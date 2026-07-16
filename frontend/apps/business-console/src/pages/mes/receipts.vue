@@ -9,7 +9,7 @@ import {
   receiptStatusTone,
 } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
-import { useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
+import { makeIdempotencyKey, useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
@@ -106,7 +106,9 @@ const form = reactive({
   unitCost: '',
   uomCode: 'EA',
   requestedAtUtc: toLocalDateTimeInput(new Date()),
-  idempotencyKey: '',
+  // 幂等键按「登记会话」生成：会话内瞬时失败后重投复用同键→后端回放不重复入库；
+  // 成功后 resetCreateForm 轮换新键→同一工单连续登记产生两笔申请（真正支持高频连录）。
+  idempotencyKey: makeIdempotencyKey('receipt'),
 })
 
 const listErrorMessage = computed(() => formatError(receiptRequestsError.value))
@@ -190,7 +192,8 @@ function resetCreateForm() {
   form.unitCost = ''
   form.uomCode = 'EA'
   form.requestedAtUtc = toLocalDateTimeInput(new Date())
-  form.idempotencyKey = ''
+  // 仅在登记成功后调用：轮换幂等键，使同一工单的下一笔登记成为一笔独立申请（连录不回放旧单）。
+  form.idempotencyKey = makeIdempotencyKey('receipt')
 }
 
 async function submitReceiptRequest() {
@@ -204,19 +207,23 @@ async function submitReceiptRequest() {
     unitCost: toPositiveNumber(form.unitCost),
     uomCode: form.uomCode.trim(),
     requestedAtUtc: toIsoFromLocalInput(form.requestedAtUtc),
-    idempotencyKey: optionalText(form.idempotencyKey) ?? `receipt-${form.workOrderId.trim()}`,
+    idempotencyKey: optionalText(form.idempotencyKey) ?? makeIdempotencyKey('receipt'),
   }
-  // 操作结果一律走 toast（反馈规范）：成功 toast + 重置表单留在原地（高频连录），失败保持 Sheet 打开。
+  // 操作结果一律走 toast（反馈规范）。登记成功与「列表刷新」是两件独立的事：
+  // 刷新失败不得否定已成功的登记（否则用户同时看到成功+失败并可能重复提交），刷新错误由列表自身错误态负责提示。
   try {
     await createReceiptRequest(body)
-    notifySuccess(`已登记完工入库 · 工单 ${body.workOrderId ?? ''}，可在列表查看入库状态。`)
-    resetCreateForm()
-    await refreshReceiptRequests()
   } catch {
-    // 超量校验保留「累计请求量超过完工数量」业务映射；其余（网络/服务/权限）由 notifyError 统一映射。
+    // 超量校验作为「实际错误消息」传入（notifyError 会优先透传 ≤60 字中文原文，故不能只放 fallback）；
+    // 其余（网络/服务/权限）由 notifyError 统一映射。
     const err = createReceiptRequestError.value ?? undefined
-    notifyError(err, friendlyCreateError(err) || '登记完工入库失败，请稍后重试。')
+    const overQuantity = overQuantityMessage(err)
+    notifyError(overQuantity ? new Error(overQuantity) : err, '登记完工入库失败，请稍后重试。')
+    return
   }
+  notifySuccess(`已登记完工入库 · 工单 ${body.workOrderId ?? ''}，可在列表查看入库状态。`)
+  resetCreateForm()
+  void Promise.resolve(refreshReceiptRequests()).catch(() => {})
 }
 
 async function retryRow(row: ReceiptRow) {
@@ -224,11 +231,13 @@ async function retryRow(row: ReceiptRow) {
   if (!requestNo || !canRetry(row)) return
   try {
     await retryInventoryPosting(requestNo)
-    notifySuccess(`已重新提交入库过账（${requestNo}），过账完成后刷新即显示为「已入库」。`)
-    await refreshReceiptRequests()
   } catch (error) {
     notifyError(error, '重投入库过账失败，请稍后重试。')
+    return
   }
+  // 重投已成功：刷新失败同样不否定成功（列表错误态负责提示）。
+  notifySuccess(`已重新提交入库过账（${requestNo}），过账完成后刷新即显示为「已入库」。`)
+  void Promise.resolve(refreshReceiptRequests()).catch(() => {})
 }
 
 function formatDateTime(value?: string | null) {
@@ -271,14 +280,14 @@ function toPositiveNumber(value: string) {
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
-// 累计申请量超过工单完工数量：把后端带 WorkOrderId 后缀的技术消息收敛成一线业务文案。
-function friendlyCreateError(error: unknown) {
+// 累计申请量超过工单完工数量：后端返回带 WorkOrderId 后缀的技术消息，收敛成 issue 指定的一线业务文案。
+// 命中时返回映射文案（由调用方作为「实际错误消息」传入 notifyError，绕过其 ≤60 字中文原文透传）；否则 undefined。
+function overQuantityMessage(error: unknown): string | undefined {
   const raw = formatError(error)
-  if (!raw) return ''
-  if (raw.includes('累计完工入库申请数量超过') || raw.includes('完工数量')) {
+  if (raw && (raw.includes('累计完工入库申请数量超过') || raw.includes('完工数量'))) {
     return '累计请求量超过完工数量，请先核对该工单的报工完成数量后再登记入库。'
   }
-  return raw
+  return undefined
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0
@@ -412,7 +421,10 @@ function isNonEmpty(value: string) {
             重试
           </NvButton>
           <NvRowActions :label="`入库登记操作 ${row.requestNo ?? row.workOrderId ?? ''}`">
-            <NvDropdownMenuItem :disabled="!row.workOrderId" @click="openWorkOrder(row.workOrderId)">
+            <NvDropdownMenuItem
+              :disabled="!row.workOrderId"
+              @click="openWorkOrder(row.workOrderId)"
+            >
               <EyeIcon aria-hidden="true" />
               查看工单
             </NvDropdownMenuItem>

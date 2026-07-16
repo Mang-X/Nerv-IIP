@@ -23,7 +23,9 @@ const mesSpies = vi.hoisted(() => ({
   createReceiptRequest: vi.fn(async () => undefined),
   refreshReceiptRequests: vi.fn(async () => undefined),
   retryInventoryPosting: vi.fn(async () => undefined),
-  traceabilityFilters: undefined as { batchOrSerial: string, materialLotId: string, mode: string, workOrderId: string } | undefined,
+  traceabilityFilters: undefined as
+    | { batchOrSerial: string; materialLotId: string; mode: string; workOrderId: string }
+    | undefined,
 }))
 
 vi.mock('vue-router', () => ({
@@ -48,6 +50,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     label: code || '未检',
     nextStep: '请按质量或设备处理要求跟进。',
   }),
+  makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   useMesFinishedGoodsReceipts: () => ({
     createReceiptRequest: mesSpies.createReceiptRequest,
     createReceiptRequestError: ref(undefined),
@@ -314,7 +317,8 @@ const uiStubs = {
   NvInput: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    template:
+      '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
   NvSelect: {
     template: '<div><slot /></div>',
@@ -386,7 +390,9 @@ function mountMesPage(component: unknown) {
 }
 
 function expectNoForbiddenVisibleTerms(text: string) {
-  expect(text).not.toMatch(/demo|mock|seed|样例|用于验证|接口|契约|组织|环境|sourceSystem|operationId|联动测试|内置|幂等键/i)
+  expect(text).not.toMatch(
+    /demo|mock|seed|样例|用于验证|接口|契约|组织|环境|sourceSystem|operationId|联动测试|内置|幂等键/i,
+  )
 }
 
 describe('MES workflow copy', () => {
@@ -436,7 +442,10 @@ describe('MES workflow copy', () => {
   it('carries operation-task context into the work-order reporting sheet route', async () => {
     const wrapper = mountMesPage(OperationTasksPage)
 
-    await wrapper.findAll('button').find((button) => button.text().includes('报工'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('报工'))!
+      .trigger('click')
 
     expect(routerState.push).toHaveBeenCalledWith({
       path: '/mes/work-orders',
@@ -478,15 +487,17 @@ describe('MES workflow copy', () => {
     await wrapper.find('#receipt-unit-cost').setValue('12.34')
     await wrapper.find('form').trigger('submit')
 
-    expect(mesSpies.createReceiptRequest).toHaveBeenCalledWith(expect.objectContaining({
-      environmentId: 'dev',
-      organizationId: 'org',
-      quantity: 10,
-      skuId: 'FG-001',
-      unitCost: 12.34,
-      uomCode: 'EA',
-      workOrderId: 'WO-001',
-    }))
+    expect(mesSpies.createReceiptRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        environmentId: 'dev',
+        organizationId: 'org',
+        quantity: 10,
+        skuId: 'FG-001',
+        unitCost: 12.34,
+        uomCode: 'EA',
+        workOrderId: 'WO-001',
+      }),
+    )
   })
 
   it('links non-work-order traceability to scan records without hardcoding a workflow filter', () => {
@@ -507,10 +518,12 @@ describe('MES workflow copy', () => {
 
     mountMesPage(TraceabilityPage)
 
-    expect(mesSpies.traceabilityFilters).toEqual(expect.objectContaining({
-      batchOrSerial: 'SN-001',
-      materialLotId: 'SN-001',
-      mode: 'batch',
-    }))
+    expect(mesSpies.traceabilityFilters).toEqual(
+      expect.objectContaining({
+        batchOrSerial: 'SN-001',
+        materialLotId: 'SN-001',
+        mode: 'batch',
+      }),
+    )
   })
 })

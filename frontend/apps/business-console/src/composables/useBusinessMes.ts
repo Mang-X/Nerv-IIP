@@ -398,7 +398,8 @@ function ignoreBackgroundError(_error: unknown) {}
 
 // 传输层幂等键。完工入库重试与质量 hold 强制释放的重复保护由后端状态机兜底
 // （重试仅 InventoryPostingFailed 可发起、强制释放仅 Active hold 生效），此处每次动作取新键即可。
-function makeIdempotencyKey(prefix: string): string {
+// 导出供创建完工入库按「登记会话」播种键（页面持有键、成功后轮换，见 mes/receipts.vue）。
+export function makeIdempotencyKey(prefix: string): string {
   const cryptoApi = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
   if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
     return `${prefix}-${cryptoApi.randomUUID()}`
@@ -1226,37 +1227,77 @@ export function useMesProductionReports() {
 }
 
 export function useMesTelemetryProductionReportCandidates() {
-  const filters = Object.assign(defaultFilters(), { status: 'pending-confirmation', fromUtc: undefined as string | undefined, toUtc: undefined as string | undefined })
+  const filters = Object.assign(defaultFilters(), {
+    status: 'pending-confirmation',
+    fromUtc: undefined as string | undefined,
+    toUtc: undefined as string | undefined,
+  })
   const queryCache = useQueryCache()
-  const candidatesQuery = useQuery(() => withBusinessContextEnabled(
-    listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions({ query: {
-      organizationId: filters.organizationId, environmentId: filters.environmentId, status: filters.status === 'all' ? undefined : filters.status || undefined,
-      workCenterId: filters.workCenterId || undefined, deviceAssetId: filters.deviceAssetId || undefined,
-      fromUtc: filters.fromUtc, toUtc: filters.toUtc, skip: filters.skip, take: filters.take,
-    } }), filters))
+  const candidatesQuery = useQuery(() =>
+    withBusinessContextEnabled(
+      listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          status: filters.status === 'all' ? undefined : filters.status || undefined,
+          workCenterId: filters.workCenterId || undefined,
+          deviceAssetId: filters.deviceAssetId || undefined,
+          fromUtc: filters.fromUtc,
+          toUtc: filters.toUtc,
+          skip: filters.skip,
+          take: filters.take,
+        },
+      }),
+      filters,
+    ),
+  )
   const promoteMutation = useMutation({
     ...promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions(),
-    onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesTelemetryProductionReportCandidates', 'listBusinessConsoleMesProductionReports', 'listBusinessConsoleMesWorkOrders']).catch(ignoreBackgroundError),
+    onSuccess: () =>
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesTelemetryProductionReportCandidates',
+        'listBusinessConsoleMesProductionReports',
+        'listBusinessConsoleMesWorkOrders',
+      ]).catch(ignoreBackgroundError),
   })
   const dismissMutation = useMutation({
     ...dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions(),
-    onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesTelemetryProductionReportCandidates']).catch(ignoreBackgroundError),
+    onSuccess: () =>
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesTelemetryProductionReportCandidates',
+      ]).catch(ignoreBackgroundError),
   })
-  type CandidateEnvelope = { data?: { items?: BusinessConsoleMesTelemetryCandidateRow[]; total?: number } | null }
+  type CandidateEnvelope = {
+    data?: { items?: BusinessConsoleMesTelemetryCandidateRow[]; total?: number } | null
+  }
   return {
     filters,
-    candidates: computed(() => envelopeItems<BusinessConsoleMesTelemetryCandidateRow, CandidateEnvelope>(candidatesQuery.data.value as CandidateEnvelope | undefined)),
-    total: computed(() => envelopeTotal(candidatesQuery.data.value as CandidateEnvelope | undefined)),
+    candidates: computed(() =>
+      envelopeItems<BusinessConsoleMesTelemetryCandidateRow, CandidateEnvelope>(
+        candidatesQuery.data.value as CandidateEnvelope | undefined,
+      ),
+    ),
+    total: computed(() =>
+      envelopeTotal(candidatesQuery.data.value as CandidateEnvelope | undefined),
+    ),
     pending: candidatesQuery.isLoading,
     error: candidatesQuery.error,
     refresh: () => refetchWithBusinessContext(filters, candidatesQuery),
-    promote: (candidateId: string, workOrderId: string, operationTaskId: string) => promoteMutation.mutateAsync({
-      path: { candidateId }, query: { organizationId: filters.organizationId, environmentId: filters.environmentId }, body: { workOrderId, operationTaskId },
-    }),
-    dismiss: (candidateId: string, reason: string) => dismissMutation.mutateAsync({
-      path: { candidateId }, query: { organizationId: filters.organizationId, environmentId: filters.environmentId }, body: { reason },
-    }),
-    actionPending: computed(() => promoteMutation.isLoading.value || dismissMutation.isLoading.value),
+    promote: (candidateId: string, workOrderId: string, operationTaskId: string) =>
+      promoteMutation.mutateAsync({
+        path: { candidateId },
+        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        body: { workOrderId, operationTaskId },
+      }),
+    dismiss: (candidateId: string, reason: string) =>
+      dismissMutation.mutateAsync({
+        path: { candidateId },
+        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        body: { reason },
+      }),
+    actionPending: computed(
+      () => promoteMutation.isLoading.value || dismissMutation.isLoading.value,
+    ),
   }
 }
 

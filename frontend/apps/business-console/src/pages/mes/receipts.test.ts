@@ -25,23 +25,29 @@ vi.mock('@/utils/notify', () => ({
 }))
 
 const receiptState = vi.hoisted(() => ({
+  createReceiptRequest: vi.fn(async (_body: unknown) => undefined),
+  createReceiptRequestError: { value: undefined as unknown },
+  refreshReceiptRequests: vi.fn(async () => undefined),
   retryInventoryPosting: vi.fn(async () => undefined),
   rows: [] as Array<Record<string, unknown>>,
   retryingRequestNo: undefined as unknown as { value: string | null },
+  keyCounter: 0,
 }))
 
 vi.mock('@/composables/useBusinessMes', () => {
   return {
+    // 唯一键生成器：每次调用递增计数，用于验证「同一工单连续两次登记 → 两个不同幂等键」。
+    makeIdempotencyKey: (prefix: string) => `${prefix}-key-${++receiptState.keyCounter}`,
     useMesFinishedGoodsReceipts: () => ({
-      createReceiptRequest: vi.fn(async () => undefined),
-      createReceiptRequestError: ref(undefined),
+      createReceiptRequest: receiptState.createReceiptRequest,
+      createReceiptRequestError: receiptState.createReceiptRequestError,
       createReceiptRequestPending: ref(false),
       filters: { organizationId: 'org', environmentId: 'dev', status: undefined },
       receiptRequests: ref(receiptState.rows),
       receiptRequestsError: ref(undefined),
       receiptRequestsPending: ref(false),
       receiptRequestsTotal: ref(receiptState.rows.length),
-      refreshReceiptRequests: vi.fn(async () => undefined),
+      refreshReceiptRequests: receiptState.refreshReceiptRequests,
       retryInventoryPosting: receiptState.retryInventoryPosting,
       retryInventoryPostingError: ref(undefined),
       retryingRequestNo: receiptState.retryingRequestNo,
@@ -92,7 +98,12 @@ const stubs = {
   NvFieldGroup: { template: '<div><slot /></div>' },
   NvField: { template: '<div><slot /></div>' },
   NvFieldLabel: { template: '<label><slot /></label>' },
-  NvInput: { props: ['modelValue'], template: '<input :value="modelValue" v-bind="$attrs" />' },
+  NvInput: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
   Spinner: true,
 }
 
@@ -118,6 +129,10 @@ describe('MES receipts — failed inventory posting retry', () => {
     routerState.replace.mockReset()
     notifySpies.success.mockReset()
     notifySpies.error.mockReset()
+    receiptState.createReceiptRequest = vi.fn(async (_body: unknown) => undefined)
+    receiptState.createReceiptRequestError = { value: undefined }
+    receiptState.refreshReceiptRequests = vi.fn(async () => undefined)
+    receiptState.keyCounter = 0
     receiptState.retryInventoryPosting.mockClear()
     receiptState.retryingRequestNo = shallowRef<string | null>(null)
     receiptState.rows = [
@@ -196,5 +211,74 @@ describe('MES receipts — failed inventory posting retry', () => {
       .findAll('button')
       .find((b) => b.text().includes('重试'))
     expect(failedRetry!.attributes('disabled')).toBeDefined()
+  })
+
+  // 工单/成品经 query 带入（工单详情发起），补齐必填单位成本后提交登记。
+  async function fillCostAndSubmit(wrapper: ReturnType<typeof mountPage>, unitCost = '3.5') {
+    await wrapper.get('#receipt-unit-cost').setValue(unitCost)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+  }
+
+  it('rotates the idempotency key per registration → two receipts for the same work order', async () => {
+    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await fillCostAndSubmit(wrapper, '3.5')
+    // 成功后重置清空单位成本；连录第二笔需重新填。
+    await fillCostAndSubmit(wrapper, '4')
+
+    expect(receiptState.createReceiptRequest).toHaveBeenCalledTimes(2)
+    const key1 = (
+      receiptState.createReceiptRequest.mock.calls[0]![0] as { idempotencyKey?: string }
+    ).idempotencyKey
+    const key2 = (
+      receiptState.createReceiptRequest.mock.calls[1]![0] as { idempotencyKey?: string }
+    ).idempotencyKey
+    expect(key1).toBeTruthy()
+    expect(key2).toBeTruthy()
+    expect(key1).not.toBe(key2)
+    // 不再是「按工单恒定」的键（否则第二笔会回放第一张或幂等冲突）。
+    expect(key1).not.toBe('receipt-WO-1')
+    expect(notifySpies.success).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps success feedback when the post-create list refresh fails (no contradictory error toast)', async () => {
+    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    receiptState.refreshReceiptRequests = vi.fn(async () => {
+      throw new Error('refresh 500')
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await fillCostAndSubmit(wrapper)
+
+    expect(receiptState.createReceiptRequest).toHaveBeenCalledTimes(1)
+    expect(notifySpies.success).toHaveBeenCalledTimes(1)
+    // 登记已成功：刷新失败不得再提示「登记失败」，避免矛盾反馈诱导重复提交。
+    expect(notifySpies.error).not.toHaveBeenCalled()
+  })
+
+  it('maps the over-quantity backend error to the business copy even for short work order ids', async () => {
+    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    receiptState.createReceiptRequest = vi.fn(async () => {
+      throw new Error('mutation rejected')
+    })
+    // 短工单号：后端原文为 ≤60 字中文，notifyError 会优先透传原文；映射必须作为「实际错误消息」传入才生效。
+    receiptState.createReceiptRequestError = {
+      value: new Error('累计完工入库申请数量超过工单完工数量，WorkOrderId = WO-1'),
+    }
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await fillCostAndSubmit(wrapper)
+
+    expect(notifySpies.error).toHaveBeenCalledTimes(1)
+    const [arg] = notifySpies.error.mock.calls[0]!
+    expect((arg as Error).message).toBe(
+      '累计请求量超过完工数量，请先核对该工单的报工完成数量后再登记入库。',
+    )
+    expect(notifySpies.success).not.toHaveBeenCalled()
   })
 })
