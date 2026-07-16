@@ -127,6 +127,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     qualityStatus?: string;
     ownerType?: string;
     ownerId?: string | null;
+    productionDate?: string | null;
+    expiryDate?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsInboundOrderListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -242,6 +244,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsInboundOrderRequest = {
     idempotencyKey: string;
+    lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundLineCaptureInput> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundLineCaptureInput = {
+    lineNo: string;
+    lotNo?: string | null;
+    productionDate?: string | null;
+    expiryDate?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateWmsOutboundOrderResponse = NetCorePalExtensionsDtoResponseData & {
@@ -450,6 +460,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     stagingLocationCode?: string;
     lotNo?: string | null;
     serialNo?: string | null;
+    productionDate?: string | null;
+    expiryDate?: string | null;
     qualityStatus?: string;
     qualityGateStatus?: string;
     inspectionRecordId?: string | null;
@@ -1053,6 +1065,8 @@ export type NervIipContractsSchedulingSchedulePlanMetricsContract = {
     lateOperationCount?: number;
     onTimeRate?: number;
     averageResourceUtilization?: number;
+    lockedOperationCount?: number;
+    optimizableOperationCount?: number;
 };
 
 export type NervIipContractsSchedulingScheduleAssignmentContract = {
@@ -1269,6 +1283,28 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     planId?: string;
     status?: NervIipContractsSchedulingSchedulePlanStatusContract;
     releasedAtUtc?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleScheduleOperationOverrideResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse = {
+    operationId?: string;
+    workOrderId?: string;
+    resourceId?: string;
+    workCenterId?: string;
+    startUtc?: string;
+    endUtc?: string;
+    lockReasonCode?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideRequest = {
+    organizationId: string;
+    environmentId: string;
+    resourceId: string;
+    startUtc?: string;
+    endUtc?: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -7891,6 +7927,42 @@ export type ReleaseBusinessConsoleSchedulingPlanResponses = {
 };
 
 export type ReleaseBusinessConsoleSchedulingPlanResponse = ReleaseBusinessConsoleSchedulingPlanResponses[keyof ReleaseBusinessConsoleSchedulingPlanResponses];
+
+export type UpsertBusinessConsoleSchedulingOperationOverrideData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideRequest;
+    path: {
+        planId: string;
+        operationId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/scheduling/plans/{planId}/operations/{operationId}/override';
+};
+
+export type UpsertBusinessConsoleSchedulingOperationOverrideErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type UpsertBusinessConsoleSchedulingOperationOverrideError = UpsertBusinessConsoleSchedulingOperationOverrideErrors[keyof UpsertBusinessConsoleSchedulingOperationOverrideErrors];
+
+export type UpsertBusinessConsoleSchedulingOperationOverrideResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleScheduleOperationOverrideResponse;
+};
+
+export type UpsertBusinessConsoleSchedulingOperationOverrideResponse = UpsertBusinessConsoleSchedulingOperationOverrideResponses[keyof UpsertBusinessConsoleSchedulingOperationOverrideResponses];
 
 export type ListBusinessConsoleQualityInspectionPlansData = {
     body?: never;

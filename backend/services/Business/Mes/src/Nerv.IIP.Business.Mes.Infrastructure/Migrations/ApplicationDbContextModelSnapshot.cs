@@ -588,6 +588,13 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("existing_start_utc")
                         .HasComment("Existing UTC start time for in-progress operation preservation.");
 
+                    b.Property<bool>("HasActiveManualDispatch")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("has_active_manual_dispatch")
+                        .HasComment("Whether the operation currently owns an active MES manual-device dispatch lock; false with revision zero and a device remains legacy-unknown.");
+
                     b.Property<long>("LaborTimeTicks")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint")
@@ -601,6 +608,14 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasDefaultValue(0L)
                         .HasColumnName("machine_time_ticks")
                         .HasComment("Actual machine time stored as .NET ticks after paused duration deduction.");
+
+                    b.Property<long>("ManualDispatchRevision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("manual_dispatch_revision")
+                        .HasComment("Monotonic MES manual-device dispatch lifecycle revision; zero is legacy-unknown after upgrade.");
 
                     b.Property<string>("OperationCode")
                         .HasMaxLength(100)

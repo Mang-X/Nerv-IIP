@@ -8,6 +8,12 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
 
 namespace Nerv.IIP.Business.Mes.Domain.DomainEvents;
 
+public enum OperationTaskManualDispatchClearReason
+{
+    DeviceCleared,
+    OperationCancelled
+}
+
 public sealed record WorkOrderCreatedDomainEvent(WorkOrder WorkOrder) : IDomainEvent;
 
 public sealed record WorkOrderReleasedDomainEvent(WorkOrder WorkOrder, IReadOnlyCollection<OperationTask> OperationTasks) : IDomainEvent;
@@ -19,6 +25,29 @@ public sealed record WorkOrderClosedDomainEvent(WorkOrder WorkOrder, DateTimeOff
 public sealed record MesEngineeringChangeWorkOrderImpactDetectedDomainEvent(MesEngineeringChangeWorkOrderImpact Impact) : IDomainEvent;
 
 public sealed record OperationTaskCompletedDomainEvent(OperationTask OperationTask) : IDomainEvent;
+
+public sealed record OperationTaskManualDispatchSnapshot(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string OperationTaskId,
+    int OperationSequence,
+    string ResourceId,
+    string WorkCenterId,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    DateTimeOffset OccurredAtUtc,
+    long DispatchRevision);
+
+public sealed record OperationTaskManuallyDispatchedDomainEvent(
+    OperationTaskManualDispatchSnapshot Dispatch,
+    string Actor) : IDomainEvent;
+
+public sealed record OperationTaskManualDispatchClearedDomainEvent(
+    OperationTaskManualDispatchSnapshot Dispatch,
+    OperationTaskManualDispatchClearReason Reason,
+    DateTimeOffset ClearedAtUtc,
+    string Actor) : IDomainEvent;
 
 public sealed record WorkOrderCancelledDomainEvent(
     WorkOrder WorkOrder,

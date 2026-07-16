@@ -7,6 +7,7 @@ using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Scheduling;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
@@ -158,6 +159,13 @@ public sealed class SchedulingIntegrationEventTests
     public void Http_context_accessor_reads_correlation_causation_and_actor_headers()
     {
         var httpContext = new DefaultHttpContext();
+        httpContext.User = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+                [
+                    new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "internal-service"),
+                    new System.Security.Claims.Claim("token_type", "internal_service")
+                ],
+                "InternalService"));
         httpContext.Request.Headers["X-Correlation-Id"] = "corr-http-001";
         httpContext.Request.Headers["X-Causation-Id"] = "cmd-http-001";
         httpContext.Request.Headers["X-Actor"] = "user:planner-001";
@@ -171,6 +179,47 @@ public sealed class SchedulingIntegrationEventTests
         Assert.Equal("corr-http-001", context.CorrelationId);
         Assert.Equal("cmd-http-001", context.CausationId);
         Assert.Equal("user:planner-001", context.Actor);
+    }
+
+    [Fact]
+    public void Http_context_accessor_ignores_forwarded_actor_for_user_tokens()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.User = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+                [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "planner-002")],
+                "Bearer"));
+        httpContext.Request.Headers["X-Actor"] = "user:impersonated";
+        var accessor = new HttpSchedulingIntegrationEventContextAccessor(new HttpContextAccessor
+        {
+            HttpContext = httpContext
+        });
+
+        var context = accessor.GetContext();
+
+        Assert.Equal("user:planner-002", context.Actor);
+    }
+
+    [Fact]
+    public void Http_context_accessor_rejects_noncanonical_forwarded_actor_for_internal_service_tokens()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.User = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+                [
+                    new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "internal-service"),
+                    new System.Security.Claims.Claim("token_type", "internal_service")
+                ],
+                "InternalService"));
+        httpContext.Request.Headers["X-Actor"] = "impersonated";
+        var accessor = new HttpSchedulingIntegrationEventContextAccessor(new HttpContextAccessor
+        {
+            HttpContext = httpContext
+        });
+
+        var exception = Assert.Throws<KnownException>(() => accessor.GetContext());
+
+        Assert.Equal("A canonical X-Actor is required for forwarded actor requests.", exception.Message);
     }
 
     [Fact]
