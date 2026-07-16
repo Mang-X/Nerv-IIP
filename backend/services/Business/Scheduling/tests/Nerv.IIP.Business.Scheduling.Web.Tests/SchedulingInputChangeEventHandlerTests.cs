@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
@@ -13,6 +14,7 @@ using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
+using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Scheduling;
@@ -304,6 +306,265 @@ public sealed class SchedulingInputChangeEventHandlerTests
     }
 
     [Fact]
+    public async Task MasterData_work_calendar_changed_event_invalidates_only_generated_plans_using_the_calendar_once()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedMasterDataScopedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var handler = new WorkCalendarChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            new RecordingLogger<WorkCalendarChangedIntegrationEventHandlerForInvalidateSchedulePlans>());
+        var integrationEvent = CreateWorkCalendarChangedEvent();
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var invalidation = Assert.Single(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+        Assert.Equal("plan-calendar-target", invalidation.PlanId);
+        Assert.Equal(SchedulingPlanInvalidationReasons.WorkCalendarChanged, invalidation.ReasonCode);
+        Assert.Equal(MasterDataIntegrationEventTypes.WorkCalendarChanged, invalidation.SourceEventType);
+
+        var plans = await scope.ServiceProvider.GetRequiredService<ISender>().Send(
+            new ListSchedulePlansQuery("org-001", "env-dev"),
+            CancellationToken.None);
+        Assert.True(plans.Single(x => x.PlanId == "plan-calendar-target").IsInvalidated);
+        Assert.False(plans.Single(x => x.PlanId == "plan-calendar-released").IsInvalidated);
+        Assert.False(plans.Single(x => x.PlanId == "plan-calendar-other").IsInvalidated);
+
+        var published = Assert.Single(scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>()
+            .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>());
+        Assert.Equal(["ASSET-CNC-01", "WC-CNC"], published.Payload.AffectedResourceIds);
+
+        var processed = Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+        Assert.Equal(WorkCalendarChangedIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName, processed.ConsumerName);
+    }
+
+    [Fact]
+    public async Task MasterData_work_calendar_changed_event_ignores_plan_not_assigned_to_a_resource_using_the_calendar()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using (var seedScope = provider.CreateScope())
+        {
+            var seedDbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            seedDbContext.SchedulePlans.Add(CreatePlan(
+                "plan-unused-calendar",
+                SchedulePlanStatusContract.Generated,
+                "org-001",
+                "env-dev",
+                "problem-unused-calendar",
+                "ASSET-LATHE-01",
+                "WC-LATHE"));
+            var horizonStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+            var horizonEnd = horizonStart.AddHours(8);
+            var problem = new SchedulingProblemContract(
+                1,
+                "problem-unused-calendar",
+                "org-001",
+                "env-dev",
+                horizonStart,
+                horizonEnd,
+                [],
+                [
+                    new SchedulingResourceContract("ASSET-CNC-01", "WC-CNC", [], 1, "CAL-A", "ASSET-CNC-01"),
+                    new SchedulingResourceContract("ASSET-LATHE-01", "WC-LATHE", [], 1, "CAL-B", "ASSET-LATHE-01"),
+                ],
+                [
+                    new SchedulingCalendarContract("CAL-A", [new SchedulingTimeWindowContract(horizonStart, horizonEnd, "regular")]),
+                    new SchedulingCalendarContract("CAL-B", [new SchedulingTimeWindowContract(horizonStart, horizonEnd, "regular")]),
+                ],
+                [],
+                [],
+                [],
+                []);
+            seedDbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(
+                problem.ProblemId,
+                problem.ContractVersion,
+                problem.OrganizationId,
+                problem.EnvironmentId,
+                "fingerprint-unused-calendar",
+                JsonSerializer.Serialize(problem, SchedulingJson.Options),
+                horizonStart,
+                horizonEnd,
+                FixedNow));
+            await seedDbContext.SaveChangesAsync();
+        }
+
+        using var scope = provider.CreateScope();
+        var handler = new WorkCalendarChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            new RecordingLogger<WorkCalendarChangedIntegrationEventHandlerForInvalidateSchedulePlans>());
+
+        await handler.HandleAsync(CreateWorkCalendarChangedEvent(), CancellationToken.None);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Empty(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+        Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+        Assert.Empty(scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>().Published);
+    }
+
+    [Fact]
+    public async Task MasterData_resource_changed_event_invalidates_only_generated_plans_assigned_to_the_resource_once()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedMasterDataScopedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var handler = new ResourceChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            new RecordingLogger<ResourceChangedIntegrationEventHandlerForInvalidateSchedulePlans>());
+        var integrationEvent = CreateResourceChangedEvent("WorkCenter", "WC-CNC");
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var invalidation = Assert.Single(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+        Assert.Equal("plan-calendar-target", invalidation.PlanId);
+        Assert.Equal(SchedulingPlanInvalidationReasons.ResourceChanged, invalidation.ReasonCode);
+        Assert.Equal("WC-CNC", invalidation.AffectedResourceId);
+        Assert.Equal(MasterDataIntegrationEventTypes.ResourceChanged, invalidation.SourceEventType);
+        Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task MasterData_work_center_change_publishes_only_operations_whose_work_center_matches()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using (var seedScope = provider.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.SchedulePlans.Add(CreatePlanWithAssignments(
+                "plan-work-center-collision",
+                "problem-work-center-collision",
+                [
+                    new ScheduleAssignmentContract(
+                        "assign-target",
+                        "WO-001",
+                        "OP-TARGET",
+                        10,
+                        "ASSET-CNC-01",
+                        "WC-CNC",
+                        new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+                        new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
+                        false,
+                        "scheduled"),
+                    new ScheduleAssignmentContract(
+                        "assign-resource-code-collision",
+                        "WO-001",
+                        "OP-UNRELATED",
+                        20,
+                        "WC-CNC",
+                        "WC-LATHE",
+                        new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
+                        new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero),
+                        false,
+                        "scheduled"),
+                ]));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var scope = provider.CreateScope();
+        var handler = new ResourceChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            new RecordingLogger<ResourceChangedIntegrationEventHandlerForInvalidateSchedulePlans>());
+
+        await handler.HandleAsync(CreateResourceChangedEvent("WorkCenter", "WC-CNC"), CancellationToken.None);
+
+        var published = Assert.Single(scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>()
+            .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>());
+        Assert.Equal(["OP-TARGET"], published.Payload.AffectedOperations.Select(x => x.OperationId));
+    }
+
+    [Fact]
+    public async Task MasterData_resource_changed_event_with_untraceable_hierarchy_is_a_successful_no_match()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedMasterDataScopedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var logger = new RecordingLogger<ResourceChangedIntegrationEventHandlerForInvalidateSchedulePlans>();
+        var handler = new ResourceChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            logger);
+
+        await handler.HandleAsync(CreateResourceChangedEvent("Shift", "WC-CNC"), CancellationToken.None);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Empty(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+        Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+        Assert.Contains(logger.Messages, x =>
+            x.LogLevel == LogLevel.Information &&
+            x.Message.Contains("WC-CNC", StringComparison.Ordinal) &&
+            x.Message.Contains("matched no schedule plan", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task MasterData_work_calendar_changes_with_distinct_event_ids_are_not_collapsed_by_the_stable_source_key()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedMasterDataScopedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var handler = new WorkCalendarChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            new RecordingLogger<WorkCalendarChangedIntegrationEventHandlerForInvalidateSchedulePlans>());
+        var first = CreateWorkCalendarChangedEvent();
+        var second = first with
+        {
+            EventId = "evt-masterdata-calendar-002",
+            OccurredAtUtc = first.OccurredAtUtc.AddHours(1),
+        };
+
+        await handler.HandleAsync(first, CancellationToken.None);
+        await handler.HandleAsync(second, CancellationToken.None);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(2, await dbContext.ProcessedIntegrationEvents.CountAsync());
+        Assert.Equal(2, await dbContext.SchedulePlanInvalidations.CountAsync());
+    }
+
+    [Fact]
+    public async Task MasterData_resource_changes_with_distinct_event_ids_are_not_collapsed_by_the_stable_source_key()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedMasterDataScopedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var handler = new ResourceChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            new RecordingLogger<ResourceChangedIntegrationEventHandlerForInvalidateSchedulePlans>());
+        var first = CreateResourceChangedEvent("WorkCenter", "WC-CNC");
+        var second = first with
+        {
+            EventId = "evt-masterdata-resource-WorkCenter-WC-CNC-002",
+            OccurredAtUtc = first.OccurredAtUtc.AddHours(1),
+        };
+
+        await handler.HandleAsync(first, CancellationToken.None);
+        await handler.HandleAsync(second, CancellationToken.None);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(2, await dbContext.ProcessedIntegrationEvents.CountAsync());
+        Assert.Equal(2, await dbContext.SchedulePlanInvalidations.CountAsync());
+    }
+
+    [Fact]
     public void Scheduling_input_change_handlers_have_cap_subscriptions()
     {
         AssertSubscription<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>(
@@ -324,6 +585,82 @@ public sealed class SchedulingInputChangeEventHandlerTests
         AssertSubscription<WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans>(
             "WorkOrderReleasedIntegrationEvent",
             WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
+        AssertSubscription<WorkCalendarChangedIntegrationEventHandlerForInvalidateSchedulePlans>(
+            "WorkCalendarChangedIntegrationEvent",
+            WorkCalendarChangedIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
+        AssertSubscription<ResourceChangedIntegrationEventHandlerForInvalidateSchedulePlans>(
+            "ResourceChangedIntegrationEvent",
+            ResourceChangedIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
+    }
+
+    private static async Task SeedMasterDataScopedPlansAsync(ServiceProvider provider)
+    {
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.SchedulePlans.Add(CreatePlan(
+            "plan-calendar-target",
+            SchedulePlanStatusContract.Generated,
+            "org-001",
+            "env-dev",
+            "problem-calendar-target",
+            "ASSET-CNC-01",
+            "WC-CNC"));
+        var released = CreatePlan(
+            "plan-calendar-released",
+            SchedulePlanStatusContract.Generated,
+            "org-001",
+            "env-dev",
+            "problem-calendar-released",
+            "ASSET-CNC-01",
+            "WC-CNC");
+        released.Release(FixedNow);
+        dbContext.SchedulePlans.Add(released);
+        dbContext.SchedulePlans.Add(CreatePlan(
+            "plan-calendar-other",
+            SchedulePlanStatusContract.Generated,
+            "org-001",
+            "env-dev",
+            "problem-calendar-other",
+            "ASSET-LATHE-01",
+            "WC-LATHE"));
+        dbContext.ScheduleProblems.Add(CreateProblemSnapshot("problem-calendar-target", "CAL-A", "ASSET-CNC-01", "WC-CNC"));
+        dbContext.ScheduleProblems.Add(CreateProblemSnapshot("problem-calendar-released", "CAL-A", "ASSET-CNC-01", "WC-CNC"));
+        dbContext.ScheduleProblems.Add(CreateProblemSnapshot("problem-calendar-other", "CAL-B", "ASSET-LATHE-01", "WC-LATHE"));
+        await dbContext.SaveChangesAsync();
+    }
+
+    private static ScheduleProblemSnapshot CreateProblemSnapshot(
+        string problemId,
+        string calendarId,
+        string resourceId,
+        string workCenterId)
+    {
+        var horizonStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var horizonEnd = horizonStart.AddHours(8);
+        var problem = new SchedulingProblemContract(
+            1,
+            problemId,
+            "org-001",
+            "env-dev",
+            horizonStart,
+            horizonEnd,
+            [],
+            [new SchedulingResourceContract(resourceId, workCenterId, [], 1, calendarId, resourceId)],
+            [new SchedulingCalendarContract(calendarId, [new SchedulingTimeWindowContract(horizonStart, horizonEnd, "regular")])],
+            [],
+            [],
+            [],
+            []);
+        return new ScheduleProblemSnapshot(
+            problemId,
+            1,
+            "org-001",
+            "env-dev",
+            $"fingerprint-{problemId}",
+            JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            horizonStart,
+            horizonEnd,
+            FixedNow);
     }
 
     private static async Task SeedPlansAsync(ServiceProvider provider)
@@ -342,7 +679,50 @@ public sealed class SchedulingInputChangeEventHandlerTests
         string planId,
         SchedulePlanStatusContract status,
         string organizationId,
-        string environmentId)
+        string environmentId,
+        string problemId = "problem-001",
+        string resourceId = "ASSET-CNC-01",
+        string workCenterId = "WC-CNC")
+    {
+        return CreatePlanWithAssignments(
+            planId,
+            problemId,
+            [
+                new ScheduleAssignmentContract(
+                    AssignmentId: $"assign-{planId}",
+                    OrderId: "WO-001",
+                    OperationId: "OP-001",
+                    OperationSequence: 10,
+                    ResourceId: resourceId,
+                    WorkCenterId: workCenterId,
+                    StartUtc: new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+                    EndUtc: new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
+                    IsLocked: false,
+                    ExplanationCode: "scheduled"),
+                new ScheduleAssignmentContract(
+                    AssignmentId: $"assign-{planId}-2",
+                    OrderId: "WO-001",
+                    OperationId: "OP-002",
+                    OperationSequence: 20,
+                    ResourceId: resourceId,
+                    WorkCenterId: workCenterId,
+                    StartUtc: new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
+                    EndUtc: new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero),
+                    IsLocked: false,
+                    ExplanationCode: "scheduled"),
+            ],
+            status,
+            organizationId,
+            environmentId);
+    }
+
+    private static SchedulePlan CreatePlanWithAssignments(
+        string planId,
+        string problemId,
+        IReadOnlyCollection<ScheduleAssignmentContract> assignments,
+        SchedulePlanStatusContract status = SchedulePlanStatusContract.Generated,
+        string organizationId = "org-001",
+        string environmentId = "env-dev")
     {
         return SchedulePlan.FromGeneratedPlan(
             organizationId,
@@ -350,7 +730,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
             SchedulePlanContractMapper.ToDomainSnapshot(new SchedulePlanContract(
                 ContractVersion: 1,
                 PlanId: planId,
-                ProblemId: "problem-001",
+                ProblemId: problemId,
                 ProblemFingerprint: $"fingerprint-{planId}",
                 AlgorithmVersion: "aps-lite-v1",
                 Status: status,
@@ -364,31 +744,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
                     LateOperationCount: 0,
                     OnTimeRate: 1m,
                     AverageResourceUtilization: 0m),
-                Assignments:
-                [
-                    new ScheduleAssignmentContract(
-                        AssignmentId: $"assign-{planId}",
-                        OrderId: "WO-001",
-                        OperationId: "OP-001",
-                        OperationSequence: 10,
-                        ResourceId: "ASSET-CNC-01",
-                        WorkCenterId: "WC-CNC",
-                        StartUtc: new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
-                        EndUtc: new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
-                        IsLocked: false,
-                        ExplanationCode: "scheduled"),
-                    new ScheduleAssignmentContract(
-                        AssignmentId: $"assign-{planId}-2",
-                        OrderId: "WO-001",
-                        OperationId: "OP-002",
-                        OperationSequence: 20,
-                        ResourceId: "ASSET-CNC-01",
-                        WorkCenterId: "WC-CNC",
-                        StartUtc: new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
-                        EndUtc: new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero),
-                        IsLocked: false,
-                        ExplanationCode: "scheduled")
-                ],
+                Assignments: assignments,
                 ResourceLoads: [],
                 Conflicts: [],
                 UnscheduledOperations: [],
@@ -552,6 +908,40 @@ public sealed class SchedulingInputChangeEventHandlerTests
                 10,
                 new DateTimeOffset(2026, 6, 1, 9, 15, 0, TimeSpan.Zero),
                 [new ReleasedOperationPayload("OP-NEW-10", 10, "WC-CNC")]));
+    }
+
+    private static WorkCalendarChangedIntegrationEvent CreateWorkCalendarChangedEvent()
+    {
+        return new WorkCalendarChangedIntegrationEvent(
+            "evt-masterdata-calendar-001",
+            MasterDataIntegrationEventTypes.WorkCalendarChanged,
+            MasterDataIntegrationEventVersions.V1,
+            new DateTimeOffset(2026, 6, 1, 9, 20, 0, TimeSpan.Zero),
+            MasterDataIntegrationEventSources.BusinessMasterData,
+            "corr-masterdata-001",
+            "calendar-CAL-A",
+            "org-001",
+            "env-dev",
+            "user:planner",
+            "work-calendar-changed:org-001:env-dev:CAL-A",
+            new MasterDataChangedPayload("work-calendar", "CAL-A", "active", FixedNow));
+    }
+
+    private static ResourceChangedIntegrationEvent CreateResourceChangedEvent(string resourceType, string code)
+    {
+        return new ResourceChangedIntegrationEvent(
+            $"evt-masterdata-resource-{resourceType}-{code}",
+            MasterDataIntegrationEventTypes.ResourceChanged,
+            MasterDataIntegrationEventVersions.V1,
+            new DateTimeOffset(2026, 6, 1, 9, 25, 0, TimeSpan.Zero),
+            MasterDataIntegrationEventSources.BusinessMasterData,
+            "corr-masterdata-001",
+            $"resource-{code}",
+            "org-001",
+            "env-dev",
+            "user:planner",
+            $"resource-changed:org-001:env-dev:{resourceType}:{code}",
+            new ResourceChangedPayload(resourceType, code, "active", FixedNow));
     }
 
     private static void AssertSubscription<THandler>(string expectedTopic, string expectedGroup)

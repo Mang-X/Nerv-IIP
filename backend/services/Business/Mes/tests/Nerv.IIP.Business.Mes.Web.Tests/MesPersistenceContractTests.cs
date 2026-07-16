@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure.Repositories;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
@@ -1508,21 +1509,78 @@ public sealed class MesPersistenceContractTests
             await dbContext.SaveChangesAsync();
 
             await new AssignDispatchTaskCommandHandler(dbContext).Handle(
-                new AssignDispatchTaskCommand("org-001", "env-dev", "OP-DISPATCH-10", "person-001", "device-fill-01", "shift-a", now.AddMinutes(5)),
+                new AssignDispatchTaskCommand("org-001", "env-dev", "OP-DISPATCH-10", "person-001", "device-fill-01", "shift-a", now.AddMinutes(5), "user:dispatcher-001"),
                 CancellationToken.None);
             await dbContext.SaveChangesAsync();
+
+            dbContext.ChangeTracker.Clear();
+            var persistedAssignment = await dbContext.OperationTasks.SingleAsync(
+                x => x.OperationTaskIdValue == "OP-DISPATCH-10");
+            Assert.Equal(1, persistedAssignment.ManualDispatchRevision);
+            Assert.True(persistedAssignment.HasActiveManualDispatch);
+
+            var list = await new ListDispatchTasksQueryHandler(dbContext)
+                .Handle(new ListDispatchTasksQuery("org-001", "env-dev", null), CancellationToken.None);
+
+            var row = Assert.Single(list.Items);
+            Assert.Equal("OP-DISPATCH-10", row.OperationTaskId);
+            Assert.Equal("person-001", row.AssignedUserId);
+            Assert.Equal("device-fill-01", row.DeviceAssetId);
+            Assert.Equal("shift-a", row.ShiftId);
+            Assert.Equal(now, row.PlannedStartUtc);
+
+            await new AssignDispatchTaskCommandHandler(dbContext).Handle(
+                new AssignDispatchTaskCommand("org-001", "env-dev", "OP-DISPATCH-10", "person-001", null, "shift-a", now.AddMinutes(10), "user:dispatcher-001"),
+                CancellationToken.None);
+            await dbContext.SaveChangesAsync();
+
+            dbContext.ChangeTracker.Clear();
+            var persistedClear = await dbContext.OperationTasks.SingleAsync(
+                x => x.OperationTaskIdValue == "OP-DISPATCH-10");
+            Assert.Equal(2, persistedClear.ManualDispatchRevision);
+            Assert.False(persistedClear.HasActiveManualDispatch);
         }
+    }
 
-        using var recreatedScope = services.CreateScope();
-        var list = await new ListDispatchTasksQueryHandler(recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>())
-            .Handle(new ListDispatchTasksQuery("org-001", "env-dev", null), CancellationToken.None);
+    [Fact]
+    public async Task Legacy_unknown_device_reload_emits_revocation_and_persists_monotonic_revision()
+    {
+        var services = CreateServices(nameof(Legacy_unknown_device_reload_emits_revocation_and_persists_monotonic_revision));
+        var now = DateTimeOffset.Parse("2026-07-15T08:00:00Z");
 
-        var row = Assert.Single(list.Items);
-        Assert.Equal("OP-DISPATCH-10", row.OperationTaskId);
-        Assert.Equal("person-001", row.AssignedUserId);
-        Assert.Equal("device-fill-01", row.DeviceAssetId);
-        Assert.Equal("shift-a", row.ShiftId);
-        Assert.Equal(now, row.PlannedStartUtc);
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var task = OperationTask.Create(
+            "org-001", "env-dev", "WO-LEGACY-001", "OP-LEGACY-10",
+            OperationTaskLifecycleStatus.Queued, 10, "WC-FILL", [], now,
+            TimeSpan.FromMinutes(45), null, null);
+        task.ApplyScheduleAssignment("WC-FILL", "device-legacy-01", now, now.AddMinutes(45), now);
+        dbContext.OperationTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        dbContext.ChangeTracker.Clear();
+        var upgraded = await dbContext.OperationTasks.SingleAsync(
+            x => x.OperationTaskIdValue == "OP-LEGACY-10");
+        Assert.Equal(0, upgraded.ManualDispatchRevision);
+        Assert.False(upgraded.HasActiveManualDispatch);
+        Assert.Equal("device-legacy-01", upgraded.DeviceAssetId);
+
+        upgraded.Assign(null, null, null, now.AddMinutes(1), "user:dispatcher-001");
+        var cleared = Assert.IsType<OperationTaskManualDispatchClearedDomainEvent>(
+            Assert.Single(upgraded.GetDomainEvents()));
+        Assert.Equal(1, cleared.Dispatch.DispatchRevision);
+        await dbContext.SaveChangesAsync();
+
+        dbContext.ChangeTracker.Clear();
+        var persistedClear = await dbContext.OperationTasks.SingleAsync(
+            x => x.OperationTaskIdValue == "OP-LEGACY-10");
+        Assert.Equal(1, persistedClear.ManualDispatchRevision);
+        Assert.False(persistedClear.HasActiveManualDispatch);
+
+        persistedClear.Assign(null, "device-new-02", null, now.AddMinutes(2), "user:dispatcher-001");
+        Assert.Equal(2, persistedClear.ManualDispatchRevision);
+        Assert.True(persistedClear.HasActiveManualDispatch);
+        await dbContext.SaveChangesAsync();
     }
 
     [Fact]

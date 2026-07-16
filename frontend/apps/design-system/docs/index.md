@@ -21,7 +21,7 @@ hero:
 import {
   MonitorIcon, SmartphoneIcon, TabletIcon, PresentationIcon, ArrowRightIcon,
   PaletteIcon, GaugeIcon, LayersIcon, AccessibilityIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 </script>
 
 <div class="nv-home">

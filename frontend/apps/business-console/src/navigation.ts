@@ -49,7 +49,7 @@ import {
   WalletIcon,
   WarehouseIcon,
   WrenchIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { BUSINESS_DOMAIN_PERMISSIONS, BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 
 /**

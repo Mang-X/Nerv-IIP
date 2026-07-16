@@ -27,7 +27,12 @@ const listClicked = ref(false)
 
     <div class="space-y-6 p-4">
       <section data-testid="scan-section">
-        <NvScanBar placeholder="扫描条码" @scan="(v: string) => (lastScan = v)" />
+        <!-- 抽屉打开时停止抢焦（S3 契约）：否则 ScanBar 会把焦点从浮层抢回 -->
+        <NvScanBar
+          placeholder="扫描条码"
+          :active="!sheetOpen"
+          @scan="(v: string) => (lastScan = v)"
+        />
         <p data-testid="scan-result" class="mt-1 text-sm text-muted-foreground">{{ lastScan }}</p>
       </section>
 

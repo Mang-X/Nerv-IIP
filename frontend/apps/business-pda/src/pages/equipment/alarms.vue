@@ -20,7 +20,7 @@ import {
   NvScanBar,
   type ActionItem,
 } from '@nerv-iip/ui-mobile'
-import { ChevronRight } from 'lucide-vue-next'
+import { ChevronRight } from '@lucide/vue'
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -226,6 +226,12 @@ function openDetail(item: Alarm) {
   detail.value = item
 }
 
+// ScanBar 抢焦 opt-out（S3 契约）：任一浮层（确认弹层/搁置 ActionSheet/失败对话框/详情抽屉）
+// 打开时停止回抢焦点，避免破坏浮层 focus-trap。
+const scanActive = computed(
+  () => !ackOpen.value && !shelveOpen.value && actionError.value === null && !detailOpen.value,
+)
+
 // 去报修：把设备 + 来源报警事件 ID 作为上下文带入报修页（repair.vue 消费 query 预填）。
 function goRepair(item: Alarm) {
   detail.value = null
@@ -262,7 +268,7 @@ function showToast(message: string, type: 'success' | 'error') {
     <div class="space-y-4 p-4">
       <!-- 按设备过滤 -->
       <section class="space-y-2">
-        <NvScanBar placeholder="扫描设备码筛选报警" @scan="onScan" />
+        <NvScanBar placeholder="扫描设备码筛选报警" :active="scanActive" @scan="onScan" />
         <div
           v-if="filteredDevice"
           class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2 text-sm"

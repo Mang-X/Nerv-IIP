@@ -32,6 +32,25 @@ test('ScanBar reclaims focus after blur (keyboard-wedge stays armed)', async ({ 
   await expect(input).toBeFocused()
 })
 
+test('ScanBar stops stealing focus while the sheet is open and re-arms after close (S3)', async ({
+  page,
+}) => {
+  await page.goto(GALLERY)
+  const input = page.locator('input[placeholder="扫描条码"]')
+  await input.click()
+  await expect(input).toBeFocused()
+  await page.getByTestId('open-sheet').click()
+  await expect(page.getByText('抽屉内容')).toBeVisible()
+  // 抽屉打开（active=false）：ScanBar 不回抢焦点，也不捕获键入字符
+  await expect(input).not.toBeFocused()
+  await page.keyboard.type('XYZ')
+  await expect(input).toHaveValue('')
+  await page.keyboard.press('Escape')
+  await expect(page.getByText('抽屉内容')).toHaveCount(0)
+  // 抽屉关闭（active 恢复 true）：焦点重新武装回 ScanBar
+  await expect(input).toBeFocused()
+})
+
 test('ListRow select fires only for the interactive row', async ({ page }) => {
   await page.goto(GALLERY)
   await expect(page.getByTestId('list-clicked')).toHaveText('idle')
@@ -50,7 +69,9 @@ test('BottomSheet opens and closes (Escape dismiss)', async ({ page }) => {
   await expect(page.getByText('抽屉内容')).toHaveCount(0)
 })
 
-test('AppShellMobile applies the safe-area minimum padding on header and footer', async ({ page }) => {
+test('AppShellMobile applies the safe-area minimum padding on header and footer', async ({
+  page,
+}) => {
   await page.goto(GALLERY)
   // Wait for the shell to mount before reading computed styles (goto resolves before SPA hydration).
   await expect(page.locator('[data-shell="footer"]')).toBeVisible()

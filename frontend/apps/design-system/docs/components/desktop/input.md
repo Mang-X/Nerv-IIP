@@ -4,7 +4,7 @@ title: NvInput 输入框
 
 <script setup>
 import { NvInput } from '@nerv-iip/ui'
-import { SearchIcon } from 'lucide-vue-next'
+import { SearchIcon } from '@lucide/vue'
 import { ref } from 'vue'
 
 const searchValue = ref('')

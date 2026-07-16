@@ -1,43 +1,41 @@
-# Date Picker
+# Date Picker (NvDatePicker / NvDateRangePicker / NvTimePicker)
 
-Date controls are design-system components exported from `@nerv-iip/ui`. The current #143 baseline composes `Popover` with compact native date inputs for reliable MVP form and filter workflows. `Calendar` and `RangeCalendar` are exported as low-level Reka root primitives only; they are not yet styled, full calendar-grid components.
+Date/time controls for desktop product UI, exported from `@nerv-iip/ui`:
 
-## Exports
+- `NvDatePicker` — single date. `v-model` is a `YYYY-MM-DD` string or `null`;
+  props `placeholder`, `disabled`.
+- `NvDateRangePicker` — range. `v-model` is `DateRange`
+  (`{ start: string | null, end: string | null }`) or `null`.
+- `NvTimePicker` — time selection for schedule/window inputs.
 
-- `DatePicker`
-- `DateRangePicker`
-- `DateRangeValue`
-- `Calendar` low-level Reka root
-- `RangeCalendar` low-level Reka root
-- `Popover` and public popover parts
+The un-prefixed `DatePicker` / `DateRangePicker` (and their `DateRangeValue`
+type) plus `Calendar` / `RangeCalendar` are 原版 / low-level exports —
+library-internal only; do not use them in app code.
 
 ## Contract
 
-1. `DatePicker` accepts `v-model` as a `YYYY-MM-DD` string or `null`.
-2. `DateRangePicker` accepts `v-model` as `{ from?: string | null, to?: string | null }` or `null`.
-3. Components keep API-bound values DateOnly-compatible; consumers convert to endpoint DTOs at the app boundary.
-4. Date actions close the popover after updating or restoring the draft value. `DatePicker` closes on `Apply`/`Clear`; `DateRangePicker` closes on `Apply`/`Cancel`/`Clear`.
-5. Triggers are compact outline buttons suitable for toolbar filters and form fields.
-6. Disabled and clearable states are handled by props; pages should not reimplement clear buttons.
-7. App pages should use `DatePicker` and `DateRangePicker` for product UI. Direct `Calendar` and `RangeCalendar` usage is reserved for future design-system work until styled parts are added.
+1. Values stay DateOnly-compatible strings; consumers convert to endpoint DTOs at the app boundary.
+2. Disabled and clearable states are handled by props; pages should not reimplement clear buttons.
+3. Triggers are compact and suitable for toolbar filters and form fields.
 
 ## Usage
 
 ```vue
 <script setup lang="ts">
 import { ref } from 'vue'
-import { DatePicker, DateRangePicker, type DateRangeValue } from '@nerv-iip/ui'
+import { NvDatePicker, NvDateRangePicker, type DateRange } from '@nerv-iip/ui'
 
 const dueDate = ref<string | null>(null)
-const plannedWindow = ref<DateRangeValue | null>(null)
+const plannedWindow = ref<DateRange | null>(null)
 </script>
 
 <template>
-  <DatePicker v-model="dueDate" />
-  <DateRangePicker v-model="plannedWindow" />
+  <NvDatePicker v-model="dueDate" />
+  <NvDateRangePicker v-model="plannedWindow" />
 </template>
 ```
 
 ## Rules
 
-Do not import calendar or popover internals from deep paths in app code. Use the `@nerv-iip/ui` barrel export.
+- Do not import calendar or popover internals from deep paths in app code — use the `@nerv-iip/ui` barrel export.
+- Do not compose Popover + native date inputs by hand — that pre-NvUI pattern is superseded by `NvDatePicker` / `NvDateRangePicker`.

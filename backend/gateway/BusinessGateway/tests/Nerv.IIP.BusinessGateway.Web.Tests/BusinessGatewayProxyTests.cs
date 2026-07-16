@@ -2425,6 +2425,55 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Scheduling_override_facade_forwards_the_authorized_principal_as_actor()
+    {
+        var scheduling = new RecordingSchedulingClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(scheduling);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PutAsJsonAsync(
+            "/api/business-console/v1/scheduling/plans/plan-001/operations/op-001/override",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                resourceId = "RES-001",
+                startUtc = "2026-06-01T08:00:00Z",
+                endUtc = "2026-06-01T09:00:00Z",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("user:user-admin", scheduling.LastOverrideActor);
+    }
+
+    [Fact]
+    public async Task Mes_dispatch_facade_forwards_the_authorized_principal_as_actor()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/dispatch-tasks/OP-001/assign?organizationId=org-001&environmentId=env-dev",
+            new { assignedUserId = "operator-1", deviceAssetId = "DEV-1", shiftId = "SHIFT-1", idempotencyKey = "dispatch-1" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("user:user-admin", mes.LastAssignDispatchActor);
+    }
+
+    [Fact]
     public async Task Scheduling_facade_accepts_generated_client_string_enum_payloads()
     {
         var scheduling = new RecordingSchedulingClient();
@@ -8609,6 +8658,8 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
 
     public BusinessConsoleSchedulingPlanRequest? LastPlanRequest { get; private set; }
 
+    public string? LastOverrideActor { get; private set; }
+
     public Task<SchedulePlanContract> PreviewPlanAsync(
         string internalBearerToken,
         SchedulingProblemContract problem,
@@ -8689,6 +8740,20 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
             request.PlanId,
             SchedulePlanStatusContract.Released,
             DateTimeOffset.Parse("2026-06-01T10:00:00Z", CultureInfo.InvariantCulture)));
+    }
+
+    public Task<BusinessConsoleScheduleOperationOverrideResponse> UpsertOperationOverrideAsync(
+        string internalBearerToken,
+        BusinessConsoleScheduleOperationOverrideRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPlanId = request.PlanId;
+        LastOverrideActor = actor;
+        return Task.FromResult(new BusinessConsoleScheduleOperationOverrideResponse(
+            request.OperationId, "WO-001", request.ResourceId, "WC-001",
+            request.StartUtc, request.EndUtc, "manual-override"));
     }
 }
 
@@ -9351,6 +9416,8 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public string? LastReverseProductionReportActor { get; private set; }
 
+    public string? LastAssignDispatchActor { get; private set; }
+
     public int RetryFinishedGoodsReceiptInventoryPostingCallCount { get; private set; }
 
     public BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest? LastRetryFinishedGoodsReceiptInventoryPostingRequest { get; private set; }
@@ -9609,8 +9676,12 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         string internalBearerToken,
         string operationTaskId,
         BusinessConsoleMesAssignDispatchTaskRequest request,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        LastAssignDispatchActor = actor;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
 
     public Task<BusinessConsoleMesOperationTaskListResponse> ListOperationTasksAsync(
         string internalBearerToken,

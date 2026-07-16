@@ -35,6 +35,12 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.MachineTimeTicks).HasColumnName("machine_time_ticks").IsRequired().HasDefaultValue(0L).HasComment("Actual machine time stored as .NET ticks after paused duration deduction.");
         builder.Property(x => x.AssignedUserId).HasColumnName("assigned_user_id").HasMaxLength(100).HasComment("Assigned operator or person public id captured by MES dispatch.");
         builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").HasMaxLength(100).HasComment("Assigned MasterData device asset public id captured by MES dispatch.");
+        builder.Property(x => x.ManualDispatchRevision)
+            .HasColumnName("manual_dispatch_revision").IsRequired().HasDefaultValue(0L).IsConcurrencyToken()
+            .HasComment("Monotonic MES manual-device dispatch lifecycle revision; zero is legacy-unknown after upgrade.");
+        builder.Property(x => x.HasActiveManualDispatch)
+            .HasColumnName("has_active_manual_dispatch").IsRequired().HasDefaultValue(false)
+            .HasComment("Whether the operation currently owns an active MES manual-device dispatch lock; false with revision zero and a device remains legacy-unknown.");
         builder.Property(x => x.ShiftId).HasColumnName("shift_id").HasMaxLength(100).HasComment("Assigned MasterData shift public id captured by MES dispatch.");
         builder.Property(x => x.AssignedAtUtc).HasColumnName("assigned_at_utc").HasComment("UTC time when MES dispatch assignment facts were captured.");
         builder.Property(x => x.ScheduledAtUtc).HasColumnName("scheduled_at_utc").HasComment("UTC time when a released APS schedule last placed this task; set only by schedule assignment (not manual dispatch) and used to derive the 已排程/未排程 schedule state.");

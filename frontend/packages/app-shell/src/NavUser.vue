@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LogOut } from 'lucide-vue-next'
+import { LogOut } from '@lucide/vue'
 import { computed } from 'vue'
 import {
   Avatar,

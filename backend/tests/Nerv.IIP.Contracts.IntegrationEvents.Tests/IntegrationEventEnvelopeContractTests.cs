@@ -7,6 +7,7 @@ using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.MasterData;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.Contracts.Quality;
@@ -45,6 +46,7 @@ public sealed class IntegrationEventEnvelopeContractTests
         typeof(NcrOpenedIntegrationEvent).Assembly,
         typeof(ApprovalStartedIntegrationEvent).Assembly,
         typeof(BarcodeScanAcceptedIntegrationEvent).Assembly,
+        typeof(MesOperationTaskManualDispatchClearedIntegrationEvent).Assembly,
         typeof(SchedulePlanReleasedIntegrationEvent).Assembly
     ];
 
@@ -291,5 +293,51 @@ public sealed class IntegrationEventEnvelopeContractTests
         Assert.NotNull(integrationEvent);
         Assert.Equal(InventoryIntegrationEventVersions.V1, integrationEvent.EventVersion);
         Assert.Null(integrationEvent.Payload.UnitCost);
+    }
+
+    [Fact]
+    public void Mes_manual_dispatch_cleared_envelope_serializes_revision_and_prior_assignment_facts()
+    {
+        var clearedAtUtc = DateTimeOffset.Parse("2026-07-15T08:01:00Z");
+        var integrationEvent = new MesOperationTaskManualDispatchClearedIntegrationEvent(
+            "evt-mes-clear-2",
+            MesIntegrationEventTypes.OperationTaskManualDispatchCleared,
+            MesIntegrationEventVersions.V1,
+            clearedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            "corr-mes-clear-2",
+            "evt-mes-dispatch-1",
+            "org-001",
+            "env-dev",
+            "user:planner-1",
+            "operation-task-manual-dispatch-cleared:org-001:env-dev:OP-10:2:device-cleared",
+            new OperationTaskManualDispatchClearedPayload(
+                "WO-001",
+                "OP-10",
+                10,
+                "DEVICE-2",
+                "WC-1",
+                DateTimeOffset.Parse("2026-07-15T08:00:00Z"),
+                DateTimeOffset.Parse("2026-07-15T09:00:00Z"),
+                2,
+                "device-cleared",
+                clearedAtUtc));
+
+        var json = JsonSerializer.Serialize(
+            integrationEvent,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var roundTripped = JsonSerializer.Deserialize<MesOperationTaskManualDispatchClearedIntegrationEvent>(
+            json,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.NotNull(roundTripped);
+        Assert.Equal(MesIntegrationEventVersions.V1, roundTripped.EventVersion);
+        Assert.Equal("evt-mes-dispatch-1", roundTripped.CausationId);
+        Assert.Equal(2, roundTripped.Payload.DispatchRevision);
+        Assert.Equal("DEVICE-2", roundTripped.Payload.ResourceId);
+        Assert.Equal("device-cleared", roundTripped.Payload.ReasonCode);
+        Assert.Equal(clearedAtUtc, roundTripped.Payload.ClearedAtUtc);
+        Assert.Contains("\"dispatchRevision\":2", json, StringComparison.Ordinal);
+        Assert.Contains("\"reasonCode\":\"device-cleared\"", json, StringComparison.Ordinal);
     }
 }

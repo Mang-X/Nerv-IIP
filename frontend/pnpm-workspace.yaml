@@ -6,12 +6,17 @@ allowBuilds:
   # (we use the XY area/line charts). Skip its native build to keep install lean.
   maplibre-gl: false
   vue-demi: true
-  # esbuild is needed only by the VitePress docs build: Rolldown-Vite (vite-plus)
-  # deprecated `transformWithEsbuild`, which @vitejs/plugin-vue still calls, and now
-  # requires esbuild installed separately (its postinstall fetches the native bin).
+  # esbuild is needed only by the VitePress docs build.
   esbuild: true
 minimumReleaseAgeExclude:
-  - '@silurus/ooxml@0.69.0'
+  - '@silurus/ooxml@0.72.2'
+  - '@pinia/colada@1.4.2'
+  - pinia@4.0.2
+  - vue-router@5.2.0
 overrides:
-  vite: npm:@voidzero-dev/vite-plus-core@0.1.21
-  vitest: npm:@voidzero-dev/vite-plus-test@0.1.21
+  vite: npm:@voidzero-dev/vite-plus-core@0.2.4
+  # VitePress 1.6.4 is the latest stable release and still embeds Vite 5. Keep
+  # that private dependency on its supported range instead of forcing Vite Plus'
+  # Vite 8/Rolldown core into VitePress config bundling.
+  'vitepress@1.6.4>vite': 5.4.21
+  vitest: 4.1.10

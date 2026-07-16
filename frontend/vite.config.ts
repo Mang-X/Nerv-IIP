@@ -90,9 +90,14 @@ export default defineConfig({
           // design-system's typechecked sources live under docs/.vitepress (theme
           // + config + showcase), not src/** — include them so editing the docs
           // app invalidates the typecheck cache instead of showing a stale green.
+          // Exclude build outputs under the same tree: they are rewritten by every
+          // workspace:build and would self-poison this cache into perpetual misses.
           'apps/**/docs/.vitepress/**',
+          '!apps/**/docs/.vitepress/dist/**',
+          '!apps/**/docs/.vitepress/cache/**',
           'packages/**/src/**',
           'packages/**/tsconfig.json',
+          'packages/**/vite.config.ts',
           'tsconfig.base.json',
         ],
       },
@@ -111,20 +116,29 @@ export default defineConfig({
       },
       'workspace:build': {
         command:
-          'pnpm --filter @nerv-iip/console --filter @nerv-iip/business-console --filter @nerv-iip/screen --filter @nerv-iip/design-system --filter @nerv-iip/docs build',
+          'pnpm --filter @nerv-iip/console --filter @nerv-iip/business-console --filter @nerv-iip/business-pda --filter @nerv-iip/screen --filter @nerv-iip/design-system --filter @nerv-iip/docs build',
         dependsOn: ['workspace:typecheck'],
         input: [
           'apps/console/index.html',
+          'apps/console/package.json',
           'apps/console/src/**',
           'apps/console/tsconfig.json',
           'apps/console/vite.config.ts',
           'apps/console/typed-router.d.ts',
           'apps/business-console/index.html',
+          'apps/business-console/package.json',
           'apps/business-console/src/**',
           'apps/business-console/tsconfig.json',
           'apps/business-console/vite.config.ts',
           'apps/business-console/typed-router.d.ts',
+          'apps/business-pda/index.html',
+          'apps/business-pda/package.json',
+          'apps/business-pda/src/**',
+          'apps/business-pda/tsconfig.json',
+          'apps/business-pda/vite.config.ts',
+          'apps/business-pda/typed-router.d.ts',
           'apps/screen/index.html',
+          'apps/screen/package.json',
           'apps/screen/src/**',
           'apps/screen/tsconfig.json',
           'apps/screen/vite.config.ts',
@@ -132,15 +146,23 @@ export default defineConfig({
           // design-system is a production VitePress docs site; build it under the
           // root gate so dead links / SSR / VitePress-Rolldown breakage surface in
           // CI. It consumes docs/** (theme + config + markdown) and both UI pkgs.
+          // Exclude both VitePress apps' own build outputs (they are listed in
+          // `output` below): leaving them inside the input globs self-poisons the
+          // cache — every build rewrites its own inputs, so it never hits.
           'apps/design-system/docs/**',
+          '!apps/design-system/docs/.vitepress/dist/**',
+          '!apps/design-system/docs/.vitepress/cache/**',
           'apps/design-system/package.json',
           'apps/design-system/tsconfig.json',
           'apps/docs/docs/**',
+          '!apps/docs/docs/.vitepress/dist/**',
+          '!apps/docs/docs/.vitepress/cache/**',
           'apps/docs/package.json',
           'apps/docs/tsconfig.json',
           'packages/api-client/src/**',
           'packages/app-shell/src/**',
           'packages/auth/src/**',
+          'packages/business-core/src/**',
           'packages/ui/src/**',
           'packages/ui-mobile/src/**',
           'tsconfig.base.json',
@@ -148,6 +170,7 @@ export default defineConfig({
         output: [
           'apps/console/dist/**',
           'apps/business-console/dist/**',
+          'apps/business-pda/dist/**',
           'apps/screen/dist/**',
           'apps/design-system/docs/.vitepress/dist/**',
           'apps/docs/docs/.vitepress/dist/**',

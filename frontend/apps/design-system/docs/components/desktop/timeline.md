@@ -9,7 +9,7 @@ import {
   PackageCheckIcon,
   PlayIcon,
   TriangleAlertIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 const items = [
   {

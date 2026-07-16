@@ -238,6 +238,60 @@ public sealed class OperationTaskCompletedIntegrationEventConverter
     }
 }
 
+public sealed class OperationTaskManuallyDispatchedIntegrationEventConverter
+    : IIntegrationEventConverter<OperationTaskManuallyDispatchedDomainEvent, MesOperationTaskManuallyDispatchedIntegrationEvent>
+{
+    public MesOperationTaskManuallyDispatchedIntegrationEvent Convert(OperationTaskManuallyDispatchedDomainEvent domainEvent)
+    {
+        var dispatch = domainEvent.Dispatch;
+        var idempotencyKey = EventIds.Idempotency("operation-task-manually-dispatched",
+            dispatch.OrganizationId, dispatch.EnvironmentId, dispatch.OperationTaskId,
+            dispatch.DispatchRevision.ToString(CultureInfo.InvariantCulture));
+        return new MesOperationTaskManuallyDispatchedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}", MesIntegrationEventTypes.OperationTaskManuallyDispatched,
+            MesIntegrationEventVersions.V1, dispatch.OccurredAtUtc, MesIntegrationEventSources.BusinessMes,
+            idempotencyKey, dispatch.WorkOrderId, dispatch.OrganizationId, dispatch.EnvironmentId,
+            domainEvent.Actor, idempotencyKey,
+            new OperationTaskManuallyDispatchedPayload(
+                dispatch.WorkOrderId, dispatch.OperationTaskId, dispatch.OperationSequence, dispatch.ResourceId,
+                dispatch.WorkCenterId, dispatch.StartUtc, dispatch.EndUtc,
+                dispatch.OccurredAtUtc, dispatch.DispatchRevision));
+    }
+}
+
+public sealed class OperationTaskManualDispatchClearedIntegrationEventConverter(
+    IMesIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<OperationTaskManualDispatchClearedDomainEvent, MesOperationTaskManualDispatchClearedIntegrationEvent>
+{
+    public MesOperationTaskManualDispatchClearedIntegrationEvent Convert(
+        OperationTaskManualDispatchClearedDomainEvent domainEvent)
+    {
+        var dispatch = domainEvent.Dispatch;
+        var reasonCode = domainEvent.Reason switch
+        {
+            OperationTaskManualDispatchClearReason.DeviceCleared =>
+                MesManualDispatchClearReasonCodes.DeviceCleared,
+            OperationTaskManualDispatchClearReason.OperationCancelled =>
+                MesManualDispatchClearReasonCodes.OperationCancelled,
+            _ => throw new ArgumentOutOfRangeException(nameof(domainEvent),
+                domainEvent.Reason, "Unsupported manual dispatch clear reason.")
+        };
+        var context = contextAccessor.GetContext();
+        var idempotencyKey = EventIds.Idempotency("operation-task-manual-dispatch-cleared",
+            dispatch.OrganizationId, dispatch.EnvironmentId, dispatch.OperationTaskId,
+            dispatch.DispatchRevision.ToString(CultureInfo.InvariantCulture), reasonCode);
+        return new MesOperationTaskManualDispatchClearedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}", MesIntegrationEventTypes.OperationTaskManualDispatchCleared,
+            MesIntegrationEventVersions.V1, domainEvent.ClearedAtUtc, MesIntegrationEventSources.BusinessMes,
+            context.CorrelationId, context.CausationId, dispatch.OrganizationId, dispatch.EnvironmentId,
+            domainEvent.Actor, idempotencyKey,
+            new OperationTaskManualDispatchClearedPayload(
+                dispatch.WorkOrderId, dispatch.OperationTaskId, dispatch.OperationSequence,
+                dispatch.ResourceId, dispatch.WorkCenterId, dispatch.StartUtc, dispatch.EndUtc,
+                dispatch.DispatchRevision, reasonCode, domainEvent.ClearedAtUtc));
+    }
+}
+
 public sealed class MaterialIssueRequestedIntegrationEventConverter
     : IIntegrationEventConverter<MaterialIssueRequestedDomainEvent, InventoryMovementRequestedIntegrationEvent>
 {

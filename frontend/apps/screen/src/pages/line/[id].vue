@@ -8,7 +8,7 @@ import {
   NvScreenTrendChart,
   useScreenData,
 } from '@nerv-iip/ui'
-import { ChevronDown, CircleCheck, OctagonAlert, UserRound, Users } from 'lucide-vue-next'
+import { ChevronDown, CircleCheck, OctagonAlert, UserRound, Users } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'

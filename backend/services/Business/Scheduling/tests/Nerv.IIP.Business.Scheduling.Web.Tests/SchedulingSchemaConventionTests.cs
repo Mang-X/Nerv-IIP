@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Scheduling.Domain;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleOperationOverrideAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Testing.EntityFramework;
 
@@ -35,6 +36,7 @@ public sealed class SchedulingSchemaConventionTests
             typeof(SchedulePlanConflict),
             typeof(SchedulePlanUnscheduledOperation),
             typeof(SchedulePlanInvalidation),
+            typeof(ScheduleOperationOverride),
         };
 
         var failures = new List<string>();

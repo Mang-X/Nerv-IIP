@@ -2,9 +2,16 @@
 
 `FileUpload` is the Calm Control Plane upload primitive for FileStorage-backed business attachments, quality evidence, maintenance photos and engineering documents.
 
+> NvUI status: `FileUpload` keeps its un-prefixed name — it is a Nerv-IIP
+> custom primitive (not a shadcn 原版 pass-through) and the current canonical
+> app-facing export from `@nerv-iip/ui`; ADR 0020 Appendix A assigned it no
+> `Nv*` rename. File-preview helpers live in the `@nerv-iip/ui/file-preview`
+> sub-entry (the only allowed sub-entry).
+
 ## Exports
 
 - `FileUpload`
+- `fileUploadMotion`
 - `uploadWithNativeFileStorageTransport`
 - `useFileUpload`
 - `FileUploadCreateSessionRequest`

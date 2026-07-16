@@ -10,7 +10,7 @@ import {
   DialogTitle,
   VisuallyHidden,
 } from 'reka-ui'
-import { CornerDownLeftIcon, SearchIcon } from 'lucide-vue-next'
+import { CornerDownLeftIcon, SearchIcon } from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 
 /**

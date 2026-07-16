@@ -9,6 +9,8 @@ public static class MesIntegrationEventTypes
     public const string WorkOrderClosed = "mes.WorkOrderClosed";
     public const string WorkOrderEngineeringChangeImpactDetected = "mes.WorkOrderEngineeringChangeImpactDetected";
     public const string OperationTaskCompleted = "mes.OperationTaskCompleted";
+    public const string OperationTaskManuallyDispatched = "mes.OperationTaskManuallyDispatched";
+    public const string OperationTaskManualDispatchCleared = "mes.OperationTaskManualDispatchCleared";
     public const string FinishedGoodsReceiptRequested = "mes.FinishedGoodsReceiptRequested";
     public const string ProductionReportRecorded = "mes.ProductionReportRecorded";
 }
@@ -21,6 +23,12 @@ public static class MesIntegrationEventVersions
 public static class MesIntegrationEventSources
 {
     public const string BusinessMes = "business-mes";
+}
+
+public static class MesManualDispatchClearReasonCodes
+{
+    public const string DeviceCleared = "device-cleared";
+    public const string OperationCancelled = "operation-cancelled";
 }
 
 public sealed record WorkOrderReleasedIntegrationEvent(
@@ -165,6 +173,36 @@ public sealed record OperationTaskCompletedPayload(
     string UomCode,
     bool RequiresQualityInspection,
     DateTimeOffset CompletedAtUtc);
+
+public sealed record MesOperationTaskManuallyDispatchedIntegrationEvent(
+    string EventId, string EventType, int EventVersion, DateTimeOffset OccurredAtUtc,
+    string SourceService, string CorrelationId, string CausationId,
+    string OrganizationId, string EnvironmentId, string Actor, string IdempotencyKey,
+    OperationTaskManuallyDispatchedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record OperationTaskManuallyDispatchedPayload(
+    string WorkOrderId, string OperationTaskId, int OperationSequence,
+    string ResourceId, string WorkCenterId, DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc, DateTimeOffset AssignedAtUtc,
+    long DispatchRevision = 0);
+
+public sealed record MesOperationTaskManualDispatchClearedIntegrationEvent(
+    string EventId, string EventType, int EventVersion, DateTimeOffset OccurredAtUtc,
+    string SourceService, string CorrelationId, string CausationId,
+    string OrganizationId, string EnvironmentId, string Actor, string IdempotencyKey,
+    OperationTaskManualDispatchClearedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record OperationTaskManualDispatchClearedPayload(
+    string WorkOrderId, string OperationTaskId, int OperationSequence,
+    string ResourceId, string WorkCenterId, DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc, long DispatchRevision,
+    string ReasonCode, DateTimeOffset ClearedAtUtc);
 
 public sealed record ProductionReportRecordedIntegrationEvent(
     string EventId,

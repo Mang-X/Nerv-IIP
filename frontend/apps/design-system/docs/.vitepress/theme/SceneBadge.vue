@@ -9,7 +9,7 @@
 // so no per-page markup is needed.
 import { computed } from 'vue'
 import { useData, withBase } from 'vitepress'
-import { MonitorIcon, PresentationIcon, SmartphoneIcon, TabletIcon } from 'lucide-vue-next'
+import { MonitorIcon, PresentationIcon, SmartphoneIcon, TabletIcon } from '@lucide/vue'
 import { resolveScene, SURFACE_META, SURFACES, type Surface } from './scene-map'
 
 const { page } = useData()

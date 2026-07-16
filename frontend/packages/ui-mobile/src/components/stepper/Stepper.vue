@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
-import { Minus, Plus } from 'lucide-vue-next'
+import { Minus, Plus } from '@lucide/vue'
 import { cn } from '../../lib/utils'
 
 /**

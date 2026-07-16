@@ -205,14 +205,14 @@ function Ensure-Pnpm {
     if (Test-CommandAvailable -Name 'corepack') {
         $corepack = (Get-Command 'corepack' -ErrorAction Stop).Source
         Invoke-NativeCommandWithTimeout -Command $corepack -Arguments @('enable') -WorkingDirectory $root -TimeoutSeconds 120 -Name 'bootstrap-corepack-enable' | Out-Null
-        Invoke-NativeCommandWithTimeout -Command $corepack -Arguments @('prepare', 'pnpm@11.1.2', '--activate') -WorkingDirectory $root -TimeoutSeconds 300 -Name 'bootstrap-corepack-pnpm' | Out-Null
+        Invoke-NativeCommandWithTimeout -Command $corepack -Arguments @('prepare', 'pnpm@11.13.1', '--activate') -WorkingDirectory $root -TimeoutSeconds 300 -Name 'bootstrap-corepack-pnpm' | Out-Null
         Update-ProcessPath
         return
     }
 
     if (Test-CommandAvailable -Name 'npm') {
         $npm = (Get-Command 'npm' -ErrorAction Stop).Source
-        Invoke-NativeCommandWithTimeout -Command $npm -Arguments @('install', '-g', 'pnpm@11.1.2') -WorkingDirectory $root -TimeoutSeconds 300 -Name 'bootstrap-npm-pnpm' | Out-Null
+        Invoke-NativeCommandWithTimeout -Command $npm -Arguments @('install', '-g', 'pnpm@11.13.1') -WorkingDirectory $root -TimeoutSeconds 300 -Name 'bootstrap-npm-pnpm' | Out-Null
         Update-ProcessPath
         return
     }

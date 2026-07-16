@@ -13,7 +13,7 @@ import {
   NvTouchButton,
   NvTouchSegmented,
 } from '@nerv-iip/ui'
-import { BellRingIcon, CheckCircleIcon, CircleStopIcon, PauseIcon } from 'lucide-vue-next'
+import { BellRingIcon, CheckCircleIcon, CircleStopIcon, PauseIcon } from '@lucide/vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 // 页面标题由 VitePress frontmatter 提供（原 definePage 已移除）

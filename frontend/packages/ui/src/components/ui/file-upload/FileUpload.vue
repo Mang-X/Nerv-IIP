@@ -13,7 +13,7 @@ import type {
 } from './types'
 import { useVirtualList } from '@vueuse/core'
 import { computed, shallowRef, useTemplateRef } from 'vue'
-import { ImageIcon, PlusIcon, Trash2Icon, UploadCloudIcon, UserIcon } from 'lucide-vue-next'
+import { ImageIcon, PlusIcon, Trash2Icon, UploadCloudIcon, UserIcon } from '@lucide/vue'
 import { AnimatePresence, motion, MotionConfig } from 'motion-v'
 import { getAcceptedFileExtensions } from '../../../lib/file'
 import { cn } from '../../../lib/utils'

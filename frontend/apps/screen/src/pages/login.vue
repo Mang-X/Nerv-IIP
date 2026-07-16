@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useNow } from '@vueuse/core'
-import { Lock, User } from 'lucide-vue-next'
+import { Lock, User } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import heroUrl from '@/assets/login-hero.webp'

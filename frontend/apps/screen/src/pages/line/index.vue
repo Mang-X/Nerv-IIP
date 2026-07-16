@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { NvKpiBar, NvSparkline, NvScreenStatusLight, useScreenData } from '@nerv-iip/ui'
 import { useVirtualList } from '@vueuse/core'
-import { Activity, AlertTriangle, Factory, PackageCheck, Workflow } from 'lucide-vue-next'
+import { Activity, AlertTriangle, Factory, PackageCheck, Workflow } from '@lucide/vue'
 import { type Component, computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
