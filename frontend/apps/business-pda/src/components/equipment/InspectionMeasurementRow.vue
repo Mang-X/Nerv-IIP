@@ -1,33 +1,30 @@
 <script setup lang="ts">
-import type { CapturedPhoto } from '@/composables/useInspectionPhotoCapture'
 import { measurementOutOfTolerance, type MeasurementDraftRow } from '@nerv-iip/business-core'
 import { NvCell, NvMobileButton, NvMobileTag } from '@nerv-iip/ui-mobile'
-import { Camera } from '@lucide/vue'
 import { computed } from 'vue'
 
 /** 点检测量值单行（数值 / 上下限走数字键盘，只读触发防系统键盘弹出）。 */
 export interface MeasurementFormRow extends MeasurementDraftRow {
   id: number
-  photos: CapturedPhoto[]
 }
 
 const props = defineProps<{
   row: MeasurementFormRow
-  /** 相机能力可用时才显示拍照入口（#812：不可用则隐藏）。 */
-  photoSupported: boolean
 }>()
 
+// Props Down / Events Up：文本字段（特性 / 单位）经类型化事件回吐由父级修改，
+// 与数值/移除的 emit 数据流一致（不直接改 row prop 的嵌套字段）。
 const emit = defineEmits<{
   openKeyboard: [field: 'measuredValue' | 'lowerSpecLimit' | 'upperSpecLimit']
-  capturePhoto: []
-  removePhoto: [photoId: number]
+  updateText: [field: 'characteristicCode' | 'uomCode', value: string]
   remove: []
 }>()
 
 // 超差即时判定（复用 business-core 共享口径，与 Console 一致）。
 const outOfTolerance = computed(() => measurementOutOfTolerance(props.row))
 
-function cellText(value: string | number): string {
+// 上下限可为空（null）→ 参数类型须容纳可空，避免隐式 any / 断言。
+function cellText(value: string | number | null | undefined): string {
   return String(value ?? '').trim() === '' ? '点击录入' : String(value)
 }
 
@@ -56,7 +53,9 @@ function specRangeText(): string {
           data-testid="measurement-characteristic"
           class="min-h-touch w-full rounded-lg border border-border bg-background px-3 text-base text-foreground"
           autocomplete="off"
-          @input="row.characteristicCode = ($event.target as HTMLInputElement).value"
+          @input="
+            emit('updateText', 'characteristicCode', ($event.target as HTMLInputElement).value)
+          "
         />
       </label>
       <label class="space-y-1 text-xs text-muted-foreground">
@@ -66,7 +65,7 @@ function specRangeText(): string {
           data-testid="measurement-uom"
           class="min-h-touch w-full rounded-lg border border-border bg-background px-3 text-base text-foreground"
           autocomplete="off"
-          @input="row.uomCode = ($event.target as HTMLInputElement).value"
+          @input="emit('updateText', 'uomCode', ($event.target as HTMLInputElement).value)"
         />
       </label>
     </div>
@@ -147,38 +146,6 @@ function specRangeText(): string {
     <div v-if="outOfTolerance" class="flex items-center gap-2">
       <NvMobileTag variant="danger" data-testid="out-of-tolerance">超差 ⚠</NvMobileTag>
       <span class="text-sm font-medium text-destructive">测量值越出规格公差</span>
-    </div>
-
-    <!-- 拍照取证（相机可用时；后端图片契约就绪前仅本地留存，见 useInspectionPhotoCapture 预留说明） -->
-    <div v-if="photoSupported" class="space-y-2">
-      <div class="flex flex-wrap gap-2">
-        <div
-          v-for="photo in row.photos"
-          :key="photo.id"
-          data-testid="measurement-photo"
-          class="relative size-16 overflow-hidden rounded-lg border border-border bg-muted"
-        >
-          <img :src="photo.url" :alt="photo.name" class="size-full object-cover" />
-          <button
-            type="button"
-            data-testid="remove-photo"
-            class="absolute right-0 top-0 grid size-6 place-items-center rounded-bl-lg bg-black/55 text-white"
-            aria-label="移除照片"
-            @click="emit('removePhoto', photo.id)"
-          >
-            ×
-          </button>
-        </div>
-        <button
-          type="button"
-          data-testid="capture-photo"
-          class="grid size-16 place-items-center rounded-lg border border-dashed border-border bg-card text-muted-foreground"
-          aria-label="拍照取证"
-          @click="emit('capturePhoto')"
-        >
-          <Camera class="size-6" aria-hidden="true" />
-        </button>
-      </div>
     </div>
 
     <NvMobileButton

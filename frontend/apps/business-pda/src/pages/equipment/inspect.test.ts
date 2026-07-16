@@ -10,20 +10,6 @@ vi.mock('vue-router', () => ({
   useRoute: () => ({ query: {} }),
 }))
 
-// ---- 拍照能力 mock（能力门控 + 采集可控）-------------------------------------
-const photoMock = vi.hoisted(() => ({
-  supported: { current: false },
-  capture: vi.fn(),
-  releasePhoto: vi.fn(),
-}))
-vi.mock('@/composables/useInspectionPhotoCapture', () => ({
-  useInspectionPhotoCapture: () => ({
-    supported: photoMock.supported.current,
-    capture: photoMock.capture,
-    releasePhoto: photoMock.releasePhoto,
-  }),
-}))
-
 // ---- useBusinessMaintenance mock ----------------------------------------------
 const recordInspection = vi.fn(async (_input: Record<string, unknown>) => ({}))
 const recordPending = ref(false)
@@ -133,9 +119,6 @@ beforeEach(() => {
   plansTotal.value = 2
   inspectionsError.value = null
   inspectionsPending.value = false
-  photoMock.supported.current = false
-  photoMock.capture.mockReset()
-  photoMock.releasePhoto.mockReset()
 })
 
 // 全局 setup.ts 已 enableAutoUnmount(afterEach)：每个 wrapper 用例后自动卸载，
@@ -364,32 +347,28 @@ describe('PDA equipment inspect page', () => {
     expect(recordInspection).toHaveBeenCalledTimes(1)
   })
 
-  it('hides the photo-capture entry when the camera is unavailable', async () => {
-    photoMock.supported.current = false
-    const wrapper = mount(InspectPage)
-    await wrapper.findAll('[data-testid="plan-option"]')[0].trigger('click')
-    await wrapper.get('[data-testid="result-pass"]').trigger('click')
-    expect(wrapper.find('[data-testid="capture-photo"]').exists()).toBe(false)
-  })
+  it('records a negative measured value entered via the keyboard ± sign toggle', async () => {
+    const wrapper = mount(InspectPage, { attachTo: document.body })
+    await startMeasuredRow(wrapper)
 
-  it('shows the photo entry and attaches a captured photo when the camera is available', async () => {
-    photoMock.supported.current = true
-    photoMock.capture.mockResolvedValueOnce({
-      id: 1,
-      url: 'blob:test',
-      file: new File([], 'a.jpg'),
-      name: 'a.jpg',
-    })
-    const wrapper = mount(InspectPage)
-    await wrapper.findAll('[data-testid="plan-option"]')[0].trigger('click')
-    await wrapper.get('[data-testid="result-pass"]').trigger('click')
-
-    expect(wrapper.find('[data-testid="capture-photo"]').exists()).toBe(true)
-    await wrapper.get('[data-testid="capture-photo"]').trigger('click')
+    // 测量值：± → 5 = -5（负温度/压力，回归覆盖：原 type=number 支持负数）。
+    await wrapper.get('[data-testid="measurement-value"]').trigger('click')
     await flushPromises()
+    const keyboard = document.querySelector('[data-slot="number-keyboard"]')
+    const buttons = Array.from(keyboard?.querySelectorAll('button') ?? []) as HTMLButtonElement[]
+    buttons.find((b) => b.textContent?.trim() === '±')?.click()
+    await flushPromises()
+    buttons.find((b) => b.textContent?.trim() === '5')?.click()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="measurement-value-text"]').text()).toBe('-5')
 
-    expect(photoMock.capture).toHaveBeenCalled()
-    expect(wrapper.find('[data-testid="measurement-photo"]').exists()).toBe(true)
+    // 无上下限 → 不超差 → 直接提交，负值随记录上送。
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+    expect(recordInspection).toHaveBeenCalledTimes(1)
+    expect(recordInspection.mock.calls[0][0]).toMatchObject({
+      measurements: [expect.objectContaining({ measuredValue: -5 })],
+    })
   })
 
   it('disables submit while recordPending (double-submit guard)', async () => {

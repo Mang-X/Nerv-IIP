@@ -4,7 +4,6 @@ import InspectionMeasurementRow, {
   type MeasurementFormRow,
 } from '@/components/equipment/InspectionMeasurementRow.vue'
 import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
-import { useInspectionPhotoCapture } from '@/composables/useInspectionPhotoCapture'
 import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWriteResult'
 import {
   createMeasurementDraft,
@@ -155,25 +154,10 @@ function openKeyboard(rowId: number, field: typeof keyboard.field) {
   keyboard.show = true
 }
 
-// 拍照取证：能力门控（相机不可用 → 隐藏入口）；后端图片契约就绪前仅本地留存。
-const { supported: photoSupported, capture, releasePhoto } = useInspectionPhotoCapture()
-async function capturePhoto(rowId: number) {
-  const photo = await capture()
-  if (!photo) return
+// 文本字段（特性 / 单位）Props Down / Events Up：子组件回吐更新，此处持有修改。
+function updateRowText(rowId: number, field: 'characteristicCode' | 'uomCode', value: string) {
   const row = measurementRows.find((r) => r.id === rowId)
-  if (row) row.photos.push(photo)
-}
-function removePhoto(rowId: number, photoId: number) {
-  const row = measurementRows.find((r) => r.id === rowId)
-  if (!row) return
-  const index = row.photos.findIndex((p) => p.id === photoId)
-  if (index >= 0) {
-    releasePhoto(row.photos[index])
-    row.photos.splice(index, 1)
-  }
-}
-function releaseRowPhotos(row: MeasurementFormRow) {
-  row.photos.forEach(releasePhoto)
+  if (row) row[field] = value
 }
 
 // 提交确认：有超差行时先弹「N 项超差，确认提交？」，无超差直接提交。
@@ -194,8 +178,12 @@ const { phase, errorTitle, errorDescription, canRetry, run, retry, verify, reset
     },
   })
 
-// ScanBar 在浮层（成功/失败 Result）展示时停止抢焦。
-const scanActive = computed(() => phase.value === 'form')
+// ScanBar 焦点常驻 opt-out：
+// - 浮层（成功/失败 Result）展示时停止抢焦；
+// - **录测量文本 / 数字键盘打开时停止抢焦**——否则 ScanBar 的 blur→RAF 回焦会把焦点从
+//   特性/单位输入抢回，戴手套录入无法用正常 tap+输入完成（#812 核心验收）。编辑结束后恢复。
+const textEditing = ref(false)
+const scanActive = computed(() => phase.value === 'form' && !textEditing.value && !keyboard.show)
 
 function onScan(value: string) {
   // 扫设备码/计划号 → 客户端过滤已加载的保养计划列表。
@@ -214,7 +202,7 @@ function chooseResult(value: string) {
 }
 
 function createMeasurementRow(): MeasurementFormRow {
-  return { id: nextMeasurementRowId++, ...createMeasurementDraft(), photos: [] }
+  return { id: nextMeasurementRowId++, ...createMeasurementDraft() }
 }
 
 function addMeasurementRow() {
@@ -223,13 +211,11 @@ function addMeasurementRow() {
 
 function removeMeasurementRow(rowId: number) {
   if (measurementRows.length === 1) {
-    releaseRowPhotos(measurementRows[0])
     Object.assign(measurementRows[0], createMeasurementRow())
     return
   }
   const index = measurementRows.findIndex((row) => row.id === rowId)
   if (index >= 0) {
-    releaseRowPhotos(measurementRows[index])
     measurementRows.splice(index, 1)
   }
 }
@@ -262,7 +248,6 @@ function resetForm() {
   // 成功后清空，避免重复记录相同点检（端点无服务端幂等）。
   form.planId = ''
   form.result = ''
-  measurementRows.forEach(releaseRowPhotos)
   measurementRows.splice(0, measurementRows.length, createMeasurementRow())
   reset()
 }
@@ -478,16 +463,17 @@ function inspectionSubtitle(item: {
             </button>
           </div>
 
-          <InspectionMeasurementRow
-            v-for="row in measurementRows"
-            :key="row.id"
-            :row="row"
-            :photo-supported="photoSupported"
-            @open-keyboard="(field) => openKeyboard(row.id, field)"
-            @capture-photo="capturePhoto(row.id)"
-            @remove-photo="(photoId) => removePhoto(row.id, photoId)"
-            @remove="removeMeasurementRow(row.id)"
-          />
+          <!-- 文本输入获焦时停用 ScanBar 回焦（focusin/focusout 冒泡），戴手套可正常录入。 -->
+          <div class="space-y-2" @focusin="textEditing = true" @focusout="textEditing = false">
+            <InspectionMeasurementRow
+              v-for="row in measurementRows"
+              :key="row.id"
+              :row="row"
+              @open-keyboard="(field) => openKeyboard(row.id, field)"
+              @update-text="(field, value) => updateRowText(row.id, field, value)"
+              @remove="removeMeasurementRow(row.id)"
+            />
+          </div>
 
           <p
             v-if="!measurementsValid"
@@ -549,12 +535,13 @@ function inspectionSubtitle(item: {
       </section>
     </div>
 
-    <!-- 数字键盘单例（测量值 / 上下限共用） -->
+    <!-- 数字键盘单例（测量值 / 上下限共用）；sign-toggle 支持负温度/压力/上下限 -->
     <NvNumberKeyboard
       v-model="keyboardValue"
       v-model:show="keyboard.show"
       :title="keyboardTitle"
       extra-key="."
+      sign-toggle
     />
 
     <!-- 超差提交确认 -->

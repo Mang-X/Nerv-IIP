@@ -20,11 +20,13 @@ const props = withDefaults(
     show?: boolean
     title?: string
     extraKey?: string
+    /** 显示 ± 正负号键（测量值 / 温度 / 压力 / 上下限等可为负 → 录负数）。默认关。 */
+    signToggle?: boolean
     maxlength?: number
     confirmText?: string
     class?: HTMLAttributes['class']
   }>(),
-  { modelValue: '', show: false, extraKey: '.', confirmText: '完成' },
+  { modelValue: '', show: false, extraKey: '.', signToggle: false, confirmText: '完成' },
 )
 const emit = defineEmits<{
   'update:modelValue': [value: string]
@@ -44,6 +46,11 @@ function input(key: string) {
 function backspace() {
   emit('press', 'delete')
   emit('update:modelValue', props.modelValue.slice(0, -1))
+}
+function toggleSign() {
+  emit('press', '±')
+  const v = props.modelValue
+  emit('update:modelValue', v.startsWith('-') ? v.slice(1) : `-${v}`)
 }
 function confirm() {
   emit('confirm')
@@ -116,14 +123,24 @@ function confirm() {
           >
             {{ extraKey }}
           </button>
-          <!-- zero, widening to fill when there is no extra key -->
+          <!-- zero, widening to fill the remaining bottom-row columns -->
           <button
             type="button"
             class="nv-m-nk-key grid h-14 place-items-center rounded-xl bg-muted text-2xl font-medium text-foreground tabular-nums"
-            :class="extraKey ? 'col-span-2' : 'col-span-3'"
+            :class="signToggle && extraKey ? 'col-span-1' : extraKey ? 'col-span-2' : 'col-span-3'"
             @click="input('0')"
           >
             0
+          </button>
+          <!-- sign toggle (±) for negative values (温度 / 压力 / 上下限)，opt-in -->
+          <button
+            v-if="signToggle"
+            type="button"
+            class="nv-m-nk-key col-span-1 grid h-14 place-items-center rounded-xl bg-muted text-2xl font-medium text-foreground"
+            aria-label="正负号"
+            @click="toggleSign"
+          >
+            ±
           </button>
         </div>
       </div>

@@ -52,57 +52,30 @@ test('点检：选保养计划 → 选「通过」→ 提交 → 成功 Result',
   await expect(page.getByText('点检已记录')).toBeVisible()
 })
 
-// MAN-458 #812：数字键盘录入 + 超差即时警示 + 提交前汇总确认 + 拍照取证（Web filechooser 路径）。
-// 真实 Chromium / Pixel 5 视口验证 jsdom 测不到的：Teleport 键盘浮层、计算样式红警示、
-// 触点尺寸、filechooser 采集。相机能力探针显式注入（headless 无 mediaDevices），点亮门控。
-test('点检：数字键盘录入 + 超差警示 + 提交确认 + 拍照取证', async ({ page }) => {
+// MAN-458 #812：数字键盘录入（含 ± 负号）+ 超差即时警示 + 提交前汇总确认。真实 Chromium /
+// Pixel 5 视口验证 jsdom 测不到的：Teleport 键盘浮层、计算样式红警示、触点尺寸、ScanBar 抢焦。
+test('点检：数字键盘录入（含负号）+ 超差警示 + 提交确认', async ({ page }) => {
   // 键盘/弹窗过渡置 none：组件 @media(prefers-reduced-motion) 走 transition:none，
   // Teleport + Transition 的离场即时移除，消除 headless 下 transitionend 滞留（测行为非动画）。
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  await page.addInitScript(() => {
-    if (!navigator.mediaDevices) {
-      Object.defineProperty(navigator, 'mediaDevices', {
-        value: { getUserMedia: () => Promise.resolve({}) },
-        configurable: true,
-      })
-    }
-  })
 
   await page.goto('/equipment/inspect')
   await page.getByText('PM-001').click()
   await page.getByTestId('result-pass').click()
 
-  // 拍照取证（先拍，避免键盘浮层遮挡）：filechooser 喂测试图片 → 缩略图 + 可删除入口。
-  const pngBuffer = Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-    'base64',
-  )
-  const [chooser] = await Promise.all([
-    page.waitForEvent('filechooser'),
-    page.getByTestId('capture-photo').click(),
-  ])
-  await chooser.setFiles({ name: '取证.png', mimeType: 'image/png', buffer: pngBuffer })
-  await expect(page.getByTestId('measurement-photo')).toBeVisible()
-  await expect(page.getByTestId('remove-photo')).toBeVisible()
+  // 特性 + 单位：**真实 tap + fill**。文本获焦时页面停用 ScanBar 回焦（focusin），故正常录入
+  // 不再被 ScanBar 抢走（#812 戴手套可完成录入的核心验收，不再靠原生 setter 假绿）。
+  const characteristic = page.getByTestId('measurement-characteristic')
+  await characteristic.click()
+  await characteristic.fill('轴承温度')
+  await expect(characteristic).toHaveValue('轴承温度')
+  const uom = page.getByTestId('measurement-uom')
+  await uom.click()
+  await uom.fill('C')
+  await expect(uom).toHaveValue('C')
 
-  // 特性 + 单位（文本录入；数值类字段走数字键盘）。页面顶部 NvScanBar 的 RAF「失焦回抢焦点」
-  // 会与 Playwright fill/type 抢焦（键入落到 ScanBar），故文本字段用原生 setter 直接置值 +
-  // 派发 input（绕开焦点竞争，等价真实录入的结果态）；数值/超差/确认/拍照仍走真实交互。
-  const setText = async (testId: string, value: string) => {
-    await page.getByTestId(testId).evaluate((el, v) => {
-      const input = el as HTMLInputElement
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
-      setter.call(input, v)
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-    }, value)
-  }
-  await setText('measurement-characteristic', '轴承温度')
-  await setText('measurement-uom', 'C')
-  await expect(page.getByTestId('measurement-uom')).toHaveValue('C')
-
-  // 数字键盘录入（只读 Cell 触发，防系统键盘）：下限 0 / 上限 70 / 测量值 80（超差）。
-  // 键盘是底部 sheet + fixed inset-0 背板：开着时遮挡其余屏幕，字段间须「完成」收起再点下一格
-  // （真实移动 UX；jsdom 无浮层拦截测不到这一点）。
+  // 数字键盘录入（只读 Cell 触发，防系统键盘）：下限 0 / 上限 70 / 测量值 -80（± 负号 →
+  // 低于下限超差）。键盘是底部 sheet + fixed inset-0 背板：字段间须「完成」收起再点下一格。
   const keyboard = page.locator('[data-slot="number-keyboard"]')
   const enterViaKeyboard = async (cell: string, digits: string) => {
     await page.getByTestId(cell).click()
@@ -126,8 +99,14 @@ test('点检：数字键盘录入 + 超差警示 + 提交确认 + 拍照取证',
   await enterViaKeyboard('measurement-upper', '70')
   await closeKeyboard()
 
-  await enterViaKeyboard('measurement-value', '80')
+  // 测量值：± → 8 → 0 = -80（负号回归覆盖；-80 < 下限 0 → 超差）。
+  await page.getByTestId('measurement-value').click()
+  await expect(keyboard).toBeVisible()
+  await keyboard.getByRole('button', { name: '正负号' }).click()
+  await keyboard.getByRole('button', { name: '8', exact: true }).click()
+  await keyboard.getByRole('button', { name: '0', exact: true }).click()
   await closeKeyboard()
+  await expect(page.getByTestId('measurement-value-text')).toHaveText('-80')
 
   // 测量值 Cell 触点 ≥44px。
   const cellBox = await page.getByTestId('measurement-value').boundingBox()
