@@ -181,6 +181,13 @@ describe('MES receipts — failed inventory posting retry', () => {
     expect(retry).toBeUndefined()
   })
 
+  it('hides the 登记完工入库 create entry for read-only users (create also needs manage)', () => {
+    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    const wrapper = mountPage(['business.mes.receipts.read'])
+    expect(wrapper.findAll('button').some((b) => b.text().includes('登记完工入库'))).toBe(false)
+    expect(wrapper.text()).not.toContain('从工单详情发起')
+  })
+
   it('disables the retry button while that row is retrying', () => {
     receiptState.retryingRequestNo = shallowRef<string | null>('FGR-000001')
     const wrapper = mountPage()

@@ -16,7 +16,7 @@ import {
   Spinner,
 } from '@nerv-iip/ui'
 import { LinkIcon, LockIcon, RefreshCwIcon, UnlockIcon } from '@lucide/vue'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps<{
   organizationId: string
@@ -54,6 +54,12 @@ const {
 
 const releaseOpen = ref(false)
 const releaseReason = ref('')
+
+// 时间线加载失败（网络/5xx）以 toast 告知，页面内不保留常驻红条（业务前端反馈约束）；
+// 空态仍有「刷新」可重试。
+watch(timelineError, (err) => {
+  if (err) notifyError(err, '质量保留时间线加载失败，请稍后重试。')
+})
 
 const scopeLabel = computed(() =>
   props.scope === 'operation-task' ? '工序级保留' : '工单级保留',
@@ -104,9 +110,6 @@ async function confirmRelease() {
   }
 }
 
-function timelineErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : error ? '时间线加载失败，请稍后重试。' : ''
-}
 </script>
 
 <template>
@@ -166,10 +169,6 @@ function timelineErrorMessage(error: unknown) {
       </div>
     </header>
 
-    <p v-if="timelineError" class="text-sm text-destructive" role="alert">
-      {{ timelineErrorMessage(timelineError) }}
-    </p>
-
     <div class="grid gap-2">
       <span class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
         >保留时间线</span
@@ -197,21 +196,28 @@ function timelineErrorMessage(error: unknown) {
             }}</span>
           </div>
           <p v-if="item.reason" class="text-sm text-muted-foreground">{{ item.reason }}</p>
-          <!-- 施加来源检验方案互链（A1 §5.3 跨页上下文 query）：sourceInspectionDocumentId 即检验方案 id，
-               目标页 /quality/inspections 按 inspectionPlanId 初始化并定位该方案（它不消费 keyword）。 -->
+          <!-- 来源检验互链（A1 §5.3 跨页上下文 query）：记录 id 恒在→带 inspectionRecordId 直接定位到只读
+               检验记录详情；方案 id 可空,存在时并带 inspectionPlanId 供列表方案上下文。覆盖无方案但有记录的保留。 -->
           <RouterLink
-            v-if="item.sourceInspectionDocumentId"
+            v-if="item.sourceInspectionRecordId || item.sourceInspectionDocumentId"
             :to="{
               path: '/quality/inspections',
-              query: { inspectionPlanId: item.sourceInspectionDocumentId },
+              query: {
+                ...(item.sourceInspectionRecordId
+                  ? { inspectionRecordId: item.sourceInspectionRecordId }
+                  : {}),
+                ...(item.sourceInspectionDocumentId
+                  ? { inspectionPlanId: item.sourceInspectionDocumentId }
+                  : {}),
+              },
             }"
             class="inline-flex w-fit items-center gap-1 text-xs text-brand underline-offset-4 hover:underline"
           >
             <LinkIcon class="size-3" aria-hidden="true" />
-            来源检验方案 {{ item.sourceInspectionDocumentId
-            }}<span v-if="item.sourceInspectionRecordId" class="text-muted-foreground">
-              · 记录 {{ item.sourceInspectionRecordId }}</span
+            <span v-if="item.sourceInspectionRecordId"
+              >来源检验记录 {{ item.sourceInspectionRecordId }}</span
             >
+            <span v-else>来源检验方案 {{ item.sourceInspectionDocumentId }}</span>
           </RouterLink>
         </li>
       </ol>

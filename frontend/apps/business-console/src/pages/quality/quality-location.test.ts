@@ -79,6 +79,24 @@ vi.mock('@/composables/useBusinessQuality', async () => {
         refreshInspectionPlans: vi.fn(),
       }
     },
+    useQualityInspectionRecordDetail: (source: () => { inspectionRecordId: string }) => ({
+      record: computed(() =>
+        source().inspectionRecordId === 'INSP-REC-9'
+          ? {
+              inspectionRecordId: 'INSP-REC-9',
+              skuCode: 'SKU-001',
+              sourceDocumentId: 'WO-1',
+              result: 'rejected',
+              inspectedQuantity: 3,
+              dispositionReason: '尺寸超差',
+              resultLines: [{ characteristicCode: 'DIM-01', measuredValue: 12.6 }],
+            }
+          : undefined,
+      ),
+      recordPending: shallowRef(false),
+      recordError: shallowRef(),
+      refreshRecord: vi.fn(),
+    }),
     useQualityNcrs: (initial = {}) => {
       const filters = reactive({
         organizationId: 'org-001',
@@ -165,8 +183,14 @@ const uiStubs = {
   SheetFooter: { template: '<div><slot /></div>' },
   SheetHeader: { template: '<div><slot /></div>' },
   SheetTitle: { template: '<h2><slot /></h2>' },
+  NvSheet: { props: ['open'], template: '<div v-if="open" data-record-sheet><slot /></div>' },
+  NvSheetContent: { template: '<div><slot /></div>' },
+  NvSheetDescription: { template: '<p><slot /></p>' },
+  NvSheetHeader: { template: '<div><slot /></div>' },
+  NvSheetTitle: { template: '<h2><slot /></h2>' },
   Spinner: true,
   StatusBadge: { props: ['value'], template: '<span>{{ value }}</span>' },
+  NvStatusBadge: { props: ['value'], template: '<span>{{ value }}</span>' },
   Toolbar: { template: '<div><slot name="filters" /></div>' },
 }
 
@@ -217,6 +241,19 @@ describe('quality route location behavior', () => {
 
     expect(wrapper.find('[data-dialog]').exists()).toBe(false)
     expect(qualityState.inspectionFilters!.keyword).toBe('PLAN-001')
+  })
+
+  it('locates a source inspection record: opens read-only record detail from inspectionRecordId', async () => {
+    routeState.route!.query = { inspectionRecordId: 'INSP-REC-9' }
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+
+    // 记录详情真实消费 inspectionRecordId → 展示该记录的判定结论与特性实测值（定位到具体记录，非仅方案）。
+    const text = wrapper.text()
+    expect(text).toContain('INSP-REC-9')
+    expect(text).toContain('rejected')
+    expect(text).toContain('DIM-01')
   })
 })
 

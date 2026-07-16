@@ -89,6 +89,7 @@ describe('QualityHoldPanel', () => {
         actor: 'quality',
         occurredAtUtc: '2026-07-14T02:00:00Z',
         reason: '终检判定不合格',
+        sourceInspectionRecordId: 'INSP-REC-9',
         sourceInspectionDocumentId: 'INSP-000001',
       },
       {
@@ -108,12 +109,32 @@ describe('QualityHoldPanel', () => {
     expect(wrapper.text()).toContain('施加质量保留')
     expect(wrapper.text()).toContain('复检合格自动放行')
     expect(wrapper.text()).toContain('自动')
-    // 来源检验方案链接须传目标页实际消费的 inspectionPlanId（非 keyword），否则点击无法定位。
+    // 来源检验互链须带 inspectionRecordId（定位记录，目标页开只读记录详情）+ inspectionPlanId（方案上下文），
+    // 且不再用目标页不消费的 keyword。
     const link = wrapper.get('[data-router-link]')
     const to = JSON.parse(link.attributes('data-to') as string)
     expect(to.path).toBe('/quality/inspections')
+    expect(to.query.inspectionRecordId).toBe('INSP-REC-9')
     expect(to.query.inspectionPlanId).toBe('INSP-000001')
     expect(to.query.keyword).toBeUndefined()
+    expect(link.text()).toContain('来源检验记录 INSP-REC-9')
+  })
+
+  it('links source-inspection even when only a record id exists (no plan)', () => {
+    holdState.timeline = [
+      {
+        transitionId: 't3',
+        eventKind: 'hold-applied',
+        origin: 'automatic',
+        actor: 'quality',
+        occurredAtUtc: '2026-07-14T02:00:00Z',
+        sourceInspectionRecordId: 'INSP-REC-ONLY',
+      },
+    ]
+    const wrapper = mountPanel({})
+    const to = JSON.parse(wrapper.get('[data-router-link]').attributes('data-to') as string)
+    expect(to.query.inspectionRecordId).toBe('INSP-REC-ONLY')
+    expect(to.query.inspectionPlanId).toBeUndefined()
   })
 
   it('hides the force-release control without manage permission', () => {

@@ -117,6 +117,8 @@ const createErrorMessage = computed(() => friendlyCreateError(createReceiptReque
 const hasReceiptContext = computed(() => isNonEmpty(form.workOrderId) && isNonEmpty(form.skuId))
 const canCreate = computed(
   () =>
+    // 创建端点同样要求 receipts.manage：无 manage 权限连提交都不放行（防只读用户提交后才 403）。
+    canManageReceipts.value &&
     isNonEmpty(form.organizationId) &&
     isNonEmpty(form.environmentId) &&
     isNonEmpty(form.workOrderId) &&
@@ -157,7 +159,8 @@ watch(
     if (skuId) form.skuId = skuId
     if (quantity) form.quantity = quantity
     resetPage()
-    if (workOrderId && skuId) receiptSheetOpen.value = true
+    // 仅有 manage 权限时才自动打开登记 Sheet（读用户从工单详情带 query 进来也不弹创建）。
+    if (workOrderId && skuId && canManageReceipts.value) receiptSheetOpen.value = true
   },
   { immediate: true },
 )
@@ -183,7 +186,7 @@ function openWorkOrder(workOrderId?: string | null) {
   if (workOrderId) quickViewWorkOrderId.value = workOrderId
 }
 function openReceiptSheet() {
-  if (!hasReceiptContext.value) return
+  if (!hasReceiptContext.value || !canManageReceipts.value) return
   lastCreatedRequestNo.value = ''
   receiptSheetOpen.value = true
 }
@@ -297,7 +300,14 @@ function isNonEmpty(value: string) {
       :count="`${receiptRequestsTotal} 条入库登记`"
     >
       <template #actions>
-        <NvButton size="sm" type="button" :disabled="!hasReceiptContext" @click="openReceiptSheet">
+        <!-- 登记完工入库调用创建端点（需 receipts.manage）：无 manage 权限的只读用户不显示创建入口。 -->
+        <NvButton
+          v-if="canManageReceipts"
+          size="sm"
+          type="button"
+          :disabled="!hasReceiptContext"
+          @click="openReceiptSheet"
+        >
           <PackageCheckIcon aria-hidden="true" />
           {{ hasReceiptContext ? '登记完工入库' : '从工单详情发起' }}
         </NvButton>
