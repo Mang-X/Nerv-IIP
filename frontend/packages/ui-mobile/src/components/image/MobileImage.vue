@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { computed, ref, watch } from 'vue'
-import { ImageOff } from 'lucide-vue-next'
+import { ImageOff } from '@lucide/vue'
 import { cn } from '../../lib/utils'
 
 /**

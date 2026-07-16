@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import { NvButton, NvStatusBadge } from '@nerv-iip/ui'
-import { ChevronDownIcon, ChevronRightIcon, PlusIcon } from 'lucide-vue-next'
+import { ChevronDownIcon, ChevronRightIcon, PlusIcon } from '@lucide/vue'
 import { computed } from 'vue'
 
 // 通用层级树节点（工厂结构、部门等共用）。状态（展开/选中）由父页通过 Set/ref 注入，

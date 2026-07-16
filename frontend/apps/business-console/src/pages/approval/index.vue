@@ -54,7 +54,7 @@ import {
   SendIcon,
   UserRoundPlusIcon,
   XCircleIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'

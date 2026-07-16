@@ -40,7 +40,7 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { EyeIcon, PackageCheckIcon, RefreshCwIcon, RotateCcwIcon } from 'lucide-vue-next'
+import { EyeIcon, PackageCheckIcon, RefreshCwIcon, RotateCcwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 

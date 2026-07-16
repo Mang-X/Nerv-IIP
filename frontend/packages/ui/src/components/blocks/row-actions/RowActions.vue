@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import { MoreHorizontalIcon } from 'lucide-vue-next'
+import { MoreHorizontalIcon } from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 import { NvButton } from '../../pc/button'
 import {

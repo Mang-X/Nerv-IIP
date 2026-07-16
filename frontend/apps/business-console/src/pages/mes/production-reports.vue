@@ -37,7 +37,7 @@ import {
   NvTooltipTrigger,
   Spinner,
 } from '@nerv-iip/ui'
-import { ClipboardPenIcon, RefreshCwIcon, Undo2Icon } from 'lucide-vue-next'
+import { ClipboardPenIcon, RefreshCwIcon, Undo2Icon } from '@lucide/vue'
 import { storeToRefs } from 'pinia'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'

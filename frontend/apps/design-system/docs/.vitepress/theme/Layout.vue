@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Button, NvThemePicker, useColorMode } from '@nerv-iip/ui'
-import { Moon, Search, Sun } from 'lucide-vue-next'
+import { Moon, Search, Sun } from '@lucide/vue'
 import { useData } from 'vitepress'
 import DefaultTheme from 'vitepress/theme'
 import { onMounted, ref, watch } from 'vue'

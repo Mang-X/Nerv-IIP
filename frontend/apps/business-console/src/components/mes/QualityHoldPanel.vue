@@ -15,7 +15,7 @@ import {
   NvStatusBadge,
   Spinner,
 } from '@nerv-iip/ui'
-import { LinkIcon, LockIcon, RefreshCwIcon, UnlockIcon } from 'lucide-vue-next'
+import { LinkIcon, LockIcon, RefreshCwIcon, UnlockIcon } from '@lucide/vue'
 import { computed, ref } from 'vue'
 
 const props = defineProps<{

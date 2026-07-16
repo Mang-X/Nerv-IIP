@@ -49,7 +49,7 @@ import {
   PlusIcon,
   RefreshCwIcon,
   Trash2Icon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { storeToRefs } from 'pinia'
 import { computed, reactive, shallowRef } from 'vue'
 

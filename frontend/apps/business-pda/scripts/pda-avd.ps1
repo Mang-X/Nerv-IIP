@@ -89,12 +89,30 @@ if (-not [string]::IsNullOrWhiteSpace($Serial) -and $Serial -notmatch '^emulator
     exit 1
 }
 
-# --- Android SDK 定位：不依赖全局安装状态，显式从 ANDROID_HOME 读，缺失即报错并给出本机既定路径提示。
-if ([string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) {
-    Write-Diagnostic -Level 'ERROR' -Message '缺少环境变量 ANDROID_HOME。请指向本机 Android SDK 根目录（本仓库开发机为 C:\Users\hp\android-sdk），例如：$env:ANDROID_HOME = ''C:\Users\hp\android-sdk''。'
+# --- Android SDK 定位：显式 ANDROID_HOME/ANDROID_SDK_ROOT 优先；未设时自动探测约定
+#     安装位置（%USERPROFILE%\android-sdk、%LOCALAPPDATA%\Android\Sdk），新终端/新会话
+#     零知识可跑；探测不到才报错。
+function Resolve-PdaAndroidHome {
+    $candidates = @(
+        $env:ANDROID_HOME
+        $env:ANDROID_SDK_ROOT
+        (Join-Path $env:USERPROFILE 'android-sdk')
+        (Join-Path $env:LOCALAPPDATA 'Android\Sdk')
+    )
+    foreach ($candidate in $candidates) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        if (Test-Path (Join-Path $candidate 'platform-tools\adb.exe')) { return $candidate }
+    }
+    return $null
+}
+
+$sdkRoot = Resolve-PdaAndroidHome
+if ([string]::IsNullOrWhiteSpace($sdkRoot)) {
+    Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：ANDROID_HOME/ANDROID_SDK_ROOT 未设，且约定位置（%USERPROFILE%\android-sdk、%LOCALAPPDATA%\Android\Sdk）均无 platform-tools\adb.exe。安装口径见 docs/architecture/mobile-pda-deployment.md。'
     exit 1
 }
-$sdkRoot = $env:ANDROID_HOME
+$env:ANDROID_HOME = $sdkRoot
+Write-Diagnostic "ANDROID_HOME=$sdkRoot"
 # SDK 路径也会拼进 cmd /c 命令行（引号包裹）：含 cmd 元字符/引号的路径直接拒绝，
 # 而不是尝试转义（cmd 的引号语义无法与 .NET ArgumentList 转义可靠互通）。
 if ($sdkRoot -match '["&|<>^%]') {

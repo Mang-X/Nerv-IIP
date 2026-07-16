@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import { PaletteIcon } from 'lucide-vue-next'
+import { PaletteIcon } from '@lucide/vue'
 import { Button } from '../../ui/button'
 import {
   DropdownMenu,

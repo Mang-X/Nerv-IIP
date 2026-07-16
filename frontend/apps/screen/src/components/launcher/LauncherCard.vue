@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { NvScreenStatusLight } from '@nerv-iip/ui'
-import { ArrowRight } from 'lucide-vue-next'
+import { ArrowRight } from '@lucide/vue'
 import type { Component } from 'vue'
 import type { ScreenGlance } from '@/data/contracts/launcher'
 

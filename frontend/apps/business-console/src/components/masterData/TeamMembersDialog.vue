@@ -24,7 +24,7 @@ import {
   NvStatusBadge,
   toast,
 } from '@nerv-iip/ui'
-import { Trash2Icon } from 'lucide-vue-next'
+import { Trash2Icon } from '@lucide/vue'
 import { computed, ref, toRef, watch } from 'vue'
 
 const props = defineProps<{

@@ -24,7 +24,7 @@ import {
   NvSelectValue,
   Spinner,
 } from '@nerv-iip/ui'
-import { SendIcon } from 'lucide-vue-next'
+import { SendIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 

@@ -35,7 +35,7 @@ import {
   NvToolbar,
   toast,
 } from '@nerv-iip/ui'
-import { EditIcon, LineChartIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { EditIcon, LineChartIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { RouterLink } from 'vue-router'
 

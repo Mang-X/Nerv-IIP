@@ -6,7 +6,7 @@ import {
   InfoIcon,
   TriangleAlertIcon,
   XIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import type { NotifyKind } from './notify'
 import { dismissNotify, useNotifyStore } from './notify'
 

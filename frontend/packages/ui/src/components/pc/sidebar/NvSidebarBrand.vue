@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { PrimitiveProps } from 'reka-ui'
-import { ChevronsUpDownIcon } from 'lucide-vue-next'
+import { ChevronsUpDownIcon } from '@lucide/vue'
 import { Primitive } from 'reka-ui'
 import { computed } from 'vue'
 

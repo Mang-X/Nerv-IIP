@@ -19,7 +19,7 @@ import {
   NvSidebarBrand,
   cn,
 } from '@nerv-iip/ui'
-import { ClockIcon, LogOutIcon, SearchIcon, StarIcon } from 'lucide-vue-next'
+import { ClockIcon, LogOutIcon, SearchIcon, StarIcon } from '@lucide/vue'
 import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import NavSide from './NavSide.vue'

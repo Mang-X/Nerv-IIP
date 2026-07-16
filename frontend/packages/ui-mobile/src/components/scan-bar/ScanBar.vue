@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ScanLine } from 'lucide-vue-next'
+import { ScanLine } from '@lucide/vue'
 import { cn } from '../../lib/utils'
 
 // `active` 是焦点抢夺的 opt-out 开关：键盘楔入设备需要输入框常驻焦点，

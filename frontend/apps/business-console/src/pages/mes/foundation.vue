@@ -14,7 +14,7 @@ import {
   NvSectionCards,
   NvStatusBadge,
 } from '@nerv-iip/ui'
-import { RefreshCwIcon } from 'lucide-vue-next'
+import { RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
 
 definePage({

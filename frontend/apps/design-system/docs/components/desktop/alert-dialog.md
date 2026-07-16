@@ -15,7 +15,7 @@ import {
   NvAlertDialogCancel,
   NvButton,
 } from '@nerv-iip/ui'
-import { Trash2Icon } from 'lucide-vue-next'
+import { Trash2Icon } from '@lucide/vue'
 import { ref } from 'vue'
 
 const alertOpen = ref(false)

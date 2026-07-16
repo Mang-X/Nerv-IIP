@@ -20,7 +20,7 @@ import {
   NvScanBar,
   type ActionItem,
 } from '@nerv-iip/ui-mobile'
-import { ChevronRight } from 'lucide-vue-next'
+import { ChevronRight } from '@lucide/vue'
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 

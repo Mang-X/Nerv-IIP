@@ -28,7 +28,7 @@ import {
   NvTabsTrigger,
   toast,
 } from '@nerv-iip/ui'
-import { CalendarClockIcon, EyeIcon, RefreshCwIcon, SendIcon } from 'lucide-vue-next'
+import { CalendarClockIcon, EyeIcon, RefreshCwIcon, SendIcon } from '@lucide/vue'
 import { computed, shallowRef } from 'vue'
 
 definePage({

@@ -10,7 +10,7 @@ import {
   Rows3Icon,
   SearchIcon,
   XIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 import {
   DropdownMenu,

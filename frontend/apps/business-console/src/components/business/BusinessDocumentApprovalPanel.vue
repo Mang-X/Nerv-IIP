@@ -22,7 +22,7 @@ import {
   Spinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
-import { ExternalLinkIcon, RefreshCwIcon, SendIcon } from 'lucide-vue-next'
+import { ExternalLinkIcon, RefreshCwIcon, SendIcon } from '@lucide/vue'
 import { computed, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 

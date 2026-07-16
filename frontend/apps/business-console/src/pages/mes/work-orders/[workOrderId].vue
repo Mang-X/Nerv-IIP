@@ -45,7 +45,7 @@ import {
   RefreshCwIcon,
   ShieldCheckIcon,
   XCircleIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 

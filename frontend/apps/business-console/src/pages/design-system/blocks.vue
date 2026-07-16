@@ -20,7 +20,7 @@ import {
   NvThemeToggle,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { BoxesIcon, FactoryIcon, GaugeIcon, LayersIcon } from 'lucide-vue-next'
+import { BoxesIcon, FactoryIcon, GaugeIcon, LayersIcon } from '@lucide/vue'
 import { computed, ref } from 'vue'
 
 definePage({ meta: { requiresAuth: false, title: '设计系统 · Blocks' } })

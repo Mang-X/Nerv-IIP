@@ -18,7 +18,7 @@ import {
   Wrench,
   X,
   Zap,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { type Component, computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { DeviceDetail, DeviceParamSeries, ParamKind } from '@/data/contracts/equipment'
 import { fetchDeviceDetail } from '@/data/fetchers/equipment'

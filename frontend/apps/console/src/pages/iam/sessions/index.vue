@@ -20,7 +20,7 @@ import {
   NvToolbar,
   toast,
 } from '@nerv-iip/ui'
-import { RefreshCwIcon } from 'lucide-vue-next'
+import { RefreshCwIcon } from '@lucide/vue'
 import { computed, shallowRef, unref, watch } from 'vue'
 
 definePage({

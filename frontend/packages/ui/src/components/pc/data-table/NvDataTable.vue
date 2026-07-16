@@ -10,7 +10,7 @@ import {
   SearchIcon,
   Settings2Icon,
   XIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table'
 import { Checkbox } from '../../ui/checkbox'

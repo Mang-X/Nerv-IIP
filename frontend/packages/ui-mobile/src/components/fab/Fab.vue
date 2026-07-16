@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Component, HTMLAttributes } from 'vue'
 import { ref } from 'vue'
-import { PlusIcon } from 'lucide-vue-next'
+import { PlusIcon } from '@lucide/vue'
 import { cn } from '../../lib/utils'
 
 /**

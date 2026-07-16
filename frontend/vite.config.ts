@@ -97,6 +97,7 @@ export default defineConfig({
           '!apps/**/docs/.vitepress/cache/**',
           'packages/**/src/**',
           'packages/**/tsconfig.json',
+          'packages/**/vite.config.ts',
           'tsconfig.base.json',
         ],
       },

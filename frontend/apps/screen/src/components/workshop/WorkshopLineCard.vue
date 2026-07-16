@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { NvSparkline, NvScreenStatusLight } from '@nerv-iip/ui'
-import { Factory } from 'lucide-vue-next'
+import { Factory } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { LineSummaryCard } from '@/data/contracts/line'

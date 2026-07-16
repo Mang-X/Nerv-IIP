@@ -61,7 +61,7 @@ import {
   WifiIcon,
   WrenchIcon,
   XCircleIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 definePage({ meta: { title: '移动控件' } })

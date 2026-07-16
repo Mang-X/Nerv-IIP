@@ -5,7 +5,30 @@
 
 ## System Summary
 
-A calm, professional enterprise control plane built on **Vue 3 + Tailwind CSS v4 + shadcn-vue (reka-nova style)**. All UI primitives live in `packages/ui` and are consumed via the `@nerv-iip/ui` barrel export. Application code never imports from deep paths like `packages/ui/src/components/ui/*`. The primary color is a cool blue (`oklch(0.49 0.17 255)`), there is no decoration, and the UI is always information-dense.
+A calm, professional enterprise control plane built on **Vue 3 + Tailwind CSS v4 +
+shadcn-vue (reka-nova style)**, branded as **NvUI**. Four surfaces (PC / mobile PDA /
+touch 一体机 / screen 大屏, ADR 0020) share one design philosophy with
+surface-isolated tokens. `--primary` is **near-black** (dashboard-01 baseline);
+brand blue is a **runtime-switchable emphasis accent** (`--nv-brand`); light + dark
+are both first-class. All components live in `packages/ui` / `packages/ui-mobile`
+and are consumed via the bare barrel with **`Nv*` brand names**. No decoration for
+its own sake — the UI is always information-dense.
+
+## 设计价值观（规范没覆盖到的场景，用这五条判断）
+
+1. **信息密度优先，克制装饰** —— 数据是主角。动效传达状态而非装饰，辉光只给活数据，
+   没有理由的视觉元素一律不加。
+2. **确定性** —— 同一事实同一数据源同一呈现；状态语义走 `NvStatus*` 与语义令牌，
+   不即兴造色；同类操作在所有页面长得一样。
+3. **真实感** —— 用真实业务数据的形状做设计（`WO-` 单号、产线名、真实数量级）；
+   UI 文案永远说业务的语言，绝不暴露开发者语言（见下节）。
+4. **说人话，给出路** —— 工程术语翻译成业务语言；空态、失败态、无权限态必须
+   给出下一步动作，不许死胡同。
+5. **诚实** —— 不做假绿：数据缺失、失联、占位、能力未就绪都显式标注；
+   宁可示弱，不可误导。
+
+组件形态不存在时：**按价值观 + 业务场景大胆新建**（选件阶梯与新组件 DoD 见
+`governance.md`），成熟后上提组件库。
 
 ---
 
@@ -31,71 +54,67 @@ If data is demo-only or incomplete, keep that fact in developer docs, PR notes o
 
 ---
 
-## Component Quick Reference
+## Component Quick Reference（PC；名称即 `@nerv-iip/ui` 导出真名）
 
-| Component                        | Export         | Use when                                                | Do NOT use when                                     |
-| -------------------------------- | -------------- | ------------------------------------------------------- | --------------------------------------------------- |
-| `Button`                         | `@nerv-iip/ui` | Any clickable action                                    | Navigating to another route (use `RouterLink`)      |
-| `Badge`                          | `@nerv-iip/ui` | Status labels, category chips                           | Long text > 3 words                                 |
-| `Card` + parts                   | `@nerv-iip/ui` | Grouped content sections, form cards                    | Wrapping a data table                               |
-| `Table` + parts                  | `@nerv-iip/ui` | Tabular entity lists                                    | Single-item detail views                            |
-| `TableEmpty`                     | `@nerv-iip/ui` | Zero-results state inside Table                         | Standalone empty states                             |
-| `Empty` + parts                  | `@nerv-iip/ui` | Full-section empty state with illustration              | Inside a data table                                 |
-| `Alert` + parts                  | `@nerv-iip/ui` | Inline persistent errors/notices                        | Transient feedback (use toast)                      |
-| `Dialog` + parts                 | `@nerv-iip/ui` | Create/Edit entity forms                                | Destructive confirmations (use AlertDialog)         |
-| `AlertDialog` + parts            | `@nerv-iip/ui` | Confirm irreversible actions (delete, disable)          | Informational prompts                               |
-| `Field` + parts                  | `@nerv-iip/ui` | Form fields with label + validation                     | Simple inline inputs without labels                 |
-| `Input`                          | `@nerv-iip/ui` | Text entry                                              | Selecting from a fixed list (use Select)            |
-| `Select` + parts                 | `@nerv-iip/ui` | Fixed-option selection                                  | Searching through large option sets (use Combobox)  |
-| `Checkbox`                       | `@nerv-iip/ui` | Multi-select, permission toggles                        | Exclusive single-choice (use Select)                |
-| `Tabs` + parts                   | `@nerv-iip/ui` | Peer sections inside a detail object                    | Primary app navigation                              |
-| `Sheet` + parts                  | `@nerv-iip/ui` | Slide-in detail/edit panels that preserve list context  | Full-page workflows                                 |
-| `DatePicker` / `DateRangePicker` | `@nerv-iip/ui` | DateOnly form fields and business date range filters    | Date-time selection or timezone-specific timestamps |
-| `Chart` parts                    | `@nerv-iip/ui` | Business dashboards with semantic chart tokens          | Decorative one-off visualizations                   |
-| `FileUpload`                     | `@nerv-iip/ui` | FileStorage-backed attachments and evidence uploads     | Direct object-storage uploads                       |
-| `Avatar` + parts                 | `@nerv-iip/ui` | User identity display                                   | Generic icons                                       |
-| `DropdownMenu` + parts           | `@nerv-iip/ui` | Contextual row actions, topbar user menu                | Primary navigation                                  |
-| `Pagination` + parts             | `@nerv-iip/ui` | Server-side paginated lists (via IamPagination wrapper) | Client-side filtered lists                          |
-| `Skeleton`                       | `@nerv-iip/ui` | Initial data load placeholder                           | Refresh over existing data (use Spinner)            |
-| `Spinner`                        | `@nerv-iip/ui` | Button/inline loading indicator                         | Full-section initial load (use Skeleton)            |
-| `Progress`                       | `@nerv-iip/ui` | Upload, batch, or operation progress                    | Binary status labels                                |
-| `ScrollArea` + `ScrollBar`       | `@nerv-iip/ui` | Constrained task/detail lists                           | Whole-page scrolling                                |
-| `Separator`                      | `@nerv-iip/ui` | Visual section dividers                                 | Layout spacing (use `gap-*`)                        |
-| `Toaster` / `toast`              | `@nerv-iip/ui` | Transient success/error feedback                        | Persistent errors (use Alert)                       |
-| `Breadcrumb` + parts             | `@nerv-iip/ui` | Deep hierarchy navigation (plant → line → device)       | Flat single-level pages                             |
-| `Tooltip` + parts                | `@nerv-iip/ui` | Icon-only button labels, status descriptions            | Long-form help text (use Popover)                   |
-| `Popover` + parts                | `@nerv-iip/ui` | Date pickers and compact advanced filter panels         | Modal workflows (use Dialog/Sheet)                  |
-| `Sidebar` + parts                | `@nerv-iip/ui` | App shell collapsible sidebar layout                    | — (only used by `AppShell`)                         |
+| Component                                                     | Use when                                                                           | Do NOT use when                                                      |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `NvButton`                                                    | Any clickable action（内建 `loading`；页面主 CTA 用 `variant="brand"`）            | Navigating to another route (use `RouterLink`)                       |
+| `NvBadge`                                                     | Category chips, counts                                                             | 状态语义（use `NvStatusBadge`）                                      |
+| `NvStatusBadge` / `NvStatusDot`                               | 业务状态呈现（`tone`: success/warning/danger/info/neutral，`value` 自动解析）      | 非状态的普通标签                                                     |
+| `NvCard` + parts                                              | Grouped content sections, form cards                                               | Wrapping a data table                                                |
+| `NvDataTable`                                                 | Tabular entity lists（内建 loading/empty/分页/`#cell-*` 插槽）                     | Single-item detail views (use `NvDescriptions`)                      |
+| `NvDescriptions`                                              | 详情字段的键值对呈现                                                               | 可编辑表单 (use `NvField`)                                           |
+| `NvPageHeader`                                                | 页头（标题 + 描述 + actions）                                                      | 卡片内小节标题                                                       |
+| `NvToolbar` / `NvFilterBar`                                   | Search + filter + primary action bar                                               | 表单内部布局                                                         |
+| `NvDialog` + parts                                            | ≤3 字段的轻量新建/编辑（见 interaction-patterns §1）                               | Destructive confirms (use `NvAlertDialog`)；4+ 字段（use `NvSheet`） |
+| `NvSheet` + parts                                             | 保持列表上下文的详情/编辑侧滑                                                      | Full-page workflows                                                  |
+| `NvAlertDialog` + parts                                       | Confirm irreversible actions                                                       | Informational prompts                                                |
+| `NvPopconfirm`                                                | 行内轻量二次确认（低风险）                                                         | 不可逆/高风险动作 (use `NvAlertDialog`)                              |
+| `NvField` + parts                                             | Form fields with label + validation                                                | Simple inline inputs                                                 |
+| `NvFormSection`                                               | 表单分节（标题 + 描述 + 字段组）                                                   | 单字段表单                                                           |
+| `NvInput`                                                     | Text entry                                                                         | Fixed-option selection (use `NvSelect`)                              |
+| `NvSelect` + parts                                            | Fixed-option selection（选项 ≲15）                                                 | 大数据集搜索 (use `NvSearchSelect`/`NvCombobox`)                     |
+| `NvSearchSelect` / `NvCombobox`                               | 可搜索选择（设备/技师/SKU 等主数据）                                               | 固定短列表 (use `NvSelect`)                                          |
+| `NvCheckbox` / `NvRadioGroup` / `NvSwitch`                    | 多选 / 互斥单选 / 即时生效开关                                                     | 需提交才生效的开关（用表单 + 保存）                                  |
+| `NvTabs` + parts                                              | Peer sections inside a detail object                                               | Primary app navigation                                               |
+| `NvDatePicker` / `NvDateRangePicker` / `NvTimePicker`         | 业务日期/区间/时间选择                                                             | timezone-specific timestamps                                         |
+| `NvAreaChart` / `NvLineChart` / `NvBarChart` / `NvDonutChart` | Business dashboards（语义图表令牌）                                                | Decorative one-off visualizations                                    |
+| `NvMetricCard` / `NvStatTile` / `NvSectionCard`               | 语义 KPI（见 list-workbench：只放帮助行动的指标）                                  | 机械计数（本页 X 行）                                                |
+| `NvDropdownMenu` + parts / `NvRowActions`                     | Contextual row actions（高频动作行内直达，其余收菜单，见 interaction-patterns §2） | Primary navigation                                                   |
+| `NvPagination`                                                | 独立分页（`NvDataTable` 已内建）                                                   | Client-side filtered lists                                           |
+| `NvTimeline`                                                  | 审计/生命周期时间线                                                                | 平铺列表                                                             |
+| `NvKanban`                                                    | 看板式任务分列                                                                     | 普通列表页                                                           |
+| `NvLoader`                                                    | 加载四形态（页面/区块/行内/按钮内建）                                              | —                                                                    |
+| `NvTooltip` + parts                                           | Icon-only button labels, status descriptions                                       | Long-form help text (use `Popover`)                                  |
+| `NvNavigationMenu` / `NvAppHeader` / `NvPage*`                | App shell 与页面骨架                                                               | —                                                                    |
 
-### Not yet installed — install as needed
+**无 `Nv` 版的现役原版件**（Appendix A 未列品牌版，直接从 `@nerv-iip/ui` 用原名，
+合法且过门禁）：`Alert` `Avatar` `Empty` `Skeleton` `Spinner` `Progress` `ScrollArea`
+`Separator` `Toaster`/`toast` `Breadcrumb` `Popover` `FileUpload` 等。深路径、
+`reka-ui`、`shadcn-vue` 直引仍然全部禁止。
 
-See `components/install-backlog.md` for full list and install commands.
-
-| Component                | When you need it                                                           |
-| ------------------------ | -------------------------------------------------------------------------- |
-| `Collapsible`            | Timeline entries, config section groups (available via `reka-ui` directly) |
-| `Command`                | Combobox / searchable Select for large datasets                            |
-| `Toggle` / `ToggleGroup` | View mode switches, filter pill groups                                     |
+还缺什么组件：先查 `component-coverage.md` 四场景矩阵的缺口列与
+`components/install-backlog.md`，再按 `governance.md` 的选件阶梯决定装原版还是新建。
 
 ---
 
 ## Pattern Quick Reference
 
-| Scenario                                                                        | Pattern                  | File                                      |
-| ------------------------------------------------------------------------------- | ------------------------ | ----------------------------------------- |
-| 表单承载/行操作/列表-详情/操作后引导/空态·批量·筛选 + PDA（W2/W3 交互验收依据） | Interaction Patterns v1  | `patterns/interaction-patterns.md`        |
-| 操作反馈：toast vs 内联校验                                                     | Feedback & Notifications | `patterns/feedback-and-notifications.md`  |
-| Business Console 列表工作台基线                                                 | List Workbench           | `patterns/pages/list-workbench.md`        |
-| 主数据六类页型模板                                                              | Master Data Templates    | `patterns/pages/master-data-templates.md` |
-| Authentication / sign in                                                        | Login Page               | `patterns/pages/login-page.md`            |
-| CRUD list page with search/filter                                               | List Page                | `patterns/pages/list-page.md`             |
-| Inline entity creation                                                          | Create Dialog            | `patterns/flows/create-dialog.md`         |
-| Confirm destructive action                                                      | Confirm Destroy          | `patterns/flows/confirm-destroy.md`       |
-| App chrome (sidebar + topbar)                                                   | App Shell                | `patterns/blocks/app-shell.md`            |
-| Page heading with title + description                                           | Page Header              | `patterns/blocks/page-header.md`          |
-| Search + filter + primary action bar                                            | Toolbar                  | `patterns/blocks/toolbar.md`              |
-| Data table with loading/empty states                                            | Data Table               | `patterns/blocks/data-table.md`           |
-| Paginated table footer                                                          | Pagination Bar           | `patterns/blocks/pagination-bar.md`       |
+| Scenario                                                                        | Pattern                             | File                                                                   |
+| ------------------------------------------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------- |
+| 表单承载/行操作/列表-详情/操作后引导/空态·批量·筛选 + PDA（W2/W3 交互验收依据） | Interaction Patterns v1             | `patterns/interaction-patterns.md`                                     |
+| 操作反馈：toast vs 内联校验                                                     | Feedback & Notifications            | `patterns/feedback-and-notifications.md`                               |
+| Business Console 列表工作台基线                                                 | List Workbench                      | `patterns/pages/list-workbench.md`                                     |
+| 主数据六类页型模板                                                              | Master Data Templates               | `patterns/pages/master-data-templates.md`                              |
+| Authentication / sign in                                                        | Login Page                          | `patterns/pages/login-page.md`                                         |
+| CRUD list page with search/filter                                               | List Page                           | `patterns/pages/list-page.md`                                          |
+| Inline entity creation                                                          | Create Dialog                       | `patterns/flows/create-dialog.md`                                      |
+| Confirm destructive action                                                      | Confirm Destroy                     | `patterns/flows/confirm-destroy.md`                                    |
+| App chrome (sidebar + topbar)                                                   | App Shell                           | `patterns/blocks/app-shell.md`                                         |
+| Page heading with title + description                                           | Page Header                         | `patterns/blocks/page-header.md`                                       |
+| Search + filter + primary action bar                                            | Toolbar                             | `patterns/blocks/toolbar.md`                                           |
+| Data table with loading/empty states                                            | Data Table                          | `patterns/blocks/data-table.md`                                        |
+| Paginated table footer                                                          | Pagination Bar                      | `patterns/blocks/pagination-bar.md`                                    |
 | 工单 / 资源排程可视化                                                           | GanttChart / ResourceSchedulerBoard | `components/gantt-chart.md` / `components/resource-scheduler-board.md` |
 
 > **排程可视化组件**（工单甘特图 `GanttChart` / 资源甘特图 `ResourceSchedulerBoard`）来自独立包 **`@nerv-iip/scheduling`**（非 `@nerv-iip/ui`）：引擎无关契约 + DHTMLX 适配器（试用开发 / 正式手动分发），无本地引擎时优雅占位。组件契约见 `components/gantt-chart.md`、`components/resource-scheduler-board.md`；引擎接缝见包 `README.md`。
@@ -113,13 +132,14 @@ See `components/install-backlog.md` for full list and install commands.
 ## Rules All AI Agents Must Follow
 
 1. **User-facing copy first**: pages are for business users, not developers. Never expose demo/test/scaffolding/gateway/context wording in UI copy.
-2. **Import boundary**: always import from `@nerv-iip/ui`, never from deep paths.
-3. **No raw palette classes**: `bg-blue-600`, `text-gray-500`, `border-zinc-*` are forbidden. Use semantic utilities (`bg-primary`, `text-muted-foreground`, `border-border`).
+2. **Import boundary**: bare `@nerv-iip/ui` / `@nerv-iip/ui-mobile` only, `Nv*` brand names（无 Nv 版原版件见上节清单）。Never deep paths, `reka-ui`, `shadcn-vue`.
+3. **No raw palette classes**: `bg-blue-600`, `text-gray-500`, `border-zinc-*` are forbidden. Use semantic utilities (`bg-primary`, `text-muted-foreground`, `border-border`, `bg-brand`).
 4. **No raw hex in templates**: use token utilities.
 5. **No `--legacy-color-*` in new components**.
-6. **Badge variants for status**: use `success`/`warning`/`destructive`/`secondary` — never handcraft colors.
-7. **AlertDialog for destructive confirms**: never use `window.confirm` or a plain `Dialog`.
+6. **Status via `NvStatusBadge`/`NvStatusDot` `tone`** (`success`/`warning`/`danger`/`info`/`neutral`) — never handcraft colors.
+7. **`NvAlertDialog` for destructive confirms**: never `window.confirm` or a plain `NvDialog`.
 8. **`<script setup lang="ts">`** with Composition API — Options API is not used.
 9. **Icon rules**: `size-4` default, `aria-hidden="true"` on decorative, `aria-label` on icon-only buttons.
-10. **New shadcn components**: install via CLI → export from `index.ts` → write spec in `DESIGN/components/`.
+10. **New components** follow the ladder + DoD in `governance.md`（选件阶梯 / 新组件六件套）。
 11. **Scoped CSS exception**: only the login page (`login.vue`) uses `<style scoped>` for the fluid `clamp()` heading. All other new components use Tailwind utilities only.
+12. **交互验收口径**：`patterns/interaction-patterns.md` 的"规则/判定/正例/反例"是评审打回依据，写页面前先过一遍对应章节。

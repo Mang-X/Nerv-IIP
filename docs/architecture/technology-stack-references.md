@@ -14,10 +14,10 @@
 | Technology | Current status | Documentation | Repository |
 |---|---|---|---|
 | Node.js | Required. `.node-version` pins `22.22.3`; Vite+ requires `>=22.18.0` for TS config loading in lint/fmt paths. | [Node.js docs](https://nodejs.org/api/) | [nodejs/node](https://github.com/nodejs/node) |
-| pnpm | Required package manager, pinned by `packageManager` to `pnpm@11.1.2`. | [pnpm docs](https://pnpm.io/) | [pnpm/pnpm](https://github.com/pnpm/pnpm) |
+| pnpm | Required package manager, pinned by `packageManager` to `pnpm@11.13.1`. | [pnpm docs](https://pnpm.io/) | [pnpm/pnpm](https://github.com/pnpm/pnpm) |
 | Vite+ | Required workspace toolchain for check, fmt, lint, test and run tasks. | [Vite+ docs](https://viteplus.dev/) | [voidzero-dev/vite-plus](https://github.com/voidzero-dev/vite-plus) |
 | Vite | Used through Vite+ core override; app-level dev/build config remains Vite-compatible. | [Vite docs](https://vite.dev/guide/) | [vitejs/vite](https://github.com/vitejs/vite) |
-| Vitest | Used through Vite+ test override. | [Vitest docs](https://vitest.dev/guide/) | [vitest-dev/vitest](https://github.com/vitest-dev/vitest) |
+| Vitest | Official Vitest is pinned to the exact version bundled by Vite+ so `vp test` and workspace packages share one runner instance. | [Vitest docs](https://vitest.dev/guide/) | [vitest-dev/vitest](https://github.com/vitest-dev/vitest) |
 | TypeScript | Required frontend language and type-checking baseline. | [TypeScript docs](https://www.typescriptlang.org/docs/) | [microsoft/TypeScript](https://github.com/microsoft/TypeScript) |
 | Vue | Required console runtime, using Vue 3 Composition API. | [Vue docs](https://vuejs.org/guide/introduction.html) | [vuejs/core](https://github.com/vuejs/core) |
 | Vue Router | Required router, using official file-routing plugin and typed routes. | [Vue Router docs](https://router.vuejs.org/guide/) | [vuejs/router](https://github.com/vuejs/router) |
