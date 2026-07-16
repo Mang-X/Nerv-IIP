@@ -8,11 +8,137 @@ using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
+using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
+
+internal static class SchedulingMasterDataResourceTypes
+{
+    public const string WorkCenter = "WorkCenter";
+}
+
+[IntegrationEventConsumer("Nerv.IIP.Contracts.MasterData.WorkCalendarChangedIntegrationEvent", ConsumerName)]
+public sealed class WorkCalendarChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+    ApplicationDbContext dbContext,
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    ISender sender,
+    ILogger<WorkCalendarChangedIntegrationEventHandlerForInvalidateSchedulePlans> logger)
+    : IIntegrationEventHandler<WorkCalendarChangedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "business-scheduling.work-calendar-changed";
+
+    private readonly IntegrationEventConsumerGuard<WorkCalendarChangedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            MasterDataIntegrationEventTypes.WorkCalendarChanged,
+            MasterDataIntegrationEventVersions.V1));
+
+    public Task HandleAsync(WorkCalendarChangedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        return consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
+
+    [CapSubscribe(nameof(WorkCalendarChangedIntegrationEvent), Group = ConsumerName)]
+    public Task HandleCapAsync(WorkCalendarChangedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        return HandleAsync(integrationEvent, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(WorkCalendarChangedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        if (!await SchedulingProcessedIntegrationEventInbox.TryRecordByEventIdAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(integrationEvent.Payload.Code))
+        {
+            logger.LogInformation(
+                "Scheduling input change {EventType} has no traceable calendar code in {OrganizationId}/{EnvironmentId}; no schedule plan was invalidated.",
+                integrationEvent.EventType,
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId);
+            await SchedulingProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync(dbContext, cancellationToken);
+            return;
+        }
+
+        await SchedulingPlanInvalidationService.InvalidateGeneratedPlansByCalendarAsync(
+            sender,
+            integrationEvent,
+            SchedulingPlanInvalidationReasons.WorkCalendarChanged,
+            integrationEvent.Payload.Code,
+            logger,
+            cancellationToken);
+    }
+}
+
+[IntegrationEventConsumer("Nerv.IIP.Contracts.MasterData.ResourceChangedIntegrationEvent", ConsumerName)]
+public sealed class ResourceChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+    ApplicationDbContext dbContext,
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    ISender sender,
+    ILogger<ResourceChangedIntegrationEventHandlerForInvalidateSchedulePlans> logger)
+    : IIntegrationEventHandler<ResourceChangedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "business-scheduling.resource-changed";
+
+    private readonly IntegrationEventConsumerGuard<ResourceChangedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            MasterDataIntegrationEventTypes.ResourceChanged,
+            MasterDataIntegrationEventVersions.V1));
+
+    public Task HandleAsync(ResourceChangedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        return consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
+
+    [CapSubscribe(nameof(ResourceChangedIntegrationEvent), Group = ConsumerName)]
+    public Task HandleCapAsync(ResourceChangedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        return HandleAsync(integrationEvent, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(ResourceChangedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        if (!await SchedulingProcessedIntegrationEventInbox.TryRecordByEventIdAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(integrationEvent.Payload.Code) ||
+            !string.Equals(
+                integrationEvent.Payload.ResourceType,
+                SchedulingMasterDataResourceTypes.WorkCenter,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogInformation(
+                "Scheduling input change {EventType} for {ResourceType} scope {ScopeValue} matched no schedule plan in {OrganizationId}/{EnvironmentId} because that hierarchy is not traceable from persisted assignments.",
+                integrationEvent.EventType,
+                integrationEvent.Payload.ResourceType,
+                integrationEvent.Payload.Code,
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId);
+            await SchedulingProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync(dbContext, cancellationToken);
+            return;
+        }
+
+        await SchedulingPlanInvalidationService.InvalidateGeneratedPlansByWorkCenterAsync(
+            sender,
+            integrationEvent,
+            SchedulingPlanInvalidationReasons.ResourceChanged,
+            integrationEvent.Payload.Code,
+            logger,
+            cancellationToken);
+    }
+}
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Maintenance.AssetUnavailableIntegrationEvent", ConsumerName)]
 public sealed class AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
@@ -304,6 +430,85 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedul
 
 internal static class SchedulingPlanInvalidationService
 {
+    public static Task InvalidateGeneratedPlansByWorkCenterAsync<TIntegrationEvent>(
+        ISender sender,
+        TIntegrationEvent integrationEvent,
+        string reasonCode,
+        string affectedResourceId,
+        ILogger logger,
+        CancellationToken cancellationToken)
+        where TIntegrationEvent : IIntegrationEventEnvelope
+    {
+        return InvalidateGeneratedPlansByScopeAsync(
+            sender,
+            integrationEvent,
+            reasonCode,
+            SchedulePlanInvalidationScope.GeneratedWorkCenter,
+            affectedResourceId,
+            logger,
+            cancellationToken);
+    }
+
+    public static Task InvalidateGeneratedPlansByCalendarAsync<TIntegrationEvent>(
+        ISender sender,
+        TIntegrationEvent integrationEvent,
+        string reasonCode,
+        string calendarId,
+        ILogger logger,
+        CancellationToken cancellationToken)
+        where TIntegrationEvent : IIntegrationEventEnvelope
+    {
+        return InvalidateGeneratedPlansByScopeAsync(
+            sender,
+            integrationEvent,
+            reasonCode,
+            SchedulePlanInvalidationScope.GeneratedCalendar,
+            calendarId,
+            logger,
+            cancellationToken);
+    }
+
+    private static async Task InvalidateGeneratedPlansByScopeAsync<TIntegrationEvent>(
+        ISender sender,
+        TIntegrationEvent integrationEvent,
+        string reasonCode,
+        SchedulePlanInvalidationScope scope,
+        string scopeValue,
+        ILogger logger,
+        CancellationToken cancellationToken)
+        where TIntegrationEvent : IIntegrationEventEnvelope
+    {
+        if (string.IsNullOrWhiteSpace(scopeValue))
+        {
+            logger.LogInformation(
+                "Scheduling input change {EventType} has no traceable scope value in {OrganizationId}/{EnvironmentId}; no schedule plan was invalidated.",
+                integrationEvent.EventType,
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId);
+            return;
+        }
+
+        var normalizedScopeValue = scopeValue.Trim();
+        var result = await sender.Send(
+            ToCommand(
+                integrationEvent,
+                reasonCode,
+                scope,
+                normalizedScopeValue,
+                affectedWorkOrderId: null,
+                affectedSkuCode: null),
+            cancellationToken);
+        if (result.MatchedPlanCount == 0)
+        {
+            logger.LogInformation(
+                "Scheduling input change {EventType} for scope {ScopeValue} matched no schedule plan in {OrganizationId}/{EnvironmentId}.",
+                integrationEvent.EventType,
+                normalizedScopeValue,
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId);
+        }
+    }
+
     public static async Task InvalidateByResourceAsync<TIntegrationEvent>(
         ISender sender,
         TIntegrationEvent integrationEvent,
@@ -411,6 +616,29 @@ internal static class SchedulingPlanInvalidationService
 
 internal static class SchedulingProcessedIntegrationEventInbox
 {
+    public static Task<int> SaveChangesOrIgnoreDuplicateAsync(
+        ApplicationDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
+            dbContext,
+            dbContext.SaveChangesAsync,
+            cancellationToken);
+    }
+
+    public static Task<bool> TryRecordByEventIdAsync(
+        ApplicationDbContext dbContext,
+        string consumerName,
+        IIntegrationEventEnvelope integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        return TryRecordAsync(
+            dbContext,
+            consumerName,
+            new EventInstanceInboxEnvelope(integrationEvent),
+            cancellationToken);
+    }
+
     public static Task<bool> TryRecordAsync(
         ApplicationDbContext dbContext,
         string consumerName,
@@ -431,5 +659,21 @@ internal static class SchedulingProcessedIntegrationEventInbox
                 record.IdempotencyKey,
                 record.ProcessedAtUtc),
             cancellationToken);
+    }
+
+    private sealed class EventInstanceInboxEnvelope(IIntegrationEventEnvelope source) : IIntegrationEventEnvelope
+    {
+        public string EventId => source.EventId;
+        public string EventType => source.EventType;
+        public int EventVersion => source.EventVersion;
+        public DateTimeOffset OccurredAtUtc => source.OccurredAtUtc;
+        public string SourceService => source.SourceService;
+        public string CorrelationId => source.CorrelationId;
+        public string CausationId => source.CausationId;
+        public string OrganizationId => source.OrganizationId;
+        public string EnvironmentId => source.EnvironmentId;
+        public string Actor => source.Actor;
+        public string IdempotencyKey => source.EventId;
+        public object? PayloadObject => source.PayloadObject;
     }
 }

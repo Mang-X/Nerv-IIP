@@ -19,6 +19,8 @@ public static class SchedulingPlanInvalidationReasons
     public const string QualityBlocked = "qualityBlocked";
     public const string QualityReleased = "qualityReleased";
     public const string WorkOrderReleased = "workOrderReleased";
+    public const string WorkCalendarChanged = "workCalendarChanged";
+    public const string ResourceChanged = "resourceChanged";
 }
 
 public enum SchedulePlanLifecycleStatus

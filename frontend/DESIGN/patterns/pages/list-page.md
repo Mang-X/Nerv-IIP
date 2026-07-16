@@ -1,84 +1,79 @@
-# Page: List Page
+# Page: List Page（标准 CRUD 实体列表页）
 
-Standard CRUD entity list page. Composes Toolbar + Data Table + Create Dialog + Confirm Destroy.
+标准 CRUD 实体列表页（ops console / IAM 管理一类）。拼装 = `NvPageHeader` +
+`NvToolbar` + `NvDataTable` + 建档弹窗（`flows/create-dialog.md`）+ 破坏性确认
+（`flows/confirm-destroy.md`）。
 
-## Reference implementations
+> Business Console 的业务列表页有更完整的基线 `pages/list-workbench.md`
+> （BusinessLayout + KPI 判定 + 文案铁律 + 契约测试强制）；本文是 IAM/运维 console
+> 的简化变体，区块拼装规则一致。
 
-- `frontend/apps/console/src/pages/iam/users/index.vue`
+## 规则
+
+1. **区块拼装**：页头 `NvPageHeader`（面包屑即标题 + 服务端总量 count + `#actions` 放
+   ［新建 X］）；工具条 `NvToolbar`（搜索 + `#filters`）；表格 `NvDataTable`；状态列
+   `NvStatusBadge`。不手搓裸表/裸页头。
+2. **页面结构分四层**（script 组织约定）：① 数据 composable（查询/分页/mutations，如
+   `useIamUsers`）→ ② 本地 UI 状态（search/筛选/弹窗开关/confirm target）→ ③ 派生
+   computed（小数据集可客户端过滤）→ ④ 权限（`usePermissions` / `useHasPermission`）。
+3. **弹窗单实例在页面层**：Create 弹窗与 `AlertDialog` 确认框声明在页面顶层、`v-for` 外。
+4. **权限门控用 disabled**：无权限时按钮 `:disabled`，不隐藏、不放会失败的假按钮。
+5. **布局**：页面内容为纵向 `grid gap-6`（或 `flex flex-col gap-6`）；间距是页面级关注点，
+   不下沉进子组件重复；加载中不用 `v-show` 藏工具条。
+
+## 判定
+
+- 「页头/工具条/表格是不是区块，而不是手拼？」
+- 「count 与分页 total 用的是服务端总量吗？」
+- 「确认框/建档弹窗在页面层单实例吗？」
+- 「无权限时动作是 disabled 还是消失/可点后失败？」
+
+## 正例
+
+现网参考实现（IAM 管理，全部已迁移到 Nv 区块）：
+
+- `frontend/apps/console/src/pages/iam/users/index.vue`（`NvPageHeader:253` +
+  `NvToolbar:265` + `NvDataTable` + `NvPagination` + `NvStatusBadge`；建档
+  `components/iam/UserCreateDialog.vue`）
 - `frontend/apps/console/src/pages/iam/roles/index.vue`
 - `frontend/apps/console/src/pages/iam/sessions/index.vue`
 
-## Structure
+结构示意（对应 users/index.vue 的真实形态）：
 
 ```vue
-<script setup lang="ts">
-// 1. Composable (handles query, pagination, mutations)
-const { users, pending, refetch } = useIamAdmin()
-
-// 2. Local UI state
-const search = ref('')
-const statusFilter = ref('')
-const createOpen = ref(false)
-const confirmTarget = ref<User | null>(null)
-const confirmOpen = ref(false)
-
-// 3. Derived (client-side filter if data set is small)
-const filteredUsers = computed(() =>
-  users.value.filter(u => matchesSearch(u, search.value) && matchesStatus(u, statusFilter.value))
-)
-
-// 4. Permissions
-const { canManageIam } = usePermissions()
-</script>
-
 <template>
-  <div class="flex flex-col gap-6 p-6">
-    <!-- Page header -->
-    <div>
-      <h1 class="text-2xl font-semibold tracking-tight">Users</h1>
-      <p class="text-sm text-muted-foreground">Manage system users and their access.</p>
-    </div>
+  <DefaultLayout>
+    <section class="grid gap-6">
+      <NvPageHeader
+        title="用户"
+        :breadcrumbs="[{ label: '身份与访问' }]"
+        :count="`${totalCount} 个用户`"
+      >
+        <template #actions>
+          <Button type="button" :disabled="!canManageUsers" @click="openCreateDialog"
+            >新建用户</Button
+          >
+        </template>
+      </NvPageHeader>
 
-    <!-- Toolbar block -->
-    <IamListToolbar
-      v-model:search="search"
-      v-model:status="statusFilter"
-      action-label="Create User"
-      search-placeholder="Search by login name or email"
-      show-status-filter
-      :action-disabled="!canManageIam"
-      @action="createOpen = true"
-    />
+      <NvToolbar :search="search" search-label="搜索用户" @update:search="search = $event">
+        <template #filters><!-- 状态 Select --></template>
+      </NvToolbar>
 
-    <!-- Data table block -->
-    <UsersTable
-      :users="filteredUsers"
-      :pending="pending"
-      :can-manage="canManageIam"
-      @edit="openEdit"
-      @disable="openConfirm"
-    />
+      <NvDataTable :columns="columns" :rows="rows" row-key="userId" :loading="pending">
+        <template #cell-status="{ row }"
+          ><NvStatusBadge :value="row.enabled ? 'active' : 'disabled'"
+        /></template>
+        <template #cell-actions="{ row }"><!-- 行操作，分级见 interaction-patterns §2 --></template>
+      </NvDataTable>
 
-    <!-- Create dialog flow -->
-    <UserCreateDialog v-model:open="createOpen" @created="refetch" />
-
-    <!-- Confirm destroy flow -->
-    <AlertDialog v-model:open="confirmOpen">
-      <!-- see patterns/flows/confirm-destroy.md -->
-    </AlertDialog>
-  </div>
+      <!-- 建档弹窗 / 确认框：页面层单实例 -->
+      <UserCreateDialog v-model:open="createOpen" @submit="onCreate" />
+    </section>
+  </DefaultLayout>
 </template>
 ```
 
-## Layout Rules
+<!-- TODO(pattern): apps/console IAM 页仍混用原版 Button/Select/AlertDialog 与 Nv 区块（console 属运维面，未列入 Nv 全量迁移范围）；business 侧新页一律全 Nv*，console 侧新增代码建议同样用 Nv*。 -->
 
-- Top-level page container: `class="flex flex-col gap-6 p-6"`.
-- Page heading: `text-2xl font-semibold tracking-tight` + optional `text-sm text-muted-foreground` subtitle.
-- Toolbar and table are siblings, separated by `gap-6` (from parent flex).
-- Dialogs/AlertDialogs are declared once at the page level, outside loops.
-
-## Do NOT
-
-- Do not repeat the `gap-6 p-6` pattern inside child components — it's a page-level concern.
-- Do not put `AlertDialog` inside the Table component — it must be at the page level.
-- Do not use `v-show` to hide the toolbar while loading.
+<!-- 反例：暂无现网证据（IAM 三页即基线本身；business 列表页的违例见 list-workbench.md 与 interaction-patterns.md）。 -->
