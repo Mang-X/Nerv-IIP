@@ -527,7 +527,10 @@ public sealed record ListReceivingQualityGatesQuery(
     int Take = 100,
     string? GateStatus = null,
     string? Keyword = null,
-    bool IncludeNotRequired = false) : IQuery<ListReceivingQualityGatesResponse>;
+    bool IncludeNotRequired = false,
+    // 精确单号过滤：PDA 收货明细按单取完整行，避免 keyword（同时命中 SKU/检验号）
+    // 跨单串扰。与 keyword 互补——keyword 用于列表模糊搜。
+    string? InboundOrderNo = null) : IQuery<ListReceivingQualityGatesResponse>;
 
 public sealed record ListReceivingQualityGatesResponse(IReadOnlyCollection<ReceivingQualityGateFact> Items, int Total);
 
@@ -574,6 +577,12 @@ public sealed class ListReceivingQualityGatesQueryHandler(ApplicationDbContext d
         if (!request.IncludeNotRequired)
         {
             query = query.Where(x => x.line.QualityGateStatus != InboundQualityGateStatuses.NotRequired);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.InboundOrderNo))
+        {
+            // 精确单号：按单取该单的完整收货行（无跨单串扰）。
+            query = query.Where(x => x.order.InboundOrderNo == request.InboundOrderNo);
         }
 
         if (!string.IsNullOrWhiteSpace(request.GateStatus))

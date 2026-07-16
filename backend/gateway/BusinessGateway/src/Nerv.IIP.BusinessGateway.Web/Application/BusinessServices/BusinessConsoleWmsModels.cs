@@ -308,7 +308,9 @@ public sealed record BusinessConsoleWmsReceivingQualityGateListRequest(
     string? Keyword = null,
     // true 时返回全部收货行（含免检），供 PDA 收货明细展示/采集免检行批号效期与「免检」标；
     // 默认 false 保持质检工作清单语义（仅需检行）。
-    bool IncludeNotRequired = false);
+    bool IncludeNotRequired = false,
+    // 精确单号过滤：PDA 收货明细按单取完整行，避免 keyword 跨单串扰。
+    string? InboundOrderNo = null);
 
 public sealed record BusinessConsoleWmsReceivingQualityGateListResponse(
     IReadOnlyCollection<BusinessConsoleWmsReceivingQualityGateItem> Items,

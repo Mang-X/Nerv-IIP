@@ -76,6 +76,7 @@ const wmsState = vi.hoisted(() => ({
   } as Record<string, GateLine[]>,
   linesPending: false,
   linesError: null as unknown,
+  linesTotal: null as number | null,
   linesRefresh: vi.fn(() => Promise.resolve()),
 }))
 
@@ -92,6 +93,13 @@ vi.mock('@/composables/useBusinessWms', () => ({
   }),
   useWmsReceivingLines: (orderNo: MaybeRefOrGetter<string>) => ({
     lines: computed(() => wmsState.linesByOrderNo[toValue(orderNo)] ?? []),
+    total: computed(
+      () => wmsState.linesTotal ?? (wmsState.linesByOrderNo[toValue(orderNo)] ?? []).length,
+    ),
+    complete: computed(() => {
+      const l = wmsState.linesByOrderNo[toValue(orderNo)] ?? []
+      return l.length >= (wmsState.linesTotal ?? l.length)
+    }),
     pending: computed(() => wmsState.linesPending),
     error: computed(() => wmsState.linesError),
     refresh: wmsState.linesRefresh,
@@ -126,6 +134,7 @@ function resetState() {
   wmsState.pending = false
   wmsState.linesPending = false
   wmsState.linesError = null
+  wmsState.linesTotal = null
   wmsState.linesByOrderNo = {
     'IB-2026-0001': [
       {
@@ -328,6 +337,69 @@ describe('WMS 收货入库', () => {
     expect(document.querySelector('[data-testid="lines-error"]')).toBeTruthy()
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     expect(confirm.disabled).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('明细超量未取全（total>已取回）：禁止提交并提示不完整（fail closed）', async () => {
+    wmsState.linesTotal = 600 // 单行已取回但 total=600 → 被截断，未证明完整
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    expect(document.querySelector('[data-lines-incomplete]')).toBeTruthy()
+    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
+    expect(confirm.disabled).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('多行单：点选目标行 → 扫码（仅效期，无批号）绑定到选中行并落库', async () => {
+    // 两行均无批号（新收货）；扫出的码只有效期，靠先选行绑定。
+    wmsState.linesByOrderNo['IB-2026-0001'] = [
+      {
+        inboundOrderId: '11111111-1111-1111-1111-111111111111',
+        inboundOrderNo: 'IB-2026-0001',
+        inboundOrderLineId: 'line-1',
+        lineNo: '1',
+        skuCode: 'SKU-A',
+        receivedQuantity: 20,
+        lotNo: null,
+        qualityGateStatus: 'pending',
+      },
+      {
+        inboundOrderId: '11111111-1111-1111-1111-111111111111',
+        inboundOrderNo: 'IB-2026-0001',
+        inboundOrderLineId: 'line-2',
+        lineNo: '2',
+        skuCode: 'SKU-C',
+        receivedQuantity: 8,
+        lotNo: null,
+        qualityGateStatus: 'not-required',
+      },
+    ]
+    const GS = String.fromCharCode(29)
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    // 未选行时扫码提示先选行
+    const gs1Input = document.querySelector<HTMLInputElement>('input[placeholder*="GS1"]')!
+    gs1Input.value = `1726123110`
+    gs1Input.dispatchEvent(new Event('input'))
+    gs1Input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    await flushPromises()
+    expect(document.querySelector('[data-gs1-notice]')?.textContent).toContain('先点选目标行')
+    // 点选第 2 行 → 扫码仅效期 → 绑定到第 2 行
+    document
+      .querySelectorAll('[data-line]')[1]!
+      .dispatchEvent(new Event('click', { bubbles: true }))
+    await flushPromises()
+    gs1Input.value = `172608${'01'}${GS}`
+    gs1Input.dispatchEvent(new Event('input'))
+    gs1Input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
+    const lines = wmsState.completeInbound.mock.calls.at(-1)?.[2] as Array<Record<string, unknown>>
+    expect(lines).toEqual([
+      { lineNo: '2', lotNo: undefined, productionDate: undefined, expiryDate: '2026-08-01' },
+    ])
     wrapper.unmount()
   })
 

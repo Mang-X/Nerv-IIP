@@ -230,8 +230,10 @@ export type ReceivingQualityGateLine = BusinessConsoleWmsReceivingQualityGateIte
 // 按「选中收货单」查完整收货行（#705 投影 + includeNotRequired=true 含免检行）。
 // 单据级质检状态标/上架门禁改由 ListInboundOrders 单据级派生字段驱动（避免按分页门禁
 // 行跨页聚合出错）；本 composable 只在打开某单明细时查该单的全部行，用于展示/采集
-// 批号效期与逐行门禁。keyword 服务端按单号收窄后，客户端再按精确单号过滤（keyword 亦
-// 命中 sku/检验记录号）。take 取上限，单张收货单行数远低于此。
+// 批号效期与逐行门禁。用服务端精确 inboundOrderNo 过滤（非 keyword——keyword 亦命中
+// sku/检验号会跨单串扰）；再暴露 total → complete 判据，行数被 take 截断（未证明完整）
+// 时调用方 fail closed 禁止提交，避免以不完整行完成收货静默漏采集。
+const RECEIVING_LINES_TAKE = 500
 export function useWmsReceivingLines(inboundOrderNo: MaybeRefOrGetter<string>) {
   const scope = useWmsScope()
   const orderNo = computed(() => toValue(inboundOrderNo).trim())
@@ -241,22 +243,31 @@ export function useWmsReceivingLines(inboundOrderNo: MaybeRefOrGetter<string>) {
       query: {
         ...scope.scopeQuery(),
         skip: 0,
-        take: 500,
-        keyword: orderNo.value,
+        take: RECEIVING_LINES_TAKE,
+        inboundOrderNo: orderNo.value,
         includeNotRequired: true,
       },
     }),
     enabled: scope.hasScope.value && orderNo.value.length > 0,
   }))
 
-  const lines = computed<ReceivingQualityGateLine[]>(() =>
-    listItems<ReceivingQualityGateLine>(
-      linesQuery.data.value as BusinessConsoleWmsReceivingQualityGateListEnvelope | undefined,
-    ).filter((l) => (l.inboundOrderNo ?? '') === orderNo.value),
+  const envelope = computed(
+    () => linesQuery.data.value as BusinessConsoleWmsReceivingQualityGateListEnvelope | undefined,
   )
+  // 服务端已精确按单过滤；客户端再按精确单号防御性过滤（不改变结果，纯保险）。
+  const lines = computed<ReceivingQualityGateLine[]>(() =>
+    listItems<ReceivingQualityGateLine>(envelope.value).filter(
+      (l) => (l.inboundOrderNo ?? '') === orderNo.value,
+    ),
+  )
+  const total = computed(() => listTotal(envelope.value))
+  // 完整性：已取回的行数覆盖 total（未被 take 截断）。空单据（total=0）视为完整。
+  const complete = computed(() => lines.value.length >= total.value)
 
   return {
     lines,
+    total,
+    complete,
     pending: linesQuery.isLoading,
     error: linesQuery.error,
     refresh: linesQuery.refetch,

@@ -89,4 +89,36 @@ public sealed class WmsInboundReceivingQueryTests
         Assert.Equal(2, allLines.Items.Count);
         Assert.Contains(allLines.Items, x => x.QualityGateStatus == InboundQualityGateStatuses.NotRequired);
     }
+
+    [Fact]
+    public async Task ListReceivingQualityGates_exact_inboundOrderNo_isolates_target_order_no_keyword_crosstalk()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var databaseName = nameof(ListReceivingQualityGates_exact_inboundOrderNo_isolates_target_order_no_keyword_crosstalk);
+        await using (var seed = CreateContext(databaseName, databaseRoot))
+        {
+            // 目标单 IN-777。另一单的 SKU 恰好含 "IN-777"（keyword 会串扰命中），且单号也含子串。
+            seed.InboundOrders.Add(InboundOrder("IN-777", Line("1", "quality")));
+            seed.InboundOrders.Add(Domain.AggregatesModel.InboundOrderAggregate.InboundOrder.Create(
+                "org-001", "env-dev", "IN-777-B", "asn", "SRC-B", "SITE-1",
+                [new InboundOrderLineDraft("1", "SKU-IN-777-XREF", "kg", 5m, "LOC-STAGE", "LOT-X", null, "quality", "company", "owner-001")]));
+            await seed.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using var context = CreateContext(databaseName, databaseRoot);
+        var handler = new ListReceivingQualityGatesQueryHandler(context);
+
+        // 精确单号：只返回 IN-777 的行，不被 IN-777-B（单号子串 + SKU 含 IN-777）串扰。
+        var exact = await handler.Handle(
+            new ListReceivingQualityGatesQuery("org-001", "env-dev", InboundOrderNo: "IN-777"),
+            CancellationToken.None);
+        Assert.Equal(1, exact.Total);
+        Assert.All(exact.Items, x => Assert.Equal("IN-777", x.InboundOrderNo));
+
+        // 对照：keyword=IN-777 会同时命中两单（证明精确过滤的必要性）。
+        var byKeyword = await handler.Handle(
+            new ListReceivingQualityGatesQuery("org-001", "env-dev", Keyword: "IN-777"),
+            CancellationToken.None);
+        Assert.Equal(2, byKeyword.Total);
+    }
 }

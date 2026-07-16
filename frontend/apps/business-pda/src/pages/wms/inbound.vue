@@ -53,13 +53,18 @@ const selectedOrderNo = computed(() => selectedOrder.value?.inboundOrderNo ?? ''
 const sheetOpen = ref(false)
 const completed = ref(false)
 
-// 打开某单明细时按单查完整收货行（含免检行）；加载/失败态显式暴露，未确认前禁止提交。
+// 打开某单明细时按单查完整收货行（含免检行）；加载/失败/不完整态显式暴露，未确认前禁止提交。
 const {
   lines: selectedLines,
+  complete: linesComplete,
   pending: linesPending,
   error: linesError,
   refresh: refreshLines,
 } = useWmsReceivingLines(selectedOrderNo)
+
+// 收货现场「当前作业行」：多行单先选行再扫码，GS1 采集落到选中行（新收货行上尚无
+// 批号时无法按 lotNo 匹配）。单行单自动选中；未选中时扫码回退 lotNo 匹配/单行兜底。
+const activeLineId = ref('')
 
 // 每次用户发起操作（点单开抽屉）生成一次稳定幂等键，跨重试复用以防丢响应重复入库；
 // 选新单/继续后再点单才换新键。绝不在重试时重新生成。
@@ -137,10 +142,24 @@ const selectedCanPutaway = computed(() => selectedOrder.value?.isReleasedForPuta
 const selectedNeedsQuality = computed(
   () => Boolean(selectedOrder.value?.qualityGateStatus) && !selectedCanPutaway.value,
 )
-// 行数据未加载/失败前不得提交（否则会以空 lines 完成收货，丢采集）。
+// 行数据未加载/失败/不完整前不得提交（否则会以空或被截断的 lines 完成收货，静默漏采集）。
 const submitDisabled = computed(
-  () => completePending.value || linesPending.value || Boolean(linesError.value),
+  () =>
+    completePending.value ||
+    linesPending.value ||
+    Boolean(linesError.value) ||
+    !linesComplete.value,
 )
+
+// 当前作业行：显式选中优先，否则单行单自动落到唯一行。
+const activeLine = computed<ReceivingQualityGateLine | undefined>(() => {
+  const explicit = selectedLines.value.find((l) => l.inboundOrderLineId === activeLineId.value)
+  if (explicit) return explicit
+  return selectedLines.value.length === 1 ? selectedLines.value[0] : undefined
+})
+function selectLine(line: ReceivingQualityGateLine) {
+  activeLineId.value = line.inboundOrderLineId ?? ''
+}
 
 function onScan(value: string) {
   // 外层扫单号：直接按单号过滤列表（无独立 keyword 输入，扫码即筛）。
@@ -161,8 +180,9 @@ function closeSheet() {
   sheetOpen.value = false
 }
 
-// 扫 GS1 批次码：解析批号/效期/生产日期，按批号匹配收货行采集（单行时兜底落到该行）。
-// 采集值随 completeInbound 落库（#935 闭环）。多行新批次（行上尚无批号）用逐行批号手输。
+// 扫 GS1 批次码：解析批号/效期/生产日期采集到目标行。目标优先级：
+// 当前作业行（选中/单行）> 按扫出 lotNo 匹配已有批号的行。新收货行上尚无批号时
+// 靠先选行绑定，满足多行单的「扫码自动带出批号效期」。采集随 completeInbound 落库。
 function onGs1Scan(value: string) {
   gs1Notice.value = ''
   const parsed = parseGs1(value)
@@ -171,14 +191,17 @@ function onGs1Scan(value: string) {
     return
   }
   const lines = selectedLines.value
-  let target = parsed.lotNo
-    ? lines.find((l) => lineBatch(l).toLowerCase() === parsed.lotNo!.toLowerCase())
-    : undefined
-  if (!target && lines.length === 1) target = lines[0]
+  let target = activeLine.value
+  if (!target && parsed.lotNo) {
+    target = lines.find((l) => lineBatch(l).toLowerCase() === parsed.lotNo!.toLowerCase())
+  }
   if (!target?.inboundOrderLineId) {
-    gs1Notice.value = parsed.lotNo
-      ? `未匹配到批号 ${parsed.lotNo} 的收货行，请手动录入批号后重扫`
-      : '未匹配到收货行，请手动选择'
+    gs1Notice.value =
+      lines.length > 1
+        ? '多行单请先点选目标行再扫码'
+        : parsed.lotNo
+          ? `未匹配到批号 ${parsed.lotNo} 的收货行`
+          : '未匹配到收货行，请手动选择'
     return
   }
   captureLine(target.inboundOrderLineId, {
@@ -258,6 +281,7 @@ function resetFlow() {
   submitError.value = ''
   gs1Notice.value = ''
   capturedByLine.value = {}
+  activeLineId.value = ''
 }
 
 function backToList() {
@@ -372,11 +396,27 @@ function goPutaway() {
             v-for="line in selectedLines"
             :key="line.inboundOrderLineId"
             data-line
-            class="px-4 py-3"
+            role="button"
+            tabindex="0"
+            :data-active="activeLine?.inboundOrderLineId === line.inboundOrderLineId || undefined"
+            class="cursor-pointer px-4 py-3 data-[active]:bg-brand/8"
+            @click="selectLine(line)"
+            @keydown.enter="selectLine(line)"
           >
             <div class="flex items-center justify-between gap-2">
-              <div class="min-w-0 text-[15px] text-foreground">
+              <div class="flex min-w-0 items-center gap-1.5 text-[15px] text-foreground">
                 {{ line.skuCode ?? '' }} ×{{ line.receivedQuantity ?? 0 }}
+                <NvMobileTag
+                  v-if="
+                    selectedLines.length > 1 &&
+                    activeLine?.inboundOrderLineId === line.inboundOrderLineId
+                  "
+                  variant="brand"
+                  size="sm"
+                  data-active-line
+                >
+                  当前行
+                </NvMobileTag>
               </div>
               <div class="flex flex-wrap items-center justify-end gap-1.5">
                 <NvMobileTag :variant="gateVariant(line.qualityGateStatus)" size="sm">
@@ -411,6 +451,24 @@ function goPutaway() {
             </div>
           </div>
         </div>
+
+        <!-- 明细超量截断（未证明完整）：fail closed，禁止完成，避免静默漏采集。 -->
+        <NvNoticeBar
+          v-if="!linesPending && !linesError && selectedLines.length && !linesComplete"
+          tone="danger"
+          data-lines-incomplete
+        >
+          收货明细过多未取全，暂不能完成入库，请联系管理员
+        </NvNoticeBar>
+
+        <!-- 多行单：先点选目标行再扫码带出批号/效期。 -->
+        <p
+          v-if="!linesPending && !linesError && selectedLines.length > 1"
+          class="text-xs text-muted-foreground"
+          data-multiline-hint
+        >
+          多行单：先点选目标行，再扫码带出批号/效期
+        </p>
 
         <!-- GS1 扫码带出批号/效期。本页有两个 NvScanBar（外层单号 + 本抽屉 GS1），
              靠 active 严格互斥：抽屉开时外层 active=false 让出 document 捕获，仅本条 active，

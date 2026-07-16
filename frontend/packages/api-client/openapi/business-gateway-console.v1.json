@@ -1670,6 +1670,14 @@
               "default": false,
               "nullable": false
             }
+          },
+          {
+            "name": "inboundOrderNo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {

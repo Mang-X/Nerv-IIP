@@ -6937,6 +6937,7 @@ export type ListBusinessConsoleWmsReceivingQualityGatesData = {
         gateStatus?: string | null;
         keyword?: string | null;
         includeNotRequired?: boolean;
+        inboundOrderNo?: string | null;
     };
     url: '/api/business-console/v1/wms/receiving-quality-gates';
 };
