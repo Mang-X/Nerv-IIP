@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web;
@@ -63,7 +64,60 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
         Assert.Equal("ASSET-CNC-01", invalidation.AffectedResourceId);
     }
 
-    private static SchedulePlan CreatePlanWithAssignment(string planId, string resourceId)
+    [Fact]
+    public async Task Postgres_records_generated_calendar_invalidation_without_matching_released_or_other_calendar_plans()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        await using var database = await SchedulingTemporaryDatabase.CreateAsync(connectionString);
+        var services = new ServiceCollection();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddSchedulingPostgreSqlPersistence(database.ConnectionString);
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await dbContext.Database.MigrateAsync();
+
+        dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-target", "ASSET-CNC-01", "problem-target"));
+        var released = CreatePlanWithAssignment("plan-released", "ASSET-CNC-01", "problem-released");
+        released.Release(FixedNow);
+        dbContext.SchedulePlans.Add(released);
+        dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-other", "ASSET-LATHE-01", "problem-other"));
+        dbContext.ScheduleProblems.Add(CreateProblemSnapshot("problem-target", "CAL-A", "ASSET-CNC-01"));
+        dbContext.ScheduleProblems.Add(CreateProblemSnapshot("problem-released", "CAL-A", "ASSET-CNC-01"));
+        dbContext.ScheduleProblems.Add(CreateProblemSnapshot("problem-other", "CAL-B", "ASSET-LATHE-01"));
+        await dbContext.SaveChangesAsync();
+
+        var handler = new RecordSchedulePlanInvalidationsCommandHandler(dbContext, new FixedTimeProvider(FixedNow));
+        var response = await handler.Handle(
+            new RecordSchedulePlanInvalidationsCommand(
+                "org-001",
+                "env-dev",
+                "evt-calendar-1",
+                "masterData.WorkCalendarChanged",
+                "business-masterdata",
+                FixedNow,
+                SchedulingPlanInvalidationReasons.WorkCalendarChanged,
+                SchedulePlanInvalidationScope.GeneratedCalendar,
+                "CAL-A",
+                null,
+                null),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(1, response.MatchedPlanCount);
+        Assert.Equal(1, response.RecordedInvalidationCount);
+        Assert.Equal("plan-target", (await dbContext.SchedulePlanInvalidations.SingleAsync()).PlanId);
+    }
+
+    private static SchedulePlan CreatePlanWithAssignment(
+        string planId,
+        string resourceId,
+        string problemId = "problem-001")
     {
         return SchedulePlan.FromGeneratedPlan(
             "org-001",
@@ -71,7 +125,7 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
             SchedulePlanContractMapper.ToDomainSnapshot(new SchedulePlanContract(
                 ContractVersion: 1,
                 PlanId: planId,
-                ProblemId: "problem-001",
+                ProblemId: problemId,
                 ProblemFingerprint: $"fingerprint-{planId}",
                 AlgorithmVersion: "aps-lite-v1",
                 Status: SchedulePlanStatusContract.Generated,
@@ -96,6 +150,36 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
                 UnscheduledOperations: [],
                 ChangeSummary: [],
                 GanttItems: [])));
+    }
+
+    private static ScheduleProblemSnapshot CreateProblemSnapshot(string problemId, string calendarId, string resourceId)
+    {
+        var horizonStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var horizonEnd = horizonStart.AddHours(8);
+        var problem = new SchedulingProblemContract(
+            1,
+            problemId,
+            "org-001",
+            "env-dev",
+            horizonStart,
+            horizonEnd,
+            [],
+            [new SchedulingResourceContract(resourceId, "WC-CNC", [], 1, calendarId, resourceId)],
+            [new SchedulingCalendarContract(calendarId, [new SchedulingTimeWindowContract(horizonStart, horizonEnd, "regular")])],
+            [],
+            [],
+            [],
+            []);
+        return new ScheduleProblemSnapshot(
+            problemId,
+            1,
+            "org-001",
+            "env-dev",
+            $"fingerprint-{problemId}",
+            JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            horizonStart,
+            horizonEnd,
+            FixedNow);
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

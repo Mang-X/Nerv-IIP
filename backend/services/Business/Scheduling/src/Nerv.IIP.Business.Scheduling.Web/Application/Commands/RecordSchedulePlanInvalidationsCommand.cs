@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
+using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 
@@ -9,6 +10,8 @@ public enum SchedulePlanInvalidationScope
     Resource = 0,
     WorkOrderOrOperation = 1,
     AllInvalidatablePlans = 2,
+    GeneratedWorkCenter = 3,
+    GeneratedCalendar = 4,
 }
 
 public sealed record RecordSchedulePlanInvalidationsCommand(
@@ -39,7 +42,10 @@ public sealed class RecordSchedulePlanInvalidationsCommandValidator
         RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(64);
         RuleFor(x => x.ScopeValue)
             .NotEmpty()
-            .When(x => x.Scope is SchedulePlanInvalidationScope.Resource or SchedulePlanInvalidationScope.WorkOrderOrOperation);
+            .When(x => x.Scope is SchedulePlanInvalidationScope.Resource
+                or SchedulePlanInvalidationScope.WorkOrderOrOperation
+                or SchedulePlanInvalidationScope.GeneratedWorkCenter
+                or SchedulePlanInvalidationScope.GeneratedCalendar);
     }
 }
 
@@ -52,7 +58,10 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
         RecordSchedulePlanInvalidationsCommand request,
         CancellationToken cancellationToken)
     {
-        var plans = await QueryPlans(request).ToArrayAsync(cancellationToken);
+        var calendarResourceIdsByProblem = request.Scope == SchedulePlanInvalidationScope.GeneratedCalendar
+            ? await FindCalendarResourceIdsByProblemAsync(request, cancellationToken)
+            : [];
+        var plans = await QueryPlans(request, calendarResourceIdsByProblem.Keys).ToArrayAsync(cancellationToken);
         if (plans.Length == 0)
         {
             return new RecordSchedulePlanInvalidationsResponse(0, 0);
@@ -74,15 +83,22 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
                      .Where(x => !existing.Contains(x.PlanId))
                      .OrderBy(x => x.PlanId, StringComparer.Ordinal))
         {
-            var affectedResourceId = request.Scope == SchedulePlanInvalidationScope.Resource
+            var affectedResourceId = request.Scope is SchedulePlanInvalidationScope.Resource or SchedulePlanInvalidationScope.GeneratedWorkCenter
                 ? Normalize(request.ScopeValue)
                 : null;
             var (affectedWorkOrderId, affectedOperationId) = ResolveWorkOrderOrOperation(request, plans);
-            var affectedOperations = SelectAffectedOperations(
-                plan,
-                affectedResourceId,
-                affectedWorkOrderId,
-                affectedOperationId);
+            var affectedOperations = request.Scope switch
+            {
+                SchedulePlanInvalidationScope.GeneratedCalendar =>
+                    SelectAffectedOperationsForCalendar(plan, calendarResourceIdsByProblem[plan.ProblemId]),
+                SchedulePlanInvalidationScope.GeneratedWorkCenter =>
+                    SelectAffectedOperationsForWorkCenter(plan, Normalize(request.ScopeValue)),
+                _ => SelectAffectedOperations(
+                    plan,
+                    affectedResourceId,
+                    affectedWorkOrderId,
+                    affectedOperationId),
+            };
             var snapshot = SchedulePlanInvalidatedSnapshot.FromPlan(plan, affectedOperations);
             var invalidation = SchedulePlanInvalidation.Create(
                 request.OrganizationId,
@@ -106,7 +122,9 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
         return new RecordSchedulePlanInvalidationsResponse(plans.Length, recordedCount);
     }
 
-    private IQueryable<SchedulePlan> QueryPlans(RecordSchedulePlanInvalidationsCommand request)
+    private IQueryable<SchedulePlan> QueryPlans(
+        RecordSchedulePlanInvalidationsCommand request,
+        IReadOnlyCollection<string> calendarProblemIds)
     {
         var normalizedScopeValue = Normalize(request.ScopeValue);
         // Inline the invalidatable-status predicate: a custom method call (IsInvalidatableStatus) inside a
@@ -125,12 +143,64 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
             SchedulePlanInvalidationScope.Resource => query.Where(x => x.Assignments.Any(assignment =>
                 assignment.ResourceId == normalizedScopeValue ||
                 assignment.WorkCenterId == normalizedScopeValue)),
+            SchedulePlanInvalidationScope.GeneratedWorkCenter => query.Where(x =>
+                x.Status == SchedulePlanLifecycleStatus.Generated &&
+                x.Assignments.Any(assignment => assignment.WorkCenterId == normalizedScopeValue)),
+            SchedulePlanInvalidationScope.GeneratedCalendar => query.Where(x =>
+                x.Status == SchedulePlanLifecycleStatus.Generated &&
+                calendarProblemIds.Contains(x.ProblemId)),
             SchedulePlanInvalidationScope.WorkOrderOrOperation => query.Where(x => x.Assignments.Any(assignment =>
                 assignment.WorkOrderId == normalizedScopeValue ||
                 assignment.OperationId == normalizedScopeValue)),
             SchedulePlanInvalidationScope.AllInvalidatablePlans => query,
             _ => throw new ArgumentOutOfRangeException(nameof(request), request.Scope, "Unsupported schedule invalidation scope.")
         };
+    }
+
+    private async Task<Dictionary<string, IReadOnlySet<string>>> FindCalendarResourceIdsByProblemAsync(
+        RecordSchedulePlanInvalidationsCommand request,
+        CancellationToken cancellationToken)
+    {
+        var calendarId = Normalize(request.ScopeValue);
+        var snapshots = await dbContext.ScheduleProblems.AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId)
+            .Select(x => new { x.ProblemId, x.ProblemJson })
+            .ToArrayAsync(cancellationToken);
+        var matched = new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal);
+
+        foreach (var snapshot in snapshots)
+        {
+            SchedulingProblemContract? problem;
+            try
+            {
+                problem = System.Text.Json.JsonSerializer.Deserialize<SchedulingProblemContract>(
+                    snapshot.ProblemJson,
+                    SchedulingJson.Options);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                continue;
+            }
+
+            if (problem is null || !problem.Calendars.Any(x => string.Equals(x.CalendarId, calendarId, StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
+            var resourceIds = problem.Resources
+                .Where(x => string.Equals(x.CalendarId, calendarId, StringComparison.Ordinal))
+                .Select(x => x.ResourceId)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToHashSet(StringComparer.Ordinal);
+            if (resourceIds.Count > 0)
+            {
+                matched[snapshot.ProblemId] = resourceIds;
+            }
+        }
+
+        return matched;
     }
 
     private static (string? WorkOrderId, string? OperationId) ResolveWorkOrderOrOperation(
@@ -182,6 +252,24 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
 
         var selected = assignments.ToArray();
         return selected.Length == 0 ? plan.Assignments.ToArray() : selected;
+    }
+
+    private static IReadOnlyCollection<SchedulePlanAssignment> SelectAffectedOperationsForCalendar(
+        SchedulePlan plan,
+        IReadOnlySet<string> resourceIds)
+    {
+        return plan.Assignments
+            .Where(x => resourceIds.Contains(x.ResourceId))
+            .ToArray();
+    }
+
+    private static IReadOnlyCollection<SchedulePlanAssignment> SelectAffectedOperationsForWorkCenter(
+        SchedulePlan plan,
+        string workCenterId)
+    {
+        return plan.Assignments
+            .Where(x => string.Equals(x.WorkCenterId, workCenterId, StringComparison.Ordinal))
+            .ToArray();
     }
 
     private static string Normalize(string? value)
