@@ -28,7 +28,7 @@ import {
   type EquipmentRuntimeAvailabilityWindow,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
-import { computed, reactive, ref, watch, type Ref } from 'vue'
+import { computed, onScopeDispose, reactive, ref, watch, type Ref } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 
@@ -560,6 +560,15 @@ export function useMaintenancePlanRuntimeRemaining(plans: Ref<RuntimeRemainingPl
     () => void recompute(),
     { immediate: true },
   )
+
+  // Complete the AbortController lifecycle: when the owning scope is disposed (page unmount), supersede any
+  // in-flight round (generation bump → workers stop pulling and never commit map/pending to a dead scope)
+  // and abort in-flight reads so they don't keep hitting the Gateway → IIoT after the page is gone.
+  onScopeDispose(() => {
+    generation += 1
+    inFlight?.abort()
+    inFlight = undefined
+  })
 
   return { remainingByPlanId, remainingPending: pending, refreshRemaining: recompute }
 }

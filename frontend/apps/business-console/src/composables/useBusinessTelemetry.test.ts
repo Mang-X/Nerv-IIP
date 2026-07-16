@@ -1,6 +1,6 @@
 import { flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick, ref, shallowRef } from 'vue'
+import { effectScope, nextTick, ref, shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
@@ -434,5 +434,29 @@ describe('business telemetry composables', () => {
     await flushPromises()
     expect(remainingPending.value).toBe(false)
     expect(remainingByPlanId.value).toEqual({})
+  })
+
+  it('aborts in-flight reads and stops committing once the owning scope is disposed', async () => {
+    const created = deferredRuntimeHours({ honorAbort: true })
+    const plans = ref<RuntimeRemainingPlan[]>([runtimePlan({})])
+    const scope = effectScope()
+    let api!: ReturnType<typeof useMaintenancePlanRuntimeRemaining>
+    scope.run(() => {
+      api = useMaintenancePlanRuntimeRemaining(plans)
+    })
+    await nextTick()
+    await flushPromises()
+    expect(created).toHaveLength(1)
+    expect(rtState.concurrent).toBe(1) // one in-flight read
+
+    // Dispose the scope (page unmount): the in-flight read is aborted and the round is superseded.
+    scope.stop()
+    await flushPromises()
+    expect(rtState.concurrent).toBe(0)
+
+    // A late resolve after disposal must never commit results to the dead scope.
+    created[0].resolveWith(500)
+    await flushPromises()
+    expect(api.remainingByPlanId.value.p1).toEqual({ status: 'loading' })
   })
 })
