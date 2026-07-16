@@ -98,7 +98,8 @@ vi.mock('@/composables/useBusinessWms', () => ({
     ),
     complete: computed(() => {
       const l = wmsState.linesByOrderNo[toValue(orderNo)] ?? []
-      return l.length >= (wmsState.linesTotal ?? l.length)
+      const t = wmsState.linesTotal ?? l.length
+      return t > 0 && l.length >= t
     }),
     pending: computed(() => wmsState.linesPending),
     error: computed(() => wmsState.linesError),
@@ -214,7 +215,6 @@ describe('WMS 收货入库', () => {
     // 批号手输框预填后端既有批号
     const batch = document.querySelector<HTMLInputElement>('[data-batch-input]')!
     expect(batch.value).toBe('LOT-A')
-    wrapper.unmount()
   })
 
   it('待检单据不出现「去上架」，显示待质检门禁提示', async () => {
@@ -223,7 +223,6 @@ describe('WMS 收货入库', () => {
     await flushPromises()
     expect(document.querySelector('[data-quality-gate-notice]')).toBeTruthy()
     expect(document.querySelector('[data-testid="go-putaway"]')).toBeNull()
-    wrapper.unmount()
   })
 
   it('合格（已放行）单据出现「去上架」引导，点按跳上架页', async () => {
@@ -235,7 +234,6 @@ describe('WMS 收货入库', () => {
     expect(document.querySelector('[data-quality-gate-notice]')).toBeNull()
     putaway.click()
     expect(push).toHaveBeenCalledWith('/wms/putaway')
-    wrapper.unmount()
   })
 
   it('确认完成 → 以单 id/稳定 idempotencyKey/采集 lines 调用 completeInbound（批号效期落库）', async () => {
@@ -252,7 +250,6 @@ describe('WMS 收货入库', () => {
     expect(lines).toEqual([
       { lineNo: '1', lotNo: 'LOT-A', productionDate: undefined, expiryDate: '2027-12-31' },
     ])
-    wrapper.unmount()
   })
 
   it('多行新批次：逐行批号手输 → 随 completeInbound 落库', async () => {
@@ -279,7 +276,6 @@ describe('WMS 收货入库', () => {
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
     const lines = wmsState.completeInbound.mock.calls.at(-1)?.[2] as Array<Record<string, unknown>>
     expect(lines[0]).toMatchObject({ lineNo: '1', lotNo: 'NEW-LOT-9' })
-    wrapper.unmount()
   })
 
   it('重试（不重新点单）复用同一 idempotencyKey；重新点单为新操作换新键', async () => {
@@ -305,7 +301,6 @@ describe('WMS 收货入库', () => {
     await flushPromises()
     expect(wmsState.completeInbound).toHaveBeenCalledTimes(3)
     expect(wmsState.completeInbound.mock.calls[2][1]).not.toBe(firstKey)
-    wrapper.unmount()
   })
 
   it('completePending 时确认按钮禁用（防重）', async () => {
@@ -315,7 +310,6 @@ describe('WMS 收货入库', () => {
     await flushPromises()
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     expect(confirm.disabled).toBe(true)
-    wrapper.unmount()
   })
 
   it('行数据加载中：禁止提交并显示加载态', async () => {
@@ -326,7 +320,6 @@ describe('WMS 收货入库', () => {
     expect(document.querySelector('[data-lines-loading]')).toBeTruthy()
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     expect(confirm.disabled).toBe(true)
-    wrapper.unmount()
   })
 
   it('行数据加载失败：禁止提交并显示重试入口', async () => {
@@ -337,7 +330,6 @@ describe('WMS 收货入库', () => {
     expect(document.querySelector('[data-testid="lines-error"]')).toBeTruthy()
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     expect(confirm.disabled).toBe(true)
-    wrapper.unmount()
   })
 
   it('明细超量未取全（total>已取回）：禁止提交并提示不完整（fail closed）', async () => {
@@ -348,7 +340,23 @@ describe('WMS 收货入库', () => {
     expect(document.querySelector('[data-lines-incomplete]')).toBeTruthy()
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     expect(confirm.disabled).toBe(true)
-    wrapper.unmount()
+  })
+
+  it('明细为空（total=0/成功空集）：判为不完整，禁止提交并可重试（fail closed）', async () => {
+    // 入库单按域约束必有行；空集 = 精确单号未命中/投影滞后/异常 → 不得空明细完成。
+    wmsState.linesByOrderNo['IB-2026-0001'] = []
+    wmsState.linesTotal = 0
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    expect(document.querySelector('[data-lines-incomplete]')).toBeTruthy()
+    expect(document.querySelector('[data-testid="lines-incomplete-retry"]')).toBeTruthy()
+    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
+    expect(confirm.disabled).toBe(true)
+    // GS1 扫码条在不完整态不渲染
+    expect(document.querySelector('input[placeholder*="GS1"]')).toBeNull()
+    document.querySelector<HTMLButtonElement>('[data-testid="lines-incomplete-retry"]')!.click()
+    expect(wmsState.linesRefresh).toHaveBeenCalledTimes(1)
   })
 
   it('多行单：点选目标行 → 扫码（仅效期，无批号）绑定到选中行并落库', async () => {
@@ -386,10 +394,8 @@ describe('WMS 收货入库', () => {
     gs1Input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
     await flushPromises()
     expect(document.querySelector('[data-gs1-notice]')?.textContent).toContain('先点选目标行')
-    // 点选第 2 行 → 扫码仅效期 → 绑定到第 2 行
-    document
-      .querySelectorAll('[data-line]')[1]!
-      .dispatchEvent(new Event('click', { bubbles: true }))
+    // 用独立「选此行」按钮点选第 2 行（容器非交互）→ 扫码仅效期 → 绑定到第 2 行
+    document.querySelectorAll<HTMLButtonElement>('[data-select-line]')[1]!.click()
     await flushPromises()
     gs1Input.value = `172608${'01'}${GS}`
     gs1Input.dispatchEvent(new Event('input'))
@@ -400,7 +406,6 @@ describe('WMS 收货入库', () => {
     expect(lines).toEqual([
       { lineNo: '2', lotNo: undefined, productionDate: undefined, expiryDate: '2026-08-01' },
     ])
-    wrapper.unmount()
   })
 
   it('完成后显示成功 Result，文案为「入库完成，待质检」', async () => {
@@ -413,7 +418,6 @@ describe('WMS 收货入库', () => {
     const result = wrapper.find('[data-result][data-status="success"]')
     expect(result.exists()).toBe(true)
     expect(wrapper.text()).toContain('入库完成，待质检')
-    wrapper.unmount()
   })
 
   it('错误时显示错误横幅', () => {
@@ -475,7 +479,6 @@ describe('WMS 收货入库 · GS1 扫码效期', () => {
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
     const lines = wmsState.completeInbound.mock.calls.at(-1)?.[2] as Array<Record<string, unknown>>
     expect(lines[0]).toMatchObject({ lotNo: 'LOT-A', expiryDate: '2026-08-01' })
-    wrapper.unmount()
   })
 
   it('扫非 GS1 码提示未识别', async () => {
@@ -488,6 +491,5 @@ describe('WMS 收货入库 · GS1 扫码效期', () => {
     gs1Input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
     await flushPromises()
     expect(document.querySelector('[data-gs1-notice]')?.textContent).toContain('未识别')
-    wrapper.unmount()
   })
 })

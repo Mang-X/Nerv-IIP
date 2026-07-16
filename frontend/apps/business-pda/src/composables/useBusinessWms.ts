@@ -261,8 +261,10 @@ export function useWmsReceivingLines(inboundOrderNo: MaybeRefOrGetter<string>) {
     ),
   )
   const total = computed(() => listTotal(envelope.value))
-  // 完整性：已取回的行数覆盖 total（未被 take 截断）。空单据（total=0）视为完整。
-  const complete = computed(() => lines.value.length >= total.value)
+  // 完整性 fail-closed：入库单按域约束必有 ≥1 行，故要求 total>0 且已取回行数覆盖 total
+  // （未被 take 截断）。total=0/空集（精确单号未命中、投影暂不一致、数据异常）判为不完整，
+  // 调用方禁止提交并展示可重试异常态，避免以空采集行静默完成收货。
+  const complete = computed(() => total.value > 0 && lines.value.length >= total.value)
 
   return {
     lines,

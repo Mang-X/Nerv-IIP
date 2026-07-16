@@ -387,36 +387,38 @@ function goPutaway() {
           @retry="() => refreshLines()"
         />
 
-        <!-- 行级明细：批号（可手输）+ 质检门禁 + 效期三色 -->
+        <!-- 明细为空或不完整：total=0（精确单号未命中/投影滞后/异常）或超量截断，
+             入库单按域约束必有 ≥1 行，故 fail closed——禁止完成，展示可重试异常态。 -->
         <div
-          v-else-if="selectedLines.length"
-          class="divide-y divide-border overflow-hidden rounded-lg border border-border"
+          v-else-if="!linesComplete"
+          class="rounded-lg border border-dashed border-destructive/40 bg-card px-4 py-6 text-center"
+          data-lines-incomplete
         >
+          <p class="text-sm text-destructive">未取到该单完整收货明细，暂不能完成入库</p>
+          <NvMobileButton
+            size="sm"
+            variant="outline"
+            class="mt-3"
+            data-testid="lines-incomplete-retry"
+            @click="() => refreshLines()"
+          >
+            重试
+          </NvMobileButton>
+        </div>
+
+        <!-- 行级明细（已确认完整、非空）：批号（可手输）+ 质检门禁 + 效期三色。
+             容器保持非交互；多行「选此行」用独立 radio 按钮，避免嵌套交互控件语义混淆。 -->
+        <div v-else class="divide-y divide-border overflow-hidden rounded-lg border border-border">
           <div
             v-for="line in selectedLines"
             :key="line.inboundOrderLineId"
             data-line
-            role="button"
-            tabindex="0"
             :data-active="activeLine?.inboundOrderLineId === line.inboundOrderLineId || undefined"
-            class="cursor-pointer px-4 py-3 data-[active]:bg-brand/8"
-            @click="selectLine(line)"
-            @keydown.enter="selectLine(line)"
+            class="px-4 py-3 data-[active]:bg-brand/8"
           >
             <div class="flex items-center justify-between gap-2">
-              <div class="flex min-w-0 items-center gap-1.5 text-[15px] text-foreground">
+              <div class="min-w-0 text-[15px] text-foreground">
                 {{ line.skuCode ?? '' }} ×{{ line.receivedQuantity ?? 0 }}
-                <NvMobileTag
-                  v-if="
-                    selectedLines.length > 1 &&
-                    activeLine?.inboundOrderLineId === line.inboundOrderLineId
-                  "
-                  variant="brand"
-                  size="sm"
-                  data-active-line
-                >
-                  当前行
-                </NvMobileTag>
               </div>
               <div class="flex flex-wrap items-center justify-end gap-1.5">
                 <NvMobileTag :variant="gateVariant(line.qualityGateStatus)" size="sm">
@@ -433,6 +435,21 @@ function goPutaway() {
               </div>
             </div>
             <div class="mt-2 flex items-center gap-2">
+              <NvMobileButton
+                v-if="selectedLines.length > 1"
+                size="sm"
+                :aria-pressed="activeLine?.inboundOrderLineId === line.inboundOrderLineId"
+                :aria-label="`选为当前作业行：${line.skuCode ?? ''}`"
+                :variant="
+                  activeLine?.inboundOrderLineId === line.inboundOrderLineId ? 'primary' : 'outline'
+                "
+                data-select-line
+                @click="selectLine(line)"
+              >
+                {{
+                  activeLine?.inboundOrderLineId === line.inboundOrderLineId ? '当前行' : '选此行'
+                }}
+              </NvMobileButton>
               <NvMobileInput
                 :model-value="lineBatch(line)"
                 placeholder="批号"
@@ -452,18 +469,9 @@ function goPutaway() {
           </div>
         </div>
 
-        <!-- 明细超量截断（未证明完整）：fail closed，禁止完成，避免静默漏采集。 -->
-        <NvNoticeBar
-          v-if="!linesPending && !linesError && selectedLines.length && !linesComplete"
-          tone="danger"
-          data-lines-incomplete
-        >
-          收货明细过多未取全，暂不能完成入库，请联系管理员
-        </NvNoticeBar>
-
         <!-- 多行单：先点选目标行再扫码带出批号/效期。 -->
         <p
-          v-if="!linesPending && !linesError && selectedLines.length > 1"
+          v-if="linesComplete && selectedLines.length > 1"
           class="text-xs text-muted-foreground"
           data-multiline-hint
         >
@@ -474,7 +482,7 @@ function goPutaway() {
              靠 active 严格互斥：抽屉开时外层 active=false 让出 document 捕获，仅本条 active，
              不触发 ScanBar「单 ScanBar 页面」的双写仲裁限制。 -->
         <NvScanBar
-          v-if="!linesPending && !linesError && selectedLines.length"
+          v-if="linesComplete && selectedLines.length"
           placeholder="扫描 GS1 批次码带出效期"
           :active="sheetOpen && !completed"
           @scan="onGs1Scan"
