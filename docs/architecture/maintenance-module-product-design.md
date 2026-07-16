@@ -49,7 +49,7 @@
 ## 5. 数据来源(facade 代码事实)
 - 保养计划:`listBusinessConsoleMaintenancePlans`(纯 DB 投影,支持 `deviceAssetId` 过滤;返回 `interval`/`nextDueOn`/`runtimeHourInterval`/`nextDueRuntimeHours`/`lastGeneratedRuntimeHours`,**不含**剩余小时——剩余由前端派生)、`createBusinessConsoleMaintenancePlan`(`interval` 可空、`runtimeHourInterval` 可选,二选一或都填)、`generateDueBusinessConsoleMaintenanceWorkOrders`。
 - 运行小时:`queryBusinessConsoleTelemetryRuntimeHours`(窗口聚合 `totalRuntimeHours` / `hasRuntimeSamples` / 日粒度)。
-- 可靠性 / 工单 / 点检 / 备件 / 可用窗口:各自 facade,设备详情按返回设备字段客户端收敛,并对 plans/work-orders 用 `deviceAssetId` 设备范围查询(避免全局分页遗漏)。
+- 可靠性 / 工单 / 点检 / 备件 / 可用窗口:各自 facade,设备详情按返回设备字段客户端收敛。**仅保养计划**列表支持 `deviceAssetId` 服务端过滤(设备范围查询);工单列表当前仍是全局 `skip/take` 分页 + 页面客户端按设备过滤,目标设备工单落在全局前 N 条之外时可能遗漏,工单读面的服务端设备过滤为后续增强。
 
 ## 6. 领域口径(代码事实)
 - `MaintenancePlan.Interval` **可空**:运行小时型计划无日历触发、无 `NextDueOn`,只在累计运行小时越过阈值时开单(PM 调度器 `generate-due`)。一个计划必须至少有一个触发(日历 / 运行小时 / 两者)。
