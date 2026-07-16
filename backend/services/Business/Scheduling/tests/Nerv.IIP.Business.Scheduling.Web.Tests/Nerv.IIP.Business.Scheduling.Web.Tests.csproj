@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\Nerv.IIP.Business.Scheduling.Web\Nerv.IIP.Business.Scheduling.Web.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.EquipmentRuntime\Nerv.IIP.Contracts.EquipmentRuntime.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.IndustrialTelemetry\Nerv.IIP.Contracts.IndustrialTelemetry.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.MasterData\Nerv.IIP.Contracts.MasterData.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Scheduling\Nerv.IIP.Contracts.Scheduling.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Testing\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
   </ItemGroup>
