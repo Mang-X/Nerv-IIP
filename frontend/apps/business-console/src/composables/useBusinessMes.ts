@@ -1301,6 +1301,75 @@ export function useMesTelemetryProductionReportCandidates() {
   }
 }
 
+export interface MesWorkOrderProducedLot {
+  producedLotNo: string
+  reportNo?: string
+  goodQuantity: number
+  serialNo?: string
+}
+
+// 工单的真实产出批次来源：完工入库创建端点强制引用 MES 已生成的产出批次
+// （CreateFinishedGoodsReceiptRequestCommandHandler 在数量校验之前即拒绝空/不存在的 producedLotNo），
+// 页面据此让操作员从工单真实报工产出中选择，而非前端伪造。产出批次即报工时生成的 OutputLotGenealogy，
+// 与生产报工一一对应，故从工单的报工列表按 producedLotNo 去重取得（列表 keyword 命中工单号，前端再精确过滤）。
+export function useMesWorkOrderProducedLots(workOrderId: () => string) {
+  const filters = defaultFilters()
+
+  const reportsQuery = useQuery(() => {
+    const workOrderIdValue = workOrderId().trim()
+    return {
+      ...listBusinessConsoleMesProductionReportsQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          ...optionalQuery('keyword', workOrderIdValue),
+          skip: 0,
+          take: DEFAULT_TAKE,
+        },
+      }),
+      enabled: hasBusinessContext(filters) && isNonEmpty(workOrderIdValue),
+    }
+  })
+
+  const producedLots = computed<MesWorkOrderProducedLot[]>(() => {
+    const workOrderIdValue = workOrderId().trim()
+    if (!isNonEmpty(workOrderIdValue)) return []
+    const rows = envelopeItems<
+      BusinessConsoleMesProductionReportRow,
+      BusinessConsoleMesProductionReportListEnvelope
+    >(reportsQuery.data.value)
+    const seen = new Set<string>()
+    const lots: MesWorkOrderProducedLot[] = []
+    for (const row of rows) {
+      const lot = row.producedLotNo?.trim()
+      // 仅取该工单、有产出批次、良品>0 的报工（排除仅报废/返修与冲销负向行），按批次号去重。
+      if (
+        !lot ||
+        row.workOrderId !== workOrderIdValue ||
+        (row.goodQuantity ?? 0) <= 0 ||
+        seen.has(lot)
+      ) {
+        continue
+      }
+      seen.add(lot)
+      lots.push({
+        producedLotNo: lot,
+        reportNo: row.reportNo,
+        goodQuantity: row.goodQuantity ?? 0,
+        serialNo: row.serialNo?.trim() || undefined,
+      })
+    }
+    return lots
+  })
+
+  return {
+    producedLots,
+    producedLotsError: reportsQuery.error,
+    producedLotsPending: reportsQuery.isLoading,
+    refreshProducedLots: () => refetchWithBusinessContext(filters, reportsQuery),
+  }
+}
+
 export function useMesFinishedGoodsReceipts() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()

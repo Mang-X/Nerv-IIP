@@ -3292,6 +3292,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     reversalReason?: string | null;
     workOrderStatus?: string | null;
     reversalReportNo?: string | null;
+    producedLotNo?: string | null;
+    serialNo?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListWithoutStatusRequest = {

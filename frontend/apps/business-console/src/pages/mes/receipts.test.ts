@@ -30,6 +30,7 @@ const receiptState = vi.hoisted(() => ({
   refreshReceiptRequests: vi.fn(async () => undefined),
   retryInventoryPosting: vi.fn(async () => undefined),
   rows: [] as Array<Record<string, unknown>>,
+  producedLots: [] as Array<{ producedLotNo: string; reportNo?: string; goodQuantity: number }>,
   retryingRequestNo: undefined as unknown as { value: string | null },
   keyCounter: 0,
 }))
@@ -38,6 +39,13 @@ vi.mock('@/composables/useBusinessMes', () => {
   return {
     // 唯一键生成器：每次调用递增计数，用于验证「同一工单连续两次登记 → 两个不同幂等键」。
     makeIdempotencyKey: (prefix: string) => `${prefix}-key-${++receiptState.keyCounter}`,
+    // 工单产出批次来源：页面据此选定 producedLotNo（后端强制引用真实产出批次）。
+    useMesWorkOrderProducedLots: () => ({
+      producedLots: ref(receiptState.producedLots),
+      producedLotsError: ref(undefined),
+      producedLotsPending: ref(false),
+      refreshProducedLots: vi.fn(async () => undefined),
+    }),
     useMesFinishedGoodsReceipts: () => ({
       createReceiptRequest: receiptState.createReceiptRequest,
       createReceiptRequestError: receiptState.createReceiptRequestError,
@@ -132,6 +140,8 @@ describe('MES receipts — failed inventory posting retry', () => {
     receiptState.createReceiptRequest = vi.fn(async (_body: unknown) => undefined)
     receiptState.createReceiptRequestError = { value: undefined }
     receiptState.refreshReceiptRequests = vi.fn(async () => undefined)
+    // 默认单一产出批次：自动选中，让创建相关用例可提交（后端强制引用真实产出批次）。
+    receiptState.producedLots = [{ producedLotNo: 'LOT-FG-1', reportNo: 'PRPT-1', goodQuantity: 8 }]
     receiptState.keyCounter = 0
     receiptState.retryInventoryPosting.mockClear()
     receiptState.retryingRequestNo = shallowRef<string | null>(null)
@@ -242,6 +252,32 @@ describe('MES receipts — failed inventory posting retry', () => {
     // 不再是「按工单恒定」的键（否则第二笔会回放第一张或幂等冲突）。
     expect(key1).not.toBe('receipt-WO-1')
     expect(notifySpies.success).toHaveBeenCalledTimes(2)
+  })
+
+  it('carries the selected produced lot in the create request (auto-selected when single)', async () => {
+    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await fillCostAndSubmit(wrapper)
+
+    expect(receiptState.createReceiptRequest).toHaveBeenCalledTimes(1)
+    const body = receiptState.createReceiptRequest.mock.calls[0]![0] as { producedLotNo?: string }
+    // 后端在数量校验之前强制引用真实产出批次：请求必须携带工单报工产出的 producedLotNo。
+    expect(body.producedLotNo).toBe('LOT-FG-1')
+  })
+
+  it('blocks create and guides reporting when the work order has no produced lots', async () => {
+    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    receiptState.producedLots = []
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await fillCostAndSubmit(wrapper)
+
+    // 无产出批次 → canCreate 为假，提交被拦截，且给出「先报工产出」引导而非盲提交后 500。
+    expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('该工单暂无可入库的产出批次')
   })
 
   it('keeps success feedback when the post-create list refresh fails (no contradictory error toast)', async () => {

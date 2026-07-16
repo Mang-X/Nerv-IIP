@@ -51,6 +51,13 @@ vi.mock('@/composables/useBusinessMes', () => ({
     nextStep: '请按质量或设备处理要求跟进。',
   }),
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
+  useMesWorkOrderProducedLots: () => ({
+    // 单一产出批次自动选中，使完工入库提交用例可通过 canCreate（后端强制引用真实产出批次）。
+    producedLots: ref([{ producedLotNo: 'LOT-WO-001', reportNo: 'PRPT-1', goodQuantity: 10 }]),
+    producedLotsError: ref(undefined),
+    producedLotsPending: ref(false),
+    refreshProducedLots: vi.fn(),
+  }),
   useMesFinishedGoodsReceipts: () => ({
     createReceiptRequest: mesSpies.createReceiptRequest,
     createReceiptRequestError: ref(undefined),

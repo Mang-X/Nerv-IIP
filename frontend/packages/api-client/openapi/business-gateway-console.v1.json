@@ -35041,6 +35041,14 @@
           "reversalReportNo": {
             "type": "string",
             "nullable": true
+          },
+          "producedLotNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

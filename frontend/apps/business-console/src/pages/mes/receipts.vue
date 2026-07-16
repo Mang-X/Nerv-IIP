@@ -9,7 +9,11 @@ import {
   receiptStatusTone,
 } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
-import { makeIdempotencyKey, useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
+import {
+  makeIdempotencyKey,
+  useMesFinishedGoodsReceipts,
+  useMesWorkOrderProducedLots,
+} from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
@@ -102,6 +106,7 @@ const form = reactive({
   environmentId: filters.environmentId,
   workOrderId: '',
   skuId: '',
+  producedLotNo: '',
   quantity: '1',
   unitCost: '',
   uomCode: 'EA',
@@ -110,6 +115,27 @@ const form = reactive({
   // 成功后 resetCreateForm 轮换新键→同一工单连续登记产生两笔申请（真正支持高频连录）。
   idempotencyKey: makeIdempotencyKey('receipt'),
 })
+
+// 完工入库必须引用工单真实报工产出的 producedLotNo（后端在数量校验之前强制，见 useMesWorkOrderProducedLots）。
+// 从工单报工列表取产出批次；操作员在 Sheet 内选择，前端不伪造批次号。
+const { producedLots, producedLotsPending } = useMesWorkOrderProducedLots(() => form.workOrderId)
+// 单一产出批次时自动选中（最常见场景）；当前选择若已不在候选集合中（工单切换/成功后重置）则清空，避免提交陈旧批次。
+function applyDefaultProducedLot() {
+  const lots = producedLots.value
+  if (lots.length === 1) {
+    form.producedLotNo = lots[0].producedLotNo
+  } else if (!lots.some((l) => l.producedLotNo === form.producedLotNo)) {
+    form.producedLotNo = ''
+  }
+}
+watch(producedLots, applyDefaultProducedLot, { immediate: true })
+const producedLotPlaceholder = computed(() =>
+  producedLotsPending.value
+    ? '加载产出批次…'
+    : producedLots.value.length === 0
+      ? '暂无产出批次'
+      : '选择产出批次',
+)
 
 const listErrorMessage = computed(() => formatError(receiptRequestsError.value))
 const hasReceiptContext = computed(() => isNonEmpty(form.workOrderId) && isNonEmpty(form.skuId))
@@ -121,6 +147,8 @@ const canCreate = computed(
     isNonEmpty(form.environmentId) &&
     isNonEmpty(form.workOrderId) &&
     isNonEmpty(form.skuId) &&
+    // 必须选定工单真实产出批次（后端强制），否则提交必被拒于数量校验之前。
+    isNonEmpty(form.producedLotNo) &&
     toPositiveNumber(form.quantity) !== undefined &&
     toPositiveNumber(form.unitCost) !== undefined &&
     isNonEmpty(form.uomCode) &&
@@ -191,6 +219,8 @@ function resetCreateForm() {
   form.quantity = '1'
   form.unitCost = ''
   form.uomCode = 'EA'
+  // 下一笔重新确定产出批次：单一批次自动重选、多批次清空由操作员重选，避免连录误复用上一批次。
+  applyDefaultProducedLot()
   form.requestedAtUtc = toLocalDateTimeInput(new Date())
   // 仅在登记成功后调用：轮换幂等键，使同一工单的下一笔登记成为一笔独立申请（连录不回放旧单）。
   form.idempotencyKey = makeIdempotencyKey('receipt')
@@ -203,6 +233,7 @@ async function submitReceiptRequest() {
     environmentId: form.environmentId.trim(),
     workOrderId: form.workOrderId.trim(),
     skuId: form.skuId.trim(),
+    producedLotNo: form.producedLotNo.trim(),
     quantity: toPositiveNumber(form.quantity),
     unitCost: toPositiveNumber(form.unitCost),
     uomCode: form.uomCode.trim(),
@@ -453,6 +484,33 @@ function isNonEmpty(value: string) {
             <NvField>
               <NvFieldLabel for="receipt-sku">成品</NvFieldLabel>
               <NvInput id="receipt-sku" v-model="form.skuId" readonly required />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="receipt-produced-lot">产出批次</NvFieldLabel>
+              <NvSelect
+                v-model="form.producedLotNo"
+                :disabled="producedLotsPending || producedLots.length === 0"
+              >
+                <NvSelectTrigger id="receipt-produced-lot" class="w-full" aria-label="选择产出批次">
+                  <NvSelectValue :placeholder="producedLotPlaceholder" />
+                </NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem
+                    v-for="lot in producedLots"
+                    :key="lot.producedLotNo"
+                    :value="lot.producedLotNo"
+                    >{{ lot.producedLotNo }}（良品
+                    {{ formatQuantity(lot.goodQuantity) }}）</NvSelectItem
+                  >
+                </NvSelectContent>
+              </NvSelect>
+              <!-- 后端强制引用工单真实产出批次：无产出报工时明确引导先报工，而非让操作员盲提交后才 500。 -->
+              <p
+                v-if="!producedLotsPending && producedLots.length === 0"
+                class="text-xs text-muted-foreground"
+              >
+                该工单暂无可入库的产出批次，请先在报工中登记产出（良品）后再登记入库。
+              </p>
             </NvField>
             <NvField>
               <NvFieldLabel for="receipt-quantity">入库数量</NvFieldLabel>

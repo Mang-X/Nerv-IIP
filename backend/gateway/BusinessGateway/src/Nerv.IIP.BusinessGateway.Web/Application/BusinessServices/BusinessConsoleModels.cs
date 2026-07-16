@@ -3785,7 +3785,12 @@ public sealed record BusinessConsoleMesProductionReportRow(
     string? WorkOrderStatus = null,
     // 冲销本报工的负向记录单号(服务端逐行反查):非空即"已冲销",供 Console 跨分页稳定判定已冲销与
     // 原单→冲销单互链,不再从当前页推断(MAN-444/#798 review)。
-    string? ReversalReportNo = null);
+    string? ReversalReportNo = null,
+    // 产出批次 / 序列号(MES 事实层 ProductionReportFact 已有,facade 直接透传):完工入库创建端点强制引用
+    // MES 已生成的产出批次(见 CreateFinishedGoodsReceiptRequestCommandHandler),Console 据此让操作员从工单
+    // 真实报工产出中选择 producedLotNo,而非前端伪造(MAN-445/#799 review)。
+    string? ProducedLotNo = null,
+    string? SerialNo = null);
 
 public sealed record BusinessConsoleMesRecordDefectRequest(
     string OrganizationId,
