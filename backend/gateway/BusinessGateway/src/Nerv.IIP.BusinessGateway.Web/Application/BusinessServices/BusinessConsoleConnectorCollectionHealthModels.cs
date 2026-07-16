@@ -12,3 +12,25 @@ public sealed record BusinessConsoleConnectorCollectionHealthResponse(
     long? DroppedCount,
     long? ErrorCount,
     string? SourceSystem);
+
+public sealed record BusinessConsoleConnectorCollectionHealthListRequest(
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record BusinessConsoleConnectorCollectionHealthListResponse(
+    IReadOnlyList<BusinessConsoleConnectorCollectionHealthListItem> Items,
+    int Total = 0);
+
+public sealed record BusinessConsoleConnectorCollectionHealthListItem(
+    string ConnectorId,
+    string ConnectorName,
+    string Status,
+    string? StaleReason,
+    DateTimeOffset? LastHeartbeatAtUtc,
+    DateTimeOffset? MetricsReportedAtUtc,
+    DateTimeOffset? LastSampleAtUtc,
+    long? ReceivedCount,
+    long? DroppedCount,
+    long? ErrorCount,
+    Guid? CounterEpoch,
+    string? SourceSystem);

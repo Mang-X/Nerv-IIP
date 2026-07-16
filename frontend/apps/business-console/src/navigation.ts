@@ -722,6 +722,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           requiredPermissions: [P.iiotTelemetryRead],
         },
         {
+          title: '采集健康',
+          icon: NetworkIcon,
+          to: { path: '/equipment/telemetry/connectors' },
+          requiredPermissions: [P.iiotTelemetryRead],
+        },
+        {
           title: '报警规则',
           icon: Settings2Icon,
           to: { path: '/equipment/telemetry/alarm-rules' },

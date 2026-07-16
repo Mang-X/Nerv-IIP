@@ -47,6 +47,41 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal(JsonValueKind.Null, data.GetProperty("droppedCount").ValueKind);
         Assert.Equal(JsonValueKind.Null, data.GetProperty("errorCount").ValueKind);
     }
+
+    [Fact]
+    public async Task Connector_collection_health_list_authorizes_telemetry_read_and_forwards_scope()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var appHub = new RecordingAppHubClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessAppHubClient>();
+            services.AddSingleton<IBusinessAppHubClient>(appHub);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/telemetry/connectors/collection-health?organizationId=org-001&environmentId=env-dev");
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = json.RootElement.GetProperty("data");
+        var items = data.GetProperty("items");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.IiotTelemetryRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("org-001", appHub.LastListRequest!.OrganizationId);
+        Assert.Equal("env-dev", appHub.LastListRequest.EnvironmentId);
+        Assert.Equal("internal-test-token", appHub.LastToken);
+        Assert.Equal(2, data.GetProperty("total").GetInt32());
+        Assert.Equal("modbus-main", items[0].GetProperty("connectorId").GetString());
+        Assert.Equal("stale", items[0].GetProperty("status").GetString());
+        Assert.Equal("offline", items[0].GetProperty("staleReason").GetString());
+        Assert.Equal("modbus", items[0].GetProperty("sourceSystem").GetString());
+        Assert.Equal("opcua-main", items[1].GetProperty("connectorId").GetString());
+        Assert.Equal(JsonValueKind.Null, items[1].GetProperty("staleReason").ValueKind);
+    }
+
     [Fact]
     public void Complete_work_order_validator_limits_actual_technician_reference_length()
     {
@@ -731,11 +766,24 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     {
         public string? LastToken { get; private set; }
         public BusinessConsoleConnectorCollectionHealthRequest? LastRequest { get; private set; }
+        public BusinessConsoleConnectorCollectionHealthListRequest? LastListRequest { get; private set; }
         public Task<BusinessConsoleConnectorCollectionHealthResponse> GetCollectionHealthAsync(string internalBearerToken, BusinessConsoleConnectorCollectionHealthRequest request, CancellationToken cancellationToken)
         {
             LastToken = internalBearerToken;
             LastRequest = request;
             return Task.FromResult(new BusinessConsoleConnectorCollectionHealthResponse(request.ConnectorId, "unknown", null, null, null, null, null, null, null));
+        }
+
+        public Task<BusinessConsoleConnectorCollectionHealthListResponse> GetCollectionHealthListAsync(string internalBearerToken, BusinessConsoleConnectorCollectionHealthListRequest request, CancellationToken cancellationToken)
+        {
+            LastToken = internalBearerToken;
+            LastListRequest = request;
+            return Task.FromResult(new BusinessConsoleConnectorCollectionHealthListResponse(
+                [
+                    new BusinessConsoleConnectorCollectionHealthListItem("modbus-main", "Modbus Main", "stale", "offline", null, null, null, 50, 9, 2, Guid.Parse("22222222-2222-2222-2222-222222222222"), "modbus"),
+                    new BusinessConsoleConnectorCollectionHealthListItem("opcua-main", "OPC UA Main", "current", null, null, null, null, 100, 4, 1, Guid.Parse("11111111-1111-1111-1111-111111111111"), "opcua"),
+                ],
+                2));
         }
     }
 

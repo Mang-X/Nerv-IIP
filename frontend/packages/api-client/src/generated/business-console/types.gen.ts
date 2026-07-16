@@ -529,6 +529,34 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConnectorCollectionHealthListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthListItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthListItem = {
+    connectorId?: string;
+    connectorName?: string;
+    status?: string;
+    staleReason?: string | null;
+    lastHeartbeatAtUtc?: string | null;
+    metricsReportedAtUtc?: string | null;
+    lastSampleAtUtc?: string | null;
+    receivedCount?: number | null;
+    droppedCount?: number | null;
+    errorCount?: number | null;
+    counterEpoch?: string | null;
+    sourceSystem?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthListRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryTagListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryTagListResponse | null;
 };
@@ -7039,6 +7067,36 @@ export type QueryBusinessConsoleTelemetryConnectorCollectionHealthResponses = {
 };
 
 export type QueryBusinessConsoleTelemetryConnectorCollectionHealthResponse = QueryBusinessConsoleTelemetryConnectorCollectionHealthResponses[keyof QueryBusinessConsoleTelemetryConnectorCollectionHealthResponses];
+
+export type ListBusinessConsoleTelemetryConnectorCollectionHealthData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/telemetry/connectors/collection-health';
+};
+
+export type ListBusinessConsoleTelemetryConnectorCollectionHealthErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleTelemetryConnectorCollectionHealthResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConnectorCollectionHealthListResponse;
+};
+
+export type ListBusinessConsoleTelemetryConnectorCollectionHealthResponse = ListBusinessConsoleTelemetryConnectorCollectionHealthResponses[keyof ListBusinessConsoleTelemetryConnectorCollectionHealthResponses];
 
 export type ListBusinessConsoleTelemetryTagsData = {
     body?: never;
