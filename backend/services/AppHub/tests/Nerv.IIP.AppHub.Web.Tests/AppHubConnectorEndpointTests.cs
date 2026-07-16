@@ -70,7 +70,7 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
     }
 
     [Fact]
-    public async Task Authorized_collection_health_query_marks_old_metrics_stale_while_heartbeat_remains_current()
+    public async Task Authorized_collection_health_query_marks_terminal_fault_stale_while_heartbeat_remains_current()
     {
         var clock = new MutableTimeProvider(DateTimeOffset.Parse("2026-07-13T01:10:00Z"));
         var databaseName = $"health-endpoint-{Guid.CreateVersion7():N}";
@@ -86,7 +86,9 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var instance = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "opcua-main", "OPC", new Dictionary<string, string>(), []);
         instance.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:00Z"), true, 3);
-        instance.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-main", "opcua", Guid.Parse("11111111-1111-1111-1111-111111111111"), DateTimeOffset.Parse("2026-07-13T01:01:00Z"), 12, 2, 1, DateTimeOffset.Parse("2026-07-13T01:00:59Z")));
+        // Still heartbeating (not offline) but self-reported a terminal stop -> stale.
+        instance.RecordStateSnapshot(DateTimeOffset.Parse("2026-07-13T01:09:00Z"), "stopped", "unhealthy", "collection failed", new Dictionary<string, string>());
+        instance.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-main", "opcua", Guid.Parse("11111111-1111-1111-1111-111111111111"), DateTimeOffset.Parse("2026-07-13T01:09:10Z"), 12, 2, 1, DateTimeOffset.Parse("2026-07-13T01:09:09Z")));
         db.ApplicationInstances.Add(instance);
         await db.SaveChangesAsync();
 
@@ -98,7 +100,6 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("stale", body.Status);
         Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:09:00Z"), body.LastHeartbeatAtUtc);
-        Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:01:00Z"), body.MetricsReportedAtUtc);
     }
 
     [Fact]
@@ -130,6 +131,224 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         Assert.Equal("unknown", body.Status);
         Assert.Equal(DateTimeOffset.Parse("2026-05-15T00:00:05Z"), body.LastHeartbeatAtUtc);
         Assert.Null(body.MetricsReportedAtUtc);
+    }
+
+    [Fact]
+    public async Task Authorized_collection_health_list_orders_offline_above_fault_above_current()
+    {
+        var clock = new MutableTimeProvider(DateTimeOffset.Parse("2026-07-13T01:10:00Z"));
+        var databaseName = $"health-list-{Guid.CreateVersion7():N}";
+        var app = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ApplicationDbContext>();
+            services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+            services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(clock);
+        }));
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var epoch = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+        // Fresh OPC UA collector -> current.
+        var current = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "opcua-main", "OPC UA Main", new Dictionary<string, string>(), []);
+        current.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), true, 3);
+        current.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-main", "opcua", epoch, DateTimeOffset.Parse("2026-07-13T01:09:40Z"), 100, 4, 1, DateTimeOffset.Parse("2026-07-13T01:09:39Z")));
+
+        // Heartbeat stopped arriving (aged out) -> offline, must sort first.
+        var offline = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "modbus-main", "Modbus Main", new Dictionary<string, string>(), []);
+        offline.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:00:00Z"), true, 3);
+        offline.RecordCollectionHealth(new ConnectorCollectionHealth("modbus-main", "modbus", Guid.Parse("22222222-2222-2222-2222-222222222222"), DateTimeOffset.Parse("2026-07-13T01:01:00Z"), 50, 9, 2, DateTimeOffset.Parse("2026-07-13T01:00:58Z")));
+
+        // Still heartbeating but self-reported a terminal stop -> fault (异常停止, not a disconnect), sorts between.
+        var fault = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "mqtt-main", "MQTT Main", new Dictionary<string, string>(), []);
+        fault.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:45Z"), true, 3);
+        fault.RecordStateSnapshot(DateTimeOffset.Parse("2026-07-13T01:09:45Z"), "stopped", "unhealthy", "collection failed", new Dictionary<string, string>());
+        fault.RecordCollectionHealth(new ConnectorCollectionHealth("mqtt-main", "mqtt", Guid.Parse("44444444-4444-4444-4444-444444444444"), DateTimeOffset.Parse("2026-07-13T01:09:46Z"), 70, 0, 0, DateTimeOffset.Parse("2026-07-13T01:09:44Z")));
+
+        // Registered but never reported collection health -> excluded from the wall.
+        var withoutHealth = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "docker-x", "Docker X", new Dictionary<string, string>(), []);
+        withoutHealth.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:00Z"), true, 3);
+
+        // Different environment must not leak into the org/env-scoped list.
+        var otherEnv = new ApplicationInstance("org", "env-other", "host", "collector", "1", "node", "opcua-other", "OPC UA Other", new Dictionary<string, string>(), []);
+        otherEnv.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), true, 3);
+        otherEnv.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-other", "opcua", Guid.Parse("33333333-3333-3333-3333-333333333333"), DateTimeOffset.Parse("2026-07-13T01:09:40Z"), 7, 0, 0, DateTimeOffset.Parse("2026-07-13T01:09:39Z")));
+
+        db.ApplicationInstances.AddRange(current, offline, fault, withoutHealth, otherEnv);
+        await db.SaveChangesAsync();
+
+        var client = app.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
+        using var response = await client.GetAsync("/internal/apphub/v1/connectors/collection-health?organizationId=org&environmentId=env");
+        var body = await ReadResponseDataAsync<ConnectorCollectionHealthListResponse>(response);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(3, body.Total);
+        Assert.Equal(3, body.Items.Count);
+
+        var first = body.Items[0];
+        Assert.Equal("modbus-main", first.ConnectorId);
+        Assert.Equal("stale", first.Status);
+        Assert.Equal("offline", first.StaleReason);
+        // Heartbeat is frozen at the last received beat, so a "disconnected for" duration derived from it grows monotonically.
+        Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:00:00Z"), first.LastHeartbeatAtUtc);
+
+        var second = body.Items[1];
+        Assert.Equal("mqtt-main", second.ConnectorId);
+        Assert.Equal("stale", second.Status);
+        Assert.Equal("fault", second.StaleReason);
+
+        var third = body.Items[2];
+        Assert.Equal("opcua-main", third.ConnectorId);
+        Assert.Equal("current", third.Status);
+        Assert.Null(third.StaleReason);
+        Assert.Equal(epoch, third.CounterEpoch);
+        Assert.Equal(100, third.ReceivedCount);
+    }
+
+    [Fact]
+    public async Task Authorized_collection_health_list_keeps_offline_heartbeat_frozen_as_clock_advances()
+    {
+        var clock = new MutableTimeProvider(DateTimeOffset.Parse("2026-07-13T01:05:00Z"));
+        var databaseName = $"health-offline-{Guid.CreateVersion7():N}";
+        var app = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ApplicationDbContext>();
+            services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+            services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(clock);
+        }));
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var lastBeat = DateTimeOffset.Parse("2026-07-13T01:00:00Z");
+        var offline = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "modbus-main", "Modbus Main", new Dictionary<string, string>(), []);
+        offline.RecordHeartbeat(lastBeat, true, 3);
+        offline.RecordCollectionHealth(new ConnectorCollectionHealth("modbus-main", "modbus", Guid.Parse("22222222-2222-2222-2222-222222222222"), DateTimeOffset.Parse("2026-07-13T01:01:00Z"), 50, 9, 2, DateTimeOffset.Parse("2026-07-13T01:00:58Z")));
+        db.ApplicationInstances.Add(offline);
+        await db.SaveChangesAsync();
+
+        var client = app.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
+
+        // Two reads at different clock times: the connector stays offline and the heartbeat basis never moves,
+        // so the derived "disconnected for" duration (now - LastHeartbeatAtUtc) only grows.
+        var firstBody = await ReadResponseDataAsync<ConnectorCollectionHealthListResponse>(
+            await client.GetAsync("/internal/apphub/v1/connectors/collection-health?organizationId=org&environmentId=env"));
+        clock.Advance(TimeSpan.FromMinutes(5));
+        var secondBody = await ReadResponseDataAsync<ConnectorCollectionHealthListResponse>(
+            await client.GetAsync("/internal/apphub/v1/connectors/collection-health?organizationId=org&environmentId=env"));
+
+        Assert.Equal("offline", firstBody.Items[0].StaleReason);
+        Assert.Equal("offline", secondBody.Items[0].StaleReason);
+        Assert.Equal(lastBeat, firstBody.Items[0].LastHeartbeatAtUtc);
+        Assert.Equal(lastBeat, secondBody.Items[0].LastHeartbeatAtUtc);
+    }
+
+    [Fact]
+    public async Task Collection_health_list_treats_running_degraded_collector_as_online_and_terminal_fault_as_abnormal_stop()
+    {
+        var clock = new MutableTimeProvider(DateTimeOffset.Parse("2026-07-13T01:10:00Z"));
+        var databaseName = $"health-degraded-{Guid.CreateVersion7():N}";
+        var app = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ApplicationDbContext>();
+            services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+            services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(clock);
+        }));
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        // Actively collecting but degraded (had past reconnects) -> upstream heartbeat Reachable=false, but it is
+        // running and sampling now, so it must NOT be reported as disconnected.
+        var degraded = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "modbus-degraded", "Modbus Degraded", new Dictionary<string, string>(), []);
+        degraded.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), reachable: false, 3);
+        degraded.RecordStateSnapshot(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), "running", "degraded", "reconnected", new Dictionary<string, string>());
+        degraded.RecordCollectionHealth(new ConnectorCollectionHealth("modbus-degraded", "modbus", Guid.Parse("55555555-5555-5555-5555-555555555555"), DateTimeOffset.Parse("2026-07-13T01:09:40Z"), 200, 3, 0, DateTimeOffset.Parse("2026-07-13T01:09:39Z")));
+
+        // Terminal failure while still heartbeating (may be downstream/processing, not necessarily a lost
+        // connection) -> fault (异常停止), never conflated with a device disconnect.
+        var stopped = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "opcua-stopped", "OPC UA Stopped", new Dictionary<string, string>(), []);
+        stopped.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), reachable: false, 3);
+        stopped.RecordStateSnapshot(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), "stopped", "unhealthy", "collection failed", new Dictionary<string, string>());
+        stopped.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-stopped", "opcua", Guid.Parse("66666666-6666-6666-6666-666666666666"), DateTimeOffset.Parse("2026-07-13T01:09:40Z"), 10, 0, 5, DateTimeOffset.Parse("2026-07-13T01:09:39Z")));
+
+        db.ApplicationInstances.AddRange(degraded, stopped);
+        await db.SaveChangesAsync();
+
+        var client = app.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
+        using var response = await client.GetAsync("/internal/apphub/v1/connectors/collection-health?organizationId=org&environmentId=env");
+        var body = await ReadResponseDataAsync<ConnectorCollectionHealthListResponse>(response);
+
+        var degradedItem = body.Items.Single(x => x.ConnectorId == "modbus-degraded");
+        Assert.Equal("current", degradedItem.Status);
+        Assert.Null(degradedItem.StaleReason);
+
+        var stoppedItem = body.Items.Single(x => x.ConnectorId == "opcua-stopped");
+        Assert.Equal("stale", stoppedItem.Status);
+        Assert.Equal("fault", stoppedItem.StaleReason);
+        // The stale (fault) connector sorts above the healthy one.
+        Assert.Equal("opcua-stopped", body.Items[0].ConnectorId);
+    }
+
+    [Fact]
+    public async Task Collection_health_list_reports_unknown_when_running_but_no_sampling_evidence()
+    {
+        var clock = new MutableTimeProvider(DateTimeOffset.Parse("2026-07-13T01:10:00Z"));
+        var databaseName = $"health-unknown-{Guid.CreateVersion7():N}";
+        var app = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ApplicationDbContext>();
+            services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+            services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(clock);
+        }));
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        // Heartbeating and running, but reported a collection-health fact with no counters and no sample yet
+        // (e.g. no configured mapping / nothing collected). Must not count as actively collecting.
+        var notConfigured = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "modbus-empty", "Modbus Empty", new Dictionary<string, string>(), []);
+        notConfigured.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:45Z"), true, 3);
+        notConfigured.RecordStateSnapshot(DateTimeOffset.Parse("2026-07-13T01:09:45Z"), "running", "degraded", "no mappings", new Dictionary<string, string>());
+        notConfigured.RecordCollectionHealth(new ConnectorCollectionHealth("modbus-empty", "modbus", Guid.Parse("77777777-7777-7777-7777-777777777777"), DateTimeOffset.Parse("2026-07-13T01:09:46Z"), null, null, null, null));
+
+        // Actively collecting (received counter present, even if zero) -> current.
+        var collecting = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "opcua-live", "OPC UA Live", new Dictionary<string, string>(), []);
+        collecting.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:45Z"), true, 3);
+        collecting.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-live", "opcua", Guid.Parse("88888888-8888-8888-8888-888888888888"), DateTimeOffset.Parse("2026-07-13T01:09:46Z"), 0, 0, 0, DateTimeOffset.Parse("2026-07-13T01:09:44Z")));
+
+        db.ApplicationInstances.AddRange(notConfigured, collecting);
+        await db.SaveChangesAsync();
+
+        var client = app.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
+        using var response = await client.GetAsync("/internal/apphub/v1/connectors/collection-health?organizationId=org&environmentId=env");
+        var body = await ReadResponseDataAsync<ConnectorCollectionHealthListResponse>(response);
+
+        var empty = body.Items.Single(x => x.ConnectorId == "modbus-empty");
+        Assert.Equal("unknown", empty.Status);
+        Assert.Null(empty.StaleReason);
+
+        var live = body.Items.Single(x => x.ConnectorId == "opcua-live");
+        Assert.Equal("current", live.Status);
+    }
+
+    [Fact]
+    public async Task Collection_health_list_requires_internal_service_authorization()
+    {
+        var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/internal/apphub/v1/connectors/collection-health?organizationId=org-unauthorized&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
