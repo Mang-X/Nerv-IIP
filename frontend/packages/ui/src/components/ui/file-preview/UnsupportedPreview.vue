@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ExternalLinkIcon, FileQuestionIcon } from 'lucide-vue-next'
+import { ExternalLinkIcon, FileQuestionIcon } from '@lucide/vue'
 
 import { Button } from '../button'
 

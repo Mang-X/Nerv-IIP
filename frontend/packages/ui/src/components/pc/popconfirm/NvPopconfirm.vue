@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { ref, watch } from 'vue'
-import { TriangleAlertIcon } from 'lucide-vue-next'
+import { TriangleAlertIcon } from '@lucide/vue'
 import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover'
 import NvButton from '../button/NvButton.vue'
 

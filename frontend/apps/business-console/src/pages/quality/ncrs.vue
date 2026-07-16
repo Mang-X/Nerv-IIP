@@ -43,7 +43,7 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { CheckCircle2Icon, RefreshCwIcon, SendIcon } from 'lucide-vue-next'
+import { CheckCircle2Icon, RefreshCwIcon, SendIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 

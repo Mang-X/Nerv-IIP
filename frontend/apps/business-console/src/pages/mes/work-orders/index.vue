@@ -53,7 +53,7 @@ import {
   RefreshCwIcon,
   RouteIcon,
   WrenchIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 

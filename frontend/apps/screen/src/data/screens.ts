@@ -5,7 +5,7 @@ export interface ScreenDef {
   route: string
   title: string
   desc: string
-  icon: string // lucide-vue-next 图标名
+  icon: string // @lucide/vue 图标名
 }
 
 export const SCREENS: ScreenDef[] = [

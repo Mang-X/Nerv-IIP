@@ -42,7 +42,7 @@ import {
   NvTabsTrigger,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { ArrowRightLeftIcon, PlusIcon, RulerIcon } from 'lucide-vue-next'
+import { ArrowRightLeftIcon, PlusIcon, RulerIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'

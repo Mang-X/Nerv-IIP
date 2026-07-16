@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
-import { SearchIcon, XIcon } from 'lucide-vue-next'
+import { SearchIcon, XIcon } from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 import NvBadge from '../badge/NvBadge.vue'
 import NvButton from '../button/NvButton.vue'

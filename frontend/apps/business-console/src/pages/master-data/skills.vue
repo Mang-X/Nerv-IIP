@@ -41,7 +41,7 @@ import {
   NvTooltipProvider,
   NvTooltipTrigger,
 } from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { formatDate } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'

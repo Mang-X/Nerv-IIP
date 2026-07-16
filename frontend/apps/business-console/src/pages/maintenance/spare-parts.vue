@@ -28,7 +28,7 @@ import {
   Spinner,
   toast,
 } from '@nerv-iip/ui'
-import { PackageSearchIcon, PlusIcon, RefreshCwIcon, WrenchIcon } from 'lucide-vue-next'
+import { PackageSearchIcon, PlusIcon, RefreshCwIcon, WrenchIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { RouterLink } from 'vue-router'
 

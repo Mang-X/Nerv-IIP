@@ -32,7 +32,7 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { EyeIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { EyeIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { isBarcodeScanWorkflow } from './workflow-options'

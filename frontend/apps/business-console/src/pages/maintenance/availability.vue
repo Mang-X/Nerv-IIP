@@ -16,7 +16,7 @@ import {
   NvSectionCard,
   NvSectionCards,
 } from '@nerv-iip/ui'
-import { RefreshCwIcon, WrenchIcon } from 'lucide-vue-next'
+import { RefreshCwIcon, WrenchIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 

@@ -7,7 +7,7 @@ import {
   NvScreenTrendChart,
   useScreenData,
 } from '@nerv-iip/ui'
-import { ClipboardList, FileCheck2, FileWarning, Scale } from 'lucide-vue-next'
+import { ClipboardList, FileCheck2, FileWarning, Scale } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'

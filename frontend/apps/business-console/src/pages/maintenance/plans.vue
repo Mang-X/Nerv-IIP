@@ -31,7 +31,7 @@ import {
   Spinner,
   toast,
 } from '@nerv-iip/ui'
-import { CalendarClockIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { CalendarClockIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 
 definePage({

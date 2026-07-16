@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ScheduleAssignmentContract } from '@nerv-iip/api-client'
 import { NvButton, NvTabs, NvTabsContent, NvTabsList, NvTabsTrigger, toast } from '@nerv-iip/ui'
-import { ListFilterIcon, PanelRightCloseIcon, PanelRightOpenIcon } from 'lucide-vue-next'
+import { ListFilterIcon, PanelRightCloseIcon, PanelRightOpenIcon } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import type { EngineCommand, TaskDragPayload, TimeScale } from '../engine/engine'
 import { useSchedulingEdits } from '../composables/useSchedulingEdits'

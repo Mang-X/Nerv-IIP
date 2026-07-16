@@ -46,15 +46,28 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..' '..')).Path
 . (Join-Path $repoRoot 'scripts' 'lib' 'ScriptAutomation.ps1')
 
-if ([string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) {
-    Write-Diagnostic -Level 'ERROR' -Message '缺少环境变量 ANDROID_HOME。请指向本机 Android SDK 根目录（本仓库开发机为 C:\Users\hp\android-sdk）。'
+# 显式 ANDROID_HOME/ANDROID_SDK_ROOT 优先；未设时自动探测约定安装位置，零知识可跑。
+function Resolve-PdaAndroidHome {
+    $candidates = @(
+        $env:ANDROID_HOME
+        $env:ANDROID_SDK_ROOT
+        (Join-Path $env:USERPROFILE 'android-sdk')
+        (Join-Path $env:LOCALAPPDATA 'Android\Sdk')
+    )
+    foreach ($candidate in $candidates) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        if (Test-Path (Join-Path $candidate 'platform-tools\adb.exe')) { return $candidate }
+    }
+    return $null
+}
+
+$resolvedSdk = Resolve-PdaAndroidHome
+if ([string]::IsNullOrWhiteSpace($resolvedSdk)) {
+    Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：ANDROID_HOME/ANDROID_SDK_ROOT 未设，且约定位置（%USERPROFILE%\android-sdk、%LOCALAPPDATA%\Android\Sdk）均无 platform-tools\adb.exe。安装口径见 docs/architecture/mobile-pda-deployment.md。'
     exit 1
 }
+$env:ANDROID_HOME = $resolvedSdk
 $adbExe = Join-Path $env:ANDROID_HOME 'platform-tools' 'adb.exe'
-if (-not (Test-Path -LiteralPath $adbExe -PathType Leaf)) {
-    Write-Diagnostic -Level 'ERROR' -Message "adb 不存在：$adbExe。请用 sdkmanager 安装 platform-tools。"
-    exit 1
-}
 
 # --- 码值校验：adb shell input text 对特殊字符没有可靠的跨版本转义通道——
 #     空格须编码为 %s；& | ( ) < > ; * ~ ' " \ $ 会被设备端 shell 解析（破坏码值甚至注入命令）；

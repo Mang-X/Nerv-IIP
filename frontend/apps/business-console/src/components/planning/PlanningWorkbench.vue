@@ -51,7 +51,7 @@ import {
   PlayIcon,
   PlusIcon,
   RefreshCwIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { computed, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 

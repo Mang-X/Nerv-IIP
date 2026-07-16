@@ -12,7 +12,7 @@ import {
   NvStatusBadge,
   nvMessage,
 } from '@nerv-iip/ui'
-import { PlusIcon, ListFilterIcon } from 'lucide-vue-next'
+import { PlusIcon, ListFilterIcon } from '@lucide/vue'
 import { ref } from 'vue'
 
 const columns = [

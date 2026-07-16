@@ -2,7 +2,7 @@
 // 图例:讲清当前视图的视觉语言。分色与条形共用 --nv-scheduling-category-* 全局变量,保证图例与条形一致。
 // 视图感知:资源排产板隐藏甘特专属(计划基线/依赖/里程碑),改讲齐套/换型/瓶颈。
 // 结构:按分类分组、每类一行(分类标题 + 该类图例项)。每类可折叠(本地 ref)、可显隐(emit + 自身淡化)。
-import { ChevronRightIcon, EyeIcon, EyeOffIcon } from 'lucide-vue-next'
+import { ChevronRightIcon, EyeIcon, EyeOffIcon } from '@lucide/vue'
 import { reactive } from 'vue'
 
 const props = withDefaults(

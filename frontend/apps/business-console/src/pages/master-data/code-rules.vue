@@ -34,7 +34,7 @@ import {
   Spinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
+import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 

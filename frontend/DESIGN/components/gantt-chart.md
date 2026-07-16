@@ -12,16 +12,17 @@
 
 ```ts
 defineProps<{
-  model?: ScheduleModel          // 来自 useSchedulingPlan(toModel)
-  scale?: TimeScale              // 'auto'(默认) | 'hour' | 'day' | 'week' | 'month'
-  readOnly?: boolean             // 默认 false
-  loading?: boolean              // true → 骨架占位
-  engineKind?: 'auto' | 'dhtmlx'  // 默认 auto(有 DHTMLX 引擎则用之,否则显示占位)
+  model?: ScheduleModel // 来自 useSchedulingPlan(toModel)
+  scale?: TimeScale // 'auto'(默认) | 'hour' | 'day' | 'week' | 'month'
+  readOnly?: boolean // 默认 false
+  loading?: boolean // true → 骨架占位
+  engineKind?: 'auto' | 'dhtmlx' // 默认 auto(有 DHTMLX 引擎则用之,否则显示占位)
 }>()
 defineEmits<{
   taskSelect: [taskId: string]
-  taskDragEnd: [payload: TaskDragPayload]   // 归一化:{ taskId, operationId, resourceId?, startUtc, endUtc, kind }
+  taskDragEnd: [payload: TaskDragPayload] // 归一化:{ taskId, operationId, resourceId?, startUtc, endUtc, kind }
   conflictClick: [taskId: string]
+  lockedDragAttempt: [taskId: string] // 拖动被锁定工序时触发(只读/锁定反馈)
 }>()
 // expose: command(cmd: EngineCommand)  // zoomIn/Out、scaleTo、scrollToToday、fitToScreen、selectTask…
 ```

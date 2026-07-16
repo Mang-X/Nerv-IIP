@@ -21,7 +21,7 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { ClipboardListIcon, MoveRightIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { ClipboardListIcon, MoveRightIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 

@@ -34,7 +34,7 @@ import {
   NvToolbar,
   toast,
 } from '@nerv-iip/ui'
-import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { formatAmount, formatDate, formatError } from '../shared'
 

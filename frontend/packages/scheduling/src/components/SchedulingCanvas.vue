@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Skeleton } from '@nerv-iip/ui'
-import { CalendarClockIcon } from 'lucide-vue-next'
+import { CalendarClockIcon } from '@lucide/vue'
 import { computed, ref, toRef } from 'vue'
 import type { EngineCommand, TaskDragPayload, TimeScale } from '../engine/engine'
 import type { ScheduleModel } from '../model/types'

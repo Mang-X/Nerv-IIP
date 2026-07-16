@@ -4,7 +4,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useBusinessTelemetryHistory } from '@/composables/useBusinessTelemetry'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { NvButton, NvDataTable, NvInput, NvPageHeader, NvToolbar } from '@nerv-iip/ui'
-import { GaugeIcon, RefreshCwIcon, Settings2Icon } from 'lucide-vue-next'
+import { GaugeIcon, RefreshCwIcon, Settings2Icon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 

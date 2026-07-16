@@ -44,7 +44,7 @@ import {
   ShieldCheckIcon,
   TriangleAlertIcon,
   WrenchIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 

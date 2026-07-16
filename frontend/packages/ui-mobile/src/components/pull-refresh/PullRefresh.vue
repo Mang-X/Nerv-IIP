@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { computed, ref, watch } from 'vue'
-import { ArrowDown, Loader2 } from 'lucide-vue-next'
+import { ArrowDown, Loader2 } from '@lucide/vue'
 import { cn, rubberband } from '../../lib/utils'
 
 /**

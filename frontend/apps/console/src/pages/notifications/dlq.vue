@@ -3,7 +3,7 @@ import type { NotificationDeadLetterResponse } from '@nerv-iip/api-client'
 import { useNotificationDeadLetters } from '@/composables/useNotificationDeadLetters'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { Button, NvPageHeader, NvSectionCard, NvSectionCards, toast } from '@nerv-iip/ui'
-import { BanIcon, PlayIcon, RefreshCwIcon, RotateCwIcon } from 'lucide-vue-next'
+import { BanIcon, PlayIcon, RefreshCwIcon, RotateCwIcon } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 
 definePage({

@@ -14,7 +14,7 @@ import {
   NvSheetClose,
   NvButton,
 } from '@nerv-iip/ui'
-import { SlidersHorizontalIcon } from 'lucide-vue-next'
+import { SlidersHorizontalIcon } from '@lucide/vue'
 import { ref } from 'vue'
 
 const sheetOpen = ref(false)

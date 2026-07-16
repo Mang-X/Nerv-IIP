@@ -9,7 +9,7 @@ import {
   ListChecks,
   ShieldCheck,
   Zap,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 /** One KPI cell: a lucide icon in a glow tile (or a ring), a value, and a label. */
 interface Kpi {

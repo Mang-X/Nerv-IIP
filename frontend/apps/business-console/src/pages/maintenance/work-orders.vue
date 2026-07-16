@@ -44,7 +44,7 @@ import {
   NvStatusBadge,
   toast,
 } from '@nerv-iip/ui'
-import { CheckCircle2Icon, PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
+import { CheckCircle2Icon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { storeToRefs } from 'pinia'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'

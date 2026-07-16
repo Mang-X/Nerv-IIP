@@ -38,7 +38,7 @@ import {
   Spinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon, SearchIcon, UsersIcon, UsersRoundIcon } from 'lucide-vue-next'
+import { PlusIcon, RefreshCwIcon, SearchIcon, UsersIcon, UsersRoundIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'

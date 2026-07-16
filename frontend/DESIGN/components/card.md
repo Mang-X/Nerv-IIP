@@ -1,64 +1,69 @@
-# Card
+# Card (NvCard)
 
-Content grouping surface. Used for settings sections, detail panels, stat summaries, and login forms.
+Content grouping surface. Used for settings sections, detail panels, stat
+summaries, and login forms. App code uses the `NvCard*` family from
+`@nerv-iip/ui`; the un-prefixed `Card*` parts are the shadcn 原版 primitives —
+library-internal only. For KPI/stat tiles, prefer the purpose-built
+`NvMetricCard` (or `NvSectionCard`/`NvSectionCards` for dashboard stat rows)
+over hand-building with `NvCard`.
 
 ## Anatomy
 
 ```
-Card
-  CardHeader
-    CardTitle
-    CardDescription
-    CardAction      (optional: right-aligned action button)
-  CardContent
-  CardFooter        (optional: form actions, links)
+NvCard
+  NvCardHeader
+    NvCardTitle
+    NvCardDescription
+    NvCardAction      (optional: right-aligned action button)
+  NvCardContent
+  NvCardFooter        (optional: form actions, links)
 ```
 
 ## Usage
 
 ```vue
 <!-- Settings section or entity detail -->
-<Card>
-  <CardHeader>
-    <CardTitle>User profile</CardTitle>
-    <CardDescription>View and update basic identity information.</CardDescription>
-  </CardHeader>
-  <CardContent class="grid gap-4">
+<NvCard>
+  <NvCardHeader>
+    <NvCardTitle>User profile</NvCardTitle>
+    <NvCardDescription>View and update basic identity information.</NvCardDescription>
+  </NvCardHeader>
+  <NvCardContent class="grid gap-4">
     <!-- content -->
-  </CardContent>
-</Card>
+  </NvCardContent>
+</NvCard>
 
 <!-- Card with header action -->
-<Card>
-  <CardHeader>
-    <CardTitle>API keys</CardTitle>
-    <CardAction>
-      <Button variant="outline" size="sm" type="button">Add key</Button>
-    </CardAction>
-  </CardHeader>
-  <CardContent>
+<NvCard>
+  <NvCardHeader>
+    <NvCardTitle>API keys</NvCardTitle>
+    <NvCardAction>
+      <NvButton variant="outline" size="sm" type="button">Add key</NvButton>
+    </NvCardAction>
+  </NvCardHeader>
+  <NvCardContent>
     <!-- content -->
-  </CardContent>
-</Card>
+  </NvCardContent>
+</NvCard>
 
 <!-- Form card (e.g. login) -->
-<Card class="w-full max-w-sm">
-  <CardHeader>
-    <CardTitle>Sign in</CardTitle>
-  </CardHeader>
-  <CardContent>
+<NvCard class="w-full max-w-sm">
+  <NvCardHeader>
+    <NvCardTitle>Sign in</NvCardTitle>
+  </NvCardHeader>
+  <NvCardContent>
     <form class="grid gap-4" @submit.prevent="submit">
       <!-- fields -->
     </form>
-  </CardContent>
-  <CardFooter>
-    <Button type="submit" class="w-full">Sign in</Button>
-  </CardFooter>
-</Card>
+  </NvCardContent>
+  <NvCardFooter>
+    <NvButton type="submit" class="w-full">Sign in</NvButton>
+  </NvCardFooter>
+</NvCard>
 ```
 
 ## Do NOT
 
-- Do not wrap a `Table` inside a `Card` — use the `overflow-hidden rounded-lg border bg-background` div wrapper instead (tables have their own border).
-- Do not add `p-*` padding to `Card` itself — `CardContent` already has the correct padding.
-- Do not use `Card` for every grouping — flat sections with just a heading are preferable for dense admin pages.
+- Do not wrap an `NvDataTable` inside an `NvCard` — the table brings its own bordered surface.
+- Do not add `p-*` padding to `NvCard` itself — `NvCardContent` already has the correct padding.
+- Do not use `NvCard` for every grouping — flat sections with just a heading are preferable for dense admin pages.

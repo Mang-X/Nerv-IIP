@@ -25,7 +25,7 @@ import {
   PackageSearch,
   Scale,
   Shuffle,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { type Component, computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'

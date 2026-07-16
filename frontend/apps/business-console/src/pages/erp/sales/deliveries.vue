@@ -15,7 +15,7 @@ import {
   NvInput,
   toast,
 } from '@nerv-iip/ui'
-import { RefreshCwIcon, TruckIcon } from 'lucide-vue-next'
+import { RefreshCwIcon, TruckIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { formatDateTime, formatError } from '../shared'
 
