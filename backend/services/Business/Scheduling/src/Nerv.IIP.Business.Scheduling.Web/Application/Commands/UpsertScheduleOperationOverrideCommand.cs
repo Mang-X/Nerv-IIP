@@ -97,8 +97,9 @@ public sealed class UpsertScheduleOperationOverrideCommandHandler(
             fact = ScheduleOperationOverride.Create(
                 request.OrganizationId, request.EnvironmentId, pair.Order.OrderId,
                 request.OperationId, pair.Operation.OperationSequence, request.ResourceId,
-                resource.WorkCenterId, request.StartUtc, request.EndUtc, "manual-override",
-                "scheduling-api", null, actor, now, now);
+                resource.WorkCenterId, request.StartUtc, request.EndUtc,
+                ScheduleOperationOverrideLockReasonCodes.ManualOverride,
+                ScheduleOperationOverrideSourceTypes.SchedulingApi, null, actor, now, now);
             dbContext.ScheduleOperationOverrides.Add(fact);
         }
         else

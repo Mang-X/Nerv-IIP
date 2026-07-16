@@ -7,26 +7,30 @@ using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 
-[IntegrationEventConsumer(nameof(MesOperationTaskManuallyDispatchedIntegrationEvent), ConsumerName)]
-public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerForUpsertOverride(
+[IntegrationEventConsumer(nameof(MesOperationTaskManualDispatchClearedIntegrationEvent), ConsumerName)]
+public sealed class MesOperationTaskManualDispatchClearedIntegrationEventHandlerForClearOverride(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore)
-    : IIntegrationEventHandler<MesOperationTaskManuallyDispatchedIntegrationEvent>, ICapSubscribe
+    : IIntegrationEventHandler<MesOperationTaskManualDispatchClearedIntegrationEvent>, ICapSubscribe
 {
-    public const string ConsumerName = "business-scheduling.mes-operation-manually-dispatched";
+    public const string ConsumerName = "business-scheduling.mes-operation-manual-dispatch-cleared";
 
     private static readonly IntegrationEventConsumerOptions ConsumerOptions = new(
-        ConsumerName, MesIntegrationEventTypes.OperationTaskManuallyDispatched, MesIntegrationEventVersions.V1);
+        ConsumerName, MesIntegrationEventTypes.OperationTaskManualDispatchCleared, MesIntegrationEventVersions.V1);
 
-    public Task HandleAsync(MesOperationTaskManuallyDispatchedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
+    public Task HandleAsync(
+        MesOperationTaskManualDispatchClearedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken) =>
         HandleEnvelopeAsync(integrationEvent, cancellationToken);
 
-    [CapSubscribe(nameof(MesOperationTaskManuallyDispatchedIntegrationEvent), Group = ConsumerName)]
-    public Task HandleCapAsync(MesOperationTaskManuallyDispatchedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
+    [CapSubscribe(nameof(MesOperationTaskManualDispatchClearedIntegrationEvent), Group = ConsumerName)]
+    public Task HandleCapAsync(
+        MesOperationTaskManualDispatchClearedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken) =>
         HandleAsync(integrationEvent, cancellationToken);
 
     private async Task HandleEnvelopeAsync(
-        MesOperationTaskManuallyDispatchedIntegrationEvent integrationEvent,
+        MesOperationTaskManualDispatchClearedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
         var inboxIdentity = MesOverrideConsumerPersistence.CreateInboxIdentity(integrationEvent);
@@ -50,21 +54,21 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
     }
 
     private async Task HandleValidEventAsync(
-        MesOperationTaskManuallyDispatchedIntegrationEvent integrationEvent,
+        MesOperationTaskManualDispatchClearedIntegrationEvent integrationEvent,
         MesOverrideInboxIdentity inboxIdentity,
         CancellationToken cancellationToken)
     {
-        if (!MesOverrideConsumerValidation.IsValidDispatch(integrationEvent, inboxIdentity))
+        if (!MesOverrideConsumerValidation.IsValidClear(integrationEvent, inboxIdentity))
         {
             await deadLetterStore.AddAsync(MesOverrideConsumerPersistence.CreateDeadLetter(
                 ConsumerName, integrationEvent,
-                "scheduling.mesManualDispatch.invalidPayload",
-                "MES manual dispatch requires real operation, resource, work center, and a positive scheduling window."), cancellationToken);
+                "scheduling.mesManualDispatchCleared.invalidPayload",
+                "MES manual dispatch clear requires real operation, resource, work center, a positive prior window and revision, and a recognized reason."), cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
-        await UpsertOverrideAsync(integrationEvent, cancellationToken);
+        await ClearOverrideAsync(integrationEvent, cancellationToken);
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -81,7 +85,7 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
     }
 
     private async Task RetryAfterConcurrentUpdateAsync(
-        MesOperationTaskManuallyDispatchedIntegrationEvent integrationEvent,
+        MesOperationTaskManualDispatchClearedIntegrationEvent integrationEvent,
         Nerv.IIP.Contracts.IntegrationEvents.IIntegrationEventEnvelope inboxEnvelope,
         CancellationToken cancellationToken)
     {
@@ -92,12 +96,12 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
             return;
         }
 
-        await UpsertOverrideAsync(integrationEvent, cancellationToken, requireExisting: true);
+        await ClearOverrideAsync(integrationEvent, cancellationToken, requireExisting: true);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task UpsertOverrideAsync(
-        MesOperationTaskManuallyDispatchedIntegrationEvent integrationEvent,
+    private async Task ClearOverrideAsync(
+        MesOperationTaskManualDispatchClearedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken,
         bool requireExisting = false)
     {
@@ -113,23 +117,18 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
                 throw new DbUpdateException("Concurrent override insert did not produce a readable current fact.");
             }
 
-            fact = ScheduleOperationOverride.Create(
+            dbContext.ScheduleOperationOverrides.Add(ScheduleOperationOverride.CreateClearedMesDispatch(
                 integrationEvent.OrganizationId, integrationEvent.EnvironmentId,
                 payload.WorkOrderId, payload.OperationTaskId, payload.OperationSequence,
                 payload.ResourceId, payload.WorkCenterId, payload.StartUtc, payload.EndUtc,
-                ScheduleOperationOverrideLockReasonCodes.MesManualDispatch,
-                ScheduleOperationOverrideSourceTypes.MesDispatch, integrationEvent.EventId,
-                integrationEvent.Actor, integrationEvent.OccurredAtUtc, integrationEvent.OccurredAtUtc);
-            fact.TryApplyMesDispatch(payload.ResourceId, payload.WorkCenterId, payload.StartUtc,
-                payload.EndUtc, integrationEvent.EventId, integrationEvent.Actor,
-                payload.DispatchRevision, integrationEvent.OccurredAtUtc, integrationEvent.OccurredAtUtc);
-            dbContext.ScheduleOperationOverrides.Add(fact);
+                integrationEvent.EventId, integrationEvent.Actor, payload.DispatchRevision,
+                integrationEvent.OccurredAtUtc, payload.ReasonCode, payload.ClearedAtUtc));
             return;
         }
 
-        fact.TryApplyMesDispatch(payload.ResourceId, payload.WorkCenterId, payload.StartUtc,
-            payload.EndUtc, integrationEvent.EventId, integrationEvent.Actor,
-            payload.DispatchRevision, integrationEvent.OccurredAtUtc, integrationEvent.OccurredAtUtc);
+        fact.TryClearMesDispatch(payload.DispatchRevision, integrationEvent.EventId,
+            integrationEvent.Actor, integrationEvent.OccurredAtUtc, payload.ReasonCode,
+            payload.ClearedAtUtc);
     }
 
 }

@@ -30,7 +30,8 @@ The following remain out of scope:
 1. #701 release/revoke or schedule version governance.
 2. #717 remaining MasterData consumers.
 3. A Gantt drag-and-drop frontend implementation owned by #78.
-4. Automatic removal of overrides based on release, revoke, completion, or timeout.
+4. Automatic cleanup of overrides based on schedule release/revoke, operation
+   completion, or timeout.
 5. Changes to PR #904's schedule invalidation semantics.
 
 ## Existing Code Facts
