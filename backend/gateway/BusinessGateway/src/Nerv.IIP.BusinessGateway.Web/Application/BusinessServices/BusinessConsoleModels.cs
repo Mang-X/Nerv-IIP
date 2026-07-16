@@ -2159,6 +2159,24 @@ public sealed record BusinessConsoleSchedulingPlanRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId);
 
+public sealed record BusinessConsoleScheduleOperationOverrideRequest(
+    [property: RouteParam] string PlanId,
+    [property: RouteParam] string OperationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ResourceId,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc);
+
+public sealed record BusinessConsoleScheduleOperationOverrideResponse(
+    string OperationId,
+    string WorkOrderId,
+    string ResourceId,
+    string WorkCenterId,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    string LockReasonCode);
+
 public sealed record BusinessConsoleSchedulePlanSummaryResponse(
     string PlanId,
     string ProblemId,

@@ -23,6 +23,143 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleOperationOverrideAggregate.ScheduleOperationOverride", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Override row id.");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("actor")
+                        .HasComment("Actor that created the current fact.");
+
+                    b.Property<DateTimeOffset?>("ClearedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cleared_at_utc")
+                        .HasComment("Optional MES timestamp at which the manual dispatch was cleared.");
+
+                    b.Property<string>("ClearedReasonCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("cleared_reason_code")
+                        .HasComment("Optional MES reason code that made this projection an inactive tombstone.");
+
+                    b.Property<DateTimeOffset>("EndUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("end_utc")
+                        .HasComment("Fixed end timestamp in UTC.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Business environment id.");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active")
+                        .HasComment("Whether this override currently contributes an active scheduling lock.");
+
+                    b.Property<string>("LockReasonCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("lock_reason_code")
+                        .HasComment("Explainable lock reason code.");
+
+                    b.Property<string>("OperationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("operation_id")
+                        .HasComment("Real operation public id.");
+
+                    b.Property<int>("OperationSequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("operation_sequence")
+                        .HasComment("Operation sequence within the work order.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Tenant organization id.");
+
+                    b.Property<string>("ResourceId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("resource_id")
+                        .HasComment("Fixed executable resource id.");
+
+                    b.Property<string>("SourceEventId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("source_event_id")
+                        .HasComment("Optional source integration event id.");
+
+                    b.Property<DateTimeOffset>("SourceOccurredAtUtc")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("source_occurred_at_utc")
+                        .HasComment("Source ordering timestamp and optimistic concurrency token used to reject stale updates.");
+
+                    b.Property<long?>("SourceRevision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("source_revision")
+                        .HasComment("Optional positive MES manual-dispatch lifecycle revision and optimistic concurrency token used as the ordering watermark.");
+
+                    b.Property<string>("SourceType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("source_type")
+                        .HasComment("Scheduling API or MES dispatch source type.");
+
+                    b.Property<DateTimeOffset>("StartUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("start_utc")
+                        .HasComment("Fixed start timestamp in UTC.");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("Last persistence update timestamp in UTC.");
+
+                    b.Property<string>("WorkCenterId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("work_center_id")
+                        .HasComment("Work center owning the fixed resource.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("Real work-order public id.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "OperationId")
+                        .IsUnique();
+
+                    b.ToTable("schedule_operation_overrides", "scheduling", t =>
+                        {
+                            t.HasComment("Operation override projections, including active locks and inactive MES revocation tombstones.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlan", b =>
                 {
                     b.Property<Guid>("Id")
@@ -68,7 +205,12 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.Property<int>("LateOperationCount")
                         .HasColumnType("integer")
                         .HasColumnName("late_operation_count")
-                        .HasComment("Number of assigned operations finishing after their due dates.");
+                        .HasComment("Number of non-locked assigned operations finishing after their due dates.");
+
+                    b.Property<int>("LockedOperationCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("locked_operation_count")
+                        .HasComment("Number of fixed locked operations retained by this plan.");
 
                     b.Property<int>("MakespanMinutes")
                         .HasColumnType("integer")
@@ -79,7 +221,12 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("on_time_rate")
-                        .HasComment("Assigned operations completed on or before due date divided by assigned operations.");
+                        .HasComment("Non-locked operations completed on or before due date divided by non-locked assigned operations.");
+
+                    b.Property<int>("OptimizableOperationCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("optimizable_operation_count")
+                        .HasComment("Number of non-locked scheduled operations included in optimization KPIs.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
@@ -129,7 +276,7 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.Property<int>("TotalTardinessMinutes")
                         .HasColumnType("integer")
                         .HasColumnName("total_tardiness_minutes")
-                        .HasComment("Total minutes by which assigned operations finish after their due dates.");
+                        .HasComment("Total minutes by which non-locked assigned operations finish after their due dates.");
 
                     b.Property<int>("UnscheduledOperationCount")
                         .HasColumnType("integer")
@@ -573,6 +720,12 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasColumnType("character varying(96)")
                         .HasColumnName("problem_id")
                         .HasComment("Public scheduling problem id.");
+
+                    b.Property<string>("ProblemJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("problem_json")
+                        .HasComment("Normalized scheduling problem payload used to validate later operation locks and overrides.");
 
                     b.HasKey("Id");
 

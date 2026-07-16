@@ -351,6 +351,7 @@ public sealed class BusinessGatewayOpenApiTests
             "operatorUserId",
             WmsWarehouseTaskOpenApiDocumentProcessor.OperatorUserIdDescription);
         AssertOperationId(paths, "/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/complete", "post", "completeBusinessConsoleWmsInboundOrder");
+        AssertRequiredSchemaProperty(document, "BusinessConsoleWmsInboundLineCaptureInput", "lineNo");
         AssertOperationId(paths, "/api/business-console/v1/wms/outbound-orders", "get", "listBusinessConsoleWmsOutboundOrders");
         AssertOperationId(paths, "/api/business-console/v1/wms/outbound-orders", "post", "createBusinessConsoleWmsOutboundOrder");
         AssertOperationId(paths, "/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks", "post", "createBusinessConsoleWmsPickingTask");
@@ -898,6 +899,14 @@ public sealed class BusinessGatewayOpenApiTests
 
         Assert.Single(schemas);
         return schemas[0].Value;
+    }
+
+    private static void AssertRequiredSchemaProperty(JsonDocument document, string schemaNameSuffix, string propertyName)
+    {
+        var schema = FindSchemaBySuffix(document, schemaNameSuffix);
+        var required = schema.GetProperty("required");
+
+        Assert.Contains(required.EnumerateArray(), value => value.GetString() == propertyName);
     }
 
     private static void AssertOperationIdsAreUnique(JsonDocument document)

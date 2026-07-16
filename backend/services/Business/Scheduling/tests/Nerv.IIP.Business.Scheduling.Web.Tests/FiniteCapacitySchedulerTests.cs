@@ -158,6 +158,39 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Schedule_excludes_locked_assignments_from_optimization_kpis()
+    {
+        var problem = CreateSingleOperationProblem();
+        var order = Assert.Single(problem.Orders);
+        var operation = Assert.Single(order.Operations);
+        problem = problem with
+        {
+            LockedAssignments =
+            [
+                new SchedulingLockedAssignmentContract(
+                    AssignmentId: "manual-lock-001",
+                    OrderId: order.OrderId,
+                    OperationId: operation.OperationId,
+                    OperationSequence: operation.OperationSequence,
+                    ResourceId: "DEV-SNAPSHOT-01",
+                    WorkCenterId: "WC-SNAPSHOT",
+                    StartUtc: operation.DueUtc.AddMinutes(-30),
+                    EndUtc: operation.DueUtc.AddMinutes(30),
+                    LockReasonCode: "manual-override")
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-kpi-lock-001", GeneratedAtUtc);
+
+        Assert.Equal(1, plan.Metrics.ScheduledOperationCount);
+        Assert.Equal(1, plan.Metrics.LockedOperationCount);
+        Assert.Equal(0, plan.Metrics.OptimizableOperationCount);
+        Assert.Equal(0, plan.Metrics.TotalTardinessMinutes);
+        Assert.Equal(0, plan.Metrics.LateOperationCount);
+        Assert.Equal(1m, plan.Metrics.OnTimeRate);
+    }
+
+    [Fact]
     public void Schedule_reports_invalid_locked_assignment_when_locked_capacity_is_overbooked()
     {
         var problem = CreateSingleOperationProblem() with

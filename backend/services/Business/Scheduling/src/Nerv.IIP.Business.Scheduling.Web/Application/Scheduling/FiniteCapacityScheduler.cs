@@ -516,9 +516,10 @@ file sealed class SchedulerState
                 Key: new OperationKey(order.OrderId, operation.OperationId),
                 operation.DueUtc)))
             .ToDictionary(x => x.Key, x => x.DueUtc);
+        var optimizableAssignments = orderedAssignments.Where(x => !x.IsLocked).ToArray();
         var tardinessMinutes = 0;
         var lateOperationCount = 0;
-        foreach (var assignment in orderedAssignments)
+        foreach (var assignment in optimizableAssignments)
         {
             var key = OperationKey.From(assignment);
             if (!dueByOperation.TryGetValue(key, out var dueUtc) || assignment.EndUtc <= dueUtc)
@@ -535,9 +536,9 @@ file sealed class SchedulerState
             ? 0
             : (int)(resourceOccupancies.Max(x => x.EndUtc) - resourceOccupancies.Min(x => x.StartUtc)).TotalMinutes;
         var totalAvailableMinutes = resourceLoads.Sum(x => x.AvailableMinutes);
-        var onTimeRate = orderedAssignments.Count == 0
+        var onTimeRate = optimizableAssignments.Length == 0
             ? 1m
-            : Math.Round((decimal)(orderedAssignments.Count - lateOperationCount) / orderedAssignments.Count, 4);
+            : Math.Round((decimal)(optimizableAssignments.Length - lateOperationCount) / optimizableAssignments.Length, 4);
         var averageResourceUtilization = totalAvailableMinutes == 0
             ? 0m
             : Math.Round((decimal)resourceLoads.Sum(x => x.AssignedMinutes) / totalAvailableMinutes, 4);
@@ -550,7 +551,9 @@ file sealed class SchedulerState
             TotalTardinessMinutes: tardinessMinutes,
             LateOperationCount: lateOperationCount,
             OnTimeRate: onTimeRate,
-            AverageResourceUtilization: averageResourceUtilization);
+            AverageResourceUtilization: averageResourceUtilization,
+            LockedOperationCount: orderedAssignments.Count(x => x.IsLocked),
+            OptimizableOperationCount: optimizableAssignments.Length);
     }
 
     private ScheduleAssignmentContract? TrySchedule(OperationWorkItem item)

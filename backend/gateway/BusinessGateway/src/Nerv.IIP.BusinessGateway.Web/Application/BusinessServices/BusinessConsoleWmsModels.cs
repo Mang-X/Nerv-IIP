@@ -12,7 +12,9 @@ public sealed record BusinessConsoleWmsInboundLineInput(
     string? SerialNo,
     string QualityStatus,
     string OwnerType,
-    string? OwnerId);
+    string? OwnerId,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);
 
 public sealed record BusinessConsoleWmsOutboundLineInput(
     string LineNo,
@@ -53,7 +55,14 @@ public sealed record BusinessConsoleCompleteWmsInboundOrderRequest(
     [property: RouteParam] string InboundOrderId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    IReadOnlyCollection<BusinessConsoleWmsInboundLineCaptureInput>? Lines = null);
+
+public sealed record BusinessConsoleWmsInboundLineCaptureInput(
+    string LineNo,
+    string? LotNo,
+    DateOnly? ProductionDate,
+    DateOnly? ExpiryDate);
 
 public sealed record BusinessConsoleCompleteWmsMovementResponse(string InventoryMovementId);
 
@@ -313,6 +322,8 @@ public sealed record BusinessConsoleWmsReceivingQualityGateItem(
     string StagingLocationCode,
     string? LotNo,
     string? SerialNo,
+    DateOnly? ProductionDate,
+    DateOnly? ExpiryDate,
     string QualityStatus,
     string QualityGateStatus,
     string? InspectionRecordId,
