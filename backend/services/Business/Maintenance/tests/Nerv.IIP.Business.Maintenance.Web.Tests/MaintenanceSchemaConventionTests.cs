@@ -177,7 +177,7 @@ public sealed class MaintenanceSchemaConventionTests
         AssertColumn(workOrder, nameof(MaintenanceWorkOrder.AlarmCleared), "alarm_cleared", false);
         AssertColumn(workOrder, nameof(MaintenanceWorkOrder.AlarmClearedAtUtc), "alarm_cleared_at_utc", true);
         AssertColumn(plan, nameof(MaintenancePlan.LastGeneratedOn), "last_generated_on", true);
-        AssertColumn(plan, nameof(MaintenancePlan.NextDueOn), "next_due_on", false);
+        AssertColumn(plan, nameof(MaintenancePlan.NextDueOn), "next_due_on", true);
         Assert.Contains(workOrder.GetIndexes(), index =>
             index.IsUnique
             && index.GetDatabaseName() == "ux_maintenance_work_orders_source_reference"

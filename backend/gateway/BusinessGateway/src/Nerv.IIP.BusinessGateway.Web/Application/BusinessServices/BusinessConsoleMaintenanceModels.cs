@@ -10,6 +10,13 @@ public sealed record BusinessConsoleMaintenanceListRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record BusinessConsoleMaintenancePlanListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? DeviceAssetId = null);
+
 public sealed record BusinessConsoleMaintenanceWorkOrderListRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -55,7 +62,8 @@ public sealed record BusinessConsoleCreateMaintenancePlanRequest(
     string EnvironmentId,
     string DeviceAssetId,
     string? PlanCode,
-    string Interval,
+    // Calendar interval (ISO-8601 P7D) for the calendar trigger, or null for a runtime-only plan.
+    string? Interval,
     DateOnly StartsOn,
     string Owner,
     DateTimeOffset? WindowStartUtc,
@@ -129,12 +137,13 @@ public sealed record BusinessConsoleMaintenancePlanItem(
     string PlanId,
     string DeviceAssetId,
     string PlanCode,
-    string Interval,
+    string? Interval,
     DateOnly StartsOn,
-    DateOnly NextDueOn,
+    DateOnly? NextDueOn,
     decimal? RuntimeHourInterval,
     decimal? NextDueRuntimeHours,
-    decimal LastGeneratedRuntimeHours);
+    decimal LastGeneratedRuntimeHours,
+    decimal? RemainingRuntimeHours);
 
 public sealed record BusinessConsoleMaintenanceInspectionListResponse(
     IReadOnlyCollection<BusinessConsoleMaintenanceInspectionItem> Items,

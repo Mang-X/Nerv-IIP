@@ -83,10 +83,10 @@ public sealed class MaintenancePlanEntityTypeConfiguration : IEntityTypeConfigur
         MaintenanceWorkOrderEntityTypeConfiguration.AddTenantColumns(builder);
         builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").IsRequired().HasMaxLength(150).HasComment("MasterData device asset public id or code reference.");
         builder.Property(x => x.PlanCode).HasColumnName("plan_code").IsRequired().HasMaxLength(100).HasComment("Maintenance plan code.");
-        builder.Property(x => x.Interval).HasColumnName("interval").IsRequired().HasMaxLength(50).HasComment("Explicit maintenance interval expression, for example ISO-8601 P7D.");
+        builder.Property(x => x.Interval).HasColumnName("interval").HasMaxLength(50).HasComment("Calendar interval expression (ISO-8601 P7D) for the calendar trigger, or null for a runtime-only plan.");
         builder.Property(x => x.StartsOn).HasColumnName("starts_on").IsRequired().HasComment("Plan start date.");
         builder.Property(x => x.LastGeneratedOn).HasColumnName("last_generated_on").HasComment("Last business date for which the plan generated a maintenance work order.");
-        builder.Property(x => x.NextDueOn).HasColumnName("next_due_on").IsRequired().HasComment("Next business date on which the preventive maintenance plan is due.");
+        builder.Property(x => x.NextDueOn).HasColumnName("next_due_on").HasComment("Next business date on which the calendar-triggered plan is due, or null for a runtime-only plan.");
         builder.Property(x => x.Owner).HasColumnName("owner").IsRequired().HasMaxLength(150).HasComment("Plan owner or team.");
         builder.Property(x => x.WindowStartUtc).HasColumnName("window_start_utc").HasComment("UTC start of the optional runtime availability maintenance window.");
         builder.Property(x => x.WindowEndUtc).HasColumnName("window_end_utc").HasComment("UTC end of the optional runtime availability maintenance window.");

@@ -397,7 +397,7 @@ describe('maintenance inspections page', () => {
 })
 
 describe('maintenance plans page', () => {
-  it('renders trigger-mode column and next-due for calendar vs runtime plans', async () => {
+  it('renders three trigger modes and remaining hours vs next-due date', async () => {
     state.plans = [
       {
         planId: 'p-cal',
@@ -412,26 +412,42 @@ describe('maintenance plans page', () => {
         planId: 'p-run',
         deviceAssetId: 'DEV-RUN',
         planCode: 'PM-RUN',
-        interval: 'P365D',
+        interval: null, // runtime-only: no calendar trigger
         startsOn: '2026-06-01',
-        nextDueOn: '2027-06-01',
+        nextDueOn: null,
         runtimeHourInterval: 1000,
         nextDueRuntimeHours: 1000,
         lastGeneratedRuntimeHours: 0,
+        remainingRuntimeHours: 300, // server-computed remaining
+      },
+      {
+        planId: 'p-both',
+        deviceAssetId: 'DEV-BOTH',
+        planCode: 'PM-BOTH',
+        interval: 'P90D',
+        startsOn: '2026-06-01',
+        nextDueOn: '2026-08-30',
+        runtimeHourInterval: 2000,
+        nextDueRuntimeHours: 2000,
+        lastGeneratedRuntimeHours: 0,
+        remainingRuntimeHours: 1700,
       },
     ]
     const wrapper = mount(PlansPage, mountOptions())
     await flushPromises()
 
     expect(wrapper.text()).toContain('触发模式')
+    // Three distinguishable modes.
     expect(wrapper.text()).toContain('日历周期')
     expect(wrapper.text()).toContain('运行小时')
-    // 日历型显下次到期日；运行小时型显下一触发阈值。
+    expect(wrapper.text()).toContain('两者组合')
+    // Calendar-only shows the next due date; runtime shows remaining hours (not the absolute threshold).
     expect(wrapper.text()).toContain('2026-07-31')
-    expect(wrapper.text()).toContain('运行满 1000 小时')
+    expect(wrapper.text()).toContain('剩余 300 小时')
+    expect(wrapper.text()).toContain('剩余 1700 小时')
   })
 
-  it('creates a runtime-hours plan with a positive threshold and calendar fallback interval', async () => {
+  it('creates a genuine runtime-only plan (no calendar interval)', async () => {
     mount(PlansPage, mountOptions())
     await flushPromises()
 
@@ -471,8 +487,8 @@ describe('maintenance plans page', () => {
     const body = state.createPlan.mock.calls[0][0]
     expect(body.deviceAssetId).toBe('DEV-SMT-01')
     expect(body.runtimeHourInterval).toBe(1000)
-    // 运行小时模式仍带日历兜底周期（后端 interval 恒必填）。
-    expect(body.interval).toBe('P365D')
+    // Runtime-only mode sends no calendar interval — a genuine usage-triggered plan.
+    expect(body.interval).toBeUndefined()
   })
 
   it('blocks a runtime-mode submit when the trigger hours are missing', async () => {
@@ -507,5 +523,10 @@ describe('maintenance plans page', () => {
 
     expect(state.createPlan).not.toHaveBeenCalled()
     expect(document.body.textContent).toContain('请填写正的触发运行小时数。')
+    // Field-level invalid state (red box on the NvInput wrapper), not only the bottom summary.
+    const runtimeWrapper = document.body
+      .querySelector<HTMLInputElement>('#plan-runtime-hours')!
+      .closest('[data-slot="nv-input"]')!
+    expect(runtimeWrapper.getAttribute('data-invalid')).toBe('true')
   })
 })

@@ -137,12 +137,14 @@ const reviewFixture = vi.hoisted(() => {
       planId: 'plan-2',
       deviceAssetId: 'DEV-OIL-01',
       planCode: 'PM-CNC-RUNTIME',
-      interval: 'P365D',
+      interval: null, // runtime-only: no calendar trigger
       startsOn: '2026-06-01',
-      nextDueOn: '2027-06-01',
+      nextDueOn: null,
       runtimeHourInterval: 1000,
       nextDueRuntimeHours: 1000,
       lastGeneratedRuntimeHours: 0,
+      // Server-computed remaining runtime hours (from the plan's own StartsOn window).
+      remainingRuntimeHours: 280,
     },
   ] satisfies BusinessConsoleMaintenancePlanItem[]
 
@@ -341,6 +343,7 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     plansError: shallowRef(),
     plansPending: shallowRef(false),
     plansTotal: computed(() => 1),
+    filters: { organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 200 },
   }),
   useMaintenanceReliability: () => ({
     filters: {

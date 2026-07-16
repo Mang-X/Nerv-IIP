@@ -17259,6 +17259,14 @@
               "default": 100,
               "nullable": false
             }
+          },
+          {
+            "name": "deviceAssetId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -17268,16 +17276,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenancePlanListResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -39632,7 +39630,6 @@
           "organizationId",
           "environmentId",
           "deviceAssetId",
-          "interval",
           "owner"
         ],
         "properties": {
@@ -39664,7 +39661,7 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "startsOn": {
             "type": "string",
@@ -39760,7 +39757,8 @@
             "type": "string"
           },
           "interval": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "startsOn": {
             "type": "string",
@@ -39768,7 +39766,8 @@
           },
           "nextDueOn": {
             "type": "string",
-            "format": "date"
+            "format": "date",
+            "nullable": true
           },
           "runtimeHourInterval": {
             "type": "number",
@@ -39783,10 +39782,15 @@
           "lastGeneratedRuntimeHours": {
             "type": "number",
             "format": "decimal"
+          },
+          "remainingRuntimeHours": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
           }
         }
       },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceListRequest": {
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenancePlanListRequest": {
         "type": "object",
         "additionalProperties": false
       },
@@ -40082,6 +40086,10 @@
             "type": "boolean"
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceListRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceInspectionMeasurementTrendResponse": {
         "allOf": [

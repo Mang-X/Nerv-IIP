@@ -4462,7 +4462,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     environmentId: string;
     deviceAssetId: string;
     planCode?: string | null;
-    interval: string;
+    interval?: string | null;
     startsOn?: string;
     owner: string;
     windowStartUtc?: string | null;
@@ -4486,15 +4486,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     planId?: string;
     deviceAssetId?: string;
     planCode?: string;
-    interval?: string;
+    interval?: string | null;
     startsOn?: string;
-    nextDueOn?: string;
+    nextDueOn?: string | null;
     runtimeHourInterval?: number | null;
     nextDueRuntimeHours?: number | null;
     lastGeneratedRuntimeHours?: number;
+    remainingRuntimeHours?: number | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceListRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenancePlanListRequest = {
     [key: string]: never;
 };
 
@@ -4569,6 +4570,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     lowerSpecLimit?: number | null;
     upperSpecLimit?: number | null;
     isWithinSpec?: boolean;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceListRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceInspectionMeasurementTrendResponse = NetCorePalExtensionsDtoResponseData & {
@@ -14037,15 +14042,12 @@ export type ListBusinessConsoleMaintenancePlansData = {
         environmentId: string;
         skip?: number;
         take?: number;
+        deviceAssetId?: string | null;
     };
     url: '/api/business-console/v1/maintenance/plans';
 };
 
 export type ListBusinessConsoleMaintenancePlansErrors = {
-    /**
-     * Bad Request
-     */
-    400: FastEndpointsErrorResponse;
     /**
      * Unauthorized
      */
@@ -14055,8 +14057,6 @@ export type ListBusinessConsoleMaintenancePlansErrors = {
      */
     403: unknown;
 };
-
-export type ListBusinessConsoleMaintenancePlansError = ListBusinessConsoleMaintenancePlansErrors[keyof ListBusinessConsoleMaintenancePlansErrors];
 
 export type ListBusinessConsoleMaintenancePlansResponses = {
     /**

@@ -117,7 +117,12 @@ const {
 const { workOrders, workOrdersError, workOrdersPending } = useMaintenanceWorkOrders({
   take: MAINTENANCE_DETAIL_TAKE,
 })
-const { plans, plansError, plansPending } = useMaintenancePlans({ take: MAINTENANCE_DETAIL_TAKE })
+const {
+  plans,
+  plansError,
+  plansPending,
+  filters: plansFilters,
+} = useMaintenancePlans({ take: MAINTENANCE_DETAIL_TAKE })
 const { inspections, inspectionsError, inspectionsPending } = useMaintenanceInspections({
   take: MAINTENANCE_DETAIL_TAKE,
 })
@@ -195,15 +200,28 @@ const currentDevicePlanMatches = computed(() =>
   plans.value.filter((row) => row.deviceAssetId === currentDeviceId.value),
 )
 const currentDevicePlans = computed(() => currentDevicePlanMatches.value.slice(0, 5))
-// 运行小时型保养计划（有 runtimeHourInterval）——取起算日最早者，作为累计运行小时窗口锚点，
-// 使 totalRuntimeHours 与后端计划推算口径一致，可与 nextDueRuntimeHours 相减求剩余小时。
+// 运行小时型保养计划（有 runtimeHourInterval）。距下次保养以最紧迫者为准：后端已按各计划自己的
+// 起算口径算出剩余小时（remainingRuntimeHours），这里取剩余最小的一条；剩余未知（无运行样本）的
+// 计划排在有剩余之后，避免遮住真正快到期的计划。
+const currentDeviceRuntimePlans = computed(() =>
+  currentDevicePlanMatches.value.filter((row) => row.runtimeHourInterval != null),
+)
 const currentDeviceRuntimePlan = computed(
   () =>
-    currentDevicePlanMatches.value
-      .filter((row) => row.runtimeHourInterval != null)
-      .slice()
-      .sort((a, b) => (a.startsOn ?? '').localeCompare(b.startsOn ?? ''))[0],
+    currentDeviceRuntimePlans.value.slice().sort((a, b) => {
+      const ar = a.remainingRuntimeHours
+      const br = b.remainingRuntimeHours
+      if (ar == null && br == null) return 0
+      if (ar == null) return 1
+      if (br == null) return -1
+      return ar - br
+    })[0],
 )
+// 「距下次保养还需 X 小时」直接消费后端逐计划剩余小时（各计划各自窗口，口径与 PM 触发一致）。
+const runtimeHoursUntilNextMaintenance = computed(
+  () => currentDeviceRuntimePlan.value?.remainingRuntimeHours ?? null,
+)
+// 「累计运行小时」是信息卡：窗口锚定运行小时计划起算日（无则近 N 天），展示窗口内累计运行事实。
 const nowIso = ref(new Date().toISOString())
 const runtimeHoursWindowEnd = nowIso
 const runtimeHoursWindowStart = computed(() => {
@@ -223,12 +241,6 @@ const {
   runtimeHoursWindowStart,
   runtimeHoursWindowEnd,
 )
-const runtimeHoursUntilNextMaintenance = computed(() => {
-  const plan = currentDeviceRuntimePlan.value
-  const total = totalRuntimeHours.value
-  if (!plan || plan.nextDueRuntimeHours == null || total == null) return null
-  return Math.max(0, plan.nextDueRuntimeHours - total)
-})
 const runtimeHoursCardHint = computed(() => {
   if (!hasRuntimeHoursSamples.value) return '当前窗口无运行样本，等于设备暂无运行事实'
   return currentDeviceRuntimePlan.value
@@ -273,6 +285,9 @@ watch(
     oeeFilters.deviceAssetId = deviceAssetId
     maintenanceAvailabilityFilters.deviceAssetIds = deviceAssetId
     reliabilityFilters.deviceAssetId = deviceAssetId
+    // Scope the plans query to this device so the runtime cards are not starved by a global,
+    // paginated plan list (a device's plan may otherwise fall outside the first page).
+    plansFilters.deviceAssetId = deviceAssetId
     void refreshDevice()
   },
   { immediate: true },

@@ -69,10 +69,8 @@ const intervalOptions = [
   { label: '每季度', value: 'P90D' },
 ]
 
-// 触发模式。后端 MaintenancePlan 的日历周期 interval 恒为必填，运行小时（runtimeHourInterval）为可叠加触发；
-// 因此「运行小时」模式仍会带一个日历兜底周期（按年 P365D，界面明确告知），纯无日历的运行小时计划后端暂不支持。
+// 触发模式：日历周期（按日期到期）/ 运行小时（按累计运行小时到期，无日历到期）/ 两者组合（任一先到即开单）。
 type TriggerMode = 'calendar' | 'runtime' | 'both'
-const RUNTIME_MODE_FALLBACK_INTERVAL = 'P365D'
 const runtimeHourQuickValues = [500, 1000, 2000]
 
 const createOpen = shallowRef(false)
@@ -86,6 +84,7 @@ const createForm = reactive({
   owner: '',
 })
 const createError = shallowRef('')
+const runtimeHoursInvalid = shallowRef(false)
 
 const generateOpen = shallowRef(false)
 const generateForm = reactive({
@@ -119,21 +118,28 @@ function planNo(row: PlanRow) {
   return id ? `PM-${id.slice(-8).toUpperCase()}` : '保养计划'
 }
 function intervalLabel(value?: string | null) {
-  return intervalOptions.find((o) => o.value === value)?.label ?? value ?? '—'
+  if (!value) return '—'
+  return intervalOptions.find((o) => o.value === value)?.label ?? value
 }
-// 存储事实只有 runtimeHourInterval 有无之分：无=纯日历，有=含运行小时触发（可能叠加日历兜底）。
+// 三态由存储事实区分：无日历 interval = 运行小时；无 runtimeHourInterval = 日历周期；两者皆有 = 两者组合。
 function triggerModeLabel(row: PlanRow) {
-  return row.runtimeHourInterval != null ? '运行小时' : '日历周期'
+  const hasCalendar = !!row.interval
+  const hasRuntime = row.runtimeHourInterval != null
+  if (hasCalendar && hasRuntime) return '两者组合'
+  if (hasRuntime) return '运行小时'
+  return '日历周期'
 }
 function formatHours(value?: number | null) {
   if (value === null || value === undefined) return '—'
   return `${Number(value)} 小时`
 }
-// 列表跨设备，不逐行拉运行小时（facade 按单设备查）：运行小时型显下一触发阈值，日历型显下次到期日。
-// 设备详情页会按当前设备实时累计运行小时算出「距下次保养还需 X 小时」。
+// 下次到期：运行小时型显剩余小时（后端按各计划起算口径算出的 remainingRuntimeHours，无运行样本时为空）；
+// 日历型显下次到期日。两者组合以运行小时剩余为主，缺剩余时回落到日历到期日。
 function nextDueLabel(row: PlanRow) {
   if (row.runtimeHourInterval != null) {
-    return `运行满 ${formatHours(row.nextDueRuntimeHours)}`
+    if (row.remainingRuntimeHours != null) return `剩余 ${formatHours(row.remainingRuntimeHours)}`
+    if (row.interval && row.nextDueOn) return row.nextDueOn // combined plan: fall back to calendar due
+    return '运行小时（暂无样本）'
   }
   return row.nextDueOn ?? row.startsOn ?? '—'
 }
@@ -153,12 +159,16 @@ function openCreate() {
   createForm.startsOn = todayDate()
   createForm.owner = ''
   createError.value = ''
+  runtimeHoursInvalid.value = false
   createOpen.value = true
 }
 function setRuntimeHours(value: number) {
   createForm.runtimeHourInterval = String(value)
+  runtimeHoursInvalid.value = false
 }
 async function submitCreate() {
+  createError.value = ''
+  runtimeHoursInvalid.value = false
   if (!createForm.deviceAssetId.trim() || !createForm.owner.trim()) {
     createError.value = '请填写设备与负责班组。'
     return
@@ -169,15 +179,15 @@ async function submitCreate() {
   if (usesRuntime) {
     const parsed = Number(createForm.runtimeHourInterval)
     if (!createForm.runtimeHourInterval.trim() || !Number.isFinite(parsed) || parsed <= 0) {
+      runtimeHoursInvalid.value = true
       createError.value = '请填写正的触发运行小时数。'
       return
     }
     runtimeHourInterval = parsed
   }
 
-  // 运行小时模式仍带日历兜底周期（后端 interval 恒必填）；两者组合用用户所选周期。
-  const interval =
-    createForm.triggerMode === 'runtime' ? RUNTIME_MODE_FALLBACK_INTERVAL : createForm.interval
+  // 运行小时模式不带日历到期（interval 留空 → 真正的纯运行小时触发）；日历/两者组合用所选周期。
+  const interval = createForm.triggerMode === 'runtime' ? undefined : createForm.interval
 
   const body: BusinessConsoleCreateMaintenancePlanRequest = {
     organizationId: filters.organizationId,
@@ -296,12 +306,13 @@ function formatError(error: unknown) {
             </NvTabs>
             <p class="text-xs text-muted-foreground">
               <template v-if="createForm.triggerMode === 'calendar'"
-                >按日历周期推算到期，到期即开具维护工单。</template
+                >按保养周期到期开单，例如每月一次。</template
               >
               <template v-else-if="createForm.triggerMode === 'runtime'"
-                >按累计运行小时达到阈值开单；后端每个计划仍带日历兜底周期，此模式默认按年（P365D）兜底。</template
+                >按设备累计运行小时到期开单，不受日历影响；例如每运行满 1000
+                小时保养一次。</template
               >
-              <template v-else>同时按日历周期与运行小时到期，任一先到即开单。</template>
+              <template v-else>同时保留日历周期与运行小时两条到期线，任一先到即开单。</template>
             </p>
           </NvField>
 
@@ -348,6 +359,14 @@ function formatError(error: unknown) {
                 step="1"
                 autocomplete="off"
                 placeholder="如 1000"
+                :invalid="runtimeHoursInvalid"
+                aria-describedby="plan-runtime-hours-error"
+                @input="runtimeHoursInvalid = false"
+              />
+              <NvFieldError
+                v-if="runtimeHoursInvalid"
+                id="plan-runtime-hours-error"
+                :errors="['请填写正的触发运行小时数。']"
               />
               <div class="flex flex-wrap gap-2 pt-1">
                 <NvButton
