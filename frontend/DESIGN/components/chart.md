@@ -1,38 +1,38 @@
-# Chart
+# Chart (NvAreaChart / NvLineChart / NvBarChart / NvDonutChart)
 
-Charts use a shadcn-style chart shell. `@nerv-iip/ui` owns the chart container, tooltip content, legend content, and semantic token bridge; business pages may bring a chart engine such as Unovis later, but the base design-system package does not depend on one.
+App pages use the branded chart components from `@nerv-iip/ui`:
 
-## Exports
+- `NvLineChart` / `NvAreaChart` — trends over time. Props: `data` (row
+  objects), `xKey`, `series: LineSeries[]` (`{ key, label, color? }`),
+  `height`, `valueSuffix`.
+- `NvBarChart` — categorical comparison (`BarSeries`).
+- `NvDonutChart` — share-of-whole (`DonutSlice`).
 
-- `ChartContainer`
-- `ChartTooltipContent`
-- `ChartLegendContent`
-- `ChartConfig`
+The shadcn-style chart shell (`ChartContainer`, `ChartTooltipContent`,
+`ChartLegendContent`, `ChartConfig`) is 原版 and library-internal — the `Nv*`
+charts already wrap it. Do not compose the shell in app code.
 
 ## Contract
 
-1. Chart config colors must use semantic chart tokens such as `var(--chart-1)` through `var(--chart-5)`.
-2. The first dashboard shapes are line, bar, and donut/pie. Do not add a second chart abstraction.
-3. Loading, empty, and error states use `Skeleton`, `Empty`, `Alert`, and `Spinner`.
+1. Series colors default to the semantic chart tokens `var(--chart-1)` … `var(--chart-5)`; pass `color` only for domain-meaningful overrides, never raw hex.
+2. The supported shapes are line/area, bar, and donut. Do not add a second chart abstraction in app code.
+3. Loading, empty, and error states use `Skeleton`, `Empty`, `Alert`, and `NvLoader` around the chart — the chart itself renders data only.
 4. Legends and tooltips must remain readable in dense panels.
-5. Page code may introduce a chart engine adapter later, but all chart shell pieces come from `@nerv-iip/ui`.
+5. Big-board surfaces do NOT use these — the screen layer has its own charts (`NvScreenBarChart`, `NvScreenTrendChart`, `NvScreenDonut`, `NvSparkline`, …).
 
 ## Usage
 
 ```vue
 <script setup lang="ts">
-import type { ChartConfig } from '@nerv-iip/ui'
-import { ChartContainer } from '@nerv-iip/ui'
+import { NvLineChart, type LineSeries } from '@nerv-iip/ui'
 
-const chartConfig = {
-  planned: { label: 'Planned', color: 'var(--chart-1)' },
-  actual: { label: 'Actual', color: 'var(--chart-2)' },
-} satisfies ChartConfig
+const series: LineSeries[] = [
+  { key: 'planned', label: 'Planned' },
+  { key: 'actual', label: 'Actual' },
+]
 </script>
 
 <template>
-  <ChartContainer :config="chartConfig" class="min-h-48">
-    <!-- Page-level chart engine goes here. -->
-  </ChartContainer>
+  <NvLineChart :data="rows" x-key="date" :series="series" :height="260" />
 </template>
 ```
