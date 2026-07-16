@@ -44,7 +44,7 @@ import {
   ShieldAlertIcon,
   Trash2Icon,
   XCircleIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { computed, reactive, ref, toRef, watch } from 'vue'
 
 const props = defineProps<{ deviceAssetId: string }>()

@@ -7,14 +7,24 @@ import wasm from 'vite-plugin-wasm'
 const dhxInstalled = existsSync(
   fileURLToPath(new URL('../../../../node_modules/@dhx/trial-gantt/package.json', import.meta.url)),
 )
-const dhxVendor = fileURLToPath(new URL('../../../../packages/scheduling/vendor/dhtmlx/dhtmlxgantt.es.js', import.meta.url))
-const dhxCssVendor = fileURLToPath(new URL('../../../../packages/scheduling/vendor/dhtmlx/dhtmlxgantt.css', import.meta.url))
-const dhxStub = fileURLToPath(new URL('../../../../packages/scheduling/src/engine/dhtmlx/stub.ts', import.meta.url))
-const dhxCssStub = fileURLToPath(new URL('../../../../packages/scheduling/src/engine/dhtmlx/empty.css', import.meta.url))
+const dhxVendor = fileURLToPath(
+  new URL('../../../../packages/scheduling/vendor/dhtmlx/dhtmlxgantt.es.js', import.meta.url),
+)
+const dhxCssVendor = fileURLToPath(
+  new URL('../../../../packages/scheduling/vendor/dhtmlx/dhtmlxgantt.css', import.meta.url),
+)
+const dhxStub = fileURLToPath(
+  new URL('../../../../packages/scheduling/src/engine/dhtmlx/stub.ts', import.meta.url),
+)
+const dhxCssStub = fileURLToPath(
+  new URL('../../../../packages/scheduling/src/engine/dhtmlx/empty.css', import.meta.url),
+)
 const dhxAlias: Record<string, string> = dhxInstalled
   ? {}
   : {
-      '@dhx/trial-gantt/codebase/dhtmlxgantt.css': existsSync(dhxCssVendor) ? dhxCssVendor : dhxCssStub,
+      '@dhx/trial-gantt/codebase/dhtmlxgantt.css': existsSync(dhxCssVendor)
+        ? dhxCssVendor
+        : dhxCssStub,
       '@dhx/trial-gantt': existsSync(dhxVendor) ? dhxVendor : dhxStub,
     }
 
@@ -45,9 +55,8 @@ const touchSidebar = [
 ]
 
 // Nerv-IIP 设计系统文档 (VitePress).
-// Runs under the workspace's `vite → @voidzero-dev/vite-plus-core` override; the
-// docs app carries an `esbuild` devDep because Rolldown-Vite deprecated
-// `transformWithEsbuild` (still called by @vitejs/plugin-vue).
+// VitePress 1.x keeps its own supported Vite 5 dependency; workspace applications
+// use the Vite Plus core override independently.
 export default defineConfig({
   title: 'Nerv-IIP 设计系统',
   description: '数字工厂控制平面 · 统一设计系统：设计哲学、设计令牌与组件展示',
@@ -199,7 +208,10 @@ export default defineConfig({
           text: '排产 Scheduling',
           items: [
             { text: 'GanttChart 工单甘特图', link: '/components/desktop/gantt-chart' },
-            { text: 'ResourceSchedulerBoard 资源甘特图', link: '/components/desktop/resource-scheduler' },
+            {
+              text: 'ResourceSchedulerBoard 资源甘特图',
+              link: '/components/desktop/resource-scheduler',
+            },
           ],
         },
       ],

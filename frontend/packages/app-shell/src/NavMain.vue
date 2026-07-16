@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
-import { ChevronRight } from 'lucide-vue-next'
+import { ChevronRight } from '@lucide/vue'
 import {
   CollapsibleContent,
   CollapsibleRoot as Collapsible,

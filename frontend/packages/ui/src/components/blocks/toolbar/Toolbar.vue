@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import { SearchIcon } from 'lucide-vue-next'
+import { SearchIcon } from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 import { NvInput } from '../../pc/input'
 

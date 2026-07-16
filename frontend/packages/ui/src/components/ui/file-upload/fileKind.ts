@@ -7,7 +7,7 @@ import {
   FileTextIcon,
   FileVideoIcon,
   PresentationIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 import { getFileFamily } from '../../../lib/file'
 

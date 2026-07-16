@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
-import { MinusIcon, TrendingDownIcon, TrendingUpIcon } from 'lucide-vue-next'
+import { MinusIcon, TrendingDownIcon, TrendingUpIcon } from '@lucide/vue'
 import { Card, CardAction, CardDescription, CardFooter, CardHeader, CardTitle } from '../../ui/card'
 import { Badge } from '../../ui/badge'
 import { cn } from '../../../lib/utils'

@@ -49,7 +49,7 @@ import {
   TriangleAlertIcon,
   Undo2Icon,
   WrenchIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import type { LocationQueryRaw } from 'vue-router'
 import { computed, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'

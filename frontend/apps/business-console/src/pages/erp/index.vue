@@ -32,7 +32,7 @@ import {
   NvToolbar,
   toast,
 } from '@nerv-iip/ui'
-import { FileSearchIcon, RefreshCwIcon, ShoppingCartIcon } from 'lucide-vue-next'
+import { FileSearchIcon, RefreshCwIcon, ShoppingCartIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { firstQueryParam, formatDate, formatError, formatQuantity } from './shared'

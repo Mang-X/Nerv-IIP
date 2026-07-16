@@ -17,7 +17,7 @@ import {
   LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, SettingsIcon,
   FactoryIcon, ChevronRightIcon, PlusIcon, BellIcon, SearchIcon,
   GaugeIcon, ActivityIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 // 一级导航选择（点击即切换激活项）
 const nav = ref('总览')

@@ -25,7 +25,7 @@ import {
   RefreshCwIcon,
   RouteIcon,
   WarehouseIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 

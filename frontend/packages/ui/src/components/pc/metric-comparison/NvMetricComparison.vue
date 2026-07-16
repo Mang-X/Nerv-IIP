@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
-import { ArrowDownIcon, ArrowUpIcon, MinusIcon } from 'lucide-vue-next'
+import { ArrowDownIcon, ArrowUpIcon, MinusIcon } from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 import NvCard from '../card/NvCard.vue'
 

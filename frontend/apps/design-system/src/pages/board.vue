@@ -13,7 +13,7 @@ import {
   NvTouchButton,
   NvTouchSegmented,
 } from '@nerv-iip/ui'
-import { BellRingIcon, CheckCircleIcon, CircleStopIcon, PauseIcon } from 'lucide-vue-next'
+import { BellRingIcon, CheckCircleIcon, CircleStopIcon, PauseIcon } from '@lucide/vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 definePage({ meta: { title: '车间看板' } })

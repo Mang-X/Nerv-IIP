@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import * as icons from 'lucide-vue-next'
+import * as icons from '@lucide/vue'
 import {
   NvGlowDivider,
   NvKpiBar,
@@ -10,7 +10,7 @@ import {
   useScreenData,
 } from '@nerv-iip/ui'
 import { useNow } from '@vueuse/core'
-import { Activity, AlertTriangle, Cpu, PackageCheck } from 'lucide-vue-next'
+import { Activity, AlertTriangle, Cpu, PackageCheck } from '@lucide/vue'
 import { type Component, computed, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'

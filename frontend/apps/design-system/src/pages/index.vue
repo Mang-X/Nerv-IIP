@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { NvThemePicker, NvThemeToggle } from '@nerv-iip/ui'
-import { ArrowRightIcon, LayoutDashboardIcon, MonitorIcon, SmartphoneIcon } from 'lucide-vue-next'
+import { ArrowRightIcon, LayoutDashboardIcon, MonitorIcon, SmartphoneIcon } from '@lucide/vue'
 
 definePage({ meta: { title: '总览' } })
 

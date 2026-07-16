@@ -4,7 +4,7 @@ title: NvKpiBar 指标横条
 
 <script setup>
 import { NvKpiBar } from '@nerv-iip/ui'
-import { ClipboardList, ListChecks, ClipboardCheck, AlertTriangle, Zap, Activity } from 'lucide-vue-next'
+import { ClipboardList, ListChecks, ClipboardCheck, AlertTriangle, Zap, Activity } from '@lucide/vue'
 
 const items = [
   { icon: ClipboardList, value: '24', label: '工单总数' },
@@ -39,7 +39,7 @@ import {
   AlertTriangle,
   Zap,
   Activity,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 const items = [
   { icon: ClipboardList, value: '24', label: '工单总数' },

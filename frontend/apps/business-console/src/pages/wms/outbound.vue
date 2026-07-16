@@ -33,7 +33,7 @@ import {
   NvToolbar,
   toast,
 } from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
+import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 
 definePage({

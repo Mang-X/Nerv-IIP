@@ -2,7 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'reka-ui'
-import { CheckIcon, ChevronsUpDownIcon, SearchIcon } from 'lucide-vue-next'
+import { CheckIcon, ChevronsUpDownIcon, SearchIcon } from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 
 /**

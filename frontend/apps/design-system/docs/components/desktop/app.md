@@ -4,7 +4,7 @@ title: NvApp & Header 应用外壳
 
 <script setup>
 import { NvAppHeader, NvButton } from '@nerv-iip/ui'
-import { BellIcon, SearchIcon } from 'lucide-vue-next'
+import { BellIcon, SearchIcon } from '@lucide/vue'
 </script>
 
 # NvApp & Header 应用外壳

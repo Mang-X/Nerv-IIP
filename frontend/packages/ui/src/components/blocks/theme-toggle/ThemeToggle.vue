@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
-import { MoonIcon, SunIcon } from 'lucide-vue-next'
+import { MoonIcon, SunIcon } from '@lucide/vue'
 import { Button } from '../../ui/button'
 import { useColorMode } from '../../../composables/useTheme'
 

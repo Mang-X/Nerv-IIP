@@ -40,7 +40,7 @@ import {
   Spinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
-import { FactoryIcon, PlusIcon, RefreshCwIcon, SearchIcon } from 'lucide-vue-next'
+import { FactoryIcon, PlusIcon, RefreshCwIcon, SearchIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { formatDateTime } from '@/utils/format'

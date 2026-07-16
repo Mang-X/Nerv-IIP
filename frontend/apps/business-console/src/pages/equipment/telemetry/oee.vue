@@ -20,7 +20,7 @@ import {
   NvSectionCards,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { LineChartIcon, RefreshCwIcon, Settings2Icon } from 'lucide-vue-next'
+import { LineChartIcon, RefreshCwIcon, Settings2Icon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 

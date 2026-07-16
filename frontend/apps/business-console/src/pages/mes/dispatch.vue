@@ -37,7 +37,7 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { RefreshCwIcon, UserCheckIcon } from 'lucide-vue-next'
+import { RefreshCwIcon, UserCheckIcon } from '@lucide/vue'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 

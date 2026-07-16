@@ -21,7 +21,7 @@ import {
   NvStatusBadge,
   toast,
 } from '@nerv-iip/ui'
-import { CircleSlashIcon, EyeIcon, PencilIcon, PlayIcon } from 'lucide-vue-next'
+import { CircleSlashIcon, EyeIcon, PencilIcon, PlayIcon } from '@lucide/vue'
 import { ref } from 'vue'
 
 export interface DetailField {

@@ -2,7 +2,7 @@
 import type { NavDomain, SideNav } from '@nerv-iip/app-shell'
 import { AppShellT } from '@nerv-iip/app-shell'
 import { useAuthStore } from '@/stores/auth'
-import { BellIcon, Building2Icon, InboxIcon, LayersIcon, ShieldIcon, TriangleAlertIcon } from 'lucide-vue-next'
+import { BellIcon, Building2Icon, InboxIcon, LayersIcon, ShieldIcon, TriangleAlertIcon } from '@lucide/vue'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'

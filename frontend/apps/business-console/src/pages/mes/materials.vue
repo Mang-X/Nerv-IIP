@@ -19,7 +19,7 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { ArrowUpRightIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { ArrowUpRightIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 

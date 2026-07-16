@@ -8,7 +8,7 @@ const props = defineProps<{
   permissions: ConsoleIamPermissionResponse[]
 }>()
 
-const selectedCodes = defineModel<string[]>({ default: [] })
+const selectedCodes = defineModel<string[]>({ default: () => [] })
 const search = shallowRef('')
 
 const sortedPermissions = computed(() =>

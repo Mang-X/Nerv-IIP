@@ -5,7 +5,7 @@ title: NvMobileBadge 角标
 
 <script setup>
 import { NvMobileBadge } from '@nerv-iip/ui-mobile'
-import { BellIcon, ClipboardListIcon, UserIcon } from 'lucide-vue-next'
+import { BellIcon, ClipboardListIcon, UserIcon } from '@lucide/vue'
 </script>
 
 <MobileDoc>
