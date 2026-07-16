@@ -25090,6 +25090,10 @@
           "status": {
             "type": "string"
           },
+          "staleReason": {
+            "type": "string",
+            "nullable": true
+          },
           "lastHeartbeatAtUtc": {
             "type": "string",
             "format": "date-time",
@@ -25118,6 +25122,11 @@
           "errorCount": {
             "type": "integer",
             "format": "int64",
+            "nullable": true
+          },
+          "counterEpoch": {
+            "type": "string",
+            "format": "guid",
             "nullable": true
           },
           "sourceSystem": {

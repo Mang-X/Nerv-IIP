@@ -88,17 +88,26 @@ public sealed record ConnectorCollectionHealthResponse(
 /// identity (<see cref="ConnectorId"/>), display name, protocol (<see cref="SourceSystem"/>: opcua/modbus/mqtt),
 /// derived <see cref="Status"/> (current/stale/unknown) and the same heartbeat/throughput/drop facts as
 /// <see cref="ConnectorCollectionHealthResponse"/>.
+/// <para>
+/// <see cref="StaleReason"/> disambiguates a <c>stale</c> status: <c>heartbeat</c> means the connector is
+/// unreachable / its heartbeat has aged out (真断线); <c>metrics</c> means the heartbeat is still fresh but
+/// collection metrics stopped advancing (仍在线但采集停滞). Null when not stale.
+/// <see cref="CounterEpoch"/> scopes the monotonic counters; a consumer computing a sampling rate from
+/// consecutive polls must reset its baseline when the epoch changes (a counter reset).
+/// </para>
 /// </summary>
 public sealed record ConnectorCollectionHealthListItem(
     string ConnectorId,
     string ConnectorName,
     string Status,
+    string? StaleReason,
     DateTimeOffset? LastHeartbeatAtUtc,
     DateTimeOffset? MetricsReportedAtUtc,
     DateTimeOffset? LastSampleAtUtc,
     long? ReceivedCount,
     long? DroppedCount,
     long? ErrorCount,
+    Guid? CounterEpoch,
     string? SourceSystem);
 
 public sealed record ConnectorCollectionHealthListResponse(

@@ -542,12 +542,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     connectorId?: string;
     connectorName?: string;
     status?: string;
+    staleReason?: string | null;
     lastHeartbeatAtUtc?: string | null;
     metricsReportedAtUtc?: string | null;
     lastSampleAtUtc?: string | null;
     receivedCount?: number | null;
     droppedCount?: number | null;
     errorCount?: number | null;
+    counterEpoch?: string | null;
     sourceSystem?: string | null;
 };
 

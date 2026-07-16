@@ -44,7 +44,7 @@ public sealed class ConnectorCollectionHealthListEndpoint(IServiceProvider servi
         var items = instances
             .Where(x => x.CollectionHealth is not null)
             .Select(x => ConnectorCollectionHealthEvaluator.ToListItem(x, now))
-            .OrderBy(x => StatusRank(x.Status))
+            .OrderBy(x => SeverityRank(x.Status, x.StaleReason))
             .ThenBy(x => x.ConnectorName, StringComparer.Ordinal)
             .ThenBy(x => x.ConnectorId, StringComparer.Ordinal)
             .ToList();
@@ -53,10 +53,12 @@ public sealed class ConnectorCollectionHealthListEndpoint(IServiceProvider servi
         await Send.OkAsync(response.AsResponseData(), ct);
     }
 
-    private static int StatusRank(string status) => status switch
+    // Real disconnects (heartbeat) sort above stalled-but-online collectors (metrics), then unknown, then healthy.
+    private static int SeverityRank(string status, string? staleReason) => status switch
     {
-        "stale" => 0,
-        "unknown" => 1,
-        _ => 2,
+        "stale" when staleReason == ConnectorCollectionHealthEvaluator.StaleReasonHeartbeat => 0,
+        "stale" => 1,
+        "unknown" => 2,
+        _ => 3,
     };
 }

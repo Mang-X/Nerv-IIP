@@ -76,8 +76,10 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal(2, data.GetProperty("total").GetInt32());
         Assert.Equal("modbus-main", items[0].GetProperty("connectorId").GetString());
         Assert.Equal("stale", items[0].GetProperty("status").GetString());
+        Assert.Equal("heartbeat", items[0].GetProperty("staleReason").GetString());
         Assert.Equal("modbus", items[0].GetProperty("sourceSystem").GetString());
         Assert.Equal("opcua-main", items[1].GetProperty("connectorId").GetString());
+        Assert.Equal(JsonValueKind.Null, items[1].GetProperty("staleReason").ValueKind);
     }
 
     [Fact]
@@ -778,8 +780,8 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             LastListRequest = request;
             return Task.FromResult(new BusinessConsoleConnectorCollectionHealthListResponse(
                 [
-                    new BusinessConsoleConnectorCollectionHealthListItem("modbus-main", "Modbus Main", "stale", null, null, null, 50, 9, 2, "modbus"),
-                    new BusinessConsoleConnectorCollectionHealthListItem("opcua-main", "OPC UA Main", "current", null, null, null, 100, 4, 1, "opcua"),
+                    new BusinessConsoleConnectorCollectionHealthListItem("modbus-main", "Modbus Main", "stale", "heartbeat", null, null, null, 50, 9, 2, Guid.Parse("22222222-2222-2222-2222-222222222222"), "modbus"),
+                    new BusinessConsoleConnectorCollectionHealthListItem("opcua-main", "OPC UA Main", "current", null, null, null, null, 100, 4, 1, Guid.Parse("11111111-1111-1111-1111-111111111111"), "opcua"),
                 ],
                 2));
         }

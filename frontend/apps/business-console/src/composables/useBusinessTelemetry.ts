@@ -24,7 +24,7 @@ import {
   type EquipmentRuntimeAvailabilityWindow,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
-import { computed, reactive, type Ref } from 'vue'
+import { computed, reactive, ref, watch, type Ref } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 
@@ -350,18 +350,25 @@ export function useBusinessTelemetryOee(initialFilters: Partial<TelemetryWindowF
 }
 
 /**
- * 采集连接器状态墙轮询周期。拔线后后端在心跳超时窗口内把状态派生为 stale，本页每个周期重取以在
- * 「1 个轮询周期内」反映断线。用官方 auto-refetch 表达，不手写 setInterval。
+ * 采集连接器状态墙轮询周期。连接器拔线后 Connector Host 会在下一个上报周期发出 Reachable=false 心跳，读面
+ * 立即派生为 stale；本页每个周期重取以在该心跳到达后的「1 个轮询周期内」反映断线。用官方 auto-refetch
+ * 表达，不手写 setInterval。
  */
 export const CONNECTOR_HEALTH_POLL_INTERVAL_MS = 10_000
 
-export function connectorHealthStatusLabel(status?: string | null) {
-  const labels: Record<string, string> = {
-    current: '在线',
-    stale: '断线 / 异常',
-    unknown: '未上报',
-  }
-  return status ? (labels[status] ?? status) : '未上报'
+/**
+ * stale 有两种成因，展示口径不同：`heartbeat`=心跳失联（真断线，显示断线时长并红色置顶）；
+ * `metrics`=心跳仍新鲜但采集指标停更（仍在线，采集停滞，不显示断线时长）。
+ */
+export function connectorHealthStatusLabel(status?: string | null, staleReason?: string | null) {
+  if (status === 'current') return '在线'
+  if (status === 'stale') return staleReason === 'metrics' ? '采集停滞' : '断线'
+  return '未上报'
+}
+
+/** 心跳失联才是真断线；其余（metrics 停更 / current / unknown）不按断线处理。 */
+export function isConnectorHeartbeatLost(status?: string | null, staleReason?: string | null) {
+  return status === 'stale' && staleReason !== 'metrics'
 }
 
 /** 采集连接器的协议类型来自采集健康的 sourceSystem（opcua/modbus/mqtt）。 */
@@ -375,9 +382,40 @@ export function connectorSourceSystemLabel(sourceSystem?: string | null) {
   return labels[sourceSystem.toLowerCase()] ?? sourceSystem
 }
 
+export interface ConnectorRateSample {
+  counterEpoch?: string | null
+  receivedCount?: number | null
+  metricsReportedAtUtc?: string | null
+}
+
 /**
- * 采集连接器健康墙：消费 #885 连接器采集健康列表 facade，按周期轮询。断线/异常连接器由后端排序置顶。
- * 业务上下文为空时不发请求（空态由页面处理）。
+ * 采样吞吐速率（samples/s）= 同一 counter epoch 内连续两次上报的 receivedCount 差 ÷ 上报时间差。
+ * epoch 变更（计数器重置）、计数回退、时间未推进或缺首个样本时返回 null（页面显示「计算中」而非伪造速率）。
+ */
+export function computeConnectorSampleRate(
+  previous: ConnectorRateSample | undefined,
+  current: ConnectorRateSample,
+): number | null {
+  if (!previous) return null
+  if ((previous.counterEpoch ?? null) !== (current.counterEpoch ?? null)) return null
+  const prevReceived = previous.receivedCount
+  const curReceived = current.receivedCount
+  if (prevReceived == null || curReceived == null || curReceived < prevReceived) return null
+  const prevAt = Date.parse(previous.metricsReportedAtUtc ?? '')
+  const curAt = Date.parse(current.metricsReportedAtUtc ?? '')
+  if (!Number.isFinite(prevAt) || !Number.isFinite(curAt) || curAt <= prevAt) return null
+  return (curReceived - prevReceived) / ((curAt - prevAt) / 1000)
+}
+
+export function formatSampleRate(rate: number | null | undefined) {
+  if (rate === null || rate === undefined) return '计算中…'
+  if (rate < 1) return `${rate.toFixed(2)} /秒`
+  return `${rate.toLocaleString(undefined, { maximumFractionDigits: 1 })} /秒`
+}
+
+/**
+ * 采集连接器健康墙：消费连接器采集健康列表 facade，按周期轮询。断线/异常连接器由后端排序置顶。
+ * 业务上下文为空时不发请求（空态由页面处理）。采样速率由相邻两次轮询在前端按 epoch 差值计算。
  */
 export function useBusinessTelemetryConnectors() {
   const businessContext = useBusinessContextStore()
@@ -389,14 +427,34 @@ export function useBusinessTelemetryConnectors() {
     autoRefetch: () => CONNECTOR_HEALTH_POLL_INTERVAL_MS,
   }))
 
-  return {
-    connectors: computed<BusinessConsoleConnectorCollectionHealthListItem[]>(() =>
-      listItems<BusinessConsoleConnectorCollectionHealthListItem>(
-        connectorsQuery.data.value as
-          | BusinessConsoleConnectorCollectionHealthListEnvelope
-          | undefined,
-      ),
+  const connectors = computed<BusinessConsoleConnectorCollectionHealthListItem[]>(() =>
+    listItems<BusinessConsoleConnectorCollectionHealthListItem>(
+      connectorsQuery.data.value as
+        | BusinessConsoleConnectorCollectionHealthListEnvelope
+        | undefined,
     ),
+  )
+
+  const previousSamples = new Map<string, ConnectorRateSample>()
+  const sampleRateByConnector = ref<Record<string, number | null>>({})
+  watch(connectors, (list) => {
+    const next: Record<string, number | null> = {}
+    for (const connector of list) {
+      const id = connector.connectorId ?? ''
+      if (!id) continue
+      const sample: ConnectorRateSample = {
+        counterEpoch: connector.counterEpoch,
+        receivedCount: connector.receivedCount,
+        metricsReportedAtUtc: connector.metricsReportedAtUtc,
+      }
+      next[id] = computeConnectorSampleRate(previousSamples.get(id), sample)
+      previousSamples.set(id, sample)
+    }
+    sampleRateByConnector.value = next
+  })
+
+  return {
+    connectors,
     connectorsError: connectorsQuery.error,
     connectorsPending: connectorsQuery.isLoading,
     connectorsTotal: computed(() =>
@@ -407,5 +465,6 @@ export function useBusinessTelemetryConnectors() {
       ),
     ),
     refreshConnectors: () => refetchWithBusinessContext(businessContext, connectorsQuery),
+    sampleRateByConnector,
   }
 }

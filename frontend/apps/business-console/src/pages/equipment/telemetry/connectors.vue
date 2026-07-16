@@ -3,12 +3,22 @@ import type { BusinessConsoleConnectorCollectionHealthListItem } from '@nerv-iip
 import {
   connectorHealthStatusLabel,
   connectorSourceSystemLabel,
+  formatSampleRate,
+  isConnectorHeartbeatLost,
   useBusinessTelemetryConnectors,
 } from '@/composables/useBusinessTelemetry'
+import { notifyError } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { NvBadge, NvButton, NvPageHeader, NvSectionCard, NvSectionCards } from '@nerv-iip/ui'
-import { ActivityIcon, ChevronDownIcon, HashIcon, RefreshCwIcon, TimerIcon } from '@lucide/vue'
-import { computed, reactive } from 'vue'
+import {
+  ActivityIcon,
+  ChevronDownIcon,
+  GaugeIcon,
+  HashIcon,
+  RefreshCwIcon,
+  TimerIcon,
+} from '@lucide/vue'
+import { computed, reactive, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 definePage({
@@ -19,14 +29,26 @@ definePage({
   },
 })
 
-const { connectors, connectorsError, connectorsPending, connectorsTotal, refreshConnectors } =
-  useBusinessTelemetryConnectors()
+const {
+  connectors,
+  connectorsError,
+  connectorsPending,
+  connectorsTotal,
+  refreshConnectors,
+  sampleRateByConnector,
+} = useBusinessTelemetryConnectors()
 
-const errorMessage = computed(() => formatError(connectorsError.value))
+// 查询失败一次性 toast（人话映射），不在页面留常驻错误条（AGENTS §1.5-B3）。
+watch(connectorsError, (error) => {
+  if (error) notifyError(error, '采集健康加载失败，请稍后重试。')
+})
+
 const onlineCount = computed(() => connectors.value.filter((c) => c.status === 'current').length)
-const offlineCount = computed(() => connectors.value.filter((c) => c.status === 'stale').length)
-const droppedTotal = computed(() =>
-  connectors.value.reduce((total, c) => total + (c.droppedCount ?? 0), 0),
+const disconnectedCount = computed(
+  () => connectors.value.filter((c) => isConnectorHeartbeatLost(c.status, c.staleReason)).length,
+)
+const stalledCount = computed(
+  () => connectors.value.filter((c) => c.status === 'stale' && c.staleReason === 'metrics').length,
 )
 
 const expanded = reactive(new Set<string>())
@@ -35,13 +57,26 @@ function toggle(connectorId: string) {
   else expanded.add(connectorId)
 }
 
-function rowKey(connector: BusinessConsoleConnectorCollectionHealthListItem) {
+type Connector = BusinessConsoleConnectorCollectionHealthListItem
+function rowKey(connector: Connector) {
   return connector.connectorId ?? connector.connectorName ?? '未知连接器'
 }
-function statusVariant(status?: string | null) {
-  if (status === 'current') return 'success'
-  if (status === 'stale') return 'danger'
-  return 'warning'
+function heartbeatLost(connector: Connector) {
+  return isConnectorHeartbeatLost(connector.status, connector.staleReason)
+}
+function statusVariant(connector: Connector) {
+  if (heartbeatLost(connector)) return 'danger'
+  if (connector.status === 'stale') return 'warning'
+  if (connector.status === 'current') return 'success'
+  return 'neutral'
+}
+function cardTone(connector: Connector) {
+  if (heartbeatLost(connector)) return 'border-destructive/60 ring-1 ring-destructive/30'
+  if (connector.status === 'stale') return 'border-amber-500/50 ring-1 ring-amber-500/20'
+  return ''
+}
+function sampleRate(connector: Connector) {
+  return sampleRateByConnector.value[connector.connectorId ?? ''] ?? null
 }
 function formatCount(value?: number | null) {
   return value === null || value === undefined ? '无数据' : value.toLocaleString()
@@ -62,9 +97,6 @@ function formatDurationSince(value?: string | null) {
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours} 小时 ${minutes % 60} 分钟`
   return `${Math.floor(hours / 24)} 天 ${hours % 24} 小时`
-}
-function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
 </script>
 
@@ -98,11 +130,9 @@ function formatError(error: unknown) {
     <NvSectionCards :columns="4">
       <NvSectionCard description="采集连接器" :value="connectorsTotal" hint="已上报采集健康" />
       <NvSectionCard description="在线" :value="onlineCount" hint="心跳与指标均新鲜" />
-      <NvSectionCard description="断线 / 异常" :value="offlineCount" hint="心跳或指标过期" />
-      <NvSectionCard description="累计丢样" :value="droppedTotal" hint="所有连接器丢样合计" />
+      <NvSectionCard description="断线" :value="disconnectedCount" hint="心跳失联" />
+      <NvSectionCard description="采集停滞" :value="stalledCount" hint="仍在线但指标停更" />
     </NvSectionCards>
-
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
     <div
       v-if="connectorsPending && !connectors.length"
@@ -123,9 +153,7 @@ function formatError(error: unknown) {
         v-for="connector in connectors"
         :key="rowKey(connector)"
         class="rounded-lg border bg-card"
-        :class="
-          connector.status === 'stale' ? 'border-destructive/60 ring-1 ring-destructive/30' : ''
-        "
+        :class="cardTone(connector)"
       >
         <button
           type="button"
@@ -146,8 +174,8 @@ function formatError(error: unknown) {
             </p>
           </div>
           <div class="flex shrink-0 items-center gap-1.5">
-            <NvBadge class="rounded-sm" :variant="statusVariant(connector.status)">{{
-              connectorHealthStatusLabel(connector.status)
+            <NvBadge class="rounded-sm" :variant="statusVariant(connector)">{{
+              connectorHealthStatusLabel(connector.status, connector.staleReason)
             }}</NvBadge>
             <ChevronDownIcon
               class="size-4 text-muted-foreground transition-transform"
@@ -159,9 +187,12 @@ function formatError(error: unknown) {
 
         <div class="grid grid-cols-3 gap-2 border-t px-4 py-3 text-center">
           <div>
-            <p class="text-xs text-muted-foreground">接收数</p>
+            <p class="text-xs text-muted-foreground">采样速率</p>
             <p class="text-sm font-semibold tabular-nums text-foreground">
-              {{ formatCount(connector.receivedCount) }}
+              {{ formatSampleRate(sampleRate(connector)) }}
+            </p>
+            <p class="text-[11px] text-muted-foreground">
+              累计接收 {{ formatCount(connector.receivedCount) }}
             </p>
           </div>
           <div>
@@ -193,11 +224,18 @@ function formatError(error: unknown) {
           </span>
           <span>最后采样 {{ formatDateTime(connector.lastSampleAtUtc) }}</span>
           <span
-            v-if="connector.status === 'stale'"
+            v-if="heartbeatLost(connector)"
             class="inline-flex items-center gap-1 text-destructive"
           >
             <TimerIcon class="size-3" aria-hidden="true" />断线时长约
             {{ formatDurationSince(connector.lastHeartbeatAtUtc) }}
+          </span>
+          <span
+            v-else-if="connector.status === 'stale'"
+            class="inline-flex items-center gap-1 text-amber-600 dark:text-amber-500"
+          >
+            <GaugeIcon class="size-3" aria-hidden="true" />心跳仍在线，指标停更约
+            {{ formatDurationSince(connector.metricsReportedAtUtc) }}
           </span>
         </div>
 
@@ -223,13 +261,21 @@ function formatError(error: unknown) {
             }}</span>
           </div>
           <p class="text-muted-foreground">
-            采集健康读面按连接器汇总心跳与采样吞吐；该连接器覆盖的逐条采集标签与实测值请在
+            当前读面按连接器汇总心跳与采样吞吐。该连接器覆盖的逐条采集标签清单与每标签最近采样时间需
+            connector→tag 读面（缺口，见 follow-up
+            <a
+              href="https://github.com/Mang-X/Nerv-IIP/issues/947"
+              target="_blank"
+              rel="noopener"
+              class="text-brand underline-offset-4 hover:underline"
+              >#947</a
+            >）；在其落地前可先到
             <RouterLink
               to="/equipment/telemetry/tags"
               class="text-brand underline-offset-4 hover:underline"
               >采集标签</RouterLink
             >
-            查看。
+            按设备查看。
           </p>
         </div>
       </div>

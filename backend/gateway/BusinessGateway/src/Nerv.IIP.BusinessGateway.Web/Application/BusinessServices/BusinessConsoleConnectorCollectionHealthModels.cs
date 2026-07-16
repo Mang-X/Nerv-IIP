@@ -25,10 +25,12 @@ public sealed record BusinessConsoleConnectorCollectionHealthListItem(
     string ConnectorId,
     string ConnectorName,
     string Status,
+    string? StaleReason,
     DateTimeOffset? LastHeartbeatAtUtc,
     DateTimeOffset? MetricsReportedAtUtc,
     DateTimeOffset? LastSampleAtUtc,
     long? ReceivedCount,
     long? DroppedCount,
     long? ErrorCount,
+    Guid? CounterEpoch,
     string? SourceSystem);
