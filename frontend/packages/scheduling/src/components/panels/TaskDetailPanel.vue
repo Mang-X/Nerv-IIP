@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { NvButton } from '@nerv-iip/ui'
-import { LockIcon, UnlockIcon } from 'lucide-vue-next'
+import { LockIcon, UnlockIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { conflictReasonLabel } from '../../model/labels'
 import type { ScheduleTask } from '../../model/types'

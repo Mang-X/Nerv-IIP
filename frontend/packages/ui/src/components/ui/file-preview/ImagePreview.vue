@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { RotateCcwIcon, RotateCwIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-vue-next'
+import { RotateCcwIcon, RotateCwIcon, ZoomInIcon, ZoomOutIcon } from '@lucide/vue'
 import { motion } from 'motion-v'
 import { computed, ref } from 'vue'
 

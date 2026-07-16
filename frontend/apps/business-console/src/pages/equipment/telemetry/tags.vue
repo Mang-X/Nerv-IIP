@@ -13,7 +13,7 @@ import {
   NvRowActions,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { EyeIcon, GaugeIcon, LineChartIcon, RefreshCwIcon, Settings2Icon } from 'lucide-vue-next'
+import { EyeIcon, GaugeIcon, LineChartIcon, RefreshCwIcon, Settings2Icon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 

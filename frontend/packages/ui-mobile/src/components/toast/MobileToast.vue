@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { inject, onBeforeUnmount, watch } from 'vue'
-import { CheckIcon, Loader2Icon, XIcon } from 'lucide-vue-next'
+import { CheckIcon, Loader2Icon, XIcon } from '@lucide/vue'
 import { MOBILE_OVERLAY_TARGET } from '../../lib/overlay-target'
 
 // Defaults to body (full-screen PDA); a host (e.g. docs phone sim) can scope it.

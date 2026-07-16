@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
-import { CircleCheck, CircleX } from 'lucide-vue-next'
+import { CircleCheck, CircleX } from '@lucide/vue'
 import { cn } from '../../lib/utils'
 
 const props = defineProps<{

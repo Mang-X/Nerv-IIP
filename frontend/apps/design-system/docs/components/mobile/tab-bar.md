@@ -5,7 +5,7 @@ title: NvTabBar 标签栏
 
 <script setup>
 import { NvTabBar } from '@nerv-iip/ui-mobile'
-import { ClipboardListIcon, ScanLineIcon, UserIcon } from 'lucide-vue-next'
+import { ClipboardListIcon, ScanLineIcon, UserIcon } from '@lucide/vue'
 import { ref } from 'vue'
 
 const tab = ref('orders')
@@ -40,7 +40,7 @@ const tabs = [
 ```vue
 <script setup lang="ts">
 import { NvTabBar } from '@nerv-iip/ui-mobile'
-import { ClipboardListIcon, ScanLineIcon, UserIcon } from 'lucide-vue-next'
+import { ClipboardListIcon, ScanLineIcon, UserIcon } from '@lucide/vue'
 import { ref } from 'vue'
 
 const tab = ref('orders')

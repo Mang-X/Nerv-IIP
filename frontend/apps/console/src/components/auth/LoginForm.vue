@@ -16,7 +16,7 @@ import {
   Input,
   Spinner,
 } from '@nerv-iip/ui'
-import { LogInIcon } from 'lucide-vue-next'
+import { LogInIcon } from '@lucide/vue'
 import { reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 

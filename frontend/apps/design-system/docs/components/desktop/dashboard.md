@@ -9,7 +9,7 @@ import {
   NvSidebarBrand, NvSidebarDot, NvSidebarUser,
   Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator,
 } from '@nerv-iip/ui'
-import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, SettingsIcon } from 'lucide-vue-next'
+import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, SettingsIcon } from '@lucide/vue'
 </script>
 
 # NvAppShellInset 应用外壳

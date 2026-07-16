@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Search, X } from 'lucide-vue-next'
+import { Search, X } from '@lucide/vue'
 
 /**
  * Screen — big-board search box. A lucide search glyph anchors the left, the

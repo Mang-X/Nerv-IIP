@@ -22,7 +22,7 @@ import {
   ShieldCheckIcon,
   ScanLineIcon,
   SettingsIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 </script>
 
 # NvNavigationMenu 导航菜单

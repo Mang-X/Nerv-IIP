@@ -26,7 +26,7 @@ import {
   GaugeIcon,
   RefreshCwIcon,
   WrenchIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 

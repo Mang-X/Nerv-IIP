@@ -14,7 +14,7 @@ import {
   NvDialogClose,
   NvButton,
 } from '@nerv-iip/ui'
-import { GaugeIcon } from 'lucide-vue-next'
+import { GaugeIcon } from '@lucide/vue'
 import { ref } from 'vue'
 
 const dialogOpen = ref(false)

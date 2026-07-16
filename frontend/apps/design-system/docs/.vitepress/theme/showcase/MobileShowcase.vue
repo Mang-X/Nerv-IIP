@@ -61,7 +61,7 @@ import {
   WifiIcon,
   WrenchIcon,
   XCircleIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 // 页面标题由 VitePress frontmatter 提供（原 definePage 已移除）

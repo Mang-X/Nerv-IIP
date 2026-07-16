@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import { Delete } from 'lucide-vue-next'
+import { Delete } from '@lucide/vue'
 import { computed, inject } from 'vue'
 import { MOBILE_OVERLAY_TARGET } from '../../lib/overlay-target'
 import { cn } from '../../lib/utils'

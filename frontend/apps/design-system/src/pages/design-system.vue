@@ -85,7 +85,7 @@ import {
   SearchIcon,
   SparklesIcon,
   TriangleAlertIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 
 definePage({ meta: { title: '桌面设计系统' } })

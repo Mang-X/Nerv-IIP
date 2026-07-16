@@ -28,7 +28,7 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { NetworkIcon, SearchIcon } from 'lucide-vue-next'
+import { NetworkIcon, SearchIcon } from '@lucide/vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 

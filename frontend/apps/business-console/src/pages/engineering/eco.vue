@@ -42,7 +42,7 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { NetworkIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
+import { NetworkIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { formatDate, today } from '@/utils/format'

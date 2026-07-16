@@ -76,7 +76,7 @@ dotnet tool run dotnet-ef migrations add <Name> `
   --startup-project backend/services/<Svc>/src/Nerv.IIP.<Svc>.Web
 ```
 
-### Frontend (Node.js >=22.18.0, pnpm 11.1.2)
+### Frontend (Node.js >=22.18.0, pnpm 11.13.1)
 ```powershell
 pnpm -C frontend typecheck     # fastest single check
 pnpm -C frontend test           # vitest

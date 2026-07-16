@@ -4,7 +4,7 @@ import NotificationTaskList from '@/components/notifications/NotificationTaskLis
 import { useNotifications } from '@/composables/useNotifications'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { Button, NvPageHeader, NvSectionCard, NvSectionCards, toast } from '@nerv-iip/ui'
-import { CheckCheckIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { CheckCheckIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
 
 definePage({

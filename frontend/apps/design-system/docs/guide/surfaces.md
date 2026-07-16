@@ -3,7 +3,7 @@ title: 四个表面
 ---
 
 <script setup>
-import { MonitorIcon, SmartphoneIcon, TabletIcon, PresentationIcon, ArrowRightIcon } from 'lucide-vue-next'
+import { MonitorIcon, SmartphoneIcon, TabletIcon, PresentationIcon, ArrowRightIcon } from '@lucide/vue'
 </script>
 
 # 四个表面

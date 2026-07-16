@@ -7,7 +7,7 @@ import {
   Maximize2Icon,
   ZoomInIcon,
   ZoomOutIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { computed, onBeforeUnmount, shallowRef } from 'vue'
 
 import {

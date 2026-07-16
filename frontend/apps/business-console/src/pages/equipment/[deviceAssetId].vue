@@ -54,7 +54,7 @@ import {
   SlidersHorizontalIcon,
   TrendingUpIcon,
   WrenchIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 

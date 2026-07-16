@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FilePreviewEmits, FilePreviewProps } from './filePreviewKind'
-import { AlertCircleIcon, ExternalLinkIcon } from 'lucide-vue-next'
+import { AlertCircleIcon, ExternalLinkIcon } from '@lucide/vue'
 import { AnimatePresence, motion, MotionConfig } from 'motion-v'
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 

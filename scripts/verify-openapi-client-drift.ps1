@@ -16,7 +16,7 @@
 #     - PowerShell 7
 #     - .NET SDK 10
 #     - Node.js 22.22.3
-#     - pnpm 11.1.2
+#     - pnpm 11.13.1
 
 [CmdletBinding()]
 param(

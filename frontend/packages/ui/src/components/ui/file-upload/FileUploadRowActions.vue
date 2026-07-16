@@ -2,7 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import type { FileUploadRow } from './types'
 import { computed } from 'vue'
-import { PauseIcon, PlayIcon, RotateCcwIcon, XIcon } from 'lucide-vue-next'
+import { PauseIcon, PlayIcon, RotateCcwIcon, XIcon } from '@lucide/vue'
 import { AnimatePresence, motion } from 'motion-v'
 import { Button } from '../button'
 import { fileUploadMotion } from './motion'

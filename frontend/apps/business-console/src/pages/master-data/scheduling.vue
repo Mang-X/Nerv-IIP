@@ -67,7 +67,7 @@ import {
   PlusIcon,
   RefreshCwIcon,
   Trash2Icon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDate, formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'

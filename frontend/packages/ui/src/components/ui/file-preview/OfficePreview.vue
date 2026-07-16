@@ -6,7 +6,7 @@ import {
   RotateCcwIcon,
   ZoomInIcon,
   ZoomOutIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 
 import {

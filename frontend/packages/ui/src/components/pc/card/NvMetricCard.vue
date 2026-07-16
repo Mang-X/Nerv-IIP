@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
-import { MinusIcon, TrendingDownIcon, TrendingUpIcon } from 'lucide-vue-next'
+import { MinusIcon, TrendingDownIcon, TrendingUpIcon } from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 import NvAreaChart from '../chart/NvAreaChart.vue'
 import NvCard from './NvCard.vue'
