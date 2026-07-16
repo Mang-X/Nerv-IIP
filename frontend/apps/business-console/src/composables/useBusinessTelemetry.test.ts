@@ -1,5 +1,6 @@
+import { flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { shallowRef } from 'vue'
+import { nextTick, ref, shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
@@ -20,6 +21,8 @@ import {
   useBusinessTelemetryHistory,
   useBusinessTelemetryOee,
   useBusinessTelemetryTags,
+  useMaintenancePlanRuntimeRemaining,
+  type RuntimeRemainingPlan,
 } from './useBusinessTelemetry'
 
 const coladaState = vi.hoisted(() => ({
@@ -29,7 +32,24 @@ const coladaState = vi.hoisted(() => ({
   refetchById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
+// Controllable runtime-hours read used by useMaintenancePlanRuntimeRemaining. Tests swap `impl` to
+// hand out deferred, abort-aware promises so overlapping rounds / out-of-order completion can be driven.
+type RuntimeHoursOptions = { query: Record<string, unknown>; signal?: AbortSignal }
+const rtState = vi.hoisted(() => ({
+  concurrent: 0,
+  maxConcurrent: 0,
+  impl: (_opts: RuntimeHoursOptions): Promise<unknown> =>
+    Promise.resolve({
+      data: { success: true, data: { totalRuntimeHours: 0, hasRuntimeSamples: false } },
+    }),
+}))
+
 vi.mock('@nerv-iip/api-client', () => ({
+  queryBusinessConsoleTelemetryRuntimeHours: (opts: RuntimeHoursOptions) => rtState.impl(opts),
+  queryBusinessConsoleTelemetryRuntimeHoursQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'queryBusinessConsoleTelemetryRuntimeHours' }],
+    query: vi.fn(),
+  })),
   createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions: vi.fn(() => ({
     key: [{ _id: 'createOrUpdateBusinessConsoleTelemetryAlarmRule' }],
     mutation: vi.fn(),
@@ -92,11 +112,20 @@ describe('business telemetry composables', () => {
     coladaState.queryDataById.clear()
     coladaState.queryOptionsById.clear()
     coladaState.refetchById.clear()
+    rtState.concurrent = 0
+    rtState.maxConcurrent = 0
+    rtState.impl = () =>
+      Promise.resolve({
+        data: { success: true, data: { totalRuntimeHours: 0, hasRuntimeSamples: false } },
+      })
   })
 
   it('uses current business context and pagination for tag and alarm-rule lists', () => {
     const businessContext = useBusinessContextStore()
-    businessContext.patchContext({ organizationId: 'org-telemetry', environmentId: 'env-shopfloor' })
+    businessContext.patchContext({
+      organizationId: 'org-telemetry',
+      environmentId: 'env-shopfloor',
+    })
 
     useBusinessTelemetryTags({ deviceAssetId: ' DEV-SMT-01 ' })
     useBusinessTelemetryAlarmRules({ deviceAssetId: ' DEV-SMT-01 ', isEnabled: 'enabled' })
@@ -199,7 +228,9 @@ describe('business telemetry composables', () => {
       isEnabled: true,
     })
 
-    expect(coladaState.refetchById.get('listBusinessConsoleTelemetryAlarmRules')).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('listBusinessConsoleTelemetryAlarmRules'),
+    ).not.toHaveBeenCalled()
   })
 
   it('keeps history and OEE queries disabled until a device scope is provided', () => {
@@ -220,8 +251,12 @@ describe('business telemetry composables', () => {
         deviceAssetId: '',
       }),
     })
-    expect(coladaState.queryOptionsById.get('queryBusinessConsoleTelemetryDeviceHistory')?.enabled).toBe(false)
-    expect(coladaState.queryOptionsById.get('queryBusinessConsoleTelemetryOee')?.enabled).toBe(false)
+    expect(
+      coladaState.queryOptionsById.get('queryBusinessConsoleTelemetryDeviceHistory')?.enabled,
+    ).toBe(false)
+    expect(coladaState.queryOptionsById.get('queryBusinessConsoleTelemetryOee')?.enabled).toBe(
+      false,
+    )
     expect(history.historyItems.value).toEqual([])
     expect(oee.oee.value).toBeUndefined()
   })
@@ -271,5 +306,95 @@ describe('business telemetry composables', () => {
     expect(formatOeeQuantity(12.5, 'PCS')).toBe('12.5 PCS')
     expect(describeTelemetryOeeLimitations()).toContain('OEE = 可用率 × 性能率 × 质量率')
     expect(describeTelemetryOeeDegradation('production-facts-missing')).toBe('缺少 MES 报工事实')
+  })
+
+  // Hand out deferred runtime-hours reads so overlapping rounds and out-of-order completion can be driven.
+  function deferredRuntimeHours(options: { honorAbort: boolean }) {
+    const created: Array<{
+      resolveWith: (totalRuntimeHours: number, hasRuntimeSamples?: boolean) => void
+    }> = []
+    rtState.impl = (opts) =>
+      new Promise((resolve, reject) => {
+        let settled = false
+        const settle = () => {
+          if (settled) return false
+          settled = true
+          rtState.concurrent -= 1
+          return true
+        }
+        rtState.concurrent += 1
+        rtState.maxConcurrent = Math.max(rtState.maxConcurrent, rtState.concurrent)
+        if (options.honorAbort) {
+          opts.signal?.addEventListener('abort', () => {
+            if (settle()) reject(new DOMException('aborted', 'AbortError'))
+          })
+        }
+        created.push({
+          resolveWith: (totalRuntimeHours, hasRuntimeSamples = true) => {
+            if (settle()) {
+              resolve({ data: { success: true, data: { totalRuntimeHours, hasRuntimeSamples } } })
+            }
+          },
+        })
+      })
+    return created
+  }
+
+  const runtimePlan = (overrides: Partial<RuntimeRemainingPlan>): RuntimeRemainingPlan => ({
+    planId: 'p1',
+    deviceAssetId: 'D1',
+    startsOn: '2026-06-01',
+    runtimeHourInterval: 1000,
+    nextDueRuntimeHours: 1000,
+    ...overrides,
+  })
+
+  it('does not let a superseded round overwrite the latest remaining or clear its pending', async () => {
+    // Ignore abort here to isolate the generation guard: the stale round stays in flight and resolves late.
+    const created = deferredRuntimeHours({ honorAbort: false })
+    const plans = ref<RuntimeRemainingPlan[]>([runtimePlan({ nextDueRuntimeHours: 1000 })])
+    const { remainingByPlanId, remainingPending } = useMaintenancePlanRuntimeRemaining(plans)
+    await nextTick()
+    await flushPromises()
+    expect(created).toHaveLength(1)
+    expect(remainingPending.value).toBe(true)
+
+    // Advance the threshold -> a newer round supersedes the first.
+    plans.value = [runtimePlan({ nextDueRuntimeHours: 2000 })]
+    await nextTick()
+    await flushPromises()
+    expect(created).toHaveLength(2)
+
+    // The newer round completes first: remaining = 2000 - 500 = 1500.
+    created[1].resolveWith(500)
+    await flushPromises()
+    expect(remainingByPlanId.value.p1).toEqual({ status: 'ok', hours: 1500 })
+    expect(remainingPending.value).toBe(false)
+
+    // The stale round completes late with a different value: it must NOT overwrite nor re-toggle pending.
+    created[0].resolveWith(900)
+    await flushPromises()
+    expect(remainingByPlanId.value.p1).toEqual({ status: 'ok', hours: 1500 })
+    expect(remainingPending.value).toBe(false)
+  })
+
+  it('bounds telemetry concurrency to the cap even when a refresh starts mid-flight', async () => {
+    deferredRuntimeHours({ honorAbort: true })
+    const makePlans = (nextDue: number) =>
+      Array.from({ length: 10 }, (_, i) =>
+        runtimePlan({ planId: `p${i}`, deviceAssetId: `D${i}`, nextDueRuntimeHours: nextDue }),
+      )
+    const plans = ref<RuntimeRemainingPlan[]>(makePlans(1000))
+    useMaintenancePlanRuntimeRemaining(plans)
+    await nextTick()
+    await flushPromises()
+    // 10 plans, cap 6 -> never more than 6 concurrent reads.
+    expect(rtState.maxConcurrent).toBe(6)
+
+    // Start a refresh while round 1 is still in flight: aborting the stale round keeps the peak at the cap.
+    plans.value = makePlans(2000)
+    await nextTick()
+    await flushPromises()
+    expect(rtState.maxConcurrent).toBeLessThanOrEqual(6)
   })
 })

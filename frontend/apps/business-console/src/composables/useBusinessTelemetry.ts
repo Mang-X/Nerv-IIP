@@ -424,11 +424,14 @@ async function mapWithConcurrency<T, R>(
   items: readonly T[],
   limit: number,
   fn: (item: T) => Promise<R>,
+  shouldStop?: () => boolean,
 ): Promise<R[]> {
   const results = new Array<R>(items.length)
   let cursor = 0
   async function worker() {
-    while (cursor < items.length) {
+    // Stop pulling new work once superseded, so overlapping rounds never keep `limit` workers each
+    // running — the stale round drains instead of adding to the global concurrency.
+    while (cursor < items.length && !shouldStop?.()) {
       const index = cursor++
       results[index] = await fn(items[index])
     }
@@ -450,10 +453,21 @@ export function useMaintenancePlanRuntimeRemaining(plans: Ref<RuntimeRemainingPl
   const businessContext = useBusinessContextStore()
   const remainingByPlanId = ref<Record<string, RuntimeRemainingEntry>>({})
   const pending = ref(false)
+  // Guards against overlapping rounds (watch fires, manual refresh, paging / org-env switch): only the
+  // latest generation may commit results or clear pending, and the previous round's in-flight reads are
+  // aborted so overlapping rounds never exceed the concurrency cap.
+  let generation = 0
+  let inFlight: AbortController | undefined
 
   async function recompute() {
+    const myGeneration = ++generation
+    inFlight?.abort()
+    const controller = new AbortController()
+    inFlight = controller
+    const isCurrent = () => myGeneration === generation
+
     if (!hasBusinessContext(businessContext)) {
-      remainingByPlanId.value = {}
+      if (isCurrent()) remainingByPlanId.value = {}
       return
     }
     const runtimePlans = plans.value.filter(
@@ -465,7 +479,7 @@ export function useMaintenancePlanRuntimeRemaining(plans: Ref<RuntimeRemainingPl
         p.nextDueRuntimeHours != null,
     )
     if (runtimePlans.length === 0) {
-      remainingByPlanId.value = {}
+      if (isCurrent()) remainingByPlanId.value = {}
       return
     }
 
@@ -487,6 +501,7 @@ export function useMaintenancePlanRuntimeRemaining(plans: Ref<RuntimeRemainingPl
                 windowStartUtc: `${p.startsOn}T00:00:00.000Z`,
                 windowEndUtc: nowUtc,
               },
+              signal: controller.signal,
             })
             if (result.error) return [p.planId!, { status: 'error' }] as const
             const data = result.data?.data
@@ -497,10 +512,14 @@ export function useMaintenancePlanRuntimeRemaining(plans: Ref<RuntimeRemainingPl
             return [p.planId!, { status: 'error' }] as const
           }
         },
+        () => !isCurrent(),
       )
-      remainingByPlanId.value = Object.fromEntries(entries)
+      // A superseded round must never overwrite the newer round's results or clear its pending flag.
+      if (isCurrent()) {
+        remainingByPlanId.value = Object.fromEntries(entries)
+      }
     } finally {
-      pending.value = false
+      if (isCurrent()) pending.value = false
     }
   }
 

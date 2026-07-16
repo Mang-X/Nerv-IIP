@@ -207,7 +207,8 @@ const currentDevicePlans = computed(() => currentDevicePlanMatches.value.slice(0
 const currentDeviceRuntimePlans = computed(() =>
   currentDevicePlanMatches.value.filter((row) => row.runtimeHourInterval != null),
 )
-const { remainingByPlanId } = useMaintenancePlanRuntimeRemaining(currentDeviceRuntimePlans)
+const { remainingByPlanId, remainingPending } =
+  useMaintenancePlanRuntimeRemaining(currentDeviceRuntimePlans)
 // 已知剩余小时（status=ok）才返回数值；无样本/读取失败/未算返回 null（用于排序与卡片区分）。
 function planRemainingHours(planId?: string) {
   const entry = planId ? remainingByPlanId.value[planId] : undefined
@@ -236,7 +237,10 @@ const runtimeUntilNextCardValue = computed(() => {
   if (runtimeHoursUntilNextMaintenance.value != null) {
     return formatHours(runtimeHoursUntilNextMaintenance.value)
   }
-  return runtimeRemainingHasError.value ? '读取失败' : '无样本'
+  if (runtimeRemainingHasError.value) return '读取失败'
+  // Distinguish an in-flight read from a settled no-samples result — never report pending as a data fact.
+  if (remainingPending.value) return '读取中…'
+  return '无样本'
 })
 // 「累计运行小时」是信息卡：窗口锚定运行小时计划起算日（无则近 N 天），展示窗口内累计运行事实。
 const nowIso = ref(new Date().toISOString())
@@ -258,7 +262,15 @@ const {
   runtimeHoursWindowStart,
   runtimeHoursWindowEnd,
 )
+// 累计运行小时卡值先判 pending/error，读取未完成或失败不落到「无样本」数据事实。
+const cumulativeRuntimeCardValue = computed(() => {
+  if (runtimeHoursPending.value) return '读取中…'
+  if (runtimeHoursError.value) return '读取失败'
+  return formatHours(totalRuntimeHours.value)
+})
 const runtimeHoursCardHint = computed(() => {
+  if (runtimeHoursPending.value) return '正在读取运行小时'
+  if (runtimeHoursError.value) return '运行小时读面读取失败，请稍后重试'
   if (!hasRuntimeHoursSamples.value) return '当前窗口无运行样本，等于设备暂无运行事实'
   return currentDeviceRuntimePlan.value
     ? '自运行小时型计划起算日累计'
@@ -761,7 +773,7 @@ function formatError(error: unknown) {
         <NvSectionCards :columns="2">
           <NvSectionCard
             description="累计运行小时"
-            :value="runtimeHoursPending ? '读取中…' : formatHours(totalRuntimeHours)"
+            :value="cumulativeRuntimeCardValue"
             :hint="runtimeHoursCardHint"
           />
           <NvSectionCard

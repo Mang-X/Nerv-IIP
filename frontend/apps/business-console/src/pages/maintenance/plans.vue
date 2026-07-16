@@ -63,7 +63,7 @@ const {
 const { page, pageSize } = usePagedList(filters)
 // Remaining runtime hours are derived on the client (one runtime-hours read per visible runtime plan,
 // each over the plan's own [startsOn, now] window) — the list query itself never fans out to telemetry.
-const { remainingByPlanId } = useMaintenancePlanRuntimeRemaining(plans)
+const { remainingByPlanId, remainingPending } = useMaintenancePlanRuntimeRemaining(plans)
 
 // 保养周期以 ISO-8601 间隔登记（后端按此推算到期），界面给常用周期。
 const intervalOptions = [
@@ -145,7 +145,9 @@ function nextDueLabel(row: PlanRow) {
     const entry = row.planId ? remainingByPlanId.value[row.planId] : undefined
     if (entry?.status === 'ok') return `剩余 ${formatHours(entry.hours)}`
     if (entry?.status === 'error') return '运行小时（读取失败）'
-    // no-samples or not-yet-computed: prefer the calendar due for combined plans, else say no samples.
+    // Not yet computed (undefined) while a read is in flight must not be reported as a data fact.
+    if (!entry && remainingPending.value) return '运行小时（读取中…）'
+    // Genuine no-samples (or done-but-empty): combined plans fall back to the calendar due.
     if (row.interval && row.nextDueOn) return row.nextDueOn
     return '运行小时（暂无样本）'
   }
