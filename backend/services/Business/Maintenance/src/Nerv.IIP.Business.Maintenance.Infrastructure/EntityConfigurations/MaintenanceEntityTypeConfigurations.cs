@@ -77,7 +77,18 @@ public sealed class MaintenancePlanEntityTypeConfiguration : IEntityTypeConfigur
 {
     public void Configure(EntityTypeBuilder<MaintenancePlan> builder)
     {
-        builder.ToTable("maintenance_plans", table => table.HasComment("Preventive maintenance plan schedule facts."));
+        builder.ToTable("maintenance_plans", table =>
+        {
+            table.HasComment("Preventive maintenance plan schedule facts.");
+            // Defense-in-depth for the nullable interval/next_due_on columns (the domain layer also enforces
+            // both): every plan keeps at least one trigger, and the calendar interval/next_due_on stay paired.
+            table.HasCheckConstraint(
+                "ck_maintenance_plans_has_trigger",
+                "interval IS NOT NULL OR runtime_hour_interval IS NOT NULL");
+            table.HasCheckConstraint(
+                "ck_maintenance_plans_calendar_trigger_paired",
+                "(interval IS NULL) = (next_due_on IS NULL)");
+        });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Maintenance plan id.");
         MaintenanceWorkOrderEntityTypeConfiguration.AddTenantColumns(builder);

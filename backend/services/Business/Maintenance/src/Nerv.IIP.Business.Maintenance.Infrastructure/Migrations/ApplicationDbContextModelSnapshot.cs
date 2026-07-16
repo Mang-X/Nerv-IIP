@@ -315,6 +315,10 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                     b.ToTable("maintenance_plans", "maintenance", t =>
                         {
                             t.HasComment("Preventive maintenance plan schedule facts.");
+
+                            t.HasCheckConstraint("ck_maintenance_plans_has_trigger", "interval IS NOT NULL OR runtime_hour_interval IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_maintenance_plans_calendar_trigger_paired", "(interval IS NULL) = (next_due_on IS NULL)");
                         });
                 });
 

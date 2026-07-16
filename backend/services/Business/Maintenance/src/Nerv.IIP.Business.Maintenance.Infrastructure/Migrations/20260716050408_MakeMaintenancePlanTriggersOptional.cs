@@ -38,20 +38,32 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
             // Defense-in-depth for the nullable columns (the domain layer already enforces both): every plan
             // must keep at least one trigger, and the calendar interval/next_due_on stay paired (both null for
             // a runtime-only plan, both set otherwise) so no "no-trigger" or never-due inconsistent row exists.
-            migrationBuilder.Sql(
-                "ALTER TABLE maintenance.maintenance_plans ADD CONSTRAINT ck_maintenance_plans_has_trigger CHECK (interval IS NOT NULL OR runtime_hour_interval IS NOT NULL);");
-            migrationBuilder.Sql(
-                "ALTER TABLE maintenance.maintenance_plans ADD CONSTRAINT ck_maintenance_plans_calendar_trigger_paired CHECK ((interval IS NULL) = (next_due_on IS NULL));");
+            migrationBuilder.AddCheckConstraint(
+                name: "ck_maintenance_plans_has_trigger",
+                schema: "maintenance",
+                table: "maintenance_plans",
+                sql: "interval IS NOT NULL OR runtime_hour_interval IS NOT NULL");
+
+            migrationBuilder.AddCheckConstraint(
+                name: "ck_maintenance_plans_calendar_trigger_paired",
+                schema: "maintenance",
+                table: "maintenance_plans",
+                sql: "(interval IS NULL) = (next_due_on IS NULL)");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             // Drop the nullable-era check constraints before re-tightening the columns.
-            migrationBuilder.Sql(
-                "ALTER TABLE maintenance.maintenance_plans DROP CONSTRAINT IF EXISTS ck_maintenance_plans_calendar_trigger_paired;");
-            migrationBuilder.Sql(
-                "ALTER TABLE maintenance.maintenance_plans DROP CONSTRAINT IF EXISTS ck_maintenance_plans_has_trigger;");
+            migrationBuilder.DropCheckConstraint(
+                name: "ck_maintenance_plans_calendar_trigger_paired",
+                schema: "maintenance",
+                table: "maintenance_plans");
+
+            migrationBuilder.DropCheckConstraint(
+                name: "ck_maintenance_plans_has_trigger",
+                schema: "maintenance",
+                table: "maintenance_plans");
 
             // Runtime-only plans created after Up have null interval/next_due_on. Re-adding the NOT NULL
             // constraint would fail on those rows (SET NOT NULL rejects existing nulls) and an empty-string
