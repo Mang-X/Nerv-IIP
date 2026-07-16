@@ -70,19 +70,66 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..' '..')).Path
 $appDir = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $androidDir = Join-Path $appDir 'android'
 
-# --- 1. 工具链前置检查（缺失即失败并给出本仓约定，不静默降级）。
-$androidHome = if (-not [string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) { $env:ANDROID_HOME } else { $env:ANDROID_SDK_ROOT }
-if ([string]::IsNullOrWhiteSpace($androidHome) -or -not (Test-Path (Join-Path $androidHome 'platform-tools'))) {
-    Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：请设置 ANDROID_HOME（或 ANDROID_SDK_ROOT）指向已装 platform-tools/build-tools/platforms 的 SDK 根目录。本机约定路径示例：C:\Users\hp\android-sdk（本仓不设全局 env，须显式传给本脚本进程）。'
+# --- 1. 工具链前置检查（显式 env 优先；未设时自动探测约定安装位置——工具链装在
+#     用户目录但不设全局 env 时（本仓开发机现状），新终端/新会话零知识也能直接跑；
+#     探测不到才失败，不静默降级）。
+function Resolve-PdaAndroidHome {
+    $candidates = @(
+        $env:ANDROID_HOME
+        $env:ANDROID_SDK_ROOT
+        (Join-Path $env:USERPROFILE 'android-sdk')
+        (Join-Path $env:LOCALAPPDATA 'Android\Sdk')
+    )
+    foreach ($candidate in $candidates) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        if (Test-Path (Join-Path $candidate 'platform-tools\adb.exe')) { return $candidate }
+    }
+    return $null
+}
+
+$androidHome = Resolve-PdaAndroidHome
+if ([string]::IsNullOrWhiteSpace($androidHome)) {
+    Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：ANDROID_HOME/ANDROID_SDK_ROOT 未设，且约定位置（%USERPROFILE%\android-sdk、%LOCALAPPDATA%\Android\Sdk）均无 platform-tools\adb.exe。安装口径见 docs/architecture/mobile-pda-deployment.md（sdkmanager 装 platform-tools/build-tools/platforms/emulator/系统镜像）。'
     exit 1
 }
 $env:ANDROID_HOME = $androidHome
 Write-Diagnostic "ANDROID_HOME=$androidHome"
 
-if ([string]::IsNullOrWhiteSpace($env:JAVA_HOME) -or -not (Test-Path (Join-Path $env:JAVA_HOME 'bin'))) {
-    Write-Diagnostic -Level 'ERROR' -Message '缺少 JDK：请设置 JAVA_HOME 指向 JDK 21+（Capacitor 8 的 android 库 sourceCompatibility=21，JDK 17 会报「无效的源发行版：21」）。本机约定路径示例：C:\Users\hp\.jdks\jdk-21.0.11+10。'
+# JDK 解析：显式 JAVA_HOME 若满足 21+ 直接用；不满足（未设/缺 java.exe/主版本<21）则
+# 探测约定位置（%USERPROFILE%\.jdks、Eclipse Adoptium 安装目录）里主版本最高的 21+ JDK。
+# Capacitor 8 的 android 库 sourceCompatibility=21，JDK 17 会报「无效的源发行版：21」。
+function Get-PdaJdkMajor([string] $jdkHome) {
+    $releaseFile = Join-Path $jdkHome 'release'
+    if (-not (Test-Path (Join-Path $jdkHome 'bin\java.exe')) -or -not (Test-Path $releaseFile)) { return 0 }
+    $m = (Select-String -LiteralPath $releaseFile -Pattern '^JAVA_VERSION="([^"]+)"').Matches
+    if ($m.Count -eq 0) { return 0 }
+    return [int] (($m[0].Groups[1].Value) -split '\.')[0]
+}
+
+function Resolve-PdaJavaHome21 {
+    if (-not [string]::IsNullOrWhiteSpace($env:JAVA_HOME)) {
+        $explicitMajor = Get-PdaJdkMajor $env:JAVA_HOME
+        if ($explicitMajor -ge 21) { return $env:JAVA_HOME }
+        Write-Diagnostic -Level 'WARN' -Message "显式 JAVA_HOME 不满足 JDK 21+（$($env:JAVA_HOME)，主版本 $explicitMajor），尝试探测约定位置的 21+ JDK。"
+    }
+    $best = $null
+    $bestMajor = 0
+    foreach ($root in @((Join-Path $env:USERPROFILE '.jdks'), 'C:\Program Files\Eclipse Adoptium', 'C:\Program Files\Java')) {
+        if (-not (Test-Path $root)) { continue }
+        foreach ($dir in (Get-ChildItem -LiteralPath $root -Directory)) {
+            $major = Get-PdaJdkMajor $dir.FullName
+            if ($major -ge 21 -and $major -gt $bestMajor) { $best = $dir.FullName; $bestMajor = $major }
+        }
+    }
+    return $best
+}
+
+$resolvedJavaHome = Resolve-PdaJavaHome21
+if ([string]::IsNullOrWhiteSpace($resolvedJavaHome)) {
+    Write-Diagnostic -Level 'ERROR' -Message '缺少 JDK 21+：JAVA_HOME 未设或版本不足，且约定位置（%USERPROFILE%\.jdks、Program Files\Eclipse Adoptium/Java）未探测到 21+ JDK。Capacitor 8 的 android 库 sourceCompatibility=21（JDK 17 会报「无效的源发行版：21」）。安装口径见 docs/architecture/mobile-pda-deployment.md。'
     exit 1
 }
+$env:JAVA_HOME = $resolvedJavaHome
 # 版本前置断言：读 $JAVA_HOME/release 的 JAVA_VERSION，主版本 < 21 直接失败（免得 gradle
 # 跑一分多钟才在 :capacitor-android:compileDebugJavaWithJavac 上报源发行版错误）。
 $javaReleaseFile = Join-Path $env:JAVA_HOME 'release'
