@@ -172,7 +172,11 @@ public sealed record BusinessConsoleWmsInboundOrderItem(
     string InboundOrderId,
     string InboundOrderNo,
     string Status,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    // 单据级派生质检状态（聚合全部收货行含免检；无行为空串）+ 上架放行判据，
+    // 供列表质检状态标与上架门禁；避免前端按分页门禁行跨页聚合出错。
+    string QualityGateStatus,
+    bool IsReleasedForPutaway);
 
 public sealed record BusinessConsoleWmsOutboundOrderListResponse(
     IReadOnlyCollection<BusinessConsoleWmsOutboundOrderItem> Items,
@@ -301,7 +305,12 @@ public sealed record BusinessConsoleWmsReceivingQualityGateListRequest(
     int Skip = 0,
     int Take = 100,
     string? GateStatus = null,
-    string? Keyword = null);
+    string? Keyword = null,
+    // true 时返回全部收货行（含免检），供 PDA 收货明细展示/采集免检行批号效期与「免检」标；
+    // 默认 false 保持质检工作清单语义（仅需检行）。
+    bool IncludeNotRequired = false,
+    // 精确单号过滤：PDA 收货明细按单取完整行，避免 keyword 跨单串扰。
+    string? InboundOrderNo = null);
 
 public sealed record BusinessConsoleWmsReceivingQualityGateListResponse(
     IReadOnlyCollection<BusinessConsoleWmsReceivingQualityGateItem> Items,

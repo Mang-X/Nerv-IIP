@@ -7,18 +7,36 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 public interface IBusinessAppHubClient
 {
     Task<BusinessConsoleConnectorCollectionHealthResponse> GetCollectionHealthAsync(string internalBearerToken, BusinessConsoleConnectorCollectionHealthRequest request, CancellationToken cancellationToken);
+
+    Task<BusinessConsoleConnectorCollectionHealthListResponse> GetCollectionHealthListAsync(string internalBearerToken, BusinessConsoleConnectorCollectionHealthListRequest request, CancellationToken cancellationToken);
 }
 
 public sealed class HttpBusinessAppHubClient(HttpClient httpClient) : IBusinessAppHubClient
 {
-    public async Task<BusinessConsoleConnectorCollectionHealthResponse> GetCollectionHealthAsync(string internalBearerToken, BusinessConsoleConnectorCollectionHealthRequest request, CancellationToken cancellationToken)
+    public Task<BusinessConsoleConnectorCollectionHealthResponse> GetCollectionHealthAsync(string internalBearerToken, BusinessConsoleConnectorCollectionHealthRequest request, CancellationToken cancellationToken)
     {
         var path = $"/internal/apphub/v1/connectors/{Uri.EscapeDataString(request.ConnectorId)}/collection-health?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}";
+        return GetAsync<BusinessConsoleConnectorCollectionHealthResponse>(path, internalBearerToken, cancellationToken);
+    }
+
+    public Task<BusinessConsoleConnectorCollectionHealthListResponse> GetCollectionHealthListAsync(string internalBearerToken, BusinessConsoleConnectorCollectionHealthListRequest request, CancellationToken cancellationToken)
+    {
+        var path = $"/internal/apphub/v1/connectors/collection-health?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}";
+        return GetAsync<BusinessConsoleConnectorCollectionHealthListResponse>(path, internalBearerToken, cancellationToken);
+    }
+
+    private async Task<T> GetAsync<T>(string path, string internalBearerToken, CancellationToken cancellationToken)
+        where T : class
+    {
         using var message = new HttpRequestMessage(HttpMethod.Get, path);
         message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
         using var response = await httpClient.SendAsync(message, cancellationToken);
-        var envelope = await response.Content.ReadFromJsonAsync<ResponseEnvelope<BusinessConsoleConnectorCollectionHealthResponse>>(cancellationToken: cancellationToken);
-        if (!response.IsSuccessStatusCode || envelope?.Data is null) throw new BusinessServiceProxyException(response.StatusCode, envelope?.Message ?? "apphub-request-failed");
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseEnvelope<T>>(cancellationToken: cancellationToken);
+        if (!response.IsSuccessStatusCode || envelope?.Data is null)
+        {
+            throw new BusinessServiceProxyException(response.StatusCode, envelope?.Message ?? "apphub-request-failed");
+        }
+
         return envelope.Data;
     }
 
