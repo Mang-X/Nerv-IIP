@@ -873,6 +873,29 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal(200m, runtime.NextDueRuntimeHours);
     }
 
+    // Locks the intended #416 design: a combined plan's calendar line and runtime-hour line are two
+    // independent trigger cursors. When both are due in the same scan, each opens its own work order
+    // (date:* + runtime:*) — this is calendar PM + usage PM as separate occurrences, not one merged unit.
+    [Fact]
+    public async Task Generate_due_combined_plan_opens_both_calendar_and_runtime_work_orders_when_both_due()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-COMBO", "P7D", new DateOnly(2026, 6, 1), "maintenance", runtimeHourInterval: 100m));
+        await dbContext.SaveChangesAsync();
+        var handler = new GenerateDueMaintenanceWorkOrdersCommandHandler(
+            dbContext,
+            new FixedAssetRuntimeHoursProvider(new AssetRuntimeHoursResult(120m, AssetRuntimeSources.Oee, HasRuntimeSamples: true)));
+
+        await handler.Handle(new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 6, 1), "system:pm"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var workOrders = await dbContext.MaintenanceWorkOrders
+            .Where(x => x.DeviceAssetId == "DEV-CNC-01")
+            .ToArrayAsync();
+        Assert.Contains(workOrders, x => x.SourceReferenceId != null && x.SourceReferenceId.Contains("date:"));
+        Assert.Contains(workOrders, x => x.SourceReferenceId != null && x.SourceReferenceId.Contains("runtime:"));
+    }
+
     [Fact]
     public async Task Generate_due_maintenance_work_orders_caps_backlog_catch_up_per_run()
     {

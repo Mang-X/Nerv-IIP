@@ -28,7 +28,7 @@
 | --- | --- | --- | --- |
 | 日历周期 | 按日期到期 | `interval`=保养周期,无 `runtimeHourInterval` | 到期日 |
 | 运行小时 | 按累计运行小时到期,**不受日历影响** | `interval` 留空,`runtimeHourInterval`=触发小时数 | 运行小时剩余 |
-| 两者组合 | 两条到期线,任一先到即开单 | `interval` + `runtimeHourInterval` 都填 | 以运行小时剩余为主,回落日历到期日 |
+| 两者组合 | **两条独立触发线**(日历 + 运行小时),各自维护独立到期游标、各自到期时开单 | `interval` + `runtimeHourInterval` 都填 | 前端展示以运行小时剩余为主,读取失败/暂无样本时回落日历到期日 |
 
 - 运行小时数提供常用值快捷按钮(500 / 1000 / 2000)+ 手动数字输入;**必填**校验为字段级(红框 + 字段级错误)+ 底部汇总,校验不过不发请求。
 - 界面文案用业务语言(如「每运行满 1000 小时保养一次」),不暴露 ISO duration(P30D)或「后端」等实现术语。
@@ -53,6 +53,7 @@
 
 ## 6. 领域口径(代码事实)
 - `MaintenancePlan.Interval` **可空**:运行小时型计划无日历触发、无 `NextDueOn`,只在累计运行小时越过阈值时开单(PM 调度器 `generate-due`)。一个计划必须至少有一个触发(日历 / 运行小时 / 两者)。
+- **组合计划的两条触发线相互独立**(沿用 #416 设计):`generate-due` 对每个计划先按日历游标 `ConsumeDueDates` 生成 `date:*` 工单,再按运行小时游标 `ConsumeRuntimeDue` 生成 `runtime:*` 工单,两个游标各自推进、各自幂等键。因此组合计划若日历线与运行小时线在同一轮同时到期,会分别开出日历型与运行小时型工单(不是合并成一单);这是「日历 PM + 用量 PM 两类保养各自成立」的口径,若业务需要「同轮只开一单」的单 occurrence 语义,属 #416 域模型调整,不在本 PR 范围。
 - 运行小时累计口径:前端按各计划 `[plan.StartsOn, now]` 窗口调 `queryBusinessConsoleTelemetryRuntimeHours` 得 `totalRuntimeHours`,`剩余 = nextDueRuntimeHours − totalRuntimeHours`(负数截 0);无真实样本时为空。**列表查询本身是纯 DB 投影,不逐计划 fan-out 到 IndustrialTelemetry**——曾把该派生放服务端 list 查询逐计划调 provider,导致 DbContext 并发/超时使 list 500,故改前端派生(每页至多 6 路并发、非阻塞)。
 - 剩余小时按**各计划各自起算窗口**计算,不同计划不可共用一个窗口直接比较。阈值推进后(生成到期工单)前端按新 `nextDueRuntimeHours` 重算,不显旧值。
 

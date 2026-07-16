@@ -297,6 +297,22 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public void Maintenance_plan_list_validator_enforces_context_paging_and_device_bounds()
+    {
+        // The plan-list endpoint binds a dedicated request type; it needs its own validator, else org/env,
+        // skip/take bounds and the optional DeviceAssetId length go unchecked.
+        var validator = new BusinessConsoleMaintenancePlanListRequestValidator();
+
+        Assert.True(validator.Validate(new BusinessConsoleMaintenancePlanListRequest("org-001", "env-dev", 0, 200, "DEV-CNC-01")).IsValid);
+        Assert.True(validator.Validate(new BusinessConsoleMaintenancePlanListRequest("org-001", "env-dev")).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenancePlanListRequest("", "env-dev")).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenancePlanListRequest("org-001", "")).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenancePlanListRequest("org-001", "env-dev", -1, 10)).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenancePlanListRequest("org-001", "env-dev", 0, 201)).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenancePlanListRequest("org-001", "env-dev", 0, 100, new string('D', 151))).IsValid);
+    }
+
+    [Fact]
     public async Task Maintenance_work_order_detail_reads_existing_work_order_surface_by_id()
     {
         var maintenance = new RecordingMaintenanceFacadeClient();

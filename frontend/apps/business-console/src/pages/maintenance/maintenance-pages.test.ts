@@ -522,6 +522,31 @@ describe('maintenance plans page', () => {
     expect(wrapper.text()).not.toContain('剩余')
   })
 
+  it('keeps the calendar due for a combined plan when the runtime-hours read fails', async () => {
+    state.plans = [
+      {
+        planId: 'p-combined',
+        deviceAssetId: 'DEV-COMBINED',
+        planCode: 'PM-COMBINED',
+        interval: 'P90D',
+        startsOn: '2026-06-01',
+        nextDueOn: '2026-08-30',
+        runtimeHourInterval: 2000,
+        nextDueRuntimeHours: 2000,
+        lastGeneratedRuntimeHours: 0,
+      },
+    ]
+    state.remainingByPlanId = { 'p-combined': { status: 'error' } }
+    const wrapper = mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    // Combined plan still has a valid calendar due — it must stay visible even when the runtime read failed.
+    expect(wrapper.text()).toContain('2026-08-30')
+    expect(wrapper.text()).toContain('运行小时读取失败')
+    // Must not hide the calendar date behind a bare runtime-only "读取失败".
+    expect(wrapper.text()).not.toContain('运行小时（读取失败）')
+  })
+
   it('creates a genuine runtime-only plan (no calendar interval)', async () => {
     mount(PlansPage, mountOptions())
     await flushPromises()

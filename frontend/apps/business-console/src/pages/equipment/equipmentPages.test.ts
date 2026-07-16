@@ -54,6 +54,9 @@ const runtimeRemainingState = vi.hoisted(() => ({
   map: {} as Record<string, { status: string; hours?: number }>,
 }))
 
+// Cumulative runtime-hours read; configurable so a no-samples device can be exercised.
+const runtimeHoursState = vi.hoisted(() => ({ total: 720, hasSamples: true }))
+
 const reviewFixture = vi.hoisted(() => {
   const historyItems = [
     {
@@ -318,9 +321,12 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
     runtimeAvailabilityError: shallowRef(),
   }),
   useBusinessTelemetryRuntimeHours: () => ({
-    runtimeHours: computed(() => ({ totalRuntimeHours: 720, hasRuntimeSamples: true })),
-    totalRuntimeHours: computed(() => 720),
-    hasRuntimeSamples: computed(() => true),
+    runtimeHours: computed(() => ({
+      totalRuntimeHours: runtimeHoursState.total,
+      hasRuntimeSamples: runtimeHoursState.hasSamples,
+    })),
+    totalRuntimeHours: computed(() => runtimeHoursState.total),
+    hasRuntimeSamples: computed(() => runtimeHoursState.hasSamples),
     runtimeHoursError: shallowRef(),
     runtimeHoursPending: shallowRef(false),
     runtimeHoursEnabled: computed(() => true),
@@ -420,6 +426,8 @@ describe('equipment pages', () => {
       'plan-2': { status: 'ok', hours: 280 },
       'plan-3': { status: 'ok', hours: 900 },
     }
+    runtimeHoursState.total = 720
+    runtimeHoursState.hasSamples = true
     authState.permissionCodes = [
       'business.iiot.alarms.read',
       'business.iiot.alarms.write',
@@ -476,6 +484,17 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('280.0 小时')
     expect(wrapper.text()).toContain('PM-CNC-RUNTIME')
     expect(wrapper.text()).not.toContain('可能更紧迫')
+  })
+
+  it('shows 无样本 (not 0.0 小时) for cumulative runtime hours when the device has no real samples', () => {
+    runtimeHoursState.total = 0
+    runtimeHoursState.hasSamples = false
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    // NvSectionCard renders description immediately followed by its value — assert the cumulative card
+    // value is the honest "无样本", never a fabricated definitive "0.0 小时".
+    expect(wrapper.text()).toContain('累计运行小时无样本')
+    expect(wrapper.text()).not.toContain('累计运行小时0.0')
   })
 
   it('flags an incomplete result when a candidate runtime plan read failed / has no samples', () => {

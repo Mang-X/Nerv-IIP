@@ -122,6 +122,7 @@ const {
   plans,
   plansError,
   plansPending,
+  refreshPlans,
   filters: plansFilters,
 } = useMaintenancePlans({ take: MAINTENANCE_DETAIL_TAKE })
 const { inspections, inspectionsError, inspectionsPending } = useMaintenanceInspections({
@@ -207,7 +208,7 @@ const currentDevicePlans = computed(() => currentDevicePlanMatches.value.slice(0
 const currentDeviceRuntimePlans = computed(() =>
   currentDevicePlanMatches.value.filter((row) => row.runtimeHourInterval != null),
 )
-const { remainingByPlanId, remainingPending } =
+const { remainingByPlanId, remainingPending, refreshRemaining } =
   useMaintenancePlanRuntimeRemaining(currentDeviceRuntimePlans)
 // 每个运行小时计划的剩余读取结果（含状态）。距下次保养以「已知(ok)计划的最小剩余」为准，但当有候选
 // 计划读取失败/暂无样本时，其真实剩余未知、可能比已知最小值更紧迫，故卡片明确标注「已知计划最小值」并
@@ -291,15 +292,27 @@ const {
   hasRuntimeSamples: hasRuntimeHoursSamples,
   runtimeHoursError,
   runtimeHoursPending,
+  refreshRuntimeHours,
 } = useBusinessTelemetryRuntimeHours(
   deviceAssetIdRef,
   runtimeHoursWindowStart,
   runtimeHoursWindowEnd,
 )
-// 累计运行小时卡值先判 pending/error，读取未完成或失败不落到「无样本」数据事实。
+// 统一刷新：先把窗口截止时间推进到当前，再刷新设备、计划、累计运行小时与逐计划剩余小时——否则长驻
+// 页面点「刷新」时运行小时/剩余两卡仍停留在进入页面时的时间窗与旧数据。
+function refreshAll() {
+  nowIso.value = new Date().toISOString()
+  void refreshDevice()
+  void refreshPlans()
+  void refreshRuntimeHours()
+  void refreshRemaining()
+}
+// 累计运行小时卡值先判 pending/error，再判是否有真实样本——无样本诚实显「无样本」，不把「没有事实」
+// 表达成确定的 0.0 小时（facade 对无样本设备返回 totalRuntimeHours=0/hasRuntimeSamples=false）。
 const cumulativeRuntimeCardValue = computed(() => {
   if (runtimeHoursPending.value) return '读取中…'
   if (runtimeHoursError.value) return '读取失败'
+  if (!hasRuntimeHoursSamples.value) return '无样本'
   return formatHours(totalRuntimeHours.value)
 })
 const runtimeHoursCardHint = computed(() => {
@@ -591,7 +604,7 @@ function formatError(error: unknown) {
           type="button"
           variant="outline"
           :disabled="devicePending"
-          @click="refreshDevice"
+          @click="refreshAll"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新

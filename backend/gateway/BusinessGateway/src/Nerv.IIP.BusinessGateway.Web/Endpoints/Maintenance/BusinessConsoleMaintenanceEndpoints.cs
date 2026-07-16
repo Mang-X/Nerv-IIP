@@ -541,6 +541,22 @@ public sealed class BusinessConsoleMaintenanceListRequestValidator : Validator<B
     }
 }
 
+// The plan-list endpoint binds a dedicated request type (adds optional DeviceAssetId); FastEndpoints
+// resolves validators by request type, so it needs its own validator — without it the endpoint loses
+// org/env/skip/take enforcement.
+public sealed class BusinessConsoleMaintenancePlanListRequestValidator
+    : Validator<BusinessConsoleMaintenancePlanListRequest>
+{
+    public BusinessConsoleMaintenancePlanListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 200);
+        RuleFor(x => x.DeviceAssetId).MaximumLength(150).When(x => x.DeviceAssetId is not null);
+    }
+}
+
 public sealed class BusinessConsoleMaintenanceWorkOrderListRequestValidator : Validator<BusinessConsoleMaintenanceWorkOrderListRequest>
 {
     public BusinessConsoleMaintenanceWorkOrderListRequestValidator()
