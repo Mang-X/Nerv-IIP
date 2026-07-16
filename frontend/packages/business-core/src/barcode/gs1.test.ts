@@ -51,4 +51,24 @@ describe('parseGs1', () => {
     expect(f!.expiryDate).toBeUndefined()
     expect(f!.lotNo).toBe('L9')
   })
+
+  it('拒绝不存在的日历日期（2/31、2/30、4/31），不静默进位', () => {
+    // 2/28 合法，2/31 / 2/30 / 4/31 非法 → expiryDate 不写入。
+    expect(parseGs1('17260228' + '10L')!.expiryDate).toBe('2026-02-28')
+    expect(parseGs1('17260231' + '10L')!.expiryDate).toBeUndefined()
+    expect(parseGs1('17260230' + '10L')!.expiryDate).toBeUndefined()
+    expect(parseGs1('17260431' + '10L')!.expiryDate).toBeUndefined()
+  })
+
+  it('闰年 2/29 判定：2024 合法、2025 非法', () => {
+    expect(parseGs1('17240229' + '10L')!.expiryDate).toBe('2024-02-29')
+    expect(parseGs1('17250229' + '10L')!.expiryDate).toBeUndefined()
+  })
+
+  it('跳过不提取的已知定长 AI（如 (15) 最佳食用期），不阻断后续 (17)/(10)', () => {
+    const f = parseGs1('15260101' + '17261231' + '10LOT-Z')
+    expect(f).not.toBeNull()
+    expect(f!.expiryDate).toBe('2026-12-31')
+    expect(f!.lotNo).toBe('LOT-Z')
+  })
 })

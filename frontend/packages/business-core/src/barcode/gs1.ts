@@ -25,16 +25,29 @@ export interface Gs1Fields {
 
 const GS = String.fromCharCode(29)
 
-/** 定长 AI → 数据长度。 */
+/**
+ * 已知定长 AI → 数据长度。只提取 01/11/17（见解析循环），其余为已知定长但不提取的
+ * AI（SSCC/其它标识/其它日期/变体号）——列出长度以便「跳过」而非在遇到它们时停止，
+ * 使单个不提取的定长 AI 不阻断后续 (10)/(17)/(21)。未列出的 AI 长度真未知，停止解析。
+ */
 const FIXED_LEN: Record<string, number> = {
-  '01': 14,
-  '11': 6,
-  '17': 6,
+  '00': 18, // SSCC
+  '01': 14, // GTIN（提取）
+  '02': 14, // 内含商品 GTIN
+  '03': 14,
+  '04': 16,
+  '11': 6, // 生产日期（提取）
+  '12': 6, // 到期付款日
+  '13': 6, // 包装日期
+  '15': 6, // 最佳食用日期
+  '16': 6, // 销售截止日期
+  '17': 6, // 有效期（提取）
+  '20': 2, // 产品变体
 }
 /** 变长 AI（以 GS 或串尾结束）。 */
 const VARIABLE_AIS = new Set(['10', '21'])
 
-/** YYMMDD → `YYYY-MM-DD`；DD=00 取当月末；非法返回 undefined。 */
+/** YYMMDD → `YYYY-MM-DD`；DD=00 取当月末；非真实日历日期返回 undefined。 */
 function parseGs1Date(yymmdd: string): string | undefined {
   if (!/^\d{6}$/.test(yymmdd)) return undefined
   const yy = Number(yymmdd.slice(0, 2))
@@ -46,7 +59,16 @@ function parseGs1Date(yymmdd: string): string | undefined {
     // GS1：日为 00 表示当月最后一天。
     dd = new Date(Date.UTC(year, mm, 0)).getUTCDate()
   }
-  if (dd < 1 || dd > 31) return undefined
+  // 按真实日历 round-trip 校验：Date.UTC 会把 2/31、4/31 静默进位到下个月，
+  // 回读三项不一致即非法日期（含闰年 2/29 的正确判定），拒绝而非静默归一化。
+  const probe = new Date(Date.UTC(year, mm - 1, dd))
+  if (
+    probe.getUTCFullYear() !== year ||
+    probe.getUTCMonth() !== mm - 1 ||
+    probe.getUTCDate() !== dd
+  ) {
+    return undefined
+  }
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${year}-${pad(mm)}-${pad(dd)}`
 }
