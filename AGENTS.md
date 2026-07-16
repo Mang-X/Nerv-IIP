@@ -277,5 +277,13 @@ also register their `.Web` assembly in the gate project.
 ## Sub-directory Overrides
 
 The nearest `AGENTS.md` in a subtree extends and overrides this file for that
-subtree. Currently: `frontend/apps/business-console/AGENTS.md`. Use
-`AGENTS.override.md` for temporary overrides; remove it to restore base guidance.
+subtree. Currently:
+
+- `frontend/apps/business-console/AGENTS.md` — 业务前端三大支柱（产品/业务/UX）
+- `frontend/apps/business-pda/AGENTS.md` — PDA 命令、测试四层定义、移动端硬规则
+- `frontend/apps/screen/AGENTS.md` — 大屏设计硬门禁、数据 seam 三段式
+- `frontend/packages/ui/AGENTS.md` + `frontend/packages/ui-mobile/AGENTS.md` —
+  NvUI 库内侧规则（原版零改动、R1–R5 命名、token/layer）
+
+Use `AGENTS.override.md` for temporary overrides; remove it to restore base
+guidance.
