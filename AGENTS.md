@@ -1,45 +1,30 @@
 # AGENTS.md — Nerv-IIP Platform
 
-> Canonical agent instruction file. For current project status, always read
-> `docs/architecture/implementation-readiness.md` first.
+> Canonical agent instruction file (shared by all agents/models). For current
+> project status, always read `docs/architecture/implementation-readiness.md` first.
 
 ## Before You Start
 
 **Always read `docs/architecture/implementation-readiness.md`** before making changes.
-It records the current phase, delivered services, database schemas, and environment prerequisites.
-Do NOT assume a service, schema, or port is ready based on prior knowledge — verify there.
+It records the current phase, delivered services, database schemas, and environment
+prerequisites. Do NOT assume a service, schema, or port is ready based on prior
+knowledge — verify there.
 
-For architectural decisions, read `docs/adr/` in order.
-For service boundaries and responsibilities, read `docs/architecture/context-map.md`.
+Where to find the rest:
 
-## Repo Layout
+- **Architectural decisions**: `docs/adr/` — numbered sequentially.
+- **Service boundaries**: `docs/architecture/context-map.md`.
+- **Directory rules**: `docs/architecture/repo-layout.md` (canonical repo layout).
+- **Local dev / Aspire troubleshooting**: `docs/architecture/local-dev-troubleshooting.md`
+  — read it before debugging startup, infra containers, or deployment artifacts.
+- **All other topics**: `docs/architecture/` files are named by topic
+  (e.g., `database-schema-conventions.md`, `frontend-structure.md`). Search by keyword.
 
-See the canonical source: `docs/architecture/repo-layout.md`
-
-```text
-Nerv-IIP/
-├── AGENTS.md / CLAUDE.md          # Agent instructions
-├── nerv.ps1                       # CLI dev entry point
-├── docs/                          # ADR, architecture docs, specs, plans
-├── backend/
-│   ├── services/                  # Platform HTTP services (CleanDDD per service)
-│   │   ├── Iam/
-│   │   ├── AppHub/
-│   │   ├── Ops/
-│   │   ├── FileStorage/
-│   │   ├── Notification/
-│   │   └── Business/              # Business platform services: MasterData, ProductEngineering, Inventory, Quality, MES, etc.
-│   ├── gateway/                   # PlatformGateway for Console; BusinessGateway for Business Console/PDA facades
-│   ├── common/                    # Narrow shared libs: Contracts, Sdk, Caching, Observability, Testing, ServiceAuth
-│   └── tests/                     # Cross-service integration test hosts
-├── frontend/
-│   ├── apps/                      # console, business-console, business-pda, design-system
-│   └── packages/                  # ui, ui-mobile, app-shell, api-client, auth, business-core
-├── connector-hosts/               # Separate .sln — NEVER merge into backend
-├── infra/                         # Aspire AppHost, Docker Compose, OTel
-├── scripts/                       # Governed automation + lib/ScriptAutomation.ps1
-└── .codex/                        # Codex agent config
-```
+Non-obvious boundaries: `backend/` is one CleanDDD service per directory
+(`services/`, business services under `services/Business/`) plus `gateway/`
+(PlatformGateway for Console, BusinessGateway for Business Console/PDA facades)
+and narrow shared libs in `common/`. `connector-hosts/` is a separate .sln —
+never merged into or referenced from `backend/` or `frontend/` (or vice-versa).
 
 ## Commands
 
@@ -60,7 +45,8 @@ Nerv-IIP/
 .\nerv.ps1 fullstack stop                # Stop the exact diagnostic session
 ```
 
-Agent-owned real full-stack verification must use `fullstack run`. Interactive `fullstack start` is diagnostic-only and must be stopped before handoff. Ordinary unit and integration test commands are unchanged.
+Agent-owned real full-stack verification must use `fullstack run`. Interactive
+`fullstack start` is diagnostic-only and must be stopped before handoff.
 
 ### Backend (.NET 10)
 ```powershell
@@ -94,7 +80,7 @@ scripts/verify-*.ps1                  # Verification scripts
 
 | Change area | Required docs | Required checks |
 |---|---|---|
-| Backend service / endpoint | implementation-readiness, api-contract-and-codegen, facade-coverage-matrix | `dotnet test backend/Nerv.IIP.sln` (includes the facade-coverage gate); declare each new/changed business endpoint `exposed`/`deferred`/`internal` and register it in `facade-coverage-matrix.json`; if contract changed: export OpenAPI |
+| Backend service / endpoint | implementation-readiness, api-contract-and-codegen, facade-coverage-matrix | `dotnet test backend/Nerv.IIP.sln` (includes the facade-coverage gate); declare each new/changed business endpoint `exposed`/`deferred`/`internal` in `facade-coverage-matrix.json`; if contract changed: export OpenAPI |
 | Gateway route / contract | api-contract-and-codegen | backend tests; export OpenAPI; `pnpm -C frontend generate:api` |
 | DB schema / migration | database-schema-conventions, database-schema-catalog | migration + schema convention tests; update catalog + comments |
 | Frontend page / feature | frontend-structure | `pnpm -C frontend typecheck && pnpm -C frontend test && pnpm -C frontend build` |
@@ -102,367 +88,202 @@ scripts/verify-*.ps1                  # Verification scripts
 | Connector Host | connector boundary docs | `dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln`; no backend service impl references |
 | Infra / Aspire | deployment-baseline | `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj` |
 
-PDA changes also run `pnpm -C frontend --filter @nerv-iip/business-pda typecheck`,
-`pnpm -C frontend --filter @nerv-iip/business-pda test`, and
-`pnpm -C frontend --filter @nerv-iip/business-pda build`; run `cap:sync` when
-native Capacitor artifacts are affected.
+PDA changes additionally run `typecheck`/`test`/`build` with
+`pnpm -C frontend --filter @nerv-iip/business-pda`; run `cap:sync` when native
+Capacitor artifacts are affected.
 
 ## Known Baseline Caveats
 
-- `pnpm -C frontend check` and `pnpm -C frontend fmt` are currently blocked by
-  pre-existing out-of-scope formatting issues. If you encounter failures from these
-  commands, check `docs/architecture/implementation-readiness.md` to confirm they
-  are known. Report clearly whether failures are pre-existing or introduced by your
-  change. Touched files should pass individually.
-- GitHub CI runs `typecheck` + `build` for frontend (not full quality gate). The
-  `.codex` actions include the full gate for completeness, but known pre-existing
-  issues are not regressions.
-- Docker-dependent verify scripts (`verify-second-slice-ops.ps1`,
-  `verify-iam-persistent-auth-foundation.ps1`) require a running Docker daemon.
-  If Docker is unavailable, report clearly and skip — do not treat as a code failure.
+- `pnpm -C frontend check` / `fmt` are blocked by pre-existing out-of-scope
+  formatting issues. Every file you touch must still pass individually
+  (`pnpm -C frontend exec vp fmt --check <file>`); report whether any failure is
+  pre-existing or introduced.
+- GitHub CI runs `typecheck` + `build` for frontend (not the full gate) — run the
+  full gate locally per the Change Decision Table.
+- Docker-dependent `verify-*.ps1` scripts require a running Docker daemon; if
+  unavailable, report and skip — not a code failure.
 
 ## Core Principles
 
-1. Platform-before-business. Control plane is built first; industry semantics go in domain extensions after platform stabilizes.
-2. Logical boundaries freeze first. Physical deployment stays flexible.
-3. Frontend: explicit Vue structure only. No pseudo-Nuxt runtime.
-4. Backend: organized by service boundary. No regression to monolith.
-5. App integration via Connector Host pattern. Connector Host lives in `connector-hosts/`, not in backend solution.
-6. AI capabilities: governance → query → low-risk actions. No model hosting in the main platform.
-7. Main platform does not embed industry models (factory, line, equipment). These belong to domain extensions.
-8. Platform SDK is modular and client-only. External units must not reference main platform internals.
-9. File Storage and Notification are generic. Business services express intent by ID only — they don't manage storage or delivery.
-10. Major version alignment between platform, apps, Connector Hosts, and extensions.
-11. Docs, contracts, and catalogs are the stability foundation. Always update docs before making structural changes.
-12. Aspire is the single deployment model. Multiple delivery targets (Compose, installer, package) adapt from it.
-13. Automation scripts are classified engineering assets (check/verify/generate/release-install) — governed and auditable.
+1. Platform-before-business. Industry semantics (factory, line, equipment models)
+   live in domain extensions — never in the main platform, PlatformGateway, IAM,
+   AppHub, Ops, or main console.
+2. Logical boundaries freeze first; physical deployment stays flexible.
+3. Frontend uses explicit Vue structure only (no pseudo-Nuxt runtime); backend is
+   organized by service boundary (no regression to monolith).
+4. App integration goes through the Connector Host pattern in `connector-hosts/`.
+5. AI capabilities: governance → query → low-risk actions. No model hosting in
+   the main platform.
+6. Platform SDK is modular and client-only; external units must not reference
+   main platform internals.
+7. File Storage and Notification are generic; business services express intent by
+   ID only.
+8. Major version alignment between platform, apps, Connector Hosts, extensions.
+9. Docs, contracts, and catalogs are the stability foundation — update docs
+   before structural changes.
+10. Aspire is the single deployment model; Compose/installer/package adapt from it.
+11. Automation scripts are governed, auditable engineering assets.
 
 ## "Do NOT" Constraints
 
 1. Do NOT create unbound SharedKernel/Common/Utils mega-directories.
-2. Do NOT merge Connector Host into `backend/Nerv.IIP.sln`.
-3. Do NOT reference `connector-hosts/` from `backend/` or `frontend/` (and vice-versa).
-4. Do NOT write industry domain rules into PlatformGateway, IAM, AppHub, Ops, or main console.
-5. Do NOT create cross-schema foreign keys between services.
-6. Do NOT use `EnsureCreated()` in non-disposable environments (PoC, shared dev, production).
-7. Do NOT call `dotnet`, `docker`, `pnpm`, `pwsh` directly in scripts. Use `scripts/lib/ScriptAutomation.ps1` helpers.
-8. Do NOT write Minimal API route mappings in startup files. Use FastEndpoints exclusively.
-9. Do NOT hand-edit OpenAPI snapshots or generated client code.
-10. Do NOT deep-import shadcn components, and do NOT use shadcn 原版 names in app
-    code. Always use the `@nerv-iip/ui` stable export boundary and the `Nv*` brand
-    names (see "NvUI Component Library" below).
-11. Do NOT reference provider-specific APIs or write raw SQL in Domain/Application/Endpoint/SDK layers.
-12. Do NOT store credentials, secrets, or customer keys in `infra/` or repo.
+2. Do NOT merge Connector Host into `backend/Nerv.IIP.sln` or cross-reference
+   `connector-hosts/` with `backend/`/`frontend/`.
+3. Do NOT write industry domain rules into PlatformGateway, IAM, AppHub, Ops, or
+   main console.
+4. Do NOT create cross-schema foreign keys between services.
+5. Do NOT use `EnsureCreated()` in non-disposable environments.
+6. Do NOT call `dotnet`, `docker`, `pnpm`, `pwsh` directly in scripts — dot-source
+   `scripts/lib/ScriptAutomation.ps1` (`Invoke-DotNet`, `Invoke-Pnpm`, …); never
+   define a function named `Write-Error` (shadows the built-in cmdlet).
+7. Do NOT write Minimal API route mappings in startup files — FastEndpoints only.
+8. Do NOT hand-edit OpenAPI snapshots or generated client code.
+9. Do NOT use non-`Nv*` component names or deep-import `components/ui/` in app
+   code (see "NvUI Component Library").
+10. Do NOT reference provider-specific APIs or write raw SQL in
+    Domain/Application/Endpoint/SDK layers.
+11. Do NOT store credentials, secrets, or customer keys in `infra/` or the repo.
+12. Do NOT start the AppHost with `dotnet run` — always Aspire CLI via
+    `.\nerv.ps1 dev`/`stop`/`wait`/`logs` (see local-dev-troubleshooting).
 
 ## NvUI Component Library — naming & import boundary (frontend)
 
 NvUI is the Nerv-IIP brand component layer inside `@nerv-iip/ui` /
-`@nerv-iip/ui-mobile`. Authoritative ADR:
-`docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md`
-(**Appendix A = the full old→new component map**). These rules exist for one
-concrete reason: agents kept using shadcn 原版 primitives as if they were the
-brand kit. The `Nv*` prefix removes that ambiguity — treat it as a hard rule.
+`@nerv-iip/ui-mobile`. Authoritative spec: ADR 0020
+(`docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md`;
+**Appendix A = the frozen per-component map**).
 
-1. **App/business code uses `Nv*` brand components only** — from `pro/`,
-   `blocks/`, `layout/`, `screen/`, `touch/` (in `@nerv-iip/ui`) and
-   `@nerv-iip/ui-mobile`. Every ready-to-use branded component is `Nv`-prefixed
-   (`NvButton`, `NvDataTable`, `NvPageHeader`, `NvOeeHero`, `NvMobileBadge`).
-2. **A name WITHOUT the `Nv` prefix is off-limits in app code.** It is either a
-   shadcn 原版 base primitive (`Button`, `Badge`, `Table`, `Dialog`, …) or a
-   removed transitional name. 原版
-   primitives exist only so the library can compose `Nv*` on top of them; they are
-   referenced ONLY inside `@nerv-iip/ui` itself, never from an app.
-3. **Import through the stable boundary only:** the bare `@nerv-iip/ui` and
-   `@nerv-iip/ui-mobile` specifiers (the sole allowed sub-entry is
-   `@nerv-iip/ui/file-preview`). No `@nerv-iip/ui/<deep>` paths, no direct
-   `reka-ui`, no direct `shadcn-vue` — all contract-test-banned per app.
-4. **Package names do not change** (ADR Decision 2): NvUI is a component-layer
-   brand carried by the `Nv*` prefix, docs site and DESIGN docs — not a package
-   rename. Never rename `@nerv-iip/ui` / `@nerv-iip/ui-mobile` in passing.
-5. **Old names are `@deprecated` during the transition.** `Nv*` was added in
-   #787; the per-app codemod is #789; token/CSS-layer isolation is #790. Old
-   names still compile (zero-breakage) but show IDE strike-through — write NEW
-   code with `Nv*`. Guards (`nvui-imports.contract.test.ts` per app,
-   `nvui-naming.contract.test.ts` per package) enforce the boundary and report
-   lingering old-name usage; ADR 0006 keeps this on Vite+ contract tests, not ESLint.
+1. **App/business code uses `Nv*` brand components only** (`NvButton`,
+   `NvDataTable`, `NvPageHeader`, `NvOeeHero`, `NvMobileBadge`, …). A name
+   without the `Nv` prefix is a shadcn 原版 base primitive — referenced ONLY
+   inside `@nerv-iip/ui` itself, never from an app.
+2. **Import through the stable boundary only:** bare `@nerv-iip/ui` and
+   `@nerv-iip/ui-mobile` (sole allowed sub-entry: `@nerv-iip/ui/file-preview`).
+   No deep paths, no direct `reka-ui`, no direct `shadcn-vue`.
+3. **Enforcement is contract tests, not ESLint** (ADR 0006):
+   `nvui-imports.contract.test.ts` per app, `nvui-naming.contract.test.ts` per
+   package.
+4. **Package names never change** (ADR 0020 Decision 2): the brand is the `Nv*`
+   prefix — never rename `@nerv-iip/ui` / `@nerv-iip/ui-mobile` in passing.
+5. **shadcn 原版 in `components/ui/` stay byte-for-byte unchanged** (no `Nv`,
+   no `--nv-`). Customizations are rebuilt copies in the brand layers.
 
-**Four-surface component map** (which layer owns which surface; examples only —
-the frozen per-component table is ADR 0020 Appendix A):
+**Four-surface map** (examples only — the frozen table is ADR 0020 Appendix A):
 
 | Surface | Package · layer | Naming rule | Examples |
 |---|---|---|---|
-| PC (console / business-console) | `@nerv-iip/ui` · `pro/` `blocks/` `layout/` | 素名优先 → `Nv` + plain name | `NvButton` `NvDataTable` `NvPageHeader` `NvPage` |
-| Mobile (business-pda) | `@nerv-iip/ui-mobile` | clash with 原版/PC → `NvMobile*`; mobile-native专名 → `Nv*` | `NvMobileBadge` `NvMobileDialog` · `NvScanBar` `NvCell` `NvBottomSheet` |
-| Touch (工位看板 / 车间一体机) | `@nerv-iip/ui` · `touch/` | clash → `NvTouch*`, else `Nv*` | `NvTouchButton` `NvQtyStepper` `NvStationBar` |
-| Screen (大屏 / 挂墙) | `@nerv-iip/ui` · `screen/` | generic word → `NvScreen*`; industrial专名 → `Nv*` | `NvScreenButton` `NvScreenTrendChart` · `NvOeeHero` `NvTaktGantt` `NvKpiBar` |
+| PC (console / business-console) | `@nerv-iip/ui` · `pc/` `blocks/` `layout/` | 素名优先 → `Nv` + plain name | `NvButton` `NvDataTable` `NvPageHeader` |
+| Mobile (business-pda) | `@nerv-iip/ui-mobile` | clash with 原版/PC → `NvMobile*`; mobile-native专名 → `Nv*` | `NvMobileBadge` `NvMobileDialog` · `NvScanBar` `NvCell` |
+| Touch (工位看板 / 车间一体机) | `@nerv-iip/ui` · `touch/` | clash → `NvTouch*`, else `Nv*` | `NvTouchButton` `NvQtyStepper` |
+| Screen (大屏 / 挂墙) | `@nerv-iip/ui` · `screen/` | generic word → `NvScreen*`; industrial专名 → `Nv*` | `NvScreenButton` · `NvOeeHero` `NvTaktGantt` |
 
 A component that spans two surfaces is built twice (one per layer) — never "one
-component, two modes". New component names follow ADR 0020 §1.2 (R1–R5), and the
-shadcn 原版 in `components/ui/` stay byte-for-byte unchanged (no `Nv`, no `--nv-`).
+component, two modes". New names follow ADR 0020 §1.2 (R1–R5).
 
 ## Common Mistakes
 
-These are errors that have occurred repeatedly. Read before writing any code.
+Repo-specific pitfalls that caused real regressions. Operational/startup lessons
+(Aspire, infra pinning, deployment artifacts) are in
+`docs/architecture/local-dev-troubleshooting.md`.
 
 1. **Endpoints default to `[AllowAnonymous]`.** Internal service APIs require
-   `[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]`. Gateway Console
-   endpoints use `GatewayPolicies.ConsoleAuthenticated`. Only health endpoints remain
-   anonymous.
-
-2. **Template/scaffold code not cleaned.** When scaffolding from NetCorePal or any
-   template, delete all demo endpoints (LoginEndpoint, ChatHub, LockEndpoint),
-   sample aggregates (OrderAggregate, DeliverRecord), and their tests before
-   committing. Also verify `ServiceName` is correct and `UseAuthentication()` is
-   called before `UseAuthorization()`.
-
-3. **`Guid.NewGuid()` instead of `Guid.CreateVersion7()`.** EF's
-   `UseGuidVersion7ValueGenerator()` only fires when the ID is default. If a
-   constructor already assigned a v4 GUID, EF will not override it, breaking
-   time-ordered index locality for child entities.
-
-4. **Synchronous EF Core calls.** All repository, service, and query handler methods
-   must be async with `CancellationToken`. Use `SaveChangesAsync`,
-   `SingleOrDefaultAsync`, `AnyAsync` — never their synchronous counterparts.
-
-5. **`Environment.SetEnvironmentVariable()` in tests without isolation.** xUnit runs
-   test classes in parallel. Use `builder.UseSetting()` instead, or place the test
-   in a `[CollectionDefinition("...", DisableParallelization = true)]` collection.
-
-6. **`MigrationsHistoryTable` not configured to service schema.** Every service's
-   PostgreSQL DbContext must include
-   `MigrationsHistoryTable("__EFMigrationsHistory", "<service-schema>")`, otherwise
-   EF puts the history table in the default `public` schema.
-
-7. **`string.Equals` for boolean config instead of `GetValue<bool>()`.** Use
-   `builder.Configuration.GetValue<bool>("Persistence:AutoMigrate")`. String
-   comparison silently ignores `True`, ` true ` (with spaces), and other valid .NET
-   boolean representations.
-
-8. **Repository query filters not matching DB unique index columns.** If the unique
-   index is on N columns, the deduplication/lookup query must filter on all N columns.
-   Partial matches will return wrong records when different sources share the same
-   partial key.
-
-9. **Domain entities holding secrets or sensitive data.** Secret names, API keys, and
-   credential references must not live in Domain aggregates. Keep them in
-   Infrastructure or configuration; use reflection tests to enforce if needed.
-
-10. **InMemory test stores generating fake tokens.** InMemory auth stores must produce
-    real JWT tokens via the service's token issuer, not `Convert.ToBase64String(...)`.
-    Otherwise Gateway JWT validation middleware will reject every request.
-
-11. **Scripts calling native commands directly.** New scripts must dot-source
-    `scripts/lib/ScriptAutomation.ps1` and use `Invoke-DotNet`, `Invoke-Pnpm`,
-    `Invoke-DockerCompose` etc. Do NOT define functions named `Write-Error` — it
-    shadows the built-in PowerShell cmdlet.
-
-12. **Test assertions via source file path traversal.** Do NOT use
-    `Path.Combine(AppContext.BaseDirectory, "..", ...)` to locate and read source
-    files for assertions. Use DI, `DbContext` reflection, or
-    `Nerv.IIP.Testing` schema convention helpers instead.
-
-13. **Treating Aspire `Finished` as a dashboard problem.** A project resource shown
-    as `Finished` usually means the process exited during startup. Inspect the latest
-    DCP stderr log under `%TEMP%\aspire-dcp*` before changing code or restarting
-    blindly. The real error is usually in the resource process log, not Aspire
-    itself.
-
-14. **Forgetting local Development environment in AppHost project resources.**
-    Platform AppHost is the canonical dev launcher. New project resources must run
-    with `ASPNETCORE_ENVIRONMENT=Development` and `DOTNET_ENVIRONMENT=Development`
-    unless there is an explicit test/deployment reason not to. Otherwise services may
-    select production-like persistence or messaging branches and fail differently
-    from local expectations.
-
-15. **PostgreSQL services added to AppHost without local migration enablement.**
-    If a local Development service relies on PostgreSQL migrations, verify whether
-    AppHost must pass `Persistence__AutoMigrate=true` for that resource. Missing
-    migration enablement can surface as broad Console request failures, downstream
-    500s, or gateway circuit breakers; the root cause may be a missing table such as
-    `relation "...table..." does not exist`. Observed local failures include AppHub
-    `apphub.registration_idempotency`, MES execution tables, Maintenance readiness
-    tables, and Notification `notification_messages` / `notification_tasks`.
-
-16. **CAP PostgreSQL profile without integration event publisher registration.**
-    Services with domain-event-to-integration-event converters must register the
-    NetCorePal integration event publisher in the active CAP profile, including
-    PostgreSQL. If startup fails with unresolved
-    `NetCorePal.Extensions.DistributedTransactions.IIntegrationEventPublisher`,
-    compare the service's CAP registration with a known working service before
-    changing handlers.
-
-17. **Redis-backed services aborting startup on first connect attempt.** Local
-    Aspire startup can race Redis readiness. When a service constructs a
-    `ConnectionMultiplexer`, parse options with `AbortOnConnectFail=false` so the
-    service can start and reconnect instead of turning one transient Redis race into
-    a failed resource.
-
-18. **Context-free readiness checks reported as execution blockers.** Diagnostic
-    endpoints such as MES `foundation-readiness` may be called without SKU,
-    production version, work center, or device scope. Global readiness should not
-    report context-specific quality/equipment execution blockers unless the required
-    execution context was actually supplied. In that case, the frontend/workbench
-    that owns the missing scope should present the selection prompt or empty state.
-
-19. **Frontend facade calls with empty business scope.** Business Console composables
-    must normalize IDs and suppress queries that require a device, work center, SKU,
-    production version, or work order when that scope is empty. Empty scope should be
-    represented as no request or a clear empty state, not as repeated failing backend
-    calls.
-
-20. **Demo/default identifiers causing backend 500s.** Console defaults such as
-    `WO-001` are UI conveniences, not durable seed guarantees. Query handlers and
-    facades must tolerate missing demo/default records with a domain-appropriate
-    empty or `Unknown` result instead of throwing 500s.
-
-21. **Starting AppHost with `dotnet run`.** The platform AppHost must be managed by
-    Aspire CLI: use `.\nerv.ps1 dev` / `aspire start`, `.\nerv.ps1 stop` /
-    `aspire stop`, `.\nerv.ps1 wait <resource>` / `aspire wait`, and
-    `.\nerv.ps1 logs <resource>` / `aspire logs`. In linked worktrees, startup must
-    use Aspire isolated mode; `scripts/dev.ps1` handles this. Direct `dotnet run`
-    leaves stale DCP/backchannel state and makes later `aspire add`, deploy, and
-    diagnostics unreliable.
-
-22. **Maintaining a second full-platform Compose topology.** Aspire AppHost is the
-    topology source. For container deployment, add/maintain Aspire deployment
-    targets and generate Docker Compose artifacts with `.\nerv.ps1 publish-compose`
-    or deploy with `.\nerv.ps1 deploy-compose`. Existing hand-written Compose files
-    may remain for dependencies, smoke tests, or legacy overlay validation, but
-    must not become a competing service graph.
-
-23. **Assuming Vite dev proxy becomes production routing.** `AddViteApp` works for
-    local dev, but publish/deploy needs an explicit JavaScript production serving
-    model. Console can use `PublishAsStaticWebsite("/api", gateway)`. Business
-    Console needs two production API routes (`/api/console` to PlatformGateway and
-    `/api/business-console` to BusinessGateway) or an equivalent BusinessGateway
-    auth facade before Compose output can be called a complete Business Console
-    deployment.
-
-24. **Skipping connected-machine bootstrap on a blank machine.** For a fresh online
-    Windows machine, use `.\nerv.ps1 bootstrap -InstallMissing` first, then
-    `.\nerv.ps1 dev`. The bootstrap entry owns prerequisite checks, optional tool
-    installation, local AppHost user-secrets initialization, package restore and
-    AppHost build. Do not debug broad request failures until this path has passed
-    and Docker Desktop is actually running.
-
-25. **Treating offline deployment as the current startup path.** Offline packaging is
-    a deployment architecture track, not the first local-development fix. Keep the
-    immediate startup path focused on connected machines and Aspire CLI/AppHost.
-    Future offline scripts should consume Aspire-generated artifacts instead of
-    inventing a parallel topology.
-
-26. **Hardcoding bootstrap seed passwords.** Connected-machine bootstrap may create
-    local Development user-secrets, but it must not keep a fixed IAM admin password
-    in source. Generate a random local value by default, or require the operator to
-    pass a value explicitly through a non-logged path. Secret-setting commands must
-    mark sensitive arguments for script log redaction.
-
-27. **Letting Aspire infrastructure image tags drift.** Persistent local resources
-    must be explicitly pinned in AppHost. PostgreSQL is currently `18` and Redis
-    is currently `8`; do not use `latest` or unpinned Aspire provider defaults.
-    PostgreSQL 18+ uses a different major-version data directory than the old
-    pre-18 `/var/lib/postgresql/data` layout, so local dev uses
-    `nerv-iip-postgres-18` and must not point PostgreSQL 18 back at the old
-    `nerv-iip-postgres` volume without an explicit `pg_upgrade` or dump/restore.
-    Do not switch major versions without a tracked upgrade plan, clean-volume test,
-    preserved-volume migration test where applicable, AppHost build, Compose
-    publish verification, and smoke startup. If Redis reports an RDB/AOF format
-    error, stop Aspire and remove only the local `nerv-iip-redis` cache volume.
-
-28. **Startup/stop scripts with no bounded feedback.** `.\nerv.ps1 dev` and
-    `.\nerv.ps1 stop` must show phase diagnostics and use bounded helper calls.
-    A failed certificate check, exited container, Aspire/DCP hang, or successful
-    startup must not all look like "still waiting". Stop must run fallback cleanup
-    for current-repo AppHost processes and Aspire usvc-dev containers when Aspire
-    CLI stop times out.
-
-29. **Skipping local HTTPS certificate validation.** Aspire Dashboard/DCP and local
-    HTTPS endpoints require a trusted developer certificate. On blank machines or
-    after Aspire certificate cache changes, run `.\nerv.ps1 bootstrap -InstallMissing`
-    or verify with `dotnet dev-certs https --check --trust`. If AppHost logs show
-    certificate name mismatch, reset with `aspire certs clean`, `aspire certs trust`,
-    and `dotnet dev-certs https --trust`.
+   `[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]`; Gateway
+   Console endpoints use `GatewayPolicies.ConsoleAuthenticated`; only health
+   endpoints stay anonymous.
+2. **Scaffold residue.** When scaffolding from NetCorePal templates, delete all
+   demo endpoints/aggregates/tests; verify `ServiceName`; `UseAuthentication()`
+   before `UseAuthorization()`.
+3. **`Guid.NewGuid()` instead of `Guid.CreateVersion7()`.** EF's v7 generator
+   only fires on default IDs; constructor-assigned v4 GUIDs break time-ordered
+   index locality.
+4. **Synchronous EF Core calls.** Repository/service/query-handler methods are
+   async with `CancellationToken`, always.
+5. **`Environment.SetEnvironmentVariable()` in parallel tests.** Use
+   `builder.UseSetting()` or a `DisableParallelization` collection.
+6. **Missing `MigrationsHistoryTable("__EFMigrationsHistory", "<schema>")`** on a
+   service's PostgreSQL DbContext (history lands in `public` otherwise).
+7. **String comparison for boolean config.** Use
+   `builder.Configuration.GetValue<bool>(...)`.
+8. **Query filters not matching the DB unique index.** If the unique index has N
+   columns, dedup/lookup queries must filter on all N.
+9. **Secrets in Domain aggregates.** Secret names/API keys/credential references
+   live in Infrastructure or configuration only.
+10. **InMemory auth stores issuing fake tokens.** They must produce real JWTs via
+    the service's token issuer or Gateway JWT validation rejects everything.
+11. **Test assertions via source-file path traversal.** Use DI, `DbContext`
+    reflection, or `Nerv.IIP.Testing` helpers — never
+    `Path.Combine(AppContext.BaseDirectory, "..", ...)`.
+12. **Context-free readiness endpoints reporting context-specific blockers.**
+    Global readiness must not report SKU/work-center/device-scoped blockers when
+    that scope was never supplied; the owning frontend shows the selection
+    prompt or empty state.
+13. **Frontend facade calls with empty business scope.** Composables normalize
+    IDs and suppress queries whose required scope is empty — no request or a
+    clear empty state, never repeated failing calls.
+14. **Demo/default identifiers causing 500s.** Defaults like `WO-001` are UI
+    conveniences, not seed guarantees; handlers/facades return a
+    domain-appropriate empty/`Unknown` result for missing records.
 
 ## "Done" Definition
 
-Before claiming a task is complete, verify against the Change Decision Table above.
-At minimum:
+Verify against the Change Decision Table. At minimum:
 
-1. ✅ Targeted tests pass for the area you changed.
-2. ✅ No new warnings introduced (backend has warnings-as-errors).
+1. ✅ Targeted tests pass for the area changed.
+2. ✅ No new warnings (backend has warnings-as-errors).
 3. ✅ Generated artifacts refreshed if contracts changed (OpenAPI → api-client).
 4. ✅ DB migrations/catalog/comments updated if schema changed.
 5. ✅ Scripts pass governance if scripts changed.
 6. ✅ Affected `verify-*.ps1` scripts still pass.
 7. ✅ Relevant docs in `docs/architecture/` and `docs/adr/` updated.
-8. ✅ New/changed business-service HTTP endpoints are declared and registered in
+8. ✅ New/changed business-service HTTP endpoints declared in
    `facade-coverage-matrix.json` as `exposed`/`deferred`/`internal`; the
-   facade-coverage gate passes (see "Facade Coverage Governance").
-
-## Finding Documentation
-
-1. **Start here**: `docs/architecture/implementation-readiness.md` — current phase,
-   delivered services, environment prerequisites.
-2. **Service boundaries**: `docs/architecture/context-map.md`.
-3. **Directory rules**: `docs/architecture/repo-layout.md`.
-4. **ADRs**: `docs/adr/` — numbered sequentially, read in order for architectural
-   decisions and their rationale.
-5. **All other topics**: `docs/architecture/` files are named by topic
-   (e.g., `database-schema-conventions.md`, `frontend-structure.md`,
-   `script-automation-governance.md`). Search by keyword when needed.
-
-## Sub-directory Overrides
-
-- `backend/services/<Svc>/AGENTS.md` — Service-specific build/test notes, schema owner, EF migration hints.
-- `frontend/apps/console/AGENTS.md` — Console-specific routing, composables, token conventions.
-- `frontend/apps/business-console/AGENTS.md` — 业务前端：产品/业务/UX 三大支柱、文档及时性、权限拆分同步、工厂对接可配置性。
-- `scripts/AGENTS.md` — Additional script governance rules if needed.
-- Use `AGENTS.override.md` for temporary overrides; rename or remove to restore base guidance.
+   facade-coverage gate passes (see below).
 
 ## Facade Coverage Governance — the two-hop DoD (business endpoints)
 
-A business capability is only usable end-to-end when it ships as **two hops**: the
-service HTTP endpoint **and** a Gateway facade (OpenAPI snapshot → `pnpm -C frontend
-generate:api` → `types.gen.ts` → stable barrel). Issue acceptance used to watch only
-the first hop, so a missing facade turned no gate red — X1/#784 had to recover 11 such
-gaps by full audit. This is the HTTP-facade analogue of the dangling-integration-event
-problem solved by `docs/architecture/integration-event-consumption-matrix.md`.
+A business capability is only usable end-to-end when it ships as **two hops**:
+the service HTTP endpoint **and** a Gateway facade (OpenAPI snapshot →
+`pnpm -C frontend generate:api` → `types.gen.ts` → stable barrel). Any issue/PR
+adding or changing a business-service HTTP endpoint MUST declare, per endpoint:
 
-**Mandatory declaration (no default).** Any issue/PR that adds or changes a
-business-service HTTP endpoint MUST declare, per new/changed endpoint, one of:
+1. **`exposed`** — the same PR delivers facade + OpenAPI export + codegen +
+   stable-barrel re-export.
+2. **`deferred`** — explicitly postponed; register in
+   `facade-coverage-matrix.json` with a `followUp`. A tracked gap, never silent.
+3. **`internal`** — never exposed by design (service-to-service, background
+   scheduler, connector/WCS callback); register with a `rationale`.
 
-1. **`exposed`** — this PR also delivers the Gateway facade + OpenAPI export + codegen
-   + stable-barrel re-export. PR review confirms the type is reachable in
-   `types.gen.ts` and exported from the barrel.
-2. **`deferred`** — explicitly postponed. Register the row in
-   `facade-coverage-matrix.json` with a `followUp` (the frontend issue / menu phase it
-   will follow). A tracked gap, never a silent one.
-3. **`internal`** — never exposed by design (service-to-service contract, background
-   scheduler, connector/WCS callback). Register with a `rationale`. Precedent: IIoT
-   `GET /iiot/runtime-hours` (#688), consumed only by Maintenance PM.
-
-**Enforcement.** `backend/tests/Nerv.IIP.FacadeCoverage.Tests` (runs inside
-`dotnet test backend/Nerv.IIP.sln`, already in CI) reflects every service's
-`*EndpointContracts.All` registry and fails if a live endpoint is missing from
-`facade-coverage-matrix.json`, if an `exposed` row's facade is absent from the Gateway
-snapshot, or if a `deferred`/`internal` row was silently given a facade. The registry
-and the governance narrative are `docs/architecture/facade-coverage-matrix.json` and
-`docs/architecture/facade-coverage-matrix.md`. Adding a new business service also
-requires registering its `.Web` assembly in the gate project.
+**Enforcement:** `backend/tests/Nerv.IIP.FacadeCoverage.Tests` (inside
+`dotnet test backend/Nerv.IIP.sln`, in CI) reflects every service's
+`*EndpointContracts.All` registry and fails on unregistered live endpoints,
+`exposed` rows missing from the Gateway snapshot, or `deferred`/`internal` rows
+silently given a facade. Registry + narrative:
+`docs/architecture/facade-coverage-matrix.{json,md}`. New business services must
+also register their `.Web` assembly in the gate project.
 
 ## GitHub Workflow
 
-- Use `gh` CLI directly for PR creation. Do not use the GitHub connector — it has
-  repeatedly returned 404 in this repo while `gh` is already authenticated and works.
-- If a PR operation fails via `gh`, report the command and error clearly.
-- PR descriptions answer a lightweight docs-impact checklist (convention, not a hard
-  gate): state whether the change affects product docs (`frontend/apps/docs`) — new
-  pages, changed business flows, or user-visible behavior changes count as "yes". If
-  yes, update the docs in the same PR or reference a follow-up docs issue; if no,
-  write "文档：无影响". Docs gaps recorded in the docs-site role path maps and
-  `internal/gaps` are recycled into GitHub issues quarterly. Rationale and IA rules:
-  `docs/adr/0021-product-docs-information-architecture.md`.
-- If the PR adds or changes a business-service HTTP endpoint, state the facade
-  declaration for each — `exposed` / `deferred` / `internal` — and confirm
-  `facade-coverage-matrix.json` was updated (see "Facade Coverage Governance"). This
-  is a hard gate: the facade-coverage test fails an unregistered endpoint.
+- Use `gh` CLI directly for PR creation (the GitHub connector has repeatedly
+  returned 404 in this repo). If a `gh` operation fails, report the command and
+  error clearly.
+- PR descriptions answer a docs-impact checklist: does the change affect product
+  docs (`frontend/apps/docs`)? New pages, changed business flows, or
+  user-visible behavior count as "yes" — update docs in the same PR or reference
+  a follow-up issue; otherwise write "文档：无影响". IA rules: ADR 0021.
+- If the PR adds/changes a business-service HTTP endpoint, state the facade
+  declaration for each (`exposed`/`deferred`/`internal`) and confirm
+  `facade-coverage-matrix.json` was updated. Hard gate.
+
+## Sub-directory Overrides
+
+The nearest `AGENTS.md` in a subtree extends and overrides this file for that
+subtree. Currently:
+
+- `frontend/apps/business-console/AGENTS.md` — 业务前端三大支柱（产品/业务/UX）
+- `frontend/apps/business-pda/AGENTS.md` — PDA 命令、测试四层定义、移动端硬规则
+- `frontend/apps/screen/AGENTS.md` — 大屏设计硬门禁、数据 seam 三段式
+- `frontend/packages/ui/AGENTS.md` + `frontend/packages/ui-mobile/AGENTS.md` —
+  NvUI 库内侧规则（原版零改动、R1–R5 命名、token/layer）
+
+Use `AGENTS.override.md` for temporary overrides; remove it to restore base
+guidance.
