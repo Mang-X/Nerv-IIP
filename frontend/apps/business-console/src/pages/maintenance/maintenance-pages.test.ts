@@ -14,7 +14,7 @@ const state = vi.hoisted(() => ({
   inspections: [] as Array<Record<string, unknown>>,
   workOrders: [] as Array<Record<string, unknown>>,
   plans: [] as Array<Record<string, unknown>>,
-  remainingByPlanId: {} as Record<string, number | null>,
+  remainingByPlanId: {} as Record<string, { status: string; hours?: number }>,
   createWorkOrder: vi.fn(async (_body: Record<string, unknown>) => ({})),
   completeWorkOrder: vi.fn(async (_id: string, _body: Record<string, unknown>) => ({})),
   recordInspection: vi.fn(async (_body: Record<string, unknown>) => ({})),
@@ -444,7 +444,10 @@ describe('maintenance plans page', () => {
       },
     ]
     // Client-derived remaining runtime hours (per plan's own window).
-    state.remainingByPlanId = { 'p-run': 300, 'p-both': 1700 }
+    state.remainingByPlanId = {
+      'p-run': { status: 'ok', hours: 300 },
+      'p-both': { status: 'ok', hours: 1700 },
+    }
     const wrapper = mount(PlansPage, mountOptions())
     await flushPromises()
 
@@ -457,6 +460,40 @@ describe('maintenance plans page', () => {
     expect(wrapper.text()).toContain('2026-07-31')
     expect(wrapper.text()).toContain('剩余 300 小时')
     expect(wrapper.text()).toContain('剩余 1700 小时')
+  })
+
+  it('distinguishes a telemetry read failure from genuinely having no samples in the plans list', async () => {
+    state.plans = [
+      {
+        planId: 'p-err',
+        deviceAssetId: 'DEV-ERR',
+        planCode: 'PM-ERR',
+        interval: null,
+        startsOn: '2026-06-01',
+        nextDueOn: null,
+        runtimeHourInterval: 1000,
+        nextDueRuntimeHours: 1000,
+        lastGeneratedRuntimeHours: 0,
+      },
+      {
+        planId: 'p-nos',
+        deviceAssetId: 'DEV-NOS',
+        planCode: 'PM-NOS',
+        interval: null,
+        startsOn: '2026-06-01',
+        nextDueOn: null,
+        runtimeHourInterval: 1000,
+        nextDueRuntimeHours: 1000,
+        lastGeneratedRuntimeHours: 0,
+      },
+    ]
+    state.remainingByPlanId = { 'p-err': { status: 'error' }, 'p-nos': { status: 'no-samples' } }
+    const wrapper = mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    // A failed telemetry read is never mislabeled as "暂无样本".
+    expect(wrapper.text()).toContain('运行小时（读取失败）')
+    expect(wrapper.text()).toContain('运行小时（暂无样本）')
   })
 
   it('creates a genuine runtime-only plan (no calendar interval)', async () => {

@@ -311,7 +311,9 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
   }),
   // Client-derived per-plan remaining runtime hours: runtime plan 'plan-2' has 280h left.
   useMaintenancePlanRuntimeRemaining: () => ({
-    remainingByPlanId: computed<Record<string, number | null>>(() => ({ 'plan-2': 280 })),
+    remainingByPlanId: computed<Record<string, { status: string; hours?: number }>>(() => ({
+      'plan-2': { status: 'ok', hours: 280 },
+    })),
     remainingPending: shallowRef(false),
     refreshRemaining: vi.fn(),
   }),

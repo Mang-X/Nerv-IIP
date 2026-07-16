@@ -35,11 +35,11 @@
 
 ### 3.2 列表展示
 - **触发模式列**:由存储事实区分三态——有日历 `interval` 无运行小时 = 日历周期;无 `interval` 有运行小时 = 运行小时;两者皆有 = 两者组合。
-- **下次到期列**:日历型显下次到期日;运行小时型显**剩余小时**(`remainingRuntimeHours`,后端按各计划自己的起算口径算出;无真实运行样本时显「暂无样本」)。
+- **下次到期列**:日历型显下次到期日;运行小时型显**剩余小时**(前端按各计划自己的起算窗口经 `queryBusinessConsoleTelemetryRuntimeHours` 派生;遥测**读取失败**显「读取失败」、真实**无运行样本**显「暂无样本」——两者分开不混淆)。
 
 ### 3.3 设备详情运行小时指标(#794 消费 #884)
 - **累计运行小时**卡:窗口聚合(锚定运行小时计划起算日,无则近 90 天),明确是「窗口内累计运行事实」非终身表底;无运行样本时诚实显「无样本」。
-- **距下次保养还需 X 小时**卡:直接消费后端逐计划 `remainingRuntimeHours`;设备有多个运行小时计划时取**剩余最小**(最紧迫)者,不按创建顺序;剩余未知(无样本)的计划排在有剩余之后。
+- **距下次保养还需 X 小时**卡:前端逐计划派生剩余小时;设备有多个运行小时计划时取**剩余最小**(最紧迫)者,不按创建顺序;剩余未知(无样本/读取失败)的计划排在有剩余之后,读取失败与无样本在卡片上分别显示。
 
 ## 4. 角色与权限
 - 读:`business.maintenance.plans.read` / `business.maintenance.work-orders.read` / `business.iiot.telemetry.read`(运行小时卡)。
@@ -47,14 +47,14 @@
 - facade 层按 operation 强制权限;运行小时读面(`telemetry/runtime-hours`)按 IIoT telemetry read 门控。
 
 ## 5. 数据来源(facade 代码事实)
-- 保养计划:`listBusinessConsoleMaintenancePlans`(支持 `deviceAssetId` 过滤 + `remainingRuntimeHours` 服务端投影)、`createBusinessConsoleMaintenancePlan`(`interval` 可空、`runtimeHourInterval` 可选,二选一或都填)、`generateDueBusinessConsoleMaintenanceWorkOrders`。
+- 保养计划:`listBusinessConsoleMaintenancePlans`(纯 DB 投影,支持 `deviceAssetId` 过滤;返回 `interval`/`nextDueOn`/`runtimeHourInterval`/`nextDueRuntimeHours`/`lastGeneratedRuntimeHours`,**不含**剩余小时——剩余由前端派生)、`createBusinessConsoleMaintenancePlan`(`interval` 可空、`runtimeHourInterval` 可选,二选一或都填)、`generateDueBusinessConsoleMaintenanceWorkOrders`。
 - 运行小时:`queryBusinessConsoleTelemetryRuntimeHours`(窗口聚合 `totalRuntimeHours` / `hasRuntimeSamples` / 日粒度)。
 - 可靠性 / 工单 / 点检 / 备件 / 可用窗口:各自 facade,设备详情按返回设备字段客户端收敛,并对 plans/work-orders 用 `deviceAssetId` 设备范围查询(避免全局分页遗漏)。
 
 ## 6. 领域口径(代码事实)
 - `MaintenancePlan.Interval` **可空**:运行小时型计划无日历触发、无 `NextDueOn`,只在累计运行小时越过阈值时开单(PM 调度器 `generate-due`)。一个计划必须至少有一个触发(日历 / 运行小时 / 两者)。
-- 运行小时累计口径:后端按 `[plan.StartsOn, now]` 经 IndustrialTelemetry 运行小时 provider 计算,`remainingRuntimeHours = NextDueRuntimeHours − 累计`;无真实样本时为 null。
-- 剩余小时按**各计划各自起算窗口**计算,不同计划不可共用一个窗口直接比较。
+- 运行小时累计口径:前端按各计划 `[plan.StartsOn, now]` 窗口调 `queryBusinessConsoleTelemetryRuntimeHours` 得 `totalRuntimeHours`,`剩余 = nextDueRuntimeHours − totalRuntimeHours`(负数截 0);无真实样本时为空。**列表查询本身是纯 DB 投影,不逐计划 fan-out 到 IndustrialTelemetry**——曾把该派生放服务端 list 查询逐计划调 provider,导致 DbContext 并发/超时使 list 500,故改前端派生(每页至多 6 路并发、非阻塞)。
+- 剩余小时按**各计划各自起算窗口**计算,不同计划不可共用一个窗口直接比较。阈值推进后(生成到期工单)前端按新 `nextDueRuntimeHours` 重算,不显旧值。
 
 ## 7. 分期
 - 本期(#794):触发模式三档 + 运行小时数快捷值 + 字段级校验;列表三态 + 剩余小时;设备详情两卡。

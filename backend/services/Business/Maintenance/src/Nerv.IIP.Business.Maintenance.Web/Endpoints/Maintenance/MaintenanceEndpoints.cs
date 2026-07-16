@@ -81,7 +81,9 @@ public sealed record CreateMaintenancePlanRequest(
     string EnvironmentId,
     string DeviceAssetId,
     string? PlanCode,
-    string Interval,
+    // Nullable: a plan may be runtime-hour-only (no calendar interval). The command enforces
+    // "at least one trigger" (calendar interval and/or runtime-hour interval).
+    string? Interval,
     DateOnly StartsOn,
     string Owner,
     DateTimeOffset? WindowStartUtc,

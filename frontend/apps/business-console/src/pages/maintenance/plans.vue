@@ -137,13 +137,16 @@ function formatHours(value?: number | null) {
   if (value === null || value === undefined) return '—'
   return `${Number(value)} 小时`
 }
-// 下次到期：运行小时型显剩余小时（前端按各计划起算口径经 runtime-hours facade 算出，无运行样本时为空）；
-// 日历型显下次到期日。两者组合以运行小时剩余为主，缺剩余时回落到日历到期日。
+// 下次到期：运行小时型显剩余小时（前端按各计划起算口径经 runtime-hours facade 算出）；日历型显下次
+// 到期日。遥测读取失败与真实无样本分开呈现，不把故障误报成「暂无样本」。两者组合在剩余未知时回落到
+// 日历到期日。
 function nextDueLabel(row: PlanRow) {
   if (row.runtimeHourInterval != null) {
-    const remaining = row.planId ? remainingByPlanId.value[row.planId] : undefined
-    if (remaining != null) return `剩余 ${formatHours(remaining)}`
-    if (row.interval && row.nextDueOn) return row.nextDueOn // combined plan: fall back to calendar due
+    const entry = row.planId ? remainingByPlanId.value[row.planId] : undefined
+    if (entry?.status === 'ok') return `剩余 ${formatHours(entry.hours)}`
+    if (entry?.status === 'error') return '运行小时（读取失败）'
+    // no-samples or not-yet-computed: prefer the calendar due for combined plans, else say no samples.
+    if (row.interval && row.nextDueOn) return row.nextDueOn
     return '运行小时（暂无样本）'
   }
   return row.nextDueOn ?? row.startsOn ?? '—'

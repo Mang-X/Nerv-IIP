@@ -208,14 +208,16 @@ const currentDeviceRuntimePlans = computed(() =>
   currentDevicePlanMatches.value.filter((row) => row.runtimeHourInterval != null),
 )
 const { remainingByPlanId } = useMaintenancePlanRuntimeRemaining(currentDeviceRuntimePlans)
-function planRemaining(planId?: string) {
-  return planId ? (remainingByPlanId.value[planId] ?? null) : null
+// 已知剩余小时（status=ok）才返回数值；无样本/读取失败/未算返回 null（用于排序与卡片区分）。
+function planRemainingHours(planId?: string) {
+  const entry = planId ? remainingByPlanId.value[planId] : undefined
+  return entry?.status === 'ok' ? entry.hours : null
 }
 const currentDeviceRuntimePlan = computed(
   () =>
     currentDeviceRuntimePlans.value.slice().sort((a, b) => {
-      const ar = planRemaining(a.planId)
-      const br = planRemaining(b.planId)
+      const ar = planRemainingHours(a.planId)
+      const br = planRemainingHours(b.planId)
       if (ar == null && br == null) return 0
       if (ar == null) return 1
       if (br == null) return -1
@@ -224,8 +226,18 @@ const currentDeviceRuntimePlan = computed(
 )
 // 「距下次保养还需 X 小时」= 最紧迫运行小时计划的剩余小时（各计划各自窗口，口径与 PM 触发一致）。
 const runtimeHoursUntilNextMaintenance = computed(() =>
-  planRemaining(currentDeviceRuntimePlan.value?.planId),
+  planRemainingHours(currentDeviceRuntimePlan.value?.planId),
 )
+// 该设备最紧迫运行小时计划的读取是否失败（用于卡片区分「读取失败」与「暂无样本」）。
+const runtimeRemainingHasError = computed(
+  () => remainingByPlanId.value[currentDeviceRuntimePlan.value?.planId ?? '']?.status === 'error',
+)
+const runtimeUntilNextCardValue = computed(() => {
+  if (runtimeHoursUntilNextMaintenance.value != null) {
+    return formatHours(runtimeHoursUntilNextMaintenance.value)
+  }
+  return runtimeRemainingHasError.value ? '读取失败' : '无样本'
+})
 // 「累计运行小时」是信息卡：窗口锚定运行小时计划起算日（无则近 N 天），展示窗口内累计运行事实。
 const nowIso = ref(new Date().toISOString())
 const runtimeHoursWindowEnd = nowIso
@@ -755,7 +767,7 @@ function formatError(error: unknown) {
           <NvSectionCard
             v-if="currentDeviceRuntimePlan"
             description="距下次保养还需"
-            :value="formatHours(runtimeHoursUntilNextMaintenance)"
+            :value="runtimeUntilNextCardValue"
             :hint="`运行小时型计划 ${currentDeviceRuntimePlan.planCode ?? '—'} · 阈值 ${
               currentDeviceRuntimePlan.nextDueRuntimeHours ?? '—'
             } 小时`"

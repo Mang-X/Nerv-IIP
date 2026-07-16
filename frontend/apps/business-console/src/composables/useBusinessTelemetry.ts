@@ -407,15 +407,48 @@ export interface RuntimeRemainingPlan {
 }
 
 /**
+ * Per-plan remaining-runtime-hours outcome. `error` (telemetry read failed) is kept distinct from
+ * `no-samples` (facade responded, but the device has no real runtime samples yet) so the UI never
+ * mislabels a transient failure as "no samples".
+ */
+export type RuntimeRemainingEntry =
+  | { status: 'ok'; hours: number }
+  | { status: 'no-samples' }
+  | { status: 'error' }
+
+// Bound the client-side telemetry fan-out: a full page of runtime plans issues at most this many
+// concurrent runtime-hours reads, so the derivation never turns into a 100-way burst against the Gateway.
+const RUNTIME_REMAINING_CONCURRENCY = 6
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let cursor = 0
+  async function worker() {
+    while (cursor < items.length) {
+      const index = cursor++
+      results[index] = await fn(items[index])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()))
+  return results
+}
+
+/**
  * Derives per-plan remaining runtime hours on the client from the runtime-hours read facade — one call
  * per runtime-hour plan over that plan's own [startsOn, now] window, so each plan uses its own accrual
  * basis (windows are never shared). The maintenance plan list query stays a fast DB projection; this
- * keeps the telemetry fan-out on the client where it is bounded by the visible page and non-blocking.
- * remaining = nextDueRuntimeHours − accumulated runtime; null when there are no real runtime samples.
+ * keeps the telemetry fan-out on the client where it is bounded (see RUNTIME_REMAINING_CONCURRENCY) and
+ * non-blocking. remaining = nextDueRuntimeHours − accumulated runtime. The result recomputes whenever a
+ * plan's next runtime threshold advances (e.g. after generating due work orders), not only when the set
+ * of plan ids changes, so a stale remaining is never shown after the threshold moves.
  */
 export function useMaintenancePlanRuntimeRemaining(plans: Ref<RuntimeRemainingPlan[]>) {
   const businessContext = useBusinessContextStore()
-  const remainingByPlanId = ref<Record<string, number | null>>({})
+  const remainingByPlanId = ref<Record<string, RuntimeRemainingEntry>>({})
   const pending = ref(false)
 
   async function recompute() {
@@ -441,8 +474,10 @@ export function useMaintenancePlanRuntimeRemaining(plans: Ref<RuntimeRemainingPl
     const organizationId = businessContext.organizationId
     const environmentId = businessContext.environmentId
     try {
-      const entries = await Promise.all(
-        runtimePlans.map(async (p) => {
+      const entries = await mapWithConcurrency(
+        runtimePlans,
+        RUNTIME_REMAINING_CONCURRENCY,
+        async (p): Promise<readonly [string, RuntimeRemainingEntry]> => {
           try {
             const result = await queryBusinessConsoleTelemetryRuntimeHours({
               query: {
@@ -453,14 +488,15 @@ export function useMaintenancePlanRuntimeRemaining(plans: Ref<RuntimeRemainingPl
                 windowEndUtc: nowUtc,
               },
             })
+            if (result.error) return [p.planId!, { status: 'error' }] as const
             const data = result.data?.data
-            if (!data?.hasRuntimeSamples) return [p.planId!, null] as const
+            if (!data?.hasRuntimeSamples) return [p.planId!, { status: 'no-samples' }] as const
             const remaining = p.nextDueRuntimeHours! - (data.totalRuntimeHours ?? 0)
-            return [p.planId!, remaining < 0 ? 0 : remaining] as const
+            return [p.planId!, { status: 'ok', hours: remaining < 0 ? 0 : remaining }] as const
           } catch {
-            return [p.planId!, null] as const
+            return [p.planId!, { status: 'error' }] as const
           }
-        }),
+        },
       )
       remainingByPlanId.value = Object.fromEntries(entries)
     } finally {
@@ -470,7 +506,9 @@ export function useMaintenancePlanRuntimeRemaining(plans: Ref<RuntimeRemainingPl
 
   watch(
     [
-      () => plans.value.map((p) => p.planId).join(','),
+      // Include the fields that move the remaining value (next runtime threshold + accrual window start),
+      // so advancing a plan's threshold via generate-due triggers a fresh read instead of a stale display.
+      () => plans.value.map((p) => `${p.planId}:${p.nextDueRuntimeHours}:${p.startsOn}`).join(','),
       () => businessContext.organizationId,
       () => businessContext.environmentId,
     ],
