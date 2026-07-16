@@ -1,58 +1,41 @@
-# Pagination
+# Pagination (NvPagination)
 
-Server-side page navigation. Implemented via the `IamPagination` wrapper component.
+Server-side page navigation.
 
-## Wrapper component
+> The old console-app pagination wrapper described by earlier versions of this
+> doc no longer exists. Current state:
+>
+> - **List pages built on `NvDataTable`** get pagination for free — set
+>   `manual` with `v-model:page`, `:total-items` and `:page-size` on the table
+>   (see `table.md`). This is the default for entity lists.
+> - **Standalone `NvPagination`** (from `@nerv-iip/ui`) is for paginated
+>   surfaces that are not tables (card grids, timelines).
+>
+> The un-prefixed `Pagination*` parts are the shadcn 原版 primitives —
+> library-internal only.
 
-`frontend/apps/console/src/components/iam/IamPagination.vue`
+## NvPagination API
 
-This component encapsulates the shadcn Pagination primitives with a "Showing X–Y of N" label. Use it for all paginated list pages instead of composing the primitives by hand.
+Props: `page` (1-based), `pageSize` (number or string), `totalItems`,
+`pageSizeOptions` (default `[10, 20, 50, 100]`), `siblingCount`, `showJump`,
+`showEdges`. Emits `update:page` / `update:pageSize`. Includes numbered pages
+with ellipsis, first/last + prev/next, a page-size select and a result summary.
 
 ## Usage
 
 ```vue
-<IamPagination
-  :page-index="pageIndex"
+<NvPagination
+  v-model:page="page"
   :page-size="pageSize"
-  :total-count="totalCount"
-  @page-change="pageIndex = $event"
+  :total-items="totalCount"
+  @update:page-size="pageSize = $event"
 />
 ```
 
-## Props
-
-| Prop | Type | Purpose |
-|---|---|---|
-| `pageIndex` | `number` | Current page (1-based) |
-| `pageSize` | `number` | Items per page |
-| `totalCount` | `number` | Total record count from API |
-
-## Visibility
-
-The component renders nothing when `totalCount <= pageSize` — no need to conditionally wrap it.
-
 ## Do NOT
 
-- Do not compose Pagination primitives directly in page files — use `IamPagination`.
+- Do not compose 原版 `Pagination*` primitives in page files — use `NvDataTable`'s built-in footer or `NvPagination`.
 - Do not use client-side pagination for large datasets — always pass the server-side total.
 - Do not hardcode `pageSize` in the component — receive it from the composable.
 - Do not show pagination above the table — always below.
-
-## Raw Pagination Primitives
-
-Only use these when building a new wrapper component that cannot use `IamPagination`:
-
-```vue
-<Pagination :page="page" :items-per-page="20" :total="totalCount" @update:page="onPageChange">
-  <PaginationContent v-slot="{ items }">
-    <PaginationPrevious />
-    <template v-for="(item, i) in items" :key="item.type === 'page' ? item.value : `e-${i}`">
-      <PaginationItem v-if="item.type === 'page'" :value="item.value" :is-active="item.value === page">
-        {{ item.value }}
-      </PaginationItem>
-      <PaginationEllipsis v-else />
-    </template>
-    <PaginationNext />
-  </PaginationContent>
-</Pagination>
-```
+- Remember the gateway page contract is **1-based** (`pageIndex` starts at 1).

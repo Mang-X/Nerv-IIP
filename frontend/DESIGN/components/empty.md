@@ -2,12 +2,21 @@
 
 Full empty state for a section or page area when there is no data to display.
 
-## When to use which empty component
+> NvUI status: there is no `NvEmpty` on the PC layer — the `Empty*` family is
+> the current canonical export from `@nerv-iip/ui` (原版 primitives kept as the
+> app-facing name until a brand rebuild exists). Mobile uses `NvMobileEmpty`
+> from `@nerv-iip/ui-mobile`.
 
-| Use `Empty` | Use `TableEmpty` |
-|---|---|
-| Full section/page with no data (first-use, zero state) | Inside a `Table` when query returns 0 rows |
-| After filtering produces zero results in a non-table view | After filtering in a table |
+## When to use which empty state
+
+| Use `Empty`                                               | Use `NvDataTable`'s `emptyMessage` |
+| --------------------------------------------------------- | ---------------------------------- |
+| Full section/page with no data (first-use, zero state)    | A table query returning 0 rows     |
+| After filtering produces zero results in a non-table view | After filtering in a table         |
+
+(The 原版 `TableEmpty` row belongs to hand-composed 原版 tables, which app code
+no longer builds — `NvDataTable` renders its own empty row from
+`emptyMessage`.)
 
 ## Usage
 
@@ -24,14 +33,12 @@ Full empty state for a section or page area when there is no data to display.
     </EmptyDescription>
   </EmptyHeader>
   <EmptyContent>
-    <Button type="button" @click="openCreate">Register instance</Button>
+    <NvButton type="button" @click="openCreate">Register instance</NvButton>
   </EmptyContent>
 </Empty>
 
-<!-- Inside a Table (TableEmpty, not Empty) -->
-<TableEmpty :colspan="5">
-  No users match the current filters.
-</TableEmpty>
+<!-- Inside a table: built into NvDataTable -->
+<NvDataTable :rows="items" empty-message="No users match the current filters." … />
 ```
 
 ## Copy Guidelines
@@ -39,10 +46,9 @@ Full empty state for a section or page area when there is no data to display.
 - `EmptyTitle`: declarative, e.g. "No users found", "No active sessions".
 - `EmptyDescription`: explain why and what to do, e.g. "Create a user to get started."
 - `EmptyContent`: optional CTA button — only include if there's an obvious next action.
-- Keep messaging in English to match the rest of the console UI.
 
 ## Do NOT
 
-- Do not show Empty during loading — show Skeleton rows instead.
+- Do not show Empty during loading — show Skeleton (or `NvDataTable`'s built-in `loading`) instead.
 - Do not use a generic "No data" message — be specific about what is empty and why.
-- Do not omit `TableEmpty` from Table components — never leave the tbody visually empty.
+- Do not leave a zero-result area visually blank — every data surface needs an explicit empty state.

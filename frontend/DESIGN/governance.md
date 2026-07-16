@@ -70,7 +70,20 @@ to repo conventions (relative `../../../lib/utils` / `../<comp>` imports;
   自带裸重置；启用 `postcssIsolateStyles()` + demo 统一容器挂 `vp-raw`；`--vp-*` 桥接
   映射保留；**禁用 `revert-layer`**（历史坑）。细则见 ADR 0020 §4.2。
 
-## Adding a New shadcn-vue Component
+## 选件阶梯（写页面时按序判断）
+
+1. **用现有 `Nv*` 件**（速查表 `DESIGN/index.md`；真实 props 以 design-system 文档站
+   - 源码为准）。
+2. **组合现有件**（block/pattern 级拼装，见 `patterns/`）。
+3. **新建品牌组件** —— 满足任一触发条件就新建，不要削足适履：
+   - 交互用现有件表达不出来（如需要 hack `:deep()`、覆盖内部结构）；
+   - 为凑合现有件加了 2 个以上"配置型" props/class 补丁；
+   - 你在"和组件搏斗"而不是在做页面。
+
+   新建门槛低、规矩高：按下面两个流程之一走完 DoD。app 内长出的业务组件成熟后
+   **上提组件库**（反哺，见 `packages/ui/AGENTS.md`）。
+
+## Adding a New shadcn-vue Component（装原版，再决定是否建品牌层）
 
 1. From the `frontend/` workspace root:
 
@@ -78,13 +91,30 @@ to repo conventions (relative `../../../lib/utils` / `../<comp>` imports;
    pnpm dlx shadcn-vue@2.7.3 add <component-name>
    ```
 
-   This installs source to `packages/ui/src/components/ui/<component-name>/`.
+   This installs source to `packages/ui/src/components/ui/<component-name>/`
+   （原版 byte-for-byte，永不改）。
 
 2. Export all public parts from `packages/ui/src/index.ts`.
 
-3. Add a component spec under `DESIGN/components/<component-name>.md` documenting variants, usage, and Do NOTs.
+3. 需要品牌化/定制时**复制重建**到对应层（`pc/`/`blocks/`/…），走下面的新组件 DoD；
+   无需定制的原版件（Alert/Empty 类）可直接在 app 使用。
 
-4. Use the component in application code via `@nerv-iip/ui`.
+## 新组件 DoD（六件套，缺一不算完成）
+
+无论是复制重建原版、还是从业务场景全新创造，一个新组件 = 以下六件全齐：
+
+1. **源码**落在正确的层（`pc/` `blocks/` `layout/` `touch/` `screen/` 或 ui-mobile），
+   命名过 ADR 0020 §1.2 R1–R5；动手前先读所在层的 `product.md`
+   （PC: `components/pc/product.md`；screen: `components/screen/product.md`）。
+2. **Barrel 导出**（`packages/ui/src/index.ts` 或 ui-mobile `index.ts`）。
+3. **Contract tests 通过**（`nvui-naming` / `ui-primitives` / 各 app `nvui-imports`）。
+4. **`DESIGN/component-coverage.md` 矩阵行**（四场景覆盖态，缺口如实标 `—`）。
+5. **决策段**：`DESIGN/components/<name>.md` 写使用时机 / 变体选择 / Do-Don't
+   （体例向 `patterns/interaction-patterns.md` 的"规则/判定/正例/反例"四段式看齐）。
+6. **文档站页**（`apps/design-system/docs/components/<surface>/<name>.md`，live demo；
+   决策性正文用 `@include` 嵌 DESIGN 源，不复制）。
+
+`skills/new-component` 技能（仓库内维护）把这条流程做成了可执行清单。
 
 ## Adding a New Design Token
 

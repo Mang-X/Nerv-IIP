@@ -153,10 +153,12 @@ NvUI is the Nerv-IIP brand component layer inside `@nerv-iip/ui` /
 (`docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md`;
 **Appendix A = the frozen per-component map**).
 
-1. **App/business code uses `Nv*` brand components only** (`NvButton`,
-   `NvDataTable`, `NvPageHeader`, `NvOeeHero`, `NvMobileBadge`, …). A name
-   without the `Nv` prefix is a shadcn 原版 base primitive — referenced ONLY
-   inside `@nerv-iip/ui` itself, never from an app.
+1. **App/business code uses `Nv*` brand components** (`NvButton`, `NvDataTable`,
+   `NvPageHeader`, `NvOeeHero`, `NvMobileBadge`, …). A name without the `Nv`
+   prefix is a shadcn 原版 base primitive: when an `Nv*` counterpart exists
+   (Appendix A), the 原版 name is off-limits in app code; the few primitives
+   with no `Nv` version yet (`Alert`, `Empty`, `Toaster`, `Skeleton`, …) are
+   used under their 原版 names from the same bare barrel.
 2. **Import through the stable boundary only:** bare `@nerv-iip/ui` and
    `@nerv-iip/ui-mobile` (sole allowed sub-entry: `@nerv-iip/ui/file-preview`).
    No deep paths, no direct `reka-ui`, no direct `shadcn-vue`.
