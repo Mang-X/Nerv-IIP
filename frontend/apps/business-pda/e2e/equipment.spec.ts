@@ -90,10 +90,16 @@ test('点检：数字键盘录入（含负号）+ 超差警示 + 提交确认', 
   }
 
   await enterViaKeyboard('measurement-lower', '0')
-  // 戴手套触点 ≥44px：数字键盘大键（键盘开着时量）。
+  // 戴手套触点 ≥44px：数字键（键盘开着时量）+ 提交动作「完成」键（删除头部小按钮后仅剩
+  // 底部大键，此前 E2E 只量数字键与 Cell、漏了提交动作，本处补上）。
   const digitBox = await keyboard.getByRole('button', { name: '8', exact: true }).boundingBox()
   expect(digitBox!.height).toBeGreaterThanOrEqual(44)
   expect(digitBox!.width).toBeGreaterThanOrEqual(44)
+  const doneButtons = await keyboard.getByRole('button', { name: '完成' }).all()
+  expect(doneButtons).toHaveLength(1)
+  const doneBox = await doneButtons[0].boundingBox()
+  expect(doneBox!.height).toBeGreaterThanOrEqual(44)
+  expect(doneBox!.width).toBeGreaterThanOrEqual(44)
   await closeKeyboard()
 
   await enterViaKeyboard('measurement-upper', '70')

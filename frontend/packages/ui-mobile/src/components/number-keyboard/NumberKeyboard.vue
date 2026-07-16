@@ -76,15 +76,10 @@ function confirm() {
           )
         "
       >
-        <div class="flex items-center justify-between px-4 py-2.5">
+        <!-- 头部仅标题：确认走底部大「完成」键（触点足够）或点背板关闭；不再放头部重复小按钮
+             （其真实高度 <44px 不满足触点基线，与底部完成重复）。 -->
+        <div class="px-4 py-2.5">
           <span class="text-sm text-muted-foreground">{{ title ?? '请输入' }}</span>
-          <button
-            type="button"
-            class="nv-m-nk-key rounded-md px-2 py-1 text-[15px] font-medium text-brand"
-            @click="confirm"
-          >
-            {{ confirmText }}
-          </button>
         </div>
         <div class="grid grid-cols-4 gap-1.5 px-1.5 pb-2">
           <!-- digits 1-9 span the first three columns -->
@@ -123,11 +118,20 @@ function confirm() {
           >
             {{ extraKey }}
           </button>
-          <!-- zero, widening to fill the remaining bottom-row columns -->
+          <!-- zero, widening to fill the remaining bottom-row columns.
+               signToggle 恒为 ± 预留一列（含 extraKey='' 组合），避免 ± 溢出到第 5 行破版。 -->
           <button
             type="button"
             class="nv-m-nk-key grid h-14 place-items-center rounded-xl bg-muted text-2xl font-medium text-foreground tabular-nums"
-            :class="signToggle && extraKey ? 'col-span-1' : extraKey ? 'col-span-2' : 'col-span-3'"
+            :class="
+              signToggle
+                ? extraKey
+                  ? 'col-span-1'
+                  : 'col-span-2'
+                : extraKey
+                  ? 'col-span-2'
+                  : 'col-span-3'
+            "
             @click="input('0')"
           >
             0
