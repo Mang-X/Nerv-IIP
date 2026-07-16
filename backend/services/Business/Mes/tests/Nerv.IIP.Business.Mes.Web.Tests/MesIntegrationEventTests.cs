@@ -14,6 +14,37 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesIntegrationEventTests
 {
     [Fact]
+    public void Manual_dispatch_clear_reason_converter_maps_every_domain_reason_to_wire_contract()
+    {
+        var expectedCodes = new Dictionary<OperationTaskManualDispatchClearReason, string>
+        {
+            [OperationTaskManualDispatchClearReason.DeviceCleared] =
+                MesManualDispatchClearReasonCodes.DeviceCleared,
+            [OperationTaskManualDispatchClearReason.OperationCancelled] =
+                MesManualDispatchClearReasonCodes.OperationCancelled
+        };
+        Assert.Equal(Enum.GetValues<OperationTaskManualDispatchClearReason>(), expectedCodes.Keys);
+
+        var occurredAtUtc = DateTimeOffset.Parse("2026-07-15T08:00:00Z");
+        var dispatch = new OperationTaskManualDispatchSnapshot(
+            "org-001", "env-dev", "WO-001", "OP-10", 10,
+            "DEVICE-2", "WC-1", occurredAtUtc, occurredAtUtc.AddHours(1),
+            occurredAtUtc, 2);
+        var converter = new OperationTaskManualDispatchClearedIntegrationEventConverter(
+            new StubMesIntegrationEventContextAccessor(
+                new MesIntegrationEventContext("corr-clear", "cause-clear")));
+
+        foreach (var (reason, expectedCode) in expectedCodes)
+        {
+            var integrationEvent = converter.Convert(
+                new OperationTaskManualDispatchClearedDomainEvent(
+                    dispatch, reason, occurredAtUtc, "user:planner-1"));
+
+            Assert.Equal(expectedCode, integrationEvent.Payload.ReasonCode);
+        }
+    }
+
+    [Fact]
     public void Manual_dispatch_lifecycle_converters_preserve_real_snapshot_revision_actor_and_lineage()
     {
         var start = DateTimeOffset.Parse("2026-07-15T08:00:00Z");
