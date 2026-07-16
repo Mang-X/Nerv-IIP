@@ -330,7 +330,9 @@ function goPutaway() {
           </NvCell>
         </div>
 
-        <!-- GS1 扫码带出批号/效期 -->
+        <!-- GS1 扫码带出批号/效期。本页有两个 NvScanBar（外层单号 + 本抽屉 GS1），
+             靠 active 严格互斥：抽屉开时外层 active=false 让出 document 捕获，仅本条 active，
+             不触发 ScanBar「单 ScanBar 页面」的双写仲裁限制。 -->
         <NvScanBar
           v-if="selectedLines.length"
           placeholder="扫描 GS1 批次码带出效期"
