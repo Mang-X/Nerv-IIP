@@ -684,9 +684,11 @@ public sealed class MesPersistenceContractTests
         Assert.Contains(MesReadinessReasonCodes.QualityHoldActive, startHold.Message);
     }
 
-    // 回归 #799 真机链路（2026-07-17 隔离全栈实测暴露）：Quality 发布的 payload.SourceService 是记录侧词汇 "mes"，
-    // 与 MES 契约 "business-mes" 不同；消费者须接受 "mes"/"mes-operation" 并归一化为 business-mes 存储，否则
-    // 不良→hold→复检合格→自动释放链断裂（此前测试用 business-mes 值掩盖了该 bug）。
+    // 回归 #799（2026-07-17 隔离全栈实测暴露的跨服务 sourceService 词汇 bug）：Quality 发布的 payload.SourceService
+    // 是记录侧词汇 "mes"，与 MES 契约 "business-mes" 不同；消费者须接受 "mes"/"mes-operation" 并归一化为 business-mes
+    // 存储，否则收到任何真机检验事件都 early-return（此前测试用 business-mes 值掩盖了该 bug）。
+    // 注：此测试证明 **MES 消费者** 在收到 rejected 再 passed 事件时正确 apply→release；「不良→复检合格」完整业务闭环
+    // 是否可达取决于 Quality 侧复检写路径（inspection_records 唯一索引使同源复检幂等、不发第二条事件），另行建模。
     [Fact]
     public async Task Quality_inspection_with_mes_source_service_vocabulary_applies_then_auto_releases_hold()
     {
