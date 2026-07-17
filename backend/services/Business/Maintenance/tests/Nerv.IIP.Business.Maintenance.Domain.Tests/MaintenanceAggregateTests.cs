@@ -212,6 +212,28 @@ public sealed class MaintenanceAggregateTests
     }
 
     [Fact]
+    public void Update_trigger_configuration_changing_only_calendar_interval_keeps_runtime_cursor()
+    {
+        var plan = CreatePlanWithAdvancedCursors();
+
+        plan.UpdateTriggerConfiguration("P10D", 100m);
+
+        Assert.Equal(new DateOnly(2026, 6, 18), plan.NextDueOn);
+        Assert.Equal(200m, plan.NextDueRuntimeHours);
+    }
+
+    [Fact]
+    public void Update_trigger_configuration_changing_only_runtime_interval_keeps_calendar_cursor()
+    {
+        var plan = CreatePlanWithAdvancedCursors();
+
+        plan.UpdateTriggerConfiguration("P7D", 50m);
+
+        Assert.Equal(175m, plan.NextDueRuntimeHours);
+        Assert.Equal(new DateOnly(2026, 6, 15), plan.NextDueOn);
+    }
+
+    [Fact]
     public void Update_trigger_configuration_keeps_cursors_when_normalized_values_are_unchanged()
     {
         var plan = CreatePlanWithAdvancedCursors();
@@ -236,6 +258,30 @@ public sealed class MaintenanceAggregateTests
         Assert.Equal(100m, plan.RuntimeHourInterval);
         Assert.Equal(200m, plan.NextDueRuntimeHours);
         Assert.Equal(125m, plan.LastGeneratedRuntimeHours);
+    }
+
+    [Fact]
+    public void Update_trigger_configuration_rejects_malformed_calendar_interval_without_partial_mutation()
+    {
+        var plan = CreatePlanWithAdvancedCursors();
+        var before = (
+            plan.Interval,
+            plan.RuntimeHourInterval,
+            plan.LastGeneratedOn,
+            plan.NextDueOn,
+            plan.LastGeneratedRuntimeHours,
+            plan.NextDueRuntimeHours);
+
+        Assert.Throws<ArgumentException>(() => plan.UpdateTriggerConfiguration("not-an-iso-interval", 50m));
+
+        var after = (
+            plan.Interval,
+            plan.RuntimeHourInterval,
+            plan.LastGeneratedOn,
+            plan.NextDueOn,
+            plan.LastGeneratedRuntimeHours,
+            plan.NextDueRuntimeHours);
+        Assert.Equal(before, after);
     }
 
     [Fact]
