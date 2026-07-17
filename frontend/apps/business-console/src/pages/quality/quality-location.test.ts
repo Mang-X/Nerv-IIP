@@ -8,8 +8,15 @@ const routeState = vi.hoisted(() => ({
   route: undefined as { query: Record<string, string> } | undefined,
 }))
 
+const notifySpies = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
+vi.mock('@/utils/notify', () => ({
+  notifyError: notifySpies.error,
+  notifySuccess: notifySpies.success,
+}))
+
 const qualityState = vi.hoisted(() => ({
   inspectionFilters: undefined as { status?: string, keyword?: string } | undefined,
+  recordError: undefined as unknown,
   inspectionPlans: [
     {
       id: 'PLAN-001',
@@ -79,6 +86,24 @@ vi.mock('@/composables/useBusinessQuality', async () => {
         refreshInspectionPlans: vi.fn(),
       }
     },
+    useQualityInspectionRecordDetail: (source: () => { inspectionRecordId: string }) => ({
+      record: computed(() =>
+        source().inspectionRecordId === 'INSP-REC-9'
+          ? {
+              inspectionRecordId: 'INSP-REC-9',
+              skuCode: 'SKU-001',
+              sourceDocumentId: 'WO-1',
+              result: 'rejected',
+              inspectedQuantity: 3,
+              dispositionReason: '尺寸超差',
+              resultLines: [{ characteristicCode: 'DIM-01', measuredValue: 12.6 }],
+            }
+          : undefined,
+      ),
+      recordPending: shallowRef(false),
+      recordError: computed(() => qualityState.recordError),
+      refreshRecord: vi.fn(),
+    }),
     useQualityNcrs: (initial = {}) => {
       const filters = reactive({
         organizationId: 'org-001',
@@ -165,8 +190,14 @@ const uiStubs = {
   SheetFooter: { template: '<div><slot /></div>' },
   SheetHeader: { template: '<div><slot /></div>' },
   SheetTitle: { template: '<h2><slot /></h2>' },
+  NvSheet: { props: ['open'], template: '<div v-if="open" data-record-sheet><slot /></div>' },
+  NvSheetContent: { template: '<div><slot /></div>' },
+  NvSheetDescription: { template: '<p><slot /></p>' },
+  NvSheetHeader: { template: '<div><slot /></div>' },
+  NvSheetTitle: { template: '<h2><slot /></h2>' },
   Spinner: true,
   StatusBadge: { props: ['value'], template: '<span>{{ value }}</span>' },
+  NvStatusBadge: { props: ['value'], template: '<span>{{ value }}</span>' },
   Toolbar: { template: '<div><slot name="filters" /></div>' },
 }
 
@@ -183,6 +214,9 @@ describe('quality route location behavior', () => {
     routeState.route!.query = {}
     qualityState.inspectionFilters = undefined
     qualityState.ncrFilters = undefined
+    qualityState.recordError = undefined
+    notifySpies.error.mockReset()
+    notifySpies.success.mockReset()
   })
 
   it('keeps the user-selected NCR status filter when ncrId is removed from the route', async () => {
@@ -217,6 +251,32 @@ describe('quality route location behavior', () => {
 
     expect(wrapper.find('[data-dialog]').exists()).toBe(false)
     expect(qualityState.inspectionFilters!.keyword).toBe('PLAN-001')
+  })
+
+  it('locates a source inspection record: opens read-only record detail from inspectionRecordId', async () => {
+    routeState.route!.query = { inspectionRecordId: 'INSP-REC-9' }
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+
+    // 记录详情真实消费 inspectionRecordId → 展示该记录的判定结论与特性实测值（定位到具体记录，非仅方案）。
+    const text = wrapper.text()
+    expect(text).toContain('INSP-REC-9')
+    expect(text).toContain('rejected')
+    expect(text).toContain('DIM-01')
+  })
+
+  it('toasts + offers retry (not “未找到”) when the record detail request fails', async () => {
+    qualityState.recordError = new Error('403 forbidden')
+    routeState.route!.query = { inspectionRecordId: 'INSP-REC-X' }
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+
+    // 请求失败不再误报为空：走 toast + 可重试，不显示“未找到”。
+    expect(notifySpies.error).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('检验记录加载失败')
+    expect(wrapper.text()).not.toContain('未找到该检验记录')
   })
 })
 

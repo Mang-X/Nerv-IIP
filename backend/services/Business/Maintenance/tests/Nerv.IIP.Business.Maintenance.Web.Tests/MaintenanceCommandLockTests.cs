@@ -14,7 +14,7 @@ namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 public sealed class MaintenanceCommandLockTests
 {
     [Fact]
-    public async Task Device_state_plan_creation_and_pm_generation_share_org_environment_lock_key()
+    public async Task Device_state_plan_creation_plan_update_and_pm_generation_share_org_environment_lock_key()
     {
         var generateSettings = await new GenerateDueMaintenanceWorkOrdersCommandLock().GetLockKeysAsync(
             new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 6, 8), "system:pm"),
@@ -25,13 +25,18 @@ public sealed class MaintenanceCommandLockTests
         var createSettings = await new CreateMaintenancePlanCommandLock().GetLockKeysAsync(
             new CreateMaintenancePlanCommand("org-001", "env-dev", "DEV-CNC-01", "PM-001", "P7D", new DateOnly(2026, 6, 1), "maintenance", null, null),
             CancellationToken.None);
+        var updateSettings = await new UpdateMaintenancePlanCommandLock().GetLockKeysAsync(
+            new UpdateMaintenancePlanCommand("org-001", "env-dev", new MaintenancePlanId(Guid.CreateVersion7()), "P30D", 500m),
+            CancellationToken.None);
 
         Assert.Equal("business-maintenance:pm-generation:org-001:env-dev", generateSettings.LockKey);
         Assert.Equal(generateSettings.LockKey, stateSettings.LockKey);
         Assert.Equal(generateSettings.LockKey, createSettings.LockKey);
+        Assert.Equal(generateSettings.LockKey, updateSettings.LockKey);
         Assert.Equal(TimeSpan.FromSeconds(30), generateSettings.AcquireTimeout);
         Assert.Equal(generateSettings.AcquireTimeout, stateSettings.AcquireTimeout);
         Assert.Equal(generateSettings.AcquireTimeout, createSettings.AcquireTimeout);
+        Assert.Equal(generateSettings.AcquireTimeout, updateSettings.AcquireTimeout);
     }
 
     [Fact]

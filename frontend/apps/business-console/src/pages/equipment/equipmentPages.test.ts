@@ -49,6 +49,14 @@ const deviceControlState = vi.hoisted(() => ({
   ],
 }))
 
+// Client-derived per-plan remaining runtime hours; configurable per test to drive mixed-status cases.
+const runtimeRemainingState = vi.hoisted(() => ({
+  map: {} as Record<string, { status: string; hours?: number }>,
+}))
+
+// Cumulative runtime-hours read; configurable so a no-samples device can be exercised.
+const runtimeHoursState = vi.hoisted(() => ({ total: 720, hasSamples: true }))
+
 const reviewFixture = vi.hoisted(() => {
   const historyItems = [
     {
@@ -130,6 +138,31 @@ const reviewFixture = vi.hoisted(() => {
       planCode: 'PM-CNC-MONTHLY',
       interval: 'P30D',
       startsOn: '2026-07-01',
+      nextDueOn: '2026-07-31',
+      lastGeneratedRuntimeHours: 0,
+    },
+    {
+      planId: 'plan-2',
+      deviceAssetId: 'DEV-OIL-01',
+      planCode: 'PM-CNC-RUNTIME',
+      interval: null, // runtime-only: no calendar trigger
+      startsOn: '2026-06-01',
+      nextDueOn: null,
+      runtimeHourInterval: 1000,
+      nextDueRuntimeHours: 1000,
+      lastGeneratedRuntimeHours: 0,
+    },
+    {
+      // A second runtime plan on the same device — drives the mixed-status aggregation cases.
+      planId: 'plan-3',
+      deviceAssetId: 'DEV-OIL-01',
+      planCode: 'PM-CNC-RUNTIME-2',
+      interval: null,
+      startsOn: '2026-06-01',
+      nextDueOn: null,
+      runtimeHourInterval: 2000,
+      nextDueRuntimeHours: 2000,
+      lastGeneratedRuntimeHours: 0,
     },
   ] satisfies BusinessConsoleMaintenancePlanItem[]
 
@@ -287,6 +320,26 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
     refreshOee: vi.fn(),
     runtimeAvailabilityError: shallowRef(),
   }),
+  useBusinessTelemetryRuntimeHours: () => ({
+    runtimeHours: computed(() => ({
+      totalRuntimeHours: runtimeHoursState.total,
+      hasRuntimeSamples: runtimeHoursState.hasSamples,
+    })),
+    totalRuntimeHours: computed(() => runtimeHoursState.total),
+    hasRuntimeSamples: computed(() => runtimeHoursState.hasSamples),
+    runtimeHoursError: shallowRef(),
+    runtimeHoursPending: shallowRef(false),
+    runtimeHoursEnabled: computed(() => true),
+    refreshRuntimeHours: vi.fn(),
+  }),
+  // Client-derived per-plan remaining runtime hours; configurable per test (see runtimeRemainingState).
+  useMaintenancePlanRuntimeRemaining: () => ({
+    remainingByPlanId: computed<Record<string, { status: string; hours?: number }>>(
+      () => runtimeRemainingState.map,
+    ),
+    remainingPending: shallowRef(false),
+    refreshRemaining: vi.fn(),
+  }),
 }))
 
 vi.mock('@/composables/useBusinessMaintenance', () => ({
@@ -319,6 +372,7 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     plansError: shallowRef(),
     plansPending: shallowRef(false),
     plansTotal: computed(() => 1),
+    filters: { organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 200 },
   }),
   useMaintenanceReliability: () => ({
     filters: {
@@ -367,6 +421,13 @@ describe('equipment pages', () => {
     }
     equipmentComposableState.deviceFilters.deviceAssetId = 'DEV-OIL-01'
     equipmentComposableState.refreshDevice.mockClear()
+    // Default: both runtime plans known; plan-2 (280h) is the most urgent, no incomplete flag.
+    runtimeRemainingState.map = {
+      'plan-2': { status: 'ok', hours: 280 },
+      'plan-3': { status: 'ok', hours: 900 },
+    }
+    runtimeHoursState.total = 720
+    runtimeHoursState.hasSamples = true
     authState.permissionCodes = [
       'business.iiot.alarms.read',
       'business.iiot.alarms.write',
@@ -411,6 +472,108 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('BEARING-6205')
     expect(wrapper.text()).toContain('MTBF')
     expect(wrapper.text()).toContain('正式页面')
+  })
+
+  it('renders cumulative runtime hours and hours-until-next-maintenance on equipment detail', () => {
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    expect(wrapper.text()).toContain('累计运行小时')
+    expect(wrapper.text()).toContain('720.0 小时')
+    expect(wrapper.text()).toContain('距下次保养还需')
+    // plan-2 剩余 280h 是已知计划中最小；plan-3 亦已知(900h),无未知候选 → 正常阈值口径,不标不完整。
+    expect(wrapper.text()).toContain('280.0 小时')
+    expect(wrapper.text()).toContain('PM-CNC-RUNTIME')
+    expect(wrapper.text()).not.toContain('可能更紧迫')
+  })
+
+  it('shows 无样本 (not 0.0 小时) for cumulative runtime hours when the device has no real samples', () => {
+    runtimeHoursState.total = 0
+    runtimeHoursState.hasSamples = false
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    // NvSectionCard renders description immediately followed by its value — assert the cumulative card
+    // value is the honest "无样本", never a fabricated definitive "0.0 小时".
+    expect(wrapper.text()).toContain('累计运行小时无样本')
+    expect(wrapper.text()).not.toContain('累计运行小时0.0')
+  })
+
+  it('flags an incomplete result when a candidate runtime plan read failed / has no samples', () => {
+    // plan-2 known (280h min), plan-3 read failed -> its true remaining is unknown and could be smaller.
+    runtimeRemainingState.map = {
+      'plan-2': { status: 'ok', hours: 280 },
+      'plan-3': { status: 'error' },
+    }
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    // Still surfaces the known minimum value, but the primary label itself says it is only the known
+    // minimum — never a deterministic "距下次保养还需" assertion — and the hint flags it may be incomplete.
+    expect(wrapper.text()).toContain('280.0 小时')
+    expect(wrapper.text()).toContain('已知计划最少还需')
+    expect(wrapper.text()).not.toContain('距下次保养还需')
+    expect(wrapper.text()).toContain('可能更紧迫')
+    // Reason names the actual status (读取失败) and does not enumerate absent causes.
+    expect(wrapper.text()).toContain('另 1 个计划读取失败')
+    expect(wrapper.text()).not.toContain('阈值缺失')
+    expect(wrapper.text()).not.toContain('暂无样本')
+  })
+
+  it('shows read-failed for the hours-until-next card when every candidate runtime plan read failed', () => {
+    runtimeRemainingState.map = {
+      'plan-2': { status: 'error' },
+      'plan-3': { status: 'error' },
+    }
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    expect(wrapper.text()).toContain('距下次保养还需')
+    expect(wrapper.text()).toContain('读取失败')
+    // No known remaining -> must not fabricate an "X 小时" value.
+    expect(wrapper.text()).not.toContain('280.0 小时')
+  })
+
+  it('does not misattribute a read failure to a no-samples candidate when there is no known value', () => {
+    // First candidate (plan-2) has no samples; another (plan-3) read failed. Value is read-failed, but the
+    // hint must be an aggregate — never claim the no-samples plan itself "读取失败".
+    runtimeRemainingState.map = {
+      'plan-2': { status: 'no-samples' },
+      'plan-3': { status: 'error' },
+    }
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    expect(wrapper.text()).toContain('读取失败')
+    // Aggregate hint, not attributed to a specific (wrong) plan.
+    expect(wrapper.text()).toContain('运行小时读面读取失败，请稍后重试')
+    expect(wrapper.text()).not.toContain('运行小时型计划 PM-CNC-RUNTIME · 运行小时读面读取失败')
+  })
+
+  it('surfaces 阈值缺失 (consistent with the list, not 无样本) when all candidates are invalid', () => {
+    runtimeRemainingState.map = {
+      'plan-2': { status: 'invalid' },
+      'plan-3': { status: 'invalid' },
+    }
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    // Detail card must use the same data-truth wording as the list — invalid is not "无样本".
+    expect(wrapper.text()).toContain('阈值缺失')
+    expect(wrapper.text()).not.toContain('距下次保养还需无样本')
+  })
+
+  it('flags incompleteness including invalid candidates alongside a known value', () => {
+    // plan-2 known (280h min), plan-3 invalid -> still show the known minimum but mark it incomplete.
+    runtimeRemainingState.map = {
+      'plan-2': { status: 'ok', hours: 280 },
+      'plan-3': { status: 'invalid' },
+    }
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    expect(wrapper.text()).toContain('280.0 小时')
+    expect(wrapper.text()).toContain('已知计划最少还需')
+    expect(wrapper.text()).toContain('可能更紧迫')
+    // The incomplete-reason must name the ACTUAL status of the other candidate — only 阈值缺失 here.
+    expect(wrapper.text()).toContain('另 1 个计划阈值缺失')
+    // Must NOT enumerate reasons that do not apply — otherwise the operator would think it might also be
+    // a telemetry read failure or no-samples, when the only real cause is a missing threshold.
+    expect(wrapper.text()).not.toContain('读取失败')
+    expect(wrapper.text()).not.toContain('暂无样本')
   })
 
   it('renders the device control action and command history when the user can control the device', () => {

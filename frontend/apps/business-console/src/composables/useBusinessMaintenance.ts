@@ -13,6 +13,7 @@ import {
   queryBusinessConsoleMaintenanceInspectionMeasurementTrendQueryOptions,
   queryBusinessConsoleMaintenanceReliabilitySummaryQueryOptions,
   recordBusinessConsoleMaintenanceInspectionMutationOptions,
+  updateBusinessConsoleMaintenancePlanMutationOptions,
   type BusinessConsoleCompleteMaintenanceWorkOrderRequest,
   type BusinessConsoleCreateMaintenancePlanRequest,
   type BusinessConsoleCreateMaintenanceSparePartRequest,
@@ -32,6 +33,7 @@ import {
   type BusinessConsoleMaintenanceWorkOrderItem,
   type BusinessConsoleMaintenanceWorkOrderListEnvelope,
   type BusinessConsoleRecordMaintenanceInspectionRequest,
+  type BusinessConsoleUpdateMaintenancePlanRequest,
   type EquipmentRuntimeAvailabilityEnvelope,
   type EquipmentRuntimeAvailabilityWindow,
 } from '@nerv-iip/api-client'
@@ -51,6 +53,7 @@ export interface MaintenanceListFilters {
   environmentId: string
   skip: number
   take: number
+  deviceAssetId?: string
 }
 
 export interface MaintenanceReliabilityFilters {
@@ -71,13 +74,15 @@ export interface MaintenanceAvailabilityFilters {
 }
 
 function defaultFilters(initial: Partial<MaintenanceListFilters> = {}): MaintenanceListFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    skip: 0,
-    take: DEFAULT_TAKE,
-    ...initial,
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      skip: 0,
+      take: DEFAULT_TAKE,
+      ...initial,
+    }),
+  )
 }
 
 function defaultWindowRange() {
@@ -91,25 +96,33 @@ function defaultWindowRange() {
   }
 }
 
-function defaultReliabilityFilters(initial: Partial<MaintenanceReliabilityFilters> = {}): MaintenanceReliabilityFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    deviceAssetId: '',
-    ...defaultWindowRange(),
-    ...initial,
-  }))
+function defaultReliabilityFilters(
+  initial: Partial<MaintenanceReliabilityFilters> = {},
+): MaintenanceReliabilityFilters {
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      deviceAssetId: '',
+      ...defaultWindowRange(),
+      ...initial,
+    }),
+  )
 }
 
-function defaultAvailabilityFilters(initial: Partial<MaintenanceAvailabilityFilters> = {}): MaintenanceAvailabilityFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    deviceAssetIds: '',
-    workCenterIds: '',
-    ...defaultWindowRange(),
-    ...initial,
-  }))
+function defaultAvailabilityFilters(
+  initial: Partial<MaintenanceAvailabilityFilters> = {},
+): MaintenanceAvailabilityFilters {
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      deviceAssetIds: '',
+      workCenterIds: '',
+      ...defaultWindowRange(),
+      ...initial,
+    }),
+  )
 }
 
 function optionalQuery<TKey extends string>(key: TKey, value: string) {
@@ -117,29 +130,34 @@ function optionalQuery<TKey extends string>(key: TKey, value: string) {
   return normalized.length > 0 ? { [key]: normalized } : {}
 }
 
-function listItems<TItem>(envelope: { success?: boolean, data?: { items?: TItem[] } | null } | undefined) {
-  return envelope?.success ? envelope.data?.items ?? [] : []
+function listItems<TItem>(
+  envelope: { success?: boolean; data?: { items?: TItem[] } | null } | undefined,
+) {
+  return envelope?.success ? (envelope.data?.items ?? []) : []
 }
 
-function listTotal(envelope: { success?: boolean, data?: { total?: number } | null } | undefined) {
-  return envelope?.success ? envelope.data?.total ?? 0 : 0
+function listTotal(envelope: { success?: boolean; data?: { total?: number } | null } | undefined) {
+  return envelope?.success ? (envelope.data?.total ?? 0) : 0
 }
 
-function unwrapData<TData>(envelope: { success?: boolean, data?: TData | null } | undefined) {
-  return envelope?.success ? envelope.data ?? undefined : undefined
+function unwrapData<TData>(envelope: { success?: boolean; data?: TData | null } | undefined) {
+  return envelope?.success ? (envelope.data ?? undefined) : undefined
 }
 
 export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceListFilters> = {}) {
   const filters = defaultFilters(initialFilters)
   const workOrdersQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMaintenanceWorkOrdersQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        skip: filters.skip,
-        take: filters.take,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMaintenanceWorkOrdersQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          skip: filters.skip,
+          take: filters.take,
+        },
+      }),
+      filters,
+    ),
   )
 
   const createMutation = useMutation({
@@ -158,18 +176,26 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
   return {
     filters,
     workOrders: computed<BusinessConsoleMaintenanceWorkOrderItem[]>(() =>
-      listItems<BusinessConsoleMaintenanceWorkOrderItem>(workOrdersQuery.data.value as BusinessConsoleMaintenanceWorkOrderListEnvelope | undefined),
+      listItems<BusinessConsoleMaintenanceWorkOrderItem>(
+        workOrdersQuery.data.value as BusinessConsoleMaintenanceWorkOrderListEnvelope | undefined,
+      ),
     ),
     workOrdersError: workOrdersQuery.error,
     workOrdersPending: workOrdersQuery.isLoading,
-    workOrdersTotal: computed(() => listTotal(workOrdersQuery.data.value as BusinessConsoleMaintenanceWorkOrderListEnvelope | undefined)),
+    workOrdersTotal: computed(() =>
+      listTotal(
+        workOrdersQuery.data.value as BusinessConsoleMaintenanceWorkOrderListEnvelope | undefined,
+      ),
+    ),
     refreshWorkOrders: () => refetchWithBusinessContext(filters, workOrdersQuery),
     createWorkOrder: (body: BusinessConsoleCreateMaintenanceWorkOrderRequest) =>
       createMutation.mutateAsync({ body }),
     createWorkOrderPending: createMutation.isLoading,
     createWorkOrderError: createMutation.error,
-    completeWorkOrder: (workOrderId: string, body: BusinessConsoleCompleteMaintenanceWorkOrderRequest) =>
-      completeMutation.mutateAsync({ path: { workOrderId }, body }),
+    completeWorkOrder: (
+      workOrderId: string,
+      body: BusinessConsoleCompleteMaintenanceWorkOrderRequest,
+    ) => completeMutation.mutateAsync({ path: { workOrderId }, body }),
     completeWorkOrderPending: completeMutation.isLoading,
     completeWorkOrderError: completeMutation.error,
   }
@@ -178,14 +204,17 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
 export function useMaintenanceInspections(initialFilters: Partial<MaintenanceListFilters> = {}) {
   const filters = defaultFilters(initialFilters)
   const inspectionsQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMaintenanceInspectionsQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        skip: filters.skip,
-        take: filters.take,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMaintenanceInspectionsQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          skip: filters.skip,
+          take: filters.take,
+        },
+      }),
+      filters,
+    ),
   )
 
   const recordMutation = useMutation({
@@ -198,11 +227,17 @@ export function useMaintenanceInspections(initialFilters: Partial<MaintenanceLis
   return {
     filters,
     inspections: computed<BusinessConsoleMaintenanceInspectionItem[]>(() =>
-      listItems<BusinessConsoleMaintenanceInspectionItem>(inspectionsQuery.data.value as BusinessConsoleMaintenanceInspectionListEnvelope | undefined),
+      listItems<BusinessConsoleMaintenanceInspectionItem>(
+        inspectionsQuery.data.value as BusinessConsoleMaintenanceInspectionListEnvelope | undefined,
+      ),
     ),
     inspectionsError: inspectionsQuery.error,
     inspectionsPending: inspectionsQuery.isLoading,
-    inspectionsTotal: computed(() => listTotal(inspectionsQuery.data.value as BusinessConsoleMaintenanceInspectionListEnvelope | undefined)),
+    inspectionsTotal: computed(() =>
+      listTotal(
+        inspectionsQuery.data.value as BusinessConsoleMaintenanceInspectionListEnvelope | undefined,
+      ),
+    ),
     refreshInspections: () => refetchWithBusinessContext(filters, inspectionsQuery),
     recordInspection: (body: BusinessConsoleRecordMaintenanceInspectionRequest) =>
       recordMutation.mutateAsync({ body }),
@@ -214,14 +249,17 @@ export function useMaintenanceInspections(initialFilters: Partial<MaintenanceLis
 export function useMaintenanceSpareParts(initialFilters: Partial<MaintenanceListFilters> = {}) {
   const filters = defaultFilters(initialFilters)
   const sparePartsQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMaintenanceSparePartsQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        skip: filters.skip,
-        take: filters.take,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMaintenanceSparePartsQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          skip: filters.skip,
+          take: filters.take,
+        },
+      }),
+      filters,
+    ),
   )
 
   const createMutation = useMutation({
@@ -234,11 +272,17 @@ export function useMaintenanceSpareParts(initialFilters: Partial<MaintenanceList
   return {
     filters,
     spareParts: computed<BusinessConsoleMaintenanceSparePartItem[]>(() =>
-      listItems<BusinessConsoleMaintenanceSparePartItem>(sparePartsQuery.data.value as BusinessConsoleMaintenanceSparePartListEnvelope | undefined),
+      listItems<BusinessConsoleMaintenanceSparePartItem>(
+        sparePartsQuery.data.value as BusinessConsoleMaintenanceSparePartListEnvelope | undefined,
+      ),
     ),
     sparePartsError: sparePartsQuery.error,
     sparePartsPending: sparePartsQuery.isLoading,
-    sparePartsTotal: computed(() => listTotal(sparePartsQuery.data.value as BusinessConsoleMaintenanceSparePartListEnvelope | undefined)),
+    sparePartsTotal: computed(() =>
+      listTotal(
+        sparePartsQuery.data.value as BusinessConsoleMaintenanceSparePartListEnvelope | undefined,
+      ),
+    ),
     refreshSpareParts: () => refetchWithBusinessContext(filters, sparePartsQuery),
     createSparePart: (body: BusinessConsoleCreateMaintenanceSparePartRequest) =>
       createMutation.mutateAsync({ body }),
@@ -247,9 +291,13 @@ export function useMaintenanceSpareParts(initialFilters: Partial<MaintenanceList
   }
 }
 
-export function useMaintenanceReliability(initialFilters: Partial<MaintenanceReliabilityFilters> = {}) {
+export function useMaintenanceReliability(
+  initialFilters: Partial<MaintenanceReliabilityFilters> = {},
+) {
   const filters = defaultReliabilityFilters(initialFilters)
-  const reliabilityEnabled = computed(() => hasBusinessContext(filters) && filters.deviceAssetId.trim().length > 0)
+  const reliabilityEnabled = computed(
+    () => hasBusinessContext(filters) && filters.deviceAssetId.trim().length > 0,
+  )
   const reliabilityQuery = useQuery(() => ({
     ...queryBusinessConsoleMaintenanceAssetReliabilityQueryOptions({
       path: { deviceAssetId: filters.deviceAssetId.trim() },
@@ -267,12 +315,15 @@ export function useMaintenanceReliability(initialFilters: Partial<MaintenanceRel
     filters,
     reliability: computed<BusinessConsoleMaintenanceAssetReliabilityResponse | undefined>(() =>
       unwrapData<BusinessConsoleMaintenanceAssetReliabilityResponse>(
-        reliabilityQuery.data.value as BusinessConsoleMaintenanceAssetReliabilityEnvelope | undefined,
+        reliabilityQuery.data.value as
+          | BusinessConsoleMaintenanceAssetReliabilityEnvelope
+          | undefined,
       ),
     ),
     reliabilityError: reliabilityQuery.error,
     reliabilityPending: reliabilityQuery.isLoading,
-    refreshReliability: () => reliabilityEnabled.value ? reliabilityQuery.refetch() : Promise.resolve(),
+    refreshReliability: () =>
+      reliabilityEnabled.value ? reliabilityQuery.refetch() : Promise.resolve(),
   }
 }
 
@@ -288,21 +339,25 @@ export interface MaintenanceMeasurementTrendFilters {
 function defaultMeasurementTrendFilters(
   initial: Partial<MaintenanceMeasurementTrendFilters> = {},
 ): MaintenanceMeasurementTrendFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    deviceAssetId: '',
-    characteristicCode: '',
-    ...defaultWindowRange(),
-    ...initial,
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      deviceAssetId: '',
+      characteristicCode: '',
+      ...defaultWindowRange(),
+      ...initial,
+    }),
+  )
 }
 
 /**
  * 同设备同特性的测量值时间序列（趋势小图数据源）。需 org/env + 设备 + 特性齐备才发请求，
  * 缺任一即静默为空态，不打空请求。
  */
-export function useMaintenanceMeasurementTrend(initialFilters: Partial<MaintenanceMeasurementTrendFilters> = {}) {
+export function useMaintenanceMeasurementTrend(
+  initialFilters: Partial<MaintenanceMeasurementTrendFilters> = {},
+) {
   const filters = defaultMeasurementTrendFilters(initialFilters)
   const trendEnabled = computed(
     () =>
@@ -324,12 +379,16 @@ export function useMaintenanceMeasurementTrend(initialFilters: Partial<Maintenan
     enabled: trendEnabled.value,
   }))
 
-  const trend = computed<BusinessConsoleMaintenanceInspectionMeasurementTrendResponse | undefined>(() =>
-    unwrapData<BusinessConsoleMaintenanceInspectionMeasurementTrendResponse>(
-      trendQuery.data.value as
-        | { success?: boolean, data?: BusinessConsoleMaintenanceInspectionMeasurementTrendResponse | null }
-        | undefined,
-    ),
+  const trend = computed<BusinessConsoleMaintenanceInspectionMeasurementTrendResponse | undefined>(
+    () =>
+      unwrapData<BusinessConsoleMaintenanceInspectionMeasurementTrendResponse>(
+        trendQuery.data.value as
+          | {
+              success?: boolean
+              data?: BusinessConsoleMaintenanceInspectionMeasurementTrendResponse | null
+            }
+          | undefined,
+      ),
   )
 
   return {
@@ -357,21 +416,25 @@ export interface MaintenanceReliabilitySummaryFilters {
 function defaultReliabilitySummaryFilters(
   initial: Partial<MaintenanceReliabilitySummaryFilters> = {},
 ): MaintenanceReliabilitySummaryFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    deviceAssetId: '',
-    technicianUserId: '',
-    ...defaultWindowRange(),
-    ...initial,
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      deviceAssetId: '',
+      technicianUserId: '',
+      ...defaultWindowRange(),
+      ...initial,
+    }),
+  )
 }
 
 /**
  * 窗口内按（设备 · 技师）聚合的工时与费用汇总。设备/技师为可选过滤（空即不带该参数）；
  * 只需 org/env 即可查（可跨设备汇总），可靠性页按当前设备下钻。
  */
-export function useMaintenanceReliabilitySummary(initialFilters: Partial<MaintenanceReliabilitySummaryFilters> = {}) {
+export function useMaintenanceReliabilitySummary(
+  initialFilters: Partial<MaintenanceReliabilitySummaryFilters> = {},
+) {
   const filters = defaultReliabilitySummaryFilters(initialFilters)
   const summaryEnabled = computed(() => hasBusinessContext(filters))
   const summaryQuery = useQuery(() => ({
@@ -391,7 +454,7 @@ export function useMaintenanceReliabilitySummary(initialFilters: Partial<Mainten
   const summary = computed<BusinessConsoleMaintenanceReliabilitySummaryResponse | undefined>(() =>
     unwrapData<BusinessConsoleMaintenanceReliabilitySummaryResponse>(
       summaryQuery.data.value as
-        | { success?: boolean, data?: BusinessConsoleMaintenanceReliabilitySummaryResponse | null }
+        | { success?: boolean; data?: BusinessConsoleMaintenanceReliabilitySummaryResponse | null }
         | undefined,
     ),
   )
@@ -408,9 +471,13 @@ export function useMaintenanceReliabilitySummary(initialFilters: Partial<Mainten
   }
 }
 
-export function useMaintenanceAvailabilityWindows(initialFilters: Partial<MaintenanceAvailabilityFilters> = {}) {
+export function useMaintenanceAvailabilityWindows(
+  initialFilters: Partial<MaintenanceAvailabilityFilters> = {},
+) {
   const filters = defaultAvailabilityFilters(initialFilters)
-  const availabilityEnabled = computed(() => hasBusinessContext(filters) && filters.deviceAssetIds.trim().length > 0)
+  const availabilityEnabled = computed(
+    () => hasBusinessContext(filters) && filters.deviceAssetIds.trim().length > 0,
+  )
   const availabilityQuery = useQuery(() => ({
     ...queryBusinessConsoleMaintenanceAvailabilityWindowsQueryOptions({
       query: {
@@ -434,21 +501,28 @@ export function useMaintenanceAvailabilityWindows(initialFilters: Partial<Mainte
         availabilityQuery.data.value as EquipmentRuntimeAvailabilityEnvelope | undefined,
       ),
     ),
-    refreshAvailability: () => availabilityEnabled.value ? availabilityQuery.refetch() : Promise.resolve(),
+    refreshAvailability: () =>
+      availabilityEnabled.value ? availabilityQuery.refetch() : Promise.resolve(),
   }
 }
 
 export function useMaintenancePlans(initialFilters: Partial<MaintenanceListFilters> = {}) {
   const filters = defaultFilters(initialFilters)
   const plansQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMaintenancePlansQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        skip: filters.skip,
-        take: filters.take,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMaintenancePlansQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          skip: filters.skip,
+          take: filters.take,
+          ...(filters.deviceAssetId && filters.deviceAssetId.trim().length > 0
+            ? { deviceAssetId: filters.deviceAssetId.trim() }
+            : {}),
+        },
+      }),
+      filters,
+    ),
   )
 
   const createMutation = useMutation({
@@ -457,6 +531,7 @@ export function useMaintenancePlans(initialFilters: Partial<MaintenanceListFilte
       void refetchWithBusinessContext(filters, plansQuery)
     },
   })
+  const updateMutation = useMutation(updateBusinessConsoleMaintenancePlanMutationOptions())
   const generateDueMutation = useMutation({
     ...generateDueBusinessConsoleMaintenanceWorkOrdersMutationOptions(),
     onSuccess() {
@@ -467,17 +542,28 @@ export function useMaintenancePlans(initialFilters: Partial<MaintenanceListFilte
   return {
     filters,
     plans: computed<BusinessConsoleMaintenancePlanItem[]>(() =>
-      listItems<BusinessConsoleMaintenancePlanItem>(plansQuery.data.value as BusinessConsoleMaintenancePlanListEnvelope | undefined),
+      listItems<BusinessConsoleMaintenancePlanItem>(
+        plansQuery.data.value as BusinessConsoleMaintenancePlanListEnvelope | undefined,
+      ),
     ),
     plansError: plansQuery.error,
     plansPending: plansQuery.isLoading,
-    plansTotal: computed(() => listTotal(plansQuery.data.value as BusinessConsoleMaintenancePlanListEnvelope | undefined)),
+    plansTotal: computed(() =>
+      listTotal(plansQuery.data.value as BusinessConsoleMaintenancePlanListEnvelope | undefined),
+    ),
     refreshPlans: () => refetchWithBusinessContext(filters, plansQuery),
     createPlan: (body: BusinessConsoleCreateMaintenancePlanRequest) =>
       createMutation.mutateAsync({ body }),
     createPlanPending: createMutation.isLoading,
     createPlanError: createMutation.error,
-    generateDue: (payload: { businessDate: string, requestedBy: string }) =>
+    async updatePlan(planId: string, body: BusinessConsoleUpdateMaintenancePlanRequest) {
+      const result = await updateMutation.mutateAsync({ path: { planId }, body })
+      await refetchWithBusinessContext(filters, plansQuery)
+      return result
+    },
+    updatePlanPending: updateMutation.isLoading,
+    updatePlanError: updateMutation.error,
+    generateDue: (payload: { businessDate: string; requestedBy: string }) =>
       generateDueMutation.mutateAsync({
         body: {
           organizationId: filters.organizationId,

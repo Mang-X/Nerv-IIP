@@ -1,10 +1,11 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
 import InspectionsPage from './inspections.vue'
+import PlansPage from './plans.vue'
 import WorkOrdersPage from './work-orders.vue'
 
 // Hoisted mutable state — safe to reference from vi.mock factories (unlike const locals).
@@ -12,10 +13,34 @@ const state = vi.hoisted(() => ({
   query: { deviceAssetId: 'DEV-PRESS-01', sourceAlarmId: 'ALARM-9001' } as Record<string, string>,
   inspections: [] as Array<Record<string, unknown>>,
   workOrders: [] as Array<Record<string, unknown>>,
+  plans: [] as Array<Record<string, unknown>>,
+  remainingByPlanId: {} as Record<string, { status: string; hours?: number }>,
+  remainingPending: false,
   createWorkOrder: vi.fn(async (_body: Record<string, unknown>) => ({})),
   completeWorkOrder: vi.fn(async (_id: string, _body: Record<string, unknown>) => ({})),
   recordInspection: vi.fn(async (_body: Record<string, unknown>) => ({})),
+  createPlan: vi.fn(async (_body: Record<string, unknown>) => ({})),
+  updatePlan: vi.fn(async (_planId: string, _body: Record<string, unknown>) => ({})),
+  generateDue: vi.fn(async (_payload: Record<string, unknown>) => ({
+    data: { generatedCount: 0 },
+  })),
+  refreshPlans: vi.fn(async () => {}),
+  refreshRemaining: vi.fn(async () => {}),
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
 }))
+
+vi.mock('@nerv-iip/ui', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@nerv-iip/ui')>()
+  return {
+    ...actual,
+    toast: {
+      ...actual.toast,
+      success: state.toastSuccess,
+      error: state.toastError,
+    },
+  }
+})
 
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
@@ -51,6 +76,33 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     recordInspection: state.recordInspection,
     recordInspectionPending: shallowRef(false),
     recordInspectionError: shallowRef(),
+  }),
+  useMaintenancePlans: () => ({
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
+    plans: computed(() => state.plans),
+    plansError: shallowRef(),
+    plansPending: shallowRef(false),
+    plansTotal: computed(() => state.plans.length),
+    refreshPlans: state.refreshPlans,
+    createPlan: state.createPlan,
+    createPlanPending: shallowRef(false),
+    createPlanError: shallowRef(),
+    updatePlan: state.updatePlan,
+    updatePlanPending: shallowRef(false),
+    updatePlanError: shallowRef(),
+    generateDue: state.generateDue,
+    generateDuePending: shallowRef(false),
+    generateDueError: shallowRef(),
+  }),
+}))
+
+// Remaining runtime hours are derived client-side via the runtime-hours facade; mock the derivation so
+// the plans list shows deterministic remaining values without a live telemetry backend.
+vi.mock('@/composables/useBusinessTelemetry', () => ({
+  useMaintenancePlanRuntimeRemaining: () => ({
+    remainingByPlanId: computed(() => state.remainingByPlanId),
+    remainingPending: computed(() => state.remainingPending),
+    refreshRemaining: state.refreshRemaining,
   }),
 }))
 
@@ -88,6 +140,28 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 
 const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
+  // reka Tabs 的点击在 jsdom 下不更新 v-model；用 CustomEvent 冒泡的轻量 stub 驱动触发模式切换。
+  // trigger 冒泡 settab 事件到 NvTabs 根节点，再 $emit update:modelValue，避开 provide/inject 的 slot 作用域问题。
+  NvTabs: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: `<div @settab="$emit('update:modelValue', $event.detail)"><slot /></div>`,
+  },
+  NvTabsList: { template: '<div><slot /></div>' },
+  NvTabsTrigger: {
+    props: ['value'],
+    methods: {
+      emitSet() {
+        ;(this as unknown as { $el: HTMLElement }).$el.dispatchEvent(
+          new CustomEvent('settab', {
+            bubbles: true,
+            detail: (this as unknown as { value: string }).value,
+          }),
+        )
+      },
+    },
+    template: `<button type="button" role="tab" :data-tab="value" @click="emitSet"><slot /></button>`,
+  },
 }
 
 // 页面用 useAuthStore 拿当前用户默认「点检人 / 开单人」——需要真 pinia + 登录 principal。
@@ -101,8 +175,19 @@ beforeEach(() => {
   state.createWorkOrder.mockClear()
   state.completeWorkOrder.mockClear()
   state.recordInspection.mockClear()
+  state.createPlan.mockClear()
+  state.updatePlan.mockClear()
+  state.updatePlan.mockResolvedValue({})
+  state.generateDue.mockClear()
+  state.refreshPlans.mockClear()
+  state.refreshRemaining.mockClear()
+  state.toastSuccess.mockClear()
+  state.toastError.mockClear()
   state.query = { deviceAssetId: 'DEV-PRESS-01', sourceAlarmId: 'ALARM-9001' }
   state.inspections = []
+  state.plans = []
+  state.remainingByPlanId = {}
+  state.remainingPending = false
   // 默认一张在保工单：既覆盖保修列渲染（在保 / 供应商），也让列表非空。
   state.workOrders = [
     {
@@ -121,7 +206,12 @@ beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
   useAuthStore().$patch({
-    principal: { principalType: 'user', principalId: 'user-admin', loginName: 'admin' },
+    principal: {
+      principalType: 'user',
+      principalId: 'user-admin',
+      loginName: 'admin',
+      permissionCodes: ['business.maintenance.plans.read', 'business.maintenance.plans.manage'],
+    },
   })
 })
 
@@ -348,5 +438,598 @@ describe('maintenance inspections page', () => {
     // 测量特性是下拉选择（button 触发），不再是自由输入。
     const characteristic = document.body.querySelector('[id^="m-char-"]')!
     expect(characteristic.tagName).toBe('BUTTON')
+  })
+})
+
+describe('maintenance plans page', () => {
+  function bodyWrapper<T extends Element>(selector: string) {
+    const element = document.body.querySelector<T>(selector)
+    expect(element, `Expected ${selector} in document.body`).not.toBeNull()
+    return new DOMWrapper(element!)
+  }
+
+  function bodyWrapperByText<T extends Element>(selector: string, text: string) {
+    const element = [...document.body.querySelectorAll<T>(selector)].find((candidate) =>
+      candidate.textContent?.includes(text),
+    )
+    expect(element, `Expected ${selector} containing ${text} in document.body`).toBeDefined()
+    return new DOMWrapper(element!)
+  }
+
+  async function openEditDialog(planCode: string) {
+    await bodyWrapper<HTMLButtonElement>(`[aria-label="保养计划操作 ${planCode}"]`).trigger('click')
+    await flushPromises()
+    await bodyWrapperByText<HTMLElement>('[role="menuitem"]', '编辑触发条件').trigger('click')
+    await flushPromises()
+  }
+
+  it('does not expose the edit row action to a principal with plans.read only', async () => {
+    useAuthStore().$patch({
+      principal: {
+        principalType: 'user',
+        principalId: 'user-reader',
+        loginName: 'reader',
+        permissionCodes: ['business.maintenance.plans.read'],
+      },
+    })
+    state.plans = [
+      {
+        planId: 'p-read-only',
+        deviceAssetId: 'DEV-READ-ONLY',
+        planCode: 'PM-READ-ONLY',
+        interval: 'P30D',
+        startsOn: '2026-07-01',
+      },
+    ]
+
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    expect(document.body.textContent).not.toContain('编辑触发条件')
+    expect(document.body.querySelector('[aria-label="保养计划操作 PM-READ-ONLY"]')).toBeNull()
+  })
+
+  it('allows a principal with plans.manage to open the edit dialog', async () => {
+    state.plans = [
+      {
+        planId: 'p-manager',
+        deviceAssetId: 'DEV-MANAGER',
+        planCode: 'PM-MANAGER',
+        interval: 'P30D',
+        startsOn: '2026-07-01',
+      },
+    ]
+
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+    await openEditDialog('PM-MANAGER')
+
+    expect(document.body.textContent).toContain('编辑保养计划')
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
+  })
+
+  it('renders three trigger modes and remaining hours vs next-due date', async () => {
+    state.plans = [
+      {
+        planId: 'p-cal',
+        deviceAssetId: 'DEV-CAL',
+        planCode: 'PM-CAL',
+        interval: 'P30D',
+        startsOn: '2026-07-01',
+        nextDueOn: '2026-07-31',
+        lastGeneratedRuntimeHours: 0,
+      },
+      {
+        planId: 'p-run',
+        deviceAssetId: 'DEV-RUN',
+        planCode: 'PM-RUN',
+        interval: null, // runtime-only: no calendar trigger
+        startsOn: '2026-06-01',
+        nextDueOn: null,
+        runtimeHourInterval: 1000,
+        nextDueRuntimeHours: 1000,
+        lastGeneratedRuntimeHours: 0,
+      },
+      {
+        planId: 'p-both',
+        deviceAssetId: 'DEV-BOTH',
+        planCode: 'PM-BOTH',
+        interval: 'P90D',
+        startsOn: '2026-06-01',
+        nextDueOn: '2026-08-30',
+        runtimeHourInterval: 2000,
+        nextDueRuntimeHours: 2000,
+        lastGeneratedRuntimeHours: 0,
+      },
+    ]
+    // Client-derived remaining runtime hours (per plan's own window).
+    state.remainingByPlanId = {
+      'p-run': { status: 'ok', hours: 300 },
+      'p-both': { status: 'ok', hours: 1700 },
+    }
+    const wrapper = mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('触发模式')
+    // Three distinguishable modes.
+    expect(wrapper.text()).toContain('日历周期')
+    expect(wrapper.text()).toContain('运行小时')
+    expect(wrapper.text()).toContain('两者组合')
+    // Calendar-only shows the next due date; runtime shows remaining hours (not the absolute threshold).
+    expect(wrapper.text()).toContain('2026-07-31')
+    expect(wrapper.text()).toContain('剩余 300 小时')
+    expect(wrapper.text()).toContain('剩余 1700 小时')
+  })
+
+  it('distinguishes a telemetry read failure from genuinely having no samples in the plans list', async () => {
+    state.plans = [
+      {
+        planId: 'p-err',
+        deviceAssetId: 'DEV-ERR',
+        planCode: 'PM-ERR',
+        interval: null,
+        startsOn: '2026-06-01',
+        nextDueOn: null,
+        runtimeHourInterval: 1000,
+        nextDueRuntimeHours: 1000,
+        lastGeneratedRuntimeHours: 0,
+      },
+      {
+        planId: 'p-nos',
+        deviceAssetId: 'DEV-NOS',
+        planCode: 'PM-NOS',
+        interval: null,
+        startsOn: '2026-06-01',
+        nextDueOn: null,
+        runtimeHourInterval: 1000,
+        nextDueRuntimeHours: 1000,
+        lastGeneratedRuntimeHours: 0,
+      },
+    ]
+    state.remainingByPlanId = { 'p-err': { status: 'error' }, 'p-nos': { status: 'no-samples' } }
+    const wrapper = mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    // A failed telemetry read is never mislabeled as "暂无样本".
+    expect(wrapper.text()).toContain('运行小时（读取失败）')
+    expect(wrapper.text()).toContain('运行小时（暂无样本）')
+  })
+
+  it('shows a loading state for a runtime plan whose remaining read is in flight (not a stale value)', async () => {
+    state.plans = [
+      {
+        planId: 'p-load',
+        deviceAssetId: 'DEV-LOAD',
+        planCode: 'PM-LOAD',
+        interval: null,
+        startsOn: '2026-06-01',
+        nextDueOn: null,
+        runtimeHourInterval: 1000,
+        nextDueRuntimeHours: 2000,
+        lastGeneratedRuntimeHours: 0,
+      },
+    ]
+    // Refresh in flight (e.g. after a threshold advance): the row must show loading, never a stale value.
+    state.remainingByPlanId = { 'p-load': { status: 'loading' } }
+    state.remainingPending = true
+    const wrapper = mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('运行小时（读取中…）')
+    expect(wrapper.text()).not.toContain('剩余')
+  })
+
+  it('re-reads both plans and per-plan remaining hours when the list refresh button is clicked', async () => {
+    state.plans = [
+      {
+        planId: 'p-run',
+        deviceAssetId: 'DEV-RUN',
+        planCode: 'PM-RUN',
+        interval: null,
+        startsOn: '2026-06-01',
+        nextDueOn: null,
+        runtimeHourInterval: 1000,
+        nextDueRuntimeHours: 1000,
+        lastGeneratedRuntimeHours: 0,
+      },
+    ]
+    state.remainingByPlanId = { 'p-run': { status: 'ok', hours: 500 } }
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    const refreshBtn = [...document.body.querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === '刷新',
+    )!
+    refreshBtn.click()
+    await flushPromises()
+
+    // Refresh must re-read the plan list AND the client-derived remaining hours — plans alone leaves a
+    // still-running device showing a stale "剩余 X 小时".
+    expect(state.refreshPlans).toHaveBeenCalledTimes(1)
+    expect(state.refreshRemaining).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a settled state (not permanent loading) for a runtime plan with a missing threshold cursor', async () => {
+    state.plans = [
+      {
+        planId: 'p-invalid',
+        deviceAssetId: 'DEV-INV',
+        planCode: 'PM-INV',
+        interval: null,
+        startsOn: '2026-06-01',
+        nextDueOn: null,
+        runtimeHourInterval: 1000,
+        nextDueRuntimeHours: null, // inconsistent cursor -> can never compute a remaining
+        lastGeneratedRuntimeHours: 0,
+      },
+    ]
+    // The composable settles such a plan as 'invalid'; pending may still be true from other reads.
+    state.remainingByPlanId = { 'p-invalid': { status: 'invalid' } }
+    state.remainingPending = true
+    const wrapper = mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('运行小时（阈值缺失）')
+    expect(wrapper.text()).not.toContain('运行小时（读取中…）')
+  })
+
+  it('keeps the calendar due for a combined plan when the runtime-hours read fails', async () => {
+    state.plans = [
+      {
+        planId: 'p-combined',
+        deviceAssetId: 'DEV-COMBINED',
+        planCode: 'PM-COMBINED',
+        interval: 'P90D',
+        startsOn: '2026-06-01',
+        nextDueOn: '2026-08-30',
+        runtimeHourInterval: 2000,
+        nextDueRuntimeHours: 2000,
+        lastGeneratedRuntimeHours: 0,
+      },
+    ]
+    state.remainingByPlanId = { 'p-combined': { status: 'error' } }
+    const wrapper = mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    // Combined plan still has a valid calendar due — it must stay visible even when the runtime read failed.
+    expect(wrapper.text()).toContain('2026-08-30')
+    expect(wrapper.text()).toContain('运行小时读取失败')
+    // Must not hide the calendar date behind a bare runtime-only "读取失败".
+    expect(wrapper.text()).not.toContain('运行小时（读取失败）')
+  })
+
+  it('creates a genuine runtime-only plan (no calendar interval)', async () => {
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    const openBtn = [...document.body.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('新建保养计划'),
+    )!
+    openBtn.click()
+    await flushPromises()
+
+    // 切到「运行小时」触发模式。
+    document.body
+      .querySelector<HTMLButtonElement>('[role="dialog"] button[data-tab="runtime"]')!
+      .click()
+    await flushPromises()
+
+    function setInput(selector: string, value: string) {
+      const el = document.body.querySelector<HTMLInputElement>(selector)!
+      el.value = value
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    setInput('#plan-device', 'DEV-SMT-01')
+    setInput('#plan-owner', '设备保全班')
+    // 用 1000 小时快捷按钮填充触发运行小时数。
+    const quick = [
+      ...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ].find((b) => b.textContent?.trim() === '1000 小时')!
+    quick.click()
+    await flushPromises()
+
+    const submit = [
+      ...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button[type="submit"]'),
+    ].find((b) => b.textContent?.includes('创建保养计划'))!
+    submit.click()
+    await flushPromises()
+
+    expect(state.createPlan).toHaveBeenCalledTimes(1)
+    const body = state.createPlan.mock.calls[0][0]
+    expect(body.deviceAssetId).toBe('DEV-SMT-01')
+    expect(body.runtimeHourInterval).toBe(1000)
+    // Runtime-only mode sends no calendar interval — a genuine usage-triggered plan.
+    expect(body.interval).toBeUndefined()
+  })
+
+  it.each([
+    {
+      label: '日历周期',
+      plan: {
+        planId: 'p-calendar-edit',
+        deviceAssetId: 'DEV-CALENDAR',
+        planCode: 'PM-CALENDAR',
+        interval: 'P90D',
+        startsOn: '2026-03-01',
+        runtimeHourInterval: null,
+      },
+      intervalVisible: true,
+      runtimeValue: undefined,
+    },
+    {
+      label: '运行小时',
+      plan: {
+        planId: 'p-runtime-edit',
+        deviceAssetId: 'DEV-RUNTIME',
+        planCode: 'PM-RUNTIME',
+        interval: null,
+        startsOn: '2026-04-02',
+        runtimeHourInterval: 1000,
+      },
+      intervalVisible: false,
+      runtimeValue: '1000',
+    },
+    {
+      label: '两者组合',
+      plan: {
+        planId: 'p-both-edit',
+        deviceAssetId: 'DEV-BOTH',
+        planCode: 'PM-BOTH',
+        interval: 'P30D',
+        startsOn: '2026-05-03',
+        runtimeHourInterval: 2000,
+      },
+      intervalVisible: true,
+      runtimeValue: '2000',
+    },
+  ])(
+    'prefills $label edit mode and keeps plan identity read-only',
+    async ({ plan, intervalVisible, runtimeValue }) => {
+      state.plans = [plan]
+      const wrapper = mount(PlansPage, mountOptions())
+      await flushPromises()
+
+      await openEditDialog(plan.planCode)
+
+      expect(document.body.textContent).toContain('编辑保养计划')
+      const device = bodyWrapper<HTMLInputElement>('#plan-device')
+      const planCode = bodyWrapper<HTMLInputElement>('#plan-code')
+      const startsOn = bodyWrapper<HTMLInputElement>('#plan-starts')
+      expect(device.element.value).toBe(plan.deviceAssetId)
+      expect(planCode.element.value).toBe(plan.planCode)
+      expect(startsOn.element.value).toBe(plan.startsOn)
+      expect(device.attributes('readonly')).toBeDefined()
+      expect(planCode.attributes('readonly')).toBeDefined()
+      expect(startsOn.attributes('readonly')).toBeDefined()
+      expect(
+        bodyWrapperByText(
+          '[role="dialog"]',
+          intervalVisible ? '保养周期' : '按设备累计运行小时',
+        ).exists(),
+      ).toBe(true)
+      expect(document.body.querySelector('#plan-interval') !== null).toBe(intervalVisible)
+      expect(document.body.querySelector<HTMLInputElement>('#plan-runtime-hours')?.value).toBe(
+        runtimeValue,
+      )
+
+      wrapper.unmount()
+    },
+  )
+
+  it('shows and preserves a non-preset calendar interval when editing', async () => {
+    state.plans = [
+      {
+        planId: 'p-custom-calendar-edit',
+        deviceAssetId: 'DEV-CUSTOM-CALENDAR',
+        planCode: 'PM-CUSTOM-CALENDAR',
+        interval: 'P45D',
+        startsOn: '2026-03-15',
+        runtimeHourInterval: null,
+      },
+    ]
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    await openEditDialog('PM-CUSTOM-CALENDAR')
+
+    expect(bodyWrapper<HTMLButtonElement>('#plan-interval').text()).toContain('45 天（当前）')
+
+    await bodyWrapper<HTMLButtonElement>('#plan-interval').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await bodyWrapperByText<HTMLElement>('[role="option"]', '每月').trigger('keydown', {
+      key: 'Enter',
+    })
+    await flushPromises()
+    expect(bodyWrapper<HTMLButtonElement>('#plan-interval').text()).toContain('每月')
+
+    await bodyWrapper<HTMLButtonElement>('#plan-interval').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await bodyWrapperByText<HTMLElement>('[role="option"]', '45 天（当前）').trigger('keydown', {
+      key: 'Enter',
+    })
+    await flushPromises()
+
+    await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+    await flushPromises()
+
+    expect(state.updatePlan).toHaveBeenCalledWith('p-custom-calendar-edit', {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      interval: 'P45D',
+      runtimeHourInterval: null,
+    })
+  })
+
+  it('clears runtime hours explicitly when changing a runtime plan to calendar-only', async () => {
+    state.plans = [
+      {
+        planId: 'p-runtime-to-calendar',
+        deviceAssetId: 'DEV-RUNTIME',
+        planCode: 'PM-RUNTIME-CALENDAR',
+        interval: null,
+        startsOn: '2026-04-02',
+        runtimeHourInterval: 1000,
+      },
+    ]
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+    await openEditDialog('PM-RUNTIME-CALENDAR')
+
+    await bodyWrapper<HTMLButtonElement>('[role="dialog"] button[data-tab="calendar"]').trigger(
+      'click',
+    )
+    await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+    await flushPromises()
+
+    expect(state.updatePlan).toHaveBeenCalledWith('p-runtime-to-calendar', {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      interval: 'P30D',
+      runtimeHourInterval: null,
+    })
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(state.toastSuccess).toHaveBeenCalledWith('保养计划触发条件已更新')
+  })
+
+  it('clears the calendar trigger for runtime-only and submits both triggers for combined mode', async () => {
+    state.plans = [
+      {
+        planId: 'p-calendar-to-runtime',
+        deviceAssetId: 'DEV-CALENDAR',
+        planCode: 'PM-CALENDAR-RUNTIME',
+        interval: 'P90D',
+        startsOn: '2026-03-01',
+        runtimeHourInterval: null,
+      },
+    ]
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+    await openEditDialog('PM-CALENDAR-RUNTIME')
+
+    await bodyWrapper<HTMLButtonElement>('[role="dialog"] button[data-tab="runtime"]').trigger(
+      'click',
+    )
+    await bodyWrapper<HTMLInputElement>('#plan-runtime-hours').setValue('1500')
+    await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+    await flushPromises()
+
+    expect(state.updatePlan).toHaveBeenNthCalledWith(1, 'p-calendar-to-runtime', {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      interval: null,
+      runtimeHourInterval: 1500,
+    })
+
+    await openEditDialog('PM-CALENDAR-RUNTIME')
+    await bodyWrapper<HTMLButtonElement>('[role="dialog"] button[data-tab="both"]').trigger('click')
+    await bodyWrapper<HTMLInputElement>('#plan-runtime-hours').setValue('2000')
+    await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+    await flushPromises()
+
+    expect(state.updatePlan).toHaveBeenNthCalledWith(2, 'p-calendar-to-runtime', {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      interval: 'P90D',
+      runtimeHourInterval: 2000,
+    })
+  })
+
+  it('marks runtime hours invalid only after submit and does not call update', async () => {
+    state.plans = [
+      {
+        planId: 'p-calendar-invalid',
+        deviceAssetId: 'DEV-CALENDAR',
+        planCode: 'PM-CALENDAR-INVALID',
+        interval: 'P30D',
+        startsOn: '2026-03-01',
+        runtimeHourInterval: null,
+      },
+    ]
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+    await openEditDialog('PM-CALENDAR-INVALID')
+
+    await bodyWrapper<HTMLButtonElement>('[role="dialog"] button[data-tab="runtime"]').trigger(
+      'click',
+    )
+    const runtimeInput = bodyWrapper<HTMLInputElement>('#plan-runtime-hours')
+    expect(
+      runtimeInput.element.closest('[data-slot="nv-input"]')?.getAttribute('data-invalid'),
+    ).not.toBe('true')
+    expect(document.body.textContent).not.toContain('请填写正的触发运行小时数。')
+
+    await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+    await flushPromises()
+
+    expect(state.updatePlan).not.toHaveBeenCalled()
+    expect(
+      runtimeInput.element.closest('[data-slot="nv-input"]')?.getAttribute('data-invalid'),
+    ).toBe('true')
+    expect(document.body.textContent).toContain('请填写正的触发运行小时数。')
+  })
+
+  it('keeps the edit dialog and entered values open and shows a friendly toast when update fails', async () => {
+    state.plans = [
+      {
+        planId: 'p-update-failure',
+        deviceAssetId: 'DEV-FAIL',
+        planCode: 'PM-UPDATE-FAIL',
+        interval: null,
+        startsOn: '2026-04-02',
+        runtimeHourInterval: 1000,
+      },
+    ]
+    state.updatePlan.mockRejectedValueOnce(new Error('network error'))
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+    await openEditDialog('PM-UPDATE-FAIL')
+
+    await bodyWrapper<HTMLInputElement>('#plan-runtime-hours').setValue('1800')
+    await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+    await flushPromises()
+
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(document.body.querySelector<HTMLInputElement>('#plan-runtime-hours')?.value).toBe('1800')
+    expect(state.toastError).toHaveBeenCalledWith('网络异常，请检查连接后重试。')
+    expect(state.toastSuccess).not.toHaveBeenCalled()
+  })
+
+  it('blocks a runtime-mode submit when the trigger hours are missing', async () => {
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    const openBtn = [...document.body.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('新建保养计划'),
+    )!
+    openBtn.click()
+    await flushPromises()
+
+    document.body
+      .querySelector<HTMLButtonElement>('[role="dialog"] button[data-tab="runtime"]')!
+      .click()
+    await flushPromises()
+
+    const deviceInput = document.body.querySelector<HTMLInputElement>('#plan-device')!
+    deviceInput.value = 'DEV-SMT-02'
+    deviceInput.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const ownerInput = document.body.querySelector<HTMLInputElement>('#plan-owner')!
+    ownerInput.value = '设备保全班'
+    ownerInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    const submit = [
+      ...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button[type="submit"]'),
+    ].find((b) => b.textContent?.includes('创建保养计划'))!
+    submit.click()
+    await flushPromises()
+
+    expect(state.createPlan).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('请填写正的触发运行小时数。')
+    // Field-level invalid state (red box on the NvInput wrapper), not only the bottom summary.
+    const runtimeWrapper = document.body
+      .querySelector<HTMLInputElement>('#plan-runtime-hours')!
+      .closest('[data-slot="nv-input"]')!
+    expect(runtimeWrapper.getAttribute('data-invalid')).toBe('true')
   })
 })

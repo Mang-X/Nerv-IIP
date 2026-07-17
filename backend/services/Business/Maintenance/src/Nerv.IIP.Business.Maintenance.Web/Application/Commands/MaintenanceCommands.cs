@@ -396,7 +396,7 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
                 && state.EnvironmentId == x.EnvironmentId
                 && state.DeviceAssetId == x.DeviceAssetId
                 && state.Disabled))
-            .Where(x => x.NextDueOn <= request.BusinessDate || x.RuntimeHourInterval != null)
+            .Where(x => (x.NextDueOn != null && x.NextDueOn <= request.BusinessDate) || x.RuntimeHourInterval != null)
             .OrderBy(x => x.DeviceAssetId)
             .ThenBy(x => x.PlanCode)
             .ToArrayAsync(cancellationToken);
@@ -518,7 +518,7 @@ public sealed record CreateMaintenancePlanCommand(
     string EnvironmentId,
     string DeviceAssetId,
     string? PlanCode,
-    string Interval,
+    string? Interval,
     DateOnly StartsOn,
     string Owner,
     DateTimeOffset? WindowStartUtc,
@@ -535,9 +535,13 @@ public sealed class CreateMaintenancePlanCommandValidator : AbstractValidator<Cr
         RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.PlanCode).MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
-        RuleFor(x => x.Interval).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.Interval).MaximumLength(50);
         RuleFor(x => x.Owner).NotEmpty().MaximumLength(150);
         RuleFor(x => x.RuntimeHourInterval).GreaterThan(0);
+        // A plan needs at least one trigger: calendar interval, runtime-hour interval, or both.
+        RuleFor(x => x)
+            .Must(x => !string.IsNullOrWhiteSpace(x.Interval) || x.RuntimeHourInterval is not null)
+            .WithMessage("Maintenance plan must have a calendar interval, a runtime-hour interval, or both.");
         RuleFor(x => x)
             .Must(x => (x.WindowStartUtc is null) == (x.WindowEndUtc is null))
             .WithMessage("Maintenance availability window start and end must be provided together.");
@@ -614,6 +618,55 @@ public sealed class CreateMaintenancePlanCommandHandler(
 public sealed class CreateMaintenancePlanCommandLock : ICommandLock<CreateMaintenancePlanCommand>
 {
     public Task<CommandLockSettings> GetLockKeysAsync(CreateMaintenancePlanCommand command, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        return Task.FromResult(new CommandLockSettings(
+            MaintenancePmCommandLockKeys.For(command.OrganizationId, command.EnvironmentId),
+            MaintenancePmCommandLockKeys.AcquireTimeoutSeconds));
+    }
+}
+
+public sealed record UpdateMaintenancePlanCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    MaintenancePlanId PlanId,
+    string? Interval,
+    decimal? RuntimeHourInterval) : ICommand;
+
+public sealed class UpdateMaintenancePlanCommandValidator : AbstractValidator<UpdateMaintenancePlanCommand>
+{
+    public UpdateMaintenancePlanCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PlanId).NotEmpty();
+        RuleFor(x => x.Interval).MaximumLength(50);
+        RuleFor(x => x.RuntimeHourInterval).GreaterThan(0).When(x => x.RuntimeHourInterval is not null);
+        RuleFor(x => x)
+            .Must(x => !string.IsNullOrWhiteSpace(x.Interval) || x.RuntimeHourInterval is not null)
+            .WithMessage("Maintenance plan must have a calendar interval, a runtime-hour interval, or both.");
+    }
+}
+
+public sealed class UpdateMaintenancePlanCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<UpdateMaintenancePlanCommand>
+{
+    public async Task Handle(UpdateMaintenancePlanCommand request, CancellationToken cancellationToken)
+    {
+        var plan = await dbContext.MaintenancePlans.SingleOrDefaultAsync(
+                x => x.Id == request.PlanId
+                    && x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId,
+                cancellationToken)
+            ?? throw new KnownException($"Maintenance plan was not found: {request.PlanId}");
+
+        plan.UpdateTriggerConfiguration(request.Interval, request.RuntimeHourInterval);
+    }
+}
+
+public sealed class UpdateMaintenancePlanCommandLock : ICommandLock<UpdateMaintenancePlanCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(UpdateMaintenancePlanCommand command, CancellationToken cancellationToken)
     {
         _ = cancellationToken;
         return Task.FromResult(new CommandLockSettings(

@@ -1,4 +1,5 @@
 import type { ListBusinessConsoleMesWorkOrdersData } from '@nerv-iip/api-client'
+import type { StatusTone } from '@nerv-iip/ui'
 
 type MesStatusValue = NonNullable<NonNullable<ListBusinessConsoleMesWorkOrdersData['query']>['status']>
 
@@ -18,7 +19,9 @@ const statusLabels: Record<MesStatusValue, string> = {
   dispositionAccepted: '处置已受理',
   hold: '挂起',
   inProgress: '执行中',
+  inventoryPostingFailed: '入库失败',
   open: '未恢复',
+  partiallyPosted: '部分入库',
   partiallyReceived: '部分接收',
   paused: '暂停',
   posted: '已入库',
@@ -90,8 +93,40 @@ export const mesQualityStatusOptions = statusOptions([
 
 export const mesReceiptStatusOptions = statusOptions([
   'requested',
+  'partiallyPosted',
   'posted',
+  'inventoryPostingFailed',
 ])
+
+// 完工入库状态的可读标签 + 徽章色。与 mesReceiptStatusOptions 同域集中，避免与页面本地映射漂移。
+// 运行时 receiptStatus 为原始 PascalCase 域状态（Requested/PartiallyPosted/Posted/InventoryPostingFailed/Cancelled），
+// 入库语境用「已入库」而非通用「已完成」；大小写不敏感查表。
+const RECEIPT_STATUS_LABELS: Record<string, string> = {
+  requested: '待入库',
+  partiallyposted: '部分入库',
+  posted: '已入库',
+  inventorypostingfailed: '入库失败',
+  cancelled: '已取消',
+}
+const RECEIPT_STATUS_TONES: Record<string, StatusTone> = {
+  requested: 'neutral',
+  partiallyposted: 'info',
+  posted: 'success',
+  inventorypostingfailed: 'danger',
+  cancelled: 'neutral',
+}
+function normalizeReceiptStatus(status?: string | null) {
+  return (status ?? '').toLowerCase()
+}
+export function receiptStatusLabel(status?: string | null) {
+  return RECEIPT_STATUS_LABELS[normalizeReceiptStatus(status)] ?? '未知状态'
+}
+export function receiptStatusTone(status?: string | null): StatusTone {
+  return RECEIPT_STATUS_TONES[normalizeReceiptStatus(status)] ?? 'neutral'
+}
+export function isFailedReceiptStatus(status?: string | null) {
+  return normalizeReceiptStatus(status) === 'inventorypostingfailed'
+}
 
 export const mesDowntimeStatusOptions = statusOptions([
   'open',

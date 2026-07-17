@@ -1,6 +1,9 @@
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { reactive, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { useAuthStore } from '@/stores/auth'
 
 import OperationTasksPage from './operation-tasks.vue'
 import PlansPage from './plans.vue'
@@ -19,7 +22,10 @@ const routerState = vi.hoisted(() => ({
 const mesSpies = vi.hoisted(() => ({
   createReceiptRequest: vi.fn(async () => undefined),
   refreshReceiptRequests: vi.fn(async () => undefined),
-  traceabilityFilters: undefined as { batchOrSerial: string, materialLotId: string, mode: string, workOrderId: string } | undefined,
+  retryInventoryPosting: vi.fn(async () => undefined),
+  traceabilityFilters: undefined as
+    | { batchOrSerial: string; materialLotId: string; mode: string; workOrderId: string }
+    | undefined,
 }))
 
 vi.mock('vue-router', () => ({
@@ -31,6 +37,8 @@ vi.mock('vue-router', () => ({
   useRouter: () => routerState,
 }))
 
+vi.mock('@/utils/notify', () => ({ notifySuccess: vi.fn(), notifyError: vi.fn() }))
+
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessMasterDataResources: () => ({ resources: ref([]) }),
   useBusinessSkus: () => ({ skus: ref([]) }),
@@ -41,6 +49,16 @@ vi.mock('@/composables/useBusinessMes', () => ({
     code,
     label: code || '未检',
     nextStep: '请按质量或设备处理要求跟进。',
+  }),
+  makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
+  useMesWorkOrderProducedLots: () => ({
+    // 单一产出批次自动选中，使完工入库提交用例可通过 canCreate（后端强制引用真实产出批次）。
+    producedLots: ref([
+      { producedLotNo: 'LOT-WO-001', reportNo: 'PRPT-1', goodQuantity: 10, remainingQuantity: 10 },
+    ]),
+    producedLotsError: ref(undefined),
+    producedLotsPending: ref(false),
+    refreshProducedLots: vi.fn(),
   }),
   useMesFinishedGoodsReceipts: () => ({
     createReceiptRequest: mesSpies.createReceiptRequest,
@@ -57,6 +75,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
     receiptRequestsPending: ref(false),
     receiptRequestsTotal: ref(0),
     refreshReceiptRequests: mesSpies.refreshReceiptRequests,
+    retryInventoryPosting: mesSpies.retryInventoryPosting,
+    retryInventoryPostingError: ref(undefined),
+    isRetrying: () => false,
   }),
   useMesOperationTasks: () => ({
     filters: {
@@ -253,6 +274,25 @@ const uiStubs = {
   NvDialogFooter: {
     template: '<div><slot /></div>',
   },
+  NvSheet: {
+    props: ['open'],
+    template: '<div><slot /></div>',
+  },
+  NvSheetContent: {
+    template: '<div><slot /></div>',
+  },
+  NvSheetHeader: {
+    template: '<div><slot /></div>',
+  },
+  NvSheetTitle: {
+    template: '<h2><slot /></h2>',
+  },
+  NvSheetDescription: {
+    template: '<p><slot /></p>',
+  },
+  NvSheetFooter: {
+    template: '<div><slot /></div>',
+  },
   RowActions: {
     props: ['label'],
     template: '<div><slot /></div>',
@@ -286,7 +326,8 @@ const uiStubs = {
   NvInput: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    template:
+      '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
   NvSelect: {
     template: '<div><slot /></div>',
@@ -330,8 +371,21 @@ const uiStubs = {
 }
 
 function mountMesPage(component: unknown) {
+  const pinia = createPinia()
+  const auth = useAuthStore(pinia)
+  auth.$patch({
+    principal: {
+      principalId: 'u1',
+      principalType: 'user',
+      organizationId: 'org',
+      environmentId: 'dev',
+      loginName: 'op',
+      permissionCodes: ['business.mes.receipts.manage'],
+    },
+  })
   return mount(component, {
     global: {
+      plugins: [pinia],
       stubs: {
         ...businessStubs,
         ...uiStubs,
@@ -345,7 +399,9 @@ function mountMesPage(component: unknown) {
 }
 
 function expectNoForbiddenVisibleTerms(text: string) {
-  expect(text).not.toMatch(/demo|mock|seed|样例|用于验证|接口|契约|组织|环境|sourceSystem|operationId|联动测试|内置|幂等键/i)
+  expect(text).not.toMatch(
+    /demo|mock|seed|样例|用于验证|接口|契约|组织|环境|sourceSystem|operationId|联动测试|内置|幂等键/i,
+  )
 }
 
 describe('MES workflow copy', () => {
@@ -395,7 +451,10 @@ describe('MES workflow copy', () => {
   it('carries operation-task context into the work-order reporting sheet route', async () => {
     const wrapper = mountMesPage(OperationTasksPage)
 
-    await wrapper.findAll('button').find((button) => button.text().includes('报工'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('报工'))!
+      .trigger('click')
 
     expect(routerState.push).toHaveBeenCalledWith({
       path: '/mes/work-orders',
@@ -437,15 +496,17 @@ describe('MES workflow copy', () => {
     await wrapper.find('#receipt-unit-cost').setValue('12.34')
     await wrapper.find('form').trigger('submit')
 
-    expect(mesSpies.createReceiptRequest).toHaveBeenCalledWith(expect.objectContaining({
-      environmentId: 'dev',
-      organizationId: 'org',
-      quantity: 10,
-      skuId: 'FG-001',
-      unitCost: 12.34,
-      uomCode: 'EA',
-      workOrderId: 'WO-001',
-    }))
+    expect(mesSpies.createReceiptRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        environmentId: 'dev',
+        organizationId: 'org',
+        quantity: 10,
+        skuId: 'FG-001',
+        unitCost: 12.34,
+        uomCode: 'EA',
+        workOrderId: 'WO-001',
+      }),
+    )
   })
 
   it('links non-work-order traceability to scan records without hardcoding a workflow filter', () => {
@@ -466,10 +527,12 @@ describe('MES workflow copy', () => {
 
     mountMesPage(TraceabilityPage)
 
-    expect(mesSpies.traceabilityFilters).toEqual(expect.objectContaining({
-      batchOrSerial: 'SN-001',
-      materialLotId: 'SN-001',
-      mode: 'batch',
-    }))
+    expect(mesSpies.traceabilityFilters).toEqual(
+      expect.objectContaining({
+        batchOrSerial: 'SN-001',
+        materialLotId: 'SN-001',
+        mode: 'batch',
+      }),
+    )
   })
 })

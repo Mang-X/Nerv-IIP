@@ -1,5 +1,6 @@
+import { flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { shallowRef } from 'vue'
+import { effectScope, nextTick, ref, shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
@@ -24,6 +25,8 @@ import {
   useBusinessTelemetryHistory,
   useBusinessTelemetryOee,
   useBusinessTelemetryTags,
+  useMaintenancePlanRuntimeRemaining,
+  type RuntimeRemainingPlan,
 } from './useBusinessTelemetry'
 
 const coladaState = vi.hoisted(() => ({
@@ -33,7 +36,24 @@ const coladaState = vi.hoisted(() => ({
   refetchById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
+// Controllable runtime-hours read used by useMaintenancePlanRuntimeRemaining. Tests swap `impl` to
+// hand out deferred, abort-aware promises so overlapping rounds / out-of-order completion can be driven.
+type RuntimeHoursOptions = { query: Record<string, unknown>; signal?: AbortSignal }
+const rtState = vi.hoisted(() => ({
+  concurrent: 0,
+  maxConcurrent: 0,
+  impl: (_opts: RuntimeHoursOptions): Promise<unknown> =>
+    Promise.resolve({
+      data: { success: true, data: { totalRuntimeHours: 0, hasRuntimeSamples: false } },
+    }),
+}))
+
 vi.mock('@nerv-iip/api-client', () => ({
+  queryBusinessConsoleTelemetryRuntimeHours: (opts: RuntimeHoursOptions) => rtState.impl(opts),
+  queryBusinessConsoleTelemetryRuntimeHoursQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'queryBusinessConsoleTelemetryRuntimeHours' }],
+    query: vi.fn(),
+  })),
   createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions: vi.fn(() => ({
     key: [{ _id: 'createOrUpdateBusinessConsoleTelemetryAlarmRule' }],
     mutation: vi.fn(),
@@ -104,6 +124,12 @@ describe('business telemetry composables', () => {
     coladaState.queryDataById.clear()
     coladaState.queryOptionsById.clear()
     coladaState.refetchById.clear()
+    rtState.concurrent = 0
+    rtState.maxConcurrent = 0
+    rtState.impl = () =>
+      Promise.resolve({
+        data: { success: true, data: { totalRuntimeHours: 0, hasRuntimeSamples: false } },
+      })
   })
 
   it('uses current business context and pagination for tag and alarm-rule lists', () => {
@@ -381,5 +407,191 @@ describe('business telemetry composables', () => {
     expect(formatOeeQuantity(12.5, 'PCS')).toBe('12.5 PCS')
     expect(describeTelemetryOeeLimitations()).toContain('OEE = 可用率 × 性能率 × 质量率')
     expect(describeTelemetryOeeDegradation('production-facts-missing')).toBe('缺少 MES 报工事实')
+  })
+
+  // Hand out deferred runtime-hours reads so overlapping rounds and out-of-order completion can be driven.
+  function deferredRuntimeHours(options: { honorAbort: boolean }) {
+    const created: Array<{
+      resolveWith: (totalRuntimeHours: number, hasRuntimeSamples?: boolean) => void
+    }> = []
+    rtState.impl = (opts) =>
+      new Promise((resolve, reject) => {
+        let settled = false
+        const settle = () => {
+          if (settled) return false
+          settled = true
+          rtState.concurrent -= 1
+          return true
+        }
+        rtState.concurrent += 1
+        rtState.maxConcurrent = Math.max(rtState.maxConcurrent, rtState.concurrent)
+        if (options.honorAbort) {
+          opts.signal?.addEventListener('abort', () => {
+            if (settle()) reject(new DOMException('aborted', 'AbortError'))
+          })
+        }
+        created.push({
+          resolveWith: (totalRuntimeHours, hasRuntimeSamples = true) => {
+            if (settle()) {
+              resolve({ data: { success: true, data: { totalRuntimeHours, hasRuntimeSamples } } })
+            }
+          },
+        })
+      })
+    return created
+  }
+
+  const runtimePlan = (overrides: Partial<RuntimeRemainingPlan>): RuntimeRemainingPlan => ({
+    planId: 'p1',
+    deviceAssetId: 'D1',
+    startsOn: '2026-06-01',
+    runtimeHourInterval: 1000,
+    nextDueRuntimeHours: 1000,
+    ...overrides,
+  })
+
+  it('does not let a superseded round overwrite the latest remaining or clear its pending', async () => {
+    // Ignore abort here to isolate the generation guard: the stale round stays in flight and resolves late.
+    const created = deferredRuntimeHours({ honorAbort: false })
+    const plans = ref<RuntimeRemainingPlan[]>([runtimePlan({ nextDueRuntimeHours: 1000 })])
+    const { remainingByPlanId, remainingPending } = useMaintenancePlanRuntimeRemaining(plans)
+    await nextTick()
+    await flushPromises()
+    expect(created).toHaveLength(1)
+    expect(remainingPending.value).toBe(true)
+
+    // Advance the threshold -> a newer round supersedes the first.
+    plans.value = [runtimePlan({ nextDueRuntimeHours: 2000 })]
+    await nextTick()
+    await flushPromises()
+    expect(created).toHaveLength(2)
+
+    // The newer round completes first: remaining = 2000 - 500 = 1500.
+    created[1].resolveWith(500)
+    await flushPromises()
+    expect(remainingByPlanId.value.p1).toEqual({ status: 'ok', hours: 1500 })
+    expect(remainingPending.value).toBe(false)
+
+    // The stale round completes late with a different value: it must NOT overwrite nor re-toggle pending.
+    created[0].resolveWith(900)
+    await flushPromises()
+    expect(remainingByPlanId.value.p1).toEqual({ status: 'ok', hours: 1500 })
+    expect(remainingPending.value).toBe(false)
+  })
+
+  it('bounds telemetry concurrency to the cap even when a refresh starts mid-flight', async () => {
+    deferredRuntimeHours({ honorAbort: true })
+    const makePlans = (nextDue: number) =>
+      Array.from({ length: 10 }, (_, i) =>
+        runtimePlan({ planId: `p${i}`, deviceAssetId: `D${i}`, nextDueRuntimeHours: nextDue }),
+      )
+    const plans = ref<RuntimeRemainingPlan[]>(makePlans(1000))
+    useMaintenancePlanRuntimeRemaining(plans)
+    await nextTick()
+    await flushPromises()
+    // 10 plans, cap 6 -> never more than 6 concurrent reads.
+    expect(rtState.maxConcurrent).toBe(6)
+
+    // Start a refresh while round 1 is still in flight: aborting the stale round keeps the peak at the cap.
+    plans.value = makePlans(2000)
+    await nextTick()
+    await flushPromises()
+    expect(rtState.maxConcurrent).toBeLessThanOrEqual(6)
+  })
+
+  it('shows loading (not the prior settled value) while a threshold-advance refresh is in flight', async () => {
+    const created = deferredRuntimeHours({ honorAbort: false })
+    const plans = ref<RuntimeRemainingPlan[]>([runtimePlan({ nextDueRuntimeHours: 1000 })])
+    const { remainingByPlanId } = useMaintenancePlanRuntimeRemaining(plans)
+    await nextTick()
+    await flushPromises()
+    created[0].resolveWith(400) // remaining = 1000 - 400 = 600, settled
+    await flushPromises()
+    expect(remainingByPlanId.value.p1).toEqual({ status: 'ok', hours: 600 })
+
+    // Advance the threshold: while the fresh read is in flight the stale 600 must NOT still be shown.
+    plans.value = [runtimePlan({ nextDueRuntimeHours: 2000 })]
+    await nextTick()
+    await flushPromises()
+    expect(remainingByPlanId.value.p1).toEqual({ status: 'loading' })
+    expect(created).toHaveLength(2)
+
+    created[1].resolveWith(500) // remaining = 2000 - 500 = 1500
+    await flushPromises()
+    expect(remainingByPlanId.value.p1).toEqual({ status: 'ok', hours: 1500 })
+  })
+
+  it('clears pending when an empty-context round supersedes an in-flight read (no stuck loading)', async () => {
+    deferredRuntimeHours({ honorAbort: true })
+    const plans = ref<RuntimeRemainingPlan[]>([runtimePlan({})])
+    const { remainingByPlanId, remainingPending } = useMaintenancePlanRuntimeRemaining(plans)
+    await nextTick()
+    await flushPromises()
+    expect(remainingPending.value).toBe(true) // round 1 in flight
+
+    // Clearing the business context supersedes the in-flight round; pending must not stay stuck on loading.
+    useBusinessContextStore().patchContext({ organizationId: '', environmentId: '' })
+    await nextTick()
+    await flushPromises()
+    expect(remainingPending.value).toBe(false)
+    expect(remainingByPlanId.value).toEqual({})
+  })
+
+  it('aborts in-flight reads and stops committing once the owning scope is disposed', async () => {
+    const created = deferredRuntimeHours({ honorAbort: true })
+    const plans = ref<RuntimeRemainingPlan[]>([runtimePlan({})])
+    const scope = effectScope()
+    let api!: ReturnType<typeof useMaintenancePlanRuntimeRemaining>
+    scope.run(() => {
+      api = useMaintenancePlanRuntimeRemaining(plans)
+    })
+    await nextTick()
+    await flushPromises()
+    expect(created).toHaveLength(1)
+    expect(rtState.concurrent).toBe(1) // one in-flight read
+
+    // Dispose the scope (page unmount): the in-flight read is aborted and the round is superseded.
+    scope.stop()
+    await flushPromises()
+    expect(rtState.concurrent).toBe(0)
+
+    // A late resolve after disposal must never commit results to the dead scope.
+    created[0].resolveWith(500)
+    await flushPromises()
+    expect(api.remainingByPlanId.value.p1).toEqual({ status: 'loading' })
+  })
+
+  it('settles a runtime plan with a missing runtime cursor as invalid (never permanent loading)', async () => {
+    const created = deferredRuntimeHours({ honorAbort: false })
+    // One valid runtime plan (fetched) + one with runtimeHourInterval but no next_due_runtime_hours cursor.
+    const plans = ref<RuntimeRemainingPlan[]>([
+      runtimePlan({ planId: 'p-valid', nextDueRuntimeHours: 1000 }),
+      runtimePlan({ planId: 'p-invalid', nextDueRuntimeHours: null }),
+    ])
+    const { remainingByPlanId, remainingPending } = useMaintenancePlanRuntimeRemaining(plans)
+    await nextTick()
+    await flushPromises()
+    // Only the fetchable plan is read; the invalid one settles immediately (never fetched, never loading).
+    expect(created).toHaveLength(1)
+    expect(remainingByPlanId.value['p-invalid']).toEqual({ status: 'invalid' })
+
+    created[0].resolveWith(400) // 1000 - 400 = 600
+    await flushPromises()
+    expect(remainingByPlanId.value['p-valid']).toEqual({ status: 'ok', hours: 600 })
+    expect(remainingByPlanId.value['p-invalid']).toEqual({ status: 'invalid' }) // preserved
+    expect(remainingPending.value).toBe(false) // never stuck on loading
+  })
+
+  it('clears pending for an all-invalid runtime-plan set (no fetch, no stuck loading)', async () => {
+    const created = deferredRuntimeHours({ honorAbort: false })
+    const plans = ref<RuntimeRemainingPlan[]>([
+      runtimePlan({ planId: 'p-inv', nextDueRuntimeHours: null }),
+    ])
+    const { remainingByPlanId, remainingPending } = useMaintenancePlanRuntimeRemaining(plans)
+    await nextTick()
+    await flushPromises()
+    expect(created).toHaveLength(0) // nothing fetchable
+    expect(remainingByPlanId.value['p-inv']).toEqual({ status: 'invalid' })
+    expect(remainingPending.value).toBe(false)
   })
 })

@@ -231,11 +231,10 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasComment("Environment id.");
 
                     b.Property<string>("Interval")
-                        .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("interval")
-                        .HasComment("Explicit maintenance interval expression, for example ISO-8601 P7D.");
+                        .HasComment("Calendar interval expression (ISO-8601 P7D) for the calendar trigger, or null for a runtime-only plan.");
 
                     b.Property<DateOnly?>("LastGeneratedOn")
                         .HasColumnType("date")
@@ -248,10 +247,10 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("last_generated_runtime_hours")
                         .HasComment("Last cumulative runtime-hour reading used to generate a PM work order.");
 
-                    b.Property<DateOnly>("NextDueOn")
+                    b.Property<DateOnly?>("NextDueOn")
                         .HasColumnType("date")
                         .HasColumnName("next_due_on")
-                        .HasComment("Next business date on which the preventive maintenance plan is due.");
+                        .HasComment("Next business date on which the calendar-triggered plan is due, or null for a runtime-only plan.");
 
                     b.Property<decimal?>("NextDueRuntimeHours")
                         .HasPrecision(18, 6)
@@ -316,6 +315,12 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                     b.ToTable("maintenance_plans", "maintenance", t =>
                         {
                             t.HasComment("Preventive maintenance plan schedule facts.");
+
+                            t.HasCheckConstraint("ck_maintenance_plans_has_trigger", "interval IS NOT NULL OR runtime_hour_interval IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_maintenance_plans_calendar_trigger_paired", "(interval IS NULL) = (next_due_on IS NULL)");
+
+                            t.HasCheckConstraint("ck_maintenance_plans_runtime_trigger_paired", "(runtime_hour_interval IS NULL) = (next_due_runtime_hours IS NULL)");
                         });
                 });
 

@@ -278,22 +278,48 @@ public sealed class CreateBusinessConsoleMaintenancePlanEndpoint(
 }
 
 [Tags("Business Console Maintenance")]
+[HttpPut("/api/business-console/v1/maintenance/plans/{planId}")]
+[BusinessGatewayOperationId("updateBusinessConsoleMaintenancePlan")]
+public sealed class UpdateBusinessConsoleMaintenancePlanEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMaintenanceClient maintenance,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleUpdateMaintenancePlanRequest, BusinessConsoleUpdateMaintenancePlanResponse>(
+        auth,
+        BusinessGatewayPermissions.MaintenancePlansManage)
+{
+    protected override string OrganizationId(BusinessConsoleUpdateMaintenancePlanRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleUpdateMaintenancePlanRequest request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleUpdateMaintenancePlanRequest request) => "maintenance-plan";
+
+    protected override string? ResourceId(BusinessConsoleUpdateMaintenancePlanRequest request) => Route<string>("planId");
+
+    protected override Task<BusinessConsoleUpdateMaintenancePlanResponse> ForwardAsync(
+        BusinessConsoleUpdateMaintenancePlanRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        maintenance.UpdatePlanAsync(tokenProvider.BearerToken, Route<string>("planId")!, request, cancellationToken);
+}
+
+[Tags("Business Console Maintenance")]
 [HttpGet("/api/business-console/v1/maintenance/plans")]
 [BusinessGatewayOperationId("listBusinessConsoleMaintenancePlans")]
 public sealed class ListBusinessConsoleMaintenancePlansEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMaintenanceClient maintenance,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMaintenanceListRequest, BusinessConsoleMaintenancePlanListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMaintenancePlanListRequest, BusinessConsoleMaintenancePlanListResponse>(
         auth,
         BusinessGatewayPermissions.MaintenancePlansRead)
 {
-    protected override string OrganizationId(BusinessConsoleMaintenanceListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleMaintenancePlanListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMaintenanceListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleMaintenancePlanListRequest request) => request.EnvironmentId;
 
     protected override Task<BusinessConsoleMaintenancePlanListResponse> ForwardAsync(
-        BusinessConsoleMaintenanceListRequest request,
+        BusinessConsoleMaintenancePlanListRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
         maintenance.ListPlansAsync(tokenProvider.BearerToken, request, cancellationToken);
@@ -541,6 +567,22 @@ public sealed class BusinessConsoleMaintenanceListRequestValidator : Validator<B
     }
 }
 
+// The plan-list endpoint binds a dedicated request type (adds optional DeviceAssetId); FastEndpoints
+// resolves validators by request type, so it needs its own validator — without it the endpoint loses
+// org/env/skip/take enforcement.
+public sealed class BusinessConsoleMaintenancePlanListRequestValidator
+    : Validator<BusinessConsoleMaintenancePlanListRequest>
+{
+    public BusinessConsoleMaintenancePlanListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 200);
+        RuleFor(x => x.DeviceAssetId).MaximumLength(150).When(x => x.DeviceAssetId is not null);
+    }
+}
+
 public sealed class BusinessConsoleMaintenanceWorkOrderListRequestValidator : Validator<BusinessConsoleMaintenanceWorkOrderListRequest>
 {
     public BusinessConsoleMaintenanceWorkOrderListRequestValidator()
@@ -600,11 +642,34 @@ public sealed class BusinessConsoleCreateMaintenancePlanRequestValidator : Valid
         RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.PlanCode).MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
-        RuleFor(x => x.Interval).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Interval).MaximumLength(50);
         RuleFor(x => x.Owner).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WindowEndUtc)
             .GreaterThan(x => x.WindowStartUtc)
             .When(x => x.WindowStartUtc.HasValue && x.WindowEndUtc.HasValue);
+        RuleFor(x => x.RuntimeHourInterval)
+            .GreaterThan(0m)
+            .When(x => x.RuntimeHourInterval.HasValue);
+        // A plan needs at least one trigger: calendar interval, runtime-hour interval, or both.
+        RuleFor(x => x)
+            .Must(x => !string.IsNullOrWhiteSpace(x.Interval) || x.RuntimeHourInterval.HasValue)
+            .WithMessage("Maintenance plan must have a calendar interval, a runtime-hour interval, or both.");
+    }
+}
+
+public sealed class BusinessConsoleUpdateMaintenancePlanRequestValidator : Validator<BusinessConsoleUpdateMaintenancePlanRequest>
+{
+    public BusinessConsoleUpdateMaintenancePlanRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Interval).MaximumLength(50);
+        RuleFor(x => x.RuntimeHourInterval)
+            .GreaterThan(0m)
+            .When(x => x.RuntimeHourInterval.HasValue);
+        RuleFor(x => x)
+            .Must(x => !string.IsNullOrWhiteSpace(x.Interval) || x.RuntimeHourInterval.HasValue)
+            .WithMessage("Maintenance plan must have a calendar interval, a runtime-hour interval, or both.");
     }
 }
 

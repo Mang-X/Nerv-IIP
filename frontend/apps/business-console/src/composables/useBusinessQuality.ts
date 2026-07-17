@@ -1,10 +1,12 @@
 import {
   closeBusinessConsoleQualityNcrMutationOptions,
   createBusinessConsoleQualityInspectionRecordMutationOptions,
+  getBusinessConsoleQualityInspectionRecordQueryOptions,
   listBusinessConsoleQualityInspectionPlansQueryOptions,
   listBusinessConsoleQualityNcrsQueryOptions,
   submitBusinessConsoleQualityNcrDispositionMutationOptions,
   type BusinessConsoleCreateInspectionRecordRequest,
+  type BusinessConsoleInspectionRecordDetailResponse,
   type BusinessConsoleNcrCloseRequest,
   type BusinessConsoleNcrDispositionRequest,
   type BusinessConsoleQualityItem,
@@ -80,6 +82,45 @@ function isBusinessQuery(id: string) {
 }
 
 function ignoreBackgroundError(_error: unknown) {}
+
+export interface QualityInspectionRecordSource {
+  organizationId: string
+  environmentId: string
+  inspectionRecordId: string
+}
+
+// 单条检验记录详情读面（get by id，QualityInspectionRecordsRead）。供来源检验记录互链按 inspectionRecordId 定位。
+export function useQualityInspectionRecordDetail(source: () => QualityInspectionRecordSource) {
+  const enabled = computed(() => {
+    const s = source()
+    return (
+      s.organizationId.trim().length > 0 &&
+      s.environmentId.trim().length > 0 &&
+      s.inspectionRecordId.trim().length > 0
+    )
+  })
+
+  const recordQuery = useQuery(() => {
+    const s = source()
+    return {
+      ...getBusinessConsoleQualityInspectionRecordQueryOptions({
+        path: { inspectionRecordId: s.inspectionRecordId },
+        query: { organizationId: s.organizationId, environmentId: s.environmentId },
+      }),
+      enabled: enabled.value,
+    }
+  })
+
+  return {
+    record: computed<BusinessConsoleInspectionRecordDetailResponse | undefined>(() => {
+      const data = recordQuery.data.value
+      return data?.success ? (data.data ?? undefined) : undefined
+    }),
+    recordPending: recordQuery.isLoading,
+    recordError: recordQuery.error,
+    refreshRecord: () => (enabled.value ? recordQuery.refetch() : Promise.resolve()),
+  }
+}
 
 export function useQualityInspectionPlans(initialFilters: Partial<QualityListFilters> = {}) {
   const filters = defaultFilters(initialFilters)

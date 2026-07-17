@@ -145,6 +145,159 @@ public sealed class MaintenanceAggregateTests
     }
 
     [Fact]
+    public void Update_trigger_configuration_removes_calendar_trigger_without_resetting_runtime_cursor()
+    {
+        var plan = CreatePlanWithAdvancedCursors();
+
+        plan.UpdateTriggerConfiguration(null, 100m);
+
+        Assert.Null(plan.Interval);
+        Assert.Null(plan.NextDueOn);
+        Assert.Equal(new DateOnly(2026, 6, 8), plan.LastGeneratedOn);
+        Assert.Equal(100m, plan.RuntimeHourInterval);
+        Assert.Equal(200m, plan.NextDueRuntimeHours);
+        Assert.Equal(125m, plan.LastGeneratedRuntimeHours);
+    }
+
+    [Fact]
+    public void Update_trigger_configuration_removes_runtime_trigger_without_resetting_calendar_cursor()
+    {
+        var plan = CreatePlanWithAdvancedCursors();
+
+        plan.UpdateTriggerConfiguration("P7D", null);
+
+        Assert.Equal("P7D", plan.Interval);
+        Assert.Equal(new DateOnly(2026, 6, 15), plan.NextDueOn);
+        Assert.Equal(new DateOnly(2026, 6, 8), plan.LastGeneratedOn);
+        Assert.Null(plan.RuntimeHourInterval);
+        Assert.Null(plan.NextDueRuntimeHours);
+        Assert.Equal(125m, plan.LastGeneratedRuntimeHours);
+    }
+
+    [Fact]
+    public void Update_trigger_configuration_adds_missing_runtime_trigger()
+    {
+        var calendarOnlyPlan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "calendar-only", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+
+        calendarOnlyPlan.UpdateTriggerConfiguration("P7D", 50m);
+
+        Assert.Equal(50m, calendarOnlyPlan.RuntimeHourInterval);
+        Assert.Equal(50m, calendarOnlyPlan.NextDueRuntimeHours);
+    }
+
+    [Fact]
+    public void Update_trigger_configuration_adds_missing_calendar_trigger()
+    {
+        var runtimeOnlyPlan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-02", "runtime-only", null, new DateOnly(2026, 6, 1), "maintenance", runtimeHourInterval: 100m);
+
+        runtimeOnlyPlan.UpdateTriggerConfiguration("P10D", 100m);
+
+        Assert.Equal(new DateOnly(2026, 6, 1), runtimeOnlyPlan.NextDueOn);
+        Assert.Equal("P10D", runtimeOnlyPlan.Interval);
+    }
+
+    [Fact]
+    public void Update_trigger_configuration_recalculates_only_changed_trigger_cursors_from_last_generated_values()
+    {
+        var plan = CreatePlanWithAdvancedCursors();
+
+        plan.UpdateTriggerConfiguration("P10D", 50m);
+
+        Assert.Equal("P10D", plan.Interval);
+        Assert.Equal(new DateOnly(2026, 6, 18), plan.NextDueOn);
+        Assert.Equal(new DateOnly(2026, 6, 8), plan.LastGeneratedOn);
+        Assert.Equal(50m, plan.RuntimeHourInterval);
+        Assert.Equal(175m, plan.NextDueRuntimeHours);
+        Assert.Equal(125m, plan.LastGeneratedRuntimeHours);
+    }
+
+    [Fact]
+    public void Update_trigger_configuration_changing_only_calendar_interval_keeps_runtime_cursor()
+    {
+        var plan = CreatePlanWithAdvancedCursors();
+
+        plan.UpdateTriggerConfiguration("P10D", 100m);
+
+        Assert.Equal(new DateOnly(2026, 6, 18), plan.NextDueOn);
+        Assert.Equal(200m, plan.NextDueRuntimeHours);
+    }
+
+    [Fact]
+    public void Update_trigger_configuration_changing_only_runtime_interval_keeps_calendar_cursor()
+    {
+        var plan = CreatePlanWithAdvancedCursors();
+
+        plan.UpdateTriggerConfiguration("P7D", 50m);
+
+        Assert.Equal(175m, plan.NextDueRuntimeHours);
+        Assert.Equal(new DateOnly(2026, 6, 15), plan.NextDueOn);
+    }
+
+    [Fact]
+    public void Update_trigger_configuration_keeps_cursors_when_normalized_values_are_unchanged()
+    {
+        var plan = CreatePlanWithAdvancedCursors();
+
+        plan.UpdateTriggerConfiguration(" p07d ", 100m);
+
+        Assert.Equal("P7D", plan.Interval);
+        Assert.Equal(new DateOnly(2026, 6, 15), plan.NextDueOn);
+        Assert.Equal(200m, plan.NextDueRuntimeHours);
+    }
+
+    [Fact]
+    public void Update_trigger_configuration_rejects_invalid_configuration_without_partial_mutation()
+    {
+        var plan = CreatePlanWithAdvancedCursors();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => plan.UpdateTriggerConfiguration("P10D", 0m));
+
+        Assert.Equal("P7D", plan.Interval);
+        Assert.Equal(new DateOnly(2026, 6, 15), plan.NextDueOn);
+        Assert.Equal(new DateOnly(2026, 6, 8), plan.LastGeneratedOn);
+        Assert.Equal(100m, plan.RuntimeHourInterval);
+        Assert.Equal(200m, plan.NextDueRuntimeHours);
+        Assert.Equal(125m, plan.LastGeneratedRuntimeHours);
+    }
+
+    [Fact]
+    public void Update_trigger_configuration_rejects_malformed_calendar_interval_without_partial_mutation()
+    {
+        var plan = CreatePlanWithAdvancedCursors();
+        var before = (
+            plan.Interval,
+            plan.RuntimeHourInterval,
+            plan.LastGeneratedOn,
+            plan.NextDueOn,
+            plan.LastGeneratedRuntimeHours,
+            plan.NextDueRuntimeHours);
+
+        Assert.Throws<ArgumentException>(() => plan.UpdateTriggerConfiguration("not-an-iso-interval", 50m));
+
+        var after = (
+            plan.Interval,
+            plan.RuntimeHourInterval,
+            plan.LastGeneratedOn,
+            plan.NextDueOn,
+            plan.LastGeneratedRuntimeHours,
+            plan.NextDueRuntimeHours);
+        Assert.Equal(before, after);
+    }
+
+    [Fact]
+    public void Update_trigger_configuration_rejects_removal_of_all_triggers_without_partial_mutation()
+    {
+        var plan = CreatePlanWithAdvancedCursors();
+
+        Assert.Throws<ArgumentException>(() => plan.UpdateTriggerConfiguration(null, null));
+
+        Assert.Equal("P7D", plan.Interval);
+        Assert.Equal(new DateOnly(2026, 6, 15), plan.NextDueOn);
+        Assert.Equal(100m, plan.RuntimeHourInterval);
+        Assert.Equal(200m, plan.NextDueRuntimeHours);
+    }
+
+    [Fact]
     public void Inspection_must_reference_a_plan_or_work_order()
     {
         Assert.Throws<ArgumentException>(() =>
@@ -264,5 +417,22 @@ public sealed class MaintenanceAggregateTests
         workOrder.Complete("fixed", "minor-stop", 5, []);
 
         Assert.Equal("worker-planned", workOrder.ActualTechnicianUserId);
+    }
+
+    private static MaintenancePlan CreatePlanWithAdvancedCursors()
+    {
+        var plan = MaintenancePlan.Create(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "combined-trigger",
+            "P7D",
+            new DateOnly(2026, 6, 1),
+            "maintenance",
+            runtimeHourInterval: 100m);
+
+        plan.ConsumeDueDates(new DateOnly(2026, 6, 8));
+        plan.ConsumeRuntimeDue(125m);
+        return plan;
     }
 }

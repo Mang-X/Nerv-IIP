@@ -1102,12 +1102,18 @@ public interface IBusinessMaintenanceClient
 
     Task<BusinessConsoleMaintenancePlanListResponse> ListPlansAsync(
         string internalBearerToken,
-        BusinessConsoleMaintenanceListRequest request,
+        BusinessConsoleMaintenancePlanListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleCreateMaintenancePlanResponse> CreatePlanAsync(
         string internalBearerToken,
         BusinessConsoleCreateMaintenancePlanRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleUpdateMaintenancePlanResponse> UpdatePlanAsync(
+        string internalBearerToken,
+        string planId,
+        BusinessConsoleUpdateMaintenancePlanRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse> GenerateDueWorkOrdersAsync(
@@ -1340,6 +1346,12 @@ public interface IBusinessMesClient
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesMaterialReadinessResponse> GetMaterialReadinessAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesReceivableProducedLotListResponse> ListReceivableProducedLotsAsync(
         string internalBearerToken,
         string workOrderId,
         BusinessConsoleMesContextRequest request,
@@ -5088,13 +5100,18 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
 
     public async Task<BusinessConsoleMaintenancePlanListResponse> ListPlansAsync(
         string internalBearerToken,
-        BusinessConsoleMaintenanceListRequest request,
+        BusinessConsoleMaintenancePlanListRequest request,
         CancellationToken cancellationToken)
     {
         var plans = await SendAsync<DownstreamMaintenancePagedResponse<DownstreamMaintenancePlanListItem>>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/maintenance/plans?" + ListQuery(request.OrganizationId, request.EnvironmentId, request.Skip, request.Take),
+            "/api/business/v1/maintenance/plans?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skip", request.Skip),
+                ("take", request.Take),
+                ("deviceAssetId", request.DeviceAssetId)),
             null,
             cancellationToken);
         return new BusinessConsoleMaintenancePlanListResponse(plans.Items.Select(plan =>
@@ -5103,7 +5120,11 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 plan.DeviceAssetId,
                 plan.PlanCode,
                 plan.Interval,
-                plan.StartsOn)).ToArray(),
+                plan.StartsOn,
+                plan.NextDueOn,
+                plan.RuntimeHourInterval,
+                plan.NextDueRuntimeHours,
+                plan.LastGeneratedRuntimeHours)).ToArray(),
             plans.Skip,
             plans.Take,
             plans.Total);
@@ -5121,6 +5142,21 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             request,
             cancellationToken);
         return new BusinessConsoleCreateMaintenancePlanResponse(FormatJsonScalar(response.PlanId));
+    }
+
+    public async Task<BusinessConsoleUpdateMaintenancePlanResponse> UpdatePlanAsync(
+        string internalBearerToken,
+        string planId,
+        BusinessConsoleUpdateMaintenancePlanRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamUpdateMaintenancePlanResponse>(
+            internalBearerToken,
+            HttpMethod.Put,
+            $"/api/business/v1/maintenance/plans/{Uri.EscapeDataString(planId)}",
+            request,
+            cancellationToken);
+        return new BusinessConsoleUpdateMaintenancePlanResponse(FormatJsonScalar(response.PlanId));
     }
 
     public async Task<BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse> GenerateDueWorkOrdersAsync(
@@ -5384,8 +5420,12 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         JsonElement PlanId,
         string DeviceAssetId,
         string PlanCode,
-        string Interval,
-        DateOnly StartsOn);
+        string? Interval,
+        DateOnly StartsOn,
+        DateOnly? NextDueOn,
+        decimal? RuntimeHourInterval,
+        decimal? NextDueRuntimeHours,
+        decimal LastGeneratedRuntimeHours);
 
     private sealed record DownstreamMaintenanceInspectionListItem(
         JsonElement InspectionId,
@@ -5419,6 +5459,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string? ActualTechnicianUserId = null);
 
     private sealed record DownstreamCreateMaintenancePlanResponse(JsonElement PlanId);
+
+    private sealed record DownstreamUpdateMaintenancePlanResponse(JsonElement PlanId);
 
     private sealed record DownstreamGenerateDueMaintenanceWorkOrdersResponse(
         int GeneratedCount,
@@ -6318,6 +6360,18 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Get,
             $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/material-readiness?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesReceivableProducedLotListResponse> ListReceivableProducedLotsAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesReceivableProducedLotListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/produced-lots?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
             cancellationToken);
 

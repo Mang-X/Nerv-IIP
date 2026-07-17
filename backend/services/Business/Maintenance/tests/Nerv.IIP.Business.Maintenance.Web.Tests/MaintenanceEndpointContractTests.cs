@@ -31,12 +31,13 @@ public sealed class MaintenanceEndpointContractTests
     {
         var contracts = MaintenanceEndpointContracts.All.ToArray();
 
-        Assert.Equal(20, contracts.Length);
+        Assert.Equal(21, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "startMaintenanceRepair");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/complete" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "completeMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "listMaintenanceWorkOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/plans" && x.PermissionCode == MaintenancePermissionCodes.PlansManage && x.OperationId == "createMaintenancePlan");
+        Assert.Contains(contracts, x => x.HttpMethod == "PUT" && x.Route == "/api/business/v1/maintenance/plans/{planId}" && x.PermissionCode == MaintenancePermissionCodes.PlansManage && x.OperationId == "updateMaintenancePlan");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/plans" && x.PermissionCode == MaintenancePermissionCodes.PlansRead && x.OperationId == "listMaintenancePlans");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/inspections" && x.PermissionCode == MaintenancePermissionCodes.PlansManage && x.OperationId == "recordMaintenanceInspection");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/inspections" && x.PermissionCode == MaintenancePermissionCodes.PlansRead && x.OperationId == "listMaintenanceInspections");
@@ -104,6 +105,74 @@ public sealed class MaintenanceEndpointContractTests
     }
 
     [Fact]
+    public void Update_maintenance_plan_validator_requires_a_valid_tenant_scoped_trigger()
+    {
+        var valid = new UpdateMaintenancePlanCommandValidator().Validate(
+            new UpdateMaintenancePlanCommand(
+                "org-001",
+                "env-dev",
+                new MaintenancePlanId(Guid.CreateVersion7()),
+                "P30D",
+                500m));
+        var missingTrigger = new UpdateMaintenancePlanCommandValidator().Validate(
+            new UpdateMaintenancePlanCommand(
+                "org-001",
+                "env-dev",
+                new MaintenancePlanId(Guid.CreateVersion7()),
+                null,
+                null));
+        var invalidRuntimeInterval = new UpdateMaintenancePlanCommandValidator().Validate(
+            new UpdateMaintenancePlanCommand(
+                "org-001",
+                "env-dev",
+                new MaintenancePlanId(Guid.CreateVersion7()),
+                null,
+                0m));
+
+        Assert.True(valid.IsValid);
+        Assert.Contains(missingTrigger.Errors, x => x.ErrorMessage == "Maintenance plan must have a calendar interval, a runtime-hour interval, or both.");
+        Assert.Contains(invalidRuntimeInterval.Errors, x => x.PropertyName == nameof(UpdateMaintenancePlanCommand.RuntimeHourInterval));
+    }
+
+    [Fact]
+    public async Task Update_maintenance_plan_persists_trigger_configuration_and_projects_the_updated_values()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-UPDATE", "P7D", new DateOnly(2026, 6, 1), "maintenance", runtimeHourInterval: 100m);
+        dbContext.MaintenancePlans.Add(plan);
+        await dbContext.SaveChangesAsync();
+
+        await new UpdateMaintenancePlanCommandHandler(dbContext).Handle(
+            new UpdateMaintenancePlanCommand("org-001", "env-dev", plan.Id, "P30D", 500m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var response = await new ListMaintenancePlansQueryHandler(dbContext).Handle(
+            new ListMaintenancePlansQuery("org-001", "env-dev"),
+            CancellationToken.None);
+        var updated = Assert.Single(response.Items);
+        Assert.Equal("P30D", updated.Interval);
+        Assert.Equal(500m, updated.RuntimeHourInterval);
+    }
+
+    [Fact]
+    public async Task Update_maintenance_plan_does_not_cross_organization_or_environment_scope()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-SCOPED", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+        dbContext.MaintenancePlans.Add(plan);
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<KnownException>(() => new UpdateMaintenancePlanCommandHandler(dbContext).Handle(
+            new UpdateMaintenancePlanCommand("org-002", "env-prod", plan.Id, "P30D", null),
+            CancellationToken.None));
+
+        var stored = await dbContext.MaintenancePlans.SingleAsync(x => x.Id == plan.Id);
+        Assert.Equal("P7D", stored.Interval);
+        Assert.Null(stored.RuntimeHourInterval);
+    }
+
+    [Fact]
     public void Completion_validator_rejects_actual_technician_references_over_150_characters()
     {
         var result = new CompleteMaintenanceWorkOrderCommandValidator().Validate(
@@ -143,6 +212,94 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal(1, plans.Take);
         Assert.Equal(2, plans.Total);
         Assert.Single(plans.Items);
+    }
+
+    [Fact]
+    public async Task Maintenance_plan_list_projects_three_distinguishable_trigger_modes()
+    {
+        await using var dbContext = CreateDbContext();
+        // Calendar-only, runtime-only (no calendar interval), and combined.
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-CAL", "PM-CAL", "P30D", new DateOnly(2026, 6, 1), "maintenance"));
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-RUN", "PM-RUN", null, new DateOnly(2026, 6, 1), "maintenance", runtimeHourInterval: 1000m));
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-BOTH", "PM-BOTH", "P90D", new DateOnly(2026, 6, 1), "maintenance", runtimeHourInterval: 2000m));
+        await dbContext.SaveChangesAsync();
+
+        var plans = await new ListMaintenancePlansQueryHandler(dbContext).Handle(
+            new ListMaintenancePlansQuery("org-001", "env-dev", 0, 100),
+            CancellationToken.None);
+
+        var calendar = plans.Items.Single(x => x.PlanCode == "PM-CAL");
+        Assert.Equal("P30D", calendar.Interval);
+        Assert.Null(calendar.RuntimeHourInterval);
+        Assert.Null(calendar.NextDueRuntimeHours);
+        Assert.Equal(new DateOnly(2026, 6, 1), calendar.NextDueOn);
+
+        var runtime = plans.Items.Single(x => x.PlanCode == "PM-RUN");
+        Assert.Null(runtime.Interval); // runtime-only: no calendar trigger
+        Assert.Null(runtime.NextDueOn); // never calendar-due
+        Assert.Equal(1000m, runtime.RuntimeHourInterval);
+        Assert.Equal(1000m, runtime.NextDueRuntimeHours);
+
+        var both = plans.Items.Single(x => x.PlanCode == "PM-BOTH");
+        Assert.Equal("P90D", both.Interval);
+        Assert.Equal(new DateOnly(2026, 6, 1), both.NextDueOn);
+        Assert.Equal(2000m, both.RuntimeHourInterval);
+    }
+
+    [Fact]
+    public async Task Maintenance_plan_list_filters_by_device_asset_id()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-A", "PM-A", "P30D", new DateOnly(2026, 6, 1), "maintenance"));
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-B", "PM-B", "P30D", new DateOnly(2026, 6, 1), "maintenance"));
+        await dbContext.SaveChangesAsync();
+
+        var plans = await new ListMaintenancePlansQueryHandler(dbContext).Handle(
+            new ListMaintenancePlansQuery("org-001", "env-dev", 0, 100, DeviceAssetId: "DEV-B"),
+            CancellationToken.None);
+
+        Assert.Equal(1, plans.Total);
+        Assert.Equal("PM-B", Assert.Single(plans.Items).PlanCode);
+    }
+
+    [Fact]
+    public void Runtime_only_plan_has_no_calendar_due_and_never_generates_calendar_occurrences()
+    {
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-RUN", "PM-RUN", null, new DateOnly(2026, 6, 1), "maintenance", runtimeHourInterval: 1000m);
+
+        Assert.Null(plan.Interval);
+        Assert.Null(plan.NextDueOn);
+        Assert.False(plan.IsDueOn(new DateOnly(2030, 1, 1)));
+        Assert.Empty(plan.ConsumeDueDates(new DateOnly(2030, 1, 1)));
+        // Runtime trigger still works.
+        Assert.Equal([1000m], plan.ConsumeRuntimeDue(1500m));
+    }
+
+    [Fact]
+    public async Task Generate_due_does_not_open_calendar_work_order_for_runtime_only_plan_on_start_day()
+    {
+        await using var dbContext = CreateDbContext();
+        // Runtime-only plan starting today: previously the P365D calendar fallback opened a work order
+        // on the start date; a runtime-only plan must NOT produce any calendar occurrence.
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-RUN", "PM-RUN", null, new DateOnly(2026, 6, 1), "maintenance", runtimeHourInterval: 1000m));
+        await dbContext.SaveChangesAsync();
+        var handler = new GenerateDueMaintenanceWorkOrdersCommandHandler(
+            dbContext,
+            new FixedAssetRuntimeHoursProvider(new AssetRuntimeHoursResult(100m, AssetRuntimeSources.Oee, HasRuntimeSamples: true)));
+
+        var result = await handler.Handle(new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 6, 1), "system:pm"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        // 100 accumulated runtime hours < 1000 threshold -> no runtime occurrence either.
+        Assert.Equal(0, result.GeneratedCount);
+        Assert.Empty(await dbContext.MaintenanceWorkOrders.ToArrayAsync());
+    }
+
+    [Fact]
+    public void Maintenance_plan_requires_at_least_one_trigger()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            MaintenancePlan.Create("org-001", "env-dev", "DEV-X", "PM-X", null, new DateOnly(2026, 6, 1), "maintenance"));
     }
 
     [Fact]
@@ -783,6 +940,29 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal(new DateOnly(2026, 6, 29), weekly.NextDueOn);
         Assert.Equal(125m, runtime.LastGeneratedRuntimeHours);
         Assert.Equal(200m, runtime.NextDueRuntimeHours);
+    }
+
+    // Locks the intended #416 design: a combined plan's calendar line and runtime-hour line are two
+    // independent trigger cursors. When both are due in the same scan, each opens its own work order
+    // (date:* + runtime:*) — this is calendar PM + usage PM as separate occurrences, not one merged unit.
+    [Fact]
+    public async Task Generate_due_combined_plan_opens_both_calendar_and_runtime_work_orders_when_both_due()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-COMBO", "P7D", new DateOnly(2026, 6, 1), "maintenance", runtimeHourInterval: 100m));
+        await dbContext.SaveChangesAsync();
+        var handler = new GenerateDueMaintenanceWorkOrdersCommandHandler(
+            dbContext,
+            new FixedAssetRuntimeHoursProvider(new AssetRuntimeHoursResult(120m, AssetRuntimeSources.Oee, HasRuntimeSamples: true)));
+
+        await handler.Handle(new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 6, 1), "system:pm"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var workOrders = await dbContext.MaintenanceWorkOrders
+            .Where(x => x.DeviceAssetId == "DEV-CNC-01")
+            .ToArrayAsync();
+        Assert.Contains(workOrders, x => x.SourceReferenceId != null && x.SourceReferenceId.Contains("date:"));
+        Assert.Contains(workOrders, x => x.SourceReferenceId != null && x.SourceReferenceId.Contains("runtime:"));
     }
 
     [Fact]

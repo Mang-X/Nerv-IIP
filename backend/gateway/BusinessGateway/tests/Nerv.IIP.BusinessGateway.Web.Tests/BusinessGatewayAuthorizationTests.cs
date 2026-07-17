@@ -186,6 +186,29 @@ public sealed class BusinessGatewayAuthorizationTests
         Assert.Null(auth.LastRequirement.ResourceId);
     }
 
+    [Fact]
+    public async Task Maintenance_plan_update_facade_authorizes_the_route_plan_resource()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PutAsJsonAsync("/api/business-console/v1/maintenance/plans/plan-001", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            interval = "P30D",
+            runtimeHourInterval = (decimal?)null,
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Equal(BusinessGatewayPermissions.MaintenancePlansManage, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("maintenance-plan", auth.LastRequirement.ResourceType);
+        Assert.Equal("plan-001", auth.LastRequirement.ResourceId);
+    }
+
     [Theory]
     [InlineData("GET", "/api/business-console/v1/planning/forecasts?skuCode=SKU-FG-1000&siteCode=SITE-01", BusinessGatewayPermissions.PlanningDemandsRead)]
     [InlineData("POST", "/api/business-console/v1/planning/forecasts", BusinessGatewayPermissions.PlanningDemandsManage)]
@@ -891,6 +914,13 @@ public sealed class BusinessGatewayAuthorizationTests
             windowStartUtc = "2026-06-01T08:00:00Z",
             windowEndUtc = "2026-06-01T10:00:00Z",
         },
+        "/api/business-console/v1/maintenance/plans/plan-001" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            interval = "P30D",
+            runtimeHourInterval = 500m,
+        },
         "/api/business-console/v1/maintenance/inspections" => new
         {
             organizationId = "org-001",
@@ -1061,6 +1091,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/work-orders/wo-maint-001/complete", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/plans", BusinessGatewayPermissions.MaintenancePlansRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/plans", BusinessGatewayPermissions.MaintenancePlansManage);
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/maintenance/plans/plan-001", BusinessGatewayPermissions.MaintenancePlansManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/inspections", BusinessGatewayPermissions.MaintenancePlansManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/inspections", BusinessGatewayPermissions.MaintenancePlansRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/inspection-measurements/trends?deviceAssetId=DEV-OIL-01&characteristicCode=bearing-temperature&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.MaintenancePlansRead);
@@ -1137,6 +1168,11 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/schedules/run", BusinessGatewayPermissions.MesSchedulesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/production-reports", BusinessGatewayPermissions.MesReportingWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/production-reports/PR-001", BusinessGatewayPermissions.MesReportingRead);
+        // 工单可入库产出批次读面与完工入库同域：受 receipts.read 门控（非 reporting.read），入库操作员无需报工权限即可选批次。
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/work-orders/WO-001/produced-lots", BusinessGatewayPermissions.MesReceiptsRead);
+        // 质量保留权限边界（MAN-445/#799）：工单详情（含保留生命周期摘要）随 work-orders.read；逐事件时间线受 quality.read 保护。
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/work-orders/WO-001", BusinessGatewayPermissions.MesWorkOrdersRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/quality-holds/WO-001/timeline", BusinessGatewayPermissions.MesQualityRead);
         return routes;
     }
 
