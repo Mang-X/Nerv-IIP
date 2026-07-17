@@ -1139,6 +1139,9 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/production-reports/PR-001", BusinessGatewayPermissions.MesReportingRead);
         // 工单可入库产出批次读面与完工入库同域：受 receipts.read 门控（非 reporting.read），入库操作员无需报工权限即可选批次。
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/work-orders/WO-001/produced-lots", BusinessGatewayPermissions.MesReceiptsRead);
+        // 质量保留权限边界（MAN-445/#799）：工单详情（含保留生命周期摘要）随 work-orders.read；逐事件时间线受 quality.read 保护。
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/work-orders/WO-001", BusinessGatewayPermissions.MesWorkOrdersRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/quality-holds/WO-001/timeline", BusinessGatewayPermissions.MesQualityRead);
         return routes;
     }
 

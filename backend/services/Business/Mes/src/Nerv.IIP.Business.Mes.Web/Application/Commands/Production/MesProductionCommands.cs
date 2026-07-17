@@ -568,6 +568,8 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
 
         // 批次追溯完整性：单个产出批次的累计有效入库申请不得超过该批次产量（工单总量之外的更细粒度约束，
         // 防止把整张工单的完工量都登记到同一批次而破坏批次追溯）。批次存在性已由上方 AnyAsync 确认，故此 Sum 必 >0。
+        // 注：与上方工单总量校验一致，此处沿用无锁「读取—校验—插入」（低并发人工流程取舍）；工单+批次两个累计不变量的
+        // 并发串行化（事务级工单锁 / SERIALIZABLE+retry + PostgreSQL 并发测试）作为横切 follow-up 见 issue #953。
         var batchProducedQuantity = await dbContext.OutputLotGenealogies
             .Where(x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
