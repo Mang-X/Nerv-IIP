@@ -22,7 +22,8 @@ public sealed record BusinessConsoleConnectorCollectionHealthResponse(
     string? SourceSystem,
     BusinessConsoleConnectorConnectionState? Connection = null,
     string? StaleReason = null,
-    string? OfflineReason = null);
+    string? OfflineReason = null,
+    DateTimeOffset? HostLivenessDeadlineUtc = null);
 
 public sealed record BusinessConsoleConnectorCollectionHealthListRequest(
     string OrganizationId,
@@ -46,4 +47,5 @@ public sealed record BusinessConsoleConnectorCollectionHealthListItem(
     Guid? CounterEpoch,
     string? SourceSystem,
     BusinessConsoleConnectorConnectionState? Connection = null,
-    string? OfflineReason = null);
+    string? OfflineReason = null,
+    DateTimeOffset? HostLivenessDeadlineUtc = null);

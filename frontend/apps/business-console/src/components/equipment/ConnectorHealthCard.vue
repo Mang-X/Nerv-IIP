@@ -27,13 +27,14 @@ const fieldConnectionLost = computed(
 const hostOffline = computed(() => props.connector.offlineReason === 'host-liveness')
 const offline = computed(() => fieldConnectionLost.value || hostOffline.value)
 const fault = computed(() => isConnectorFault(props.connector.status, props.connector.staleReason))
-const connectionUnknown = computed(
-  () => props.connector.connection == null || props.connector.connection.status === 'unknown',
-)
+const connectionUnknown = computed(() => {
+  const status = props.connector.connection?.status
+  return status !== 'alive' && status !== 'lost'
+})
 const statusLabel = computed(() => {
   if (fieldConnectionLost.value) return '现场连接断开'
-  if (hostOffline.value) return '采集主机离线'
   if (connectionUnknown.value) return '连接状态未知'
+  if (hostOffline.value) return '采集主机离线'
   return connectorHealthStatusLabel(props.connector.status, props.connector.staleReason)
 })
 const detailId = computed(
@@ -43,6 +44,7 @@ const detailId = computed(
 const statusVariant = computed(() => {
   if (offline.value) return 'danger'
   if (fault.value) return 'warning'
+  if (connectionUnknown.value) return 'neutral'
   if (props.connector.status === 'current') return 'success'
   return 'neutral'
 })
@@ -75,13 +77,11 @@ function formatDurationSince(value?: string | null) {
 
 const offlineDuration = computed(() => {
   if (fieldConnectionLost.value) {
-    const connection = props.connector.connection
-    return `现场断开约 ${formatDurationSince(
-      connection?.disconnectedSinceUtc ?? connection?.observedAtUtc,
-    )}`
+    const disconnectedSinceUtc = props.connector.connection?.disconnectedSinceUtc
+    return disconnectedSinceUtc ? `现场断开约 ${formatDurationSince(disconnectedSinceUtc)}` : null
   }
   if (hostOffline.value) {
-    return `主机离线约 ${formatDurationSince(props.connector.lastHeartbeatAtUtc)}`
+    return `主机离线约 ${formatDurationSince(props.connector.hostLivenessDeadlineUtc)}`
   }
   return null
 })

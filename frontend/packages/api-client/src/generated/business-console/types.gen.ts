@@ -526,6 +526,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     connection?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorConnectionState | null;
     staleReason?: string | null;
     offlineReason?: string | null;
+    hostLivenessDeadlineUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorConnectionState = {
@@ -565,6 +566,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     sourceSystem?: string | null;
     connection?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorConnectionState | null;
     offlineReason?: string | null;
+    hostLivenessDeadlineUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthListRequest = {

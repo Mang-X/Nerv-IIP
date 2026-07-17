@@ -93,7 +93,8 @@ public sealed record ConnectorCollectionHealthResponse(
     string? SourceSystem,
     ConnectorConnectionState? Connection = null,
     string? StaleReason = null,
-    string? OfflineReason = null);
+    string? OfflineReason = null,
+    DateTimeOffset? HostLivenessDeadlineUtc = null);
 
 /// <summary>
 /// One connector-host instance's collection health, self-sufficient for a status wall card:
@@ -130,7 +131,8 @@ public sealed record ConnectorCollectionHealthListItem(
     Guid? CounterEpoch,
     string? SourceSystem,
     ConnectorConnectionState? Connection = null,
-    string? OfflineReason = null);
+    string? OfflineReason = null,
+    DateTimeOffset? HostLivenessDeadlineUtc = null);
 
 public sealed record ConnectorCollectionHealthListResponse(
     IReadOnlyList<ConnectorCollectionHealthListItem> Items,

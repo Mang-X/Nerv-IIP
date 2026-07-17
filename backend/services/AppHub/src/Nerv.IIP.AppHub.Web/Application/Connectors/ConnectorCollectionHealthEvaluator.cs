@@ -85,7 +85,8 @@ public sealed class ConnectorCollectionHealthEvaluator(IOptions<ConnectorCollect
             health?.SourceSystem,
             ToConnection(health),
             staleReason,
-            offlineReason);
+            offlineReason,
+            HostLivenessDeadline(instance.Heartbeat));
     }
 
     public ConnectorCollectionHealthListItem ToListItem(ApplicationInstance instance, DateTimeOffset now)
@@ -111,8 +112,12 @@ public sealed class ConnectorCollectionHealthEvaluator(IOptions<ConnectorCollect
             health?.CounterEpoch,
             health?.SourceSystem,
             ToConnection(health),
-            offlineReason);
+            offlineReason,
+            HostLivenessDeadline(instance.Heartbeat));
     }
+
+    private DateTimeOffset? HostLivenessDeadline(InstanceHeartbeat? heartbeat)
+        => heartbeat?.LastHeartbeatAtUtc.Add(hostLivenessTimeout);
 
     private static ConnectorConnectionState? ToConnection(ConnectorCollectionHealthProjection? health)
     {

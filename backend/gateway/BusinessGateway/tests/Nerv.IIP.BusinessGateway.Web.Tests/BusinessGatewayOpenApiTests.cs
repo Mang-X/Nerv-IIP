@@ -755,13 +755,15 @@ public sealed class BusinessGatewayOpenApiTests
             "BusinessConsoleConnectorCollectionHealthResponse",
             "connection",
             "staleReason",
-            "offlineReason");
+            "offlineReason",
+            "hostLivenessDeadlineUtc");
         AssertSchemaProperties(
             document,
             "BusinessConsoleConnectorCollectionHealthListItem",
             "connection",
             "staleReason",
-            "offlineReason");
+            "offlineReason",
+            "hostLivenessDeadlineUtc");
         AssertSchemaProperties(
             document,
             "BusinessConsoleConnectorConnectionState",

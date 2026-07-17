@@ -25049,6 +25049,11 @@
           "offlineReason": {
             "type": "string",
             "nullable": true
+          },
+          "hostLivenessDeadlineUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -25190,6 +25195,11 @@
           },
           "offlineReason": {
             "type": "string",
+            "nullable": true
+          },
+          "hostLivenessDeadlineUtc": {
+            "type": "string",
+            "format": "date-time",
             "nullable": true
           }
         }

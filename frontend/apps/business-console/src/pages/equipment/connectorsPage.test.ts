@@ -1,8 +1,9 @@
 import { mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import { computeConnectorSampleRate } from '@/composables/useBusinessTelemetry'
+import ConnectorHealthCard from '@/components/equipment/ConnectorHealthCard.vue'
 import ConnectorsPage from './telemetry/connectors.vue'
 
 const connectorMocks = vi.hoisted(() => ({
@@ -14,7 +15,7 @@ const connectorMocks = vi.hoisted(() => ({
       connectorName: 'Modbus Main',
       status: 'stale',
       staleReason: 'offline',
-      offlineReason: 'field-connection',
+      offlineReason: 'host-liveness',
       connection: {
         status: 'lost',
         observedAtUtc: '2026-07-13T01:00:00.000Z',
@@ -28,6 +29,7 @@ const connectorMocks = vi.hoisted(() => ({
       errorCount: 2,
       counterEpoch: '22222222-2222-2222-2222-222222222222',
       lastHeartbeatAtUtc: '2026-07-13T01:00:00.000Z',
+      hostLivenessDeadlineUtc: '2026-07-13T01:00:06.000Z',
       metricsReportedAtUtc: '2026-07-13T01:01:00.000Z',
       lastSampleAtUtc: '2026-07-13T01:00:58.000Z',
     },
@@ -108,6 +110,7 @@ const connectorMocks = vi.hoisted(() => ({
       errorCount: 0,
       counterEpoch: '88888888-8888-8888-8888-888888888888',
       lastHeartbeatAtUtc: '2026-07-13T01:00:00.000Z',
+      hostLivenessDeadlineUtc: '2026-07-13T01:04:00.000Z',
       metricsReportedAtUtc: '2026-07-13T01:00:01.000Z',
       lastSampleAtUtc: '2026-07-13T01:00:00.000Z',
     },
@@ -126,6 +129,42 @@ const connectorMocks = vi.hoisted(() => ({
       lastHeartbeatAtUtc: '2026-07-13T01:09:45.000Z',
       metricsReportedAtUtc: '2026-07-13T01:09:46.000Z',
       lastSampleAtUtc: '2026-07-13T01:09:44.000Z',
+    },
+    {
+      connectorId: 'unknown-main',
+      connectorName: 'Unknown Main',
+      status: 'current',
+      staleReason: null,
+      offlineReason: null,
+      connection: {
+        status: 'unknown',
+        observedAtUtc: '2026-07-13T01:09:45.000Z',
+      },
+      sourceSystem: 'opcua',
+      receivedCount: 1,
+      droppedCount: 0,
+      errorCount: 0,
+      lastHeartbeatAtUtc: '2026-07-13T01:09:45.000Z',
+      metricsReportedAtUtc: null,
+      lastSampleAtUtc: null,
+    },
+    {
+      connectorId: 'future-main',
+      connectorName: 'Future Main',
+      status: 'current',
+      staleReason: null,
+      offlineReason: null,
+      connection: {
+        status: 'recovering',
+        observedAtUtc: '2026-07-13T01:09:45.000Z',
+      },
+      sourceSystem: 'opcua',
+      receivedCount: 1,
+      droppedCount: 0,
+      errorCount: 0,
+      lastHeartbeatAtUtc: '2026-07-13T01:09:45.000Z',
+      metricsReportedAtUtc: null,
+      lastSampleAtUtc: null,
     },
   ],
 }))
@@ -173,8 +212,14 @@ const stubs = {
 
 describe('equipment telemetry connectors page', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-13T01:10:00.000Z'))
     notifyMock.notifyError.mockClear()
     setError(undefined)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('renders connector name, protocol type, throughput rate, and derived status', () => {
@@ -194,14 +239,39 @@ describe('equipment telemetry connectors page', () => {
 
     expect(text).toContain('现场连接断开')
     expect(text).toContain('采集主机离线')
-    expect(text).toContain('连接状态未知')
+    expect(text.match(/连接状态未知/g)).toHaveLength(3)
     expect(text).toContain('异常停止')
-    expect(text).toContain('现场断开约')
-    expect(text).toContain('主机离线约')
+    expect(text).toContain('现场断开约 10 分钟')
+    expect(text).toContain('主机离线约 6 分钟')
     expect(text).toContain('连接器上报异常停止')
     expect(text).not.toContain('field-connection')
     expect(text).not.toContain('host-liveness')
     expect(text).not.toContain('connection-lost')
+  })
+
+  it('does not infer a field disconnect duration from the observation time', () => {
+    const wrapper = mount(ConnectorHealthCard, {
+      props: {
+        connector: {
+          connectorId: 'missing-transition-time',
+          connectorName: 'Missing Transition Time',
+          status: 'stale',
+          staleReason: 'offline',
+          offlineReason: 'field-connection',
+          connection: {
+            status: 'lost',
+            observedAtUtc: '2026-07-13T01:00:00.000Z',
+            disconnectedSinceUtc: null,
+          },
+        },
+        sampleRate: null,
+        expanded: false,
+      },
+      global: { stubs },
+    })
+
+    expect(wrapper.text()).toContain('现场连接断开')
+    expect(wrapper.text()).not.toContain('现场断开约')
   })
 
   it('summarizes online / offline / fault connectors separately', () => {

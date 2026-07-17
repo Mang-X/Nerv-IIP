@@ -43,6 +43,7 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         Assert.Equal(now.AddSeconds(-2), response.Connection?.DisconnectedSinceUtc);
         Assert.Equal("offline", response.StaleReason);
         Assert.Equal("field-connection", response.OfflineReason);
+        Assert.Equal(now.AddSeconds(5), response.HostLivenessDeadlineUtc);
     }
 
     [Fact]
@@ -65,6 +66,7 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         Assert.Equal(("stale", "offline", "field-connection"), result);
         Assert.Equal("lost", item.Connection?.Status);
         Assert.Equal("field-connection", item.OfflineReason);
+        Assert.Equal(now, item.HostLivenessDeadlineUtc);
     }
 
     [Fact]
@@ -124,6 +126,7 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         Assert.Equal("offline", response.StaleReason);
         Assert.Equal("host-liveness", response.OfflineReason);
         Assert.Null(response.Connection);
+        Assert.Equal(now, response.HostLivenessDeadlineUtc);
     }
 
     [Fact]
@@ -200,6 +203,7 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         Assert.Equal("unknown", body.Status);
         Assert.Null(body.LastHeartbeatAtUtc);
         Assert.Null(body.ReceivedCount);
+        Assert.Null(body.HostLivenessDeadlineUtc);
     }
 
     [Fact]
@@ -236,6 +240,7 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         Assert.Equal(2, body.DroppedCount);
         Assert.Equal(1, body.ErrorCount);
         Assert.Equal("opcua", body.SourceSystem);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:00:06Z"), body.HostLivenessDeadlineUtc);
     }
 
     [Fact]
@@ -363,6 +368,7 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         Assert.Equal("offline", first.StaleReason);
         // Heartbeat is frozen at the last received beat, so a "disconnected for" duration derived from it grows monotonically.
         Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:00:00Z"), first.LastHeartbeatAtUtc);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:00:06Z"), first.HostLivenessDeadlineUtc);
 
         var second = body.Items[1];
         Assert.Equal("mqtt-main", second.ConnectorId);

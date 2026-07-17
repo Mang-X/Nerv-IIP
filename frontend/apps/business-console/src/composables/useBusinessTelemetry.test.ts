@@ -141,6 +141,7 @@ describe('business telemetry composables', () => {
             status: 'stale',
             staleReason: 'offline',
             offlineReason: 'field-connection',
+            hostLivenessDeadlineUtc: '2026-07-13T01:00:06.000Z',
             connection: {
               status: 'lost',
               observedAtUtc: '2026-07-13T01:00:00.000Z',
@@ -165,6 +166,7 @@ describe('business telemetry composables', () => {
     ).toBe(10_000)
     expect(result.connectors.value[0]).toMatchObject({
       offlineReason: 'field-connection',
+      hostLivenessDeadlineUtc: '2026-07-13T01:00:06.000Z',
       connection: {
         status: 'lost',
         disconnectedSinceUtc: '2026-07-13T01:00:00.000Z',
