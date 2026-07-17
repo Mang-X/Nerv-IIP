@@ -1251,8 +1251,13 @@
       "method": "GET",
       "route": "/api/business/v1/iiot/connectors/{collectionConnectorId}/tag-coverage",
       "operationId": "getBusinessIiotConnectorTagCoverage",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade is delivered by #947 / PR #952 Task 9 as getBusinessConsoleTelemetryConnectorTagCoverage; Task 9 must flip this row to exposed."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleTelemetryConnectorTagCoverage"
+      ]
     },
     {
       "service": "IndustrialTelemetry",

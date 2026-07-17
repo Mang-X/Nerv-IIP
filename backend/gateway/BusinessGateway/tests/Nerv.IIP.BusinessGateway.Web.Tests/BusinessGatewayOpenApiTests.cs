@@ -154,6 +154,8 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/telemetry/connectors/{connectorId}/collection-health", "get", "queryBusinessConsoleTelemetryConnectorCollectionHealth");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/connectors/collection-health", "get", "listBusinessConsoleTelemetryConnectorCollectionHealth");
         AssertConnectorCollectionHealthFields(document);
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/connectors/{connectorId}/tag-coverage", "get", "getBusinessConsoleTelemetryConnectorTagCoverage");
+        AssertConnectorTagCoverageFields(document);
         AssertOperationId(paths, "/api/business-console/v1/telemetry/tags/current-value", "get", "getBusinessConsoleTelemetryTagCurrentValue");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarm-rules", "get", "listBusinessConsoleTelemetryAlarmRules");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarm-rules", "post", "createOrUpdateBusinessConsoleTelemetryAlarmRule");
@@ -773,6 +775,35 @@ public sealed class BusinessGatewayOpenApiTests
             "disconnectedSinceUtc",
             "reasonCategory",
             "diagnosticCode");
+    }
+
+    private static void AssertConnectorTagCoverageFields(JsonDocument document)
+    {
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleConnectorTagCoverageResponse",
+            "collectionConnectorId",
+            "manifestStatus",
+            "manifestRevision",
+            "manifestObservedAtUtc",
+            "configuredCount",
+            "enabledCount",
+            "activeCount",
+            "everSampledCount",
+            "errorCount",
+            "items");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleConnectorTagCoverageItem",
+            "deviceAssetId",
+            "tagKey",
+            "enabled",
+            "activationStatus",
+            "activationObservedAtUtc",
+            "activationErrorCode",
+            "activationErrorMessage",
+            "firstSampleAtUtc",
+            "lastSampleAtUtc");
     }
 
     private static void AssertSchemaProperties(JsonDocument document, string schemaNameSuffix, params string[] propertyNames)

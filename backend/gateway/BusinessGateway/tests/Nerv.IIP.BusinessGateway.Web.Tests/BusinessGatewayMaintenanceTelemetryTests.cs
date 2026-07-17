@@ -1174,6 +1174,25 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
     public BusinessConsoleTelemetryHistoryRequest? LastHistoryRequest { get; private set; }
     public BusinessConsoleTelemetryRuntimeHoursRequest? LastRuntimeHoursRequest { get; private set; }
 
+    public Task<BusinessConsoleConnectorTagCoverageResponse> GetConnectorTagCoverageAsync(
+        string internalBearerToken,
+        BusinessConsoleConnectorTagCoverageRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleConnectorTagCoverageResponse(
+            request.ConnectorId,
+            "unavailable",
+            null,
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            []));
+    }
+
     public Task<BusinessConsoleTelemetryRuntimeHoursResponse> QueryRuntimeHoursAsync(string internalBearerToken, BusinessConsoleTelemetryRuntimeHoursRequest request, CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
