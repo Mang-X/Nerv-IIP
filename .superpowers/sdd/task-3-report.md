@@ -29,3 +29,19 @@
 ## Commit
 
 `feat(business-gateway): expose maintenance plan updates`
+
+## Review follow-up
+
+- Added full facade-to-downstream HTTP assertions for both trigger shapes:
+  - `interval: null` with `runtimeHourInterval: 500`.
+  - `interval: "P30D"` with `runtimeHourInterval: null`.
+- Added an authorization assertion that the PUT route checks `ResourceType=maintenance-plan` and `ResourceId=plan-001`.
+- Mutation RED command:
+  - `dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj --no-restore --filter "FullyQualifiedName~Maintenance_plan_update_facade_preserves_explicit_null_triggers_in_downstream_json|FullyQualifiedName~Maintenance_plan_update_facade_authorizes_the_route_plan_resource"`
+  - With temporary local regressions that omitted null JSON properties and cleared route resource metadata, the new tests failed `2/2` for the intended reasons. The production mutations were then fully reverted.
+- GREEN evidence:
+  - The same focused command passed `2/2` against the committed production implementation.
+  - `dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj --no-restore --filter "FullyQualifiedName~BusinessGatewayMaintenanceTelemetryTests"` passed `25/25`.
+  - `git diff --check` passed.
+- Production conclusion: no production bug was found; the existing client preserves explicit nulls and the endpoint already supplies the correct resource metadata.
+- Fix commit: `efa02c6 test(business-gateway): cover maintenance plan update forwarding`.
