@@ -104,13 +104,13 @@ public sealed class MqttConnector(
         IReadOnlyList<ConnectorTarget> targets =
         [
             new(
-                $"mqtt-{options.ConnectorId}",
+                options.EffectiveCollectionConnectorId,
                 $"MQTT {options.ConnectorId}",
                 "mqtt",
                 "mqtt-collector",
                 "MQTT Collector",
                 "1.0",
-                $"mqtt-{options.ConnectorId}",
+                options.EffectiveCollectionConnectorId,
                 $"MQTT {options.Broker}",
                 state.ReportedStatus,
                 state.HealthStatus,
@@ -127,7 +127,7 @@ public sealed class MqttConnector(
     private ConnectorCollectionHealthSnapshot CreateCollectionHealth(MqttConnectorState state)
     {
         var known = state.ReceivedSamples > 0 || state.DroppedSamples > 0 || state.ErrorCount > 0 || state.LastSampleAtUtc is not null;
-        return new($"mqtt-{options.ConnectorId}", "mqtt", _counterEpoch,
+        return new(options.EffectiveCollectionConnectorId, "mqtt", _counterEpoch,
             known ? state.ReceivedSamples : null, known ? state.DroppedSamples : null, known ? state.ErrorCount : null, state.LastSampleAtUtc);
     }
 

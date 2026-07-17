@@ -5,6 +5,17 @@ namespace Nerv.IIP.ConnectorHost.Connectors.OpcUa.Tests;
 public sealed class OpcUaTelemetryCollectorTests
 {
     [Fact]
+    public async Task Discover_uses_configured_collection_connector_id_for_instance_and_health()
+    {
+        var connector = CreateConnector(new FakeOpcUaClient([], []), new RecordingIndustrialTelemetrySamplesClient(), collectionConnectorId: "line-a-primary");
+
+        var target = Assert.Single(await connector.DiscoverAsync(CancellationToken.None));
+
+        Assert.Equal("line-a-primary", target.InstanceKey);
+        Assert.Equal("line-a-primary", target.CollectionHealth!.ConnectorId);
+    }
+
+    [Fact]
     public async Task Run_cycle_browses_nodes_subscribes_tags_and_posts_bucketed_sample_with_idempotency_fields()
     {
         var opcUa = new FakeOpcUaClient(
@@ -285,7 +296,8 @@ public sealed class OpcUaTelemetryCollectorTests
     private static OpcUaConnector CreateConnector(
         IOpcUaClient opcUa,
         IIndustrialTelemetrySamplesClient samples,
-        Func<DateTimeOffset>? utcNow = null)
+        Func<DateTimeOffset>? utcNow = null,
+        string? collectionConnectorId = null)
     {
         return new OpcUaConnector(
             new OpcUaConnectorOptions(
@@ -306,7 +318,8 @@ public sealed class OpcUaTelemetryCollectorTests
                         NodeId: "ns=2;s=Line1.Temperature",
                         SamplingIntervalMilliseconds: 1000,
                         BucketSeconds: 60)
-                ]),
+                ],
+                CollectionConnectorId: collectionConnectorId),
             opcUa,
             samples,
             utcNow ?? (() => new DateTimeOffset(2026, 7, 3, 0, 1, 1, TimeSpan.Zero)));

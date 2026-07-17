@@ -70,7 +70,16 @@ public sealed record ConnectorCollectionHealth(
     long? ReceivedCount,
     long? DroppedCount,
     long? ErrorCount,
-    DateTimeOffset? LastSampleAtUtc);
+    DateTimeOffset? LastSampleAtUtc,
+    ConnectorConnectionState? Connection = null);
+
+public sealed record ConnectorConnectionState(
+    string Status,
+    DateTimeOffset ObservedAtUtc,
+    DateTimeOffset? ConnectedSinceUtc = null,
+    DateTimeOffset? DisconnectedSinceUtc = null,
+    string? ReasonCategory = null,
+    string? DiagnosticCode = null);
 
 public sealed record ConnectorCollectionHealthResponse(
     string ConnectorId,

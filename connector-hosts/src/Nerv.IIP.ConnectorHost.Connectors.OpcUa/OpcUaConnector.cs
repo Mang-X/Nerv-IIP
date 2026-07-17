@@ -86,13 +86,13 @@ public sealed class OpcUaConnector(
         IReadOnlyList<ConnectorTarget> targets =
         [
             new(
-                $"opcua-{options.ConnectorId}",
+                options.EffectiveCollectionConnectorId,
                 $"OPC UA {options.ConnectorId}",
                 "opcua",
                 "opcua-collector",
                 "OPC UA Collector",
                 "1.0",
-                $"opcua-{options.ConnectorId}",
+                options.EffectiveCollectionConnectorId,
                 $"OPC UA {options.EndpointUrl}",
                 state.ReportedStatus,
                 state.HealthStatus,
@@ -109,7 +109,7 @@ public sealed class OpcUaConnector(
     private ConnectorCollectionHealthSnapshot CreateCollectionHealth(OpcUaConnectorState state)
     {
         var known = state.ReceivedSamples > 0 || state.DroppedSamples > 0 || state.ErrorCount > 0 || state.LastSampleAtUtc is not null;
-        return new($"opcua-{options.ConnectorId}", "opcua", _counterEpoch,
+        return new(options.EffectiveCollectionConnectorId, "opcua", _counterEpoch,
             known ? state.ReceivedSamples : null, known ? state.DroppedSamples : null, known ? state.ErrorCount : null, state.LastSampleAtUtc);
     }
 

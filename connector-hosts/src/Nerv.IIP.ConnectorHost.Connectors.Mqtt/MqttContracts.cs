@@ -11,7 +11,11 @@ public sealed record MqttConnectorOptions(
     string ClientId,
     string? CredentialReference,
     IReadOnlyList<MqttTopicMapping> TopicMappings,
-    int MaxReconnectAttempts = 1);
+    int MaxReconnectAttempts = 1,
+    string? CollectionConnectorId = null)
+{
+    public string EffectiveCollectionConnectorId => CollectionConnectorId ?? $"mqtt-{ConnectorId}";
+}
 
 public sealed record MqttConnectionOptions(
     string Broker,

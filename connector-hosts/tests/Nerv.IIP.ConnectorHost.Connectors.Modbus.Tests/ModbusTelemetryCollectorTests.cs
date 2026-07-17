@@ -6,6 +6,27 @@ namespace Nerv.IIP.ConnectorHost.Connectors.Modbus.Tests;
 public sealed class ModbusTelemetryCollectorTests
 {
     [Fact]
+    public async Task Discover_uses_configured_collection_connector_id_for_instance_and_health()
+    {
+        var connector = CreateConnector(new FakeModbusTcpClient(), new RecordingIndustrialTelemetrySamplesClient(), collectionConnectorId: "line-a-primary");
+
+        var target = Assert.Single(await connector.DiscoverAsync(CancellationToken.None));
+
+        Assert.Equal("line-a-primary", target.InstanceKey);
+        Assert.Equal("line-a-primary", target.CollectionHealth!.ConnectorId);
+    }
+
+    [Fact]
+    public async Task Missing_collection_connector_id_preserves_legacy_derived_identity()
+    {
+        var connector = CreateConnector(new FakeModbusTcpClient(), new RecordingIndustrialTelemetrySamplesClient());
+
+        var target = Assert.Single(await connector.DiscoverAsync(CancellationToken.None));
+
+        Assert.Equal("modbus-modbus-line-1", target.InstanceKey);
+    }
+
+    [Fact]
     public async Task Run_cycle_polls_configured_registers_and_posts_bucketed_sample_with_stable_source_sequence()
     {
         var now = new DateTimeOffset(2026, 7, 5, 8, 1, 1, TimeSpan.Zero);
@@ -125,7 +146,8 @@ public sealed class ModbusTelemetryCollectorTests
     private static ModbusConnector CreateConnector(
         IModbusTcpClient modbus,
         IIndustrialTelemetrySamplesClient samples,
-        Func<DateTimeOffset>? utcNow = null)
+        Func<DateTimeOffset>? utcNow = null,
+        string? collectionConnectorId = null)
     {
         return new ModbusConnector(
             new ModbusConnectorOptions(
@@ -147,7 +169,8 @@ public sealed class ModbusTelemetryCollectorTests
                         Scale: 1m,
                         Offset: 0m,
                         BucketSeconds: 60)
-                ]),
+                ],
+                CollectionConnectorId: collectionConnectorId),
             modbus,
             samples,
             utcNow ?? (() => new DateTimeOffset(2026, 7, 5, 8, 1, 1, TimeSpan.Zero)));

@@ -6,6 +6,17 @@ namespace Nerv.IIP.ConnectorHost.Connectors.Mqtt.Tests;
 public sealed class MqttTelemetryCollectorTests
 {
     [Fact]
+    public async Task Discover_uses_configured_collection_connector_id_for_instance_and_health()
+    {
+        var connector = CreateConnector(new FakeMqttSubscriptionClient(), new RecordingIndustrialTelemetrySamplesClient(), collectionConnectorId: "line-a-primary");
+
+        var target = Assert.Single(await connector.DiscoverAsync(CancellationToken.None));
+
+        Assert.Equal("line-a-primary", target.InstanceKey);
+        Assert.Equal("line-a-primary", target.CollectionHealth!.ConnectorId);
+    }
+
+    [Fact]
     public async Task One_inbound_message_is_received_once_even_when_multiple_mappings_accept_it()
     {
         var message = new MqttInboundMessage("factory/line-1/temperature", """{"temperature":10}""", new DateTimeOffset(2026, 7, 5, 9, 0, 10, TimeSpan.Zero));
@@ -117,7 +128,8 @@ public sealed class MqttTelemetryCollectorTests
     private static MqttConnector CreateConnector(
         IMqttSubscriptionClient mqtt,
         IIndustrialTelemetrySamplesClient samples,
-        Func<DateTimeOffset>? utcNow = null)
+        Func<DateTimeOffset>? utcNow = null,
+        string? collectionConnectorId = null)
     {
         return new MqttConnector(
             new MqttConnectorOptions(
@@ -136,7 +148,8 @@ public sealed class MqttTelemetryCollectorTests
                         TopicFilter: "factory/line-1/temperature",
                         ValueJsonPath: "$.temperature",
                         BucketSeconds: 60)
-                ]),
+                ],
+                CollectionConnectorId: collectionConnectorId),
             mqtt,
             samples,
             utcNow ?? (() => new DateTimeOffset(2026, 7, 5, 9, 1, 1, TimeSpan.Zero)));

@@ -73,7 +73,14 @@ public sealed class ConnectorReportingLoop(
             target.CollectionHealth.ReceivedCount,
             target.CollectionHealth.DroppedCount,
             target.CollectionHealth.ErrorCount,
-            target.CollectionHealth.LastSampleAtUtc);
+            target.CollectionHealth.LastSampleAtUtc,
+            target.CollectionHealth.Connection is null ? null : new ConnectorConnectionState(
+                target.CollectionHealth.Connection.Status,
+                target.CollectionHealth.Connection.ObservedAtUtc,
+                target.CollectionHealth.Connection.ConnectedSinceUtc,
+                target.CollectionHealth.Connection.DisconnectedSinceUtc,
+                target.CollectionHealth.Connection.ReasonCategory,
+                target.CollectionHealth.Connection.DiagnosticCode));
         return new InstanceStateSnapshot(context, target.InstanceKey, reportedAtUtc, target.ReportedStatus, target.HealthStatus, $"{target.InstanceName} is {target.ReportedStatus}", new Dictionary<string, string>(), new Dictionary<string, decimal>(), target.Metadata, health);
     }
 }

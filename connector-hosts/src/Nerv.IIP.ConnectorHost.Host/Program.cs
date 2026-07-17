@@ -127,7 +127,8 @@ static OpcUaConnectorOptions CreateOpcUaOptions(IConfiguration configuration)
         configuration["OpcUa:BrowseRootNodeId"] ?? "ns=0;i=85",
         tags,
         configuration.GetValue("OpcUa:MaxReconnectAttempts", 1),
-        configuration.GetValue("OpcUa:AutoAcceptUntrustedServerCertificates", false));
+        configuration.GetValue("OpcUa:AutoAcceptUntrustedServerCertificates", false),
+        configuration["OpcUa:CollectionConnectorId"]);
 }
 
 static ModbusConnectorOptions CreateModbusOptions(IConfiguration configuration)
@@ -156,7 +157,8 @@ static ModbusConnectorOptions CreateModbusOptions(IConfiguration configuration)
         Required(configuration, "Modbus:Endpoint"),
         configuration["Modbus:CredentialReference"],
         registers,
-        configuration.GetValue("Modbus:MaxReconnectAttempts", 1));
+        configuration.GetValue("Modbus:MaxReconnectAttempts", 1),
+        configuration["Modbus:CollectionConnectorId"]);
 }
 
 static MqttConnectorOptions CreateMqttOptions(IConfiguration configuration)
@@ -180,7 +182,8 @@ static MqttConnectorOptions CreateMqttOptions(IConfiguration configuration)
         Required(configuration, "Mqtt:ClientId"),
         configuration["Mqtt:CredentialReference"],
         mappings,
-        configuration.GetValue("Mqtt:MaxReconnectAttempts", 1));
+        configuration.GetValue("Mqtt:MaxReconnectAttempts", 1),
+        configuration["Mqtt:CollectionConnectorId"]);
 }
 
 static string Required(IConfiguration configuration, string key)

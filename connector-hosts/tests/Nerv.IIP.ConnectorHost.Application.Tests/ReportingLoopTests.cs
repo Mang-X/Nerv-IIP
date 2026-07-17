@@ -8,6 +8,35 @@ namespace Nerv.IIP.ConnectorHost.Application.Tests;
 public sealed class ReportingLoopTests
 {
     [Fact]
+    public async Task Configured_collection_connector_id_is_identical_in_registration_and_collection_health()
+    {
+        var target = new ConnectorTarget("node", "node", "opcua", "collector", "Collector", "1", "line-a-primary", "OPC", "running", "healthy", [], new Dictionary<string, string>(),
+            new ConnectorCollectionHealthSnapshot("line-a-primary", "opcua", Guid.CreateVersion7(), 0, 0, 0, null));
+        var client = new RecordingConnectorProtocolClient();
+        var loop = new ConnectorReportingLoop([new StaticConnector(target)], client, ConnectorHostRuntimeContext.DefaultLocal);
+
+        await loop.RunCycleAsync(CancellationToken.None);
+
+        Assert.Equal("line-a-primary", client.Registrations.Single().InstanceKey);
+        Assert.Equal("line-a-primary", client.StateSnapshots.Single().CollectionHealth!.ConnectorId);
+    }
+
+    [Fact]
+    public async Task Reports_optional_connection_state_without_changing_legacy_payload()
+    {
+        var observed = DateTimeOffset.Parse("2026-07-17T00:00:00Z");
+        var target = new ConnectorTarget("node", "node", "opcua", "collector", "Collector", "1", "line-a-primary", "OPC", "running", "healthy", [], new Dictionary<string, string>(),
+            new ConnectorCollectionHealthSnapshot("line-a-primary", "opcua", Guid.CreateVersion7(), 0, 0, 0, null,
+                new ConnectorConnectionStateSnapshot("lost", observed, null, observed, "transport", "socket-closed")));
+        var client = new RecordingConnectorProtocolClient();
+        var loop = new ConnectorReportingLoop([new StaticConnector(target)], client, ConnectorHostRuntimeContext.DefaultLocal);
+
+        await loop.RunCycleAsync(CancellationToken.None);
+
+        Assert.Equal("lost", client.StateSnapshots.Single().CollectionHealth!.Connection!.Status);
+    }
+
+    [Fact]
     public async Task Reports_typed_collection_health_without_mapping_bucket_or_reconnect_metrics()
     {
         var epoch = Guid.Parse("11111111-1111-1111-1111-111111111111");
@@ -69,11 +98,13 @@ public sealed class ReportingLoopTests
         private bool _failed;
         public bool FailFirstRegistration { get; init; }
         public List<string> Calls { get; } = [];
+        public List<ApplicationRegistration> Registrations { get; } = [];
         public List<InstanceStateSnapshot> StateSnapshots { get; } = [];
 
         public Task<ApplicationRegistrationResult> SendRegistrationAsync(ApplicationRegistration registration, CancellationToken cancellationToken = default)
         {
             Calls.Add($"registration:{registration.InstanceKey}");
+            Registrations.Add(registration);
             if (FailFirstRegistration && !_failed)
             {
                 _failed = true;

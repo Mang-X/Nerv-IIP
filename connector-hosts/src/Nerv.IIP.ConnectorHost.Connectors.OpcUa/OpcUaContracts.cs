@@ -14,7 +14,11 @@ public sealed record OpcUaConnectorOptions(
     string BrowseRootNodeId,
     IReadOnlyList<OpcUaTagSubscription> Tags,
     int MaxReconnectAttempts = 1,
-    bool AutoAcceptUntrustedServerCertificates = false);
+    bool AutoAcceptUntrustedServerCertificates = false,
+    string? CollectionConnectorId = null)
+{
+    public string EffectiveCollectionConnectorId => CollectionConnectorId ?? $"opcua-{ConnectorId}";
+}
 
 public sealed record OpcUaConnectionOptions(
     string EndpointUrl,

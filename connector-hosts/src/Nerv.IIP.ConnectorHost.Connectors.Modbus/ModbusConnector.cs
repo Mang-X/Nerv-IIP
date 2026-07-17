@@ -112,13 +112,13 @@ public sealed class ModbusConnector(
         IReadOnlyList<ConnectorTarget> targets =
         [
             new(
-                $"modbus-{options.ConnectorId}",
+                options.EffectiveCollectionConnectorId,
                 $"Modbus TCP {options.ConnectorId}",
                 "modbus-tcp",
                 "modbus-collector",
                 "Modbus TCP Collector",
                 "1.0",
-                $"modbus-{options.ConnectorId}",
+                options.EffectiveCollectionConnectorId,
                 $"Modbus TCP {options.Endpoint}",
                 state.ReportedStatus,
                 state.HealthStatus,
@@ -135,7 +135,7 @@ public sealed class ModbusConnector(
     private ConnectorCollectionHealthSnapshot CreateCollectionHealth(ModbusConnectorState state)
     {
         var known = state.ReceivedSamples > 0 || state.DroppedSamples > 0 || state.ErrorCount > 0 || state.LastSampleAtUtc is not null;
-        return new($"modbus-{options.ConnectorId}", "modbus", _counterEpoch,
+        return new(options.EffectiveCollectionConnectorId, "modbus", _counterEpoch,
             known ? state.ReceivedSamples : null, known ? state.DroppedSamples : null, known ? state.ErrorCount : null, state.LastSampleAtUtc);
     }
 

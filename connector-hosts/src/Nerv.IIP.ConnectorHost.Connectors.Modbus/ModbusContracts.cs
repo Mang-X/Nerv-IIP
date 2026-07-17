@@ -10,7 +10,11 @@ public sealed record ModbusConnectorOptions(
     string Endpoint,
     string? CredentialReference,
     IReadOnlyList<ModbusRegisterMapping> Registers,
-    int MaxReconnectAttempts = 1);
+    int MaxReconnectAttempts = 1,
+    string? CollectionConnectorId = null)
+{
+    public string EffectiveCollectionConnectorId => CollectionConnectorId ?? $"modbus-{ConnectorId}";
+}
 
 public sealed record ModbusConnectionOptions(string Endpoint, string? CredentialReference);
 

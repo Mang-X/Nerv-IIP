@@ -17,7 +17,16 @@ public sealed record ConnectorCollectionHealthSnapshot(
     long? ReceivedCount,
     long? DroppedCount,
     long? ErrorCount,
-    DateTimeOffset? LastSampleAtUtc);
+    DateTimeOffset? LastSampleAtUtc,
+    ConnectorConnectionStateSnapshot? Connection = null);
+
+public sealed record ConnectorConnectionStateSnapshot(
+    string Status,
+    DateTimeOffset ObservedAtUtc,
+    DateTimeOffset? ConnectedSinceUtc = null,
+    DateTimeOffset? DisconnectedSinceUtc = null,
+    string? ReasonCategory = null,
+    string? DiagnosticCode = null);
 
 public sealed record ConnectorTarget(
     string NodeKey,
