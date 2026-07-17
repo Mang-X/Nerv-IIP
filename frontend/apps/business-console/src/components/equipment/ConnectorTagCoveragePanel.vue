@@ -28,11 +28,17 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
-function itemState(item: BusinessConsoleConnectorTagCoverageItem) {
-  if (!item.enabled || item.activationStatus === 'disabled') {
+function configurationState(item: BusinessConsoleConnectorTagCoverageItem) {
+  return item.enabled
+    ? { label: '配置启用', variant: 'success' as const }
+    : { label: '配置停用', variant: 'neutral' as const }
+}
+
+function activationState(item: BusinessConsoleConnectorTagCoverageItem) {
+  if (item.activationStatus === 'disabled') {
     return {
-      label: '已停用',
-      description: '此标签未启用采集',
+      label: '采集已停用',
+      description: '采集程序已停用此标签',
       variant: 'neutral' as const,
     }
   }
@@ -45,7 +51,7 @@ function itemState(item: BusinessConsoleConnectorTagCoverageItem) {
   }
   if (item.activationStatus === 'active') {
     return {
-      label: '已启用',
+      label: '已激活',
       description: '采集程序已启用此标签',
       variant: 'success' as const,
     }
@@ -132,15 +138,20 @@ function sampleDescription(item: BusinessConsoleConnectorTagCoverageItem) {
               设备 {{ item.deviceAssetId || '未关联' }}
             </p>
           </div>
-          <NvBadge class="shrink-0 rounded-sm" :variant="itemState(item).variant">
-            {{ itemState(item).label }}
-          </NvBadge>
+          <div class="flex shrink-0 flex-wrap justify-end gap-1">
+            <NvBadge class="rounded-sm" :variant="configurationState(item).variant">
+              {{ configurationState(item).label }}
+            </NvBadge>
+            <NvBadge class="rounded-sm" :variant="activationState(item).variant">
+              {{ activationState(item).label }}
+            </NvBadge>
+          </div>
         </div>
         <p
           class="mt-1.5 text-[11px]"
           :class="item.activationStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'"
         >
-          {{ itemState(item).description }}
+          {{ activationState(item).description }}
         </p>
         <p class="mt-1 text-[11px] text-muted-foreground">
           {{ sampleDescription(item) }}

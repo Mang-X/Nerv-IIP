@@ -97,7 +97,7 @@ describe('ConnectorTagCoveragePanel', () => {
       configuredCount: 4,
       enabledCount: 3,
       activeCount: 2,
-      everSampledCount: 1,
+      everSampledCount: 2,
       errorCount: 1,
       manifestRevision: 'secret-revision-must-not-render',
       items: [
@@ -150,9 +150,17 @@ describe('ConnectorTagCoveragePanel', () => {
     expect(text).not.toContain('数据过期')
     expect(text).not.toContain('质量异常')
     expect(disabled.text()).toContain('最近采样')
+    expect(disabled.text()).toContain('配置停用')
+    expect(disabled.text()).toContain('采集已停用')
     expect(activationError.text()).toContain('尚未收到采样')
+    expect(activationError.text()).toContain('配置启用')
+    expect(activationError.text()).toContain('启用失败')
     expect(neverSampled.text()).toContain('等待首条数据')
+    expect(neverSampled.text()).toContain('配置启用')
+    expect(neverSampled.text()).toContain('已激活')
     expect(sampled.text()).toContain('最近采样')
+    expect(sampled.text()).toContain('配置启用')
+    expect(sampled.text()).toContain('已激活')
   })
 
   it('queries only the canonical connector identity supplied by its card', async () => {
