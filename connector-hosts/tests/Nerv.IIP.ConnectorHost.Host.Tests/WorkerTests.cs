@@ -199,6 +199,47 @@ public sealed class WorkerTests
         }
     }
 
+    [Fact]
+    public async Task Bulk_activation_signals_for_one_connector_trigger_only_one_additional_manifest_scan()
+    {
+        var clock = new ControllableTimeProvider();
+        var manifestSignal = new ConnectorManifestSignal();
+        var connector = new ObservableStaticConnector();
+        var manifestClient = new BlockingInitialAcknowledgementManifestClient();
+        var worker = CreateWorker(
+            clock,
+            new ConnectorReportSignal(),
+            new RecordingProtocolClient(),
+            new RecordingOpsClient(),
+            [],
+            [],
+            manifestClient,
+            manifestSignal,
+            connector);
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            await manifestClient.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            for (var index = 0; index < 500; index++)
+            {
+                manifestSignal.Signal("connector-a");
+            }
+
+            manifestClient.Release();
+            await manifestClient.Completed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await connector.Discovery(1).WaitAsync(TimeSpan.FromSeconds(5));
+            await Task.Delay(TimeSpan.FromMilliseconds(100));
+
+            Assert.Equal(2, connector.DiscoveryCount);
+            Assert.Single(manifestClient.Requests);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
     [Theory]
     [MemberData(nameof(InvalidProfiles))]
     public void Governed_worker_profile_rejects_invalid_values(ConnectorHostWorkerOptions options)
@@ -292,6 +333,8 @@ public sealed class WorkerTests
             .Select(_ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))
             .ToArray();
         private int _discoveryCount;
+
+        public int DiscoveryCount => Volatile.Read(ref _discoveryCount);
 
         public Task Discovery(int index) => _discoveries[index].Task;
 
@@ -506,6 +549,28 @@ public sealed class WorkerTests
 
             return Task.FromResult(new ConnectorTagManifestAcknowledgement("accepted", report.ManifestRevision, report.ManifestObservedAtUtc));
         }
+    }
+
+    private sealed class BlockingInitialAcknowledgementManifestClient : IConnectorTagManifestClient
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Completed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public List<ConnectorTagManifestReport> Requests { get; } = [];
+
+        public async Task<ConnectorTagManifestAcknowledgement> ReportAsync(
+            ConnectorTagManifestReport report,
+            CancellationToken cancellationToken)
+        {
+            Requests.Add(report);
+            Started.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            Completed.TrySetResult();
+            return new ConnectorTagManifestAcknowledgement("accepted", report.ManifestRevision, report.ManifestObservedAtUtc);
+        }
+
+        public void Release() => _release.TrySetResult();
     }
 
 }

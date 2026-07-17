@@ -58,9 +58,13 @@ public sealed record ConnectorManifestSignalEvent(string ConnectorId, bool Force
 
 public sealed class ConnectorManifestSignal : IConnectorManifestSignal, IConnectorManifestRebirthRequest
 {
-    private readonly Channel<ConnectorManifestSignalEvent> _channel = Channel.CreateUnbounded<ConnectorManifestSignalEvent>(
-        new UnboundedChannelOptions
+    private readonly object _gate = new();
+    private readonly Dictionary<string, bool> _pending = new(StringComparer.Ordinal);
+    private readonly Queue<string> _pendingOrder = new();
+    private readonly Channel<bool> _wake = Channel.CreateBounded<bool>(
+        new BoundedChannelOptions(1)
         {
+            FullMode = BoundedChannelFullMode.DropWrite,
             SingleReader = true,
             SingleWriter = false
         });
@@ -80,21 +84,69 @@ public sealed class ConnectorManifestSignal : IConnectorManifestSignal, IConnect
         }
 
         ArgumentNullException.ThrowIfNull(timeProvider);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (TryTakePending(out var pending))
+        {
+            return pending;
+        }
 
         using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var signalTask = _channel.Reader.ReadAsync(waitCancellation.Token).AsTask();
+        var signalTask = _wake.Reader.ReadAsync(waitCancellation.Token).AsTask();
         var timeoutTask = Task.Delay(timeout, timeProvider, waitCancellation.Token);
-        var completedTask = await Task.WhenAny(signalTask, timeoutTask);
-        ConnectorManifestSignalEvent? signal = completedTask == signalTask
-            ? await signalTask
-            : null;
-        await waitCancellation.CancelAsync();
-        return signal;
+        try
+        {
+            var completedTask = await Task.WhenAny(signalTask, timeoutTask);
+            cancellationToken.ThrowIfCancellationRequested();
+            await completedTask;
+            return TryTakePending(out pending) ? pending : null;
+        }
+        finally
+        {
+            await waitCancellation.CancelAsync();
+        }
     }
 
     private void Write(string connectorId, bool forceRebirth)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectorId);
-        _channel.Writer.TryWrite(new ConnectorManifestSignalEvent(connectorId.Trim(), forceRebirth));
+        var normalized = connectorId.Trim();
+        lock (_gate)
+        {
+            if (_pending.TryGetValue(normalized, out var existingForceRebirth))
+            {
+                _pending[normalized] = existingForceRebirth || forceRebirth;
+            }
+            else
+            {
+                _pending.Add(normalized, forceRebirth);
+                _pendingOrder.Enqueue(normalized);
+            }
+
+            _wake.Writer.TryWrite(true);
+        }
+    }
+
+    private bool TryTakePending(out ConnectorManifestSignalEvent? signal)
+    {
+        lock (_gate)
+        {
+            if (_pendingOrder.Count == 0)
+            {
+                signal = null;
+                return false;
+            }
+
+            var connectorId = _pendingOrder.Dequeue();
+            var forceRebirth = _pending.Remove(connectorId, out var pendingForceRebirth)
+                && pendingForceRebirth;
+            _wake.Reader.TryRead(out _);
+            if (_pendingOrder.Count > 0)
+            {
+                _wake.Writer.TryWrite(true);
+            }
+
+            signal = new ConnectorManifestSignalEvent(connectorId, forceRebirth);
+            return true;
+        }
     }
 }
