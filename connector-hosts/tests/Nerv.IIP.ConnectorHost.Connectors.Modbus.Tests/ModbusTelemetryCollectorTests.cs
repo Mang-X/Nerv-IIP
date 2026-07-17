@@ -261,6 +261,34 @@ public sealed class ModbusTelemetryCollectorTests
     }
 
     [Fact]
+    public async Task One_mapping_failure_does_not_overwrite_an_already_active_mapping()
+    {
+        var connector = new ModbusConnector(
+            new ModbusConnectorOptions(
+                ConnectorId: "modbus-line-1",
+                ConnectorHostId: "connector-host-001",
+                OrganizationId: "org-001",
+                EnvironmentId: "env-dev",
+                Endpoint: "tcp://plc-line-1:502",
+                CredentialReference: null,
+                Registers:
+                [
+                    new ModbusRegisterMapping("device-line-1", "temperature", 1, ModbusRegisterTable.HoldingRegisters, 40001, 2, 1, 0, 60),
+                    new ModbusRegisterMapping("device-line-1", "pressure", 1, ModbusRegisterTable.HoldingRegisters, 40003, 2, 1, 0, 60)
+                ]),
+            new PartiallyFailingModbusTcpClient(),
+            new RecordingIndustrialTelemetrySamplesClient());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => connector.RunCollectionCycleAsync(CancellationToken.None));
+
+        var entries = Assert.Single(await connector.DiscoverAsync(CancellationToken.None))
+            .TagManifest!.Entries.ToDictionary(entry => entry.TagKey, StringComparer.Ordinal);
+        Assert.Equal("active", entries["temperature"].ActivationStatus);
+        Assert.Equal("error", entries["pressure"].ActivationStatus);
+        Assert.Equal("modbus.activation-failed", entries["pressure"].ActivationErrorCode);
+    }
+
+    [Fact]
     public async Task Invalid_raw_register_sample_counts_received_once_and_dropped_once()
     {
         var connector = CreateConnector(
@@ -404,6 +432,21 @@ public sealed class ModbusTelemetryCollectorTests
         {
             throw new NotSupportedException();
         }
+    }
+
+    private sealed class PartiallyFailingModbusTcpClient : IModbusTcpClient
+    {
+        public Task ConnectAsync(ModbusConnectionOptions options, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<IReadOnlyList<ModbusRegisterSample>> ReadRegistersAsync(
+            ModbusRegisterMapping mapping,
+            DateTimeOffset observedAtUtc,
+            CancellationToken cancellationToken) =>
+            mapping.TagKey == "temperature"
+                ? Task.FromResult<IReadOnlyList<ModbusRegisterSample>>([])
+                : Task.FromException<IReadOnlyList<ModbusRegisterSample>>(new InvalidOperationException("pressure mapping failed"));
+
+        public Task ProbeAsync(ModbusRegisterMapping mapping, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class RecordingIndustrialTelemetrySamplesClient : IIndustrialTelemetrySamplesClient

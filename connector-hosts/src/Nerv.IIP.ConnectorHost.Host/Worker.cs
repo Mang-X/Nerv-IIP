@@ -82,13 +82,30 @@ public class Worker(
 
     private async Task RunManifestReportingLoopAsync(CancellationToken cancellationToken)
     {
+        Application.ConnectorManifestSignalEvent? signal = null;
         while (!cancellationToken.IsCancellationRequested)
         {
-            await RunIsolatedAsync(
-                () => manifestReportingLoop.RunCycleAsync(cancellationToken),
-                "Connector manifest reporting cycle failed and will be retried.",
-                cancellationToken);
-            await manifestSignal.WaitAsync(TimeSpan.FromSeconds(options.HeartbeatSeconds), timeProvider, cancellationToken);
+            DateTimeOffset? nextAttemptAtUtc = null;
+            try
+            {
+                nextAttemptAtUtc = await manifestReportingLoop.RunCycleAsync(
+                    cancellationToken,
+                    signal is { ForceRebirth: true } ? signal.ConnectorId : null);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning(ex, "Connector manifest reporting cycle failed and will be retried.");
+            }
+
+            var wait = nextAttemptAtUtc.HasValue
+                ? nextAttemptAtUtc.Value - timeProvider.GetUtcNow()
+                : TimeSpan.FromSeconds(options.HeartbeatSeconds);
+            if (wait <= TimeSpan.Zero)
+            {
+                wait = TimeSpan.FromMilliseconds(1);
+            }
+
+            signal = await manifestSignal.WaitAsync(wait, timeProvider, cancellationToken);
         }
     }
 

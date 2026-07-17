@@ -46,15 +46,55 @@ public interface IConnectorManifestSignal
 {
     void Signal(string connectorId);
 
-    Task WaitAsync(TimeSpan timeout, TimeProvider timeProvider, CancellationToken cancellationToken);
+    Task<ConnectorManifestSignalEvent?> WaitAsync(TimeSpan timeout, TimeProvider timeProvider, CancellationToken cancellationToken);
 }
 
-public sealed class ConnectorManifestSignal : IConnectorManifestSignal
+public interface IConnectorManifestRebirthRequest
 {
-    private readonly ConnectorReportSignal _signal = new();
+    void RequestRebirth(string connectorId);
+}
 
-    public void Signal(string connectorId) => _signal.Signal(connectorId);
+public sealed record ConnectorManifestSignalEvent(string ConnectorId, bool ForceRebirth);
 
-    public Task WaitAsync(TimeSpan timeout, TimeProvider timeProvider, CancellationToken cancellationToken) =>
-        _signal.WaitAsync(timeout, timeProvider, cancellationToken);
+public sealed class ConnectorManifestSignal : IConnectorManifestSignal, IConnectorManifestRebirthRequest
+{
+    private readonly Channel<ConnectorManifestSignalEvent> _channel = Channel.CreateUnbounded<ConnectorManifestSignalEvent>(
+        new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
+
+    public void Signal(string connectorId) => Write(connectorId, forceRebirth: false);
+
+    public void RequestRebirth(string connectorId) => Write(connectorId, forceRebirth: true);
+
+    public async Task<ConnectorManifestSignalEvent?> WaitAsync(
+        TimeSpan timeout,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+    {
+        if (timeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeout), "Manifest wait timeout must be greater than zero.");
+        }
+
+        ArgumentNullException.ThrowIfNull(timeProvider);
+
+        using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var signalTask = _channel.Reader.ReadAsync(waitCancellation.Token).AsTask();
+        var timeoutTask = Task.Delay(timeout, timeProvider, waitCancellation.Token);
+        var completedTask = await Task.WhenAny(signalTask, timeoutTask);
+        ConnectorManifestSignalEvent? signal = completedTask == signalTask
+            ? await signalTask
+            : null;
+        await waitCancellation.CancelAsync();
+        return signal;
+    }
+
+    private void Write(string connectorId, bool forceRebirth)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectorId);
+        _channel.Writer.TryWrite(new ConnectorManifestSignalEvent(connectorId.Trim(), forceRebirth));
+    }
 }

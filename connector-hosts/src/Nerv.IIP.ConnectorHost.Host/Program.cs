@@ -85,6 +85,7 @@ builder.Services.AddSingleton<ConnectorReportSignal>();
 builder.Services.AddSingleton<IConnectorReportSignal>(sp => sp.GetRequiredService<ConnectorReportSignal>());
 builder.Services.AddSingleton<ConnectorManifestSignal>();
 builder.Services.AddSingleton<IConnectorManifestSignal>(sp => sp.GetRequiredService<ConnectorManifestSignal>());
+builder.Services.AddSingleton<IConnectorManifestRebirthRequest>(sp => sp.GetRequiredService<ConnectorManifestSignal>());
 builder.Services.AddSingleton<IndustrialTelemetryCollectorRunner>();
 builder.Services.AddHostedService<Worker>();
 

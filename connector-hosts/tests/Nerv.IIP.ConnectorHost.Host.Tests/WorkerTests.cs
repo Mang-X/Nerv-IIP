@@ -107,6 +107,98 @@ public sealed class WorkerTests
         }
     }
 
+    [Fact]
+    public async Task Manifest_retry_loop_uses_exact_exponential_due_times_instead_of_heartbeat_quantization()
+    {
+        var clock = new ControllableTimeProvider();
+        var manifestClient = new TimedFailingManifestClient(clock, expectedAttempts: 8);
+        var worker = CreateWorker(
+            clock,
+            new ConnectorReportSignal(),
+            new RecordingProtocolClient(),
+            new RecordingOpsClient(),
+            [],
+            [],
+            manifestClient);
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            await manifestClient.Attempt(0).WaitAsync(TimeSpan.FromSeconds(5));
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+            var retryDelays = new[] { 1, 2, 4, 8, 16, 30, 30 };
+            for (var index = 0; index < retryDelays.Length; index++)
+            {
+                clock.Advance(TimeSpan.FromSeconds(retryDelays[index]) - TimeSpan.FromTicks(1));
+                Assert.False(manifestClient.Attempt(index + 1).IsCompleted);
+                clock.Advance(TimeSpan.FromTicks(1));
+                try
+                {
+                    await manifestClient.Attempt(index + 1).WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch (TimeoutException exception)
+                {
+                    throw new InvalidOperationException(
+                        $"Attempt {index + 1} was not observed at {clock.GetUtcNow():O}; observed {manifestClient.AttemptTimesUtc.Count} attempts.",
+                        exception);
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(50));
+            }
+
+            Assert.Equal(
+                new[] { 0, 1, 3, 7, 15, 31, 61, 91 },
+                manifestClient.AttemptTimesUtc
+                    .Select(attempt => (int)(attempt - DateTimeOffset.Parse("2026-07-17T00:00:00Z")).TotalSeconds)
+                    .ToArray());
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task Explicit_rebirth_request_republishes_matching_root_but_activation_signal_does_not()
+    {
+        var clock = new ControllableTimeProvider();
+        var manifestSignal = new ConnectorManifestSignal();
+        var connector = new ObservableStaticConnector();
+        var manifestClient = new RecordingAcknowledgingManifestClient(expectedAttempts: 2);
+        var worker = CreateWorker(
+            clock,
+            new ConnectorReportSignal(),
+            new RecordingProtocolClient(),
+            new RecordingOpsClient(),
+            [],
+            [],
+            manifestClient,
+            manifestSignal,
+            connector);
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            await manifestClient.Attempt(0).WaitAsync(TimeSpan.FromSeconds(5));
+
+            manifestSignal.Signal("connector-a");
+            await connector.Discovery(1).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Single(manifestClient.Requests);
+
+            ((IConnectorManifestRebirthRequest)manifestSignal).RequestRebirth("connector-a");
+            await manifestClient.Attempt(1).WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.Equal(manifestClient.Requests[0].ManifestRevision, manifestClient.Requests[1].ManifestRevision);
+            Assert.Equal(
+                manifestClient.Requests[0].ManifestObservedAtUtc.AddTicks(1),
+                manifestClient.Requests[1].ManifestObservedAtUtc);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
     [Theory]
     [MemberData(nameof(InvalidProfiles))]
     public void Governed_worker_profile_rejects_invalid_values(ConnectorHostWorkerOptions options)
@@ -134,13 +226,16 @@ public sealed class WorkerTests
         RecordingOpsClient ops,
         IReadOnlyList<IIndustrialTelemetryCollectionConnector> collectors,
         IReadOnlyList<IConnectorConnectionMonitor> monitors,
-        IConnectorTagManifestClient? manifestClient = null)
+        IConnectorTagManifestClient? manifestClient = null,
+        ConnectorManifestSignal? manifestSignal = null,
+        IConnector? manifestConnector = null)
     {
-        var connector = new StaticConnector(includeManifest: manifestClient is not null);
+        var connector = new StaticConnector();
+        manifestConnector ??= new StaticConnector(includeManifest: manifestClient is not null);
         manifestClient ??= new NoOpManifestClient();
         var reporter = new ConnectorManifestReporter(manifestClient, ConnectorHostRuntimeContext.DefaultLocal, timeProvider);
         var reporting = new ConnectorReportingLoop([connector], protocol, ConnectorHostRuntimeContext.DefaultLocal);
-        var manifestReporting = new ConnectorManifestReportingLoop([connector], reporter);
+        var manifestReporting = new ConnectorManifestReportingLoop([manifestConnector], reporter);
         var operations = new ConnectorOperationLoop([], ops, ConnectorHostRuntimeContext.DefaultLocal);
         return new Worker(
             NullLogger<Worker>.Instance,
@@ -153,7 +248,7 @@ public sealed class WorkerTests
             collectors,
             monitors,
             signal,
-            new ConnectorManifestSignal());
+            manifestSignal ?? new ConnectorManifestSignal());
     }
 
     private static ConnectorHostWorkerOptions ValidOptions(
@@ -186,6 +281,36 @@ public sealed class WorkerTests
                             "opcua",
                             [new ConnectorTagManifestEntrySnapshot("device-a", "temperature", true, "ns=2;s=T", "pending", DateTimeOffset.Parse("2026-07-17T00:00:00Z"))])
                         : null)
+            ];
+            return Task.FromResult(targets);
+        }
+    }
+
+    private sealed class ObservableStaticConnector : IConnector
+    {
+        private readonly TaskCompletionSource[] _discoveries = Enumerable.Range(0, 3)
+            .Select(_ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))
+            .ToArray();
+        private int _discoveryCount;
+
+        public Task Discovery(int index) => _discoveries[index].Task;
+
+        public Task<IReadOnlyList<ConnectorTarget>> DiscoverAsync(CancellationToken cancellationToken)
+        {
+            var index = Interlocked.Increment(ref _discoveryCount) - 1;
+            if (index < _discoveries.Length)
+            {
+                _discoveries[index].TrySetResult();
+            }
+
+            IReadOnlyList<ConnectorTarget> targets =
+            [
+                new(
+                    "node-a", "Node A", "test", "collector", "Collector", "1.0", "connector-a", "Connector A", "running", "degraded", [], new Dictionary<string, string>(),
+                    TagManifest: new ConnectorTagManifestSnapshot(
+                        "connector-a",
+                        "opcua",
+                        [new ConnectorTagManifestEntrySnapshot("device-a", "temperature", true, "ns=2;s=T", "pending", DateTimeOffset.Parse("2026-07-17T00:00:00Z"))]))
             ];
             return Task.FromResult(targets);
         }
@@ -331,6 +456,56 @@ public sealed class WorkerTests
             ConnectorTagManifestReport report,
             CancellationToken cancellationToken) =>
             Task.FromResult(new ConnectorTagManifestAcknowledgement("accepted", report.ManifestRevision, report.ManifestObservedAtUtc));
+    }
+
+    private sealed class TimedFailingManifestClient(TimeProvider timeProvider, int expectedAttempts) : IConnectorTagManifestClient
+    {
+        private readonly TaskCompletionSource[] _attempts = Enumerable.Range(0, expectedAttempts)
+            .Select(_ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))
+            .ToArray();
+
+        public List<DateTimeOffset> AttemptTimesUtc { get; } = [];
+
+        public Task Attempt(int index) => _attempts[index].Task;
+
+        public Task<ConnectorTagManifestAcknowledgement> ReportAsync(
+            ConnectorTagManifestReport report,
+            CancellationToken cancellationToken)
+        {
+            var index = AttemptTimesUtc.Count;
+            AttemptTimesUtc.Add(timeProvider.GetUtcNow());
+            if (index < _attempts.Length)
+            {
+                _attempts[index].TrySetResult();
+            }
+
+            return Task.FromException<ConnectorTagManifestAcknowledgement>(new HttpRequestException("unavailable"));
+        }
+    }
+
+    private sealed class RecordingAcknowledgingManifestClient(int expectedAttempts) : IConnectorTagManifestClient
+    {
+        private readonly TaskCompletionSource[] _attempts = Enumerable.Range(0, expectedAttempts)
+            .Select(_ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))
+            .ToArray();
+
+        public List<ConnectorTagManifestReport> Requests { get; } = [];
+
+        public Task Attempt(int index) => _attempts[index].Task;
+
+        public Task<ConnectorTagManifestAcknowledgement> ReportAsync(
+            ConnectorTagManifestReport report,
+            CancellationToken cancellationToken)
+        {
+            var index = Requests.Count;
+            Requests.Add(report);
+            if (index < _attempts.Length)
+            {
+                _attempts[index].TrySetResult();
+            }
+
+            return Task.FromResult(new ConnectorTagManifestAcknowledgement("accepted", report.ManifestRevision, report.ManifestObservedAtUtc));
+        }
     }
 
 }

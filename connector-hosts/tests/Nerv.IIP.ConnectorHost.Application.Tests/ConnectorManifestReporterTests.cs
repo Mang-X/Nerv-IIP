@@ -105,6 +105,23 @@ public sealed class ConnectorManifestReporterTests
     }
 
     [Fact]
+    public async Task Retry_due_is_measured_from_failure_completion_time()
+    {
+        var clock = new ControllableTimeProvider();
+        var client = new AdvancingManifestClient(
+            clock,
+            TimeSpan.FromSeconds(5),
+            new HttpRequestException("unavailable"));
+        var reporter = CreateReporter(client, clock);
+
+        var nextAttemptAtUtc = await reporter.ReportAsync(
+            Snapshot(Entry("dev-1", "temperature", true, null, "pending")),
+            cancellationToken: default);
+
+        Assert.Equal(clock.GetUtcNow().AddSeconds(1), nextAttemptAtUtc);
+    }
+
+    [Fact]
     public async Task Newer_activation_coalesces_pending_without_changing_configuration_revision_or_observation()
     {
         var clock = new ControllableTimeProvider();
@@ -121,6 +138,29 @@ public sealed class ConnectorManifestReporterTests
         Assert.Equal(client.Requests[0].ManifestRevision, client.Requests[1].ManifestRevision);
         Assert.Equal(client.Requests[0].ManifestObservedAtUtc, client.Requests[1].ManifestObservedAtUtc);
         Assert.Equal("active", Assert.Single(client.Requests[1].Entries).ActivationStatus);
+    }
+
+    [Fact]
+    public async Task Newer_entry_coalesces_pending_even_when_another_entry_has_the_global_latest_observation()
+    {
+        var clock = new ControllableTimeProvider();
+        var client = new ScriptedManifestClient(new HttpRequestException("unavailable"), Accepted());
+        var reporter = CreateReporter(client, clock);
+        var pending = Snapshot(
+            Entry("dev-a", "temperature", true, null, "active", observedAtUtc: ActivationObservedAtUtc.AddMinutes(10)),
+            Entry("dev-b", "pressure", true, null, "pending", observedAtUtc: ActivationObservedAtUtc));
+        var updated = Snapshot(
+            Entry("dev-a", "temperature", true, null, "active", observedAtUtc: ActivationObservedAtUtc.AddMinutes(10)),
+            Entry("dev-b", "pressure", true, null, "active", observedAtUtc: ActivationObservedAtUtc.AddMinutes(1)));
+
+        await reporter.ReportAsync(pending, cancellationToken: default);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        await reporter.ReportAsync(updated, cancellationToken: default);
+
+        Assert.Equal(2, client.Requests.Count);
+        var entries = client.Requests[1].Entries.ToDictionary(entry => entry.DeviceAssetId, StringComparer.Ordinal);
+        Assert.Equal("active", entries["dev-b"].ActivationStatus);
+        Assert.Equal(ActivationObservedAtUtc.AddMinutes(1), entries["dev-b"].ActivationObservedAtUtc);
     }
 
     [Fact]
@@ -165,6 +205,24 @@ public sealed class ConnectorManifestReporterTests
     }
 
     [Fact]
+    public async Task Rejected_report_uses_response_completion_time_when_it_is_later_than_service_acknowledgement()
+    {
+        var clock = new ControllableTimeProvider();
+        var client = new AdvancingManifestClient(
+            clock,
+            TimeSpan.FromMinutes(5),
+            new ConnectorTagManifestAcknowledgement("stale", new string('a', 64), clock.GetUtcNow()));
+        var reporter = CreateReporter(client, clock);
+        var snapshot = Snapshot(Entry("dev-1", "temperature", true, null, "pending"));
+
+        await reporter.ReportAsync(snapshot, cancellationToken: default);
+        await reporter.ReportAsync(snapshot, cancellationToken: default);
+
+        Assert.Equal(2, client.Requests.Count);
+        Assert.Equal(clock.GetUtcNow(), client.Requests[1].ManifestObservedAtUtc);
+    }
+
+    [Fact]
     public async Task Configuration_change_and_rebirth_advance_last_attempted_observation_monotonically()
     {
         var clock = new ControllableTimeProvider();
@@ -202,8 +260,48 @@ public sealed class ConnectorManifestReporterTests
         Assert.DoesNotContain("sensitive downstream stack", failure.Message, StringComparison.Ordinal);
     }
 
-    private static ConnectorManifestReporter CreateReporter(ScriptedManifestClient client, TimeProvider clock) =>
+    [Fact]
+    public async Task Http_client_reads_acknowledgement_from_response_data_envelope()
+    {
+        const string body = """{"data":{"disposition":"accepted","acceptedManifestRevision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","acceptedManifestObservedAtUtc":"2026-07-17T00:00:00Z"}}""";
+        var handler = new RecordingHandler(HttpStatusCode.OK, body);
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://iiot") };
+        var client = new HttpConnectorTagManifestClient(httpClient);
+
+        var acknowledgement = await client.ReportAsync(Report(), default);
+
+        Assert.Equal("accepted", acknowledgement.Disposition);
+        Assert.Equal(new string('a', 64), acknowledgement.AcceptedManifestRevision);
+        Assert.Equal(ActivationObservedAtUtc, acknowledgement.AcceptedManifestObservedAtUtc);
+    }
+
+    [Theory]
+    [InlineData("{\"data\":null}")]
+    [InlineData("{\"data\":\"sensitive malformed acknowledgement\"")]
+    public async Task Http_client_rejects_empty_or_malformed_envelope_without_leaking_response_body(string body)
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, body);
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://iiot") };
+        var client = new HttpConnectorTagManifestClient(httpClient);
+
+        var failure = await Assert.ThrowsAsync<HttpRequestException>(() => client.ReportAsync(Report(), default));
+
+        Assert.Equal("Connector tag manifest endpoint returned an invalid acknowledgement.", failure.Message);
+        Assert.DoesNotContain("sensitive", failure.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static ConnectorManifestReporter CreateReporter(IConnectorTagManifestClient client, TimeProvider clock) =>
         new(client, ConnectorHostRuntimeContext.DefaultLocal, clock);
+
+    private static ConnectorTagManifestReport Report() =>
+        new(
+            "org-1",
+            "env-1",
+            "line-a",
+            "opcua",
+            new string('a', 64),
+            ActivationObservedAtUtc,
+            [Entry("dev-1", "temperature", true, "ns=2;s=T", "pending")]);
 
     private static ConnectorTagManifestSnapshot Snapshot(params ConnectorTagManifestEntrySnapshot[] entries) =>
         new("line-a", "opcua", entries);
@@ -231,6 +329,29 @@ public sealed class ConnectorManifestReporterTests
         {
             Requests.Add(report);
             var result = _results.Dequeue();
+            return result is Exception exception
+                ? Task.FromException<ConnectorTagManifestAcknowledgement>(exception)
+                : Task.FromResult((ConnectorTagManifestAcknowledgement)result);
+        }
+    }
+
+    private sealed class AdvancingManifestClient(
+        ControllableTimeProvider clock,
+        TimeSpan advance,
+        object result) : IConnectorTagManifestClient
+    {
+        public List<ConnectorTagManifestReport> Requests { get; } = [];
+
+        public Task<ConnectorTagManifestAcknowledgement> ReportAsync(
+            ConnectorTagManifestReport report,
+            CancellationToken cancellationToken)
+        {
+            Requests.Add(report);
+            if (Requests.Count == 1)
+            {
+                clock.Advance(advance);
+            }
+
             return result is Exception exception
                 ? Task.FromException<ConnectorTagManifestAcknowledgement>(exception)
                 : Task.FromResult((ConnectorTagManifestAcknowledgement)result);

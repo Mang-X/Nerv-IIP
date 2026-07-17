@@ -92,7 +92,6 @@ public sealed class ModbusConnector(
             }
             catch (Exception ex) when (!pollingCompleted && ex is not OperationCanceledException && attempts < options.MaxReconnectAttempts)
             {
-                _manifestTracker.MarkAllEnabledError("modbus.activation-failed", "Modbus mapping activation failed.");
                 attempts++;
                 await UpdateStateAsync(state => state with
                 {
@@ -104,11 +103,6 @@ public sealed class ModbusConnector(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                if (!pollingCompleted)
-                {
-                    _manifestTracker.MarkAllEnabledError("modbus.activation-failed", "Modbus mapping activation failed.");
-                }
-
                 await UpdateStateAsync(state => state with
                 {
                     ReportedStatus = "stopped",
@@ -129,9 +123,14 @@ public sealed class ModbusConnector(
                 new ModbusConnectionOptions(options.Endpoint, options.CredentialReference),
                 cancellationToken);
         }
-        catch (Exception ex) when (IsConnectionLoss(ex))
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            MarkLostIfTransportFailure(ex);
+            _manifestTracker.MarkAllEnabledError("modbus.activation-failed", "Modbus mapping activation failed.");
+            if (IsConnectionLoss(ex))
+            {
+                MarkLostIfTransportFailure(ex);
+            }
+
             throw;
         }
     }
@@ -147,10 +146,14 @@ public sealed class ModbusConnector(
             _manifestTracker.MarkActive(mapping.DeviceAssetId, mapping.TagKey);
             return samples;
         }
-        catch (Exception ex) when (IsConnectionLoss(ex))
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _manifestTracker.MarkError(mapping.DeviceAssetId, mapping.TagKey, "modbus.activation-failed", "Modbus mapping activation failed.");
-            MarkLostIfTransportFailure(ex);
+            if (IsConnectionLoss(ex))
+            {
+                MarkLostIfTransportFailure(ex);
+            }
+
             throw;
         }
     }

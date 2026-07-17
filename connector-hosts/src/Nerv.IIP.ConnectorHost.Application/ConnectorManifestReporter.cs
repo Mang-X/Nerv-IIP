@@ -27,8 +27,12 @@ public sealed class ConnectorManifestReportingLoop(
     IReadOnlyList<IConnector> connectors,
     ConnectorManifestReporter manifestReporter)
 {
-    public async Task RunCycleAsync(CancellationToken cancellationToken)
+    public async Task<DateTimeOffset?> RunCycleAsync(
+        CancellationToken cancellationToken,
+        string? forceRebirthConnectorId = null)
     {
+        DateTimeOffset? nextAttemptAtUtc = null;
+        var forceRebirthPending = !string.IsNullOrWhiteSpace(forceRebirthConnectorId);
         foreach (var connector in connectors)
         {
             var targets = await connector.DiscoverAsync(cancellationToken);
@@ -36,9 +40,22 @@ public sealed class ConnectorManifestReportingLoop(
                          .Select(target => target.TagManifest)
                          .Where(static manifest => manifest is not null))
             {
-                await manifestReporter.ReportAsync(manifest!, cancellationToken: cancellationToken);
+                var forceRebirth = forceRebirthPending
+                    && string.Equals(manifest!.CollectionConnectorId, forceRebirthConnectorId, StringComparison.Ordinal);
+                var connectorNextAttemptAtUtc = await manifestReporter.ReportAsync(
+                    manifest!,
+                    forceRebirth,
+                    cancellationToken);
+                forceRebirthPending &= !forceRebirth;
+                if (connectorNextAttemptAtUtc.HasValue
+                    && (!nextAttemptAtUtc.HasValue || connectorNextAttemptAtUtc < nextAttemptAtUtc))
+                {
+                    nextAttemptAtUtc = connectorNextAttemptAtUtc;
+                }
             }
         }
+
+        return nextAttemptAtUtc;
     }
 }
 
@@ -51,7 +68,7 @@ public sealed class ConnectorManifestReporter(
     private readonly Dictionary<string, ManifestState> _states = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    public async Task ReportAsync(
+    public async Task<DateTimeOffset?> ReportAsync(
         ConnectorTagManifestSnapshot snapshot,
         bool forceRebirth = false,
         CancellationToken cancellationToken = default)
@@ -65,20 +82,22 @@ public sealed class ConnectorManifestReporter(
             Observe(state, snapshot, forceRebirth, now);
             if (state.Pending is null || state.NextAttemptAtUtc > now)
             {
-                return;
+                return state.Pending is null ? null : state.NextAttemptAtUtc;
             }
 
             var attempted = state.Pending;
             try
             {
                 var acknowledgement = await client.ReportAsync(attempted, cancellationToken);
-                ApplyAcknowledgement(state, attempted, acknowledgement, now);
+                ApplyAcknowledgement(state, attempted, acknowledgement, timeProvider.GetUtcNow());
             }
             catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
                 state.FailedAttempts++;
-                state.NextAttemptAtUtc = now + RetryDelay(state.FailedAttempts);
+                state.NextAttemptAtUtc = timeProvider.GetUtcNow() + RetryDelay(state.FailedAttempts);
             }
+
+            return state.Pending is null ? null : state.NextAttemptAtUtc;
         }
         finally
         {
@@ -133,11 +152,21 @@ public sealed class ConnectorManifestReporter(
             normalizedEntries);
         if (state.Pending is not null)
         {
-            if (rootObservationAdvanced || LatestObservation(candidate) > LatestObservation(state.Pending))
+            if (rootObservationAdvanced)
             {
                 state.Pending = candidate;
                 state.FailedAttempts = 0;
                 state.NextAttemptAtUtc = now;
+            }
+            else
+            {
+                var mergedCandidate = MergeNewerActivationEntries(candidate, state.Pending);
+                if (!mergedCandidate.Entries.SequenceEqual(state.Pending.Entries))
+                {
+                    state.Pending = mergedCandidate;
+                    state.FailedAttempts = 0;
+                    state.NextAttemptAtUtc = now;
+                }
             }
 
             return;
@@ -201,13 +230,19 @@ public sealed class ConnectorManifestReporter(
         return next;
     }
 
-    private static DateTimeOffset LatestObservation(ConnectorTagManifestReport report)
+    private static ConnectorTagManifestReport MergeNewerActivationEntries(
+        ConnectorTagManifestReport candidate,
+        ConnectorTagManifestReport pending)
     {
-        return report.Entries.Count == 0
-            ? report.ManifestObservedAtUtc
-            : report.Entries.Max(entry => entry.ActivationObservedAtUtc) > report.ManifestObservedAtUtc
-                ? report.Entries.Max(entry => entry.ActivationObservedAtUtc)
-                : report.ManifestObservedAtUtc;
+        var pendingByKey = pending.Entries.ToDictionary(
+            entry => (entry.DeviceAssetId, entry.TagKey));
+        var merged = candidate.Entries
+            .Select(entry => pendingByKey.TryGetValue((entry.DeviceAssetId, entry.TagKey), out var previous)
+                             && previous.ActivationObservedAtUtc >= entry.ActivationObservedAtUtc
+                ? previous
+                : entry)
+            .ToArray();
+        return candidate with { Entries = merged };
     }
 
     private static bool SamePayload(ConnectorTagManifestReport left, ConnectorTagManifestReport right)
