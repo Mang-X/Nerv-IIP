@@ -1,4 +1,6 @@
+using Nerv.IIP.ConnectorHost.Application;
 using Nerv.IIP.ConnectorHost.Connectors.OpcUa;
+using Nerv.IIP.ConnectorHost.TestUtilities;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.OpcUa.Tests;
 
@@ -21,6 +23,36 @@ public sealed class OpcUaTelemetryCollectorTests
 
         var acknowledged = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!;
         Assert.Equal("alive", acknowledged.Connection!.Status);
+    }
+
+    [Fact]
+    public async Task Apply_ack_marks_alive_before_sampling_dwell_then_cycle_completes_after_full_window()
+    {
+        var opcUa = new AcknowledgementControlledOpcUaClient();
+        var timeProvider = new ControllableTimeProvider();
+        var reportSignal = new ConnectorReportSignal();
+        var connector = CreateConnector(
+            opcUa,
+            new RecordingIndustrialTelemetrySamplesClient(),
+            timeProvider: timeProvider,
+            reportSignal: reportSignal);
+        var aliveSignal = reportSignal.WaitAsync(TimeSpan.FromSeconds(30), timeProvider, CancellationToken.None);
+        var cycle = connector.RunCollectionCycleAsync(CancellationToken.None);
+        await opcUa.WaitForSubscribeAsync();
+
+        opcUa.AcknowledgeSubscription();
+        await aliveSignal;
+
+        var connection = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!;
+        Assert.Equal("alive", connection.Status);
+        await Task.Delay(TimeSpan.FromMilliseconds(50));
+        Assert.False(cycle.IsCompleted);
+
+        timeProvider.Advance(TimeSpan.FromMilliseconds(1999));
+        Assert.False(cycle.IsCompleted);
+
+        timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+        await cycle.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
     [Fact]
@@ -57,6 +89,20 @@ public sealed class OpcUaTelemetryCollectorTests
         var connection = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!;
         Assert.Equal("lost", connection.Status);
         Assert.Equal("opcua.bad-keepalive", connection.DiagnosticCode);
+    }
+
+    [Fact]
+    public async Task Keepalive_from_old_session_does_not_mark_new_alive_interval_lost()
+    {
+        var opcUa = new AcknowledgementControlledOpcUaClient(autoAcknowledge: true);
+        var connector = CreateConnector(opcUa, new RecordingIndustrialTelemetrySamplesClient());
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        opcUa.FailKeepAlive(connectionIndex: 0);
+
+        var connection = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!;
+        Assert.Equal("alive", connection.Status);
     }
 
     [Fact]
@@ -355,7 +401,9 @@ public sealed class OpcUaTelemetryCollectorTests
         IOpcUaClient opcUa,
         IIndustrialTelemetrySamplesClient samples,
         Func<DateTimeOffset>? utcNow = null,
-        string? collectionConnectorId = null)
+        string? collectionConnectorId = null,
+        TimeProvider? timeProvider = null,
+        IConnectorReportSignal? reportSignal = null)
     {
         return new OpcUaConnector(
             new OpcUaConnectorOptions(
@@ -380,7 +428,9 @@ public sealed class OpcUaTelemetryCollectorTests
                 CollectionConnectorId: collectionConnectorId),
             opcUa,
             samples,
-            utcNow ?? (() => new DateTimeOffset(2026, 7, 3, 0, 1, 1, TimeSpan.Zero)));
+            utcNow ?? (() => new DateTimeOffset(2026, 7, 3, 0, 1, 1, TimeSpan.Zero)),
+            timeProvider,
+            reportSignal);
     }
 
     private sealed class RecordingIndustrialTelemetrySamplesClient : IIndustrialTelemetrySamplesClient
@@ -612,7 +662,7 @@ public sealed class OpcUaTelemetryCollectorTests
     {
         private readonly TaskCompletionSource _subscribeStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private TaskCompletionSource _acknowledgement = CreateAcknowledgement(autoAcknowledge);
-        private Action? _onConnectionLost;
+        private readonly List<Action> _connectionLostHandlers = [];
 
         public Task ConnectAsync(OpcUaConnectionOptions options, CancellationToken cancellationToken)
         {
@@ -621,7 +671,7 @@ public sealed class OpcUaTelemetryCollectorTests
 
         public Task ConnectAsync(OpcUaConnectionOptions options, Action onConnectionLost, CancellationToken cancellationToken)
         {
-            _onConnectionLost = onConnectionLost;
+            _connectionLostHandlers.Add(onConnectionLost);
             return Task.CompletedTask;
         }
 
@@ -639,7 +689,7 @@ public sealed class OpcUaTelemetryCollectorTests
             await _acknowledgement.Task.WaitAsync(cancellationToken);
             if (failKeepAliveBeforeReturn)
             {
-                _onConnectionLost?.Invoke();
+                _connectionLostHandlers[^1]();
             }
         }
 
@@ -655,7 +705,12 @@ public sealed class OpcUaTelemetryCollectorTests
         public void FailKeepAlive()
         {
             _acknowledgement = CreateAcknowledgement(autoAcknowledge: true);
-            _onConnectionLost?.Invoke();
+            _connectionLostHandlers[^1]();
+        }
+
+        public void FailKeepAlive(int connectionIndex)
+        {
+            _connectionLostHandlers[connectionIndex]();
         }
 
         private static TaskCompletionSource CreateAcknowledgement(bool autoAcknowledge)

@@ -38,30 +38,30 @@ public sealed class ModbusConnector(
 
     public async Task RunCollectionCycleAsync(CancellationToken cancellationToken)
     {
+        var enabledMappings = options.Registers.Where(x => x.Enabled).ToArray();
+        if (enabledMappings.Length == 0)
+        {
+            await UpdateStateAsync(state => state with
+            {
+                ReportedStatus = "running",
+                HealthStatus = "degraded",
+                Summary = "Modbus TCP collector has no enabled register mappings."
+            }, cancellationToken);
+            return;
+        }
+
         var attempts = 0;
         while (true)
         {
             var pollingCompleted = false;
             try
             {
-                await modbusClient.ConnectAsync(new ModbusConnectionOptions(options.Endpoint, options.CredentialReference), cancellationToken);
-
-                var enabledMappings = options.Registers.Where(x => x.Enabled).ToArray();
-                if (enabledMappings.Length == 0)
-                {
-                    await UpdateStateAsync(state => state with
-                    {
-                        ReportedStatus = "running",
-                        HealthStatus = "degraded",
-                        Summary = "Modbus TCP collector is connected but has no configured register mappings."
-                    }, cancellationToken);
-                    return;
-                }
+                await ConnectForCollectionAsync(cancellationToken);
 
                 var observedAtUtc = _utcNow();
                 foreach (var mapping in enabledMappings)
                 {
-                    var samples = await modbusClient.ReadRegistersAsync(mapping, observedAtUtc, cancellationToken);
+                    var samples = await ReadForCollectionAsync(mapping, observedAtUtc, cancellationToken);
                     _connectionTracker.MarkAlive();
                     if (samples.Count == 0)
                     {
@@ -81,7 +81,6 @@ public sealed class ModbusConnector(
             }
             catch (Exception ex) when (!pollingCompleted && ex is not OperationCanceledException && attempts < options.MaxReconnectAttempts)
             {
-                MarkLostIfTransportFailure(ex);
                 attempts++;
                 await UpdateStateAsync(state => state with
                 {
@@ -93,7 +92,6 @@ public sealed class ModbusConnector(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                MarkLostIfTransportFailure(ex);
                 await UpdateStateAsync(state => state with
                 {
                     ReportedStatus = "stopped",
@@ -103,6 +101,37 @@ public sealed class ModbusConnector(
                 }, cancellationToken);
                 throw;
             }
+        }
+    }
+
+    private async Task ConnectForCollectionAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await modbusClient.ConnectAsync(
+                new ModbusConnectionOptions(options.Endpoint, options.CredentialReference),
+                cancellationToken);
+        }
+        catch (Exception ex) when (IsConnectionLoss(ex))
+        {
+            MarkLostIfTransportFailure(ex);
+            throw;
+        }
+    }
+
+    private async Task<IReadOnlyList<ModbusRegisterSample>> ReadForCollectionAsync(
+        ModbusRegisterMapping mapping,
+        DateTimeOffset observedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await modbusClient.ReadRegistersAsync(mapping, observedAtUtc, cancellationToken);
+        }
+        catch (Exception ex) when (IsConnectionLoss(ex))
+        {
+            MarkLostIfTransportFailure(ex);
+            throw;
         }
     }
 
@@ -202,6 +231,11 @@ public sealed class ModbusConnector(
     private static bool IsTransportFailure(Exception exception)
     {
         return exception is SocketException or IOException;
+    }
+
+    private static bool IsConnectionLoss(Exception exception)
+    {
+        return exception is TimeoutException || IsTransportFailure(exception);
     }
 
     private async Task HandleSampleAsync(ModbusRegisterMapping mapping, ModbusRegisterSample sample, CancellationToken cancellationToken)

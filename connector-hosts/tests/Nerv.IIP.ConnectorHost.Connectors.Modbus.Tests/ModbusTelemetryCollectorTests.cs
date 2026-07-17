@@ -146,6 +146,30 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Equal(1, connector.CurrentState.ErrorCount);
     }
 
+    [Theory]
+    [InlineData("timeout")]
+    [InlineData("io")]
+    public async Task Downstream_transport_shaped_failure_does_not_mark_modbus_connection_lost(string failureKind)
+    {
+        var modbus = new FakeModbusTcpClient(
+            new ModbusRegisterSample(
+                1,
+                ModbusRegisterTable.HoldingRegisters,
+                40001,
+                42m,
+                new DateTimeOffset(2026, 7, 5, 8, 0, 10, TimeSpan.Zero)));
+        Exception failure = failureKind == "timeout"
+            ? new TimeoutException("simulated downstream timeout")
+            : new IOException("simulated downstream transport failure");
+        var connector = CreateConnector(modbus, new FailingIndustrialTelemetrySamplesClient(failure));
+
+        await Assert.ThrowsAsync(failure.GetType(), () => connector.RunCollectionCycleAsync(CancellationToken.None));
+
+        var connection = Assert.Single(await connector.DiscoverAsync(CancellationToken.None))
+            .CollectionHealth!.Connection!;
+        Assert.Equal("alive", connection.Status);
+    }
+
     [Fact]
     public async Task Discover_reports_degraded_health_when_register_mapping_is_empty()
     {
@@ -168,6 +192,28 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Equal("running", target.ReportedStatus);
         Assert.Equal("degraded", target.HealthStatus);
         Assert.Equal("0", target.Metadata["registerCount"]);
+    }
+
+    [Fact]
+    public async Task Run_cycle_with_no_enabled_mapping_keeps_connection_unknown_without_connecting()
+    {
+        var connector = new ModbusConnector(
+            new ModbusConnectorOptions(
+                ConnectorId: "modbus-line-1",
+                ConnectorHostId: "connector-host-001",
+                OrganizationId: "org-001",
+                EnvironmentId: "env-dev",
+                Endpoint: "tcp://plc-line-1:502",
+                CredentialReference: null,
+                Registers: []),
+            new FailingConnectModbusTcpClient(),
+            new RecordingIndustrialTelemetrySamplesClient());
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        var connection = Assert.Single(await connector.DiscoverAsync(CancellationToken.None))
+            .CollectionHealth!.Connection!;
+        Assert.Equal("unknown", connection.Status);
     }
 
     [Fact]
@@ -311,6 +357,27 @@ public sealed class ModbusTelemetryCollectorTests
         }
     }
 
+    private sealed class FailingConnectModbusTcpClient : IModbusTcpClient
+    {
+        public Task ConnectAsync(ModbusConnectionOptions options, CancellationToken cancellationToken)
+        {
+            return Task.FromException(new IOException("Connect must not run without an enabled mapping."));
+        }
+
+        public Task<IReadOnlyList<ModbusRegisterSample>> ReadRegistersAsync(
+            ModbusRegisterMapping mapping,
+            DateTimeOffset observedAtUtc,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task ProbeAsync(ModbusRegisterMapping mapping, CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
     private sealed class RecordingIndustrialTelemetrySamplesClient : IIndustrialTelemetrySamplesClient
     {
         public List<RecordIndustrialTelemetrySampleRequest> Requests { get; } = [];
@@ -337,6 +404,14 @@ public sealed class ModbusTelemetryCollectorTests
 
             Requests.Add(request);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FailingIndustrialTelemetrySamplesClient(Exception failure) : IIndustrialTelemetrySamplesClient
+    {
+        public Task RecordSampleAsync(RecordIndustrialTelemetrySampleRequest request, CancellationToken cancellationToken)
+        {
+            return Task.FromException(failure);
         }
     }
 }

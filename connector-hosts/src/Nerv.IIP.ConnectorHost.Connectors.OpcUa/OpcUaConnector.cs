@@ -17,6 +17,7 @@ public sealed class OpcUaConnector(
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly object _connectionTransitionGate = new();
     private readonly Func<DateTimeOffset> _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly TimeSpan _sealedBucketRetention = CalculateSealedBucketRetention(options.Tags);
     private readonly Guid _counterEpoch = Guid.CreateVersion7();
     private readonly ConnectorConnectionStateTracker _connectionTracker = new(
@@ -24,6 +25,7 @@ public sealed class OpcUaConnector(
         timeProvider ?? TimeProvider.System,
         reportSignal is null ? static _ => { } : reportSignal.Signal);
     private long _connectionLossVersion;
+    private long _currentConnectionAttempt;
 
     public OpcUaConnectorState CurrentState { get; private set; } = new(
         "stopped",
@@ -126,7 +128,7 @@ public sealed class OpcUaConnector(
 
     private async Task ConnectBrowseAndSubscribeAsync(CancellationToken cancellationToken)
     {
-        var connectionLossVersion = CaptureConnectionLossVersion();
+        var (connectionAttempt, connectionLossVersion) = StartConnectionAttempt();
         await opcUaClient.ConnectAsync(
             new OpcUaConnectionOptions(
                 options.EndpointUrl,
@@ -134,7 +136,7 @@ public sealed class OpcUaConnector(
                 options.SecurityMode,
                 options.CredentialReference,
                 options.AutoAcceptUntrustedServerCertificates),
-            HandleConnectionLost,
+            () => HandleConnectionLost(connectionAttempt),
             cancellationToken);
 
         _ = await opcUaClient.BrowseAsync(options.BrowseRootNodeId, cancellationToken);
@@ -151,36 +153,52 @@ public sealed class OpcUaConnector(
         }
 
         await opcUaClient.SubscribeAsync(options.Tags, HandleDataChangeAsync, cancellationToken);
-        MarkAliveIfNoConnectionLoss(connectionLossVersion);
+        MarkAliveIfNoConnectionLoss(connectionAttempt, connectionLossVersion);
+        await Task.Delay(CalculateSamplingDwell(options.Tags), _timeProvider, cancellationToken);
     }
 
-    private void HandleConnectionLost()
+    private void HandleConnectionLost(long connectionAttempt)
     {
-        MarkConnectionLost("opcua.bad-keepalive");
+        lock (_connectionTransitionGate)
+        {
+            if (_currentConnectionAttempt != connectionAttempt)
+            {
+                return;
+            }
+
+            MarkConnectionLostUnsafe("opcua.bad-keepalive");
+        }
     }
 
     private void MarkConnectionLost(string diagnosticCode)
     {
         lock (_connectionTransitionGate)
         {
-            _connectionLossVersion++;
-            _connectionTracker.MarkLost("transport", diagnosticCode);
+            MarkConnectionLostUnsafe(diagnosticCode);
         }
     }
 
-    private long CaptureConnectionLossVersion()
+    private void MarkConnectionLostUnsafe(string diagnosticCode)
+    {
+        _connectionLossVersion++;
+        _connectionTracker.MarkLost("transport", diagnosticCode);
+    }
+
+    private (long ConnectionAttempt, long ConnectionLossVersion) StartConnectionAttempt()
     {
         lock (_connectionTransitionGate)
         {
-            return _connectionLossVersion;
+            _currentConnectionAttempt++;
+            return (_currentConnectionAttempt, _connectionLossVersion);
         }
     }
 
-    private void MarkAliveIfNoConnectionLoss(long connectionLossVersion)
+    private void MarkAliveIfNoConnectionLoss(long connectionAttempt, long connectionLossVersion)
     {
         lock (_connectionTransitionGate)
         {
-            if (_connectionLossVersion == connectionLossVersion)
+            if (_currentConnectionAttempt == connectionAttempt
+                && _connectionLossVersion == connectionLossVersion)
             {
                 _connectionTracker.MarkAlive();
             }
@@ -437,6 +455,12 @@ public sealed class OpcUaConnector(
     {
         var maxBucketSeconds = tags.Count == 0 ? 60 : tags.Max(x => Math.Max(x.BucketSeconds, 1));
         return TimeSpan.FromSeconds(Math.Max(60, maxBucketSeconds * 5));
+    }
+
+    private static TimeSpan CalculateSamplingDwell(IReadOnlyList<OpcUaTagSubscription> tags)
+    {
+        var maxSamplingIntervalMilliseconds = tags.Max(x => Math.Max(x.SamplingIntervalMilliseconds, 0));
+        return TimeSpan.FromMilliseconds(Math.Max(1000L, maxSamplingIntervalMilliseconds * 2L));
     }
 
     private sealed record BucketFlushItem(
