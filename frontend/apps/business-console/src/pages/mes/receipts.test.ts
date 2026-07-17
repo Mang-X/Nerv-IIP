@@ -30,7 +30,12 @@ const receiptState = vi.hoisted(() => ({
   refreshReceiptRequests: vi.fn(async () => undefined),
   retryInventoryPosting: vi.fn(async () => undefined),
   rows: [] as Array<Record<string, unknown>>,
-  producedLots: [] as Array<{ producedLotNo: string; reportNo?: string; goodQuantity: number }>,
+  producedLots: [] as Array<{
+    producedLotNo: string
+    reportNo?: string
+    goodQuantity: number
+    remainingQuantity: number
+  }>,
   producedLotsError: undefined as unknown,
   retryingRequestNo: undefined as unknown as { value: string | null },
   keyCounter: 0,
@@ -59,7 +64,8 @@ vi.mock('@/composables/useBusinessMes', () => {
       refreshReceiptRequests: receiptState.refreshReceiptRequests,
       retryInventoryPosting: receiptState.retryInventoryPosting,
       retryInventoryPostingError: ref(undefined),
-      retryingRequestNo: receiptState.retryingRequestNo,
+      isRetrying: (requestNo: string) =>
+        (receiptState.retryingRequestNo?.value ?? null) === requestNo,
     }),
   }
 })
@@ -142,7 +148,9 @@ describe('MES receipts — failed inventory posting retry', () => {
     receiptState.createReceiptRequestError = { value: undefined }
     receiptState.refreshReceiptRequests = vi.fn(async () => undefined)
     // 默认单一产出批次：自动选中，让创建相关用例可提交（后端强制引用真实产出批次）。
-    receiptState.producedLots = [{ producedLotNo: 'LOT-FG-1', reportNo: 'PRPT-1', goodQuantity: 8 }]
+    receiptState.producedLots = [
+      { producedLotNo: 'LOT-FG-1', reportNo: 'PRPT-1', goodQuantity: 8, remainingQuantity: 8 },
+    ]
     receiptState.producedLotsError = undefined
     receiptState.keyCounter = 0
     receiptState.retryInventoryPosting.mockClear()

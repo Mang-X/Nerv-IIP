@@ -104,8 +104,8 @@ function formatQuantity(value?: number) {
                   v-for="lot in producedLots"
                   :key="lot.producedLotNo"
                   :value="lot.producedLotNo"
-                  >{{ lot.producedLotNo }}（良品
-                  {{ formatQuantity(lot.goodQuantity) }}）</NvSelectItem
+                  >{{ lot.producedLotNo }}（剩余可入库
+                  {{ formatQuantity(lot.remainingQuantity) }}）</NvSelectItem
                 >
               </NvSelectContent>
             </NvSelect>

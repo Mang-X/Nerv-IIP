@@ -28,6 +28,7 @@ import {
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   recordBusinessConsoleMesProductionReportMutationOptions,
+  retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
   reverseBusinessConsoleMesProductionReportMutationOptions,
   runBusinessConsoleMesScheduleMutationOptions,
 } from '@nerv-iip/api-client'
@@ -807,6 +808,47 @@ describe('business MES composables', () => {
     expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(2)
   })
 
+  it('tracks concurrent inventory-posting retries independently by requestNo', async () => {
+    // 用 deferred promise 控制两次重试的在途状态，验证 A 完成不会误清仍在途的 B。
+    const resolvers = new Map<string, () => void>()
+    const mocked = vi.mocked(
+      retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
+    )
+    mocked.mockReturnValue({
+      mutation: (vars: { path: { requestNo: string } }) =>
+        new Promise((resolve) =>
+          resolvers.set(vars.path.requestNo, () => resolve({ success: true })),
+        ),
+    } as unknown as ReturnType<
+      typeof retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions
+    >)
+    try {
+      const { retryInventoryPosting, isRetrying } = useMesFinishedGoodsReceipts()
+
+      const a = retryInventoryPosting('FGR-A')
+      const b = retryInventoryPosting('FGR-B')
+      await Promise.resolve()
+      expect(isRetrying('FGR-A')).toBe(true)
+      expect(isRetrying('FGR-B')).toBe(true)
+
+      resolvers.get('FGR-A')!()
+      await a
+      // A 完成后仅 A 恢复；仍在途的 B 的 spinner/禁用不被误清。
+      expect(isRetrying('FGR-A')).toBe(false)
+      expect(isRetrying('FGR-B')).toBe(true)
+
+      resolvers.get('FGR-B')!()
+      await b
+      expect(isRetrying('FGR-B')).toBe(false)
+    } finally {
+      mocked.mockReturnValue({
+        mutation: vi.fn(async (vars: { body?: unknown }) => ({ success: true, data: vars.body })),
+      } as unknown as ReturnType<
+        typeof retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions
+      >)
+    }
+  })
+
   it('reverses a production report by reportNo and invalidates dependent MES lists', async () => {
     const { reverseProductionReport } = useMesProductionReports()
 
@@ -1015,19 +1057,22 @@ describe('business MES composables', () => {
     }))
     vi.mocked(listBusinessConsoleMesMaterialIssueRequests).mockImplementation(((options?: {
       query?: { skip?: number }
-    }) => Promise.resolve({
-      data: {
-        success: true,
-        data: { items: (options?.query?.skip ?? 0) === 0 ? page1 : page2, total: 250 },
-      },
-    })) as unknown as typeof listBusinessConsoleMesMaterialIssueRequests)
+    }) =>
+      Promise.resolve({
+        data: {
+          success: true,
+          data: { items: (options?.query?.skip ?? 0) === 0 ? page1 : page2, total: 250 },
+        },
+      })) as unknown as typeof listBusinessConsoleMesMaterialIssueRequests)
 
     const detail = useMesWorkOrderDetail()
     detail.filters.workOrderId = 'WO-CANCEL'
     detail.activateCancelPreview()
 
     // mock 的 useQuery 不会自动执行 query，直接跑分页 query fn 验证累计取全
-    const factory = coladaState.queryFactoriesById.get('listBusinessConsoleMesMaterialIssueRequests')
+    const factory = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesMaterialIssueRequests',
+    )
     const options = factory?.() as { query: () => Promise<{ data?: { items?: unknown[] } }> }
     const result = await options.query()
     expect(result.data?.items).toHaveLength(250)
@@ -1045,7 +1090,9 @@ describe('business MES composables', () => {
     detail.filters.workOrderId = 'WO-CANCEL'
     detail.activateCancelPreview()
 
-    const factory = coladaState.queryFactoriesById.get('listBusinessConsoleMesMaterialIssueRequests')
+    const factory = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesMaterialIssueRequests',
+    )
     const options = factory?.() as { query: () => Promise<unknown> }
     await expect(options.query()).rejects.toThrow()
   })

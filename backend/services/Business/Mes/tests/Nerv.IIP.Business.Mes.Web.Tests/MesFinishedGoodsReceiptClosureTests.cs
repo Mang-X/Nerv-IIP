@@ -192,7 +192,35 @@ public sealed class MesFinishedGoodsReceiptClosureTests
         Assert.Equal("OP-20", lotB.OperationTaskId);
         Assert.Equal(4m, lotB.Quantity);
         Assert.Equal("SN-9", lotB.SerialNo);
+        // 无入库申请时剩余可入库量 = 批次产量。
+        Assert.Equal(4m, lotB.RemainingQuantity);
         Assert.DoesNotContain(result.Items, x => x.ProducedLotNo == "LOT-X");
+    }
+
+    // 剩余可入库量 = 批次产量 − 非取消入库申请累计；已耗尽批次不出现在读面（否则页面选中后提交必然失败）。
+    [Fact]
+    public async Task List_receivable_produced_lots_reports_remaining_quantity_and_excludes_exhausted_lots()
+    {
+        await using var dbContext = CreateDbContext(nameof(List_receivable_produced_lots_reports_remaining_quantity_and_excludes_exhausted_lots));
+        var now = DateTimeOffset.Parse("2026-07-04T08:00:00Z");
+        dbContext.OutputLotGenealogies.Add(OutputLotGenealogy.Create("org-001", "env-dev", "WO-703", "OP-10", "PRPT-A", "LOT-A", null, 5m, now));
+        dbContext.OutputLotGenealogies.Add(OutputLotGenealogy.Create("org-001", "env-dev", "WO-703", "OP-20", "PRPT-B", "LOT-B", null, 5m, now));
+        // LOT-A 已全额入库（耗尽）；LOT-B 部分入库 2（剩余 3）。取消申请不计入。
+        dbContext.FinishedGoodsReceiptRequests.Add(FinishedGoodsReceiptRequest.Create("org-001", "env-dev", "FGR-A5", "WO-703", "SKU-FG", 5m, "PCS", now.AddMinutes(10), "LOT-A", null, 1m));
+        dbContext.FinishedGoodsReceiptRequests.Add(FinishedGoodsReceiptRequest.Create("org-001", "env-dev", "FGR-B2", "WO-703", "SKU-FG", 2m, "PCS", now.AddMinutes(11), "LOT-B", null, 1m));
+        var cancelled = FinishedGoodsReceiptRequest.Create("org-001", "env-dev", "FGR-BX", "WO-703", "SKU-FG", 3m, "PCS", now.AddMinutes(12), "LOT-B", null, 1m);
+        cancelled.Cancel();
+        dbContext.FinishedGoodsReceiptRequests.Add(cancelled);
+        await dbContext.SaveChangesAsync();
+
+        var result = await new ListReceivableProducedLotsQueryHandler(dbContext).Handle(
+            new ListReceivableProducedLotsQuery("org-001", "env-dev", "WO-703"), CancellationToken.None);
+
+        // LOT-A 耗尽被排除，仅剩 LOT-B 剩余 3（5 − 2，取消的 3 不计）。
+        var only = Assert.Single(result.Items);
+        Assert.Equal("LOT-B", only.ProducedLotNo);
+        Assert.Equal(3m, only.RemainingQuantity);
+        Assert.Equal(5m, only.Quantity);
     }
 
     // 读面直接查 OutputLotGenealogies：genealogy 行被删除后即从结果消失。报工冲销正是通过

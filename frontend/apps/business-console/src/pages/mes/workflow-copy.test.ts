@@ -53,7 +53,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   useMesWorkOrderProducedLots: () => ({
     // 单一产出批次自动选中，使完工入库提交用例可通过 canCreate（后端强制引用真实产出批次）。
-    producedLots: ref([{ producedLotNo: 'LOT-WO-001', reportNo: 'PRPT-1', goodQuantity: 10 }]),
+    producedLots: ref([
+      { producedLotNo: 'LOT-WO-001', reportNo: 'PRPT-1', goodQuantity: 10, remainingQuantity: 10 },
+    ]),
     producedLotsError: ref(undefined),
     producedLotsPending: ref(false),
     refreshProducedLots: vi.fn(),
@@ -75,7 +77,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     refreshReceiptRequests: mesSpies.refreshReceiptRequests,
     retryInventoryPosting: mesSpies.retryInventoryPosting,
     retryInventoryPostingError: ref(undefined),
-    retryingRequestNo: ref(null),
+    isRetrying: () => false,
   }),
   useMesOperationTasks: () => ({
     filters: {

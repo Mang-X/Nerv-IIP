@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 
@@ -219,6 +220,9 @@ public sealed record ReceivableProducedLotFact(
     string OperationTaskId,
     decimal Quantity,
     DateTimeOffset CreatedAtUtc,
+    // 剩余可入库量 = 批次产量 − 该批次已有非取消入库申请累计量。创建端点按批次上限拒绝，故读面据此过滤已耗尽批次
+    // 并提示剩余量，避免展示/自动选中一个提交必然失败的批次（与 CreateFinishedGoodsReceiptRequestCommandHandler 一致）。
+    decimal RemainingQuantity,
     string? SerialNo = null);
 
 public sealed class ListReceivableProducedLotsQueryHandler(ApplicationDbContext dbContext)
@@ -226,21 +230,54 @@ public sealed class ListReceivableProducedLotsQueryHandler(ApplicationDbContext 
 {
     public async Task<ListReceivableProducedLotsResponse> Handle(ListReceivableProducedLotsQuery request, CancellationToken cancellationToken)
     {
-        // ProducedLotNo 在 (org, env) 内唯一（OutputLotGenealogy 唯一索引），故无需去重；按批次号排序保持稳定顺序（provider 中立）。
-        var items = await dbContext.OutputLotGenealogies
+        // ProducedLotNo 在 (org, env) 内唯一（OutputLotGenealogy 唯一索引），故无需去重。
+        var lots = await dbContext.OutputLotGenealogies
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
                 && x.WorkOrderId == request.WorkOrderId)
-            .OrderBy(x => x.ProducedLotNo)
-            .Select(x => new ReceivableProducedLotFact(
+            .Select(x => new
+            {
                 x.ProducedLotNo,
                 x.ReportNo,
                 x.OperationTaskId,
                 x.Quantity,
                 x.CreatedAtUtc,
-                x.SerialNo))
+                x.SerialNo,
+            })
             .ToArrayAsync(cancellationToken);
+
+        // 各批次已占用量（非取消入库申请累计），口径与创建端点批次校验一致。
+        var receivedByLot = (await dbContext.FinishedGoodsReceiptRequests
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.WorkOrderId == request.WorkOrderId
+                && x.Status != FinishedGoodsReceiptRequest.CancelledStatus
+                && x.ProducedLotNo != null)
+            .GroupBy(x => x.ProducedLotNo!)
+            .Select(g => new { ProducedLotNo = g.Key, Received = g.Sum(x => x.Quantity) })
+            .ToArrayAsync(cancellationToken))
+            .ToDictionary(x => x.ProducedLotNo, x => x.Received, StringComparer.Ordinal);
+
+        var items = lots
+            .Select(x => new
+            {
+                Fact = x,
+                Remaining = x.Quantity - (receivedByLot.TryGetValue(x.ProducedLotNo, out var received) ? received : 0m),
+            })
+            // 排除已耗尽批次（剩余量不足容差）：不展示提交必然失败的批次。
+            .Where(x => x.Remaining > FinishedGoodsReceiptRequest.QuantityTolerance)
+            .OrderBy(x => x.Fact.ProducedLotNo, StringComparer.Ordinal)
+            .Select(x => new ReceivableProducedLotFact(
+                x.Fact.ProducedLotNo,
+                x.Fact.ReportNo,
+                x.Fact.OperationTaskId,
+                x.Fact.Quantity,
+                x.Fact.CreatedAtUtc,
+                x.Remaining,
+                x.Fact.SerialNo))
+            .ToArray();
         return new ListReceivableProducedLotsResponse(items);
     }
 }

@@ -52,7 +52,7 @@ const {
   receiptRequestsTotal,
   refreshReceiptRequests,
   retryInventoryPosting,
-  retryingRequestNo,
+  isRetrying,
 } = useMesFinishedGoodsReceipts()
 const { page, pageSize, resetPage } = usePagedList(filters, { resetOn: [() => filters.status] })
 const { resolveSku } = useMesDisplayNames()
@@ -316,10 +316,10 @@ function isNonEmpty(value: string) {
             size="sm"
             type="button"
             variant="outline"
-            :disabled="retryingRequestNo === row.requestNo"
+            :disabled="isRetrying(row.requestNo ?? '')"
             @click="retryRow(row)"
           >
-            <Spinner v-if="retryingRequestNo === row.requestNo" aria-hidden="true" />
+            <Spinner v-if="isRetrying(row.requestNo ?? '')" aria-hidden="true" />
             <RotateCcwIcon v-else aria-hidden="true" />
             重试
           </NvButton>

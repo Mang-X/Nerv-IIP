@@ -3178,6 +3178,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     operationTaskId?: string;
     quantity?: number;
     createdAtUtc?: string;
+    remainingQuantity?: number;
     serialNo?: string | null;
 };
 

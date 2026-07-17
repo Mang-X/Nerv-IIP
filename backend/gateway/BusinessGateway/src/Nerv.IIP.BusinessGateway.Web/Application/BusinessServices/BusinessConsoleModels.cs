@@ -3594,6 +3594,8 @@ public sealed record BusinessConsoleMesReceivableProducedLotRow(
     string OperationTaskId,
     decimal Quantity,
     DateTimeOffset CreatedAtUtc,
+    // 剩余可入库量（批次产量 − 已有非取消入库申请）：读面已过滤耗尽批次，Console 据此提示剩余并按剩余限制数量。
+    decimal RemainingQuantity,
     string? SerialNo = null);
 
 public sealed record BusinessConsoleMesCreateMaterialIssueRequest(

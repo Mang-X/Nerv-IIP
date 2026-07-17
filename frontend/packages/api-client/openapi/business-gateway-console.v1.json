@@ -34647,6 +34647,10 @@
             "type": "string",
             "format": "date-time"
           },
+          "remainingQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
           "serialNo": {
             "type": "string",
             "nullable": true

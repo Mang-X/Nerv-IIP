@@ -1308,6 +1308,8 @@ export interface MesWorkOrderProducedLot {
   producedLotNo: string
   reportNo?: string
   goodQuantity: number
+  // 剩余可入库量（读面已过滤耗尽批次）：Console 据此提示并按剩余限制登记数量。
+  remainingQuantity: number
   serialNo?: string
 }
 
@@ -1346,6 +1348,7 @@ export function useMesWorkOrderProducedLots(workOrderId: () => string) {
         producedLotNo: (row.producedLotNo ?? '').trim(),
         reportNo: row.reportNo ?? undefined,
         goodQuantity: row.quantity ?? 0,
+        remainingQuantity: row.remainingQuantity ?? 0,
         serialNo: row.serialNo?.trim() || undefined,
       }))
   })
@@ -1393,8 +1396,8 @@ export function useMesFinishedGoodsReceipts() {
       ]).catch(ignoreBackgroundError)
     },
   })
-  // 当前正在重试的单据号，供行内按钮 spinner/禁用只作用于该行（列表其余行不受影响）。
-  const retryingRequestNo = shallowRef<string | null>(null)
+  // 正在重试的单据号集合（支持并发重试）：spinner/禁用按单据号各自作用，A 在途时重试 B 不会互相清空状态。
+  const retryingRequestNos = reactive(new Set<string>())
 
   return {
     createReceiptRequest: (body: BusinessConsoleMesCreateReceiptRequest) =>
@@ -1402,7 +1405,7 @@ export function useMesFinishedGoodsReceipts() {
     createReceiptRequestError: createReceiptMutation.error,
     createReceiptRequestPending: createReceiptMutation.isLoading,
     retryInventoryPosting: async (requestNo: string) => {
-      retryingRequestNo.value = requestNo
+      retryingRequestNos.add(requestNo)
       try {
         await retryMutation.mutateAsync({
           path: { requestNo },
@@ -1413,11 +1416,12 @@ export function useMesFinishedGoodsReceipts() {
           body: { idempotencyKey: makeIdempotencyKey('receipt-retry') },
         })
       } finally {
-        retryingRequestNo.value = null
+        // 只删当前单据：并发重试时不会误清其他仍在途单据的状态。
+        retryingRequestNos.delete(requestNo)
       }
     },
     retryInventoryPostingError: retryMutation.error,
-    retryingRequestNo: computed(() => retryingRequestNo.value),
+    isRetrying: (requestNo: string) => retryingRequestNos.has(requestNo),
     filters,
     receiptRequests: computed<BusinessConsoleMesReceiptRequestRow[]>(() =>
       envelopeItems<
