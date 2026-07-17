@@ -4,6 +4,8 @@ public sealed class ControllableTimeProvider : TimeProvider
 {
     private readonly object _gate = new();
     private readonly List<ControllableTimer> _timers = [];
+    private readonly HashSet<(TimeSpan DueTime, TimeSpan Period)> _createdTimers = [];
+    private readonly Dictionary<(TimeSpan DueTime, TimeSpan Period), TaskCompletionSource> _timerCreationWaiters = [];
     private DateTimeOffset _utcNow = DateTimeOffset.Parse("2026-07-17T00:00:00Z");
 
     public override DateTimeOffset GetUtcNow()
@@ -21,12 +23,37 @@ public sealed class ControllableTimeProvider : TimeProvider
     public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
     {
         var timer = new ControllableTimer(this, callback, state, dueTime, period);
+        TaskCompletionSource? creationWaiter = null;
         lock (_gate)
         {
             _timers.Add(timer);
+            var registration = (dueTime, period);
+            _createdTimers.Add(registration);
+            _timerCreationWaiters.Remove(registration, out creationWaiter);
         }
 
+        creationWaiter?.TrySetResult();
         return timer;
+    }
+
+    public Task WaitForTimerCreatedAsync(TimeSpan dueTime, TimeSpan period)
+    {
+        lock (_gate)
+        {
+            var registration = (dueTime, period);
+            if (_createdTimers.Contains(registration))
+            {
+                return Task.CompletedTask;
+            }
+
+            if (!_timerCreationWaiters.TryGetValue(registration, out var waiter))
+            {
+                waiter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _timerCreationWaiters.Add(registration, waiter);
+            }
+
+            return waiter.Task;
+        }
     }
 
     public void Advance(TimeSpan amount)

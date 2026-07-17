@@ -28,25 +28,36 @@ public sealed class WorkerTests
         var worker = CreateWorker(clock, signal, protocol, ops, [collection], [monitor]);
 
         await worker.StartAsync(CancellationToken.None);
-        await Task.WhenAll(collection.Started.Task, protocol.FirstCycle.Task, ops.Polled.Task);
-        Assert.Equal(0, monitor.Calls);
+        try
+        {
+            await Task.WhenAll(collection.Started.Task, protocol.FirstCycle.Task, ops.Polled.Task)
+                .WaitAsync(TimeSpan.FromSeconds(5));
+            await clock.WaitForTimerCreatedAsync(TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(4))
+                .WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(0, monitor.Calls);
 
-        var tracker = new ConnectorConnectionStateTracker("connector-a", clock, signal.Signal);
-        tracker.MarkLost("transport", "socket-closed");
-        await protocol.SecondCycle.Task;
-        Assert.Equal(DateTimeOffset.Parse("2026-07-17T00:00:00Z"), clock.GetUtcNow());
+            var tracker = new ConnectorConnectionStateTracker("connector-a", clock, signal.Signal);
+            tracker.MarkLost("transport", "socket-closed");
+            await protocol.SecondCycle.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(DateTimeOffset.Parse("2026-07-17T00:00:00Z"), clock.GetUtcNow());
 
-        clock.Advance(TimeSpan.FromSeconds(4));
-        await Task.WhenAll(monitor.Checked.Task, protocol.ThirdCycle.Task);
+            clock.Advance(TimeSpan.FromSeconds(4));
+            await monitor.Checked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await protocol.ThirdCycle.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        Assert.True(monitor.Calls >= 1);
-        Assert.True(protocol.ReportingCycles >= 3);
-        Assert.True(ops.Calls >= 1);
-        Assert.False(collection.Completed);
+            Assert.True(monitor.Calls >= 1);
+            Assert.True(protocol.ReportingCycles >= 3);
+            Assert.True(ops.Calls >= 1);
+            Assert.False(collection.Completed);
 
-        collection.Release();
-        await collection.Finished.Task;
-        await worker.StopAsync(CancellationToken.None);
+            collection.Release();
+            await collection.Finished.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            collection.Release();
+            await worker.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+        }
     }
 
     [Fact]
