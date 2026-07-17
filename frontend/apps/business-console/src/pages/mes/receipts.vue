@@ -98,8 +98,9 @@ const hasReceiptContext = computed(
 watch(
   () => route.query.status,
   (value) => {
-    const next = firstQueryValue(value)
-    if (next && next !== filters.status) filters.status = next
+    // 空值也要生效：从失败状态页后退到无 status 的 URL 时清回默认（否则列表卡在旧筛选）。
+    const next = firstQueryValue(value) || undefined
+    if (next !== filters.status) filters.status = next
   },
   { immediate: true },
 )

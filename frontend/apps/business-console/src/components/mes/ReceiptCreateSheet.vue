@@ -49,7 +49,10 @@ const {
   producedLotsError,
   refreshProducedLots,
   producedLotPlaceholder,
+  selectedLot,
   canSubmit,
+  showErrors,
+  invalid,
   createReceiptRequestPending,
   submit,
 } = useReceiptCreateForm(
@@ -96,7 +99,12 @@ function formatQuantity(value?: number) {
               v-model="form.producedLotNo"
               :disabled="producedLotsPending || producedLots.length === 0"
             >
-              <NvSelectTrigger id="receipt-produced-lot" class="w-full" aria-label="选择产出批次">
+              <NvSelectTrigger
+                id="receipt-produced-lot"
+                class="w-full"
+                aria-label="选择产出批次"
+                :data-invalid="showErrors && invalid.producedLotNo ? '' : undefined"
+              >
                 <NvSelectValue :placeholder="producedLotPlaceholder" />
               </NvSelectTrigger>
               <NvSelectContent>
@@ -137,9 +145,15 @@ function formatQuantity(value?: number) {
               inputmode="decimal"
               min="0.000001"
               step="0.000001"
+              :max="selectedLot?.remainingQuantity"
               required
               type="number"
+              :data-invalid="showErrors && invalid.quantity ? '' : undefined"
             />
+            <!-- 剩余可入库量提示：数量不得超过所选批次剩余（后端按批次上限拒绝，前端闭环）。 -->
+            <p v-if="selectedLot" class="text-xs text-muted-foreground">
+              该批次剩余可入库 {{ formatQuantity(selectedLot.remainingQuantity) }}。
+            </p>
           </NvField>
           <NvField>
             <NvFieldLabel for="receipt-unit-cost">单位成本</NvFieldLabel>
@@ -151,11 +165,17 @@ function formatQuantity(value?: number) {
               step="0.000001"
               required
               type="number"
+              :data-invalid="showErrors && invalid.unitCost ? '' : undefined"
             />
           </NvField>
           <NvField>
             <NvFieldLabel for="receipt-uom">单位</NvFieldLabel>
-            <NvInput id="receipt-uom" v-model="form.uomCode" required />
+            <NvInput
+              id="receipt-uom"
+              v-model="form.uomCode"
+              required
+              :data-invalid="showErrors && invalid.uomCode ? '' : undefined"
+            />
           </NvField>
           <NvField>
             <NvFieldLabel for="receipt-requested-at">登记时间</NvFieldLabel>
@@ -164,13 +184,23 @@ function formatQuantity(value?: number) {
               v-model="form.requestedAtUtc"
               required
               type="datetime-local"
+              :data-invalid="showErrors && invalid.requestedAtUtc ? '' : undefined"
             />
           </NvField>
         </NvFieldGroup>
 
+        <!-- 点提交才标红：必填/超量未过给顶部汇总 + 字段红框，不发请求（create-dialog 硬规则）。 -->
+        <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+          {{
+            showErrors && invalid.quantity && selectedLot
+              ? '入库数量需大于 0 且不超过该批次剩余可入库量（已标红）。'
+              : '请完整填写带 * 的必填项（已标红）。'
+          }}
+        </p>
+
         <NvSheetFooter>
           <NvButton type="button" variant="outline" @click="openModel = false">取消</NvButton>
-          <NvButton type="submit" :disabled="createReceiptRequestPending || !canSubmit">
+          <NvButton type="submit" :disabled="createReceiptRequestPending">
             <Spinner v-if="createReceiptRequestPending" aria-hidden="true" />
             <PackageCheckIcon v-else aria-hidden="true" />
             提交入库登记

@@ -59,6 +59,14 @@ const {
 
 const releaseOpen = ref(false)
 const releaseReason = ref('')
+// 点提交才标红（create-dialog 硬规则）：必填理由为空时不禁用按钮，而是标红 + 提示且不发请求。
+const releaseShowErrors = ref(false)
+watch(releaseOpen, (open) => {
+  if (!open) {
+    releaseReason.value = ''
+    releaseShowErrors.value = false
+  }
+})
 
 // 时间线加载失败（网络/5xx）以 toast 告知，页面内不保留常驻红条（业务前端反馈约束）；
 // 空态仍有「刷新」可重试。
@@ -99,6 +107,8 @@ function formatDateTime(value?: string | null) {
 }
 
 async function confirmRelease() {
+  // 点提交才校验：理由为空则标红 + 提示，不发请求。
+  releaseShowErrors.value = true
   const reason = releaseReason.value.trim()
   if (!reason || forceReleasePending.value) return
   try {
@@ -251,7 +261,15 @@ async function confirmRelease() {
             v-model="releaseReason"
             :maxlength="500"
             placeholder="说明为何强制释放该质量保留"
+            :data-invalid="releaseShowErrors && !releaseReason.trim() ? '' : undefined"
           />
+          <p
+            v-if="releaseShowErrors && !releaseReason.trim()"
+            class="text-xs text-destructive"
+            role="alert"
+          >
+            请填写释放理由（已标红）。
+          </p>
         </NvField>
         <NvAlertDialogFooter>
           <NvButton
@@ -265,7 +283,7 @@ async function confirmRelease() {
           <NvButton
             type="button"
             variant="destructive"
-            :disabled="!releaseReason.trim() || forceReleasePending"
+            :disabled="forceReleasePending"
             @click="confirmRelease"
           >
             <Spinner v-if="forceReleasePending" aria-hidden="true" />

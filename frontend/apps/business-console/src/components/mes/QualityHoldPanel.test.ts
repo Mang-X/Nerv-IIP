@@ -178,6 +178,20 @@ describe('QualityHoldPanel', () => {
     expect(wrapper.emitted('released')).toBeTruthy()
   })
 
+  it('marks the reason field on empty submit without sending (no disabled button)', async () => {
+    const wrapper = mountPanel({ canManage: true })
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('强制释放'))!
+      .trigger('click')
+    // 理由为空直接点确认：按钮未被禁用，点后标红 + 提示，且不发释放请求。
+    const confirm = wrapper.findAll('button').find((b) => b.text().includes('确认强制释放'))!
+    expect(confirm.attributes('disabled')).toBeUndefined()
+    await confirm.trigger('click')
+    expect(holdState.forceRelease).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('请填写释放理由')
+  })
+
   it('gates the timeline behind quality read permission (no request, clear note)', () => {
     // 时间线读端点需 business.mes.quality.read：无该权限时不加载时间线、给出说明，而非逐个保留 403。
     const wrapper = mountPanel({ canReadTimeline: false })

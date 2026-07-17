@@ -1,5 +1,5 @@
 import type { BusinessConsoleMesCreateReceiptRequest } from '@nerv-iip/api-client'
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 import {
   makeIdempotencyKey,
@@ -110,6 +110,27 @@ export function useReceiptCreateForm(
           : '选择产出批次',
   )
 
+  // 当前所选批次：用于按剩余可入库量限制登记数量（后端按批次上限拒绝，前端闭环避免必然失败的请求）。
+  const selectedLot = computed(() =>
+    producedLots.value.find((l) => l.producedLotNo === form.producedLotNo),
+  )
+  const QUANTITY_TOLERANCE = 0.000001
+  const quantityValid = computed(() => {
+    const quantity = toPositiveNumber(form.quantity)
+    if (quantity === undefined) return false
+    const remaining = selectedLot.value?.remainingQuantity
+    return remaining === undefined || quantity <= remaining + QUANTITY_TOLERANCE
+  })
+
+  // 字段级无效标记（校验时机对齐 create-dialog：点提交才标红）。
+  const invalid = computed(() => ({
+    producedLotNo: !isNonEmpty(form.producedLotNo),
+    quantity: !quantityValid.value,
+    unitCost: toPositiveNumber(form.unitCost) === undefined,
+    uomCode: !isNonEmpty(form.uomCode),
+    requestedAtUtc: !isNonEmpty(form.requestedAtUtc),
+  }))
+
   const canSubmit = computed(() => {
     const ctx = context()
     return (
@@ -117,14 +138,16 @@ export function useReceiptCreateForm(
       isNonEmpty(ctx.environmentId) &&
       isNonEmpty(ctx.workOrderId) &&
       isNonEmpty(ctx.skuId) &&
-      // 必须选定工单真实产出批次（后端强制），否则提交必被拒于数量校验之前。
-      isNonEmpty(form.producedLotNo) &&
-      toPositiveNumber(form.quantity) !== undefined &&
-      toPositiveNumber(form.unitCost) !== undefined &&
-      isNonEmpty(form.uomCode) &&
-      isNonEmpty(form.requestedAtUtc)
+      !invalid.value.producedLotNo &&
+      !invalid.value.quantity &&
+      !invalid.value.unitCost &&
+      !invalid.value.uomCode &&
+      !invalid.value.requestedAtUtc
     )
   })
+
+  // 点提交才标红（feedback-and-notifications：字段级校验内联标红 + 顶部汇总，不发请求也不 toast）。
+  const showErrors = ref(false)
 
   function resetForm() {
     form.quantity = '1'
@@ -137,9 +160,12 @@ export function useReceiptCreateForm(
     form.requestedAtUtc = toLocalDateTimeInput(new Date())
     // 仅在登记成功后调用：轮换幂等键，使同一工单的下一笔登记成为一笔独立申请（连录不回放旧单）。
     form.idempotencyKey = makeIdempotencyKey('receipt')
+    showErrors.value = false
   }
 
   async function submit(): Promise<boolean> {
+    // 点提交才校验：必填/超量未过则标红 + 顶部汇总，不发请求（create-dialog 硬规则）。
+    showErrors.value = true
     if (!canSubmit.value) return false
     const ctx = context()
     const body: BusinessConsoleMesCreateReceiptRequest = {
@@ -177,7 +203,10 @@ export function useReceiptCreateForm(
     producedLotsError,
     refreshProducedLots,
     producedLotPlaceholder,
+    selectedLot,
     canSubmit,
+    showErrors,
+    invalid,
     createReceiptRequestPending,
     submit,
   }

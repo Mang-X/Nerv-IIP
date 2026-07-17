@@ -290,6 +290,25 @@ describe('MES receipts — failed inventory posting retry', () => {
     expect(wrapper.text()).toContain('该工单暂无可入库的产出批次')
   })
 
+  it('blocks submit when quantity exceeds the selected lot remaining (no request, inline error)', async () => {
+    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    receiptState.producedLots = [
+      { producedLotNo: 'LOT-FG-1', reportNo: 'PRPT-1', goodQuantity: 8, remainingQuantity: 3 },
+    ]
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await wrapper.get('#receipt-unit-cost').setValue('3.5')
+    await wrapper.get('#receipt-quantity').setValue('4') // 超过剩余 3
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    // 数量超剩余 → 不发请求，内联标红提示（不是禁用按钮、不是 toast）。
+    expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('不超过该批次剩余可入库量')
+    expect(notifySpies.error).not.toHaveBeenCalled()
+  })
+
   it('surfaces a retry (not “暂无产出批次”) when produced-lot loading fails', async () => {
     routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     receiptState.producedLots = []
