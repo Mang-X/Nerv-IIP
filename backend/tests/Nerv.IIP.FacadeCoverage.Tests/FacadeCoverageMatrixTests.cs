@@ -236,7 +236,23 @@ public sealed class FacadeCoverageMatrixTests
             }
         }
 
-        foreach (var service in actual.Keys.Where(s => !expected.ContainsKey(s)))
+        var expectedTotal = expected.Values.Aggregate(
+            (Total: 0, Exposed: 0, Deferred: 0, Internal: 0),
+            (sum, counts) =>
+                (sum.Total + counts.Total,
+                 sum.Exposed + counts.Exposed,
+                 sum.Deferred + counts.Deferred,
+                 sum.Internal + counts.Internal));
+        if (!actual.TryGetValue("Total", out var totalRow))
+        {
+            problems.Add("  Total: missing from the markdown summary table.");
+        }
+        else if (totalRow != expectedTotal)
+        {
+            problems.Add($"  Total: markdown says {totalRow} but registry has {expectedTotal}.");
+        }
+
+        foreach (var service in actual.Keys.Where(s => s != "Total" && !expected.ContainsKey(s)))
         {
             problems.Add($"  {service}: present in markdown summary but not in the registry.");
         }
@@ -450,16 +466,16 @@ public sealed class FacadeCoverageMatrixTests
                 continue;
             }
 
-            var service = cells[0];
-            if (service.Contains('*') || service == "Service" || service.StartsWith("---", StringComparison.Ordinal))
+            var service = cells[0].Trim('*').Trim();
+            if (service == "Service" || service.StartsWith("---", StringComparison.Ordinal))
             {
-                continue; // header, separator, or bolded Total row
+                continue; // header or separator
             }
 
-            if (int.TryParse(cells[1], out var total)
-                && int.TryParse(cells[2], out var exposed)
-                && int.TryParse(cells[3], out var deferred)
-                && int.TryParse(cells[4], out var @internal))
+            if (int.TryParse(cells[1].Trim('*').Trim(), out var total)
+                && int.TryParse(cells[2].Trim('*').Trim(), out var exposed)
+                && int.TryParse(cells[3].Trim('*').Trim(), out var deferred)
+                && int.TryParse(cells[4].Trim('*').Trim(), out var @internal))
             {
                 rows[service] = (total, exposed, deferred, @internal);
             }
