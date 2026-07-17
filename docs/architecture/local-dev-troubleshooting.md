@@ -81,6 +81,17 @@ the topology source, pinned infra images) remain in `AGENTS.md`.
    Secret-setting commands must mark sensitive arguments for script log
    redaction.
 
+10. **Connector disconnect acceptance is an opt-in real-infrastructure gate.**
+    Run `pwsh scripts/verify-connector-health-disconnect.ps1 -Runs 3`; do not
+    enable `ConnectorHealthAcceptance:Enabled` for normal `nerv.ps1 dev` or a
+    customer profile. The acceptance profile injects its session-scoped internal
+    token, IndustrialTelemetry endpoint and loopback Modbus mappings into the
+    Connector Host, then writes evidence under
+    `artifacts/script-logs/connector-health-disconnect/<timestamp>/`. A Docker
+    daemon/runtime health failure means no real run occurred (for example 0/3),
+    even when the simulator, script contract and AppHost build gates pass. Repair
+    Docker Desktop and rerun; never widen the fixed ten-second deadline.
+
 ## Service startup failure patterns
 
 10. **CAP PostgreSQL profile without integration event publisher registration.**

@@ -316,6 +316,31 @@ Modbus TCP 与 MQTT 采集器同样归属 `connector-hosts`，复用 Connector H
 
 首批自动化验证覆盖 Modbus 模拟采样入库、MQTT broker/payload 映射采样入库、点位映射配置化、下游写入失败后的 bucket 恢复与稳定 `source_sequence`。真实现场联调仍应在部署 profile 中提供 endpoint/broker 与凭据引用，不得把凭据写入仓库。
 
+## Canonical identity、连接状态与 tag manifest 扩展（#947 / #951）
+
+### Canonical collection connector identity
+
+`collectionConnectorId` 是 organization/environment 内一条采集连接器配置的稳定身份。完整能力 profile 的 Connector Host 配置显式提供该值，并把同一值用于 AppHub `instanceKey`、collection health `connectorId`、tag manifest、telemetry sample、BusinessGateway route 和 Business Console 查询。当前 adapters 为旧配置保留 deterministic derived-ID fallback，但该 fallback 只是同协议 V1 的迁移兼容，不是历史数据关联或跨配置重命名机制。`sourceConnector` 继续保留为向后兼容的来源诊断文本，不是 join key；既有 telemetry 行保持 nullable `collection_connector_id`，不得从旧文本猜测或回填。显式 ID 变化表示新连接器身份，不自动合并历史。
+
+### 四个独立事实面
+
+1. **Host liveness**：AppHub heartbeat 只证明 Connector Host 进程存活。
+2. **Field connection**：协议适配器上报 `unknown`、`alive` 或 `lost` 及独立 `observedAtUtc`；alive 带 `connectedSinceUtc`，lost 带 `disconnectedSinceUtc`，可附有界 reason category 和脱敏 diagnostic code。
+3. **Collector health**：采集循环自己的 reported/health status、counter epoch、received/dropped/error counters 和 last sample。
+4. **Tag sample presence**：IndustrialTelemetry summary 只说明一个 current manifest binding 是否曾有 sample，以及 first/last sample time。
+
+四轴分别排序和持久化。sample silence、collector error 或 Host heartbeat 不能伪造 field `lost`；field `lost`、Host timeout、collector terminal failure 的读面优先级分别产生 `field-connection`、`host-liveness` 或 fault，但原始轴仍同时返回。旧 Host 没有 connection object 时保持 null/unknown，不历史回填。
+
+受治理 profile 固定为 heartbeat 2 秒、field probe 4 秒、AppHub Host liveness timeout 6 秒、backend deadline 不超过 8 秒，Business Console 每 10 秒轮询。Connector Host 与 AppHub 对超出这些边界的配置执行启动校验；采样 bucket 周期可以更长，但不能替代 4 秒的协议连接探测。
+
+### Connector tag manifest
+
+Connector Host 通过 IndustrialTelemetry 内部 endpoint `POST /api/business/v1/iiot/connector-tag-manifests`（operation `reportBusinessIiotConnectorTagManifest`）上报 replace-style current manifest。`manifestRevision` 是配置 shape 的 canonical SHA-256；`manifestObservedAtUtc`/exact ticks 决定 definition 顺序。逐 tag activation 使用独立 observation，因此 pending/active/error/disabled 变化不改变 revision。重启、配置变化和 rebirth request 会触发上报；未确认 payload 以有界 exponential backoff 重试。
+
+这些字段是 Connector Protocol V1 的 additive compatibility extension，没有伪造新的协议主版本。完整 connection/manifest 体验的最低兼容条件是 Host build 同时支持显式 `collectionConnectorId`、connection object、manifest report/retry 和 sample `collectionConnectorId`；更早的 V1 Host 继续注册和采样，但读面会保守显示 connection unknown 与 manifest unavailable。当前仓库没有独立可引用的 Connector Host 小版本号，因此文档不编造数值版本门槛。
+
+IndustrialTelemetry 通过 `GET /api/business/v1/iiot/connectors/{collectionConnectorId}/tag-coverage`（operation `getBusinessIiotConnectorTagCoverage`）从 current bindings 出发并 LEFT JOIN `telemetry_summaries`。它不扫描 raw historian、不使用 device-control bindings，也不把 sample presence 推断成 quality/freshness。旧 Host 从未上报 manifest 时返回 `manifestStatus=unavailable`；current manifest 的零 bindings 才表示真实空配置。
+
 ## 非目标
 
 1. 不在本文档中定义全部命令下发传输形态；当前只冻结第二阶段采用的 HTTP claim/lease 拉取模型。

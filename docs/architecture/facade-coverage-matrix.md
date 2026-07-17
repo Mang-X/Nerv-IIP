@@ -109,6 +109,14 @@ The `exposed` rows (286) — each with its verified facade `gatewayOperationIds`
 enumerated in the JSON registry. The `deferred` and `internal` rows, the actual
 governance decisions, are listed in full below.
 
+For connector configured-tag coverage, the declaration is exact: service
+operation `reportBusinessIiotConnectorTagManifest` is `internal` because it is a
+Connector Host callback; service operation `getBusinessIiotConnectorTagCoverage`
+is `exposed` through Gateway operation
+`getBusinessConsoleTelemetryConnectorTagCoverage`. Coverage starts from the
+current manifest rather than from samples, so the facade must preserve
+`current` versus `unavailable` and nullable sample timestamps.
+
 ### Deferred endpoints (facade tracked, not yet exposed)
 
 | Service | Method | Service route | Follow-up |

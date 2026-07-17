@@ -50,7 +50,7 @@
 - Produces: effective connector ID `CollectionConnectorId ?? $"{protocol}-{ConnectorId}"` in all three adapters.
 - Produces: `ConnectorCollectionHealth(..., ConnectorConnectionState? Connection = null)` and matching Host snapshot.
 
-- [ ] **Step 1: Write the failing protocol and identity tests**
+- [x] **Step 1: Write the failing protocol and identity tests**
 
 ```csharp
 [Fact]
@@ -79,13 +79,13 @@ public async Task Reports_optional_connection_state_without_changing_legacy_payl
 }
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run: `dotnet test connector-hosts/tests/Nerv.IIP.ConnectorHost.Application.Tests/Nerv.IIP.ConnectorHost.Application.Tests.csproj --filter "FullyQualifiedName~ReportingLoopTests"`
 
 Expected: FAIL because the connection records and explicit collection connector ID do not exist.
 
-- [ ] **Step 3: Add the exact additive records and effective-ID rule**
+- [x] **Step 3: Add the exact additive records and effective-ID rule**
 
 ```csharp
 public sealed record ConnectorConnectionState(
@@ -107,13 +107,13 @@ public sealed record ConnectorConnectionStateSnapshot(
 
 Append `Connection = null` to both collection-health records and `string? CollectionConnectorId = null` to each protocol options record. Add a single `EffectiveCollectionConnectorId` property per options record and use it for target `InstanceKey`, collection health `ConnectorId`, and later sample/manifest payloads. Bind `{Protocol}:CollectionConnectorId` in Host configuration and set the development example to the former derived value.
 
-- [ ] **Step 4: Run all connector contract tests and verify GREEN**
+- [x] **Step 4: Run all connector contract tests and verify GREEN**
 
 Run: `dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln`
 
 Expected: PASS with legacy and explicit identities both covered.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add backend/common/Contracts/Nerv.IIP.Contracts.ConnectorProtocol connector-hosts/src connector-hosts/tests
@@ -141,7 +141,7 @@ git commit -m "feat(connector-protocol): add canonical connection identity"
 - Produces: `IConnectorConnectionMonitor.RunConnectionCheckAsync(CancellationToken)` for Modbus only.
 - Produces: independent collection, connection-monitor, serialized reporting, and Ops loops.
 
-- [ ] **Step 1: Write failing state-machine and scheduling tests**
+- [x] **Step 1: Write failing state-machine and scheduling tests**
 
 ```csharp
 [Fact]
@@ -166,13 +166,13 @@ public async Task Connection_monitor_runs_independently_of_slow_collection()
 
 Also cover recovery creating a new `ConnectedSinceUtc`, loss preserving `DisconnectedSinceUtc`, one slow collector not blocking another, a transition waking reporting before the periodic tick, registration preceding heartbeat/state for each target, and Ops polling while collection is blocked.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run: `dotnet test connector-hosts/tests/Nerv.IIP.ConnectorHost.Host.Tests/Nerv.IIP.ConnectorHost.Host.Tests.csproj --filter "FullyQualifiedName~WorkerTests|FullyQualifiedName~IndustrialTelemetryCollectorRunnerTests"`
 
 Expected: FAIL because Worker is one serial cycle and no monitor/signal exists.
 
-- [ ] **Step 3: Implement the state tracker and fixed product profile**
+- [x] **Step 3: Implement the state tracker and fixed product profile**
 
 ```csharp
 public interface IConnectorConnectionMonitor
@@ -194,7 +194,7 @@ public sealed class ConnectorHostWorkerOptions
 
 Validate positive periods, detection budget `<=4`, heartbeat `==2` for the governed profile, and backend deadline `<=8`. Run per-collector collection loops, per-monitor probe loops, one serialized report loop awakened by either its 2-second period or the capacity-one signal, and one Ops loop under `Task.WhenAll`. A normal heartbeat always reports Host process reachability as `true`; collector degradation stays in collection health.
 
-- [ ] **Step 4: Run connector Host and Application tests and verify GREEN**
+- [x] **Step 4: Run connector Host and Application tests and verify GREEN**
 
 Run: `dotnet test connector-hosts/tests/Nerv.IIP.ConnectorHost.Application.Tests/Nerv.IIP.ConnectorHost.Application.Tests.csproj`
 
@@ -202,7 +202,7 @@ Run: `dotnet test connector-hosts/tests/Nerv.IIP.ConnectorHost.Host.Tests/Nerv.I
 
 Expected: PASS without wall-clock sleeps; use fake `TimeProvider` and controllable tasks.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add connector-hosts/src connector-hosts/tests
@@ -227,11 +227,11 @@ git commit -m "refactor(connector-host): decouple health reporting loops"
 - Consumes: `ConnectorConnectionStateTracker`, `IConnectorReportSignal`, `IConnectorConnectionMonitor`.
 - Produces: explicit unknown/alive/lost snapshots without using sample POST success as connectivity.
 
-- [ ] **Step 1: Add failing adapter tests**
+- [x] **Step 1: Add failing adapter tests**
 
 For Modbus, assert a successful protocol transaction—not TCP connect alone—marks alive; a transport timeout marks lost; recovery creates a new interval; sample POST failure does not mark lost; and `ProbeAsync(firstMapping)` changes no sample counters. For MQTT, assert CONNACK plus subscription acknowledgement marks alive, `DisconnectedAsync` marks lost immediately, resubscription recovers, and invalid payload does not mark lost. For OPC UA, assert Session plus Subscription `ApplyChanges` marks alive, bad keep-alive marks lost immediately, reconnect recovers, and telemetry POST failure does not mark lost.
 
-- [ ] **Step 2: Run each adapter suite and verify RED**
+- [x] **Step 2: Run each adapter suite and verify RED**
 
 Run the three commands:
 
@@ -243,15 +243,15 @@ dotnet test connector-hosts/tests/Nerv.IIP.ConnectorHost.Connectors.OpcUa.Tests/
 
 Expected: the new transition assertions fail while existing sampling tests remain green.
 
-- [ ] **Step 3: Implement the minimal authoritative transitions**
+- [x] **Step 3: Implement the minimal authoritative transitions**
 
 Use a short async gate around Modbus protocol I/O, a maximum four-second linked cancellation timeout, and the first enabled mapping as an active probe; no mapping leaves state unknown. Wire MQTTnet disconnect and OPC UA bad keep-alive callbacks directly to `MarkLost("transport", stableCode)`. Only protocol transport/session failures change connection state; parsing, validation, and IndustrialTelemetry delivery failures remain collector errors.
 
-- [ ] **Step 4: Re-run all three suites and verify GREEN**
+- [x] **Step 4: Re-run all three suites and verify GREEN**
 
 Expected: PASS, including recovery interval and non-connection-error cases.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add connector-hosts/src/Nerv.IIP.ConnectorHost.Connectors.* connector-hosts/tests/Nerv.IIP.ConnectorHost.Connectors.*
@@ -282,7 +282,7 @@ git commit -m "feat(connector-host): report protocol connection transitions"
 - Produces additive response `Connection`, `StaleReason`, and `OfflineReason` for single and list reads.
 - Produces one `CollectionHealth:HostLivenessTimeout` consumed by evaluator and scanner.
 
-- [ ] **Step 1: Write failing ordering, precedence, and schema tests**
+- [x] **Step 1: Write failing ordering, precedence, and schema tests**
 
 ```csharp
 [Fact]
@@ -304,7 +304,7 @@ public void Explicit_field_loss_precedes_fresh_host_heartbeat()
 
 Also cover stale connection observations unable to revive lost, null legacy reports not clearing facts, new counters with stale connection, host timeout producing `host-liveness`, simultaneous field and host loss preferring field, live connection plus terminal collector reporting fault, and invalid cadence/timeout configuration failing startup.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run:
 
@@ -315,7 +315,7 @@ dotnet test backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.App
 
 Expected: FAIL because connection observations are not persisted and the evaluator/scanner use different constants.
 
-- [ ] **Step 3: Implement independent ordering and unified options**
+- [x] **Step 3: Implement independent ordering and unified options**
 
 Split `ConnectorCollectionHealthProjection.Record` into counter ordering by epoch/report time and connection ordering solely by `Connection.ObservedAtUtc`. Null legacy connection never clears a known fact. Validate state timestamps: alive requires only `ConnectedSinceUtc`, lost requires only `DisconnectedSinceUtc`, unknown has neither. Bind:
 
@@ -329,7 +329,7 @@ Split `ConnectorCollectionHealthProjection.Record` into counter ordering by epoc
 
 Remove `ConnectorCollectionHealthEvaluator.StaleAfter`; inject the same options into query derivation and timeout scanning.
 
-- [ ] **Step 4: Generate the migration**
+- [x] **Step 4: Generate the migration**
 
 Run:
 
@@ -341,7 +341,7 @@ dotnet tool run dotnet-ef migrations add AddConnectorConnectionState --project b
 
 Expected: nullable columns with lengths 32/64/128 and database comments; no historical backfill.
 
-- [ ] **Step 5: Re-run focused tests and commit**
+- [x] **Step 5: Re-run focused tests and commit**
 
 ```powershell
 git add backend/common/Contracts/Nerv.IIP.Contracts.ConnectorProtocol backend/services/AppHub
@@ -364,11 +364,11 @@ git commit -m "feat(apphub): persist authoritative connector connectivity"
 - Consumes: AppHub additive connection and offline-reason fields.
 - Produces: generated API types and operator-facing separate field/Host disconnect labels and durations.
 
-- [ ] **Step 1: Write failing Gateway and Vue tests**
+- [x] **Step 1: Write failing Gateway and Vue tests**
 
 Assert the Gateway preserves explicit lost connection and `field-connection`, preserves null connection for old Hosts, and exposes all new schema fields. In the card test, assert field loss renders “现场连接断开”, host timeout renders “采集主机离线”, and legacy null renders “连接状态未知”; do not infer any state from `lastSampleAtUtc`.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run:
 
@@ -377,7 +377,7 @@ dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.T
 pnpm -C frontend --filter @nerv-iip/business-console test -- connectorsPage.test.ts
 ```
 
-- [ ] **Step 3: Mirror additive DTOs, export, codegen, and render**
+- [x] **Step 3: Mirror additive DTOs, export, codegen, and render**
 
 Add `BusinessConsoleConnectorConnectionState` and append nullable `Connection`, `StaleReason`, and `OfflineReason` to both single/list models. Export the real snapshot and generate the client:
 
@@ -388,7 +388,7 @@ pnpm -C frontend generate:api
 
 Use generated types in the Vue component; keep existing 10-second polling unchanged.
 
-- [ ] **Step 4: Run Gateway and frontend focused tests and commit**
+- [x] **Step 4: Run Gateway and frontend focused tests and commit**
 
 ```powershell
 git add backend/gateway/BusinessGateway frontend/packages/api-client frontend/apps/business-console
@@ -415,11 +415,11 @@ git commit -m "feat(console): distinguish connector and host disconnects"
 - Produces: one manifest root per organization/environment/connector and one reusable current binding projection per connector/device/tag.
 - Produces: nullable `CollectionConnectorId` on raw and summary samples; only summary receives the coverage join index.
 
-- [ ] **Step 1: Write failing aggregate and schema tests**
+- [x] **Step 1: Write failing aggregate and schema tests**
 
 Cover idempotent replay; older observation stale; same observation/different revision conflict; later observation rolling back to an earlier hash; omitted binding retirement; older activation unable to overwrite newer; organization/environment/connector isolation; nullable sample connector ID; summary coverage index; and absence of a raw coverage index.
 
-- [ ] **Step 2: Run Domain and Web tests and verify RED**
+- [x] **Step 2: Run Domain and Web tests and verify RED**
 
 Run:
 
@@ -428,7 +428,7 @@ dotnet test backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Busines
 dotnet test backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj --filter "FullyQualifiedName~IndustrialTelemetrySchemaConventionTests|FullyQualifiedName~IndustrialTelemetryHistorianTests"
 ```
 
-- [ ] **Step 3: Implement the manifest state model**
+- [x] **Step 3: Implement the manifest state model**
 
 ```csharp
 public enum ManifestApplyDisposition { Accepted, Idempotent, Stale, Conflict }
@@ -441,7 +441,7 @@ public sealed record ManifestApplyResult(
 
 Use unique keys `(organization, environment, collectionConnectorId)` and `(organization, environment, collectionConnectorId, deviceAssetId, tagKey)`. Keep removed bindings with `IsCurrent=false` and `RetiredAtUtc`; re-adding revives the same business projection. Limit revision to lowercase SHA-256, activation status to `pending|active|error|disabled`, and error text to sanitized bounded fields.
 
-- [ ] **Step 4: Generate migration and verify GREEN**
+- [x] **Step 4: Generate migration and verify GREEN**
 
 ```powershell
 $env:Persistence__Provider = "PostgreSQL"
@@ -450,7 +450,7 @@ dotnet tool run dotnet-ef migrations add AddConnectorTagManifestCoverage --proje
 
 Re-run both test projects. Expected: PASS and no model drift.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add backend/services/Business/IndustrialTelemetry
@@ -471,7 +471,7 @@ git commit -m "feat(iiot): persist connector tag manifests"
 - Produces: `POST /api/business/v1/iiot/connector-tag-manifests`, operation `reportBusinessIiotConnectorTagManifest`, classification `internal`.
 - Produces: `GET /api/business/v1/iiot/connectors/{collectionConnectorId}/tag-coverage`, operation `getBusinessIiotConnectorTagCoverage`, classification `exposed`.
 
-- [ ] **Step 1: Write failing command/query/contract tests**
+- [x] **Step 1: Write failing command/query/contract tests**
 
 Use these request/result shapes:
 
@@ -500,21 +500,21 @@ public sealed record ConnectorTagCoverageItem(
 
 Tests must prove never-sampled bindings remain, two connectors on the same device/tag do not share samples, retired bindings disappear, unavailable differs from a valid empty manifest, future clock skew is rejected, duplicate device/tag entries fail validation, anonymous access is rejected, and both contracts are registered.
 
-- [ ] **Step 2: Run focused Web tests and verify RED**
+- [x] **Step 2: Run focused Web tests and verify RED**
 
 Run: `dotnet test backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj --filter "FullyQualifiedName~ConnectorTagManifestTests|FullyQualifiedName~IndustrialTelemetryEndpointContractTests"`
 
-- [ ] **Step 3: Implement transactional ingestion and summary-only query**
+- [x] **Step 3: Implement transactional ingestion and summary-only query**
 
 Recompute the canonical hash server-side using ordinal sorting by device/tag and deterministic field serialization. Accept later observation with either the same or different revision; return the accepted server observation for stale/conflict. Apply activation by its independent observation. Start coverage from current bindings and aggregate `MIN(summary.BucketStart)`/`MAX(summary.BucketEnd)` using the full organization/environment/connector/device/tag key. Never query raw samples or device-control bindings.
 
-- [ ] **Step 4: Register facade classifications and verify GREEN**
+- [x] **Step 4: Register facade classifications and verify GREEN**
 
 Add one `internal` row with Connector Host callback rationale and one `exposed` row naming `getBusinessConsoleTelemetryConnectorTagCoverage`. Run the focused tests and the facade gate:
 
 `dotnet test backend/tests/Nerv.IIP.FacadeCoverage.Tests/Nerv.IIP.FacadeCoverage.Tests.csproj`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add backend/services/Business/IndustrialTelemetry docs/architecture/facade-coverage-matrix.json
@@ -537,23 +537,23 @@ git commit -m "feat(iiot): expose connector tag coverage"
 - Produces: `ConnectorTagManifestSnapshot` and entries from configured mappings, including failed/disabled entries.
 - Produces: bounded retry state cleared only by acknowledgement and coalesced only by newer observation.
 
-- [ ] **Step 1: Write failing deterministic hash and retry tests**
+- [x] **Step 1: Write failing deterministic hash and retry tests**
 
 Fix one canonical vector in both solutions: differently ordered input entries yield the same lowercase SHA-256; changing enabled/address changes the hash; activation changes do not. Assert same observation retries unchanged, stale/conflict advances to `max(now, accepted+1 tick)`, later observation coalesces pending state, successful acknowledgement clears it, and exponential delays cap at 30 seconds.
 
-- [ ] **Step 2: Run Application and adapter tests and verify RED**
+- [x] **Step 2: Run Application and adapter tests and verify RED**
 
 Run: `dotnet test connector-hosts/tests/Nerv.IIP.ConnectorHost.Application.Tests/Nerv.IIP.ConnectorHost.Application.Tests.csproj --filter "FullyQualifiedName~ConnectorManifest"`
 
-- [ ] **Step 3: Implement manifest reporting and canonical sample identity**
+- [x] **Step 3: Implement manifest reporting and canonical sample identity**
 
 Expose every configured mapping regardless of activation/sample result. Use protocol address metadata but no secrets or exception stacks. Maintain `lastAttemptedObservation` per connector in the process and advance by one tick when necessary; use service acknowledgement after restart/clock lag. Send `CollectionConnectorId` with every new sample while preserving `SourceConnector`.
 
-- [ ] **Step 4: Run the full Connector Host solution and verify GREEN**
+- [x] **Step 4: Run the full Connector Host solution and verify GREEN**
 
 Run: `dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add connector-hosts
@@ -576,15 +576,15 @@ git commit -m "feat(connector-host): report configured tag manifests"
 **Interfaces:**
 - Produces: `GET /api/business-console/v1/telemetry/connectors/{connectorId}/tag-coverage` with operation `getBusinessConsoleTelemetryConnectorTagCoverage` and permission `IiotTelemetryRead`.
 
-- [ ] **Step 1: Write failing proxy and OpenAPI tests**
+- [x] **Step 1: Write failing proxy and OpenAPI tests**
 
 Assert route connector identity and organization/environment are forwarded, bearer token is an internal token, response preserves unavailable/empty and nullable sample timestamps, authorization uses resource type `connector`, and the operation/schema is in OpenAPI.
 
-- [ ] **Step 2: Run Gateway tests and verify RED**
+- [x] **Step 2: Run Gateway tests and verify RED**
 
 Run: `dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj --filter "FullyQualifiedName~BusinessGatewayConnectorTagCoverageTests|FullyQualifiedName~BusinessGatewayOpenApiTests"`
 
-- [ ] **Step 3: Implement facade and generate contracts**
+- [x] **Step 3: Implement facade and generate contracts**
 
 Add `IBusinessIndustrialTelemetryClient.GetConnectorTagCoverageAsync(string internalBearerToken, BusinessConsoleConnectorTagCoverageRequest request, CancellationToken cancellationToken)` and update every fake implementation. Export and generate:
 
@@ -593,7 +593,7 @@ scripts/export-gateway-openapi.ps1
 pnpm -C frontend generate:api
 ```
 
-- [ ] **Step 4: Run contract tests and commit**
+- [x] **Step 4: Run contract tests and commit**
 
 ```powershell
 dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj
@@ -617,19 +617,19 @@ git commit -m "feat(gateway): expose connector tag coverage"
 - Produces: `useBusinessTelemetryConnectorCoverage(collectionConnectorId: Ref<string>)` using the generated query options.
 - Produces: panel mounted only while the card is expanded.
 
-- [ ] **Step 1: Write failing composable and component tests**
+- [x] **Step 1: Write failing composable and component tests**
 
 Assert collapsed cards issue zero coverage calls; expanding one card requests only its connector; unavailable, valid empty, disabled, activation error, active never-sampled, and sampled states render distinct operator copy; errors offer a local retry; collapse/reopen preserves canonical ID; and engineering details such as revision/hash are not displayed.
 
-- [ ] **Step 2: Run focused Vitest and verify RED**
+- [x] **Step 2: Run focused Vitest and verify RED**
 
 Run: `pnpm -C frontend --filter @nerv-iip/business-console test -- ConnectorTagCoveragePanel.test.ts useBusinessTelemetry.test.ts connectorsPage.test.ts`
 
-- [ ] **Step 3: Implement with NvUI stable imports**
+- [x] **Step 3: Implement with NvUI stable imports**
 
 Mount the panel with `v-if="expanded"`, use only bare `@nerv-iip/ui` imports and existing `Nv*` components, and show authoritative most recent sample time without quality/freshness inference.
 
-- [ ] **Step 4: Run focused tests, typecheck, touched-file format, and commit**
+- [x] **Step 4: Run focused tests, typecheck, touched-file format, and commit**
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/business-console test -- ConnectorTagCoveragePanel.test.ts useBusinessTelemetry.test.ts connectorsPage.test.ts
@@ -654,15 +654,15 @@ git commit -m "feat(business-console): expand connector tag coverage"
 - Produces: acceptance-only AppHost configuration forwarding IndustrialTelemetry endpoint/internal token and explicit Modbus mappings to Connector Host.
 - Produces: `artifacts/script-logs/connector-health-disconnect/<timestamp>/evidence.json` with monotonic elapsed and phase timestamps.
 
-- [ ] **Step 1: Write failing script governance/runtime tests**
+- [x] **Step 1: Write failing script governance/runtime tests**
 
 Assert the verify script dot-sources `scripts/lib/ScriptAutomation.ps1`, uses `Start-ManagedBackgroundProcess`, fixes its deadline at 10 seconds, uses `Stopwatch`, cleans up session/simulator in `finally`, and contains no direct `dotnet`, `docker`, `pnpm`, `pwsh`, or `Start-Process`. Assert AppHost injects the IndustrialTelemetry URL and session internal token and enables simulator mappings only under `ConnectorHealthAcceptance:Enabled=true`.
 
-- [ ] **Step 2: Run the script tests and verify RED**
+- [x] **Step 2: Run the script tests and verify RED**
 
 Run: `pwsh scripts/tests/connector-health-disconnect-verify-script.Tests.ps1`
 
-- [ ] **Step 3: Implement the simulator and acceptance flow**
+- [x] **Step 3: Implement the simulator and acceptance flow**
 
 The simulator must bind loopback, publish its selected port as ready JSON, serve one valid mapping and one configured mapping that remains never-sampled, close its accepted socket and listener on stop, and restart on the same port. The verify script starts a fullstack session, waits for alive plus current manifest, stops the simulator, polls BusinessGateway for explicit lost/offline/field-connection with a fresh advancing Host heartbeat before 10 seconds, restarts the simulator, verifies a new alive interval, and verifies the never-sampled binding. Record `disconnectStartUtc`, `connectionObservedAtUtc`, `gatewayObservedAtUtc`, `elapsedMilliseconds`, `lastHeartbeatAtUtc`, and recovery timestamps.
 
@@ -677,7 +677,7 @@ pwsh scripts/verify-connector-health-disconnect.ps1 -Runs 3
 
 Expected: three passes, each disconnect observed in `<10000ms`; if Docker is unavailable, retain deterministic gates and record the environment limitation in the PR rather than weakening the deadline.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add scripts infra/aspire/Nerv.IIP.AppHost
@@ -702,7 +702,7 @@ git commit -m "test(connectors): verify end-to-end disconnect timing"
 **Interfaces:**
 - Produces: documented minimum Host compatibility, four-axis semantics, schema/catalog rows, facade declaration, operator workflow, and acceptance command.
 
-- [ ] **Step 1: Update documentation from delivered code facts**
+- [x] **Step 1: Update documentation from delivered code facts**
 
 Document null compatibility, no historical identity backfill, canonical ID configuration, governed timing values, manifest unavailable behavior, sample-presence-only coverage, acceptance-only simulator topology, exact facade operations, and the real verification evidence location. State product docs impact as yes.
 
