@@ -516,7 +516,8 @@ public sealed record RecordTelemetrySampleCommand(
     decimal? FirstValue = null,
     decimal? LastValue = null,
     string? DeviceState = null,
-    DateTimeOffset? StateOccurredAtUtc = null) : ICommand<RecordTelemetrySampleResult>;
+    DateTimeOffset? StateOccurredAtUtc = null,
+    string? CollectionConnectorId = null) : ICommand<RecordTelemetrySampleResult>;
 
 public sealed record RecordTelemetrySampleResult(TelemetrySummaryId? TelemetrySummaryId, DeviceStateSnapshotId? DeviceStateSnapshotId);
 
@@ -533,6 +534,7 @@ public sealed class RecordTelemetrySampleCommandValidator : AbstractValidator<Re
         RuleFor(x => x.SourceSequence).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SourceSystem).MaximumLength(100);
         RuleFor(x => x.SourceConnector).MaximumLength(150);
+        RuleFor(x => x.CollectionConnectorId).MaximumLength(150);
     }
 }
 
@@ -551,8 +553,9 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         var normalizedSourceSequence = IndustrialTelemetryText.Required(request.SourceSequence, nameof(request.SourceSequence));
         var normalizedSourceSystem = IndustrialTelemetryText.Optional(request.SourceSystem);
         var normalizedSourceConnector = IndustrialTelemetryText.Optional(request.SourceConnector);
+        var normalizedCollectionConnectorId = IndustrialTelemetryText.Optional(request.CollectionConnectorId);
         var productionCountMode = await ValidateSamplingPolicyAsync(request, normalizedTagKey, cancellationToken);
-        await RecordRawSampleAsync(request, normalizedTagKey, normalizedSourceSequence, normalizedSourceSystem, normalizedSourceConnector, cancellationToken);
+        await RecordRawSampleAsync(request, normalizedTagKey, normalizedSourceSequence, normalizedSourceSystem, normalizedSourceConnector, normalizedCollectionConnectorId, cancellationToken);
         var existingSummary = await dbContext.TelemetrySummaries.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
@@ -575,7 +578,8 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             request.AverageValue,
             normalizedSourceSequence,
             normalizedSourceSystem,
-            normalizedSourceConnector);
+            normalizedSourceConnector,
+            normalizedCollectionConnectorId);
         if (existingSummary is not null)
         {
             if (!existingSummary.HasSamePayload(incoming))
@@ -702,6 +706,7 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         string normalizedSourceSequence,
         string? normalizedSourceSystem,
         string? normalizedSourceConnector,
+        string? normalizedCollectionConnectorId,
         CancellationToken cancellationToken)
     {
         var incoming = TelemetryRawSample.Record(
@@ -719,7 +724,8 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             request.LastValue ?? request.AverageValue,
             normalizedSourceSequence,
             normalizedSourceSystem,
-            normalizedSourceConnector);
+            normalizedSourceConnector,
+            normalizedCollectionConnectorId);
         var existing = await dbContext.TelemetryRawSamples.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId

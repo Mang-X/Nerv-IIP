@@ -219,7 +219,8 @@ public sealed class IndustrialTelemetryHistorianTests
             "opcua",
             "host-001/cell-01",
             FirstValue: 1210m,
-            LastValue: 1490m), CancellationToken.None);
+            LastValue: 1490m,
+            CollectionConnectorId: "line-a-primary"), CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         Assert.NotNull(result.TelemetrySummaryId);
@@ -232,7 +233,43 @@ public sealed class IndustrialTelemetryHistorianTests
         Assert.Equal(1210m, raw.FirstValue);
         Assert.Equal(1490m, raw.LastValue);
         Assert.Equal("opcua:cell-01:spindle.speed:1782892800000", raw.SourceSequence);
-        Assert.Single(dbContext.TelemetrySummaries);
+        Assert.Equal("line-a-primary", raw.CollectionConnectorId);
+        Assert.Equal("line-a-primary", Assert.Single(dbContext.TelemetrySummaries).CollectionConnectorId);
+    }
+
+    [Fact]
+    public async Task Record_sample_rejects_a_different_collection_connector_for_the_same_historian_idempotency_key()
+    {
+        await using var dbContext = CreateDbContext(nameof(Record_sample_rejects_a_different_collection_connector_for_the_same_historian_idempotency_key));
+        dbContext.TelemetryTags.Add(TelemetryTag.Create("org-001", "env-dev", "DEV-CNC-01", "spindle.speed", "number", "rpm", "sample-60s"));
+        await dbContext.SaveChangesAsync();
+
+        var handler = new RecordTelemetrySampleCommandHandler(dbContext);
+        var first = new RecordTelemetrySampleCommand(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "spindle.speed",
+            new DateTimeOffset(2026, 7, 1, 8, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 7, 1, 8, 1, 0, TimeSpan.Zero),
+            3,
+            1200m,
+            1500m,
+            1350m,
+            "opcua:cell-01:spindle.speed:1782892800000",
+            "opcua",
+            "host-001/cell-01",
+            FirstValue: 1210m,
+            LastValue: 1490m,
+            CollectionConnectorId: "line-a-primary");
+
+        await handler.Handle(first, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var conflict = first with { CollectionConnectorId = "line-a-failover" };
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(conflict, CancellationToken.None));
+
+        Assert.Contains("conflicting payload", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

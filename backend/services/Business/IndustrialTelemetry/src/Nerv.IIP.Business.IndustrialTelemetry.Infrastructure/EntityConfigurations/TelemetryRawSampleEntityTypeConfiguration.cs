@@ -26,6 +26,7 @@ public sealed class TelemetryRawSampleEntityTypeConfiguration : IEntityTypeConfi
         builder.Property(x => x.SourceSequence).IsRequired().HasMaxLength(150).HasColumnName("source_sequence").HasComment("Source sequence used for idempotent raw historian ingestion.");
         builder.Property(x => x.SourceSystem).HasMaxLength(100).HasColumnName("source_system").HasComment("External source system that produced the raw historian bucket.");
         builder.Property(x => x.SourceConnector).HasMaxLength(150).HasColumnName("source_connector").HasComment("Connector instance or adapter that delivered the raw historian bucket.");
+        builder.Property(x => x.CollectionConnectorId).HasMaxLength(150).HasColumnName("collection_connector_id").HasComment("Canonical collection connector identity retained as nullable sample provenance.");
         builder.Property(x => x.RecordedAtUtc).HasColumnName("recorded_at_utc").HasComment("UTC time when the raw historian bucket was recorded.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceSystem, x.SourceConnector, x.DeviceAssetId, x.TagKey, x.SourceSequence })
             .IsUnique()

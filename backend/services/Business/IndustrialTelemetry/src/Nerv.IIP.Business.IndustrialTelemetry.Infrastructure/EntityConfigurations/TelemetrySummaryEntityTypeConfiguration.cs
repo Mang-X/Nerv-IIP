@@ -23,11 +23,14 @@ public sealed class TelemetrySummaryEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.SourceSequence).HasMaxLength(150).HasColumnName("source_sequence").HasComment("Source sequence used for idempotent summary ingestion.");
         builder.Property(x => x.SourceSystem).HasMaxLength(100).HasColumnName("source_system").HasComment("External source system that produced the telemetry summary.");
         builder.Property(x => x.SourceConnector).HasMaxLength(150).HasColumnName("source_connector").HasComment("Connector instance or adapter that delivered the telemetry summary.");
+        builder.Property(x => x.CollectionConnectorId).HasMaxLength(150).HasColumnName("collection_connector_id").HasComment("Canonical collection connector identity used for manifest coverage joins when supplied.");
         builder.Property(x => x.RecordedAtUtc).HasColumnName("recorded_at_utc").HasComment("UTC time when the summary was recorded.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceSystem, x.SourceConnector, x.DeviceAssetId, x.TagKey, x.SourceSequence })
             .IsUnique()
             .AreNullsDistinct(false);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.BucketStartUtc });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.BucketEndUnixTimeMilliseconds });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.CollectionConnectorId, x.DeviceAssetId, x.TagKey, x.BucketEndUtc })
+            .HasDatabaseName("IX_telemetry_summaries_connector_coverage");
     }
 }

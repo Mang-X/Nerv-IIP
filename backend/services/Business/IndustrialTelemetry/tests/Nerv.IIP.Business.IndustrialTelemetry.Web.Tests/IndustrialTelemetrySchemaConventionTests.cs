@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.ConnectorTagManifestAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlChannelBindingAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlCommandAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
@@ -28,6 +29,8 @@ public sealed class IndustrialTelemetrySchemaConventionTests
         {
             typeof(TelemetryTag),
             typeof(AlarmRule),
+            typeof(ConnectorTagManifest),
+            typeof(ConnectorTagBinding),
             typeof(DeviceControlChannelBinding),
             typeof(DeviceControlCommand),
             typeof(DeviceStateSnapshot),
@@ -55,8 +58,45 @@ public sealed class IndustrialTelemetrySchemaConventionTests
         AssertOptionalStringColumn<DeviceStateSnapshot>(fixture, nameof(DeviceStateSnapshot.SourceConnector), "source_connector", 150);
         AssertOptionalStringColumn<TelemetrySummary>(fixture, nameof(TelemetrySummary.SourceSystem), "source_system", 100);
         AssertOptionalStringColumn<TelemetrySummary>(fixture, nameof(TelemetrySummary.SourceConnector), "source_connector", 150);
+        AssertOptionalStringColumn<TelemetrySummary>(fixture, nameof(TelemetrySummary.CollectionConnectorId), "collection_connector_id", 150);
         AssertOptionalStringColumn<TelemetryRawSample>(fixture, nameof(TelemetryRawSample.SourceSystem), "source_system", 100);
         AssertOptionalStringColumn<TelemetryRawSample>(fixture, nameof(TelemetryRawSample.SourceConnector), "source_connector", 150);
+        AssertOptionalStringColumn<TelemetryRawSample>(fixture, nameof(TelemetryRawSample.CollectionConnectorId), "collection_connector_id", 150);
+    }
+
+    [Fact]
+    public void Connector_manifest_keys_and_summary_coverage_index_are_exact()
+    {
+        using var fixture = CreateFixture();
+
+        AssertUniqueIndex<ConnectorTagManifest>(
+            fixture,
+            [
+                nameof(ConnectorTagManifest.OrganizationId),
+                nameof(ConnectorTagManifest.EnvironmentId),
+                nameof(ConnectorTagManifest.CollectionConnectorId),
+            ]);
+        AssertUniqueIndex<ConnectorTagBinding>(
+            fixture,
+            [
+                nameof(ConnectorTagBinding.OrganizationId),
+                nameof(ConnectorTagBinding.EnvironmentId),
+                nameof(ConnectorTagBinding.CollectionConnectorId),
+                nameof(ConnectorTagBinding.DeviceAssetId),
+                nameof(ConnectorTagBinding.TagKey),
+            ]);
+
+        var coverageProperties = new[]
+        {
+            nameof(TelemetrySummary.OrganizationId),
+            nameof(TelemetrySummary.EnvironmentId),
+            nameof(TelemetrySummary.CollectionConnectorId),
+            nameof(TelemetrySummary.DeviceAssetId),
+            nameof(TelemetrySummary.TagKey),
+            nameof(TelemetrySummary.BucketEndUtc),
+        };
+        AssertIndex<TelemetrySummary>(fixture, coverageProperties);
+        AssertNoIndex<TelemetryRawSample>(fixture, coverageProperties);
     }
 
     [Fact]
@@ -155,6 +195,26 @@ public sealed class IndustrialTelemetrySchemaConventionTests
             index.IsUnique &&
             index.Properties.Select(property => property.Name).SequenceEqual(propertyNames) &&
             string.Equals(index.GetFilter(), filter, StringComparison.Ordinal));
+    }
+
+    private static void AssertIndex<TEntity>(
+        IndustrialTelemetrySchemaFixture fixture,
+        IReadOnlyCollection<string> propertyNames)
+    {
+        var entityType = fixture.DbContext.Model.FindEntityType(typeof(TEntity));
+        Assert.NotNull(entityType);
+        Assert.Contains(entityType!.GetIndexes(), index =>
+            index.Properties.Select(property => property.Name).SequenceEqual(propertyNames));
+    }
+
+    private static void AssertNoIndex<TEntity>(
+        IndustrialTelemetrySchemaFixture fixture,
+        IReadOnlyCollection<string> propertyNames)
+    {
+        var entityType = fixture.DbContext.Model.FindEntityType(typeof(TEntity));
+        Assert.NotNull(entityType);
+        Assert.DoesNotContain(entityType!.GetIndexes(), index =>
+            index.Properties.Select(property => property.Name).SequenceEqual(propertyNames));
     }
 
     private static IndustrialTelemetrySchemaFixture CreateFixture()
