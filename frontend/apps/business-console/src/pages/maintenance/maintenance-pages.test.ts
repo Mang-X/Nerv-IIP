@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
@@ -20,12 +20,27 @@ const state = vi.hoisted(() => ({
   completeWorkOrder: vi.fn(async (_id: string, _body: Record<string, unknown>) => ({})),
   recordInspection: vi.fn(async (_body: Record<string, unknown>) => ({})),
   createPlan: vi.fn(async (_body: Record<string, unknown>) => ({})),
+  updatePlan: vi.fn(async (_planId: string, _body: Record<string, unknown>) => ({})),
   generateDue: vi.fn(async (_payload: Record<string, unknown>) => ({
     data: { generatedCount: 0 },
   })),
   refreshPlans: vi.fn(async () => {}),
   refreshRemaining: vi.fn(async () => {}),
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
 }))
+
+vi.mock('@nerv-iip/ui', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@nerv-iip/ui')>()
+  return {
+    ...actual,
+    toast: {
+      ...actual.toast,
+      success: state.toastSuccess,
+      error: state.toastError,
+    },
+  }
+})
 
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
@@ -72,6 +87,9 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     createPlan: state.createPlan,
     createPlanPending: shallowRef(false),
     createPlanError: shallowRef(),
+    updatePlan: state.updatePlan,
+    updatePlanPending: shallowRef(false),
+    updatePlanError: shallowRef(),
     generateDue: state.generateDue,
     generateDuePending: shallowRef(false),
     generateDueError: shallowRef(),
@@ -158,9 +176,13 @@ beforeEach(() => {
   state.completeWorkOrder.mockClear()
   state.recordInspection.mockClear()
   state.createPlan.mockClear()
+  state.updatePlan.mockClear()
+  state.updatePlan.mockResolvedValue({})
   state.generateDue.mockClear()
   state.refreshPlans.mockClear()
   state.refreshRemaining.mockClear()
+  state.toastSuccess.mockClear()
+  state.toastError.mockClear()
   state.query = { deviceAssetId: 'DEV-PRESS-01', sourceAlarmId: 'ALARM-9001' }
   state.inspections = []
   state.plans = []
@@ -415,6 +437,27 @@ describe('maintenance inspections page', () => {
 })
 
 describe('maintenance plans page', () => {
+  function bodyWrapper<T extends Element>(selector: string) {
+    const element = document.body.querySelector<T>(selector)
+    expect(element, `Expected ${selector} in document.body`).not.toBeNull()
+    return new DOMWrapper(element!)
+  }
+
+  function bodyWrapperByText<T extends Element>(selector: string, text: string) {
+    const element = [...document.body.querySelectorAll<T>(selector)].find((candidate) =>
+      candidate.textContent?.includes(text),
+    )
+    expect(element, `Expected ${selector} containing ${text} in document.body`).toBeDefined()
+    return new DOMWrapper(element!)
+  }
+
+  async function openEditDialog(planCode: string) {
+    await bodyWrapper<HTMLButtonElement>(`[aria-label="保养计划操作 ${planCode}"]`).trigger('click')
+    await flushPromises()
+    await bodyWrapperByText<HTMLElement>('[role="menuitem"]', '编辑触发条件').trigger('click')
+    await flushPromises()
+  }
+
   it('renders three trigger modes and remaining hours vs next-due date', async () => {
     state.plans = [
       {
@@ -647,6 +690,214 @@ describe('maintenance plans page', () => {
     expect(body.runtimeHourInterval).toBe(1000)
     // Runtime-only mode sends no calendar interval — a genuine usage-triggered plan.
     expect(body.interval).toBeUndefined()
+  })
+
+  it.each([
+    {
+      label: '日历周期',
+      plan: {
+        planId: 'p-calendar-edit',
+        deviceAssetId: 'DEV-CALENDAR',
+        planCode: 'PM-CALENDAR',
+        interval: 'P90D',
+        startsOn: '2026-03-01',
+        runtimeHourInterval: null,
+      },
+      intervalVisible: true,
+      runtimeValue: undefined,
+    },
+    {
+      label: '运行小时',
+      plan: {
+        planId: 'p-runtime-edit',
+        deviceAssetId: 'DEV-RUNTIME',
+        planCode: 'PM-RUNTIME',
+        interval: null,
+        startsOn: '2026-04-02',
+        runtimeHourInterval: 1000,
+      },
+      intervalVisible: false,
+      runtimeValue: '1000',
+    },
+    {
+      label: '两者组合',
+      plan: {
+        planId: 'p-both-edit',
+        deviceAssetId: 'DEV-BOTH',
+        planCode: 'PM-BOTH',
+        interval: 'P30D',
+        startsOn: '2026-05-03',
+        runtimeHourInterval: 2000,
+      },
+      intervalVisible: true,
+      runtimeValue: '2000',
+    },
+  ])(
+    'prefills $label edit mode and keeps plan identity read-only',
+    async ({ plan, intervalVisible, runtimeValue }) => {
+      state.plans = [plan]
+      const wrapper = mount(PlansPage, mountOptions())
+      await flushPromises()
+
+      await openEditDialog(plan.planCode)
+
+      expect(document.body.textContent).toContain('编辑保养计划')
+      const device = bodyWrapper<HTMLInputElement>('#plan-device')
+      const planCode = bodyWrapper<HTMLInputElement>('#plan-code')
+      const startsOn = bodyWrapper<HTMLInputElement>('#plan-starts')
+      expect(device.element.value).toBe(plan.deviceAssetId)
+      expect(planCode.element.value).toBe(plan.planCode)
+      expect(startsOn.element.value).toBe(plan.startsOn)
+      expect(device.attributes('readonly')).toBeDefined()
+      expect(planCode.attributes('readonly')).toBeDefined()
+      expect(startsOn.attributes('readonly')).toBeDefined()
+      expect(
+        bodyWrapperByText(
+          '[role="dialog"]',
+          intervalVisible ? '保养周期' : '按设备累计运行小时',
+        ).exists(),
+      ).toBe(true)
+      expect(document.body.querySelector('#plan-interval') !== null).toBe(intervalVisible)
+      expect(document.body.querySelector<HTMLInputElement>('#plan-runtime-hours')?.value).toBe(
+        runtimeValue,
+      )
+
+      wrapper.unmount()
+    },
+  )
+
+  it('clears runtime hours explicitly when changing a runtime plan to calendar-only', async () => {
+    state.plans = [
+      {
+        planId: 'p-runtime-to-calendar',
+        deviceAssetId: 'DEV-RUNTIME',
+        planCode: 'PM-RUNTIME-CALENDAR',
+        interval: null,
+        startsOn: '2026-04-02',
+        runtimeHourInterval: 1000,
+      },
+    ]
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+    await openEditDialog('PM-RUNTIME-CALENDAR')
+
+    await bodyWrapper<HTMLButtonElement>('[role="dialog"] button[data-tab="calendar"]').trigger(
+      'click',
+    )
+    await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+    await flushPromises()
+
+    expect(state.updatePlan).toHaveBeenCalledWith('p-runtime-to-calendar', {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      interval: 'P30D',
+      runtimeHourInterval: null,
+    })
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(state.toastSuccess).toHaveBeenCalledWith('保养计划触发条件已更新')
+  })
+
+  it('clears the calendar trigger for runtime-only and submits both triggers for combined mode', async () => {
+    state.plans = [
+      {
+        planId: 'p-calendar-to-runtime',
+        deviceAssetId: 'DEV-CALENDAR',
+        planCode: 'PM-CALENDAR-RUNTIME',
+        interval: 'P90D',
+        startsOn: '2026-03-01',
+        runtimeHourInterval: null,
+      },
+    ]
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+    await openEditDialog('PM-CALENDAR-RUNTIME')
+
+    await bodyWrapper<HTMLButtonElement>('[role="dialog"] button[data-tab="runtime"]').trigger(
+      'click',
+    )
+    await bodyWrapper<HTMLInputElement>('#plan-runtime-hours').setValue('1500')
+    await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+    await flushPromises()
+
+    expect(state.updatePlan).toHaveBeenNthCalledWith(1, 'p-calendar-to-runtime', {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      interval: null,
+      runtimeHourInterval: 1500,
+    })
+
+    await openEditDialog('PM-CALENDAR-RUNTIME')
+    await bodyWrapper<HTMLButtonElement>('[role="dialog"] button[data-tab="both"]').trigger('click')
+    await bodyWrapper<HTMLInputElement>('#plan-runtime-hours').setValue('2000')
+    await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+    await flushPromises()
+
+    expect(state.updatePlan).toHaveBeenNthCalledWith(2, 'p-calendar-to-runtime', {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      interval: 'P90D',
+      runtimeHourInterval: 2000,
+    })
+  })
+
+  it('marks runtime hours invalid only after submit and does not call update', async () => {
+    state.plans = [
+      {
+        planId: 'p-calendar-invalid',
+        deviceAssetId: 'DEV-CALENDAR',
+        planCode: 'PM-CALENDAR-INVALID',
+        interval: 'P30D',
+        startsOn: '2026-03-01',
+        runtimeHourInterval: null,
+      },
+    ]
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+    await openEditDialog('PM-CALENDAR-INVALID')
+
+    await bodyWrapper<HTMLButtonElement>('[role="dialog"] button[data-tab="runtime"]').trigger(
+      'click',
+    )
+    const runtimeInput = bodyWrapper<HTMLInputElement>('#plan-runtime-hours')
+    expect(
+      runtimeInput.element.closest('[data-slot="nv-input"]')?.getAttribute('data-invalid'),
+    ).not.toBe('true')
+    expect(document.body.textContent).not.toContain('请填写正的触发运行小时数。')
+
+    await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+    await flushPromises()
+
+    expect(state.updatePlan).not.toHaveBeenCalled()
+    expect(
+      runtimeInput.element.closest('[data-slot="nv-input"]')?.getAttribute('data-invalid'),
+    ).toBe('true')
+    expect(document.body.textContent).toContain('请填写正的触发运行小时数。')
+  })
+
+  it('keeps the edit dialog and entered values open and shows a friendly toast when update fails', async () => {
+    state.plans = [
+      {
+        planId: 'p-update-failure',
+        deviceAssetId: 'DEV-FAIL',
+        planCode: 'PM-UPDATE-FAIL',
+        interval: null,
+        startsOn: '2026-04-02',
+        runtimeHourInterval: 1000,
+      },
+    ]
+    state.updatePlan.mockRejectedValueOnce(new Error('network error'))
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+    await openEditDialog('PM-UPDATE-FAIL')
+
+    await bodyWrapper<HTMLInputElement>('#plan-runtime-hours').setValue('1800')
+    await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+    await flushPromises()
+
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(document.body.querySelector<HTMLInputElement>('#plan-runtime-hours')?.value).toBe('1800')
+    expect(state.toastError).toHaveBeenCalledWith('网络异常，请检查连接后重试。')
+    expect(state.toastSuccess).not.toHaveBeenCalled()
   })
 
   it('blocks a runtime-mode submit when the trigger hours are missing', async () => {

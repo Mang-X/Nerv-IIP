@@ -2,12 +2,15 @@
 import type {
   BusinessConsoleCreateMaintenancePlanRequest,
   BusinessConsoleMaintenancePlanItem,
+  BusinessConsoleUpdateMaintenancePlanRequest,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import MaintenancePlanFormDialog from '@/components/maintenance/MaintenancePlanFormDialog.vue'
 import { useMaintenancePlans } from '@/composables/useBusinessMaintenance'
 import { useMaintenancePlanRuntimeRemaining } from '@/composables/useBusinessTelemetry'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -18,24 +21,17 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
+  NvDropdownMenuItem,
   NvField,
   NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
   NvPageHeader,
-  NvSelect,
-  NvSelectContent,
-  NvSelectItem,
-  NvSelectTrigger,
-  NvSelectValue,
-  NvTabs,
-  NvTabsList,
-  NvTabsTrigger,
+  NvRowActions,
   Spinner,
-  toast,
 } from '@nerv-iip/ui'
-import { CalendarClockIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
+import { CalendarClockIcon, PencilIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 
 definePage({
@@ -54,7 +50,8 @@ const {
   refreshPlans,
   createPlan,
   createPlanPending,
-  createPlanError,
+  updatePlan,
+  updatePlanPending,
   generateDue,
   generateDuePending,
   generateDueError,
@@ -80,22 +77,17 @@ const intervalOptions = [
   { label: '每季度', value: 'P90D' },
 ]
 
-// 触发模式：日历周期（按日期到期）/ 运行小时（按累计运行小时到期，无日历到期）/ 两者组合（任一先到即开单）。
-type TriggerMode = 'calendar' | 'runtime' | 'both'
-const runtimeHourQuickValues = [500, 1000, 2000]
+type PlanDialogMode = 'create' | 'edit'
+type PlanFormSubmission =
+  | { mode: 'create'; body: BusinessConsoleCreateMaintenancePlanRequest }
+  | { mode: 'edit'; planId: string; body: BusinessConsoleUpdateMaintenancePlanRequest }
 
-const createOpen = shallowRef(false)
-const createForm = reactive({
-  deviceAssetId: '',
-  planCode: '',
-  triggerMode: 'calendar' as TriggerMode,
-  interval: 'P30D',
-  runtimeHourInterval: '',
-  startsOn: '',
-  owner: '',
-})
-const createError = shallowRef('')
-const runtimeHoursInvalid = shallowRef(false)
+const planDialogOpen = shallowRef(false)
+const planDialogMode = shallowRef<PlanDialogMode>('create')
+const selectedPlan = shallowRef<BusinessConsoleMaintenancePlanItem>()
+const planDialogPending = computed(() =>
+  planDialogMode.value === 'create' ? createPlanPending.value : updatePlanPending.value,
+)
 
 const generateOpen = shallowRef(false)
 const generateForm = reactive({
@@ -105,7 +97,6 @@ const generateForm = reactive({
 const generateError = shallowRef('')
 
 const listErrorMessage = computed(() => formatError(plansError.value))
-const createErrorMessage = computed(() => createError.value || formatError(createPlanError.value))
 const generateErrorMessage = computed(
   () => generateError.value || formatError(generateDueError.value),
 )
@@ -122,6 +113,7 @@ const columns: NvDataTableColumn<PlanRow>[] = [
   { key: 'triggerMode', header: '触发模式', accessor: (r) => triggerModeLabel(r) },
   { key: 'interval', header: '保养周期', accessor: (r) => intervalLabel(r.interval) },
   { key: 'nextDue', header: '下次到期', accessor: (r) => nextDueLabel(r) },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
 function planNo(row: PlanRow) {
@@ -179,60 +171,35 @@ function todayDate() {
 }
 
 function openCreate() {
-  createForm.deviceAssetId = ''
-  createForm.planCode = ''
-  createForm.triggerMode = 'calendar'
-  createForm.interval = 'P30D'
-  createForm.runtimeHourInterval = ''
-  createForm.startsOn = todayDate()
-  createForm.owner = ''
-  createError.value = ''
-  runtimeHoursInvalid.value = false
-  createOpen.value = true
+  selectedPlan.value = undefined
+  planDialogMode.value = 'create'
+  planDialogOpen.value = true
 }
-function setRuntimeHours(value: number) {
-  createForm.runtimeHourInterval = String(value)
-  runtimeHoursInvalid.value = false
+
+function openEdit(row: PlanRow) {
+  if (!row.planId) return
+  selectedPlan.value = row
+  planDialogMode.value = 'edit'
+  planDialogOpen.value = true
 }
-async function submitCreate() {
-  createError.value = ''
-  runtimeHoursInvalid.value = false
-  if (!createForm.deviceAssetId.trim() || !createForm.owner.trim()) {
-    createError.value = '请填写设备与负责班组。'
-    return
-  }
 
-  const usesRuntime = createForm.triggerMode !== 'calendar'
-  let runtimeHourInterval: number | undefined
-  if (usesRuntime) {
-    const parsed = Number(createForm.runtimeHourInterval)
-    if (!createForm.runtimeHourInterval.trim() || !Number.isFinite(parsed) || parsed <= 0) {
-      runtimeHoursInvalid.value = true
-      createError.value = '请填写正的触发运行小时数。'
-      return
-    }
-    runtimeHourInterval = parsed
-  }
-
-  // 运行小时模式不带日历到期（interval 留空 → 真正的纯运行小时触发）；日历/两者组合用所选周期。
-  const interval = createForm.triggerMode === 'runtime' ? undefined : createForm.interval
-
-  const body: BusinessConsoleCreateMaintenancePlanRequest = {
-    organizationId: filters.organizationId,
-    environmentId: filters.environmentId,
-    deviceAssetId: createForm.deviceAssetId.trim(),
-    planCode: createForm.planCode.trim() || undefined,
-    interval,
-    startsOn: createForm.startsOn || todayDate(),
-    owner: createForm.owner.trim(),
-    runtimeHourInterval,
-  }
+async function submitPlan(submission: PlanFormSubmission) {
   try {
-    await createPlan(body)
-    createOpen.value = false
-    toast.success('保养计划已创建')
-  } catch {
-    // 失败信息由对话框错误区呈现。
+    if (submission.mode === 'create') {
+      await createPlan(submission.body)
+      notifySuccess('保养计划已创建')
+    } else {
+      await updatePlan(submission.planId, submission.body)
+      notifySuccess('保养计划触发条件已更新')
+    }
+    planDialogOpen.value = false
+  } catch (error) {
+    notifyError(
+      error,
+      submission.mode === 'create'
+        ? '保养计划创建失败，请稍后重试。'
+        : '保养计划更新失败，请稍后重试。',
+    )
   }
 }
 
@@ -254,7 +221,7 @@ async function submitGenerate() {
     })
     const count = result?.data?.generatedCount ?? 0
     generateOpen.value = false
-    toast.success(count > 0 ? `已生成 ${count} 张到期维护工单` : '当前无到期保养计划')
+    notifySuccess(count > 0 ? `已生成 ${count} 张到期维护工单` : '当前无到期保养计划')
   } catch {
     // 失败信息由对话框错误区呈现。
   }
@@ -312,131 +279,26 @@ function formatError(error: unknown) {
       :searchable="false"
       :column-settings="false"
       empty-message="暂无保养计划。为关键设备登记周期保养，再用「生成到期工单」批量开单。"
+    >
+      <template #cell-actions="{ row }">
+        <NvRowActions :label="`保养计划操作 ${row.planCode ?? planNo(row)}`">
+          <NvDropdownMenuItem :disabled="!row.planId" @click="openEdit(row)">
+            <PencilIcon aria-hidden="true" />
+            编辑触发条件
+          </NvDropdownMenuItem>
+        </NvRowActions>
+      </template>
+    </NvDataTable>
+
+    <MaintenancePlanFormDialog
+      v-model:open="planDialogOpen"
+      :mode="planDialogMode"
+      :organization-id="filters.organizationId"
+      :environment-id="filters.environmentId"
+      :plan="selectedPlan"
+      :pending="planDialogPending"
+      @submit="submitPlan"
     />
-
-    <NvDialog v-model:open="createOpen">
-      <NvDialogContent>
-        <NvDialogHeader>
-          <NvDialogTitle>新建保养计划</NvDialogTitle>
-          <NvDialogDescription
-            >为设备登记周期保养，系统据此推算到期并批量生成维护工单。</NvDialogDescription
-          >
-        </NvDialogHeader>
-        <form class="grid gap-4" @submit.prevent="submitCreate">
-          <NvField>
-            <NvFieldLabel>触发模式</NvFieldLabel>
-            <NvTabs v-model="createForm.triggerMode">
-              <NvTabsList class="w-full">
-                <NvTabsTrigger value="calendar" class="flex-1">日历周期</NvTabsTrigger>
-                <NvTabsTrigger value="runtime" class="flex-1">运行小时</NvTabsTrigger>
-                <NvTabsTrigger value="both" class="flex-1">两者组合</NvTabsTrigger>
-              </NvTabsList>
-            </NvTabs>
-            <p class="text-xs text-muted-foreground">
-              <template v-if="createForm.triggerMode === 'calendar'"
-                >按保养周期到期开单，例如每月一次。</template
-              >
-              <template v-else-if="createForm.triggerMode === 'runtime'"
-                >按设备累计运行小时到期开单，不受日历影响；例如每运行满 1000
-                小时保养一次。</template
-              >
-              <template v-else>同时保留日历周期与运行小时两条到期线，任一先到即开单。</template>
-            </p>
-          </NvField>
-
-          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField>
-              <NvFieldLabel for="plan-device">设备</NvFieldLabel>
-              <NvInput
-                id="plan-device"
-                v-model="createForm.deviceAssetId"
-                autocomplete="off"
-                placeholder="如 DEV-SMT-01"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="plan-code">计划编号</NvFieldLabel>
-              <NvInput
-                id="plan-code"
-                v-model="createForm.planCode"
-                autocomplete="off"
-                placeholder="可选，如 PM-SMT-01-M"
-              />
-            </NvField>
-            <NvField v-if="createForm.triggerMode !== 'runtime'">
-              <NvFieldLabel for="plan-interval">保养周期</NvFieldLabel>
-              <NvSelect v-model="createForm.interval">
-                <NvSelectTrigger id="plan-interval" aria-label="保养周期"
-                  ><NvSelectValue
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem v-for="o in intervalOptions" :key="o.value" :value="o.value">{{
-                    o.label
-                  }}</NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
-            </NvField>
-            <NvField v-if="createForm.triggerMode !== 'calendar'">
-              <NvFieldLabel for="plan-runtime-hours">触发运行小时</NvFieldLabel>
-              <NvInput
-                id="plan-runtime-hours"
-                v-model="createForm.runtimeHourInterval"
-                type="number"
-                inputmode="numeric"
-                min="1"
-                step="1"
-                autocomplete="off"
-                placeholder="如 1000"
-                :invalid="runtimeHoursInvalid"
-                aria-describedby="plan-runtime-hours-error"
-                @input="runtimeHoursInvalid = false"
-              />
-              <NvFieldError
-                v-if="runtimeHoursInvalid"
-                id="plan-runtime-hours-error"
-                :errors="['请填写正的触发运行小时数。']"
-              />
-              <div class="flex flex-wrap gap-2 pt-1">
-                <NvButton
-                  v-for="value in runtimeHourQuickValues"
-                  :key="value"
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                  @click="setRuntimeHours(value)"
-                  >{{ value }} 小时</NvButton
-                >
-              </div>
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="plan-starts">起始日期</NvFieldLabel>
-              <NvInput id="plan-starts" v-model="createForm.startsOn" type="date" />
-            </NvField>
-            <NvField class="sm:col-span-2">
-              <NvFieldLabel for="plan-owner">负责班组</NvFieldLabel>
-              <NvInput
-                id="plan-owner"
-                v-model="createForm.owner"
-                autocomplete="off"
-                placeholder="如 设备保全班"
-              />
-            </NvField>
-          </NvFieldGroup>
-
-          <NvFieldError v-if="createErrorMessage" :errors="[createErrorMessage]" />
-
-          <NvDialogFooter>
-            <NvDialogClose as-child>
-              <NvButton type="button" variant="outline">取消</NvButton>
-            </NvDialogClose>
-            <NvButton type="submit" :disabled="createPlanPending">
-              <Spinner v-if="createPlanPending" aria-hidden="true" />
-              创建保养计划
-            </NvButton>
-          </NvDialogFooter>
-        </form>
-      </NvDialogContent>
-    </NvDialog>
 
     <NvDialog v-model:open="generateOpen">
       <NvDialogContent>

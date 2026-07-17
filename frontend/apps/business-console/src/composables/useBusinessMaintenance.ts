@@ -13,6 +13,7 @@ import {
   queryBusinessConsoleMaintenanceInspectionMeasurementTrendQueryOptions,
   queryBusinessConsoleMaintenanceReliabilitySummaryQueryOptions,
   recordBusinessConsoleMaintenanceInspectionMutationOptions,
+  updateBusinessConsoleMaintenancePlanMutationOptions,
   type BusinessConsoleCompleteMaintenanceWorkOrderRequest,
   type BusinessConsoleCreateMaintenancePlanRequest,
   type BusinessConsoleCreateMaintenanceSparePartRequest,
@@ -32,6 +33,7 @@ import {
   type BusinessConsoleMaintenanceWorkOrderItem,
   type BusinessConsoleMaintenanceWorkOrderListEnvelope,
   type BusinessConsoleRecordMaintenanceInspectionRequest,
+  type BusinessConsoleUpdateMaintenancePlanRequest,
   type EquipmentRuntimeAvailabilityEnvelope,
   type EquipmentRuntimeAvailabilityWindow,
 } from '@nerv-iip/api-client'
@@ -529,6 +531,7 @@ export function useMaintenancePlans(initialFilters: Partial<MaintenanceListFilte
       void refetchWithBusinessContext(filters, plansQuery)
     },
   })
+  const updateMutation = useMutation(updateBusinessConsoleMaintenancePlanMutationOptions())
   const generateDueMutation = useMutation({
     ...generateDueBusinessConsoleMaintenanceWorkOrdersMutationOptions(),
     onSuccess() {
@@ -553,6 +556,13 @@ export function useMaintenancePlans(initialFilters: Partial<MaintenanceListFilte
       createMutation.mutateAsync({ body }),
     createPlanPending: createMutation.isLoading,
     createPlanError: createMutation.error,
+    async updatePlan(planId: string, body: BusinessConsoleUpdateMaintenancePlanRequest) {
+      const result = await updateMutation.mutateAsync({ path: { planId }, body })
+      await refetchWithBusinessContext(filters, plansQuery)
+      return result
+    },
+    updatePlanPending: updateMutation.isLoading,
+    updatePlanError: updateMutation.error,
     generateDue: (payload: { businessDate: string; requestedBy: string }) =>
       generateDueMutation.mutateAsync({
         body: {
