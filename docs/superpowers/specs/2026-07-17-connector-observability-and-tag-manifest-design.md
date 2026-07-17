@@ -15,7 +15,7 @@ PR #929 delivered the read-only collection-health wall for #796, but two require
 
 These are not independent UI gaps. They expose a missing connector identity, configuration inventory, and runtime-state model across Connector Host, AppHub, IndustrialTelemetry, BusinessGateway, and Business Console.
 
-The industry-source analysis in [connector coverage and health industry standards](../../research/2026-07-17-connector-coverage-and-health-industry-standards.md) is normative input to this design. OPC UA separates MonitoredItems, connection/session keep-alive, and DataValue quality; Sparkplug separates Birth metric inventory, node/device lifecycle, and Data messages; MQTT separates Network Connection, Session State, and application payload. Nerv-IIP will preserve the same separation.
+The industry-source analysis in [connector coverage and health industry standards](2026-07-17-connector-coverage-and-health-industry-research.md) is normative input to this design. OPC UA separates MonitoredItems, connection/session keep-alive, and DataValue quality; Sparkplug separates Birth metric inventory, node/device lifecycle, and Data messages; MQTT separates Network Connection, Session State, and application payload. Nerv-IIP will preserve the same separation.
 
 ## Goals
 
@@ -49,17 +49,24 @@ The tuple `(organizationId, environmentId, collectionConnectorId)` is unique. Pr
 
 ## Decision 2: configured coverage is a manifest, not a sample inference
 
-Connector Host reports a replace-style `ConnectorTagManifest` to IndustrialTelemetry through a telemetry-specific ingestion endpoint. AppHub does not own this manifest because tag and protocol-mapping semantics belong to the IndustrialTelemetry boundary.
+Connector Host reports a replace-style `ConnectorTagManifest` to IndustrialTelemetry through a telemetry-specific ingestion endpoint. AppHub does not own this manifest because tag and protocol-mapping semantics belong to the IndustrialTelemetry boundary. The endpoint uses `InternalServiceAuthorizationPolicy.Name`, matching the existing sample-ingestion path; it is never anonymous.
 
 The manifest contains:
 
 - `collectionConnectorId`;
 - `sourceSystem` (`opcua`, `modbus`, or `mqtt`);
-- deterministic `manifestRevision` and `reportedAtUtc`;
-- one entry per configured mapping with `deviceAssetId`, `tagKey`, `enabled`, optional protocol address metadata, and activation result;
-- activation result fields: `pending | active | error | disabled`, `observedAtUtc`, and a sanitized optional error code/message.
+- deterministic configuration-only `manifestRevision`, monotonic `manifestObservedAtUtc`, and one entry per configured mapping with `deviceAssetId`, `tagKey`, `enabled`, and optional protocol address metadata;
+- activation result fields, maintained as mutable runtime facts outside the revision hash: `pending/active/error/disabled`, `observedAtUtc`, and a sanitized optional error code/message.
 
-The revision is stable for identical configuration, so restart/retry is idempotent. A newer manifest supersedes the prior current manifest. Entries omitted from the newer revision become retired rather than being confused with active coverage.
+`manifestRevision` is a canonical content hash of configuration shape only: the mapping set, protocol addresses, and enabled flags. It is stable for identical configuration, so restart/retry is idempotent, but it is not used as an ordering key. `manifestObservedAtUtc` is the ordering key and must advance monotonically per connector. IndustrialTelemetry applies these rules transactionally:
+
+- the same revision and observation is an idempotent replay;
+- a different revision older than the current observation is rejected as stale;
+- a different revision at the same observation is rejected as a conflict;
+- a different revision at a later observation becomes current and retires entries omitted from the new shape;
+- a deliberate rollback to an earlier content hash is valid when reported with a later observation, so the old hash becomes a new current generation rather than being mistaken for a delayed replay.
+
+Connector Host advances the observation with `max(utcNow, lastAttemptedObservation + 1 tick)`. A stale/conflict response returns the accepted observation, allowing a restarted Host whose clock/state lags to advance and retry safely. The service rejects observations beyond a bounded clock-skew allowance. Activation results have their own per-entry `observedAtUtc`; changing activation never changes `manifestRevision`, and older activation observations cannot overwrite newer runtime facts.
 
 IndustrialTelemetry persists the current binding projection. The current connector coverage list includes configured entries even when no sample exists. `firstSampleAtUtc` and `lastSampleAtUtc` are nullable facts joined from samples. The UI labels an active entry with no sample as `never sampled`; an activation failure is shown separately from freshness.
 
@@ -72,9 +79,9 @@ The model keeps these facts separate:
 | Axis | Owner and source | Minimum state |
 |---|---|---|
 | Host liveness | AppHub heartbeat | last heartbeat, reachable/timeout |
-| Field connection | Connector adapter and AppHub projection | `unknown | alive | lost`, observed/since timestamps, reason category |
+| Field connection | Connector adapter and AppHub projection | `unknown/alive/lost`, observed/since timestamps, reason category |
 | Collector health | Connector collection loop | reported/health status, counters, last success/error |
-| Tag freshness | IndustrialTelemetry samples | `never | current | stale | bad`, first/last sample and quality |
+| Tag freshness | IndustrialTelemetry samples | `never/current/stale/bad`, first/last sample and quality |
 
 `ConnectorConnectionState` is an optional additive object in the Connector Protocol collection-health payload:
 
@@ -95,10 +102,12 @@ Transition rules:
 
 AppHub's collection-health projection stores the latest connection state. Read-model precedence is:
 
-1. explicit field `lost` => `stale/offline`, duration from `disconnectedSinceUtc`;
-2. Connector Host heartbeat timeout => `stale/offline`, duration from the host-liveness deadline;
+1. explicit field `lost` => `stale/offline`, `offlineReason=field-connection`, duration from `disconnectedSinceUtc`;
+2. Connector Host heartbeat timeout => `stale/offline`, `offlineReason=host-liveness`, duration from the host-liveness deadline;
 3. fresh connection plus collector terminal failure => `stale/fault`;
 4. otherwise expose the independent raw axes without deriving connection state from sample activity.
+
+The coarse `staleReason=offline|fault` values remain compatible with the existing facade. A new additive `offlineReason=field-connection|host-liveness` gives operators the correct remediation path without asking the UI to reverse-engineer the four axes. The hard-coded evaluator `StaleAfter` and the scanner's separate `HeartbeatTimeout` are replaced by one `CollectionHealth:HostLivenessTimeout` option consumed by both paths, so query-time derivation and persisted unreachable state cannot disagree.
 
 Older reports without connection state retain the existing conservative fallback and never fabricate an explicit `alive` or `lost` fact.
 
@@ -115,7 +124,7 @@ Connector Host will separate these responsibilities:
 
 Protocol adapters publish connection and manifest changes through bounded in-process signals. Signals coalesce repeated identical state, and the reporting worker remains the single writer to preserve ordering.
 
-The configured timing budget is:
+The governed collection-health product profile has a fixed timing budget:
 
 - field connection detection: at most four seconds;
 - transition signal, AppHub reporting, and persistence: at most two seconds;
@@ -123,9 +132,9 @@ The configured timing budget is:
 - total backend deadline: at most eight seconds;
 - Business Console polls every ten seconds.
 
-Protocol client timeouts/keep-alives must be validated against the detection budget. “Within one polling period” means that a disconnect immediately after a confirmed online poll is observable no later than the poll ten seconds later; it does not claim that a request already in flight before the physical disconnect can observe the future event.
+Protocol client timeouts/keep-alives must be validated against the four-second detection budget. This profile does not widen the ten-second UI acceptance for slow devices: collection sampling intervals may be longer, but the protocol liveness probe must still fit the connection budget. A deployment that overrides the governed limits is rejected at startup rather than silently advertising the #951 guarantee. “Within one polling period” means that a disconnect immediately after a confirmed online poll is observable no later than the poll ten seconds later; it does not claim that a request already in flight before the physical disconnect can observe the future event.
 
-Host-process loss remains a distinct path. Its heartbeat cadence and timeout become configuration-driven and must fit the same product deadline when the Host-loss scenario is tested.
+Host-process loss remains a distinct path. The existing configurable combined worker cycle is replaced by an independent `ConnectorHost:HeartbeatSeconds` cadence, and the unified AppHub host-liveness timeout is validated with it (`timeout >= 3 * cadence` while still fitting the eight-second backend deadline). This is a decoupling and cross-option validation change, not a claim that the current heartbeat cycle lacks configuration.
 
 ## Data flow
 
@@ -149,7 +158,7 @@ Host-process loss remains a distinct path. Its heartbeat cadence and timeout bec
 
 1. Every telemetry sample carries the canonical `collectionConnectorId` in addition to existing provenance.
 2. IndustrialTelemetry records the sample without creating or modifying configured coverage from sample presence alone.
-3. The connector-tag query starts from the current manifest and left-joins sample aggregates for first/last sample and quality.
+3. The connector-tag query starts from the current manifest and left-joins `TelemetrySummary` by canonical connector, device, and tag identity for first/last sample and quality; it never scans the high-write-volume raw historian table.
 4. Business Console loads the query lazily when a connector card expands.
 
 ## Storage and contracts
@@ -170,9 +179,9 @@ Null means an older protocol report or no authoritative observation.
 
 Add a connector manifest root and current binding projection scoped by organization, environment, and collection connector. Binding uniqueness is `(organizationId, environmentId, collectionConnectorId, deviceAssetId, tagKey)`.
 
-Add nullable `collection_connector_id` to raw/sample facts that support the latest-sample join and add an index beginning with organization, environment, and connector identity. Existing rows remain null and are not backfilled from `source_connector`.
+Add nullable `collection_connector_id` to `TelemetrySummary` and index the summary projection by organization, environment, connector identity, device, tag, and bucket end for the coverage join. The raw historian may retain the same nullable field as provenance, but receives no connector-coverage query index. Existing rows remain null and are not backfilled from `source_connector`.
 
-The existing tags endpoint remains the generic tag catalog. A dedicated connector-coverage endpoint exposes manifest semantics so “configured coverage” is not confused with “all tags on a device”. It is declared `exposed` in `facade-coverage-matrix.json` and delivered through BusinessGateway, OpenAPI export, generated client, and the stable barrel in the same PR.
+The existing tags endpoint remains the generic tag catalog. A dedicated connector-coverage endpoint exposes manifest semantics so “configured coverage” is not confused with “all tags on a device”. It is declared `exposed` in `facade-coverage-matrix.json` and delivered through BusinessGateway, OpenAPI export, generated client, and the stable barrel in the same PR. The manifest ingestion endpoint is separately declared `internal` with the Connector Host callback rationale. Both operations are registered in `IndustrialTelemetryEndpointContracts.All` and covered by the facade gate.
 
 ## Business Console behavior
 
@@ -198,7 +207,8 @@ The page does not parse connector IDs, fall back to device-control bindings, or 
 
 - All Connector Protocol additions are optional and appended compatibly within protocol major version 1.
 - Old Hosts continue to report legacy collection health; UI renders connection fact as unknown/fallback.
-- New Hosts report manifests on startup, configuration change, activation-result change, and explicit platform rebirth/request.
+- New Hosts report configuration manifests on startup, configuration change, and explicit platform rebirth/request; activation snapshots use the same ingestion contract but independent observation ordering.
+- A failed manifest/activation upload remains pending in the reporting worker and retries with bounded exponential backoff until IndustrialTelemetry acknowledges it. A later transition coalesces the pending payload only when it has a newer observation; successful acknowledgement clears the retry state.
 - Existing sample and collection-health rows remain valid with null new fields.
 - No historical mapping or connection timestamp is fabricated.
 - Deployment documentation identifies the minimum Connector Host version required for full manifest and connection-state support.
@@ -208,7 +218,7 @@ The page does not parse connector IDs, fall back to device-control bindings, or 
 ### Contract and domain tests
 
 - Canonical identity is identical in registration, health, manifest, samples, and queries.
-- Manifest retries with the same revision are idempotent; a newer revision retires removed bindings.
+- Manifest retries with the same revision and observation are idempotent; stale different revisions are rejected, and a later observation can legally roll back to an earlier content hash while retiring removed bindings.
 - An enabled configured tag with no sample is returned as `never sampled`.
 - Activation failure remains visible and is not treated as connection loss.
 - Multiple connectors may cover the same tag without merging their bindings or latest-sample facts.
@@ -222,9 +232,11 @@ The page does not parse connector IDs, fall back to device-control bindings, or 
 - Protocol-specific timeout/keep-alive configuration cannot exceed the product detection budget in the governed profile.
 - One connector's retry or slow call cannot delay another connector's heartbeat/state report.
 
-### End-to-end timing test
+### End-to-end timing verification
 
-The stable CI proof uses a real loopback Modbus TCP socket without cross-solution implementation references:
+Default CI uses deterministic layered tests that do not depend on wall-clock or cross-solution references: protocol adapters use fake clocks/transports, AppHub tests connection/host timeout derivation with `TimeProvider`, IndustrialTelemetry tests manifest ordering and summary joins, Gateway asserts contracts, and Business Console uses fake timers.
+
+The real process-level acceptance is carried by a governed `scripts/verify-connector-health-disconnect.ps1` entry that uses `scripts/lib/ScriptAutomation.ps1` helpers and the existing full-stack session lifecycle. It is a Docker/PostgreSQL-dependent local or release gate, not falsely described as a default CI test. The script uses a real loopback Modbus TCP socket without adding project references between `backend` and `connector-hosts`:
 
 1. start the platform services, Connector Host, and simulator;
 2. wait for an explicit `alive` Gateway response and a current manifest;
@@ -234,7 +246,7 @@ The stable CI proof uses a real loopback Modbus TCP socket without cross-solutio
 6. restore the simulator and assert a new alive interval;
 7. separately prove a configured-but-never-sampled tag remains in the expanded coverage list.
 
-OPC UA simulator and MQTT broker disconnect tests remain protocol-specific integration evidence. Business Console fake-timer tests verify the ten-second refresh and every manifest/health display state.
+The acceptance script measures with a monotonic stopwatch, enforces the product deadline of ten seconds without extending it for CI jitter, and records detection/report/query phase timestamps in its artifact. Repeated local/release runs report the maximum elapsed time. OPC UA simulator and MQTT broker disconnect tests remain protocol-specific integration evidence. Business Console fake-timer tests verify the ten-second refresh and every manifest/health display state.
 
 ## Documentation and PR scope
 
