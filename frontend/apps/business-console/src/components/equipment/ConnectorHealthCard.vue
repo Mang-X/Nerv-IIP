@@ -10,6 +10,7 @@ import { NvBadge } from '@nerv-iip/ui'
 import { ActivityIcon, ChevronDownIcon, TriangleAlertIcon, TimerIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
+import ConnectorTagCoveragePanel from './ConnectorTagCoveragePanel.vue'
 
 const props = defineProps<{
   connector: BusinessConsoleConnectorCollectionHealthListItem
@@ -179,13 +180,20 @@ const offlineDuration = computed(() => {
         }}</span>
       </div>
       <p class="text-muted-foreground">
-        本卡片按连接器汇总心跳与采样吞吐。该连接器覆盖的逐条采集标签与实时数值，可在
+        以下清单来自该连接器上报的配置；标签实时数值可在
         <RouterLink
           to="/equipment/telemetry/tags"
           class="text-brand underline-offset-4 hover:underline"
           >采集标签</RouterLink
         >
         中按设备查看。
+      </p>
+      <ConnectorTagCoveragePanel
+        v-if="connector.connectorId"
+        :collection-connector-id="connector.connectorId"
+      />
+      <p v-else class="mt-3 border-t pt-3 text-muted-foreground">
+        该连接器尚未提供可用于读取配置标签的编号。
       </p>
     </div>
   </div>

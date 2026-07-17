@@ -8,6 +8,7 @@ import ConnectorsPage from './telemetry/connectors.vue'
 
 const connectorMocks = vi.hoisted(() => ({
   refreshConnectors: vi.fn(),
+  coverageConnectorIds: [] as string[],
   errorRef: null as { value: unknown } | null,
   connectors: [
     {
@@ -186,6 +187,20 @@ vi.mock('@/composables/useBusinessTelemetry', async (importOriginal) => {
       refreshConnectors: connectorMocks.refreshConnectors,
       sampleRateByConnector: vue.ref<Record<string, number | null>>({ 'opcua-main': 12.5 }),
     }),
+    useBusinessTelemetryConnectorCoverage: (connectorId: { value: string }) => {
+      connectorMocks.coverageConnectorIds.push(connectorId.value)
+      return {
+        coverage: vue.shallowRef({
+          collectionConnectorId: connectorId.value,
+          manifestStatus: 'current',
+          configuredCount: 0,
+          items: [],
+        }),
+        coverageError: vue.shallowRef(),
+        coveragePending: vue.shallowRef(false),
+        refreshCoverage: vi.fn(),
+      }
+    },
   }
 })
 
@@ -215,6 +230,7 @@ describe('equipment telemetry connectors page', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-07-13T01:10:00.000Z'))
     notifyMock.notifyError.mockClear()
+    connectorMocks.coverageConnectorIds = []
     setError(undefined)
   })
 
@@ -310,6 +326,25 @@ describe('equipment telemetry connectors page', () => {
 
     expect(wrapper.text()).toContain('采集协议')
     expect(wrapper.text()).toContain('采集标签')
+  })
+
+  it('loads configured tags only while the canonical connector card is expanded', async () => {
+    const wrapper = mount(ConnectorsPage, { global: { stubs } })
+
+    expect(connectorMocks.coverageConnectorIds).toEqual([])
+
+    await wrapper.findAll('button[aria-expanded]')[0].trigger('click')
+    expect(connectorMocks.coverageConnectorIds).toEqual(['modbus-main'])
+    expect(wrapper.text()).toContain('当前未配置采集标签')
+
+    await wrapper.findAll('button[aria-expanded]')[1].trigger('click')
+    expect(connectorMocks.coverageConnectorIds).toEqual(['modbus-main', 'mqtt-main'])
+    expect(wrapper.findAll('button[aria-expanded]')[0].attributes('aria-expanded')).toBe('false')
+    expect(wrapper.findAll('button[aria-expanded]')[1].attributes('aria-expanded')).toBe('true')
+
+    await wrapper.findAll('button[aria-expanded]')[1].trigger('click')
+    await wrapper.findAll('button[aria-expanded]')[1].trigger('click')
+    expect(connectorMocks.coverageConnectorIds).toEqual(['modbus-main', 'mqtt-main', 'mqtt-main'])
   })
 
   it('does not spam toast on repeated auto-refetch failures, but re-notifies after recovery', async () => {

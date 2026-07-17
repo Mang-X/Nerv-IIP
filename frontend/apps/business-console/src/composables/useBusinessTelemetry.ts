@@ -1,5 +1,6 @@
 import {
   createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions,
+  getBusinessConsoleTelemetryConnectorTagCoverageQueryOptions,
   getBusinessConsoleTelemetryTagCurrentValueQueryOptions,
   listBusinessConsoleTelemetryAlarmRulesQueryOptions,
   listBusinessConsoleTelemetryConnectorCollectionHealthQueryOptions,
@@ -9,6 +10,8 @@ import {
   queryBusinessConsoleTelemetryRuntimeAvailabilityQueryOptions,
   type BusinessConsoleConnectorCollectionHealthListEnvelope,
   type BusinessConsoleConnectorCollectionHealthListItem,
+  type BusinessConsoleConnectorTagCoverageEnvelope,
+  type BusinessConsoleConnectorTagCoverageResponse,
   type BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest,
   type BusinessConsoleTelemetryTagCurrentValueEnvelope,
   type BusinessConsoleTelemetryTagCurrentValueResponse,
@@ -471,5 +474,35 @@ export function useBusinessTelemetryConnectors() {
     ),
     refreshConnectors: () => refetchWithBusinessContext(businessContext, connectorsQuery),
     sampleRateByConnector,
+  }
+}
+
+/**
+ * 连接器卡片展开后的配置标签覆盖。调用方仅在明细挂载时创建该查询；空连接器编号或空业务
+ * 上下文不会发请求。覆盖事实来自连接器配置清单，不从采样、设备控制绑定或连接器名称推断。
+ */
+export function useBusinessTelemetryConnectorCoverage(collectionConnectorId: Ref<string>) {
+  const businessContext = useBusinessContextStore()
+  const connectorId = computed(() => collectionConnectorId.value.trim())
+  const coverageEnabled = computed(
+    () => hasBusinessContext(businessContext) && connectorId.value.length > 0,
+  )
+  const coverageQuery = useQuery(() => ({
+    ...getBusinessConsoleTelemetryConnectorTagCoverageQueryOptions({
+      path: { connectorId: connectorId.value },
+      query: toContextQuery(businessContext),
+    }),
+    enabled: coverageEnabled.value,
+  }))
+
+  return {
+    coverage: computed<BusinessConsoleConnectorTagCoverageResponse | undefined>(() =>
+      unwrapData<BusinessConsoleConnectorTagCoverageResponse>(
+        coverageQuery.data.value as BusinessConsoleConnectorTagCoverageEnvelope | undefined,
+      ),
+    ),
+    coverageError: coverageQuery.error,
+    coveragePending: coverageQuery.isLoading,
+    refreshCoverage: () => (coverageEnabled.value ? coverageQuery.refetch() : Promise.resolve()),
   }
 }

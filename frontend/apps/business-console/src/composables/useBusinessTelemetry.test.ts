@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import {
   createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions,
+  getBusinessConsoleTelemetryConnectorTagCoverageQueryOptions,
   listBusinessConsoleTelemetryAlarmRulesQueryOptions,
   listBusinessConsoleTelemetryConnectorCollectionHealthQueryOptions,
   listBusinessConsoleTelemetryTagsQueryOptions,
@@ -19,6 +20,7 @@ import {
   formatOeeRate,
   useBusinessTelemetryAlarmRules,
   useBusinessTelemetryConnectors,
+  useBusinessTelemetryConnectorCoverage,
   useBusinessTelemetryHistory,
   useBusinessTelemetryOee,
   useBusinessTelemetryTags,
@@ -35,6 +37,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions: vi.fn(() => ({
     key: [{ _id: 'createOrUpdateBusinessConsoleTelemetryAlarmRule' }],
     mutation: vi.fn(),
+  })),
+  getBusinessConsoleTelemetryConnectorTagCoverageQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleTelemetryConnectorTagCoverage' }],
+    query: vi.fn(),
   })),
   listBusinessConsoleTelemetryAlarmRulesQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleTelemetryAlarmRules' }],
@@ -173,6 +179,51 @@ describe('business telemetry composables', () => {
       },
       lastSampleAtUtc: '2026-07-13T01:09:59.000Z',
     })
+  })
+
+  it('loads connector coverage by canonical connector identity and unwraps its envelope', async () => {
+    coladaState.queryDataById.set('getBusinessConsoleTelemetryConnectorTagCoverage', {
+      success: true,
+      data: {
+        collectionConnectorId: 'modbus-main',
+        manifestStatus: 'current',
+        configuredCount: 1,
+        items: [{ deviceAssetId: 'DEV-CNC-01', tagKey: 'temperature' }],
+      },
+    })
+    const connectorId = shallowRef(' modbus-main ')
+
+    const result = useBusinessTelemetryConnectorCoverage(connectorId)
+
+    expect(getBusinessConsoleTelemetryConnectorTagCoverageQueryOptions).toHaveBeenCalledWith({
+      path: { connectorId: 'modbus-main' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+    })
+    expect(
+      coladaState.queryOptionsById.get('getBusinessConsoleTelemetryConnectorTagCoverage')?.enabled,
+    ).toBe(true)
+    expect(result.coverage.value).toMatchObject({
+      collectionConnectorId: 'modbus-main',
+      manifestStatus: 'current',
+      configuredCount: 1,
+    })
+
+    await result.refreshCoverage()
+    expect(
+      coladaState.refetchById.get('getBusinessConsoleTelemetryConnectorTagCoverage'),
+    ).toHaveBeenCalledTimes(1)
+  })
+
+  it('suppresses connector coverage when canonical identity is empty', async () => {
+    const result = useBusinessTelemetryConnectorCoverage(shallowRef('   '))
+
+    expect(
+      coladaState.queryOptionsById.get('getBusinessConsoleTelemetryConnectorTagCoverage')?.enabled,
+    ).toBe(false)
+    await result.refreshCoverage()
+    expect(
+      coladaState.refetchById.get('getBusinessConsoleTelemetryConnectorTagCoverage'),
+    ).not.toHaveBeenCalled()
   })
 
   it('unwraps paged telemetry lists and exposes totals from successful envelopes', () => {
