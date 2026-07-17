@@ -71,19 +71,21 @@ public sealed class ConnectorTagManifestTests
     }
 
     [Fact]
-    public void Manifest_and_activation_observation_watermarks_are_concurrency_tokens()
+    public void Persistent_versions_are_concurrency_tokens_and_observation_times_are_business_facts_only()
     {
         using var dbContext = CreateDbContext();
 
-        var manifestObservedAt = dbContext.Model
-            .FindEntityType(typeof(ConnectorTagManifest))!
-            .FindProperty(nameof(ConnectorTagManifest.ManifestObservedAtUtc))!;
-        var activationObservedAt = dbContext.Model
-            .FindEntityType(typeof(ConnectorTagBinding))!
-            .FindProperty(nameof(ConnectorTagBinding.ActivationObservedAtUtc))!;
+        var manifestType = dbContext.Model.FindEntityType(typeof(ConnectorTagManifest))!;
+        var bindingType = dbContext.Model.FindEntityType(typeof(ConnectorTagBinding))!;
+        var manifestVersion = manifestType.FindProperty(nameof(ConnectorTagManifest.ConcurrencyVersion))!;
+        var bindingVersion = bindingType.FindProperty(nameof(ConnectorTagBinding.ConcurrencyVersion))!;
+        var manifestObservedAt = manifestType.FindProperty(nameof(ConnectorTagManifest.ManifestObservedAtUtc))!;
+        var activationObservedAt = bindingType.FindProperty(nameof(ConnectorTagBinding.ActivationObservedAtUtc))!;
 
-        Assert.True(manifestObservedAt.IsConcurrencyToken);
-        Assert.True(activationObservedAt.IsConcurrencyToken);
+        Assert.True(manifestVersion.IsConcurrencyToken);
+        Assert.True(bindingVersion.IsConcurrencyToken);
+        Assert.False(manifestObservedAt.IsConcurrencyToken);
+        Assert.False(activationObservedAt.IsConcurrencyToken);
     }
 
     [Fact]

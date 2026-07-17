@@ -50,7 +50,9 @@ public sealed class ConnectorTagManifest : Entity<ConnectorTagManifestId>, IAggr
         CollectionConnectorId = IndustrialTelemetryText.Required(collectionConnectorId, nameof(collectionConnectorId));
         SourceSystem = IndustrialTelemetryText.RequiredLower(sourceSystem, nameof(sourceSystem));
         ManifestRevision = NormalizeRevision(manifestRevision);
-        ManifestObservedAtUtc = manifestObservedAtUtc;
+        ManifestObservedAtUtc = manifestObservedAtUtc.ToUniversalTime();
+        ManifestObservedAtUtcTicks = manifestObservedAtUtc.UtcTicks;
+        ConcurrencyVersion = 1;
         ApplyEntries(normalizedEntries, manifestObservedAtUtc);
     }
 
@@ -60,6 +62,8 @@ public sealed class ConnectorTagManifest : Entity<ConnectorTagManifestId>, IAggr
     public string SourceSystem { get; private set; } = string.Empty;
     public string ManifestRevision { get; private set; } = string.Empty;
     public DateTimeOffset ManifestObservedAtUtc { get; private set; }
+    public long ManifestObservedAtUtcTicks { get; private set; }
+    public long ConcurrencyVersion { get; private set; }
     public IReadOnlyCollection<ConnectorTagBinding> Bindings => bindings.AsReadOnly();
 
     public static ConnectorTagManifest Create(
@@ -89,12 +93,13 @@ public sealed class ConnectorTagManifest : Entity<ConnectorTagManifestId>, IAggr
     {
         ArgumentNullException.ThrowIfNull(entries);
         var normalizedRevision = NormalizeRevision(manifestRevision);
-        if (manifestObservedAtUtc < ManifestObservedAtUtc)
+        var manifestObservedAtUtcTicks = manifestObservedAtUtc.UtcTicks;
+        if (manifestObservedAtUtcTicks < ManifestObservedAtUtcTicks)
         {
             return CurrentResult(ManifestApplyDisposition.Stale);
         }
 
-        if (manifestObservedAtUtc == ManifestObservedAtUtc)
+        if (manifestObservedAtUtcTicks == ManifestObservedAtUtcTicks)
         {
             if (normalizedRevision != ManifestRevision)
             {
@@ -121,8 +126,10 @@ public sealed class ConnectorTagManifest : Entity<ConnectorTagManifestId>, IAggr
 
         SourceSystem = normalizedSourceSystem;
         ManifestRevision = normalizedRevision;
-        ManifestObservedAtUtc = manifestObservedAtUtc;
+        ManifestObservedAtUtc = manifestObservedAtUtc.ToUniversalTime();
+        ManifestObservedAtUtcTicks = manifestObservedAtUtcTicks;
         ApplyEntries(normalizedEntries, manifestObservedAtUtc);
+        ConcurrencyVersion = checked(ConcurrencyVersion + 1);
         return CurrentResult(ManifestApplyDisposition.Accepted);
     }
 
@@ -212,7 +219,10 @@ public sealed class ConnectorTagManifest : Entity<ConnectorTagManifestId>, IAggr
 
     private ManifestApplyResult CurrentResult(ManifestApplyDisposition disposition)
     {
-        return new ManifestApplyResult(disposition, ManifestRevision, ManifestObservedAtUtc);
+        return new ManifestApplyResult(
+            disposition,
+            ManifestRevision,
+            new DateTimeOffset(ManifestObservedAtUtcTicks, TimeSpan.Zero));
     }
 
     private static string NormalizeRevision(string manifestRevision)

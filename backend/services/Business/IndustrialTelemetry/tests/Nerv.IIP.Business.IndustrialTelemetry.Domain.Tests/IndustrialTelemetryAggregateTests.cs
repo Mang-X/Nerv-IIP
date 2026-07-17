@@ -17,6 +17,80 @@ public sealed class IndustrialTelemetryAggregateTests
     private const string ManifestRevisionB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
     [Fact]
+    public void Connector_manifest_versions_increment_once_for_each_actual_root_or_binding_mutation()
+    {
+        var observedAtUtc = new DateTimeOffset(2026, 7, 17, 8, 0, 0, TimeSpan.Zero);
+        var manifest = CreateManifest(observedAtUtc, ManifestRevisionA,
+        [
+            Entry("temperature", observedAtUtc, activationStatus: "pending"),
+            Entry("pressure", observedAtUtc),
+        ]);
+        var temperature = manifest.Bindings.Single(binding => binding.TagKey == "temperature");
+        var pressure = manifest.Bindings.Single(binding => binding.TagKey == "pressure");
+
+        Assert.Equal(1, manifest.ConcurrencyVersion);
+        Assert.Equal(1, temperature.ConcurrencyVersion);
+        Assert.Equal(1, pressure.ConcurrencyVersion);
+
+        manifest.Apply("opcua", ManifestRevisionA, observedAtUtc,
+        [
+            Entry("temperature", observedAtUtc, activationStatus: "pending"),
+            Entry("pressure", observedAtUtc),
+        ]);
+
+        Assert.Equal(1, manifest.ConcurrencyVersion);
+        Assert.Equal(1, temperature.ConcurrencyVersion);
+        Assert.Equal(1, pressure.ConcurrencyVersion);
+
+        manifest.Apply("opcua", ManifestRevisionA, observedAtUtc,
+        [
+            Entry("temperature", observedAtUtc.AddMinutes(1), activationStatus: "active"),
+            Entry("pressure", observedAtUtc),
+        ]);
+
+        Assert.Equal(1, manifest.ConcurrencyVersion);
+        Assert.Equal(2, temperature.ConcurrencyVersion);
+        Assert.Equal(1, pressure.ConcurrencyVersion);
+
+        var changedTemperature = Entry("temperature", observedAtUtc.AddMinutes(1), activationStatus: "active") with
+        {
+            Enabled = false,
+            ProtocolAddress = "ns=3;s=temperature",
+        };
+        manifest.Apply("opcua", ManifestRevisionB, observedAtUtc.AddMinutes(2), [changedTemperature]);
+
+        Assert.Equal(2, manifest.ConcurrencyVersion);
+        Assert.Equal(3, temperature.ConcurrencyVersion);
+        Assert.Equal(2, pressure.ConcurrencyVersion);
+
+        manifest.Apply("opcua", ManifestRevisionA, observedAtUtc.AddMinutes(3),
+        [
+            changedTemperature,
+            Entry("pressure", observedAtUtc.AddMinutes(3)),
+        ]);
+
+        Assert.Equal(3, manifest.ConcurrencyVersion);
+        Assert.Equal(3, temperature.ConcurrencyVersion);
+        Assert.Equal(3, pressure.ConcurrencyVersion);
+        Assert.True(pressure.IsCurrent);
+        Assert.Null(pressure.RetiredAtUtc);
+    }
+
+    [Fact]
+    public void Connector_manifest_rejected_reports_do_not_increment_concurrency_versions()
+    {
+        var observedAtUtc = new DateTimeOffset(2026, 7, 17, 8, 0, 0, TimeSpan.Zero);
+        var manifest = CreateManifest(observedAtUtc, ManifestRevisionA, [Entry("temperature", observedAtUtc)]);
+        var binding = Assert.Single(manifest.Bindings);
+
+        manifest.Apply("opcua", ManifestRevisionB, observedAtUtc.AddTicks(-1), [Entry("pressure", observedAtUtc)]);
+        manifest.Apply("opcua", ManifestRevisionB, observedAtUtc, [Entry("pressure", observedAtUtc)]);
+
+        Assert.Equal(1, manifest.ConcurrencyVersion);
+        Assert.Equal(1, binding.ConcurrencyVersion);
+    }
+
+    [Fact]
     public void Connector_manifest_same_revision_and_observation_is_idempotent()
     {
         var observedAtUtc = new DateTimeOffset(2026, 7, 17, 8, 0, 0, TimeSpan.Zero);

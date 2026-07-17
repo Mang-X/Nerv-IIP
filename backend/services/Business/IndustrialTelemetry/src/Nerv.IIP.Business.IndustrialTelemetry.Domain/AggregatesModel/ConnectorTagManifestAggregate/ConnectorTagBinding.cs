@@ -39,8 +39,10 @@ public sealed class ConnectorTagBinding : Entity<ConnectorTagBindingId>
     public DateTimeOffset? RetiredAtUtc { get; private set; }
     public string ActivationStatus { get; private set; } = "pending";
     public DateTimeOffset ActivationObservedAtUtc { get; private set; }
+    public long ActivationObservedAtUtcTicks { get; private set; }
     public string? ActivationErrorCode { get; private set; }
     public string? ActivationErrorMessage { get; private set; }
+    public long ConcurrencyVersion { get; private set; }
 
     internal static ConnectorTagBinding Create(
         ConnectorTagManifestId connectorTagManifestId,
@@ -59,17 +61,36 @@ public sealed class ConnectorTagBinding : Entity<ConnectorTagBindingId>
 
     internal void Apply(ConnectorTagManifestEntry entry)
     {
-        Enabled = entry.Enabled;
-        ProtocolAddress = IndustrialTelemetryText.OptionalSanitized(entry.ProtocolAddress, 500);
-        IsCurrent = true;
-        RetiredAtUtc = null;
-        ApplyActivation(entry);
+        var protocolAddress = IndustrialTelemetryText.OptionalSanitized(entry.ProtocolAddress, 500);
+        var changed = Enabled != entry.Enabled
+            || ProtocolAddress != protocolAddress
+            || !IsCurrent
+            || RetiredAtUtc.HasValue;
+        if (changed)
+        {
+            Enabled = entry.Enabled;
+            ProtocolAddress = protocolAddress;
+            IsCurrent = true;
+            RetiredAtUtc = null;
+        }
+
+        changed |= ApplyActivation(entry);
+        if (changed)
+        {
+            ConcurrencyVersion = checked(ConcurrencyVersion + 1);
+        }
     }
 
     internal void Retire(DateTimeOffset retiredAtUtc)
     {
+        if (!IsCurrent && RetiredAtUtc == retiredAtUtc.ToUniversalTime())
+        {
+            return;
+        }
+
         IsCurrent = false;
-        RetiredAtUtc = retiredAtUtc;
+        RetiredAtUtc = retiredAtUtc.ToUniversalTime();
+        ConcurrencyVersion = checked(ConcurrencyVersion + 1);
     }
 
     public bool HasSameBusinessKey(
@@ -86,22 +107,25 @@ public sealed class ConnectorTagBinding : Entity<ConnectorTagBindingId>
             && TagKey == IndustrialTelemetryText.RequiredLower(tagKey, nameof(tagKey));
     }
 
-    private void ApplyActivation(ConnectorTagManifestEntry entry)
+    private bool ApplyActivation(ConnectorTagManifestEntry entry)
     {
         var status = NormalizeActivationStatus(entry.ActivationStatus);
-        if (ActivationObservedAtUtc != default && entry.ActivationObservedAtUtc <= ActivationObservedAtUtc)
+        var activationObservedAtUtcTicks = entry.ActivationObservedAtUtc.UtcTicks;
+        if (ActivationObservedAtUtcTicks != default && activationObservedAtUtcTicks <= ActivationObservedAtUtcTicks)
         {
-            return;
+            return false;
         }
 
         ActivationStatus = status;
-        ActivationObservedAtUtc = entry.ActivationObservedAtUtc;
+        ActivationObservedAtUtc = entry.ActivationObservedAtUtc.ToUniversalTime();
+        ActivationObservedAtUtcTicks = activationObservedAtUtcTicks;
         ActivationErrorCode = status == "error"
             ? IndustrialTelemetryText.OptionalSanitized(entry.ActivationErrorCode, 128)
             : null;
         ActivationErrorMessage = status == "error"
             ? IndustrialTelemetryText.OptionalSanitized(entry.ActivationErrorMessage, 500)
             : null;
+        return true;
     }
 
     internal static string NormalizeActivationStatus(string activationStatus)

@@ -3,6 +3,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
@@ -15,6 +17,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRoll
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
+using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations;
 using Nerv.IIP.Testing.EntityFramework;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
@@ -168,6 +171,45 @@ public sealed class IndustrialTelemetrySchemaConventionTests
             ]);
     }
 
+    [Fact]
+    public void Connector_manifest_exact_ordering_migration_backfills_before_enforcing_not_null()
+    {
+        var operations = new InspectableConnectorManifestExactOrderingMigration().BuildOperations();
+        var expectedColumns = new HashSet<(string Table, string Column)>
+        {
+            ("connector_tag_manifests", "manifest_observed_at_utc_ticks"),
+            ("connector_tag_manifests", "concurrency_version"),
+            ("connector_tag_bindings", "activation_observed_at_utc_ticks"),
+            ("connector_tag_bindings", "concurrency_version"),
+        };
+        var addedColumns = operations
+            .OfType<AddColumnOperation>()
+            .Where(operation => expectedColumns.Contains((operation.Table, operation.Name)))
+            .ToArray();
+
+        Assert.Equal(4, addedColumns.Length);
+        Assert.All(addedColumns, operation =>
+        {
+            Assert.True(operation.IsNullable);
+            Assert.Null(operation.DefaultValue);
+            Assert.Null(operation.DefaultValueSql);
+        });
+
+        var backfillSql = Assert.Single(operations.OfType<SqlOperation>()).Sql;
+        Assert.Contains("EXTRACT(EPOCH FROM manifest_observed_at_utc) * 10000000", backfillSql, StringComparison.Ordinal);
+        Assert.Contains("EXTRACT(EPOCH FROM activation_observed_at_utc) * 10000000", backfillSql, StringComparison.Ordinal);
+        Assert.Contains("621355968000000000", backfillSql, StringComparison.Ordinal);
+        Assert.Contains("concurrency_version = 1", backfillSql, StringComparison.Ordinal);
+        Assert.DoesNotContain("concurrency_version = 0", backfillSql, StringComparison.Ordinal);
+
+        var requiredColumns = operations
+            .OfType<AlterColumnOperation>()
+            .Where(operation => expectedColumns.Contains((operation.Table, operation.Name)))
+            .ToArray();
+        Assert.Equal(4, requiredColumns.Length);
+        Assert.All(requiredColumns, operation => Assert.False(operation.IsNullable));
+    }
+
     private static void AssertOptionalStringColumn<TEntity>(
         IndustrialTelemetrySchemaFixture fixture,
         string propertyName,
@@ -224,6 +266,16 @@ public sealed class IndustrialTelemetrySchemaConventionTests
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddIndustrialTelemetryPostgreSqlPersistence("Host=localhost;Database=nerv_iip_industrial_telemetry_schema;Username=nerv;Password=nerv");
         return new IndustrialTelemetrySchemaFixture(services.BuildServiceProvider());
+    }
+
+    private sealed class InspectableConnectorManifestExactOrderingMigration : AddConnectorManifestExactOrdering
+    {
+        public IReadOnlyList<MigrationOperation> BuildOperations()
+        {
+            var builder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+            base.Up(builder);
+            return builder.Operations;
+        }
     }
 
     private sealed class IndustrialTelemetrySchemaFixture : IDisposable
