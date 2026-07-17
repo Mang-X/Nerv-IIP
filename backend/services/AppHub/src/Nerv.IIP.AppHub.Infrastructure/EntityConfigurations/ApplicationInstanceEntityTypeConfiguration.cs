@@ -62,6 +62,12 @@ public sealed class ConnectorCollectionHealthProjectionEntityTypeConfiguration :
         builder.Property(x => x.DroppedCount).HasComment("Actual source samples intentionally dropped or rejected in this epoch; null means unknown");
         builder.Property(x => x.ErrorCount).HasComment("Actual collection or processing failures in this epoch; null means unknown");
         builder.Property(x => x.LastSampleAtUtc).HasComment("Most recent actual source sample time; null means unknown");
+        builder.Property(x => x.ConnectionStatus).HasMaxLength(32).HasComment("Authoritative field connection state: unknown, alive, or lost; null means a legacy report supplied no connection fact");
+        builder.Property(x => x.ConnectionObservedAtUtc).HasComment("UTC time of the latest authoritative field connection observation; null means no connection fact");
+        builder.Property(x => x.ConnectedSinceUtc).HasComment("UTC start of the current alive connection interval; present only while connection state is alive");
+        builder.Property(x => x.DisconnectedSinceUtc).HasComment("UTC start of the current lost connection interval; present only while connection state is lost");
+        builder.Property(x => x.ConnectionReasonCategory).HasMaxLength(64).HasComment("Bounded category for the latest field connection transition reason; null when not reported");
+        builder.Property(x => x.ConnectionDiagnosticCode).HasMaxLength(128).HasComment("Sanitized diagnostic code for the latest field connection transition; null when not reported");
         builder.Property(x => x.RetiredCounterEpochs).IsRequired().HasColumnType("text").HasComment("Complete set of retired counter epoch identities, preventing delayed reports from reviving reset counters");
         builder.HasIndex(x => x.ApplicationInstanceId).IsUnique().HasDatabaseName("ux_connector_collection_health_instance");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ConnectorId }).IsUnique().HasDatabaseName("ux_connector_collection_health_scope");

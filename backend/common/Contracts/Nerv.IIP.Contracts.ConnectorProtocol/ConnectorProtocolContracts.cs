@@ -90,7 +90,10 @@ public sealed record ConnectorCollectionHealthResponse(
     long? ReceivedCount,
     long? DroppedCount,
     long? ErrorCount,
-    string? SourceSystem);
+    string? SourceSystem,
+    ConnectorConnectionState? Connection = null,
+    string? StaleReason = null,
+    string? OfflineReason = null);
 
 /// <summary>
 /// One connector-host instance's collection health, self-sufficient for a status wall card:
@@ -105,12 +108,10 @@ public sealed record ConnectorCollectionHealthResponse(
 /// not counted as online).
 /// </para>
 /// <para>
-/// <see cref="StaleReason"/> disambiguates a <c>stale</c> status: <c>offline</c> — the heartbeat stopped
-/// arriving (aged out); the connector-host is no longer reporting, a real disconnect (断线). Since heartbeats
-/// stopped, <see cref="LastHeartbeatAtUtc"/> is frozen, so a "disconnected for" duration derived from it grows
-/// monotonically. <c>fault</c> — still heartbeating but the connector self-reported a terminal down state
-/// (异常停止); the cause is not observable here (may be a lost connection, but equally a downstream/processing
-/// failure), so it is never conflated with a device disconnect. Null when not stale.
+/// <see cref="StaleReason"/> disambiguates a <c>stale</c> status: <c>offline</c> means either an explicit field
+/// connection loss or a Connector Host heartbeat timeout; <see cref="OfflineReason"/> identifies which one.
+/// <c>fault</c> means the Host is fresh and the connector self-reported a terminal collector state. Null when
+/// not stale. An explicit field loss takes precedence over a simultaneous Host timeout.
 /// <see cref="CounterEpoch"/> scopes the monotonic counters; a consumer computing a sampling rate from
 /// consecutive polls must reset its baseline when the epoch changes (a counter reset).
 /// </para>
@@ -127,7 +128,9 @@ public sealed record ConnectorCollectionHealthListItem(
     long? DroppedCount,
     long? ErrorCount,
     Guid? CounterEpoch,
-    string? SourceSystem);
+    string? SourceSystem,
+    ConnectorConnectionState? Connection = null,
+    string? OfflineReason = null);
 
 public sealed record ConnectorCollectionHealthListResponse(
     IReadOnlyList<ConnectorCollectionHealthListItem> Items,
