@@ -203,7 +203,7 @@ public sealed class WorkerTests
     public async Task Bulk_activation_signals_for_one_connector_trigger_only_one_additional_manifest_scan()
     {
         var clock = new ControllableTimeProvider();
-        var manifestSignal = new ConnectorManifestSignal();
+        var manifestSignal = new ObservableManifestSignal(new ConnectorManifestSignal());
         var connector = new ObservableStaticConnector();
         var manifestClient = new BlockingInitialAcknowledgementManifestClient();
         var worker = CreateWorker(
@@ -229,8 +229,9 @@ public sealed class WorkerTests
             manifestClient.Release();
             await manifestClient.Completed.Task.WaitAsync(TimeSpan.FromSeconds(5));
             await connector.Discovery(1).WaitAsync(TimeSpan.FromSeconds(5));
-            await Task.Delay(TimeSpan.FromMilliseconds(100));
+            await manifestSignal.SecondWaitEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
+            Assert.False(manifestSignal.SecondWaitTask.IsCompleted);
             Assert.Equal(2, connector.DiscoveryCount);
             Assert.Single(manifestClient.Requests);
         }
@@ -268,7 +269,7 @@ public sealed class WorkerTests
         IReadOnlyList<IIndustrialTelemetryCollectionConnector> collectors,
         IReadOnlyList<IConnectorConnectionMonitor> monitors,
         IConnectorTagManifestClient? manifestClient = null,
-        ConnectorManifestSignal? manifestSignal = null,
+        IConnectorManifestSignal? manifestSignal = null,
         IConnector? manifestConnector = null)
     {
         var connector = new StaticConnector();
@@ -356,6 +357,36 @@ public sealed class WorkerTests
                         [new ConnectorTagManifestEntrySnapshot("device-a", "temperature", true, "ns=2;s=T", "pending", DateTimeOffset.Parse("2026-07-17T00:00:00Z"))]))
             ];
             return Task.FromResult(targets);
+        }
+    }
+
+    private sealed class ObservableManifestSignal(ConnectorManifestSignal inner) : IConnectorManifestSignal
+    {
+        private Task<ConnectorManifestSignalEvent?>? _secondWaitTask;
+        private int _waitCount;
+
+        public TaskCompletionSource SecondWaitEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<ConnectorManifestSignalEvent?> SecondWaitTask =>
+            Volatile.Read(ref _secondWaitTask)
+            ?? throw new InvalidOperationException("The second manifest signal wait has not started.");
+
+        public void Signal(string connectorId) => inner.Signal(connectorId);
+
+        public async Task<ConnectorManifestSignalEvent?> WaitAsync(
+            TimeSpan timeout,
+            TimeProvider timeProvider,
+            CancellationToken cancellationToken)
+        {
+            var underlyingTask = inner.WaitAsync(timeout, timeProvider, cancellationToken);
+            if (Interlocked.Increment(ref _waitCount) == 2)
+            {
+                Volatile.Write(ref _secondWaitTask, underlyingTask);
+                SecondWaitEntered.TrySetResult();
+            }
+
+            return await underlyingTask;
         }
     }
 
