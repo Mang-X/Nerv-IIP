@@ -7,7 +7,10 @@ import { useAuthStore } from '@/stores/auth'
 import WorkOrderDetailPage from './[workOrderId].vue'
 import WorkOrdersListPage from './index.vue'
 
-const routeState = vi.hoisted(() => ({ params: { workOrderId: 'WO-1' }, query: {} as Record<string, string> }))
+const routeState = vi.hoisted(() => ({
+  params: { workOrderId: 'WO-1' },
+  query: {} as Record<string, string>,
+}))
 const routerState = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }))
 vi.mock('vue-router', () => ({
   useRoute: () => routeState,
@@ -67,7 +70,13 @@ vi.mock('@/composables/useBusinessMes', () => ({
     createRushWorkOrder: vi.fn(),
     createRushWorkOrderError: ref(undefined),
     createRushWorkOrderPending: ref(false),
-    filters: reactive({ organizationId: 'org', environmentId: 'dev', status: undefined, skip: 0, take: 20 }),
+    filters: reactive({
+      organizationId: 'org',
+      environmentId: 'dev',
+      status: undefined,
+      skip: 0,
+      take: 20,
+    }),
     recordProductionReport: vi.fn(),
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
@@ -96,9 +105,9 @@ function patchPermissions(codes: string[]) {
 }
 
 const holdPanelStub = {
-  props: ['sourceService', 'sourceDocumentId', 'scope', 'isActive', 'canManage'],
+  props: ['sourceService', 'sourceDocumentId', 'scope', 'isActive', 'canManage', 'canReadTimeline'],
   template:
-    '<div data-testid="hold-panel" :data-source="sourceDocumentId" :data-active="String(isActive)" :data-manage="String(canManage)" />',
+    '<div data-testid="hold-panel" :data-source="sourceDocumentId" :data-active="String(isActive)" :data-manage="String(canManage)" :data-read-timeline="String(canReadTimeline)" />',
 }
 
 describe('work-order detail — quality hold block', () => {
@@ -118,7 +127,10 @@ describe('work-order detail — quality hold block', () => {
           NvSectionCard: { template: '<div />' },
           NvDataTable: { props: ['rows'], template: '<div />' },
           NvButton: { template: '<button><slot /></button>' },
-          NvStatusBadge: { props: ['label', 'value'], template: '<span>{{ label ?? value }}</span>' },
+          NvStatusBadge: {
+            props: ['label', 'value'],
+            template: '<span>{{ label ?? value }}</span>',
+          },
           NvTooltip: { template: '<div><slot /></div>' },
           NvTooltipProvider: { template: '<div><slot /></div>' },
           NvTooltipTrigger: { template: '<div><slot /></div>' },
@@ -131,7 +143,12 @@ describe('work-order detail — quality hold block', () => {
 
   it('renders a hold panel per quality hold', () => {
     detailState.qualityHolds = [
-      { sourceService: 'business-mes', sourceDocumentId: 'WO-1', scope: 'work-order', isActive: true },
+      {
+        sourceService: 'business-mes',
+        sourceDocumentId: 'WO-1',
+        scope: 'work-order',
+        isActive: true,
+      },
       {
         sourceService: 'business-mes',
         sourceDocumentId: 'WO-1-OP-20',
@@ -147,7 +164,12 @@ describe('work-order detail — quality hold block', () => {
 
   it('keeps rendering a released hold so its release audit + timeline stay visible', () => {
     detailState.qualityHolds = [
-      { sourceService: 'business-mes', sourceDocumentId: 'WO-1', scope: 'work-order', isActive: false },
+      {
+        sourceService: 'business-mes',
+        sourceDocumentId: 'WO-1',
+        scope: 'work-order',
+        isActive: false,
+      },
     ]
     const wrapper = mountDetail(['business.mes.work-orders.read'])
     const panel = wrapper.get('[data-testid="hold-panel"]')
@@ -158,13 +180,40 @@ describe('work-order detail — quality hold block', () => {
 
   it('grants force-release only with quality write permission', () => {
     detailState.qualityHolds = [
-      { sourceService: 'business-mes', sourceDocumentId: 'WO-1', scope: 'work-order', isActive: true },
+      {
+        sourceService: 'business-mes',
+        sourceDocumentId: 'WO-1',
+        scope: 'work-order',
+        isActive: true,
+      },
     ]
     const readOnly = mountDetail(['business.mes.work-orders.read'])
     expect(readOnly.get('[data-testid="hold-panel"]').attributes('data-manage')).toBe('false')
 
     const manager = mountDetail(['business.mes.work-orders.read', 'business.mes.quality.write'])
     expect(manager.get('[data-testid="hold-panel"]').attributes('data-manage')).toBe('true')
+  })
+
+  it('gates the timeline read on quality read permission (separate from work-orders read)', () => {
+    detailState.qualityHolds = [
+      {
+        sourceService: 'business-mes',
+        sourceDocumentId: 'WO-1',
+        scope: 'work-order',
+        isActive: true,
+      },
+    ]
+    // 仅工单读权限：不得加载时间线（读端点要 business.mes.quality.read）。
+    const woOnly = mountDetail(['business.mes.work-orders.read'])
+    expect(woOnly.get('[data-testid="hold-panel"]').attributes('data-read-timeline')).toBe('false')
+
+    const qualityReader = mountDetail([
+      'business.mes.work-orders.read',
+      'business.mes.quality.read',
+    ])
+    expect(qualityReader.get('[data-testid="hold-panel"]').attributes('data-read-timeline')).toBe(
+      'true',
+    )
   })
 
   it('renders no hold block when there are no active holds', () => {
@@ -207,8 +256,20 @@ describe('work-order list — quality hold lock icon', () => {
 
   it('shows a lock marker only for work orders with an active quality hold', () => {
     detailState.workOrders = [
-      { workOrderId: 'WO-1', skuId: 'FG-1', status: 'released', operationTasks: [], hasActiveQualityHold: true },
-      { workOrderId: 'WO-2', skuId: 'FG-2', status: 'released', operationTasks: [], hasActiveQualityHold: false },
+      {
+        workOrderId: 'WO-1',
+        skuId: 'FG-1',
+        status: 'released',
+        operationTasks: [],
+        hasActiveQualityHold: true,
+      },
+      {
+        workOrderId: 'WO-2',
+        skuId: 'FG-2',
+        status: 'released',
+        operationTasks: [],
+        hasActiveQualityHold: false,
+      },
     ]
     const wrapper = mountList()
     const locks = wrapper.findAll('[aria-label="存在有效质量保留"]')

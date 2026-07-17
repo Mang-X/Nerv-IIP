@@ -34,6 +34,8 @@ const props = defineProps<{
   releaseReason?: string | null
   releaseSource?: string | null
   canManage: boolean
+  // 时间线读端点要求 business.mes.quality.read；无该权限则不加载时间线（避免逐个保留 403）。
+  canReadTimeline: boolean
 }>()
 
 const emit = defineEmits<{ released: [] }>()
@@ -45,12 +47,15 @@ const {
   refreshTimeline,
   forceRelease,
   forceReleasePending,
-} = useMesQualityHold(() => ({
-  organizationId: props.organizationId,
-  environmentId: props.environmentId,
-  sourceService: props.sourceService,
-  sourceDocumentId: props.sourceDocumentId,
-}))
+} = useMesQualityHold(
+  () => ({
+    organizationId: props.organizationId,
+    environmentId: props.environmentId,
+    sourceService: props.sourceService,
+    sourceDocumentId: props.sourceDocumentId,
+  }),
+  () => props.canReadTimeline,
+)
 
 const releaseOpen = ref(false)
 const releaseReason = ref('')
@@ -61,9 +66,7 @@ watch(timelineError, (err) => {
   if (err) notifyError(err, '质量保留时间线加载失败，请稍后重试。')
 })
 
-const scopeLabel = computed(() =>
-  props.scope === 'operation-task' ? '工序级保留' : '工单级保留',
-)
+const scopeLabel = computed(() => (props.scope === 'operation-task' ? '工序级保留' : '工单级保留'))
 
 // 释放方式（ReleaseSource）→ 一线可读：manual-force-release=人工强制释放，其余（检验联动）=复检自动放行。
 const releaseSourceLabel = computed(() =>
@@ -109,7 +112,6 @@ async function confirmRelease() {
     notifyError(error, '强制释放质量保留失败，请稍后重试。')
   }
 }
-
 </script>
 
 <template>
@@ -146,6 +148,7 @@ async function confirmRelease() {
       </div>
       <div class="flex items-center gap-1">
         <NvButton
+          v-if="canReadTimeline"
           size="sm"
           type="button"
           variant="outline"
@@ -173,7 +176,14 @@ async function confirmRelease() {
       <span class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
         >保留时间线</span
       >
-      <div v-if="timelinePending" class="flex items-center gap-2 text-sm text-muted-foreground">
+      <!-- 时间线读端点需 business.mes.quality.read；无该权限则不请求（否则逐个保留 403），给出明确说明。 -->
+      <p v-if="!canReadTimeline" class="text-sm text-muted-foreground">
+        需要「质量」读取权限才能查看保留时间线。
+      </p>
+      <div
+        v-else-if="timelinePending"
+        class="flex items-center gap-2 text-sm text-muted-foreground"
+      >
         <Spinner aria-hidden="true" />
         <span>正在加载时间线…</span>
       </div>

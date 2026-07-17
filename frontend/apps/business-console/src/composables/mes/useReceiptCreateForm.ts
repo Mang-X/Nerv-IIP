@@ -130,7 +130,9 @@ export function useReceiptCreateForm(
     form.quantity = '1'
     form.unitCost = ''
     form.uomCode = 'EA'
-    // 下一笔重新确定产出批次：单一批次自动重选、多批次清空由操作员重选，避免连录误复用上一批次。
+    // 成功后先清空产出批次：多批次工单强制操作员重新选择（避免连录误记到上一批次），单一批次再由
+    // applyDefaultProducedLot 自动回填。
+    form.producedLotNo = ''
     applyDefaultProducedLot()
     form.requestedAtUtc = toLocalDateTimeInput(new Date())
     // 仅在登记成功后调用：轮换幂等键，使同一工单的下一笔登记成为一笔独立申请（连录不回放旧单）。

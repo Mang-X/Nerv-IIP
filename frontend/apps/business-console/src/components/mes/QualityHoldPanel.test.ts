@@ -70,6 +70,7 @@ function mountPanel(props: Record<string, unknown>) {
       heldAtUtc: '2026-07-14T02:00:00Z',
       heldBy: 'qa-01',
       canManage: true,
+      canReadTimeline: true,
       ...props,
     },
     global: { stubs },
@@ -162,12 +163,27 @@ describe('QualityHoldPanel', () => {
 
   it('force-releases with a required reason and notifies success', async () => {
     const wrapper = mountPanel({ canManage: true })
-    await wrapper.findAll('button').find((b) => b.text().includes('强制释放'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('强制释放'))!
+      .trigger('click')
     await wrapper.get('#force-release-reason').setValue('设备已复检，人工放行')
-    await wrapper.findAll('button').find((b) => b.text().includes('确认强制释放'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('确认强制释放'))!
+      .trigger('click')
     await flushPromises()
     expect(holdState.forceRelease).toHaveBeenCalledWith('设备已复检，人工放行')
     expect(notifySpies.success).toHaveBeenCalled()
     expect(wrapper.emitted('released')).toBeTruthy()
+  })
+
+  it('gates the timeline behind quality read permission (no request, clear note)', () => {
+    // 时间线读端点需 business.mes.quality.read：无该权限时不加载时间线、给出说明，而非逐个保留 403。
+    const wrapper = mountPanel({ canReadTimeline: false })
+    expect(wrapper.text()).toContain('需要「质量」读取权限才能查看保留时间线')
+    expect(wrapper.text()).not.toContain('复检合格自动放行')
+    // 无可刷新的时间线时不显示刷新入口。
+    expect(wrapper.findAll('button').some((b) => b.text().includes('刷新'))).toBe(false)
   })
 })

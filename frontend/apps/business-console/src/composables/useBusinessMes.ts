@@ -1441,11 +1441,17 @@ export interface MesQualityHoldSource {
 
 // 单个质量保留(quality hold)的时间线读面(#886)+人工强制释放(既有 force-release 写面)。
 // 由工单详情 hold 区块按活跃保留逐个实例化;定位键为 sourceService + sourceDocumentId。
-export function useMesQualityHold(source: () => MesQualityHoldSource) {
+// isReadable：时间线读端点要求 business.mes.quality.read（网关 MesQualityRead），高于本页 work-orders.read。
+// 无该权限的用户不发时间线请求（否则每个保留逐一 403），由调用方按权限传入。
+export function useMesQualityHold(
+  source: () => MesQualityHoldSource,
+  isReadable: () => boolean = () => true,
+) {
   const queryCache = useQueryCache()
   const enabled = computed(() => {
     const s = source()
     return (
+      isReadable() &&
       isNonEmpty(s.organizationId) &&
       isNonEmpty(s.environmentId) &&
       isNonEmpty(s.sourceService) &&

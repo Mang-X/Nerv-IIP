@@ -117,15 +117,18 @@ watch(
 watch(
   () => route.query,
   (query) => {
-    const workOrderId = firstQueryValue(query.workOrderId)
-    const skuId = firstQueryValue(query.skuId)
-    const quantity = firstQueryValue(query.quantity)
-    if (workOrderId) receiptContext.workOrderId = workOrderId
-    if (skuId) receiptContext.skuId = skuId
-    if (quantity) receiptContext.quantity = quantity
+    // 无条件覆盖：query 缺失即清空，避免离开/切换后残留旧工单或混合上下文。
+    receiptContext.workOrderId = firstQueryValue(query.workOrderId)
+    receiptContext.skuId = firstQueryValue(query.skuId)
+    receiptContext.quantity = firstQueryValue(query.quantity)
     resetPage()
-    // 仅有 manage 权限时才自动打开登记 Sheet（读用户从工单详情带 query 进来也不弹创建）。
-    if (workOrderId && skuId && canManageReceipts.value) receiptSheetOpen.value = true
+    if (receiptContext.workOrderId && receiptContext.skuId && canManageReceipts.value) {
+      // 仅有 manage 权限时才自动打开登记 Sheet（读用户从工单详情带 query 进来也不弹创建）。
+      receiptSheetOpen.value = true
+    } else if (!receiptContext.workOrderId || !receiptContext.skuId) {
+      // 上下文不完整则关闭登记 Sheet，避免用陈旧/混合上下文提交。
+      receiptSheetOpen.value = false
+    }
   },
   { immediate: true },
 )
