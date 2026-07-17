@@ -655,8 +655,9 @@ if (connectorHealthAcceptanceEnabled)
         .WithEnvironment("Modbus__Registers__1__UnitId", "1")
         .WithEnvironment("Modbus__Registers__1__Table", "HoldingRegisters")
         .WithEnvironment("Modbus__Registers__1__Address", "40002")
-        .WithEnvironment("Modbus__Registers__1__RegisterCount", "1")
-        .WithEnvironment("Modbus__Registers__1__BucketSeconds", "3600")
+        .WithEnvironment("Modbus__Registers__1__RegisterCount", "2")
+        .WithEnvironment("Modbus__Registers__1__DataType", "Float32")
+        .WithEnvironment("Modbus__Registers__1__BucketSeconds", "1")
         .WithReference(businessIndustrialTelemetry)
         .WaitFor(businessIndustrialTelemetry);
 }

@@ -77,7 +77,9 @@ function Set-AcceptanceStage([string] $Stage) {
 
 function Get-FullStackStartErrorTail {
     if (-not (Test-Path -LiteralPath $fullStackStartStderrPath -PathType Leaf)) { return '<no stderr>' }
-    $stderr = Protect-ScriptAutomationText -Text (Get-Content -LiteralPath $fullStackStartStderrPath -Raw)
+    $stderr = Protect-NervFullStackDiagnosticText `
+        -Text (Get-Content -LiteralPath $fullStackStartStderrPath -Raw) `
+        -SensitiveValues @($adminPassword)
     if ($stderr.Length -gt 2000) { return $stderr.Substring($stderr.Length - 2000) }
     return $stderr
 }
@@ -186,7 +188,9 @@ function Invoke-JsonRequest(
         return $result
     }
     catch {
-        $script:lastRequestError = "$Method $Uri failed: $($_.Exception.Message)"
+        $script:lastRequestError = Protect-NervFullStackDiagnosticText `
+            -Text "$Method $Uri failed: $($_.Exception.Message)" `
+            -SensitiveValues @($adminPassword)
         Write-AcceptanceDiagnostics
         throw
     }
@@ -282,6 +286,7 @@ try {
                     "$($candidate.status)" -eq 'stale' -and
                     "$($candidate.staleReason)" -eq 'offline' -and
                     "$($candidate.offlineReason)" -eq 'field-connection' -and
+                    $candidate.connection.disconnectedSinceUtc -and
                     $heartbeatUtc -gt $baselineHeartbeatUtc) {
                     $lost = $candidate
                     break
@@ -296,6 +301,9 @@ try {
         Assert-Acceptance ($null -ne $lost) "Run $run did not expose lost/offline/field-connection with an advancing Host heartbeat before the fixed 10-second deadline."
         Assert-Acceptance ($stopwatch.ElapsedMilliseconds -lt $DisconnectDeadlineMilliseconds) "Run $run exceeded the fixed 10-second disconnect deadline."
         $gatewayObservedAtUtc = [DateTimeOffset]::UtcNow
+        $disconnectedSinceUtc = [DateTimeOffset]::Parse("$($lost.connection.disconnectedSinceUtc)")
+        Assert-Acceptance ($disconnectedSinceUtc -ge $disconnectStartUtc) "Run $run reported disconnectedSinceUtc before the simulator disconnect started."
+        Assert-Acceptance ($disconnectedSinceUtc -le $gatewayObservedAtUtc) "Run $run reported disconnectedSinceUtc after the Gateway observation."
 
         Set-AcceptanceStage -Stage "run-$run-restarting"
         $simulator = Start-ModbusSimulator -Port $modbusPort -Generation $run
@@ -328,6 +336,7 @@ try {
             connectionObservedAtUtc = "$($lost.connection.observedAtUtc)"
             gatewayObservedAtUtc = $gatewayObservedAtUtc.ToString('O')
             elapsedMilliseconds = $stopwatch.ElapsedMilliseconds
+            disconnectedSinceUtc = $disconnectedSinceUtc.ToString('O')
             lastHeartbeatAtUtc = "$($lost.lastHeartbeatAtUtc)"
             recoveryObservedAtUtc = "$($recovered.connection.observedAtUtc)"
             recoveredConnectedSinceUtc = "$($recovered.connection.connectedSinceUtc)"
@@ -341,17 +350,19 @@ try {
             sessionId = $sessionId
             connectorId = $connectorId
             fixedDeadlineMilliseconds = $DisconnectDeadlineMilliseconds
+            maximumElapsedMilliseconds = @($evidenceRuns | Measure-Object -Property elapsedMilliseconds -Maximum)[0].Maximum
             runs = $evidenceRuns
         } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $evidencePath -Encoding utf8
         Set-AcceptanceStage -Stage "run-$run-passed"
     }
 }
 catch {
+    $safeFailureMessage = Protect-NervFullStackDiagnosticText -Text $_.Exception.Message -SensitiveValues @($adminPassword)
     $failure = [ordered]@{
         status = 'failed'
         failedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
         exceptionType = $_.Exception.GetType().FullName
-        message = $_.Exception.Message
+        message = $safeFailureMessage
     }
     Write-AcceptanceDiagnostics -Status 'failed' -Failure $failure
     throw

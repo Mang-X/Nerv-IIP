@@ -46,6 +46,15 @@ function Write-ModbusResponse([System.IO.Stream] $OutputStream, [byte[]] $Reques
     $response[7] = $functionCode
     $response[8] = $byteCount
     $startAddress = ([int] $Request[8] -shl 8) -bor [int] $Request[9]
+    if ($startAddress -eq 1 -and $registerCount -eq 2) {
+        $response[9] = 0x7f
+        $response[10] = 0xc0
+        $response[11] = 0x00
+        $response[12] = 0x00
+        $OutputStream.Write($response, 0, $response.Length)
+        $OutputStream.Flush()
+        return
+    }
     for ($index = 0; $index -lt $registerCount; $index++) {
         $value = 100 + $startAddress + $index
         $response[9 + ($index * 2)] = [byte] ($value -shr 8)
