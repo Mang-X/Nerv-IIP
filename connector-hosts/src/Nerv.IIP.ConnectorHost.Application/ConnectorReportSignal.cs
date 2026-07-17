@@ -41,3 +41,20 @@ public sealed class ConnectorReportSignal : IConnectorReportSignal
         await waitCancellation.CancelAsync();
     }
 }
+
+public interface IConnectorManifestSignal
+{
+    void Signal(string connectorId);
+
+    Task WaitAsync(TimeSpan timeout, TimeProvider timeProvider, CancellationToken cancellationToken);
+}
+
+public sealed class ConnectorManifestSignal : IConnectorManifestSignal
+{
+    private readonly ConnectorReportSignal _signal = new();
+
+    public void Signal(string connectorId) => _signal.Signal(connectorId);
+
+    public Task WaitAsync(TimeSpan timeout, TimeProvider timeProvider, CancellationToken cancellationToken) =>
+        _signal.WaitAsync(timeout, timeProvider, cancellationToken);
+}

@@ -12,7 +12,8 @@ public sealed class MqttConnector(
     IIndustrialTelemetrySamplesClient samplesClient,
     Func<DateTimeOffset>? utcNow = null,
     TimeProvider? timeProvider = null,
-    IConnectorReportSignal? reportSignal = null) : IConnector, IIndustrialTelemetryCollectionConnector
+    IConnectorReportSignal? reportSignal = null,
+    IConnectorManifestSignal? manifestSignal = null) : IConnector, IIndustrialTelemetryCollectionConnector
 {
     private readonly Dictionary<(string TopicFilter, string TagKey, DateTimeOffset BucketStartUtc), MqttTelemetryBucket> _buckets = [];
     private readonly Dictionary<(string TopicFilter, string TagKey, DateTimeOffset BucketStartUtc), DateTimeOffset> _sealedBucketKeys = [];
@@ -25,6 +26,16 @@ public sealed class MqttConnector(
         options.EffectiveCollectionConnectorId,
         timeProvider ?? TimeProvider.System,
         reportSignal is null ? static _ => { } : reportSignal.Signal);
+    private readonly ConnectorTagManifestTracker _manifestTracker = new(
+        options.EffectiveCollectionConnectorId,
+        "mqtt",
+        options.TopicMappings.Select(mapping => new ConnectorTagManifestDefinition(
+            mapping.DeviceAssetId,
+            mapping.TagKey,
+            mapping.Enabled,
+            $"topic={mapping.TopicFilter};path={mapping.ValueJsonPath}")).ToArray(),
+        timeProvider ?? TimeProvider.System,
+        manifestSignal is null ? static _ => { } : manifestSignal.Signal);
     private long _connectionLossVersion;
 
     public MqttConnectorState CurrentState { get; private set; } = new(
@@ -47,7 +58,8 @@ public sealed class MqttConnector(
             var subscriptionCompleted = false;
             try
             {
-                if (options.TopicMappings.Count == 0)
+                var enabledMappings = options.TopicMappings.Where(mapping => mapping.Enabled).ToArray();
+                if (enabledMappings.Length == 0)
                 {
                     await UpdateStateAsync(state => state with
                     {
@@ -58,7 +70,7 @@ public sealed class MqttConnector(
                     return;
                 }
 
-                var topicFilters = options.TopicMappings.Select(x => x.TopicFilter).Distinct(StringComparer.Ordinal).ToArray();
+                var topicFilters = enabledMappings.Select(x => x.TopicFilter).Distinct(StringComparer.Ordinal).ToArray();
                 var connectionLossVersion = CaptureConnectionLossVersion();
                 await mqttClient.ConnectAndSubscribeAsync(
                     new MqttConnectionOptions(options.Broker, options.ClientId, options.CredentialReference),
@@ -69,12 +81,14 @@ public sealed class MqttConnector(
 
                 subscriptionCompleted = true;
                 MarkAliveIfNoConnectionLoss(connectionLossVersion);
+                _manifestTracker.MarkAllEnabledActive();
                 await FlushClosedBucketsAsync(_utcNow(), cancellationToken);
                 await MarkRunningAsync(cancellationToken);
                 return;
             }
             catch (Exception ex) when (!subscriptionCompleted && ex is not OperationCanceledException && attempts < options.MaxReconnectAttempts)
             {
+                _manifestTracker.MarkAllEnabledError("mqtt.activation-failed", "MQTT topic activation failed.");
                 attempts++;
                 await UpdateStateAsync(state => state with
                 {
@@ -86,6 +100,11 @@ public sealed class MqttConnector(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                if (!subscriptionCompleted)
+                {
+                    _manifestTracker.MarkAllEnabledError("mqtt.activation-failed", "MQTT topic activation failed.");
+                }
+
                 await UpdateStateAsync(state => state with
                 {
                     ReportedStatus = "stopped",
@@ -131,7 +150,8 @@ public sealed class MqttConnector(
                     new ConnectorCapability("industrial-telemetry.ingest", "1.0", "telemetry", ["subscribe", "sample"])
                 ],
                 metadata,
-                CreateCollectionHealth(state))
+                CreateCollectionHealth(state),
+                _manifestTracker.Snapshot)
         ];
         return targets;
     }
@@ -176,7 +196,7 @@ public sealed class MqttConnector(
     {
         await RecordReceivedMessageAsync(message.ObservedAtUtc, cancellationToken);
         var matchedMappings = options.TopicMappings
-            .Where(x => TopicMatches(x.TopicFilter, message.Topic))
+            .Where(x => x.Enabled && TopicMatches(x.TopicFilter, message.Topic))
             .ToArray();
         if (matchedMappings.Length == 0)
         {
@@ -375,7 +395,8 @@ public sealed class MqttConnector(
             "mqtt",
             $"{options.ConnectorHostId}/{options.ConnectorId}",
             FirstValue: bucket.FirstValue,
-            LastValue: bucket.LastValue);
+            LastValue: bucket.LastValue,
+            CollectionConnectorId: options.EffectiveCollectionConnectorId);
     }
 
     private async Task MarkRunningAsync(CancellationToken cancellationToken)

@@ -94,6 +94,11 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Null(initialHealth.DroppedCount);
         Assert.Null(initialHealth.ErrorCount);
         Assert.Null(initialHealth.LastSampleAtUtc);
+        var initialManifest = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).TagManifest!;
+        Assert.Equal("modbus-modbus-line-1", initialManifest.CollectionConnectorId);
+        var pendingEntry = Assert.Single(initialManifest.Entries);
+        Assert.Equal("pending", pendingEntry.ActivationStatus);
+        Assert.Equal("unit=1;table=holdingregisters;address=40001;count=2", pendingEntry.ProtocolAddress);
 
         await connector.RunCollectionCycleAsync(CancellationToken.None);
 
@@ -113,6 +118,8 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Equal("modbus:modbus-line-1:temperature:1783238400000", request.SourceSequence);
         Assert.Equal("modbus", request.SourceSystem);
         Assert.Equal("connector-host-001/modbus-line-1", request.SourceConnector);
+        Assert.Equal("modbus-modbus-line-1", request.CollectionConnectorId);
+        Assert.Equal("active", Assert.Single(Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).TagManifest!.Entries).ActivationStatus);
         var health = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth;
         Assert.NotNull(health);
         Assert.Equal("modbus-modbus-line-1", health.ConnectorId);
@@ -138,6 +145,7 @@ public sealed class ModbusTelemetryCollectorTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => connector.RunCollectionCycleAsync(CancellationToken.None));
         var connectionAfterPostFailure = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!;
         Assert.Equal("alive", connectionAfterPostFailure.Status);
+        Assert.Equal("active", Assert.Single(Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).TagManifest!.Entries).ActivationStatus);
         await connector.RunCollectionCycleAsync(CancellationToken.None);
 
         var request = Assert.Single(samples.Requests);
@@ -205,7 +213,10 @@ public sealed class ModbusTelemetryCollectorTests
                 EnvironmentId: "env-dev",
                 Endpoint: "tcp://plc-line-1:502",
                 CredentialReference: null,
-                Registers: []),
+                Registers:
+                [
+                    new ModbusRegisterMapping("device-line-1", "temperature", 1, ModbusRegisterTable.HoldingRegisters, 40001, 2, 1, 0, 60, Enabled: false)
+                ]),
             new FailingConnectModbusTcpClient(),
             new RecordingIndustrialTelemetrySamplesClient());
 
@@ -214,6 +225,9 @@ public sealed class ModbusTelemetryCollectorTests
         var connection = Assert.Single(await connector.DiscoverAsync(CancellationToken.None))
             .CollectionHealth!.Connection!;
         Assert.Equal("unknown", connection.Status);
+        var disabled = Assert.Single(Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).TagManifest!.Entries);
+        Assert.False(disabled.Enabled);
+        Assert.Equal("disabled", disabled.ActivationStatus);
     }
 
     [Fact]
@@ -230,6 +244,20 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Null(target.CollectionHealth!.ReceivedCount);
         Assert.Null(target.CollectionHealth.DroppedCount);
         Assert.Equal("0", target.Metadata["reconnectCount"]);
+    }
+
+    [Fact]
+    public async Task Activation_failure_reports_sanitized_error_without_exception_details()
+    {
+        var connector = CreateConnector(new FailingConnectModbusTcpClient(), new RecordingIndustrialTelemetrySamplesClient());
+
+        await Assert.ThrowsAsync<IOException>(() => connector.RunCollectionCycleAsync(CancellationToken.None));
+
+        var entry = Assert.Single(Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).TagManifest!.Entries);
+        Assert.Equal("error", entry.ActivationStatus);
+        Assert.Equal("modbus.activation-failed", entry.ActivationErrorCode);
+        Assert.Equal("Modbus mapping activation failed.", entry.ActivationErrorMessage);
+        Assert.DoesNotContain("Connect must not run", entry.ActivationErrorMessage, StringComparison.Ordinal);
     }
 
     [Fact]

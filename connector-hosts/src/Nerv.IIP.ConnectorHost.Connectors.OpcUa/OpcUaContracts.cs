@@ -40,7 +40,8 @@ public sealed record OpcUaTagSubscription(
     string NodeId,
     int SamplingIntervalMilliseconds,
     int BucketSeconds,
-    string? SamplingPolicy = null);
+    string? SamplingPolicy = null,
+    bool Enabled = true);
 
 public sealed record OpcUaNode(string NodeId, string DisplayName, bool IsVariable);
 
@@ -71,7 +72,8 @@ public sealed record RecordIndustrialTelemetrySampleRequest(
     string? DeviceState = null,
     DateTimeOffset? StateOccurredAtUtc = null,
     decimal? FirstValue = null,
-    decimal? LastValue = null);
+    decimal? LastValue = null,
+    string? CollectionConnectorId = null);
 
 public sealed record OpcUaConnectorState(
     string ReportedStatus,

@@ -11,7 +11,8 @@ public sealed class ModbusConnector(
     IIndustrialTelemetrySamplesClient samplesClient,
     Func<DateTimeOffset>? utcNow = null,
     TimeProvider? timeProvider = null,
-    IConnectorReportSignal? reportSignal = null) : IConnector, IIndustrialTelemetryCollectionConnector, IConnectorConnectionMonitor
+    IConnectorReportSignal? reportSignal = null,
+    IConnectorManifestSignal? manifestSignal = null) : IConnector, IIndustrialTelemetryCollectionConnector, IConnectorConnectionMonitor
 {
     private readonly Dictionary<(byte UnitId, ModbusRegisterTable Table, ushort Address, DateTimeOffset BucketStartUtc), ModbusTelemetryBucket> _buckets = [];
     private readonly Dictionary<(byte UnitId, ModbusRegisterTable Table, ushort Address, DateTimeOffset BucketStartUtc), DateTimeOffset> _sealedBucketKeys = [];
@@ -23,6 +24,16 @@ public sealed class ModbusConnector(
         options.EffectiveCollectionConnectorId,
         timeProvider ?? TimeProvider.System,
         reportSignal is null ? static _ => { } : reportSignal.Signal);
+    private readonly ConnectorTagManifestTracker _manifestTracker = new(
+        options.EffectiveCollectionConnectorId,
+        "modbus",
+        options.Registers.Select(mapping => new ConnectorTagManifestDefinition(
+            mapping.DeviceAssetId,
+            mapping.TagKey,
+            mapping.Enabled,
+            $"unit={mapping.UnitId};table={mapping.Table.ToString().ToLowerInvariant()};address={mapping.Address};count={mapping.RegisterCount}")).ToArray(),
+        timeProvider ?? TimeProvider.System,
+        manifestSignal is null ? static _ => { } : manifestSignal.Signal);
 
     public ModbusConnectorState CurrentState { get; private set; } = new(
         "stopped",
@@ -81,6 +92,7 @@ public sealed class ModbusConnector(
             }
             catch (Exception ex) when (!pollingCompleted && ex is not OperationCanceledException && attempts < options.MaxReconnectAttempts)
             {
+                _manifestTracker.MarkAllEnabledError("modbus.activation-failed", "Modbus mapping activation failed.");
                 attempts++;
                 await UpdateStateAsync(state => state with
                 {
@@ -92,6 +104,11 @@ public sealed class ModbusConnector(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                if (!pollingCompleted)
+                {
+                    _manifestTracker.MarkAllEnabledError("modbus.activation-failed", "Modbus mapping activation failed.");
+                }
+
                 await UpdateStateAsync(state => state with
                 {
                     ReportedStatus = "stopped",
@@ -126,10 +143,13 @@ public sealed class ModbusConnector(
     {
         try
         {
-            return await modbusClient.ReadRegistersAsync(mapping, observedAtUtc, cancellationToken);
+            var samples = await modbusClient.ReadRegistersAsync(mapping, observedAtUtc, cancellationToken);
+            _manifestTracker.MarkActive(mapping.DeviceAssetId, mapping.TagKey);
+            return samples;
         }
         catch (Exception ex) when (IsConnectionLoss(ex))
         {
+            _manifestTracker.MarkError(mapping.DeviceAssetId, mapping.TagKey, "modbus.activation-failed", "Modbus mapping activation failed.");
             MarkLostIfTransportFailure(ex);
             throw;
         }
@@ -203,7 +223,8 @@ public sealed class ModbusConnector(
                     new ConnectorCapability("industrial-telemetry.ingest", "1.0", "telemetry", ["poll", "sample"])
                 ],
                 metadata,
-                CreateCollectionHealth(state))
+                CreateCollectionHealth(state),
+                _manifestTracker.Snapshot)
         ];
         return targets;
     }
@@ -402,7 +423,8 @@ public sealed class ModbusConnector(
             "modbus",
             $"{options.ConnectorHostId}/{options.ConnectorId}",
             FirstValue: bucket.FirstValue,
-            LastValue: bucket.LastValue);
+            LastValue: bucket.LastValue,
+            CollectionConnectorId: options.EffectiveCollectionConnectorId);
     }
 
     private async Task MarkRunningAsync(CancellationToken cancellationToken)

@@ -30,7 +30,8 @@ public sealed record MqttTopicMapping(
     string TopicFilter,
     string ValueJsonPath,
     int BucketSeconds,
-    string? SamplingPolicy = null);
+    string? SamplingPolicy = null,
+    bool Enabled = true);
 
 public sealed record MqttInboundMessage(
     string Topic,

@@ -33,6 +33,21 @@ public sealed record ConnectorConnectionStateSnapshot(
     string? ReasonCategory = null,
     string? DiagnosticCode = null);
 
+public sealed record ConnectorTagManifestSnapshot(
+    string CollectionConnectorId,
+    string SourceSystem,
+    IReadOnlyList<ConnectorTagManifestEntrySnapshot> Entries);
+
+public sealed record ConnectorTagManifestEntrySnapshot(
+    string DeviceAssetId,
+    string TagKey,
+    bool Enabled,
+    string? ProtocolAddress,
+    string ActivationStatus,
+    DateTimeOffset ActivationObservedAtUtc,
+    string? ActivationErrorCode = null,
+    string? ActivationErrorMessage = null);
+
 public sealed record ConnectorTarget(
     string NodeKey,
     string NodeName,
@@ -46,7 +61,8 @@ public sealed record ConnectorTarget(
     string HealthStatus,
     IReadOnlyList<ConnectorCapability> Capabilities,
     IReadOnlyDictionary<string, string> Metadata,
-    ConnectorCollectionHealthSnapshot? CollectionHealth = null);
+    ConnectorCollectionHealthSnapshot? CollectionHealth = null,
+    ConnectorTagManifestSnapshot? TagManifest = null);
 
 public sealed record ConnectorCapability(
     string Code,

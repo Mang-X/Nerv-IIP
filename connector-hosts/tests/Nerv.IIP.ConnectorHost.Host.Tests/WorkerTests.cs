@@ -82,6 +82,31 @@ public sealed class WorkerTests
         }
     }
 
+    [Fact]
+    public async Task Blocked_manifest_upload_does_not_delay_heartbeat_reporting()
+    {
+        var clock = new ControllableTimeProvider();
+        var signal = new ConnectorReportSignal();
+        var protocol = new RecordingProtocolClient();
+        var manifestClient = new BlockingManifestClient();
+        var worker = CreateWorker(clock, signal, protocol, new RecordingOpsClient(), [], [], manifestClient);
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            await Task.WhenAll(protocol.FirstCycle.Task, manifestClient.Started.Task);
+            signal.Signal("connector-a");
+
+            await protocol.SecondCycle.Task.WaitAsync(TimeSpan.FromSeconds(1));
+            Assert.False(manifestClient.Completed);
+        }
+        finally
+        {
+            manifestClient.Release();
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
     [Theory]
     [MemberData(nameof(InvalidProfiles))]
     public void Governed_worker_profile_rejects_invalid_values(ConnectorHostWorkerOptions options)
@@ -108,20 +133,27 @@ public sealed class WorkerTests
         RecordingProtocolClient protocol,
         RecordingOpsClient ops,
         IReadOnlyList<IIndustrialTelemetryCollectionConnector> collectors,
-        IReadOnlyList<IConnectorConnectionMonitor> monitors)
+        IReadOnlyList<IConnectorConnectionMonitor> monitors,
+        IConnectorTagManifestClient? manifestClient = null)
     {
-        var reporting = new ConnectorReportingLoop([new StaticConnector()], protocol, ConnectorHostRuntimeContext.DefaultLocal);
+        var connector = new StaticConnector(includeManifest: manifestClient is not null);
+        manifestClient ??= new NoOpManifestClient();
+        var reporter = new ConnectorManifestReporter(manifestClient, ConnectorHostRuntimeContext.DefaultLocal, timeProvider);
+        var reporting = new ConnectorReportingLoop([connector], protocol, ConnectorHostRuntimeContext.DefaultLocal);
+        var manifestReporting = new ConnectorManifestReportingLoop([connector], reporter);
         var operations = new ConnectorOperationLoop([], ops, ConnectorHostRuntimeContext.DefaultLocal);
         return new Worker(
             NullLogger<Worker>.Instance,
             ValidOptions(),
             timeProvider,
             reporting,
+            manifestReporting,
             operations,
             new IndustrialTelemetryCollectorRunner(NullLogger<IndustrialTelemetryCollectorRunner>.Instance),
             collectors,
             monitors,
-            signal);
+            signal,
+            new ConnectorManifestSignal());
     }
 
     private static ConnectorHostWorkerOptions ValidOptions(
@@ -140,13 +172,20 @@ public sealed class WorkerTests
             BackendDeadlineSeconds = backendDeadlineSeconds
         };
 
-    private sealed class StaticConnector : IConnector
+    private sealed class StaticConnector(bool includeManifest = false) : IConnector
     {
         public Task<IReadOnlyList<ConnectorTarget>> DiscoverAsync(CancellationToken cancellationToken)
         {
             IReadOnlyList<ConnectorTarget> targets =
             [
-                new("node-a", "Node A", "test", "collector", "Collector", "1.0", "connector-a", "Connector A", "running", "degraded", [], new Dictionary<string, string>())
+                new(
+                    "node-a", "Node A", "test", "collector", "Collector", "1.0", "connector-a", "Connector A", "running", "degraded", [], new Dictionary<string, string>(),
+                    TagManifest: includeManifest
+                        ? new ConnectorTagManifestSnapshot(
+                            "connector-a",
+                            "opcua",
+                            [new ConnectorTagManifestEntrySnapshot("device-a", "temperature", true, "ns=2;s=T", "pending", DateTimeOffset.Parse("2026-07-17T00:00:00Z"))])
+                        : null)
             ];
             return Task.FromResult(targets);
         }
@@ -265,6 +304,33 @@ public sealed class WorkerTests
         public Task<OperationTaskResponse> AbandonOperationTaskLeaseAsync(string operationTaskId, AbandonOperationTaskLeaseRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<OperationTaskResponse> HeartbeatOperationTaskLeaseAsync(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task SendOperationResultAsync(OperationResult result, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class BlockingManifestClient : IConnectorTagManifestClient
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Completed { get; private set; }
+
+        public async Task<ConnectorTagManifestAcknowledgement> ReportAsync(
+            ConnectorTagManifestReport report,
+            CancellationToken cancellationToken)
+        {
+            Started.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            Completed = true;
+            return new ConnectorTagManifestAcknowledgement("accepted", report.ManifestRevision, report.ManifestObservedAtUtc);
+        }
+
+        public void Release() => _release.TrySetResult();
+    }
+
+    private sealed class NoOpManifestClient : IConnectorTagManifestClient
+    {
+        public Task<ConnectorTagManifestAcknowledgement> ReportAsync(
+            ConnectorTagManifestReport report,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new ConnectorTagManifestAcknowledgement("accepted", report.ManifestRevision, report.ManifestObservedAtUtc));
     }
 
 }

@@ -5,11 +5,13 @@ public class Worker(
     ConnectorHostWorkerOptions options,
     TimeProvider timeProvider,
     Application.ConnectorReportingLoop reportingLoop,
+    Application.ConnectorManifestReportingLoop manifestReportingLoop,
     Application.ConnectorOperationLoop operationLoop,
     IndustrialTelemetryCollectorRunner telemetryCollectorRunner,
     IReadOnlyList<Connectors.Abstractions.IIndustrialTelemetryCollectionConnector> telemetryCollectors,
     IReadOnlyList<Connectors.Abstractions.IConnectorConnectionMonitor> connectionMonitors,
-    Application.IConnectorReportSignal reportSignal) : BackgroundService
+    Application.IConnectorReportSignal reportSignal,
+    Application.IConnectorManifestSignal manifestSignal) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -18,6 +20,7 @@ public class Worker(
             .Select(collector => RunCollectionLoopAsync(collector, stoppingToken))
             .Concat(connectionMonitors.Select(monitor => RunConnectionMonitorLoopAsync(monitor, stoppingToken)))
             .Append(RunReportingLoopAsync(stoppingToken))
+            .Append(RunManifestReportingLoopAsync(stoppingToken))
             .Append(RunOperationLoopAsync(stoppingToken));
 
         await Task.WhenAll(workers);
@@ -74,6 +77,18 @@ public class Worker(
                 "Connector operation polling cycle failed and will be retried.",
                 cancellationToken);
             await Task.Delay(TimeSpan.FromSeconds(options.OperationPollSeconds), timeProvider, cancellationToken);
+        }
+    }
+
+    private async Task RunManifestReportingLoopAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await RunIsolatedAsync(
+                () => manifestReportingLoop.RunCycleAsync(cancellationToken),
+                "Connector manifest reporting cycle failed and will be retried.",
+                cancellationToken);
+            await manifestSignal.WaitAsync(TimeSpan.FromSeconds(options.HeartbeatSeconds), timeProvider, cancellationToken);
         }
     }
 

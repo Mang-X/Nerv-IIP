@@ -31,17 +31,20 @@ public sealed class OpcUaTelemetryCollectorTests
         var opcUa = new AcknowledgementControlledOpcUaClient();
         var timeProvider = new ControllableTimeProvider();
         var reportSignal = new ConnectorReportSignal();
+        var manifestSignal = new ConnectorManifestSignal();
         var connector = CreateConnector(
             opcUa,
             new RecordingIndustrialTelemetrySamplesClient(),
             timeProvider: timeProvider,
-            reportSignal: reportSignal);
+            reportSignal: reportSignal,
+            manifestSignal: manifestSignal);
         var aliveSignal = reportSignal.WaitAsync(TimeSpan.FromSeconds(30), timeProvider, CancellationToken.None);
+        var activationSignal = manifestSignal.WaitAsync(TimeSpan.FromSeconds(30), timeProvider, CancellationToken.None);
         var cycle = connector.RunCollectionCycleAsync(CancellationToken.None);
         await opcUa.WaitForSubscribeAsync();
 
         opcUa.AcknowledgeSubscription();
-        await aliveSignal;
+        await Task.WhenAll(aliveSignal, activationSignal);
 
         var connection = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!;
         Assert.Equal("alive", connection.Status);
@@ -140,6 +143,9 @@ public sealed class OpcUaTelemetryCollectorTests
         Assert.Null(initialHealth.DroppedCount);
         Assert.Null(initialHealth.ErrorCount);
         Assert.Null(initialHealth.LastSampleAtUtc);
+        var pending = Assert.Single(Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).TagManifest!.Entries);
+        Assert.Equal("pending", pending.ActivationStatus);
+        Assert.Equal("ns=2;s=Line1.Temperature", pending.ProtocolAddress);
 
         await connector.RunCollectionCycleAsync(CancellationToken.None);
 
@@ -159,6 +165,8 @@ public sealed class OpcUaTelemetryCollectorTests
         Assert.Equal("opcua:opcua-line-1:temperature:1783036800000", request.SourceSequence);
         Assert.Equal("opcua", request.SourceSystem);
         Assert.Equal("connector-host-001/opcua-line-1", request.SourceConnector);
+        Assert.Equal("opcua-opcua-line-1", request.CollectionConnectorId);
+        Assert.Equal("active", Assert.Single(Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).TagManifest!.Entries).ActivationStatus);
         var health = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth;
         Assert.NotNull(health);
         Assert.Equal("opcua-opcua-line-1", health.ConnectorId);
@@ -209,11 +217,48 @@ public sealed class OpcUaTelemetryCollectorTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => connector.RunCollectionCycleAsync(CancellationToken.None));
         Assert.Equal("alive", Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!.Status);
+        Assert.Equal("active", Assert.Single(Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).TagManifest!.Entries).ActivationStatus);
         await connector.RunCollectionCycleAsync(CancellationToken.None);
 
         var request = Assert.Single(samples.Requests);
         Assert.Equal("opcua:opcua-line-1:temperature:1783036800000", request.SourceSequence);
         Assert.Equal(2, samples.WriteAttempts);
+    }
+
+    [Fact]
+    public async Task Disabled_subscription_is_reported_but_not_activated()
+    {
+        var opcUa = new FakeOpcUaClient([], []);
+        var connector = new OpcUaConnector(
+            new OpcUaConnectorOptions("opcua-line-1", "host", "org", "env", "opc.tcp://localhost", "None", "None", "secret-reference", "ns=0;i=85",
+            [
+                new OpcUaTagSubscription("device-1", "temperature", "ns=2;s=T", 1000, 60, Enabled: false)
+            ]),
+            opcUa,
+            new RecordingIndustrialTelemetrySamplesClient(),
+            timeProvider: TimeProvider.System);
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        var entry = Assert.Single(Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).TagManifest!.Entries);
+        Assert.False(entry.Enabled);
+        Assert.Equal("disabled", entry.ActivationStatus);
+        Assert.Empty(opcUa.SubscribedNodeIds);
+        Assert.DoesNotContain("secret-reference", entry.ProtocolAddress ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Activation_failure_reports_sanitized_error_without_exception_details()
+    {
+        var connector = CreateConnector(new FailingOpcUaClient(), new RecordingIndustrialTelemetrySamplesClient());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => connector.RunCollectionCycleAsync(CancellationToken.None));
+
+        var entry = Assert.Single(Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).TagManifest!.Entries);
+        Assert.Equal("error", entry.ActivationStatus);
+        Assert.Equal("opcua.activation-failed", entry.ActivationErrorCode);
+        Assert.Equal("OPC UA subscription activation failed.", entry.ActivationErrorMessage);
+        Assert.DoesNotContain("secret", entry.ActivationErrorMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -403,7 +448,8 @@ public sealed class OpcUaTelemetryCollectorTests
         Func<DateTimeOffset>? utcNow = null,
         string? collectionConnectorId = null,
         TimeProvider? timeProvider = null,
-        IConnectorReportSignal? reportSignal = null)
+        IConnectorReportSignal? reportSignal = null,
+        IConnectorManifestSignal? manifestSignal = null)
     {
         return new OpcUaConnector(
             new OpcUaConnectorOptions(
@@ -430,7 +476,8 @@ public sealed class OpcUaTelemetryCollectorTests
             samples,
             utcNow ?? (() => new DateTimeOffset(2026, 7, 3, 0, 1, 1, TimeSpan.Zero)),
             timeProvider,
-            reportSignal);
+            reportSignal,
+            manifestSignal);
     }
 
     private sealed class RecordingIndustrialTelemetrySamplesClient : IIndustrialTelemetrySamplesClient
@@ -723,6 +770,24 @@ public sealed class OpcUaTelemetryCollectorTests
 
             return source;
         }
+    }
+
+    private sealed class FailingOpcUaClient : IOpcUaClient
+    {
+        public Task ConnectAsync(OpcUaConnectionOptions options, CancellationToken cancellationToken)
+        {
+            return Task.FromException(new InvalidOperationException("password=secret\nprivate stack"));
+        }
+
+        public Task<IReadOnlyList<OpcUaNode>> BrowseAsync(string rootNodeId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task SubscribeAsync(
+            IReadOnlyList<OpcUaTagSubscription> tags,
+            Func<OpcUaDataChange, CancellationToken, Task> onDataChange,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task DisconnectAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class TemporaryEnvironmentVariables(params (string Name, string Value)[] variables) : IDisposable

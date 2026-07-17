@@ -26,6 +26,12 @@ builder.Services.AddHttpClient<IIndustrialTelemetrySamplesClient, HttpIndustrial
     var token = services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 });
+builder.Services.AddHttpClient<IConnectorTagManifestClient, HttpConnectorTagManifestClient>((services, client) =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Platform:IndustrialTelemetryBaseUrl"] ?? "http://localhost:5116");
+    var token = services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
+    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+});
 if (builder.Configuration.GetValue("OpcUa:Enabled", false))
 {
     builder.Services.AddSingleton(_ => CreateOpcUaOptions(builder.Configuration));
@@ -70,11 +76,15 @@ builder.Services.AddHttpClient<IOpsClient, HttpOpsClient>((services, client) =>
     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 });
 builder.Services.AddSingleton<ConnectorReportingLoop>();
+builder.Services.AddSingleton<ConnectorManifestReporter>();
+builder.Services.AddSingleton<ConnectorManifestReportingLoop>();
 builder.Services.AddSingleton<ConnectorOperationLoop>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(_ => CreateWorkerOptions(builder.Configuration));
 builder.Services.AddSingleton<ConnectorReportSignal>();
 builder.Services.AddSingleton<IConnectorReportSignal>(sp => sp.GetRequiredService<ConnectorReportSignal>());
+builder.Services.AddSingleton<ConnectorManifestSignal>();
+builder.Services.AddSingleton<IConnectorManifestSignal>(sp => sp.GetRequiredService<ConnectorManifestSignal>());
 builder.Services.AddSingleton<IndustrialTelemetryCollectorRunner>();
 builder.Services.AddHostedService<Worker>();
 
@@ -125,7 +135,8 @@ static OpcUaConnectorOptions CreateOpcUaOptions(IConfiguration configuration)
             Required(section, "NodeId"),
             section.GetValue("SamplingIntervalMilliseconds", 1000),
             ResolveTelemetryBucketSeconds(section),
-            section["SamplingPolicy"]))
+            section["SamplingPolicy"],
+            section.GetValue("Enabled", true)))
         .ToList();
 
     return new OpcUaConnectorOptions(
@@ -184,7 +195,8 @@ static MqttConnectorOptions CreateMqttOptions(IConfiguration configuration)
             Required(section, "TopicFilter"),
             Required(section, "ValueJsonPath"),
             ResolveTelemetryBucketSeconds(section),
-            section["SamplingPolicy"]))
+            section["SamplingPolicy"],
+            section.GetValue("Enabled", true)))
         .ToList();
 
     return new MqttConnectorOptions(

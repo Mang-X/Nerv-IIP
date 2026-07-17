@@ -9,11 +9,14 @@ public sealed class OpcUaConnector(
     IIndustrialTelemetrySamplesClient samplesClient,
     Func<DateTimeOffset>? utcNow = null,
     TimeProvider? timeProvider = null,
-    IConnectorReportSignal? reportSignal = null) : IConnector, IIndustrialTelemetryCollectionConnector
+    IConnectorReportSignal? reportSignal = null,
+    IConnectorManifestSignal? manifestSignal = null) : IConnector, IIndustrialTelemetryCollectionConnector
 {
     private readonly Dictionary<(string NodeId, DateTimeOffset BucketStartUtc), TelemetryBucket> _buckets = [];
     private readonly Dictionary<(string NodeId, DateTimeOffset BucketStartUtc), DateTimeOffset> _sealedBucketKeys = [];
-    private readonly Dictionary<string, OpcUaTagSubscription> _tagsByNodeId = options.Tags.ToDictionary(x => x.NodeId, StringComparer.Ordinal);
+    private readonly Dictionary<string, OpcUaTagSubscription> _tagsByNodeId = options.Tags
+        .Where(tag => tag.Enabled)
+        .ToDictionary(x => x.NodeId, StringComparer.Ordinal);
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly object _connectionTransitionGate = new();
     private readonly Func<DateTimeOffset> _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
@@ -24,6 +27,12 @@ public sealed class OpcUaConnector(
         options.EffectiveCollectionConnectorId,
         timeProvider ?? TimeProvider.System,
         reportSignal is null ? static _ => { } : reportSignal.Signal);
+    private readonly ConnectorTagManifestTracker _manifestTracker = new(
+        options.EffectiveCollectionConnectorId,
+        "opcua",
+        options.Tags.Select(tag => new ConnectorTagManifestDefinition(tag.DeviceAssetId, tag.TagKey, tag.Enabled, tag.NodeId)).ToArray(),
+        timeProvider ?? TimeProvider.System,
+        manifestSignal is null ? static _ => { } : manifestSignal.Signal);
     private long _connectionLossVersion;
     private long _currentConnectionAttempt;
 
@@ -45,15 +54,18 @@ public sealed class OpcUaConnector(
         var attempts = 0;
         while (true)
         {
+            var activationCompleted = false;
             try
             {
                 await ConnectBrowseAndSubscribeAsync(cancellationToken);
+                activationCompleted = true;
                 await FlushClosedBucketsAsync(_utcNow(), cancellationToken);
                 await MarkRunningAsync(cancellationToken);
                 return;
             }
             catch (OpcUaConnectionLostException) when (attempts < options.MaxReconnectAttempts)
             {
+                _manifestTracker.MarkAllEnabledError("opcua.activation-failed", "OPC UA subscription activation failed.");
                 MarkConnectionLost("opcua.session-lost");
                 attempts++;
                 await UpdateStateAsync(state => state with
@@ -68,6 +80,11 @@ public sealed class OpcUaConnector(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                if (!activationCompleted)
+                {
+                    _manifestTracker.MarkAllEnabledError("opcua.activation-failed", "OPC UA subscription activation failed.");
+                }
+
                 await UpdateStateAsync(state => state with
                 {
                     ReportedStatus = "stopped",
@@ -113,7 +130,8 @@ public sealed class OpcUaConnector(
                     new ConnectorCapability("industrial-telemetry.ingest", "1.0", "telemetry", ["browse", "subscribe", "sample"])
                 ],
                 metadata,
-                CreateCollectionHealth(state))
+                CreateCollectionHealth(state),
+                _manifestTracker.Snapshot)
         ];
         return targets;
     }
@@ -141,7 +159,8 @@ public sealed class OpcUaConnector(
 
         _ = await opcUaClient.BrowseAsync(options.BrowseRootNodeId, cancellationToken);
 
-        if (options.Tags.Count == 0)
+        var enabledTags = options.Tags.Where(tag => tag.Enabled).ToArray();
+        if (enabledTags.Length == 0)
         {
             await UpdateStateAsync(state => state with
             {
@@ -152,9 +171,10 @@ public sealed class OpcUaConnector(
             return;
         }
 
-        await opcUaClient.SubscribeAsync(options.Tags, HandleDataChangeAsync, cancellationToken);
+        await opcUaClient.SubscribeAsync(enabledTags, HandleDataChangeAsync, cancellationToken);
+        _manifestTracker.MarkAllEnabledActive();
         MarkAliveIfNoConnectionLoss(connectionAttempt, connectionLossVersion);
-        await Task.Delay(CalculateSamplingDwell(options.Tags), _timeProvider, cancellationToken);
+        await Task.Delay(CalculateSamplingDwell(enabledTags), _timeProvider, cancellationToken);
     }
 
     private void HandleConnectionLost(long connectionAttempt)
@@ -376,7 +396,8 @@ public sealed class OpcUaConnector(
             "opcua",
             $"{options.ConnectorHostId}/{options.ConnectorId}",
             FirstValue: bucket.FirstValue,
-            LastValue: bucket.LastValue);
+            LastValue: bucket.LastValue,
+            CollectionConnectorId: options.EffectiveCollectionConnectorId);
     }
 
     private async Task MarkRunningAsync(CancellationToken cancellationToken)

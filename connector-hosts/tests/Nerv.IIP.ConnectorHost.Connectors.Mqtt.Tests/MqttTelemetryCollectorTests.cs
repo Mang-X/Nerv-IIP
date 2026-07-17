@@ -104,6 +104,9 @@ public sealed class MqttTelemetryCollectorTests
         Assert.Null(initialHealth.DroppedCount);
         Assert.Null(initialHealth.ErrorCount);
         Assert.Null(initialHealth.LastSampleAtUtc);
+        var pending = Assert.Single(Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).TagManifest!.Entries);
+        Assert.Equal("pending", pending.ActivationStatus);
+        Assert.Equal("topic=factory/line-1/temperature;path=$.temperature", pending.ProtocolAddress);
 
         await connector.RunCollectionCycleAsync(CancellationToken.None);
 
@@ -119,6 +122,8 @@ public sealed class MqttTelemetryCollectorTests
         Assert.Equal("mqtt:mqtt-line-1:temperature:1783242000000", request.SourceSequence);
         Assert.Equal("mqtt", request.SourceSystem);
         Assert.Equal("connector-host-001/mqtt-line-1", request.SourceConnector);
+        Assert.Equal("mqtt-mqtt-line-1", request.CollectionConnectorId);
+        Assert.Equal("active", Assert.Single(Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).TagManifest!.Entries).ActivationStatus);
         var health = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth;
         Assert.NotNull(health);
         Assert.Equal("mqtt-mqtt-line-1", health.ConnectorId);
@@ -159,6 +164,7 @@ public sealed class MqttTelemetryCollectorTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => connector.RunCollectionCycleAsync(CancellationToken.None));
         Assert.Equal("alive", Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!.Status);
+        Assert.Equal("active", Assert.Single(Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).TagManifest!.Entries).ActivationStatus);
         await connector.RunCollectionCycleAsync(CancellationToken.None);
 
         var request = Assert.Single(samples.Requests);
@@ -180,6 +186,41 @@ public sealed class MqttTelemetryCollectorTests
         Assert.NotNull(credential);
         Assert.Equal("collector", credential.UserName);
         Assert.Equal("secret-value", credential.Password);
+    }
+
+    [Fact]
+    public async Task Disabled_mapping_is_reported_but_not_subscribed()
+    {
+        var mqtt = new FakeMqttSubscriptionClient();
+        var connector = new MqttConnector(
+            new MqttConnectorOptions("mqtt-line-1", "host", "org", "env", "tcp://mqtt", "client", "secret-reference",
+            [
+                new MqttTopicMapping("device-1", "temperature", "factory/line-1/temperature", "$.temperature", 60, Enabled: false)
+            ]),
+            mqtt,
+            new RecordingIndustrialTelemetrySamplesClient());
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        var entry = Assert.Single(Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).TagManifest!.Entries);
+        Assert.False(entry.Enabled);
+        Assert.Equal("disabled", entry.ActivationStatus);
+        Assert.Empty(mqtt.Subscriptions);
+        Assert.DoesNotContain("secret-reference", entry.ProtocolAddress ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Activation_failure_reports_sanitized_error_without_exception_details()
+    {
+        var connector = CreateConnector(new FailingMqttSubscriptionClient(), new RecordingIndustrialTelemetrySamplesClient());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => connector.RunCollectionCycleAsync(CancellationToken.None));
+
+        var entry = Assert.Single(Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).TagManifest!.Entries);
+        Assert.Equal("error", entry.ActivationStatus);
+        Assert.Equal("mqtt.activation-failed", entry.ActivationErrorCode);
+        Assert.Equal("MQTT topic activation failed.", entry.ActivationErrorMessage);
+        Assert.DoesNotContain("secret", entry.ActivationErrorMessage, StringComparison.Ordinal);
     }
 
     private static MqttConnector CreateConnector(
@@ -351,6 +392,19 @@ public sealed class MqttTelemetryCollectorTests
 
             Requests.Add(request);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FailingMqttSubscriptionClient : IMqttSubscriptionClient
+    {
+        public Task ConnectAndSubscribeAsync(
+            MqttConnectionOptions options,
+            IReadOnlyList<string> topicFilters,
+            Func<MqttInboundMessage, CancellationToken, Task> onMessage,
+            Action onDisconnected,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromException(new InvalidOperationException("password=secret\nprivate stack"));
         }
     }
 
