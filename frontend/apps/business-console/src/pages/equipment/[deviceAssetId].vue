@@ -246,6 +246,22 @@ const runtimeRemainingHasErrorCandidate = computed(() =>
 const runtimeRemainingHasInvalidCandidate = computed(() =>
   runtimeRemainingEntries.value.some((e) => e.status === 'invalid'),
 )
+// 未知候选的**实际**成因短语：只列出当前确实存在的 status（error→读取失败 / no-samples→暂无样本 /
+// invalid→阈值缺失），不罗列不存在的成因——否则「另 N 个计划读取失败/暂无样本/阈值缺失」会让操作员
+// 误以为可能是遥测失败或无样本，而事实可能只有阈值缺失。
+const runtimeRemainingUnknownReason = computed(() => {
+  const present = new Set(runtimeRemainingEntries.value.map((e) => e.status))
+  return (
+    [
+      ['error', '读取失败'],
+      ['no-samples', '暂无样本'],
+      ['invalid', '阈值缺失'],
+    ] as const
+  )
+    .filter(([status]) => present.has(status))
+    .map(([, label]) => label)
+    .join('/')
+})
 // 代表计划（累计小时窗口锚点、计划编号展示）：优先已知最紧迫者，否则取第一个候选。
 const currentDeviceRuntimePlan = computed(
   () => mostUrgentOkRuntimeCandidate.value?.plan ?? currentDeviceRuntimePlans.value[0],
@@ -275,7 +291,7 @@ const runtimeUntilNextCardHint = computed(() => {
   if (mostUrgent) {
     const code = mostUrgent.plan.planCode ?? '—'
     if (runtimeRemainingUnknownCount.value > 0) {
-      return `已知计划中的最小值（另 ${runtimeRemainingUnknownCount.value} 个计划读取失败/暂无样本/阈值缺失，可能更紧迫）· 计划 ${code}`
+      return `已知计划中的最小值（另 ${runtimeRemainingUnknownCount.value} 个计划${runtimeRemainingUnknownReason.value}，可能更紧迫）· 计划 ${code}`
     }
     return `运行小时型计划 ${code} · 阈值 ${mostUrgent.plan.nextDueRuntimeHours ?? '—'} 小时`
   }

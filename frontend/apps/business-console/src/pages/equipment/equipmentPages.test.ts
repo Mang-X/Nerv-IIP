@@ -511,6 +511,10 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('已知计划最少还需')
     expect(wrapper.text()).not.toContain('距下次保养还需')
     expect(wrapper.text()).toContain('可能更紧迫')
+    // Reason names the actual status (读取失败) and does not enumerate absent causes.
+    expect(wrapper.text()).toContain('另 1 个计划读取失败')
+    expect(wrapper.text()).not.toContain('阈值缺失')
+    expect(wrapper.text()).not.toContain('暂无样本')
   })
 
   it('shows read-failed for the hours-until-next card when every candidate runtime plan read failed', () => {
@@ -564,8 +568,12 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('280.0 小时')
     expect(wrapper.text()).toContain('已知计划最少还需')
     expect(wrapper.text()).toContain('可能更紧迫')
-    // The incomplete-reason wording covers invalid, consistent across the detail hint.
-    expect(wrapper.text()).toContain('阈值缺失')
+    // The incomplete-reason must name the ACTUAL status of the other candidate — only 阈值缺失 here.
+    expect(wrapper.text()).toContain('另 1 个计划阈值缺失')
+    // Must NOT enumerate reasons that do not apply — otherwise the operator would think it might also be
+    // a telemetry read failure or no-samples, when the only real cause is a missing threshold.
+    expect(wrapper.text()).not.toContain('读取失败')
+    expect(wrapper.text()).not.toContain('暂无样本')
   })
 
   it('renders the device control action and command history when the user can control the device', () => {
