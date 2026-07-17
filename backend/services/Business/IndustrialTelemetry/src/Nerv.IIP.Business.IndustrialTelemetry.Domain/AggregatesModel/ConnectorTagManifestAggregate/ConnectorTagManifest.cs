@@ -103,6 +103,11 @@ public sealed class ConnectorTagManifest : Entity<ConnectorTagManifestId>, IAggr
 
         var normalizedEntries = NormalizeEntries(entries);
         var normalizedSourceSystem = IndustrialTelemetryText.RequiredLower(sourceSystem, nameof(sourceSystem));
+        if (normalizedRevision == ManifestRevision && !HasSameRevisionShape(normalizedSourceSystem, normalizedEntries))
+        {
+            return CurrentResult(ManifestApplyDisposition.Conflict);
+        }
+
         SourceSystem = normalizedSourceSystem;
         ManifestRevision = normalizedRevision;
         ManifestObservedAtUtc = manifestObservedAtUtc;
@@ -159,6 +164,7 @@ public sealed class ConnectorTagManifest : Entity<ConnectorTagManifestId>, IAggr
             {
                 DeviceAssetId = IndustrialTelemetryText.Required(entry.DeviceAssetId, nameof(entry.DeviceAssetId)),
                 TagKey = IndustrialTelemetryText.RequiredLower(entry.TagKey, nameof(entry.TagKey)),
+                ProtocolAddress = IndustrialTelemetryText.OptionalSanitized(entry.ProtocolAddress, 500),
                 ActivationStatus = ConnectorTagBinding.NormalizeActivationStatus(entry.ActivationStatus),
             };
             if (!keys.Add((normalizedEntry.DeviceAssetId, normalizedEntry.TagKey)))
@@ -172,6 +178,25 @@ public sealed class ConnectorTagManifest : Entity<ConnectorTagManifestId>, IAggr
         }
 
         return normalized;
+    }
+
+    private bool HasSameRevisionShape(
+        string sourceSystem,
+        IReadOnlyCollection<ConnectorTagManifestEntry> entries)
+    {
+        if (SourceSystem != sourceSystem)
+        {
+            return false;
+        }
+
+        var currentBindings = bindings
+            .Where(binding => binding.IsCurrent)
+            .ToDictionary(binding => (binding.DeviceAssetId, binding.TagKey));
+        return currentBindings.Count == entries.Count
+            && entries.All(entry =>
+                currentBindings.TryGetValue((entry.DeviceAssetId, entry.TagKey), out var binding)
+                && binding.Enabled == entry.Enabled
+                && binding.ProtocolAddress == entry.ProtocolAddress);
     }
 
     private ManifestApplyResult CurrentResult(ManifestApplyDisposition disposition)

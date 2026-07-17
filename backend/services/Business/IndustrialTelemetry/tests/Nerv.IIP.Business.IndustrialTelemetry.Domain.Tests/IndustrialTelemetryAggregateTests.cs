@@ -31,6 +31,117 @@ public sealed class IndustrialTelemetryAggregateTests
     }
 
     [Fact]
+    public void Connector_manifest_same_revision_later_matching_shape_accepts_newer_activation_fact()
+    {
+        var observedAtUtc = new DateTimeOffset(2026, 7, 17, 8, 0, 0, TimeSpan.Zero);
+        var manifest = CreateManifest(
+            observedAtUtc,
+            ManifestRevisionA,
+            [Entry("temperature", observedAtUtc, activationStatus: "pending")]);
+
+        var result = manifest.Apply(
+            "OPCUA",
+            ManifestRevisionA,
+            observedAtUtc.AddMinutes(1),
+            [Entry("TEMPERATURE", observedAtUtc.AddMinutes(1), activationStatus: "active") with
+            {
+                ProtocolAddress = "ns=2;s=temperature",
+            }]);
+
+        Assert.Equal(ManifestApplyDisposition.Accepted, result.Disposition);
+        Assert.Equal(observedAtUtc.AddMinutes(1), manifest.ManifestObservedAtUtc);
+        var binding = Assert.Single(manifest.Bindings);
+        Assert.Equal("active", binding.ActivationStatus);
+        Assert.Equal(observedAtUtc.AddMinutes(1), binding.ActivationObservedAtUtc);
+    }
+
+    [Fact]
+    public void Connector_manifest_same_revision_later_changed_enabled_is_conflict()
+    {
+        var observedAtUtc = new DateTimeOffset(2026, 7, 17, 8, 0, 0, TimeSpan.Zero);
+        var original = Entry("temperature", observedAtUtc);
+        var manifest = CreateManifest(observedAtUtc, ManifestRevisionA, [original]);
+
+        var result = manifest.Apply(
+            "opcua",
+            ManifestRevisionA,
+            observedAtUtc.AddMinutes(1),
+            [original with { Enabled = false, ActivationObservedAtUtc = observedAtUtc.AddMinutes(1) }]);
+
+        Assert.Equal(ManifestApplyDisposition.Conflict, result.Disposition);
+        Assert.Equal(observedAtUtc, manifest.ManifestObservedAtUtc);
+        Assert.True(Assert.Single(manifest.Bindings).Enabled);
+    }
+
+    [Fact]
+    public void Connector_manifest_same_revision_later_changed_protocol_address_is_conflict()
+    {
+        var observedAtUtc = new DateTimeOffset(2026, 7, 17, 8, 0, 0, TimeSpan.Zero);
+        var original = Entry("temperature", observedAtUtc);
+        var manifest = CreateManifest(observedAtUtc, ManifestRevisionA, [original]);
+
+        var result = manifest.Apply(
+            "opcua",
+            ManifestRevisionA,
+            observedAtUtc.AddMinutes(1),
+            [original with
+            {
+                ProtocolAddress = "ns=3;s=temperature",
+                ActivationObservedAtUtc = observedAtUtc.AddMinutes(1),
+            }]);
+
+        Assert.Equal(ManifestApplyDisposition.Conflict, result.Disposition);
+        Assert.Equal(observedAtUtc, manifest.ManifestObservedAtUtc);
+        Assert.Equal("ns=2;s=temperature", Assert.Single(manifest.Bindings).ProtocolAddress);
+    }
+
+    [Fact]
+    public void Connector_manifest_same_revision_later_changed_source_system_is_conflict()
+    {
+        var observedAtUtc = new DateTimeOffset(2026, 7, 17, 8, 0, 0, TimeSpan.Zero);
+        var manifest = CreateManifest(observedAtUtc, ManifestRevisionA, [Entry("temperature", observedAtUtc)]);
+
+        var result = manifest.Apply(
+            "mqtt",
+            ManifestRevisionA,
+            observedAtUtc.AddMinutes(1),
+            [Entry("temperature", observedAtUtc.AddMinutes(1))]);
+
+        Assert.Equal(ManifestApplyDisposition.Conflict, result.Disposition);
+        Assert.Equal("opcua", manifest.SourceSystem);
+        Assert.Equal(observedAtUtc, manifest.ManifestObservedAtUtc);
+    }
+
+    [Fact]
+    public void Connector_manifest_same_revision_later_changed_membership_conflict_is_atomic()
+    {
+        var observedAtUtc = new DateTimeOffset(2026, 7, 17, 8, 0, 0, TimeSpan.Zero);
+        var manifest = CreateManifest(
+            observedAtUtc,
+            ManifestRevisionA,
+            [Entry("temperature", observedAtUtc), Entry("pressure", observedAtUtc)]);
+        var acceptedBindings = manifest.Bindings.ToDictionary(binding => binding.TagKey);
+
+        var result = manifest.Apply(
+            "opcua",
+            ManifestRevisionA,
+            observedAtUtc.AddMinutes(1),
+            [Entry("temperature", observedAtUtc.AddMinutes(1), activationStatus: "disabled")]);
+
+        Assert.Equal(ManifestApplyDisposition.Conflict, result.Disposition);
+        Assert.Equal(ManifestRevisionA, manifest.ManifestRevision);
+        Assert.Equal(observedAtUtc, manifest.ManifestObservedAtUtc);
+        Assert.Equal(2, manifest.Bindings.Count);
+        Assert.All(manifest.Bindings, binding =>
+        {
+            Assert.True(binding.IsCurrent);
+            Assert.Null(binding.RetiredAtUtc);
+            Assert.Equal("active", binding.ActivationStatus);
+            Assert.Same(acceptedBindings[binding.TagKey], binding);
+        });
+    }
+
+    [Fact]
     public void Connector_manifest_older_observation_is_stale()
     {
         var acceptedAtUtc = new DateTimeOffset(2026, 7, 17, 8, 0, 0, TimeSpan.Zero);
