@@ -523,6 +523,18 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     droppedCount?: number | null;
     errorCount?: number | null;
     sourceSystem?: string | null;
+    connection?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorConnectionState | null;
+    staleReason?: string | null;
+    offlineReason?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorConnectionState = {
+    status?: string;
+    observedAtUtc?: string;
+    connectedSinceUtc?: string | null;
+    disconnectedSinceUtc?: string | null;
+    reasonCategory?: string | null;
+    diagnosticCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthRequest = {
@@ -551,6 +563,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     errorCount?: number | null;
     counterEpoch?: string | null;
     sourceSystem?: string | null;
+    connection?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorConnectionState | null;
+    offlineReason?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthListRequest = {

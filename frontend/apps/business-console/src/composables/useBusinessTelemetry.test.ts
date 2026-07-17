@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import {
   createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions,
   listBusinessConsoleTelemetryAlarmRulesQueryOptions,
+  listBusinessConsoleTelemetryConnectorCollectionHealthQueryOptions,
   listBusinessConsoleTelemetryTagsQueryOptions,
   queryBusinessConsoleTelemetryDeviceHistoryQueryOptions,
   queryBusinessConsoleTelemetryOeeQueryOptions,
@@ -17,6 +18,7 @@ import {
   formatOeeQuantity,
   formatOeeRate,
   useBusinessTelemetryAlarmRules,
+  useBusinessTelemetryConnectors,
   useBusinessTelemetryHistory,
   useBusinessTelemetryOee,
   useBusinessTelemetryTags,
@@ -25,7 +27,7 @@ import {
 const coladaState = vi.hoisted(() => ({
   mutationCalls: [] as unknown[],
   queryDataById: new Map<string, unknown>(),
-  queryOptionsById: new Map<string, { enabled?: boolean }>(),
+  queryOptionsById: new Map<string, { enabled?: boolean; autoRefetch?: () => number }>(),
   refetchById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
@@ -36,6 +38,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   listBusinessConsoleTelemetryAlarmRulesQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleTelemetryAlarmRules' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleTelemetryConnectorCollectionHealthQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleTelemetryConnectorCollectionHealth' }],
     query: vi.fn(),
   })),
   listBusinessConsoleTelemetryTagsQueryOptions: vi.fn(() => ({
@@ -96,7 +102,10 @@ describe('business telemetry composables', () => {
 
   it('uses current business context and pagination for tag and alarm-rule lists', () => {
     const businessContext = useBusinessContextStore()
-    businessContext.patchContext({ organizationId: 'org-telemetry', environmentId: 'env-shopfloor' })
+    businessContext.patchContext({
+      organizationId: 'org-telemetry',
+      environmentId: 'env-shopfloor',
+    })
 
     useBusinessTelemetryTags({ deviceAssetId: ' DEV-SMT-01 ' })
     useBusinessTelemetryAlarmRules({ deviceAssetId: ' DEV-SMT-01 ', isEnabled: 'enabled' })
@@ -119,6 +128,48 @@ describe('business telemetry composables', () => {
         skip: 0,
         take: 100,
       },
+    })
+  })
+
+  it('polls connector health every ten seconds and preserves explicit connection facts', () => {
+    coladaState.queryDataById.set('listBusinessConsoleTelemetryConnectorCollectionHealth', {
+      success: true,
+      data: {
+        items: [
+          {
+            connectorId: 'opcua-main',
+            status: 'stale',
+            staleReason: 'offline',
+            offlineReason: 'field-connection',
+            connection: {
+              status: 'lost',
+              observedAtUtc: '2026-07-13T01:00:00.000Z',
+              disconnectedSinceUtc: '2026-07-13T01:00:00.000Z',
+            },
+            lastSampleAtUtc: '2026-07-13T01:09:59.000Z',
+          },
+        ],
+        total: 1,
+      },
+    })
+
+    const result = useBusinessTelemetryConnectors()
+
+    expect(listBusinessConsoleTelemetryConnectorCollectionHealthQueryOptions).toHaveBeenCalledWith({
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+    })
+    expect(
+      coladaState.queryOptionsById
+        .get('listBusinessConsoleTelemetryConnectorCollectionHealth')
+        ?.autoRefetch?.(),
+    ).toBe(10_000)
+    expect(result.connectors.value[0]).toMatchObject({
+      offlineReason: 'field-connection',
+      connection: {
+        status: 'lost',
+        disconnectedSinceUtc: '2026-07-13T01:00:00.000Z',
+      },
+      lastSampleAtUtc: '2026-07-13T01:09:59.000Z',
     })
   })
 
@@ -199,7 +250,9 @@ describe('business telemetry composables', () => {
       isEnabled: true,
     })
 
-    expect(coladaState.refetchById.get('listBusinessConsoleTelemetryAlarmRules')).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('listBusinessConsoleTelemetryAlarmRules'),
+    ).not.toHaveBeenCalled()
   })
 
   it('keeps history and OEE queries disabled until a device scope is provided', () => {
@@ -220,8 +273,12 @@ describe('business telemetry composables', () => {
         deviceAssetId: '',
       }),
     })
-    expect(coladaState.queryOptionsById.get('queryBusinessConsoleTelemetryDeviceHistory')?.enabled).toBe(false)
-    expect(coladaState.queryOptionsById.get('queryBusinessConsoleTelemetryOee')?.enabled).toBe(false)
+    expect(
+      coladaState.queryOptionsById.get('queryBusinessConsoleTelemetryDeviceHistory')?.enabled,
+    ).toBe(false)
+    expect(coladaState.queryOptionsById.get('queryBusinessConsoleTelemetryOee')?.enabled).toBe(
+      false,
+    )
     expect(history.historyItems.value).toEqual([])
     expect(oee.oee.value).toBeUndefined()
   })

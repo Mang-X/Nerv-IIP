@@ -2,6 +2,14 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public sealed record BusinessConsoleConnectorCollectionHealthRequest(string ConnectorId, string OrganizationId, string EnvironmentId);
 
+public sealed record BusinessConsoleConnectorConnectionState(
+    string Status,
+    DateTimeOffset ObservedAtUtc,
+    DateTimeOffset? ConnectedSinceUtc = null,
+    DateTimeOffset? DisconnectedSinceUtc = null,
+    string? ReasonCategory = null,
+    string? DiagnosticCode = null);
+
 public sealed record BusinessConsoleConnectorCollectionHealthResponse(
     string ConnectorId,
     string Status,
@@ -11,7 +19,10 @@ public sealed record BusinessConsoleConnectorCollectionHealthResponse(
     long? ReceivedCount,
     long? DroppedCount,
     long? ErrorCount,
-    string? SourceSystem);
+    string? SourceSystem,
+    BusinessConsoleConnectorConnectionState? Connection = null,
+    string? StaleReason = null,
+    string? OfflineReason = null);
 
 public sealed record BusinessConsoleConnectorCollectionHealthListRequest(
     string OrganizationId,
@@ -33,4 +44,6 @@ public sealed record BusinessConsoleConnectorCollectionHealthListItem(
     long? DroppedCount,
     long? ErrorCount,
     Guid? CounterEpoch,
-    string? SourceSystem);
+    string? SourceSystem,
+    BusinessConsoleConnectorConnectionState? Connection = null,
+    string? OfflineReason = null);

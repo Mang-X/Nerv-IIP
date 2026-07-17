@@ -14,6 +14,14 @@ const connectorMocks = vi.hoisted(() => ({
       connectorName: 'Modbus Main',
       status: 'stale',
       staleReason: 'offline',
+      offlineReason: 'field-connection',
+      connection: {
+        status: 'lost',
+        observedAtUtc: '2026-07-13T01:00:00.000Z',
+        disconnectedSinceUtc: '2026-07-13T01:00:00.000Z',
+        reasonCategory: 'network',
+        diagnosticCode: 'connection-lost',
+      },
       sourceSystem: 'modbus',
       receivedCount: 50,
       droppedCount: 9,
@@ -28,6 +36,12 @@ const connectorMocks = vi.hoisted(() => ({
       connectorName: 'MQTT Main',
       status: 'stale',
       staleReason: 'fault',
+      offlineReason: null,
+      connection: {
+        status: 'alive',
+        observedAtUtc: '2026-07-13T01:09:45.000Z',
+        connectedSinceUtc: '2026-07-13T01:00:00.000Z',
+      },
       sourceSystem: 'mqtt',
       receivedCount: 70,
       droppedCount: 0,
@@ -42,6 +56,12 @@ const connectorMocks = vi.hoisted(() => ({
       connectorName: 'OPC UA Main',
       status: 'current',
       staleReason: null,
+      offlineReason: null,
+      connection: {
+        status: 'alive',
+        observedAtUtc: '2026-07-13T01:09:30.000Z',
+        connectedSinceUtc: '2026-07-13T01:00:00.000Z',
+      },
       sourceSystem: 'opcua',
       receivedCount: 100,
       droppedCount: 0,
@@ -56,6 +76,12 @@ const connectorMocks = vi.hoisted(() => ({
       connectorName: 'Modbus Empty',
       status: 'unknown',
       staleReason: null,
+      offlineReason: null,
+      connection: {
+        status: 'alive',
+        observedAtUtc: '2026-07-13T01:09:45.000Z',
+        connectedSinceUtc: '2026-07-13T01:00:00.000Z',
+      },
       sourceSystem: 'modbus',
       receivedCount: null,
       droppedCount: null,
@@ -64,6 +90,42 @@ const connectorMocks = vi.hoisted(() => ({
       lastHeartbeatAtUtc: '2026-07-13T01:09:45.000Z',
       metricsReportedAtUtc: '2026-07-13T01:09:46.000Z',
       lastSampleAtUtc: null,
+    },
+    {
+      connectorId: 'opcua-host-timeout',
+      connectorName: 'OPC UA Host Timeout',
+      status: 'stale',
+      staleReason: 'offline',
+      offlineReason: 'host-liveness',
+      connection: {
+        status: 'alive',
+        observedAtUtc: '2026-07-13T01:00:00.000Z',
+        connectedSinceUtc: '2026-07-13T00:55:00.000Z',
+      },
+      sourceSystem: 'opcua',
+      receivedCount: 200,
+      droppedCount: 0,
+      errorCount: 0,
+      counterEpoch: '88888888-8888-8888-8888-888888888888',
+      lastHeartbeatAtUtc: '2026-07-13T01:00:00.000Z',
+      metricsReportedAtUtc: '2026-07-13T01:00:01.000Z',
+      lastSampleAtUtc: '2026-07-13T01:00:00.000Z',
+    },
+    {
+      connectorId: 'legacy-main',
+      connectorName: 'Legacy Main',
+      status: 'unknown',
+      staleReason: null,
+      offlineReason: null,
+      connection: null,
+      sourceSystem: 'opcua',
+      receivedCount: 12,
+      droppedCount: 0,
+      errorCount: 0,
+      counterEpoch: '99999999-9999-9999-9999-999999999999',
+      lastHeartbeatAtUtc: '2026-07-13T01:09:45.000Z',
+      metricsReportedAtUtc: '2026-07-13T01:09:46.000Z',
+      lastSampleAtUtc: '2026-07-13T01:09:44.000Z',
     },
   ],
 }))
@@ -126,14 +188,20 @@ describe('equipment telemetry connectors page', () => {
     expect(text).toContain('12.5 /秒')
   })
 
-  it('distinguishes a real disconnect (断线) from a self-reported abnormal stop (异常停止)', () => {
-    const text = mount(ConnectorsPage, { global: { stubs } }).text()
+  it('distinguishes field loss, host timeout, collector fault, and legacy connection unknown', () => {
+    const wrapper = mount(ConnectorsPage, { global: { stubs } })
+    const text = wrapper.text()
 
-    expect(text).toContain('断线')
+    expect(text).toContain('现场连接断开')
+    expect(text).toContain('采集主机离线')
+    expect(text).toContain('连接状态未知')
     expect(text).toContain('异常停止')
-    // heartbeat-loss shows a disconnect duration; a fault shows an abnormal-stop note without a duration
-    expect(text).toContain('断线时长约')
+    expect(text).toContain('现场断开约')
+    expect(text).toContain('主机离线约')
     expect(text).toContain('连接器上报异常停止')
+    expect(text).not.toContain('field-connection')
+    expect(text).not.toContain('host-liveness')
+    expect(text).not.toContain('connection-lost')
   })
 
   it('summarizes online / offline / fault connectors separately', () => {
@@ -141,7 +209,7 @@ describe('equipment telemetry connectors page', () => {
 
     // the never-sampled connector is 待采集, NOT counted as online
     expect(text).toMatch(/在线\s*1/)
-    expect(text).toMatch(/断线\s*1/)
+    expect(text).toMatch(/断线\s*2/)
     expect(text).toMatch(/异常停止\s*1/)
   })
 

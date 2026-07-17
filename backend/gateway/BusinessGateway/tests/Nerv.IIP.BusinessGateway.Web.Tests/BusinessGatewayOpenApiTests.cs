@@ -153,6 +153,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/telemetry/tags", "get", "listBusinessConsoleTelemetryTags");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/connectors/{connectorId}/collection-health", "get", "queryBusinessConsoleTelemetryConnectorCollectionHealth");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/connectors/collection-health", "get", "listBusinessConsoleTelemetryConnectorCollectionHealth");
+        AssertConnectorCollectionHealthFields(document);
         AssertOperationId(paths, "/api/business-console/v1/telemetry/tags/current-value", "get", "getBusinessConsoleTelemetryTagCurrentValue");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarm-rules", "get", "listBusinessConsoleTelemetryAlarmRules");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarm-rules", "post", "createOrUpdateBusinessConsoleTelemetryAlarmRule");
@@ -745,6 +746,51 @@ public sealed class BusinessGatewayOpenApiTests
         Assert.Equal("number", creditLimit.GetProperty("type").GetString());
         Assert.True(properties.TryGetProperty("creditCurrencyCode", out var creditCurrencyCode), "Business partner create request must expose creditCurrencyCode.");
         Assert.Equal("string", creditCurrencyCode.GetProperty("type").GetString());
+    }
+
+    private static void AssertConnectorCollectionHealthFields(JsonDocument document)
+    {
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleConnectorCollectionHealthResponse",
+            "connection",
+            "staleReason",
+            "offlineReason");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleConnectorCollectionHealthListItem",
+            "connection",
+            "staleReason",
+            "offlineReason");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleConnectorConnectionState",
+            "status",
+            "observedAtUtc",
+            "connectedSinceUtc",
+            "disconnectedSinceUtc",
+            "reasonCategory",
+            "diagnosticCode");
+    }
+
+    private static void AssertSchemaProperties(JsonDocument document, string schemaNameSuffix, params string[] propertyNames)
+    {
+        var schemas = document.RootElement
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .EnumerateObject()
+            .Where(schema =>
+                schema.Name.EndsWith(schemaNameSuffix, StringComparison.Ordinal)
+                && schema.Value.TryGetProperty("properties", out _))
+            .ToArray();
+        var schema = Assert.Single(schemas).Value;
+        var properties = schema.GetProperty("properties");
+        foreach (var propertyName in propertyNames)
+        {
+            Assert.True(
+                properties.TryGetProperty(propertyName, out _),
+                $"{schemaNameSuffix} must expose {propertyName}.");
+        }
     }
 
     private static void AssertMesListDisplayContract(JsonDocument document)

@@ -25033,6 +25033,53 @@
           "sourceSystem": {
             "type": "string",
             "nullable": true
+          },
+          "connection": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorConnectionState"
+              }
+            ]
+          },
+          "staleReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "offlineReason": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorConnectionState": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "observedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "connectedSinceUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "disconnectedSinceUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reasonCategory": {
+            "type": "string",
+            "nullable": true
+          },
+          "diagnosticCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -25130,6 +25177,18 @@
             "nullable": true
           },
           "sourceSystem": {
+            "type": "string",
+            "nullable": true
+          },
+          "connection": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorConnectionState"
+              }
+            ]
+          },
+          "offlineReason": {
             "type": "string",
             "nullable": true
           }

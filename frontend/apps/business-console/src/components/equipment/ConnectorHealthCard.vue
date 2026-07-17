@@ -5,7 +5,6 @@ import {
   connectorSourceSystemLabel,
   formatSampleRate,
   isConnectorFault,
-  isConnectorOffline,
 } from '@/composables/useBusinessTelemetry'
 import { NvBadge } from '@nerv-iip/ui'
 import { ActivityIcon, ChevronDownIcon, TriangleAlertIcon, TimerIcon } from '@lucide/vue'
@@ -20,10 +19,23 @@ const props = defineProps<{
 
 defineEmits<{ toggle: [] }>()
 
-const offline = computed(() =>
-  isConnectorOffline(props.connector.status, props.connector.staleReason),
+const fieldConnectionLost = computed(
+  () =>
+    props.connector.offlineReason === 'field-connection' ||
+    props.connector.connection?.status === 'lost',
 )
+const hostOffline = computed(() => props.connector.offlineReason === 'host-liveness')
+const offline = computed(() => fieldConnectionLost.value || hostOffline.value)
 const fault = computed(() => isConnectorFault(props.connector.status, props.connector.staleReason))
+const connectionUnknown = computed(
+  () => props.connector.connection == null || props.connector.connection.status === 'unknown',
+)
+const statusLabel = computed(() => {
+  if (fieldConnectionLost.value) return '现场连接断开'
+  if (hostOffline.value) return '采集主机离线'
+  if (connectionUnknown.value) return '连接状态未知'
+  return connectorHealthStatusLabel(props.connector.status, props.connector.staleReason)
+})
 const detailId = computed(
   () =>
     `connector-detail-${props.connector.connectorId ?? props.connector.connectorName ?? 'connector'}`,
@@ -60,6 +72,19 @@ function formatDurationSince(value?: string | null) {
   if (hours < 24) return `${hours} 小时 ${minutes % 60} 分钟`
   return `${Math.floor(hours / 24)} 天 ${hours % 24} 小时`
 }
+
+const offlineDuration = computed(() => {
+  if (fieldConnectionLost.value) {
+    const connection = props.connector.connection
+    return `现场断开约 ${formatDurationSince(
+      connection?.disconnectedSinceUtc ?? connection?.observedAtUtc,
+    )}`
+  }
+  if (hostOffline.value) {
+    return `主机离线约 ${formatDurationSince(props.connector.lastHeartbeatAtUtc)}`
+  }
+  return null
+})
 </script>
 
 <template>
@@ -83,9 +108,7 @@ function formatDurationSince(value?: string | null) {
         </p>
       </div>
       <div class="flex shrink-0 items-center gap-1.5">
-        <NvBadge class="rounded-sm" :variant="statusVariant">{{
-          connectorHealthStatusLabel(connector.status, connector.staleReason)
-        }}</NvBadge>
+        <NvBadge class="rounded-sm" :variant="statusVariant">{{ statusLabel }}</NvBadge>
         <ChevronDownIcon
           class="size-4 text-muted-foreground transition-transform"
           :class="expanded ? 'rotate-180' : ''"
@@ -130,9 +153,8 @@ function formatDurationSince(value?: string | null) {
         {{ formatDateTime(connector.lastHeartbeatAtUtc) }}
       </span>
       <span>最后采样 {{ formatDateTime(connector.lastSampleAtUtc) }}</span>
-      <span v-if="offline" class="inline-flex items-center gap-1 text-destructive">
-        <TimerIcon class="size-3" aria-hidden="true" />断线时长约
-        {{ formatDurationSince(connector.lastHeartbeatAtUtc) }}
+      <span v-if="offlineDuration" class="inline-flex items-center gap-1 text-destructive">
+        <TimerIcon class="size-3" aria-hidden="true" />{{ offlineDuration }}
       </span>
       <span v-else-if="fault" class="inline-flex items-center gap-1 text-warning-strong">
         <TriangleAlertIcon class="size-3" aria-hidden="true" />连接器上报异常停止
