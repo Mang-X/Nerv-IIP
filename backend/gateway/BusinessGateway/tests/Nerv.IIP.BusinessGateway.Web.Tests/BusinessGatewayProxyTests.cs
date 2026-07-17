@@ -9229,7 +9229,7 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
 
     public Task<BusinessConsoleMaintenancePlanListResponse> ListPlansAsync(
         string internalBearerToken,
-        BusinessConsoleMaintenanceListRequest request,
+        BusinessConsoleMaintenancePlanListRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;

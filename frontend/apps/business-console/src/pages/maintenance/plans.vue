@@ -5,6 +5,7 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMaintenancePlans } from '@/composables/useBusinessMaintenance'
+import { useMaintenancePlanRuntimeRemaining } from '@/composables/useBusinessTelemetry'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -28,6 +29,9 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
+  NvTabs,
+  NvTabsList,
+  NvTabsTrigger,
   Spinner,
   toast,
 } from '@nerv-iip/ui'
@@ -57,6 +61,16 @@ const {
   filters,
 } = useMaintenancePlans()
 const { page, pageSize } = usePagedList(filters)
+// Remaining runtime hours are derived on the client (one runtime-hours read per visible runtime plan,
+// each over the plan's own [startsOn, now] window) — the list query itself never fans out to telemetry.
+const { remainingByPlanId, remainingPending, refreshRemaining } =
+  useMaintenancePlanRuntimeRemaining(plans)
+// 「刷新」需同时重取计划与逐计划剩余小时:计划字段未变时 refreshPlans 得到相同 watch key,
+// 运行小时读面不会自动重算,只有显式 refreshRemaining 才能反映设备继续运行后的新剩余。
+async function refreshPlansAndRemaining() {
+  await refreshPlans()
+  await refreshRemaining()
+}
 
 // 保养周期以 ISO-8601 间隔登记（后端按此推算到期），界面给常用周期。
 const intervalOptions = [
@@ -66,15 +80,22 @@ const intervalOptions = [
   { label: '每季度', value: 'P90D' },
 ]
 
+// 触发模式：日历周期（按日期到期）/ 运行小时（按累计运行小时到期，无日历到期）/ 两者组合（任一先到即开单）。
+type TriggerMode = 'calendar' | 'runtime' | 'both'
+const runtimeHourQuickValues = [500, 1000, 2000]
+
 const createOpen = shallowRef(false)
 const createForm = reactive({
   deviceAssetId: '',
   planCode: '',
+  triggerMode: 'calendar' as TriggerMode,
   interval: 'P30D',
+  runtimeHourInterval: '',
   startsOn: '',
   owner: '',
 })
 const createError = shallowRef('')
+const runtimeHoursInvalid = shallowRef(false)
 
 const generateOpen = shallowRef(false)
 const generateForm = reactive({
@@ -98,8 +119,9 @@ const columns: NvDataTableColumn<PlanRow>[] = [
     accessor: (r) => r.planCode ?? planNo(r),
   },
   { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '—' },
+  { key: 'triggerMode', header: '触发模式', accessor: (r) => triggerModeLabel(r) },
   { key: 'interval', header: '保养周期', accessor: (r) => intervalLabel(r.interval) },
-  { key: 'startsOn', header: '起始日期', accessor: (r) => r.startsOn ?? '—' },
+  { key: 'nextDue', header: '下次到期', accessor: (r) => nextDueLabel(r) },
 ]
 
 function planNo(row: PlanRow) {
@@ -107,7 +129,47 @@ function planNo(row: PlanRow) {
   return id ? `PM-${id.slice(-8).toUpperCase()}` : '保养计划'
 }
 function intervalLabel(value?: string | null) {
-  return intervalOptions.find((o) => o.value === value)?.label ?? value ?? '—'
+  if (!value) return '—'
+  return intervalOptions.find((o) => o.value === value)?.label ?? value
+}
+// 三态由存储事实区分：无日历 interval = 运行小时；无 runtimeHourInterval = 日历周期；两者皆有 = 两者组合。
+function triggerModeLabel(row: PlanRow) {
+  const hasCalendar = !!row.interval
+  const hasRuntime = row.runtimeHourInterval != null
+  if (hasCalendar && hasRuntime) return '两者组合'
+  if (hasRuntime) return '运行小时'
+  return '日历周期'
+}
+function formatHours(value?: number | null) {
+  if (value === null || value === undefined) return '—'
+  return `${Number(value)} 小时`
+}
+// 下次到期：运行小时型显剩余小时（前端按各计划起算口径经 runtime-hours facade 算出）；日历型显下次
+// 到期日。遥测读取失败与真实无样本分开呈现，不把故障误报成「暂无样本」。两者组合在剩余未知时回落到
+// 日历到期日。
+function nextDueLabel(row: PlanRow) {
+  if (row.runtimeHourInterval != null) {
+    const entry = row.planId ? remainingByPlanId.value[row.planId] : undefined
+    // In flight (including a refresh that superseded a prior settled value) never shows the stale value.
+    if (entry?.status === 'loading' || (!entry && remainingPending.value))
+      return '运行小时（读取中…）'
+    if (entry?.status === 'ok') return `剩余 ${formatHours(entry.hours)}`
+    // Runtime remaining unknown (read failed / no samples / inconsistent cursor — settled, not loading).
+    // A combined plan still has a valid calendar due — keep showing it (with the runtime state noted),
+    // rather than hiding the known date.
+    const note =
+      entry?.status === 'error'
+        ? '运行小时读取失败'
+        : entry?.status === 'invalid'
+          ? '运行小时阈值缺失'
+          : '暂无运行样本'
+    if (row.interval && row.nextDueOn) return `${row.nextDueOn}（${note}）`
+    // Runtime-only plan (no calendar fallback): surface the settled runtime state as the value.
+    if (entry?.status === 'error') return '运行小时（读取失败）'
+    if (entry?.status === 'invalid') return '运行小时（阈值缺失）'
+    return '运行小时（暂无样本）'
+  }
+  return row.nextDueOn ?? row.startsOn ?? '—'
 }
 function rowKey(row: PlanRow) {
   return row.planId ?? row.planCode ?? '保养计划'
@@ -119,25 +181,51 @@ function todayDate() {
 function openCreate() {
   createForm.deviceAssetId = ''
   createForm.planCode = ''
+  createForm.triggerMode = 'calendar'
   createForm.interval = 'P30D'
+  createForm.runtimeHourInterval = ''
   createForm.startsOn = todayDate()
   createForm.owner = ''
   createError.value = ''
+  runtimeHoursInvalid.value = false
   createOpen.value = true
 }
+function setRuntimeHours(value: number) {
+  createForm.runtimeHourInterval = String(value)
+  runtimeHoursInvalid.value = false
+}
 async function submitCreate() {
+  createError.value = ''
+  runtimeHoursInvalid.value = false
   if (!createForm.deviceAssetId.trim() || !createForm.owner.trim()) {
     createError.value = '请填写设备与负责班组。'
     return
   }
+
+  const usesRuntime = createForm.triggerMode !== 'calendar'
+  let runtimeHourInterval: number | undefined
+  if (usesRuntime) {
+    const parsed = Number(createForm.runtimeHourInterval)
+    if (!createForm.runtimeHourInterval.trim() || !Number.isFinite(parsed) || parsed <= 0) {
+      runtimeHoursInvalid.value = true
+      createError.value = '请填写正的触发运行小时数。'
+      return
+    }
+    runtimeHourInterval = parsed
+  }
+
+  // 运行小时模式不带日历到期（interval 留空 → 真正的纯运行小时触发）；日历/两者组合用所选周期。
+  const interval = createForm.triggerMode === 'runtime' ? undefined : createForm.interval
+
   const body: BusinessConsoleCreateMaintenancePlanRequest = {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
     deviceAssetId: createForm.deviceAssetId.trim(),
     planCode: createForm.planCode.trim() || undefined,
-    interval: createForm.interval,
+    interval,
     startsOn: createForm.startsOn || todayDate(),
     owner: createForm.owner.trim(),
+    runtimeHourInterval,
   }
   try {
     await createPlan(body)
@@ -190,7 +278,7 @@ function formatError(error: unknown) {
           type="button"
           variant="outline"
           :disabled="plansPending"
-          @click="refreshPlans"
+          @click="refreshPlansAndRemaining"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
@@ -235,6 +323,27 @@ function formatError(error: unknown) {
           >
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
+          <NvField>
+            <NvFieldLabel>触发模式</NvFieldLabel>
+            <NvTabs v-model="createForm.triggerMode">
+              <NvTabsList class="w-full">
+                <NvTabsTrigger value="calendar" class="flex-1">日历周期</NvTabsTrigger>
+                <NvTabsTrigger value="runtime" class="flex-1">运行小时</NvTabsTrigger>
+                <NvTabsTrigger value="both" class="flex-1">两者组合</NvTabsTrigger>
+              </NvTabsList>
+            </NvTabs>
+            <p class="text-xs text-muted-foreground">
+              <template v-if="createForm.triggerMode === 'calendar'"
+                >按保养周期到期开单，例如每月一次。</template
+              >
+              <template v-else-if="createForm.triggerMode === 'runtime'"
+                >按设备累计运行小时到期开单，不受日历影响；例如每运行满 1000
+                小时保养一次。</template
+              >
+              <template v-else>同时保留日历周期与运行小时两条到期线，任一先到即开单。</template>
+            </p>
+          </NvField>
+
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="plan-device">设备</NvFieldLabel>
@@ -254,7 +363,7 @@ function formatError(error: unknown) {
                 placeholder="可选，如 PM-SMT-01-M"
               />
             </NvField>
-            <NvField>
+            <NvField v-if="createForm.triggerMode !== 'runtime'">
               <NvFieldLabel for="plan-interval">保养周期</NvFieldLabel>
               <NvSelect v-model="createForm.interval">
                 <NvSelectTrigger id="plan-interval" aria-label="保养周期"
@@ -266,6 +375,38 @@ function formatError(error: unknown) {
                   }}</NvSelectItem>
                 </NvSelectContent>
               </NvSelect>
+            </NvField>
+            <NvField v-if="createForm.triggerMode !== 'calendar'">
+              <NvFieldLabel for="plan-runtime-hours">触发运行小时</NvFieldLabel>
+              <NvInput
+                id="plan-runtime-hours"
+                v-model="createForm.runtimeHourInterval"
+                type="number"
+                inputmode="numeric"
+                min="1"
+                step="1"
+                autocomplete="off"
+                placeholder="如 1000"
+                :invalid="runtimeHoursInvalid"
+                aria-describedby="plan-runtime-hours-error"
+                @input="runtimeHoursInvalid = false"
+              />
+              <NvFieldError
+                v-if="runtimeHoursInvalid"
+                id="plan-runtime-hours-error"
+                :errors="['请填写正的触发运行小时数。']"
+              />
+              <div class="flex flex-wrap gap-2 pt-1">
+                <NvButton
+                  v-for="value in runtimeHourQuickValues"
+                  :key="value"
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                  @click="setRuntimeHours(value)"
+                  >{{ value }} 小时</NvButton
+                >
+              </div>
             </NvField>
             <NvField>
               <NvFieldLabel for="plan-starts">起始日期</NvFieldLabel>

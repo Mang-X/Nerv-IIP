@@ -17479,6 +17479,14 @@
               "default": 100,
               "nullable": false
             }
+          },
+          {
+            "name": "deviceAssetId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -40289,7 +40297,6 @@
           "organizationId",
           "environmentId",
           "deviceAssetId",
-          "interval",
           "owner"
         ],
         "properties": {
@@ -40321,7 +40328,7 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "startsOn": {
             "type": "string",
@@ -40348,6 +40355,13 @@
             "maxLength": 150,
             "minLength": 0,
             "nullable": true
+          },
+          "runtimeHourInterval": {
+            "type": "number",
+            "format": "decimal",
+            "minimum": 0.0,
+            "nullable": true,
+            "exclusiveMinimum": true
           }
         }
       },
@@ -40410,15 +40424,35 @@
             "type": "string"
           },
           "interval": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "startsOn": {
             "type": "string",
             "format": "date"
+          },
+          "nextDueOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "runtimeHourInterval": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "nextDueRuntimeHours": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "lastGeneratedRuntimeHours": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceListRequest": {
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenancePlanListRequest": {
         "type": "object",
         "additionalProperties": false
       },
@@ -40714,6 +40748,10 @@
             "type": "boolean"
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceListRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceInspectionMeasurementTrendResponse": {
         "allOf": [

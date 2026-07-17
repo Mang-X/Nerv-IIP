@@ -4575,12 +4575,13 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     environmentId: string;
     deviceAssetId: string;
     planCode?: string | null;
-    interval: string;
+    interval?: string | null;
     startsOn?: string;
     owner: string;
     windowStartUtc?: string | null;
     windowEndUtc?: string | null;
     idempotencyKey?: string | null;
+    runtimeHourInterval?: number | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenancePlanListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4598,11 +4599,15 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     planId?: string;
     deviceAssetId?: string;
     planCode?: string;
-    interval?: string;
+    interval?: string | null;
     startsOn?: string;
+    nextDueOn?: string | null;
+    runtimeHourInterval?: number | null;
+    nextDueRuntimeHours?: number | null;
+    lastGeneratedRuntimeHours?: number;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceListRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenancePlanListRequest = {
     [key: string]: never;
 };
 
@@ -4677,6 +4682,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     lowerSpecLimit?: number | null;
     upperSpecLimit?: number | null;
     isWithinSpec?: boolean;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceListRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceInspectionMeasurementTrendResponse = NetCorePalExtensionsDtoResponseData & {
@@ -14245,6 +14254,7 @@ export type ListBusinessConsoleMaintenancePlansData = {
         environmentId: string;
         skip?: number;
         take?: number;
+        deviceAssetId?: string | null;
     };
     url: '/api/business-console/v1/maintenance/plans';
 };

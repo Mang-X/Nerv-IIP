@@ -87,9 +87,18 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
     }
 }
 
-public sealed record ListMaintenancePlansQuery(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100) : IQuery<PagedMaintenanceListResponse<MaintenancePlanListItem>>;
+public sealed record ListMaintenancePlansQuery(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? DeviceAssetId = null) : IQuery<PagedMaintenanceListResponse<MaintenancePlanListItem>>;
 
-public sealed record MaintenancePlanListItem(MaintenancePlanId PlanId, string DeviceAssetId, string PlanCode, string Interval, DateOnly StartsOn);
+public sealed record MaintenancePlanListItem(
+    MaintenancePlanId PlanId,
+    string DeviceAssetId,
+    string PlanCode,
+    string? Interval,
+    DateOnly StartsOn,
+    DateOnly? NextDueOn,
+    decimal? RuntimeHourInterval,
+    decimal? NextDueRuntimeHours,
+    decimal LastGeneratedRuntimeHours);
 
 public sealed class ListMaintenancePlansQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaintenancePlansQuery, PagedMaintenanceListResponse<MaintenancePlanListItem>>
@@ -98,13 +107,27 @@ public sealed class ListMaintenancePlansQueryHandler(ApplicationDbContext dbCont
     {
         var skip = ListMaintenanceWorkOrdersQueryHandler.NormalizeSkip(request.Skip);
         var take = ListMaintenanceWorkOrdersQueryHandler.NormalizeTake(request.Take);
+        var deviceAssetId = string.IsNullOrWhiteSpace(request.DeviceAssetId) ? null : request.DeviceAssetId;
+        // The list stays a fast DB projection: remaining runtime hours (which needs a telemetry read per
+        // plan over the plan's own [StartsOn, now] window) is derived on the client from the runtime-hours
+        // read facade, so the list query never fans out to IndustrialTelemetry.
         var query = dbContext.MaintenancePlans
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => deviceAssetId == null || x.DeviceAssetId == deviceAssetId);
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
-            .Select(x => new MaintenancePlanListItem(x.Id, x.DeviceAssetId, x.PlanCode, x.Interval, x.StartsOn))
+            .Select(x => new MaintenancePlanListItem(
+                x.Id,
+                x.DeviceAssetId,
+                x.PlanCode,
+                x.Interval,
+                x.StartsOn,
+                x.NextDueOn,
+                x.RuntimeHourInterval,
+                x.NextDueRuntimeHours,
+                x.LastGeneratedRuntimeHours))
             .Skip(skip)
             .Take(take)
             .ToArrayAsync(cancellationToken);

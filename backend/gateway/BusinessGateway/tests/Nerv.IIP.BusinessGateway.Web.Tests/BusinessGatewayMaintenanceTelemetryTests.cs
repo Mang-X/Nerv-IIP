@@ -297,6 +297,22 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public void Maintenance_plan_list_validator_enforces_context_paging_and_device_bounds()
+    {
+        // The plan-list endpoint binds a dedicated request type; it needs its own validator, else org/env,
+        // skip/take bounds and the optional DeviceAssetId length go unchecked.
+        var validator = new BusinessConsoleMaintenancePlanListRequestValidator();
+
+        Assert.True(validator.Validate(new BusinessConsoleMaintenancePlanListRequest("org-001", "env-dev", 0, 200, "DEV-CNC-01")).IsValid);
+        Assert.True(validator.Validate(new BusinessConsoleMaintenancePlanListRequest("org-001", "env-dev")).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenancePlanListRequest("", "env-dev")).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenancePlanListRequest("org-001", "")).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenancePlanListRequest("org-001", "env-dev", -1, 10)).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenancePlanListRequest("org-001", "env-dev", 0, 201)).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenancePlanListRequest("org-001", "env-dev", 0, 100, new string('D', 151))).IsValid);
+    }
+
+    [Fact]
     public async Task Maintenance_work_order_detail_reads_existing_work_order_surface_by_id()
     {
         var maintenance = new RecordingMaintenanceFacadeClient();
@@ -337,11 +353,20 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var plansResponse = await client.GetAsync("/api/business-console/v1/maintenance/plans?organizationId=org-001&environmentId=env-dev");
+        var plansResponse = await client.GetAsync("/api/business-console/v1/maintenance/plans?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01");
         var windowsResponse = await client.GetAsync("/api/business-console/v1/maintenance/availability-windows?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-PRESS-01");
 
         Assert.Equal(HttpStatusCode.OK, plansResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, windowsResponse.StatusCode);
+        // Device filter flows through to the downstream plan list request.
+        Assert.Equal("DEV-PRESS-01", maintenance.LastPlanListRequest?.DeviceAssetId);
+        using var plansDocument = JsonDocument.Parse(await plansResponse.Content.ReadAsStringAsync());
+        var planItem = plansDocument.RootElement.GetProperty("data").GetProperty("items")[0];
+        // Runtime-only plan: no calendar interval / next-due; runtime threshold fields surfaced.
+        Assert.Equal(JsonValueKind.Null, planItem.GetProperty("interval").ValueKind);
+        Assert.Equal(JsonValueKind.Null, planItem.GetProperty("nextDueOn").ValueKind);
+        Assert.Equal(1000m, planItem.GetProperty("runtimeHourInterval").GetDecimal());
+        Assert.Equal(1000m, planItem.GetProperty("nextDueRuntimeHours").GetDecimal());
         Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenancePlansRead);
         Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         Assert.DoesNotContain(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.IiotTelemetryRead);
@@ -428,6 +453,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             windowStartUtc = "2026-06-01T08:00:00Z",
             windowEndUtc = "2026-06-01T16:00:00Z",
             idempotencyKey = "maintenance-plan-create-001",
+            runtimeHourInterval = 1000m,
         });
         var inspectionResponse = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/inspections", new
         {
@@ -450,6 +476,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal(
             DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
             maintenance.LastCreatePlanRequest.GetProperty("windowStartUtc").GetDateTimeOffset());
+        Assert.Equal(1000m, maintenance.LastCreatePlanRequest.GetProperty("runtimeHourInterval").GetDecimal());
         Assert.Equal("plan-001", maintenance.LastRecordInspectionRequest.GetProperty("planId").GetString());
         Assert.Equal("wo-maint-001", maintenance.LastRecordInspectionRequest.GetProperty("workOrderId").GetString());
     }
@@ -898,19 +925,28 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
             DateTimeOffset.Parse("2026-06-01T08:10:00Z", CultureInfo.InvariantCulture)));
     }
 
+    public BusinessConsoleMaintenancePlanListRequest? LastPlanListRequest { get; private set; }
+
     public Task<BusinessConsoleMaintenancePlanListResponse> ListPlansAsync(
         string internalBearerToken,
-        BusinessConsoleMaintenanceListRequest request,
-        CancellationToken cancellationToken) =>
-        Task.FromResult(new BusinessConsoleMaintenancePlanListResponse(
+        BusinessConsoleMaintenancePlanListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastPlanListRequest = request;
+        return Task.FromResult(new BusinessConsoleMaintenancePlanListResponse(
         [
             new BusinessConsoleMaintenancePlanItem(
                 "plan-001",
                 "DEV-PRESS-01",
                 "PM-PRESS",
-                "weekly",
-                new DateOnly(2026, 6, 1)),
+                null,
+                new DateOnly(2026, 6, 1),
+                null,
+                1000m,
+                1000m,
+                0m),
         ], request.Skip, request.Take, 1));
+    }
 
     public Task<BusinessConsoleMaintenanceInspectionListResponse> ListInspectionsAsync(
         string internalBearerToken,
