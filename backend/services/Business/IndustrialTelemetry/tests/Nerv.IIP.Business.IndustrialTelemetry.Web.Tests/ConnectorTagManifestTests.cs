@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -44,6 +46,44 @@ public sealed class ConnectorTagManifestTests
 
         Assert.Equal("e0ff8c1111083580a719587480101437f3fcd5bf76bb822fc3ae5f2698631e44", revision);
         Assert.Equal(revision, activationOnlyRevision);
+    }
+
+    [Fact]
+    public void Canonical_utf8_bytes_and_hash_are_frozen_for_unicode_and_json_escape_characters()
+    {
+        ReportConnectorTagManifestEntry[] entries =
+        [
+            Entry(
+                " DEV-中文😀-\"\\\n\u0001 ",
+                " TAG-\"\\\n\u0002 ",
+                protocolAddress: " ns=2;s=中文😀-\"\\\n\u0003 ",
+                activationObservedAtUtc: Now),
+        ];
+        const string expectedJson = """{"sourceSystem":"opcua-\u4E2D\u6587\uD83D\uDE00","entries":[{"deviceAssetId":"DEV-\u4E2D\u6587\uD83D\uDE00-\u0022\\\n\u0001","tagKey":"tag-\u0022\\\n\u0002","enabled":true,"protocolAddress":"ns=2;s=\u4E2D\u6587\uD83D\uDE00-\u0022\\"}]}""";
+
+        var canonicalBytes = ConnectorTagManifestRevision.ComputeCanonicalUtf8Bytes(" OPCUA-中文😀 ", entries);
+        var revision = ConnectorTagManifestRevision.Compute(" OPCUA-中文😀 ", entries);
+
+        Assert.All(canonicalBytes, value => Assert.InRange(value, (byte)0, (byte)127));
+        Assert.Equal(expectedJson, Encoding.UTF8.GetString(canonicalBytes));
+        Assert.Equal("e047382c6f4bb10de8f61e5fd1112ee46805620f5749528c16ace0b923d8ae71", revision);
+        Assert.Equal(revision, Convert.ToHexString(SHA256.HashData(canonicalBytes)).ToLowerInvariant());
+    }
+
+    [Fact]
+    public void Manifest_and_activation_observation_watermarks_are_concurrency_tokens()
+    {
+        using var dbContext = CreateDbContext();
+
+        var manifestObservedAt = dbContext.Model
+            .FindEntityType(typeof(ConnectorTagManifest))!
+            .FindProperty(nameof(ConnectorTagManifest.ManifestObservedAtUtc))!;
+        var activationObservedAt = dbContext.Model
+            .FindEntityType(typeof(ConnectorTagBinding))!
+            .FindProperty(nameof(ConnectorTagBinding.ActivationObservedAtUtc))!;
+
+        Assert.True(manifestObservedAt.IsConcurrencyToken);
+        Assert.True(activationObservedAt.IsConcurrencyToken);
     }
 
     [Fact]

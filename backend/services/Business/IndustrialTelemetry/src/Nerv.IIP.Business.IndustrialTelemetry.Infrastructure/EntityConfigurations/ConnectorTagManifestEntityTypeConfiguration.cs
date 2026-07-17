@@ -14,7 +14,7 @@ public sealed class ConnectorTagManifestEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.CollectionConnectorId).HasColumnName("collection_connector_id").IsRequired().HasMaxLength(150).HasComment("Canonical collection connector identity owning this manifest.");
         builder.Property(x => x.SourceSystem).HasColumnName("source_system").IsRequired().HasMaxLength(100).HasComment("Source system that observed the accepted manifest.");
         builder.Property(x => x.ManifestRevision).HasColumnName("manifest_revision").IsRequired().HasMaxLength(64).HasComment("Lowercase SHA-256 revision of the accepted manifest payload.");
-        builder.Property(x => x.ManifestObservedAtUtc).HasColumnName("manifest_observed_at_utc").HasComment("Source observation time ordering accepted manifest revisions.");
+        builder.Property(x => x.ManifestObservedAtUtc).HasColumnName("manifest_observed_at_utc").IsConcurrencyToken().HasComment("Source observation time ordering accepted manifest revisions.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.CollectionConnectorId }).IsUnique();
         builder.HasMany(x => x.Bindings)
             .WithOne()

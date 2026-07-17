@@ -5,8 +5,11 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.ConnectorTagManifestAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.IntegrationEventHandlers;
@@ -20,6 +23,203 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 public sealed class IndustrialTelemetryIdempotentConcurrencyTests
 {
     private const string PostgresConnectionStringEnvironmentVariable = "NERV_IIP_TEST_POSTGRES";
+    private static readonly DateTimeOffset ManifestNow = new(2026, 7, 17, 10, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task Concurrent_first_manifest_insert_retries_the_unique_conflict_and_replays_the_winner()
+    {
+        await using var database = await IndustrialTelemetrySqliteDatabase.CreateAsync();
+        await using var winningContext = database.CreateContext();
+        await using var racingContext = database.CreateContext();
+        var command = ManifestCommand("temperature", ManifestNow, ManifestNow, "active");
+        var winningResult = await CreateManifestHandler(winningContext).Handle(command, CancellationToken.None);
+        var racingHandler = CreateManifestHandler(racingContext);
+        var stagedResult = await racingHandler.Handle(command, CancellationToken.None);
+        var behavior = new IndustrialTelemetryIdempotentIngestionBehavior<ReportConnectorTagManifestCommand, ReportConnectorTagManifestResult>(racingContext);
+        var attempts = 0;
+
+        var recoveredResult = await behavior.Handle(
+            command,
+            async ct =>
+            {
+                attempts++;
+                var result = attempts == 1 ? stagedResult : await racingHandler.Handle(command, ct);
+                if (attempts == 1)
+                {
+                    await winningContext.SaveChangesAsync(ct);
+                }
+
+                await racingContext.SaveChangesAsync(ct);
+                return result;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(2, attempts);
+        Assert.Equal(ManifestApplyDisposition.Accepted, winningResult.Disposition);
+        Assert.Equal(ManifestApplyDisposition.Idempotent, recoveredResult.Disposition);
+        await using var assertionContext = database.CreateContext();
+        Assert.Equal(1, await assertionContext.ConnectorTagManifests.CountAsync());
+        Assert.Equal(1, await assertionContext.ConnectorTagBindings.CountAsync());
+    }
+
+    [Fact]
+    public async Task Concurrent_newer_and_older_manifest_updates_keep_the_newer_manifest_after_retry()
+    {
+        await using var database = await IndustrialTelemetrySqliteDatabase.CreateAsync();
+        await SeedManifestAsync(database, ManifestCommand("temperature", ManifestNow, ManifestNow, "pending"));
+        await using var winningContext = database.CreateContext();
+        await using var racingContext = database.CreateContext();
+        var newer = ManifestCommand("pressure", ManifestNow.AddMinutes(2), ManifestNow.AddMinutes(2), "active");
+        var older = ManifestCommand("speed", ManifestNow.AddMinutes(1), ManifestNow.AddMinutes(1), "error");
+        var winningHandler = CreateManifestHandler(winningContext);
+        var racingHandler = CreateManifestHandler(racingContext);
+        await winningHandler.Handle(newer, CancellationToken.None);
+        var stagedResult = await racingHandler.Handle(older, CancellationToken.None);
+        var behavior = new IndustrialTelemetryIdempotentIngestionBehavior<ReportConnectorTagManifestCommand, ReportConnectorTagManifestResult>(racingContext);
+        var attempts = 0;
+
+        var recoveredResult = await behavior.Handle(
+            older,
+            async ct =>
+            {
+                attempts++;
+                var result = attempts == 1 ? stagedResult : await racingHandler.Handle(older, ct);
+                if (attempts == 1)
+                {
+                    await winningContext.SaveChangesAsync(ct);
+                }
+
+                await racingContext.SaveChangesAsync(ct);
+                return result;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(2, attempts);
+        Assert.Equal(ManifestApplyDisposition.Stale, recoveredResult.Disposition);
+        await using var assertionContext = database.CreateContext();
+        var manifest = await assertionContext.ConnectorTagManifests.Include(x => x.Bindings).SingleAsync();
+        Assert.Equal(newer.ManifestRevision, manifest.ManifestRevision);
+        Assert.Equal(newer.ManifestObservedAtUtc, manifest.ManifestObservedAtUtc);
+        Assert.Equal("pressure", Assert.Single(manifest.Bindings, binding => binding.IsCurrent).TagKey);
+    }
+
+    [Fact]
+    public async Task Concurrent_same_manifest_observation_activation_updates_keep_the_newer_activation_after_retry()
+    {
+        await using var database = await IndustrialTelemetrySqliteDatabase.CreateAsync();
+        var initial = ManifestCommand("temperature", ManifestNow, ManifestNow, "pending");
+        await SeedManifestAsync(database, initial);
+        await using var winningContext = database.CreateContext();
+        await using var racingContext = database.CreateContext();
+        var newerActivation = ManifestCommand("temperature", ManifestNow, ManifestNow.AddMinutes(2), "active");
+        var olderActivation = ManifestCommand("temperature", ManifestNow, ManifestNow.AddMinutes(1), "error");
+        var winningHandler = CreateManifestHandler(winningContext);
+        var racingHandler = CreateManifestHandler(racingContext);
+        await winningHandler.Handle(newerActivation, CancellationToken.None);
+        var stagedResult = await racingHandler.Handle(olderActivation, CancellationToken.None);
+        var behavior = new IndustrialTelemetryIdempotentIngestionBehavior<ReportConnectorTagManifestCommand, ReportConnectorTagManifestResult>(racingContext);
+        var attempts = 0;
+
+        var recoveredResult = await behavior.Handle(
+            olderActivation,
+            async ct =>
+            {
+                attempts++;
+                var result = attempts == 1 ? stagedResult : await racingHandler.Handle(olderActivation, ct);
+                if (attempts == 1)
+                {
+                    await winningContext.SaveChangesAsync(ct);
+                }
+
+                await racingContext.SaveChangesAsync(ct);
+                return result;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(2, attempts);
+        Assert.Equal(ManifestApplyDisposition.Idempotent, recoveredResult.Disposition);
+        await using var assertionContext = database.CreateContext();
+        var binding = await assertionContext.ConnectorTagBindings.SingleAsync();
+        Assert.Equal("active", binding.ActivationStatus);
+        Assert.Equal(ManifestNow.AddMinutes(2), binding.ActivationObservedAtUtc);
+    }
+
+    [Fact]
+    public async Task Manifest_concurrency_retry_is_bounded()
+    {
+        await using var database = await IndustrialTelemetrySqliteDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var command = ManifestCommand("temperature", ManifestNow, ManifestNow, "active");
+        var behavior = new IndustrialTelemetryIdempotentIngestionBehavior<ReportConnectorTagManifestCommand, ReportConnectorTagManifestResult>(context);
+        var attempts = 0;
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => behavior.Handle(
+            command,
+            _ =>
+            {
+                attempts++;
+                throw new DbUpdateConcurrencyException("forced manifest concurrency conflict");
+            },
+            CancellationToken.None));
+
+        Assert.Equal(3, attempts);
+    }
+
+    [Fact]
+    public async Task Manifest_retry_does_not_swallow_a_non_manifest_provider_unique_conflict()
+    {
+        await using var database = await IndustrialTelemetrySqliteDatabase.CreateAsync();
+        await using (var setupContext = database.CreateContext())
+        {
+            setupContext.TelemetryTags.Add(TelemetryTag.Create(
+                "org-001", "env-dev", "DEV-NON-TARGET", "temperature", "number", "celsius", "sample-60s"));
+            await setupContext.SaveChangesAsync();
+        }
+
+        await using var context = database.CreateContext();
+        context.TelemetryTags.Add(TelemetryTag.Create(
+            "org-001", "env-dev", "DEV-NON-TARGET", "temperature", "number", "celsius", "sample-60s"));
+        var command = ManifestCommand("temperature", ManifestNow, ManifestNow, "active");
+        var behavior = new IndustrialTelemetryIdempotentIngestionBehavior<ReportConnectorTagManifestCommand, ReportConnectorTagManifestResult>(context);
+        var attempts = 0;
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => behavior.Handle(
+            command,
+            async ct =>
+            {
+                attempts++;
+                await context.SaveChangesAsync(ct);
+                return new ReportConnectorTagManifestResult(ManifestApplyDisposition.Accepted, command.ManifestRevision, command.ManifestObservedAtUtc);
+            },
+            CancellationToken.None));
+
+        Assert.Equal(1, attempts);
+    }
+
+    [Fact]
+    public void Idempotent_behavior_wraps_unit_of_work_save_for_manifest_command()
+    {
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            });
+        using var scope = factory.Services.CreateScope();
+
+        var behaviorTypes = scope.ServiceProvider
+            .GetServices<IPipelineBehavior<ReportConnectorTagManifestCommand, ReportConnectorTagManifestResult>>()
+            .Select(behavior => behavior.GetType())
+            .ToArray();
+        var idempotentBehaviorIndex = Array.FindIndex(behaviorTypes, IsIdempotentIngestionBehavior);
+        var unitOfWorkBehaviorIndex = Array.FindIndex(
+            behaviorTypes,
+            type => type.FullName?.Contains("UnitOfWorkBehavior", StringComparison.Ordinal) is true);
+
+        Assert.True(idempotentBehaviorIndex >= 0, "Idempotent behavior must be registered for ReportConnectorTagManifestCommand.");
+        Assert.True(unitOfWorkBehaviorIndex >= 0, "Unit of work behavior must be registered.");
+        Assert.True(idempotentBehaviorIndex < unitOfWorkBehaviorIndex, "Idempotent behavior must wrap manifest unit-of-work save.");
+    }
 
     [Fact]
     public async Task Duplicate_sample_save_conflict_is_retried_as_idempotent_existing_summary()
@@ -493,6 +693,51 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
             type.GetGenericTypeDefinition() == typeof(IndustrialTelemetryIdempotentIngestionBehavior<,>);
     }
 
+    private static ReportConnectorTagManifestCommand ManifestCommand(
+        string tagKey,
+        DateTimeOffset manifestObservedAtUtc,
+        DateTimeOffset activationObservedAtUtc,
+        string activationStatus)
+    {
+        ReportConnectorTagManifestEntry[] entries =
+        [
+            new(
+                "DEV-MANIFEST-RACE",
+                tagKey,
+                true,
+                $"ns=2;s={tagKey}",
+                activationStatus,
+                activationObservedAtUtc,
+                activationStatus == "error" ? "ACTIVATION_FAILED" : null,
+                activationStatus == "error" ? "activation failed" : null),
+        ];
+        return new ReportConnectorTagManifestCommand(
+            "org-001",
+            "env-dev",
+            "connector-manifest-race",
+            "opcua",
+            ConnectorTagManifestRevision.Compute("opcua", entries),
+            manifestObservedAtUtc,
+            entries);
+    }
+
+    private static ReportConnectorTagManifestCommandHandler CreateManifestHandler(ApplicationDbContext context)
+    {
+        return new ReportConnectorTagManifestCommandHandler(
+            context,
+            new FixedTimeProvider(ManifestNow),
+            Options.Create(new ConnectorTagManifestIngestionOptions()));
+    }
+
+    private static async Task SeedManifestAsync(
+        IndustrialTelemetrySqliteDatabase database,
+        ReportConnectorTagManifestCommand command)
+    {
+        await using var context = database.CreateContext();
+        await CreateManifestHandler(context).Handle(command, CancellationToken.None);
+        await context.SaveChangesAsync();
+    }
+
     private static RecordTelemetrySampleCommand CreatePostgresRaceSample(string sourceSequence, DateTimeOffset bucketEndUtc)
     {
         return new RecordTelemetrySampleCommand(
@@ -595,6 +840,11 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
 
             return result;
         }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 
     private sealed class IndustrialTelemetryPostgresDatabase : IAsyncDisposable

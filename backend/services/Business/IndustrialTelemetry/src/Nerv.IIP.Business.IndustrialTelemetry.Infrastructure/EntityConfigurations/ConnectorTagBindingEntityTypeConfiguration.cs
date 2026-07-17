@@ -20,7 +20,7 @@ public sealed class ConnectorTagBindingEntityTypeConfiguration : IEntityTypeConf
         builder.Property(x => x.IsCurrent).HasColumnName("is_current").HasComment("Whether the binding is present in the accepted manifest revision.");
         builder.Property(x => x.RetiredAtUtc).HasColumnName("retired_at_utc").HasComment("Accepted manifest observation time that retired the binding.");
         builder.Property(x => x.ActivationStatus).HasColumnName("activation_status").IsRequired().HasMaxLength(16).HasComment("Latest independently ordered activation status.");
-        builder.Property(x => x.ActivationObservedAtUtc).HasColumnName("activation_observed_at_utc").HasComment("Source observation time ordering activation updates.");
+        builder.Property(x => x.ActivationObservedAtUtc).HasColumnName("activation_observed_at_utc").IsConcurrencyToken().HasComment("Source observation time ordering activation updates.");
         builder.Property(x => x.ActivationErrorCode).HasColumnName("activation_error_code").HasMaxLength(128).HasComment("Sanitized bounded connector activation error code.");
         builder.Property(x => x.ActivationErrorMessage).HasColumnName("activation_error_message").HasMaxLength(500).HasComment("Sanitized bounded connector activation error message.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.CollectionConnectorId, x.DeviceAssetId, x.TagKey }).IsUnique();
