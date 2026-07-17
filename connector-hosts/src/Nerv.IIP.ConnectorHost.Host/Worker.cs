@@ -41,9 +41,11 @@ public class Worker(
         Connectors.Abstractions.IConnectorConnectionMonitor monitor,
         CancellationToken cancellationToken)
     {
-        while (!cancellationToken.IsCancellationRequested)
+        using var timer = new PeriodicTimer(
+            TimeSpan.FromSeconds(options.ConnectionProbeSeconds),
+            timeProvider);
+        while (await timer.WaitForNextTickAsync(cancellationToken))
         {
-            await Task.Delay(TimeSpan.FromSeconds(options.ConnectionProbeSeconds), timeProvider, cancellationToken);
             await RunIsolatedAsync(
                 () => monitor.RunConnectionCheckAsync(cancellationToken),
                 "Connector connection check failed and will be retried.",

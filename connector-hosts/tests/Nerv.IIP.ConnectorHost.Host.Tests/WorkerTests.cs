@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.ConnectorHost.Application;
 using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 using Nerv.IIP.ConnectorHost.Host;
+using Nerv.IIP.ConnectorHost.TestUtilities;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Sdk.ConnectorProtocol;
@@ -46,6 +47,39 @@ public sealed class WorkerTests
         collection.Release();
         await collection.Finished.Task;
         await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Slow_connection_monitor_keeps_the_next_start_on_the_fixed_four_second_tick()
+    {
+        var clock = new ControllableTimeProvider();
+        var monitor = new SlowConnectionMonitor(clock);
+        var protocol = new RecordingProtocolClient();
+        var ops = new RecordingOpsClient();
+        var worker = CreateWorker(clock, new ConnectorReportSignal(), protocol, ops, [], [monitor]);
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            await Task.WhenAll(protocol.FirstCycle.Task, ops.Polled.Task);
+
+            clock.Advance(TimeSpan.FromSeconds(4));
+            await monitor.FirstCheckStarted.Task;
+            Assert.Equal(1, monitor.Calls);
+            monitor.CompleteFirstCheck();
+
+            Assert.Equal(2, monitor.Calls);
+            Assert.Equal(
+                [
+                    DateTimeOffset.Parse("2026-07-17T00:00:04Z"),
+                    DateTimeOffset.Parse("2026-07-17T00:00:08Z")
+                ],
+                monitor.StartedAtUtc);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
     }
 
     [Theory]
@@ -152,6 +186,31 @@ public sealed class WorkerTests
         }
     }
 
+    private sealed class SlowConnectionMonitor(ControllableTimeProvider clock) : IConnectorConnectionMonitor
+    {
+        private readonly TaskCompletionSource _completeFirstCheck = new();
+
+        public int Calls { get; private set; }
+        public List<DateTimeOffset> StartedAtUtc { get; } = [];
+        public TaskCompletionSource FirstCheckStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task RunConnectionCheckAsync(CancellationToken cancellationToken)
+        {
+            Calls++;
+            StartedAtUtc.Add(clock.GetUtcNow());
+            if (Calls != 1)
+            {
+                return;
+            }
+
+            clock.Advance(TimeSpan.FromSeconds(4));
+            FirstCheckStarted.TrySetResult();
+            await _completeFirstCheck.Task.WaitAsync(cancellationToken);
+        }
+
+        public void CompleteFirstCheck() => _completeFirstCheck.TrySetResult();
+    }
+
     private sealed class RecordingProtocolClient : IConnectorProtocolClient
     {
         public int ReportingCycles { get; private set; }
@@ -208,93 +267,4 @@ public sealed class WorkerTests
         public Task SendOperationResultAsync(OperationResult result, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
-    private sealed class ControllableTimeProvider : TimeProvider
-    {
-        private readonly object _gate = new();
-        private readonly List<ControllableTimer> _timers = [];
-        private DateTimeOffset _utcNow = DateTimeOffset.Parse("2026-07-17T00:00:00Z");
-
-        public override DateTimeOffset GetUtcNow()
-        {
-            lock (_gate)
-            {
-                return _utcNow;
-            }
-        }
-
-        public override long GetTimestamp() => GetUtcNow().UtcTicks;
-
-        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
-
-        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
-        {
-            var timer = new ControllableTimer(this, callback, state, dueTime, period);
-            lock (_gate)
-            {
-                _timers.Add(timer);
-            }
-
-            return timer;
-        }
-
-        public void Advance(TimeSpan amount)
-        {
-            ControllableTimer[] due;
-            lock (_gate)
-            {
-                _utcNow += amount;
-                due = _timers.Where(timer => timer.IsDue(_utcNow)).ToArray();
-            }
-
-            foreach (var timer in due)
-            {
-                timer.Fire(GetUtcNow());
-            }
-        }
-
-        private sealed class ControllableTimer(
-            ControllableTimeProvider owner,
-            TimerCallback callback,
-            object? state,
-            TimeSpan dueTime,
-            TimeSpan period) : ITimer
-        {
-            private DateTimeOffset? _dueAtUtc = dueTime == Timeout.InfiniteTimeSpan ? null : owner.GetUtcNow() + dueTime;
-            private TimeSpan _period = period;
-            private bool _disposed;
-
-            public bool IsDue(DateTimeOffset utcNow) => !_disposed && _dueAtUtc <= utcNow;
-
-            public void Fire(DateTimeOffset utcNow)
-            {
-                if (_disposed || _dueAtUtc > utcNow)
-                {
-                    return;
-                }
-
-                _dueAtUtc = _period == Timeout.InfiniteTimeSpan ? null : utcNow + _period;
-                callback(state);
-            }
-
-            public bool Change(TimeSpan dueTime, TimeSpan period)
-            {
-                if (_disposed)
-                {
-                    return false;
-                }
-
-                _period = period;
-                _dueAtUtc = dueTime == Timeout.InfiniteTimeSpan ? null : owner.GetUtcNow() + dueTime;
-                return true;
-            }
-
-            public void Dispose() => _disposed = true;
-
-            public ValueTask DisposeAsync()
-            {
-                Dispose();
-                return ValueTask.CompletedTask;
-            }
-        }
-    }
 }
