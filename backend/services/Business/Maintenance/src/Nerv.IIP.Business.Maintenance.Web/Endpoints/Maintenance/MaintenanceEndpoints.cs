@@ -93,6 +93,15 @@ public sealed record CreateMaintenancePlanRequest(
 
 public sealed record CreateMaintenancePlanResponse(MaintenancePlanId PlanId);
 
+public sealed record UpdateMaintenancePlanRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    MaintenancePlanId PlanId,
+    string? Interval,
+    decimal? RuntimeHourInterval);
+
+public sealed record UpdateMaintenancePlanResponse(MaintenancePlanId PlanId);
+
 public sealed record ListMaintenancePlansRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? DeviceAssetId = null);
 
 public sealed record GenerateDueMaintenanceWorkOrdersRequest(
@@ -251,6 +260,18 @@ public sealed class CreateMaintenancePlanEndpoint(ISender sender)
     {
         var id = await sender.Send(new CreateMaintenancePlanCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.PlanCode, req.Interval, req.StartsOn, req.Owner, req.WindowStartUtc, req.WindowEndUtc, req.IdempotencyKey, req.RuntimeHourInterval), ct);
         await Send.OkAsync(new CreateMaintenancePlanResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class UpdateMaintenancePlanEndpoint(ISender sender)
+    : MaintenanceEndpoint<UpdateMaintenancePlanRequest, ResponseData<UpdateMaintenancePlanResponse>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<UpdateMaintenancePlanEndpoint>());
+
+    public override async Task HandleAsync(UpdateMaintenancePlanRequest req, CancellationToken ct)
+    {
+        await sender.Send(new UpdateMaintenancePlanCommand(req.OrganizationId, req.EnvironmentId, req.PlanId, req.Interval, req.RuntimeHourInterval), ct);
+        await Send.OkAsync(new UpdateMaintenancePlanResponse(req.PlanId).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -460,6 +481,7 @@ public static class MaintenanceEndpointContracts
         new(typeof(CompleteMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/complete", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "completeMaintenanceWorkOrder"),
         new(typeof(ListMaintenanceWorkOrdersEndpoint), "GET", "/api/business/v1/maintenance/work-orders", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceWorkOrders"),
         new(typeof(CreateMaintenancePlanEndpoint), "POST", "/api/business/v1/maintenance/plans", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createMaintenancePlan"),
+        new(typeof(UpdateMaintenancePlanEndpoint), "PUT", "/api/business/v1/maintenance/plans/{planId}", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "updateMaintenancePlan"),
         new(typeof(ListMaintenancePlansEndpoint), "GET", "/api/business/v1/maintenance/plans", MaintenancePermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listMaintenancePlans"),
         new(typeof(GenerateDueMaintenanceWorkOrdersEndpoint), "POST", "/api/business/v1/maintenance/plans/generate-due", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "generateDueMaintenanceWorkOrders"),
         new(typeof(QueryMaintenanceAssetReliabilityEndpoint), "GET", "/api/business/v1/maintenance/assets/{deviceAssetId}/reliability", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "queryMaintenanceAssetReliability"),

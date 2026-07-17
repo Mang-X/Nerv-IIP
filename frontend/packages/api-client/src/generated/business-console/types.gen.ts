@@ -4584,6 +4584,21 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     runtimeHourInterval?: number | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleUpdateMaintenancePlanResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateMaintenancePlanResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateMaintenancePlanResponse = {
+    planId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateMaintenancePlanRequest = {
+    organizationId: string;
+    environmentId: string;
+    interval?: string | null;
+    runtimeHourInterval?: number | null;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenancePlanListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenancePlanListResponse | null;
 };
@@ -14317,6 +14332,41 @@ export type CreateBusinessConsoleMaintenancePlanResponses = {
 };
 
 export type CreateBusinessConsoleMaintenancePlanResponse = CreateBusinessConsoleMaintenancePlanResponses[keyof CreateBusinessConsoleMaintenancePlanResponses];
+
+export type UpdateBusinessConsoleMaintenancePlanData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateMaintenancePlanRequest;
+    path: {
+        planId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/maintenance/plans/{planId}';
+};
+
+export type UpdateBusinessConsoleMaintenancePlanErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type UpdateBusinessConsoleMaintenancePlanError = UpdateBusinessConsoleMaintenancePlanErrors[keyof UpdateBusinessConsoleMaintenancePlanErrors];
+
+export type UpdateBusinessConsoleMaintenancePlanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleUpdateMaintenancePlanResponse;
+};
+
+export type UpdateBusinessConsoleMaintenancePlanResponse = UpdateBusinessConsoleMaintenancePlanResponses[keyof UpdateBusinessConsoleMaintenancePlanResponses];
 
 export type GenerateDueBusinessConsoleMaintenanceWorkOrdersData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleGenerateDueMaintenanceWorkOrdersRequest;

@@ -31,12 +31,13 @@ public sealed class MaintenanceEndpointContractTests
     {
         var contracts = MaintenanceEndpointContracts.All.ToArray();
 
-        Assert.Equal(20, contracts.Length);
+        Assert.Equal(21, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "startMaintenanceRepair");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/complete" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "completeMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "listMaintenanceWorkOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/plans" && x.PermissionCode == MaintenancePermissionCodes.PlansManage && x.OperationId == "createMaintenancePlan");
+        Assert.Contains(contracts, x => x.HttpMethod == "PUT" && x.Route == "/api/business/v1/maintenance/plans/{planId}" && x.PermissionCode == MaintenancePermissionCodes.PlansManage && x.OperationId == "updateMaintenancePlan");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/plans" && x.PermissionCode == MaintenancePermissionCodes.PlansRead && x.OperationId == "listMaintenancePlans");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/inspections" && x.PermissionCode == MaintenancePermissionCodes.PlansManage && x.OperationId == "recordMaintenanceInspection");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/inspections" && x.PermissionCode == MaintenancePermissionCodes.PlansRead && x.OperationId == "listMaintenanceInspections");
@@ -101,6 +102,74 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Contains(invalidCompletion.Errors, x => x.ErrorMessage == "Spare part cost amount must fit numeric(18,6).");
         Assert.Contains(invalidCompletion.Errors, x => x.ErrorMessage == "External service cost amount must fit numeric(18,6).");
         Assert.Contains(invalidCompletion.Errors, x => x.ErrorMessage == "Spare part quantity must fit numeric(18,6).");
+    }
+
+    [Fact]
+    public void Update_maintenance_plan_validator_requires_a_valid_tenant_scoped_trigger()
+    {
+        var valid = new UpdateMaintenancePlanCommandValidator().Validate(
+            new UpdateMaintenancePlanCommand(
+                "org-001",
+                "env-dev",
+                new MaintenancePlanId(Guid.CreateVersion7()),
+                "P30D",
+                500m));
+        var missingTrigger = new UpdateMaintenancePlanCommandValidator().Validate(
+            new UpdateMaintenancePlanCommand(
+                "org-001",
+                "env-dev",
+                new MaintenancePlanId(Guid.CreateVersion7()),
+                null,
+                null));
+        var invalidRuntimeInterval = new UpdateMaintenancePlanCommandValidator().Validate(
+            new UpdateMaintenancePlanCommand(
+                "org-001",
+                "env-dev",
+                new MaintenancePlanId(Guid.CreateVersion7()),
+                null,
+                0m));
+
+        Assert.True(valid.IsValid);
+        Assert.Contains(missingTrigger.Errors, x => x.ErrorMessage == "Maintenance plan must have a calendar interval, a runtime-hour interval, or both.");
+        Assert.Contains(invalidRuntimeInterval.Errors, x => x.PropertyName == nameof(UpdateMaintenancePlanCommand.RuntimeHourInterval));
+    }
+
+    [Fact]
+    public async Task Update_maintenance_plan_persists_trigger_configuration_and_projects_the_updated_values()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-UPDATE", "P7D", new DateOnly(2026, 6, 1), "maintenance", runtimeHourInterval: 100m);
+        dbContext.MaintenancePlans.Add(plan);
+        await dbContext.SaveChangesAsync();
+
+        await new UpdateMaintenancePlanCommandHandler(dbContext).Handle(
+            new UpdateMaintenancePlanCommand("org-001", "env-dev", plan.Id, "P30D", 500m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var response = await new ListMaintenancePlansQueryHandler(dbContext).Handle(
+            new ListMaintenancePlansQuery("org-001", "env-dev"),
+            CancellationToken.None);
+        var updated = Assert.Single(response.Items);
+        Assert.Equal("P30D", updated.Interval);
+        Assert.Equal(500m, updated.RuntimeHourInterval);
+    }
+
+    [Fact]
+    public async Task Update_maintenance_plan_does_not_cross_organization_or_environment_scope()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-SCOPED", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+        dbContext.MaintenancePlans.Add(plan);
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<KnownException>(() => new UpdateMaintenancePlanCommandHandler(dbContext).Handle(
+            new UpdateMaintenancePlanCommand("org-002", "env-prod", plan.Id, "P30D", null),
+            CancellationToken.None));
+
+        var stored = await dbContext.MaintenancePlans.SingleAsync(x => x.Id == plan.Id);
+        Assert.Equal("P7D", stored.Interval);
+        Assert.Null(stored.RuntimeHourInterval);
     }
 
     [Fact]

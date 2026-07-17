@@ -104,6 +104,48 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public void Maintenance_plan_gateway_validators_match_service_interval_length_limit()
+    {
+        var acceptedInterval = new string('D', 50);
+        var rejectedInterval = new string('D', 51);
+        var startsOn = new DateOnly(2026, 7, 17);
+
+        var createValidator = new BusinessConsoleCreateMaintenancePlanRequestValidator();
+        Assert.True(createValidator.Validate(new BusinessConsoleCreateMaintenancePlanRequest(
+            "org-001",
+            "env-dev",
+            "DEV-PRESS-01",
+            "PM-PRESS-01",
+            acceptedInterval,
+            startsOn,
+            "设备保全班",
+            null,
+            null)).IsValid);
+        Assert.False(createValidator.Validate(new BusinessConsoleCreateMaintenancePlanRequest(
+            "org-001",
+            "env-dev",
+            "DEV-PRESS-01",
+            "PM-PRESS-01",
+            rejectedInterval,
+            startsOn,
+            "设备保全班",
+            null,
+            null)).IsValid);
+
+        var updateValidator = new BusinessConsoleUpdateMaintenancePlanRequestValidator();
+        Assert.True(updateValidator.Validate(new BusinessConsoleUpdateMaintenancePlanRequest(
+            "org-001",
+            "env-dev",
+            acceptedInterval,
+            null)).IsValid);
+        Assert.False(updateValidator.Validate(new BusinessConsoleUpdateMaintenancePlanRequest(
+            "org-001",
+            "env-dev",
+            rejectedInterval,
+            null)).IsValid);
+    }
+
+    [Fact]
     public async Task Workshop_data_scope_is_pushed_down_to_maintenance_telemetry_and_equipment_alarm_lists()
     {
         var dataScope = new AuthorizationDataScope([], ["WS-A"], []);
@@ -482,6 +524,80 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public async Task Maintenance_plan_update_facade_preserves_explicit_null_triggers_in_downstream_json()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var handler = new RecordingMaintenanceUpdateHandler();
+        using var downstreamHttpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
+        var maintenance = new HttpBusinessMaintenanceClient(downstreamHttpClient);
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var runtimeOnlyResponse = await client.PutAsJsonAsync("/api/business-console/v1/maintenance/plans/plan-runtime", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            interval = (string?)null,
+            runtimeHourInterval = 500m,
+        });
+        var calendarOnlyResponse = await client.PutAsJsonAsync("/api/business-console/v1/maintenance/plans/plan-calendar", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            interval = "P30D",
+            runtimeHourInterval = (decimal?)null,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, runtimeOnlyResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, calendarOnlyResponse.StatusCode);
+        Assert.All(auth.Requirements, x => Assert.Equal(BusinessGatewayPermissions.MaintenancePlansManage, x.PermissionCode));
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.All(handler.Requests, request =>
+        {
+            Assert.Equal(HttpMethod.Put, request.Method);
+            Assert.Equal("internal-test-token", request.BearerToken);
+        });
+
+        Assert.Equal("/api/business/v1/maintenance/plans/plan-runtime", handler.Requests[0].Path);
+        using var runtimeOnlyBody = JsonDocument.Parse(handler.Requests[0].Body);
+        var runtimeOnlyRoot = runtimeOnlyBody.RootElement;
+        Assert.Equal(JsonValueKind.Null, runtimeOnlyRoot.GetProperty("interval").ValueKind);
+        Assert.Equal(500m, runtimeOnlyRoot.GetProperty("runtimeHourInterval").GetDecimal());
+
+        Assert.Equal("/api/business/v1/maintenance/plans/plan-calendar", handler.Requests[1].Path);
+        using var calendarOnlyBody = JsonDocument.Parse(handler.Requests[1].Body);
+        var calendarOnlyRoot = calendarOnlyBody.RootElement;
+        Assert.Equal("P30D", calendarOnlyRoot.GetProperty("interval").GetString());
+        Assert.Equal(JsonValueKind.Null, calendarOnlyRoot.GetProperty("runtimeHourInterval").ValueKind);
+    }
+
+    [Fact]
+    public async Task Maintenance_plan_update_facade_rejects_a_request_without_any_trigger()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PutAsJsonAsync("/api/business-console/v1/maintenance/plans/plan-001", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            interval = (string?)null,
+            runtimeHourInterval = (decimal?)null,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Maintenance_generate_due_and_reliability_facades_use_permissions_and_forward_scope()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -816,6 +932,32 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 
+    private sealed class RecordingMaintenanceUpdateHandler : HttpMessageHandler
+    {
+        public List<RecordedMaintenanceUpdateRequest> Requests { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(new RecordedMaintenanceUpdateRequest(
+                request.Method,
+                request.RequestUri!.AbsolutePath,
+                request.Headers.Authorization?.Parameter,
+                await request.Content!.ReadAsStringAsync(cancellationToken)));
+
+            var planId = request.RequestUri.AbsolutePath.Split('/').Last();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { data = new { planId } }),
+            };
+        }
+    }
+
+    private sealed record RecordedMaintenanceUpdateRequest(
+        HttpMethod Method,
+        string Path,
+        string? BearerToken,
+        string Body);
+
     private static int ReadTotal(string body)
     {
         using var document = JsonDocument.Parse(body);
@@ -846,6 +988,10 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
     public JsonElement LastCompleteWorkOrderRequest { get; private set; }
 
     public JsonElement LastCreatePlanRequest { get; private set; }
+
+    public string? LastUpdatePlanId { get; private set; }
+
+    public JsonElement LastUpdatePlanRequest { get; private set; }
 
     public BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest? LastGenerateDueRequest { get; private set; }
 
@@ -1032,6 +1178,18 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
         LastInternalToken = internalBearerToken;
         LastCreatePlanRequest = JsonSerializer.SerializeToElement(request, JsonOptions);
         return Task.FromResult(new BusinessConsoleCreateMaintenancePlanResponse("plan-created"));
+    }
+
+    public Task<BusinessConsoleUpdateMaintenancePlanResponse> UpdatePlanAsync(
+        string internalBearerToken,
+        string planId,
+        BusinessConsoleUpdateMaintenancePlanRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastUpdatePlanId = planId;
+        LastUpdatePlanRequest = JsonSerializer.SerializeToElement(request, JsonOptions);
+        return Task.FromResult(new BusinessConsoleUpdateMaintenancePlanResponse(planId));
     }
 
     public Task<BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse> GenerateDueWorkOrdersAsync(

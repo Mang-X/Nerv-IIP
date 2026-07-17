@@ -9,11 +9,13 @@ import {
   queryBusinessConsoleMaintenanceAssetReliabilityQueryOptions,
   queryBusinessConsoleMaintenanceAvailabilityWindowsQueryOptions,
   recordBusinessConsoleMaintenanceInspectionMutationOptions,
+  updateBusinessConsoleMaintenancePlanMutationOptions,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   useMaintenanceAvailabilityWindows,
   useMaintenanceInspections,
+  useMaintenancePlans,
   useMaintenanceReliability,
   useMaintenanceSpareParts,
 } from './useBusinessMaintenance'
@@ -27,19 +29,34 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
-  completeBusinessConsoleMaintenanceWorkOrderMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
-  createBusinessConsoleMaintenancePlanMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
+  completeBusinessConsoleMaintenanceWorkOrderMutationOptions: vi.fn(() => ({
+    key: [],
+    mutation: vi.fn(),
+  })),
+  createBusinessConsoleMaintenancePlanMutationOptions: vi.fn(() => ({
+    key: [],
+    mutation: vi.fn(),
+  })),
   createBusinessConsoleMaintenanceSparePartMutationOptions: vi.fn(() => ({
     key: [{ _id: 'createBusinessConsoleMaintenanceSparePart' }],
     mutation: vi.fn(),
   })),
-  createBusinessConsoleMaintenanceWorkOrderMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
-  generateDueBusinessConsoleMaintenanceWorkOrdersMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
+  createBusinessConsoleMaintenanceWorkOrderMutationOptions: vi.fn(() => ({
+    key: [],
+    mutation: vi.fn(),
+  })),
+  generateDueBusinessConsoleMaintenanceWorkOrdersMutationOptions: vi.fn(() => ({
+    key: [],
+    mutation: vi.fn(),
+  })),
   listBusinessConsoleMaintenanceInspectionsQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMaintenanceInspections' }],
     query: vi.fn(),
   })),
-  listBusinessConsoleMaintenancePlansQueryOptions: vi.fn(() => ({ key: [], query: vi.fn() })),
+  listBusinessConsoleMaintenancePlansQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMaintenancePlans' }],
+    query: vi.fn(),
+  })),
   listBusinessConsoleMaintenanceSparePartsQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMaintenanceSpareParts' }],
     query: vi.fn(),
@@ -55,6 +72,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   recordBusinessConsoleMaintenanceInspectionMutationOptions: vi.fn(() => ({
     key: [{ _id: 'recordBusinessConsoleMaintenanceInspection' }],
+    mutation: vi.fn(),
+  })),
+  updateBusinessConsoleMaintenancePlanMutationOptions: vi.fn(() => ({
+    key: [{ _id: 'updateBusinessConsoleMaintenancePlan' }],
     mutation: vi.fn(),
   })),
 }))
@@ -141,15 +162,17 @@ describe('business maintenance composables', () => {
     })
 
     expect(recordBusinessConsoleMaintenanceInspectionMutationOptions).toHaveBeenCalled()
-    expect(coladaState.mutationCallsById.get('recordBusinessConsoleMaintenanceInspection')).toEqual([
-      {
-        body: expect.objectContaining({
-          inspector: '设备保全班',
-          planId: 'plan-1',
-          workOrderId: 'wo-1',
-        }),
-      },
-    ])
+    expect(coladaState.mutationCallsById.get('recordBusinessConsoleMaintenanceInspection')).toEqual(
+      [
+        {
+          body: expect.objectContaining({
+            inspector: '设备保全班',
+            planId: 'plan-1',
+            workOrderId: 'wo-1',
+          }),
+        },
+      ],
+    )
   })
 
   it('loads spare part requests and creates a request without inventing inventory balance', async () => {
@@ -198,6 +221,51 @@ describe('business maintenance composables', () => {
     ])
   })
 
+  it('updates a plan in the current business scope and awaits the scoped list refresh', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-maint', environmentId: 'env-maint' })
+    const plans = useMaintenancePlans()
+    const refetch = coladaState.queryRefetchById.get('listBusinessConsoleMaintenancePlans')!
+    let finishRefetch!: () => void
+    refetch.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishRefetch = resolve
+      }),
+    )
+
+    let updateSettled = false
+    const updatePromise = plans
+      .updatePlan('plan-945', {
+        organizationId: 'org-maint',
+        environmentId: 'env-maint',
+        interval: null,
+        runtimeHourInterval: 1200,
+      })
+      .then(() => {
+        updateSettled = true
+      })
+    await Promise.resolve()
+
+    expect(updateBusinessConsoleMaintenancePlanMutationOptions).toHaveBeenCalled()
+    expect(coladaState.mutationCallsById.get('updateBusinessConsoleMaintenancePlan')).toEqual([
+      {
+        path: { planId: 'plan-945' },
+        body: {
+          organizationId: 'org-maint',
+          environmentId: 'env-maint',
+          interval: null,
+          runtimeHourInterval: 1200,
+        },
+      },
+    ])
+    expect(refetch).toHaveBeenCalledOnce()
+    expect(updateSettled).toBe(false)
+
+    finishRefetch()
+    await updatePromise
+    expect(updateSettled).toBe(true)
+  })
+
   it('keeps reliability disabled until a device is selected', () => {
     const context = useBusinessContextStore()
     context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
@@ -210,7 +278,9 @@ describe('business maintenance composables', () => {
         environmentId: 'env-dev',
       }),
     })
-    expect(coladaState.queryOptionsById.get('queryBusinessConsoleMaintenanceAssetReliability')?.enabled).toBe(false)
+    expect(
+      coladaState.queryOptionsById.get('queryBusinessConsoleMaintenanceAssetReliability')?.enabled,
+    ).toBe(false)
     expect(reliability.reliability.value).toBeUndefined()
   })
 
@@ -220,7 +290,13 @@ describe('business maintenance composables', () => {
     coladaState.queryDataById.set('queryBusinessConsoleMaintenanceAvailabilityWindows', {
       success: true,
       data: {
-        items: [{ deviceAssetId: 'DEV-CNC-01', availabilityStatus: 'unavailable', reasonCode: 'maintenance.pm' }],
+        items: [
+          {
+            deviceAssetId: 'DEV-CNC-01',
+            availabilityStatus: 'unavailable',
+            reasonCode: 'maintenance.pm',
+          },
+        ],
       },
     })
 
@@ -233,7 +309,10 @@ describe('business maintenance composables', () => {
         deviceAssetIds: 'DEV-CNC-01',
       }),
     })
-    expect(coladaState.queryOptionsById.get('queryBusinessConsoleMaintenanceAvailabilityWindows')?.enabled).toBe(true)
+    expect(
+      coladaState.queryOptionsById.get('queryBusinessConsoleMaintenanceAvailabilityWindows')
+        ?.enabled,
+    ).toBe(true)
     expect('availability' in availability).toBe(false)
     expect(availability.availabilityWindows.value).toHaveLength(1)
   })
@@ -244,7 +323,9 @@ describe('business maintenance composables', () => {
     expect(listBusinessConsoleMaintenanceInspectionsQueryOptions).toHaveBeenCalledWith({
       query: expect.objectContaining({ organizationId: '', environmentId: '' }),
     })
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleMaintenanceInspections')?.enabled).toBe(false)
+    expect(
+      coladaState.queryOptionsById.get('listBusinessConsoleMaintenanceInspections')?.enabled,
+    ).toBe(false)
   })
 
   it('does not refetch maintenance lists when business context is empty', async () => {
@@ -255,7 +336,10 @@ describe('business maintenance composables', () => {
 
     expect(refetch).not.toHaveBeenCalled()
 
-    useBusinessContextStore().patchContext({ organizationId: 'org-maint', environmentId: 'env-maint' })
+    useBusinessContextStore().patchContext({
+      organizationId: 'org-maint',
+      environmentId: 'env-maint',
+    })
     await inspections.refreshInspections()
 
     expect(refetch).toHaveBeenCalledOnce()
