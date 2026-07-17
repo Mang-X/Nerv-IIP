@@ -541,6 +541,33 @@ describe('equipment pages', () => {
     expect(wrapper.text()).not.toContain('运行小时型计划 PM-CNC-RUNTIME · 运行小时读面读取失败')
   })
 
+  it('surfaces 阈值缺失 (consistent with the list, not 无样本) when all candidates are invalid', () => {
+    runtimeRemainingState.map = {
+      'plan-2': { status: 'invalid' },
+      'plan-3': { status: 'invalid' },
+    }
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    // Detail card must use the same data-truth wording as the list — invalid is not "无样本".
+    expect(wrapper.text()).toContain('阈值缺失')
+    expect(wrapper.text()).not.toContain('距下次保养还需无样本')
+  })
+
+  it('flags incompleteness including invalid candidates alongside a known value', () => {
+    // plan-2 known (280h min), plan-3 invalid -> still show the known minimum but mark it incomplete.
+    runtimeRemainingState.map = {
+      'plan-2': { status: 'ok', hours: 280 },
+      'plan-3': { status: 'invalid' },
+    }
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    expect(wrapper.text()).toContain('280.0 小时')
+    expect(wrapper.text()).toContain('已知计划最少还需')
+    expect(wrapper.text()).toContain('可能更紧迫')
+    // The incomplete-reason wording covers invalid, consistent across the detail hint.
+    expect(wrapper.text()).toContain('阈值缺失')
+  })
+
   it('renders the device control action and command history when the user can control the device', () => {
     const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
 
