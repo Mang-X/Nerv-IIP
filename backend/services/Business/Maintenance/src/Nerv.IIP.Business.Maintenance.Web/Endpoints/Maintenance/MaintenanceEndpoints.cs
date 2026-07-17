@@ -81,7 +81,9 @@ public sealed record CreateMaintenancePlanRequest(
     string EnvironmentId,
     string DeviceAssetId,
     string? PlanCode,
-    string Interval,
+    // Nullable: a plan may be runtime-hour-only (no calendar interval). The command enforces
+    // "at least one trigger" (calendar interval and/or runtime-hour interval).
+    string? Interval,
     DateOnly StartsOn,
     string Owner,
     DateTimeOffset? WindowStartUtc,
@@ -91,7 +93,7 @@ public sealed record CreateMaintenancePlanRequest(
 
 public sealed record CreateMaintenancePlanResponse(MaintenancePlanId PlanId);
 
-public sealed record ListMaintenancePlansRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100);
+public sealed record ListMaintenancePlansRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? DeviceAssetId = null);
 
 public sealed record GenerateDueMaintenanceWorkOrdersRequest(
     string OrganizationId,
@@ -259,7 +261,7 @@ public sealed class ListMaintenancePlansEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListMaintenancePlansRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListMaintenancePlansQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take), ct);
+        var result = await sender.Send(new ListMaintenancePlansQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take, req.DeviceAssetId), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
