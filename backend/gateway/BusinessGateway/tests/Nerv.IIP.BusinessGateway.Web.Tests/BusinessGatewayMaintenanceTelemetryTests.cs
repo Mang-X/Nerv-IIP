@@ -482,10 +482,12 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
-    public async Task Maintenance_plan_update_facade_uses_plan_manage_permission()
+    public async Task Maintenance_plan_update_facade_preserves_explicit_null_triggers_in_downstream_json()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        var maintenance = new RecordingMaintenanceFacadeClient();
+        var handler = new RecordingMaintenanceUpdateHandler();
+        using var downstreamHttpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
+        var maintenance = new HttpBusinessMaintenanceClient(downstreamHttpClient);
         await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
@@ -496,20 +498,42 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.PutAsJsonAsync("/api/business-console/v1/maintenance/plans/plan-001", new
+        var runtimeOnlyResponse = await client.PutAsJsonAsync("/api/business-console/v1/maintenance/plans/plan-runtime", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            interval = (string?)null,
+            runtimeHourInterval = 500m,
+        });
+        var calendarOnlyResponse = await client.PutAsJsonAsync("/api/business-console/v1/maintenance/plans/plan-calendar", new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
             interval = "P30D",
-            runtimeHourInterval = 500m,
+            runtimeHourInterval = (decimal?)null,
         });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenancePlansManage);
-        Assert.Equal("internal-test-token", maintenance.LastInternalToken);
-        Assert.Equal("plan-001", maintenance.LastUpdatePlanId);
-        Assert.Equal("P30D", maintenance.LastUpdatePlanRequest.GetProperty("interval").GetString());
-        Assert.Equal(500m, maintenance.LastUpdatePlanRequest.GetProperty("runtimeHourInterval").GetDecimal());
+        Assert.Equal(HttpStatusCode.OK, runtimeOnlyResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, calendarOnlyResponse.StatusCode);
+        Assert.All(auth.Requirements, x => Assert.Equal(BusinessGatewayPermissions.MaintenancePlansManage, x.PermissionCode));
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.All(handler.Requests, request =>
+        {
+            Assert.Equal(HttpMethod.Put, request.Method);
+            Assert.Equal("internal-test-token", request.BearerToken);
+        });
+
+        Assert.Equal("/api/business/v1/maintenance/plans/plan-runtime", handler.Requests[0].Path);
+        using var runtimeOnlyBody = JsonDocument.Parse(handler.Requests[0].Body);
+        var runtimeOnlyRoot = runtimeOnlyBody.RootElement;
+        Assert.Equal(JsonValueKind.Null, runtimeOnlyRoot.GetProperty("interval").ValueKind);
+        Assert.Equal(500m, runtimeOnlyRoot.GetProperty("runtimeHourInterval").GetDecimal());
+
+        Assert.Equal("/api/business/v1/maintenance/plans/plan-calendar", handler.Requests[1].Path);
+        using var calendarOnlyBody = JsonDocument.Parse(handler.Requests[1].Body);
+        var calendarOnlyRoot = calendarOnlyBody.RootElement;
+        Assert.Equal("P30D", calendarOnlyRoot.GetProperty("interval").GetString());
+        Assert.Equal(JsonValueKind.Null, calendarOnlyRoot.GetProperty("runtimeHourInterval").ValueKind);
     }
 
     [Fact]
@@ -865,6 +889,32 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
+
+    private sealed class RecordingMaintenanceUpdateHandler : HttpMessageHandler
+    {
+        public List<RecordedMaintenanceUpdateRequest> Requests { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(new RecordedMaintenanceUpdateRequest(
+                request.Method,
+                request.RequestUri!.AbsolutePath,
+                request.Headers.Authorization?.Parameter,
+                await request.Content!.ReadAsStringAsync(cancellationToken)));
+
+            var planId = request.RequestUri.AbsolutePath.Split('/').Last();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { data = new { planId } }),
+            };
+        }
+    }
+
+    private sealed record RecordedMaintenanceUpdateRequest(
+        HttpMethod Method,
+        string Path,
+        string? BearerToken,
+        string Body);
 
     private static int ReadTotal(string body)
     {

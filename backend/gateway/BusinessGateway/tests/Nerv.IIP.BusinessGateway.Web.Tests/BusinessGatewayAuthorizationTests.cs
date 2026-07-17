@@ -186,6 +186,29 @@ public sealed class BusinessGatewayAuthorizationTests
         Assert.Null(auth.LastRequirement.ResourceId);
     }
 
+    [Fact]
+    public async Task Maintenance_plan_update_facade_authorizes_the_route_plan_resource()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PutAsJsonAsync("/api/business-console/v1/maintenance/plans/plan-001", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            interval = "P30D",
+            runtimeHourInterval = (decimal?)null,
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Equal(BusinessGatewayPermissions.MaintenancePlansManage, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("maintenance-plan", auth.LastRequirement.ResourceType);
+        Assert.Equal("plan-001", auth.LastRequirement.ResourceId);
+    }
+
     [Theory]
     [InlineData("GET", "/api/business-console/v1/planning/forecasts?skuCode=SKU-FG-1000&siteCode=SITE-01", BusinessGatewayPermissions.PlanningDemandsRead)]
     [InlineData("POST", "/api/business-console/v1/planning/forecasts", BusinessGatewayPermissions.PlanningDemandsManage)]
