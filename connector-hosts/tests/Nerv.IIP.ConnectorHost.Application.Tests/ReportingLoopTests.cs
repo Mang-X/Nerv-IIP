@@ -70,6 +70,37 @@ public sealed class ReportingLoopTests
     }
 
     [Fact]
+    public async Task Reporting_cycle_preserves_registration_heartbeat_state_order_for_each_target()
+    {
+        var client = new RecordingConnectorProtocolClient();
+        var loop = new ConnectorReportingLoop(
+            [new StaticConnector(CreateTarget("target-a")), new StaticConnector(CreateTarget("target-b"))],
+            client,
+            ConnectorHostRuntimeContext.DefaultLocal);
+
+        await loop.RunCycleAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [
+                "registration:target-a", "heartbeat:target-a", "state:target-a",
+                "registration:target-b", "heartbeat:target-b", "state:target-b"
+            ],
+            client.Calls);
+    }
+
+    [Fact]
+    public async Task Heartbeat_reports_host_reachable_when_collection_is_degraded()
+    {
+        var client = new RecordingConnectorProtocolClient();
+        var target = CreateTarget("target-a") with { HealthStatus = "degraded" };
+        var loop = new ConnectorReportingLoop([new StaticConnector(target)], client, ConnectorHostRuntimeContext.DefaultLocal);
+
+        await loop.RunCycleAsync(CancellationToken.None);
+
+        Assert.True(Assert.Single(client.Heartbeats).Reachable);
+    }
+
+    [Fact]
     public async Task Failed_apphub_request_is_retried_on_next_cycle()
     {
         var client = new RecordingConnectorProtocolClient { FailFirstRegistration = true };
@@ -93,12 +124,27 @@ public sealed class ReportingLoopTests
         }
     }
 
+    private static ConnectorTarget CreateTarget(string instanceKey) => new(
+        $"node-{instanceKey}",
+        instanceKey,
+        "test",
+        "collector",
+        "Collector",
+        "1.0",
+        instanceKey,
+        instanceKey,
+        "running",
+        "healthy",
+        [],
+        new Dictionary<string, string>());
+
     private sealed class RecordingConnectorProtocolClient : IConnectorProtocolClient
     {
         private bool _failed;
         public bool FailFirstRegistration { get; init; }
         public List<string> Calls { get; } = [];
         public List<ApplicationRegistration> Registrations { get; } = [];
+        public List<ApplicationHeartbeat> Heartbeats { get; } = [];
         public List<InstanceStateSnapshot> StateSnapshots { get; } = [];
 
         public Task<ApplicationRegistrationResult> SendRegistrationAsync(ApplicationRegistration registration, CancellationToken cancellationToken = default)
@@ -117,6 +163,7 @@ public sealed class ReportingLoopTests
         public Task SendHeartbeatAsync(ApplicationHeartbeat heartbeat, CancellationToken cancellationToken = default)
         {
             Calls.Add($"heartbeat:{heartbeat.InstanceKey}");
+            Heartbeats.Add(heartbeat);
             return Task.CompletedTask;
         }
 

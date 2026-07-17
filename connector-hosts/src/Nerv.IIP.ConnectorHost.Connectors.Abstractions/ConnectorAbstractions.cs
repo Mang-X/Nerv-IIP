@@ -10,6 +10,11 @@ public interface IIndustrialTelemetryCollectionConnector
     Task RunCollectionCycleAsync(CancellationToken cancellationToken);
 }
 
+public interface IConnectorConnectionMonitor
+{
+    Task RunConnectionCheckAsync(CancellationToken cancellationToken);
+}
+
 public sealed record ConnectorCollectionHealthSnapshot(
     string ConnectorId,
     string SourceSystem,

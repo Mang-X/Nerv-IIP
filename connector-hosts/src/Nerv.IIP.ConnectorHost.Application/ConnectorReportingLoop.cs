@@ -59,7 +59,7 @@ public sealed class ConnectorReportingLoop(
 
     private ApplicationHeartbeat ToHeartbeat(ConnectorRequestContext context, ConnectorTarget target)
     {
-        return new ApplicationHeartbeat(context, target.InstanceKey, DateTimeOffset.UtcNow, target.HealthStatus == "healthy", runtimeContext.StartedAtUtc, 0, new Dictionary<string, string>());
+        return new ApplicationHeartbeat(context, target.InstanceKey, DateTimeOffset.UtcNow, true, runtimeContext.StartedAtUtc, 0, new Dictionary<string, string>());
     }
 
     private static InstanceStateSnapshot ToStateSnapshot(ConnectorRequestContext context, ConnectorTarget target)

@@ -57,6 +57,7 @@ if (builder.Configuration.GetValue("Mqtt:Enabled", false))
 builder.Services.AddSingleton<IReadOnlyList<IConnector>>(sp => sp.GetServices<IConnector>().ToList());
 builder.Services.AddSingleton<IReadOnlyList<IConnectorOperationExecutor>>(sp => sp.GetServices<IConnectorOperationExecutor>().ToList());
 builder.Services.AddSingleton<IReadOnlyList<IIndustrialTelemetryCollectionConnector>>(sp => sp.GetServices<IIndustrialTelemetryCollectionConnector>().ToList());
+builder.Services.AddSingleton<IReadOnlyList<IConnectorConnectionMonitor>>(sp => sp.GetServices<IConnectorConnectionMonitor>().ToList());
 builder.Services.AddHttpClient<IConnectorProtocolClient, HttpConnectorProtocolClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Platform:AppHubBaseUrl"] ?? "http://localhost:5101");
@@ -69,6 +70,10 @@ builder.Services.AddHttpClient<IOpsClient, HttpOpsClient>((services, client) =>
 });
 builder.Services.AddSingleton<ConnectorReportingLoop>();
 builder.Services.AddSingleton<ConnectorOperationLoop>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton(_ => CreateWorkerOptions(builder.Configuration));
+builder.Services.AddSingleton<ConnectorReportSignal>();
+builder.Services.AddSingleton<IConnectorReportSignal>(sp => sp.GetRequiredService<ConnectorReportSignal>());
 builder.Services.AddSingleton<IndustrialTelemetryCollectorRunner>();
 builder.Services.AddHostedService<Worker>();
 
@@ -84,6 +89,13 @@ static ConnectorHostRuntimeContext CreateRuntimeContext(IConfiguration configura
         Required(configuration, "ConnectorHost:EnvironmentId"),
         Required(configuration, "ConnectorHost:ConnectorHostId"),
         DateTimeOffset.UtcNow);
+}
+
+static ConnectorHostWorkerOptions CreateWorkerOptions(IConfiguration configuration)
+{
+    var options = configuration.GetSection(ConnectorHostWorkerOptions.SectionName).Get<ConnectorHostWorkerOptions>() ?? new ConnectorHostWorkerOptions();
+    options.Validate();
+    return options;
 }
 
 static ConnectorHostCredential CreateConnectorCredential(IConfiguration configuration)
