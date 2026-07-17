@@ -70,7 +70,7 @@ const emit = defineEmits<{
   submit: [submission: MaintenancePlanFormSubmission]
 }>()
 
-const intervalOptions = [
+const presetIntervalOptions = [
   { label: '每周', value: 'P7D' },
   { label: '每两周', value: 'P14D' },
   { label: '每月', value: 'P30D' },
@@ -88,6 +88,21 @@ const form = reactive<PlanFormState>({
   owner: '',
 })
 const submitted = shallowRef(false)
+
+const intervalOptions = computed(() => {
+  if (presetIntervalOptions.some((option) => option.value === form.interval)) {
+    return presetIntervalOptions
+  }
+
+  const dayInterval = /^P(\d+)D$/.exec(form.interval)?.[1]
+  return [
+    ...presetIntervalOptions,
+    {
+      label: dayInterval ? `${Number(dayInterval)} 天（当前）` : '当前周期（非预设）',
+      value: form.interval,
+    },
+  ]
+})
 
 const isEditMode = computed(() => props.mode === 'edit')
 const usesCalendar = computed(() => form.triggerMode !== 'runtime')

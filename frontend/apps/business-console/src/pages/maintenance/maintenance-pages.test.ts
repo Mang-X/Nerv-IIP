@@ -816,6 +816,34 @@ describe('maintenance plans page', () => {
     },
   )
 
+  it('shows and preserves a non-preset calendar interval when editing', async () => {
+    state.plans = [
+      {
+        planId: 'p-custom-calendar-edit',
+        deviceAssetId: 'DEV-CUSTOM-CALENDAR',
+        planCode: 'PM-CUSTOM-CALENDAR',
+        interval: 'P45D',
+        startsOn: '2026-03-15',
+        runtimeHourInterval: null,
+      },
+    ]
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    await openEditDialog('PM-CUSTOM-CALENDAR')
+
+    expect(bodyWrapper<HTMLButtonElement>('#plan-interval').text()).toContain('45 天（当前）')
+    await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+    await flushPromises()
+
+    expect(state.updatePlan).toHaveBeenCalledWith('p-custom-calendar-edit', {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      interval: 'P45D',
+      runtimeHourInterval: null,
+    })
+  })
+
   it('clears runtime hours explicitly when changing a runtime plan to calendar-only', async () => {
     state.plans = [
       {

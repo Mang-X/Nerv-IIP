@@ -642,7 +642,7 @@ public sealed class BusinessConsoleCreateMaintenancePlanRequestValidator : Valid
         RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.PlanCode).MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
-        RuleFor(x => x.Interval).MaximumLength(100);
+        RuleFor(x => x.Interval).MaximumLength(50);
         RuleFor(x => x.Owner).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WindowEndUtc)
             .GreaterThan(x => x.WindowStartUtc)
@@ -663,7 +663,7 @@ public sealed class BusinessConsoleUpdateMaintenancePlanRequestValidator : Valid
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Interval).MaximumLength(100);
+        RuleFor(x => x.Interval).MaximumLength(50);
         RuleFor(x => x.RuntimeHourInterval)
             .GreaterThan(0m)
             .When(x => x.RuntimeHourInterval.HasValue);

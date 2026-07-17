@@ -40391,7 +40391,7 @@
           },
           "interval": {
             "type": "string",
-            "maxLength": 100,
+            "maxLength": 50,
             "minLength": 0,
             "nullable": true
           },
@@ -40482,7 +40482,7 @@
           },
           "interval": {
             "type": "string",
-            "maxLength": 100,
+            "maxLength": 50,
             "minLength": 0,
             "nullable": true
           },

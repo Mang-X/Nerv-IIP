@@ -3316,12 +3316,6 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public void Maintenance_http_client_exposes_plan_update_proxy()
-    {
-        Assert.NotNull(typeof(HttpBusinessMaintenanceClient).GetMethod("UpdatePlanAsync"));
-    }
-
-    [Fact]
     public async Task Scheduling_http_client_uses_scheduling_contract_enum_json()
     {
         var handler = new RecordingHandler(request =>

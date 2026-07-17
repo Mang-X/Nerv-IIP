@@ -104,6 +104,48 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public void Maintenance_plan_gateway_validators_match_service_interval_length_limit()
+    {
+        var acceptedInterval = new string('D', 50);
+        var rejectedInterval = new string('D', 51);
+        var startsOn = new DateOnly(2026, 7, 17);
+
+        var createValidator = new BusinessConsoleCreateMaintenancePlanRequestValidator();
+        Assert.True(createValidator.Validate(new BusinessConsoleCreateMaintenancePlanRequest(
+            "org-001",
+            "env-dev",
+            "DEV-PRESS-01",
+            "PM-PRESS-01",
+            acceptedInterval,
+            startsOn,
+            "设备保全班",
+            null,
+            null)).IsValid);
+        Assert.False(createValidator.Validate(new BusinessConsoleCreateMaintenancePlanRequest(
+            "org-001",
+            "env-dev",
+            "DEV-PRESS-01",
+            "PM-PRESS-01",
+            rejectedInterval,
+            startsOn,
+            "设备保全班",
+            null,
+            null)).IsValid);
+
+        var updateValidator = new BusinessConsoleUpdateMaintenancePlanRequestValidator();
+        Assert.True(updateValidator.Validate(new BusinessConsoleUpdateMaintenancePlanRequest(
+            "org-001",
+            "env-dev",
+            acceptedInterval,
+            null)).IsValid);
+        Assert.False(updateValidator.Validate(new BusinessConsoleUpdateMaintenancePlanRequest(
+            "org-001",
+            "env-dev",
+            rejectedInterval,
+            null)).IsValid);
+    }
+
+    [Fact]
     public async Task Workshop_data_scope_is_pushed_down_to_maintenance_telemetry_and_equipment_alarm_lists()
     {
         var dataScope = new AuthorizationDataScope([], ["WS-A"], []);
