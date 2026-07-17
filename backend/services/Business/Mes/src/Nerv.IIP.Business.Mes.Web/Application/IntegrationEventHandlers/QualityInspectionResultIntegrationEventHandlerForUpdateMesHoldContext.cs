@@ -23,6 +23,16 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
         QualityIntegrationEventTypes.InspectionRejected,
     ];
 
+    // Quality 发布 MES 归属检验的 sourceService 词汇为 "mes"（工单级）/"mes-operation"（工序任务级），与 MES 内部及
+    // 契约 QualityIntegrationEventSources.BusinessMes（"business-mes"）不一致（历史跨服务词汇分歧）。此处入站归一化：
+    // 接受 Quality 的 MES 词汇，统一以 business-mes 存储保留上下文/时间线，使 MES 查询与前端（均用 business-mes）一致。
+    private static readonly HashSet<string> MesSourceServiceTokens = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "mes",
+        "mes-operation",
+        QualityIntegrationEventSources.BusinessMes,
+    };
+
     private readonly IntegrationEventConsumerGuard<InspectionResultIntegrationEvent> consumerGuard = new(
         new IntegrationEventEnvelopeValidator(),
         deadLetterStore,
@@ -46,10 +56,13 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
         var payload = integrationEvent.Payload;
-        if (!string.Equals(payload.SourceService, QualityIntegrationEventSources.BusinessMes, StringComparison.OrdinalIgnoreCase))
+        if (!MesSourceServiceTokens.Contains(payload.SourceService?.Trim() ?? string.Empty))
         {
             return;
         }
+
+        // 统一以 MES 契约词汇存储，使保留上下文/时间线与 MES 查询、前端（均用 business-mes）一致。
+        var sourceService = QualityIntegrationEventSources.BusinessMes;
 
         if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
         {
@@ -70,7 +83,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
         var existing = await dbContext.QualityHoldContexts.SingleOrDefaultAsync(
             x => x.OrganizationId == integrationEvent.OrganizationId &&
                 x.EnvironmentId == integrationEvent.EnvironmentId &&
-                x.SourceService == payload.SourceService &&
+                x.SourceService == sourceService &&
                 x.SourceDocumentId == sourceDocumentId,
             cancellationToken);
         if (existing is null)
@@ -80,7 +93,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
                 integrationEvent.EnvironmentId,
                 source.WorkOrderId,
                 source.OperationTaskId,
-                payload.SourceService,
+                sourceService,
                 sourceDocumentId,
                 payload.InspectionRecordId,
                 payload.InspectionPlanId,
@@ -92,7 +105,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
             dbContext.QualityHoldContexts.Add(hold);
             if (hold.Active)
             {
-                AddTransition(integrationEvent, "hold-applied", payload.InspectionRecordId);
+                AddTransition(integrationEvent, sourceService, "hold-applied", payload.InspectionRecordId);
             }
             return;
         }
@@ -112,15 +125,16 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
 
         AddTransition(
             integrationEvent,
+            sourceService,
             wasActive ? "inspection-released" : "hold-applied",
             wasActive ? existing.HeldInspectionRecordId! : payload.InspectionRecordId);
     }
 
-    private void AddTransition(InspectionResultIntegrationEvent integrationEvent, string eventKind, string holdCycleId)
+    private void AddTransition(InspectionResultIntegrationEvent integrationEvent, string sourceService, string eventKind, string holdCycleId)
     {
         var payload = integrationEvent.Payload;
         dbContext.QualityHoldTransitions.Add(QualityHoldTransition.Record(
-            integrationEvent.OrganizationId, integrationEvent.EnvironmentId, payload.SourceService,
+            integrationEvent.OrganizationId, integrationEvent.EnvironmentId, sourceService,
             payload.SourceDocumentId.Trim(), holdCycleId, integrationEvent.CorrelationId, eventKind,
             integrationEvent.Actor, payload.RecordedAtUtc, payload.DispositionReason, payload.InspectionRecordId,
             payload.InspectionPlanId, "automatic", integrationEvent.IdempotencyKey));

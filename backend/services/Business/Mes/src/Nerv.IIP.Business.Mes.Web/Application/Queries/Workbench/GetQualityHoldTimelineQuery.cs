@@ -11,7 +11,8 @@ public sealed record GetQualityHoldTimelineQuery(
     string SourceDocumentId) : IQuery<QualityHoldTimelineResponse>;
 
 public sealed record QualityHoldTimelineItem(
-    QualityHoldTransitionId TransitionId,
+    // 强类型 id 以字符串对外投影(与其他读面一致),避免网关按 Guid/字符串反序列化下游强类型 id 失败。
+    string TransitionId,
     string SourceService,
     string SourceDocumentId,
     string HoldCycleId,
@@ -34,20 +35,37 @@ public sealed class GetQualityHoldTimelineQueryHandler(ApplicationDbContext dbCo
         GetQualityHoldTimelineQuery request,
         CancellationToken cancellationToken)
     {
+        // 先取原始行(含强类型 Id),再在内存端投影为字符串 TransitionId——强类型 id 的 ToString() 不宜进 EF SQL 翻译。
         var persistedItems = await dbContext.QualityHoldTransitions
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 x.SourceService == request.SourceService &&
                 x.SourceDocumentId == request.SourceDocumentId)
-            .Select(x => new QualityHoldTimelineItem(
-                x.Id, x.SourceService, x.SourceDocumentId, x.HoldCycleId, x.CorrelationId,
-                x.EventKind, x.Actor, x.OccurredAtUtc, x.Reason, x.SourceInspectionRecordId,
-                x.SourceInspectionDocumentId, x.Origin, x.IdempotencyKey))
+            .Select(x => new
+            {
+                x.Id,
+                x.SourceService,
+                x.SourceDocumentId,
+                x.HoldCycleId,
+                x.CorrelationId,
+                x.EventKind,
+                x.Actor,
+                x.OccurredAtUtc,
+                x.Reason,
+                x.SourceInspectionRecordId,
+                x.SourceInspectionDocumentId,
+                x.Origin,
+                x.IdempotencyKey,
+            })
             .ToListAsync(cancellationToken);
         var items = persistedItems
             .OrderBy(x => x.OccurredAtUtc)
-            .ThenBy(x => x.TransitionId.ToString(), StringComparer.Ordinal)
+            .ThenBy(x => x.Id.ToString(), StringComparer.Ordinal)
+            .Select(x => new QualityHoldTimelineItem(
+                x.Id.ToString(), x.SourceService, x.SourceDocumentId, x.HoldCycleId, x.CorrelationId,
+                x.EventKind, x.Actor, x.OccurredAtUtc, x.Reason, x.SourceInspectionRecordId,
+                x.SourceInspectionDocumentId, x.Origin, x.IdempotencyKey))
             .ToList();
         return new QualityHoldTimelineResponse(items);
     }

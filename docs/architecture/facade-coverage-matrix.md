@@ -81,7 +81,7 @@ declaration against what actually shipped (facade + codegen + barrel for
   add `gateways` + `gatewayOperationIds`, drop `followUp`.
 - **New business service** → add its `.Web` project reference and assembly name to
   the gate project (`Nerv.IIP.FacadeCoverage.Tests`) so its endpoints are covered.
-- The `exposed` rows are summarised by count here; the full 355-row registry with
+- The `exposed` rows are summarised by count here; the full 357-row registry with
   per-endpoint facade operation ids lives in the JSON.
 
 ## Summary
@@ -97,7 +97,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Inventory | 12 | 5 | 2 | 5 |
 | Maintenance | 21 | 16 | 5 | 0 |
 | MasterData | 46 | 38 | 4 | 4 |
-| Mes | 52 | 49 | 3 | 0 |
+| Mes | 53 | 50 | 3 | 0 |
 | ProductEngineering | 38 | 38 | 0 | 0 |
 | Quality | 32 | 18 | 14 | 0 |
 | Scheduling | 8 | 7 | 1 | 0 |

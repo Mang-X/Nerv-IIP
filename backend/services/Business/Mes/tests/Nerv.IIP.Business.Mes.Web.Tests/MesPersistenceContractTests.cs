@@ -684,6 +684,52 @@ public sealed class MesPersistenceContractTests
         Assert.Contains(MesReadinessReasonCodes.QualityHoldActive, startHold.Message);
     }
 
+    // 回归 #799（2026-07-17 隔离全栈实测暴露的跨服务 sourceService 词汇 bug）：Quality 发布的 payload.SourceService
+    // 是记录侧词汇 "mes"，与 MES 契约 "business-mes" 不同；消费者须接受 "mes"/"mes-operation" 并归一化为 business-mes
+    // 存储，否则收到任何真机检验事件都 early-return（此前测试用 business-mes 值掩盖了该 bug）。
+    // 注：此测试证明 **MES 消费者** 在收到 rejected 再 passed 事件时正确 apply→release；「不良→复检合格」完整业务闭环
+    // 是否可达取决于 Quality 侧复检写路径（inspection_records 唯一索引使同源复检幂等、不发第二条事件），另行建模。
+    [Fact]
+    public async Task Quality_inspection_with_mes_source_service_vocabulary_applies_then_auto_releases_hold()
+    {
+        var services = CreateServices(nameof(Quality_inspection_with_mes_source_service_vocabulary_applies_then_auto_releases_hold));
+        var now = DateTimeOffset.Parse("2026-07-17T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-QH-MES", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        await dbContext.SaveChangesAsync();
+
+        var consumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
+
+        // 不良（真机词汇 sourceService="mes"）→ 建 hold，存储归一化为 business-mes。
+        await consumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-mes-rejected", QualityIntegrationEventTypes.InspectionRejected, "QI-MES-1", "WO-QH-MES",
+            now.AddMinutes(1), sourceService: "mes"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var applied = await dbContext.QualityHoldContexts.SingleAsync(x => x.SourceDocumentId == "WO-QH-MES");
+        Assert.True(applied.Active);
+        Assert.Equal(QualityIntegrationEventSources.BusinessMes, applied.SourceService);
+
+        // 复检合格（sourceService="mes"）→ 自动释放同一 hold。
+        await consumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-mes-passed", QualityIntegrationEventTypes.InspectionPassed, "QI-MES-2", "WO-QH-MES",
+            now.AddMinutes(5), sourceService: "mes"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var released = await dbContext.QualityHoldContexts.SingleAsync(x => x.SourceDocumentId == "WO-QH-MES");
+        Assert.False(released.Active);
+
+        var transitions = await dbContext.QualityHoldTransitions
+            .Where(x => x.SourceDocumentId == "WO-QH-MES")
+            .ToListAsync();
+        Assert.Contains(transitions, t => t.EventKind == "hold-applied");
+        Assert.Contains(transitions, t => t.EventKind == "inspection-released");
+        Assert.All(transitions, t => Assert.Equal(QualityIntegrationEventSources.BusinessMes, t.SourceService));
+    }
+
     [Fact]
     public async Task Conditional_release_clears_only_matching_operation_hold_and_allows_dispatch_without_manual_intervention()
     {
@@ -992,7 +1038,7 @@ public sealed class MesPersistenceContractTests
             new GetQualityHoldTimelineQuery("org-001", "env-dev", QualityIntegrationEventSources.BusinessMes, "WO-QH-HISTORY"),
             CancellationToken.None);
         Assert.Equal(4, timeline.Items.Count);
-        Assert.Equal(transitions.Select(x => x.Id), timeline.Items.Select(x => x.TransitionId));
+        Assert.Equal(transitions.Select(x => x.Id.ToString()), timeline.Items.Select(x => x.TransitionId));
         Assert.Equal(transitions.Select(x => x.IdempotencyKey), timeline.Items.Select(x => x.IdempotencyKey));
     }
 
@@ -2608,7 +2654,10 @@ public sealed class MesPersistenceContractTests
         string inspectionRecordId,
         string workOrderId,
         DateTimeOffset occurredAtUtc,
-        string? dispositionReason = null)
+        string? dispositionReason = null,
+        // Quality 实际发布的 payload.SourceService 是记录侧词汇（"mes" 工单级 / "mes-operation" 工序级），与 MES 契约
+        // 的 "business-mes" 不同（历史跨服务词汇分歧）。默认沿用旧用例的 business-mes，另有用例传 "mes" 验证真机词汇被消费。
+        string sourceService = QualityIntegrationEventSources.BusinessMes)
     {
         var result = eventType == QualityIntegrationEventTypes.InspectionPassed
             ? "passed"
@@ -2631,7 +2680,7 @@ public sealed class MesPersistenceContractTests
                 inspectionRecordId,
                 "PLAN-QH-001",
                 "in-process",
-                QualityIntegrationEventSources.BusinessMes,
+                sourceService,
                 workOrderId,
                 "FG-FSA",
                 10m,

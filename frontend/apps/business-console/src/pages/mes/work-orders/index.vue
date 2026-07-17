@@ -49,6 +49,7 @@ import {
   ClipboardCheckIcon,
   EyeIcon,
   FactoryIcon,
+  LockIcon,
   PackageCheckIcon,
   RefreshCwIcon,
   RouteIcon,
@@ -497,7 +498,18 @@ function isNonEmpty(value: string) {
           }}</span>
         </div>
       </template>
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }">
+        <div class="flex items-center gap-1.5">
+          <NvStatusBadge :value="row.status" />
+          <!-- 质量保留锁定标记：与工单生命周期状态无关，来源为活跃 quality hold（#886）。 -->
+          <LockIcon
+            v-if="row.hasActiveQualityHold"
+            class="size-3.5 text-destructive"
+            aria-label="存在有效质量保留"
+            title="存在有效质量保留，需处理后才能放行或开工"
+          />
+        </div>
+      </template>
       <template #cell-quantity="{ row }"
         ><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template
       >

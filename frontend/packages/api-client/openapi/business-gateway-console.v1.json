@@ -10007,7 +10007,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -10291,7 +10293,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -11058,6 +11062,64 @@
         ]
       }
     },
+    "/api/business-console/v1/mes/work-orders/{workOrderId}/produced-lots": {
+      "get": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleMesReceivableProducedLots",
+        "parameters": [
+          {
+            "name": "workOrderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesReceivableProducedLotListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/mes/work-orders/{workOrderId}/material-issue-requests": {
       "post": {
         "tags": [
@@ -11170,7 +11232,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -11388,7 +11452,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -11606,7 +11672,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -12128,7 +12196,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -12835,7 +12905,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -12982,7 +13054,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -13172,7 +13246,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -13433,7 +13509,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -13868,7 +13946,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -33717,7 +33797,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -33749,6 +33831,9 @@
           "skuCode": {
             "type": "string",
             "nullable": true
+          },
+          "hasActiveQualityHold": {
+            "type": "boolean"
           }
         }
       },
@@ -33772,7 +33857,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -33904,6 +33991,13 @@
                 "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference"
               }
             ]
+          },
+          "qualityHolds": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderQualityHoldSummary"
+            }
           }
         }
       },
@@ -33930,7 +34024,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -34039,6 +34135,69 @@
           }
         }
       },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderQualityHoldSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sourceService": {
+            "type": "string"
+          },
+          "sourceDocumentId": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "operationTaskId": {
+            "type": "string",
+            "nullable": true
+          },
+          "holdReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "heldAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "heldBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "heldInspectionRecordId": {
+            "type": "string",
+            "nullable": true
+          },
+          "heldInspectionDocumentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "inspectionRecordId": {
+            "type": "string"
+          },
+          "releasedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "releasedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "releaseReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "releaseSource": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderDetailRequest": {
         "type": "object",
         "additionalProperties": false
@@ -34128,8 +34287,7 @@
         "additionalProperties": false,
         "properties": {
           "transitionId": {
-            "type": "string",
-            "format": "guid"
+            "type": "string"
           },
           "sourceService": {
             "type": "string"
@@ -34508,6 +34666,74 @@
         "type": "object",
         "additionalProperties": false
       },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesReceivableProducedLotListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceivableProducedLotListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceivableProducedLotListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceivableProducedLotRow"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceivableProducedLotRow": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "producedLotNo": {
+            "type": "string"
+          },
+          "reportNo": {
+            "type": "string"
+          },
+          "operationTaskId": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "remainingQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "serialNo": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceivableProducedLotsRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest": {
         "type": "object",
         "additionalProperties": false,
@@ -34625,7 +34851,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -34755,7 +34983,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -35010,7 +35240,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -35155,6 +35387,14 @@
             "nullable": true
           },
           "reversalReportNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "producedLotNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNo": {
             "type": "string",
             "nullable": true
           }
@@ -35719,7 +35959,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -35823,7 +36065,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -35867,6 +36111,19 @@
             "nullable": true
           },
           "postedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "inventoryPostingFailureCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "inventoryPostingFailureMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "inventoryPostingFailedAtUtc": {
             "type": "string",
             "format": "date-time",
             "nullable": true
@@ -35986,7 +36243,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -36326,7 +36585,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",

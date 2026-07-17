@@ -1346,6 +1346,12 @@ public interface IBusinessMesClient
         BusinessConsoleMesContextRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMesReceivableProducedLotListResponse> ListReceivableProducedLotsAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleAcceptedResponse> CreateMaterialIssueRequestAsync(
         string internalBearerToken,
         string workOrderId,
@@ -6336,6 +6342,18 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Get,
             $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/material-readiness?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesReceivableProducedLotListResponse> ListReceivableProducedLotsAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesReceivableProducedLotListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/produced-lots?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
             cancellationToken);
 
