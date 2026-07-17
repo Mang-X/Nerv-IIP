@@ -329,6 +329,7 @@ public class ConnectorCollectionHealthProjection : Entity<ConnectorCollectionHea
     public void Record(ConnectorCollectionHealth report)
     {
         ValidateConnection(report.Connection);
+        ValidateConnectionObservation(report.Connection);
         RecordCounters(report);
         RecordConnection(report.Connection);
     }
@@ -391,6 +392,26 @@ public class ConnectorCollectionHealthProjection : Entity<ConnectorCollectionHea
         {
             throw new ArgumentException(
                 "Connector connection must be unknown with no transition timestamps, alive with only ConnectedSinceUtc, or lost with only DisconnectedSinceUtc.",
+                nameof(connection));
+        }
+    }
+
+    private void ValidateConnectionObservation(ConnectorConnectionState? connection)
+    {
+        if (connection is null || ConnectionObservedAtUtc != connection.ObservedAtUtc)
+        {
+            return;
+        }
+
+        var isIdentical = string.Equals(ConnectionStatus, connection.Status, StringComparison.Ordinal)
+            && ConnectedSinceUtc == connection.ConnectedSinceUtc
+            && DisconnectedSinceUtc == connection.DisconnectedSinceUtc
+            && string.Equals(ConnectionReasonCategory, connection.ReasonCategory, StringComparison.Ordinal)
+            && string.Equals(ConnectionDiagnosticCode, connection.DiagnosticCode, StringComparison.Ordinal);
+        if (!isIdentical)
+        {
+            throw new ArgumentException(
+                "Connector connection observations with the same ObservedAtUtc must be identical.",
                 nameof(connection));
         }
     }

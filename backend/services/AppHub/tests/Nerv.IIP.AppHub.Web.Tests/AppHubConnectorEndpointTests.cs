@@ -126,6 +126,40 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         Assert.Null(response.Connection);
     }
 
+    [Fact]
+    public void Expired_host_heartbeat_without_collection_health_is_offline()
+    {
+        var now = DateTimeOffset.Parse("2026-07-17T01:00:10Z");
+        var instance = CreateInstanceWithoutCollectionHealth(now.AddSeconds(-6));
+        var evaluator = CreateCollectionHealthEvaluator();
+
+        var result = evaluator.DeriveStatusAndReason(
+            instance.Heartbeat,
+            instance.CollectionHealth,
+            instance.ReportedStatus,
+            instance.HealthStatus,
+            now);
+
+        Assert.Equal(("stale", "offline", "host-liveness"), result);
+    }
+
+    [Fact]
+    public void Missing_host_heartbeat_without_collection_health_is_offline()
+    {
+        var now = DateTimeOffset.Parse("2026-07-17T01:00:10Z");
+        var instance = CreateInstanceWithoutCollectionHealth(heartbeatAtUtc: null);
+        var evaluator = CreateCollectionHealthEvaluator();
+
+        var result = evaluator.DeriveStatusAndReason(
+            instance.Heartbeat,
+            instance.CollectionHealth,
+            instance.ReportedStatus,
+            instance.HealthStatus,
+            now);
+
+        Assert.Equal(("stale", "offline", "host-liveness"), result);
+    }
+
     [Theory]
     [InlineData("00:00:02", "00:00:05", "00:00:08")]
     [InlineData("00:00:02", "00:00:09", "00:00:08")]
@@ -840,6 +874,27 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
             0,
             heartbeatAtUtc,
             connection));
+        return instance;
+    }
+
+    private static ApplicationInstance CreateInstanceWithoutCollectionHealth(DateTimeOffset? heartbeatAtUtc)
+    {
+        var instance = new ApplicationInstance(
+            "org",
+            "env",
+            "host",
+            "collector",
+            "1",
+            "node",
+            $"connector-{Guid.CreateVersion7():N}",
+            "Connector",
+            new Dictionary<string, string>(),
+            []);
+        if (heartbeatAtUtc is { } recordedAtUtc)
+        {
+            instance.RecordHeartbeat(recordedAtUtc, reachable: true, latencyMs: 1);
+        }
+
         return instance;
     }
 

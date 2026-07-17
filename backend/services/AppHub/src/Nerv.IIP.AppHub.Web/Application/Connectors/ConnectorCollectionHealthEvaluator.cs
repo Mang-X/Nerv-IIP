@@ -36,12 +36,7 @@ public sealed class ConnectorCollectionHealthEvaluator(IOptions<ConnectorCollect
         string healthStatus,
         DateTimeOffset now)
     {
-        if (health is null)
-        {
-            return ("unknown", null, null);
-        }
-
-        if (string.Equals(health.ConnectionStatus, "lost", StringComparison.Ordinal))
+        if (string.Equals(health?.ConnectionStatus, "lost", StringComparison.Ordinal))
         {
             return ("stale", StaleReasonOffline, OfflineReasonFieldConnection);
         }
@@ -51,6 +46,11 @@ public sealed class ConnectorCollectionHealthEvaluator(IOptions<ConnectorCollect
         if (heartbeatTimedOut)
         {
             return ("stale", StaleReasonOffline, OfflineReasonHostLiveness);
+        }
+
+        if (health is null)
+        {
+            return ("unknown", null, null);
         }
 
         var reportedFault = string.Equals(reportedStatus, "stopped", StringComparison.OrdinalIgnoreCase)
