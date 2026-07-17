@@ -94,7 +94,7 @@ the topology source, pinned infra images) remain in `AGENTS.md`.
 
 ## Service startup failure patterns
 
-10. **CAP PostgreSQL profile without integration event publisher registration.**
+11. **CAP PostgreSQL profile without integration event publisher registration.**
     Services with domain-event-to-integration-event converters must register the
     NetCorePal integration event publisher in the active CAP profile, including
     PostgreSQL. If startup fails with unresolved
@@ -102,7 +102,7 @@ the topology source, pinned infra images) remain in `AGENTS.md`.
     compare the service's CAP registration with a known working service before
     changing handlers.
 
-11. **Redis-backed services aborting startup on first connect attempt.** Local
+12. **Redis-backed services aborting startup on first connect attempt.** Local
     Aspire startup can race Redis readiness. When a service constructs a
     `ConnectionMultiplexer`, parse options with `AbortOnConnectFail=false` so
     the service can start and reconnect instead of turning one transient Redis
@@ -110,14 +110,14 @@ the topology source, pinned infra images) remain in `AGENTS.md`.
 
 ## Deployment artifacts
 
-12. **Aspire AppHost is the only topology source.** For container deployment,
+13. **Aspire AppHost is the only topology source.** For container deployment,
     add/maintain Aspire deployment targets and generate Docker Compose artifacts
     with `.\nerv.ps1 publish-compose` or deploy with `.\nerv.ps1 deploy-compose`.
     Existing hand-written Compose files may remain for dependencies, smoke
     tests, or legacy overlay validation, but must not become a competing service
     graph.
 
-13. **Vite dev proxy is not production routing.** `AddViteApp` works for local
+14. **Vite dev proxy is not production routing.** `AddViteApp` works for local
     dev, but publish/deploy needs an explicit JavaScript production serving
     model. Console can use `PublishAsStaticWebsite("/api", gateway)`. Business
     Console needs two production API routes (`/api/console` to PlatformGateway
@@ -125,7 +125,7 @@ the topology source, pinned infra images) remain in `AGENTS.md`.
     BusinessGateway auth facade before Compose output can be called a complete
     Business Console deployment.
 
-14. **Offline deployment is a separate track.** Offline packaging is a
+15. **Offline deployment is a separate track.** Offline packaging is a
     deployment architecture track, not the first local-development fix. Keep the
     immediate startup path focused on connected machines and Aspire CLI/AppHost.
     Future offline scripts should consume Aspire-generated artifacts instead of

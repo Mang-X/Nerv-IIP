@@ -422,7 +422,7 @@ Connector Host、AppHub、IndustrialTelemetry、BusinessGateway 与 Business Con
 
 Connector Host 现在向 IndustrialTelemetry 上报 replace-style tag manifest。配置 shape 的 revision 与逐 tag activation observation 独立排序；connector coverage 从 current bindings 出发，仅 LEFT JOIN `telemetry_summaries`，因此可返回配置停用、启用失败、已激活但从未采样、已采样等状态，而不把 sample presence 解释为数据质量或新鲜度。旧 Host 未上报 manifest 时返回 `manifestStatus=unavailable`，不伪装成空配置。内部写 operation `reportBusinessIiotConnectorTagManifest` 分类为 `internal`；服务读 operation `getBusinessIiotConnectorTagCoverage` 通过 BusinessGateway `getBusinessConsoleTelemetryConnectorTagCoverage` 分类为 `exposed`，OpenAPI、generated client 与稳定导出已同步。
 
-受治理产品时序固定为 Host heartbeat 2 秒、现场连接探测 4 秒、AppHub Host liveness timeout 6 秒、backend deadline 不超过 8 秒、Business Console 10 秒轮询；不满足该 profile 的配置在启动时拒绝。确定性协议、领域、Gateway、前端和脚本门禁已经覆盖该时序与四轴优先级。Docker/PostgreSQL 真实拔线验收入口为 `pwsh scripts/verify-connector-health-disconnect.ps1 -Runs 3`；当前执行环境的 Docker runtime unhealthy，因此结果为 0/3，真实验收必须在 Docker 恢复后重新执行，不能以确定性门禁替代或宣称已经完成。产品文档影响：有，设备工程师的采集健康排查说明已同步更新。
+受治理的默认/AppHost profile 使用 Host heartbeat 2 秒、现场连接探测 4 秒、AppHub Host liveness timeout 6 秒、backend deadline 不超过 8 秒、Business Console 10 秒轮询。Connector Host 启动校验固定 heartbeat/probe 并限制 detection budget/backend deadline；AppHub 启动校验的事实规则是 cadence 为正、liveness timeout 至少为 cadence 的 3 倍且 `liveness timeout <= backend deadline <= 8s`，因此 6 秒是默认与验收值而不是所有部署唯一可启动值。确定性协议、领域、Gateway、前端和脚本门禁已经覆盖该默认时序与四轴优先级。Docker/PostgreSQL 真实拔线验收入口为 `pwsh scripts/verify-connector-health-disconnect.ps1 -Runs 3`；当前执行环境的 Docker runtime unhealthy，因此结果为 0/3，真实验收必须在 Docker 恢复后重新执行，不能以确定性门禁替代或宣称已经完成。产品文档影响：有，设备工程师的采集健康排查说明已同步更新。
 
 ### 可以并行但不阻塞开工的事项
 

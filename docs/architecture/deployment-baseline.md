@@ -83,7 +83,7 @@ Nerv-IIP/
 
 后续 Knowledge、AI Integration 等能力进入可运行状态后，应纳入同一 AppHost，而不是新增第二套平台编排入口。
 
-`ConnectorHealthAcceptance:Enabled=true` 只供受治理的 Connector 断连验收脚本使用，不是普通 Development、PoC 或生产 profile。该 opt-in 拓扑把 session-scoped internal token、IndustrialTelemetry endpoint 与 loopback Modbus mapping 注入 Connector Host，并由脚本拥有模拟器和 fullstack session 的启动/清理。默认 AppHost 不启用模拟映射，也不把验收 token、端口或配置带入部署产物。受治理时序为 Connector Host heartbeat 2 秒、field probe 4 秒、AppHub Host liveness timeout 6 秒、backend deadline 不超过 8 秒，Business Console 10 秒轮询；profile override 不得削弱这一产品保证。
+`ConnectorHealthAcceptance:Enabled=true` 只供受治理的 Connector 断连验收脚本使用，不是普通 Development、PoC 或生产 profile。该 opt-in 拓扑把 session-scoped internal token、IndustrialTelemetry endpoint 与 loopback Modbus mapping 注入 Connector Host，并由脚本拥有模拟器和 fullstack session 的启动/清理。默认 AppHost 不启用模拟映射，也不把验收 token、端口或配置带入部署产物。默认与验收时序为 Connector Host heartbeat 2 秒、field probe 4 秒、AppHub Host liveness timeout 6 秒、backend deadline 不超过 8 秒，Business Console 10 秒轮询；AppHub 的可配置启动边界是 cadence 为正、liveness timeout 至少为 cadence 的 3 倍且 `liveness timeout <= backend deadline <= 8s`。若部署 profile 改动默认值，必须重新证明十秒产品验收，不能沿用默认 profile 的证据。
 
 ## CAP Redis Streams transport
 

@@ -331,7 +331,7 @@ Modbus TCP 与 MQTT 采集器同样归属 `connector-hosts`，复用 Connector H
 
 四轴分别排序和持久化。sample silence、collector error 或 Host heartbeat 不能伪造 field `lost`；field `lost`、Host timeout、collector terminal failure 的读面优先级分别产生 `field-connection`、`host-liveness` 或 fault，但原始轴仍同时返回。旧 Host 没有 connection object 时保持 null/unknown，不历史回填。
 
-受治理 profile 固定为 heartbeat 2 秒、field probe 4 秒、AppHub Host liveness timeout 6 秒、backend deadline 不超过 8 秒，Business Console 每 10 秒轮询。Connector Host 与 AppHub 对超出这些边界的配置执行启动校验；采样 bucket 周期可以更长，但不能替代 4 秒的协议连接探测。
+受治理的默认/AppHost profile 使用 heartbeat 2 秒、field probe 4 秒、AppHub Host liveness timeout 6 秒、backend deadline 不超过 8 秒，Business Console 每 10 秒轮询。Connector Host 启动时要求 heartbeat 为 2 秒、probe 为 4 秒、connection detection budget 在 1–4 秒内且 backend deadline 不超过 8 秒；AppHub 则校验 heartbeat cadence 为正、liveness timeout 至少为 cadence 的 3 倍，并满足 `liveness timeout <= backend deadline <= 8s`。因此 6 秒是当前默认和验收 profile，不是 AppHub 对所有部署强制的唯一数值。采样 bucket 周期可以更长，但不能替代 4 秒的协议连接探测。
 
 ### Connector tag manifest
 
