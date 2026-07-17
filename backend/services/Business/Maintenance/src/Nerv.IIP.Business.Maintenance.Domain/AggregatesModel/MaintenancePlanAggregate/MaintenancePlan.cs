@@ -39,15 +39,10 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
         // A plan must be triggered by a calendar interval, a runtime-hour interval, or both.
         // Runtime-only plans have no calendar interval and therefore never generate a calendar
         // occurrence — they only open work orders once accumulated runtime crosses the threshold.
-        var normalizedInterval = string.IsNullOrWhiteSpace(interval) ? null : interval;
+        var normalizedInterval = NormalizeCalendarInterval(interval);
         if (normalizedInterval is null && runtimeHourInterval is null)
         {
             throw new ArgumentException("Maintenance plan must have a calendar interval, a runtime-hour interval, or both.");
-        }
-
-        if (normalizedInterval is not null)
-        {
-            _ = ParseIsoDayInterval(normalizedInterval);
         }
 
         if (runtimeHourInterval is not null && runtimeHourInterval <= 0)
@@ -120,6 +115,50 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
         Paused = true;
     }
 
+    public void UpdateTriggerConfiguration(string? interval, decimal? runtimeHourInterval)
+    {
+        var normalizedInterval = NormalizeCalendarInterval(interval);
+        if (normalizedInterval is null && runtimeHourInterval is null)
+        {
+            throw new ArgumentException("Maintenance plan must have a calendar interval, a runtime-hour interval, or both.");
+        }
+
+        if (runtimeHourInterval is not null && runtimeHourInterval <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(runtimeHourInterval), "Maintenance runtime-hour interval must be positive.");
+        }
+
+        var calendarTriggerChanged = !string.Equals(NormalizeCalendarInterval(Interval), normalizedInterval, StringComparison.Ordinal);
+        var runtimeTriggerChanged = RuntimeHourInterval != runtimeHourInterval;
+        if (!calendarTriggerChanged && !runtimeTriggerChanged)
+        {
+            Interval = normalizedInterval;
+            return;
+        }
+
+        var nextDueOn = NextDueOn;
+        var nextDueRuntimeHours = NextDueRuntimeHours;
+
+        if (calendarTriggerChanged)
+        {
+            nextDueOn = normalizedInterval is null
+                ? null
+                : (LastGeneratedOn?.AddDays(ParseIsoDayInterval(normalizedInterval)) ?? StartsOn);
+        }
+
+        if (runtimeTriggerChanged)
+        {
+            nextDueRuntimeHours = runtimeHourInterval is null
+                ? null
+                : LastGeneratedRuntimeHours + runtimeHourInterval.Value;
+        }
+
+        Interval = normalizedInterval;
+        RuntimeHourInterval = runtimeHourInterval;
+        NextDueOn = nextDueOn;
+        NextDueRuntimeHours = nextDueRuntimeHours;
+    }
+
     public void MarkGenerated(DateOnly generatedOn)
     {
         _ = ConsumeDueDates(generatedOn);
@@ -182,5 +221,15 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
         }
 
         return days;
+    }
+
+    private static string? NormalizeCalendarInterval(string? interval)
+    {
+        if (string.IsNullOrWhiteSpace(interval))
+        {
+            return null;
+        }
+
+        return $"P{ParseIsoDayInterval(interval.Trim())}D";
     }
 }
