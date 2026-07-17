@@ -9598,7 +9598,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleMesQualityHoldTimelineResponse([
             new BusinessConsoleMesQualityHoldTimelineItem(
-                Guid.Parse("019f0000-0000-7000-8000-000000000001"), "source", sourceDocumentId,
+                "019f0000-0000-7000-8000-000000000001", "source", sourceDocumentId,
                 "cycle-1", "corr-1", "hold-applied", "quality", DateTimeOffset.Parse("2026-07-13T08:00:00Z"),
                 "defect", "QI-1", "PLAN-1", "automatic", "event-idem")
         ]));
@@ -9644,6 +9644,16 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleMesMaterialReadinessResponse(workOrderId, "Ready", [], []));
+    }
+
+    public Task<BusinessConsoleMesReceivableProducedLotListResponse> ListReceivableProducedLotsAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMesReceivableProducedLotListResponse([]));
     }
 
     public Task<BusinessConsoleAcceptedResponse> CreateMaterialIssueRequestAsync(

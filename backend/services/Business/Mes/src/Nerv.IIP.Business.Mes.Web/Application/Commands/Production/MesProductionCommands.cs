@@ -541,6 +541,8 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
             throw new KnownException($"完工入库 UoM 与工单不一致，WorkOrderId = {request.WorkOrderId}");
         }
 
+        // 引用的产出批次必须存在于 OutputLotGenealogies（报工时生成、冲销时删除）。用 AnyAsync 判存在（provider 中立，
+        // 避免依赖空集 Sum 在 InMemory/Postgres 上的差异，见 ef-test-provider-translation-gap）。
         var outputLotExists = await dbContext.OutputLotGenealogies.AnyAsync(
             x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
@@ -562,6 +564,28 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
         if (activeReceiptQuantity + request.Quantity > workOrder.CompletedQuantity + FinishedGoodsReceiptRequest.QuantityTolerance)
         {
             throw new KnownException($"累计完工入库申请数量超过工单完工数量，WorkOrderId = {request.WorkOrderId}");
+        }
+
+        // 批次追溯完整性：单个产出批次的累计有效入库申请不得超过该批次产量（工单总量之外的更细粒度约束，
+        // 防止把整张工单的完工量都登记到同一批次而破坏批次追溯）。批次存在性已由上方 AnyAsync 确认，故此 Sum 必 >0。
+        // 注：与上方工单总量校验一致，此处沿用无锁「读取—校验—插入」（低并发人工流程取舍）；工单+批次两个累计不变量的
+        // 并发串行化（事务级工单锁 / SERIALIZABLE+retry + PostgreSQL 并发测试）作为横切 follow-up 见 issue #953。
+        var batchProducedQuantity = await dbContext.OutputLotGenealogies
+            .Where(x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId &&
+                x.ProducedLotNo == request.ProducedLotNo)
+            .SumAsync(x => x.Quantity, cancellationToken);
+        var activeBatchReceiptQuantity = await ActiveReceiptRequestsForWorkOrder(
+                dbContext.FinishedGoodsReceiptRequests,
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId)
+            .Where(x => x.ProducedLotNo == request.ProducedLotNo)
+            .SumAsync(x => x.Quantity, cancellationToken);
+        if (activeBatchReceiptQuantity + request.Quantity > batchProducedQuantity + FinishedGoodsReceiptRequest.QuantityTolerance)
+        {
+            throw new KnownException($"完工入库申请超过该产出批次可入库数量，ProducedLotNo = {request.ProducedLotNo}");
         }
 
         var receiptRequest = FinishedGoodsReceiptRequest.Create(

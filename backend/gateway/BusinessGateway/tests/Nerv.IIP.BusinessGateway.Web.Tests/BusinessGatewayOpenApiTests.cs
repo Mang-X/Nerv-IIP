@@ -822,8 +822,34 @@ public sealed class BusinessGatewayOpenApiTests
             document,
             "BusinessConsoleMesReceiptRequestRow",
             "workOrderNo",
-            "skuCode");
+            "skuCode",
+            // MAN-445/#799: 库存过账失败原因,支撑 Console 失败行红 badge + 失败原因文案 + 行内重试。
+            "inventoryPostingFailureCode",
+            "inventoryPostingFailureMessage",
+            "inventoryPostingFailedAtUtc");
         AssertMesStatusEnum(document, "BusinessConsoleMesReceiptRequestRow", "receiptStatus");
+
+        // MAN-445/#799: 工单详情活跃质量保留投影,支撑 hold 区块时间线定位键(sourceService+sourceDocumentId)+强制释放。
+        AssertMesDisplayProperties(
+            document,
+            "BusinessConsoleMesWorkOrderQualityHoldSummary",
+            "sourceService",
+            "sourceDocumentId",
+            "scope",
+            "isActive",
+            "holdReason",
+            "heldAtUtc",
+            "heldBy",
+            // 已释放周期审计,支撑释放后详情面板常驻展示释放时间/方式(issue 验收「时间线完整」)。
+            "releasedAtUtc",
+            "releasedBy",
+            "releaseReason",
+            "releaseSource");
+        // MAN-445/#799: 工单列表锁定标志,支撑质量保留中工单的锁定图标。
+        AssertMesDisplayProperties(
+            document,
+            "BusinessConsoleMesWorkOrderItem",
+            "hasActiveQualityHold");
     }
 
     private static void AssertMesDisplayProperties(JsonDocument document, string schemaNameSuffix, params string[] propertyNames)

@@ -8,6 +8,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useQualityInspectionPlans } from '@/composables/useBusinessQuality'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
 import {
   NvButton,
   NvDataTable,
@@ -98,6 +99,18 @@ const targetInspectionPlan = computed(() =>
 const targetInspectionPlanMissing = computed(
   () =>
     !!targetInspectionPlanId.value && !inspectionPlansPending.value && !targetInspectionPlan.value,
+)
+
+// 来源检验记录定位：hold 时间线「来源检验记录」互链带 ?inspectionRecordId= 进来，打开只读记录详情。
+// 详情查询/错误副作用/重试封装在 InspectionRecordDetailSheet，路由页只负责按 query 编排开合（Vue best-practices §2）。
+const recordDetailId = computed(() => firstQuery(route.query.inspectionRecordId))
+const recordDetailOpen = shallowRef(false)
+watch(
+  recordDetailId,
+  (id) => {
+    recordDetailOpen.value = !!id
+  },
+  { immediate: true },
 )
 const scanAuditRoute = computed(() => ({
   path: '/barcode/scans',
@@ -572,5 +585,13 @@ function isPresent(value: string | undefined | null): value is string {
         </form>
       </NvDialogContent>
     </NvDialog>
+
+    <!-- 来源检验记录只读详情：hold 时间线「来源检验记录」互链带 ?inspectionRecordId= 进入即定位到该记录。 -->
+    <InspectionRecordDetailSheet
+      v-model:open="recordDetailOpen"
+      :record-id="recordDetailId"
+      :organization-id="filters.organizationId"
+      :environment-id="filters.environmentId"
+    />
   </BusinessLayout>
 </template>

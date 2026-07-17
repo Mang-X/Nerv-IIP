@@ -3271,7 +3271,8 @@ public sealed record BusinessConsoleMesWorkOrderItem(
     string Status,
     IReadOnlyCollection<BusinessConsoleMesOperationTaskItem> OperationTasks,
     string? WorkOrderNo = null,
-    string? SkuCode = null);
+    string? SkuCode = null,
+    bool HasActiveQualityHold = false);
 
 public sealed record BusinessConsoleMesOperationTaskItem(
     string OperationTaskId,
@@ -3456,7 +3457,25 @@ public sealed record BusinessConsoleMesWorkOrderDetailResponse(
     string ReadinessStatus,
     IReadOnlyCollection<string> BlockingReasons,
     IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> OperationTasks,
-    BusinessConsoleMesSourcePlanReference? SourcePlanReference = null);
+    BusinessConsoleMesSourcePlanReference? SourcePlanReference = null,
+    IReadOnlyCollection<BusinessConsoleMesWorkOrderQualityHoldSummary>? QualityHolds = null);
+
+public sealed record BusinessConsoleMesWorkOrderQualityHoldSummary(
+    string SourceService,
+    string SourceDocumentId,
+    string Scope,
+    bool IsActive,
+    string? OperationTaskId,
+    string? HoldReason,
+    DateTimeOffset? HeldAtUtc,
+    string? HeldBy,
+    string? HeldInspectionRecordId,
+    string? HeldInspectionDocumentId,
+    string InspectionRecordId,
+    DateTimeOffset? ReleasedAtUtc = null,
+    string? ReleasedBy = null,
+    string? ReleaseReason = null,
+    string? ReleaseSource = null);
 
 public sealed record BusinessConsoleMesSourcePlanReference(
     string SourceSystem,
@@ -3496,7 +3515,9 @@ public sealed record BusinessConsoleMesQualityHoldTimelineRequest(
     [property: QueryParam] string SourceService);
 
 public sealed record BusinessConsoleMesQualityHoldTimelineItem(
-    Guid TransitionId,
+    // 时间线转移 id 以字符串透传:MES 端投影为 x.Id.ToString()(与本网关所有其他强类型 id 端点一致)。
+    // 此前 MES 直投强类型 QualityHoldTransitionId、网关按 Guid 反序列化,真实响应无法解析导致 502。
+    string TransitionId,
     string SourceService,
     string SourceDocumentId,
     string HoldCycleId,
@@ -3555,6 +3576,27 @@ public sealed record BusinessConsoleMesMaterialReadinessRow(
     decimal ReceivedQuantity,
     decimal ShortageQuantity,
     string Status);
+
+// 工单可入库产出批次（MAN-445/#799）：从 MES OutputLotGenealogies 权威表列出当前有效的产出批次，供 Console
+// 完工入库选择真实 producedLotNo。读权限 MesReceiptsRead 与完工入库列表一致，避免入库操作员因缺 reporting.read
+// 而在选批次时 403。
+public sealed record BusinessConsoleMesReceivableProducedLotsRequest(
+    [property: RouteParam] string WorkOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleMesReceivableProducedLotListResponse(
+    IReadOnlyCollection<BusinessConsoleMesReceivableProducedLotRow> Items);
+
+public sealed record BusinessConsoleMesReceivableProducedLotRow(
+    string ProducedLotNo,
+    string ReportNo,
+    string OperationTaskId,
+    decimal Quantity,
+    DateTimeOffset CreatedAtUtc,
+    // 剩余可入库量（批次产量 − 已有非取消入库申请）：读面已过滤耗尽批次，Console 据此提示剩余并按剩余限制数量。
+    decimal RemainingQuantity,
+    string? SerialNo = null);
 
 public sealed record BusinessConsoleMesCreateMaterialIssueRequest(
     [property: RouteParam] string WorkOrderId,
@@ -3764,7 +3806,12 @@ public sealed record BusinessConsoleMesProductionReportRow(
     string? WorkOrderStatus = null,
     // 冲销本报工的负向记录单号(服务端逐行反查):非空即"已冲销",供 Console 跨分页稳定判定已冲销与
     // 原单→冲销单互链,不再从当前页推断(MAN-444/#798 review)。
-    string? ReversalReportNo = null);
+    string? ReversalReportNo = null,
+    // 产出批次 / 序列号(MES 事实层 ProductionReportFact 已有,facade 直接透传):完工入库创建端点强制引用
+    // MES 已生成的产出批次(见 CreateFinishedGoodsReceiptRequestCommandHandler),Console 据此让操作员从工单
+    // 真实报工产出中选择 producedLotNo,而非前端伪造(MAN-445/#799 review)。
+    string? ProducedLotNo = null,
+    string? SerialNo = null);
 
 public sealed record BusinessConsoleMesRecordDefectRequest(
     string OrganizationId,
@@ -3807,7 +3854,10 @@ public sealed record BusinessConsoleMesReceiptRequestRow(
     string? ProducedLotNo = null,
     string? SerialNo = null,
     string? PostedInventoryMovementId = null,
-    DateTimeOffset? PostedAtUtc = null);
+    DateTimeOffset? PostedAtUtc = null,
+    string? InventoryPostingFailureCode = null,
+    string? InventoryPostingFailureMessage = null,
+    DateTimeOffset? InventoryPostingFailedAtUtc = null);
 
 public sealed record BusinessConsoleMesCreateReceiptRequest(
     string OrganizationId,

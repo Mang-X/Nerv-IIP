@@ -32,7 +32,10 @@ public sealed record MesWorkOrderExecutionFact(
     string Status,
     IReadOnlyCollection<MesOperationTaskExecutionFact> OperationTasks,
     string? WorkOrderNo = null,
-    string? SkuCode = null);
+    string? SkuCode = null,
+    // 工单当前是否存在活跃质量保留(quality hold);供列表锁定图标标记。与工单生命周期 Status 无关
+    // (质量保留不改工单状态),故用独立标志而非从 Status 推断。
+    bool HasActiveQualityHold = false);
 
 public sealed record MesOperationTaskExecutionFact(
     string OperationTaskId,
@@ -142,6 +145,20 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
             })
             .ToListAsync(cancellationToken);
 
+        // 活跃质量保留的工单集合(锁定图标)。质量保留按 WorkOrderId 去规范化,只需该批工单是否命中,
+        // 故用 EXISTS 语义投影出集合,避免逐行子查询。
+        var heldWorkOrderIds = await dbContext.QualityHoldContexts
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.Active &&
+                workOrderIds.Contains(x.WorkOrderId))
+            .Select(x => x.WorkOrderId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        var heldWorkOrderIdSet = heldWorkOrderIds.ToHashSet(StringComparer.Ordinal);
+
         var tasksByWorkOrder = tasks
             .GroupBy(x => x.WorkOrderId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
@@ -172,7 +189,8 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
             x.Status,
             tasksByWorkOrder.GetValueOrDefault(x.WorkOrderIdValue, []),
             x.WorkOrderIdValue,
-            x.SkuId)).ToArray();
+            x.SkuId,
+            heldWorkOrderIdSet.Contains(x.WorkOrderIdValue))).ToArray();
 
         return new ListMesWorkOrdersResponse(items, total);
     }
