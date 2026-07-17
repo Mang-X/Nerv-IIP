@@ -556,6 +556,30 @@ describe('maintenance plans page', () => {
     expect(state.refreshRemaining).toHaveBeenCalledTimes(1)
   })
 
+  it('shows a settled state (not permanent loading) for a runtime plan with a missing threshold cursor', async () => {
+    state.plans = [
+      {
+        planId: 'p-invalid',
+        deviceAssetId: 'DEV-INV',
+        planCode: 'PM-INV',
+        interval: null,
+        startsOn: '2026-06-01',
+        nextDueOn: null,
+        runtimeHourInterval: 1000,
+        nextDueRuntimeHours: null, // inconsistent cursor -> can never compute a remaining
+        lastGeneratedRuntimeHours: 0,
+      },
+    ]
+    // The composable settles such a plan as 'invalid'; pending may still be true from other reads.
+    state.remainingByPlanId = { 'p-invalid': { status: 'invalid' } }
+    state.remainingPending = true
+    const wrapper = mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('运行小时（阈值缺失）')
+    expect(wrapper.text()).not.toContain('运行小时（读取中…）')
+  })
+
   it('keeps the calendar due for a combined plan when the runtime-hours read fails', async () => {
     state.plans = [
       {

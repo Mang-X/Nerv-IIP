@@ -459,4 +459,38 @@ describe('business telemetry composables', () => {
     await flushPromises()
     expect(api.remainingByPlanId.value.p1).toEqual({ status: 'loading' })
   })
+
+  it('settles a runtime plan with a missing runtime cursor as invalid (never permanent loading)', async () => {
+    const created = deferredRuntimeHours({ honorAbort: false })
+    // One valid runtime plan (fetched) + one with runtimeHourInterval but no next_due_runtime_hours cursor.
+    const plans = ref<RuntimeRemainingPlan[]>([
+      runtimePlan({ planId: 'p-valid', nextDueRuntimeHours: 1000 }),
+      runtimePlan({ planId: 'p-invalid', nextDueRuntimeHours: null }),
+    ])
+    const { remainingByPlanId, remainingPending } = useMaintenancePlanRuntimeRemaining(plans)
+    await nextTick()
+    await flushPromises()
+    // Only the fetchable plan is read; the invalid one settles immediately (never fetched, never loading).
+    expect(created).toHaveLength(1)
+    expect(remainingByPlanId.value['p-invalid']).toEqual({ status: 'invalid' })
+
+    created[0].resolveWith(400) // 1000 - 400 = 600
+    await flushPromises()
+    expect(remainingByPlanId.value['p-valid']).toEqual({ status: 'ok', hours: 600 })
+    expect(remainingByPlanId.value['p-invalid']).toEqual({ status: 'invalid' }) // preserved
+    expect(remainingPending.value).toBe(false) // never stuck on loading
+  })
+
+  it('clears pending for an all-invalid runtime-plan set (no fetch, no stuck loading)', async () => {
+    const created = deferredRuntimeHours({ honorAbort: false })
+    const plans = ref<RuntimeRemainingPlan[]>([
+      runtimePlan({ planId: 'p-inv', nextDueRuntimeHours: null }),
+    ])
+    const { remainingByPlanId, remainingPending } = useMaintenancePlanRuntimeRemaining(plans)
+    await nextTick()
+    await flushPromises()
+    expect(created).toHaveLength(0) // nothing fetchable
+    expect(remainingByPlanId.value['p-inv']).toEqual({ status: 'invalid' })
+    expect(remainingPending.value).toBe(false)
+  })
 })

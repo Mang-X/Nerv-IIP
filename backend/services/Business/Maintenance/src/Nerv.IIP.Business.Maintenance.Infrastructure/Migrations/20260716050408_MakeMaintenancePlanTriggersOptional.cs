@@ -49,12 +49,23 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                 schema: "maintenance",
                 table: "maintenance_plans",
                 sql: "(interval IS NULL) = (next_due_on IS NULL)");
+
+            migrationBuilder.AddCheckConstraint(
+                name: "ck_maintenance_plans_runtime_trigger_paired",
+                schema: "maintenance",
+                table: "maintenance_plans",
+                sql: "(runtime_hour_interval IS NULL) = (next_due_runtime_hours IS NULL)");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             // Drop the nullable-era check constraints before re-tightening the columns.
+            migrationBuilder.DropCheckConstraint(
+                name: "ck_maintenance_plans_runtime_trigger_paired",
+                schema: "maintenance",
+                table: "maintenance_plans");
+
             migrationBuilder.DropCheckConstraint(
                 name: "ck_maintenance_plans_calendar_trigger_paired",
                 schema: "maintenance",

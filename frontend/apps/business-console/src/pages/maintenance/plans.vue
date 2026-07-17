@@ -154,14 +154,19 @@ function nextDueLabel(row: PlanRow) {
     if (entry?.status === 'loading' || (!entry && remainingPending.value))
       return '运行小时（读取中…）'
     if (entry?.status === 'ok') return `剩余 ${formatHours(entry.hours)}`
-    // Runtime remaining unknown (read failed / no samples). A combined plan still has a valid calendar
-    // due — keep showing it (with the runtime read state noted), rather than hiding the known date.
-    if (row.interval && row.nextDueOn) {
-      const note = entry?.status === 'error' ? '运行小时读取失败' : '暂无运行样本'
-      return `${row.nextDueOn}（${note}）`
-    }
-    // Runtime-only plan (no calendar fallback): surface the runtime read state as the value.
+    // Runtime remaining unknown (read failed / no samples / inconsistent cursor — settled, not loading).
+    // A combined plan still has a valid calendar due — keep showing it (with the runtime state noted),
+    // rather than hiding the known date.
+    const note =
+      entry?.status === 'error'
+        ? '运行小时读取失败'
+        : entry?.status === 'invalid'
+          ? '运行小时阈值缺失'
+          : '暂无运行样本'
+    if (row.interval && row.nextDueOn) return `${row.nextDueOn}（${note}）`
+    // Runtime-only plan (no calendar fallback): surface the settled runtime state as the value.
     if (entry?.status === 'error') return '运行小时（读取失败）'
+    if (entry?.status === 'invalid') return '运行小时（阈值缺失）'
     return '运行小时（暂无样本）'
   }
   return row.nextDueOn ?? row.startsOn ?? '—'

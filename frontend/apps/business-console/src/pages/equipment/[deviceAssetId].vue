@@ -233,11 +233,12 @@ const mostUrgentOkRuntimeCandidate = computed(
       .slice()
       .sort((a, b) => (a.hours ?? 0) - (b.hours ?? 0))[0],
 )
-// 存在读取失败/暂无样本的候选：真实剩余未知，可能更紧迫（用于「结果不完整」提示）。
+// 存在读取失败/暂无样本/阈值缺失的候选：真实剩余未知，可能更紧迫（用于「结果不完整」提示）。
 const runtimeRemainingUnknownCount = computed(
   () =>
-    runtimeRemainingEntries.value.filter((e) => e.status === 'error' || e.status === 'no-samples')
-      .length,
+    runtimeRemainingEntries.value.filter(
+      (e) => e.status === 'error' || e.status === 'no-samples' || e.status === 'invalid',
+    ).length,
 )
 const runtimeRemainingHasErrorCandidate = computed(() =>
   runtimeRemainingEntries.value.some((e) => e.status === 'error'),

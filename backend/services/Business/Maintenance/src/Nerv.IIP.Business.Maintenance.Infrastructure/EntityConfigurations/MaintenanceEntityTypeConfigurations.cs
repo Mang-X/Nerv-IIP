@@ -88,6 +88,11 @@ public sealed class MaintenancePlanEntityTypeConfiguration : IEntityTypeConfigur
             table.HasCheckConstraint(
                 "ck_maintenance_plans_calendar_trigger_paired",
                 "(interval IS NULL) = (next_due_on IS NULL)");
+            // The runtime-hour trigger config and its cursor are set/cleared together by the domain; keep
+            // them paired so no plan has a threshold without a next-due cursor (or vice versa).
+            table.HasCheckConstraint(
+                "ck_maintenance_plans_runtime_trigger_paired",
+                "(runtime_hour_interval IS NULL) = (next_due_runtime_hours IS NULL)");
         });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Maintenance plan id.");

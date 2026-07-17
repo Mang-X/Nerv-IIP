@@ -420,6 +420,9 @@ export type RuntimeRemainingEntry =
   | { status: 'no-samples' }
   | { status: 'error' }
   | { status: 'loading' }
+  // A runtime-hour plan whose runtime cursor / device / window is missing can never yield a remaining; it
+  // settles here (terminal, never loading) so such a plan is never left forever on the loading state.
+  | { status: 'invalid' }
 
 // Bound the client-side telemetry fan-out: a full page of runtime plans issues at most this many
 // concurrent runtime-hours reads, so the derivation never turns into a 100-way burst against the Gateway.
@@ -486,36 +489,43 @@ export function useMaintenancePlanRuntimeRemaining(plans: Ref<RuntimeRemainingPl
       }
       return
     }
-    const runtimePlans = plans.value.filter(
-      (p) =>
-        !!p.planId &&
-        !!p.deviceAssetId &&
-        !!p.startsOn &&
-        p.runtimeHourInterval != null &&
-        p.nextDueRuntimeHours != null,
-    )
-    if (runtimePlans.length === 0) {
+    // Every runtime-hour plan (has runtimeHourInterval) gets an entry. Plans that can actually be read
+    // (device + window + runtime cursor present) are fetched; any missing those settle as 'invalid' up-front
+    // so a runtime plan with an incomplete/inconsistent cursor is never left permanently on 'loading'.
+    const runtimeCandidates = plans.value.filter((p) => !!p.planId && p.runtimeHourInterval != null)
+    if (runtimeCandidates.length === 0) {
       if (isCurrent()) {
         remainingByPlanId.value = {}
         pending.value = false
       }
       return
     }
+    const isFetchable = (p: RuntimeRemainingPlan) =>
+      !!p.deviceAssetId && !!p.startsOn && p.nextDueRuntimeHours != null
+    const fetchable = runtimeCandidates.filter(isFetchable)
 
-    // Mark every runtime plan loading up-front so a refresh (e.g. a threshold advance) never keeps showing
-    // the prior settled value/error while its fresh read is in flight.
+    // Loading up-front for fetchable plans (so a refresh never shows a prior settled value while a fresh read
+    // is in flight); terminal 'invalid' for the rest.
     if (isCurrent()) {
       remainingByPlanId.value = Object.fromEntries(
-        runtimePlans.map((p) => [p.planId!, { status: 'loading' } as RuntimeRemainingEntry]),
+        runtimeCandidates.map(
+          (p) =>
+            [p.planId!, isFetchable(p) ? { status: 'loading' } : { status: 'invalid' }] as const,
+        ),
       )
     }
+    if (fetchable.length === 0) {
+      if (isCurrent()) pending.value = false
+      return
+    }
+
     pending.value = true
     const nowUtc = new Date().toISOString()
     const organizationId = businessContext.organizationId
     const environmentId = businessContext.environmentId
     try {
       const entries = await mapWithConcurrency(
-        runtimePlans,
+        fetchable,
         RUNTIME_REMAINING_CONCURRENCY,
         async (p): Promise<readonly [string, RuntimeRemainingEntry]> => {
           try {
@@ -540,9 +550,10 @@ export function useMaintenancePlanRuntimeRemaining(plans: Ref<RuntimeRemainingPl
         },
         () => !isCurrent(),
       )
-      // A superseded round must never overwrite the newer round's results or clear its pending flag.
+      // A superseded round must never overwrite the newer round's results or clear its pending flag. Overlay
+      // the fetched results onto the up-front map so the terminal 'invalid' entries are preserved.
       if (isCurrent()) {
-        remainingByPlanId.value = Object.fromEntries(entries)
+        remainingByPlanId.value = { ...remainingByPlanId.value, ...Object.fromEntries(entries) }
       }
     } finally {
       if (isCurrent()) pending.value = false

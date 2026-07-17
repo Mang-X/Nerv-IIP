@@ -322,6 +322,8 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                             t.HasCheckConstraint("ck_maintenance_plans_has_trigger", "interval IS NOT NULL OR runtime_hour_interval IS NOT NULL");
 
                             t.HasCheckConstraint("ck_maintenance_plans_calendar_trigger_paired", "(interval IS NULL) = (next_due_on IS NULL)");
+
+                            t.HasCheckConstraint("ck_maintenance_plans_runtime_trigger_paired", "(runtime_hour_interval IS NULL) = (next_due_runtime_hours IS NULL)");
                         });
                 });
 
