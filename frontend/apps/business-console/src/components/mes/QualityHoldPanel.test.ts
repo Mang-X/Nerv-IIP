@@ -71,6 +71,7 @@ function mountPanel(props: Record<string, unknown>) {
       heldBy: 'qa-01',
       canManage: true,
       canReadTimeline: true,
+      canReadInspectionRecords: true,
       ...props,
     },
     global: { stubs },
@@ -119,6 +120,14 @@ describe('QualityHoldPanel', () => {
     expect(to.query.inspectionPlanId).toBe('INSP-000001')
     expect(to.query.keyword).toBeUndefined()
     expect(link.text()).toContain('来源检验记录 INSP-REC-9')
+  })
+
+  it('hides the source-inspection link without inspection-records read permission', () => {
+    // 目标页需 business.quality.inspection-records.read：无该权限不显示互链，避免点后被路由守卫拒（死链）。
+    const wrapper = mountPanel({ canReadInspectionRecords: false })
+    expect(wrapper.find('[data-router-link]').exists()).toBe(false)
+    // 时间线本身仍可见（只是不带下钻互链）。
+    expect(wrapper.text()).toContain('施加质量保留')
   })
 
   it('links source-inspection even when only a record id exists (no plan)', () => {

@@ -94,6 +94,10 @@ const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManageQualityHold = computed(() => permissionCodes.value.includes(P.mesQualityWrite))
 // 时间线读端点需 business.mes.quality.read（高于本页 work-orders.read）：无则不加载时间线，避免逐个保留 403。
 const canReadQualityHold = computed(() => permissionCodes.value.includes(P.mesQualityRead))
+// 来源检验记录下钻目标页需 business.quality.inspection-records.read：无则面板不显示互链，避免点后被路由守卫拒。
+const canReadInspectionRecords = computed(() =>
+  permissionCodes.value.includes(P.qualityInspectionRecordsRead),
+)
 
 const operationTasks = computed(() => detail.value?.operationTasks ?? [])
 // 工单质量保留（活跃 + 已释放周期）。定位键齐备（sourceService + sourceDocumentId）的才渲染。
@@ -489,6 +493,7 @@ function formatError(error: unknown) {
         :release-source="hold.releaseSource"
         :can-manage="canManageQualityHold"
         :can-read-timeline="canReadQualityHold"
+        :can-read-inspection-records="canReadInspectionRecords"
         @released="refreshDetail"
       />
     </div>

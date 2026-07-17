@@ -36,6 +36,8 @@ const props = defineProps<{
   canManage: boolean
   // 时间线读端点要求 business.mes.quality.read；无该权限则不加载时间线（避免逐个保留 403）。
   canReadTimeline: boolean
+  // 来源检验记录下钻目标页要求 business.quality.inspection-records.read；无该权限不显示互链（避免点后被路由守卫拒）。
+  canReadInspectionRecords: boolean
 }>()
 
 const emit = defineEmits<{ released: [] }>()
@@ -219,7 +221,10 @@ async function confirmRelease() {
           <!-- 来源检验互链（A1 §5.3 跨页上下文 query）：记录 id 恒在→带 inspectionRecordId 直接定位到只读
                检验记录详情；方案 id 可空,存在时并带 inspectionPlanId 供列表方案上下文。覆盖无方案但有记录的保留。 -->
           <RouterLink
-            v-if="item.sourceInspectionRecordId || item.sourceInspectionDocumentId"
+            v-if="
+              canReadInspectionRecords &&
+              (item.sourceInspectionRecordId || item.sourceInspectionDocumentId)
+            "
             :to="{
               path: '/quality/inspections',
               query: {

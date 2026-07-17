@@ -99,6 +99,16 @@ export function useReceiptCreateForm(
     },
     { immediate: true },
   )
+  // 工单上下文切换（同一 /mes/receipts 路由从工单 A 切到 B）：整体重置表单，避免以 A 的数量/成本/单位/时间提交 B，
+  // 或复用 A 的登记会话幂等键；重置后再应用 B 的建议数量。
+  watch(
+    () => context().workOrderId,
+    () => {
+      resetForm()
+      const suggested = context().initialQuantity
+      if (suggested && isNonEmpty(suggested)) form.quantity = suggested
+    },
+  )
 
   const producedLotPlaceholder = computed(() =>
     producedLotsPending.value

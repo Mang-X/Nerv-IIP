@@ -105,9 +105,17 @@ function patchPermissions(codes: string[]) {
 }
 
 const holdPanelStub = {
-  props: ['sourceService', 'sourceDocumentId', 'scope', 'isActive', 'canManage', 'canReadTimeline'],
+  props: [
+    'sourceService',
+    'sourceDocumentId',
+    'scope',
+    'isActive',
+    'canManage',
+    'canReadTimeline',
+    'canReadInspectionRecords',
+  ],
   template:
-    '<div data-testid="hold-panel" :data-source="sourceDocumentId" :data-active="String(isActive)" :data-manage="String(canManage)" :data-read-timeline="String(canReadTimeline)" />',
+    '<div data-testid="hold-panel" :data-source="sourceDocumentId" :data-active="String(isActive)" :data-manage="String(canManage)" :data-read-timeline="String(canReadTimeline)" :data-read-records="String(canReadInspectionRecords)" />',
 }
 
 describe('work-order detail — quality hold block', () => {
@@ -212,6 +220,30 @@ describe('work-order detail — quality hold block', () => {
       'business.mes.quality.read',
     ])
     expect(qualityReader.get('[data-testid="hold-panel"]').attributes('data-read-timeline')).toBe(
+      'true',
+    )
+  })
+
+  it('gates the source-inspection drilldown on quality inspection-records read permission', () => {
+    detailState.qualityHolds = [
+      {
+        sourceService: 'business-mes',
+        sourceDocumentId: 'WO-1',
+        scope: 'work-order',
+        isActive: true,
+      },
+    ]
+    // 来源检验记录下钻目标页需 business.quality.inspection-records.read（Quality 域，非 MES 质量读）。
+    const noRecords = mountDetail(['business.mes.work-orders.read', 'business.mes.quality.read'])
+    expect(noRecords.get('[data-testid="hold-panel"]').attributes('data-read-records')).toBe(
+      'false',
+    )
+
+    const withRecords = mountDetail([
+      'business.mes.work-orders.read',
+      'business.quality.inspection-records.read',
+    ])
+    expect(withRecords.get('[data-testid="hold-panel"]').attributes('data-read-records')).toBe(
       'true',
     )
   })
