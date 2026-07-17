@@ -175,6 +175,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}/complete", "post", "completeBusinessConsoleMaintenanceWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/plans", "get", "listBusinessConsoleMaintenancePlans");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/plans", "post", "createBusinessConsoleMaintenancePlan");
+        AssertOperationId(paths, "/api/business-console/v1/maintenance/plans/{planId}", "put", "updateBusinessConsoleMaintenancePlan");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/inspections", "post", "recordBusinessConsoleMaintenanceInspection");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/inspections", "get", "listBusinessConsoleMaintenanceInspections");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/spare-parts", "get", "listBusinessConsoleMaintenanceSpareParts");

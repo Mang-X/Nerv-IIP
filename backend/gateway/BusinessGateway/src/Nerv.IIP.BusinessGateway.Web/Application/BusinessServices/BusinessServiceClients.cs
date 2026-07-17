@@ -1105,6 +1105,12 @@ public interface IBusinessMaintenanceClient
         BusinessConsoleCreateMaintenancePlanRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleUpdateMaintenancePlanResponse> UpdatePlanAsync(
+        string internalBearerToken,
+        string planId,
+        BusinessConsoleUpdateMaintenancePlanRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse> GenerateDueWorkOrdersAsync(
         string internalBearerToken,
         BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest request,
@@ -5114,6 +5120,21 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         return new BusinessConsoleCreateMaintenancePlanResponse(FormatJsonScalar(response.PlanId));
     }
 
+    public async Task<BusinessConsoleUpdateMaintenancePlanResponse> UpdatePlanAsync(
+        string internalBearerToken,
+        string planId,
+        BusinessConsoleUpdateMaintenancePlanRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamUpdateMaintenancePlanResponse>(
+            internalBearerToken,
+            HttpMethod.Put,
+            $"/api/business/v1/maintenance/plans/{Uri.EscapeDataString(planId)}",
+            request,
+            cancellationToken);
+        return new BusinessConsoleUpdateMaintenancePlanResponse(FormatJsonScalar(response.PlanId));
+    }
+
     public async Task<BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse> GenerateDueWorkOrdersAsync(
         string internalBearerToken,
         BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest request,
@@ -5414,6 +5435,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string? ActualTechnicianUserId = null);
 
     private sealed record DownstreamCreateMaintenancePlanResponse(JsonElement PlanId);
+
+    private sealed record DownstreamUpdateMaintenancePlanResponse(JsonElement PlanId);
 
     private sealed record DownstreamGenerateDueMaintenanceWorkOrdersResponse(
         int GeneratedCount,

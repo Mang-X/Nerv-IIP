@@ -3135,6 +3135,7 @@ public sealed class BusinessGatewayProxyTests
             "/api/business/v1/maintenance/work-orders" => JsonResponse(HttpStatusCode.OK, new { data = new { workOrderId = "wo-maint-001" } }),
             "/api/business/v1/maintenance/work-orders/wo-maint-001/complete" => JsonResponse(HttpStatusCode.OK, new { data = new { accepted = true } }),
             "/api/business/v1/maintenance/plans" => JsonResponse(HttpStatusCode.OK, new { data = new { planId = "plan-001" } }),
+            "/api/business/v1/maintenance/plans/plan-001" => JsonResponse(HttpStatusCode.OK, new { data = new { planId = "plan-001" } }),
             "/api/business/v1/maintenance/plans/generate-due" => JsonResponse(HttpStatusCode.OK, new { data = new { generatedCount = 1, workOrderIds = new[] { "wo-pm-001" } } }),
             "/api/business/v1/maintenance/assets/DEV-PRESS-01/reliability" => JsonResponse(HttpStatusCode.OK, new
             {
@@ -3241,6 +3242,11 @@ public sealed class BusinessGatewayProxyTests
                 DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
                 DateTimeOffset.Parse("2026-06-01T10:00:00Z", CultureInfo.InvariantCulture)),
             CancellationToken.None);
+        await client.UpdatePlanAsync(
+            "internal-token-001",
+            "plan-001",
+            new BusinessConsoleUpdateMaintenancePlanRequest("org-001", "env-dev", "P30D", 500m),
+            CancellationToken.None);
         await client.GenerateDueWorkOrdersAsync(
             "internal-token-001",
             new BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest(
@@ -3299,12 +3305,20 @@ public sealed class BusinessGatewayProxyTests
         AssertRequest(handler.Requests[1], HttpMethod.Post, "/api/business/v1/maintenance/work-orders/wo-maint-001/complete");
         Assert.Contains("\"actualTechnicianUserId\":\"worker-actual\"", handler.RequestBodies[1]);
         AssertRequest(handler.Requests[2], HttpMethod.Post, "/api/business/v1/maintenance/plans");
-        AssertRequest(handler.Requests[3], HttpMethod.Post, "/api/business/v1/maintenance/plans/generate-due");
-        AssertRequest(handler.Requests[4], HttpMethod.Get, "/api/business/v1/maintenance/assets/DEV-PRESS-01/reliability?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-06-30T16%3A00%3A00.0000000%2B00%3A00");
-        AssertRequest(handler.Requests[5], HttpMethod.Get, "/api/business/v1/maintenance/inspection-measurements/trends?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&characteristicCode=bearing-temperature&windowStartUtc=2026-06-01T08%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-06-30T16%3A00%3A00.0000000%2B00%3A00");
-        AssertRequest(handler.Requests[6], HttpMethod.Get, "/api/business/v1/maintenance/reliability/summary?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-06-30T16%3A00%3A00.0000000%2B00%3A00&deviceAssetId=DEV-PRESS-01&technicianUserId=worker-001");
-        AssertRequest(handler.Requests[7], HttpMethod.Post, "/api/business/v1/maintenance/inspections");
-        AssertRequest(handler.Requests[8], HttpMethod.Post, "/api/business/v1/maintenance/spare-parts");
+        AssertRequest(handler.Requests[3], HttpMethod.Put, "/api/business/v1/maintenance/plans/plan-001");
+        Assert.Contains("\"runtimeHourInterval\":500", handler.RequestBodies[3]);
+        AssertRequest(handler.Requests[4], HttpMethod.Post, "/api/business/v1/maintenance/plans/generate-due");
+        AssertRequest(handler.Requests[5], HttpMethod.Get, "/api/business/v1/maintenance/assets/DEV-PRESS-01/reliability?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-06-30T16%3A00%3A00.0000000%2B00%3A00");
+        AssertRequest(handler.Requests[6], HttpMethod.Get, "/api/business/v1/maintenance/inspection-measurements/trends?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&characteristicCode=bearing-temperature&windowStartUtc=2026-06-01T08%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-06-30T16%3A00%3A00.0000000%2B00%3A00");
+        AssertRequest(handler.Requests[7], HttpMethod.Get, "/api/business/v1/maintenance/reliability/summary?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-06-30T16%3A00%3A00.0000000%2B00%3A00&deviceAssetId=DEV-PRESS-01&technicianUserId=worker-001");
+        AssertRequest(handler.Requests[8], HttpMethod.Post, "/api/business/v1/maintenance/inspections");
+        AssertRequest(handler.Requests[9], HttpMethod.Post, "/api/business/v1/maintenance/spare-parts");
+    }
+
+    [Fact]
+    public void Maintenance_http_client_exposes_plan_update_proxy()
+    {
+        Assert.NotNull(typeof(HttpBusinessMaintenanceClient).GetMethod("UpdatePlanAsync"));
     }
 
     [Fact]
@@ -9243,6 +9257,16 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleCreateMaintenancePlanResponse("plan-created"));
+    }
+
+    public Task<BusinessConsoleUpdateMaintenancePlanResponse> UpdatePlanAsync(
+        string internalBearerToken,
+        string planId,
+        BusinessConsoleUpdateMaintenancePlanRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleUpdateMaintenancePlanResponse(planId));
     }
 
     public Task<BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse> GenerateDueWorkOrdersAsync(

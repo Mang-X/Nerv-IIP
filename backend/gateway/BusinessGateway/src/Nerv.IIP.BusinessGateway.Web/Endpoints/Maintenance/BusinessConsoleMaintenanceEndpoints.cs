@@ -278,6 +278,32 @@ public sealed class CreateBusinessConsoleMaintenancePlanEndpoint(
 }
 
 [Tags("Business Console Maintenance")]
+[HttpPut("/api/business-console/v1/maintenance/plans/{planId}")]
+[BusinessGatewayOperationId("updateBusinessConsoleMaintenancePlan")]
+public sealed class UpdateBusinessConsoleMaintenancePlanEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMaintenanceClient maintenance,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleUpdateMaintenancePlanRequest, BusinessConsoleUpdateMaintenancePlanResponse>(
+        auth,
+        BusinessGatewayPermissions.MaintenancePlansManage)
+{
+    protected override string OrganizationId(BusinessConsoleUpdateMaintenancePlanRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleUpdateMaintenancePlanRequest request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleUpdateMaintenancePlanRequest request) => "maintenance-plan";
+
+    protected override string? ResourceId(BusinessConsoleUpdateMaintenancePlanRequest request) => Route<string>("planId");
+
+    protected override Task<BusinessConsoleUpdateMaintenancePlanResponse> ForwardAsync(
+        BusinessConsoleUpdateMaintenancePlanRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        maintenance.UpdatePlanAsync(tokenProvider.BearerToken, Route<string>("planId")!, request, cancellationToken);
+}
+
+[Tags("Business Console Maintenance")]
 [HttpGet("/api/business-console/v1/maintenance/plans")]
 [BusinessGatewayOperationId("listBusinessConsoleMaintenancePlans")]
 public sealed class ListBusinessConsoleMaintenancePlansEndpoint(
@@ -625,6 +651,22 @@ public sealed class BusinessConsoleCreateMaintenancePlanRequestValidator : Valid
             .GreaterThan(0m)
             .When(x => x.RuntimeHourInterval.HasValue);
         // A plan needs at least one trigger: calendar interval, runtime-hour interval, or both.
+        RuleFor(x => x)
+            .Must(x => !string.IsNullOrWhiteSpace(x.Interval) || x.RuntimeHourInterval.HasValue)
+            .WithMessage("Maintenance plan must have a calendar interval, a runtime-hour interval, or both.");
+    }
+}
+
+public sealed class BusinessConsoleUpdateMaintenancePlanRequestValidator : Validator<BusinessConsoleUpdateMaintenancePlanRequest>
+{
+    public BusinessConsoleUpdateMaintenancePlanRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Interval).MaximumLength(100);
+        RuleFor(x => x.RuntimeHourInterval)
+            .GreaterThan(0m)
+            .When(x => x.RuntimeHourInterval.HasValue);
         RuleFor(x => x)
             .Must(x => !string.IsNullOrWhiteSpace(x.Interval) || x.RuntimeHourInterval.HasValue)
             .WithMessage("Maintenance plan must have a calendar interval, a runtime-hour interval, or both.");

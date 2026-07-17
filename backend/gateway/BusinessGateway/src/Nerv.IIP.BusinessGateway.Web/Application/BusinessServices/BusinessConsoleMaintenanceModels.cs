@@ -73,6 +73,15 @@ public sealed record BusinessConsoleCreateMaintenancePlanRequest(
 
 public sealed record BusinessConsoleCreateMaintenancePlanResponse(string PlanId);
 
+public sealed record BusinessConsoleUpdateMaintenancePlanRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    // Calendar interval (ISO-8601 P7D) for the calendar trigger, or null for a runtime-only plan.
+    string? Interval,
+    decimal? RuntimeHourInterval);
+
+public sealed record BusinessConsoleUpdateMaintenancePlanResponse(string PlanId);
+
 public sealed record BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest(
     string OrganizationId,
     string EnvironmentId,

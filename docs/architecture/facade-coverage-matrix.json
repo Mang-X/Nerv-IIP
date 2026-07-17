@@ -1704,6 +1704,19 @@
     },
     {
       "service": "Maintenance",
+      "method": "PUT",
+      "route": "/api/business/v1/maintenance/plans/{planId}",
+      "operationId": "updateMaintenancePlan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "updateBusinessConsoleMaintenancePlan"
+      ]
+    },
+    {
+      "service": "Maintenance",
       "method": "POST",
       "route": "/api/business/v1/maintenance/plans/generate-due",
       "operationId": "generateDueMaintenanceWorkOrders",

@@ -95,17 +95,17 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Erp | 51 | 39 | 11 | 1 |
 | IndustrialTelemetry | 24 | 22 | 1 | 1 |
 | Inventory | 12 | 5 | 2 | 5 |
-| Maintenance | 20 | 15 | 5 | 0 |
+| Maintenance | 21 | 16 | 5 | 0 |
 | MasterData | 46 | 38 | 4 | 4 |
 | Mes | 52 | 49 | 3 | 0 |
 | ProductEngineering | 38 | 38 | 0 | 0 |
 | Quality | 32 | 18 | 14 | 0 |
 | Scheduling | 8 | 7 | 1 | 0 |
 | Wms | 30 | 19 | 6 | 5 |
-| **Total** | **355** | **284** | **51** | **20** |
+| **Total** | **357** | **286** | **51** | **20** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-The `exposed` rows (284) — each with its verified facade `gatewayOperationIds` — are
+The `exposed` rows (286) — each with its verified facade `gatewayOperationIds` — are
 enumerated in the JSON registry. The `deferred` and `internal` rows, the actual
 governance decisions, are listed in full below.
 

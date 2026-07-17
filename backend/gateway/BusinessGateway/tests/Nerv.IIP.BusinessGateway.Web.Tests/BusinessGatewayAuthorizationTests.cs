@@ -891,6 +891,13 @@ public sealed class BusinessGatewayAuthorizationTests
             windowStartUtc = "2026-06-01T08:00:00Z",
             windowEndUtc = "2026-06-01T10:00:00Z",
         },
+        "/api/business-console/v1/maintenance/plans/plan-001" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            interval = "P30D",
+            runtimeHourInterval = 500m,
+        },
         "/api/business-console/v1/maintenance/inspections" => new
         {
             organizationId = "org-001",
@@ -1061,6 +1068,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/work-orders/wo-maint-001/complete", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/plans", BusinessGatewayPermissions.MaintenancePlansRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/plans", BusinessGatewayPermissions.MaintenancePlansManage);
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/maintenance/plans/plan-001", BusinessGatewayPermissions.MaintenancePlansManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/inspections", BusinessGatewayPermissions.MaintenancePlansManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/inspections", BusinessGatewayPermissions.MaintenancePlansRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/inspection-measurements/trends?deviceAssetId=DEV-OIL-01&characteristicCode=bearing-temperature&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.MaintenancePlansRead);

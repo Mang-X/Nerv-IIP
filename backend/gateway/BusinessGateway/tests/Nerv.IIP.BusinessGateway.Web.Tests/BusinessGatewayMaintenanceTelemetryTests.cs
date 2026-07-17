@@ -482,6 +482,56 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public async Task Maintenance_plan_update_facade_uses_plan_manage_permission()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PutAsJsonAsync("/api/business-console/v1/maintenance/plans/plan-001", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            interval = "P30D",
+            runtimeHourInterval = 500m,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenancePlansManage);
+        Assert.Equal("internal-test-token", maintenance.LastInternalToken);
+        Assert.Equal("plan-001", maintenance.LastUpdatePlanId);
+        Assert.Equal("P30D", maintenance.LastUpdatePlanRequest.GetProperty("interval").GetString());
+        Assert.Equal(500m, maintenance.LastUpdatePlanRequest.GetProperty("runtimeHourInterval").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Maintenance_plan_update_facade_rejects_a_request_without_any_trigger()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PutAsJsonAsync("/api/business-console/v1/maintenance/plans/plan-001", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            interval = (string?)null,
+            runtimeHourInterval = (decimal?)null,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Maintenance_generate_due_and_reliability_facades_use_permissions_and_forward_scope()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -847,6 +897,10 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public JsonElement LastCreatePlanRequest { get; private set; }
 
+    public string? LastUpdatePlanId { get; private set; }
+
+    public JsonElement LastUpdatePlanRequest { get; private set; }
+
     public BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest? LastGenerateDueRequest { get; private set; }
 
     public string? LastReliabilityDeviceAssetId { get; private set; }
@@ -1032,6 +1086,18 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
         LastInternalToken = internalBearerToken;
         LastCreatePlanRequest = JsonSerializer.SerializeToElement(request, JsonOptions);
         return Task.FromResult(new BusinessConsoleCreateMaintenancePlanResponse("plan-created"));
+    }
+
+    public Task<BusinessConsoleUpdateMaintenancePlanResponse> UpdatePlanAsync(
+        string internalBearerToken,
+        string planId,
+        BusinessConsoleUpdateMaintenancePlanRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastUpdatePlanId = planId;
+        LastUpdatePlanRequest = JsonSerializer.SerializeToElement(request, JsonOptions);
+        return Task.FromResult(new BusinessConsoleUpdateMaintenancePlanResponse(planId));
     }
 
     public Task<BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse> GenerateDueWorkOrdersAsync(
