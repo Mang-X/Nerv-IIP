@@ -31,18 +31,18 @@ public sealed class ConnectorConnectionStateTracker
         }
     }
 
-    public void MarkConnected()
+    public void MarkAlive()
     {
         lock (_gate)
         {
-            if (_snapshot.Status == "connected")
+            if (_snapshot.Status == "alive")
             {
                 return;
             }
 
             var observedAtUtc = GetMonotonicUtcNow();
             _snapshot = new ConnectorConnectionStateSnapshot(
-                "connected",
+                "alive",
                 observedAtUtc,
                 ConnectedSinceUtc: observedAtUtc);
         }

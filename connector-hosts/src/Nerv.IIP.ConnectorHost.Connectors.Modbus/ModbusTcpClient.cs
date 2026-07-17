@@ -5,6 +5,7 @@ namespace Nerv.IIP.ConnectorHost.Connectors.Modbus;
 
 public sealed class ModbusTcpClient : IModbusTcpClient, IDisposable
 {
+    private readonly SemaphoreSlim _protocolGate = new(1, 1);
     private TcpClient? _client;
     private NetworkStream? _stream;
     private ushort _transactionId;
@@ -12,20 +13,57 @@ public sealed class ModbusTcpClient : IModbusTcpClient, IDisposable
 
     public async Task ConnectAsync(ModbusConnectionOptions options, CancellationToken cancellationToken)
     {
-        if (_client?.Connected == true && string.Equals(_connectedEndpoint, options.Endpoint, StringComparison.OrdinalIgnoreCase))
+        await _protocolGate.WaitAsync(cancellationToken);
+        try
         {
-            return;
-        }
+            if (_client?.Connected == true && string.Equals(_connectedEndpoint, options.Endpoint, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
 
-        DisposeClient();
-        var endpoint = ParseEndpoint(options.Endpoint);
-        _client = new TcpClient();
-        await _client.ConnectAsync(endpoint.Host, endpoint.Port, cancellationToken);
-        _stream = _client.GetStream();
-        _connectedEndpoint = options.Endpoint;
+            DisposeClient();
+            var endpoint = ParseEndpoint(options.Endpoint);
+            _client = new TcpClient();
+            await _client.ConnectAsync(endpoint.Host, endpoint.Port, cancellationToken);
+            _stream = _client.GetStream();
+            _connectedEndpoint = options.Endpoint;
+        }
+        finally
+        {
+            _protocolGate.Release();
+        }
     }
 
     public async Task<IReadOnlyList<ModbusRegisterSample>> ReadRegistersAsync(
+        ModbusRegisterMapping mapping,
+        DateTimeOffset observedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await _protocolGate.WaitAsync(cancellationToken);
+        try
+        {
+            return await ReadRegistersCoreAsync(mapping, observedAtUtc, cancellationToken);
+        }
+        finally
+        {
+            _protocolGate.Release();
+        }
+    }
+
+    public async Task ProbeAsync(ModbusRegisterMapping mapping, CancellationToken cancellationToken)
+    {
+        await _protocolGate.WaitAsync(cancellationToken);
+        try
+        {
+            _ = await ReadRegistersCoreAsync(mapping, DateTimeOffset.UtcNow, cancellationToken);
+        }
+        finally
+        {
+            _protocolGate.Release();
+        }
+    }
+
+    private async Task<IReadOnlyList<ModbusRegisterSample>> ReadRegistersCoreAsync(
         ModbusRegisterMapping mapping,
         DateTimeOffset observedAtUtc,
         CancellationToken cancellationToken)
@@ -97,6 +135,7 @@ public sealed class ModbusTcpClient : IModbusTcpClient, IDisposable
     public void Dispose()
     {
         DisposeClient();
+        _protocolGate.Dispose();
     }
 
     private static async Task ReadExactlyAsync(NetworkStream stream, byte[] buffer, CancellationToken cancellationToken)
@@ -107,7 +146,7 @@ public sealed class ModbusTcpClient : IModbusTcpClient, IDisposable
             var read = await stream.ReadAsync(buffer.AsMemory(offset), cancellationToken);
             if (read == 0)
             {
-                throw new InvalidOperationException("Modbus TCP connection closed while reading response.");
+                throw new IOException("Modbus TCP connection closed while reading response.");
             }
 
             offset += read;

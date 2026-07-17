@@ -65,6 +65,7 @@ public interface IMqttSubscriptionClient
         MqttConnectionOptions options,
         IReadOnlyList<string> topicFilters,
         Func<MqttInboundMessage, CancellationToken, Task> onMessage,
+        Action onDisconnected,
         CancellationToken cancellationToken);
 }
 

@@ -67,6 +67,9 @@ public sealed class OpcUaSimulatorIntegrationTests
 
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
             await connector.RunCollectionCycleAsync(timeout.Token);
+            await WaitUntilAsync(() => connector.CurrentState.ReceivedSamples > 0, timeout.Token);
+            await Task.Delay(TimeSpan.FromSeconds(2), timeout.Token);
+            await connector.RunCollectionCycleAsync(timeout.Token);
 
             Assert.NotEmpty(samples.Requests);
             Assert.All(samples.Requests, request =>
@@ -87,6 +90,14 @@ public sealed class OpcUaSimulatorIntegrationTests
         finally
         {
             await RunDockerAllowFailureAsync("rm", "-f", containerName);
+        }
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, CancellationToken cancellationToken)
+    {
+        while (!condition())
+        {
+            await Task.Delay(25, cancellationToken);
         }
     }
 

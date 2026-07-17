@@ -10,12 +10,19 @@ public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialRe
 {
     private Session? _session;
     private Subscription? _subscription;
-    private string? _lastKeepAliveError;
+    private KeepAliveEventHandler? _keepAliveHandler;
 
-    public async Task ConnectAsync(OpcUaConnectionOptions options, CancellationToken cancellationToken)
+    public Task ConnectAsync(OpcUaConnectionOptions options, CancellationToken cancellationToken)
+    {
+        return ConnectAsync(options, static () => { }, cancellationToken);
+    }
+
+    public async Task ConnectAsync(
+        OpcUaConnectionOptions options,
+        Action onConnectionLost,
+        CancellationToken cancellationToken)
     {
         await DisconnectAsync(cancellationToken);
-        _lastKeepAliveError = null;
 
         var configuration = CreateApplicationConfiguration(options);
         await configuration.Validate(ApplicationType.Client);
@@ -52,13 +59,14 @@ public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialRe
             identity,
             preferredLocales: null,
             cancellationToken);
-        _session.KeepAlive += (_, args) =>
+        _keepAliveHandler = (_, args) =>
         {
             if (ServiceResult.IsBad(args.Status))
             {
-                _lastKeepAliveError = $"OPC UA keepalive failed: {args.Status}";
+                onConnectionLost();
             }
         };
+        _session.KeepAlive += _keepAliveHandler;
     }
 
     public async Task<IReadOnlyList<OpcUaNode>> BrowseAsync(string rootNodeId, CancellationToken cancellationToken)
@@ -125,12 +133,6 @@ public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialRe
         session.AddSubscription(_subscription);
         await _subscription.CreateAsync(cancellationToken);
         await _subscription.ApplyChangesAsync(cancellationToken);
-        var samplingWindowMilliseconds = Math.Max(1000, tags.Max(x => x.SamplingIntervalMilliseconds) * 2);
-        await Task.Delay(TimeSpan.FromMilliseconds(samplingWindowMilliseconds), cancellationToken);
-        if (_lastKeepAliveError is not null)
-        {
-            throw new OpcUaConnectionLostException(_lastKeepAliveError);
-        }
     }
 
     public async Task<OpcUaWriteReceipt> WriteAsync(OpcUaWriteRequest request, CancellationToken cancellationToken)
@@ -159,6 +161,12 @@ public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialRe
     {
         _subscription?.Delete(true);
         _subscription = null;
+        if (_session is not null && _keepAliveHandler is not null)
+        {
+            _session.KeepAlive -= _keepAliveHandler;
+        }
+
+        _keepAliveHandler = null;
         _session?.Close();
         _session?.Dispose();
         _session = null;
@@ -168,6 +176,11 @@ public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialRe
     public void Dispose()
     {
         _subscription?.Dispose();
+        if (_session is not null && _keepAliveHandler is not null)
+        {
+            _session.KeepAlive -= _keepAliveHandler;
+        }
+
         _session?.Dispose();
     }
 

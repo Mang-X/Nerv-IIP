@@ -101,6 +101,15 @@ public interface IOpcUaClient
 {
     Task ConnectAsync(OpcUaConnectionOptions options, CancellationToken cancellationToken);
 
+    Task ConnectAsync(
+        OpcUaConnectionOptions options,
+        Action onConnectionLost,
+        CancellationToken cancellationToken)
+    {
+        _ = onConnectionLost;
+        return ConnectAsync(options, cancellationToken);
+    }
+
     Task<IReadOnlyList<OpcUaNode>> BrowseAsync(string rootNodeId, CancellationToken cancellationToken);
 
     Task SubscribeAsync(

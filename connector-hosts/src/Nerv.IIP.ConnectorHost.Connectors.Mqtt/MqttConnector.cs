@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Nerv.IIP.ConnectorHost.Application;
 using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 using Nerv.IIP.ConnectorHost.Connectors.OpcUa;
 
@@ -9,14 +10,22 @@ public sealed class MqttConnector(
     MqttConnectorOptions options,
     IMqttSubscriptionClient mqttClient,
     IIndustrialTelemetrySamplesClient samplesClient,
-    Func<DateTimeOffset>? utcNow = null) : IConnector, IIndustrialTelemetryCollectionConnector
+    Func<DateTimeOffset>? utcNow = null,
+    TimeProvider? timeProvider = null,
+    IConnectorReportSignal? reportSignal = null) : IConnector, IIndustrialTelemetryCollectionConnector
 {
     private readonly Dictionary<(string TopicFilter, string TagKey, DateTimeOffset BucketStartUtc), MqttTelemetryBucket> _buckets = [];
     private readonly Dictionary<(string TopicFilter, string TagKey, DateTimeOffset BucketStartUtc), DateTimeOffset> _sealedBucketKeys = [];
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _connectionTransitionGate = new();
     private readonly Func<DateTimeOffset> _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
     private readonly TimeSpan _sealedBucketRetention = CalculateSealedBucketRetention(options.TopicMappings);
     private readonly Guid _counterEpoch = Guid.CreateVersion7();
+    private readonly ConnectorConnectionStateTracker _connectionTracker = new(
+        options.EffectiveCollectionConnectorId,
+        timeProvider ?? TimeProvider.System,
+        reportSignal is null ? static _ => { } : reportSignal.Signal);
+    private long _connectionLossVersion;
 
     public MqttConnectorState CurrentState { get; private set; } = new(
         "stopped",
@@ -50,13 +59,16 @@ public sealed class MqttConnector(
                 }
 
                 var topicFilters = options.TopicMappings.Select(x => x.TopicFilter).Distinct(StringComparer.Ordinal).ToArray();
+                var connectionLossVersion = CaptureConnectionLossVersion();
                 await mqttClient.ConnectAndSubscribeAsync(
                     new MqttConnectionOptions(options.Broker, options.ClientId, options.CredentialReference),
                     topicFilters,
                     HandleMessageAsync,
+                    HandleDisconnected,
                     cancellationToken);
 
                 subscriptionCompleted = true;
+                MarkAliveIfNoConnectionLoss(connectionLossVersion);
                 await FlushClosedBucketsAsync(_utcNow(), cancellationToken);
                 await MarkRunningAsync(cancellationToken);
                 return;
@@ -79,7 +91,7 @@ public sealed class MqttConnector(
                     ReportedStatus = "stopped",
                     HealthStatus = "unhealthy",
                     ErrorCount = state.ErrorCount + 1,
-                    Summary = $"MQTT collection failed: {ex.Message}"
+                    Summary = "MQTT collection failed."
                 }, cancellationToken);
                 throw;
             }
@@ -128,7 +140,36 @@ public sealed class MqttConnector(
     {
         var known = state.ReceivedSamples > 0 || state.DroppedSamples > 0 || state.ErrorCount > 0 || state.LastSampleAtUtc is not null;
         return new(options.EffectiveCollectionConnectorId, "mqtt", _counterEpoch,
-            known ? state.ReceivedSamples : null, known ? state.DroppedSamples : null, known ? state.ErrorCount : null, state.LastSampleAtUtc);
+            known ? state.ReceivedSamples : null, known ? state.DroppedSamples : null, known ? state.ErrorCount : null, state.LastSampleAtUtc,
+            _connectionTracker.Snapshot);
+    }
+
+    private void HandleDisconnected()
+    {
+        lock (_connectionTransitionGate)
+        {
+            _connectionLossVersion++;
+            _connectionTracker.MarkLost("transport", "mqtt.disconnected");
+        }
+    }
+
+    private long CaptureConnectionLossVersion()
+    {
+        lock (_connectionTransitionGate)
+        {
+            return _connectionLossVersion;
+        }
+    }
+
+    private void MarkAliveIfNoConnectionLoss(long connectionLossVersion)
+    {
+        lock (_connectionTransitionGate)
+        {
+            if (_connectionLossVersion == connectionLossVersion)
+            {
+                _connectionTracker.MarkAlive();
+            }
+        }
     }
 
     private async Task HandleMessageAsync(MqttInboundMessage message, CancellationToken cancellationToken)

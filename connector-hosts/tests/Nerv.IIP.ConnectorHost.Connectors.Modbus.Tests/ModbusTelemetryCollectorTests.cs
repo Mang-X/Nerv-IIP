@@ -1,3 +1,4 @@
+using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 using Nerv.IIP.ConnectorHost.Connectors.Modbus;
 using Nerv.IIP.ConnectorHost.Connectors.OpcUa;
 
@@ -5,6 +6,59 @@ namespace Nerv.IIP.ConnectorHost.Connectors.Modbus.Tests;
 
 public sealed class ModbusTelemetryCollectorTests
 {
+    [Fact]
+    public async Task Successful_protocol_probe_marks_alive_without_changing_sample_counters()
+    {
+        var modbus = new ProbeSequenceModbusTcpClient([null]);
+        var connector = CreateConnector(modbus, new RecordingIndustrialTelemetrySamplesClient());
+        var monitor = Assert.IsAssignableFrom<IConnectorConnectionMonitor>(connector);
+
+        await monitor.RunConnectionCheckAsync(CancellationToken.None);
+
+        var health = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!;
+        Assert.Equal("alive", health.Connection!.Status);
+        Assert.Equal(1, modbus.ProbeCount);
+        Assert.Equal(0, connector.CurrentState.ReceivedSamples);
+        Assert.Equal(0, connector.CurrentState.DroppedSamples);
+        Assert.Equal(0, connector.CurrentState.PostedBuckets);
+    }
+
+    [Fact]
+    public async Task Protocol_error_after_tcp_connect_does_not_fabricate_alive_or_lost()
+    {
+        var modbus = new ProbeSequenceModbusTcpClient([new InvalidOperationException("invalid Modbus response")]);
+        var connector = CreateConnector(modbus, new RecordingIndustrialTelemetrySamplesClient());
+        var monitor = Assert.IsAssignableFrom<IConnectorConnectionMonitor>(connector);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => monitor.RunConnectionCheckAsync(CancellationToken.None));
+
+        var health = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!;
+        Assert.Equal("unknown", health.Connection!.Status);
+        Assert.Equal(1, modbus.ConnectCount);
+    }
+
+    [Fact]
+    public async Task Transport_timeout_marks_lost_and_recovery_starts_new_alive_interval()
+    {
+        var modbus = new ProbeSequenceModbusTcpClient([new TimeoutException("simulated timeout"), null]);
+        var connector = CreateConnector(modbus, new RecordingIndustrialTelemetrySamplesClient());
+        var monitor = Assert.IsAssignableFrom<IConnectorConnectionMonitor>(connector);
+
+        await Assert.ThrowsAsync<TimeoutException>(() => monitor.RunConnectionCheckAsync(CancellationToken.None));
+        var lost = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!;
+        Assert.Equal("lost", lost.Status);
+        Assert.Equal("transport", lost.ReasonCategory);
+        Assert.Equal("modbus.probe-timeout", lost.DiagnosticCode);
+
+        await monitor.RunConnectionCheckAsync(CancellationToken.None);
+
+        var recovered = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!;
+        Assert.Equal("alive", recovered.Status);
+        Assert.NotNull(recovered.ConnectedSinceUtc);
+        Assert.Null(recovered.DisconnectedSinceUtc);
+        Assert.True(recovered.ObservedAtUtc >= lost.ObservedAtUtc);
+    }
+
     [Fact]
     public async Task Discover_uses_configured_collection_connector_id_for_instance_and_health()
     {
@@ -82,6 +136,8 @@ public sealed class ModbusTelemetryCollectorTests
         var connector = CreateConnector(modbus, samples);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => connector.RunCollectionCycleAsync(CancellationToken.None));
+        var connectionAfterPostFailure = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!;
+        Assert.Equal("alive", connectionAfterPostFailure.Status);
         await connector.RunCollectionCycleAsync(CancellationToken.None);
 
         var request = Assert.Single(samples.Requests);
@@ -195,6 +251,11 @@ public sealed class ModbusTelemetryCollectorTests
             ReadRequests.Add((mapping.UnitId, mapping.Table, mapping.Address, mapping.RegisterCount));
             return Task.FromResult<IReadOnlyList<ModbusRegisterSample>>(samples);
         }
+
+        public Task ProbeAsync(ModbusRegisterMapping mapping, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class SequencedModbusTcpClient(IReadOnlyList<IReadOnlyList<ModbusRegisterSample>> batches) : IModbusTcpClient
@@ -213,6 +274,40 @@ public sealed class ModbusTelemetryCollectorTests
         {
             var batch = _index < batches.Count ? batches[_index++] : [];
             return Task.FromResult(batch);
+        }
+
+        public Task ProbeAsync(ModbusRegisterMapping mapping, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ProbeSequenceModbusTcpClient(IReadOnlyList<Exception?> probeOutcomes) : IModbusTcpClient
+    {
+        private int _probeIndex;
+
+        public int ConnectCount { get; private set; }
+        public int ProbeCount { get; private set; }
+
+        public Task ConnectAsync(ModbusConnectionOptions options, CancellationToken cancellationToken)
+        {
+            ConnectCount++;
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<ModbusRegisterSample>> ReadRegistersAsync(
+            ModbusRegisterMapping mapping,
+            DateTimeOffset observedAtUtc,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<ModbusRegisterSample>>([]);
+        }
+
+        public Task ProbeAsync(ModbusRegisterMapping mapping, CancellationToken cancellationToken)
+        {
+            ProbeCount++;
+            var outcome = _probeIndex < probeOutcomes.Count ? probeOutcomes[_probeIndex++] : null;
+            return outcome is null ? Task.CompletedTask : Task.FromException(outcome);
         }
     }
 

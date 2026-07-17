@@ -6,6 +6,61 @@ namespace Nerv.IIP.ConnectorHost.Connectors.Mqtt.Tests;
 public sealed class MqttTelemetryCollectorTests
 {
     [Fact]
+    public async Task Connection_stays_unknown_until_subscription_acknowledgement_then_becomes_alive()
+    {
+        var mqtt = new AcknowledgementControlledMqttClient();
+        var connector = CreateConnector(mqtt, new RecordingIndustrialTelemetrySamplesClient());
+
+        var cycle = connector.RunCollectionCycleAsync(CancellationToken.None);
+        await mqtt.WaitForSubscribeAsync();
+
+        var pending = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!;
+        Assert.Equal("unknown", pending.Connection!.Status);
+
+        mqtt.AcknowledgeSubscription();
+        await cycle;
+
+        var acknowledged = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!;
+        Assert.Equal("alive", acknowledged.Connection!.Status);
+    }
+
+    [Fact]
+    public async Task Disconnected_callback_marks_lost_immediately_and_resubscribe_recovers()
+    {
+        var mqtt = new AcknowledgementControlledMqttClient(autoAcknowledge: true);
+        var connector = CreateConnector(mqtt, new RecordingIndustrialTelemetrySamplesClient());
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+        var firstAlive = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!;
+
+        mqtt.Disconnect();
+
+        var lost = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!;
+        Assert.Equal("lost", lost.Status);
+        Assert.Equal("transport", lost.ReasonCategory);
+        Assert.Equal("mqtt.disconnected", lost.DiagnosticCode);
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        var recovered = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!;
+        Assert.Equal("alive", recovered.Status);
+        Assert.NotEqual(firstAlive.ConnectedSinceUtc, recovered.ConnectedSinceUtc);
+        Assert.Null(recovered.DisconnectedSinceUtc);
+    }
+
+    [Fact]
+    public async Task Disconnect_during_subscription_completion_is_not_overwritten_by_stale_alive()
+    {
+        var mqtt = new AcknowledgementControlledMqttClient(autoAcknowledge: true, disconnectBeforeReturn: true);
+        var connector = CreateConnector(mqtt, new RecordingIndustrialTelemetrySamplesClient());
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        var connection = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!;
+        Assert.Equal("lost", connection.Status);
+        Assert.Equal("mqtt.disconnected", connection.DiagnosticCode);
+    }
+
+    [Fact]
     public async Task Discover_uses_configured_collection_connector_id_for_instance_and_health()
     {
         var connector = CreateConnector(new FakeMqttSubscriptionClient(), new RecordingIndustrialTelemetrySamplesClient(), collectionConnectorId: "line-a-primary");
@@ -88,6 +143,7 @@ public sealed class MqttTelemetryCollectorTests
 
         Assert.Empty(samples.Requests);
         Assert.Equal(2, connector.CurrentState.DroppedSamples);
+        Assert.Equal("alive", Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!.Status);
     }
 
     [Fact]
@@ -102,6 +158,7 @@ public sealed class MqttTelemetryCollectorTests
         var connector = CreateConnector(mqtt, samples);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => connector.RunCollectionCycleAsync(CancellationToken.None));
+        Assert.Equal("alive", Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!.Status);
         await connector.RunCollectionCycleAsync(CancellationToken.None);
 
         var request = Assert.Single(samples.Requests);
@@ -173,6 +230,16 @@ public sealed class MqttTelemetryCollectorTests
                 await onMessage(message, cancellationToken);
             }
         }
+
+        public Task ConnectAndSubscribeAsync(
+            MqttConnectionOptions options,
+            IReadOnlyList<string> topicFilters,
+            Func<MqttInboundMessage, CancellationToken, Task> onMessage,
+            Action onDisconnected,
+            CancellationToken cancellationToken)
+        {
+            return ConnectAndSubscribeAsync(options, topicFilters, onMessage, cancellationToken);
+        }
     }
 
     private sealed class SequencedMqttSubscriptionClient(IReadOnlyList<IReadOnlyList<MqttInboundMessage>> batches) : IMqttSubscriptionClient
@@ -190,6 +257,71 @@ public sealed class MqttTelemetryCollectorTests
             {
                 await onMessage(message, cancellationToken);
             }
+        }
+
+        public Task ConnectAndSubscribeAsync(
+            MqttConnectionOptions options,
+            IReadOnlyList<string> topicFilters,
+            Func<MqttInboundMessage, CancellationToken, Task> onMessage,
+            Action onDisconnected,
+            CancellationToken cancellationToken)
+        {
+            return ConnectAndSubscribeAsync(options, topicFilters, onMessage, cancellationToken);
+        }
+    }
+
+    private sealed class AcknowledgementControlledMqttClient(
+        bool autoAcknowledge = false,
+        bool disconnectBeforeReturn = false) : IMqttSubscriptionClient
+    {
+        private readonly TaskCompletionSource _subscribeStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private TaskCompletionSource _acknowledgement = CreateAcknowledgement(autoAcknowledge);
+        private Action? _onDisconnected;
+
+        public Task ConnectAndSubscribeAsync(
+            MqttConnectionOptions options,
+            IReadOnlyList<string> topicFilters,
+            Func<MqttInboundMessage, CancellationToken, Task> onMessage,
+            CancellationToken cancellationToken)
+        {
+            _subscribeStarted.TrySetResult();
+            return _acknowledgement.Task.WaitAsync(cancellationToken);
+        }
+
+        public async Task ConnectAndSubscribeAsync(
+            MqttConnectionOptions options,
+            IReadOnlyList<string> topicFilters,
+            Func<MqttInboundMessage, CancellationToken, Task> onMessage,
+            Action onDisconnected,
+            CancellationToken cancellationToken)
+        {
+            _onDisconnected = onDisconnected;
+            await ConnectAndSubscribeAsync(options, topicFilters, onMessage, cancellationToken);
+            if (disconnectBeforeReturn)
+            {
+                onDisconnected();
+            }
+        }
+
+        public Task WaitForSubscribeAsync() => _subscribeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        public void AcknowledgeSubscription() => _acknowledgement.TrySetResult();
+
+        public void Disconnect()
+        {
+            _acknowledgement = CreateAcknowledgement(autoAcknowledge: true);
+            _onDisconnected?.Invoke();
+        }
+
+        private static TaskCompletionSource CreateAcknowledgement(bool autoAcknowledge)
+        {
+            var source = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (autoAcknowledge)
+            {
+                source.SetResult();
+            }
+
+            return source;
         }
     }
 

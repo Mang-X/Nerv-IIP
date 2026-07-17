@@ -1,3 +1,4 @@
+using Nerv.IIP.ConnectorHost.Application;
 using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.OpcUa;
@@ -6,15 +7,23 @@ public sealed class OpcUaConnector(
     OpcUaConnectorOptions options,
     IOpcUaClient opcUaClient,
     IIndustrialTelemetrySamplesClient samplesClient,
-    Func<DateTimeOffset>? utcNow = null) : IConnector, IIndustrialTelemetryCollectionConnector
+    Func<DateTimeOffset>? utcNow = null,
+    TimeProvider? timeProvider = null,
+    IConnectorReportSignal? reportSignal = null) : IConnector, IIndustrialTelemetryCollectionConnector
 {
     private readonly Dictionary<(string NodeId, DateTimeOffset BucketStartUtc), TelemetryBucket> _buckets = [];
     private readonly Dictionary<(string NodeId, DateTimeOffset BucketStartUtc), DateTimeOffset> _sealedBucketKeys = [];
     private readonly Dictionary<string, OpcUaTagSubscription> _tagsByNodeId = options.Tags.ToDictionary(x => x.NodeId, StringComparer.Ordinal);
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _connectionTransitionGate = new();
     private readonly Func<DateTimeOffset> _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
     private readonly TimeSpan _sealedBucketRetention = CalculateSealedBucketRetention(options.Tags);
     private readonly Guid _counterEpoch = Guid.CreateVersion7();
+    private readonly ConnectorConnectionStateTracker _connectionTracker = new(
+        options.EffectiveCollectionConnectorId,
+        timeProvider ?? TimeProvider.System,
+        reportSignal is null ? static _ => { } : reportSignal.Signal);
+    private long _connectionLossVersion;
 
     public OpcUaConnectorState CurrentState { get; private set; } = new(
         "stopped",
@@ -43,6 +52,7 @@ public sealed class OpcUaConnector(
             }
             catch (OpcUaConnectionLostException) when (attempts < options.MaxReconnectAttempts)
             {
+                MarkConnectionLost("opcua.session-lost");
                 attempts++;
                 await UpdateStateAsync(state => state with
                 {
@@ -61,7 +71,7 @@ public sealed class OpcUaConnector(
                     ReportedStatus = "stopped",
                     HealthStatus = "unhealthy",
                     ErrorCount = state.ErrorCount + 1,
-                    Summary = $"OPC UA collection failed: {ex.Message}"
+                    Summary = "OPC UA collection failed."
                 }, cancellationToken);
                 throw;
             }
@@ -110,17 +120,22 @@ public sealed class OpcUaConnector(
     {
         var known = state.ReceivedSamples > 0 || state.DroppedSamples > 0 || state.ErrorCount > 0 || state.LastSampleAtUtc is not null;
         return new(options.EffectiveCollectionConnectorId, "opcua", _counterEpoch,
-            known ? state.ReceivedSamples : null, known ? state.DroppedSamples : null, known ? state.ErrorCount : null, state.LastSampleAtUtc);
+            known ? state.ReceivedSamples : null, known ? state.DroppedSamples : null, known ? state.ErrorCount : null, state.LastSampleAtUtc,
+            _connectionTracker.Snapshot);
     }
 
     private async Task ConnectBrowseAndSubscribeAsync(CancellationToken cancellationToken)
     {
-        await opcUaClient.ConnectAsync(new OpcUaConnectionOptions(
-            options.EndpointUrl,
-            options.SecurityPolicy,
-            options.SecurityMode,
-            options.CredentialReference,
-            options.AutoAcceptUntrustedServerCertificates), cancellationToken);
+        var connectionLossVersion = CaptureConnectionLossVersion();
+        await opcUaClient.ConnectAsync(
+            new OpcUaConnectionOptions(
+                options.EndpointUrl,
+                options.SecurityPolicy,
+                options.SecurityMode,
+                options.CredentialReference,
+                options.AutoAcceptUntrustedServerCertificates),
+            HandleConnectionLost,
+            cancellationToken);
 
         _ = await opcUaClient.BrowseAsync(options.BrowseRootNodeId, cancellationToken);
 
@@ -136,6 +151,40 @@ public sealed class OpcUaConnector(
         }
 
         await opcUaClient.SubscribeAsync(options.Tags, HandleDataChangeAsync, cancellationToken);
+        MarkAliveIfNoConnectionLoss(connectionLossVersion);
+    }
+
+    private void HandleConnectionLost()
+    {
+        MarkConnectionLost("opcua.bad-keepalive");
+    }
+
+    private void MarkConnectionLost(string diagnosticCode)
+    {
+        lock (_connectionTransitionGate)
+        {
+            _connectionLossVersion++;
+            _connectionTracker.MarkLost("transport", diagnosticCode);
+        }
+    }
+
+    private long CaptureConnectionLossVersion()
+    {
+        lock (_connectionTransitionGate)
+        {
+            return _connectionLossVersion;
+        }
+    }
+
+    private void MarkAliveIfNoConnectionLoss(long connectionLossVersion)
+    {
+        lock (_connectionTransitionGate)
+        {
+            if (_connectionLossVersion == connectionLossVersion)
+            {
+                _connectionTracker.MarkAlive();
+            }
+        }
     }
 
     private async Task HandleDataChangeAsync(OpcUaDataChange change, CancellationToken cancellationToken)

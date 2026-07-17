@@ -44,6 +44,7 @@ if (builder.Configuration.GetValue("Modbus:Enabled", false))
     builder.Services.AddSingleton<ModbusConnector>();
     builder.Services.AddSingleton<IConnector>(sp => sp.GetRequiredService<ModbusConnector>());
     builder.Services.AddSingleton<IIndustrialTelemetryCollectionConnector>(sp => sp.GetRequiredService<ModbusConnector>());
+    builder.Services.AddSingleton<IConnectorConnectionMonitor>(sp => sp.GetRequiredService<ModbusConnector>());
 }
 if (builder.Configuration.GetValue("Mqtt:Enabled", false))
 {
@@ -158,7 +159,8 @@ static ModbusConnectorOptions CreateModbusOptions(IConfiguration configuration)
             ResolveTelemetryBucketSeconds(section),
             Enum.Parse<ModbusRegisterDataType>(section["DataType"] ?? "UInt16", ignoreCase: true),
             Enum.Parse<ModbusWordOrder>(section["WordOrder"] ?? "BigEndian", ignoreCase: true),
-            section["SamplingPolicy"]))
+            section["SamplingPolicy"],
+            section.GetValue("Enabled", true)))
         .ToList();
 
     return new ModbusConnectorOptions(

@@ -21,18 +21,20 @@ public sealed class ConnectorConnectionStateTrackerTests
     }
 
     [Fact]
-    public void Recovery_creates_a_new_connected_since_timestamp()
+    public void Recovery_creates_a_new_alive_interval()
     {
         var timeProvider = new MutableTimeProvider();
         var tracker = new ConnectorConnectionStateTracker("connector-a", timeProvider, _ => { });
-        tracker.MarkConnected();
+        tracker.MarkAlive();
         var firstConnectedSince = tracker.Snapshot.ConnectedSinceUtc;
+        Assert.Equal("alive", tracker.Snapshot.Status);
         timeProvider.Advance(TimeSpan.FromSeconds(5));
         tracker.MarkLost("transport", "socket-closed");
         timeProvider.Advance(TimeSpan.FromSeconds(5));
 
-        tracker.MarkConnected();
+        tracker.MarkAlive();
 
+        Assert.Equal("alive", tracker.Snapshot.Status);
         Assert.NotEqual(firstConnectedSince, tracker.Snapshot.ConnectedSinceUtc);
         Assert.Equal(timeProvider.GetUtcNow(), tracker.Snapshot.ConnectedSinceUtc);
         Assert.Null(tracker.Snapshot.DisconnectedSinceUtc);
@@ -43,7 +45,7 @@ public sealed class ConnectorConnectionStateTrackerTests
     {
         var timeProvider = new MutableTimeProvider();
         var tracker = new ConnectorConnectionStateTracker("connector-a", timeProvider, _ => { });
-        tracker.MarkConnected();
+        tracker.MarkAlive();
         timeProvider.Advance(TimeSpan.FromSeconds(2));
         tracker.MarkLost("transport", "socket-closed");
         var disconnectedSince = tracker.Snapshot.DisconnectedSinceUtc;
