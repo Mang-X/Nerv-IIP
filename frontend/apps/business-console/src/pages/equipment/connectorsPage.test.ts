@@ -339,7 +339,7 @@ describe('equipment telemetry connectors page', () => {
 
     await wrapper.findAll('button[aria-expanded]')[1].trigger('click')
     expect(connectorMocks.coverageConnectorIds).toEqual(['modbus-main', 'mqtt-main'])
-    expect(wrapper.findAll('button[aria-expanded]')[0].attributes('aria-expanded')).toBe('false')
+    expect(wrapper.findAll('button[aria-expanded]')[0].attributes('aria-expanded')).toBe('true')
     expect(wrapper.findAll('button[aria-expanded]')[1].attributes('aria-expanded')).toBe('true')
 
     await wrapper.findAll('button[aria-expanded]')[1].trigger('click')

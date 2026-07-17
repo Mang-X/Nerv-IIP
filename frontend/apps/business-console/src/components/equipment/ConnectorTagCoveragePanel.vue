@@ -39,21 +39,14 @@ function itemState(item: BusinessConsoleConnectorTagCoverageItem) {
   if (item.activationStatus === 'error') {
     return {
       label: '启用失败',
-      description: item.activationErrorMessage || '采集程序未能启用此标签',
+      description: '采集程序未能启用此标签',
       variant: 'danger' as const,
     }
   }
-  if (item.activationStatus === 'active' && !item.lastSampleAtUtc) {
+  if (item.activationStatus === 'active') {
     return {
-      label: '等待首条数据',
-      description: '已启用，尚未收到采样',
-      variant: 'warning' as const,
-    }
-  }
-  if (item.activationStatus === 'active' && item.lastSampleAtUtc) {
-    return {
-      label: '已收到数据',
-      description: `最近采样 ${formatDateTime(item.lastSampleAtUtc)}`,
+      label: '已启用',
+      description: '采集程序已启用此标签',
       variant: 'success' as const,
     }
   }
@@ -62,6 +55,12 @@ function itemState(item: BusinessConsoleConnectorTagCoverageItem) {
     description: '等待采集程序确认',
     variant: 'neutral' as const,
   }
+}
+
+function sampleDescription(item: BusinessConsoleConnectorTagCoverageItem) {
+  if (item.lastSampleAtUtc) return `最近采样 ${formatDateTime(item.lastSampleAtUtc)}`
+  if (item.activationStatus === 'active') return '等待首条数据'
+  return '尚未收到采样'
 }
 </script>
 
@@ -142,6 +141,9 @@ function itemState(item: BusinessConsoleConnectorTagCoverageItem) {
           :class="item.activationStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'"
         >
           {{ itemState(item).description }}
+        </p>
+        <p class="mt-1 text-[11px] text-muted-foreground">
+          {{ sampleDescription(item) }}
         </p>
       </article>
     </div>

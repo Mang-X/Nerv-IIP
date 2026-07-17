@@ -106,6 +106,7 @@ describe('ConnectorTagCoveragePanel', () => {
           tagKey: 'disabled-speed',
           enabled: false,
           activationStatus: 'disabled',
+          lastSampleAtUtc: '2026-07-16T07:08:09.000Z',
         },
         {
           deviceAssetId: 'DEV-CNC-01',
@@ -113,7 +114,7 @@ describe('ConnectorTagCoveragePanel', () => {
           enabled: true,
           activationStatus: 'error',
           activationErrorCode: 'OPC_BAD_NODE',
-          activationErrorMessage: '找不到配置的数据点',
+          activationErrorMessage: 'OPC UA subscription activation failed.',
         },
         {
           deviceAssetId: 'DEV-CNC-02',
@@ -132,19 +133,26 @@ describe('ConnectorTagCoveragePanel', () => {
       ],
     }
 
-    const text = mountPanel().text()
+    const wrapper = mountPanel()
+    const text = wrapper.text()
+    const [disabled, activationError, neverSampled, sampled] = wrapper.findAll('article')
 
     expect(text).toContain('已停用')
     expect(text).toContain('启用失败')
-    expect(text).toContain('找不到配置的数据点')
+    expect(text).toContain('采集程序未能启用此标签')
     expect(text).toContain('等待首条数据')
     expect(text).toContain('已收到数据')
     expect(text).toContain('最近采样')
     expect(text).not.toContain('secret-revision-must-not-render')
     expect(text).not.toContain('OPC_BAD_NODE')
+    expect(text).not.toContain('OPC UA subscription activation failed.')
     expect(text).not.toContain('数据当前')
     expect(text).not.toContain('数据过期')
     expect(text).not.toContain('质量异常')
+    expect(disabled.text()).toContain('最近采样')
+    expect(activationError.text()).toContain('尚未收到采样')
+    expect(neverSampled.text()).toContain('等待首条数据')
+    expect(sampled.text()).toContain('最近采样')
   })
 
   it('queries only the canonical connector identity supplied by its card', async () => {

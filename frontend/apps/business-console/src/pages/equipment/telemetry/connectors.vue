@@ -9,7 +9,7 @@ import { notifyError } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { NvButton, NvPageHeader, NvSectionCard, NvSectionCards } from '@nerv-iip/ui'
 import { HashIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 definePage({
@@ -54,12 +54,13 @@ const faultCount = computed(
   () => connectors.value.filter((c) => isConnectorFault(c.status, c.staleReason)).length,
 )
 
-const expandedConnectorKey = ref<string | null>(null)
+const expanded = reactive(new Set<string>())
 function rowKey(connectorId?: string | null, connectorName?: string | null) {
   return connectorId ?? connectorName ?? '未知连接器'
 }
 function toggle(key: string) {
-  expandedConnectorKey.value = expandedConnectorKey.value === key ? null : key
+  if (expanded.has(key)) expanded.delete(key)
+  else expanded.add(key)
 }
 </script>
 
@@ -117,7 +118,7 @@ function toggle(key: string) {
         :key="rowKey(connector.connectorId, connector.connectorName)"
         :connector="connector"
         :sample-rate="sampleRateByConnector[connector.connectorId ?? ''] ?? null"
-        :expanded="expandedConnectorKey === rowKey(connector.connectorId, connector.connectorName)"
+        :expanded="expanded.has(rowKey(connector.connectorId, connector.connectorName))"
         @toggle="toggle(rowKey(connector.connectorId, connector.connectorName))"
       />
     </div>
