@@ -833,6 +833,22 @@ describe('maintenance plans page', () => {
     await openEditDialog('PM-CUSTOM-CALENDAR')
 
     expect(bodyWrapper<HTMLButtonElement>('#plan-interval').text()).toContain('45 天（当前）')
+
+    await bodyWrapper<HTMLButtonElement>('#plan-interval').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await bodyWrapperByText<HTMLElement>('[role="option"]', '每月').trigger('keydown', {
+      key: 'Enter',
+    })
+    await flushPromises()
+    expect(bodyWrapper<HTMLButtonElement>('#plan-interval').text()).toContain('每月')
+
+    await bodyWrapper<HTMLButtonElement>('#plan-interval').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await bodyWrapperByText<HTMLElement>('[role="option"]', '45 天（当前）').trigger('keydown', {
+      key: 'Enter',
+    })
+    await flushPromises()
+
     await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
     await flushPromises()
 

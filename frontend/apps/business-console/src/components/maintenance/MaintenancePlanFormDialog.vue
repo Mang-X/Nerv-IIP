@@ -90,16 +90,20 @@ const form = reactive<PlanFormState>({
 const submitted = shallowRef(false)
 
 const intervalOptions = computed(() => {
-  if (presetIntervalOptions.some((option) => option.value === form.interval)) {
+  const originalInterval = props.mode === 'edit' ? props.plan?.interval : undefined
+  if (
+    !originalInterval ||
+    presetIntervalOptions.some((option) => option.value === originalInterval)
+  ) {
     return presetIntervalOptions
   }
 
-  const dayInterval = /^P(\d+)D$/.exec(form.interval)?.[1]
+  const dayInterval = /^P(\d+)D$/.exec(originalInterval)?.[1]
   return [
     ...presetIntervalOptions,
     {
       label: dayInterval ? `${Number(dayInterval)} 天（当前）` : '当前周期（非预设）',
-      value: form.interval,
+      value: originalInterval,
     },
   ]
 })
