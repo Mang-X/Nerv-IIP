@@ -81,7 +81,7 @@ The model keeps these facts separate:
 | Host liveness | AppHub heartbeat | last heartbeat, reachable/timeout |
 | Field connection | Connector adapter and AppHub projection | `unknown/alive/lost`, observed/since timestamps, reason category |
 | Collector health | Connector collection loop | reported/health status, counters, last success/error |
-| Tag freshness | IndustrialTelemetry samples | `never/current/stale/bad`, first/last sample and quality |
+| Tag sample presence | IndustrialTelemetry summaries | `never/sampled`, first/last sample timestamps |
 
 `ConnectorConnectionState` is an optional additive object in the Connector Protocol collection-health payload:
 
@@ -158,7 +158,7 @@ Host-process loss remains a distinct path. The existing configurable combined wo
 
 1. Every telemetry sample carries the canonical `collectionConnectorId` in addition to existing provenance.
 2. IndustrialTelemetry records the sample without creating or modifying configured coverage from sample presence alone.
-3. The connector-tag query starts from the current manifest and left-joins `TelemetrySummary` by canonical connector, device, and tag identity for first/last sample and quality; it never scans the high-write-volume raw historian table.
+3. The connector-tag query starts from the current manifest and left-joins `TelemetrySummary` by canonical connector, device, and tag identity for first/last sample timestamps; it never scans the high-write-volume raw historian table.
 4. Business Console loads the query lazily when a connector card expands.
 
 ## Storage and contracts
@@ -199,7 +199,9 @@ Expanding a card loads the current manifest and shows each configured tag with d
 - configured but disabled;
 - activation error;
 - active but never sampled;
-- sampled and current/stale/bad.
+- sampled, with the authoritative most recent sample time.
+
+This PR does not label a sampled tag as `current`, `stale`, or `bad`. The current sample contract has no cross-protocol quality fact, and the manifest has no authoritative per-tag freshness threshold. Adding those labels without extending the sample contract and sampling policy would fabricate state. A later quality/freshness slice may add them with an explicit authority and threshold model.
 
 The page does not parse connector IDs, fall back to device-control bindings, or derive connection status from sample silence.
 
@@ -240,10 +242,10 @@ The real process-level acceptance is carried by a governed `scripts/verify-conne
 
 1. start the platform services, Connector Host, and simulator;
 2. wait for an explicit `alive` Gateway response and a current manifest;
-3. close the accepted socket while leaving Connector Host running;
+3. stop the controlled simulator so its accepted socket closes and the endpoint remains unavailable while Connector Host keeps running;
 4. poll the BusinessGateway facade until the ten-second deadline;
 5. assert explicit `lost`, `stale/offline`, a bounded `disconnectedSinceUtc`, and a still-fresh Host heartbeat;
-6. restore the simulator and assert a new alive interval;
+6. restart the simulator on the same endpoint and assert a new alive interval;
 7. separately prove a configured-but-never-sampled tag remains in the expanded coverage list.
 
 The acceptance script measures with a monotonic stopwatch, enforces the product deadline of ten seconds without extending it for CI jitter, and records detection/report/query phase timestamps in its artifact. Repeated local/release runs report the maximum elapsed time. OPC UA simulator and MQTT broker disconnect tests remain protocol-specific integration evidence. Business Console fake-timer tests verify the ten-second refresh and every manifest/health display state.
