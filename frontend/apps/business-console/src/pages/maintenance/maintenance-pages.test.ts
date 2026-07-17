@@ -206,7 +206,12 @@ beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
   useAuthStore().$patch({
-    principal: { principalType: 'user', principalId: 'user-admin', loginName: 'admin' },
+    principal: {
+      principalType: 'user',
+      principalId: 'user-admin',
+      loginName: 'admin',
+      permissionCodes: ['business.maintenance.plans.read', 'business.maintenance.plans.manage'],
+    },
   })
 })
 
@@ -457,6 +462,51 @@ describe('maintenance plans page', () => {
     await bodyWrapperByText<HTMLElement>('[role="menuitem"]', '编辑触发条件').trigger('click')
     await flushPromises()
   }
+
+  it('does not expose the edit row action to a principal with plans.read only', async () => {
+    useAuthStore().$patch({
+      principal: {
+        principalType: 'user',
+        principalId: 'user-reader',
+        loginName: 'reader',
+        permissionCodes: ['business.maintenance.plans.read'],
+      },
+    })
+    state.plans = [
+      {
+        planId: 'p-read-only',
+        deviceAssetId: 'DEV-READ-ONLY',
+        planCode: 'PM-READ-ONLY',
+        interval: 'P30D',
+        startsOn: '2026-07-01',
+      },
+    ]
+
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    expect(document.body.textContent).not.toContain('编辑触发条件')
+    expect(document.body.querySelector('[aria-label="保养计划操作 PM-READ-ONLY"]')).toBeNull()
+  })
+
+  it('allows a principal with plans.manage to open the edit dialog', async () => {
+    state.plans = [
+      {
+        planId: 'p-manager',
+        deviceAssetId: 'DEV-MANAGER',
+        planCode: 'PM-MANAGER',
+        interval: 'P30D',
+        startsOn: '2026-07-01',
+      },
+    ]
+
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+    await openEditDialog('PM-MANAGER')
+
+    expect(document.body.textContent).toContain('编辑保养计划')
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
+  })
 
   it('renders three trigger modes and remaining hours vs next-due date', async () => {
     state.plans = [

@@ -10,6 +10,8 @@ import { useMaintenancePlans } from '@/composables/useBusinessMaintenance'
 import { useMaintenancePlanRuntimeRemaining } from '@/composables/useBusinessTelemetry'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
@@ -41,6 +43,11 @@ definePage({
     requiredPermissions: ['business.maintenance.plans.read'],
   },
 })
+
+const auth = useAuthStore()
+const canManagePlans = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(P.maintenancePlansManage),
+)
 
 const {
   plans,
@@ -177,7 +184,7 @@ function openCreate() {
 }
 
 function openEdit(row: PlanRow) {
-  if (!row.planId) return
+  if (!canManagePlans.value || !row.planId) return
   selectedPlan.value = row
   planDialogMode.value = 'edit'
   planDialogOpen.value = true
@@ -281,7 +288,7 @@ function formatError(error: unknown) {
       empty-message="暂无保养计划。为关键设备登记周期保养，再用「生成到期工单」批量开单。"
     >
       <template #cell-actions="{ row }">
-        <NvRowActions :label="`保养计划操作 ${row.planCode ?? planNo(row)}`">
+        <NvRowActions v-if="canManagePlans" :label="`保养计划操作 ${row.planCode ?? planNo(row)}`">
           <NvDropdownMenuItem :disabled="!row.planId" @click="openEdit(row)">
             <PencilIcon aria-hidden="true" />
             编辑触发条件
