@@ -1241,6 +1241,22 @@
     {
       "service": "IndustrialTelemetry",
       "method": "POST",
+      "route": "/api/business/v1/iiot/connector-tag-manifests",
+      "operationId": "reportBusinessIiotConnectorTagManifest",
+      "classification": "internal",
+      "rationale": "Connector Host callback reporting authoritative connector configuration and activation facts; never a direct Console action."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/connectors/{collectionConnectorId}/tag-coverage",
+      "operationId": "getBusinessIiotConnectorTagCoverage",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade is delivered by #947 / PR #952 Task 9 as getBusinessConsoleTelemetryConnectorTagCoverage; Task 9 must flip this row to exposed."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
       "route": "/api/business/v1/iiot/device-control-commands",
       "operationId": "createBusinessIiotDeviceControlCommand",
       "classification": "exposed",

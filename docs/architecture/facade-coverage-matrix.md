@@ -81,7 +81,7 @@ declaration against what actually shipped (facade + codegen + barrel for
   add `gateways` + `gatewayOperationIds`, drop `followUp`.
 - **New business service** → add its `.Web` project reference and assembly name to
   the gate project (`Nerv.IIP.FacadeCoverage.Tests`) so its endpoints are covered.
-- The `exposed` rows are summarised by count here; the full 355-row registry with
+- The `exposed` rows are summarised by count here; the full 357-row registry with
   per-endpoint facade operation ids lives in the JSON.
 
 ## Summary
@@ -93,7 +93,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | BarcodeLabel | 12 | 9 | 0 | 3 |
 | DemandPlanning | 15 | 15 | 0 | 0 |
 | Erp | 51 | 39 | 11 | 1 |
-| IndustrialTelemetry | 24 | 22 | 1 | 1 |
+| IndustrialTelemetry | 26 | 22 | 2 | 2 |
 | Inventory | 12 | 5 | 2 | 5 |
 | Maintenance | 20 | 15 | 5 | 0 |
 | MasterData | 46 | 38 | 4 | 4 |
@@ -102,7 +102,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Quality | 32 | 18 | 14 | 0 |
 | Scheduling | 8 | 7 | 1 | 0 |
 | Wms | 30 | 19 | 6 | 5 |
-| **Total** | **355** | **284** | **51** | **20** |
+| **Total** | **357** | **284** | **52** | **21** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
 The `exposed` rows (284) — each with its verified facade `gatewayOperationIds` — are
@@ -128,6 +128,7 @@ governance decisions, are listed in full below.
 | Erp | POST | `/api/business/v1/erp/supplier-invoices/{invoiceNo}/release-payment-hold` | BusinessGateway facade pending; supplier-invoice payment-hold UI is a known ERP frontend gap. |
 | Erp | POST | `/api/business/v1/erp/supplier-invoices/{invoiceNo}/void-payment-hold` | BusinessGateway facade pending; supplier-invoice payment-hold UI is a known ERP frontend gap. |
 | Erp | POST | `/api/business/v1/erp/sales-return-authorizations` | BusinessGateway facade pending; customer return authorization follows the ERP returns Business Console menu phase. |
+| IndustrialTelemetry | GET | `/api/business/v1/iiot/connectors/{collectionConnectorId}/tag-coverage` | BusinessGateway facade is delivered by #947 / PR #952 Task 9 as getBusinessConsoleTelemetryConnectorTagCoverage; Task 9 must flip this row to exposed. |
 | IndustrialTelemetry | POST | `/api/business/v1/iiot/tags` | BusinessGateway facade pending; telemetry tag create follows the equipment/telemetry config menu phase (only tag list GET is exposed today). |
 | Inventory | POST | `/api/inventory/v1/count-tasks/{countTaskId}/cancel` | BusinessGateway facade pending; count-task create/adjust are exposed, cancel follows the inventory count Business Console menu phase. |
 | Inventory | POST | `/api/inventory/v1/locations` | BusinessGateway facade pending; inventory location master-setup UI is a later menu phase. |
@@ -168,6 +169,7 @@ governance decisions, are listed in full below.
 | Approval | POST | `/api/business/v1/approvals/tasks/overdue/check` | Internal server-clock overdue scheduler endpoint invoked by the Approval OverdueCheck background scanner (#488); not a user action. |
 | Erp | GET | `/api/business/v1/erp/purchase-receipts/{purchaseReceiptNo}/source-document` | Service-to-service source-document read contract consumed by Quality to validate receipt line SKU/qty/UOM/lot (#77). |
 | IndustrialTelemetry | POST | `/api/business/v1/iiot/alarms/escalations/run` | Internal alarm-escalation scheduler endpoint (IndustrialTelemetry:AlarmEscalation opt-in scanner, #686); not a user action. |
+| IndustrialTelemetry | POST | `/api/business/v1/iiot/connector-tag-manifests` | Connector Host callback reporting authoritative connector configuration and activation facts; never a direct Console action. |
 | Inventory | POST | `/api/inventory/v1/reservations` | Service-to-service reservation API consumed by WMS pick-task creation (#412). |
 | Inventory | POST | `/api/inventory/v1/reservations/fefo` | Service-to-service FEFO reservation API consumed by WMS (#412). |
 | Inventory | POST | `/api/inventory/v1/reservations/{reservationId}/release` | Service-to-service reservation release API consumed by WMS outbound cancel (#412). |

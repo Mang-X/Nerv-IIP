@@ -96,9 +96,20 @@ public sealed class ConnectorTagManifest : Entity<ConnectorTagManifestId>, IAggr
 
         if (manifestObservedAtUtc == ManifestObservedAtUtc)
         {
-            return CurrentResult(normalizedRevision == ManifestRevision
-                ? ManifestApplyDisposition.Idempotent
-                : ManifestApplyDisposition.Conflict);
+            if (normalizedRevision != ManifestRevision)
+            {
+                return CurrentResult(ManifestApplyDisposition.Conflict);
+            }
+
+            var replayEntries = NormalizeEntries(entries);
+            var replaySourceSystem = IndustrialTelemetryText.RequiredLower(sourceSystem, nameof(sourceSystem));
+            if (!HasSameRevisionShape(replaySourceSystem, replayEntries))
+            {
+                return CurrentResult(ManifestApplyDisposition.Conflict);
+            }
+
+            ApplyEntries(replayEntries, manifestObservedAtUtc);
+            return CurrentResult(ManifestApplyDisposition.Idempotent);
         }
 
         var normalizedEntries = NormalizeEntries(entries);
