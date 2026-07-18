@@ -3,6 +3,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmShelveIdempotencyAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.ConnectorTagManifestAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlChannelBindingAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlCommandAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
@@ -27,6 +28,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<OeeProductionFact> OeeProductionFacts => Set<OeeProductionFact>();
     public DbSet<AlarmEvent> AlarmEvents => Set<AlarmEvent>();
     public DbSet<AlarmShelveIdempotency> AlarmShelveIdempotencies => Set<AlarmShelveIdempotency>();
+    public DbSet<ConnectorTagManifest> ConnectorTagManifests => Set<ConnectorTagManifest>();
+    public DbSet<ConnectorTagBinding> ConnectorTagBindings => Set<ConnectorTagBinding>();
     public DbSet<TelemetryRawSample> TelemetryRawSamples => Set<TelemetryRawSample>();
     public DbSet<TelemetryRollup> TelemetryRollups => Set<TelemetryRollup>();
     public DbSet<TelemetrySummary> TelemetrySummaries => Set<TelemetrySummary>();

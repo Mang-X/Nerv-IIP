@@ -20,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Nerv.IIP.ConnectorHost.Application\Nerv.IIP.ConnectorHost.Application.csproj" />
     <ProjectReference Include="..\..\src\Nerv.IIP.ConnectorHost.Connectors.Mqtt\Nerv.IIP.ConnectorHost.Connectors.Mqtt.csproj" />
     <ProjectReference Include="..\..\src\Nerv.IIP.ConnectorHost.Connectors.OpcUa\Nerv.IIP.ConnectorHost.Connectors.OpcUa.csproj" />
   </ItemGroup>

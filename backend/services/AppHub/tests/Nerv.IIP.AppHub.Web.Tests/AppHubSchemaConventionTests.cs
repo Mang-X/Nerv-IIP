@@ -86,6 +86,106 @@ public sealed class AppHubSchemaConventionTests
     }
 
     [Fact]
+    public void Connector_connection_projection_columns_are_nullable_bounded_and_commented()
+    {
+        using var fixture = CreateFixture();
+        var projection = fixture.DbContext.GetService<IDesignTimeModel>().Model
+            .FindEntityType(typeof(ConnectorCollectionHealthProjection))!;
+        var expectedLengths = new Dictionary<string, int>
+        {
+            [nameof(ConnectorCollectionHealthProjection.ConnectionStatus)] = 32,
+            [nameof(ConnectorCollectionHealthProjection.ConnectionReasonCategory)] = 64,
+            [nameof(ConnectorCollectionHealthProjection.ConnectionDiagnosticCode)] = 128,
+        };
+        var properties = new[]
+        {
+            projection.FindProperty(nameof(ConnectorCollectionHealthProjection.ConnectionStatus))!,
+            projection.FindProperty(nameof(ConnectorCollectionHealthProjection.ConnectionObservedAtUtc))!,
+            projection.FindProperty(nameof(ConnectorCollectionHealthProjection.ConnectedSinceUtc))!,
+            projection.FindProperty(nameof(ConnectorCollectionHealthProjection.DisconnectedSinceUtc))!,
+            projection.FindProperty(nameof(ConnectorCollectionHealthProjection.ConnectionReasonCategory))!,
+            projection.FindProperty(nameof(ConnectorCollectionHealthProjection.ConnectionDiagnosticCode))!,
+        };
+
+        Assert.All(properties, property =>
+        {
+            Assert.True(property.IsNullable, $"{property.Name} must remain nullable for legacy rows.");
+            Assert.False(string.IsNullOrWhiteSpace(property.GetComment()), $"{property.Name} requires a database comment.");
+        });
+        foreach (var (propertyName, maxLength) in expectedLengths)
+        {
+            Assert.Equal(maxLength, projection.FindProperty(propertyName)!.GetMaxLength());
+        }
+    }
+
+    [Fact]
+    public void Connector_connection_migration_adds_only_nullable_columns_without_historical_backfill()
+    {
+        var migrationType = typeof(ApplicationDbContext).Assembly.GetType(
+            "Nerv.IIP.AppHub.Infrastructure.Migrations.AddConnectorConnectionState");
+        Assert.NotNull(migrationType);
+        var migration = Assert.IsAssignableFrom<Migration>(Activator.CreateInstance(migrationType));
+        var builder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        migrationType.GetMethod(
+                "Up",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [builder]);
+
+        var expectedColumns = new Dictionary<string, int?>
+        {
+            [nameof(ConnectorCollectionHealthProjection.ConnectionStatus)] = 32,
+            [nameof(ConnectorCollectionHealthProjection.ConnectionObservedAtUtc)] = null,
+            [nameof(ConnectorCollectionHealthProjection.ConnectedSinceUtc)] = null,
+            [nameof(ConnectorCollectionHealthProjection.DisconnectedSinceUtc)] = null,
+            [nameof(ConnectorCollectionHealthProjection.ConnectionReasonCategory)] = 64,
+            [nameof(ConnectorCollectionHealthProjection.ConnectionDiagnosticCode)] = 128,
+        };
+        var addedColumns = builder.Operations
+            .OfType<AddColumnOperation>()
+            .Where(operation => operation.Schema == "apphub" && operation.Table == "connector_collection_health")
+            .ToDictionary(operation => operation.Name, StringComparer.Ordinal);
+
+        Assert.Equal(expectedColumns.Keys.Order(), addedColumns.Keys.Order());
+        foreach (var (columnName, maxLength) in expectedColumns)
+        {
+            var column = addedColumns[columnName];
+            Assert.True(column.IsNullable, $"{columnName} must not backfill a fabricated historical fact.");
+            Assert.Equal(maxLength, column.MaxLength);
+            Assert.False(string.IsNullOrWhiteSpace(column.Comment), $"{columnName} requires a database comment.");
+            Assert.Null(column.DefaultValue);
+            Assert.Null(column.DefaultValueSql);
+        }
+
+        Assert.DoesNotContain(builder.Operations, operation => operation is SqlOperation);
+    }
+
+    [Fact]
+    public void Hardened_connector_connection_projection_has_exact_ordering_concurrency_and_shape_constraints()
+    {
+        using var fixture = CreateFixture();
+        var projection = fixture.DbContext.GetService<IDesignTimeModel>().Model
+            .FindEntityType(typeof(ConnectorCollectionHealthProjection))!;
+
+        Assert.True(projection.FindProperty(nameof(ConnectorCollectionHealthProjection.ConcurrencyVersion))!.IsConcurrencyToken);
+        Assert.True(projection.FindProperty(nameof(ConnectorCollectionHealthProjection.ConnectionObservedAtUtcTicks))!.IsNullable);
+        Assert.Equal(
+            ["ck_connector_collection_health_connection_shape", "ck_connector_collection_health_connection_status"],
+            projection.GetCheckConstraints().Select(constraint => constraint.Name!).Order().ToArray());
+
+        var migrationType = typeof(ApplicationDbContext).Assembly.GetType(
+            "Nerv.IIP.AppHub.Infrastructure.Migrations.HardenConnectorConnectionProjection");
+        Assert.NotNull(migrationType);
+        var migration = Assert.IsAssignableFrom<Migration>(Activator.CreateInstance(migrationType));
+        var builder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        migrationType.GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [builder]);
+
+        Assert.Equal(2, builder.Operations.OfType<AddCheckConstraintOperation>().Count());
+        Assert.Contains(builder.Operations.OfType<SqlOperation>(), operation =>
+            operation.Sql.Contains("ConnectionObservedAtUtcTicks", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Current_model_matches_the_latest_migration_snapshot()
     {
         using var fixture = CreateFixture();

@@ -395,6 +395,195 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.ConnectorTagManifestAggregate.ConnectorTagBinding", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Connector tag binding identifier.");
+
+                    b.Property<string>("ActivationErrorCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("activation_error_code")
+                        .HasComment("Sanitized bounded connector activation error code.");
+
+                    b.Property<string>("ActivationErrorMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("activation_error_message")
+                        .HasComment("Sanitized bounded connector activation error message.");
+
+                    b.Property<DateTimeOffset>("ActivationObservedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("activation_observed_at_utc")
+                        .HasComment("UTC source observation time displayed for the latest activation update.");
+
+                    b.Property<long>("ActivationObservedAtUtcTicks")
+                        .HasColumnType("bigint")
+                        .HasColumnName("activation_observed_at_utc_ticks")
+                        .HasComment("Exact .NET UTC ticks ordering activation updates without timestamptz precision loss.");
+
+                    b.Property<string>("ActivationStatus")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("activation_status")
+                        .HasComment("Latest independently ordered activation status.");
+
+                    b.Property<string>("CollectionConnectorId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("collection_connector_id")
+                        .HasComment("Canonical collection connector identity owning the binding.");
+
+                    b.Property<long>("ConcurrencyVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("concurrency_version")
+                        .HasComment("Application-managed optimistic concurrency version incremented by binding mutations.");
+
+                    b.Property<Guid>("ConnectorTagManifestId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("connector_tag_manifest_id")
+                        .HasComment("Owning connector tag manifest identifier.");
+
+                    b.Property<string>("DeviceAssetId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("device_asset_id")
+                        .HasComment("Referenced MasterData device asset identifier.");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("enabled")
+                        .HasComment("Whether the manifest enables collection for the binding.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Owning environment identifier duplicated for scoped lookups.");
+
+                    b.Property<bool>("IsCurrent")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_current")
+                        .HasComment("Whether the binding is present in the accepted manifest revision.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Owning organization identifier duplicated for scoped lookups.");
+
+                    b.Property<string>("ProtocolAddress")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("protocol_address")
+                        .HasComment("Optional protocol-native source address for diagnostics.");
+
+                    b.Property<DateTimeOffset?>("RetiredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("retired_at_utc")
+                        .HasComment("Accepted manifest observation time that retired the binding.");
+
+                    b.Property<string>("TagKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("tag_key")
+                        .HasComment("Normalized telemetry tag key exposed by the connector.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConnectorTagManifestId", "IsCurrent");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "CollectionConnectorId", "DeviceAssetId", "TagKey")
+                        .IsUnique();
+
+                    b.ToTable("connector_tag_bindings", "industrial_telemetry", t =>
+                        {
+                            t.HasComment("BusinessIndustrialTelemetry current and retired connector device-tag bindings.");
+
+                            t.HasCheckConstraint("ck_connector_tag_bindings_activation_status", "activation_status IN ('pending', 'active', 'error', 'disabled')");
+
+                            t.HasCheckConstraint("ck_connector_tag_bindings_current_retirement", "(is_current AND retired_at_utc IS NULL) OR (NOT is_current AND retired_at_utc IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.ConnectorTagManifestAggregate.ConnectorTagManifest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Connector tag manifest identifier.");
+
+                    b.Property<string>("CollectionConnectorId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("collection_connector_id")
+                        .HasComment("Canonical collection connector identity owning this manifest.");
+
+                    b.Property<long>("ConcurrencyVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("concurrency_version")
+                        .HasComment("Application-managed optimistic concurrency version incremented by accepted root mutations.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Owning environment identifier.");
+
+                    b.Property<DateTimeOffset>("ManifestObservedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("manifest_observed_at_utc")
+                        .HasComment("UTC source observation time displayed for the accepted manifest revision.");
+
+                    b.Property<long>("ManifestObservedAtUtcTicks")
+                        .HasColumnType("bigint")
+                        .HasColumnName("manifest_observed_at_utc_ticks")
+                        .HasComment("Exact .NET UTC ticks ordering accepted manifest revisions without timestamptz precision loss.");
+
+                    b.Property<string>("ManifestRevision")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("manifest_revision")
+                        .HasComment("Lowercase SHA-256 revision of the accepted manifest payload.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Owning organization identifier.");
+
+                    b.Property<string>("SourceSystem")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_system")
+                        .HasComment("Source system that observed the accepted manifest.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "CollectionConnectorId")
+                        .IsUnique();
+
+                    b.ToTable("connector_tag_manifests", "industrial_telemetry", t =>
+                        {
+                            t.HasComment("BusinessIndustrialTelemetry accepted connector tag manifest revisions.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlChannelBindingAggregate.DeviceControlChannelBinding", b =>
                 {
                     b.Property<Guid>("Id")
@@ -844,6 +1033,12 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnName("bucket_start_utc")
                         .HasComment("Inclusive UTC start of the raw historian bucket.");
 
+                    b.Property<string>("CollectionConnectorId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("collection_connector_id")
+                        .HasComment("Canonical collection connector identity retained as nullable sample provenance.");
+
                     b.Property<string>("DeviceAssetId")
                         .IsRequired()
                         .HasMaxLength(150)
@@ -1103,6 +1298,12 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnName("bucket_start_utc")
                         .HasComment("Inclusive UTC start of the summary bucket.");
 
+                    b.Property<string>("CollectionConnectorId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("collection_connector_id")
+                        .HasComment("Canonical collection connector identity used for manifest coverage joins when supplied.");
+
                     b.Property<string>("DeviceAssetId")
                         .IsRequired()
                         .HasMaxLength(150)
@@ -1177,6 +1378,9 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "BucketStartUtc")
                         .HasDatabaseName("IX_telemetry_summaries_organization_id_environment_id_device_~1");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "CollectionConnectorId", "DeviceAssetId", "TagKey", "BucketEndUtc")
+                        .HasDatabaseName("IX_telemetry_summaries_connector_coverage");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceSystem", "SourceConnector", "DeviceAssetId", "TagKey", "SourceSequence")
                         .IsUnique();
@@ -1496,6 +1700,20 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasDatabaseName("IX_Version_ExpiresAt_StatusName1");
 
                     b.ToTable("CAPReceivedMessage", "industrial_telemetry");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.ConnectorTagManifestAggregate.ConnectorTagBinding", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.ConnectorTagManifestAggregate.ConnectorTagManifest", null)
+                        .WithMany("Bindings")
+                        .HasForeignKey("ConnectorTagManifestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.ConnectorTagManifestAggregate.ConnectorTagManifest", b =>
+                {
+                    b.Navigation("Bindings");
                 });
 #pragma warning restore 612, 618
         }

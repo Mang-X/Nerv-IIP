@@ -28,6 +28,21 @@ builder.Services.AddFastEndpoints();
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IConnectorIngestionTokenService, ConnectorIngestionTokenService>();
+builder.Services
+    .AddOptions<ConnectorCollectionHealthOptions>()
+    .Bind(builder.Configuration.GetSection(ConnectorCollectionHealthOptions.SectionName))
+    .Validate(
+        options => options.HostHeartbeatCadence > TimeSpan.Zero,
+        "CollectionHealth:HostHeartbeatCadence must be positive.")
+    .Validate(
+        options => options.BackendDeadline > TimeSpan.Zero
+            && options.BackendDeadline <= ConnectorCollectionHealthOptions.MaximumBackendDeadline,
+        "CollectionHealth:BackendDeadline must be positive and no greater than 00:00:08.")
+    .Validate(
+        options => options.HasValidHostLivenessWindow(),
+        "CollectionHealth:HostLivenessTimeout must be at least three heartbeat cadences and no greater than the backend deadline or 00:00:08.")
+    .ValidateOnStart();
+builder.Services.AddSingleton<ConnectorCollectionHealthEvaluator>();
 builder.Services.AddMediatR(configuration =>
 {
     configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);

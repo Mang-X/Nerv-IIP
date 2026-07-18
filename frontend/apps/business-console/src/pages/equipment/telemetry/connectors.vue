@@ -41,7 +41,12 @@ watch(connectorsError, (error) => {
   }
 })
 
-const onlineCount = computed(() => connectors.value.filter((c) => c.status === 'current').length)
+const onlineCount = computed(
+  () =>
+    connectors.value.filter(
+      (connector) => connector.status === 'current' && connector.connection?.status === 'alive',
+    ).length,
+)
 const offlineCount = computed(
   () => connectors.value.filter((c) => isConnectorOffline(c.status, c.staleReason)).length,
 )

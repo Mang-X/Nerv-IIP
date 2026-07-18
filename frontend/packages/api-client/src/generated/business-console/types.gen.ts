@@ -523,6 +523,19 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     droppedCount?: number | null;
     errorCount?: number | null;
     sourceSystem?: string | null;
+    connection?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorConnectionState | null;
+    staleReason?: string | null;
+    offlineReason?: string | null;
+    hostLivenessDeadlineUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorConnectionState = {
+    status?: string;
+    observedAtUtc?: string;
+    connectedSinceUtc?: string | null;
+    disconnectedSinceUtc?: string | null;
+    reasonCategory?: string | null;
+    diagnosticCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthRequest = {
@@ -551,9 +564,45 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     errorCount?: number | null;
     counterEpoch?: string | null;
     sourceSystem?: string | null;
+    connection?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorConnectionState | null;
+    offlineReason?: string | null;
+    hostLivenessDeadlineUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConnectorTagCoverageResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorTagCoverageResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorTagCoverageResponse = {
+    collectionConnectorId?: string;
+    manifestStatus?: string;
+    manifestRevision?: string | null;
+    manifestObservedAtUtc?: string | null;
+    configuredCount?: number;
+    enabledCount?: number;
+    activeCount?: number;
+    everSampledCount?: number;
+    errorCount?: number;
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorTagCoverageItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorTagCoverageItem = {
+    deviceAssetId?: string;
+    tagKey?: string;
+    enabled?: boolean;
+    activationStatus?: string;
+    activationObservedAtUtc?: string;
+    activationErrorCode?: string | null;
+    activationErrorMessage?: string | null;
+    firstSampleAtUtc?: string | null;
+    lastSampleAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorTagCoverageRequest = {
     [key: string]: never;
 };
 
@@ -7182,6 +7231,44 @@ export type ListBusinessConsoleTelemetryConnectorCollectionHealthResponses = {
 };
 
 export type ListBusinessConsoleTelemetryConnectorCollectionHealthResponse = ListBusinessConsoleTelemetryConnectorCollectionHealthResponses[keyof ListBusinessConsoleTelemetryConnectorCollectionHealthResponses];
+
+export type GetBusinessConsoleTelemetryConnectorTagCoverageData = {
+    body?: never;
+    path: {
+        connectorId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/telemetry/connectors/{connectorId}/tag-coverage';
+};
+
+export type GetBusinessConsoleTelemetryConnectorTagCoverageErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleTelemetryConnectorTagCoverageError = GetBusinessConsoleTelemetryConnectorTagCoverageErrors[keyof GetBusinessConsoleTelemetryConnectorTagCoverageErrors];
+
+export type GetBusinessConsoleTelemetryConnectorTagCoverageResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConnectorTagCoverageResponse;
+};
+
+export type GetBusinessConsoleTelemetryConnectorTagCoverageResponse = GetBusinessConsoleTelemetryConnectorTagCoverageResponses[keyof GetBusinessConsoleTelemetryConnectorTagCoverageResponses];
 
 export type ListBusinessConsoleTelemetryTagsData = {
     body?: never;

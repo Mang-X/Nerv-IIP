@@ -1,3 +1,5 @@
+using System.Net.Sockets;
+using Nerv.IIP.ConnectorHost.Application;
 using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 using Nerv.IIP.ConnectorHost.Connectors.OpcUa;
 
@@ -7,7 +9,10 @@ public sealed class ModbusConnector(
     ModbusConnectorOptions options,
     IModbusTcpClient modbusClient,
     IIndustrialTelemetrySamplesClient samplesClient,
-    Func<DateTimeOffset>? utcNow = null) : IConnector, IIndustrialTelemetryCollectionConnector
+    Func<DateTimeOffset>? utcNow = null,
+    TimeProvider? timeProvider = null,
+    IConnectorReportSignal? reportSignal = null,
+    IConnectorManifestSignal? manifestSignal = null) : IConnector, IIndustrialTelemetryCollectionConnector, IConnectorConnectionMonitor
 {
     private readonly Dictionary<(byte UnitId, ModbusRegisterTable Table, ushort Address, DateTimeOffset BucketStartUtc), ModbusTelemetryBucket> _buckets = [];
     private readonly Dictionary<(byte UnitId, ModbusRegisterTable Table, ushort Address, DateTimeOffset BucketStartUtc), DateTimeOffset> _sealedBucketKeys = [];
@@ -15,6 +20,20 @@ public sealed class ModbusConnector(
     private readonly Func<DateTimeOffset> _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
     private readonly TimeSpan _sealedBucketRetention = CalculateSealedBucketRetention(options.Registers);
     private readonly Guid _counterEpoch = Guid.CreateVersion7();
+    private readonly ConnectorConnectionStateTracker _connectionTracker = new(
+        options.EffectiveCollectionConnectorId,
+        timeProvider ?? TimeProvider.System,
+        reportSignal is null ? static _ => { } : reportSignal.Signal);
+    private readonly ConnectorTagManifestTracker _manifestTracker = new(
+        options.EffectiveCollectionConnectorId,
+        "modbus",
+        options.Registers.Select(mapping => new ConnectorTagManifestDefinition(
+            mapping.DeviceAssetId,
+            mapping.TagKey,
+            mapping.Enabled,
+            $"unit={mapping.UnitId};table={mapping.Table.ToString().ToLowerInvariant()};address={mapping.Address};count={mapping.RegisterCount}")).ToArray(),
+        timeProvider ?? TimeProvider.System,
+        manifestSignal is null ? static _ => { } : manifestSignal.Signal);
 
     public ModbusConnectorState CurrentState { get; private set; } = new(
         "stopped",
@@ -30,29 +49,31 @@ public sealed class ModbusConnector(
 
     public async Task RunCollectionCycleAsync(CancellationToken cancellationToken)
     {
+        var enabledMappings = options.Registers.Where(x => x.Enabled).ToArray();
+        if (enabledMappings.Length == 0)
+        {
+            await UpdateStateAsync(state => state with
+            {
+                ReportedStatus = "running",
+                HealthStatus = "degraded",
+                Summary = "Modbus TCP collector has no enabled register mappings."
+            }, cancellationToken);
+            return;
+        }
+
         var attempts = 0;
         while (true)
         {
             var pollingCompleted = false;
             try
             {
-                await modbusClient.ConnectAsync(new ModbusConnectionOptions(options.Endpoint, options.CredentialReference), cancellationToken);
-
-                if (options.Registers.Count == 0)
-                {
-                    await UpdateStateAsync(state => state with
-                    {
-                        ReportedStatus = "running",
-                        HealthStatus = "degraded",
-                        Summary = "Modbus TCP collector is connected but has no configured register mappings."
-                    }, cancellationToken);
-                    return;
-                }
+                await ConnectForCollectionAsync(cancellationToken);
 
                 var observedAtUtc = _utcNow();
-                foreach (var mapping in options.Registers)
+                foreach (var mapping in enabledMappings)
                 {
-                    var samples = await modbusClient.ReadRegistersAsync(mapping, observedAtUtc, cancellationToken);
+                    var samples = await ReadForCollectionAsync(mapping, observedAtUtc, cancellationToken);
+                    _connectionTracker.MarkAlive();
                     if (samples.Count == 0)
                     {
                         continue;
@@ -87,10 +108,88 @@ public sealed class ModbusConnector(
                     ReportedStatus = "stopped",
                     HealthStatus = "unhealthy",
                     ErrorCount = state.ErrorCount + 1,
-                    Summary = $"Modbus TCP collection failed: {ex.Message}"
+                    Summary = "Modbus TCP collection failed."
                 }, cancellationToken);
                 throw;
             }
+        }
+    }
+
+    private async Task ConnectForCollectionAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await modbusClient.ConnectAsync(
+                new ModbusConnectionOptions(options.Endpoint, options.CredentialReference),
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _manifestTracker.MarkAllEnabledError("modbus.activation-failed", "Modbus mapping activation failed.");
+            if (IsConnectionLoss(ex))
+            {
+                MarkLostIfTransportFailure(ex);
+            }
+
+            throw;
+        }
+    }
+
+    private async Task<IReadOnlyList<ModbusRegisterSample>> ReadForCollectionAsync(
+        ModbusRegisterMapping mapping,
+        DateTimeOffset observedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var samples = await modbusClient.ReadRegistersAsync(mapping, observedAtUtc, cancellationToken);
+            _manifestTracker.MarkActive(mapping.DeviceAssetId, mapping.TagKey);
+            return samples;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _manifestTracker.MarkError(mapping.DeviceAssetId, mapping.TagKey, "modbus.activation-failed", "Modbus mapping activation failed.");
+            if (IsConnectionLoss(ex))
+            {
+                MarkLostIfTransportFailure(ex);
+            }
+
+            throw;
+        }
+    }
+
+    public async Task RunConnectionCheckAsync(CancellationToken cancellationToken)
+    {
+        var mapping = options.Registers.FirstOrDefault(x => x.Enabled);
+        if (mapping is null)
+        {
+            return;
+        }
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(4));
+        try
+        {
+            await modbusClient.ConnectAsync(
+                new ModbusConnectionOptions(options.Endpoint, options.CredentialReference),
+                timeout.Token);
+            await modbusClient.ProbeAsync(mapping, timeout.Token);
+            _connectionTracker.MarkAlive();
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            _connectionTracker.MarkLost("transport", "modbus.probe-timeout");
+            throw;
+        }
+        catch (TimeoutException)
+        {
+            _connectionTracker.MarkLost("transport", "modbus.probe-timeout");
+            throw;
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            _connectionTracker.MarkLost("transport", "modbus.transport-failure");
+            throw;
         }
     }
 
@@ -112,13 +211,13 @@ public sealed class ModbusConnector(
         IReadOnlyList<ConnectorTarget> targets =
         [
             new(
-                $"modbus-{options.ConnectorId}",
+                options.EffectiveCollectionConnectorId,
                 $"Modbus TCP {options.ConnectorId}",
                 "modbus-tcp",
                 "modbus-collector",
                 "Modbus TCP Collector",
                 "1.0",
-                $"modbus-{options.ConnectorId}",
+                options.EffectiveCollectionConnectorId,
                 $"Modbus TCP {options.Endpoint}",
                 state.ReportedStatus,
                 state.HealthStatus,
@@ -127,7 +226,8 @@ public sealed class ModbusConnector(
                     new ConnectorCapability("industrial-telemetry.ingest", "1.0", "telemetry", ["poll", "sample"])
                 ],
                 metadata,
-                CreateCollectionHealth(state))
+                CreateCollectionHealth(state),
+                _manifestTracker.Snapshot)
         ];
         return targets;
     }
@@ -135,8 +235,31 @@ public sealed class ModbusConnector(
     private ConnectorCollectionHealthSnapshot CreateCollectionHealth(ModbusConnectorState state)
     {
         var known = state.ReceivedSamples > 0 || state.DroppedSamples > 0 || state.ErrorCount > 0 || state.LastSampleAtUtc is not null;
-        return new($"modbus-{options.ConnectorId}", "modbus", _counterEpoch,
-            known ? state.ReceivedSamples : null, known ? state.DroppedSamples : null, known ? state.ErrorCount : null, state.LastSampleAtUtc);
+        return new(options.EffectiveCollectionConnectorId, "modbus", _counterEpoch,
+            known ? state.ReceivedSamples : null, known ? state.DroppedSamples : null, known ? state.ErrorCount : null, state.LastSampleAtUtc,
+            _connectionTracker.Snapshot);
+    }
+
+    private void MarkLostIfTransportFailure(Exception exception)
+    {
+        if (exception is TimeoutException)
+        {
+            _connectionTracker.MarkLost("transport", "modbus.transaction-timeout");
+        }
+        else if (IsTransportFailure(exception))
+        {
+            _connectionTracker.MarkLost("transport", "modbus.transport-failure");
+        }
+    }
+
+    private static bool IsTransportFailure(Exception exception)
+    {
+        return exception is SocketException or IOException;
+    }
+
+    private static bool IsConnectionLoss(Exception exception)
+    {
+        return exception is TimeoutException || IsTransportFailure(exception);
     }
 
     private async Task HandleSampleAsync(ModbusRegisterMapping mapping, ModbusRegisterSample sample, CancellationToken cancellationToken)
@@ -303,7 +426,8 @@ public sealed class ModbusConnector(
             "modbus",
             $"{options.ConnectorHostId}/{options.ConnectorId}",
             FirstValue: bucket.FirstValue,
-            LastValue: bucket.LastValue);
+            LastValue: bucket.LastValue,
+            CollectionConnectorId: options.EffectiveCollectionConnectorId);
     }
 
     private async Task MarkRunningAsync(CancellationToken cancellationToken)

@@ -8,16 +8,20 @@ public sealed class IndustrialTelemetryCollectorRunner(ILogger<IndustrialTelemet
         IReadOnlyList<IIndustrialTelemetryCollectionConnector> collectors,
         CancellationToken cancellationToken)
     {
-        foreach (var collector in collectors)
+        await Task.WhenAll(collectors.Select(collector => RunCollectorAsync(collector, cancellationToken)));
+    }
+
+    private async Task RunCollectorAsync(
+        IIndustrialTelemetryCollectionConnector collector,
+        CancellationToken cancellationToken)
+    {
+        try
         {
-            try
-            {
-                await collector.RunCollectionCycleAsync(cancellationToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogWarning(ex, "Industrial telemetry collector cycle failed; continuing with remaining collectors.");
-            }
+            await collector.RunCollectionCycleAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Industrial telemetry collector cycle failed; continuing with remaining collectors.");
         }
     }
 }

@@ -4,11 +4,14 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
 using Nerv.IIP.AppHub.Infrastructure;
+using Nerv.IIP.AppHub.Web.Application.Connectors;
 using Nerv.IIP.Contracts.AppHubQueries;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 
@@ -17,6 +20,175 @@ namespace Nerv.IIP.AppHub.Web.Tests;
 public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
     private const string InternalServiceBearerToken = "local-internal-service-token";
+
+    [Fact]
+    public void Explicit_field_loss_precedes_fresh_host_heartbeat()
+    {
+        var now = DateTimeOffset.Parse("2026-07-17T01:00:10Z");
+        var instance = CreateCollectionHealthInstance(
+            heartbeatAtUtc: now.AddSeconds(-1),
+            connection: LostConnection(now.AddSeconds(-2)));
+        var evaluator = CreateCollectionHealthEvaluator();
+
+        var result = evaluator.DeriveStatusAndReason(
+            instance.Heartbeat,
+            instance.CollectionHealth,
+            instance.ReportedStatus,
+            instance.HealthStatus,
+            now);
+        var response = evaluator.ToResponse(instance, now);
+
+        Assert.Equal(("stale", "offline", "field-connection"), result);
+        Assert.Equal("lost", response.Connection?.Status);
+        Assert.Equal(now.AddSeconds(-2), response.Connection?.DisconnectedSinceUtc);
+        Assert.Equal("offline", response.StaleReason);
+        Assert.Equal("field-connection", response.OfflineReason);
+        Assert.Equal(now.AddSeconds(5), response.HostLivenessDeadlineUtc);
+    }
+
+    [Fact]
+    public void Explicit_field_loss_precedes_simultaneous_host_timeout()
+    {
+        var now = DateTimeOffset.Parse("2026-07-17T01:00:10Z");
+        var instance = CreateCollectionHealthInstance(
+            heartbeatAtUtc: now.AddSeconds(-6),
+            connection: LostConnection(now.AddSeconds(-2)));
+        var evaluator = CreateCollectionHealthEvaluator();
+
+        var result = evaluator.DeriveStatusAndReason(
+            instance.Heartbeat,
+            instance.CollectionHealth,
+            instance.ReportedStatus,
+            instance.HealthStatus,
+            now);
+        var item = evaluator.ToListItem(instance, now);
+
+        Assert.Equal(("stale", "offline", "field-connection"), result);
+        Assert.Equal("lost", item.Connection?.Status);
+        Assert.Equal("field-connection", item.OfflineReason);
+        Assert.Equal(now, item.HostLivenessDeadlineUtc);
+    }
+
+    [Fact]
+    public void Host_timeout_uses_unified_six_second_liveness_window()
+    {
+        var now = DateTimeOffset.Parse("2026-07-17T01:00:10Z");
+        var evaluator = CreateCollectionHealthEvaluator();
+        var fresh = CreateCollectionHealthInstance(
+            heartbeatAtUtc: now.AddTicks(-TimeSpan.FromSeconds(6).Ticks + 1),
+            connection: AliveConnection(now.AddSeconds(-5)));
+        var timedOut = CreateCollectionHealthInstance(
+            heartbeatAtUtc: now.AddSeconds(-6),
+            connection: AliveConnection(now.AddSeconds(-5)));
+
+        var freshResult = evaluator.DeriveStatusAndReason(
+            fresh.Heartbeat, fresh.CollectionHealth, fresh.ReportedStatus, fresh.HealthStatus, now);
+        var timedOutResult = evaluator.DeriveStatusAndReason(
+            timedOut.Heartbeat, timedOut.CollectionHealth, timedOut.ReportedStatus, timedOut.HealthStatus, now);
+
+        Assert.Equal(("current", (string?)null, (string?)null), freshResult);
+        Assert.Equal(("stale", "offline", "host-liveness"), timedOutResult);
+    }
+
+    [Fact]
+    public void Fresh_host_and_alive_field_connection_preserve_terminal_collector_fault()
+    {
+        var now = DateTimeOffset.Parse("2026-07-17T01:00:10Z");
+        var instance = CreateCollectionHealthInstance(
+            heartbeatAtUtc: now.AddSeconds(-1),
+            connection: AliveConnection(now.AddSeconds(-5)),
+            reportedStatus: "stopped",
+            healthStatus: "unhealthy");
+        var evaluator = CreateCollectionHealthEvaluator();
+
+        var result = evaluator.DeriveStatusAndReason(
+            instance.Heartbeat,
+            instance.CollectionHealth,
+            instance.ReportedStatus,
+            instance.HealthStatus,
+            now);
+
+        Assert.Equal(("stale", "fault", (string?)null), result);
+    }
+
+    [Fact]
+    public void Legacy_null_connection_keeps_conservative_host_timeout_fallback()
+    {
+        var now = DateTimeOffset.Parse("2026-07-17T01:00:10Z");
+        var instance = CreateCollectionHealthInstance(
+            heartbeatAtUtc: now.AddSeconds(-6),
+            connection: null);
+        var evaluator = CreateCollectionHealthEvaluator();
+
+        var response = evaluator.ToResponse(instance, now);
+
+        Assert.Equal("stale", response.Status);
+        Assert.Equal("offline", response.StaleReason);
+        Assert.Equal("host-liveness", response.OfflineReason);
+        Assert.Null(response.Connection);
+        Assert.Equal(now, response.HostLivenessDeadlineUtc);
+    }
+
+    [Fact]
+    public void Expired_host_heartbeat_without_collection_health_is_offline()
+    {
+        var now = DateTimeOffset.Parse("2026-07-17T01:00:10Z");
+        var instance = CreateInstanceWithoutCollectionHealth(now.AddSeconds(-6));
+        var evaluator = CreateCollectionHealthEvaluator();
+
+        var result = evaluator.DeriveStatusAndReason(
+            instance.Heartbeat,
+            instance.CollectionHealth,
+            instance.ReportedStatus,
+            instance.HealthStatus,
+            now);
+
+        Assert.Equal(("stale", "offline", "host-liveness"), result);
+    }
+
+    [Fact]
+    public void Missing_host_heartbeat_without_collection_health_is_offline()
+    {
+        var now = DateTimeOffset.Parse("2026-07-17T01:00:10Z");
+        var instance = CreateInstanceWithoutCollectionHealth(heartbeatAtUtc: null);
+        var evaluator = CreateCollectionHealthEvaluator();
+
+        var result = evaluator.DeriveStatusAndReason(
+            instance.Heartbeat,
+            instance.CollectionHealth,
+            instance.ReportedStatus,
+            instance.HealthStatus,
+            now);
+
+        Assert.Equal(("stale", "offline", "host-liveness"), result);
+    }
+
+    [Theory]
+    [InlineData("00:00:02", "00:00:05", "00:00:08")]
+    [InlineData("00:00:02", "00:00:09", "00:00:08")]
+    public async Task Invalid_collection_health_timing_configuration_fails_startup(
+        string cadence,
+        string timeout,
+        string deadline)
+    {
+        await using var app = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["CollectionHealth:HostHeartbeatCadence"] = cadence,
+                    ["CollectionHealth:HostLivenessTimeout"] = timeout,
+                    ["CollectionHealth:BackendDeadline"] = deadline,
+                })));
+
+        var exception = await Record.ExceptionAsync(async () =>
+        {
+            using var client = app.CreateClient();
+            await client.GetAsync("/health");
+        });
+
+        Assert.NotNull(exception);
+        Assert.Contains("CollectionHealth:HostLivenessTimeout", exception.ToString(), StringComparison.Ordinal);
+    }
 
     [Fact]
     public async Task Authorized_collection_health_query_returns_unknown_for_missing_connector()
@@ -31,6 +203,7 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         Assert.Equal("unknown", body.Status);
         Assert.Null(body.LastHeartbeatAtUtc);
         Assert.Null(body.ReceivedCount);
+        Assert.Null(body.HostLivenessDeadlineUtc);
     }
 
     [Fact]
@@ -67,6 +240,7 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         Assert.Equal(2, body.DroppedCount);
         Assert.Equal(1, body.ErrorCount);
         Assert.Equal("opcua", body.SourceSystem);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:00:06Z"), body.HostLivenessDeadlineUtc);
     }
 
     [Fact]
@@ -153,7 +327,7 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
 
         // Fresh OPC UA collector -> current.
         var current = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "opcua-main", "OPC UA Main", new Dictionary<string, string>(), []);
-        current.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), true, 3);
+        current.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:57Z"), true, 3);
         current.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-main", "opcua", epoch, DateTimeOffset.Parse("2026-07-13T01:09:40Z"), 100, 4, 1, DateTimeOffset.Parse("2026-07-13T01:09:39Z")));
 
         // Heartbeat stopped arriving (aged out) -> offline, must sort first.
@@ -163,8 +337,8 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
 
         // Still heartbeating but self-reported a terminal stop -> fault (异常停止, not a disconnect), sorts between.
         var fault = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "mqtt-main", "MQTT Main", new Dictionary<string, string>(), []);
-        fault.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:45Z"), true, 3);
-        fault.RecordStateSnapshot(DateTimeOffset.Parse("2026-07-13T01:09:45Z"), "stopped", "unhealthy", "collection failed", new Dictionary<string, string>());
+        fault.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:58Z"), true, 3);
+        fault.RecordStateSnapshot(DateTimeOffset.Parse("2026-07-13T01:09:58Z"), "stopped", "unhealthy", "collection failed", new Dictionary<string, string>());
         fault.RecordCollectionHealth(new ConnectorCollectionHealth("mqtt-main", "mqtt", Guid.Parse("44444444-4444-4444-4444-444444444444"), DateTimeOffset.Parse("2026-07-13T01:09:46Z"), 70, 0, 0, DateTimeOffset.Parse("2026-07-13T01:09:44Z")));
 
         // Registered but never reported collection health -> excluded from the wall.
@@ -194,6 +368,7 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         Assert.Equal("offline", first.StaleReason);
         // Heartbeat is frozen at the last received beat, so a "disconnected for" duration derived from it grows monotonically.
         Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:00:00Z"), first.LastHeartbeatAtUtc);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:00:06Z"), first.HostLivenessDeadlineUtc);
 
         var second = body.Items[1];
         Assert.Equal("mqtt-main", second.ConnectorId);
@@ -267,15 +442,15 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         // Actively collecting but degraded (had past reconnects) -> upstream heartbeat Reachable=false, but it is
         // running and sampling now, so it must NOT be reported as disconnected.
         var degraded = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "modbus-degraded", "Modbus Degraded", new Dictionary<string, string>(), []);
-        degraded.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), reachable: false, 3);
-        degraded.RecordStateSnapshot(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), "running", "degraded", "reconnected", new Dictionary<string, string>());
+        degraded.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:57Z"), reachable: false, 3);
+        degraded.RecordStateSnapshot(DateTimeOffset.Parse("2026-07-13T01:09:57Z"), "running", "degraded", "reconnected", new Dictionary<string, string>());
         degraded.RecordCollectionHealth(new ConnectorCollectionHealth("modbus-degraded", "modbus", Guid.Parse("55555555-5555-5555-5555-555555555555"), DateTimeOffset.Parse("2026-07-13T01:09:40Z"), 200, 3, 0, DateTimeOffset.Parse("2026-07-13T01:09:39Z")));
 
         // Terminal failure while still heartbeating (may be downstream/processing, not necessarily a lost
         // connection) -> fault (异常停止), never conflated with a device disconnect.
         var stopped = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "opcua-stopped", "OPC UA Stopped", new Dictionary<string, string>(), []);
-        stopped.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), reachable: false, 3);
-        stopped.RecordStateSnapshot(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), "stopped", "unhealthy", "collection failed", new Dictionary<string, string>());
+        stopped.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:57Z"), reachable: false, 3);
+        stopped.RecordStateSnapshot(DateTimeOffset.Parse("2026-07-13T01:09:57Z"), "stopped", "unhealthy", "collection failed", new Dictionary<string, string>());
         stopped.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-stopped", "opcua", Guid.Parse("66666666-6666-6666-6666-666666666666"), DateTimeOffset.Parse("2026-07-13T01:09:40Z"), 10, 0, 5, DateTimeOffset.Parse("2026-07-13T01:09:39Z")));
 
         db.ApplicationInstances.AddRange(degraded, stopped);
@@ -316,13 +491,13 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         // Heartbeating and running, but reported a collection-health fact with no counters and no sample yet
         // (e.g. no configured mapping / nothing collected). Must not count as actively collecting.
         var notConfigured = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "modbus-empty", "Modbus Empty", new Dictionary<string, string>(), []);
-        notConfigured.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:45Z"), true, 3);
-        notConfigured.RecordStateSnapshot(DateTimeOffset.Parse("2026-07-13T01:09:45Z"), "running", "degraded", "no mappings", new Dictionary<string, string>());
+        notConfigured.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:57Z"), true, 3);
+        notConfigured.RecordStateSnapshot(DateTimeOffset.Parse("2026-07-13T01:09:57Z"), "running", "degraded", "no mappings", new Dictionary<string, string>());
         notConfigured.RecordCollectionHealth(new ConnectorCollectionHealth("modbus-empty", "modbus", Guid.Parse("77777777-7777-7777-7777-777777777777"), DateTimeOffset.Parse("2026-07-13T01:09:46Z"), null, null, null, null));
 
         // Actively collecting (received counter present, even if zero) -> current.
         var collecting = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "opcua-live", "OPC UA Live", new Dictionary<string, string>(), []);
-        collecting.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:45Z"), true, 3);
+        collecting.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:57Z"), true, 3);
         collecting.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-live", "opcua", Guid.Parse("88888888-8888-8888-8888-888888888888"), DateTimeOffset.Parse("2026-07-13T01:09:46Z"), 0, 0, 0, DateTimeOffset.Parse("2026-07-13T01:09:44Z")));
 
         db.ApplicationInstances.AddRange(notConfigured, collecting);
@@ -662,6 +837,84 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
 
     private static InstanceStateSnapshot CreateSnapshot(TestScenario scenario) =>
         new(Context(scenario), scenario.InstanceKey, DateTimeOffset.Parse("2026-05-15T00:00:10Z"), "running", "healthy", "demo-api is running", new Dictionary<string, string>(), new Dictionary<string, decimal>(), new Dictionary<string, string> { ["containerId"] = "local-demo-001" });
+
+    private static ConnectorCollectionHealthEvaluator CreateCollectionHealthEvaluator() => new(
+        Options.Create(new ConnectorCollectionHealthOptions
+        {
+            HostHeartbeatCadence = TimeSpan.FromSeconds(2),
+            HostLivenessTimeout = TimeSpan.FromSeconds(6),
+            BackendDeadline = TimeSpan.FromSeconds(8),
+        }));
+
+    private static ApplicationInstance CreateCollectionHealthInstance(
+        DateTimeOffset heartbeatAtUtc,
+        ConnectorConnectionState? connection,
+        string reportedStatus = "running",
+        string healthStatus = "healthy")
+    {
+        var instance = new ApplicationInstance(
+            "org",
+            "env",
+            "host",
+            "collector",
+            "1",
+            "node",
+            $"connector-{Guid.CreateVersion7():N}",
+            "Connector",
+            new Dictionary<string, string>(),
+            []);
+        instance.RecordHeartbeat(heartbeatAtUtc, reachable: true, latencyMs: 1);
+        instance.RecordStateSnapshot(
+            heartbeatAtUtc,
+            reportedStatus,
+            healthStatus,
+            "collector state",
+            new Dictionary<string, string>());
+        instance.RecordCollectionHealth(new ConnectorCollectionHealth(
+            instance.InstanceKey,
+            "opcua",
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            heartbeatAtUtc,
+            1,
+            0,
+            0,
+            heartbeatAtUtc,
+            connection));
+        return instance;
+    }
+
+    private static ApplicationInstance CreateInstanceWithoutCollectionHealth(DateTimeOffset? heartbeatAtUtc)
+    {
+        var instance = new ApplicationInstance(
+            "org",
+            "env",
+            "host",
+            "collector",
+            "1",
+            "node",
+            $"connector-{Guid.CreateVersion7():N}",
+            "Connector",
+            new Dictionary<string, string>(),
+            []);
+        if (heartbeatAtUtc is { } recordedAtUtc)
+        {
+            instance.RecordHeartbeat(recordedAtUtc, reachable: true, latencyMs: 1);
+        }
+
+        return instance;
+    }
+
+    private static ConnectorConnectionState AliveConnection(DateTimeOffset observedAtUtc) => new(
+        "alive",
+        observedAtUtc,
+        ConnectedSinceUtc: observedAtUtc.AddSeconds(-1));
+
+    private static ConnectorConnectionState LostConnection(DateTimeOffset observedAtUtc) => new(
+        "lost",
+        observedAtUtc,
+        DisconnectedSinceUtc: observedAtUtc,
+        ReasonCategory: "transport",
+        DiagnosticCode: "connection-lost");
 
     private sealed record TestScenario(string OrganizationId, string EnvironmentId, string ConnectorHostId, string InstanceKey, string IdempotencyKey);
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);

@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.InMemory.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
 using Nerv.IIP.AppHub.Infrastructure;
@@ -18,6 +19,7 @@ using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.AppHub.Web.Application.Commands;
+using Nerv.IIP.AppHub.Web.Application.Connectors;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
 
@@ -208,17 +210,15 @@ public sealed class AppHubIntegrationEventTests
         dbContext.ApplicationInstances.Add(instance);
         await dbContext.SaveChangesAsync();
         instance.ClearDomainEvents();
-        var scanner = new AppHubHeartbeatTimeoutScanner(dbContext);
+        var scanner = new AppHubHeartbeatTimeoutScanner(dbContext, CollectionHealthOptions());
 
         var first = await scanner.ScanAsync(
             DateTimeOffset.Parse("2026-07-06T01:06:00Z"),
-            TimeSpan.FromMinutes(5),
             take: 10,
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
         var second = await scanner.ScanAsync(
             DateTimeOffset.Parse("2026-07-06T01:07:00Z"),
-            TimeSpan.FromMinutes(5),
             take: 10,
             CancellationToken.None);
 
@@ -264,7 +264,6 @@ public sealed class AppHubIntegrationEventTests
             var sender = scope.ServiceProvider.GetRequiredService<ISender>();
             result = await sender.Send(new AppHubHeartbeatTimeoutScanCommand(
                 DateTimeOffset.Parse("2026-07-06T01:06:00Z"),
-                TimeSpan.FromMinutes(5),
                 Take: 10));
         }
 
@@ -273,6 +272,7 @@ public sealed class AppHubIntegrationEventTests
         Assert.Equal(1, result.MarkedUnreachableCount);
         Assert.Equal(AppHubIntegrationEventTypes.ConnectorHostUnreachable, integrationEvent.EventType);
         Assert.Equal("connector-host-001", integrationEvent.Payload.ConnectorHostId);
+        Assert.Equal(6, integrationEvent.Payload.HeartbeatTimeoutSeconds);
         Assert.False(string.IsNullOrWhiteSpace(integrationEvent.CorrelationId));
     }
 
@@ -296,11 +296,10 @@ public sealed class AppHubIntegrationEventTests
         instance.RecordHeartbeat(DateTimeOffset.Parse("2026-07-06T01:00:00Z"), true, 12);
         dbContext.ApplicationInstances.Add(instance);
         await dbContext.SaveChangesAsync();
-        var scanner = new AppHubHeartbeatTimeoutScanner(dbContext);
+        var scanner = new AppHubHeartbeatTimeoutScanner(dbContext, CollectionHealthOptions());
 
         var result = await scanner.ScanAsync(
             DateTimeOffset.Parse("2026-07-06T01:06:00Z"),
-            TimeSpan.FromMinutes(5),
             take: 10,
             CancellationToken.None);
 
@@ -736,9 +735,18 @@ public sealed class AppHubIntegrationEventTests
                 .UseInMemoryDatabase(databaseName, databaseRoot)
                 .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
         services.AddUnitOfWork<ApplicationDbContext>();
+        services.AddSingleton(CollectionHealthOptions());
         services.AddScoped<AppHubHeartbeatTimeoutScanner>();
         return services.BuildServiceProvider();
     }
+
+    private static IOptions<ConnectorCollectionHealthOptions> CollectionHealthOptions() => Options.Create(
+        new ConnectorCollectionHealthOptions
+        {
+            HostHeartbeatCadence = TimeSpan.FromSeconds(2),
+            HostLivenessTimeout = TimeSpan.FromSeconds(6),
+            BackendDeadline = TimeSpan.FromSeconds(8),
+        });
 
     private static ServiceProvider CreateServiceProvider(ApplicationDbContext dbContext)
     {

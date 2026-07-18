@@ -8,6 +8,9 @@ import type {
   BusinessConsoleCancelScheduledEngineeringChangeRequest,
   BusinessConsoleConnectorCollectionHealthRequest,
   BusinessConsoleConnectorCollectionHealthResponse,
+  BusinessConsoleConnectorTagCoverageItem,
+  BusinessConsoleConnectorTagCoverageRequest,
+  BusinessConsoleConnectorTagCoverageResponse,
   BusinessConsoleCreateErpPurchaseRequisitionEnvelope,
   BusinessConsoleCreateErpPurchaseRequisitionResponse,
   BusinessConsoleCreateOrUpdateForecastInputRequest,
@@ -53,6 +56,7 @@ import type {
   GetBusinessConsoleEngineeringDocumentData,
   GetBusinessConsoleEngineeringItemData,
   GetBusinessConsoleEngineeringChangeData,
+  GetBusinessConsoleTelemetryConnectorTagCoverageData,
   GetBusinessConsoleErpCostCandidateBySourceDocumentData,
   GetBusinessConsoleErpPayableBySourceDocumentData,
   GetBusinessConsoleErpReceivableBySourceDocumentData,
@@ -155,9 +159,7 @@ describe('generated API client contract', () => {
       idempotencyKey: string
       lines?: BusinessConsoleWmsInboundLineCaptureInput[] | null
     }>()
-    expectTypeOf<
-      Pick<BusinessConsoleWmsInboundLineCaptureInput, 'lineNo'>
-    >().toEqualTypeOf<{
+    expectTypeOf<Pick<BusinessConsoleWmsInboundLineCaptureInput, 'lineNo'>>().toEqualTypeOf<{
       lineNo: string
     }>()
     expectTypeOf<BusinessConsoleWmsInboundLineCaptureInput>().toEqualTypeOf<{
@@ -491,10 +493,12 @@ describe('generated API client contract', () => {
     }
   })
 
-  it('exports collection health and quality hold lifecycle facades through stable api-client entry points', () => {
+  it('exports connector observability and quality hold lifecycle facades through stable api-client entry points', () => {
     const expectedFunctions = [
       'queryBusinessConsoleTelemetryConnectorCollectionHealth',
       'queryBusinessConsoleTelemetryConnectorCollectionHealthQueryOptions',
+      'getBusinessConsoleTelemetryConnectorTagCoverage',
+      'getBusinessConsoleTelemetryConnectorTagCoverageQueryOptions',
       'getBusinessConsoleMesQualityHoldTimeline',
       'getBusinessConsoleMesQualityHoldTimelineQueryOptions',
     ] as const
@@ -505,6 +509,10 @@ describe('generated API client contract', () => {
 
     expectTypeOf<BusinessConsoleConnectorCollectionHealthRequest>().toBeObject()
     expectTypeOf<BusinessConsoleConnectorCollectionHealthResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleConnectorTagCoverageRequest>().toBeObject()
+    expectTypeOf<BusinessConsoleConnectorTagCoverageResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleConnectorTagCoverageItem>().toBeObject()
+    expectTypeOf<GetBusinessConsoleTelemetryConnectorTagCoverageData>().toBeObject()
     expectTypeOf<BusinessConsoleMesQualityHoldTimelineRequest>().toBeObject()
     expectTypeOf<BusinessConsoleMesQualityHoldTimelineResponse>().toBeObject()
     expectTypeOf<BusinessConsoleMesQualityHoldTimelineItem>().toBeObject()

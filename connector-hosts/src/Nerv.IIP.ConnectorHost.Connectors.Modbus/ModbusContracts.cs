@@ -10,7 +10,11 @@ public sealed record ModbusConnectorOptions(
     string Endpoint,
     string? CredentialReference,
     IReadOnlyList<ModbusRegisterMapping> Registers,
-    int MaxReconnectAttempts = 1);
+    int MaxReconnectAttempts = 1,
+    string? CollectionConnectorId = null)
+{
+    public string EffectiveCollectionConnectorId => CollectionConnectorId ?? $"modbus-{ConnectorId}";
+}
 
 public sealed record ModbusConnectionOptions(string Endpoint, string? CredentialReference);
 
@@ -26,7 +30,8 @@ public sealed record ModbusRegisterMapping(
     int BucketSeconds,
     ModbusRegisterDataType DataType = ModbusRegisterDataType.UInt16,
     ModbusWordOrder WordOrder = ModbusWordOrder.BigEndian,
-    string? SamplingPolicy = null);
+    string? SamplingPolicy = null,
+    bool Enabled = true);
 
 public enum ModbusRegisterTable
 {
@@ -86,6 +91,8 @@ public interface IModbusTcpClient
         ModbusRegisterMapping mapping,
         DateTimeOffset observedAtUtc,
         CancellationToken cancellationToken);
+
+    Task ProbeAsync(ModbusRegisterMapping mapping, CancellationToken cancellationToken);
 }
 
 internal sealed class ModbusTelemetryBucket(ModbusRegisterMapping mapping, DateTimeOffset bucketStartUtc, DateTimeOffset bucketEndUtc)

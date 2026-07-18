@@ -27,4 +27,8 @@
     <ProjectReference Include="..\..\src\Nerv.IIP.ConnectorHost.Connectors.Docker\Nerv.IIP.ConnectorHost.Connectors.Docker.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\TestUtilities\ControllableTimeProvider.cs" Link="TestUtilities\ControllableTimeProvider.cs" />
+  </ItemGroup>
+
 </Project>

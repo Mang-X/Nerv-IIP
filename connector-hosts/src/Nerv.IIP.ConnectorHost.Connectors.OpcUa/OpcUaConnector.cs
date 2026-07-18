@@ -1,4 +1,6 @@
+using Nerv.IIP.ConnectorHost.Application;
 using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
+using Opc.Ua;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.OpcUa;
 
@@ -6,15 +8,34 @@ public sealed class OpcUaConnector(
     OpcUaConnectorOptions options,
     IOpcUaClient opcUaClient,
     IIndustrialTelemetrySamplesClient samplesClient,
-    Func<DateTimeOffset>? utcNow = null) : IConnector, IIndustrialTelemetryCollectionConnector
+    Func<DateTimeOffset>? utcNow = null,
+    TimeProvider? timeProvider = null,
+    IConnectorReportSignal? reportSignal = null,
+    IConnectorManifestSignal? manifestSignal = null) : IConnector, IIndustrialTelemetryCollectionConnector
 {
     private readonly Dictionary<(string NodeId, DateTimeOffset BucketStartUtc), TelemetryBucket> _buckets = [];
     private readonly Dictionary<(string NodeId, DateTimeOffset BucketStartUtc), DateTimeOffset> _sealedBucketKeys = [];
-    private readonly Dictionary<string, OpcUaTagSubscription> _tagsByNodeId = options.Tags.ToDictionary(x => x.NodeId, StringComparer.Ordinal);
+    private readonly Dictionary<string, OpcUaTagSubscription> _tagsByNodeId = options.Tags
+        .Where(tag => tag.Enabled)
+        .ToDictionary(x => x.NodeId, StringComparer.Ordinal);
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _connectionTransitionGate = new();
     private readonly Func<DateTimeOffset> _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly TimeSpan _sealedBucketRetention = CalculateSealedBucketRetention(options.Tags);
     private readonly Guid _counterEpoch = Guid.CreateVersion7();
+    private readonly ConnectorConnectionStateTracker _connectionTracker = new(
+        options.EffectiveCollectionConnectorId,
+        timeProvider ?? TimeProvider.System,
+        reportSignal is null ? static _ => { } : reportSignal.Signal);
+    private readonly ConnectorTagManifestTracker _manifestTracker = new(
+        options.EffectiveCollectionConnectorId,
+        "opcua",
+        options.Tags.Select(tag => new ConnectorTagManifestDefinition(tag.DeviceAssetId, tag.TagKey, tag.Enabled, tag.NodeId)).ToArray(),
+        timeProvider ?? TimeProvider.System,
+        manifestSignal is null ? static _ => { } : manifestSignal.Signal);
+    private long _connectionLossVersion;
+    private long _currentConnectionAttempt;
 
     public OpcUaConnectorState CurrentState { get; private set; } = new(
         "stopped",
@@ -34,15 +55,19 @@ public sealed class OpcUaConnector(
         var attempts = 0;
         while (true)
         {
+            var activationCompleted = false;
             try
             {
                 await ConnectBrowseAndSubscribeAsync(cancellationToken);
+                activationCompleted = true;
                 await FlushClosedBucketsAsync(_utcNow(), cancellationToken);
                 await MarkRunningAsync(cancellationToken);
                 return;
             }
             catch (OpcUaConnectionLostException) when (attempts < options.MaxReconnectAttempts)
             {
+                _manifestTracker.MarkAllEnabledError("opcua.activation-failed", "OPC UA subscription activation failed.");
+                MarkConnectionLost("opcua.session-lost");
                 attempts++;
                 await UpdateStateAsync(state => state with
                 {
@@ -56,17 +81,30 @@ public sealed class OpcUaConnector(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                if (!activationCompleted)
+                {
+                    _manifestTracker.MarkAllEnabledError("opcua.activation-failed", "OPC UA subscription activation failed.");
+                }
+
+                if (_connectionTracker.Snapshot.Status == "alive" && IsTransportFailure(ex))
+                {
+                    MarkConnectionLost("opcua.transport-failure");
+                }
+
                 await UpdateStateAsync(state => state with
                 {
                     ReportedStatus = "stopped",
                     HealthStatus = "unhealthy",
                     ErrorCount = state.ErrorCount + 1,
-                    Summary = $"OPC UA collection failed: {ex.Message}"
+                    Summary = "OPC UA collection failed."
                 }, cancellationToken);
                 throw;
             }
         }
     }
+
+    private static bool IsTransportFailure(Exception exception) =>
+        exception is TimeoutException or IOException or System.Net.Sockets.SocketException or ServiceResultException;
 
     public async Task<IReadOnlyList<ConnectorTarget>> DiscoverAsync(CancellationToken cancellationToken)
     {
@@ -86,13 +124,13 @@ public sealed class OpcUaConnector(
         IReadOnlyList<ConnectorTarget> targets =
         [
             new(
-                $"opcua-{options.ConnectorId}",
+                options.EffectiveCollectionConnectorId,
                 $"OPC UA {options.ConnectorId}",
                 "opcua",
                 "opcua-collector",
                 "OPC UA Collector",
                 "1.0",
-                $"opcua-{options.ConnectorId}",
+                options.EffectiveCollectionConnectorId,
                 $"OPC UA {options.EndpointUrl}",
                 state.ReportedStatus,
                 state.HealthStatus,
@@ -101,7 +139,8 @@ public sealed class OpcUaConnector(
                     new ConnectorCapability("industrial-telemetry.ingest", "1.0", "telemetry", ["browse", "subscribe", "sample"])
                 ],
                 metadata,
-                CreateCollectionHealth(state))
+                CreateCollectionHealth(state),
+                _manifestTracker.Snapshot)
         ];
         return targets;
     }
@@ -109,22 +148,28 @@ public sealed class OpcUaConnector(
     private ConnectorCollectionHealthSnapshot CreateCollectionHealth(OpcUaConnectorState state)
     {
         var known = state.ReceivedSamples > 0 || state.DroppedSamples > 0 || state.ErrorCount > 0 || state.LastSampleAtUtc is not null;
-        return new($"opcua-{options.ConnectorId}", "opcua", _counterEpoch,
-            known ? state.ReceivedSamples : null, known ? state.DroppedSamples : null, known ? state.ErrorCount : null, state.LastSampleAtUtc);
+        return new(options.EffectiveCollectionConnectorId, "opcua", _counterEpoch,
+            known ? state.ReceivedSamples : null, known ? state.DroppedSamples : null, known ? state.ErrorCount : null, state.LastSampleAtUtc,
+            _connectionTracker.Snapshot);
     }
 
     private async Task ConnectBrowseAndSubscribeAsync(CancellationToken cancellationToken)
     {
-        await opcUaClient.ConnectAsync(new OpcUaConnectionOptions(
-            options.EndpointUrl,
-            options.SecurityPolicy,
-            options.SecurityMode,
-            options.CredentialReference,
-            options.AutoAcceptUntrustedServerCertificates), cancellationToken);
+        var (connectionAttempt, connectionLossVersion) = StartConnectionAttempt();
+        await opcUaClient.ConnectAsync(
+            new OpcUaConnectionOptions(
+                options.EndpointUrl,
+                options.SecurityPolicy,
+                options.SecurityMode,
+                options.CredentialReference,
+                options.AutoAcceptUntrustedServerCertificates),
+            () => HandleConnectionLost(connectionAttempt),
+            cancellationToken);
 
         _ = await opcUaClient.BrowseAsync(options.BrowseRootNodeId, cancellationToken);
 
-        if (options.Tags.Count == 0)
+        var enabledTags = options.Tags.Where(tag => tag.Enabled).ToArray();
+        if (enabledTags.Length == 0)
         {
             await UpdateStateAsync(state => state with
             {
@@ -135,7 +180,58 @@ public sealed class OpcUaConnector(
             return;
         }
 
-        await opcUaClient.SubscribeAsync(options.Tags, HandleDataChangeAsync, cancellationToken);
+        await opcUaClient.SubscribeAsync(enabledTags, HandleDataChangeAsync, cancellationToken);
+        _manifestTracker.MarkAllEnabledActive();
+        MarkAliveIfNoConnectionLoss(connectionAttempt, connectionLossVersion);
+        await Task.Delay(CalculateSamplingDwell(enabledTags), _timeProvider, cancellationToken);
+    }
+
+    private void HandleConnectionLost(long connectionAttempt)
+    {
+        lock (_connectionTransitionGate)
+        {
+            if (_currentConnectionAttempt != connectionAttempt)
+            {
+                return;
+            }
+
+            MarkConnectionLostUnsafe("opcua.bad-keepalive");
+        }
+    }
+
+    private void MarkConnectionLost(string diagnosticCode)
+    {
+        lock (_connectionTransitionGate)
+        {
+            MarkConnectionLostUnsafe(diagnosticCode);
+        }
+    }
+
+    private void MarkConnectionLostUnsafe(string diagnosticCode)
+    {
+        _connectionLossVersion++;
+        _connectionTracker.MarkLost("transport", diagnosticCode);
+    }
+
+    private (long ConnectionAttempt, long ConnectionLossVersion) StartConnectionAttempt()
+    {
+        lock (_connectionTransitionGate)
+        {
+            _currentConnectionAttempt++;
+            return (_currentConnectionAttempt, _connectionLossVersion);
+        }
+    }
+
+    private void MarkAliveIfNoConnectionLoss(long connectionAttempt, long connectionLossVersion)
+    {
+        lock (_connectionTransitionGate)
+        {
+            if (_currentConnectionAttempt == connectionAttempt
+                && _connectionLossVersion == connectionLossVersion)
+            {
+                _connectionTracker.MarkAlive();
+            }
+        }
     }
 
     private async Task HandleDataChangeAsync(OpcUaDataChange change, CancellationToken cancellationToken)
@@ -309,7 +405,8 @@ public sealed class OpcUaConnector(
             "opcua",
             $"{options.ConnectorHostId}/{options.ConnectorId}",
             FirstValue: bucket.FirstValue,
-            LastValue: bucket.LastValue);
+            LastValue: bucket.LastValue,
+            CollectionConnectorId: options.EffectiveCollectionConnectorId);
     }
 
     private async Task MarkRunningAsync(CancellationToken cancellationToken)
@@ -388,6 +485,12 @@ public sealed class OpcUaConnector(
     {
         var maxBucketSeconds = tags.Count == 0 ? 60 : tags.Max(x => Math.Max(x.BucketSeconds, 1));
         return TimeSpan.FromSeconds(Math.Max(60, maxBucketSeconds * 5));
+    }
+
+    private static TimeSpan CalculateSamplingDwell(IReadOnlyList<OpcUaTagSubscription> tags)
+    {
+        var maxSamplingIntervalMilliseconds = tags.Max(x => Math.Max(x.SamplingIntervalMilliseconds, 0));
+        return TimeSpan.FromMilliseconds(Math.Max(1000L, maxSamplingIntervalMilliseconds * 2L));
     }
 
     private sealed record BucketFlushItem(

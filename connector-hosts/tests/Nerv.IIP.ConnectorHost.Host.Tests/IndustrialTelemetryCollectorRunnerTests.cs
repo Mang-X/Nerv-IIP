@@ -19,6 +19,22 @@ public sealed class IndustrialTelemetryCollectorRunnerTests
         Assert.Equal(1, healthy.Attempts);
     }
 
+    [Fact]
+    public async Task One_slow_collector_does_not_block_another_collector()
+    {
+        var slow = new BlockingCollector();
+        var healthy = new RecordingCollector();
+        var runner = new IndustrialTelemetryCollectorRunner(NullLogger<IndustrialTelemetryCollectorRunner>.Instance);
+
+        var run = runner.RunCollectionCycleAsync([slow, healthy], CancellationToken.None);
+        await slow.Started.Task;
+
+        Assert.Equal(1, healthy.Attempts);
+
+        slow.Release();
+        await run;
+    }
+
     private sealed class FailingCollector : IIndustrialTelemetryCollectionConnector
     {
         public int Attempts { get; private set; }
@@ -39,5 +55,20 @@ public sealed class IndustrialTelemetryCollectorRunnerTests
             Attempts++;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class BlockingCollector : IIndustrialTelemetryCollectionConnector
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task RunCollectionCycleAsync(CancellationToken cancellationToken)
+        {
+            Started.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+        }
+
+        public void Release() => _release.TrySetResult();
     }
 }

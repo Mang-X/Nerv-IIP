@@ -5,12 +5,12 @@ import {
   connectorSourceSystemLabel,
   formatSampleRate,
   isConnectorFault,
-  isConnectorOffline,
 } from '@/composables/useBusinessTelemetry'
 import { NvBadge } from '@nerv-iip/ui'
 import { ActivityIcon, ChevronDownIcon, TriangleAlertIcon, TimerIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
+import ConnectorTagCoveragePanel from './ConnectorTagCoveragePanel.vue'
 
 const props = defineProps<{
   connector: BusinessConsoleConnectorCollectionHealthListItem
@@ -20,10 +20,26 @@ const props = defineProps<{
 
 defineEmits<{ toggle: [] }>()
 
-const offline = computed(() =>
-  isConnectorOffline(props.connector.status, props.connector.staleReason),
+const fieldConnectionLost = computed(
+  () =>
+    props.connector.offlineReason === 'field-connection' ||
+    props.connector.connection?.status === 'lost',
 )
+const hostOffline = computed(() => props.connector.offlineReason === 'host-liveness')
+const offline = computed(() => fieldConnectionLost.value || hostOffline.value)
 const fault = computed(() => isConnectorFault(props.connector.status, props.connector.staleReason))
+const connectionUnknown = computed(() => {
+  const status = props.connector.connection?.status
+  return status !== 'alive' && status !== 'lost'
+})
+const statusLabel = computed(() => {
+  if (fieldConnectionLost.value) return '现场连接断开'
+  if (hostOffline.value) return '采集主机离线'
+  if (fault.value)
+    return connectorHealthStatusLabel(props.connector.status, props.connector.staleReason)
+  if (connectionUnknown.value) return '连接状态未知'
+  return connectorHealthStatusLabel(props.connector.status, props.connector.staleReason)
+})
 const detailId = computed(
   () =>
     `connector-detail-${props.connector.connectorId ?? props.connector.connectorName ?? 'connector'}`,
@@ -31,6 +47,7 @@ const detailId = computed(
 const statusVariant = computed(() => {
   if (offline.value) return 'danger'
   if (fault.value) return 'warning'
+  if (connectionUnknown.value) return 'neutral'
   if (props.connector.status === 'current') return 'success'
   return 'neutral'
 })
@@ -60,6 +77,18 @@ function formatDurationSince(value?: string | null) {
   if (hours < 24) return `${hours} 小时 ${minutes % 60} 分钟`
   return `${Math.floor(hours / 24)} 天 ${hours % 24} 小时`
 }
+
+const offlineDuration = computed(() => {
+  if (fieldConnectionLost.value) {
+    const disconnectedSinceUtc = props.connector.connection?.disconnectedSinceUtc
+    return disconnectedSinceUtc ? `现场断开约 ${formatDurationSince(disconnectedSinceUtc)}` : null
+  }
+  if (hostOffline.value) {
+    const deadlineUtc = props.connector.hostLivenessDeadlineUtc
+    return deadlineUtc ? `主机离线约 ${formatDurationSince(deadlineUtc)}` : null
+  }
+  return null
+})
 </script>
 
 <template>
@@ -83,9 +112,7 @@ function formatDurationSince(value?: string | null) {
         </p>
       </div>
       <div class="flex shrink-0 items-center gap-1.5">
-        <NvBadge class="rounded-sm" :variant="statusVariant">{{
-          connectorHealthStatusLabel(connector.status, connector.staleReason)
-        }}</NvBadge>
+        <NvBadge class="rounded-sm" :variant="statusVariant">{{ statusLabel }}</NvBadge>
         <ChevronDownIcon
           class="size-4 text-muted-foreground transition-transform"
           :class="expanded ? 'rotate-180' : ''"
@@ -130,9 +157,8 @@ function formatDurationSince(value?: string | null) {
         {{ formatDateTime(connector.lastHeartbeatAtUtc) }}
       </span>
       <span>最后采样 {{ formatDateTime(connector.lastSampleAtUtc) }}</span>
-      <span v-if="offline" class="inline-flex items-center gap-1 text-destructive">
-        <TimerIcon class="size-3" aria-hidden="true" />断线时长约
-        {{ formatDurationSince(connector.lastHeartbeatAtUtc) }}
+      <span v-if="offlineDuration" class="inline-flex items-center gap-1 text-destructive">
+        <TimerIcon class="size-3" aria-hidden="true" />{{ offlineDuration }}
       </span>
       <span v-else-if="fault" class="inline-flex items-center gap-1 text-warning-strong">
         <TriangleAlertIcon class="size-3" aria-hidden="true" />连接器上报异常停止
@@ -157,13 +183,20 @@ function formatDurationSince(value?: string | null) {
         }}</span>
       </div>
       <p class="text-muted-foreground">
-        本卡片按连接器汇总心跳与采样吞吐。该连接器覆盖的逐条采集标签与实时数值，可在
+        以下清单来自该连接器上报的配置；标签实时数值可在
         <RouterLink
           to="/equipment/telemetry/tags"
           class="text-brand underline-offset-4 hover:underline"
           >采集标签</RouterLink
         >
         中按设备查看。
+      </p>
+      <ConnectorTagCoveragePanel
+        v-if="connector.connectorId"
+        :collection-connector-id="connector.connectorId"
+      />
+      <p v-else class="mt-3 border-t pt-3 text-muted-foreground">
+        该连接器尚未提供可用于读取配置标签的编号。
       </p>
     </div>
   </div>

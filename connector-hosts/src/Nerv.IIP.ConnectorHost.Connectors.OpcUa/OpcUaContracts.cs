@@ -14,7 +14,11 @@ public sealed record OpcUaConnectorOptions(
     string BrowseRootNodeId,
     IReadOnlyList<OpcUaTagSubscription> Tags,
     int MaxReconnectAttempts = 1,
-    bool AutoAcceptUntrustedServerCertificates = false);
+    bool AutoAcceptUntrustedServerCertificates = false,
+    string? CollectionConnectorId = null)
+{
+    public string EffectiveCollectionConnectorId => CollectionConnectorId ?? $"opcua-{ConnectorId}";
+}
 
 public sealed record OpcUaConnectionOptions(
     string EndpointUrl,
@@ -36,7 +40,8 @@ public sealed record OpcUaTagSubscription(
     string NodeId,
     int SamplingIntervalMilliseconds,
     int BucketSeconds,
-    string? SamplingPolicy = null);
+    string? SamplingPolicy = null,
+    bool Enabled = true);
 
 public sealed record OpcUaNode(string NodeId, string DisplayName, bool IsVariable);
 
@@ -67,7 +72,8 @@ public sealed record RecordIndustrialTelemetrySampleRequest(
     string? DeviceState = null,
     DateTimeOffset? StateOccurredAtUtc = null,
     decimal? FirstValue = null,
-    decimal? LastValue = null);
+    decimal? LastValue = null,
+    string? CollectionConnectorId = null);
 
 public sealed record OpcUaConnectorState(
     string ReportedStatus,
@@ -96,6 +102,15 @@ public sealed record OpcUaConnectorState(
 public interface IOpcUaClient
 {
     Task ConnectAsync(OpcUaConnectionOptions options, CancellationToken cancellationToken);
+
+    Task ConnectAsync(
+        OpcUaConnectionOptions options,
+        Action onConnectionLost,
+        CancellationToken cancellationToken)
+    {
+        _ = onConnectionLost;
+        return ConnectAsync(options, cancellationToken);
+    }
 
     Task<IReadOnlyList<OpcUaNode>> BrowseAsync(string rootNodeId, CancellationToken cancellationToken);
 

@@ -23,7 +23,8 @@ public sealed class TelemetryRawSample : Entity<TelemetryRawSampleId>, IAggregat
         decimal lastValue,
         string sourceSequence,
         string? sourceSystem,
-        string? sourceConnector)
+        string? sourceConnector,
+        string? collectionConnectorId)
     {
         if (bucketEndUtc <= bucketStartUtc)
         {
@@ -53,6 +54,7 @@ public sealed class TelemetryRawSample : Entity<TelemetryRawSampleId>, IAggregat
         SourceSequence = IndustrialTelemetryText.Required(sourceSequence, nameof(sourceSequence));
         SourceSystem = IndustrialTelemetryText.Optional(sourceSystem);
         SourceConnector = IndustrialTelemetryText.Optional(sourceConnector);
+        CollectionConnectorId = IndustrialTelemetryText.Optional(collectionConnectorId);
         RecordedAtUtc = DateTimeOffset.UtcNow;
     }
 
@@ -73,6 +75,7 @@ public sealed class TelemetryRawSample : Entity<TelemetryRawSampleId>, IAggregat
     public string SourceSequence { get; private set; } = string.Empty;
     public string? SourceSystem { get; private set; }
     public string? SourceConnector { get; private set; }
+    public string? CollectionConnectorId { get; private set; }
     public DateTimeOffset RecordedAtUtc { get; private set; }
 
     public static TelemetryRawSample Record(
@@ -90,7 +93,8 @@ public sealed class TelemetryRawSample : Entity<TelemetryRawSampleId>, IAggregat
         decimal lastValue,
         string sourceSequence,
         string? sourceSystem,
-        string? sourceConnector)
+        string? sourceConnector,
+        string? collectionConnectorId = null)
     {
         return new TelemetryRawSample(
             organizationId,
@@ -107,7 +111,8 @@ public sealed class TelemetryRawSample : Entity<TelemetryRawSampleId>, IAggregat
             lastValue,
             sourceSequence,
             sourceSystem,
-            sourceConnector);
+            sourceConnector,
+            collectionConnectorId);
     }
 
     public bool HasSamePayload(TelemetryRawSample other)
@@ -119,6 +124,7 @@ public sealed class TelemetryRawSample : Entity<TelemetryRawSampleId>, IAggregat
             && TagKey == other.TagKey
             && SourceSystem == other.SourceSystem
             && SourceConnector == other.SourceConnector
+            && CollectionConnectorId == other.CollectionConnectorId
             && SourceSequence == other.SourceSequence
             && BucketStartUtc == other.BucketStartUtc
             && BucketEndUtc == other.BucketEndUtc

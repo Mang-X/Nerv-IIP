@@ -210,6 +210,38 @@ namespace Nerv.IIP.AppHub.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasComment("Owning application instance aggregate id");
 
+                    b.Property<long>("ConcurrencyVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasComment("Application-managed optimistic concurrency version for collection-health merges");
+
+                    b.Property<DateTimeOffset?>("ConnectedSinceUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("UTC start of the current alive connection interval; present only while connection state is alive");
+
+                    b.Property<string>("ConnectionDiagnosticCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasComment("Sanitized diagnostic code for the latest field connection transition; null when not reported");
+
+                    b.Property<DateTimeOffset?>("ConnectionObservedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("UTC time of the latest authoritative field connection observation; null means no connection fact");
+
+                    b.Property<long?>("ConnectionObservedAtUtcTicks")
+                        .HasColumnType("bigint")
+                        .HasComment("Exact .NET UTC ticks for monotonic ordering beyond PostgreSQL timestamp microsecond precision");
+
+                    b.Property<string>("ConnectionReasonCategory")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Bounded category for the latest field connection transition reason; null when not reported");
+
+                    b.Property<string>("ConnectionStatus")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasComment("Authoritative field connection state: unknown, alive, or lost; null means a legacy report supplied no connection fact");
+
                     b.Property<string>("ConnectorId")
                         .IsRequired()
                         .HasMaxLength(160)
@@ -219,6 +251,10 @@ namespace Nerv.IIP.AppHub.Infrastructure.Migrations
                     b.Property<Guid>("CounterEpoch")
                         .HasColumnType("uuid")
                         .HasComment("Process or counter epoch that makes resets explicit");
+
+                    b.Property<DateTimeOffset?>("DisconnectedSinceUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("UTC start of the current lost connection interval; present only while connection state is lost");
 
                     b.Property<long?>("DroppedCount")
                         .HasColumnType("bigint")
@@ -276,6 +312,10 @@ namespace Nerv.IIP.AppHub.Infrastructure.Migrations
                     b.ToTable("connector_collection_health", "apphub", t =>
                         {
                             t.HasComment("Latest recoverable collection health counters reported by each Connector Host connector/source.");
+
+                            t.HasCheckConstraint("ck_connector_collection_health_connection_shape", "(\"ConnectionStatus\" IS NULL AND \"ConnectionObservedAtUtc\" IS NULL AND \"ConnectionObservedAtUtcTicks\" IS NULL AND \"ConnectedSinceUtc\" IS NULL AND \"DisconnectedSinceUtc\" IS NULL) OR (\"ConnectionStatus\" = 'unknown' AND \"ConnectionObservedAtUtc\" IS NOT NULL AND \"ConnectionObservedAtUtcTicks\" IS NOT NULL AND \"ConnectedSinceUtc\" IS NULL AND \"DisconnectedSinceUtc\" IS NULL) OR (\"ConnectionStatus\" = 'alive' AND \"ConnectionObservedAtUtc\" IS NOT NULL AND \"ConnectionObservedAtUtcTicks\" IS NOT NULL AND \"ConnectedSinceUtc\" IS NOT NULL AND \"DisconnectedSinceUtc\" IS NULL) OR (\"ConnectionStatus\" = 'lost' AND \"ConnectionObservedAtUtc\" IS NOT NULL AND \"ConnectionObservedAtUtcTicks\" IS NOT NULL AND \"ConnectedSinceUtc\" IS NULL AND \"DisconnectedSinceUtc\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_connector_collection_health_connection_status", "\"ConnectionStatus\" IS NULL OR \"ConnectionStatus\" IN ('unknown', 'alive', 'lost')");
                         });
                 });
 
