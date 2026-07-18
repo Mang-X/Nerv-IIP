@@ -9,6 +9,27 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
 public sealed class ListSchedulePlansQueryHandlerTests
 {
+    [Fact]
+    public async Task List_returns_superseded_and_revoked_terminal_statuses()
+    {
+        await using var dbContext = CreateDbContext();
+        var superseded = CreatePlan("plan-superseded", SchedulePlanStatusContract.Generated);
+        superseded.Release(new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero), 1);
+        superseded.Supersede("plan-successor", new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero));
+        var revoked = CreatePlan("plan-revoked", SchedulePlanStatusContract.Generated);
+        revoked.Release(new DateTimeOffset(2026, 6, 1, 11, 0, 0, TimeSpan.Zero), 2);
+        revoked.Revoke(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
+        dbContext.SchedulePlans.AddRange(superseded, revoked);
+        await dbContext.SaveChangesAsync();
+
+        var results = await new ListSchedulePlansQueryHandler(dbContext).Handle(
+            new ListSchedulePlansQuery("org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal(SchedulePlanStatusContract.Superseded, Assert.Single(results, x => x.PlanId == "plan-superseded").Status);
+        Assert.Equal(SchedulePlanStatusContract.Revoked, Assert.Single(results, x => x.PlanId == "plan-revoked").Status);
+    }
+
     // Asserts the enrichment logic + newest-of-multiple selection. This handler cannot run on SQLite
     // (the plans query ORDER BYs GeneratedAtUtc, a DateTimeOffset SQLite refuses to sort), so the real
     // relational translation of the bounded anti-join is covered by SchedulingListPlansPostgresProfileTests.

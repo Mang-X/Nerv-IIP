@@ -64,6 +64,7 @@ import type {
   PublishBusinessConsoleEngineeringSopDocumentData,
   RescheduleBusinessConsoleEngineeringChangeData,
   ResolveBusinessConsoleEngineeringProductionVersionData,
+  RevokeBusinessConsoleSchedulingPlanData,
   SearchBusinessConsoleObjectsData,
 } from './business-console'
 import {
@@ -333,6 +334,7 @@ describe('generated API client contract', () => {
       'getBusinessConsoleSchedulingPlanQueryOptions',
       'getBusinessConsoleSchedulingPlanGanttQueryOptions',
       'releaseBusinessConsoleSchedulingPlanMutationOptions',
+      'revokeBusinessConsoleSchedulingPlanMutationOptions',
       'listBusinessConsoleMaintenanceSparePartsQueryOptions',
       'createBusinessConsoleMaintenanceSparePartMutationOptions',
       'queryBusinessConsoleMaintenanceAssetReliabilityQueryOptions',
@@ -387,6 +389,7 @@ describe('generated API client contract', () => {
       'getBusinessConsoleSchedulingPlan',
       'getBusinessConsoleSchedulingPlanGantt',
       'releaseBusinessConsoleSchedulingPlan',
+      'revokeBusinessConsoleSchedulingPlan',
       'listBusinessConsoleMaintenanceSpareParts',
       'createBusinessConsoleMaintenanceSparePart',
       'queryBusinessConsoleMaintenanceAssetReliability',
@@ -529,6 +532,7 @@ describe('generated API client contract', () => {
     expectTypeOf<GetBusinessConsoleErpCostCandidateBySourceDocumentData>().toBeObject()
     expectTypeOf<GetBusinessConsoleErpPayableBySourceDocumentData>().toBeObject()
     expectTypeOf<GetBusinessConsoleErpReceivableBySourceDocumentData>().toBeObject()
+    expectTypeOf<RevokeBusinessConsoleSchedulingPlanData>().toBeObject()
   })
 
   it('exports wave2 refreshed Business Console request/response DTO aliases', () => {

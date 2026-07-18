@@ -150,6 +150,8 @@ public static class SchedulePlanContractMapper
         {
             SchedulePlanLifecycleStatus.Generated => SchedulePlanStatusContract.Generated,
             SchedulePlanLifecycleStatus.Released => SchedulePlanStatusContract.Released,
+            SchedulePlanLifecycleStatus.Superseded => SchedulePlanStatusContract.Superseded,
+            SchedulePlanLifecycleStatus.Revoked => SchedulePlanStatusContract.Revoked,
             _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unsupported schedule plan lifecycle status.")
         };
     }

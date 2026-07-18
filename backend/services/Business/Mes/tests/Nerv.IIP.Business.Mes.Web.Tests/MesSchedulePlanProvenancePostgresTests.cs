@@ -4,6 +4,7 @@ using Npgsql;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -23,15 +24,19 @@ public sealed class MesSchedulePlanProvenancePostgresTests
             var task = OperationTask.Queue("org-001", "env-dev", "WO-001", "OP-10", 10, "WC-OLD", [], scheduledAt, TimeSpan.FromHours(1));
             task.ApplyScheduleAssignment("WC-1", "DEV-1", scheduledAt, scheduledAt.AddHours(1), scheduledAt, schedulePlanId: "plan-1", scheduleReleaseRevision: 1);
             db.OperationTasks.Add(task);
+            db.ScheduleReleaseWatermarks.Add(new ScheduleReleaseWatermark(
+                "org-001", "env-dev", "plan-0", 0, scheduledAt.AddMinutes(-1)));
             await db.SaveChangesAsync();
         }
 
         await using (var db = new ApplicationDbContext(options, new NoopMediator()))
         {
             var task = await db.OperationTasks.SingleAsync();
+            var watermark = await db.ScheduleReleaseWatermarks.SingleAsync();
             Assert.Equal("plan-1", task.SchedulePlanId);
             Assert.Equal(1, task.ScheduleReleaseRevision);
             Assert.Equal(scheduledAt, task.ScheduledAtUtc);
+            watermark.RecordRevocation("plan-1", 1, scheduledAt);
             task.RevokeScheduleAssignment("plan-1", 1, "explicit");
             await db.SaveChangesAsync();
         }
@@ -43,6 +48,10 @@ public sealed class MesSchedulePlanProvenancePostgresTests
             Assert.Null(task.ScheduleReleaseRevision);
             Assert.Null(task.ScheduledAtUtc);
             Assert.Equal(OperationTaskLifecycleStatus.ScheduleInvalidated, task.Status);
+            var watermark = await db.ScheduleReleaseWatermarks.SingleAsync();
+            Assert.Equal("plan-1", watermark.RevokedPlanId);
+            Assert.Equal(1, watermark.RevokedReleaseRevision);
+            Assert.Equal(scheduledAt, watermark.RevokedAtUtc);
         }
     }
 

@@ -66,5 +66,7 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
             .HasDatabaseName("ix_operation_tasks_scope_work_order_fk");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId, x.OperationSequence })
             .HasDatabaseName("ix_operation_tasks_scope_work_order_seq");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SchedulePlanId })
+            .HasDatabaseName("ix_operation_tasks_scope_schedule_plan");
     }
 }

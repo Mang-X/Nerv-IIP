@@ -587,6 +587,71 @@ public sealed class SchedulingPlanReleasedHandlerTests
         Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync());
     }
 
+    [Fact]
+    public async Task SchedulePlanReleasedHandler_ClosedTaskDoesNotPoisonQueuedAssignments()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001", "env-dev", "WO-APS-001", "FG-APS", "PV-001", 1m, 10,
+            DateTimeOffset.Parse("2026-06-02T16:00:00Z"), "PCS", null));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001", "env-dev", "WO-APS-001", "OP-10", OperationTaskLifecycleStatus.Completed,
+            10, "WC-DONE", [], DateTimeOffset.Parse("2026-06-01T08:00:00Z"), TimeSpan.FromMinutes(30),
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z"), DateTimeOffset.Parse("2026-06-01T08:30:00Z")));
+        dbContext.OperationTasks.Add(OperationTask.Queue(
+            "org-001", "env-dev", "WO-APS-001", "OP-20", 20, "WC-OLD", [],
+            DateTimeOffset.Parse("2026-06-01T09:00:00Z"), TimeSpan.FromMinutes(30)));
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(dbContext, deadLetters);
+
+        await handler.HandleAsync(CreateReleasedEvent(
+            new SchedulePlanAffectedOperationPayload("WO-APS-001", "OP-10", 10, "DEV-NEW-10", "WC-NEW", DateTimeOffset.Parse("2026-06-01T12:00:00Z"), DateTimeOffset.Parse("2026-06-01T13:00:00Z")),
+            new SchedulePlanAffectedOperationPayload("WO-APS-001", "OP-20", 20, "DEV-NEW-20", "WC-NEW", DateTimeOffset.Parse("2026-06-01T13:00:00Z"), DateTimeOffset.Parse("2026-06-01T14:00:00Z"))), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(OperationTaskLifecycleStatus.Completed, (await dbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-10")).Status);
+        Assert.Equal("plan-001", (await dbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-20")).SchedulePlanId);
+        Assert.Equal("mes.schedulePlanReleased.operationTaskClosed", Assert.Single(await deadLetters.ListAsync(
+            SchedulePlanReleasedIntegrationEventHandlerForDispatch.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None)).FailureCode);
+    }
+
+    [Fact]
+    public async Task FirstGovernedReleaseInvalidatesOmittedLegacyApsAssignments()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001", "env-dev", "WO-APS-001", "FG-APS", "PV-001", 1m, 10,
+            DateTimeOffset.Parse("2026-06-02T16:00:00Z"), "PCS", null));
+        var omittedLegacy = OperationTask.Queue(
+            "org-001", "env-dev", "WO-APS-001", "OP-10", 10, "WC-OLD", [],
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z"), TimeSpan.FromMinutes(30));
+        omittedLegacy.ApplyScheduleAssignment(
+            "WC-LEGACY", "DEV-LEGACY", DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
+            DateTimeOffset.Parse("2026-06-01T08:30:00Z"), DateTimeOffset.Parse("2026-06-01T07:00:00Z"));
+        dbContext.OperationTasks.Add(omittedLegacy);
+        dbContext.OperationTasks.Add(OperationTask.Queue(
+            "org-001", "env-dev", "WO-APS-001", "OP-20", 20, "WC-OLD", [],
+            DateTimeOffset.Parse("2026-06-01T09:00:00Z"), TimeSpan.FromMinutes(30)));
+        await dbContext.SaveChangesAsync();
+
+        await new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+            dbContext, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
+            CreateReleasedEvent(new SchedulePlanAffectedOperationPayload(
+                "WO-APS-001", "OP-20", 20, "DEV-NEW", "WC-NEW",
+                DateTimeOffset.Parse("2026-06-01T09:00:00Z"), DateTimeOffset.Parse("2026-06-01T09:30:00Z"))),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var reconciled = await dbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-10");
+        Assert.Equal(OperationTaskLifecycleStatus.ScheduleInvalidated, reconciled.Status);
+        Assert.Null(reconciled.ScheduledAtUtc);
+        Assert.Null(reconciled.DeviceAssetId);
+        Assert.Equal("plan-001", (await dbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-20")).SchedulePlanId);
+    }
+
     private static SchedulePlanReleasedIntegrationEvent CreateReleasedEvent(
         params SchedulePlanAffectedOperationPayload[] affectedOperations)
     {

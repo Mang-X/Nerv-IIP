@@ -63,6 +63,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
 
+    public DbSet<ScheduleReleaseWatermark> ScheduleReleaseWatermarks => Set<ScheduleReleaseWatermark>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         if (modelBuilder is null)

@@ -79,6 +79,32 @@ public sealed class SchedulingPlanRevokedHandlerTests
         Assert.Equal(4, await dbContext.ProcessedIntegrationEvents.CountAsync());
     }
 
+    [Fact]
+    public async Task Revoke_before_release_persists_scope_watermark_and_prevents_resurrection()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"mes-schedule-revoke-first-{Guid.CreateVersion7():N}")
+            .Options;
+        await using var dbContext = new ApplicationDbContext(options, new NoopMediator());
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001", "env-dev", "WO-001", "FG-001", "PV-001", 1m, 1, At(8), "PCS", null));
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+
+        await new SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatch(dbContext, deadLetters)
+            .HandleAsync(CreateRevoked("revoke-first", "plan-1", 1, "explicit", null), CancellationToken.None);
+        await new SchedulePlanReleasedIntegrationEventHandlerForDispatch(dbContext, deadLetters)
+            .HandleAsync(CreateReleased("release-late", "plan-1", 1, "DEV-1", At(1)), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Empty(dbContext.OperationTasks);
+        Assert.Equal(1, (await dbContext.ScheduleReleaseWatermarks.SingleAsync()).RevokedReleaseRevision);
+        Assert.Contains(await deadLetters.ListAsync(
+            SchedulePlanReleasedIntegrationEventHandlerForDispatch.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None), x => x.FailureCode == "mes.schedulePlanReleased.releaseAlreadyRevoked");
+    }
+
     private static SchedulePlanReleasedIntegrationEvent CreateReleased(
         string eventId, string planId, long revision, string resourceId, DateTimeOffset startUtc) => new(
         eventId,

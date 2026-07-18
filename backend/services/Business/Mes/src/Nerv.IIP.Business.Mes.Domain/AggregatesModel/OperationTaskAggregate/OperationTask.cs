@@ -447,7 +447,32 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         ScheduleReleaseRevision = null;
         ScheduledAtUtc = null;
 
-        if (!HasActiveManualDispatch)
+        if (!HasActiveManualDispatch &&
+            Status is not (OperationTaskLifecycleStatus.InProgress or
+                OperationTaskLifecycleStatus.Paused or
+                OperationTaskLifecycleStatus.Completed or
+                OperationTaskLifecycleStatus.Cancelled))
+        {
+            DeviceAssetId = null;
+            AssignedAtUtc = null;
+        }
+
+        MarkScheduleInvalidated(reasonCode);
+    }
+
+    public void ReconcileLegacyScheduleAssignment(string reasonCode)
+    {
+        if (SchedulePlanId is not null || ScheduleReleaseRevision is not null || ScheduledAtUtc is null)
+        {
+            return;
+        }
+
+        ScheduledAtUtc = null;
+        if (!HasActiveManualDispatch &&
+            Status is not (OperationTaskLifecycleStatus.InProgress or
+                OperationTaskLifecycleStatus.Paused or
+                OperationTaskLifecycleStatus.Completed or
+                OperationTaskLifecycleStatus.Cancelled))
         {
             DeviceAssetId = null;
             AssignedAtUtc = null;

@@ -52,6 +52,23 @@ public sealed class OperationTaskScheduleReleaseGovernanceTests
         Assert.Equal(OperationTaskLifecycleStatus.ScheduleInvalidated, task.Status);
     }
 
+    [Fact]
+    public void Matching_revoke_preserves_execution_device_and_assignment_facts()
+    {
+        var task = CreateTask();
+        task.ApplyScheduleAssignment("WC-APS", "DEV-APS", At(1), At(2), At(0), schedulePlanId: "plan-1", scheduleReleaseRevision: 1);
+        task.Start(At(1));
+
+        task.RevokeScheduleAssignment("plan-1", 1, "superseded");
+
+        Assert.Equal(OperationTaskLifecycleStatus.InProgress, task.Status);
+        Assert.Equal("DEV-APS", task.DeviceAssetId);
+        Assert.Equal(At(0), task.AssignedAtUtc);
+        Assert.Null(task.SchedulePlanId);
+        Assert.Null(task.ScheduleReleaseRevision);
+        Assert.Null(task.ScheduledAtUtc);
+    }
+
     private static OperationTask CreateTask() => OperationTask.Queue(
         "org-001", "env-dev", "WO-001", "OP-10", 10, "WC-OLD", [], At(0), TimeSpan.FromHours(1));
 
