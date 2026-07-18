@@ -256,10 +256,26 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasColumnName("problem_id")
                         .HasComment("Public scheduling problem id used to generate this plan.");
 
+                    b.Property<long?>("ReleaseRevision")
+                        .HasColumnType("bigint")
+                        .HasColumnName("release_revision")
+                        .HasComment("Monotonic release revision within the organization and environment scope.");
+
                     b.Property<DateTimeOffset?>("ReleasedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("released_at_utc")
                         .HasComment("UTC timestamp when the plan was released.");
+
+                    b.Property<string>("RevocationReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("revocation_reason")
+                        .HasComment("Released plan withdrawal reason: Superseded or Explicit.");
+
+                    b.Property<DateTimeOffset?>("RevokedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at_utc")
+                        .HasComment("UTC timestamp when the released plan was superseded or explicitly revoked.");
 
                     b.Property<int>("ScheduledOperationCount")
                         .HasColumnType("integer")
@@ -272,6 +288,12 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasColumnType("character varying(32)")
                         .HasColumnName("status")
                         .HasComment("Persisted plan lifecycle status.");
+
+                    b.Property<string>("SupersededByPlanId")
+                        .HasMaxLength(96)
+                        .HasColumnType("character varying(96)")
+                        .HasColumnName("superseded_by_plan_id")
+                        .HasComment("Successor schedule plan id for automatic supersession; null for explicit revoke.");
 
                     b.Property<int>("TotalTardinessMinutes")
                         .HasColumnType("integer")
@@ -288,9 +310,19 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.HasIndex("PlanId")
                         .IsUnique();
 
+                    b.HasIndex("OrganizationId", "EnvironmentId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_schedule_plans_scope_active_release")
+                        .HasFilter("status = 'Released'");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ReleaseRevision")
+                        .IsUnique()
+                        .HasDatabaseName("ux_schedule_plans_scope_release_revision")
+                        .HasFilter("release_revision IS NOT NULL");
+
                     b.ToTable("schedule_plans", "scheduling", t =>
                         {
-                            t.HasComment("BusinessScheduling generated and released schedule plan headers.");
+                            t.HasComment("BusinessScheduling generated, released, superseded, and revoked schedule plan headers.");
                         });
                 });
 

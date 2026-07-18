@@ -59,6 +59,11 @@ public sealed record ReleaseSchedulePlanRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId);
 
+public sealed record RevokeSchedulePlanRequest(
+    [property: RouteParam] string PlanId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
 public sealed record UpsertScheduleOperationOverrideRequest(
     [property: RouteParam] string PlanId,
     [property: RouteParam] string OperationId,
@@ -182,6 +187,24 @@ public sealed class ReleaseSchedulePlanEndpoint(ISender sender)
     }
 }
 
+public sealed class RevokeSchedulePlanEndpoint(ISender sender)
+    : SchedulingEndpoint<RevokeSchedulePlanRequest, ResponseData<RevokeSchedulePlanResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureSchedulingContract(SchedulingEndpointContracts.Get<RevokeSchedulePlanEndpoint>());
+    }
+
+    public override async Task HandleAsync(RevokeSchedulePlanRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new RevokeSchedulePlanCommand(
+            req.PlanId,
+            req.OrganizationId,
+            req.EnvironmentId), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class UpsertScheduleOperationOverrideEndpoint(ISender sender)
     : SchedulingEndpoint<UpsertScheduleOperationOverrideRequest, ResponseData<ScheduleOperationOverrideResponse>>
 {
@@ -239,6 +262,16 @@ public sealed class ReleaseSchedulePlanRequestValidator : Validator<ReleaseSched
     }
 }
 
+public sealed class RevokeSchedulePlanRequestValidator : Validator<RevokeSchedulePlanRequest>
+{
+    public RevokeSchedulePlanRequestValidator()
+    {
+        RuleFor(x => x.PlanId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+    }
+}
+
 public sealed class UpsertScheduleOperationOverrideRequestValidator : Validator<UpsertScheduleOperationOverrideRequest>
 {
     public UpsertScheduleOperationOverrideRequestValidator()
@@ -271,6 +304,7 @@ public static class SchedulingEndpointContracts
         new(typeof(GetSchedulePlanEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingPlan"),
         new(typeof(GetSchedulePlanGanttEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}/gantt", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingPlanGantt"),
         new(typeof(ReleaseSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/{planId}/release", SchedulingPermissionCodes.PlansRelease, InternalServiceAuthorizationPolicy.Name, "releaseSchedulingPlan"),
+        new(typeof(RevokeSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/{planId}/revoke", SchedulingPermissionCodes.PlansRelease, InternalServiceAuthorizationPolicy.Name, "revokeSchedulingPlan"),
         new(typeof(UpsertScheduleOperationOverrideEndpoint), "PUT", "/api/business/v1/scheduling/plans/{planId}/operations/{operationId}/override", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "upsertSchedulingOperationOverride"),
     ];
 

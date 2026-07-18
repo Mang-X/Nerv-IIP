@@ -25,6 +25,16 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesSchemaConventionTests
 {
     [Fact]
+    public void Operation_task_schedule_release_provenance_columns_are_explicit()
+    {
+        using var fixture = CreateFixture();
+        var entity = fixture.DbContext.Model.FindEntityType(typeof(OperationTask))!;
+
+        Assert.Equal("schedule_plan_id", entity.FindProperty(nameof(OperationTask.SchedulePlanId))!.GetColumnName());
+        Assert.Equal("schedule_release_revision", entity.FindProperty(nameof(OperationTask.ScheduleReleaseRevision))!.GetColumnName());
+    }
+
+    [Fact]
     public void Runtime_PostgreSQL_profile_configures_migrations_history_schema()
     {
         using var fixture = CreateFixture();
@@ -61,6 +71,7 @@ public sealed class MesSchemaConventionTests
             typeof(CodeCounter),
             typeof(CodeIdempotencyKey),
             typeof(ProcessedIntegrationEvent),
+            typeof(ScheduleReleaseWatermark),
         };
 
         var failures = new List<string>();
@@ -81,8 +92,22 @@ public sealed class MesSchemaConventionTests
         failures.AddRange(ProductionReportReversalHasUniqueOriginalReportIndex(fixture.DbContext.Model));
         failures.AddRange(ProcessedIntegrationEventHasUniqueInboxIndex(fixture.DbContext.Model));
         failures.AddRange(QualityHoldTransitionHasGovernedIdempotencyIndex(fixture.DbContext.Model));
+        failures.AddRange(OperationTaskHasScheduleProvenanceIndex(fixture.DbContext.Model));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    private static IReadOnlyCollection<string> OperationTaskHasScheduleProvenanceIndex(IModel model)
+    {
+        var entity = model.FindEntityType(typeof(OperationTask));
+        var found = entity?.GetIndexes().Any(index =>
+            index.GetDatabaseName() == "ix_operation_tasks_scope_schedule_plan" &&
+            index.Properties.Select(x => x.Name).SequenceEqual([
+                nameof(OperationTask.OrganizationId),
+                nameof(OperationTask.EnvironmentId),
+                nameof(OperationTask.SchedulePlanId),
+            ])) == true;
+        return found ? [] : ["MES: operation task schedule provenance index is missing."];
     }
 
     private static IReadOnlyCollection<string> QualityHoldTransitionHasGovernedIdempotencyIndex(IModel model)

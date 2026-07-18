@@ -85,7 +85,7 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
 
         dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-target", "ASSET-CNC-01", "problem-target"));
         var released = CreatePlanWithAssignment("plan-released", "ASSET-CNC-01", "problem-released");
-        released.Release(FixedNow);
+        released.Release(FixedNow, 1);
         dbContext.SchedulePlans.Add(released);
         dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-other", "ASSET-LATHE-01", "problem-other"));
         dbContext.ScheduleProblems.Add(CreateProblemSnapshot("problem-target", "CAL-A", "ASSET-CNC-01"));
@@ -141,7 +141,7 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
 
         dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-target", "ASSET-CNC-01", "problem-target"));
         var released = CreatePlanWithAssignment("plan-released", "ASSET-CNC-01", "problem-released");
-        released.Release(FixedNow);
+        released.Release(FixedNow, 1);
         dbContext.SchedulePlans.Add(released);
         dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-other", "ASSET-LATHE-01", "problem-other"));
         dbContext.ScheduleProblems.Add(CreateProblemSnapshot("problem-target", "CAL-A", "ASSET-CNC-01"));

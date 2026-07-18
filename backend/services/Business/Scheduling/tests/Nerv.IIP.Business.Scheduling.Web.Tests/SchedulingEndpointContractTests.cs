@@ -40,7 +40,7 @@ public sealed class SchedulingEndpointContractTests
             SchedulingPermissionCodes.PlansRelease
         };
 
-        Assert.Equal(8, contracts.Length);
+        Assert.Equal(9, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans/preview" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "previewSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/problems/assemble" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "assembleSchedulingProblem");
@@ -48,6 +48,7 @@ public sealed class SchedulingEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/plans/{planId}" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/plans/{planId}/gantt" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingPlanGantt");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans/{planId}/release" && x.PermissionCode == SchedulingPermissionCodes.PlansRelease && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "releaseSchedulingPlan");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans/{planId}/revoke" && x.PermissionCode == SchedulingPermissionCodes.PlansRelease && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "revokeSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "PUT" && x.Route == "/api/business/v1/scheduling/plans/{planId}/operations/{operationId}/override" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "upsertSchedulingOperationOverride");
         Assert.All(contracts, x => Assert.Contains(x.PermissionCode, allowedPermissions));
     }
@@ -60,6 +61,7 @@ public sealed class SchedulingEndpointContractTests
     [InlineData(typeof(GetSchedulePlanEndpoint))]
     [InlineData(typeof(GetSchedulePlanGanttEndpoint))]
     [InlineData(typeof(ReleaseSchedulePlanEndpoint))]
+    [InlineData(typeof(RevokeSchedulePlanEndpoint))]
     [InlineData(typeof(UpsertScheduleOperationOverrideEndpoint))]
     public void Scheduling_endpoints_route_through_mediator(Type endpointType)
     {
@@ -430,7 +432,10 @@ public sealed class SchedulingEndpointContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(), new SchedulingOperationOverrideOverlay(dbContext));
-        var releaseHandler = new ReleaseSchedulePlanCommandHandler(dbContext, new FixedTimeProvider(FixedNow.AddHours(2)));
+        var releaseHandler = new ReleaseSchedulePlanCommandHandler(
+            dbContext,
+            new FixedTimeProvider(FixedNow.AddHours(2)),
+            new PostgreSqlScheduleReleaseScopeLock(dbContext));
 
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
         var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
@@ -446,13 +451,40 @@ public sealed class SchedulingEndpointContractTests
     }
 
     [Fact]
+    public void Release_unique_conflict_behavior_wraps_unit_of_work_save()
+    {
+        using var factory = new SchedulingLiveHttpTestFactory();
+        using var scope = factory.Services.CreateScope();
+        var behaviorTypes = scope.ServiceProvider
+            .GetServices<IPipelineBehavior<ReleaseSchedulePlanCommand, ReleaseSchedulePlanResponse>>()
+            .Select(x => x.GetType())
+            .ToArray();
+
+        var conflictIndex = Array.FindIndex(
+            behaviorTypes,
+            x => x == typeof(ReleaseSchedulePlanUniqueConflictBehavior));
+        var unitOfWorkIndex = Array.FindIndex(
+            behaviorTypes,
+            x => x.Name.Contains("UnitOfWork", StringComparison.Ordinal));
+
+        Assert.True(conflictIndex >= 0, $"Missing release conflict behavior. Pipeline: {string.Join(", ", behaviorTypes.Select(x => x.Name))}");
+        Assert.True(unitOfWorkIndex >= 0, $"Missing unit-of-work behavior. Pipeline: {string.Join(", ", behaviorTypes.Select(x => x.Name))}");
+        Assert.True(
+            conflictIndex < unitOfWorkIndex,
+            $"Release conflict behavior must wrap unit-of-work save. Pipeline: {string.Join(", ", behaviorTypes.Select(x => x.Name))}");
+    }
+
+    [Fact]
     public async Task Release_rejects_plans_with_error_conflicts_or_unscheduled_operations()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(), new SchedulingOperationOverrideOverlay(dbContext));
-        var releaseHandler = new ReleaseSchedulePlanCommandHandler(dbContext, new FixedTimeProvider(FixedNow.AddHours(2)));
+        var releaseHandler = new ReleaseSchedulePlanCommandHandler(
+            dbContext,
+            new FixedTimeProvider(FixedNow.AddHours(2)),
+            new PostgreSqlScheduleReleaseScopeLock(dbContext));
 
         var problem = CreateProblemWithUnscheduledOperation();
         var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
@@ -479,7 +511,8 @@ public sealed class SchedulingEndpointContractTests
         var releaseContext = releaseScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var releaseHandler = new ReleaseSchedulePlanCommandHandler(
             releaseContext,
-            new FixedTimeProvider(FixedNow.AddHours(2)));
+            new FixedTimeProvider(FixedNow.AddHours(2)),
+            new PostgreSqlScheduleReleaseScopeLock(releaseContext));
 
         var response = await releaseHandler.Handle(
             new ReleaseSchedulePlanCommand("plan-release-001", "org-001", "prod"),
@@ -499,7 +532,10 @@ public sealed class SchedulingEndpointContractTests
         var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(), new SchedulingOperationOverrideOverlay(dbContext));
         var detailHandler = new GetSchedulePlanDetailQueryHandler(dbContext);
         var ganttHandler = new GetSchedulePlanGanttQueryHandler(dbContext);
-        var releaseHandler = new ReleaseSchedulePlanCommandHandler(dbContext, new FixedTimeProvider(FixedNow.AddHours(2)));
+        var releaseHandler = new ReleaseSchedulePlanCommandHandler(
+            dbContext,
+            new FixedTimeProvider(FixedNow.AddHours(2)),
+            new PostgreSqlScheduleReleaseScopeLock(dbContext));
 
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
         var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);

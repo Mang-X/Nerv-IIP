@@ -62,7 +62,7 @@ public sealed class SchedulingIntegrationEventTests
     public void Schedule_plan_released_event_uses_required_name_and_released_status()
     {
         var plan = CreatePlan();
-        plan.Release(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
+        plan.Release(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero), 7);
 
         var integrationEvent = new SchedulePlanReleasedIntegrationEventConverter(
                 new FixedTimeProvider(FixedNow),
@@ -73,7 +73,32 @@ public sealed class SchedulingIntegrationEventTests
         Assert.Equal("plan-001", integrationEvent.Payload.PlanId);
         Assert.Equal("problem-001", integrationEvent.Payload.ProblemId);
         Assert.Equal("released", integrationEvent.Payload.PlanStatus);
+        Assert.Equal(7, integrationEvent.Payload.ReleaseRevision);
         Assert.Contains(integrationEvent.Payload.AffectedOperations, x => x.WorkOrderId == "wo-001" && x.OperationId == "op-001" && x.StandardOperationCode == "STD-ASSY");
+    }
+
+    [Fact]
+    public void Schedule_plan_revoked_event_carries_real_plan_revision_successor_and_operations()
+    {
+        var plan = CreatePlan();
+        plan.Release(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero), 7);
+        plan.ClearDomainEvents();
+        plan.Supersede("plan-002", new DateTimeOffset(2026, 6, 1, 13, 0, 0, TimeSpan.Zero));
+
+        var integrationEvent = new SchedulePlanRevokedIntegrationEventConverter(
+                new FixedTimeProvider(FixedNow),
+                new StubSchedulingIntegrationEventContextAccessor())
+            .Convert(new SchedulePlanRevokedDomainEvent(plan));
+
+        Assert.Equal("scheduling.SchedulePlanRevoked", integrationEvent.EventType);
+        Assert.Equal("plan-001", integrationEvent.Payload.PlanId);
+        Assert.Equal(7, integrationEvent.Payload.ReleaseRevision);
+        Assert.Equal("superseded", integrationEvent.Payload.Reason);
+        Assert.Equal("plan-002", integrationEvent.Payload.SupersededByPlanId);
+        Assert.Contains(integrationEvent.Payload.AffectedOperations, x =>
+            x.WorkOrderId == "wo-001" &&
+            x.OperationId == "op-001" &&
+            x.StandardOperationCode == "STD-ASSY");
     }
 
     [Fact]
@@ -146,7 +171,7 @@ public sealed class SchedulingIntegrationEventTests
             .Convert(new SchedulePlanGeneratedDomainEvent(plan));
         var conflictEvent = new ScheduleConflictDetectedIntegrationEventConverter(timeProvider, contextAccessor)
             .Convert(new ScheduleConflictDetectedDomainEvent(plan, plan.Conflicts.Single()));
-        plan.Release(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
+        plan.Release(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero), 1);
         var releasedEvent = new SchedulePlanReleasedIntegrationEventConverter(timeProvider, contextAccessor)
             .Convert(new SchedulePlanReleasedDomainEvent(plan));
 

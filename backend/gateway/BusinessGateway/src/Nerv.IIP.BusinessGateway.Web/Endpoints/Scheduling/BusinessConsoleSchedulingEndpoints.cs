@@ -165,6 +165,32 @@ public sealed class ReleaseBusinessConsoleSchedulingPlanEndpoint(
 }
 
 [Tags("Business Console Scheduling")]
+[HttpPost("/api/business-console/v1/scheduling/plans/{planId}/revoke")]
+[BusinessGatewayOperationId("revokeBusinessConsoleSchedulingPlan")]
+public sealed class RevokeBusinessConsoleSchedulingPlanEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessSchedulingClient scheduling,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessSchedulingProxyEndpoint<BusinessConsoleSchedulingPlanRequest, BusinessConsoleRevokeSchedulePlanResponse>(
+        auth,
+        BusinessGatewayPermissions.SchedulingPlansRelease)
+{
+    protected override string OrganizationId(BusinessConsoleSchedulingPlanRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleSchedulingPlanRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleSchedulingPlanRequest request) => "scheduling-plan";
+
+    protected override string? ResourceId(BusinessConsoleSchedulingPlanRequest request) => request.PlanId;
+
+    protected override Task<BusinessConsoleRevokeSchedulePlanResponse> ForwardAsync(
+        BusinessConsoleSchedulingPlanRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        scheduling.RevokePlanAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Scheduling")]
 [HttpPut("/api/business-console/v1/scheduling/plans/{planId}/operations/{operationId}/override")]
 [BusinessGatewayOperationId("upsertBusinessConsoleSchedulingOperationOverride")]
 public sealed class UpsertBusinessConsoleSchedulingOperationOverrideEndpoint(

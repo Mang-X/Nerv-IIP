@@ -671,6 +671,17 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("schedule_invalidation_reason_code")
                         .HasComment("Latest scheduling invalidation reason code when the task is schedule invalidated; cleared when a released schedule re-plans the task.");
 
+                    b.Property<string>("SchedulePlanId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("schedule_plan_id")
+                        .HasComment("Scheduling plan id that currently owns this task's APS assignment, or null after matching revocation.");
+
+                    b.Property<long?>("ScheduleReleaseRevision")
+                        .HasColumnType("bigint")
+                        .HasColumnName("schedule_release_revision")
+                        .HasComment("Monotonic Scheduling release revision that currently owns this task's APS assignment.");
+
                     b.Property<DateTimeOffset?>("ScheduledAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("scheduled_at_utc")
@@ -724,6 +735,9 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
                     b.HasIndex("WorkOrderId")
                         .HasDatabaseName("ix_operation_tasks_work_order_id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SchedulePlanId")
+                        .HasDatabaseName("ix_operation_tasks_scope_schedule_plan");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId")
                         .HasDatabaseName("ix_operation_tasks_scope_work_order_fk");
@@ -2154,6 +2168,46 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.ToTable("processed_integration_events", "mes", t =>
                         {
                             t.HasComment("Integration events already processed by BusinessMES for idempotent consumption.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents.ScheduleReleaseWatermark", b =>
+                {
+                    b.Property<string>("OrganizationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("EnvironmentId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id for the scheduling scope.");
+
+                    b.Property<DateTimeOffset>("RevokedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at_utc")
+                        .HasComment("UTC occurrence time of the highest consumed revocation.");
+
+                    b.Property<string>("RevokedPlanId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("revoked_plan_id")
+                        .HasComment("Plan id owning the highest revoked release revision consumed in this scope.");
+
+                    b.Property<long>("RevokedReleaseRevision")
+                        .HasColumnType("bigint")
+                        .HasColumnName("revoked_release_revision")
+                        .HasComment("Highest revoked monotonic Scheduling release revision consumed in this scope.");
+
+                    b.HasKey("OrganizationId", "EnvironmentId")
+                        .HasName("pk_schedule_release_watermarks");
+
+                    b.ToTable("schedule_release_watermarks", "mes", t =>
+                        {
+                            t.HasComment("Highest revoked Scheduling release revision consumed by MES for each business scope.");
                         });
                 });
 

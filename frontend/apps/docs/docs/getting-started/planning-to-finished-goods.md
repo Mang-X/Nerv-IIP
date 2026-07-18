@@ -36,13 +36,14 @@
 
 1. 在 `/planning` 查看需求、运行 MRP，并检查 pegging 和计划建议。
 2. 接受可执行的计划建议，进入生产计划或 MES 可消费的计划视图。
-3. 在 `/mes/foundation` 检查开工前基础准备，缺 SKU、生产版本、工作中心或设备范围时先补上下文。
-4. 在 `/mes/plans` 查看可转入 MES 执行的计划，确认计划就绪状态。
-5. 在 `/mes/work-orders` 创建或释放工单；进入 `/mes/work-orders/:workOrderId` 查看工序、用料和阻塞原因。
-6. 在 `/mes/materials` 跟踪齐套和领料，必要时联动 WMS/Inventory。
-7. 在 `/mes/dispatch` 和 `/mes/operation-tasks` 派工、开工、暂停、恢复或完工。
-8. 在 `/mes/production-reports` 记录良品、不良和返工；需要质检时进入 `/mes/quality` 或 Quality 页面。
-9. 在 `/mes/receipts` 创建完工入库请求，等待 Inventory/WMS 过账事实回写。
+3. 发布 Scheduling 新版本时，同一组织/环境内的旧发布版本会自动标记为已取代；MES 只保留新版排程来源。无替代版本时，后端也支持显式撤销，当前产品页尚未提供该动作入口。
+4. 在 `/mes/foundation` 检查开工前基础准备，缺 SKU、生产版本、工作中心或设备范围时先补上下文。
+5. 在 `/mes/plans` 查看可转入 MES 执行的计划，确认计划就绪状态。
+6. 在 `/mes/work-orders` 创建或释放工单；进入 `/mes/work-orders/:workOrderId` 查看工序、用料和阻塞原因。
+7. 在 `/mes/materials` 跟踪齐套和领料，必要时联动 WMS/Inventory。
+8. 在 `/mes/dispatch` 和 `/mes/operation-tasks` 派工、开工、暂停、恢复或完工。
+9. 在 `/mes/production-reports` 记录良品、不良和返工；需要质检时进入 `/mes/quality` 或 Quality 页面。
+10. 在 `/mes/receipts` 创建完工入库请求，等待 Inventory/WMS 过账事实回写。
 
 ## 业务对象/单据流
 
