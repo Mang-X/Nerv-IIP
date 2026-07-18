@@ -3,12 +3,80 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Contracts.DemandPlanning;
+using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesDemandPlanningBridgeTests
 {
+    [Fact]
+    public async Task Accepted_suggestion_for_consumed_disabled_sku_is_terminally_rejected_without_retry_poisoning()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var changedAtUtc = DateTimeOffset.Parse("2026-07-18T08:00:00Z");
+        var skuDisabledHandler = new SkuDisabledIntegrationEventHandlerForProjectMesSkuAvailability(dbContext, deadLetters);
+        await skuDisabledHandler.HandleAsync(
+            new SkuDisabledIntegrationEvent(
+                "evt-sku-disabled-demand",
+                MasterDataIntegrationEventTypes.SkuDisabled,
+                MasterDataIntegrationEventVersions.V1,
+                changedAtUtc,
+                MasterDataIntegrationEventSources.BusinessMasterData,
+                "corr-sku-disabled-demand",
+                "cause-sku-disabled-demand",
+                "org-001",
+                "env-dev",
+                "user:masterdata-admin",
+                "sku-disabled-demand",
+                new MasterDataDisabledPayload("sku", "SKU-DISABLED", "disabled", "retired", changedAtUtc)),
+            CancellationToken.None);
+
+        var suggestionHandler = new PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder(dbContext, deadLetters);
+        await suggestionHandler.HandleAsync(
+            new PlanningSuggestionAcceptedIntegrationEvent(
+                "evt-demand-disabled-sku",
+                DemandPlanningIntegrationEventTypes.PlanningSuggestionAccepted,
+                DemandPlanningIntegrationEventVersions.V1,
+                changedAtUtc.AddMinutes(1),
+                DemandPlanningIntegrationEventSources.BusinessDemandPlanning,
+                "corr-demand-disabled-sku",
+                "cause-demand-disabled-sku",
+                "org-001",
+                "env-dev",
+                "user:planner",
+                "demand-disabled-sku",
+                new PlanningSuggestionAcceptedPayload(
+                    "SUG-DISABLED-SKU",
+                    "MRP-001",
+                    "planned-work-order",
+                    "SKU-DISABLED",
+                    "PCS",
+                    "SITE-A",
+                    12m,
+                    new DateOnly(2026, 7, 31),
+                    new DateOnly(2026, 7, 18),
+                    "DEMAND-001",
+                    "PV-001",
+                    "BusinessMes",
+                    "WorkOrder",
+                    null)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Empty(await dbContext.WorkOrders.ToListAsync(CancellationToken.None));
+        Assert.Equal(2, await dbContext.ProcessedIntegrationEvents.CountAsync(CancellationToken.None));
+        Assert.Contains(
+            await deadLetters.ListAsync(
+                PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder.ConsumerName,
+                IntegrationEventDeadLetterStatus.Pending,
+                CancellationToken.None),
+            x => x.FailureCode == "mes.planningSuggestionAccepted.skuDisabled");
+    }
+
     [Fact]
     public async Task Accepted_planned_work_order_suggestion_creates_queryable_mes_work_order()
     {

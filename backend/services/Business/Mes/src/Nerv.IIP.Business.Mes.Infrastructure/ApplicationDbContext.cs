@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Business.Mes.Infrastructure.MasterData;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Coding;
 
@@ -64,6 +65,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
 
     public DbSet<ScheduleReleaseWatermark> ScheduleReleaseWatermarks => Set<ScheduleReleaseWatermark>();
+
+    public DbSet<MesSkuAvailability> MesSkuAvailabilities => Set<MesSkuAvailability>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

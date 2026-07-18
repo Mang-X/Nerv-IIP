@@ -9,6 +9,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Nerv.IIP.Business.Acceptance.Tests" />
+    <InternalsVisibleTo Include="Nerv.IIP.Business.Mes.Web.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="DotNetCore.CAP.Dashboard" />
     <PackageReference Include="DotNetCore.CAP.PostgreSql" />
     <PackageReference Include="FastEndpoints" />
@@ -38,6 +43,7 @@
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Inventory\Nerv.IIP.Contracts.Inventory.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Erp\Nerv.IIP.Contracts.Erp.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Maintenance\Nerv.IIP.Contracts.Maintenance.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.MasterData\Nerv.IIP.Contracts.MasterData.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Mes\Nerv.IIP.Contracts.Mes.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.ProductEngineering\Nerv.IIP.Contracts.ProductEngineering.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Quality\Nerv.IIP.Contracts.Quality.csproj" />

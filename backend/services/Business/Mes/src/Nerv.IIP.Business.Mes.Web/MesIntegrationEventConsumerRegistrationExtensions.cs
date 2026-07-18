@@ -19,6 +19,7 @@ public static class MesIntegrationEventConsumerRegistrationExtensions
         services.AddScoped<SchedulePlanReleasedIntegrationEventHandlerForDispatch>();
         services.AddScoped<SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatch>();
         services.AddScoped<SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalidated>();
+        services.AddScoped<SkuDisabledIntegrationEventHandlerForProjectMesSkuAvailability>();
         return services;
     }
 }

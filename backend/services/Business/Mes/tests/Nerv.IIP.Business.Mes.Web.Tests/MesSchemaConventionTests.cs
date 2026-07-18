@@ -16,6 +16,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Business.Mes.Infrastructure.MasterData;
 using Nerv.IIP.Business.Mes.Infrastructure.Migrations;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Testing.EntityFramework;
@@ -72,6 +73,7 @@ public sealed class MesSchemaConventionTests
             typeof(CodeIdempotencyKey),
             typeof(ProcessedIntegrationEvent),
             typeof(ScheduleReleaseWatermark),
+            typeof(MesSkuAvailability),
         };
 
         var failures = new List<string>();

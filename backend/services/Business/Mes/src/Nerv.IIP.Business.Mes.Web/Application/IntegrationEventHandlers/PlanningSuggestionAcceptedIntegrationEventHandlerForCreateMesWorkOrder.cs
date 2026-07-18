@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.MasterData;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.DemandPlanning;
 using Nerv.IIP.Messaging.CAP;
@@ -31,10 +32,16 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
     public PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder(
         ApplicationDbContext dbContext,
         IIntegrationEventDeadLetterStore deadLetterStore,
-        IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null)
+        IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null,
+        IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator = null)
         : this(
             dbContext,
-            new ConvertPlanToWorkOrderCommandHandler(dbContext, new RuleScheduler(), null, materialSnapshotProvider),
+            new ConvertPlanToWorkOrderCommandHandler(
+                dbContext,
+                new RuleScheduler(),
+                null,
+                materialSnapshotProvider,
+                skuAvailabilityScopeCoordinator ?? new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext)),
             deadLetterStore)
     {
     }
@@ -85,25 +92,57 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
             return;
         }
 
-        var dueUtc = new DateTimeOffset(payload.RequiredDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        await convertHandler.Handle(
-            new ConvertPlanToWorkOrderCommand(
+        if (await MesSkuAvailabilityGate.IsDisabledAsync(
+                dbContext,
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
-                payload.SuggestionId,
-                payload.DownstreamDocumentId,
-                integrationEvent.OccurredAtUtc,
                 payload.SkuCode,
-                payload.ProductionVersionReference,
-                payload.Quantity,
-                payload.UomCode,
-                dueUtc,
-                null,
-                DemandPlanningSourceReferences.DemandPlanning,
-                DemandPlanningSourceReferences.PlanningSuggestion,
-                payload.SuggestionId,
-                payload.DemandSourceReference,
-                integrationEvent.IdempotencyKey),
+                cancellationToken))
+        {
+            await AddDisabledSkuDeadLetterAsync(integrationEvent, cancellationToken);
+            return;
+        }
+
+        var dueUtc = new DateTimeOffset(payload.RequiredDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        try
+        {
+            await convertHandler.Handle(
+                new ConvertPlanToWorkOrderCommand(
+                    integrationEvent.OrganizationId,
+                    integrationEvent.EnvironmentId,
+                    payload.SuggestionId,
+                    payload.DownstreamDocumentId,
+                    integrationEvent.OccurredAtUtc,
+                    payload.SkuCode,
+                    payload.ProductionVersionReference,
+                    payload.Quantity,
+                    payload.UomCode,
+                    dueUtc,
+                    null,
+                    DemandPlanningSourceReferences.DemandPlanning,
+                    DemandPlanningSourceReferences.PlanningSuggestion,
+                    payload.SuggestionId,
+                    payload.DemandSourceReference,
+                    integrationEvent.IdempotencyKey),
+                cancellationToken);
+        }
+        catch (DisabledMesSkuException)
+        {
+            await AddDisabledSkuDeadLetterAsync(integrationEvent, cancellationToken);
+        }
+    }
+
+    private Task AddDisabledSkuDeadLetterAsync(
+        PlanningSuggestionAcceptedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        var payload = integrationEvent.Payload;
+        return deadLetterStore.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                ConsumerName,
+                integrationEvent,
+                "mes.planningSuggestionAccepted.skuDisabled",
+                $"Planning suggestion '{payload.SuggestionId}' references disabled SKU '{payload.SkuCode}'."),
             cancellationToken);
     }
 }

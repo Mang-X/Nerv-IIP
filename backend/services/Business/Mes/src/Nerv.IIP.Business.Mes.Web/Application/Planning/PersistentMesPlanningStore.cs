@@ -105,6 +105,27 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext, I
             .ToListAsync(cancellationToken);
     }
 
+    public Task<bool> WorkOrderExistsAsync(
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        CancellationToken cancellationToken = default)
+    {
+        if (dbContext.WorkOrders.Local.Any(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.WorkOrderIdValue == workOrderId))
+        {
+            return Task.FromResult(true);
+        }
+
+        return dbContext.WorkOrders.AnyAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.WorkOrderIdValue == workOrderId,
+            cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<PlannedOperationTask>> GetOperationTasksAsync(CancellationToken cancellationToken = default)
     {
         return await dbContext.OperationTasks
