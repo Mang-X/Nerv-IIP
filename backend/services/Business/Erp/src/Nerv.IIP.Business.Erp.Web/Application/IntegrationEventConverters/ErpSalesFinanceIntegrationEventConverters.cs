@@ -6,6 +6,115 @@ using static Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters.Er
 
 namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 
+public sealed class SalesOrderReleasedIntegrationEventConverter
+    : IIntegrationEventConverter<SalesOrderReleasedDomainEvent, SalesOrderReleasedIntegrationEvent>
+{
+    public SalesOrderReleasedIntegrationEvent Convert(SalesOrderReleasedDomainEvent domainEvent)
+    {
+        var order = domainEvent.SalesOrder;
+        var idempotencyKey = SalesOrderIntegrationEventConverterHelpers.IdempotencyKey(order, "released");
+        return new SalesOrderReleasedIntegrationEvent(
+            EventIds.New(),
+            ErpIntegrationEventTypes.SalesOrderReleased,
+            ErpIntegrationEventVersions.V1,
+            DateTimeOffset.UtcNow,
+            ErpIntegrationEventSources.BusinessErp,
+            idempotencyKey,
+            order.SalesOrderNo,
+            order.OrganizationId,
+            order.EnvironmentId,
+            "system:erp",
+            idempotencyKey,
+            SalesOrderIntegrationEventConverterHelpers.Payload(order));
+    }
+}
+
+public sealed class SalesOrderChangedIntegrationEventConverter
+    : IIntegrationEventConverter<SalesOrderChangedDomainEvent, SalesOrderChangedIntegrationEvent>
+{
+    public SalesOrderChangedIntegrationEvent Convert(SalesOrderChangedDomainEvent domainEvent)
+    {
+        var order = domainEvent.SalesOrder;
+        var idempotencyKey = SalesOrderIntegrationEventConverterHelpers.IdempotencyKey(order, "changed");
+        return new SalesOrderChangedIntegrationEvent(
+            EventIds.New(),
+            ErpIntegrationEventTypes.SalesOrderChanged,
+            ErpIntegrationEventVersions.V1,
+            DateTimeOffset.UtcNow,
+            ErpIntegrationEventSources.BusinessErp,
+            idempotencyKey,
+            order.SalesOrderNo,
+            order.OrganizationId,
+            order.EnvironmentId,
+            "system:erp",
+            idempotencyKey,
+            SalesOrderIntegrationEventConverterHelpers.Payload(order));
+    }
+}
+
+public sealed class SalesOrderCancelledIntegrationEventConverter
+    : IIntegrationEventConverter<SalesOrderCancelledDomainEvent, SalesOrderCancelledIntegrationEvent>
+{
+    public SalesOrderCancelledIntegrationEvent Convert(SalesOrderCancelledDomainEvent domainEvent)
+    {
+        var order = domainEvent.SalesOrder;
+        var idempotencyKey = SalesOrderIntegrationEventConverterHelpers.IdempotencyKey(order, "cancelled");
+        return new SalesOrderCancelledIntegrationEvent(
+            EventIds.New(),
+            ErpIntegrationEventTypes.SalesOrderCancelled,
+            ErpIntegrationEventVersions.V1,
+            DateTimeOffset.UtcNow,
+            ErpIntegrationEventSources.BusinessErp,
+            idempotencyKey,
+            order.SalesOrderNo,
+            order.OrganizationId,
+            order.EnvironmentId,
+            "system:erp",
+            idempotencyKey,
+            SalesOrderIntegrationEventConverterHelpers.Payload(order));
+    }
+}
+
+internal static class SalesOrderIntegrationEventConverterHelpers
+{
+    public static SalesOrderLifecyclePayload Payload(
+        Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate.SalesOrder order) =>
+        new(
+            PublicId(order.Id),
+            order.SalesOrderNo,
+            order.CustomerCode,
+            order.SiteCode,
+            order.Version,
+            order.Status,
+            order.Lines
+                .OrderBy(x => x.LineNo, StringComparer.Ordinal)
+                .Select(x => new SalesOrderLineSnapshot(
+                    x.LineNo,
+                    x.SkuCode,
+                    x.OrderedQuantity,
+                    x.UomCode,
+                    x.RequiredDate,
+                    x.Cancelled))
+                .ToArray());
+
+    public static string IdempotencyKey(
+        Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate.SalesOrder order,
+        string fact)
+    {
+        var raw = EventIds.Idempotency(
+            "sales-order",
+            order.OrganizationId,
+            order.EnvironmentId,
+            order.SalesOrderNo,
+            $"v{order.Version}",
+            fact);
+        return new string(raw.Select(character =>
+            char.IsAsciiLetterOrDigit(character) || character is ':' or '_' or '-'
+                ? character
+                : '-').ToArray());
+    }
+}
+
 public sealed class DeliveryOrderReleasedIntegrationEventConverter
     : IIntegrationEventConverter<DeliveryOrderReleasedDomainEvent, ErpIntegrationEvent<DeliveryOrderReleasedPayload>>
 {

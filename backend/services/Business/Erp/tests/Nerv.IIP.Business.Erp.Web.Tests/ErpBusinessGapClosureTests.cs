@@ -988,7 +988,7 @@ public sealed class ErpBusinessGapClosureTests
         await new CreateSalesOrderCommandHandler(
             dbContext,
             new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 100m, "CNY"))).Handle(
-            new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001"),
+            new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001", "SITE-001"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -1107,7 +1107,7 @@ public sealed class ErpBusinessGapClosureTests
         await new CreateSalesOrderCommandHandler(
             dbContext,
             new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 100m, "CNY"))).Handle(
-            new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001"),
+            new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001", "SITE-001"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(
@@ -1135,7 +1135,7 @@ public sealed class ErpBusinessGapClosureTests
         var salesOrderId = await new CreateSalesOrderCommandHandler(
             dbContext,
             new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 60m, "CNY"))).Handle(
-            new CreateSalesOrderCommand("org-001", "env-dev", "SO-002", "QT-002"),
+            new CreateSalesOrderCommand("org-001", "env-dev", "SO-002", "QT-002", "SITE-001"),
             CancellationToken.None);
 
         Assert.NotNull(salesOrderId);

@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
+using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 
 namespace Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 
@@ -21,12 +22,13 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
     {
     }
 
-    private SalesOrder(string salesOrderNo, Quotation quotation, CustomerCreditSnapshot? creditSnapshot)
+    private SalesOrder(string salesOrderNo, string siteCode, Quotation quotation, CustomerCreditSnapshot? creditSnapshot)
     {
         quotation.EnsureCanCreateSalesOrder(DateOnly.FromDateTime(DateTime.UtcNow));
         OrganizationId = quotation.OrganizationId;
         EnvironmentId = quotation.EnvironmentId;
         SalesOrderNo = ErpText.Required(salesOrderNo, nameof(salesOrderNo));
+        SiteCode = ErpText.Required(siteCode, nameof(siteCode));
         QuotationNo = quotation.QuotationNo;
         CustomerCode = quotation.CustomerCode;
         Status = "released";
@@ -35,6 +37,10 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
         lines.AddRange(quotation.Lines.Select(line => SalesOrderLine.Create(line.LineNo, line.SkuCode, line.UomCode, line.Quantity, line.UnitPrice, line.RequiredDate)));
         TotalAmount = lines.Sum(x => x.LineAmount);
         ApplyCreditStatus(creditSnapshot);
+        if (Status == "released")
+        {
+            this.AddDomainEvent(new SalesOrderReleasedDomainEvent(this));
+        }
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -42,6 +48,7 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
     public string SalesOrderNo { get; private set; } = string.Empty;
     public string QuotationNo { get; private set; } = string.Empty;
     public string CustomerCode { get; private set; } = string.Empty;
+    public string SiteCode { get; private set; } = string.Empty;
     public string Status { get; private set; } = string.Empty;
     public decimal TotalAmount { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
@@ -52,12 +59,26 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
 
     public static SalesOrder CreateFromQuotation(string salesOrderNo, Quotation quotation)
     {
-        return new SalesOrder(salesOrderNo, quotation, null);
+        return new SalesOrder(salesOrderNo, "UNSPECIFIED", quotation, null);
     }
 
     public static SalesOrder CreateFromQuotation(string salesOrderNo, Quotation quotation, CustomerCreditSnapshot creditSnapshot)
     {
-        return new SalesOrder(salesOrderNo, quotation, creditSnapshot);
+        return new SalesOrder(salesOrderNo, "UNSPECIFIED", quotation, creditSnapshot);
+    }
+
+    public static SalesOrder CreateFromQuotation(string salesOrderNo, string siteCode, Quotation quotation)
+    {
+        return new SalesOrder(salesOrderNo, siteCode, quotation, null);
+    }
+
+    public static SalesOrder CreateFromQuotation(
+        string salesOrderNo,
+        string siteCode,
+        Quotation quotation,
+        CustomerCreditSnapshot creditSnapshot)
+    {
+        return new SalesOrder(salesOrderNo, siteCode, quotation, creditSnapshot);
     }
 
     public SalesOrderLine RegisterDelivery(string lineNo, decimal quantity)
@@ -92,6 +113,8 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
         }
 
         Status = "released";
+        Version++;
+        this.AddDomainEvent(new SalesOrderReleasedDomainEvent(this));
     }
 
     public void ChangeLine(string lineNo, decimal orderedQuantity, decimal unitPrice, DateOnly requiredDate, string reason)
@@ -102,6 +125,10 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
         changeHistory.Add(SalesOrderChange.Create("amend", line.LineNo, reason));
         RecalculateTotalAmount();
         Version++;
+        if (Status == "released")
+        {
+            this.AddDomainEvent(new SalesOrderChangedDomainEvent(this));
+        }
     }
 
     public void CancelLine(string lineNo, string reason)
@@ -115,6 +142,11 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
         if (lines.All(x => x.Cancelled))
         {
             Status = "cancelled";
+            this.AddDomainEvent(new SalesOrderCancelledDomainEvent(this));
+        }
+        else if (Status == "released")
+        {
+            this.AddDomainEvent(new SalesOrderChangedDomainEvent(this));
         }
     }
 
@@ -135,6 +167,7 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
         changeHistory.Add(SalesOrderChange.Create("cancel", null, reason));
         Version++;
         Status = "cancelled";
+        this.AddDomainEvent(new SalesOrderCancelledDomainEvent(this));
     }
 
     private SalesOrderLine FindLine(string lineNo)

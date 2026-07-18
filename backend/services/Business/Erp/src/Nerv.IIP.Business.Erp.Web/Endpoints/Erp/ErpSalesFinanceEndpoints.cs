@@ -21,7 +21,7 @@ public sealed record OpenOpportunityResponse(OpportunityId OpportunityId);
 public sealed record CreateQuotationRequest(string OrganizationId, string EnvironmentId, string? QuotationNo, string CustomerCode, DateOnly ExpiresOn, IReadOnlyCollection<QuotationCommandLine> Lines, string? IdempotencyKey = null);
 public sealed record CreateQuotationResponse(QuotationId QuotationId);
 public sealed record ApproveQuotationRequest(string OrganizationId, string EnvironmentId, string QuotationNo);
-public sealed record CreateSalesOrderRequest(string OrganizationId, string EnvironmentId, string? SalesOrderNo, string QuotationNo, string? IdempotencyKey = null);
+public sealed record CreateSalesOrderRequest(string OrganizationId, string EnvironmentId, string? SalesOrderNo, string QuotationNo, string SiteCode, string? IdempotencyKey = null);
 public sealed record CreateSalesOrderResponse(SalesOrderId SalesOrderId);
 public sealed record ChangeSalesOrderLineRequest(string OrganizationId, string EnvironmentId, string SalesOrderNo, string LineNo, decimal OrderedQuantity, decimal UnitPrice, DateOnly RequiredDate, string Reason);
 public sealed record CancelSalesOrderRequest(string OrganizationId, string EnvironmentId, string SalesOrderNo, string Reason);
@@ -169,7 +169,7 @@ public sealed class CreateSalesOrderEndpoint(ISender sender) : ErpEndpoint<Creat
 
     public override async Task HandleAsync(CreateSalesOrderRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateSalesOrderCommand(req.OrganizationId, req.EnvironmentId, req.SalesOrderNo, req.QuotationNo, req.IdempotencyKey), ct);
+        var id = await sender.Send(new CreateSalesOrderCommand(req.OrganizationId, req.EnvironmentId, req.SalesOrderNo, req.QuotationNo, req.SiteCode, req.IdempotencyKey), ct);
         await Send.OkAsync(new CreateSalesOrderResponse(id).AsResponseData(), cancellation: ct);
     }
 }

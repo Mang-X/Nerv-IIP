@@ -9,11 +9,68 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.OpportunityAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
+using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 
 namespace Nerv.IIP.Business.Erp.Domain.Tests;
 
 public sealed class ErpSalesFinanceAggregateTests
 {
+    [Fact]
+    public void Sales_order_lifecycle_raises_versioned_release_change_and_cancel_facts()
+    {
+        var quotation = Quotation.Create(
+            "org-001",
+            "env-dev",
+            "QT-DEMAND-001",
+            "CUST-001",
+            new DateOnly(2026, 8, 1),
+            [new QuotationLineDraft("10", "SKU-FG", "EA", 2m, 10m, new DateOnly(2026, 8, 15))]);
+        quotation.Approve();
+
+        var order = SalesOrder.CreateFromQuotation("SO-DEMO-001", "SITE-001", quotation);
+
+        var released = Assert.IsType<SalesOrderReleasedDomainEvent>(Assert.Single(order.GetDomainEvents()));
+        Assert.Same(order, released.SalesOrder);
+        Assert.Equal(1, order.Version);
+        Assert.Equal("SITE-001", order.SiteCode);
+
+        order.ClearDomainEvents();
+        order.ChangeLine("10", 3m, 10m, new DateOnly(2026, 8, 16), "customer changed quantity");
+        Assert.IsType<SalesOrderChangedDomainEvent>(Assert.Single(order.GetDomainEvents()));
+        Assert.Equal(2, order.Version);
+
+        order.ClearDomainEvents();
+        order.Cancel("customer cancelled order");
+        Assert.IsType<SalesOrderCancelledDomainEvent>(Assert.Single(order.GetDomainEvents()));
+        Assert.Equal(3, order.Version);
+    }
+
+    [Fact]
+    public void Credit_held_sales_order_only_raises_release_fact_after_approval()
+    {
+        var quotation = Quotation.Create(
+            "org-001",
+            "env-dev",
+            "QT-DEMAND-HOLD",
+            "CUST-001",
+            new DateOnly(2026, 8, 1),
+            [new QuotationLineDraft("10", "SKU-FG", "EA", 2m, 10m, new DateOnly(2026, 8, 15))]);
+        quotation.Approve();
+        var order = SalesOrder.CreateFromQuotation(
+            "SO-DEMO-HOLD",
+            "SITE-001",
+            quotation,
+            new CustomerCreditSnapshot("CUST-001", 1m, 0m, 0m));
+
+        Assert.Equal("credit-held", order.Status);
+        Assert.Empty(order.GetDomainEvents());
+
+        order.ReleaseCreditHold();
+
+        Assert.Equal(2, order.Version);
+        Assert.IsType<SalesOrderReleasedDomainEvent>(Assert.Single(order.GetDomainEvents()));
+    }
+
     [Fact]
     public void Opportunity_requires_customer_reference_and_topic()
     {

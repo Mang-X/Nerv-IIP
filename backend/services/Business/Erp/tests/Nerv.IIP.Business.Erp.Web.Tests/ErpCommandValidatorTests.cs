@@ -26,9 +26,18 @@ public sealed class ErpCommandValidatorTests
         AssertInvalid(new CreateQuotationCommandValidator().Validate(new CreateQuotationCommand(
             "org-001", "env-dev", "", "", new DateOnly(2026, 6, 1), [new QuotationCommandLine("", "", "", 0m, 0m, new DateOnly(2026, 6, 1))])));
         AssertInvalid(new ApproveQuotationCommandValidator().Validate(new ApproveQuotationCommand("", "", "")));
-        AssertInvalid(new CreateSalesOrderCommandValidator().Validate(new CreateSalesOrderCommand("org-001", "env-dev", "", "")));
+        AssertInvalid(new CreateSalesOrderCommandValidator().Validate(new CreateSalesOrderCommand("org-001", "env-dev", "", "", "")));
         AssertInvalid(new ReleaseDeliveryOrderCommandValidator().Validate(new ReleaseDeliveryOrderCommand(
             "org-001", "env-dev", "", "", [new DeliveryOrderCommandLine("", 0m)])));
+    }
+
+    [Fact]
+    public void Sales_order_requires_an_authoritative_site_for_demand_planning()
+    {
+        var validator = new CreateSalesOrderCommandValidator();
+
+        AssertInvalid(validator.Validate(new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001", "")));
+        Assert.True(validator.Validate(new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001", "SITE-001")).IsValid);
     }
 
     [Fact]
