@@ -5,11 +5,59 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Contracts.Scheduling;
+using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesSchedulePlanProvenancePostgresTests
 {
+    [MesRealPostgresFact]
+    public async Task Concurrent_revoke_then_release_is_serialized_and_cannot_resurrect_assignment()
+    {
+        await using var database = await TemporaryDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(database.ConnectionString).Options;
+        await using (var setup = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await setup.Database.MigrateAsync();
+            setup.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-001", "PV-001", 1m, 1, At(8), "PCS"));
+            await setup.SaveChangesAsync();
+        }
+
+        await using var revokeDb = new ApplicationDbContext(options, new NoopMediator());
+        await using var releaseDb = new ApplicationDbContext(options, new NoopMediator());
+        var revokeHasLock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRevoke = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var revokeCoordinator = new SignalingCoordinator(
+            new PostgreSqlMesScheduleReleaseScopeCoordinator(revokeDb),
+            revokeHasLock,
+            allowRevoke.Task);
+        var releaseDeadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var revokeTask = new SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatch(
+            revokeDb,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            revokeCoordinator).HandleAsync(CreateRevokedEvent(), CancellationToken.None);
+
+        await revokeHasLock.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var releaseTask = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+            releaseDb,
+            releaseDeadLetters,
+            new PostgreSqlMesScheduleReleaseScopeCoordinator(releaseDb)).HandleAsync(CreateReleasedEvent(), CancellationToken.None);
+        await Task.Delay(200);
+        Assert.False(releaseTask.IsCompleted, "Release must wait for the same-scope revoke transaction lock.");
+        allowRevoke.SetResult();
+        await Task.WhenAll(revokeTask, releaseTask);
+
+        await using var assertion = new ApplicationDbContext(options, new NoopMediator());
+        Assert.Empty(await assertion.OperationTasks.ToArrayAsync());
+        Assert.Equal(1, (await assertion.ScheduleReleaseWatermarks.SingleAsync()).RevokedReleaseRevision);
+        Assert.Contains(await releaseDeadLetters.ListAsync(
+            SchedulePlanReleasedIntegrationEventHandlerForDispatch.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None), x => x.FailureCode == "mes.schedulePlanReleased.releaseAlreadyRevoked");
+    }
+
     [MesRealPostgresFact]
     public async Task Schedule_provenance_and_DateTimeOffset_survive_release_and_revoke_on_postgres()
     {
@@ -79,6 +127,65 @@ public sealed class MesSchedulePlanProvenancePostgresTests
             await connection.OpenAsync();
             await using var command = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)", connection);
             await command.ExecuteNonQueryAsync();
+        }
+    }
+
+    private static SchedulePlanReleasedIntegrationEvent CreateReleasedEvent() => new(
+        "release-concurrent",
+        SchedulingIntegrationEventTypes.SchedulePlanReleased,
+        SchedulingIntegrationEventVersions.V1,
+        At(1),
+        SchedulingIntegrationEventSources.BusinessScheduling,
+        "corr-001",
+        "cause-release",
+        "org-001",
+        "env-dev",
+        "scheduling",
+        "release:plan-1:1",
+        new SchedulePlanLifecyclePayload(
+            "plan-1", "problem-1", 1, "aps-lite-v1", "fingerprint-1", "released",
+            [new SchedulePlanAffectedOperationPayload("WO-001", "OP-10", 10, "DEV-1", "WC-1", At(2), At(3))],
+            1));
+
+    private static SchedulePlanRevokedIntegrationEvent CreateRevokedEvent() => new(
+        "revoke-concurrent",
+        SchedulingIntegrationEventTypes.SchedulePlanRevoked,
+        SchedulingIntegrationEventVersions.V1,
+        At(1),
+        SchedulingIntegrationEventSources.BusinessScheduling,
+        "corr-001",
+        "cause-revoke",
+        "org-001",
+        "env-dev",
+        "scheduling",
+        "revoke:plan-1:1",
+        new SchedulePlanRevokedPayload(
+            "plan-1", "problem-1", 1, "aps-lite-v1", "fingerprint-1", 1, "explicit", null,
+            [new SchedulePlanAffectedOperationPayload("WO-001", "OP-10", 10, "DEV-1", "WC-1", At(2), At(3))]));
+
+    private static DateTimeOffset At(int hour) => DateTimeOffset.Parse("2026-07-18T00:00:00Z").AddHours(hour);
+
+    private sealed class SignalingCoordinator(
+        IMesScheduleReleaseScopeCoordinator inner,
+        TaskCompletionSource lockAcquired,
+        Task continueAction) : IMesScheduleReleaseScopeCoordinator
+    {
+        public Task ExecuteAsync(
+            string organizationId,
+            string environmentId,
+            Func<CancellationToken, Task> action,
+            CancellationToken cancellationToken)
+        {
+            return inner.ExecuteAsync(
+                organizationId,
+                environmentId,
+                async ct =>
+                {
+                    lockAcquired.TrySetResult();
+                    await continueAction.WaitAsync(ct);
+                    await action(ct);
+                },
+                cancellationToken);
         }
     }
 

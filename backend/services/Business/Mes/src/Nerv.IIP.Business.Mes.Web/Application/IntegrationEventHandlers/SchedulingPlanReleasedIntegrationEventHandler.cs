@@ -13,7 +13,8 @@ namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 [IntegrationEventConsumer(SchedulePlanReleasedIntegrationEventTopic.TopicName, ConsumerName)]
 public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    IMesScheduleReleaseScopeCoordinator? scopeCoordinator = null)
     : IIntegrationEventHandler<SchedulePlanReleasedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-mes.schedule-plan-released-dispatch";
@@ -42,6 +43,23 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
     }
 
     private async Task HandleValidEventAsync(
+        SchedulePlanReleasedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        if (scopeCoordinator is null)
+        {
+            await HandleValidEventCoreAsync(integrationEvent, cancellationToken);
+            return;
+        }
+
+        await scopeCoordinator.ExecuteAsync(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            ct => HandleValidEventCoreAsync(integrationEvent, ct),
+            cancellationToken);
+    }
+
+    private async Task HandleValidEventCoreAsync(
         SchedulePlanReleasedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
@@ -213,7 +231,8 @@ public static class SchedulePlanReleasedIntegrationEventTopic
 [IntegrationEventConsumer(SchedulePlanRevokedIntegrationEventTopic.TopicName, ConsumerName)]
 public sealed class SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatch(
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    IMesScheduleReleaseScopeCoordinator? scopeCoordinator = null)
     : IIntegrationEventHandler<SchedulePlanRevokedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-mes.schedule-plan-revoked-withdraw-dispatch";
@@ -238,6 +257,23 @@ public sealed class SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatc
     }
 
     private async Task HandleValidEventAsync(
+        SchedulePlanRevokedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        if (scopeCoordinator is null)
+        {
+            await HandleValidEventCoreAsync(integrationEvent, cancellationToken);
+            return;
+        }
+
+        await scopeCoordinator.ExecuteAsync(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            ct => HandleValidEventCoreAsync(integrationEvent, ct),
+            cancellationToken);
+    }
+
+    private async Task HandleValidEventCoreAsync(
         SchedulePlanRevokedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {

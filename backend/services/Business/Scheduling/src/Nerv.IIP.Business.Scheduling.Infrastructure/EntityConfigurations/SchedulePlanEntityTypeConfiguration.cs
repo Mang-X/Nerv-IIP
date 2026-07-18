@@ -36,9 +36,11 @@ public sealed class SchedulePlanEntityTypeConfiguration : IEntityTypeConfigurati
         builder.HasIndex(x => x.PlanId).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId })
             .IsUnique()
+            .HasDatabaseName("ux_schedule_plans_scope_active_release")
             .HasFilter("status = 'Released'");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ReleaseRevision })
             .IsUnique()
+            .HasDatabaseName("ux_schedule_plans_scope_release_revision")
             .HasFilter("release_revision IS NOT NULL");
 
         builder.HasMany(x => x.Assignments).WithOne().HasForeignKey(x => x.SchedulePlanId).OnDelete(DeleteBehavior.Cascade);

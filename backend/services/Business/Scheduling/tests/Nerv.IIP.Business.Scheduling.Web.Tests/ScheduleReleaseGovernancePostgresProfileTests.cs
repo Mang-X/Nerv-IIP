@@ -49,6 +49,22 @@ public sealed class ScheduleReleaseGovernancePostgresProfileTests
         Assert.Equal(2, reader.GetInt64(2));
         Assert.True(await reader.IsDBNullAsync(3));
         Assert.False(await reader.ReadAsync());
+        await reader.CloseAsync();
+
+        await using var indexCommand = new NpgsqlCommand(
+            "SELECT indexname FROM pg_indexes WHERE schemaname = 'scheduling' AND tablename = 'schedule_plans' AND indexname LIKE 'ux_schedule_plans_scope_%' ORDER BY indexname",
+            connection);
+        await using var indexReader = await indexCommand.ExecuteReaderAsync();
+        var indexNames = new List<string>();
+        while (await indexReader.ReadAsync())
+        {
+            indexNames.Add(indexReader.GetString(0));
+        }
+
+        Assert.Equal([
+            "ux_schedule_plans_scope_active_release",
+            "ux_schedule_plans_scope_release_revision",
+        ], indexNames);
     }
 
     [SchedulingPostgresFact]

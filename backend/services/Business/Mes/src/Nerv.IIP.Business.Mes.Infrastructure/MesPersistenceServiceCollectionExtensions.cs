@@ -35,6 +35,7 @@ public static class MesPersistenceServiceCollectionExtensions
         services.AddScoped<IWorkOrderRepository, WorkOrderRepository>();
         services.AddScoped<IOperationTaskRepository, OperationTaskRepository>();
         services.AddScoped<IProductionReportRepository, ProductionReportRepository>();
+        services.AddScoped<IMesScheduleReleaseScopeCoordinator, PostgreSqlMesScheduleReleaseScopeCoordinator>();
         return services;
     }
 }

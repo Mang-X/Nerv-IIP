@@ -571,6 +571,7 @@ Source:
 7. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260714141100_AddSchedulingOperationOverrides.cs`
 8. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260715095540_AddSchedulingOverrideRevocationTombstones.cs`
 9. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260718020006_AddScheduleReleaseGovernance.cs`
+10. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260718053455_NameScheduleReleaseGovernanceIndexes.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
