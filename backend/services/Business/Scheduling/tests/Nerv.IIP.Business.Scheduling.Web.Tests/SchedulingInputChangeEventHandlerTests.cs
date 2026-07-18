@@ -613,7 +613,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
             "problem-calendar-released",
             "ASSET-CNC-01",
             "WC-CNC");
-        released.Release(FixedNow);
+        released.Release(FixedNow, 1);
         dbContext.SchedulePlans.Add(released);
         dbContext.SchedulePlans.Add(CreatePlan(
             "plan-calendar-other",
@@ -669,7 +669,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         dbContext.SchedulePlans.Add(CreatePlan("plan-generated", SchedulePlanStatusContract.Generated, "org-001", "env-dev"));
         var released = CreatePlan("plan-released", SchedulePlanStatusContract.Generated, "org-001", "env-dev");
-        released.Release(FixedNow);
+        released.Release(FixedNow, 1);
         dbContext.SchedulePlans.Add(released);
         dbContext.SchedulePlans.Add(CreatePlan("plan-other-env", SchedulePlanStatusContract.Generated, "org-001", "env-other"));
         await dbContext.SaveChangesAsync();

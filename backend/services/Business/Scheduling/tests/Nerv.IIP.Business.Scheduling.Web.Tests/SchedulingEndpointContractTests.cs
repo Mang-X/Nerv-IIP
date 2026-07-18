@@ -432,7 +432,10 @@ public sealed class SchedulingEndpointContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(), new SchedulingOperationOverrideOverlay(dbContext));
-        var releaseHandler = new ReleaseSchedulePlanCommandHandler(dbContext, new FixedTimeProvider(FixedNow.AddHours(2)));
+        var releaseHandler = new ReleaseSchedulePlanCommandHandler(
+            dbContext,
+            new FixedTimeProvider(FixedNow.AddHours(2)),
+            new PostgreSqlScheduleReleaseScopeLock(dbContext));
 
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
         var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
@@ -448,13 +451,40 @@ public sealed class SchedulingEndpointContractTests
     }
 
     [Fact]
+    public void Release_unique_conflict_behavior_wraps_unit_of_work_save()
+    {
+        using var factory = new SchedulingLiveHttpTestFactory();
+        using var scope = factory.Services.CreateScope();
+        var behaviorTypes = scope.ServiceProvider
+            .GetServices<IPipelineBehavior<ReleaseSchedulePlanCommand, ReleaseSchedulePlanResponse>>()
+            .Select(x => x.GetType())
+            .ToArray();
+
+        var conflictIndex = Array.FindIndex(
+            behaviorTypes,
+            x => x == typeof(ReleaseSchedulePlanUniqueConflictBehavior));
+        var unitOfWorkIndex = Array.FindIndex(
+            behaviorTypes,
+            x => x.Name.Contains("UnitOfWork", StringComparison.Ordinal));
+
+        Assert.True(conflictIndex >= 0, $"Missing release conflict behavior. Pipeline: {string.Join(", ", behaviorTypes.Select(x => x.Name))}");
+        Assert.True(unitOfWorkIndex >= 0, $"Missing unit-of-work behavior. Pipeline: {string.Join(", ", behaviorTypes.Select(x => x.Name))}");
+        Assert.True(
+            conflictIndex < unitOfWorkIndex,
+            $"Release conflict behavior must wrap unit-of-work save. Pipeline: {string.Join(", ", behaviorTypes.Select(x => x.Name))}");
+    }
+
+    [Fact]
     public async Task Release_rejects_plans_with_error_conflicts_or_unscheduled_operations()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(), new SchedulingOperationOverrideOverlay(dbContext));
-        var releaseHandler = new ReleaseSchedulePlanCommandHandler(dbContext, new FixedTimeProvider(FixedNow.AddHours(2)));
+        var releaseHandler = new ReleaseSchedulePlanCommandHandler(
+            dbContext,
+            new FixedTimeProvider(FixedNow.AddHours(2)),
+            new PostgreSqlScheduleReleaseScopeLock(dbContext));
 
         var problem = CreateProblemWithUnscheduledOperation();
         var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
@@ -481,7 +511,8 @@ public sealed class SchedulingEndpointContractTests
         var releaseContext = releaseScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var releaseHandler = new ReleaseSchedulePlanCommandHandler(
             releaseContext,
-            new FixedTimeProvider(FixedNow.AddHours(2)));
+            new FixedTimeProvider(FixedNow.AddHours(2)),
+            new PostgreSqlScheduleReleaseScopeLock(releaseContext));
 
         var response = await releaseHandler.Handle(
             new ReleaseSchedulePlanCommand("plan-release-001", "org-001", "prod"),
@@ -501,7 +532,10 @@ public sealed class SchedulingEndpointContractTests
         var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(), new SchedulingOperationOverrideOverlay(dbContext));
         var detailHandler = new GetSchedulePlanDetailQueryHandler(dbContext);
         var ganttHandler = new GetSchedulePlanGanttQueryHandler(dbContext);
-        var releaseHandler = new ReleaseSchedulePlanCommandHandler(dbContext, new FixedTimeProvider(FixedNow.AddHours(2)));
+        var releaseHandler = new ReleaseSchedulePlanCommandHandler(
+            dbContext,
+            new FixedTimeProvider(FixedNow.AddHours(2)),
+            new PostgreSqlScheduleReleaseScopeLock(dbContext));
 
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
         var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);

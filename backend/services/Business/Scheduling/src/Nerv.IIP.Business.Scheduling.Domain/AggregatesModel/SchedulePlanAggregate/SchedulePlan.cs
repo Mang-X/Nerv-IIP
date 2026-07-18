@@ -330,7 +330,7 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         return new SchedulePlan(organizationId, environmentId, plan);
     }
 
-    public void Release(DateTimeOffset releasedAtUtc, long releaseRevision = 1)
+    public void Release(DateTimeOffset releasedAtUtc, long releaseRevision)
     {
         if (Status == SchedulePlanLifecycleStatus.Released)
         {

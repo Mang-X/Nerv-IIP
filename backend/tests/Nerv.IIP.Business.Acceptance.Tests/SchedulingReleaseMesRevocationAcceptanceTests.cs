@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.DomainEvents;
@@ -40,9 +41,13 @@ public sealed class SchedulingReleaseMesRevocationAcceptanceTests
             "org-001", "env-dev", "WO-001", "SKU-001", "PV-001", 1m, 1, now.AddDays(1), "PCS"));
         await mesDb.SaveChangesAsync();
         var releasedHandler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
-            mesDb, new InMemoryIntegrationEventDeadLetterStore());
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new PostgreSqlMesScheduleReleaseScopeCoordinator(mesDb));
         var revokedHandler = new SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatch(
-            mesDb, new InMemoryIntegrationEventDeadLetterStore());
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new PostgreSqlMesScheduleReleaseScopeCoordinator(mesDb));
 
         await releasedHandler.HandleAsync(release1, CancellationToken.None);
         await mesDb.SaveChangesAsync();

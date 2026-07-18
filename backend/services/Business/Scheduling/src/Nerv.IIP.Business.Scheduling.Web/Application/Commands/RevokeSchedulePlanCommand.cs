@@ -30,19 +30,17 @@ public sealed class RevokeSchedulePlanCommandValidator : AbstractValidator<Revok
 public sealed class RevokeSchedulePlanCommandHandler(
     ApplicationDbContext dbContext,
     TimeProvider timeProvider,
-    IScheduleReleaseScopeLock? releaseScopeLock = null)
+    IScheduleReleaseScopeLock releaseScopeLock)
     : ICommandHandler<RevokeSchedulePlanCommand, RevokeSchedulePlanResponse>
 {
     public async Task<RevokeSchedulePlanResponse> Handle(
         RevokeSchedulePlanCommand request,
         CancellationToken cancellationToken)
     {
-        await using var scopeLock = releaseScopeLock is null
-            ? NoopAsyncDisposable.Instance
-            : await releaseScopeLock.AcquireAsync(
-                request.OrganizationId,
-                request.EnvironmentId,
-                cancellationToken);
+        await using var scopeLock = await releaseScopeLock.AcquireAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            cancellationToken);
         var plan = await dbContext.SchedulePlans.SingleOrDefaultAsync(
             x => x.PlanId == request.PlanId &&
                 x.OrganizationId == request.OrganizationId &&
@@ -82,11 +80,4 @@ public sealed class RevokeSchedulePlanCommandHandler(
         SchedulePlanRevocationReason.Explicit => "explicit",
         _ => throw new InvalidOperationException("Revoked plan must retain its revocation reason.")
     };
-
-    private sealed class NoopAsyncDisposable : IAsyncDisposable
-    {
-        public static NoopAsyncDisposable Instance { get; } = new();
-
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-    }
 }

@@ -42,7 +42,7 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
         using var schedulingScope = schedulingProvider.CreateScope();
         var schedulingDb = schedulingScope.ServiceProvider.GetRequiredService<SchedulingDbContext>();
         var releasedPlan = CreateSchedulePlan();
-        releasedPlan.Release(FixedNow);
+        releasedPlan.Release(FixedNow, 1);
         schedulingDb.SchedulePlans.Add(releasedPlan);
         await schedulingDb.SaveChangesAsync();
         releasedPlan.ClearDomainEvents();

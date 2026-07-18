@@ -22,13 +22,12 @@ public sealed class ReleaseSchedulePlanCommandValidator : AbstractValidator<Rele
     }
 }
 
-public sealed class ReleaseSchedulePlanUniqueConflictBehavior<TRequest, TResponse>
-    : IPipelineBehavior<TRequest, TResponse>
-    where TRequest : notnull
+public sealed class ReleaseSchedulePlanUniqueConflictBehavior
+    : IPipelineBehavior<ReleaseSchedulePlanCommand, ReleaseSchedulePlanResponse>
 {
-    public async Task<TResponse> Handle(
-        TRequest request,
-        RequestHandlerDelegate<TResponse> next,
+    public async Task<ReleaseSchedulePlanResponse> Handle(
+        ReleaseSchedulePlanCommand request,
+        RequestHandlerDelegate<ReleaseSchedulePlanResponse> next,
         CancellationToken cancellationToken)
     {
         try
@@ -36,7 +35,6 @@ public sealed class ReleaseSchedulePlanUniqueConflictBehavior<TRequest, TRespons
             return await next(cancellationToken);
         }
         catch (DbUpdateException exception) when (
-            request is ReleaseSchedulePlanCommand &&
             ScheduleReleaseUniqueConflictClassifier.IsReleaseGovernanceConflict(exception))
         {
             throw new KnownException("Schedule release conflicted with another release in the same scope; refresh and retry.");
@@ -47,12 +45,15 @@ public sealed class ReleaseSchedulePlanUniqueConflictBehavior<TRequest, TRespons
 public sealed class ReleaseSchedulePlanCommandHandler(
     ApplicationDbContext dbContext,
     TimeProvider timeProvider,
-    IScheduleReleaseScopeLock? releaseScopeLock = null)
+    IScheduleReleaseScopeLock releaseScopeLock)
     : ICommandHandler<ReleaseSchedulePlanCommand, ReleaseSchedulePlanResponse>
 {
     public async Task<ReleaseSchedulePlanResponse> Handle(ReleaseSchedulePlanCommand request, CancellationToken cancellationToken)
     {
-        await using var scopeLock = await AcquireScopeLockAsync(request, cancellationToken);
+        await using var scopeLock = await releaseScopeLock.AcquireAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            cancellationToken);
         var plan = await dbContext.SchedulePlans
             .SingleOrDefaultAsync(
                 x => x.PlanId == request.PlanId &&
@@ -114,18 +115,6 @@ public sealed class ReleaseSchedulePlanCommandHandler(
         return Response(plan);
     }
 
-    private async Task<IAsyncDisposable> AcquireScopeLockAsync(
-        ReleaseSchedulePlanCommand request,
-        CancellationToken cancellationToken)
-    {
-        return releaseScopeLock is null
-            ? NoopAsyncDisposable.Instance
-            : await releaseScopeLock.AcquireAsync(
-                request.OrganizationId,
-                request.EnvironmentId,
-                cancellationToken);
-    }
-
     private static ReleaseSchedulePlanResponse Response(SchedulePlan plan)
     {
         return new ReleaseSchedulePlanResponse(
@@ -133,12 +122,5 @@ public sealed class ReleaseSchedulePlanCommandHandler(
             SchedulePlanStatusContract.Released,
             plan.ReleasedAtUtc,
             plan.ReleaseRevision ?? throw new InvalidOperationException("Released plan must have a release revision."));
-    }
-
-    private sealed class NoopAsyncDisposable : IAsyncDisposable
-    {
-        public static NoopAsyncDisposable Instance { get; } = new();
-
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

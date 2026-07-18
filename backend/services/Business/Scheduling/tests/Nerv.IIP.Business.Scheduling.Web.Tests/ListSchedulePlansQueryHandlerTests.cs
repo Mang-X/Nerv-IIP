@@ -39,7 +39,7 @@ public sealed class ListSchedulePlansQueryHandlerTests
         await using var dbContext = CreateDbContext();
         dbContext.SchedulePlans.Add(CreatePlan("plan-clean", SchedulePlanStatusContract.Generated));
         var released = CreatePlan("plan-invalid", SchedulePlanStatusContract.Generated);
-        released.Release(new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero));
+        released.Release(new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero), 1);
         dbContext.SchedulePlans.Add(released);
 
         // An older material-readiness invalidation, then a newer equipment invalidation for the same plan.

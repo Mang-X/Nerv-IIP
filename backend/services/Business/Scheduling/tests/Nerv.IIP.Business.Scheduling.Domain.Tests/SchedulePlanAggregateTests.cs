@@ -6,6 +6,17 @@ namespace Nerv.IIP.Business.Scheduling.Domain.Tests;
 public sealed class SchedulePlanAggregateTests
 {
     [Fact]
+    public void Release_RequiresExplicitReleaseRevision()
+    {
+        var releaseRevision = typeof(SchedulePlan)
+            .GetMethod(nameof(SchedulePlan.Release))!
+            .GetParameters()
+            .Single(x => x.Name == "releaseRevision");
+
+        Assert.False(releaseRevision.HasDefaultValue);
+    }
+
+    [Fact]
     public void Generated_plan_stores_metadata_and_generated_event()
     {
         var plan = CreatePlan();
@@ -27,7 +38,7 @@ public sealed class SchedulePlanAggregateTests
         plan.ClearDomainEvents();
         var releasedAtUtc = new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
 
-        plan.Release(releasedAtUtc);
+        plan.Release(releasedAtUtc, 1);
 
         Assert.Equal(SchedulePlanLifecycleStatus.Released, plan.Status);
         Assert.Equal(releasedAtUtc, plan.ReleasedAtUtc);
@@ -41,8 +52,8 @@ public sealed class SchedulePlanAggregateTests
         plan.ClearDomainEvents();
         var firstRelease = new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
 
-        plan.Release(firstRelease);
-        plan.Release(firstRelease.AddHours(1));
+        plan.Release(firstRelease, 1);
+        plan.Release(firstRelease.AddHours(1), 1);
 
         Assert.Equal(firstRelease, plan.ReleasedAtUtc);
         Assert.Single(plan.GetDomainEvents().OfType<SchedulePlanReleasedDomainEvent>());
@@ -90,7 +101,7 @@ public sealed class SchedulePlanAggregateTests
     public void Released_plan_cannot_be_mutated_or_regenerated()
     {
         var plan = CreatePlan();
-        plan.Release(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
+        plan.Release(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero), 1);
 
         Assert.Throws<InvalidOperationException>(() => plan.AddAssignment(CreateAssignment("assign-002", "op-002")));
         Assert.Throws<InvalidOperationException>(() => plan.ReplaceGeneratedPlan(CreateContract("plan-001", "fingerprint-002")));

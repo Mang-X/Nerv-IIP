@@ -146,7 +146,7 @@ try
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
             .AddCommandLockBehavior()
             .AddKnownExceptionValidationBehavior()
-            .AddOpenBehavior(typeof(ReleaseSchedulePlanUniqueConflictBehavior<,>))
+            .AddBehavior<ReleaseSchedulePlanUniqueConflictBehavior>()
             .AddUnitOfWorkBehaviors());
 
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = SchedulingFacts.ServiceName)

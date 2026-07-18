@@ -171,7 +171,7 @@ public sealed class SchedulingIntegrationEventTests
             .Convert(new SchedulePlanGeneratedDomainEvent(plan));
         var conflictEvent = new ScheduleConflictDetectedIntegrationEventConverter(timeProvider, contextAccessor)
             .Convert(new ScheduleConflictDetectedDomainEvent(plan, plan.Conflicts.Single()));
-        plan.Release(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
+        plan.Release(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero), 1);
         var releasedEvent = new SchedulePlanReleasedIntegrationEventConverter(timeProvider, contextAccessor)
             .Convert(new SchedulePlanReleasedDomainEvent(plan));
 

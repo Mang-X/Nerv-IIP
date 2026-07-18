@@ -19,7 +19,7 @@ public sealed class SchedulingPlanInvalidationCommandTests
         await using var dbContext = CreateDbContext();
         dbContext.SchedulePlans.Add(CreatePlan("plan-generated", SchedulePlanStatusContract.Generated));
         var released = CreatePlan("plan-released", SchedulePlanStatusContract.Generated);
-        released.Release(FixedNow);
+        released.Release(FixedNow, 1);
         dbContext.SchedulePlans.Add(released);
         await dbContext.SaveChangesAsync();
 

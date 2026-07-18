@@ -14,7 +14,7 @@ namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    IMesScheduleReleaseScopeCoordinator? scopeCoordinator = null)
+    IMesScheduleReleaseScopeCoordinator scopeCoordinator)
     : IIntegrationEventHandler<SchedulePlanReleasedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-mes.schedule-plan-released-dispatch";
@@ -46,12 +46,6 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
         SchedulePlanReleasedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
-        if (scopeCoordinator is null)
-        {
-            await HandleValidEventCoreAsync(integrationEvent, cancellationToken);
-            return;
-        }
-
         await scopeCoordinator.ExecuteAsync(
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
@@ -70,7 +64,7 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
         }
 
         if (string.IsNullOrWhiteSpace(integrationEvent.Payload.PlanId) ||
-            integrationEvent.Payload.ReleaseRevision <= 0 ||
+            integrationEvent.Payload.ReleaseRevision is not > 0 ||
             integrationEvent.Payload.AffectedOperations is null)
         {
             await deadLetterStore.AddAsync(
@@ -147,6 +141,16 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
         SchedulePlanAffectedOperationPayload operation,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(operation.OperationId) ||
+            string.IsNullOrWhiteSpace(operation.WorkCenterId))
+        {
+            return IntegrationEventDeadLetterMessage.Create(
+                ConsumerName,
+                integrationEvent,
+                "mes.schedulePlanReleased.invalidOperationIdentity",
+                $"Released schedule operation requires an operation id and work center id, WorkOrderId = {operation.WorkOrderId}, OperationId = {operation.OperationId}, WorkCenterId = {operation.WorkCenterId}.");
+        }
+
         if (operation.EndUtc <= operation.StartUtc)
         {
             return IntegrationEventDeadLetterMessage.Create(
@@ -232,7 +236,7 @@ public static class SchedulePlanReleasedIntegrationEventTopic
 public sealed class SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatch(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    IMesScheduleReleaseScopeCoordinator? scopeCoordinator = null)
+    IMesScheduleReleaseScopeCoordinator scopeCoordinator)
     : IIntegrationEventHandler<SchedulePlanRevokedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-mes.schedule-plan-revoked-withdraw-dispatch";
@@ -260,12 +264,6 @@ public sealed class SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatc
         SchedulePlanRevokedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
-        if (scopeCoordinator is null)
-        {
-            await HandleValidEventCoreAsync(integrationEvent, cancellationToken);
-            return;
-        }
-
         await scopeCoordinator.ExecuteAsync(
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
@@ -346,8 +344,6 @@ public sealed class SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatc
                     integrationEvent.Payload.Reason);
             }
         }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
     }
 }
 

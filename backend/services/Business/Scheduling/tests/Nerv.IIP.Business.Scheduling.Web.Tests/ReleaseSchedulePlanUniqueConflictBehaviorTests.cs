@@ -16,7 +16,7 @@ public sealed class ReleaseSchedulePlanUniqueConflictBehaviorTests
             "ERROR",
             PostgresErrorCodes.UniqueViolation);
         var dbUpdateException = new DbUpdateException("release conflict", postgresException);
-        var behavior = new ReleaseSchedulePlanUniqueConflictBehavior<ReleaseSchedulePlanCommand, ReleaseSchedulePlanResponse>();
+        var behavior = new ReleaseSchedulePlanUniqueConflictBehavior();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => behavior.Handle(
             new ReleaseSchedulePlanCommand("plan-2", "org-001", "env-dev"),

@@ -24,7 +24,7 @@ public sealed class SchedulingPlanRevokedHandlerTests
         dbContext.OperationTasks.Add(task);
         await dbContext.SaveChangesAsync();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = new SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatch(dbContext, deadLetters);
+        var handler = CreateRevokedHandler(dbContext, deadLetters);
 
         await handler.HandleAsync(CreateRevoked("revoke-invalid", "plan-1", 0, "explicit", null), CancellationToken.None);
 
@@ -50,9 +50,9 @@ public sealed class SchedulingPlanRevokedHandlerTests
             At(8), "PCS", null));
         await dbContext.SaveChangesAsync();
 
-        var releasedHandler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+        var releasedHandler = CreateReleasedHandler(
             dbContext, new InMemoryIntegrationEventDeadLetterStore());
-        var revokedHandler = new SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatch(
+        var revokedHandler = CreateRevokedHandler(
             dbContext, new InMemoryIntegrationEventDeadLetterStore());
 
         await releasedHandler.HandleAsync(CreateReleased("release-1", "plan-1", 1, "DEV-1", At(1)), CancellationToken.None);
@@ -91,9 +91,9 @@ public sealed class SchedulingPlanRevokedHandlerTests
         await dbContext.SaveChangesAsync();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
 
-        await new SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatch(dbContext, deadLetters)
+        await CreateRevokedHandler(dbContext, deadLetters)
             .HandleAsync(CreateRevoked("revoke-first", "plan-1", 1, "explicit", null), CancellationToken.None);
-        await new SchedulePlanReleasedIntegrationEventHandlerForDispatch(dbContext, deadLetters)
+        await CreateReleasedHandler(dbContext, deadLetters)
             .HandleAsync(CreateReleased("release-late", "plan-1", 1, "DEV-1", At(1)), CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -103,6 +103,26 @@ public sealed class SchedulingPlanRevokedHandlerTests
             SchedulePlanReleasedIntegrationEventHandlerForDispatch.ConsumerName,
             IntegrationEventDeadLetterStatus.Pending,
             CancellationToken.None), x => x.FailureCode == "mes.schedulePlanReleased.releaseAlreadyRevoked");
+    }
+
+    private static SchedulePlanReleasedIntegrationEventHandlerForDispatch CreateReleasedHandler(
+        ApplicationDbContext dbContext,
+        IIntegrationEventDeadLetterStore deadLetterStore)
+    {
+        return new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+            dbContext,
+            deadLetterStore,
+            new PostgreSqlMesScheduleReleaseScopeCoordinator(dbContext));
+    }
+
+    private static SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatch CreateRevokedHandler(
+        ApplicationDbContext dbContext,
+        IIntegrationEventDeadLetterStore deadLetterStore)
+    {
+        return new SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatch(
+            dbContext,
+            deadLetterStore,
+            new PostgreSqlMesScheduleReleaseScopeCoordinator(dbContext));
     }
 
     private static SchedulePlanReleasedIntegrationEvent CreateReleased(

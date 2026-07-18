@@ -11,6 +11,18 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
 public sealed class ReleaseSchedulePlanInvalidationGateTests
 {
+    [Theory]
+    [InlineData(typeof(ReleaseSchedulePlanCommandHandler))]
+    [InlineData(typeof(RevokeSchedulePlanCommandHandler))]
+    public void ScheduleReleaseHandlers_RequireScopeLock(Type handlerType)
+    {
+        var scopeLock = Assert.Single(handlerType.GetConstructors())
+            .GetParameters()
+            .Single(x => x.ParameterType == typeof(IScheduleReleaseScopeLock));
+
+        Assert.False(scopeLock.IsOptional);
+    }
+
     private static readonly DateTimeOffset FixedNow = new(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]

@@ -14,6 +14,88 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class SchedulingPlanReleasedHandlerTests
 {
+    [Theory]
+    [InlineData(typeof(SchedulePlanReleasedIntegrationEventHandlerForDispatch))]
+    [InlineData(typeof(SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatch))]
+    public void ScheduleLifecycleHandlers_RequireScopeCoordinator(Type handlerType)
+    {
+        var coordinator = Assert.Single(handlerType.GetConstructors())
+            .GetParameters()
+            .Single(x => x.ParameterType == typeof(IMesScheduleReleaseScopeCoordinator));
+
+        Assert.False(coordinator.IsOptional);
+    }
+
+    [Fact]
+    public async Task SchedulePlanReleasedHandler_DeadLettersMissingReleaseRevisionWithoutPersistingProvenance()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateReleasedHandler(
+            dbContext,
+            deadLetters);
+
+        var releasedEvent = CreateReleasedEvent();
+        var missingRevisionEvent = releasedEvent with
+        {
+            Payload = releasedEvent.Payload with { ReleaseRevision = null }
+        };
+
+        await handler.HandleAsync(missingRevisionEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Empty(await dbContext.OperationTasks.ToArrayAsync());
+        Assert.Empty(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            SchedulePlanReleasedIntegrationEventHandlerForDispatch.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("mes.schedulePlanReleased.invalidPayload", deadLetter.FailureCode);
+    }
+
+    [Theory]
+    [InlineData("", "WC-OIL")]
+    [InlineData("OP-10", "")]
+    public async Task SchedulePlanReleasedHandler_DeadLettersMissingOperationIdentityWithoutThrowing(
+        string operationId,
+        string workCenterId)
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-APS-001",
+            "FG-APS",
+            "PV-001",
+            1m,
+            10,
+            DateTimeOffset.Parse("2026-06-02T16:00:00Z"),
+            "PCS",
+            null));
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateReleasedHandler(dbContext, deadLetters);
+
+        await handler.HandleAsync(
+            CreateReleasedEvent(new SchedulePlanAffectedOperationPayload(
+                "WO-APS-001",
+                operationId,
+                10,
+                "DEV-OIL-01",
+                workCenterId,
+                DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
+                DateTimeOffset.Parse("2026-06-01T13:30:00Z"))),
+            CancellationToken.None);
+
+        Assert.Empty(await dbContext.OperationTasks.ToArrayAsync());
+        Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            SchedulePlanReleasedIntegrationEventHandlerForDispatch.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("mes.schedulePlanReleased.invalidOperationIdentity", deadLetter.FailureCode);
+    }
+
     [Fact]
     public async Task SchedulePlanReleasedHandler_UpsertsAndAssignsMesOperationTasks()
     {
@@ -40,7 +122,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
             DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
             TimeSpan.FromMinutes(30)));
         await dbContext.SaveChangesAsync();
-        var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+        var handler = CreateReleasedHandler(
             dbContext,
             new InMemoryIntegrationEventDeadLetterStore());
 
@@ -98,7 +180,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
         dbContext.OperationTasks.Add(task);
         await dbContext.SaveChangesAsync();
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+        var handler = CreateReleasedHandler(
             dbContext,
             deadLetterStore);
 
@@ -169,7 +251,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
             TimeSpan.FromMinutes(45)));
         await dbContext.SaveChangesAsync();
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+        var handler = CreateReleasedHandler(
             dbContext,
             deadLetterStore);
 
@@ -255,7 +337,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
         {
             await using var transaction = await dbContext.Database.BeginTransactionAsync();
             var deadLetterStore = new SaveChangesDeadLetterStore(dbContext);
-            var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+            var handler = CreateReleasedHandler(
                 dbContext,
                 deadLetterStore);
 
@@ -338,7 +420,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
         await using (var dbContext = CreateSqliteDbContext(connection))
         {
             await using var transaction = await dbContext.Database.BeginTransactionAsync();
-            var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+            var handler = CreateReleasedHandler(
                 dbContext,
                 new SaveThenThrowDeadLetterStore(dbContext));
 
@@ -391,7 +473,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
 
         await using (var dbContext = CreateDbContext(options))
         {
-            var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+            var handler = CreateReleasedHandler(
                 dbContext,
                 new InMemoryIntegrationEventDeadLetterStore());
             await handler.HandleAsync(CreateReleasedEvent(), CancellationToken.None);
@@ -400,7 +482,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
 
         await using (var dbContext = CreateDbContext(options))
         {
-            var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+            var handler = CreateReleasedHandler(
                 dbContext,
                 new InMemoryIntegrationEventDeadLetterStore());
             await handler.HandleAsync(CreateReleasedEvent(), CancellationToken.None);
@@ -417,7 +499,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
     {
         await using var dbContext = CreateDbContext();
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+        var handler = CreateReleasedHandler(
             dbContext,
             deadLetterStore);
 
@@ -518,7 +600,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
 
         await using (var dbContext = CreateDbContext(options))
         {
-            var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+            var handler = CreateReleasedHandler(
                 dbContext,
                 new InMemoryIntegrationEventDeadLetterStore());
             await handler.HandleAsync(CreateReleasedEvent(), CancellationToken.None);
@@ -603,7 +685,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
             DateTimeOffset.Parse("2026-06-01T09:00:00Z"), TimeSpan.FromMinutes(30)));
         await dbContext.SaveChangesAsync();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(dbContext, deadLetters);
+        var handler = CreateReleasedHandler(dbContext, deadLetters);
 
         await handler.HandleAsync(CreateReleasedEvent(
             new SchedulePlanAffectedOperationPayload("WO-APS-001", "OP-10", 10, "DEV-NEW-10", "WC-NEW", DateTimeOffset.Parse("2026-06-01T12:00:00Z"), DateTimeOffset.Parse("2026-06-01T13:00:00Z")),
@@ -637,7 +719,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
             DateTimeOffset.Parse("2026-06-01T09:00:00Z"), TimeSpan.FromMinutes(30)));
         await dbContext.SaveChangesAsync();
 
-        await new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+        await CreateReleasedHandler(
             dbContext, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
             CreateReleasedEvent(new SchedulePlanAffectedOperationPayload(
                 "WO-APS-001", "OP-20", 20, "DEV-NEW", "WC-NEW",
@@ -650,6 +732,16 @@ public sealed class SchedulingPlanReleasedHandlerTests
         Assert.Null(reconciled.ScheduledAtUtc);
         Assert.Null(reconciled.DeviceAssetId);
         Assert.Equal("plan-001", (await dbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-20")).SchedulePlanId);
+    }
+
+    private static SchedulePlanReleasedIntegrationEventHandlerForDispatch CreateReleasedHandler(
+        ApplicationDbContext dbContext,
+        IIntegrationEventDeadLetterStore deadLetterStore)
+    {
+        return new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+            dbContext,
+            deadLetterStore,
+            new PostgreSqlMesScheduleReleaseScopeCoordinator(dbContext));
     }
 
     private static SchedulePlanReleasedIntegrationEvent CreateReleasedEvent(
