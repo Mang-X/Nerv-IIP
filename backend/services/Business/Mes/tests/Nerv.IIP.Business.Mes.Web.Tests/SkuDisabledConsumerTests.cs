@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.MasterData;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
+using Nerv.IIP.Contracts.DemandPlanning;
 using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.Messaging.CAP;
 
@@ -245,27 +246,31 @@ public sealed class SkuDisabledConsumerTests
             CancellationToken.None);
         await projectionReady.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        var commandHandler = new ConvertPlanToWorkOrderCommandHandler(
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var suggestionHandler = new PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder(
             commandContext,
-            new RuleScheduler(),
-            null,
+            deadLetters,
             null,
             new PostgreSqlMesSkuAvailabilityScopeCoordinator(commandContext));
-        var createTask = commandHandler.Handle(
-            new ConvertPlanToWorkOrderCommand(
-                "org-001", "env-dev", "PLAN-RACE", "WO-RACE", DateTimeOffset.Parse("2026-07-18T08:01:00Z"),
-                "SKU-DISABLED", "PV-001", 1m, "PCS", DateTimeOffset.Parse("2026-07-19T08:00:00Z"), null),
+        var createTask = suggestionHandler.HandleAsync(
+            PlanningSuggestionEvent(DateTimeOffset.Parse("2026-07-18T08:01:00Z")),
             CancellationToken.None);
 
         await Task.Delay(250);
         Assert.False(createTask.IsCompleted, "Creation must wait for the in-flight disable transaction for the same SKU scope.");
         allowConsumerCommit.SetResult();
         await consumeTask;
-        await Assert.ThrowsAsync<DisabledMesSkuException>(() => createTask);
+        await createTask;
 
         await using var assertionContext = CreateContext(options);
         Assert.Empty(await assertionContext.WorkOrders.ToListAsync(CancellationToken.None));
         Assert.Single(await assertionContext.MesSkuAvailabilities.ToListAsync(CancellationToken.None));
+        Assert.Contains(
+            await deadLetters.ListAsync(
+                PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder.ConsumerName,
+                IntegrationEventDeadLetterStatus.Pending,
+                CancellationToken.None),
+            x => x.FailureCode == "mes.planningSuggestionAccepted.skuDisabled");
     }
 
     [Fact]
@@ -325,6 +330,35 @@ public sealed class SkuDisabledConsumerTests
             "user:masterdata-admin",
             "sku-disabled-001",
             new MasterDataDisabledPayload("sku", "SKU-DISABLED", "disabled", "retired", changedAtUtc));
+
+    private static PlanningSuggestionAcceptedIntegrationEvent PlanningSuggestionEvent(DateTimeOffset occurredAtUtc) =>
+        new(
+            "evt-demand-sku-race",
+            DemandPlanningIntegrationEventTypes.PlanningSuggestionAccepted,
+            DemandPlanningIntegrationEventVersions.V1,
+            occurredAtUtc,
+            DemandPlanningIntegrationEventSources.BusinessDemandPlanning,
+            "corr-demand-sku-race",
+            "cause-demand-sku-race",
+            "org-001",
+            "env-dev",
+            "user:planner",
+            "demand-sku-race",
+            new PlanningSuggestionAcceptedPayload(
+                "SUG-SKU-RACE",
+                "MRP-001",
+                "planned-work-order",
+                "SKU-DISABLED",
+                "PCS",
+                "SITE-A",
+                1m,
+                new DateOnly(2026, 7, 19),
+                new DateOnly(2026, 7, 18),
+                "DEMAND-001",
+                "PV-001",
+                "BusinessMes",
+                "WorkOrder",
+                null));
 
     private static async Task ConsumeAndSaveAsync(
         SkuDisabledIntegrationEventHandlerForProjectMesSkuAvailability handler,
