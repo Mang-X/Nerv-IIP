@@ -81,9 +81,20 @@ the topology source, pinned infra images) remain in `AGENTS.md`.
    Secret-setting commands must mark sensitive arguments for script log
    redaction.
 
+10. **Connector disconnect acceptance is an opt-in real-infrastructure gate.**
+    Run `pwsh scripts/verify-connector-health-disconnect.ps1 -Runs 3`; do not
+    enable `ConnectorHealthAcceptance:Enabled` for normal `nerv.ps1 dev` or a
+    customer profile. The acceptance profile injects its session-scoped internal
+    token, IndustrialTelemetry endpoint and loopback Modbus mappings into the
+    Connector Host, then writes evidence under
+    `artifacts/script-logs/connector-health-disconnect/<timestamp>/`. A Docker
+    daemon/runtime health failure means no real run occurred (for example 0/3),
+    even when the simulator, script contract and AppHost build gates pass. Repair
+    Docker Desktop and rerun; never widen the fixed ten-second deadline.
+
 ## Service startup failure patterns
 
-10. **CAP PostgreSQL profile without integration event publisher registration.**
+11. **CAP PostgreSQL profile without integration event publisher registration.**
     Services with domain-event-to-integration-event converters must register the
     NetCorePal integration event publisher in the active CAP profile, including
     PostgreSQL. If startup fails with unresolved
@@ -91,7 +102,7 @@ the topology source, pinned infra images) remain in `AGENTS.md`.
     compare the service's CAP registration with a known working service before
     changing handlers.
 
-11. **Redis-backed services aborting startup on first connect attempt.** Local
+12. **Redis-backed services aborting startup on first connect attempt.** Local
     Aspire startup can race Redis readiness. When a service constructs a
     `ConnectionMultiplexer`, parse options with `AbortOnConnectFail=false` so
     the service can start and reconnect instead of turning one transient Redis
@@ -99,14 +110,14 @@ the topology source, pinned infra images) remain in `AGENTS.md`.
 
 ## Deployment artifacts
 
-12. **Aspire AppHost is the only topology source.** For container deployment,
+13. **Aspire AppHost is the only topology source.** For container deployment,
     add/maintain Aspire deployment targets and generate Docker Compose artifacts
     with `.\nerv.ps1 publish-compose` or deploy with `.\nerv.ps1 deploy-compose`.
     Existing hand-written Compose files may remain for dependencies, smoke
     tests, or legacy overlay validation, but must not become a competing service
     graph.
 
-13. **Vite dev proxy is not production routing.** `AddViteApp` works for local
+14. **Vite dev proxy is not production routing.** `AddViteApp` works for local
     dev, but publish/deploy needs an explicit JavaScript production serving
     model. Console can use `PublishAsStaticWebsite("/api", gateway)`. Business
     Console needs two production API routes (`/api/console` to PlatformGateway
@@ -114,7 +125,7 @@ the topology source, pinned infra images) remain in `AGENTS.md`.
     BusinessGateway auth facade before Compose output can be called a complete
     Business Console deployment.
 
-14. **Offline deployment is a separate track.** Offline packaging is a
+15. **Offline deployment is a separate track.** Offline packaging is a
     deployment architecture track, not the first local-development fix. Keep the
     immediate startup path focused on connected machines and Aspire CLI/AppHost.
     Future offline scripts should consume Aspire-generated artifacts instead of

@@ -124,5 +124,221 @@ public sealed class ConnectorCollectionHealthProjectionTests
         Assert.Null(instance.CollectionHealth.LastSampleAtUtc);
     }
 
+    [Fact]
+    public void Newer_connection_transition_updates_even_when_counter_report_is_stale()
+    {
+        var instance = CreateInstance();
+        var epoch = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        instance.RecordCollectionHealth(Health(
+            epoch,
+            reportedAtUtc: "2026-07-13T01:10:00Z",
+            receivedCount: 100,
+            connection: Alive("2026-07-13T01:10:00Z", "2026-07-13T01:00:00Z")));
+
+        instance.RecordCollectionHealth(Health(
+            epoch,
+            reportedAtUtc: "2026-07-13T01:05:00Z",
+            receivedCount: 10,
+            connection: Lost("2026-07-13T01:11:00Z", "2026-07-13T01:11:00Z")));
+
+        Assert.Equal(100, instance.CollectionHealth!.ReceivedCount);
+        Assert.Equal("lost", instance.CollectionHealth.ConnectionStatus);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:11:00Z"), instance.CollectionHealth.ConnectionObservedAtUtc);
+    }
+
+    [Fact]
+    public void Newer_counter_report_updates_even_when_connection_observation_is_stale()
+    {
+        var instance = CreateInstance();
+        var epoch = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        instance.RecordCollectionHealth(Health(
+            epoch,
+            reportedAtUtc: "2026-07-13T01:10:00Z",
+            receivedCount: 100,
+            connection: Lost("2026-07-13T01:10:00Z", "2026-07-13T01:10:00Z")));
+
+        instance.RecordCollectionHealth(Health(
+            epoch,
+            reportedAtUtc: "2026-07-13T01:11:00Z",
+            receivedCount: 120,
+            connection: Alive("2026-07-13T01:09:00Z", "2026-07-13T01:09:00Z")));
+
+        Assert.Equal(120, instance.CollectionHealth!.ReceivedCount);
+        Assert.Equal("lost", instance.CollectionHealth.ConnectionStatus);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:10:00Z"), instance.CollectionHealth.ConnectionObservedAtUtc);
+    }
+
+    [Fact]
+    public void Stale_connection_observation_cannot_revive_a_newer_loss()
+    {
+        var instance = CreateInstance();
+        var epoch = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        instance.RecordCollectionHealth(Health(
+            epoch,
+            reportedAtUtc: "2026-07-13T01:10:00Z",
+            receivedCount: 100,
+            connection: Lost("2026-07-13T01:12:00Z", "2026-07-13T01:12:00Z")));
+
+        instance.RecordCollectionHealth(Health(
+            epoch,
+            reportedAtUtc: "2026-07-13T01:13:00Z",
+            receivedCount: 130,
+            connection: Alive("2026-07-13T01:11:00Z", "2026-07-13T01:11:00Z")));
+
+        Assert.Equal("lost", instance.CollectionHealth!.ConnectionStatus);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:12:00Z"), instance.CollectionHealth.DisconnectedSinceUtc);
+        Assert.Null(instance.CollectionHealth.ConnectedSinceUtc);
+    }
+
+    [Fact]
+    public void Legacy_null_connection_does_not_clear_known_connection_fact()
+    {
+        var instance = CreateInstance();
+        var epoch = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        instance.RecordCollectionHealth(Health(
+            epoch,
+            reportedAtUtc: "2026-07-13T01:10:00Z",
+            receivedCount: 100,
+            connection: Alive("2026-07-13T01:10:00Z", "2026-07-13T01:00:00Z")));
+
+        instance.RecordCollectionHealth(Health(
+            epoch,
+            reportedAtUtc: "2026-07-13T01:11:00Z",
+            receivedCount: 120,
+            connection: null));
+
+        Assert.Equal(120, instance.CollectionHealth!.ReceivedCount);
+        Assert.Equal("alive", instance.CollectionHealth.ConnectionStatus);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:00:00Z"), instance.CollectionHealth.ConnectedSinceUtc);
+    }
+
+    [Fact]
+    public void Identical_connection_observation_is_idempotent_while_newer_counters_advance()
+    {
+        var instance = CreateInstance();
+        var epoch = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var connection = Lost("2026-07-13T01:10:00Z", "2026-07-13T01:10:00Z");
+        instance.RecordCollectionHealth(Health(
+            epoch,
+            reportedAtUtc: "2026-07-13T01:10:00Z",
+            receivedCount: 100,
+            connection));
+
+        instance.RecordCollectionHealth(Health(
+            epoch,
+            reportedAtUtc: "2026-07-13T01:11:00Z",
+            receivedCount: 120,
+            connection));
+
+        Assert.Equal(120, instance.CollectionHealth!.ReceivedCount);
+        Assert.Equal("lost", instance.CollectionHealth.ConnectionStatus);
+        Assert.Equal("transport", instance.CollectionHealth.ConnectionReasonCategory);
+        Assert.Equal("connection-lost", instance.CollectionHealth.ConnectionDiagnosticCode);
+    }
+
+    [Theory]
+    [MemberData(nameof(EqualTimestampConflicts))]
+    public void Conflicting_connection_observation_at_same_timestamp_preserves_first_fact_while_counters_advance(
+        ConnectorConnectionState conflictingConnection)
+    {
+        var instance = CreateInstance();
+        var epoch = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        instance.RecordCollectionHealth(Health(
+            epoch,
+            reportedAtUtc: "2026-07-13T01:10:00Z",
+            receivedCount: 100,
+            Lost("2026-07-13T01:10:00Z", "2026-07-13T01:10:00Z")));
+
+        instance.RecordCollectionHealth(Health(
+            epoch,
+            reportedAtUtc: "2026-07-13T01:11:00Z",
+            receivedCount: 120,
+            conflictingConnection));
+
+        Assert.Equal(120, instance.CollectionHealth!.ReceivedCount);
+        Assert.Equal("lost", instance.CollectionHealth.ConnectionStatus);
+        Assert.Equal("transport", instance.CollectionHealth.ConnectionReasonCategory);
+        Assert.Equal("connection-lost", instance.CollectionHealth.ConnectionDiagnosticCode);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidConnections))]
+    public void Invalid_connection_state_is_rejected(ConnectorConnectionState connection)
+    {
+        var instance = CreateInstance();
+
+        var exception = Assert.Throws<ArgumentException>(() => instance.RecordCollectionHealth(Health(
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            reportedAtUtc: "2026-07-13T01:10:00Z",
+            receivedCount: 100,
+            connection: connection)));
+
+        Assert.Contains("connection", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static TheoryData<ConnectorConnectionState> InvalidConnections => new()
+    {
+        new ConnectorConnectionState("connected", DateTimeOffset.Parse("2026-07-13T01:10:00Z"), DateTimeOffset.Parse("2026-07-13T01:00:00Z")),
+        new ConnectorConnectionState("alive", DateTimeOffset.Parse("2026-07-13T01:10:00Z")),
+        new ConnectorConnectionState("alive", DateTimeOffset.Parse("2026-07-13T01:10:00Z"), DateTimeOffset.Parse("2026-07-13T01:00:00Z"), DateTimeOffset.Parse("2026-07-13T01:09:00Z")),
+        new ConnectorConnectionState("lost", DateTimeOffset.Parse("2026-07-13T01:10:00Z")),
+        new ConnectorConnectionState("lost", DateTimeOffset.Parse("2026-07-13T01:10:00Z"), DateTimeOffset.Parse("2026-07-13T01:00:00Z"), DateTimeOffset.Parse("2026-07-13T01:09:00Z")),
+        new ConnectorConnectionState("unknown", DateTimeOffset.Parse("2026-07-13T01:10:00Z"), DateTimeOffset.Parse("2026-07-13T01:00:00Z")),
+        new ConnectorConnectionState("unknown", DateTimeOffset.Parse("2026-07-13T01:10:00Z"), DisconnectedSinceUtc: DateTimeOffset.Parse("2026-07-13T01:09:00Z")),
+    };
+
+    public static TheoryData<ConnectorConnectionState> EqualTimestampConflicts => new()
+    {
+        new ConnectorConnectionState(
+            "alive",
+            DateTimeOffset.Parse("2026-07-13T01:10:00Z"),
+            ConnectedSinceUtc: DateTimeOffset.Parse("2026-07-13T01:00:00Z")),
+        new ConnectorConnectionState(
+            "lost",
+            DateTimeOffset.Parse("2026-07-13T01:10:00Z"),
+            DisconnectedSinceUtc: DateTimeOffset.Parse("2026-07-13T01:09:00Z"),
+            ReasonCategory: "transport",
+            DiagnosticCode: "connection-lost"),
+        new ConnectorConnectionState(
+            "lost",
+            DateTimeOffset.Parse("2026-07-13T01:10:00Z"),
+            DisconnectedSinceUtc: DateTimeOffset.Parse("2026-07-13T01:10:00Z"),
+            ReasonCategory: "protocol",
+            DiagnosticCode: "connection-lost"),
+        new ConnectorConnectionState(
+            "lost",
+            DateTimeOffset.Parse("2026-07-13T01:10:00Z"),
+            DisconnectedSinceUtc: DateTimeOffset.Parse("2026-07-13T01:10:00Z"),
+            ReasonCategory: "transport",
+            DiagnosticCode: "session-closed"),
+    };
+
+    private static ConnectorCollectionHealth Health(
+        Guid epoch,
+        string reportedAtUtc,
+        long? receivedCount,
+        ConnectorConnectionState? connection) => new(
+            "opc-main",
+            "opcua",
+            epoch,
+            DateTimeOffset.Parse(reportedAtUtc),
+            receivedCount,
+            0,
+            0,
+            null,
+            connection);
+
+    private static ConnectorConnectionState Alive(string observedAtUtc, string connectedSinceUtc) => new(
+        "alive",
+        DateTimeOffset.Parse(observedAtUtc),
+        DateTimeOffset.Parse(connectedSinceUtc));
+
+    private static ConnectorConnectionState Lost(string observedAtUtc, string disconnectedSinceUtc) => new(
+        "lost",
+        DateTimeOffset.Parse(observedAtUtc),
+        DisconnectedSinceUtc: DateTimeOffset.Parse(disconnectedSinceUtc),
+        ReasonCategory: "transport",
+        DiagnosticCode: "connection-lost");
+
     private static ApplicationInstance CreateInstance() => new("org", "env", "host", "app", "1", "node", "opc-main", "Instance", new Dictionary<string, string>(), []);
 }

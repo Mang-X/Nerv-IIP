@@ -81,7 +81,7 @@ declaration against what actually shipped (facade + codegen + barrel for
   add `gateways` + `gatewayOperationIds`, drop `followUp`.
 - **New business service** → add its `.Web` project reference and assembly name to
   the gate project (`Nerv.IIP.FacadeCoverage.Tests`) so its endpoints are covered.
-- The `exposed` rows are summarised by count here; the full 357-row registry with
+- The `exposed` rows are summarised by count here; the full 360-row registry with
   per-endpoint facade operation ids lives in the JSON.
 
 ## Summary
@@ -93,7 +93,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | BarcodeLabel | 12 | 9 | 0 | 3 |
 | DemandPlanning | 15 | 15 | 0 | 0 |
 | Erp | 51 | 39 | 11 | 1 |
-| IndustrialTelemetry | 24 | 22 | 1 | 1 |
+| IndustrialTelemetry | 26 | 23 | 1 | 2 |
 | Inventory | 12 | 5 | 2 | 5 |
 | Maintenance | 21 | 16 | 5 | 0 |
 | MasterData | 46 | 38 | 4 | 4 |
@@ -102,12 +102,20 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Quality | 32 | 18 | 14 | 0 |
 | Scheduling | 8 | 7 | 1 | 0 |
 | Wms | 30 | 19 | 6 | 5 |
-| **Total** | **357** | **286** | **51** | **20** |
+| **Total** | **360** | **288** | **51** | **21** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-The `exposed` rows (286) — each with its verified facade `gatewayOperationIds` — are
+The `exposed` rows (288) — each with its verified facade `gatewayOperationIds` — are
 enumerated in the JSON registry. The `deferred` and `internal` rows, the actual
 governance decisions, are listed in full below.
+
+For connector configured-tag coverage, the declaration is exact: service
+operation `reportBusinessIiotConnectorTagManifest` is `internal` because it is a
+Connector Host callback; service operation `getBusinessIiotConnectorTagCoverage`
+is `exposed` through Gateway operation
+`getBusinessConsoleTelemetryConnectorTagCoverage`. Coverage starts from the
+current manifest rather than from samples, so the facade must preserve
+`current` versus `unavailable` and nullable sample timestamps.
 
 ### Deferred endpoints (facade tracked, not yet exposed)
 
@@ -168,6 +176,7 @@ governance decisions, are listed in full below.
 | Approval | POST | `/api/business/v1/approvals/tasks/overdue/check` | Internal server-clock overdue scheduler endpoint invoked by the Approval OverdueCheck background scanner (#488); not a user action. |
 | Erp | GET | `/api/business/v1/erp/purchase-receipts/{purchaseReceiptNo}/source-document` | Service-to-service source-document read contract consumed by Quality to validate receipt line SKU/qty/UOM/lot (#77). |
 | IndustrialTelemetry | POST | `/api/business/v1/iiot/alarms/escalations/run` | Internal alarm-escalation scheduler endpoint (IndustrialTelemetry:AlarmEscalation opt-in scanner, #686); not a user action. |
+| IndustrialTelemetry | POST | `/api/business/v1/iiot/connector-tag-manifests` | Connector Host callback reporting authoritative connector configuration and activation facts; never a direct Console action. |
 | Inventory | POST | `/api/inventory/v1/reservations` | Service-to-service reservation API consumed by WMS pick-task creation (#412). |
 | Inventory | POST | `/api/inventory/v1/reservations/fefo` | Service-to-service FEFO reservation API consumed by WMS (#412). |
 | Inventory | POST | `/api/inventory/v1/reservations/{reservationId}/release` | Service-to-service reservation release API consumed by WMS outbound cancel (#412). |

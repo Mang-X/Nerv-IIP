@@ -2,10 +2,11 @@
 #   Category: check
 #   SideEffects:
 #     - Validates full-stack Docker ownership predicates against synthetic inspect data
+#     - Starts and stops one detached local PowerShell lifecycle probe
 #   Writes:
-#     - None
+#     - Temporary detached-process stdout and stderr logs
 #   Cleanup:
-#     - None
+#     - Stops the exact lifecycle-probe process and removes its temporary directory
 #   Requires:
 #     - PowerShell 7
 
@@ -94,6 +95,40 @@ foreach ($requiredText in @(
 $parseErrors = $null
 [void] [System.Management.Automation.Language.Parser]::ParseFile($parallelAcceptanceScript, [ref] $null, [ref] $parseErrors)
 Assert-True (@($parseErrors).Count -eq 0) 'Parallel acceptance script must parse successfully.'
+$detachedStartIndex = $parallelAcceptanceText.IndexOf('Start-DetachedManagedProcess', [StringComparison]::Ordinal)
+$manifestWaitIndex = $parallelAcceptanceText.IndexOf('Wait-AcceptanceSessions', [StringComparison]::Ordinal)
+$identityCleanupIndex = $parallelAcceptanceText.IndexOf('function Stop-AcceptanceStartProcess', [StringComparison]::Ordinal)
+Assert-True (
+    $detachedStartIndex -ge 0 -and
+    $manifestWaitIndex -ge 0 -and
+    $identityCleanupIndex -ge 0
+) 'Detached wrapper lifecycle structure must include start, manifest wait, and identity cleanup.'
+
+$detachedProbeRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-detached-lifecycle-$([guid]::NewGuid().ToString('N'))"
+$detachedProbe = $null
+try {
+    [System.IO.Directory]::CreateDirectory($detachedProbeRoot) | Out-Null
+    $detachedProbe = Start-DetachedManagedProcess `
+        -Command (Get-Process -Id $PID).Path `
+        -Arguments @('-NoProfile', '-Command', 'Start-Sleep -Seconds 60') `
+        -WorkingDirectory $repoRoot `
+        -StdoutPath (Join-Path $detachedProbeRoot 'stdout.log') `
+        -StderrPath (Join-Path $detachedProbeRoot 'stderr.log')
+    Assert-True (
+        Test-NervProcessIdentity -ProcessId $detachedProbe.Pid -ProcessStartTimeUtc $detachedProbe.ProcessStartTimeUtc
+    ) 'Detached wrapper identity must be observable before cleanup.'
+    $detachedProcess = Get-Process -Id $detachedProbe.Pid -ErrorAction Stop
+    Stop-Process -Id $detachedProbe.Pid -Force
+    [void] $detachedProcess.WaitForExit(10000)
+    $detachedProcess.Dispose()
+    Assert-True (-not (Test-NervProcessIdentity -ProcessId $detachedProbe.Pid -ProcessStartTimeUtc $detachedProbe.ProcessStartTimeUtc)) 'Detached wrapper identity must disappear after exact cleanup.'
+}
+finally {
+    if ($null -ne $detachedProbe -and (Test-NervProcessIdentity -ProcessId $detachedProbe.Pid -ProcessStartTimeUtc $detachedProbe.ProcessStartTimeUtc)) {
+        Stop-Process -Id $detachedProbe.Pid -Force -ErrorAction SilentlyContinue
+    }
+    Remove-Item -LiteralPath $detachedProbeRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 $start = Read-NervAspireJson -Text (Get-Content -LiteralPath $startFixture -Raw)
 $describe = Read-NervAspireJson -Text (Get-Content -LiteralPath $describeFixture -Raw)

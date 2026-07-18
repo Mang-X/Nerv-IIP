@@ -18,7 +18,7 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayMaintenanceTelemetryTests
 {
     [Fact]
-    public async Task Connector_collection_health_authorizes_connector_scope_and_preserves_unknown_nulls()
+    public async Task Connector_collection_health_authorizes_connector_scope_and_preserves_field_connection_loss()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var appHub = new RecordingAppHubClient();
@@ -43,6 +43,13 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal("org-001", appHub.LastRequest!.OrganizationId);
         Assert.Equal("env-dev", appHub.LastRequest.EnvironmentId);
         Assert.Equal("internal-test-token", appHub.LastToken);
+        Assert.Equal("stale", data.GetProperty("status").GetString());
+        Assert.Equal("offline", data.GetProperty("staleReason").GetString());
+        Assert.Equal("field-connection", data.GetProperty("offlineReason").GetString());
+        var connection = data.GetProperty("connection");
+        Assert.Equal("lost", connection.GetProperty("status").GetString());
+        Assert.Equal("2026-07-13T01:00:00+00:00", connection.GetProperty("disconnectedSinceUtc").GetString());
+        Assert.Equal("2026-07-13T01:05:06+00:00", data.GetProperty("hostLivenessDeadlineUtc").GetString());
         Assert.Equal(JsonValueKind.Null, data.GetProperty("receivedCount").ValueKind);
         Assert.Equal(JsonValueKind.Null, data.GetProperty("droppedCount").ValueKind);
         Assert.Equal(JsonValueKind.Null, data.GetProperty("errorCount").ValueKind);
@@ -73,13 +80,23 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal("org-001", appHub.LastListRequest!.OrganizationId);
         Assert.Equal("env-dev", appHub.LastListRequest.EnvironmentId);
         Assert.Equal("internal-test-token", appHub.LastToken);
-        Assert.Equal(2, data.GetProperty("total").GetInt32());
+        Assert.Equal(3, data.GetProperty("total").GetInt32());
         Assert.Equal("modbus-main", items[0].GetProperty("connectorId").GetString());
         Assert.Equal("stale", items[0].GetProperty("status").GetString());
         Assert.Equal("offline", items[0].GetProperty("staleReason").GetString());
+        Assert.Equal("host-liveness", items[0].GetProperty("offlineReason").GetString());
+        Assert.Equal("alive", items[0].GetProperty("connection").GetProperty("status").GetString());
+        Assert.Equal("2026-07-13T01:00:06+00:00", items[0].GetProperty("hostLivenessDeadlineUtc").GetString());
         Assert.Equal("modbus", items[0].GetProperty("sourceSystem").GetString());
-        Assert.Equal("opcua-main", items[1].GetProperty("connectorId").GetString());
-        Assert.Equal(JsonValueKind.Null, items[1].GetProperty("staleReason").ValueKind);
+        Assert.Equal("mqtt-main", items[1].GetProperty("connectorId").GetString());
+        Assert.Equal("fault", items[1].GetProperty("staleReason").GetString());
+        Assert.Equal(JsonValueKind.Null, items[1].GetProperty("offlineReason").ValueKind);
+        Assert.Equal("2026-07-13T01:05:06+00:00", items[1].GetProperty("hostLivenessDeadlineUtc").GetString());
+        Assert.Equal("legacy-main", items[2].GetProperty("connectorId").GetString());
+        Assert.Equal(JsonValueKind.Null, items[2].GetProperty("connection").ValueKind);
+        Assert.Equal(JsonValueKind.Null, items[2].GetProperty("staleReason").ValueKind);
+        Assert.Equal(JsonValueKind.Null, items[2].GetProperty("offlineReason").ValueKind);
+        Assert.Equal(JsonValueKind.Null, items[2].GetProperty("hostLivenessDeadlineUtc").ValueKind);
     }
 
     [Fact]
@@ -914,7 +931,25 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         {
             LastToken = internalBearerToken;
             LastRequest = request;
-            return Task.FromResult(new BusinessConsoleConnectorCollectionHealthResponse(request.ConnectorId, "unknown", null, null, null, null, null, null, null));
+            return Task.FromResult(new BusinessConsoleConnectorCollectionHealthResponse(
+                request.ConnectorId,
+                "stale",
+                DateTimeOffset.Parse("2026-07-13T01:05:00Z"),
+                null,
+                null,
+                null,
+                null,
+                null,
+                "opcua",
+                new BusinessConsoleConnectorConnectionState(
+                    "lost",
+                    DateTimeOffset.Parse("2026-07-13T01:00:00Z"),
+                    DisconnectedSinceUtc: DateTimeOffset.Parse("2026-07-13T01:00:00Z"),
+                    ReasonCategory: "network",
+                    DiagnosticCode: "connection-lost"),
+                "offline",
+                "field-connection",
+                DateTimeOffset.Parse("2026-07-13T01:05:06Z")));
         }
 
         public Task<BusinessConsoleConnectorCollectionHealthListResponse> GetCollectionHealthListAsync(string internalBearerToken, BusinessConsoleConnectorCollectionHealthListRequest request, CancellationToken cancellationToken)
@@ -923,10 +958,23 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             LastListRequest = request;
             return Task.FromResult(new BusinessConsoleConnectorCollectionHealthListResponse(
                 [
-                    new BusinessConsoleConnectorCollectionHealthListItem("modbus-main", "Modbus Main", "stale", "offline", null, null, null, 50, 9, 2, Guid.Parse("22222222-2222-2222-2222-222222222222"), "modbus"),
-                    new BusinessConsoleConnectorCollectionHealthListItem("opcua-main", "OPC UA Main", "current", null, null, null, null, 100, 4, 1, Guid.Parse("11111111-1111-1111-1111-111111111111"), "opcua"),
+                    new BusinessConsoleConnectorCollectionHealthListItem(
+                        "modbus-main", "Modbus Main", "stale", "offline", null, null, null, 50, 9, 2,
+                        Guid.Parse("22222222-2222-2222-2222-222222222222"), "modbus",
+                        new BusinessConsoleConnectorConnectionState("alive", DateTimeOffset.Parse("2026-07-13T00:55:00Z"), ConnectedSinceUtc: DateTimeOffset.Parse("2026-07-13T00:50:00Z")),
+                        "host-liveness",
+                        DateTimeOffset.Parse("2026-07-13T01:00:06Z")),
+                    new BusinessConsoleConnectorCollectionHealthListItem(
+                        "mqtt-main", "MQTT Main", "stale", "fault", null, null, null, 70, 0, 1,
+                        Guid.Parse("44444444-4444-4444-4444-444444444444"), "mqtt",
+                        new BusinessConsoleConnectorConnectionState("alive", DateTimeOffset.Parse("2026-07-13T01:05:00Z"), ConnectedSinceUtc: DateTimeOffset.Parse("2026-07-13T01:00:00Z")),
+                        null,
+                        DateTimeOffset.Parse("2026-07-13T01:05:06Z")),
+                    new BusinessConsoleConnectorCollectionHealthListItem(
+                        "legacy-main", "Legacy Main", "unknown", null, null, null, DateTimeOffset.Parse("2026-07-13T01:04:59Z"), 10, 0, 0,
+                        Guid.Parse("99999999-9999-9999-9999-999999999999"), "opcua", null, null),
                 ],
-                2));
+                3));
         }
     }
 
@@ -1319,6 +1367,25 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
 
     public BusinessConsoleTelemetryHistoryRequest? LastHistoryRequest { get; private set; }
     public BusinessConsoleTelemetryRuntimeHoursRequest? LastRuntimeHoursRequest { get; private set; }
+
+    public Task<BusinessConsoleConnectorTagCoverageResponse> GetConnectorTagCoverageAsync(
+        string internalBearerToken,
+        BusinessConsoleConnectorTagCoverageRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleConnectorTagCoverageResponse(
+            request.ConnectorId,
+            "unavailable",
+            null,
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            []));
+    }
 
     public Task<BusinessConsoleTelemetryRuntimeHoursResponse> QueryRuntimeHoursAsync(string internalBearerToken, BusinessConsoleTelemetryRuntimeHoursRequest request, CancellationToken cancellationToken)
     {

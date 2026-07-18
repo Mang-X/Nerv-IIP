@@ -22,6 +22,7 @@ public sealed class MqttNetSubscriptionClientIntegrationTests
                 received.TrySetResult(message);
                 return Task.CompletedTask;
             },
+            () => { },
             CancellationToken.None);
 
         await broker.PublishAsync("factory/line-1/temperature", """{"temperature":42.5}""");

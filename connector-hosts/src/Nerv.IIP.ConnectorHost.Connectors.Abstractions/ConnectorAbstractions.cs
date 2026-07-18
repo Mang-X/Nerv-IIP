@@ -10,6 +10,11 @@ public interface IIndustrialTelemetryCollectionConnector
     Task RunCollectionCycleAsync(CancellationToken cancellationToken);
 }
 
+public interface IConnectorConnectionMonitor
+{
+    Task RunConnectionCheckAsync(CancellationToken cancellationToken);
+}
+
 public sealed record ConnectorCollectionHealthSnapshot(
     string ConnectorId,
     string SourceSystem,
@@ -17,7 +22,31 @@ public sealed record ConnectorCollectionHealthSnapshot(
     long? ReceivedCount,
     long? DroppedCount,
     long? ErrorCount,
-    DateTimeOffset? LastSampleAtUtc);
+    DateTimeOffset? LastSampleAtUtc,
+    ConnectorConnectionStateSnapshot? Connection = null);
+
+public sealed record ConnectorConnectionStateSnapshot(
+    string Status,
+    DateTimeOffset ObservedAtUtc,
+    DateTimeOffset? ConnectedSinceUtc = null,
+    DateTimeOffset? DisconnectedSinceUtc = null,
+    string? ReasonCategory = null,
+    string? DiagnosticCode = null);
+
+public sealed record ConnectorTagManifestSnapshot(
+    string CollectionConnectorId,
+    string SourceSystem,
+    IReadOnlyList<ConnectorTagManifestEntrySnapshot> Entries);
+
+public sealed record ConnectorTagManifestEntrySnapshot(
+    string DeviceAssetId,
+    string TagKey,
+    bool Enabled,
+    string? ProtocolAddress,
+    string ActivationStatus,
+    DateTimeOffset ActivationObservedAtUtc,
+    string? ActivationErrorCode = null,
+    string? ActivationErrorMessage = null);
 
 public sealed record ConnectorTarget(
     string NodeKey,
@@ -32,7 +61,8 @@ public sealed record ConnectorTarget(
     string HealthStatus,
     IReadOnlyList<ConnectorCapability> Capabilities,
     IReadOnlyDictionary<string, string> Metadata,
-    ConnectorCollectionHealthSnapshot? CollectionHealth = null);
+    ConnectorCollectionHealthSnapshot? CollectionHealth = null,
+    ConnectorTagManifestSnapshot? TagManifest = null);
 
 public sealed record ConnectorCapability(
     string Code,

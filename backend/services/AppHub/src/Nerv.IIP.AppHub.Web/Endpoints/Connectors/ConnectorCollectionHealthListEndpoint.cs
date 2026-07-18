@@ -16,7 +16,10 @@ namespace Nerv.IIP.AppHub.Web.Endpoints.Connectors;
 /// </summary>
 [HttpGet("/internal/apphub/v1/connectors/collection-health")]
 [Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
-public sealed class ConnectorCollectionHealthListEndpoint(IServiceProvider services, TimeProvider clock)
+public sealed class ConnectorCollectionHealthListEndpoint(
+    IServiceProvider services,
+    TimeProvider clock,
+    ConnectorCollectionHealthEvaluator evaluator)
     : EndpointWithoutRequest<ResponseData<ConnectorCollectionHealthListResponse>>
 {
     public override async Task HandleAsync(CancellationToken ct)
@@ -43,7 +46,7 @@ public sealed class ConnectorCollectionHealthListEndpoint(IServiceProvider servi
 
         var items = instances
             .Where(x => x.CollectionHealth is not null)
-            .Select(x => ConnectorCollectionHealthEvaluator.ToListItem(x, now))
+            .Select(x => evaluator.ToListItem(x, now))
             .OrderBy(x => SeverityRank(x.Status, x.StaleReason))
             .ThenBy(x => x.ConnectorName, StringComparer.Ordinal)
             .ThenBy(x => x.ConnectorId, StringComparer.Ordinal)

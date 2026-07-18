@@ -1,12 +1,15 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Unicode;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmShelveIdempotencyAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.ConnectorTagManifestAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlChannelBindingAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlCommandAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
@@ -17,6 +20,260 @@ using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Sdk.Ops;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
+
+public static class ConnectorTagManifestLimits
+{
+    public const int MaxEntries = 500;
+}
+
+public sealed record ReportConnectorTagManifestEntry(
+    string DeviceAssetId,
+    string TagKey,
+    bool Enabled,
+    string? ProtocolAddress,
+    string ActivationStatus,
+    DateTimeOffset ActivationObservedAtUtc,
+    string? ActivationErrorCode = null,
+    string? ActivationErrorMessage = null);
+
+public sealed record ReportConnectorTagManifestCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string CollectionConnectorId,
+    string SourceSystem,
+    string ManifestRevision,
+    DateTimeOffset ManifestObservedAtUtc,
+    IReadOnlyCollection<ReportConnectorTagManifestEntry> Entries)
+    : ICommand<ReportConnectorTagManifestResult>;
+
+public sealed record ReportConnectorTagManifestResult(
+    ManifestApplyDisposition Disposition,
+    string AcceptedManifestRevision,
+    DateTimeOffset AcceptedManifestObservedAtUtc);
+
+public sealed class ConnectorTagManifestIngestionOptions
+{
+    public const string SectionName = "IndustrialTelemetry:ConnectorTagManifest";
+    public static readonly TimeSpan DefaultMaxFutureObservationSkew = TimeSpan.FromMinutes(5);
+    public static readonly TimeSpan MaximumConfigurableFutureObservationSkew = TimeSpan.FromMinutes(15);
+
+    public TimeSpan MaxFutureObservationSkew { get; set; } = DefaultMaxFutureObservationSkew;
+}
+
+public static class ConnectorTagManifestRevision
+{
+    private static readonly JavaScriptEncoder CanonicalJsonEncoder = JavaScriptEncoder.Create(UnicodeRanges.BasicLatin);
+    private static readonly JsonWriterOptions CanonicalJsonWriterOptions = new()
+    {
+        Encoder = CanonicalJsonEncoder,
+        Indented = false,
+        SkipValidation = false,
+    };
+
+    public static string Compute(
+        string sourceSystem,
+        IReadOnlyCollection<ReportConnectorTagManifestEntry> entries)
+    {
+        return Convert.ToHexString(SHA256.HashData(ComputeCanonicalUtf8Bytes(sourceSystem, entries))).ToLowerInvariant();
+    }
+
+    internal static byte[] ComputeCanonicalUtf8Bytes(
+        string sourceSystem,
+        IReadOnlyCollection<ReportConnectorTagManifestEntry> entries)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        var normalizedSourceSystem = IndustrialTelemetryText.RequiredLower(sourceSystem, nameof(sourceSystem));
+        var normalizedEntries = entries
+            .Select(entry =>
+            {
+                ArgumentNullException.ThrowIfNull(entry);
+                return new CanonicalEntry(
+                    IndustrialTelemetryText.Required(entry.DeviceAssetId, nameof(entry.DeviceAssetId)),
+                    IndustrialTelemetryText.RequiredLower(entry.TagKey, nameof(entry.TagKey)),
+                    entry.Enabled,
+                    IndustrialTelemetryText.OptionalSanitized(entry.ProtocolAddress, 500));
+            })
+            .OrderBy(entry => entry.DeviceAssetId, StringComparer.Ordinal)
+            .ThenBy(entry => entry.TagKey, StringComparer.Ordinal)
+            .ToArray();
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream, CanonicalJsonWriterOptions))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("sourceSystem", normalizedSourceSystem);
+            writer.WritePropertyName("entries");
+            writer.WriteStartArray();
+            foreach (var entry in normalizedEntries)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("deviceAssetId", entry.DeviceAssetId);
+                writer.WriteString("tagKey", entry.TagKey);
+                writer.WriteBoolean("enabled", entry.Enabled);
+                if (entry.ProtocolAddress is null)
+                {
+                    writer.WriteNull("protocolAddress");
+                }
+                else
+                {
+                    writer.WriteString("protocolAddress", entry.ProtocolAddress);
+                }
+
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        return stream.ToArray();
+    }
+
+    private sealed record CanonicalEntry(
+        string DeviceAssetId,
+        string TagKey,
+        bool Enabled,
+        string? ProtocolAddress);
+}
+
+public sealed class ReportConnectorTagManifestEntryValidator : AbstractValidator<ReportConnectorTagManifestEntry>
+{
+    private static readonly string[] ActivationStatuses = ["pending", "active", "error", "disabled"];
+
+    public ReportConnectorTagManifestEntryValidator()
+    {
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ProtocolAddress).MaximumLength(500);
+        RuleFor(x => x.ActivationStatus)
+            .NotEmpty()
+            .MaximumLength(16)
+            .Must(status => ActivationStatuses.Contains(status.Trim(), StringComparer.OrdinalIgnoreCase))
+            .WithMessage("ActivationStatus must be pending, active, error or disabled.");
+        RuleFor(x => x.ActivationObservedAtUtc).NotEmpty();
+        RuleFor(x => x.ActivationErrorCode).MaximumLength(128);
+        RuleFor(x => x.ActivationErrorMessage).MaximumLength(500);
+    }
+}
+
+public sealed class ReportConnectorTagManifestCommandValidator : AbstractValidator<ReportConnectorTagManifestCommand>
+{
+    public ReportConnectorTagManifestCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CollectionConnectorId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.SourceSystem).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ManifestRevision)
+            .Must(BeLowercaseSha256)
+            .WithMessage("ManifestRevision must be a 64-character lowercase SHA-256 hexadecimal value.");
+        RuleFor(x => x.ManifestObservedAtUtc).NotEmpty();
+        RuleFor(x => x.Entries).NotNull().Must(entries => entries.Count <= ConnectorTagManifestLimits.MaxEntries)
+            .WithMessage($"Connector manifest cannot contain more than {ConnectorTagManifestLimits.MaxEntries} entries.");
+        RuleForEach(x => x.Entries).SetValidator(new ReportConnectorTagManifestEntryValidator());
+        RuleFor(x => x).Custom((command, context) =>
+        {
+            if (command.Entries is null)
+            {
+                return;
+            }
+
+            var keys = new HashSet<(string DeviceAssetId, string TagKey)>();
+            foreach (var entry in command.Entries.Where(entry => entry is not null))
+            {
+                var deviceAssetId = entry.DeviceAssetId?.Trim() ?? string.Empty;
+                var tagKey = entry.TagKey?.Trim().ToLowerInvariant() ?? string.Empty;
+                if (!keys.Add((deviceAssetId, tagKey)))
+                {
+                    context.AddFailure(nameof(command.Entries), $"Connector manifest contains duplicate normalized device/tag binding '{deviceAssetId}/{tagKey}'.");
+                }
+            }
+        });
+    }
+
+    private static bool BeLowercaseSha256(string manifestRevision)
+    {
+        return manifestRevision is { Length: 64 }
+            && manifestRevision.All(character => character is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
+    }
+}
+
+public sealed class ReportConnectorTagManifestCommandHandler(
+    ApplicationDbContext dbContext,
+    TimeProvider timeProvider,
+    Microsoft.Extensions.Options.IOptions<ConnectorTagManifestIngestionOptions> options)
+    : ICommandHandler<ReportConnectorTagManifestCommand, ReportConnectorTagManifestResult>
+{
+    public async Task<ReportConnectorTagManifestResult> Handle(
+        ReportConnectorTagManifestCommand request,
+        CancellationToken cancellationToken)
+    {
+        var maxFutureObservation = timeProvider.GetUtcNow() + options.Value.MaxFutureObservationSkew;
+        if (request.ManifestObservedAtUtc > maxFutureObservation
+            || request.Entries.Any(entry => entry.ActivationObservedAtUtc > maxFutureObservation))
+        {
+            throw new KnownException(
+                $"Connector tag manifest observation is too far in the future. Maximum accepted observation is {maxFutureObservation:O}.");
+        }
+
+        var canonicalRevision = ConnectorTagManifestRevision.Compute(request.SourceSystem, request.Entries);
+        if (!string.Equals(request.ManifestRevision, canonicalRevision, StringComparison.Ordinal))
+        {
+            throw new KnownException(
+                $"ManifestRevision does not match the server canonical connector tag manifest revision. Expected '{canonicalRevision}'.");
+        }
+
+        var entries = request.Entries
+            .Select(entry => new ConnectorTagManifestEntry(
+                entry.DeviceAssetId,
+                entry.TagKey,
+                entry.Enabled,
+                entry.ProtocolAddress,
+                entry.ActivationStatus,
+                entry.ActivationObservedAtUtc,
+                entry.ActivationErrorCode,
+                entry.ActivationErrorMessage))
+            .ToArray();
+        var manifest = await dbContext.ConnectorTagManifests
+            .Include(existing => existing.Bindings)
+            .SingleOrDefaultAsync(existing =>
+                existing.OrganizationId == request.OrganizationId
+                && existing.EnvironmentId == request.EnvironmentId
+                && existing.CollectionConnectorId == request.CollectionConnectorId,
+                cancellationToken);
+
+        ManifestApplyResult applyResult;
+        if (manifest is null)
+        {
+            manifest = ConnectorTagManifest.Create(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.CollectionConnectorId,
+                request.SourceSystem,
+                canonicalRevision,
+                request.ManifestObservedAtUtc,
+                entries);
+            dbContext.ConnectorTagManifests.Add(manifest);
+            applyResult = new ManifestApplyResult(
+                ManifestApplyDisposition.Accepted,
+                manifest.ManifestRevision,
+                manifest.ManifestObservedAtUtc);
+        }
+        else
+        {
+            applyResult = manifest.Apply(
+                request.SourceSystem,
+                canonicalRevision,
+                request.ManifestObservedAtUtc,
+                entries);
+        }
+
+        return new ReportConnectorTagManifestResult(
+            applyResult.Disposition,
+            applyResult.AcceptedManifestRevision,
+            applyResult.AcceptedManifestObservedAtUtc);
+    }
+}
 
 public sealed record CreateTelemetryTagCommand(
     string OrganizationId,
@@ -516,7 +773,8 @@ public sealed record RecordTelemetrySampleCommand(
     decimal? FirstValue = null,
     decimal? LastValue = null,
     string? DeviceState = null,
-    DateTimeOffset? StateOccurredAtUtc = null) : ICommand<RecordTelemetrySampleResult>;
+    DateTimeOffset? StateOccurredAtUtc = null,
+    string? CollectionConnectorId = null) : ICommand<RecordTelemetrySampleResult>;
 
 public sealed record RecordTelemetrySampleResult(TelemetrySummaryId? TelemetrySummaryId, DeviceStateSnapshotId? DeviceStateSnapshotId);
 
@@ -533,6 +791,7 @@ public sealed class RecordTelemetrySampleCommandValidator : AbstractValidator<Re
         RuleFor(x => x.SourceSequence).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SourceSystem).MaximumLength(100);
         RuleFor(x => x.SourceConnector).MaximumLength(150);
+        RuleFor(x => x.CollectionConnectorId).MaximumLength(150);
     }
 }
 
@@ -551,8 +810,9 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         var normalizedSourceSequence = IndustrialTelemetryText.Required(request.SourceSequence, nameof(request.SourceSequence));
         var normalizedSourceSystem = IndustrialTelemetryText.Optional(request.SourceSystem);
         var normalizedSourceConnector = IndustrialTelemetryText.Optional(request.SourceConnector);
+        var normalizedCollectionConnectorId = IndustrialTelemetryText.Optional(request.CollectionConnectorId);
         var productionCountMode = await ValidateSamplingPolicyAsync(request, normalizedTagKey, cancellationToken);
-        await RecordRawSampleAsync(request, normalizedTagKey, normalizedSourceSequence, normalizedSourceSystem, normalizedSourceConnector, cancellationToken);
+        await RecordRawSampleAsync(request, normalizedTagKey, normalizedSourceSequence, normalizedSourceSystem, normalizedSourceConnector, normalizedCollectionConnectorId, cancellationToken);
         var existingSummary = await dbContext.TelemetrySummaries.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
@@ -575,7 +835,8 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             request.AverageValue,
             normalizedSourceSequence,
             normalizedSourceSystem,
-            normalizedSourceConnector);
+            normalizedSourceConnector,
+            normalizedCollectionConnectorId);
         if (existingSummary is not null)
         {
             if (!existingSummary.HasSamePayload(incoming))
@@ -702,6 +963,7 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         string normalizedSourceSequence,
         string? normalizedSourceSystem,
         string? normalizedSourceConnector,
+        string? normalizedCollectionConnectorId,
         CancellationToken cancellationToken)
     {
         var incoming = TelemetryRawSample.Record(
@@ -719,7 +981,8 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             request.LastValue ?? request.AverageValue,
             normalizedSourceSequence,
             normalizedSourceSystem,
-            normalizedSourceConnector);
+            normalizedSourceConnector,
+            normalizedCollectionConnectorId);
         var existing = await dbContext.TelemetryRawSamples.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
@@ -1072,15 +1335,25 @@ public sealed class IndustrialTelemetryIdempotentIngestionBehavior<TRequest, TRe
             return await next(cancellationToken);
         }
 
-        try
+        var maximumAttempts = request is ReportConnectorTagManifestCommand ? 3 : 2;
+        for (var attempt = 1; ; attempt++)
         {
-            return await next(cancellationToken);
-        }
-        catch (DbUpdateException ex) when (IsIdempotentIngestionUniqueConflict(ex, dbContext))
-        {
-            // These ingestion commands own the scoped DbContext writes; clear failed Added entities before retrying.
-            dbContext.ChangeTracker.Clear();
-            return await next(cancellationToken);
+            try
+            {
+                return await next(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException) when (
+                request is ReportConnectorTagManifestCommand && attempt < maximumAttempts)
+            {
+                dbContext.ChangeTracker.Clear();
+            }
+            catch (DbUpdateException ex) when (
+                attempt < maximumAttempts && IsIdempotentIngestionUniqueConflict(request, ex, dbContext))
+            {
+                // These ingestion commands own their scoped DbContext writes. Clear the failed unit of work,
+                // then rerun the complete handler so its authoritative ordering/idempotency checks see the winner.
+                dbContext.ChangeTracker.Clear();
+            }
         }
     }
 
@@ -1089,13 +1362,23 @@ public sealed class IndustrialTelemetryIdempotentIngestionBehavior<TRequest, TRe
         // ShelveAlarmCommand is included so a concurrent duplicate that loses the alarm_shelve_idempotency
         // unique-index race is retried instead of surfacing an unhandled DbUpdateException (500): the retried
         // handler finds the winner's record and returns a replay (same payload) or a clear conflict.
-        return request is RecordTelemetrySampleCommand or RaiseAlarmCommand or CreateDeviceControlCommandCommand or ShelveAlarmCommand;
+        return request is RecordTelemetrySampleCommand
+            or RaiseAlarmCommand
+            or CreateDeviceControlCommandCommand
+            or ShelveAlarmCommand
+            or ReportConnectorTagManifestCommand;
     }
 
-    private static bool IsIdempotentIngestionUniqueConflict(DbUpdateException exception, ApplicationDbContext context)
+    private static bool IsIdempotentIngestionUniqueConflict(
+        TRequest request,
+        DbUpdateException exception,
+        ApplicationDbContext context)
     {
         // Keep detection entity-scoped so provider-specific index names do not leak into the application layer.
-        return exception.Entries.Any(entry => entry.Entity is TelemetryRawSample or TelemetrySummary or DeviceStateSnapshot or AlarmEvent or DeviceControlCommand or AlarmShelveIdempotency) &&
+        var belongsToCommand = request is ReportConnectorTagManifestCommand
+            ? exception.Entries.Count > 0 && exception.Entries.All(entry => entry.Entity is ConnectorTagManifest or ConnectorTagBinding)
+            : exception.Entries.Any(entry => entry.Entity is TelemetryRawSample or TelemetrySummary or DeviceStateSnapshot or AlarmEvent or DeviceControlCommand or AlarmShelveIdempotency);
+        return belongsToCommand &&
             EnumerateExceptions(exception).Any(inner =>
                 IsPostgreSqlUniqueConflict(inner) ||
                 IsSqliteUniqueConflict(context, inner) ||

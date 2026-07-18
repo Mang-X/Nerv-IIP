@@ -19,7 +19,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Nerv.IIP.ConnectorHost.Application\Nerv.IIP.ConnectorHost.Application.csproj" />
     <ProjectReference Include="..\..\src\Nerv.IIP.ConnectorHost.Connectors.OpcUa\Nerv.IIP.ConnectorHost.Connectors.OpcUa.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\TestUtilities\ControllableTimeProvider.cs" Link="TestUtilities\ControllableTimeProvider.cs" />
   </ItemGroup>
 
 </Project>

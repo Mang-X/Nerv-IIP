@@ -56,6 +56,13 @@ try
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
     builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddOptions<ConnectorTagManifestIngestionOptions>()
+        .BindConfiguration(ConnectorTagManifestIngestionOptions.SectionName)
+        .Validate(
+            options => options.MaxFutureObservationSkew > TimeSpan.Zero
+                && options.MaxFutureObservationSkew <= ConnectorTagManifestIngestionOptions.MaximumConfigurableFutureObservationSkew,
+            $"MaxFutureObservationSkew must be greater than zero and no more than {ConnectorTagManifestIngestionOptions.MaximumConfigurableFutureObservationSkew}.")
+        .ValidateOnStart();
     builder.Services.AddScoped<TelemetryHistorianService>();
     builder.Services.AddHostedService<AlarmEscalationScheduler>();
     builder.Services.AddHostedService<TelemetryHistorianScheduler>();

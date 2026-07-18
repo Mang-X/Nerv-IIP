@@ -3091,6 +3091,58 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Connector_tag_coverage_http_client_forwards_canonical_scope_and_preserves_nullable_sample_facts()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = true,
+            data = new
+            {
+                collectionConnectorId = "opc/main",
+                manifestStatus = "current",
+                manifestRevision = "manifest-revision-001",
+                manifestObservedAtUtc = "2026-07-17T08:00:00Z",
+                configuredCount = 1,
+                enabledCount = 1,
+                activeCount = 1,
+                everSampledCount = 0,
+                errorCount = 0,
+                items = new[]
+                {
+                    new
+                    {
+                        deviceAssetId = "device-001",
+                        tagKey = "temperature",
+                        enabled = true,
+                        activationStatus = "active",
+                        activationObservedAtUtc = "2026-07-17T08:01:00Z",
+                        activationErrorCode = (string?)null,
+                        activationErrorMessage = (string?)null,
+                        firstSampleAtUtc = (string?)null,
+                        lastSampleAtUtc = (string?)null,
+                    },
+                },
+            },
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://industrial-telemetry.local") };
+        var client = new HttpBusinessIndustrialTelemetryClient(httpClient);
+
+        var result = await client.GetConnectorTagCoverageAsync(
+            "internal-token-001",
+            new BusinessConsoleConnectorTagCoverageRequest("opc/main", "org/001", "env dev"),
+            CancellationToken.None);
+
+        var sent = Assert.Single(handler.Requests);
+        Assert.Equal("internal-token-001", sent.Headers.Authorization?.Parameter);
+        Assert.Equal("/api/business/v1/iiot/connectors/opc%2Fmain/tag-coverage", sent.RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org%2F001&environmentId=env%20dev", sent.RequestUri.Query.TrimStart('?'));
+        Assert.Equal("current", result.ManifestStatus);
+        var item = Assert.Single(result.Items);
+        Assert.Null(item.FirstSampleAtUtc);
+        Assert.Null(item.LastSampleAtUtc);
+    }
+
+    [Fact]
     public async Task Maintenance_http_client_does_not_duplicate_source_alarm_as_related_alarm()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
@@ -8806,6 +8858,31 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
     public EquipmentRuntimeAvailabilityResponse? RuntimeAvailabilityResponse { get; init; }
 
     public EquipmentRuntimeAvailabilityResponse? DeviceRuntimeAvailabilityResponse { get; init; }
+
+    public BusinessConsoleConnectorTagCoverageRequest? LastConnectorTagCoverageRequest { get; private set; }
+
+    public BusinessConsoleConnectorTagCoverageResponse? ConnectorTagCoverageResponse { get; init; }
+
+    public Task<BusinessConsoleConnectorTagCoverageResponse> GetConnectorTagCoverageAsync(
+        string internalBearerToken,
+        BusinessConsoleConnectorTagCoverageRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastConnectorTagCoverageRequest = request;
+        return Task.FromResult(ConnectorTagCoverageResponse
+            ?? new BusinessConsoleConnectorTagCoverageResponse(
+                request.ConnectorId,
+                "unavailable",
+                null,
+                null,
+                0,
+                0,
+                0,
+                0,
+                0,
+                []));
+    }
 
     public Task<BusinessConsoleTelemetryTagListResponse> ListTagsAsync(
         string internalBearerToken,

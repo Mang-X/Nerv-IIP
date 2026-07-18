@@ -11,7 +11,11 @@ public sealed record MqttConnectorOptions(
     string ClientId,
     string? CredentialReference,
     IReadOnlyList<MqttTopicMapping> TopicMappings,
-    int MaxReconnectAttempts = 1);
+    int MaxReconnectAttempts = 1,
+    string? CollectionConnectorId = null)
+{
+    public string EffectiveCollectionConnectorId => CollectionConnectorId ?? $"mqtt-{ConnectorId}";
+}
 
 public sealed record MqttConnectionOptions(
     string Broker,
@@ -26,7 +30,8 @@ public sealed record MqttTopicMapping(
     string TopicFilter,
     string ValueJsonPath,
     int BucketSeconds,
-    string? SamplingPolicy = null);
+    string? SamplingPolicy = null,
+    bool Enabled = true);
 
 public sealed record MqttInboundMessage(
     string Topic,
@@ -61,6 +66,7 @@ public interface IMqttSubscriptionClient
         MqttConnectionOptions options,
         IReadOnlyList<string> topicFilters,
         Func<MqttInboundMessage, CancellationToken, Task> onMessage,
+        Action onDisconnected,
         CancellationToken cancellationToken);
 }
 

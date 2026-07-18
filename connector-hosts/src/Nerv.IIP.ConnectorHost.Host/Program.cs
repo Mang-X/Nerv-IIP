@@ -25,12 +25,22 @@ builder.Services.AddHttpClient<IIndustrialTelemetrySamplesClient, HttpIndustrial
     client.BaseAddress = new Uri(builder.Configuration["Platform:IndustrialTelemetryBaseUrl"] ?? "http://localhost:5116");
     var token = services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+    client.Timeout = TimeSpan.FromSeconds(services.GetRequiredService<ConnectorHostWorkerOptions>().BackendDeadlineSeconds);
+});
+builder.Services.AddHttpClient<IConnectorTagManifestClient, HttpConnectorTagManifestClient>((services, client) =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Platform:IndustrialTelemetryBaseUrl"] ?? "http://localhost:5116");
+    var token = services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
+    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+    client.Timeout = TimeSpan.FromSeconds(services.GetRequiredService<ConnectorHostWorkerOptions>().BackendDeadlineSeconds);
 });
 if (builder.Configuration.GetValue("OpcUa:Enabled", false))
 {
     builder.Services.AddSingleton(_ => CreateOpcUaOptions(builder.Configuration));
     builder.Services.AddSingleton<IOpcUaCredentialResolver, EnvironmentOpcUaCredentialResolver>();
-    builder.Services.AddSingleton<IOpcUaClient, OpcUaNetStandardClient>();
+    builder.Services.AddSingleton<IOpcUaClient>(sp => new OpcUaNetStandardClient(
+        sp.GetRequiredService<IOpcUaCredentialResolver>(),
+        TimeSpan.FromSeconds(sp.GetRequiredService<ConnectorHostWorkerOptions>().ConnectionDetectionBudgetSeconds)));
     builder.Services.AddSingleton<OpcUaConnector>();
     builder.Services.AddSingleton<IConnector>(sp => sp.GetRequiredService<OpcUaConnector>());
     builder.Services.AddSingleton<IIndustrialTelemetryCollectionConnector>(sp => sp.GetRequiredService<OpcUaConnector>());
@@ -40,16 +50,20 @@ if (builder.Configuration.GetValue("OpcUa:Enabled", false))
 if (builder.Configuration.GetValue("Modbus:Enabled", false))
 {
     builder.Services.AddSingleton(_ => CreateModbusOptions(builder.Configuration));
-    builder.Services.AddSingleton<IModbusTcpClient, ModbusTcpClient>();
+    builder.Services.AddSingleton<IModbusTcpClient>(sp => new ModbusTcpClient(
+        TimeSpan.FromSeconds(sp.GetRequiredService<ConnectorHostWorkerOptions>().ConnectionDetectionBudgetSeconds)));
     builder.Services.AddSingleton<ModbusConnector>();
     builder.Services.AddSingleton<IConnector>(sp => sp.GetRequiredService<ModbusConnector>());
     builder.Services.AddSingleton<IIndustrialTelemetryCollectionConnector>(sp => sp.GetRequiredService<ModbusConnector>());
+    builder.Services.AddSingleton<IConnectorConnectionMonitor>(sp => sp.GetRequiredService<ModbusConnector>());
 }
 if (builder.Configuration.GetValue("Mqtt:Enabled", false))
 {
     builder.Services.AddSingleton(_ => CreateMqttOptions(builder.Configuration));
     builder.Services.AddSingleton<IMqttCredentialResolver, EnvironmentMqttCredentialResolver>();
-    builder.Services.AddSingleton<IMqttSubscriptionClient, MqttNetSubscriptionClient>();
+    builder.Services.AddSingleton<IMqttSubscriptionClient>(sp => new MqttNetSubscriptionClient(
+        sp.GetRequiredService<IMqttCredentialResolver>(),
+        TimeSpan.FromSeconds(sp.GetRequiredService<ConnectorHostWorkerOptions>().ConnectionDetectionBudgetSeconds)));
     builder.Services.AddSingleton<MqttConnector>();
     builder.Services.AddSingleton<IConnector>(sp => sp.GetRequiredService<MqttConnector>());
     builder.Services.AddSingleton<IIndustrialTelemetryCollectionConnector>(sp => sp.GetRequiredService<MqttConnector>());
@@ -57,18 +71,37 @@ if (builder.Configuration.GetValue("Mqtt:Enabled", false))
 builder.Services.AddSingleton<IReadOnlyList<IConnector>>(sp => sp.GetServices<IConnector>().ToList());
 builder.Services.AddSingleton<IReadOnlyList<IConnectorOperationExecutor>>(sp => sp.GetServices<IConnectorOperationExecutor>().ToList());
 builder.Services.AddSingleton<IReadOnlyList<IIndustrialTelemetryCollectionConnector>>(sp => sp.GetServices<IIndustrialTelemetryCollectionConnector>().ToList());
-builder.Services.AddHttpClient<IConnectorProtocolClient, HttpConnectorProtocolClient>(client =>
+builder.Services.AddSingleton<IReadOnlyList<IConnectorConnectionMonitor>>(sp => sp.GetServices<IConnectorConnectionMonitor>().ToList());
+builder.Services.AddHttpClient<IConnectorProtocolClient, HttpConnectorProtocolClient>((services, client) =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Platform:AppHubBaseUrl"] ?? "http://localhost:5101");
+    client.Timeout = TimeSpan.FromSeconds(services.GetRequiredService<ConnectorHostWorkerOptions>().BackendDeadlineSeconds);
 });
 builder.Services.AddHttpClient<IOpsClient, HttpOpsClient>((services, client) =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Platform:OpsBaseUrl"] ?? "http://localhost:5103");
     var token = services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+    client.Timeout = TimeSpan.FromSeconds(services.GetRequiredService<ConnectorHostWorkerOptions>().BackendDeadlineSeconds);
 });
-builder.Services.AddSingleton<ConnectorReportingLoop>();
+builder.Services.AddSingleton<ConnectorTargetSnapshotStore>();
+builder.Services.AddSingleton(sp => new ConnectorReportingLoop(
+    sp.GetRequiredService<ConnectorTargetSnapshotStore>(),
+    sp.GetRequiredService<IConnectorProtocolClient>(),
+    sp.GetRequiredService<ConnectorHostRuntimeContext>(),
+    sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddSingleton<ConnectorManifestReporter>();
+builder.Services.AddSingleton(sp => new ConnectorManifestReportingLoop(
+    sp.GetRequiredService<ConnectorTargetSnapshotStore>(),
+    sp.GetRequiredService<ConnectorManifestReporter>()));
 builder.Services.AddSingleton<ConnectorOperationLoop>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton(_ => CreateWorkerOptions(builder.Configuration));
+builder.Services.AddSingleton<ConnectorReportSignal>();
+builder.Services.AddSingleton<IConnectorReportSignal>(sp => sp.GetRequiredService<ConnectorReportSignal>());
+builder.Services.AddSingleton<ConnectorManifestSignal>();
+builder.Services.AddSingleton<IConnectorManifestSignal>(sp => sp.GetRequiredService<ConnectorManifestSignal>());
+builder.Services.AddSingleton<IConnectorManifestRebirthRequest>(sp => sp.GetRequiredService<ConnectorManifestSignal>());
 builder.Services.AddSingleton<IndustrialTelemetryCollectorRunner>();
 builder.Services.AddHostedService<Worker>();
 
@@ -84,6 +117,13 @@ static ConnectorHostRuntimeContext CreateRuntimeContext(IConfiguration configura
         Required(configuration, "ConnectorHost:EnvironmentId"),
         Required(configuration, "ConnectorHost:ConnectorHostId"),
         DateTimeOffset.UtcNow);
+}
+
+static ConnectorHostWorkerOptions CreateWorkerOptions(IConfiguration configuration)
+{
+    var options = configuration.GetSection(ConnectorHostWorkerOptions.SectionName).Get<ConnectorHostWorkerOptions>() ?? new ConnectorHostWorkerOptions();
+    options.Validate();
+    return options;
 }
 
 static ConnectorHostCredential CreateConnectorCredential(IConfiguration configuration)
@@ -112,7 +152,8 @@ static OpcUaConnectorOptions CreateOpcUaOptions(IConfiguration configuration)
             Required(section, "NodeId"),
             section.GetValue("SamplingIntervalMilliseconds", 1000),
             ResolveTelemetryBucketSeconds(section),
-            section["SamplingPolicy"]))
+            section["SamplingPolicy"],
+            section.GetValue("Enabled", true)))
         .ToList();
 
     return new OpcUaConnectorOptions(
@@ -127,7 +168,8 @@ static OpcUaConnectorOptions CreateOpcUaOptions(IConfiguration configuration)
         configuration["OpcUa:BrowseRootNodeId"] ?? "ns=0;i=85",
         tags,
         configuration.GetValue("OpcUa:MaxReconnectAttempts", 1),
-        configuration.GetValue("OpcUa:AutoAcceptUntrustedServerCertificates", false));
+        configuration.GetValue("OpcUa:AutoAcceptUntrustedServerCertificates", false),
+        configuration["OpcUa:CollectionConnectorId"]);
 }
 
 static ModbusConnectorOptions CreateModbusOptions(IConfiguration configuration)
@@ -145,7 +187,8 @@ static ModbusConnectorOptions CreateModbusOptions(IConfiguration configuration)
             ResolveTelemetryBucketSeconds(section),
             Enum.Parse<ModbusRegisterDataType>(section["DataType"] ?? "UInt16", ignoreCase: true),
             Enum.Parse<ModbusWordOrder>(section["WordOrder"] ?? "BigEndian", ignoreCase: true),
-            section["SamplingPolicy"]))
+            section["SamplingPolicy"],
+            section.GetValue("Enabled", true)))
         .ToList();
 
     return new ModbusConnectorOptions(
@@ -156,7 +199,8 @@ static ModbusConnectorOptions CreateModbusOptions(IConfiguration configuration)
         Required(configuration, "Modbus:Endpoint"),
         configuration["Modbus:CredentialReference"],
         registers,
-        configuration.GetValue("Modbus:MaxReconnectAttempts", 1));
+        configuration.GetValue("Modbus:MaxReconnectAttempts", 1),
+        configuration["Modbus:CollectionConnectorId"]);
 }
 
 static MqttConnectorOptions CreateMqttOptions(IConfiguration configuration)
@@ -168,7 +212,8 @@ static MqttConnectorOptions CreateMqttOptions(IConfiguration configuration)
             Required(section, "TopicFilter"),
             Required(section, "ValueJsonPath"),
             ResolveTelemetryBucketSeconds(section),
-            section["SamplingPolicy"]))
+            section["SamplingPolicy"],
+            section.GetValue("Enabled", true)))
         .ToList();
 
     return new MqttConnectorOptions(
@@ -180,7 +225,8 @@ static MqttConnectorOptions CreateMqttOptions(IConfiguration configuration)
         Required(configuration, "Mqtt:ClientId"),
         configuration["Mqtt:CredentialReference"],
         mappings,
-        configuration.GetValue("Mqtt:MaxReconnectAttempts", 1));
+        configuration.GetValue("Mqtt:MaxReconnectAttempts", 1),
+        configuration["Mqtt:CollectionConnectorId"]);
 }
 
 static string Required(IConfiguration configuration, string key)

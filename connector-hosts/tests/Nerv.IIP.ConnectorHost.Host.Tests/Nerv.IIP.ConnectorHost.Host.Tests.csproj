@@ -23,4 +23,8 @@
     <ProjectReference Include="..\..\src\Nerv.IIP.ConnectorHost.Host\Nerv.IIP.ConnectorHost.Host.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\TestUtilities\ControllableTimeProvider.cs" Link="TestUtilities\ControllableTimeProvider.cs" />
+  </ItemGroup>
+
 </Project>

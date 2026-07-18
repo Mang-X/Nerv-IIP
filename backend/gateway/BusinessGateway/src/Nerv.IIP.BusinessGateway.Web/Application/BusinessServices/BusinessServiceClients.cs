@@ -949,6 +949,11 @@ public interface IBusinessBarcodeLabelClient
 
 public interface IBusinessIndustrialTelemetryClient
 {
+    Task<BusinessConsoleConnectorTagCoverageResponse> GetConnectorTagCoverageAsync(
+        string internalBearerToken,
+        BusinessConsoleConnectorTagCoverageRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleTelemetryTagListResponse> ListTagsAsync(
         string internalBearerToken,
         BusinessConsoleTelemetryTagListRequest request,
@@ -4415,6 +4420,19 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
 public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessIndustrialTelemetryClient
 {
+    public Task<BusinessConsoleConnectorTagCoverageResponse> GetConnectorTagCoverageAsync(
+        string internalBearerToken,
+        BusinessConsoleConnectorTagCoverageRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleConnectorTagCoverageResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/iiot/connectors/{Uri.EscapeDataString(request.ConnectorId)}/tag-coverage?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            null,
+            cancellationToken);
+
     public async Task<BusinessConsoleTelemetryTagListResponse> ListTagsAsync(
         string internalBearerToken,
         BusinessConsoleTelemetryTagListRequest request,

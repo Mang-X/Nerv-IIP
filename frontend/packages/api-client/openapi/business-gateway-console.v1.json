@@ -1919,6 +1919,74 @@
         ]
       }
     },
+    "/api/business-console/v1/telemetry/connectors/{connectorId}/tag-coverage": {
+      "get": {
+        "tags": [
+          "Business Console Telemetry",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleTelemetryConnectorTagCoverage",
+        "parameters": [
+          {
+            "name": "connectorId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConnectorTagCoverageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/telemetry/tags": {
       "get": {
         "tags": [
@@ -25186,6 +25254,58 @@
           "sourceSystem": {
             "type": "string",
             "nullable": true
+          },
+          "connection": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorConnectionState"
+              }
+            ]
+          },
+          "staleReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "offlineReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "hostLivenessDeadlineUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorConnectionState": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "observedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "connectedSinceUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "disconnectedSinceUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reasonCategory": {
+            "type": "string",
+            "nullable": true
+          },
+          "diagnosticCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -25285,10 +25405,139 @@
           "sourceSystem": {
             "type": "string",
             "nullable": true
+          },
+          "connection": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorConnectionState"
+              }
+            ]
+          },
+          "offlineReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "hostLivenessDeadlineUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthListRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConnectorTagCoverageResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorTagCoverageResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorTagCoverageResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "collectionConnectorId": {
+            "type": "string"
+          },
+          "manifestStatus": {
+            "type": "string"
+          },
+          "manifestRevision": {
+            "type": "string",
+            "nullable": true
+          },
+          "manifestObservedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "configuredCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "enabledCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "activeCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "everSampledCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "errorCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorTagCoverageItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorTagCoverageItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "deviceAssetId": {
+            "type": "string"
+          },
+          "tagKey": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "activationStatus": {
+            "type": "string"
+          },
+          "activationObservedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "activationErrorCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "activationErrorMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "firstSampleAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastSampleAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorTagCoverageRequest": {
         "type": "object",
         "additionalProperties": false
       },

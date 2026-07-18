@@ -13,6 +13,143 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
 
 public sealed record PagedListResponse<T>(IReadOnlyCollection<T> Items, int Total);
 
+public sealed record GetConnectorTagCoverageQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string CollectionConnectorId) : IQuery<ConnectorTagCoverageResponse>;
+
+public sealed record ConnectorTagCoverageItem(
+    string DeviceAssetId,
+    string TagKey,
+    bool Enabled,
+    string ActivationStatus,
+    DateTimeOffset ActivationObservedAtUtc,
+    string? ActivationErrorCode,
+    string? ActivationErrorMessage,
+    DateTimeOffset? FirstSampleAtUtc,
+    DateTimeOffset? LastSampleAtUtc);
+
+public sealed record ConnectorTagCoverageResponse(
+    string CollectionConnectorId,
+    string ManifestStatus,
+    string? ManifestRevision,
+    DateTimeOffset? ManifestObservedAtUtc,
+    int ConfiguredCount,
+    int EnabledCount,
+    int ActiveCount,
+    int EverSampledCount,
+    int ErrorCount,
+    IReadOnlyCollection<ConnectorTagCoverageItem> Items);
+
+public sealed class GetConnectorTagCoverageQueryValidator : AbstractValidator<GetConnectorTagCoverageQuery>
+{
+    public GetConnectorTagCoverageQueryValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CollectionConnectorId).NotEmpty().MaximumLength(150);
+    }
+}
+
+public static class ConnectorTagCoverageQueryProjection
+{
+    public static IQueryable<ConnectorTagCoverageItem> Build(
+        ApplicationDbContext dbContext,
+        GetConnectorTagCoverageQuery request)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(request);
+        return
+            from binding in dbContext.ConnectorTagBindings.AsNoTracking()
+            where binding.OrganizationId == request.OrganizationId
+                && binding.EnvironmentId == request.EnvironmentId
+                && binding.CollectionConnectorId == request.CollectionConnectorId
+                && binding.IsCurrent
+            join summary in dbContext.TelemetrySummaries.AsNoTracking()
+                on new
+                {
+                    binding.OrganizationId,
+                    binding.EnvironmentId,
+                    binding.CollectionConnectorId,
+                    binding.DeviceAssetId,
+                    binding.TagKey,
+                }
+                equals new
+                {
+                    summary.OrganizationId,
+                    summary.EnvironmentId,
+                    CollectionConnectorId = summary.CollectionConnectorId!,
+                    summary.DeviceAssetId,
+                    summary.TagKey,
+                }
+                into summaries
+            orderby binding.DeviceAssetId, binding.TagKey
+            select new ConnectorTagCoverageItem(
+                binding.DeviceAssetId,
+                binding.TagKey,
+                binding.Enabled,
+                binding.ActivationStatus,
+                binding.ActivationObservedAtUtc,
+                binding.ActivationErrorCode,
+                binding.ActivationErrorMessage,
+                summaries.Min(summary => (DateTimeOffset?)summary.BucketStartUtc),
+                summaries.Max(summary => (DateTimeOffset?)summary.BucketEndUtc));
+    }
+}
+
+public sealed class GetConnectorTagCoverageQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetConnectorTagCoverageQuery, ConnectorTagCoverageResponse>
+{
+    public async Task<ConnectorTagCoverageResponse> Handle(
+        GetConnectorTagCoverageQuery request,
+        CancellationToken cancellationToken)
+    {
+        var manifest = await dbContext.ConnectorTagManifests
+            .AsNoTracking()
+            .Where(existing =>
+                existing.OrganizationId == request.OrganizationId
+                && existing.EnvironmentId == request.EnvironmentId
+                && existing.CollectionConnectorId == request.CollectionConnectorId)
+            .Select(existing => new ManifestProjection(
+                existing.ManifestRevision,
+                existing.ManifestObservedAtUtc))
+            .SingleOrDefaultAsync(cancellationToken);
+        if (manifest is null)
+        {
+            return new ConnectorTagCoverageResponse(
+                request.CollectionConnectorId,
+                "unavailable",
+                null,
+                null,
+                0,
+                0,
+                0,
+                0,
+                0,
+                []);
+        }
+
+        var items = await ConnectorTagCoverageQueryProjection.Build(dbContext, request)
+            .ToArrayAsync(cancellationToken);
+
+        return new ConnectorTagCoverageResponse(
+            request.CollectionConnectorId,
+            "current",
+            manifest.ManifestRevision,
+            manifest.ManifestObservedAtUtc,
+            items.Length,
+            items.Count(item => item.Enabled),
+            items.Count(item => item.ActivationStatus == "active"),
+            items.Count(item => item.FirstSampleAtUtc.HasValue),
+            items.Count(item => item.ActivationStatus == "error"),
+            items);
+    }
+
+    private sealed record ManifestProjection(
+        string ManifestRevision,
+        DateTimeOffset ManifestObservedAtUtc);
+}
+
 public sealed record ListTelemetryTagsQuery(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, int Skip = 0, int Take = 100) : IQuery<PagedListResponse<TelemetryTagListItem>>;
 
 public sealed record TelemetryTagListItem(

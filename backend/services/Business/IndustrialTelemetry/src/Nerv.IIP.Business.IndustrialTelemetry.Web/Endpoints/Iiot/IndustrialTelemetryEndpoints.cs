@@ -52,6 +52,22 @@ public sealed record CreateTelemetryTagRequest(
 public sealed record CreateTelemetryTagResponse(TelemetryTagId TelemetryTagId);
 public sealed record ListTelemetryTagsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, int Skip = 0, int Take = 100);
 public sealed record GetTelemetryTagCurrentValueRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, string TagKey);
+public sealed record ReportConnectorTagManifestRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string CollectionConnectorId,
+    string SourceSystem,
+    string ManifestRevision,
+    DateTimeOffset ManifestObservedAtUtc,
+    IReadOnlyCollection<ReportConnectorTagManifestEntry> Entries);
+public sealed record ReportConnectorTagManifestResponse(
+    string Disposition,
+    string AcceptedManifestRevision,
+    DateTimeOffset AcceptedManifestObservedAtUtc);
+public sealed record GetConnectorTagCoverageRequest(
+    string CollectionConnectorId,
+    string OrganizationId,
+    string EnvironmentId);
 public sealed record CreateDeviceControlCommandRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -101,7 +117,8 @@ public sealed record RecordTelemetrySampleRequest(
     decimal? FirstValue,
     decimal? LastValue,
     string? DeviceState,
-    DateTimeOffset? StateOccurredAtUtc);
+    DateTimeOffset? StateOccurredAtUtc,
+    string? CollectionConnectorId = null);
 public sealed record RecordTelemetrySampleResponse(TelemetrySummaryId? TelemetrySummaryId, DeviceStateSnapshotId? DeviceStateSnapshotId);
 public sealed record PostAlarmEventRequest(
     string OrganizationId,
@@ -176,6 +193,43 @@ public sealed class CreateTelemetryTagEndpoint(ISender sender) : IndustrialTelem
     {
         var id = await sender.Send(new CreateTelemetryTagCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.TagKey, req.ValueType, req.UnitCode, req.SamplingPolicy, req.IsWritable, req.ControlMinValue, req.ControlMaxValue, req.ControlAllowedValues), ct);
         await Send.OkAsync(new CreateTelemetryTagResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ReportConnectorTagManifestEndpoint(ISender sender)
+    : IndustrialTelemetryEndpoint<ReportConnectorTagManifestRequest, ResponseData<ReportConnectorTagManifestResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<ReportConnectorTagManifestEndpoint>());
+
+    public override async Task HandleAsync(ReportConnectorTagManifestRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new ReportConnectorTagManifestCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.CollectionConnectorId,
+            req.SourceSystem,
+            req.ManifestRevision,
+            req.ManifestObservedAtUtc,
+            req.Entries), ct);
+        await Send.OkAsync(new ReportConnectorTagManifestResponse(
+            result.Disposition.ToString().ToLowerInvariant(),
+            result.AcceptedManifestRevision,
+            result.AcceptedManifestObservedAtUtc).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetConnectorTagCoverageEndpoint(ISender sender)
+    : IndustrialTelemetryEndpoint<GetConnectorTagCoverageRequest, ResponseData<ConnectorTagCoverageResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<GetConnectorTagCoverageEndpoint>());
+
+    public override async Task HandleAsync(GetConnectorTagCoverageRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new GetConnectorTagCoverageQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.CollectionConnectorId), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -322,7 +376,7 @@ public sealed class RecordTelemetrySampleEndpoint(ISender sender) : IndustrialTe
 
     public override async Task HandleAsync(RecordTelemetrySampleRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new RecordTelemetrySampleCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.TagKey, req.BucketStartUtc, req.BucketEndUtc, req.SampleCount, req.MinValue, req.MaxValue, req.AverageValue, req.SourceSequence, req.SourceSystem, req.SourceConnector, req.FirstValue, req.LastValue, req.DeviceState, req.StateOccurredAtUtc), ct);
+        var result = await sender.Send(new RecordTelemetrySampleCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.TagKey, req.BucketStartUtc, req.BucketEndUtc, req.SampleCount, req.MinValue, req.MaxValue, req.AverageValue, req.SourceSequence, req.SourceSystem, req.SourceConnector, req.FirstValue, req.LastValue, req.DeviceState, req.StateOccurredAtUtc, req.CollectionConnectorId), ct);
         await Send.OkAsync(new RecordTelemetrySampleResponse(result.TelemetrySummaryId, result.DeviceStateSnapshotId).AsResponseData(), cancellation: ct);
     }
 }
@@ -483,6 +537,34 @@ public sealed class ListTelemetryTagsRequestValidator : Validator<ListTelemetryT
     }
 }
 
+public sealed class ReportConnectorTagManifestRequestValidator : Validator<ReportConnectorTagManifestRequest>
+{
+    public ReportConnectorTagManifestRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CollectionConnectorId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.SourceSystem).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ManifestRevision)
+            .Length(64)
+            .Matches("^[0-9a-f]{64}$");
+        RuleFor(x => x.ManifestObservedAtUtc).NotEmpty();
+        RuleFor(x => x.Entries).NotNull().Must(entries => entries.Count <= ConnectorTagManifestLimits.MaxEntries)
+            .WithMessage($"Connector manifest cannot contain more than {ConnectorTagManifestLimits.MaxEntries} entries.");
+        RuleForEach(x => x.Entries).SetValidator(new ReportConnectorTagManifestEntryValidator());
+    }
+}
+
+public sealed class GetConnectorTagCoverageRequestValidator : Validator<GetConnectorTagCoverageRequest>
+{
+    public GetConnectorTagCoverageRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CollectionConnectorId).NotEmpty().MaximumLength(150);
+    }
+}
+
 public sealed class GetTelemetryTagCurrentValueRequestValidator : Validator<GetTelemetryTagCurrentValueRequest>
 {
     public GetTelemetryTagCurrentValueRequestValidator()
@@ -606,6 +688,8 @@ public static class IndustrialTelemetryEndpointContracts
 {
     public static readonly IReadOnlyCollection<IndustrialTelemetryEndpointContract> All =
     [
+        new(typeof(ReportConnectorTagManifestEndpoint), "POST", "/api/business/v1/iiot/connector-tag-manifests", IndustrialTelemetryPermissionCodes.TelemetryWrite, InternalServiceAuthorizationPolicy.Name, "reportBusinessIiotConnectorTagManifest"),
+        new(typeof(GetConnectorTagCoverageEndpoint), "GET", "/api/business/v1/iiot/connectors/{collectionConnectorId}/tag-coverage", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotConnectorTagCoverage"),
         new(typeof(CreateTelemetryTagEndpoint), "POST", "/api/business/v1/iiot/tags", IndustrialTelemetryPermissionCodes.TagsManage, InternalServiceAuthorizationPolicy.Name, "createBusinessIiotTelemetryTag"),
         new(typeof(ListTelemetryTagsEndpoint), "GET", "/api/business/v1/iiot/tags", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotTelemetryTags"),
         new(typeof(GetTelemetryTagCurrentValueEndpoint), "GET", "/api/business/v1/iiot/tags/current-value", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotTelemetryTagCurrentValue"),

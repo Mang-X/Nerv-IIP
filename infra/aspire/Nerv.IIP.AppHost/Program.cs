@@ -43,6 +43,7 @@ var victoriaLogsRetentionPeriod = builder.Configuration["Observability:VictoriaL
 var connectorHostId = builder.Configuration["ConnectorHost:ConnectorHostId"] ?? "connector-host-001";
 var connectorHostOrganizationId = builder.Configuration["ConnectorHost:OrganizationId"] ?? "org-001";
 var connectorHostEnvironmentId = builder.Configuration["ConnectorHost:EnvironmentId"] ?? "env-dev";
+var connectorHealthAcceptanceEnabled = builder.Configuration.GetValue("ConnectorHealthAcceptance:Enabled", false);
 var gatewayCorsAllowedOrigins = builder.Configuration["Security:Cors:AllowedOrigins"];
 if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
 {
@@ -117,7 +118,9 @@ var apphub = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddPro
     .WithEnvironment("ConnectorHostCredential__Secret", iamSeedConnectorHostSecret)
     .WithEnvironment("ConnectorIngestionToken__SigningKey", connectorIngestionTokenSigningKey)
     .WithEnvironment("AppHub__HeartbeatTimeoutScan__Enabled", "true")
-    .WithEnvironment("AppHub__HeartbeatTimeoutScan__HeartbeatTimeout", "00:05:00")
+    .WithEnvironment("CollectionHealth__HostHeartbeatCadence", "00:00:02")
+    .WithEnvironment("CollectionHealth__HostLivenessTimeout", "00:00:06")
+    .WithEnvironment("CollectionHealth__BackendDeadline", "00:00:08")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(appHubDatabase, "AppHubDb")
     .WithReference(redis)
@@ -621,6 +624,45 @@ var connectorHost = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder
     .WaitFor(apphub)
     .WaitFor(ops)
     .WaitFor(iam);
+
+if (connectorHealthAcceptanceEnabled)
+{
+    var modbusEndpoint = builder.Configuration["ConnectorHealthAcceptance:ModbusEndpoint"];
+    if (string.IsNullOrWhiteSpace(modbusEndpoint))
+    {
+        throw new InvalidOperationException("ConnectorHealthAcceptance:ModbusEndpoint is required when acceptance wiring is enabled.");
+    }
+
+    connectorHost = connectorHost
+        .WithEnvironment("Platform__IndustrialTelemetryBaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
+        .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
+        .WithEnvironment("ConnectorHost__CollectionCycleSeconds", "1")
+        .WithEnvironment("ConnectorHost__HeartbeatSeconds", "2")
+        .WithEnvironment("Modbus__Enabled", "true")
+        .WithEnvironment("Modbus__ConnectorId", "acceptance-modbus")
+        .WithEnvironment("Modbus__CollectionConnectorId", "modbus-acceptance")
+        .WithEnvironment("Modbus__Endpoint", modbusEndpoint)
+        .WithEnvironment("Modbus__MaxReconnectAttempts", "0")
+        .WithEnvironment("Modbus__Registers__0__DeviceAssetId", "DEV-ACCEPTANCE-01")
+        .WithEnvironment("Modbus__Registers__0__TagKey", "acceptance.sampled")
+        .WithEnvironment("Modbus__Registers__0__UnitId", "1")
+        .WithEnvironment("Modbus__Registers__0__Table", "HoldingRegisters")
+        .WithEnvironment("Modbus__Registers__0__Address", "40001")
+        .WithEnvironment("Modbus__Registers__0__RegisterCount", "1")
+        .WithEnvironment("Modbus__Registers__0__DataType", "UInt16")
+        .WithEnvironment("Modbus__Registers__0__WordOrder", "BigEndian")
+        .WithEnvironment("Modbus__Registers__0__BucketSeconds", "1")
+        .WithEnvironment("Modbus__Registers__1__DeviceAssetId", "DEV-ACCEPTANCE-01")
+        .WithEnvironment("Modbus__Registers__1__TagKey", "acceptance.never-sampled")
+        .WithEnvironment("Modbus__Registers__1__UnitId", "1")
+        .WithEnvironment("Modbus__Registers__1__Table", "HoldingRegisters")
+        .WithEnvironment("Modbus__Registers__1__Address", "40002")
+        .WithEnvironment("Modbus__Registers__1__RegisterCount", "2")
+        .WithEnvironment("Modbus__Registers__1__DataType", "Float32")
+        .WithEnvironment("Modbus__Registers__1__BucketSeconds", "1")
+        .WithReference(businessIndustrialTelemetry)
+        .WaitFor(businessIndustrialTelemetry);
+}
 
 // PublishAsStaticWebsite is an experimental Aspire API (ASPIREJAVASCRIPT001).
 // Business Console omits it until its two-backend production route model is finalized.

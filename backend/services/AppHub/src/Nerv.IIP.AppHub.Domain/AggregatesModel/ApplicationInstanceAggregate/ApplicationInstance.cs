@@ -318,9 +318,29 @@ public class ConnectorCollectionHealthProjection : Entity<ConnectorCollectionHea
     public long? DroppedCount { get; private set; }
     public long? ErrorCount { get; private set; }
     public DateTimeOffset? LastSampleAtUtc { get; private set; }
+    public string? ConnectionStatus { get; private set; }
+    public DateTimeOffset? ConnectionObservedAtUtc { get; private set; }
+    public long? ConnectionObservedAtUtcTicks { get; private set; }
+    public DateTimeOffset? ConnectedSinceUtc { get; private set; }
+    public DateTimeOffset? DisconnectedSinceUtc { get; private set; }
+    public string? ConnectionReasonCategory { get; private set; }
+    public string? ConnectionDiagnosticCode { get; private set; }
     public string RetiredCounterEpochs { get; private set; } = string.Empty;
+    public long ConcurrencyVersion { get; private set; }
 
     public void Record(ConnectorCollectionHealth report)
+    {
+        ValidateConnection(report.Connection);
+        var previous = CaptureMutationState();
+        RecordCounters(report);
+        RecordConnection(report.Connection);
+        if (previous != CaptureMutationState())
+        {
+            ConcurrencyVersion++;
+        }
+    }
+
+    private void RecordCounters(ConnectorCollectionHealth report)
     {
         var isNewEpoch = CounterEpoch != Guid.Empty && report.CounterEpoch != CounterEpoch;
         if (isNewEpoch)
@@ -343,6 +363,78 @@ public class ConnectorCollectionHealthProjection : Entity<ConnectorCollectionHea
         ErrorCount = isNewEpoch ? report.ErrorCount : report.ErrorCount ?? ErrorCount;
         LastSampleAtUtc = isNewEpoch ? report.LastSampleAtUtc : report.LastSampleAtUtc ?? LastSampleAtUtc;
     }
+
+    private void RecordConnection(ConnectorConnectionState? connection)
+    {
+        var observedTicks = connection?.ObservedAtUtc.UtcTicks;
+        if (connection is null || ConnectionObservedAtUtcTicks >= observedTicks)
+        {
+            return;
+        }
+
+        ConnectionStatus = connection.Status;
+        ConnectionObservedAtUtc = connection.ObservedAtUtc;
+        ConnectionObservedAtUtcTicks = observedTicks;
+        ConnectedSinceUtc = connection.ConnectedSinceUtc;
+        DisconnectedSinceUtc = connection.DisconnectedSinceUtc;
+        ConnectionReasonCategory = connection.ReasonCategory;
+        ConnectionDiagnosticCode = connection.DiagnosticCode;
+    }
+
+    private static void ValidateConnection(ConnectorConnectionState? connection)
+    {
+        if (connection is null)
+        {
+            return;
+        }
+
+        var valid = connection.Status switch
+        {
+            "alive" => connection.ConnectedSinceUtc is not null && connection.DisconnectedSinceUtc is null,
+            "lost" => connection.ConnectedSinceUtc is null && connection.DisconnectedSinceUtc is not null,
+            "unknown" => connection.ConnectedSinceUtc is null && connection.DisconnectedSinceUtc is null,
+            _ => false,
+        };
+
+        if (!valid)
+        {
+            throw new ArgumentException(
+                "Connector connection must be unknown with no transition timestamps, alive with only ConnectedSinceUtc, or lost with only DisconnectedSinceUtc.",
+                nameof(connection));
+        }
+    }
+
+    private MutationState CaptureMutationState() => new(
+        SourceSystem,
+        CounterEpoch,
+        ReportedAtUtc,
+        ReceivedCount,
+        DroppedCount,
+        ErrorCount,
+        LastSampleAtUtc,
+        ConnectionStatus,
+        ConnectionObservedAtUtcTicks,
+        ConnectedSinceUtc,
+        DisconnectedSinceUtc,
+        ConnectionReasonCategory,
+        ConnectionDiagnosticCode,
+        RetiredCounterEpochs);
+
+    private sealed record MutationState(
+        string SourceSystem,
+        Guid CounterEpoch,
+        DateTimeOffset ReportedAtUtc,
+        long? ReceivedCount,
+        long? DroppedCount,
+        long? ErrorCount,
+        DateTimeOffset? LastSampleAtUtc,
+        string? ConnectionStatus,
+        long? ConnectionObservedAtUtcTicks,
+        DateTimeOffset? ConnectedSinceUtc,
+        DateTimeOffset? DisconnectedSinceUtc,
+        string? ConnectionReasonCategory,
+        string? ConnectionDiagnosticCode,
+        string RetiredCounterEpochs);
 
     private static bool IsDecrease(long? previous, long? current) => previous.HasValue && current.HasValue && current < previous;
 }

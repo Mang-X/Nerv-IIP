@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Application\Nerv.IIP.ConnectorHost.Application.csproj" />
     <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Connectors.Abstractions\Nerv.IIP.ConnectorHost.Connectors.Abstractions.csproj" />
     <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Connectors.OpcUa\Nerv.IIP.ConnectorHost.Connectors.OpcUa.csproj" />
   </ItemGroup>

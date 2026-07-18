@@ -5,16 +5,22 @@
 
 ## 第一周路径
 
-| #   | 路径（页面操作串）                                                                                                            | 业务结果                   | 状态                                                                                                             |
-| --- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| 1   | 在 `/master-data/devices` 确认台账，再到 `/equipment/telemetry/tags` 和 `/equipment/telemetry/alarm-rules` 配置采集与报警规则 | 设备具备可监控的数据基础   | ✅ 可用                                                                                                          |
-| 2   | 在 `/equipment/telemetry/history` 看运行历史，在 `/equipment/telemetry/oee` 看 OEE                                            | 设备运行事实与效率可解释   | ✅ 已可用：OEE 使用设备 productive runtime 与 MES 报工投影计算性能率、质量率和乘积；缺少状态、报工或理论速率时会明确显示数据不完整。           |
-| 3   | 在 `/equipment/alarms` 确认、搁置或跟踪升级报警                                                                               | 报警生命周期受控           | 🟡 部分可用：自定义搁置时长、批量确认与升级链展示未交付（[#794](https://github.com/Mang-X/Nerv-IIP/issues/794)） |
-| 4   | 在 `/maintenance/work-orders` 接报警开维修工单并确认恢复                                                                      | 故障到恢复形成闭环记录     | 🟡 部分可用：维修工时、人员与费用记录未交付（[#793](https://github.com/Mang-X/Nerv-IIP/issues/793)）             |
-| 5   | 在 `/maintenance/spare-parts` 申领备件并跟踪出库                                                                              | 维修备件从库存出库有据可查 | ✅ 可用                                                                                                          |
-| 6   | 在 `/maintenance/plans` 维护保养计划，在 `/maintenance/inspections` 执行点检                                                  | 预防性维护按计划触发并留档 | 🟡 部分可用：点检测量值动态行未交付（[#793](https://github.com/Mang-X/Nerv-IIP/issues/793)）                     |
-| 7   | 在 `/maintenance/reliability` 与 `/maintenance/availability` 查看 MTBF/MTTR 与可用率                                          | 可靠性指标可用于改进决策   | ✅ 可用                                                                                                          |
-| 8   | 从平台向设备下发控制命令并留审计                                                                                              | 远程控制受审批与审计约束   | ⛔ 缺口：设备控制下发 UI 未交付（[#792](https://github.com/Mang-X/Nerv-IIP/issues/792)）                         |
+| #   | 路径（页面操作串）                                                                                                            | 业务结果                   | 状态                                                                                                                                 |
+| --- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | 在 `/master-data/devices` 确认台账，再到 `/equipment/telemetry/tags` 和 `/equipment/telemetry/alarm-rules` 配置采集与报警规则 | 设备具备可监控的数据基础   | ✅ 可用                                                                                                                              |
+| 2   | 在 `/equipment/telemetry/history` 看运行历史，在 `/equipment/telemetry/oee` 看 OEE                                            | 设备运行事实与效率可解释   | ✅ 已可用：OEE 使用设备 productive runtime 与 MES 报工投影计算性能率、质量率和乘积；缺少状态、报工或理论速率时会明确显示数据不完整。 |
+| 3   | 在 `/equipment/alarms` 确认、搁置或跟踪升级报警                                                                               | 报警生命周期受控           | 🟡 部分可用：自定义搁置时长、批量确认与升级链展示未交付（[#794](https://github.com/Mang-X/Nerv-IIP/issues/794)）                     |
+| 4   | 在 `/maintenance/work-orders` 接报警开维修工单并确认恢复                                                                      | 故障到恢复形成闭环记录     | 🟡 部分可用：维修工时、人员与费用记录未交付（[#793](https://github.com/Mang-X/Nerv-IIP/issues/793)）                                 |
+| 5   | 在 `/maintenance/spare-parts` 申领备件并跟踪出库                                                                              | 维修备件从库存出库有据可查 | ✅ 可用                                                                                                                              |
+| 6   | 在 `/maintenance/plans` 维护保养计划，在 `/maintenance/inspections` 执行点检                                                  | 预防性维护按计划触发并留档 | 🟡 部分可用：点检测量值动态行未交付（[#793](https://github.com/Mang-X/Nerv-IIP/issues/793)）                                         |
+| 7   | 在 `/maintenance/reliability` 与 `/maintenance/availability` 查看 MTBF/MTTR 与可用率                                          | 可靠性指标可用于改进决策   | ✅ 可用                                                                                                                              |
+| 8   | 从平台向设备下发控制命令并留审计                                                                                              | 远程控制受审批与审计约束   | ⛔ 缺口：设备控制下发 UI 未交付（[#792](https://github.com/Mang-X/Nerv-IIP/issues/792)）                                             |
+
+## 采集健康排查
+
+进入 `/equipment/telemetry/connectors` 后，先区分“现场连接断开”和“采集主机离线”：前者表示协议连接已明确丢失，后者表示 Connector Host 心跳超时；采集错误数或长时间没有样本不能单独证明断线。页面每 10 秒刷新一次。
+
+展开连接器卡片后才会加载该连接器上报的配置标签。配置停用、启用失败、已激活但等待首条数据、已收到数据是不同状态；“尚未上报已配置标签清单”通常表示现场采集程序版本尚未提供清单，不等于当前没有配置。最近采样时间只证明曾收到数据，不表示数据质量合格或仍然新鲜。标签配置仍在现场采集程序维护，本页面只读。
 
 ## 从哪里学
 

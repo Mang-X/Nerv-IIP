@@ -91,6 +91,56 @@ public sealed class ModbusTcpClientTests
         Assert.Empty(samples);
     }
 
+    [Fact]
+    public async Task Transaction_timeout_resets_the_socket_so_the_same_endpoint_can_recover()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var endpoint = (IPEndPoint)listener.LocalEndpoint;
+        var server = Task.Run(async () =>
+        {
+            using (var first = await listener.AcceptTcpClientAsync())
+            await using (var firstStream = first.GetStream())
+            {
+                await ReadExactlyAsync(firstStream, new byte[12]);
+                var closed = new byte[1];
+                Assert.Equal(0, await firstStream.ReadAsync(closed).AsTask().WaitAsync(TimeSpan.FromSeconds(2)));
+            }
+
+            using var second = await listener.AcceptTcpClientAsync();
+            await using var secondStream = second.GetStream();
+            var request = new byte[12];
+            await ReadExactlyAsync(secondStream, request);
+            var response = new byte[]
+            {
+                request[0], request[1], 0, 0, 0, 5, request[6], request[7], 2, 0, 42
+            };
+            await secondStream.WriteAsync(response);
+        });
+        try
+        {
+            using var client = new ModbusTcpClient(TimeSpan.FromMilliseconds(100));
+            var options = new ModbusConnectionOptions($"tcp://127.0.0.1:{endpoint.Port}", null);
+            var mapping = new ModbusRegisterMapping(
+                "device-line-1", "temperature", 1, ModbusRegisterTable.HoldingRegisters,
+                40001, 1, 1m, 0m, 60, ModbusRegisterDataType.UInt16);
+            await client.ConnectAsync(options, CancellationToken.None);
+
+            await Assert.ThrowsAsync<TimeoutException>(() =>
+                client.ReadRegistersAsync(mapping, DateTimeOffset.UtcNow, CancellationToken.None));
+
+            await client.ConnectAsync(options, CancellationToken.None);
+            var sample = Assert.Single(await client.ReadRegistersAsync(
+                mapping, DateTimeOffset.UtcNow, CancellationToken.None));
+            Assert.Equal(42m, sample.Value);
+            await server.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        finally
+        {
+            listener.Stop();
+        }
+    }
+
     private sealed class ModbusTcpSimulator : IAsyncDisposable
     {
         private readonly TcpListener _listener;
@@ -158,6 +208,21 @@ public sealed class ModbusTcpClientTests
 
                 offset += read;
             }
+        }
+    }
+
+    private static async Task ReadExactlyAsync(NetworkStream stream, byte[] buffer)
+    {
+        var offset = 0;
+        while (offset < buffer.Length)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(offset));
+            if (read == 0)
+            {
+                throw new InvalidOperationException("Client closed before sending a complete request.");
+            }
+
+            offset += read;
         }
     }
 
