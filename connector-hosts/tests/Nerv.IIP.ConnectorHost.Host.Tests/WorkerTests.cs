@@ -469,6 +469,13 @@ public sealed class WorkerTests
 
         public Task<ApplicationRegistrationResult> SendRegistrationAsync(ApplicationRegistration registration, CancellationToken cancellationToken = default)
         {
+            return Task.FromResult(new ApplicationRegistrationResult("registration-a", registration.InstanceKey, "token-a"));
+        }
+
+        public Task SendHeartbeatAsync(ApplicationHeartbeat heartbeat, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task SendStateSnapshotAsync(InstanceStateSnapshot snapshot, CancellationToken cancellationToken = default)
+        {
             ReportingCycles++;
             if (ReportingCycles == 1)
             {
@@ -483,12 +490,8 @@ public sealed class WorkerTests
                 ThirdCycle.TrySetResult();
             }
 
-            return Task.FromResult(new ApplicationRegistrationResult("registration-a", registration.InstanceKey, "token-a"));
+            return Task.CompletedTask;
         }
-
-        public Task SendHeartbeatAsync(ApplicationHeartbeat heartbeat, CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public Task SendStateSnapshotAsync(InstanceStateSnapshot snapshot, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class RecordingOpsClient : IOpsClient

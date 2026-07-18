@@ -1,5 +1,6 @@
 using Nerv.IIP.ConnectorHost.Application;
 using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
+using Opc.Ua;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.OpcUa;
 
@@ -85,6 +86,11 @@ public sealed class OpcUaConnector(
                     _manifestTracker.MarkAllEnabledError("opcua.activation-failed", "OPC UA subscription activation failed.");
                 }
 
+                if (_connectionTracker.Snapshot.Status == "alive" && IsTransportFailure(ex))
+                {
+                    MarkConnectionLost("opcua.transport-failure");
+                }
+
                 await UpdateStateAsync(state => state with
                 {
                     ReportedStatus = "stopped",
@@ -96,6 +102,9 @@ public sealed class OpcUaConnector(
             }
         }
     }
+
+    private static bool IsTransportFailure(Exception exception) =>
+        exception is TimeoutException or IOException or System.Net.Sockets.SocketException or ServiceResultException;
 
     public async Task<IReadOnlyList<ConnectorTarget>> DiscoverAsync(CancellationToken cancellationToken)
     {

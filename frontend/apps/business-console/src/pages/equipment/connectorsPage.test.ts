@@ -290,6 +290,71 @@ describe('equipment telemetry connectors page', () => {
     expect(wrapper.text()).not.toContain('现场断开约')
   })
 
+  it('prioritizes a known host timeout over an unavailable legacy connection state', () => {
+    const wrapper = mount(ConnectorHealthCard, {
+      props: {
+        connector: {
+          connectorId: 'legacy-host-timeout',
+          connectorName: 'Legacy Host Timeout',
+          status: 'stale',
+          staleReason: 'offline',
+          offlineReason: 'host-liveness',
+          connection: null,
+          hostLivenessDeadlineUtc: '2026-07-13T01:04:00.000Z',
+        },
+        sampleRate: null,
+        expanded: false,
+      },
+      global: { stubs },
+    })
+
+    expect(wrapper.text()).toContain('采集主机离线')
+    expect(wrapper.text()).not.toContain('连接状态未知')
+  })
+
+  it('prioritizes a known collector fault over an unavailable legacy connection state', () => {
+    const wrapper = mount(ConnectorHealthCard, {
+      props: {
+        connector: {
+          connectorId: 'legacy-fault',
+          connectorName: 'Legacy Fault',
+          status: 'stale',
+          staleReason: 'fault',
+          offlineReason: null,
+          connection: null,
+        },
+        sampleRate: null,
+        expanded: false,
+      },
+      global: { stubs },
+    })
+
+    expect(wrapper.text()).toContain('异常停止')
+    expect(wrapper.text()).not.toContain('连接状态未知')
+  })
+
+  it('suppresses host-offline duration when no liveness deadline was reported', () => {
+    const wrapper = mount(ConnectorHealthCard, {
+      props: {
+        connector: {
+          connectorId: 'host-timeout-without-deadline',
+          connectorName: 'Host Timeout Without Deadline',
+          status: 'stale',
+          staleReason: 'offline',
+          offlineReason: 'host-liveness',
+          connection: null,
+          hostLivenessDeadlineUtc: null,
+        },
+        sampleRate: null,
+        expanded: false,
+      },
+      global: { stubs },
+    })
+
+    expect(wrapper.text()).toContain('采集主机离线')
+    expect(wrapper.text()).not.toContain('主机离线约')
+  })
+
   it('summarizes online / offline / fault connectors separately', () => {
     const text = mount(ConnectorsPage, { global: { stubs } }).text()
 

@@ -14,12 +14,12 @@ public sealed class ConnectorReportSignalTests
         signal.Signal("connector-a");
         signal.Signal("connector-a");
 
-        await signal.WaitAsync(TimeSpan.FromMinutes(1), timeProvider, CancellationToken.None);
+        Assert.Equal("connector-a", await signal.WaitAsync(TimeSpan.FromMinutes(1), timeProvider, CancellationToken.None));
         var secondWait = signal.WaitAsync(TimeSpan.FromMinutes(1), timeProvider, CancellationToken.None);
 
         Assert.False(secondWait.IsCompleted);
         timeProvider.Advance(TimeSpan.FromMinutes(1));
-        await secondWait;
+        Assert.Null(await secondWait);
     }
 
     [Fact]
@@ -31,7 +31,21 @@ public sealed class ConnectorReportSignalTests
 
         timeProvider.Advance(TimeSpan.FromSeconds(2));
 
-        await wait;
+        Assert.Null(await wait);
+    }
+
+    [Fact]
+    public async Task Different_connectors_are_coalesced_independently()
+    {
+        var signal = new ConnectorReportSignal();
+        var timeProvider = new ControllableTimeProvider();
+
+        signal.Signal("connector-a");
+        signal.Signal("connector-b");
+        signal.Signal("connector-a");
+
+        Assert.Equal("connector-a", await signal.WaitAsync(TimeSpan.FromMinutes(1), timeProvider, CancellationToken.None));
+        Assert.Equal("connector-b", await signal.WaitAsync(TimeSpan.FromMinutes(1), timeProvider, CancellationToken.None));
     }
 
 }

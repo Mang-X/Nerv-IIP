@@ -64,11 +64,26 @@ public sealed class ConnectorCollectionHealthProjectionEntityTypeConfiguration :
         builder.Property(x => x.LastSampleAtUtc).HasComment("Most recent actual source sample time; null means unknown");
         builder.Property(x => x.ConnectionStatus).HasMaxLength(32).HasComment("Authoritative field connection state: unknown, alive, or lost; null means a legacy report supplied no connection fact");
         builder.Property(x => x.ConnectionObservedAtUtc).HasComment("UTC time of the latest authoritative field connection observation; null means no connection fact");
+        builder.Property(x => x.ConnectionObservedAtUtcTicks).HasComment("Exact .NET UTC ticks for monotonic ordering beyond PostgreSQL timestamp microsecond precision");
         builder.Property(x => x.ConnectedSinceUtc).HasComment("UTC start of the current alive connection interval; present only while connection state is alive");
         builder.Property(x => x.DisconnectedSinceUtc).HasComment("UTC start of the current lost connection interval; present only while connection state is lost");
         builder.Property(x => x.ConnectionReasonCategory).HasMaxLength(64).HasComment("Bounded category for the latest field connection transition reason; null when not reported");
         builder.Property(x => x.ConnectionDiagnosticCode).HasMaxLength(128).HasComment("Sanitized diagnostic code for the latest field connection transition; null when not reported");
         builder.Property(x => x.RetiredCounterEpochs).IsRequired().HasColumnType("text").HasComment("Complete set of retired counter epoch identities, preventing delayed reports from reviving reset counters");
+        builder.Property(x => x.ConcurrencyVersion).IsConcurrencyToken().HasComment("Application-managed optimistic concurrency version for collection-health merges");
+        builder.ToTable("connector_collection_health", table =>
+        {
+            table.HasComment("Latest recoverable collection health counters reported by each Connector Host connector/source.");
+            table.HasCheckConstraint(
+                "ck_connector_collection_health_connection_status",
+                "\"ConnectionStatus\" IS NULL OR \"ConnectionStatus\" IN ('unknown', 'alive', 'lost')");
+            table.HasCheckConstraint(
+                "ck_connector_collection_health_connection_shape",
+                "(\"ConnectionStatus\" IS NULL AND \"ConnectionObservedAtUtc\" IS NULL AND \"ConnectionObservedAtUtcTicks\" IS NULL AND \"ConnectedSinceUtc\" IS NULL AND \"DisconnectedSinceUtc\" IS NULL) OR " +
+                "(\"ConnectionStatus\" = 'unknown' AND \"ConnectionObservedAtUtc\" IS NOT NULL AND \"ConnectionObservedAtUtcTicks\" IS NOT NULL AND \"ConnectedSinceUtc\" IS NULL AND \"DisconnectedSinceUtc\" IS NULL) OR " +
+                "(\"ConnectionStatus\" = 'alive' AND \"ConnectionObservedAtUtc\" IS NOT NULL AND \"ConnectionObservedAtUtcTicks\" IS NOT NULL AND \"ConnectedSinceUtc\" IS NOT NULL AND \"DisconnectedSinceUtc\" IS NULL) OR " +
+                "(\"ConnectionStatus\" = 'lost' AND \"ConnectionObservedAtUtc\" IS NOT NULL AND \"ConnectionObservedAtUtcTicks\" IS NOT NULL AND \"ConnectedSinceUtc\" IS NULL AND \"DisconnectedSinceUtc\" IS NOT NULL)");
+        });
         builder.HasIndex(x => x.ApplicationInstanceId).IsUnique().HasDatabaseName("ux_connector_collection_health_instance");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ConnectorId }).IsUnique().HasDatabaseName("ux_connector_collection_health_scope");
     }

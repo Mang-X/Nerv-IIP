@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Sdk.ConnectorProtocol;
@@ -15,29 +16,92 @@ public sealed record ConnectorHostRuntimeContext(
     public static ConnectorHostRuntimeContext DefaultLocal { get; } = new("1.0", "1.0", "org-001", "env-dev", "connector-host-001", DateTimeOffset.UtcNow);
 }
 
-public sealed class ConnectorReportingLoop(
-    IReadOnlyList<IConnector> connectors,
-    IConnectorProtocolClient connectorProtocolClient,
-    ConnectorHostRuntimeContext runtimeContext)
+public sealed class ConnectorReportingLoop
 {
-    public async Task RunCycleAsync(CancellationToken cancellationToken)
+    private static readonly TimeSpan RegistrationRefreshInterval = TimeSpan.FromMinutes(5);
+    private readonly IReadOnlyList<IConnector>? _connectors;
+    private readonly ConnectorTargetSnapshotStore? _snapshotStore;
+    private readonly IConnectorProtocolClient _connectorProtocolClient;
+    private readonly ConnectorHostRuntimeContext _runtimeContext;
+    private readonly TimeProvider _timeProvider;
+    private readonly ConcurrentDictionary<string, RegistrationState> _registrations = new(StringComparer.Ordinal);
+
+    public ConnectorReportingLoop(
+        IReadOnlyList<IConnector> connectors,
+        IConnectorProtocolClient connectorProtocolClient,
+        ConnectorHostRuntimeContext runtimeContext)
+        : this(connectors, null, connectorProtocolClient, runtimeContext, TimeProvider.System)
     {
-        foreach (var connector in connectors)
+    }
+
+    public ConnectorReportingLoop(
+        ConnectorTargetSnapshotStore snapshotStore,
+        IConnectorProtocolClient connectorProtocolClient,
+        ConnectorHostRuntimeContext runtimeContext,
+        TimeProvider timeProvider)
+        : this(null, snapshotStore, connectorProtocolClient, runtimeContext, timeProvider)
+    {
+    }
+
+    private ConnectorReportingLoop(
+        IReadOnlyList<IConnector>? connectors,
+        ConnectorTargetSnapshotStore? snapshotStore,
+        IConnectorProtocolClient connectorProtocolClient,
+        ConnectorHostRuntimeContext runtimeContext,
+        TimeProvider timeProvider)
+    {
+        _connectors = connectors;
+        _snapshotStore = snapshotStore;
+        _connectorProtocolClient = connectorProtocolClient;
+        _runtimeContext = runtimeContext;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task RunCycleAsync(CancellationToken cancellationToken, string? changedConnectorId = null)
+    {
+        IReadOnlyList<ConnectorTarget> targets;
+        if (_snapshotStore is not null)
         {
-            var targets = await connector.DiscoverAsync(cancellationToken);
-            foreach (var target in targets)
-            {
-                var context = CreateContext();
-                await connectorProtocolClient.SendRegistrationAsync(ToRegistration(context, target), cancellationToken);
-                await connectorProtocolClient.SendHeartbeatAsync(ToHeartbeat(context, target), cancellationToken);
-                await connectorProtocolClient.SendStateSnapshotAsync(ToStateSnapshot(context, target), cancellationToken);
-            }
+            _snapshotStore.TriggerRefresh(cancellationToken, changedConnectorId);
+            targets = _snapshotStore.GetCurrentTargets();
+        }
+        else
+        {
+            var discovered = await Task.WhenAll(_connectors!.Select(connector => connector.DiscoverAsync(cancellationToken)));
+            targets = discovered.SelectMany(static connectorTargets => connectorTargets).ToArray();
+        }
+
+        await Task.WhenAll(targets.Select(target => ReportTargetAsync(target, cancellationToken)));
+    }
+
+    private async Task ReportTargetAsync(ConnectorTarget target, CancellationToken cancellationToken)
+    {
+        var context = CreateContext();
+        var now = _timeProvider.GetUtcNow();
+        var fingerprint = RegistrationFingerprint(target);
+        if (!_registrations.TryGetValue(target.InstanceKey, out var registration)
+            || registration.Fingerprint != fingerprint
+            || now - registration.RegisteredAtUtc >= RegistrationRefreshInterval)
+        {
+            await _connectorProtocolClient.SendRegistrationAsync(ToRegistration(context, target), cancellationToken);
+            _registrations[target.InstanceKey] = new RegistrationState(fingerprint, now);
+        }
+
+        try
+        {
+            await _connectorProtocolClient.SendHeartbeatAsync(ToHeartbeat(context, target), cancellationToken);
+            await _connectorProtocolClient.SendStateSnapshotAsync(ToStateSnapshot(context, target), cancellationToken);
+        }
+        catch
+        {
+            _registrations.TryRemove(target.InstanceKey, out _);
+            throw;
         }
     }
 
     private ConnectorRequestContext CreateContext()
     {
-        return new ConnectorRequestContext(runtimeContext.ProtocolVersion, runtimeContext.SdkVersion, Guid.NewGuid().ToString("n"), DateTimeOffset.UtcNow, runtimeContext.OrganizationId, runtimeContext.EnvironmentId, runtimeContext.ConnectorHostId);
+        return new ConnectorRequestContext(_runtimeContext.ProtocolVersion, _runtimeContext.SdkVersion, Guid.NewGuid().ToString("n"), _timeProvider.GetUtcNow(), _runtimeContext.OrganizationId, _runtimeContext.EnvironmentId, _runtimeContext.ConnectorHostId);
     }
 
     private static ApplicationRegistration ToRegistration(ConnectorRequestContext context, ConnectorTarget target)
@@ -59,12 +123,12 @@ public sealed class ConnectorReportingLoop(
 
     private ApplicationHeartbeat ToHeartbeat(ConnectorRequestContext context, ConnectorTarget target)
     {
-        return new ApplicationHeartbeat(context, target.InstanceKey, DateTimeOffset.UtcNow, true, runtimeContext.StartedAtUtc, 0, new Dictionary<string, string>());
+        return new ApplicationHeartbeat(context, target.InstanceKey, _timeProvider.GetUtcNow(), true, _runtimeContext.StartedAtUtc, 0, new Dictionary<string, string>());
     }
 
     private static InstanceStateSnapshot ToStateSnapshot(ConnectorRequestContext context, ConnectorTarget target)
     {
-        var reportedAtUtc = DateTimeOffset.UtcNow;
+        var reportedAtUtc = context.OccurredAtUtc;
         var health = target.CollectionHealth is null ? null : new ConnectorCollectionHealth(
             target.CollectionHealth.ConnectorId,
             target.CollectionHealth.SourceSystem,
@@ -83,4 +147,15 @@ public sealed class ConnectorReportingLoop(
                 target.CollectionHealth.Connection.DiagnosticCode));
         return new InstanceStateSnapshot(context, target.InstanceKey, reportedAtUtc, target.ReportedStatus, target.HealthStatus, $"{target.InstanceName} is {target.ReportedStatus}", new Dictionary<string, string>(), new Dictionary<string, decimal>(), target.Metadata, health);
     }
+
+    private static string RegistrationFingerprint(ConnectorTarget target) => string.Join(
+        '\u001f',
+        target.NodeKey,
+        target.DeploymentKind,
+        target.ApplicationKey,
+        target.Version,
+        target.InstanceKey,
+        string.Join(',', target.Capabilities.Select(static capability => $"{capability.Code}:{capability.Version}")));
+
+    private sealed record RegistrationState(string Fingerprint, DateTimeOffset RegisteredAtUtc);
 }

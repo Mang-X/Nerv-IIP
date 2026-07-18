@@ -12,6 +12,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySumm
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
@@ -208,6 +209,24 @@ public sealed class ConnectorTagManifestTests
         Assert.Contains(result.Errors, error => SamePropertySuffix(error.PropertyName, nameof(ReportConnectorTagManifestEntry.ActivationStatus)));
         Assert.Contains(result.Errors, error => SamePropertySuffix(error.PropertyName, nameof(ReportConnectorTagManifestEntry.ActivationErrorCode)));
         Assert.Contains(result.Errors, error => SamePropertySuffix(error.PropertyName, nameof(ReportConnectorTagManifestEntry.ActivationErrorMessage)));
+    }
+
+    [Fact]
+    public void Report_validators_reject_manifests_above_the_bounded_entry_limit()
+    {
+        var entries = Enumerable.Range(0, ConnectorTagManifestLimits.MaxEntries + 1)
+            .Select(index => Entry("DEV-CNC-01", $"tag-{index}", activationObservedAtUtc: Now))
+            .ToArray();
+        var command = new ReportConnectorTagManifestCommand(
+            "org-001", "env-dev", "connector-a", "opcua", RevisionA, Now, entries);
+        var request = new ReportConnectorTagManifestRequest(
+            "org-001", "env-dev", "connector-a", "opcua", RevisionA, Now, entries);
+
+        var commandResult = new ReportConnectorTagManifestCommandValidator().Validate(command);
+        var requestResult = new ReportConnectorTagManifestRequestValidator().Validate(request);
+
+        Assert.Contains(commandResult.Errors, error => error.ErrorMessage.Contains("more than 500", StringComparison.Ordinal));
+        Assert.Contains(requestResult.Errors, error => error.ErrorMessage.Contains("more than 500", StringComparison.Ordinal));
     }
 
     [Fact]

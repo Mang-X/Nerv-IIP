@@ -238,7 +238,7 @@ public sealed class ConnectorCollectionHealthProjectionTests
 
     [Theory]
     [MemberData(nameof(EqualTimestampConflicts))]
-    public void Conflicting_connection_observation_at_same_timestamp_is_rejected_before_counters_change(
+    public void Conflicting_connection_observation_at_same_timestamp_preserves_first_fact_while_counters_advance(
         ConnectorConnectionState conflictingConnection)
     {
         var instance = CreateInstance();
@@ -249,14 +249,13 @@ public sealed class ConnectorCollectionHealthProjectionTests
             receivedCount: 100,
             Lost("2026-07-13T01:10:00Z", "2026-07-13T01:10:00Z")));
 
-        var exception = Assert.Throws<ArgumentException>(() => instance.RecordCollectionHealth(Health(
+        instance.RecordCollectionHealth(Health(
             epoch,
             reportedAtUtc: "2026-07-13T01:11:00Z",
             receivedCount: 120,
-            conflictingConnection)));
+            conflictingConnection));
 
-        Assert.Contains("ObservedAtUtc", exception.Message, StringComparison.Ordinal);
-        Assert.Equal(100, instance.CollectionHealth!.ReceivedCount);
+        Assert.Equal(120, instance.CollectionHealth!.ReceivedCount);
         Assert.Equal("lost", instance.CollectionHealth.ConnectionStatus);
         Assert.Equal("transport", instance.CollectionHealth.ConnectionReasonCategory);
         Assert.Equal("connection-lost", instance.CollectionHealth.ConnectionDiagnosticCode);

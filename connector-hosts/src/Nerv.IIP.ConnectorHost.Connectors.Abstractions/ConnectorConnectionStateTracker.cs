@@ -82,6 +82,6 @@ public sealed class ConnectorConnectionStateTracker
     private DateTimeOffset GetMonotonicUtcNow()
     {
         var utcNow = _timeProvider.GetUtcNow();
-        return utcNow < _snapshot.ObservedAtUtc ? _snapshot.ObservedAtUtc : utcNow;
+        return utcNow <= _snapshot.ObservedAtUtc ? _snapshot.ObservedAtUtc.AddTicks(1) : utcNow;
     }
 }

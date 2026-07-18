@@ -6,12 +6,15 @@ public interface IConnectorReportSignal
 {
     void Signal(string connectorId);
 
-    Task WaitAsync(TimeSpan timeout, TimeProvider timeProvider, CancellationToken cancellationToken);
+    Task<string?> WaitAsync(TimeSpan timeout, TimeProvider timeProvider, CancellationToken cancellationToken);
 }
 
 public sealed class ConnectorReportSignal : IConnectorReportSignal
 {
-    private readonly Channel<string> _channel = Channel.CreateBounded<string>(new BoundedChannelOptions(1)
+    private readonly object _gate = new();
+    private readonly HashSet<string> _pending = new(StringComparer.Ordinal);
+    private readonly Queue<string> _pendingOrder = new();
+    private readonly Channel<bool> _wake = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
     {
         FullMode = BoundedChannelFullMode.DropWrite,
         SingleReader = true,
@@ -21,10 +24,19 @@ public sealed class ConnectorReportSignal : IConnectorReportSignal
     public void Signal(string connectorId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectorId);
-        _channel.Writer.TryWrite(connectorId);
+        var normalized = connectorId.Trim();
+        lock (_gate)
+        {
+            if (_pending.Add(normalized))
+            {
+                _pendingOrder.Enqueue(normalized);
+            }
+
+            _wake.Writer.TryWrite(true);
+        }
     }
 
-    public async Task WaitAsync(TimeSpan timeout, TimeProvider timeProvider, CancellationToken cancellationToken)
+    public async Task<string?> WaitAsync(TimeSpan timeout, TimeProvider timeProvider, CancellationToken cancellationToken)
     {
         if (timeout <= TimeSpan.Zero)
         {
@@ -32,13 +44,48 @@ public sealed class ConnectorReportSignal : IConnectorReportSignal
         }
 
         ArgumentNullException.ThrowIfNull(timeProvider);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (TryTakePending(out var pending))
+        {
+            return pending;
+        }
 
         using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var signalTask = _channel.Reader.ReadAsync(waitCancellation.Token).AsTask();
+        var signalTask = _wake.Reader.ReadAsync(waitCancellation.Token).AsTask();
         var timeoutTask = Task.Delay(timeout, timeProvider, waitCancellation.Token);
-        var completedTask = await Task.WhenAny(signalTask, timeoutTask);
-        await completedTask;
-        await waitCancellation.CancelAsync();
+        try
+        {
+            var completedTask = await Task.WhenAny(signalTask, timeoutTask);
+            cancellationToken.ThrowIfCancellationRequested();
+            await completedTask;
+            return TryTakePending(out pending) ? pending : null;
+        }
+        finally
+        {
+            await waitCancellation.CancelAsync();
+        }
+    }
+
+    private bool TryTakePending(out string? connectorId)
+    {
+        lock (_gate)
+        {
+            if (_pendingOrder.Count == 0)
+            {
+                connectorId = null;
+                return false;
+            }
+
+            connectorId = _pendingOrder.Dequeue();
+            _pending.Remove(connectorId);
+            _wake.Reader.TryRead(out _);
+            if (_pendingOrder.Count > 0)
+            {
+                _wake.Writer.TryWrite(true);
+            }
+
+            return true;
+        }
     }
 }
 

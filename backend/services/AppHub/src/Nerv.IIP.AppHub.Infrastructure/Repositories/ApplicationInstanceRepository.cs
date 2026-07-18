@@ -38,34 +38,33 @@ public class ApplicationInstanceRepository(ApplicationDbContext context)
 
     public async Task RecordAsync(InstanceStateSnapshot snapshot, CancellationToken cancellationToken = default)
     {
-        var instance = await GetByContextAsync(
-            snapshot.Context.OrganizationId,
-            snapshot.Context.EnvironmentId,
-            snapshot.InstanceKey,
-            cancellationToken)
-            ?? throw new KnownException($"Instance context is invalid: {snapshot.InstanceKey}");
-
-        ApplySnapshot(instance, snapshot);
-        try
+        for (var attempt = 1; attempt <= 3; attempt++)
         {
-            await _context.SaveEntitiesAsync(cancellationToken);
-        }
-        catch (DbUpdateException exception) when (CollectionHealthUniqueConflictDetector.IsUniqueConflict(exception))
-        {
-            _context.ChangeTracker.Clear();
-            var concurrent = await GetByContextAsync(
+            var instance = await GetByContextAsync(
                 snapshot.Context.OrganizationId,
                 snapshot.Context.EnvironmentId,
                 snapshot.InstanceKey,
-                cancellationToken);
-            if (concurrent?.CollectionHealth is null)
-            {
-                throw;
-            }
+                cancellationToken)
+                ?? throw new KnownException($"Instance context is invalid: {snapshot.InstanceKey}");
 
-            ApplySnapshot(concurrent, snapshot);
-            await _context.SaveEntitiesAsync(cancellationToken);
+            ApplySnapshot(instance, snapshot);
+            try
+            {
+                await _context.SaveEntitiesAsync(cancellationToken);
+                return;
+            }
+            catch (DbUpdateConcurrencyException) when (attempt < 3)
+            {
+                _context.ChangeTracker.Clear();
+            }
+            catch (DbUpdateException exception) when (
+                attempt < 3 && CollectionHealthUniqueConflictDetector.IsUniqueConflict(exception))
+            {
+                _context.ChangeTracker.Clear();
+            }
         }
+
+        throw new DbUpdateConcurrencyException("Connector collection-health merge exceeded the bounded concurrency retry limit.");
     }
 
     private static void ApplySnapshot(ApplicationInstance instance, InstanceStateSnapshot snapshot)

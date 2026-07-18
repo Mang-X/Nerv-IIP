@@ -24,6 +24,7 @@ Assert-Contract ($verify.Contains("scripts/lib/FullStackSessionState.ps1")) 'Ver
 Assert-Contract ($verify.Contains('Start-ManagedBackgroundProcess')) 'Verify script must start the simulator with Start-ManagedBackgroundProcess.'
 Assert-Contract ($verify.Contains('[System.Diagnostics.Stopwatch]::StartNew()')) 'Disconnect deadline must use a monotonic Stopwatch.'
 Assert-Contract ($verify.Contains('DisconnectDeadlineMilliseconds = 10000')) 'Disconnect deadline must remain fixed at 10 seconds.'
+Assert-Contract ($verify.Contains('DisconnectRequestTimeoutSeconds = 3')) 'Disconnect polling requests must use a timeout shorter than the 10-second assertion window.'
 Assert-Contract ($verify.Contains('$disconnectedSinceUtc.UtcTicks -ge $script:disconnectStartUtc.UtcTicks')) 'Disconnect ordering must compare absolute UTC ticks rather than offset-bearing DateTimeOffset values.'
 Assert-Contract ($verify.Contains('[DateTimeOffset] $lost.connection.disconnectedSinceUtc')) 'Disconnect evidence must preserve the JSON timestamp precision without a culture-formatted string round trip.'
 Assert-Contract (-not $verify.Contains('[DateTimeOffset]::Parse("$($lost.connection.disconnectedSinceUtc)")')) 'Disconnect evidence must not truncate fractional seconds through string interpolation.'
@@ -35,6 +36,8 @@ Assert-Contract ($verify.Contains('disconnectStartUtc')) 'Evidence must include 
 Assert-Contract ($verify.Contains('connectionObservedAtUtc')) 'Evidence must include connectionObservedAtUtc.'
 Assert-Contract ($verify.Contains('gatewayObservedAtUtc')) 'Evidence must include gatewayObservedAtUtc.'
 Assert-Contract ($verify.Contains('elapsedMilliseconds')) 'Evidence must include elapsedMilliseconds.'
+Assert-Contract ($verify.Contains('detectionElapsedMilliseconds')) 'Evidence must split protocol detection time from downstream visibility time.'
+Assert-Contract ($verify.Contains('postDetectionVisibilityMilliseconds')) 'Evidence must record post-detection Gateway visibility time.'
 Assert-Contract ($verify.Contains('lastHeartbeatAtUtc')) 'Evidence must include lastHeartbeatAtUtc.'
 Assert-Contract ($verify.Contains('recoveryObservedAtUtc')) 'Evidence must include a recovery timestamp.'
 Assert-Contract ($verify.Contains('neverSampled')) 'Evidence must prove a configured but never-sampled mapping.'
@@ -143,6 +146,10 @@ try {
         $nan = Invoke-ModbusRead -Stream $stream -Request ([byte[]] @(0, 2, 0, 0, 0, 6, 1, 3, 0, 1, 0, 2))
         Assert-Contract ($nan.Header[1] -eq 2 -and $nan.Body[0] -eq 3 -and $nan.Body[1] -eq 4) 'NaN mapping response frame is invalid.'
         Assert-Contract (@($nan.Body[2..5]) -join ',' -eq '127,192,0,0') 'NaN mapping must return IEEE754 quiet NaN bytes 7F C0 00 00.'
+        $unsupported = Invoke-ModbusRead -Stream $stream -Request ([byte[]] @(0, 3, 0, 0, 0, 6, 1, 6, 0, 0, 0, 1))
+        Assert-Contract ($unsupported.Header[1] -eq 3 -and $unsupported.Body[0] -eq 0x86 -and $unsupported.Body[1] -eq 1) 'Unsupported function codes must return Modbus exception 01 without terminating the simulator.'
+        $afterException = Invoke-ModbusRead -Stream $stream -Request ([byte[]] @(0, 4, 0, 0, 0, 6, 1, 3, 0, 0, 0, 1))
+        Assert-Contract ($afterException.Header[1] -eq 4 -and $afterException.Body[0] -eq 3) 'Simulator must remain available after an unsupported function code.'
     }
     finally {
         if ($null -ne $client) { $client.Dispose() }

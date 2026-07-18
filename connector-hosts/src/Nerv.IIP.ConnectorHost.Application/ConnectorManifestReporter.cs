@@ -23,26 +23,49 @@ public interface IConnectorTagManifestClient
         CancellationToken cancellationToken);
 }
 
-public sealed class ConnectorManifestReportingLoop(
-    IReadOnlyList<IConnector> connectors,
-    ConnectorManifestReporter manifestReporter)
+public sealed class ConnectorManifestReportingLoop
 {
+    private readonly IReadOnlyList<IConnector>? _connectors;
+    private readonly ConnectorTargetSnapshotStore? _snapshotStore;
+    private readonly ConnectorManifestReporter _manifestReporter;
+
+    public ConnectorManifestReportingLoop(IReadOnlyList<IConnector> connectors, ConnectorManifestReporter manifestReporter)
+    {
+        _connectors = connectors;
+        _manifestReporter = manifestReporter;
+    }
+
+    public ConnectorManifestReportingLoop(ConnectorTargetSnapshotStore snapshotStore, ConnectorManifestReporter manifestReporter)
+    {
+        _snapshotStore = snapshotStore;
+        _manifestReporter = manifestReporter;
+    }
+
     public async Task<DateTimeOffset?> RunCycleAsync(
         CancellationToken cancellationToken,
         string? forceRebirthConnectorId = null)
     {
         DateTimeOffset? nextAttemptAtUtc = null;
         var forceRebirthPending = !string.IsNullOrWhiteSpace(forceRebirthConnectorId);
-        foreach (var connector in connectors)
+        IReadOnlyList<ConnectorTarget> targets;
+        if (_snapshotStore is not null)
         {
-            var targets = await connector.DiscoverAsync(cancellationToken);
-            foreach (var manifest in targets
-                         .Select(target => target.TagManifest)
-                         .Where(static manifest => manifest is not null))
-            {
+            _snapshotStore.TriggerRefresh(cancellationToken);
+            targets = _snapshotStore.GetCurrentTargets();
+        }
+        else
+        {
+            var discovered = await Task.WhenAll(_connectors!.Select(connector => connector.DiscoverAsync(cancellationToken)));
+            targets = discovered.SelectMany(static connectorTargets => connectorTargets).ToArray();
+        }
+
+        foreach (var manifest in targets
+                     .Select(target => target.TagManifest)
+                     .Where(static manifest => manifest is not null))
+        {
                 var forceRebirth = forceRebirthPending
                     && string.Equals(manifest!.CollectionConnectorId, forceRebirthConnectorId, StringComparison.Ordinal);
-                var connectorNextAttemptAtUtc = await manifestReporter.ReportAsync(
+                var connectorNextAttemptAtUtc = await _manifestReporter.ReportAsync(
                     manifest!,
                     forceRebirth,
                     cancellationToken);
@@ -52,7 +75,6 @@ public sealed class ConnectorManifestReportingLoop(
                 {
                     nextAttemptAtUtc = connectorNextAttemptAtUtc;
                 }
-            }
         }
 
         return nextAttemptAtUtc;

@@ -160,6 +160,32 @@ public sealed class AppHubSchemaConventionTests
     }
 
     [Fact]
+    public void Hardened_connector_connection_projection_has_exact_ordering_concurrency_and_shape_constraints()
+    {
+        using var fixture = CreateFixture();
+        var projection = fixture.DbContext.GetService<IDesignTimeModel>().Model
+            .FindEntityType(typeof(ConnectorCollectionHealthProjection))!;
+
+        Assert.True(projection.FindProperty(nameof(ConnectorCollectionHealthProjection.ConcurrencyVersion))!.IsConcurrencyToken);
+        Assert.True(projection.FindProperty(nameof(ConnectorCollectionHealthProjection.ConnectionObservedAtUtcTicks))!.IsNullable);
+        Assert.Equal(
+            ["ck_connector_collection_health_connection_shape", "ck_connector_collection_health_connection_status"],
+            projection.GetCheckConstraints().Select(constraint => constraint.Name!).Order().ToArray());
+
+        var migrationType = typeof(ApplicationDbContext).Assembly.GetType(
+            "Nerv.IIP.AppHub.Infrastructure.Migrations.HardenConnectorConnectionProjection");
+        Assert.NotNull(migrationType);
+        var migration = Assert.IsAssignableFrom<Migration>(Activator.CreateInstance(migrationType));
+        var builder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        migrationType.GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [builder]);
+
+        Assert.Equal(2, builder.Operations.OfType<AddCheckConstraintOperation>().Count());
+        Assert.Contains(builder.Operations.OfType<SqlOperation>(), operation =>
+            operation.Sql.Contains("ConnectionObservedAtUtcTicks", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Current_model_matches_the_latest_migration_snapshot()
     {
         using var fixture = CreateFixture();

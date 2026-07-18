@@ -3,13 +3,14 @@ using System.Net.Sockets;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.Modbus;
 
-public sealed class ModbusTcpClient : IModbusTcpClient, IDisposable
+public sealed class ModbusTcpClient(TimeSpan? transactionTimeout = null) : IModbusTcpClient, IDisposable
 {
     private readonly SemaphoreSlim _protocolGate = new(1, 1);
     private TcpClient? _client;
     private NetworkStream? _stream;
     private ushort _transactionId;
     private string? _connectedEndpoint;
+    private readonly TimeSpan _transactionTimeout = transactionTimeout ?? TimeSpan.FromSeconds(4);
 
     public async Task ConnectAsync(ModbusConnectionOptions options, CancellationToken cancellationToken)
     {
@@ -24,7 +25,21 @@ public sealed class ModbusTcpClient : IModbusTcpClient, IDisposable
             DisposeClient();
             var endpoint = ParseEndpoint(options.Endpoint);
             _client = new TcpClient();
-            await _client.ConnectAsync(endpoint.Host, endpoint.Port, cancellationToken);
+            using var deadline = CreateDeadline(cancellationToken);
+            try
+            {
+                await _client.ConnectAsync(endpoint.Host, endpoint.Port, deadline.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                DisposeClient();
+                throw new TimeoutException("Modbus TCP connection exceeded the configured transaction deadline.");
+            }
+            catch
+            {
+                DisposeClient();
+                throw;
+            }
             _stream = _client.GetStream();
             _connectedEndpoint = options.Endpoint;
         }
@@ -42,7 +57,9 @@ public sealed class ModbusTcpClient : IModbusTcpClient, IDisposable
         await _protocolGate.WaitAsync(cancellationToken);
         try
         {
-            return await ReadRegistersCoreAsync(mapping, observedAtUtc, cancellationToken);
+            return await ExecuteTransactionAsync(
+                token => ReadRegistersCoreAsync(mapping, observedAtUtc, token),
+                cancellationToken);
         }
         finally
         {
@@ -55,12 +72,42 @@ public sealed class ModbusTcpClient : IModbusTcpClient, IDisposable
         await _protocolGate.WaitAsync(cancellationToken);
         try
         {
-            _ = await ReadRegistersCoreAsync(mapping, DateTimeOffset.UtcNow, cancellationToken);
+            _ = await ExecuteTransactionAsync(
+                token => ReadRegistersCoreAsync(mapping, DateTimeOffset.UtcNow, token),
+                cancellationToken);
         }
         finally
         {
             _protocolGate.Release();
         }
+    }
+
+    private async Task<T> ExecuteTransactionAsync<T>(
+        Func<CancellationToken, Task<T>> action,
+        CancellationToken cancellationToken)
+    {
+        using var deadline = CreateDeadline(cancellationToken);
+        try
+        {
+            return await action(deadline.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            DisposeClient();
+            throw new TimeoutException("Modbus TCP transaction exceeded the configured deadline.");
+        }
+        catch (Exception exception) when (exception is IOException or SocketException)
+        {
+            DisposeClient();
+            throw;
+        }
+    }
+
+    private CancellationTokenSource CreateDeadline(CancellationToken cancellationToken)
+    {
+        var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(_transactionTimeout);
+        return deadline;
     }
 
     private async Task<IReadOnlyList<ModbusRegisterSample>> ReadRegistersCoreAsync(

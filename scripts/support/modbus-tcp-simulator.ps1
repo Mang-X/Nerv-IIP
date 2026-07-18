@@ -8,6 +8,8 @@
 #     - Closes accepted sockets and the listener when the stop marker appears or the process exits
 #   Requires:
 #     - PowerShell 7
+#   Assumption:
+#     - Serves one Modbus TCP client at a time because collection and probing share one serialized adapter connection
 
 [CmdletBinding()]
 param(
@@ -36,6 +38,14 @@ function Read-Exactly([System.IO.Stream] $InputStream, [byte[]] $Buffer) {
 
 function Write-ModbusResponse([System.IO.Stream] $OutputStream, [byte[]] $Request) {
     $functionCode = $Request[7]
+    if ($functionCode -notin @(3, 4)) {
+        $exception = [byte[]] @(
+            $Request[0], $Request[1], $Request[2], $Request[3],
+            0, 3, $Request[6], ([byte] ($functionCode -bor 0x80)), 1)
+        $OutputStream.Write($exception, 0, $exception.Length)
+        $OutputStream.Flush()
+        return
+    }
     $registerCount = ([int] $Request[10] -shl 8) -bor [int] $Request[11]
     $byteCount = $registerCount * 2
     $response = [byte[]]::new(9 + $byteCount)
@@ -106,9 +116,6 @@ try {
             $stream = $null
             $client = $null
             continue
-        }
-        if ($request[7] -notin @(3, 4)) {
-            throw "Unsupported Modbus function code $($request[7])."
         }
         Write-ModbusResponse -OutputStream $stream -Request $request
     }

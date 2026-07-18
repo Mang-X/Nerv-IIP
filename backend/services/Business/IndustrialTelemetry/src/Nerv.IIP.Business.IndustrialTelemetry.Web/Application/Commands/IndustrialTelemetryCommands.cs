@@ -21,6 +21,11 @@ using Nerv.IIP.Sdk.Ops;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 
+public static class ConnectorTagManifestLimits
+{
+    public const int MaxEntries = 500;
+}
+
 public sealed record ReportConnectorTagManifestEntry(
     string DeviceAssetId,
     string TagKey,
@@ -163,7 +168,8 @@ public sealed class ReportConnectorTagManifestCommandValidator : AbstractValidat
             .Must(BeLowercaseSha256)
             .WithMessage("ManifestRevision must be a 64-character lowercase SHA-256 hexadecimal value.");
         RuleFor(x => x.ManifestObservedAtUtc).NotEmpty();
-        RuleFor(x => x.Entries).NotNull();
+        RuleFor(x => x.Entries).NotNull().Must(entries => entries.Count <= ConnectorTagManifestLimits.MaxEntries)
+            .WithMessage($"Connector manifest cannot contain more than {ConnectorTagManifestLimits.MaxEntries} entries.");
         RuleForEach(x => x.Entries).SetValidator(new ReportConnectorTagManifestEntryValidator());
         RuleFor(x => x).Custom((command, context) =>
         {

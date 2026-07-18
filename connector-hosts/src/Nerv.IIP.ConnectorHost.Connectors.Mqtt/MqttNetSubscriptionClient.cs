@@ -5,7 +5,9 @@ using MQTTnet.Protocol;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.Mqtt;
 
-public sealed class MqttNetSubscriptionClient(IMqttCredentialResolver credentialResolver) : IMqttSubscriptionClient, IDisposable
+public sealed class MqttNetSubscriptionClient(
+    IMqttCredentialResolver credentialResolver,
+    TimeSpan? connectionDetectionBudget = null) : IMqttSubscriptionClient, IDisposable
 {
     private readonly MqttClientFactory _factory = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -13,6 +15,7 @@ public sealed class MqttNetSubscriptionClient(IMqttCredentialResolver credential
     private Func<MqttApplicationMessageReceivedEventArgs, Task>? _messageHandler;
     private Func<MqttClientDisconnectedEventArgs, Task>? _disconnectedHandler;
     private string? _subscriptionKey;
+    private readonly TimeSpan _connectionDetectionBudget = connectionDetectionBudget ?? TimeSpan.FromSeconds(4);
 
     public async Task ConnectAndSubscribeAsync(
         MqttConnectionOptions options,
@@ -106,6 +109,8 @@ public sealed class MqttNetSubscriptionClient(IMqttCredentialResolver credential
         var builder = new MqttClientOptionsBuilder()
             .WithClientId(options.ClientId)
             .WithTcpServer(broker.Host, broker.Port)
+            .WithKeepAlivePeriod(TimeSpan.FromMilliseconds(Math.Max(500, _connectionDetectionBudget.TotalMilliseconds / 2)))
+            .WithTimeout(_connectionDetectionBudget)
             .WithCleanSession();
 
         var credential = await credentialResolver.ResolveAsync(options.CredentialReference, cancellationToken);

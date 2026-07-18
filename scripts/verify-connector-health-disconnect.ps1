@@ -25,6 +25,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 . (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1')
 
 $DisconnectDeadlineMilliseconds = 10000
+$DisconnectRequestTimeoutSeconds = 3
 $organizationId = 'org-001'
 $environmentId = 'env-dev'
 $connectorId = 'modbus-acceptance'
@@ -178,8 +179,9 @@ function Invoke-JsonRequest(
     [string] $Method,
     [string] $Uri,
     [hashtable] $Headers = @{},
-    [object] $Body = $null) {
-    $parameters = @{ Method = $Method; Uri = $Uri; Headers = $Headers; TimeoutSec = 30 }
+    [object] $Body = $null,
+    [ValidateRange(1, 120)] [int] $TimeoutSeconds = 30) {
+    $parameters = @{ Method = $Method; Uri = $Uri; Headers = $Headers; TimeoutSec = $TimeoutSeconds }
     if ($null -ne $Body) {
         $parameters.Body = $Body | ConvertTo-Json -Depth 20
         $parameters.ContentType = 'application/json'
@@ -198,9 +200,12 @@ function Invoke-JsonRequest(
     }
 }
 
-function Get-Health([string] $BusinessGatewayUrl, [hashtable] $Headers) {
+function Get-Health(
+    [string] $BusinessGatewayUrl,
+    [hashtable] $Headers,
+    [ValidateRange(1, 120)] [int] $TimeoutSeconds = 30) {
     $uri = "$BusinessGatewayUrl/api/business-console/v1/telemetry/connectors/$connectorId/collection-health?organizationId=$organizationId&environmentId=$environmentId"
-    $script:lastHealth = (Invoke-JsonRequest -Method Get -Uri $uri -Headers $Headers).data
+    $script:lastHealth = (Invoke-JsonRequest -Method Get -Uri $uri -Headers $Headers -TimeoutSeconds $TimeoutSeconds).data
     return $script:lastHealth
 }
 
@@ -282,7 +287,7 @@ try {
         $lost = $null
         while ($stopwatch.ElapsedMilliseconds -lt $DisconnectDeadlineMilliseconds) {
             try {
-                $candidate = Get-Health -BusinessGatewayUrl $businessGatewayUrl -Headers $headers
+                $candidate = Get-Health -BusinessGatewayUrl $businessGatewayUrl -Headers $headers -TimeoutSeconds $DisconnectRequestTimeoutSeconds
                 $heartbeatUtc = if ($candidate.lastHeartbeatAtUtc) { [DateTimeOffset] $candidate.lastHeartbeatAtUtc } else { [DateTimeOffset]::MinValue }
                 if ("$($candidate.connection.status)" -eq 'lost' -and
                     "$($candidate.status)" -eq 'stale' -and
@@ -304,6 +309,8 @@ try {
         Assert-Acceptance ($stopwatch.ElapsedMilliseconds -lt $DisconnectDeadlineMilliseconds) "Run $run exceeded the fixed 10-second disconnect deadline."
         $gatewayObservedAtUtc = [DateTimeOffset]::UtcNow
         $disconnectedSinceUtc = [DateTimeOffset] $lost.connection.disconnectedSinceUtc
+        $detectionElapsedMilliseconds = [math]::Round(($disconnectedSinceUtc - $script:disconnectStartUtc).TotalMilliseconds, 3)
+        $postDetectionVisibilityMilliseconds = [math]::Round(($gatewayObservedAtUtc - $disconnectedSinceUtc).TotalMilliseconds, 3)
         Assert-Acceptance ($disconnectedSinceUtc.UtcTicks -ge $script:disconnectStartUtc.UtcTicks) "Run $run reported disconnectedSinceUtc before the simulator disconnect started (disconnectStartUtc=$($script:disconnectStartUtc.ToString('O')); disconnectedSinceUtc=$($disconnectedSinceUtc.ToString('O')))."
         Assert-Acceptance ($disconnectedSinceUtc -le $gatewayObservedAtUtc) "Run $run reported disconnectedSinceUtc after the Gateway observation."
 
@@ -338,6 +345,8 @@ try {
             connectionObservedAtUtc = ([DateTimeOffset] $lost.connection.observedAtUtc).ToString('O')
             gatewayObservedAtUtc = $gatewayObservedAtUtc.ToString('O')
             elapsedMilliseconds = $stopwatch.ElapsedMilliseconds
+            detectionElapsedMilliseconds = $detectionElapsedMilliseconds
+            postDetectionVisibilityMilliseconds = $postDetectionVisibilityMilliseconds
             disconnectedSinceUtc = $disconnectedSinceUtc.ToString('O')
             lastHeartbeatAtUtc = ([DateTimeOffset] $lost.lastHeartbeatAtUtc).ToString('O')
             recoveryObservedAtUtc = ([DateTimeOffset] $recovered.connection.observedAtUtc).ToString('O')

@@ -6,7 +6,16 @@ public sealed class ConnectorTagBindingEntityTypeConfiguration : IEntityTypeConf
 {
     public void Configure(EntityTypeBuilder<ConnectorTagBinding> builder)
     {
-        builder.ToTable("connector_tag_bindings", table => table.HasComment("BusinessIndustrialTelemetry current and retired connector device-tag bindings."));
+        builder.ToTable("connector_tag_bindings", table =>
+        {
+            table.HasComment("BusinessIndustrialTelemetry current and retired connector device-tag bindings.");
+            table.HasCheckConstraint(
+                "ck_connector_tag_bindings_activation_status",
+                "activation_status IN ('pending', 'active', 'error', 'disabled')");
+            table.HasCheckConstraint(
+                "ck_connector_tag_bindings_current_retirement",
+                "(is_current AND retired_at_utc IS NULL) OR (NOT is_current AND retired_at_utc IS NOT NULL)");
+        });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Connector tag binding identifier.");
         builder.Property(x => x.ConnectorTagManifestId).HasColumnName("connector_tag_manifest_id").HasComment("Owning connector tag manifest identifier.");

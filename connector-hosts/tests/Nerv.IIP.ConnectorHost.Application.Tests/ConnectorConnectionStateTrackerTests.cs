@@ -58,6 +58,19 @@ public sealed class ConnectorConnectionStateTrackerTests
         Assert.Equal("connection-refused", tracker.Snapshot.DiagnosticCode);
     }
 
+    [Fact]
+    public void Distinct_transitions_in_the_same_clock_tick_advance_the_observation()
+    {
+        var timeProvider = new MutableTimeProvider();
+        var tracker = new ConnectorConnectionStateTracker("connector-a", timeProvider, _ => { });
+        tracker.MarkAlive();
+        var aliveObservedAtUtc = tracker.Snapshot.ObservedAtUtc;
+
+        tracker.MarkLost("transport", "socket-closed");
+
+        Assert.True(tracker.Snapshot.ObservedAtUtc > aliveObservedAtUtc);
+    }
+
     private sealed class MutableTimeProvider : TimeProvider
     {
         private DateTimeOffset _utcNow = DateTimeOffset.Parse("2026-07-17T00:00:00Z");

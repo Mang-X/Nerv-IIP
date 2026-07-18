@@ -58,13 +58,17 @@ public class Worker(
 
     private async Task RunReportingLoopAsync(CancellationToken cancellationToken)
     {
+        string? changedConnectorId = null;
         while (!cancellationToken.IsCancellationRequested)
         {
             await RunIsolatedAsync(
-                () => reportingLoop.RunCycleAsync(cancellationToken),
+                () => reportingLoop.RunCycleAsync(cancellationToken, changedConnectorId),
                 "Connector reporting cycle failed and will be retried.",
                 cancellationToken);
-            await reportSignal.WaitAsync(TimeSpan.FromSeconds(options.HeartbeatSeconds), timeProvider, cancellationToken);
+            changedConnectorId = await reportSignal.WaitAsync(
+                TimeSpan.FromSeconds(options.HeartbeatSeconds),
+                timeProvider,
+                cancellationToken);
         }
     }
 

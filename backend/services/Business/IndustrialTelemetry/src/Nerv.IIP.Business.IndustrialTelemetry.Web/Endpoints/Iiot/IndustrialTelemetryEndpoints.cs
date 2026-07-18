@@ -549,7 +549,8 @@ public sealed class ReportConnectorTagManifestRequestValidator : Validator<Repor
             .Length(64)
             .Matches("^[0-9a-f]{64}$");
         RuleFor(x => x.ManifestObservedAtUtc).NotEmpty();
-        RuleFor(x => x.Entries).NotNull();
+        RuleFor(x => x.Entries).NotNull().Must(entries => entries.Count <= ConnectorTagManifestLimits.MaxEntries)
+            .WithMessage($"Connector manifest cannot contain more than {ConnectorTagManifestLimits.MaxEntries} entries.");
         RuleForEach(x => x.Entries).SetValidator(new ReportConnectorTagManifestEntryValidator());
     }
 }

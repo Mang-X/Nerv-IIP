@@ -210,6 +210,20 @@ public sealed class IndustrialTelemetrySchemaConventionTests
         Assert.All(requiredColumns, operation => Assert.False(operation.IsNullable));
     }
 
+    [Fact]
+    public void Connector_binding_activation_and_retirement_invariants_are_database_constraints()
+    {
+        using var fixture = CreateFixture();
+        var binding = fixture.DbContext.GetService<IDesignTimeModel>().Model
+            .FindEntityType(typeof(ConnectorTagBinding))!;
+        Assert.Equal(
+            ["ck_connector_tag_bindings_activation_status", "ck_connector_tag_bindings_current_retirement"],
+            binding.GetCheckConstraints().Select(constraint => constraint.Name!).Order().ToArray());
+
+        var operations = new InspectableConnectorTagBindingConstraintsMigration().BuildOperations();
+        Assert.Equal(2, operations.OfType<AddCheckConstraintOperation>().Count());
+    }
+
     private static void AssertOptionalStringColumn<TEntity>(
         IndustrialTelemetrySchemaFixture fixture,
         string propertyName,
@@ -269,6 +283,16 @@ public sealed class IndustrialTelemetrySchemaConventionTests
     }
 
     private sealed class InspectableConnectorManifestExactOrderingMigration : AddConnectorManifestExactOrdering
+    {
+        public IReadOnlyList<MigrationOperation> BuildOperations()
+        {
+            var builder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+            base.Up(builder);
+            return builder.Operations;
+        }
+    }
+
+    private sealed class InspectableConnectorTagBindingConstraintsMigration : HardenConnectorTagBindingConstraints
     {
         public IReadOnlyList<MigrationOperation> BuildOperations()
         {

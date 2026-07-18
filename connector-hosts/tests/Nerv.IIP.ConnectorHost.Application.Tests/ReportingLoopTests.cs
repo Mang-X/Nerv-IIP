@@ -70,6 +70,20 @@ public sealed class ReportingLoopTests
     }
 
     [Fact]
+    public async Task Stable_target_is_not_registered_again_on_every_heartbeat_cycle()
+    {
+        var client = new RecordingConnectorProtocolClient();
+        var loop = new ConnectorReportingLoop([new StaticConnector()], client, ConnectorHostRuntimeContext.DefaultLocal);
+
+        await loop.RunCycleAsync(CancellationToken.None);
+        await loop.RunCycleAsync(CancellationToken.None);
+
+        Assert.Equal(1, client.Calls.Count(call => call == "registration:demo-api-001"));
+        Assert.Equal(2, client.Calls.Count(call => call == "heartbeat:demo-api-001"));
+        Assert.Equal(2, client.Calls.Count(call => call == "state:demo-api-001"));
+    }
+
+    [Fact]
     public async Task Reporting_cycle_preserves_registration_heartbeat_state_order_for_each_target()
     {
         var client = new RecordingConnectorProtocolClient();

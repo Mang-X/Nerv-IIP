@@ -6,11 +6,14 @@ using System.Text;
 namespace Nerv.IIP.ConnectorHost.Connectors.OpcUa;
 
 #pragma warning disable CS0618
-public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialResolver) : IOpcUaClient, IDisposable
+public sealed class OpcUaNetStandardClient(
+    IOpcUaCredentialResolver credentialResolver,
+    TimeSpan? connectionDetectionBudget = null) : IOpcUaClient, IDisposable
 {
     private Session? _session;
     private Subscription? _subscription;
     private KeepAliveEventHandler? _keepAliveHandler;
+    private readonly TimeSpan _connectionDetectionBudget = connectionDetectionBudget ?? TimeSpan.FromSeconds(4);
 
     public Task ConnectAsync(OpcUaConnectionOptions options, CancellationToken cancellationToken)
     {
@@ -59,6 +62,7 @@ public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialRe
             identity,
             preferredLocales: null,
             cancellationToken);
+        _session.KeepAliveInterval = checked((int)Math.Max(500, _connectionDetectionBudget.TotalMilliseconds / 2));
         _keepAliveHandler = (_, args) =>
         {
             if (ServiceResult.IsBad(args.Status))
@@ -201,7 +205,7 @@ public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialRe
             });
     }
 
-    private static ApplicationConfiguration CreateApplicationConfiguration(OpcUaConnectionOptions options)
+    private ApplicationConfiguration CreateApplicationConfiguration(OpcUaConnectionOptions options)
     {
         return new ApplicationConfiguration
         {
@@ -235,7 +239,7 @@ public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialRe
             },
             TransportQuotas = new TransportQuotas
             {
-                OperationTimeout = 15_000
+                OperationTimeout = checked((int)Math.Max(500, _connectionDetectionBudget.TotalMilliseconds / 2))
             },
             ClientConfiguration = new ClientConfiguration
             {
