@@ -46,6 +46,12 @@ public interface IMesPlanningStore
 
     Task<IReadOnlyCollection<PlannedWorkOrder>> GetWorkOrdersAsync(CancellationToken cancellationToken = default);
 
+    Task<bool> WorkOrderExistsAsync(
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<PlannedOperationTask>> GetOperationTasksAsync(CancellationToken cancellationToken = default);
 
     Task<IReadOnlyCollection<WorkCenterUnavailability>> GetUnavailabilitiesAsync(CancellationToken cancellationToken = default);
@@ -210,6 +216,19 @@ public sealed class InMemoryMesPlanningStore : IMesPlanningStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(WorkOrders);
+    }
+
+    public Task<bool> WorkOrderExistsAsync(
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(_workOrders.Any(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.WorkOrderId == workOrderId));
     }
 
     public Task<IReadOnlyCollection<PlannedOperationTask>> GetOperationTasksAsync(CancellationToken cancellationToken = default)

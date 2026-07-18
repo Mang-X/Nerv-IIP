@@ -456,14 +456,42 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
     private readonly RuleScheduler scheduler;
     private readonly MesCodingService _codingService;
     private readonly IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider;
-    private readonly IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator;
+    private readonly IMesSkuAvailabilityScopeCoordinator skuAvailabilityScopeCoordinator;
 
     public ConvertPlanToWorkOrderCommandHandler(
         ApplicationDbContext dbContext,
         RuleScheduler scheduler,
+        MesCodingService codingService,
+        IMesSkuAvailabilityScopeCoordinator skuAvailabilityScopeCoordinator,
+        IMesMaterialRequirementSnapshotProvider materialSnapshotProvider)
+    {
+        this.dbContext = dbContext;
+        this.scheduler = scheduler;
+        _codingService = codingService;
+        this.materialSnapshotProvider = materialSnapshotProvider;
+        this.skuAvailabilityScopeCoordinator = skuAvailabilityScopeCoordinator;
+    }
+
+    internal ConvertPlanToWorkOrderCommandHandler(
+        ApplicationDbContext dbContext,
+        RuleScheduler scheduler,
         MesCodingService? codingService = null,
-        IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null,
-        IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator = null)
+        IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null)
+        : this(
+            dbContext,
+            scheduler,
+            codingService,
+            materialSnapshotProvider,
+            new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext))
+    {
+    }
+
+    internal ConvertPlanToWorkOrderCommandHandler(
+        ApplicationDbContext dbContext,
+        RuleScheduler scheduler,
+        MesCodingService? codingService,
+        IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider,
+        IMesSkuAvailabilityScopeCoordinator skuAvailabilityScopeCoordinator)
     {
         this.dbContext = dbContext;
         this.scheduler = scheduler;
@@ -472,12 +500,12 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
         this.skuAvailabilityScopeCoordinator = skuAvailabilityScopeCoordinator;
     }
 
-    public ConvertPlanToWorkOrderCommandHandler(ApplicationDbContext dbContext)
+    internal ConvertPlanToWorkOrderCommandHandler(ApplicationDbContext dbContext)
         : this(dbContext, new RuleScheduler())
     {
     }
 
-    public ConvertPlanToWorkOrderCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService)
+    internal ConvertPlanToWorkOrderCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService)
         : this(dbContext, new RuleScheduler(), codingService)
     {
     }
@@ -523,22 +551,11 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
             }
         }
 
-        if (skuAvailabilityScopeCoordinator is not null)
-        {
-            return await skuAvailabilityScopeCoordinator.ExecuteAsync(
-                request.OrganizationId,
-                request.EnvironmentId,
-                request.SkuId,
-                token => CreateWorkOrderAsync(request, allocation.Code, sourceSystem, sourceDocumentType, sourceDocumentId, token),
-                cancellationToken);
-        }
-
-        return await CreateWorkOrderAsync(
-            request,
-            allocation.Code,
-            sourceSystem,
-            sourceDocumentType,
-            sourceDocumentId,
+        return await skuAvailabilityScopeCoordinator.ExecuteAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SkuId,
+            token => CreateWorkOrderAsync(request, allocation.Code, sourceSystem, sourceDocumentType, sourceDocumentId, token),
             cancellationToken);
     }
 

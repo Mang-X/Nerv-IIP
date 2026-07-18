@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Inventory;
@@ -16,6 +17,7 @@ using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.Quality;
 using Npgsql;
 using System.Data;
+using System.Reflection;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -130,6 +132,37 @@ public sealed class MesCapSubscriptionTests
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(SkuDisabledIntegrationEventHandlerForProjectMesSkuAvailability) &&
             descriptor.Lifetime == ServiceLifetime.Scoped);
+    }
+
+    [Fact]
+    public void Mes_runtime_work_order_handlers_require_registered_sku_gate_dependencies()
+    {
+        var rushConstructor = Assert.Single(typeof(CreateRushWorkOrderCommandHandler).GetConstructors());
+        var convertConstructor = Assert.Single(typeof(ConvertPlanToWorkOrderCommandHandler).GetConstructors());
+
+        AssertRequiredParameter<ApplicationDbContext>(rushConstructor);
+        AssertRequiredParameter<IMesSkuAvailabilityScopeCoordinator>(rushConstructor);
+        AssertRequiredParameter<ApplicationDbContext>(convertConstructor);
+        AssertRequiredParameter<IMesSkuAvailabilityScopeCoordinator>(convertConstructor);
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IMesPlanningStore>(new InMemoryMesPlanningStore());
+        services.AddSingleton<RuleScheduler>();
+        services.AddSingleton<MesCodingService>();
+        services.AddSingleton<IMesMaterialRequirementSnapshotProvider>(NoRequirementSnapshotProvider.Instance);
+        services.AddSingleton(new ApplicationDbContext(
+            new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase($"mes-required-sku-gate-{Guid.CreateVersion7():N}")
+                .Options,
+            new NoopMediator()));
+        services.AddTransient<CreateRushWorkOrderCommandHandler>();
+        services.AddTransient<ConvertPlanToWorkOrderCommandHandler>();
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Throws<InvalidOperationException>(
+            () => provider.GetRequiredService<CreateRushWorkOrderCommandHandler>());
+        Assert.Throws<InvalidOperationException>(
+            () => provider.GetRequiredService<ConvertPlanToWorkOrderCommandHandler>());
     }
 
     [PostgreSqlFact]
@@ -247,6 +280,13 @@ public sealed class MesCapSubscriptionTests
     private static bool CandidateSubscribesToTopic(object candidate, string topic)
     {
         return DescribeCandidate(candidate).Contains(topic, StringComparison.Ordinal);
+    }
+
+    private static void AssertRequiredParameter<T>(ConstructorInfo constructor)
+    {
+        var parameter = Assert.Single(constructor.GetParameters(), x => x.ParameterType == typeof(T));
+        Assert.False(parameter.HasDefaultValue);
+        Assert.False(parameter.IsOptional);
     }
 
     private static string DescribeCandidate(object candidate)

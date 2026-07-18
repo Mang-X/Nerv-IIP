@@ -27,16 +27,56 @@ public sealed record CreateRushWorkOrderResponse(
     MesScheduleResult Schedule,
     IReadOnlyCollection<string> AffectedWorkOrderIds);
 
-public sealed class CreateRushWorkOrderCommandHandler(
-    IMesPlanningStore store,
-    RuleScheduler scheduler,
-    MesCodingService? codingService = null,
-    ApplicationDbContext? dbContext = null,
-    IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator = null)
+public sealed class CreateRushWorkOrderCommandHandler
     : ICommandHandler<CreateRushWorkOrderCommand, CreateRushWorkOrderResponse>
 {
     private const int RushPriority = 1000;
-    private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
+    private readonly IMesPlanningStore store;
+    private readonly RuleScheduler scheduler;
+    private readonly MesCodingService _codingService;
+    private readonly ApplicationDbContext? dbContext;
+    private readonly IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator;
+
+    public CreateRushWorkOrderCommandHandler(
+        IMesPlanningStore store,
+        RuleScheduler scheduler,
+        MesCodingService codingService,
+        ApplicationDbContext dbContext,
+        IMesSkuAvailabilityScopeCoordinator skuAvailabilityScopeCoordinator)
+        : this(store, scheduler, codingService, dbContext, skuAvailabilityScopeCoordinator, isTestConstruction: false)
+    {
+    }
+
+    internal CreateRushWorkOrderCommandHandler(
+        IMesPlanningStore store,
+        RuleScheduler scheduler,
+        MesCodingService? codingService = null,
+        ApplicationDbContext? dbContext = null)
+        : this(
+            store,
+            scheduler,
+            codingService ?? new MesCodingService(),
+            dbContext,
+            dbContext is null ? null : new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
+            isTestConstruction: true)
+    {
+    }
+
+    private CreateRushWorkOrderCommandHandler(
+        IMesPlanningStore store,
+        RuleScheduler scheduler,
+        MesCodingService codingService,
+        ApplicationDbContext? dbContext,
+        IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator,
+        bool isTestConstruction)
+    {
+        _ = isTestConstruction;
+        this.store = store;
+        this.scheduler = scheduler;
+        _codingService = codingService;
+        this.dbContext = dbContext;
+        this.skuAvailabilityScopeCoordinator = skuAvailabilityScopeCoordinator;
+    }
 
     public async Task<CreateRushWorkOrderResponse> Handle(CreateRushWorkOrderCommand request, CancellationToken cancellationToken)
     {
@@ -49,10 +89,11 @@ public sealed class CreateRushWorkOrderCommandHandler(
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            var replayedWorkOrderExists = (await store.GetWorkOrdersAsync(cancellationToken)).Any(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderId == allocation.Code);
+            var replayedWorkOrderExists = await store.WorkOrderExistsAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                allocation.Code,
+                cancellationToken);
             if (replayedWorkOrderExists)
             {
                 return new CreateRushWorkOrderResponse(

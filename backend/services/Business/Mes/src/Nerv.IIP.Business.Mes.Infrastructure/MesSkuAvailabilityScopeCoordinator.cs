@@ -51,6 +51,9 @@ public sealed class PostgreSqlMesSkuAvailabilityScopeCoordinator(ApplicationDbCo
         ArgumentNullException.ThrowIfNull(action);
         if (!dbContext.Database.IsNpgsql())
         {
+            // BusinessMES runtime persistence is PostgreSQL-only. This branch supports provider-light
+            // command and consumer tests; it deliberately preserves save semantics without pretending
+            // that a non-PostgreSQL provider can provide the advisory-lock concurrency guarantee.
             var result = await action(cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             return result;
