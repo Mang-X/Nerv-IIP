@@ -6,7 +6,7 @@ public sealed class SchedulePlanEntityTypeConfiguration : IEntityTypeConfigurati
 {
     public void Configure(EntityTypeBuilder<SchedulePlan> builder)
     {
-        builder.ToTable("schedule_plans", table => table.HasComment("BusinessScheduling generated and released schedule plan headers."));
+        builder.ToTable("schedule_plans", table => table.HasComment("BusinessScheduling generated, released, superseded, and revoked schedule plan headers."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Schedule plan aggregate row id.");
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").HasMaxLength(64).IsRequired().HasComment("Tenant organization id.");
@@ -19,6 +19,10 @@ public sealed class SchedulePlanEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(32).HasComment("Persisted plan lifecycle status.");
         builder.Property(x => x.GeneratedAtUtc).HasColumnName("generated_at_utc").HasComment("UTC timestamp when the plan was generated.");
         builder.Property(x => x.ReleasedAtUtc).HasColumnName("released_at_utc").HasComment("UTC timestamp when the plan was released.");
+        builder.Property(x => x.ReleaseRevision).HasColumnName("release_revision").HasComment("Monotonic release revision within the organization and environment scope.");
+        builder.Property(x => x.RevokedAtUtc).HasColumnName("revoked_at_utc").HasComment("UTC timestamp when the released plan was superseded or explicitly revoked.");
+        builder.Property(x => x.SupersededByPlanId).HasColumnName("superseded_by_plan_id").HasMaxLength(96).HasComment("Successor schedule plan id for automatic supersession; null for explicit revoke.");
+        builder.Property(x => x.RevocationReason).HasColumnName("revocation_reason").HasConversion<string>().HasMaxLength(32).HasComment("Released plan withdrawal reason: Superseded or Explicit.");
         builder.Property(x => x.ScheduledOperationCount).HasColumnName("scheduled_operation_count").HasComment("Number of operations assigned by this plan.");
         builder.Property(x => x.UnscheduledOperationCount).HasColumnName("unscheduled_operation_count").HasComment("Number of operations left unscheduled by this plan.");
         builder.Property(x => x.LockedOperationCount).HasColumnName("locked_operation_count").HasComment("Number of fixed locked operations retained by this plan.");
@@ -30,6 +34,12 @@ public sealed class SchedulePlanEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.OnTimeRate).HasColumnName("on_time_rate").HasPrecision(18, 6).HasComment("Non-locked operations completed on or before due date divided by non-locked assigned operations.");
         builder.Property(x => x.AverageResourceUtilization).HasColumnName("average_resource_utilization").HasPrecision(18, 6).HasComment("Total assigned minutes divided by total available minutes across resource load windows.");
         builder.HasIndex(x => x.PlanId).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId })
+            .IsUnique()
+            .HasFilter("status = 'Released'");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ReleaseRevision })
+            .IsUnique()
+            .HasFilter("release_revision IS NOT NULL");
 
         builder.HasMany(x => x.Assignments).WithOne().HasForeignKey(x => x.SchedulePlanId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.ResourceLoads).WithOne().HasForeignKey(x => x.SchedulePlanId).OnDelete(DeleteBehavior.Cascade);

@@ -48,6 +48,28 @@ public sealed class SchedulingSchemaConventionTests
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
 
+    [Fact]
+    public void Schedule_plan_release_governance_columns_and_indexes_are_explicit()
+    {
+        using var fixture = CreateFixture();
+        var entity = fixture.DbContext.Model.FindEntityType(typeof(SchedulePlan))!;
+
+        Assert.Equal("release_revision", entity.FindProperty(nameof(SchedulePlan.ReleaseRevision))!.GetColumnName());
+        Assert.Equal("revoked_at_utc", entity.FindProperty(nameof(SchedulePlan.RevokedAtUtc))!.GetColumnName());
+        Assert.Equal("superseded_by_plan_id", entity.FindProperty(nameof(SchedulePlan.SupersededByPlanId))!.GetColumnName());
+        Assert.Equal("revocation_reason", entity.FindProperty(nameof(SchedulePlan.RevocationReason))!.GetColumnName());
+        Assert.Contains(entity.GetIndexes(), index =>
+            index.IsUnique &&
+            index.Properties.Select(x => x.Name).SequenceEqual(
+                [nameof(SchedulePlan.OrganizationId), nameof(SchedulePlan.EnvironmentId)]) &&
+            index.GetFilter() == "status = 'Released'");
+        Assert.Contains(entity.GetIndexes(), index =>
+            index.IsUnique &&
+            index.Properties.Select(x => x.Name).SequenceEqual(
+                [nameof(SchedulePlan.OrganizationId), nameof(SchedulePlan.EnvironmentId), nameof(SchedulePlan.ReleaseRevision)]) &&
+            index.GetFilter() == "release_revision IS NOT NULL");
+    }
+
     private static SchemaFixture CreateFixture()
     {
         var services = new ServiceCollection();
