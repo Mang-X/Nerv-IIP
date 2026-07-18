@@ -239,7 +239,7 @@ public sealed class OpcUaNetStandardClient(
             },
             TransportQuotas = new TransportQuotas
             {
-                OperationTimeout = checked((int)Math.Max(500, _connectionDetectionBudget.TotalMilliseconds / 2))
+                OperationTimeout = checked((int)Math.Max(1_000, _connectionDetectionBudget.TotalMilliseconds))
             },
             ClientConfiguration = new ClientConfiguration
             {
