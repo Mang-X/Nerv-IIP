@@ -34,7 +34,10 @@ public sealed class ReleaseSchedulePlanInvalidationGateTests
             recordedAtUtc: FixedNow));
         await dbContext.SaveChangesAsync();
 
-        var handler = new ReleaseSchedulePlanCommandHandler(dbContext, new FixedTimeProvider(FixedNow));
+        var handler = new ReleaseSchedulePlanCommandHandler(
+            dbContext,
+            new FixedTimeProvider(FixedNow),
+            new NoopScheduleReleaseScopeLock());
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new ReleaseSchedulePlanCommand("plan-invalid", "org-001", "env-dev"),
@@ -53,7 +56,10 @@ public sealed class ReleaseSchedulePlanInvalidationGateTests
         dbContext.SchedulePlans.Add(CreatePlan("plan-clean"));
         await dbContext.SaveChangesAsync();
 
-        var handler = new ReleaseSchedulePlanCommandHandler(dbContext, new FixedTimeProvider(FixedNow));
+        var handler = new ReleaseSchedulePlanCommandHandler(
+            dbContext,
+            new FixedTimeProvider(FixedNow),
+            new NoopScheduleReleaseScopeLock());
 
         var response = await handler.Handle(
             new ReleaseSchedulePlanCommand("plan-clean", "org-001", "env-dev"),
@@ -61,6 +67,62 @@ public sealed class ReleaseSchedulePlanInvalidationGateTests
 
         Assert.Equal(SchedulePlanStatusContract.Released, response.Status);
         Assert.Equal(FixedNow, response.ReleasedAtUtc);
+    }
+
+    [Fact]
+    public async Task Second_release_supersedes_current_plan_before_releasing_successor()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.SchedulePlans.AddRange(CreatePlan("plan-v1"), CreatePlan("plan-v2"));
+        await dbContext.SaveChangesAsync();
+        var handler = new ReleaseSchedulePlanCommandHandler(
+            dbContext,
+            new FixedTimeProvider(FixedNow),
+            new NoopScheduleReleaseScopeLock());
+
+        var first = await handler.Handle(
+            new ReleaseSchedulePlanCommand("plan-v1", "org-001", "env-dev"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var second = await handler.Handle(
+            new ReleaseSchedulePlanCommand("plan-v2", "org-001", "env-dev"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var plans = await dbContext.SchedulePlans.OrderBy(x => x.PlanId).ToArrayAsync();
+        Assert.Equal(1, first.ReleaseRevision);
+        Assert.Equal(2, second.ReleaseRevision);
+        Assert.Equal(SchedulePlanLifecycleStatus.Superseded, plans[0].Status);
+        Assert.Equal("plan-v2", plans[0].SupersededByPlanId);
+        Assert.Equal(SchedulePlanLifecycleStatus.Released, plans[1].Status);
+    }
+
+    [Fact]
+    public async Task Explicit_revoke_is_idempotent_without_a_successor()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = CreatePlan("plan-revoke");
+        plan.Release(FixedNow, 3);
+        plan.ClearDomainEvents();
+        dbContext.SchedulePlans.Add(plan);
+        await dbContext.SaveChangesAsync();
+        var handler = new RevokeSchedulePlanCommandHandler(
+            dbContext,
+            new FixedTimeProvider(FixedNow.AddHours(1)),
+            new NoopScheduleReleaseScopeLock());
+
+        var first = await handler.Handle(
+            new RevokeSchedulePlanCommand("plan-revoke", "org-001", "env-dev"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var second = await handler.Handle(
+            new RevokeSchedulePlanCommand("plan-revoke", "org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal(SchedulePlanStatusContract.Revoked, first.Status);
+        Assert.Equal(first.RevokedAtUtc, second.RevokedAtUtc);
+        Assert.Equal(3, second.ReleaseRevision);
+        Assert.Null(second.SupersededByPlanId);
     }
 
     private static ApplicationDbContext CreateDbContext()
@@ -109,6 +171,24 @@ public sealed class ReleaseSchedulePlanInvalidationGateTests
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class NoopScheduleReleaseScopeLock : IScheduleReleaseScopeLock
+    {
+        public Task<IAsyncDisposable> AcquireAsync(
+            string organizationId,
+            string environmentId,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IAsyncDisposable>(NoopAsyncDisposable.Instance);
+        }
+    }
+
+    private sealed class NoopAsyncDisposable : IAsyncDisposable
+    {
+        public static NoopAsyncDisposable Instance { get; } = new();
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class NoopMediator : IMediator
