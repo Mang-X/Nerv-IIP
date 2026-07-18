@@ -27,6 +27,14 @@ public enum SchedulePlanLifecycleStatus
 {
     Generated = 0,
     Released = 1,
+    Superseded = 2,
+    Revoked = 3,
+}
+
+public enum SchedulePlanRevocationReason
+{
+    Superseded = 0,
+    Explicit = 1,
 }
 
 public enum SchedulePlanInputStatus
@@ -294,6 +302,10 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
     public SchedulePlanLifecycleStatus Status { get; private set; }
     public DateTimeOffset GeneratedAtUtc { get; private set; }
     public DateTimeOffset? ReleasedAtUtc { get; private set; }
+    public long? ReleaseRevision { get; private set; }
+    public DateTimeOffset? RevokedAtUtc { get; private set; }
+    public string? SupersededByPlanId { get; private set; }
+    public SchedulePlanRevocationReason? RevocationReason { get; private set; }
     public int ScheduledOperationCount { get; private set; }
     public int UnscheduledOperationCount { get; private set; }
     public int LockedOperationCount { get; private set; }
@@ -318,16 +330,69 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         return new SchedulePlan(organizationId, environmentId, plan);
     }
 
-    public void Release(DateTimeOffset releasedAtUtc)
+    public void Release(DateTimeOffset releasedAtUtc, long releaseRevision = 1)
     {
         if (Status == SchedulePlanLifecycleStatus.Released)
         {
             return;
         }
 
+        if (Status is SchedulePlanLifecycleStatus.Superseded or SchedulePlanLifecycleStatus.Revoked)
+        {
+            throw new InvalidOperationException("Terminal schedule plans cannot be released.");
+        }
+
+        if (releaseRevision <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(releaseRevision), "Release revision must be positive.");
+        }
+
         Status = SchedulePlanLifecycleStatus.Released;
         ReleasedAtUtc = releasedAtUtc;
+        ReleaseRevision = releaseRevision;
         this.AddDomainEvent(new SchedulePlanReleasedDomainEvent(this));
+    }
+
+    public void Supersede(string successorPlanId, DateTimeOffset supersededAtUtc)
+    {
+        RevokeCore(
+            SchedulePlanLifecycleStatus.Superseded,
+            SchedulePlanRevocationReason.Superseded,
+            Required(successorPlanId, nameof(successorPlanId)),
+            supersededAtUtc);
+    }
+
+    public void Revoke(DateTimeOffset revokedAtUtc)
+    {
+        RevokeCore(
+            SchedulePlanLifecycleStatus.Revoked,
+            SchedulePlanRevocationReason.Explicit,
+            null,
+            revokedAtUtc);
+    }
+
+    private void RevokeCore(
+        SchedulePlanLifecycleStatus terminalStatus,
+        SchedulePlanRevocationReason reason,
+        string? supersededByPlanId,
+        DateTimeOffset revokedAtUtc)
+    {
+        if (Status == terminalStatus && RevocationReason == reason &&
+            string.Equals(SupersededByPlanId, supersededByPlanId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (Status != SchedulePlanLifecycleStatus.Released || ReleaseRevision is null)
+        {
+            throw new InvalidOperationException("Only released schedule plans can be revoked or superseded.");
+        }
+
+        Status = terminalStatus;
+        RevokedAtUtc = revokedAtUtc;
+        SupersededByPlanId = supersededByPlanId;
+        RevocationReason = reason;
+        this.AddDomainEvent(new SchedulePlanRevokedDomainEvent(this));
     }
 
     public void ReplaceGeneratedPlan(GeneratedSchedulePlanSnapshot plan)
@@ -411,9 +476,9 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
 
     private void EnsureMutable()
     {
-        if (Status == SchedulePlanLifecycleStatus.Released)
+        if (Status != SchedulePlanLifecycleStatus.Generated)
         {
-            throw new InvalidOperationException("Released schedule plans are immutable.");
+            throw new InvalidOperationException("Released or revoked schedule plans are immutable.");
         }
     }
 

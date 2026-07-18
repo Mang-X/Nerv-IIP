@@ -10,6 +10,8 @@ public sealed record ScheduleConflictDetectedDomainEvent(
 
 public sealed record SchedulePlanReleasedDomainEvent(SchedulePlan SchedulePlan) : IDomainEvent;
 
+public sealed record SchedulePlanRevokedDomainEvent(SchedulePlan SchedulePlan) : IDomainEvent;
+
 public sealed record SchedulePlanInvalidatedDomainEvent(
     SchedulePlanInvalidation Invalidation,
     SchedulePlanInvalidatedSnapshot Plan) : IDomainEvent;
