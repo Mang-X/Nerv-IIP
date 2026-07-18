@@ -629,7 +629,9 @@ public sealed class BusinessGatewayOpenApiTests
         processor.Process(CreateDocumentProcessorContext(document));
 
         Assert.Equal(JsonObjectType.String, schema.Type);
-        Assert.Equal(["preview", "generated", "released"], schema.Enumeration.Select(value => Assert.IsType<string>(value)).ToArray());
+        Assert.Equal(
+            ["preview", "generated", "released", "superseded", "revoked"],
+            schema.Enumeration.Select(value => Assert.IsType<string>(value)).ToArray());
         Assert.Empty(schema.EnumerationNames);
     }
 
