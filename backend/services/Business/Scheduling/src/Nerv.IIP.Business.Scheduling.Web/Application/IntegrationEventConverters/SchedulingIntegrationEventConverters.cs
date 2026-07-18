@@ -169,6 +169,58 @@ public sealed class SchedulePlanReleasedIntegrationEventConverter(
     }
 }
 
+public sealed class SchedulePlanRevokedIntegrationEventConverter(
+    TimeProvider timeProvider,
+    ISchedulingIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<SchedulePlanRevokedDomainEvent, SchedulePlanRevokedIntegrationEvent>
+{
+    public SchedulePlanRevokedIntegrationEvent Convert(SchedulePlanRevokedDomainEvent domainEvent)
+    {
+        var plan = domainEvent.SchedulePlan;
+        var releaseRevision = plan.ReleaseRevision
+            ?? throw new InvalidOperationException("Revoked schedule plan must retain its release revision.");
+        var revocationReason = plan.RevocationReason
+            ?? throw new InvalidOperationException("Revoked schedule plan must retain its revocation reason.");
+        var context = contextAccessor.GetContext();
+        var envelope = Envelope(
+            SchedulingIntegrationEventTypes.SchedulePlanRevoked,
+            plan.OrganizationId,
+            plan.EnvironmentId,
+            EventIds.Idempotency(
+                "schedule-plan-revoked",
+                plan.OrganizationId,
+                plan.EnvironmentId,
+                plan.PlanId,
+                releaseRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                EnumValue(revocationReason)),
+            new SchedulePlanRevokedPayload(
+                plan.PlanId,
+                plan.ProblemId,
+                plan.ContractVersion,
+                plan.AlgorithmVersion,
+                plan.ProblemFingerprint,
+                releaseRevision,
+                EnumValue(revocationReason),
+                plan.SupersededByPlanId,
+                AffectedOperations(plan)),
+            timeProvider,
+            context);
+        return new SchedulePlanRevokedIntegrationEvent(
+            envelope.EventId,
+            envelope.EventType,
+            envelope.EventVersion,
+            envelope.OccurredAtUtc,
+            envelope.SourceService,
+            envelope.CorrelationId,
+            envelope.CausationId,
+            envelope.OrganizationId,
+            envelope.EnvironmentId,
+            envelope.Actor,
+            envelope.IdempotencyKey,
+            envelope.Payload);
+    }
+}
+
 public sealed class SchedulePlanInvalidatedIntegrationEventConverter(
     TimeProvider timeProvider,
     ISchedulingIntegrationEventContextAccessor contextAccessor)
@@ -256,23 +308,29 @@ internal static class SchedulingIntegrationEventConverterHelpers
                 plan.AlgorithmVersion,
                 plan.ProblemFingerprint,
                 Status(plan.Status),
-                plan.Assignments
-                    .OrderBy(x => x.StartUtc)
-                    .ThenBy(x => x.WorkOrderId, StringComparer.Ordinal)
-                    .ThenBy(x => x.OperationSequence)
-                    .ThenBy(x => x.OperationId, StringComparer.Ordinal)
-                    .Select(x => new SchedulePlanAffectedOperationPayload(
-                        x.WorkOrderId,
-                        x.OperationId,
-                        x.OperationSequence,
-                        x.ResourceId,
-                        x.WorkCenterId,
-                        x.StartUtc,
-                        x.EndUtc,
-                        x.StandardOperationCode))
-                    .ToArray()),
+                AffectedOperations(plan),
+                plan.ReleaseRevision),
             timeProvider,
             context);
+    }
+
+    public static SchedulePlanAffectedOperationPayload[] AffectedOperations(SchedulePlan plan)
+    {
+        return plan.Assignments
+            .OrderBy(x => x.StartUtc)
+            .ThenBy(x => x.WorkOrderId, StringComparer.Ordinal)
+            .ThenBy(x => x.OperationSequence)
+            .ThenBy(x => x.OperationId, StringComparer.Ordinal)
+            .Select(x => new SchedulePlanAffectedOperationPayload(
+                x.WorkOrderId,
+                x.OperationId,
+                x.OperationSequence,
+                x.ResourceId,
+                x.WorkCenterId,
+                x.StartUtc,
+                x.EndUtc,
+                x.StandardOperationCode))
+            .ToArray();
     }
 
     public static SchedulingIntegrationEvent<TPayload> Envelope<TPayload>(
@@ -305,6 +363,8 @@ internal static class SchedulingIntegrationEventConverterHelpers
         {
             SchedulePlanLifecycleStatus.Generated => "generated",
             SchedulePlanLifecycleStatus.Released => "released",
+            SchedulePlanLifecycleStatus.Superseded => "superseded",
+            SchedulePlanLifecycleStatus.Revoked => "revoked",
             _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unknown schedule plan lifecycle status.")
         };
     }

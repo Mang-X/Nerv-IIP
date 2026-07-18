@@ -193,6 +193,7 @@ public static class SchedulingIntegrationEventTypes
     public const string SchedulePlanGenerated = "scheduling.SchedulePlanGenerated";
     public const string ScheduleConflictDetected = "scheduling.ScheduleConflictDetected";
     public const string SchedulePlanReleased = "scheduling.SchedulePlanReleased";
+    public const string SchedulePlanRevoked = "scheduling.SchedulePlanRevoked";
     public const string SchedulePlanInvalidated = "scheduling.SchedulePlanInvalidated";
 }
 
@@ -257,6 +258,23 @@ public sealed record SchedulePlanInvalidatedIntegrationEvent(
     object? IIntegrationEventEnvelope.PayloadObject => Payload;
 }
 
+public sealed record SchedulePlanRevokedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    SchedulePlanRevokedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
 public sealed record ScheduleConflictDetectedIntegrationEvent(
     string EventId,
     string EventType,
@@ -281,6 +299,18 @@ public sealed record SchedulePlanLifecyclePayload(
     string AlgorithmVersion,
     string ProblemFingerprint,
     string PlanStatus,
+    IReadOnlyCollection<SchedulePlanAffectedOperationPayload> AffectedOperations,
+    long? ReleaseRevision = null);
+
+public sealed record SchedulePlanRevokedPayload(
+    string PlanId,
+    string ProblemId,
+    int ContractVersion,
+    string AlgorithmVersion,
+    string ProblemFingerprint,
+    long ReleaseRevision,
+    string Reason,
+    string? SupersededByPlanId,
     IReadOnlyCollection<SchedulePlanAffectedOperationPayload> AffectedOperations);
 
 public sealed record SchedulePlanInvalidatedPayload(
@@ -329,7 +359,9 @@ public enum SchedulePlanStatusContract
 {
     Preview = 0,
     Generated = 1,
-    Released = 2
+    Released = 2,
+    Superseded = 3,
+    Revoked = 4
 }
 
 public enum ScheduleConflictReasonCodeContract
