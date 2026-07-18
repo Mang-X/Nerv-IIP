@@ -49,6 +49,7 @@ $script:currentStage = 'initializing'
 $script:lastRequestError = $null
 $script:lastHealth = $null
 $script:lastCoverage = $null
+$script:disconnectStartUtc = $null
 
 function Write-AcceptanceDiagnostics([string] $Status = 'running', [object] $Failure = $null) {
     try {
@@ -58,6 +59,7 @@ function Write-AcceptanceDiagnostics([string] $Status = 'running', [object] $Fai
             observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
             sessionId = $sessionId
             connectorId = $connectorId
+            disconnectStartUtc = if ($null -eq $script:disconnectStartUtc) { $null } else { $script:disconnectStartUtc.ToString('O') }
             lastRequestError = $script:lastRequestError
             lastHealth = $script:lastHealth
             lastCoverage = $script:lastCoverage
@@ -269,9 +271,9 @@ try {
     for ($run = 1; $run -le $Runs; $run++) {
         $before = Get-Health -BusinessGatewayUrl $businessGatewayUrl -Headers $headers
         Assert-Acceptance ("$($before.connection.status)" -eq 'alive') "Run $run did not start from explicit alive state."
-        $previousConnectedSinceUtc = [DateTimeOffset]::Parse("$($before.connection.connectedSinceUtc)")
-        $baselineHeartbeatUtc = [DateTimeOffset]::Parse("$($before.lastHeartbeatAtUtc)")
-        $disconnectStartUtc = [DateTimeOffset]::UtcNow
+        $previousConnectedSinceUtc = [DateTimeOffset] $before.connection.connectedSinceUtc
+        $baselineHeartbeatUtc = [DateTimeOffset] $before.lastHeartbeatAtUtc
+        $script:disconnectStartUtc = [DateTimeOffset]::UtcNow
         $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
         Set-AcceptanceStage -Stage "run-$run-disconnecting"
         Stop-ModbusSimulator -Record $simulator
@@ -281,7 +283,7 @@ try {
         while ($stopwatch.ElapsedMilliseconds -lt $DisconnectDeadlineMilliseconds) {
             try {
                 $candidate = Get-Health -BusinessGatewayUrl $businessGatewayUrl -Headers $headers
-                $heartbeatUtc = if ($candidate.lastHeartbeatAtUtc) { [DateTimeOffset]::Parse("$($candidate.lastHeartbeatAtUtc)") } else { [DateTimeOffset]::MinValue }
+                $heartbeatUtc = if ($candidate.lastHeartbeatAtUtc) { [DateTimeOffset] $candidate.lastHeartbeatAtUtc } else { [DateTimeOffset]::MinValue }
                 if ("$($candidate.connection.status)" -eq 'lost' -and
                     "$($candidate.status)" -eq 'stale' -and
                     "$($candidate.staleReason)" -eq 'offline' -and
@@ -301,8 +303,8 @@ try {
         Assert-Acceptance ($null -ne $lost) "Run $run did not expose lost/offline/field-connection with an advancing Host heartbeat before the fixed 10-second deadline."
         Assert-Acceptance ($stopwatch.ElapsedMilliseconds -lt $DisconnectDeadlineMilliseconds) "Run $run exceeded the fixed 10-second disconnect deadline."
         $gatewayObservedAtUtc = [DateTimeOffset]::UtcNow
-        $disconnectedSinceUtc = [DateTimeOffset]::Parse("$($lost.connection.disconnectedSinceUtc)")
-        Assert-Acceptance ($disconnectedSinceUtc -ge $disconnectStartUtc) "Run $run reported disconnectedSinceUtc before the simulator disconnect started."
+        $disconnectedSinceUtc = [DateTimeOffset] $lost.connection.disconnectedSinceUtc
+        Assert-Acceptance ($disconnectedSinceUtc.UtcTicks -ge $script:disconnectStartUtc.UtcTicks) "Run $run reported disconnectedSinceUtc before the simulator disconnect started (disconnectStartUtc=$($script:disconnectStartUtc.ToString('O')); disconnectedSinceUtc=$($disconnectedSinceUtc.ToString('O')))."
         Assert-Acceptance ($disconnectedSinceUtc -le $gatewayObservedAtUtc) "Run $run reported disconnectedSinceUtc after the Gateway observation."
 
         Set-AcceptanceStage -Stage "run-$run-restarting"
@@ -314,7 +316,7 @@ try {
             try {
                 $candidate = Get-Health -BusinessGatewayUrl $businessGatewayUrl -Headers $headers
                 if ("$($candidate.connection.status)" -eq 'alive' -and
-                    [DateTimeOffset]::Parse("$($candidate.connection.connectedSinceUtc)") -gt $previousConnectedSinceUtc) {
+                    [DateTimeOffset] $candidate.connection.connectedSinceUtc -gt $previousConnectedSinceUtc) {
                     $recovered = $candidate
                     break
                 }
@@ -332,25 +334,30 @@ try {
 
         $evidenceRuns.Add([ordered]@{
             run = $run
-            disconnectStartUtc = $disconnectStartUtc.ToString('O')
-            connectionObservedAtUtc = "$($lost.connection.observedAtUtc)"
+            disconnectStartUtc = $script:disconnectStartUtc.ToString('O')
+            connectionObservedAtUtc = ([DateTimeOffset] $lost.connection.observedAtUtc).ToString('O')
             gatewayObservedAtUtc = $gatewayObservedAtUtc.ToString('O')
             elapsedMilliseconds = $stopwatch.ElapsedMilliseconds
             disconnectedSinceUtc = $disconnectedSinceUtc.ToString('O')
-            lastHeartbeatAtUtc = "$($lost.lastHeartbeatAtUtc)"
-            recoveryObservedAtUtc = "$($recovered.connection.observedAtUtc)"
-            recoveredConnectedSinceUtc = "$($recovered.connection.connectedSinceUtc)"
+            lastHeartbeatAtUtc = ([DateTimeOffset] $lost.lastHeartbeatAtUtc).ToString('O')
+            recoveryObservedAtUtc = ([DateTimeOffset] $recovered.connection.observedAtUtc).ToString('O')
+            recoveredConnectedSinceUtc = ([DateTimeOffset] $recovered.connection.connectedSinceUtc).ToString('O')
             neverSampled = [ordered]@{
                 tagKey = "$($neverSampled[0].tagKey)"
                 activationStatus = "$($neverSampled[0].activationStatus)"
                 lastSampleAtUtc = $neverSampled[0].lastSampleAtUtc
             }
         })
+        $maximumElapsedMilliseconds = @(
+            $evidenceRuns |
+                ForEach-Object { [long] $_['elapsedMilliseconds'] } |
+                Measure-Object -Maximum
+        )[0].Maximum
         [ordered]@{
             sessionId = $sessionId
             connectorId = $connectorId
             fixedDeadlineMilliseconds = $DisconnectDeadlineMilliseconds
-            maximumElapsedMilliseconds = @($evidenceRuns | Measure-Object -Property elapsedMilliseconds -Maximum)[0].Maximum
+            maximumElapsedMilliseconds = $maximumElapsedMilliseconds
             runs = $evidenceRuns
         } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $evidencePath -Encoding utf8
         Set-AcceptanceStage -Stage "run-$run-passed"

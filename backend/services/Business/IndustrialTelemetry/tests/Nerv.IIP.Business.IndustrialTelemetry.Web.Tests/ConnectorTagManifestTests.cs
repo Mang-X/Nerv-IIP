@@ -285,6 +285,7 @@ public sealed class ConnectorTagManifestTests
                 new GetConnectorTagCoverageQuery("org-001", "env-dev", "connector-a"))
             .ToQueryString();
 
+        Assert.Contains("ORDER BY", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("connector_tag_bindings", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("telemetry_summaries", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("organization_id", sql, StringComparison.OrdinalIgnoreCase);

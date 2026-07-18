@@ -83,6 +83,7 @@ public static class ConnectorTagCoverageQueryProjection
                     summary.TagKey,
                 }
                 into summaries
+            orderby binding.DeviceAssetId, binding.TagKey
             select new ConnectorTagCoverageItem(
                 binding.DeviceAssetId,
                 binding.TagKey,
@@ -129,8 +130,6 @@ public sealed class GetConnectorTagCoverageQueryHandler(ApplicationDbContext dbC
         }
 
         var items = await ConnectorTagCoverageQueryProjection.Build(dbContext, request)
-            .OrderBy(item => item.DeviceAssetId)
-            .ThenBy(item => item.TagKey)
             .ToArrayAsync(cancellationToken);
 
         return new ConnectorTagCoverageResponse(
