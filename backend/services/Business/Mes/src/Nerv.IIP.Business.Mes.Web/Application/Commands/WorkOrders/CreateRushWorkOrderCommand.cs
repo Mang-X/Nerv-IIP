@@ -31,13 +31,54 @@ public sealed class CreateRushWorkOrderCommandHandler(
     IMesPlanningStore store,
     RuleScheduler scheduler,
     MesCodingService? codingService = null,
-    ApplicationDbContext? dbContext = null)
+    ApplicationDbContext? dbContext = null,
+    IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator = null)
     : ICommandHandler<CreateRushWorkOrderCommand, CreateRushWorkOrderResponse>
 {
     private const int RushPriority = 1000;
     private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
 
     public async Task<CreateRushWorkOrderResponse> Handle(CreateRushWorkOrderCommand request, CancellationToken cancellationToken)
+    {
+        var allocation = await _codingService.AllocateWorkOrderIdAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkOrderId,
+            request.IdempotencyKey,
+            WorkOrderPayloadFingerprint(request),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            var replayedWorkOrderExists = (await store.GetWorkOrdersAsync(cancellationToken)).Any(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == allocation.Code);
+            if (replayedWorkOrderExists)
+            {
+                return new CreateRushWorkOrderResponse(
+                    allocation.Code,
+                    new MesScheduleResult(0, RescheduleTrigger.RushOrder, request.RequestedAtUtc, [], []),
+                    []);
+            }
+        }
+
+        if (dbContext is not null && skuAvailabilityScopeCoordinator is not null)
+        {
+            return await skuAvailabilityScopeCoordinator.ExecuteAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.SkuId,
+                token => CreateWorkOrderAsync(request, allocation.Code, token),
+                cancellationToken);
+        }
+
+        return await CreateWorkOrderAsync(request, allocation.Code, cancellationToken);
+    }
+
+    private async Task<CreateRushWorkOrderResponse> CreateWorkOrderAsync(
+        CreateRushWorkOrderCommand request,
+        string workOrderId,
+        CancellationToken cancellationToken)
     {
         if (dbContext is not null)
         {
@@ -55,23 +96,8 @@ public sealed class CreateRushWorkOrderCommandHandler(
                 cancellationToken);
         }
 
-        var allocation = await _codingService.AllocateWorkOrderIdAsync(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.WorkOrderId,
-            request.IdempotencyKey,
-            WorkOrderPayloadFingerprint(request),
-            cancellationToken);
-        if (allocation.IsIdempotentReplay)
-        {
-            return new CreateRushWorkOrderResponse(
-                allocation.Code,
-                new MesScheduleResult(0, RescheduleTrigger.RushOrder, request.RequestedAtUtc, [], []),
-                []);
-        }
-
         var operationTaskId = string.IsNullOrWhiteSpace(request.OperationTaskId)
-            ? $"{allocation.Code}-OP-{request.OperationSequence}"
+            ? $"{workOrderId}-OP-{request.OperationSequence}"
             : request.OperationTaskId.Trim();
         var baselinePlan = scheduler.Schedule(
             await store.GetScheduleOperationsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken),
@@ -80,14 +106,14 @@ public sealed class CreateRushWorkOrderCommandHandler(
         store.AddWorkOrder(new PlannedWorkOrder(
             request.OrganizationId,
             request.EnvironmentId,
-            allocation.Code,
+            workOrderId,
             request.SkuId,
             request.ProductionVersionId,
             request.Quantity,
             RushPriority,
             request.DueUtc));
         store.AddOperationTask(new PlannedOperationTask(
-            allocation.Code,
+            workOrderId,
             operationTaskId,
             OperationTaskStatus.Queued,
             request.OperationSequence,
@@ -110,7 +136,7 @@ public sealed class CreateRushWorkOrderCommandHandler(
             baselinePlan.Assignments,
             cancellationToken);
         return new CreateRushWorkOrderResponse(
-            allocation.Code,
+            workOrderId,
             schedule,
             schedule.AffectedWorkOrderIds);
     }

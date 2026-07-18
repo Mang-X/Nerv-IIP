@@ -7,6 +7,7 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Mes.Web.Application.MasterData;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.MasterData;
@@ -37,7 +38,7 @@ public sealed class SkuDisabledConsumerTests
         }
 
         await using var commandContext = CreateContext(options);
-        await Assert.ThrowsAsync<KnownException>(() =>
+        await Assert.ThrowsAsync<DisabledMesSkuException>(() =>
             new ConvertPlanToWorkOrderCommandHandler(commandContext).Handle(
                 new ConvertPlanToWorkOrderCommand(
                     "org-001",
@@ -128,7 +129,7 @@ public sealed class SkuDisabledConsumerTests
         }
 
         await using var commandContext = CreateContext(options);
-        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+        var exception = await Assert.ThrowsAsync<DisabledMesSkuException>(() =>
             new ConvertPlanToWorkOrderCommandHandler(commandContext).Handle(
                 new ConvertPlanToWorkOrderCommand(
                     "org-001",
@@ -165,7 +166,7 @@ public sealed class SkuDisabledConsumerTests
 
         var store = new InMemoryMesPlanningStore();
         var rushHandler = new CreateRushWorkOrderCommandHandler(store, new RuleScheduler(), null, dbContext);
-        await Assert.ThrowsAsync<KnownException>(() => rushHandler.Handle(
+        await Assert.ThrowsAsync<DisabledMesSkuException>(() => rushHandler.Handle(
             RushCommand("org-001", "env-dev", "WO-BLOCKED", changedAtUtc),
             CancellationToken.None));
 
@@ -175,6 +176,96 @@ public sealed class SkuDisabledConsumerTests
 
         Assert.DoesNotContain(store.WorkOrders, x => x.WorkOrderId == "WO-BLOCKED");
         Assert.Contains(store.WorkOrders, x => x.WorkOrderId == "WO-ALLOWED");
+    }
+
+    [Fact]
+    public async Task Idempotent_work_order_replays_remain_accepted_after_sku_is_disabled()
+    {
+        var options = CreateOptions(new InMemoryDatabaseRoot());
+        var changedAtUtc = DateTimeOffset.Parse("2026-07-18T08:00:00Z");
+        await using var dbContext = CreateContext(options);
+        var codingService = new MesCodingService();
+        var planHandler = new ConvertPlanToWorkOrderCommandHandler(dbContext, codingService);
+        var planCommand = new ConvertPlanToWorkOrderCommand(
+            "org-001", "env-dev", "PLAN-REPLAY", null, changedAtUtc.AddMinutes(-1),
+            "SKU-DISABLED", "PV-001", 1m, "PCS", changedAtUtc.AddDays(1), null,
+            IdempotencyKey: "plan-replay-001");
+        var firstPlan = await planHandler.Handle(planCommand, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var rushStore = new InMemoryMesPlanningStore();
+        var rushHandler = new CreateRushWorkOrderCommandHandler(rushStore, new RuleScheduler(), codingService, dbContext);
+        var rushCommand = RushCommand("org-001", "env-dev", "WO-RUSH-REPLAY", changedAtUtc) with
+        {
+            IdempotencyKey = "rush-replay-001"
+        };
+        var firstRush = await rushHandler.Handle(rushCommand, CancellationToken.None);
+
+        var consumer = new SkuDisabledIntegrationEventHandlerForProjectMesSkuAvailability(
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+        await consumer.HandleAsync(DisabledEvent(changedAtUtc), CancellationToken.None);
+
+        var replayedPlan = await planHandler.Handle(planCommand, CancellationToken.None);
+        var replayedRush = await rushHandler.Handle(rushCommand, CancellationToken.None);
+
+        Assert.Equal(firstPlan.ReferenceId, replayedPlan.ReferenceId);
+        Assert.Equal(firstRush.WorkOrderId, replayedRush.WorkOrderId);
+        Assert.Single(await dbContext.WorkOrders.ToListAsync(CancellationToken.None));
+        Assert.Single(rushStore.WorkOrders);
+    }
+
+    [MesRealPostgresFact]
+    public async Task PostgreSQL_disable_commit_serializes_before_new_work_order_creation()
+    {
+        await using var database = await TemporaryDatabase.CreateAsync(
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(database.ConnectionString)
+            .Options;
+        await using (var setup = CreateContext(options))
+        {
+            await setup.Database.MigrateAsync(CancellationToken.None);
+        }
+
+        await using var consumerContext = CreateContext(options);
+        await using var commandContext = CreateContext(options);
+        var projectionReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowConsumerCommit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var blockingCoordinator = new BlockingSkuAvailabilityCoordinator(
+            new PostgreSqlMesSkuAvailabilityScopeCoordinator(consumerContext),
+            projectionReady,
+            allowConsumerCommit);
+        var consumer = new SkuDisabledIntegrationEventHandlerForProjectMesSkuAvailability(
+            consumerContext,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            blockingCoordinator);
+        var consumeTask = consumer.HandleAsync(
+            DisabledEvent(DateTimeOffset.Parse("2026-07-18T08:00:00Z")),
+            CancellationToken.None);
+        await projectionReady.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var commandHandler = new ConvertPlanToWorkOrderCommandHandler(
+            commandContext,
+            new RuleScheduler(),
+            null,
+            null,
+            new PostgreSqlMesSkuAvailabilityScopeCoordinator(commandContext));
+        var createTask = commandHandler.Handle(
+            new ConvertPlanToWorkOrderCommand(
+                "org-001", "env-dev", "PLAN-RACE", "WO-RACE", DateTimeOffset.Parse("2026-07-18T08:01:00Z"),
+                "SKU-DISABLED", "PV-001", 1m, "PCS", DateTimeOffset.Parse("2026-07-19T08:00:00Z"), null),
+            CancellationToken.None);
+
+        await Task.Delay(250);
+        Assert.False(createTask.IsCompleted, "Creation must wait for the in-flight disable transaction for the same SKU scope.");
+        allowConsumerCommit.SetResult();
+        await consumeTask;
+        await Assert.ThrowsAsync<DisabledMesSkuException>(() => createTask);
+
+        await using var assertionContext = CreateContext(options);
+        Assert.Empty(await assertionContext.WorkOrders.ToListAsync(CancellationToken.None));
+        Assert.Single(await assertionContext.MesSkuAvailabilities.ToListAsync(CancellationToken.None));
     }
 
     [Fact]
@@ -242,6 +333,38 @@ public sealed class SkuDisabledConsumerTests
     {
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
+    private sealed class BlockingSkuAvailabilityCoordinator(
+        IMesSkuAvailabilityScopeCoordinator inner,
+        TaskCompletionSource projectionReady,
+        TaskCompletionSource allowCommit) : IMesSkuAvailabilityScopeCoordinator
+    {
+        public Task ExecuteAsync(
+            string organizationId,
+            string environmentId,
+            string skuCode,
+            Func<CancellationToken, Task> action,
+            CancellationToken cancellationToken) =>
+            inner.ExecuteAsync(
+                organizationId,
+                environmentId,
+                skuCode,
+                async token =>
+                {
+                    await action(token);
+                    projectionReady.SetResult();
+                    await allowCommit.Task.WaitAsync(token);
+                },
+                cancellationToken);
+
+        public Task<T> ExecuteAsync<T>(
+            string organizationId,
+            string environmentId,
+            string skuCode,
+            Func<CancellationToken, Task<T>> action,
+            CancellationToken cancellationToken) =>
+            inner.ExecuteAsync(organizationId, environmentId, skuCode, action, cancellationToken);
     }
 
     private static DbContextOptions<ApplicationDbContext> CreateOptions(InMemoryDatabaseRoot databaseRoot) =>

@@ -456,17 +456,20 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
     private readonly RuleScheduler scheduler;
     private readonly MesCodingService _codingService;
     private readonly IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider;
+    private readonly IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator;
 
     public ConvertPlanToWorkOrderCommandHandler(
         ApplicationDbContext dbContext,
         RuleScheduler scheduler,
         MesCodingService? codingService = null,
-        IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null)
+        IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null,
+        IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator = null)
     {
         this.dbContext = dbContext;
         this.scheduler = scheduler;
         _codingService = codingService ?? new MesCodingService();
         this.materialSnapshotProvider = materialSnapshotProvider;
+        this.skuAvailabilityScopeCoordinator = skuAvailabilityScopeCoordinator;
     }
 
     public ConvertPlanToWorkOrderCommandHandler(ApplicationDbContext dbContext)
@@ -484,18 +487,6 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
         var sourceSystem = string.IsNullOrWhiteSpace(request.SourceSystem) ? "DemandPlanning" : request.SourceSystem.Trim();
         var sourceDocumentType = string.IsNullOrWhiteSpace(request.SourceDocumentType) ? "PlanningSuggestion" : request.SourceDocumentType.Trim();
         var sourceDocumentId = string.IsNullOrWhiteSpace(request.SourceDocumentId) ? request.ProductionPlanId.Trim() : request.SourceDocumentId.Trim();
-        await MesSkuAvailabilityGate.EnsureActiveAsync(
-            dbContext,
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.SkuId,
-            cancellationToken);
-        await MesArchivedProductionVersionGuard.ThrowIfArchivedAsync(
-            dbContext,
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.ProductionVersionId,
-            cancellationToken);
         var allocation = await _codingService.AllocateWorkOrderIdAsync(
             request.OrganizationId,
             request.EnvironmentId,
@@ -517,17 +508,68 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return new MesAcceptedResponse("Accepted", allocation.Code, request.RequestedAtUtc);
+            var replayedWorkOrderExists = dbContext.WorkOrders.Local.Any(x =>
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.WorkOrderIdValue == allocation.Code)
+                || await dbContext.WorkOrders.AnyAsync(
+                    x => x.OrganizationId == request.OrganizationId &&
+                        x.EnvironmentId == request.EnvironmentId &&
+                        x.WorkOrderIdValue == allocation.Code,
+                    cancellationToken);
+            if (replayedWorkOrderExists)
+            {
+                return new MesAcceptedResponse("Accepted", allocation.Code, request.RequestedAtUtc);
+            }
         }
 
+        if (skuAvailabilityScopeCoordinator is not null)
+        {
+            return await skuAvailabilityScopeCoordinator.ExecuteAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.SkuId,
+                token => CreateWorkOrderAsync(request, allocation.Code, sourceSystem, sourceDocumentType, sourceDocumentId, token),
+                cancellationToken);
+        }
+
+        return await CreateWorkOrderAsync(
+            request,
+            allocation.Code,
+            sourceSystem,
+            sourceDocumentType,
+            sourceDocumentId,
+            cancellationToken);
+    }
+
+    private async Task<MesAcceptedResponse> CreateWorkOrderAsync(
+        ConvertPlanToWorkOrderCommand request,
+        string workOrderId,
+        string sourceSystem,
+        string sourceDocumentType,
+        string sourceDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await MesSkuAvailabilityGate.EnsureActiveAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SkuId,
+            cancellationToken);
+        await MesArchivedProductionVersionGuard.ThrowIfArchivedAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.ProductionVersionId,
+            cancellationToken);
         var alreadyExists = await dbContext.WorkOrders.AnyAsync(
             x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderIdValue == allocation.Code,
+                x.WorkOrderIdValue == workOrderId,
             cancellationToken);
         if (alreadyExists)
         {
-            throw new KnownException($"生产工单已存在，WorkOrderId = {allocation.Code}");
+            throw new KnownException($"生产工单已存在，WorkOrderId = {workOrderId}");
         }
 
         var sourceReference = new SourcePlanReference(
@@ -538,7 +580,7 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
         var workOrder = WorkOrder.Create(
             request.OrganizationId,
             request.EnvironmentId,
-            allocation.Code,
+            workOrderId,
             request.SkuId,
             request.ProductionVersionId,
             request.PlannedQuantity,
@@ -556,8 +598,8 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
             dbContext.OperationTasks.Add(OperationTask.Create(
                 request.OrganizationId,
                 request.EnvironmentId,
-                allocation.Code,
-                $"{allocation.Code}-OP-10",
+                workOrderId,
+                $"{workOrderId}-OP-10",
                 OperationTaskLifecycleStatus.Queued,
                 10,
                 request.WorkCenterId.Trim(),
@@ -586,7 +628,7 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
             }
         }
 
-        return new MesAcceptedResponse("Accepted", allocation.Code, request.RequestedAtUtc);
+        return new MesAcceptedResponse("Accepted", workOrderId, request.RequestedAtUtc);
     }
 
     private async Task<IReadOnlyCollection<ScheduleOperation>> GetScheduleOperationsAsync(

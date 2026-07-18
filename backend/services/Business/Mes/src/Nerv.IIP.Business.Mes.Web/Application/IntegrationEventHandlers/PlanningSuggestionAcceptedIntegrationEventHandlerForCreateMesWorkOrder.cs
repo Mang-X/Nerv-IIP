@@ -93,35 +93,50 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
                 payload.SkuCode,
                 cancellationToken))
         {
-            await deadLetterStore.AddAsync(
-                IntegrationEventDeadLetterMessage.Create(
-                    ConsumerName,
-                    integrationEvent,
-                    "mes.planningSuggestionAccepted.skuDisabled",
-                    $"Planning suggestion '{payload.SuggestionId}' references disabled SKU '{payload.SkuCode}'."),
-                cancellationToken);
+            await AddDisabledSkuDeadLetterAsync(integrationEvent, cancellationToken);
             return;
         }
 
         var dueUtc = new DateTimeOffset(payload.RequiredDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        await convertHandler.Handle(
-            new ConvertPlanToWorkOrderCommand(
-                integrationEvent.OrganizationId,
-                integrationEvent.EnvironmentId,
-                payload.SuggestionId,
-                payload.DownstreamDocumentId,
-                integrationEvent.OccurredAtUtc,
-                payload.SkuCode,
-                payload.ProductionVersionReference,
-                payload.Quantity,
-                payload.UomCode,
-                dueUtc,
-                null,
-                DemandPlanningSourceReferences.DemandPlanning,
-                DemandPlanningSourceReferences.PlanningSuggestion,
-                payload.SuggestionId,
-                payload.DemandSourceReference,
-                integrationEvent.IdempotencyKey),
+        try
+        {
+            await convertHandler.Handle(
+                new ConvertPlanToWorkOrderCommand(
+                    integrationEvent.OrganizationId,
+                    integrationEvent.EnvironmentId,
+                    payload.SuggestionId,
+                    payload.DownstreamDocumentId,
+                    integrationEvent.OccurredAtUtc,
+                    payload.SkuCode,
+                    payload.ProductionVersionReference,
+                    payload.Quantity,
+                    payload.UomCode,
+                    dueUtc,
+                    null,
+                    DemandPlanningSourceReferences.DemandPlanning,
+                    DemandPlanningSourceReferences.PlanningSuggestion,
+                    payload.SuggestionId,
+                    payload.DemandSourceReference,
+                    integrationEvent.IdempotencyKey),
+                cancellationToken);
+        }
+        catch (DisabledMesSkuException)
+        {
+            await AddDisabledSkuDeadLetterAsync(integrationEvent, cancellationToken);
+        }
+    }
+
+    private Task AddDisabledSkuDeadLetterAsync(
+        PlanningSuggestionAcceptedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        var payload = integrationEvent.Payload;
+        return deadLetterStore.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                ConsumerName,
+                integrationEvent,
+                "mes.planningSuggestionAccepted.skuDisabled",
+                $"Planning suggestion '{payload.SuggestionId}' references disabled SKU '{payload.SkuCode}'."),
             cancellationToken);
     }
 }

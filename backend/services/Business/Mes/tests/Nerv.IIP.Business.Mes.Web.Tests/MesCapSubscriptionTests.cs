@@ -36,6 +36,7 @@ public sealed class MesCapSubscriptionTests
     private const string InspectionResultTopic = "InspectionResultIntegrationEvent";
     private const string StockMovementPostedTopic = "StockMovementPostedIntegrationEvent";
     private const string StockMovementPostingFailedTopic = "StockMovementPostingFailedIntegrationEvent";
+    private const string SkuDisabledTopic = "SkuDisabledIntegrationEvent";
 
     [Fact]
     public void Mes_cap_registration_discovers_maintenance_asset_event_subscribers()
@@ -67,6 +68,7 @@ public sealed class MesCapSubscriptionTests
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, InspectionResultTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostedTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostingFailedTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, SkuDisabledTopic));
     }
 
     [Fact]
@@ -99,6 +101,7 @@ public sealed class MesCapSubscriptionTests
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, InspectionResultTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostedTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostingFailedTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, SkuDisabledTopic));
         Assert.Null(provider.GetService<IStorageInitializer>());
     }
 

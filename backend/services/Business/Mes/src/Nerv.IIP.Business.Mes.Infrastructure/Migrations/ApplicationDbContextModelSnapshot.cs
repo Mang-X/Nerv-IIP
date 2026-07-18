@@ -2215,50 +2215,59 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")
+                        .HasColumnName("id")
                         .HasComment("MES SKU availability projection identifier.");
 
                     b.Property<DateTimeOffset>("ChangedAtUtc")
                         .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone")
+                        .HasColumnName("changed_at_utc")
                         .HasComment("UTC time of the latest applied MasterData SKU availability change.");
 
                     b.Property<string>("DisabledReason")
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
+                        .HasColumnName("disabled_reason")
                         .HasComment("MasterData reason for disabling the SKU.");
 
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
+                        .HasColumnName("environment_id")
                         .HasComment("Owning environment identifier.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
+                        .HasColumnName("organization_id")
                         .HasComment("Owning organization identifier.");
 
                     b.Property<string>("SkuCode")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_code")
                         .HasComment("MasterData SKU code used by MES work orders.");
 
                     b.Property<string>("SourceEventId")
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
+                        .HasColumnName("source_event_id")
                         .HasComment("Latest applied MasterData integration event identifier.");
 
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
+                        .HasColumnName("status")
                         .HasComment("Latest consumed SKU status; this slice records disabled facts.");
 
-                    b.HasKey("Id");
+                    b.HasKey("Id")
+                        .HasName("pk_mes_sku_availabilities");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SkuCode")
                         .IsUnique()

@@ -5,6 +5,9 @@ using Nerv.IIP.Business.Mes.Infrastructure.MasterData;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.MasterData;
 
+public sealed class DisabledMesSkuException(string skuCode)
+    : KnownException($"SKU '{skuCode}' is disabled and cannot be used for a new MES work order.");
+
 public static class MesSkuAvailabilityGate
 {
     public static async Task EnsureActiveAsync(
@@ -21,7 +24,7 @@ public static class MesSkuAvailabilityGate
                 skuCode,
                 cancellationToken))
         {
-            throw new KnownException($"SKU '{skuCode}' is disabled and cannot be used for a new MES work order.");
+            throw new DisabledMesSkuException(skuCode);
         }
     }
 
