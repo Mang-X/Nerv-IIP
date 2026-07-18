@@ -54,6 +54,8 @@ public sealed class SchedulingPlanReleasedHandlerTests
         Assert.Equal(TimeSpan.FromMinutes(90), task.Duration);
         Assert.Equal(DateTimeOffset.Parse("2026-06-01T07:30:00Z"), task.AssignedAtUtc);
         Assert.Equal(DateTimeOffset.Parse("2026-06-01T07:30:00Z"), task.ScheduledAtUtc);
+        Assert.Equal("plan-001", task.SchedulePlanId);
+        Assert.Equal(1, task.ScheduleReleaseRevision);
         Assert.Equal("STD-OIL", task.OperationCode);
     }
 
@@ -217,7 +219,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
     }
 
     [Fact]
-    public async Task SchedulePlanReleasedHandler_DoesNotPersistInboxWhenRejectedOperationPrecedesInvalidOperation()
+    public async Task SchedulePlanReleasedHandler_DeadLettersInvalidOperationWithoutThrowing()
     {
         await using var connection = await CreateOpenSqliteConnectionAsync();
         await using (var dbContext = await CreateInitializedSqliteDbContextAsync(connection))
@@ -252,11 +254,12 @@ public sealed class SchedulingPlanReleasedHandlerTests
         await using (var dbContext = CreateSqliteDbContext(connection))
         {
             await using var transaction = await dbContext.Database.BeginTransactionAsync();
+            var deadLetterStore = new SaveChangesDeadLetterStore(dbContext);
             var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
                 dbContext,
-                new SaveChangesDeadLetterStore(dbContext));
+                deadLetterStore);
 
-            await Assert.ThrowsAsync<KnownException>(() => handler.HandleAsync(
+            await handler.HandleAsync(
                 CreateReleasedEvent(
                     new SchedulePlanAffectedOperationPayload(
                         "WO-APS-001",
@@ -274,12 +277,16 @@ public sealed class SchedulingPlanReleasedHandlerTests
                         "WC-PACK",
                         DateTimeOffset.Parse("2026-06-01T14:45:00Z"),
                         DateTimeOffset.Parse("2026-06-01T14:00:00Z"))),
-                CancellationToken.None));
-            await transaction.RollbackAsync();
+                CancellationToken.None);
+            Assert.Equal(2, (await deadLetterStore.ListAsync(
+                SchedulePlanReleasedIntegrationEventHandlerForDispatch.ConsumerName,
+                IntegrationEventDeadLetterStatus.Pending,
+                CancellationToken.None)).Count);
+            await transaction.CommitAsync();
         }
 
         await using var assertionDbContext = CreateSqliteDbContext(connection);
-        Assert.Empty(assertionDbContext.ProcessedIntegrationEvents);
+        Assert.Single(assertionDbContext.ProcessedIntegrationEvents);
     }
 
     [Fact]
@@ -618,7 +625,8 @@ public sealed class SchedulingPlanReleasedHandlerTests
                 "aps-lite-v1",
                 "fingerprint-001",
                 "released",
-                affectedOperations));
+                affectedOperations,
+                1));
     }
 
     private static SchedulePlanInvalidatedIntegrationEvent CreateInvalidatedEvent()

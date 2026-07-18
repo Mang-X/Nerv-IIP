@@ -86,6 +86,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     // Set only when a released APS schedule places this task (ApplyScheduleAssignment); never by manual
     // dispatch (Assign). This is the schedule-specific fact that distinguishes 已排程 from 未排程.
     public DateTimeOffset? ScheduledAtUtc { get; private set; }
+    public string? SchedulePlanId { get; private set; }
+    public long? ScheduleReleaseRevision { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public string SkuCode { get; private set; } = string.Empty;
     public string UomCode { get; private set; } = "pcs";
@@ -363,7 +365,9 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         DateTimeOffset plannedStartUtc,
         DateTimeOffset plannedEndUtc,
         DateTimeOffset assignedAtUtc,
-        string? operationCode = null)
+        string? operationCode = null,
+        string? schedulePlanId = null,
+        long? scheduleReleaseRevision = null)
     {
         if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
         {
@@ -380,6 +384,28 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             throw new ArgumentOutOfRangeException(nameof(plannedEndUtc), "Planned end must be after planned start.");
         }
 
+        var normalizedSchedulePlanId = NormalizeOptional(schedulePlanId);
+        if (normalizedSchedulePlanId is null && scheduleReleaseRevision is not null)
+        {
+            throw new ArgumentException("Schedule plan id is required when a release revision is supplied.");
+        }
+
+        if (scheduleReleaseRevision <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(scheduleReleaseRevision), "Schedule release revision must be positive.");
+        }
+
+        if (ScheduleReleaseRevision is not null && scheduleReleaseRevision is not null &&
+            ScheduleReleaseRevision.Value > scheduleReleaseRevision.Value)
+        {
+            return;
+        }
+
+        if (ScheduleReleaseRevision is not null && scheduleReleaseRevision is null)
+        {
+            return;
+        }
+
         var normalizedWorkCenterId = DomainGuard.Required(workCenterId, nameof(workCenterId));
         if (!HasActiveManualDispatch)
         {
@@ -392,6 +418,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
         OperationCode = NormalizeOptional(operationCode) ?? OperationCode;
         ScheduledAtUtc = assignedAtUtc;
+        SchedulePlanId = normalizedSchedulePlanId;
+        ScheduleReleaseRevision = scheduleReleaseRevision;
         if (Status == OperationTaskLifecycleStatus.ScheduleInvalidated)
         {
             Status = OperationTaskLifecycleStatus.Queued;
@@ -399,6 +427,33 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
         // A released schedule assignment re-plans the task, so any prior invalidation reason no longer applies.
         ScheduleInvalidationReasonCode = null;
+    }
+
+    public void RevokeScheduleAssignment(string schedulePlanId, long scheduleReleaseRevision, string reasonCode)
+    {
+        var normalizedPlanId = DomainGuard.Required(schedulePlanId, nameof(schedulePlanId));
+        if (scheduleReleaseRevision <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(scheduleReleaseRevision), "Schedule release revision must be positive.");
+        }
+
+        if (!string.Equals(SchedulePlanId, normalizedPlanId, StringComparison.Ordinal) ||
+            (ScheduleReleaseRevision is not null && ScheduleReleaseRevision.Value != scheduleReleaseRevision))
+        {
+            return;
+        }
+
+        SchedulePlanId = null;
+        ScheduleReleaseRevision = null;
+        ScheduledAtUtc = null;
+
+        if (!HasActiveManualDispatch)
+        {
+            DeviceAssetId = null;
+            AssignedAtUtc = null;
+        }
+
+        MarkScheduleInvalidated(reasonCode);
     }
 
     private static string NormalizeAlternatives(IReadOnlyCollection<string> values)

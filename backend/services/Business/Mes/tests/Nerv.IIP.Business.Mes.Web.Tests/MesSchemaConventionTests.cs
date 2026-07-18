@@ -25,6 +25,16 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesSchemaConventionTests
 {
     [Fact]
+    public void Operation_task_schedule_release_provenance_columns_are_explicit()
+    {
+        using var fixture = CreateFixture();
+        var entity = fixture.DbContext.Model.FindEntityType(typeof(OperationTask))!;
+
+        Assert.Equal("schedule_plan_id", entity.FindProperty(nameof(OperationTask.SchedulePlanId))!.GetColumnName());
+        Assert.Equal("schedule_release_revision", entity.FindProperty(nameof(OperationTask.ScheduleReleaseRevision))!.GetColumnName());
+    }
+
+    [Fact]
     public void Runtime_PostgreSQL_profile_configures_migrations_history_schema()
     {
         using var fixture = CreateFixture();

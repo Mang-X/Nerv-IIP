@@ -82,7 +82,11 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
     {
         if (operation.EndUtc <= operation.StartUtc)
         {
-            throw new KnownException($"Released schedule operation has an invalid time window, OperationId = {operation.OperationId}");
+            return IntegrationEventDeadLetterMessage.Create(
+                ConsumerName,
+                integrationEvent,
+                "mes.schedulePlanReleased.invalidTimeWindow",
+                $"Released schedule operation has an invalid time window, OperationId = {operation.OperationId}, StartUtc = {operation.StartUtc:O}, EndUtc = {operation.EndUtc:O}.");
         }
 
         var task = await dbContext.OperationTasks.SingleOrDefaultAsync(
@@ -136,7 +140,9 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
             operation.StartUtc,
             operation.EndUtc,
             integrationEvent.OccurredAtUtc,
-            operation.StandardOperationCode);
+            operation.StandardOperationCode,
+            integrationEvent.Payload.PlanId,
+            integrationEvent.Payload.ReleaseRevision);
         return null;
     }
 }
@@ -144,6 +150,90 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
 public static class SchedulePlanReleasedIntegrationEventTopic
 {
     public const string TopicName = "SchedulePlanReleasedIntegrationEvent";
+}
+
+[IntegrationEventConsumer(SchedulePlanRevokedIntegrationEventTopic.TopicName, ConsumerName)]
+public sealed class SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatch(
+    ApplicationDbContext dbContext,
+    IIntegrationEventDeadLetterStore deadLetterStore)
+    : IIntegrationEventHandler<SchedulePlanRevokedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "business-mes.schedule-plan-revoked-withdraw-dispatch";
+
+    private readonly IntegrationEventConsumerGuard<SchedulePlanRevokedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            SchedulingIntegrationEventTypes.SchedulePlanRevoked,
+            SchedulingIntegrationEventVersions.V1));
+
+    public Task HandleAsync(SchedulePlanRevokedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        return consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
+
+    [CapSubscribe(SchedulePlanRevokedIntegrationEventTopic.TopicName, Group = ConsumerName)]
+    public Task HandleCapAsync(SchedulePlanRevokedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        return HandleAsync(integrationEvent, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(
+        SchedulePlanRevokedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(integrationEvent);
+        if (string.IsNullOrWhiteSpace(integrationEvent.Payload.PlanId) ||
+            integrationEvent.Payload.ReleaseRevision <= 0 ||
+            integrationEvent.Payload.AffectedOperations is null)
+        {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    "mes.schedulePlanRevoked.invalidPayload",
+                    "Schedule revocation requires a plan id, positive release revision, and affected operations collection."),
+                cancellationToken);
+            return;
+        }
+
+        if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        {
+            return;
+        }
+
+        var operationIds = integrationEvent.Payload.AffectedOperations
+            .Select(x => x.OperationId)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (operationIds.Length > 0)
+        {
+            var tasks = await dbContext.OperationTasks
+                .Where(x =>
+                    x.OrganizationId == integrationEvent.OrganizationId &&
+                    x.EnvironmentId == integrationEvent.EnvironmentId &&
+                    operationIds.Contains(x.OperationTaskIdValue))
+                .ToArrayAsync(cancellationToken);
+
+            foreach (var task in tasks)
+            {
+                task.RevokeScheduleAssignment(
+                    integrationEvent.Payload.PlanId,
+                    integrationEvent.Payload.ReleaseRevision,
+                    integrationEvent.Payload.Reason);
+            }
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+}
+
+public static class SchedulePlanRevokedIntegrationEventTopic
+{
+    public const string TopicName = "SchedulePlanRevokedIntegrationEvent";
 }
 
 [IntegrationEventConsumer(SchedulePlanInvalidatedIntegrationEventTopic.TopicName, ConsumerName)]

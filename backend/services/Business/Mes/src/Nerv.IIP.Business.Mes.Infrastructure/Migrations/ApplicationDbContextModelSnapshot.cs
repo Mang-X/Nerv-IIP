@@ -671,6 +671,17 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("schedule_invalidation_reason_code")
                         .HasComment("Latest scheduling invalidation reason code when the task is schedule invalidated; cleared when a released schedule re-plans the task.");
 
+                    b.Property<string>("SchedulePlanId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("schedule_plan_id")
+                        .HasComment("Scheduling plan id that currently owns this task's APS assignment, or null after matching revocation.");
+
+                    b.Property<long?>("ScheduleReleaseRevision")
+                        .HasColumnType("bigint")
+                        .HasColumnName("schedule_release_revision")
+                        .HasComment("Monotonic Scheduling release revision that currently owns this task's APS assignment.");
+
                     b.Property<DateTimeOffset?>("ScheduledAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("scheduled_at_utc")

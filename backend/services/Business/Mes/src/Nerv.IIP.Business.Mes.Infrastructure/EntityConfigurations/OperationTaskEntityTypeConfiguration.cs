@@ -44,6 +44,8 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.ShiftId).HasColumnName("shift_id").HasMaxLength(100).HasComment("Assigned MasterData shift public id captured by MES dispatch.");
         builder.Property(x => x.AssignedAtUtc).HasColumnName("assigned_at_utc").HasComment("UTC time when MES dispatch assignment facts were captured.");
         builder.Property(x => x.ScheduledAtUtc).HasColumnName("scheduled_at_utc").HasComment("UTC time when a released APS schedule last placed this task; set only by schedule assignment (not manual dispatch) and used to derive the 已排程/未排程 schedule state.");
+        builder.Property(x => x.SchedulePlanId).HasColumnName("schedule_plan_id").HasMaxLength(100).HasComment("Scheduling plan id that currently owns this task's APS assignment, or null after matching revocation.");
+        builder.Property(x => x.ScheduleReleaseRevision).HasColumnName("schedule_release_revision").HasComment("Monotonic Scheduling release revision that currently owns this task's APS assignment.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the operation task fact was created.");
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("Produced SKU code copied from the MES work order for downstream inspection triggers.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(30).HasComment("Produced quantity unit of measure for downstream inspection triggers.");

@@ -17,6 +17,7 @@ public static class MesIntegrationEventConsumerRegistrationExtensions
         services.AddScoped<StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed>();
         services.AddScoped<InventoryReservationExpiredIntegrationEventHandlerForMarkMesRequestExpired>();
         services.AddScoped<SchedulePlanReleasedIntegrationEventHandlerForDispatch>();
+        services.AddScoped<SchedulePlanRevokedIntegrationEventHandlerForWithdrawDispatch>();
         services.AddScoped<SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalidated>();
         return services;
     }
