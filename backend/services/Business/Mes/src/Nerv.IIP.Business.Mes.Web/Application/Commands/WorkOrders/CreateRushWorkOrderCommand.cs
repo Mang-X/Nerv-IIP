@@ -2,6 +2,7 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
+using Nerv.IIP.Business.Mes.Web.Application.MasterData;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
@@ -40,6 +41,12 @@ public sealed class CreateRushWorkOrderCommandHandler(
     {
         if (dbContext is not null)
         {
+            await MesSkuAvailabilityGate.EnsureActiveAsync(
+                dbContext,
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.SkuId,
+                cancellationToken);
             await MesArchivedProductionVersionGuard.ThrowIfArchivedAsync(
                 dbContext,
                 request.OrganizationId,

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.MasterData;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.DemandPlanning;
 using Nerv.IIP.Messaging.CAP;
@@ -82,6 +83,23 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
             cancellationToken);
         if (existing)
         {
+            return;
+        }
+
+        if (await MesSkuAvailabilityGate.IsDisabledAsync(
+                dbContext,
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId,
+                payload.SkuCode,
+                cancellationToken))
+        {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    "mes.planningSuggestionAccepted.skuDisabled",
+                    $"Planning suggestion '{payload.SuggestionId}' references disabled SKU '{payload.SkuCode}'."),
+                cancellationToken);
             return;
         }
 

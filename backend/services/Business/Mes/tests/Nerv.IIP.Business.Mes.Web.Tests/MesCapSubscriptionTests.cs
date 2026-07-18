@@ -124,6 +124,9 @@ public sealed class MesCapSubscriptionTests
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalidated) &&
             descriptor.Lifetime == ServiceLifetime.Scoped);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(SkuDisabledIntegrationEventHandlerForProjectMesSkuAvailability) &&
+            descriptor.Lifetime == ServiceLifetime.Scoped);
     }
 
     [PostgreSqlFact]

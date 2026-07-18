@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
+using Nerv.IIP.Business.Mes.Web.Application.MasterData;
 using DomainScheduleResult = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduleResult;
 using DomainScheduleTrigger = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduleTrigger;
 using DomainScheduledOperationSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduledOperationSnapshot;
@@ -483,6 +484,12 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
         var sourceSystem = string.IsNullOrWhiteSpace(request.SourceSystem) ? "DemandPlanning" : request.SourceSystem.Trim();
         var sourceDocumentType = string.IsNullOrWhiteSpace(request.SourceDocumentType) ? "PlanningSuggestion" : request.SourceDocumentType.Trim();
         var sourceDocumentId = string.IsNullOrWhiteSpace(request.SourceDocumentId) ? request.ProductionPlanId.Trim() : request.SourceDocumentId.Trim();
+        await MesSkuAvailabilityGate.EnsureActiveAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SkuId,
+            cancellationToken);
         await MesArchivedProductionVersionGuard.ThrowIfArchivedAsync(
             dbContext,
             request.OrganizationId,
