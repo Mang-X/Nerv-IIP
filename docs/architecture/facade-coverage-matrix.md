@@ -100,7 +100,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Mes | 53 | 50 | 3 | 0 |
 | ProductEngineering | 38 | 38 | 0 | 0 |
 | Quality | 32 | 18 | 14 | 0 |
-| Scheduling | 8 | 7 | 1 | 0 |
+| Scheduling | 9 | 8 | 1 | 0 |
 | Wms | 30 | 19 | 6 | 5 |
 | **Total** | **357** | **286** | **51** | **20** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->

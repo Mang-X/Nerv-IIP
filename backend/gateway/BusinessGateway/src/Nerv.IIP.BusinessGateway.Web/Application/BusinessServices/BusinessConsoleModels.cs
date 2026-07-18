@@ -2193,7 +2193,16 @@ public sealed record BusinessConsoleSchedulePlanSummaryResponse(
 public sealed record BusinessConsoleReleaseSchedulePlanResponse(
     string PlanId,
     Nerv.IIP.Contracts.Scheduling.SchedulePlanStatusContract Status,
-    DateTimeOffset? ReleasedAtUtc);
+    DateTimeOffset? ReleasedAtUtc,
+    long ReleaseRevision);
+
+public sealed record BusinessConsoleRevokeSchedulePlanResponse(
+    string PlanId,
+    Nerv.IIP.Contracts.Scheduling.SchedulePlanStatusContract Status,
+    long ReleaseRevision,
+    DateTimeOffset? RevokedAtUtc,
+    string Reason,
+    string? SupersededByPlanId);
 
 public sealed record BusinessConsoleEquipmentContextRequest(
     string OrganizationId,

@@ -694,6 +694,11 @@ public interface IBusinessSchedulingClient
         BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleRevokeSchedulePlanResponse> RevokePlanAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingPlanRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleScheduleOperationOverrideResponse> UpsertOperationOverrideAsync(
         string internalBearerToken,
         BusinessConsoleScheduleOperationOverrideRequest request,
@@ -4388,6 +4393,18 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/release?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken,
+            SchedulingJson.Options);
+
+    public Task<BusinessConsoleRevokeSchedulePlanResponse> RevokePlanAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingPlanRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleRevokeSchedulePlanResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/revoke?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
             cancellationToken,
             SchedulingJson.Options);

@@ -2392,6 +2392,7 @@ public sealed class BusinessGatewayProxyTests
         var detail = await client.GetAsync("/api/business-console/v1/scheduling/plans/plan-001?organizationId=org-001&environmentId=env-dev");
         var gantt = await client.GetAsync("/api/business-console/v1/scheduling/plans/plan-001/gantt?organizationId=org-001&environmentId=env-dev");
         var release = await client.PostAsync("/api/business-console/v1/scheduling/plans/plan-001/release?organizationId=org-001&environmentId=env-dev", null);
+        var revoke = await client.PostAsync("/api/business-console/v1/scheduling/plans/plan-001/revoke?organizationId=org-001&environmentId=env-dev", null);
 
         Assert.Equal(HttpStatusCode.OK, preview.StatusCode);
         Assert.Equal(HttpStatusCode.OK, create.StatusCode);
@@ -2399,6 +2400,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
         Assert.Equal(HttpStatusCode.OK, gantt.StatusCode);
         Assert.Equal(HttpStatusCode.OK, release.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, revoke.StatusCode);
         Assert.Equal("internal-test-token", scheduling.LastInternalToken);
         Assert.Equal("problem-001", scheduling.LastProblem!.ProblemId);
         Assert.Equal(new BusinessConsoleSchedulingContextRequest("org-001", "env-dev", 1, 20), scheduling.LastListRequest);
@@ -2422,6 +2424,10 @@ public sealed class BusinessGatewayProxyTests
         using var releaseDocument = JsonDocument.Parse(await release.Content.ReadAsStringAsync());
         Assert.Equal("plan-001", releaseDocument.RootElement.GetProperty("data").GetProperty("planId").GetString());
         Assert.Equal("released", releaseDocument.RootElement.GetProperty("data").GetProperty("status").GetString());
+        Assert.Equal(1, releaseDocument.RootElement.GetProperty("data").GetProperty("releaseRevision").GetInt64());
+        using var revokeDocument = JsonDocument.Parse(await revoke.Content.ReadAsStringAsync());
+        Assert.Equal("revoked", revokeDocument.RootElement.GetProperty("data").GetProperty("status").GetString());
+        Assert.Equal("explicit", revokeDocument.RootElement.GetProperty("data").GetProperty("reason").GetString());
     }
 
     [Fact]
@@ -2529,6 +2535,7 @@ public sealed class BusinessGatewayProxyTests
     [InlineData("GET", "/api/business-console/v1/scheduling/plans/%20?organizationId=org-001&environmentId=env-dev")]
     [InlineData("GET", "/api/business-console/v1/scheduling/plans/plan-001/gantt?environmentId=env-dev")]
     [InlineData("POST", "/api/business-console/v1/scheduling/plans/plan-001/release?organizationId=org-001")]
+    [InlineData("POST", "/api/business-console/v1/scheduling/plans/plan-001/revoke?environmentId=env-dev")]
     public async Task Scheduling_plan_endpoints_reject_missing_context_or_plan_id_before_downstream_forwarding(
         string method,
         string path)
@@ -3021,6 +3028,7 @@ public sealed class BusinessGatewayProxyTests
         await client.GetPlanAsync("internal-token-001", planRequest, CancellationToken.None);
         await client.GetPlanGanttAsync("internal-token-001", planRequest, CancellationToken.None);
         await client.ReleasePlanAsync("internal-token-001", planRequest, CancellationToken.None);
+        await client.RevokePlanAsync("internal-token-001", planRequest, CancellationToken.None);
 
         Assert.All(handler.Requests, request => Assert.Equal("Bearer", request.Headers.Authorization?.Scheme));
         Assert.All(handler.Requests, request => Assert.Equal("internal-token-001", request.Headers.Authorization?.Parameter));
@@ -3038,6 +3046,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpMethod.Post, handler.Requests[5].Method);
         Assert.Equal("/api/business/v1/scheduling/plans/plan-001/release", handler.Requests[5].RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[5].RequestUri!.Query.TrimStart('?'));
+        Assert.Equal(HttpMethod.Post, handler.Requests[6].Method);
+        Assert.Equal("/api/business/v1/scheduling/plans/plan-001/revoke", handler.Requests[6].RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[6].RequestUri!.Query.TrimStart('?'));
     }
 
     [Fact]
@@ -5832,7 +5843,25 @@ public sealed class BusinessGatewayProxyTests
                 data = new BusinessConsoleReleaseSchedulePlanResponse(
                     "plan-001",
                     SchedulePlanStatusContract.Released,
-                    DateTimeOffset.Parse("2026-06-01T10:00:00Z", CultureInfo.InvariantCulture)),
+                    DateTimeOffset.Parse("2026-06-01T10:00:00Z", CultureInfo.InvariantCulture),
+                    1),
+                success = true,
+                message = string.Empty,
+                code = 0,
+            };
+        }
+
+        if (path.EndsWith("/revoke", StringComparison.Ordinal))
+        {
+            return new
+            {
+                data = new BusinessConsoleRevokeSchedulePlanResponse(
+                    "plan-001",
+                    SchedulePlanStatusContract.Revoked,
+                    1,
+                    DateTimeOffset.Parse("2026-06-01T11:00:00Z", CultureInfo.InvariantCulture),
+                    "explicit",
+                    null),
                 success = true,
                 message = string.Empty,
                 code = 0,
@@ -8747,7 +8776,25 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
         return Task.FromResult(new BusinessConsoleReleaseSchedulePlanResponse(
             request.PlanId,
             SchedulePlanStatusContract.Released,
-            DateTimeOffset.Parse("2026-06-01T10:00:00Z", CultureInfo.InvariantCulture)));
+            DateTimeOffset.Parse("2026-06-01T10:00:00Z", CultureInfo.InvariantCulture),
+            1));
+    }
+
+    public Task<BusinessConsoleRevokeSchedulePlanResponse> RevokePlanAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingPlanRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPlanId = request.PlanId;
+        LastPlanRequest = request;
+        return Task.FromResult(new BusinessConsoleRevokeSchedulePlanResponse(
+            request.PlanId,
+            SchedulePlanStatusContract.Revoked,
+            1,
+            DateTimeOffset.Parse("2026-06-01T11:00:00Z", CultureInfo.InvariantCulture),
+            "explicit",
+            null));
     }
 
     public Task<BusinessConsoleScheduleOperationOverrideResponse> UpsertOperationOverrideAsync(

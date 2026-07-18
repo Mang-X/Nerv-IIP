@@ -3967,6 +3967,19 @@
     {
       "service": "Scheduling",
       "method": "POST",
+      "route": "/api/business/v1/scheduling/plans/{planId}/revoke",
+      "operationId": "revokeSchedulingPlan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "revokeBusinessConsoleSchedulingPlan"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
       "route": "/api/business/v1/scheduling/problems/assemble",
       "operationId": "assembleSchedulingProblem",
       "classification": "deferred",

@@ -1084,7 +1084,7 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
     ganttItems?: Array<NervIipContractsSchedulingGanttScheduleItemContract>;
 };
 
-export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released';
+export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released' | 'superseded' | 'revoked';
 
 export type NervIipContractsSchedulingSchedulePlanMetricsContract = {
     scheduledOperationCount?: number;
@@ -1313,6 +1313,20 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     planId?: string;
     status?: NervIipContractsSchedulingSchedulePlanStatusContract;
     releasedAtUtc?: string | null;
+    releaseRevision?: number;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRevokeSchedulePlanResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRevokeSchedulePlanResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRevokeSchedulePlanResponse = {
+    planId?: string;
+    status?: NervIipContractsSchedulingSchedulePlanStatusContract;
+    releaseRevision?: number;
+    revokedAtUtc?: string | null;
+    reason?: string;
+    supersededByPlanId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleScheduleOperationOverrideResponse = NetCorePalExtensionsDtoResponseData & {
@@ -8060,6 +8074,44 @@ export type ReleaseBusinessConsoleSchedulingPlanResponses = {
 };
 
 export type ReleaseBusinessConsoleSchedulingPlanResponse = ReleaseBusinessConsoleSchedulingPlanResponses[keyof ReleaseBusinessConsoleSchedulingPlanResponses];
+
+export type RevokeBusinessConsoleSchedulingPlanData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans/{planId}/revoke';
+};
+
+export type RevokeBusinessConsoleSchedulingPlanErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RevokeBusinessConsoleSchedulingPlanError = RevokeBusinessConsoleSchedulingPlanErrors[keyof RevokeBusinessConsoleSchedulingPlanErrors];
+
+export type RevokeBusinessConsoleSchedulingPlanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRevokeSchedulePlanResponse;
+};
+
+export type RevokeBusinessConsoleSchedulingPlanResponse = RevokeBusinessConsoleSchedulingPlanResponses[keyof RevokeBusinessConsoleSchedulingPlanResponses];
 
 export type UpsertBusinessConsoleSchedulingOperationOverrideData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideRequest;
