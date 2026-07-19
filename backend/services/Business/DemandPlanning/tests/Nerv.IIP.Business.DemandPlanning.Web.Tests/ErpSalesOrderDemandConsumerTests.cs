@@ -83,7 +83,7 @@ public sealed class ErpSalesOrderDemandConsumerTests
     }
 
     [DemandPlanningRealPostgresRedisFact]
-    public async Task Redis_cap_retry_converges_changed_v2_after_first_consumer_failure()
+    public async Task Redis_cap_fallback_scan_converges_changed_v2_after_immediate_retries_fail()
     {
         await using var database = await TemporaryDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
         var redisConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_REDIS")!;
@@ -97,7 +97,7 @@ public sealed class ErpSalesOrderDemandConsumerTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddMediatR(options => options.RegisterServicesFromAssembly(typeof(Program).Assembly));
-        services.AddSingleton<ChangedV2FirstAttemptFailureProbe>();
+        services.AddSingleton<ChangedV2FallbackFailureProbe>();
         services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
         services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
             database.ConnectionString,
@@ -105,13 +105,14 @@ public sealed class ErpSalesOrderDemandConsumerTests
         services.AddCap(options =>
             {
                 options.Version = $"man517-retry-{Guid.NewGuid():N}"[..20];
-                options.FailedRetryCount = 2;
+                options.FailedRetryCount = 4;
                 options.FailedRetryInterval = 2;
+                options.FallbackWindowLookbackSeconds = 30;
                 options.TopicNamePrefix = topicNamePrefix;
                 options.UseEntityFramework<ApplicationDbContext>();
                 options.UseConfiguredTransport(configuration, "Development");
             })
-            .AddSubscriberAssembly(typeof(ChangedV2RetryProbeSubscriber).Assembly);
+            .AddSubscriberAssembly(typeof(ChangedV2FallbackRetryProbeSubscriber).Assembly);
 
         await using var provider = services.BuildServiceProvider();
         await using (var setupScope = provider.CreateAsyncScope())
@@ -131,18 +132,19 @@ public sealed class ErpSalesOrderDemandConsumerTests
             EventId = targetEventId,
             IdempotencyKey = $"erp:sales-order:org-001:env-dev:SO-DEMO-001:v2:retry-{Guid.NewGuid():N}",
         };
-        provider.GetRequiredService<ChangedV2FirstAttemptFailureProbe>().SetTarget(targetEventId);
+        provider.GetRequiredService<ChangedV2FallbackFailureProbe>().SetTarget(targetEventId);
+        var retryPathWait = System.Diagnostics.Stopwatch.StartNew();
         await provider.GetRequiredService<ICapPublisher>()
             .PublishAsync(nameof(SalesOrderChangedIntegrationEvent), targetEvent);
 
-        var firstFailureDeadline = DateTimeOffset.UtcNow.AddSeconds(5);
-        var failureProbe = provider.GetRequiredService<ChangedV2FirstAttemptFailureProbe>();
-        while (failureProbe.InjectedFailureCount == 0 && DateTimeOffset.UtcNow < firstFailureDeadline)
+        var immediateRetryWait = System.Diagnostics.Stopwatch.StartNew();
+        var failureProbe = provider.GetRequiredService<ChangedV2FallbackFailureProbe>();
+        while (failureProbe.InjectedFailureCount < 3 && immediateRetryWait.Elapsed < TimeSpan.FromSeconds(15))
         {
             await Task.Delay(50);
         }
 
-        Assert.Equal(1, failureProbe.InjectedFailureCount);
+        Assert.Equal(3, failureProbe.InjectedFailureCount);
         await using (var failedAttemptScope = provider.CreateAsyncScope())
         {
             var failedAttemptDb = failedAttemptScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -152,18 +154,20 @@ public sealed class ErpSalesOrderDemandConsumerTests
             Assert.Single(await failedAttemptDb.ProcessedIntegrationEvents.AsNoTracking().ToArrayAsync());
         }
 
-        failureProbe.ReleaseRetry();
+        await Task.Delay(TimeSpan.FromSeconds(5));
+        Assert.Equal(3, failureProbe.AttemptCount);
 
-        var timeoutAt = DateTimeOffset.UtcNow.AddSeconds(8);
-        while (DateTimeOffset.UtcNow < timeoutAt)
+        var fallbackScanWait = System.Diagnostics.Stopwatch.StartNew();
+        while (fallbackScanWait.Elapsed < TimeSpan.FromSeconds(50))
         {
             await using var verificationScope = provider.CreateAsyncScope();
             var dbContext = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var demand = await dbContext.DemandSources.AsNoTracking().SingleAsync();
             if (demand.SourceVersion == 2)
             {
-                Assert.Equal(1, failureProbe.InjectedFailureCount);
-                Assert.True(failureProbe.AttemptCount >= 2);
+                Assert.Equal(3, failureProbe.InjectedFailureCount);
+                Assert.True(failureProbe.AttemptCount >= 4);
+                Assert.True(retryPathWait.Elapsed >= TimeSpan.FromSeconds(25));
                 Assert.Equal(4m, demand.Quantity);
                 Assert.Equal("active", demand.SourceStatus);
                 Assert.Equal(2, await dbContext.ProcessedIntegrationEvents.CountAsync());
@@ -173,7 +177,7 @@ public sealed class ErpSalesOrderDemandConsumerTests
             await Task.Delay(200);
         }
 
-        Assert.Fail($"CAP did not retry the injected v2 failure within the test deadline. attempts={failureProbe.AttemptCount}, failures={failureProbe.InjectedFailureCount}");
+        Assert.Fail($"CAP fallback scan did not retry the failed v2 message within the test deadline. attempts={failureProbe.AttemptCount}, failures={failureProbe.InjectedFailureCount}");
     }
 
     [DemandPlanningRealPostgresFact]
@@ -538,12 +542,11 @@ public sealed class ErpSalesOrderDemandConsumerTests
     }
 }
 
-internal sealed class ChangedV2FirstAttemptFailureProbe
+internal sealed class ChangedV2FallbackFailureProbe
 {
     private int attemptCount;
     private int injectedFailureCount;
     private string? targetEventId;
-    private readonly TaskCompletionSource retryRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public int AttemptCount => Volatile.Read(ref attemptCount);
 
@@ -554,9 +557,7 @@ internal sealed class ChangedV2FirstAttemptFailureProbe
     public bool IsTarget(SalesOrderChangedIntegrationEvent integrationEvent) =>
         string.Equals(Volatile.Read(ref targetEventId), integrationEvent.EventId, StringComparison.Ordinal);
 
-    public async Task WaitBeforeHandlingAsync(
-        SalesOrderChangedIntegrationEvent integrationEvent,
-        CancellationToken cancellationToken)
+    public void ThrowDuringImmediateRetries(SalesOrderChangedIntegrationEvent integrationEvent)
     {
         if (integrationEvent.Payload.OrderVersion != 2)
         {
@@ -564,22 +565,18 @@ internal sealed class ChangedV2FirstAttemptFailureProbe
         }
 
         var attempt = Interlocked.Increment(ref attemptCount);
-        if (attempt == 1)
+        if (attempt <= 3)
         {
             Interlocked.Increment(ref injectedFailureCount);
-            throw new TimeoutException("Injected MAN-517 transient failure before the v2 DemandPlanning handler.");
+            throw new TimeoutException("Injected MAN-517 transient failure through all CAP immediate attempts.");
         }
-
-        await retryRelease.Task.WaitAsync(cancellationToken);
     }
-
-    public void ReleaseRetry() => retryRelease.TrySetResult();
 }
 
-internal sealed class ChangedV2RetryProbeSubscriber(
+internal sealed class ChangedV2FallbackRetryProbeSubscriber(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    ChangedV2FirstAttemptFailureProbe probe) : ICapSubscribe
+    ChangedV2FallbackFailureProbe probe) : ICapSubscribe
 {
     [CapSubscribe(nameof(SalesOrderChangedIntegrationEvent), Group = "business-demand-planning.man517-retry-proof")]
     public async Task HandleAsync(SalesOrderChangedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
@@ -589,7 +586,7 @@ internal sealed class ChangedV2RetryProbeSubscriber(
             return;
         }
 
-        await probe.WaitBeforeHandlingAsync(integrationEvent, cancellationToken);
+        probe.ThrowDuringImmediateRetries(integrationEvent);
 
         await new SalesOrderChangedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetterStore)
             .HandleAsync(integrationEvent, cancellationToken);

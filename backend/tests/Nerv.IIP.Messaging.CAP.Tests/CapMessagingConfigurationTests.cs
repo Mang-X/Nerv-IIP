@@ -9,6 +9,37 @@ namespace Nerv.IIP.Messaging.CAP.Tests;
 public sealed class CapMessagingConfigurationTests
 {
     [Fact]
+    public void UseConfiguredRecovery_OverridesAcceptanceRetryScanSettings()
+    {
+        var options = new CapOptions();
+
+        options.UseConfiguredRecovery(CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Cap:FailedRetryInterval"] = "2",
+            ["Cap:FallbackWindowLookbackSeconds"] = "30",
+        }));
+
+        Assert.Equal(2, options.FailedRetryInterval);
+        Assert.Equal(30, options.FallbackWindowLookbackSeconds);
+    }
+
+    [Theory]
+    [InlineData("Cap:FailedRetryInterval", "0")]
+    [InlineData("Cap:FallbackWindowLookbackSeconds", "29")]
+    public void UseConfiguredRecovery_RejectsUnsafeExplicitSettings(string key, string value)
+    {
+        var options = new CapOptions();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            options.UseConfiguredRecovery(CreateConfiguration(new Dictionary<string, string?>
+            {
+                [key] = value,
+            })));
+
+        Assert.Contains(key, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UseConfiguredTransport_DefaultProvider_RegistersInMemoryMessageQueue()
     {
         var options = new CapOptions();

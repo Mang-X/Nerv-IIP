@@ -16,8 +16,8 @@
 - Modify: `backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs`
 - Modify: `scripts/tests/erp-sales-order-demand-planning-verify-script.Tests.ps1`
 
-- [ ] Add a real Redis CAP test subscriber that throws on the first version-2 changed-event delivery, then calls `SalesOrderChangedIntegrationEventHandlerForProjectDemandSource`.
-- [ ] Run the test without a shortened `FailedRetryInterval` and record the expected timeout before CAP's default 60-second scan.
+- [ ] Add a real Redis CAP test subscriber that exhausts all three immediate version-2 deliveries, then calls `SalesOrderChangedIntegrationEventHandlerForProjectDemandSource` on the fallback execution.
+- [ ] Record the failed immediate-path state before the CAP fallback lookback makes the message eligible.
 - [ ] Add PowerShell assertions requiring last-observation diagnostics, pre-cleanup DB/Redis/log export, and an `if: always()` artifact upload.
 - [ ] Run the PowerShell test and record the expected missing-contract failures.
 
@@ -26,8 +26,8 @@
 **Files:**
 - Modify: `backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs`
 
-- [ ] Configure only the test host with `FailedRetryInterval = 2`.
-- [ ] Assert exactly one injected failure, at least two delivery attempts, durable inbox evidence, and version-2 quantity/status projection.
+- [ ] Configure only the test/acceptance profile with `FailedRetryInterval = 2` and the safe-minimum `FallbackWindowLookbackSeconds = 30`.
+- [ ] Assert three injected immediate failures, a stable version-1 intermediate projection, a fourth fallback execution, and the durable version-2 quantity/status projection.
 - [ ] Run the targeted test and the surrounding DemandPlanning test project to green.
 
 ### Task 3: Add retry-aware, redacted acceptance diagnostics

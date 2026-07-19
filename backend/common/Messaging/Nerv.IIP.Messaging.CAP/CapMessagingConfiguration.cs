@@ -21,7 +21,35 @@ public static class CapMessagingConfiguration
     public const string RedisCachingFallbackKey = "Caching:Redis";
     public const string RabbitMqConnectionStringConfigurationKey = "Messaging:RabbitMQ:ConnectionString";
     public const string RabbitMqConnectionStringFallbackKey = "ConnectionStrings:rabbitmq";
+    public const string FailedRetryIntervalConfigurationKey = "Cap:FailedRetryInterval";
+    public const string FallbackWindowLookbackSecondsConfigurationKey = "Cap:FallbackWindowLookbackSeconds";
     private const string DevelopmentEnvironmentName = "Development";
+    private const int MinimumFallbackWindowLookbackSeconds = 30;
+
+    public static CapOptions UseConfiguredRecovery(
+        this CapOptions options,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var retryInterval = ReadOptionalPositiveInt(configuration, FailedRetryIntervalConfigurationKey, minimum: 1);
+        if (retryInterval.HasValue)
+        {
+            options.FailedRetryInterval = retryInterval.Value;
+        }
+
+        var fallbackLookback = ReadOptionalPositiveInt(
+            configuration,
+            FallbackWindowLookbackSecondsConfigurationKey,
+            MinimumFallbackWindowLookbackSeconds);
+        if (fallbackLookback.HasValue)
+        {
+            options.FallbackWindowLookbackSeconds = fallbackLookback.Value;
+        }
+
+        return options;
+    }
 
     public static CapOptions UseConfiguredTransport(
         this CapOptions options,
@@ -151,6 +179,25 @@ public static class CapMessagingConfiguration
         throw new InvalidOperationException(
             "Redis CAP transport requires a Redis connection string. " +
             $"Set {RedisConnectionStringConfigurationKey}; fallback keys are {RedisConnectionStringFallbackKey} and {RedisCachingFallbackKey}.");
+    }
+
+    private static int? ReadOptionalPositiveInt(
+        IConfiguration configuration,
+        string key,
+        int minimum)
+    {
+        var configured = configuration[key];
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return null;
+        }
+
+        if (!int.TryParse(configured, out var value) || value < minimum)
+        {
+            throw new InvalidOperationException($"{key} must be an integer greater than or equal to {minimum}.");
+        }
+
+        return value;
     }
 
     private static void EnsureInMemoryTransportAllowed(IConfiguration configuration, string? environmentName)

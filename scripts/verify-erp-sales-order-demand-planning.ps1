@@ -80,8 +80,8 @@ function Invoke-JsonPost {
 
 function Wait-Demand {
     param([string]$DemandPlanningUrl, [hashtable]$Headers, [int]$Version, [decimal]$Quantity, [string]$Status)
-    # CAP 10.0.1 scans failed messages every 60 seconds by default. Cover one
-    # complete retry scan plus scheduling slack without weakening the assertion.
+    # The acceptance profile uses a 30-second fallback lookback and a two-second
+    # failed-message scan interval. Keep enough scheduling slack for that path.
     $deadline = (Get-Date).AddSeconds(90)
     $lastHttpStatus = $null
     $lastResponseBody = $null
@@ -116,7 +116,8 @@ function Wait-Demand {
         lastRequestException = $lastRequestException
         lastObservedDemand = $lastObservedDemand
     } | ConvertTo-Json -Depth 8 -Compress
-    throw "Demand SO-DEMO-001 did not converge to version=$Version quantity=$Quantity status=$Status. Last observation: $lastObservation"
+    $safeLastObservation = Protect-Man517DiagnosticText -Text $lastObservation
+    throw "Demand SO-DEMO-001 did not converge to version=$Version quantity=$Quantity status=$Status. Last observation: $safeLastObservation"
 }
 
 function Assert-DemandStable {
@@ -141,7 +142,7 @@ function Protect-Man517DiagnosticText {
     if (-not [string]::IsNullOrWhiteSpace($internalToken)) {
         $safe = $safe.Replace($internalToken, '[REDACTED_TOKEN]', [StringComparison]::Ordinal)
     }
-    return Protect-ScriptAutomationText $safe
+    return $safe
 }
 
 function Write-Man517DiagnosticFile {
@@ -233,6 +234,8 @@ FROM (SELECT organization_id, environment_id, source_document_id, source_referen
     }
 
     $redisLines = [System.Collections.Generic.List[string]]::new()
+    # CAP appends Cap:Version to the [CapSubscribe] group. This exact shape is
+    # verified by the preceding XINFO GROUPS output on the real Redis transport.
     $redisGroup = "business-demand-planning.erp-sales-order-demand.$capVersion"
     foreach ($streamName in @(
         'SalesOrderReleasedIntegrationEvent',
@@ -309,6 +312,8 @@ try {
         Messaging__Redis__ConnectionString = $RedisConnectionString
         ConnectionStrings__Redis = $RedisConnectionString
         Cap__Version = $capVersion
+        Cap__FailedRetryInterval = '2'
+        Cap__FallbackWindowLookbackSeconds = '30'
         InternalService__BearerToken = $internalToken
     }
 
@@ -377,26 +382,26 @@ try {
         NERV_IIP_TEST_POSTGRES = $PostgresAdminConnectionString
         NERV_IIP_TEST_REDIS = $RedisConnectionString
     } -ScriptBlock {
-        $duplicateResultsDirectory = Join-Path $root 'artifacts/acceptance/man517'
-        [System.IO.Directory]::CreateDirectory($duplicateResultsDirectory) | Out-Null
-        $duplicateResultsFile = "duplicate-$([Guid]::NewGuid().ToString('N')).trx"
-        $duplicateResults = Join-Path $duplicateResultsDirectory $duplicateResultsFile
-        $redisProofFilter = 'FullyQualifiedName~Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres|FullyQualifiedName~Redis_cap_retry_converges_changed_v2_after_first_consumer_failure'
-        Invoke-DotNet -Arguments @('test', $demandPlanningTestsProject, '--no-build', '--filter', $redisProofFilter, '--results-directory', $duplicateResultsDirectory, '--logger', "trx;LogFileName=$duplicateResultsFile") -WorkingDirectory $root -TimeoutSeconds 180 -Name 'man517-redis-reliability-probes' | Out-Null
-        if (-not (Test-Path -LiteralPath $duplicateResults)) {
-            throw 'MAN-517 identical-key Redis duplicate probe produced no TRX result.'
+        $redisProofResultsDirectory = Join-Path $root 'artifacts/acceptance/man517'
+        [System.IO.Directory]::CreateDirectory($redisProofResultsDirectory) | Out-Null
+        $redisProofResultsFile = "redis-proofs-$([Guid]::NewGuid().ToString('N')).trx"
+        $redisProofResults = Join-Path $redisProofResultsDirectory $redisProofResultsFile
+        $redisProofFilter = 'FullyQualifiedName~Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres|FullyQualifiedName~Redis_cap_fallback_scan_converges_changed_v2_after_immediate_retries_fail'
+        Invoke-DotNet -Arguments @('test', $demandPlanningTestsProject, '--no-build', '--filter', $redisProofFilter, '--results-directory', $redisProofResultsDirectory, '--logger', "trx;LogFileName=$redisProofResultsFile") -WorkingDirectory $root -TimeoutSeconds 180 -Name 'man517-redis-reliability-probes' | Out-Null
+        if (-not (Test-Path -LiteralPath $redisProofResults)) {
+            throw 'MAN-517 Redis reliability probes produced no TRX result.'
         }
-        [xml]$duplicateTrx = Get-Content -LiteralPath $duplicateResults -Raw
+        [xml]$redisProofTrx = Get-Content -LiteralPath $redisProofResults -Raw
         $expectedRedisProofs = @(
             '.Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres',
-            '.Redis_cap_retry_converges_changed_v2_after_first_consumer_failure'
+            '.Redis_cap_fallback_scan_converges_changed_v2_after_immediate_retries_fail'
         )
-        $redisProofExecutions = @($duplicateTrx.SelectNodes("//*[local-name()='UnitTestResult']") | Where-Object {
+        $redisProofExecutions = @($redisProofTrx.SelectNodes("//*[local-name()='UnitTestResult']") | Where-Object {
             $testName = $_.GetAttribute('testName')
             $expectedRedisProofs | Where-Object { $testName.EndsWith($_, [StringComparison]::Ordinal) }
         })
         if ($redisProofExecutions.Count -ne 2 -or @($redisProofExecutions | Where-Object { $_.GetAttribute('outcome') -ne 'Passed' }).Count -ne 0) {
-            throw 'MAN-517 Redis duplicate and first-attempt-failure retry probes did not both execute exactly once and pass.'
+            throw 'MAN-517 Redis duplicate and fallback-scan retry probes did not both execute exactly once and pass.'
         }
     }
 
