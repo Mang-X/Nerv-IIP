@@ -117,7 +117,7 @@ describe('quality inspection task workbench', () => {
   })
 
   it('starts a task through the existing from-task record mutation and invalidates the list', async () => {
-    const { startInspection, taskFilters } = useQualityInspectionTasks()
+    const { startInspection, filters } = useQualityInspectionTasks()
 
     await startInspection('TASK-1', {
       inspectorUserId: 'user-qa',
@@ -133,6 +133,6 @@ describe('quality inspection task workbench', () => {
       query: { organizationId: 'org-001', environmentId: 'env-dev' },
       body: { inspectorUserId: 'user-qa', resultLines: [] },
     })
-    expect(taskFilters.organizationId).toBe('org-001')
+    expect(filters.organizationId).toBe('org-001')
   })
 })

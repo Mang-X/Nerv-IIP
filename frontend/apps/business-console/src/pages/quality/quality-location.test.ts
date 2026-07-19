@@ -35,6 +35,16 @@ const qualityState = vi.hoisted(() => ({
       status: 'active',
     },
   ],
+  planCharacteristics: [
+    {
+      characteristicCode: 'DIM-01',
+      name: '长度',
+      lowerSpecLimit: 9.8,
+      upperSpecLimit: 10.2,
+      unitCode: 'mm',
+    },
+  ],
+  planCharacteristicsRef: undefined as { value: Array<Record<string, unknown>> } | undefined,
   ncrFilters: undefined as { status?: string; keyword?: string } | undefined,
   ncrs: [
     {
@@ -73,6 +83,18 @@ vi.mock('@/composables/useBusinessQuality', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
 
   return {
+    useQualityInspectionPlanCharacteristics: (source: () => { inspectionPlanId: string }) => {
+      const planCharacteristics = shallowRef(
+        source().inspectionPlanId ? qualityState.planCharacteristics : [],
+      )
+      qualityState.planCharacteristicsRef = planCharacteristics
+      return {
+        planCharacteristics,
+        planCharacteristicsError: shallowRef(),
+        planCharacteristicsPending: shallowRef(false),
+        refreshPlanCharacteristics: vi.fn(),
+      }
+    },
     useQualityInspectionPlans: (initial = {}) => {
       const filters = reactive({
         organizationId: 'org-001',
@@ -230,6 +252,16 @@ describe('quality route location behavior', () => {
     qualityState.inspectionFilters = undefined
     qualityState.ncrFilters = undefined
     qualityState.recordError = undefined
+    qualityState.planCharacteristics = [
+      {
+        characteristicCode: 'DIM-01',
+        name: '长度',
+        lowerSpecLimit: 9.8,
+        upperSpecLimit: 10.2,
+        unitCode: 'mm',
+      },
+    ]
+    qualityState.planCharacteristicsRef = undefined
     notifySpies.error.mockReset()
     notifySpies.success.mockReset()
   })
@@ -271,7 +303,8 @@ describe('quality route location behavior', () => {
   it('prefills the existing record flow from the stable inspection task query contract', async () => {
     routeState.route!.query = {
       inspectionTaskId: 'TASK-001',
-      sourceDocumentNo: 'GR-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
       sourceType: 'receiving',
       sourceService: 'wms',
       skuCode: 'SKU-RM-001',
@@ -284,12 +317,62 @@ describe('quality route location behavior', () => {
 
     const form = (
       wrapper.vm as unknown as {
-        recordForm: { sourceDocumentId: string; skuCode: string; inspectedQuantity: string }
+        recordForm: {
+          sourceDocumentId: string
+          skuCode: string
+          inspectedQuantity: string
+          resultLines: Array<{
+            characteristicCode: string
+            specification: string
+            unitCode: string
+          }>
+        }
       }
     ).recordForm
     expect(form.sourceDocumentId).toBe('GR-001')
     expect(form.skuCode).toBe('SKU-RM-001')
     expect(form.inspectedQuantity).toBe('12')
+    expect(form.resultLines).toEqual([
+      expect.objectContaining({
+        characteristicCode: 'DIM-01',
+        specification: '9.8–10.2 mm',
+        unitCode: 'mm',
+      }),
+    ])
+  })
+
+  it('preserves inspector input when plan characteristics arrive asynchronously', async () => {
+    qualityState.planCharacteristics = []
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    const form = (
+      wrapper.vm as unknown as {
+        recordForm: {
+          resultLines: Array<{ characteristicCode: string; observedValue: string }>
+        }
+      }
+    ).recordForm
+    form.resultLines[0]!.characteristicCode = 'MANUAL-01'
+    form.resultLines[0]!.observedValue = '10.1'
+    qualityState.planCharacteristicsRef!.value = [
+      { characteristicCode: 'DIM-01', lowerSpecLimit: 9.8, upperSpecLimit: 10.2 },
+    ]
+    await nextRenderTick()
+
+    expect(form.resultLines).toEqual([
+      expect.objectContaining({ characteristicCode: 'MANUAL-01', observedValue: '10.1' }),
+    ])
   })
 
   it('locates a source inspection record: opens read-only record detail from inspectionRecordId', async () => {

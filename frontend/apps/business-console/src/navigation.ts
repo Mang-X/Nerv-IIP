@@ -28,6 +28,7 @@ import {
   HashIcon,
   LayersIcon,
   LayoutDashboardIcon,
+  ListChecksIcon,
   LineChartIcon,
   NetworkIcon,
   PackageCheckIcon,
@@ -572,7 +573,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
       items: [
         {
           title: '待检工作台',
-          icon: ClipboardCheckIcon,
+          icon: ListChecksIcon,
           to: { path: '/quality/inspection-tasks' },
           requiredPermissions: [P.qualityInspectionRecordsRead],
         },

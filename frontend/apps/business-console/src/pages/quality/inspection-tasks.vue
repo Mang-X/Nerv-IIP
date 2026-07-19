@@ -34,6 +34,7 @@ const { filters, tasks, total, pending, error, refreshTasks } = useQualityInspec
   status: 'pending',
 })
 const { page, pageSize } = usePagedList(filters, {
+  initialPageSize: '200',
   resetOn: [() => filters.sourceType, () => filters.skuCode],
 })
 
@@ -61,7 +62,7 @@ const columns: NvDataTableColumn<BusinessConsoleQualityInspectionTaskItem>[] = [
   },
   {
     key: 'sourceDocumentId',
-    header: '来源单据',
+    header: '来源引用',
     width: 'w-40',
     accessor: (row) => row.sourceDocumentId ?? '—',
   },
@@ -112,14 +113,22 @@ function formatError(errorValue: unknown) {
   return '待检任务加载失败，请稍后重试。'
 }
 
-function startInspection(task: BusinessConsoleQualityInspectionTaskItem) {
+function sourceDocumentRoute(task: BusinessConsoleQualityInspectionTaskItem) {
+  const sourceService = task.sourceService?.trim().toLowerCase()
+  if (task.sourceType === 'receiving') return sourceService === 'wms' ? '/wms/inbound' : ''
+  if (sourceService !== 'mes') return ''
+  const workOrderId =
+    task.sourceType === 'final' ? task.sourceDocumentLineId : task.sourceDocumentId
+  return workOrderId ? `/mes/work-orders/${encodeURIComponent(workOrderId)}` : ''
+}
+
+function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
   const inspectionTaskId = task.inspectionTaskId?.trim()
   if (!inspectionTaskId) return
   void router.push({
     path: '/quality/inspections',
     query: {
       inspectionTaskId,
-      sourceDocumentNo: task.sourceDocumentId ?? undefined,
       sourceDocumentId: task.sourceDocumentId ?? undefined,
       sourceType: task.sourceType ?? undefined,
       sourceService: task.sourceService ?? undefined,
@@ -185,7 +194,9 @@ function startInspection(task: BusinessConsoleQualityInspectionTaskItem) {
           <NvFieldLabel for="inspection-task-sku">按 SKU 查找</NvFieldLabel>
           <NvInput id="inspection-task-sku" v-model="filters.skuCode" placeholder="输入 SKU 编码" />
         </NvField>
-        <p class="text-sm text-muted-foreground">共 {{ total }} 个待检任务，当前页按超期优先。</p>
+        <p class="text-sm text-muted-foreground">
+          共 {{ total }} 个待检任务；当前批次最多加载 200 条，来源筛选作用于当前批次。
+        </p>
       </div>
     </div>
 
@@ -203,6 +214,7 @@ function startInspection(task: BusinessConsoleQualityInspectionTaskItem) {
       manual
       :page="page"
       :page-size="pageSize"
+      :page-size-options="[50, 100, 200]"
       :total-items="total"
       :columns="columns"
       :rows="tasks"
@@ -214,6 +226,16 @@ function startInspection(task: BusinessConsoleQualityInspectionTaskItem) {
       @update:page="page = $event"
       @update:page-size="(value) => (pageSize = String(value))"
     >
+      <template #cell-sourceDocumentId="{ row }">
+        <RouterLink
+          v-if="sourceDocumentRoute(row)"
+          class="font-medium underline underline-offset-2"
+          :to="sourceDocumentRoute(row)"
+        >
+          {{ row.sourceDocumentId ?? '—' }}
+        </RouterLink>
+        <span v-else>{{ row.sourceDocumentId ?? '—' }}</span>
+      </template>
       <template #cell-sourceType="{ row }">{{ sourceLabel(row.sourceType) }}</template>
       <template #cell-dueAtUtc="{ row }">
         <span
@@ -226,7 +248,7 @@ function startInspection(task: BusinessConsoleQualityInspectionTaskItem) {
         <span v-else>{{ formatDateTime(row.dueAtUtc) }}</span>
       </template>
       <template #cell-actions="{ row }">
-        <NvButton size="sm" :disabled="!row.inspectionTaskId" @click="startInspection(row)">
+        <NvButton size="sm" :disabled="!row.inspectionTaskId" @click="goToInspectionForm(row)">
           <ClipboardCheckIcon aria-hidden="true" />
           开始检验
           <ArrowRightIcon aria-hidden="true" />

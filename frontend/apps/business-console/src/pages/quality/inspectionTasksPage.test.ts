@@ -10,12 +10,42 @@ const state = vi.hoisted(() => ({
       inspectionTaskId: 'TASK-LATE',
       status: 'pending',
       sourceType: 'receiving',
+      sourceService: 'wms',
       sourceDocumentId: 'GR-001',
       skuCode: 'SKU-001',
       dueAtUtc: '2020-01-01T00:00:00Z',
     },
+    {
+      inspectionTaskId: 'TASK-OP',
+      status: 'pending',
+      sourceType: 'operation',
+      sourceService: 'mes',
+      sourceDocumentId: 'WO-001',
+      skuCode: 'SKU-002',
+      dueAtUtc: '2030-01-01T00:00:00Z',
+    },
+    {
+      inspectionTaskId: 'TASK-ERP',
+      status: 'pending',
+      sourceType: 'receiving',
+      sourceService: 'erp',
+      sourceDocumentId: 'PR-001',
+      skuCode: 'SKU-003',
+      dueAtUtc: '2030-01-02T00:00:00Z',
+    },
+    {
+      inspectionTaskId: 'TASK-FINAL',
+      status: 'pending',
+      sourceType: 'final',
+      sourceService: 'mes',
+      sourceDocumentId: 'FGR-001',
+      sourceDocumentLineId: 'WO-002',
+      skuCode: 'SKU-004',
+      dueAtUtc: '2030-01-03T00:00:00Z',
+    },
   ],
   push: vi.fn(),
+  pagedListOptions: undefined as { initialPageSize?: string } | undefined,
 }))
 
 vi.mock('@/composables/useQualityInspectionTasks', () => ({
@@ -50,7 +80,10 @@ vi.mock('@/composables/useQualityInspectionTasks', () => ({
 }))
 
 vi.mock('@/composables/usePagedList', () => ({
-  usePagedList: () => ({ page: shallowRef(1), pageSize: shallowRef(200) }),
+  usePagedList: (_filters: unknown, options: { initialPageSize?: string }) => {
+    state.pagedListOptions = options
+    return { page: shallowRef(1), pageSize: shallowRef(200) }
+  },
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -58,7 +91,7 @@ vi.mock('@/stores/auth', () => ({
 }))
 
 vi.mock('vue-router', () => ({
-  RouterLink: { props: ['to'], template: '<a><slot /></a>' },
+  RouterLink: { props: ['to'], template: '<a :data-to="to"><slot /></a>' },
   useRouter: () => ({ push: state.push }),
 }))
 
@@ -71,7 +104,7 @@ const stubs = {
   NvDataTable: {
     props: ['rows'],
     template:
-      '<div><div v-for="row in rows" :key="row.inspectionTaskId">{{ row.sourceDocumentId }} {{ row.skuCode }}<slot name="cell-dueAtUtc" :row="row" /><slot name="cell-actions" :row="row" /></div></div>',
+      '<div><div v-for="row in rows" :key="row.inspectionTaskId"><slot name="cell-sourceDocumentId" :row="row" /> {{ row.skuCode }}<slot name="cell-dueAtUtc" :row="row" /><slot name="cell-actions" :row="row" /></div></div>',
   },
   NvField: { template: '<div><slot /></div>' },
   NvFieldLabel: { template: '<label><slot /></label>' },
@@ -88,6 +121,7 @@ describe('quality inspection task workbench page', () => {
   beforeEach(() => {
     state.error = undefined
     state.push.mockReset()
+    state.pagedListOptions = undefined
   })
 
   it('renders real task context and an explicit overdue label', () => {
@@ -96,6 +130,27 @@ describe('quality inspection task workbench page', () => {
     expect(wrapper.text()).toContain('已超期')
     expect(wrapper.text()).toContain('待检总量')
     expect(wrapper.text()).toContain('当前业务范围的待检任务总数')
+    expect(state.pagedListOptions?.initialPageSize).toBe('200')
+    expect(wrapper.find('[data-to="/wms/inbound"]').exists()).toBe(true)
+    expect(wrapper.find('[data-to="/mes/work-orders/WO-001"]').exists()).toBe(true)
+    expect(wrapper.find('[data-to="/mes/work-orders/WO-002"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-to="/wms/inbound"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('PR-001')
+  })
+
+  it('opens the existing inspection form without inventing a source document number', async () => {
+    const wrapper = mount(InspectionTasksPage, { global: { stubs } })
+    const action = wrapper.findAll('button').find((button) => button.text().includes('开始检验'))
+    await action?.trigger('click')
+
+    expect(state.push).toHaveBeenCalledWith({
+      path: '/quality/inspections',
+      query: expect.objectContaining({
+        inspectionTaskId: 'TASK-LATE',
+        sourceDocumentId: 'GR-001',
+      }),
+    })
+    expect(state.push.mock.calls[0]?.[0]?.query).not.toHaveProperty('sourceDocumentNo')
   })
 
   it('shows a retryable failure state instead of an empty success state', () => {

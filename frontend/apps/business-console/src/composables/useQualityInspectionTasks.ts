@@ -106,7 +106,6 @@ export function useQualityInspectionTasks(initialFilters: Partial<InspectionTask
 
   return {
     filters,
-    taskFilters: filters,
     tasks,
     total: computed(() =>
       tasksQuery.data.value?.success ? (tasksQuery.data.value.data?.total ?? 0) : 0,

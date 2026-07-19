@@ -5,7 +5,10 @@ import type {
   BusinessConsoleQualityItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import { useQualityInspectionPlans } from '@/composables/useBusinessQuality'
+import {
+  useQualityInspectionPlanCharacteristics,
+  useQualityInspectionPlans,
+} from '@/composables/useBusinessQuality'
 import { useQualityInspectionTaskActions } from '@/composables/useQualityInspectionTasks'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
@@ -74,6 +77,7 @@ const { page, pageSize } = usePagedList(filters, {
 const recordSuccess = shallowRef('')
 const recordSheetOpen = shallowRef(false)
 const recordCreatedFromLocatedPlanId = shallowRef('')
+const characteristicsAppliedPlanId = shallowRef('')
 
 const recordForm = reactive({
   organizationId: filters.organizationId,
@@ -106,6 +110,16 @@ const targetInspectionPlanMissing = computed(
   () =>
     !!targetInspectionPlanId.value && !inspectionPlansPending.value && !targetInspectionPlan.value,
 )
+const {
+  planCharacteristics,
+  planCharacteristicsError,
+  planCharacteristicsPending,
+  refreshPlanCharacteristics,
+} = useQualityInspectionPlanCharacteristics(() => ({
+  organizationId: filters.organizationId,
+  environmentId: filters.environmentId,
+  inspectionPlanId: targetInspectionPlanId.value,
+}))
 
 // 来源检验记录定位：hold 时间线「来源检验记录」互链带 ?inspectionRecordId= 进来，打开只读记录详情。
 // 详情查询/错误副作用/重试封装在 InspectionRecordDetailSheet，路由页只负责按 query 编排开合（Vue best-practices §2）。
@@ -186,10 +200,33 @@ watch(
   },
   { immediate: true },
 )
+watch(
+  [planCharacteristics, targetInspectionPlanId, shouldCreateRecordFromLocatedPlan],
+  ([characteristics, inspectionPlanId, shouldCreate]) => {
+    if (
+      !inspectionPlanId ||
+      !shouldCreate ||
+      characteristics.length === 0 ||
+      characteristicsAppliedPlanId.value === inspectionPlanId ||
+      !hasPristineResultLines()
+    )
+      return
+    characteristicsAppliedPlanId.value = inspectionPlanId
+    recordForm.resultLines = characteristics.map((characteristic) => ({
+      ...emptyLine(),
+      characteristicCode: characteristic.characteristicCode ?? '',
+      characteristicName: characteristic.name ?? '',
+      unitCode: characteristic.unitCode ?? '',
+      specification: formatSpecification(characteristic),
+    }))
+  },
+  { immediate: true },
+)
 
 const listErrorMessage = computed(() => formatError(inspectionPlansError.value))
 const createErrorMessage = computed(() => formatError(createInspectionRecordError.value))
 const inspectedQuantity = computed(() => toOptionalNumber(recordForm.inspectedQuantity))
+const isInspectionTaskFlow = computed(() => !!firstQuery(route.query.inspectionTaskId))
 const requiresDispositionReason = computed(() =>
   recordForm.resultLines.some(
     (line) => line.result === 'failed' || line.result === 'conditional-release',
@@ -215,6 +252,8 @@ const canCreateRecord = computed(
     inspectedQuantity.value !== undefined &&
     inspectedQuantity.value > 0 &&
     (!requiresDispositionReason.value || isNonEmpty(recordForm.dispositionReason)) &&
+    (!isInspectionTaskFlow.value ||
+      (!planCharacteristicsPending.value && !planCharacteristicsError.value)) &&
     validResultLines.value.length > 0,
 )
 
@@ -234,11 +273,42 @@ function emptyLine() {
     unitCode: '',
     defectReason: '',
     defectQuantity: '',
+    characteristicName: '',
+    specification: '',
   }
+}
+function hasPristineResultLines() {
+  if (recordForm.resultLines.length !== 1) return false
+  const line = recordForm.resultLines[0]
+  return (
+    !!line &&
+    line.result === 'passed' &&
+    [
+      line.characteristicCode,
+      line.observedValue,
+      line.unitCode,
+      line.defectReason,
+      line.defectQuantity,
+      line.characteristicName,
+      line.specification,
+    ].every((value) => value === '')
+  )
+}
+function formatSpecification(characteristic: {
+  nominalValue?: number | null
+  lowerSpecLimit?: number | null
+  upperSpecLimit?: number | null
+  unitCode?: string | null
+}) {
+  const unit = characteristic.unitCode ? ` ${characteristic.unitCode}` : ''
+  if (characteristic.lowerSpecLimit != null || characteristic.upperSpecLimit != null) {
+    return `${characteristic.lowerSpecLimit ?? '—'}–${characteristic.upperSpecLimit ?? '—'}${unit}`
+  }
+  return characteristic.nominalValue == null ? '' : `目标 ${characteristic.nominalValue}${unit}`
 }
 function useInspectionPlan(plan: BusinessConsoleQualityItem) {
   recordForm.inspectionPlanId = plan.id ?? ''
-  if (plan.skuCode) recordForm.skuCode = plan.skuCode
+  if (plan.skuCode && !firstQuery(route.query.skuCode)) recordForm.skuCode = plan.skuCode
   recordSuccess.value = ''
   recordSheetOpen.value = true
 }
@@ -271,7 +341,6 @@ async function submitInspectionRecord() {
     recordSuccess.value = `检验记录 ${response?.data?.inspectionRecordId ?? inspectionTaskId} 已提交，待检任务已闭合。`
     await router.push({
       path: '/quality/inspection-tasks',
-      query: { completedTaskId: inspectionTaskId },
     })
     return
   }
@@ -519,6 +588,28 @@ function isPresent(value: string | undefined | null): value is string {
                 添加行
               </NvButton>
             </div>
+            <p
+              v-if="planCharacteristicsError"
+              class="flex items-center gap-2 text-sm text-destructive"
+              role="alert"
+            >
+              检验特性与规格加载失败，请重试后再检验。
+              <NvButton
+                size="sm"
+                variant="outline"
+                type="button"
+                @click="refreshPlanCharacteristics"
+              >
+                重试
+              </NvButton>
+            </p>
+            <p
+              v-else-if="planCharacteristicsPending"
+              class="text-sm text-muted-foreground"
+              role="status"
+            >
+              正在加载检验特性与规格…
+            </p>
             <div class="grid gap-2">
               <div
                 v-for="(line, index) in recordForm.resultLines"
@@ -532,6 +623,9 @@ function isPresent(value: string | undefined | null): value is string {
                     v-model="line.characteristicCode"
                     required
                   />
+                  <NvFieldDescription v-if="line.characteristicName">
+                    {{ line.characteristicName }}
+                  </NvFieldDescription>
                 </NvField>
                 <NvField>
                   <NvFieldLabel>结果</NvFieldLabel>
@@ -549,6 +643,9 @@ function isPresent(value: string | undefined | null): value is string {
                 <NvField>
                   <NvFieldLabel :for="`observed-value-${index}`">实测值</NvFieldLabel>
                   <NvInput :id="`observed-value-${index}`" v-model="line.observedValue" required />
+                  <NvFieldDescription v-if="line.specification">
+                    规格：{{ line.specification }}
+                  </NvFieldDescription>
                 </NvField>
                 <NvField>
                   <NvFieldLabel :for="`unit-code-${index}`">单位</NvFieldLabel>
