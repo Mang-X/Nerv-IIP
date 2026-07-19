@@ -2,11 +2,13 @@ import {
   closeBusinessConsoleQualityNcrMutationOptions,
   createBusinessConsoleQualityInspectionRecordMutationOptions,
   getBusinessConsoleQualityInspectionRecordQueryOptions,
+  listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions,
   listBusinessConsoleQualityInspectionPlansQueryOptions,
   listBusinessConsoleQualityNcrsQueryOptions,
   submitBusinessConsoleQualityNcrDispositionMutationOptions,
   type BusinessConsoleCreateInspectionRecordRequest,
   type BusinessConsoleInspectionRecordDetailResponse,
+  type BusinessConsoleInspectionPlanCharacteristicItem,
   type BusinessConsoleNcrCloseRequest,
   type BusinessConsoleNcrDispositionRequest,
   type BusinessConsoleQualityItem,
@@ -31,13 +33,15 @@ export interface QualityListFilters extends BusinessContextFields {
 }
 
 function defaultFilters(initial: Partial<QualityListFilters> = {}): QualityListFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    skip: 0,
-    take: DEFAULT_TAKE,
-    ...initial,
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      skip: 0,
+      take: DEFAULT_TAKE,
+      ...initial,
+    }),
+  )
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -87,6 +91,47 @@ export interface QualityInspectionRecordSource {
   organizationId: string
   environmentId: string
   inspectionRecordId: string
+}
+
+export interface QualityInspectionPlanCharacteristicsSource extends BusinessContextFields {
+  inspectionPlanId: string
+}
+
+export function useQualityInspectionPlanCharacteristics(
+  source: () => QualityInspectionPlanCharacteristicsSource,
+) {
+  const enabled = computed(() => {
+    const value = source()
+    return (
+      value.organizationId.trim().length > 0 &&
+      value.environmentId.trim().length > 0 &&
+      value.inspectionPlanId.trim().length > 0
+    )
+  })
+  const characteristicsQuery = useQuery(() => {
+    const value = source()
+    return {
+      ...listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions({
+        path: { inspectionPlanId: value.inspectionPlanId },
+        query: {
+          organizationId: value.organizationId,
+          environmentId: value.environmentId,
+        },
+      }),
+      enabled: enabled.value,
+    }
+  })
+
+  return {
+    planCharacteristics: computed<BusinessConsoleInspectionPlanCharacteristicItem[]>(() => {
+      const data = characteristicsQuery.data.value
+      return data?.success ? (data.data?.items ?? []) : []
+    }),
+    planCharacteristicsError: characteristicsQuery.error,
+    planCharacteristicsPending: characteristicsQuery.isLoading,
+    refreshPlanCharacteristics: () =>
+      enabled.value ? characteristicsQuery.refetch() : Promise.resolve(),
+  }
 }
 
 // 单条检验记录详情读面（get by id，QualityInspectionRecordsRead）。供来源检验记录互链按 inspectionRecordId 定位。
