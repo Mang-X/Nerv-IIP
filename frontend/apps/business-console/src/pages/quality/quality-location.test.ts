@@ -9,6 +9,7 @@ const routeState = vi.hoisted(() => ({
 }))
 
 const notifySpies = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
+const taskActionSpies = vi.hoisted(() => ({ startInspection: vi.fn() }))
 vi.mock('@/utils/notify', () => ({
   notifyError: notifySpies.error,
   notifySuccess: notifySpies.success,
@@ -20,7 +21,7 @@ vi.mock('@/stores/auth', () => ({
 
 vi.mock('@/composables/useQualityInspectionTasks', () => ({
   useQualityInspectionTaskActions: () => ({
-    startInspection: vi.fn(),
+    startInspection: taskActionSpies.startInspection,
   }),
 }))
 
@@ -273,6 +274,7 @@ describe('quality route location behavior', () => {
     qualityState.planCharacteristicsRef = undefined
     notifySpies.error.mockReset()
     notifySpies.success.mockReset()
+    taskActionSpies.startInspection.mockReset()
   })
 
   it('keeps the user-selected NCR status filter when ncrId is removed from the route', async () => {
@@ -382,13 +384,21 @@ describe('quality route location behavior', () => {
 
     const wrapper = mountQualityPage(InspectionsPage)
     await nextRenderTick()
-    qualityState.inspectionFilters!.organizationId = 'org-001'
-    qualityState.inspectionFilters!.environmentId = 'env-dev'
     const vm = wrapper.vm as unknown as {
       recordForm: { resultLines: Array<{ observedValue: string }> }
       canCreateRecord: boolean
+      submitInspectionRecord: () => Promise<void>
     }
     vm.recordForm.resultLines[0]!.observedValue = '10.1'
+    await nextRenderTick()
+
+    expect(vm.canCreateRecord).toBe(false)
+    await vm.submitInspectionRecord()
+    expect(notifySpies.error).toHaveBeenCalledWith('业务范围尚未就绪，请稍后重试。')
+    expect(taskActionSpies.startInspection).not.toHaveBeenCalled()
+
+    qualityState.inspectionFilters!.organizationId = 'org-001'
+    qualityState.inspectionFilters!.environmentId = 'env-dev'
     await nextRenderTick()
 
     expect(vm.canCreateRecord).toBe(true)

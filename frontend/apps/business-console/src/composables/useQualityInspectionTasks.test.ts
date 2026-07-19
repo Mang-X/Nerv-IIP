@@ -71,6 +71,21 @@ describe('quality inspection task workbench', () => {
     expect(filters.take).toBe(20)
   })
 
+  it('exposes one reactive locator flag for composable consumers', () => {
+    const { filters, hasLocator } = useQualityInspectionTasks()
+
+    expect(hasLocator.value).toBe(false)
+
+    filters.sourceDocumentNo = ' IN-001 '
+    expect(hasLocator.value).toBe(true)
+
+    filters.sourceDocumentNo = ' '
+    expect(hasLocator.value).toBe(false)
+
+    filters.inspectionTaskId = ' TASK-001 '
+    expect(hasLocator.value).toBe(true)
+  })
+
   it('keeps the server total while exposing safe task items', () => {
     state.data = {
       success: true,

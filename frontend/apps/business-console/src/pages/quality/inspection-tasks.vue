@@ -33,11 +33,12 @@ const route = useRoute()
 const router = useRouter()
 const initialSourceDocumentNo = firstQuery(route.query.sourceDocumentNo)
 const initialInspectionTaskId = firstQuery(route.query.inspectionTaskId)
-const { filters, tasks, total, pending, error, refreshTasks } = useQualityInspectionTasks({
-  status: 'pending',
-  ...(initialSourceDocumentNo ? { sourceDocumentNo: initialSourceDocumentNo } : {}),
-  ...(initialInspectionTaskId ? { inspectionTaskId: initialInspectionTaskId } : {}),
-})
+const { filters, hasLocator, tasks, total, pending, error, refreshTasks } =
+  useQualityInspectionTasks({
+    status: 'pending',
+    ...(initialSourceDocumentNo ? { sourceDocumentNo: initialSourceDocumentNo } : {}),
+    ...(initialInspectionTaskId ? { inspectionTaskId: initialInspectionTaskId } : {}),
+  })
 const { page, pageSize } = usePagedList(filters, {
   initialPageSize: '200',
   resetOn: [() => filters.sourceType, () => filters.skuCode],
@@ -259,7 +260,7 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
 
     <NvDataTable
       v-if="!listErrorMessage"
-      manual
+      :manual="!hasLocator"
       :page="page"
       :page-size="pageSize"
       :page-size-options="[50, 100, 200]"

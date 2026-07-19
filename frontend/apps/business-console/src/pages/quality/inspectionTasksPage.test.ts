@@ -46,6 +46,7 @@ const state = vi.hoisted(() => ({
   ],
   push: vi.fn(),
   query: {} as Record<string, string>,
+  hasLocator: false,
   initialFilters: undefined as Record<string, unknown> | undefined,
   pagedListOptions: undefined as { initialPageSize?: string } | undefined,
 }))
@@ -77,6 +78,7 @@ vi.mock('@/composables/useQualityInspectionTasks', () => ({
     )
     return {
       filters,
+      hasLocator: computed(() => state.hasLocator),
       tasks,
       total: computed(() => (initial.status === 'completed' ? 0 : state.tasks.length)),
       pending: shallowRef(false),
@@ -110,9 +112,12 @@ const stubs = {
     template: '<button :disabled="disabled"><slot /></button>',
   },
   NvDataTable: {
-    props: ['rows'],
+    props: {
+      rows: { type: Array, default: () => [] },
+      manual: { type: Boolean, default: false },
+    },
     template:
-      '<div data-testid="task-table"><div v-for="row in rows" :key="row.inspectionTaskId"><slot name="cell-sourceDocumentId" :row="row" /> {{ row.skuCode }}<slot name="cell-dueAtUtc" :row="row" /><slot name="cell-actions" :row="row" /></div></div>',
+      '<div data-testid="task-table" :data-manual="String(manual)"><div v-for="row in rows" :key="row.inspectionTaskId"><slot name="cell-sourceDocumentId" :row="row" /> {{ row.skuCode }}<slot name="cell-dueAtUtc" :row="row" /><slot name="cell-actions" :row="row" /></div></div>',
   },
   NvField: { template: '<div><slot /></div>' },
   NvFieldLabel: { template: '<label><slot /></label>' },
@@ -130,6 +135,7 @@ describe('quality inspection task workbench page', () => {
     state.error = undefined
     state.push.mockReset()
     state.query = {}
+    state.hasLocator = false
     state.initialFilters = undefined
     state.pagedListOptions = undefined
   })
@@ -146,6 +152,7 @@ describe('quality inspection task workbench page', () => {
     expect(wrapper.find('[data-to="/mes/work-orders/WO-002"]').exists()).toBe(true)
     expect(wrapper.findAll('[data-to="/wms/inbound"]')).toHaveLength(1)
     expect(wrapper.text()).toContain('PR-001')
+    expect(wrapper.get('[data-testid="task-table"]').attributes('data-manual')).toBe('true')
     const actionColumn = (
       wrapper.vm as unknown as {
         columns: Array<{ key: string; headerClass?: string; cellClass?: string }>
@@ -153,6 +160,14 @@ describe('quality inspection task workbench page', () => {
     ).columns.find((column) => column.key === 'actions')
     expect(actionColumn?.headerClass).toContain('sticky')
     expect(actionColumn?.cellClass).toContain('sticky')
+  })
+
+  it('uses the composable locator state as the pagination mode source of truth', () => {
+    state.hasLocator = true
+    const wrapper = mount(InspectionTasksPage, { global: { stubs } })
+
+    expect(state.initialFilters).toEqual({ status: 'pending' })
+    expect(wrapper.get('[data-testid="task-table"]').attributes('data-manual')).toBe('false')
   })
 
   it('opens the existing inspection form without inventing a source document number', async () => {
@@ -181,6 +196,7 @@ describe('quality inspection task workbench page', () => {
 
   it('consumes the stable source document locator contract from WMS', () => {
     state.query = { sourceDocumentNo: ' ASN-20260718-0087 ' }
+    state.hasLocator = true
     const wrapper = mount(InspectionTasksPage, { global: { stubs } })
 
     expect(state.initialFilters).toEqual({
@@ -188,5 +204,19 @@ describe('quality inspection task workbench page', () => {
       sourceDocumentNo: 'ASN-20260718-0087',
     })
     expect(wrapper.text()).toContain('正在定位收货单 ASN-20260718-0087 的待检任务')
+    expect(wrapper.get('[data-testid="task-table"]').attributes('data-manual')).toBe('false')
+  })
+
+  it('uses client pagination when locating an exact inspection task', () => {
+    state.query = { inspectionTaskId: ' TASK-LATE ' }
+    state.hasLocator = true
+    const wrapper = mount(InspectionTasksPage, { global: { stubs } })
+
+    expect(state.initialFilters).toEqual({
+      status: 'pending',
+      inspectionTaskId: 'TASK-LATE',
+    })
+    expect(wrapper.text()).toContain('正在定位待检任务 TASK-LATE')
+    expect(wrapper.get('[data-testid="task-table"]').attributes('data-manual')).toBe('false')
   })
 })
