@@ -2,6 +2,7 @@
 import {
   NvScreenBarChart,
   NvScreenDonut,
+  NvScreenFreshness,
   NvScreenPanel,
   NvScreenScrollArea,
   NvScrollBoard,
@@ -38,6 +39,7 @@ import type {
   WhTaskRow,
 } from '@/data/contracts/warehouse'
 import { fetchWarehouseBoard, fetchWarehouseOpsTick } from '@/data/fetchers/warehouse'
+import { formatScreenFreshness } from '@/data/freshness'
 import { scopedOverride, type Scoped } from '@/data/scope'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
@@ -65,6 +67,7 @@ const {
 const {
   data: opsEnv,
   isStale: opsStale,
+  lastUpdated: opsLastUpdated,
   refresh: refreshOps,
 } = useScreenData<Scoped<WarehouseOpsTick>>(
   async () => ({
@@ -74,9 +77,10 @@ const {
   { intervalMs: 15000 },
 )
 const board = computed(() => boardEnv.value?.data)
-// ops 仅在其 scope 与当前 board 一致时才优先（否则回退 board 完整快照）；页脚 stale 同时反映主板与 tick。
+// ops 仅在其 scope 与当前 board 一致时才优先（否则回退 board 完整快照）；页脚分别反映两条数据源。
 const ops = computed(() => scopedOverride(opsEnv.value, boardEnv.value))
-const isStale = computed(() => Boolean(boardStale.value || opsStale.value))
+const boardFreshness = computed(() => formatScreenFreshness(boardStale.value, lastUpdated.value))
+const opsFreshness = computed(() => formatScreenFreshness(opsStale.value, opsLastUpdated.value))
 watch(
   () => [scope.currentFactoryId, scope.personaId],
   () => {
@@ -97,13 +101,6 @@ function fmtAge(min: number): string {
   if (min >= 60) return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`
   return `${min}m`
 }
-const updatedAt = computed(() => {
-  const t = lastUpdated.value
-  if (!t) return '—'
-  const d = new Date(t)
-  const p = (x: number) => String(x).padStart(2, '0')
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
-})
 
 // —— 顶部 KPI 带：出库进度 hero（发不出货是仓库第一失职 —— 指挥屏第一焦点）+
 //    五格（入库/积压/差异/失败），语义色渐隐强调线，主次分明 ——
@@ -340,7 +337,10 @@ const wcsView = ref<'chart' | 'list'>('chart')
             <!-- 小时流量是离散量 —— 柱状比面积曲线更诚实（每小时一根柱） -->
             <div class="wb-flow-spark">
               <NvScreenBarChart
-                :series="[{ label: '入库', color: '#4aa6ee', data: board.inbound.hourly }]"
+                :series="[
+                  { label: '完成', color: 'var(--nv-scr-cyan)', data: board.inbound.hourly },
+                  { label: '失败', color: 'var(--nv-scr-red)', data: board.inbound.failedHourly },
+                ]"
                 :hover-labels="board.inbound.hourLabels"
                 autoplay
               />
@@ -375,7 +375,10 @@ const wcsView = ref<'chart' | 'list'>('chart')
             </div>
             <div class="wb-flow-spark">
               <NvScreenBarChart
-                :series="[{ label: '出库', color: '#8b9be6', data: board.outbound.hourly }]"
+                :series="[
+                  { label: '完成', color: 'var(--nv-scr-indigo)', data: board.outbound.hourly },
+                  { label: '失败', color: 'var(--nv-scr-red)', data: board.outbound.failedHourly },
+                ]"
                 :hover-labels="board.outbound.hourLabels"
                 autoplay
                 :autoplay-ms="2800"
@@ -524,9 +527,21 @@ const wcsView = ref<'chart' | 'list'>('chart')
                       class="wa-donut"
                       :size="104"
                       :segments="[
-                        { label: '执行中', value: wcs.counts.running, color: '#4aa6ee' },
-                        { label: '已完成', value: wcs.counts.completed, color: '#3fb37f' },
-                        { label: '失败', value: wcs.counts.failed, color: '#ef5a63' },
+                        {
+                          label: '执行中',
+                          value: wcs.counts.running,
+                          color: 'var(--nv-scr-cyan)',
+                        },
+                        {
+                          label: '已完成',
+                          value: wcs.counts.completed,
+                          color: 'var(--nv-scr-green)',
+                        },
+                        {
+                          label: '失败',
+                          value: wcs.counts.failed,
+                          color: 'var(--nv-scr-red)',
+                        },
                       ]"
                     >
                       <b class="wa-dn-num">{{ nf.format(wcs.counts.completed) }}</b>
@@ -592,8 +607,8 @@ const wcsView = ref<'chart' | 'list'>('chart')
         <span class="wb-foot-r">
           当日吞吐 <b>{{ nf.format(board.kpis.throughputLines) }}</b> {{ flowUnit }} （入
           {{ nf.format(board.inbound.linesDone) }} · 出 {{ nf.format(board.outbound.linesDone) }}）
-          · 更新 <b class="wb-foot-ts">{{ updatedAt }}</b>
-          <span v-if="isStale" class="wb-stale">· 数据暂未刷新</span>
+          <NvScreenFreshness :tone="boardFreshness.tone" :label="`主数据 ${boardFreshness.text}`" />
+          <NvScreenFreshness :tone="opsFreshness.tone" :label="`任务/WCS ${opsFreshness.text}`" />
         </span>
       </footer>
     </div>

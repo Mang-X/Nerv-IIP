@@ -284,10 +284,92 @@ describe('fetchRealWarehouseBoard', () => {
     expect(b.inbound.docsDone).toBe(1)
     expect(b.inbound.postFailedDocs).toBe(1)
     expect(b.inbound.postFailedDoc).toBe('ASN-260703')
+    expect(b.inbound.failedDocs).toBe(1)
+    expect(b.inbound.failedHourly.reduce((n, v) => n + v, 0)).toBe(1)
     expect(b.inbound.linesDone).toBe(b.inbound.docsDone)
     expect(b.inbound.pct).toBe(33)
+    expect(b.outbound.failedDocs).toBe(0)
+    expect(b.outbound.failedHourly.reduce((n, v) => n + v, 0)).toBe(0)
     expect(b.outbound.customers).toBe(0)
     expect(b.outbound.latestShipment).toBe('发运单 SO-9801')
+  })
+
+  it('近 12h 失败柱只统计窗口内单据，同时保留当日过账失败总数', async () => {
+    vi.mocked(api.listBusinessConsoleWmsInboundOrders).mockImplementation(
+      makeList([
+        {
+          inboundOrderId: 'IN-recent-failed',
+          inboundOrderNo: 'ASN-recent',
+          status: 'InventoryPostingFailed',
+          createdAtUtc: iso(60),
+        },
+        {
+          inboundOrderId: 'IN-old-failed',
+          inboundOrderNo: 'ASN-old',
+          status: 'InventoryPostingFailed',
+          createdAtUtc: iso(13 * 60),
+        },
+      ]) as never,
+    )
+
+    const b = await fetchRealWarehouseBoard('F01')
+
+    expect(b.inbound.postFailedDocs).toBe(2)
+    expect(b.inbound.failedDocs).toBe(1)
+    expect(b.inbound.failedHourly.reduce((sum, count) => sum + count, 0)).toBe(b.inbound.failedDocs)
+  })
+
+  it('上午的近 12h 窗口包含昨晚失败，但当日进度与过账失败仍只统计今天', async () => {
+    const morning = new Date(NOW)
+    morning.setHours(6, 0, 0, 0)
+    vi.setSystemTime(morning)
+    const oneHourAgo = new Date(morning.getTime() - 60 * 60_000).toISOString()
+    const previousNight = new Date(morning)
+    previousNight.setDate(previousNight.getDate() - 1)
+    previousNight.setHours(23, 0, 0, 0)
+
+    vi.mocked(api.listBusinessConsoleWmsInboundOrders).mockImplementation(
+      makeList([
+        {
+          inboundOrderId: 'IN-today-failed',
+          inboundOrderNo: 'ASN-today',
+          status: 'InventoryPostingFailed',
+          createdAtUtc: oneHourAgo,
+        },
+        {
+          inboundOrderId: 'IN-last-night-failed',
+          inboundOrderNo: 'ASN-last-night',
+          status: 'InventoryPostingFailed',
+          createdAtUtc: previousNight.toISOString(),
+        },
+      ]) as never,
+    )
+    vi.mocked(api.listBusinessConsoleWmsOutboundOrders).mockImplementation(
+      makeList([
+        {
+          outboundOrderId: 'OUT-today-failed',
+          outboundOrderNo: 'SO-today',
+          status: 'InventoryPostingFailed',
+          createdAtUtc: oneHourAgo,
+        },
+        {
+          outboundOrderId: 'OUT-last-night-failed',
+          outboundOrderNo: 'SO-last-night',
+          status: 'InventoryPostingFailed',
+          createdAtUtc: previousNight.toISOString(),
+        },
+      ]) as never,
+    )
+
+    const b = await fetchRealWarehouseBoard('F01')
+
+    expect(b.inbound.docsTotal).toBe(1)
+    expect(b.inbound.postFailedDocs).toBe(1)
+    expect(b.inbound.failedDocs).toBe(2)
+    expect(b.inbound.failedHourly.reduce((sum, count) => sum + count, 0)).toBe(2)
+    expect(b.outbound.docsTotal).toBe(1)
+    expect(b.outbound.failedDocs).toBe(2)
+    expect(b.outbound.failedHourly.reduce((sum, count) => sum + count, 0)).toBe(2)
   })
 
   it('open 积压跨第二页完整覆盖（120 Open），末页最老超时单不漏、按龄期降序', async () => {

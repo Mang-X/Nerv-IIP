@@ -48,15 +48,17 @@ describe('buildQualityBoard（F01 · 勾稽自洽）', () => {
       expect(b.ncrs[i - 1].ageHours).toBeGreaterThanOrEqual(b.ncrs[i].ageHours)
   })
 
-  it('帕累托：TOP5 严格降序、Σ占比 ≤ 100、占比按同一分母重算一致', () => {
-    expect(b.pareto).toHaveLength(5)
-    for (let i = 1; i < b.pareto.length; i++) {
+  it('帕累托：TOP5 + 其他按窗口长尾聚合，数量守恒且占比按同一分母重算', () => {
+    expect(b.pareto).toHaveLength(6)
+    expect(b.pareto.at(-1)?.defect).toBe('其他')
+    expect(b.pareto.at(-1)?.lineName).toBe('其余缺陷')
+    for (let i = 1; i < b.pareto.length - 1; i++) {
       expect(b.pareto[i - 1].count).toBeGreaterThan(b.pareto[i].count)
       expect(b.pareto[i - 1].pct).toBeGreaterThanOrEqual(b.pareto[i].pct)
     }
     const sumCount = b.pareto.reduce((n, p) => n + p.count, 0)
-    expect(b.paretoTotal).toBeGreaterThanOrEqual(sumCount)
-    expect(b.pareto.reduce((n, p) => n + p.pct, 0)).toBeLessThanOrEqual(100)
+    expect(b.paretoTotal).toBe(sumCount)
+    expect(b.pareto.reduce((n, p) => n + p.pct, 0)).toBeCloseTo(100, 0)
     for (const p of b.pareto) expect(p.pct).toBe(round1((p.count / b.paretoTotal) * 100))
   })
 
@@ -204,7 +206,8 @@ describe('buildQualityBoard（对照与 scope）', () => {
     expect(b.kpis.openNcr).toBe(b.ncrs.length)
     expect(b.kpis.overdueNcr).toBe(b.ncrs.filter((r) => r.overdue).length)
     expect(b.kpis.mrbPending).toBe(b.ncrs.filter((r) => r.status === 'review').length)
-    for (const p of b.pareto) expect(p.lineName).toBe('电芯线')
-    expect(b.pareto.reduce((n, x) => n + x.pct, 0)).toBeLessThanOrEqual(100)
+    for (const p of b.pareto.slice(0, -1)) expect(p.lineName).toBe('电芯线')
+    expect(b.pareto.at(-1)?.lineName).toBe('其余缺陷')
+    expect(b.pareto.reduce((n, x) => n + x.pct, 0)).toBeCloseTo(100, 0)
   })
 })

@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { NvSparkline } from '@nerv-iip/ui'
 import { useVirtualList } from '@vueuse/core'
-import { computed, ref, watch } from 'vue'
+import { type CSSProperties, computed, ref, watch } from 'vue'
 import type { DeviceCell, DeviceDetail, StateCounts } from '@/data/contracts/equipment'
 import { fetchDeviceDetail } from '@/data/fetchers/equipment'
+import {
+  EQUIPMENT_DEVICE_NAME_SIZE_PX,
+  EQUIPMENT_ROW_GAP_PX,
+  EQUIPMENT_ROW_HEIGHT_PX,
+  EQUIPMENT_ROW_ITEM_HEIGHT_PX,
+  EQUIPMENT_ROW_OVERSCAN,
+} from './device-wall-layout'
 import { paramColor } from './paramColors'
 
 /**
@@ -47,8 +54,15 @@ function groupBy(key: (d: DeviceCell) => string): [string, DeviceCell[]][] {
   return [...m.entries()]
 }
 
-// —— 平铺：行虚拟滚动（每行 6 台，行高 122 + 12 间距）——
+// —— 平铺：行虚拟滚动（每行 6 台；虚拟 stride 与渲染行高/间距共享常量）——
 const COLS = 6
+const wallStyle = {
+  '--equipment-device-name-size': `${EQUIPMENT_DEVICE_NAME_SIZE_PX}px`,
+} as CSSProperties
+const virtualRowStyle = {
+  height: `${EQUIPMENT_ROW_HEIGHT_PX}px`,
+  marginBottom: `${EQUIPMENT_ROW_GAP_PX}px`,
+} as CSSProperties
 const rowsSrc = computed(() => {
   const out: DeviceCell[][] = []
   for (let i = 0; i < props.devices.length; i += COLS) out.push(props.devices.slice(i, i + COLS))
@@ -59,8 +73,8 @@ const {
   containerProps,
   wrapperProps,
 } = useVirtualList(rowsSrc, {
-  itemHeight: 134,
-  overscan: 1,
+  itemHeight: EQUIPMENT_ROW_ITEM_HEIGHT_PX,
+  overscan: EQUIPMENT_ROW_OVERSCAN,
 })
 
 // 视野内设备集：平铺 = 虚拟列表渲染行；分组视图格子总量小，视为全可见
@@ -121,7 +135,7 @@ function pick(d: DeviceCell) {
 </script>
 
 <template>
-  <div class="dsw-root">
+  <div class="dsw-root" :style="wallStyle">
     <!-- 顶部五态计数（与墙体逐台归并一致，单测对账） -->
     <div class="dsw-counts">
       <span v-for="c in countItems()" :key="c.k" class="count" :class="c.k">
@@ -138,7 +152,7 @@ function pick(d: DeviceCell) {
       @scroll="onFlatScroll"
     >
       <div v-bind="wrapperProps">
-        <div v-for="row in vRows" :key="row.index" class="dsw-vrow">
+        <div v-for="row in vRows" :key="row.index" class="dsw-vrow" :style="virtualRowStyle">
           <button
             v-for="d in row.data"
             :key="d.id"
@@ -432,8 +446,6 @@ function pick(d: DeviceCell) {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
     gap: 12px;
-    height: 122px;
-    margin-bottom: 12px;
   }
   .dsw-cell {
     display: flex;
@@ -449,7 +461,7 @@ function pick(d: DeviceCell) {
   }
   .dsw-name {
     margin: 0;
-    font-size: 14.5px;
+    font-size: var(--equipment-device-name-size, 14px);
     font-weight: 600;
     color: var(--nv-scr-text);
     white-space: nowrap;
@@ -585,7 +597,7 @@ function pick(d: DeviceCell) {
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    font-size: 12.5px;
+    font-size: var(--equipment-device-name-size, 14px);
     font-weight: 600;
     color: var(--nv-scr-text);
     white-space: nowrap;
@@ -631,7 +643,7 @@ function pick(d: DeviceCell) {
     min-width: 0;
   }
   .dsw-chip b {
-    font-size: 12.5px;
+    font-size: var(--equipment-device-name-size, 14px);
     font-weight: 600;
     color: var(--nv-scr-text);
     flex: none;

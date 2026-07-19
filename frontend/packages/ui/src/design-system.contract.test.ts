@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createSourceFile, isImportDeclaration, isStringLiteral, ScriptTarget } from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 // Design System v2 tokens live in the shared, single-source-of-truth theme file
@@ -15,10 +16,28 @@ const overridesCss = read('styles/overrides.css')
 
 // App main.css files live outside packages/ui: src → ui → packages → frontend.
 const appCss = (app: string) => read(`../../../apps/${app}/src/assets/main.css`)
+const appEntry = (app: string) => read(`../../../apps/${app}/src/main.ts`)
 // Strip CSS block comments so structural assertions ignore prose that documents
 // removed constructs (e.g. a comment noting the `revert-layer` hack is gone).
 const stripComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '')
-const PRODUCT_APPS = ['business-console', 'business-pda', 'console', 'screen'] as const
+const firstStatement = (source: string) => {
+  const file = createSourceFile('main.ts', source, ScriptTarget.Latest, true)
+  return file.statements[0]?.getText(file)
+}
+const firstImportSpecifier = (source: string) => {
+  const file = createSourceFile('main.ts', source, ScriptTarget.Latest, true)
+  const statement = file.statements[0]
+  return statement && isImportDeclaration(statement) && isStringLiteral(statement.moduleSpecifier)
+    ? statement.moduleSpecifier.text
+    : undefined
+}
+const HOST_APPS = [
+  'business-console',
+  'business-pda',
+  'console',
+  'design-system',
+  'screen',
+] as const
 const LAYER_ORDER =
   '@layer theme, nv-tokens, base, components, nv-components, utilities, nv-overrides, app;'
 
@@ -163,8 +182,8 @@ describe('ADR 0020 §3 — token scene namespaces', () => {
 
 // ─── ADR 0020 §4 — CSS cascade-layer isolation ─────────────────────────────
 describe('ADR 0020 §4 — cascade-layer isolation', () => {
-  it('declares the full global layer order first in every product app main.css', () => {
-    for (const app of PRODUCT_APPS) {
+  it('declares the full global layer order first in every host app main.css', () => {
+    for (const app of HOST_APPS) {
       const css = appCss(app)
       // First non-comment statement must be the exact layer order.
       const firstStmt = css
@@ -174,6 +193,32 @@ describe('ADR 0020 §4 — cascade-layer isolation', () => {
         .trim()
       expect.soft(firstStmt, `${app} main.css first statement`).toBe(LAYER_ORDER)
     }
+  })
+
+  it('loads the host layer order before Vue and component-library modules', () => {
+    for (const app of HOST_APPS) {
+      expect
+        .soft(firstImportSpecifier(appEntry(app)), `${app} main.ts first import`)
+        .toBe('./assets/main.css')
+    }
+  })
+
+  it('ignores import-looking comments when locating the host bootstrap', () => {
+    const source = `/*
+import './assets/main.css'
+*/
+import App from './App.vue'`
+
+    expect(firstStatement(source)).toBe("import App from './App.vue'")
+  })
+
+  it('parses the first module statement without being fooled by comments or string contents', () => {
+    expect(firstStatement('// license\nimport "./assets/main.css";')).toBe(
+      'import "./assets/main.css";',
+    )
+    expect(firstStatement("const marker = '/* import fake */'\nimport './assets/main.css'")).toBe(
+      "const marker = '/* import fake */'",
+    )
   })
 
   it('wraps the library token table + reset + overlay motion in layers', () => {
@@ -191,7 +236,7 @@ describe('ADR 0020 §4 — cascade-layer isolation', () => {
     // the docs import it plain. (ADR 0020 §4.3.)
     expect.soft(stripComments(overridesCss)).not.toContain('@layer')
     // Product apps import it into nv-overrides.
-    for (const app of PRODUCT_APPS) {
+    for (const app of HOST_APPS) {
       expect.soft(appCss(app)).toMatch(/overrides\.css'\s*layer\(nv-overrides\)/)
     }
   })

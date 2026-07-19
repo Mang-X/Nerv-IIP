@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   NvRingGauge,
+  NvScreenFreshness,
   NvScreenPanel,
   NvScreenScrollArea,
   NvScreenSegmented,
@@ -23,6 +24,8 @@ import type {
 } from '@/data/contracts/equipment'
 import { REPAIR_STAGES } from '@/data/contracts/equipment'
 import { fetchDeviceParamsTick, fetchEquipmentOverview } from '@/data/fetchers/equipment'
+import { OEE_PLACEHOLDER_BADGE, RELIABILITY_SNAPSHOT_BADGE } from '@/data/copy'
+import { formatScreenFreshness } from '@/data/freshness'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
 // 刷新频率分层（MAN-466 大屏轮询调参，观察 #734 Gateway 限流后再降频）：
@@ -43,6 +46,8 @@ const {
 const visibleIds = ref<string[]>([])
 const {
   data: paramsTick,
+  isStale: paramsStale,
+  lastUpdated: paramsLastUpdated,
   start: tickStart,
   stop: tickStop,
 } = useScreenData<DeviceParamsTick>(
@@ -185,24 +190,10 @@ const relCells = computed(() => {
   ]
 })
 
-// —— 数据新鲜度：断流/无数据诚实标 stale（页脚实时灯 + 最后更新时刻），不白屏 ——
-function hhmmss(ms: number): string {
-  const d = new Date(ms)
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
-}
-const freshness = computed<{ tone: 'live' | 'stale' | 'wait'; text: string }>(() => {
-  if (isStale.value) {
-    return {
-      tone: 'stale',
-      text: lastUpdated.value
-        ? `数据滞留 · 最后更新 ${hhmmss(lastUpdated.value)}`
-        : '后端不可达 · 数据滞留',
-    }
-  }
-  if (lastUpdated.value) return { tone: 'live', text: `实时 · 更新于 ${hhmmss(lastUpdated.value)}` }
-  return { tone: 'wait', text: '连接数据…' }
-})
+const freshness = computed(() => formatScreenFreshness(isStale.value, lastUpdated.value))
+const paramsFreshness = computed(() =>
+  formatScreenFreshness(paramsStale.value, paramsLastUpdated.value),
+)
 </script>
 
 <template>
@@ -232,7 +223,8 @@ const freshness = computed<{ tone: 'live' | 'stale' | 'wait'; text: string }>(()
         <div class="side">
           <NvScreenPanel title="可靠性">
             <template #extra>
-              <NvScreenStatusTag tone="amber" label="运行设备占比（瞬时）" />
+              <NvScreenStatusTag tone="cyan" :label="RELIABILITY_SNAPSHOT_BADGE" />
+              <NvScreenStatusTag tone="amber" :label="OEE_PLACEHOLDER_BADGE" />
             </template>
             <div class="rel">
               <NvRingGauge :value="ov.reliability.availability" label="运行设备占比" :size="104" />
@@ -358,9 +350,8 @@ const freshness = computed<{ tone: 'live' | 'stale' | 'wait'; text: string }>(()
       <footer class="scr-foot">
         <RouterLink :to="backLink.to" class="scr-back">‹ {{ backLink.label }}</RouterLink>
         <div class="scr-foot-r">
-          <span class="scr-fresh" :class="freshness.tone"
-            ><i aria-hidden="true" />{{ freshness.text }}</span
-          >
+          <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
+          <NvScreenFreshness :tone="paramsFreshness.tone" :label="`参数 ${paramsFreshness.text}`" />
           <span>实时参数与趋势待 historian · #570 · 单机 OEE 已接入真实读面 · #738</span>
         </div>
       </footer>
@@ -416,48 +407,6 @@ const freshness = computed<{ tone: 'live' | 'stale' | 'wait'; text: string }>(()
     align-items: center;
     gap: 16px;
     min-width: 0;
-  }
-  .scr-fresh {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    flex: none;
-    font-variant-numeric: tabular-nums;
-  }
-  .scr-fresh i {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--nv-scr-faint);
-  }
-  .scr-fresh.live {
-    color: var(--nv-scr-green);
-  }
-  .scr-fresh.live i {
-    background: var(--nv-scr-green);
-    box-shadow: 0 0 7px var(--nv-scr-green);
-    animation: breathe 4.5s ease-in-out infinite;
-  }
-  .scr-fresh.stale {
-    color: var(--nv-scr-amber);
-  }
-  .scr-fresh.stale i {
-    background: var(--nv-scr-amber);
-    box-shadow: 0 0 7px var(--nv-scr-amber);
-  }
-  @keyframes breathe {
-    0%,
-    100% {
-      opacity: 0.55;
-    }
-    50% {
-      opacity: 1;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .scr-fresh.live i {
-      animation: none;
-    }
   }
   .main {
     flex: 1;
