@@ -113,9 +113,10 @@ describe('business WMS composables', () => {
       { inboundOrderId: 'in-1', inboundOrderNo: 'IN-001' },
     ])
     expect(result.inboundOrdersTotal.value).toBe(23)
-    expect(
-      coladaState.queryOptionsById.get('listBusinessConsoleWmsInboundOrders')?.autoRefetch?.(),
-    ).toBe(10_000)
+    const inboundQuery = coladaState.queryOptionsById.get('listBusinessConsoleWmsInboundOrders') as
+      | { autoRefetch?: () => number }
+      | undefined
+    expect(inboundQuery?.autoRefetch?.()).toBe(10_000)
   })
 
   it('reads receiving quality and supplier returns through all server pages', async () => {
