@@ -297,7 +297,9 @@ Source:
 6. `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/20260702063924_AddMpsLifecycleAndMrpInputSources.cs`
 7. `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/20260702093625_AddMrpNetRequirementExplanation.cs`
 8. `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/20260706070015_AddForecastInputsAndMrpExceptions.cs`
-9. `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/20260719033124_AddSalesOrderDemandProjection.cs`
+9. `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/20260719045306_AddSalesOrderDemandProjection.cs`
+   - adds optimistic version concurrency tokens and `ix_demand_sources_scope_type_source_document` for scoped order reconciliation;
+   - reclassifies legacy manual rows with `demand_type='sales-order'` and no upstream document id to `manual` before integrated order facts arrive.
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |

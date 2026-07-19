@@ -6,70 +6,73 @@ using static Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters.Er
 
 namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 
-public sealed class SalesOrderReleasedIntegrationEventConverter
+public sealed class SalesOrderReleasedIntegrationEventConverter(IErpIntegrationEventContextAccessor contextAccessor)
     : IIntegrationEventConverter<SalesOrderReleasedDomainEvent, SalesOrderReleasedIntegrationEvent>
 {
     public SalesOrderReleasedIntegrationEvent Convert(SalesOrderReleasedDomainEvent domainEvent)
     {
         var order = domainEvent.SalesOrder;
         var idempotencyKey = SalesOrderIntegrationEventConverterHelpers.IdempotencyKey(order, "released");
+        var context = contextAccessor.GetContext();
         return new SalesOrderReleasedIntegrationEvent(
             EventIds.New(),
             ErpIntegrationEventTypes.SalesOrderReleased,
             ErpIntegrationEventVersions.V1,
             DateTimeOffset.UtcNow,
             ErpIntegrationEventSources.BusinessErp,
-            idempotencyKey,
-            order.SalesOrderNo,
+            context.CorrelationId,
+            context.CausationId,
             order.OrganizationId,
             order.EnvironmentId,
-            "system:erp",
+            context.Actor,
             idempotencyKey,
             SalesOrderIntegrationEventConverterHelpers.Payload(order));
     }
 }
 
-public sealed class SalesOrderChangedIntegrationEventConverter
+public sealed class SalesOrderChangedIntegrationEventConverter(IErpIntegrationEventContextAccessor contextAccessor)
     : IIntegrationEventConverter<SalesOrderChangedDomainEvent, SalesOrderChangedIntegrationEvent>
 {
     public SalesOrderChangedIntegrationEvent Convert(SalesOrderChangedDomainEvent domainEvent)
     {
         var order = domainEvent.SalesOrder;
         var idempotencyKey = SalesOrderIntegrationEventConverterHelpers.IdempotencyKey(order, "changed");
+        var context = contextAccessor.GetContext();
         return new SalesOrderChangedIntegrationEvent(
             EventIds.New(),
             ErpIntegrationEventTypes.SalesOrderChanged,
             ErpIntegrationEventVersions.V1,
             DateTimeOffset.UtcNow,
             ErpIntegrationEventSources.BusinessErp,
-            idempotencyKey,
-            order.SalesOrderNo,
+            context.CorrelationId,
+            context.CausationId,
             order.OrganizationId,
             order.EnvironmentId,
-            "system:erp",
+            context.Actor,
             idempotencyKey,
             SalesOrderIntegrationEventConverterHelpers.Payload(order));
     }
 }
 
-public sealed class SalesOrderCancelledIntegrationEventConverter
+public sealed class SalesOrderCancelledIntegrationEventConverter(IErpIntegrationEventContextAccessor contextAccessor)
     : IIntegrationEventConverter<SalesOrderCancelledDomainEvent, SalesOrderCancelledIntegrationEvent>
 {
     public SalesOrderCancelledIntegrationEvent Convert(SalesOrderCancelledDomainEvent domainEvent)
     {
         var order = domainEvent.SalesOrder;
         var idempotencyKey = SalesOrderIntegrationEventConverterHelpers.IdempotencyKey(order, "cancelled");
+        var context = contextAccessor.GetContext();
         return new SalesOrderCancelledIntegrationEvent(
             EventIds.New(),
             ErpIntegrationEventTypes.SalesOrderCancelled,
             ErpIntegrationEventVersions.V1,
             DateTimeOffset.UtcNow,
             ErpIntegrationEventSources.BusinessErp,
-            idempotencyKey,
-            order.SalesOrderNo,
+            context.CorrelationId,
+            context.CausationId,
             order.OrganizationId,
             order.EnvironmentId,
-            "system:erp",
+            context.Actor,
             idempotencyKey,
             SalesOrderIntegrationEventConverterHelpers.Payload(order));
     }

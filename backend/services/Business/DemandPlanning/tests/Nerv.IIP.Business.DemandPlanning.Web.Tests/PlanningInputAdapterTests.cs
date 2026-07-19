@@ -51,7 +51,7 @@ public sealed class PlanningInputAdapterTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
-            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "manual", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var engineering = new FakePlanningProductEngineeringClient();
@@ -222,9 +222,9 @@ public sealed class PlanningInputAdapterTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await new CreateOrUpdateForecastInputCommandHandler(dbContext).Handle(NewForecastCommand(), CancellationToken.None);
-        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
-            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 4m, new DateOnly(2026, 6, 15)),
-            CancellationToken.None);
+        dbContext.DemandSources.Add(DemandSource.CreateSalesOrderDemand(
+            "org-001", "env-dev", "sales-order-id-1000", "SO-1000", "10", "CUST-001",
+            "SKU-FG-1000", "pcs", "SITE-01", 4m, new DateOnly(2026, 6, 15), 1));
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
             dbContext,
@@ -252,9 +252,9 @@ public sealed class PlanningInputAdapterTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await new CreateOrUpdateForecastInputCommandHandler(dbContext).Handle(NewForecastCommand(), CancellationToken.None);
-        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
-            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-BOX", "SKU-FG-1000", "box", "SITE-01", 1m, new DateOnly(2026, 6, 15)),
-            CancellationToken.None);
+        dbContext.DemandSources.Add(DemandSource.CreateSalesOrderDemand(
+            "org-001", "env-dev", "sales-order-id-box", "SO-BOX", "10", "CUST-001",
+            "SKU-FG-1000", "box", "SITE-01", 1m, new DateOnly(2026, 6, 15), 1));
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
             dbContext,
@@ -356,9 +356,9 @@ public sealed class PlanningInputAdapterTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await new CreateOrUpdateForecastInputCommandHandler(dbContext).Handle(NewForecastCommand(), CancellationToken.None);
-        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
-            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 12m, new DateOnly(2026, 6, 15)),
-            CancellationToken.None);
+        dbContext.DemandSources.Add(DemandSource.CreateSalesOrderDemand(
+            "org-001", "env-dev", "sales-order-id-1000", "SO-1000", "10", "CUST-001",
+            "SKU-FG-1000", "pcs", "SITE-01", 12m, new DateOnly(2026, 6, 15), 1));
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
             dbContext,
@@ -383,7 +383,7 @@ public sealed class PlanningInputAdapterTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
-            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "manual", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var planningParameters = new FakePlanningParameterClient();
@@ -424,7 +424,7 @@ public sealed class PlanningInputAdapterTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
-            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "manual", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var erp = new FakePlanningErpScheduledReceiptClient();
@@ -459,7 +459,7 @@ public sealed class PlanningInputAdapterTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
-            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "manual", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
@@ -490,7 +490,7 @@ public sealed class PlanningInputAdapterTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
-            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "box", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "manual", "SO-1000", "SKU-FG-1000", "box", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
@@ -517,7 +517,7 @@ public sealed class PlanningInputAdapterTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
-            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "manual", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
@@ -543,7 +543,7 @@ public sealed class PlanningInputAdapterTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
-            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "manual", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(

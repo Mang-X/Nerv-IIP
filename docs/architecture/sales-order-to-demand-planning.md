@@ -25,4 +25,6 @@ ERP 发布三个 v1 具体事件：`SalesOrderReleasedIntegrationEvent`、`Sales
 6. 运行覆盖要求交期的 MRP，验证 pegging/计划工单建议的 demand source reference 为 `SO-DEMO-001`。
 7. 重放相同事件，再依次投递更高版本 change、低版本 change 和 cancel；验证重复/乱序不回滚，新数量可见，取消后 quantity=0/status=cancelled 且后续 MRP 不再使用该需求。
 
-真实跨进程验收使用 PostgreSQL 保存 ERP outbox、DemandPlanning inbox/watermark/DemandSource，并使用 Redis CAP transport。不要用 InMemory provider 代替该验收；演示结束保留业务事实或在专用测试数据库中清理。
+`sales-order` demand type 由 ERP 集成独占；Planning 手工录入不再提供该类型，迁移会把没有上游文档 ID 的旧手工 `sales-order` 行归类为 `manual`，避免和真实订单行重复计数。
+
+真实跨进程验收运行 `scripts/verify-erp-sales-order-demand-planning.ps1`。脚本使用一次性 PostgreSQL 数据库保存 ERP outbox 与 DemandPlanning inbox/watermark/DemandSource，使用 Redis CAP transport，分别启动 MasterData、ERP、DemandPlanning 进程，并由独立 probe 注入 duplicate/out-of-order 消息；证据输出到 `artifacts/acceptance/man517/sales-order-demand-planning-evidence.json`，finally 删除测试库并停止托管进程。不要用 InMemory provider 代替该验收。

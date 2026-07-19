@@ -22,7 +22,11 @@ public sealed class CreateOrUpdateDemandSourceCommandValidator : AbstractValidat
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
-        RuleFor(x => x.DemandType).NotEmpty().MaximumLength(32);
+        RuleFor(x => x.DemandType)
+            .NotEmpty()
+            .MaximumLength(32)
+            .Must(value => !string.Equals(value, "sales-order", StringComparison.OrdinalIgnoreCase))
+            .WithMessage("Demand type 'sales-order' is integration-owned and cannot be created manually.");
         RuleFor(x => x.SourceReference).MaximumLength(128);
         RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(64);
         RuleFor(x => x.UomCode).NotEmpty().MaximumLength(32);
@@ -38,6 +42,11 @@ public sealed class CreateOrUpdateDemandSourceCommandHandler(ApplicationDbContex
 
     public async Task<DemandSourceId> Handle(CreateOrUpdateDemandSourceCommand request, CancellationToken cancellationToken)
     {
+        if (string.Equals(request.DemandType, "sales-order", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new KnownException("Demand type 'sales-order' is integration-owned and cannot be created manually.");
+        }
+
         var allocation = await _codingService.AllocateDemandReferenceAsync(
             request.OrganizationId,
             request.EnvironmentId,

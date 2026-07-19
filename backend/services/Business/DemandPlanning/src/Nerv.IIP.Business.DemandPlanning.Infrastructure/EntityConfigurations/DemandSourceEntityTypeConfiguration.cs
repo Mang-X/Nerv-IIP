@@ -16,7 +16,7 @@ public sealed class DemandSourceEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").HasMaxLength(128).IsRequired().HasDefaultValue(string.Empty).HasComment("Stable upstream source document identifier; sales order public id for ERP demand.");
         builder.Property(x => x.SourceLineReference).HasColumnName("source_line_reference").HasMaxLength(64).IsRequired().HasDefaultValue(string.Empty).HasComment("Stable upstream source line reference; empty for manually managed demand.");
         builder.Property(x => x.CustomerCode).HasColumnName("customer_code").HasMaxLength(100).IsRequired().HasDefaultValue(string.Empty).HasComment("Customer code snapshot supplied by the upstream sales order.");
-        builder.Property(x => x.SourceVersion).HasColumnName("source_version").HasDefaultValue(0).HasComment("Latest accepted upstream business version; zero for manually managed demand.");
+        builder.Property(x => x.SourceVersion).HasColumnName("source_version").HasDefaultValue(0).IsConcurrencyToken().HasComment("Latest accepted upstream business version and optimistic concurrency token; zero for manually managed demand.");
         builder.Property(x => x.SourceStatus).HasColumnName("source_status").HasMaxLength(32).IsRequired().HasDefaultValue("active").HasComment("Explainable upstream lifecycle status: active or cancelled.");
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").HasMaxLength(64).IsRequired().HasComment("Demanded finished-good SKU code snapshot.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").HasMaxLength(32).IsRequired().HasComment("Demand quantity unit of measure snapshot.");
@@ -26,5 +26,7 @@ public sealed class DemandSourceEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasComment("UTC timestamp when the demand source was created.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasComment("UTC timestamp when the demand source was last updated.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DemandType, x.SourceReference, x.SourceLineReference }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DemandType, x.SourceDocumentId })
+            .HasDatabaseName("ix_demand_sources_scope_type_source_document");
     }
 }

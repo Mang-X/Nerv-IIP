@@ -14,7 +14,7 @@ public sealed class SalesOrderDemandProjectionEntityTypeConfiguration : IEntityT
         builder.Property(x => x.SalesOrderNo).HasColumnName("sales_order_no").HasMaxLength(128).HasComment("ERP sales order number for traceability.");
         builder.Property(x => x.CustomerCode).HasColumnName("customer_code").HasMaxLength(100).HasComment("Customer code snapshot.");
         builder.Property(x => x.SiteCode).HasColumnName("site_code").HasMaxLength(64).HasComment("Planning site code snapshot.");
-        builder.Property(x => x.OrderVersion).HasColumnName("order_version").HasComment("Latest accepted ERP sales order business version.");
+        builder.Property(x => x.OrderVersion).HasColumnName("order_version").IsConcurrencyToken().HasComment("Latest accepted ERP sales order business version and optimistic concurrency token.");
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(32).HasComment("Latest accepted ERP sales order lifecycle status.");
         builder.Property(x => x.LastEventId).HasColumnName("last_event_id").HasMaxLength(256).HasComment("Latest accepted integration event identifier.");
         builder.Property(x => x.OccurredAtUtc).HasColumnName("occurred_at_utc").HasComment("Source event occurrence time for audit.");

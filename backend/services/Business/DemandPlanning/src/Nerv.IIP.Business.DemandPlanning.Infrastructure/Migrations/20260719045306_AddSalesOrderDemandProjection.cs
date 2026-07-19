@@ -63,7 +63,11 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                 type: "integer",
                 nullable: false,
                 defaultValue: 0,
-                comment: "Latest accepted upstream business version; zero for manually managed demand.");
+                comment: "Latest accepted upstream business version and optimistic concurrency token; zero for manually managed demand.");
+
+            migrationBuilder.Sql(
+                "UPDATE demand_planning.demand_sources SET demand_type = 'manual' " +
+                "WHERE demand_type = 'sales-order' AND source_document_id = '';", suppressTransaction: false);
 
             migrationBuilder.CreateTable(
                 name: "integration_event_dead_letters",
@@ -122,7 +126,7 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                     sales_order_no = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false, comment: "ERP sales order number for traceability."),
                     customer_code = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Customer code snapshot."),
                     site_code = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false, comment: "Planning site code snapshot."),
-                    order_version = table.Column<int>(type: "integer", nullable: false, comment: "Latest accepted ERP sales order business version."),
+                    order_version = table.Column<int>(type: "integer", nullable: false, comment: "Latest accepted ERP sales order business version and optimistic concurrency token."),
                     status = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false, comment: "Latest accepted ERP sales order lifecycle status."),
                     last_event_id = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false, comment: "Latest accepted integration event identifier."),
                     occurred_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "Source event occurrence time for audit.")
@@ -139,6 +143,12 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                 table: "demand_sources",
                 columns: new[] { "organization_id", "environment_id", "demand_type", "source_reference", "source_line_reference" },
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "ix_demand_sources_scope_type_source_document",
+                schema: "demand_planning",
+                table: "demand_sources",
+                columns: new[] { "organization_id", "environment_id", "demand_type", "source_document_id" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_integration_event_dead_letters_consumer_name_event_id",
@@ -190,6 +200,11 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
 
             migrationBuilder.DropIndex(
                 name: "IX_demand_sources_organization_id_environment_id_demand_type_s~",
+                schema: "demand_planning",
+                table: "demand_sources");
+
+            migrationBuilder.DropIndex(
+                name: "ix_demand_sources_scope_type_source_document",
                 schema: "demand_planning",
                 table: "demand_sources");
 

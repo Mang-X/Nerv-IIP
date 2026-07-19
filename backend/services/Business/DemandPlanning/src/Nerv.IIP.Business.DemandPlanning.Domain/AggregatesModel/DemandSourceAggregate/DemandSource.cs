@@ -64,6 +64,12 @@ public sealed class DemandSource : Entity<DemandSourceId>, IAggregateRoot
         decimal quantity,
         DateOnly dueDate)
     {
+        ArgumentNullException.ThrowIfNull(demandType);
+        if (string.Equals(demandType.Trim(), "sales-order", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Demand type 'sales-order' is integration-owned and cannot be created manually.");
+        }
+
         return new DemandSource(organizationId, environmentId, demandType, sourceReference, skuCode, uomCode, siteCode, quantity, dueDate);
     }
 

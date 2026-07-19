@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
@@ -293,9 +294,9 @@ public sealed class DemandPlanningEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
-            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1001", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
-            CancellationToken.None);
+        dbContext.DemandSources.Add(DemandSource.CreateSalesOrderDemand(
+            "org-001", "env-dev", "sales-order-id-1001", "SO-1001", "10", "CUST-001",
+            "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1), 1));
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new RunMrpCommandHandler(dbContext, new DemandPlanningFixtureInputSnapshotProvider(dbContext));
 

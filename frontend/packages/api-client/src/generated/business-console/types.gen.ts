@@ -5304,6 +5304,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSalesOrderItem = {
     salesOrderNo?: string;
     customerCode?: string;
+    siteCode?: string;
     status?: string;
     totalAmount?: number;
 };

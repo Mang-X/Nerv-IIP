@@ -14,12 +14,15 @@ public sealed class ErpSalesOrderDemandIntegrationEventTests
     {
         var order = CreateReleasedOrder();
 
-        var integrationEvent = new SalesOrderReleasedIntegrationEventConverter()
+        var integrationEvent = new SalesOrderReleasedIntegrationEventConverter(Context)
             .Convert(new SalesOrderReleasedDomainEvent(order));
 
         Assert.Equal(ErpIntegrationEventTypes.SalesOrderReleased, integrationEvent.EventType);
         Assert.Equal(ErpIntegrationEventVersions.V1, integrationEvent.EventVersion);
         Assert.Equal(ErpIntegrationEventSources.BusinessErp, integrationEvent.SourceService);
+        Assert.Equal("corr-http-001", integrationEvent.CorrelationId);
+        Assert.Equal("command-create-so-001", integrationEvent.CausationId);
+        Assert.Equal("user:planner-001", integrationEvent.Actor);
         Assert.Equal("org-001", integrationEvent.OrganizationId);
         Assert.Equal("env-dev", integrationEvent.EnvironmentId);
         Assert.Equal("SO-DEMO-001", integrationEvent.Payload.SalesOrderNo);
@@ -46,7 +49,7 @@ public sealed class ErpSalesOrderDemandIntegrationEventTests
         order.ClearDomainEvents();
         order.ChangeLine("10", 3m, 10m, new DateOnly(2026, 8, 16), "customer changed quantity");
 
-        var changed = new SalesOrderChangedIntegrationEventConverter()
+        var changed = new SalesOrderChangedIntegrationEventConverter(Context)
             .Convert(new SalesOrderChangedDomainEvent(order));
 
         Assert.Equal(ErpIntegrationEventTypes.SalesOrderChanged, changed.EventType);
@@ -55,7 +58,7 @@ public sealed class ErpSalesOrderDemandIntegrationEventTests
         Assert.Contains(":v2:changed", changed.IdempotencyKey, StringComparison.Ordinal);
 
         order.Cancel("customer cancelled");
-        var cancelled = new SalesOrderCancelledIntegrationEventConverter()
+        var cancelled = new SalesOrderCancelledIntegrationEventConverter(Context)
             .Convert(new SalesOrderCancelledDomainEvent(order));
 
         Assert.Equal(ErpIntegrationEventTypes.SalesOrderCancelled, cancelled.EventType);
@@ -76,5 +79,12 @@ public sealed class ErpSalesOrderDemandIntegrationEventTests
             [new QuotationLineDraft("10", "SKU-FG", "EA", 2m, 10m, new DateOnly(2026, 8, 15))]);
         quotation.Approve();
         return SalesOrder.CreateFromQuotation("SO-DEMO-001", "SITE-001", quotation);
+    }
+
+    private static readonly IErpIntegrationEventContextAccessor Context = new StaticContextAccessor();
+
+    private sealed class StaticContextAccessor : IErpIntegrationEventContextAccessor
+    {
+        public ErpIntegrationEventContext GetContext() => new("corr-http-001", "command-create-so-001", "user:planner-001");
     }
 }

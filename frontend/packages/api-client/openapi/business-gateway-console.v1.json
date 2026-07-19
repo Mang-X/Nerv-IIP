@@ -43155,6 +43155,9 @@
           "customerCode": {
             "type": "string"
           },
+          "siteCode": {
+            "type": "string"
+          },
           "status": {
             "type": "string"
           },

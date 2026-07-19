@@ -2490,6 +2490,7 @@ public sealed record BusinessConsoleErpSalesOrderListResponse(
 public sealed record BusinessConsoleErpSalesOrderItem(
     string SalesOrderNo,
     string CustomerCode,
+    string SiteCode,
     string Status,
     decimal TotalAmount);
 

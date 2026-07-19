@@ -125,11 +125,12 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasComment("Explainable upstream lifecycle status: active or cancelled.");
 
                     b.Property<int>("SourceVersion")
+                        .IsConcurrencyToken()
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
                         .HasDefaultValue(0)
                         .HasColumnName("source_version")
-                        .HasComment("Latest accepted upstream business version; zero for manually managed demand.");
+                        .HasComment("Latest accepted upstream business version and optimistic concurrency token; zero for manually managed demand.");
 
                     b.Property<string>("UomCode")
                         .IsRequired()
@@ -144,6 +145,9 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasComment("UTC timestamp when the demand source was last updated.");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DemandType", "SourceDocumentId")
+                        .HasDatabaseName("ix_demand_sources_scope_type_source_document");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "DemandType", "SourceReference", "SourceLineReference")
                         .IsUnique();
@@ -860,9 +864,10 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasComment("Source event occurrence time for audit.");
 
                     b.Property<int>("OrderVersion")
+                        .IsConcurrencyToken()
                         .HasColumnType("integer")
                         .HasColumnName("order_version")
-                        .HasComment("Latest accepted ERP sales order business version.");
+                        .HasComment("Latest accepted ERP sales order business version and optimistic concurrency token.");
 
                     b.Property<string>("SalesOrderNo")
                         .IsRequired()

@@ -73,18 +73,18 @@ internal sealed class SalesOrderDemandEventProcessor(
     string consumerName)
 {
     public Task ProcessAsync(SalesOrderReleasedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
-        ProcessCoreAsync(integrationEvent, integrationEvent.Payload, cancellationToken);
+        ProcessCoreAsync(integrationEvent, integrationEvent.Payload, "released", cancellationToken);
 
     public Task ProcessAsync(SalesOrderChangedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
-        ProcessCoreAsync(integrationEvent, integrationEvent.Payload, cancellationToken);
+        ProcessCoreAsync(integrationEvent, integrationEvent.Payload, "released", cancellationToken);
 
     public Task ProcessAsync(SalesOrderCancelledIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
-        ProcessCoreAsync(integrationEvent, integrationEvent.Payload, cancellationToken);
+        ProcessCoreAsync(integrationEvent, integrationEvent.Payload, "cancelled", cancellationToken);
 
-    private async Task ProcessCoreAsync(IIntegrationEventEnvelope integrationEvent, SalesOrderLifecyclePayload payload, CancellationToken cancellationToken)
+    private async Task ProcessCoreAsync(IIntegrationEventEnvelope integrationEvent, SalesOrderLifecyclePayload payload, string expectedStatus, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
-        var validationError = Validate(integrationEvent, payload);
+        var validationError = Validate(integrationEvent, payload, expectedStatus);
         if (validationError is not null)
         {
             await deadLetterStore.AddAsync(
@@ -93,6 +93,28 @@ internal sealed class SalesOrderDemandEventProcessor(
             return;
         }
 
+        for (var attempt = 1; attempt <= 4; attempt++)
+        {
+            try
+            {
+                await ProcessValidatedAsync(integrationEvent, payload, cancellationToken);
+                return;
+            }
+            catch (DbUpdateConcurrencyException) when (attempt < 4)
+            {
+                dbContext.ChangeTracker.Clear();
+            }
+            catch (DbUpdateException exception) when (
+                attempt < 4 &&
+                ProcessedIntegrationEventInbox.IsUniqueConflict(exception, dbContext, "PK_sales_order_demand_projections"))
+            {
+                dbContext.ChangeTracker.Clear();
+            }
+        }
+    }
+
+    private async Task ProcessValidatedAsync(IIntegrationEventEnvelope integrationEvent, SalesOrderLifecyclePayload payload, CancellationToken cancellationToken)
+    {
         if (!await DemandPlanningProcessedIntegrationEventInbox.TryRecordAsync(dbContext, consumerName, integrationEvent, cancellationToken))
         {
             return;
@@ -178,7 +200,7 @@ internal sealed class SalesOrderDemandEventProcessor(
         ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
             dbContext, dbContext.SaveChangesAsync, cancellationToken);
 
-    private static string? Validate(IIntegrationEventEnvelope integrationEvent, SalesOrderLifecyclePayload payload)
+    private static string? Validate(IIntegrationEventEnvelope integrationEvent, SalesOrderLifecyclePayload payload, string expectedStatus)
     {
         if (!string.Equals(integrationEvent.SourceService, ErpIntegrationEventSources.BusinessErp, StringComparison.Ordinal))
         {
@@ -192,10 +214,9 @@ internal sealed class SalesOrderDemandEventProcessor(
             return "Sales order identity, customer, site, positive version, and full line snapshot are required.";
         }
 
-        if (!string.Equals(payload.Status, "released", StringComparison.Ordinal) &&
-            !string.Equals(payload.Status, "cancelled", StringComparison.Ordinal))
+        if (!string.Equals(payload.Status, expectedStatus, StringComparison.Ordinal))
         {
-            return $"Unsupported sales order status '{payload.Status}'.";
+            return $"Event fact requires sales order status '{expectedStatus}', but payload supplied '{payload.Status}'.";
         }
 
         if (payload.Lines.GroupBy(x => x.SalesOrderLineNo, StringComparer.Ordinal).Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1) ||

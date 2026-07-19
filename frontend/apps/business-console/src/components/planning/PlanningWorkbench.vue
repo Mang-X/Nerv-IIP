@@ -185,7 +185,6 @@ const mrpOpen = shallowRef(false)
 const acceptingSuggestionId = shallowRef<string | null>(null)
 
 const demandTypeOptions = [
-  { label: '销售订单', value: 'sales-order' },
   { label: '预测', value: 'forecast' },
   { label: '安全库存', value: 'safety-stock' },
 ]

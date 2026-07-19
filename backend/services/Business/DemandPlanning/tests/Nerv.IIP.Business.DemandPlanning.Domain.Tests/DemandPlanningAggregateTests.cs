@@ -9,6 +9,15 @@ namespace Nerv.IIP.Business.DemandPlanning.Domain.Tests;
 public sealed class DemandPlanningAggregateTests
 {
     [Fact]
+    public void Manual_demand_cannot_claim_integration_owned_sales_order_type()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => DemandSource.Create(
+            "org-001", "env-dev", "sales-order", "SO-MANUAL-001", "SKU-FG", "EA", "SITE-001", 1m, new DateOnly(2026, 8, 1)));
+
+        Assert.Contains("integration-owned", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Sales_order_demand_tracks_line_version_customer_and_explainable_cancellation()
     {
         var demand = DemandSource.CreateSalesOrderDemand(

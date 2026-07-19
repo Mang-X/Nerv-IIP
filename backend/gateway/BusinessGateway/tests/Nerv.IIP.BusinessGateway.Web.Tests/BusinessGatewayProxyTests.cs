@@ -2016,6 +2016,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-test-token", erp.LastInternalToken);
         Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "released", "CUST-001", 10, 20), erp.LastSalesOrderListRequest);
         Assert.Equal(new BusinessConsoleErpSourceDocumentRequest("org-001", "env-dev", "PR-001"), erp.LastFinanceSourceDocumentRequest);
+        using var salesDocument = JsonDocument.Parse(await sales.Content.ReadAsStringAsync());
+        Assert.Equal("SITE-001", salesDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("siteCode").GetString());
     }
 
     [Fact]
@@ -8283,7 +8285,7 @@ internal sealed class RecordingErpClient : IBusinessErpClient
         LastSalesOrderListRequest = request;
         return Task.FromResult(new BusinessConsoleErpSalesOrderListResponse(
         [
-            new BusinessConsoleErpSalesOrderItem("SO-001", "CUST-001", "Released", 1200m),
+            new BusinessConsoleErpSalesOrderItem("SO-001", "CUST-001", "SITE-001", "Released", 1200m),
         ],
         1));
     }
