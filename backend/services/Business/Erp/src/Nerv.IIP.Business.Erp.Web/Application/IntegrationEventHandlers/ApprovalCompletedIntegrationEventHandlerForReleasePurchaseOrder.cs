@@ -6,13 +6,15 @@ using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Approval.ApprovalCompletedIntegrationEvent", ConsumerName)]
 public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    IErpIntegrationEventContextAccessor? integrationEventContext = null)
     : IIntegrationEventHandler<ApprovalCompletedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.purchase-order-approval-completed";
@@ -30,6 +32,8 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
         new IntegrationEventEnvelopeValidator(),
         deadLetterStore,
         ConsumerOptions);
+    private readonly IErpIntegrationEventContextAccessor eventContext = integrationEventContext
+        ?? new HttpErpIntegrationEventContextAccessor(new HttpContextAccessor());
 
     public Task HandleAsync(ApprovalCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
@@ -44,6 +48,10 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
 
     private async Task HandleValidEventAsync(ApprovalCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
+        using var causationScope = eventContext.BeginScope(
+            integrationEvent.EventId,
+            integrationEvent.CorrelationId,
+            integrationEvent.Actor);
         if (!string.Equals(integrationEvent.SourceService, ApprovalIntegrationEventSources.BusinessApproval, StringComparison.OrdinalIgnoreCase))
         {
             await deadLetterStore.AddAsync(

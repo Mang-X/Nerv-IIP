@@ -21,7 +21,7 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
       demandForm: reactive({
         organizationId: 'org-001',
         environmentId: 'env-dev',
-        demandType: 'sales-order',
+        demandType: 'forecast',
         sourceReference: '',
         skuCode: '',
         uomCode: '',

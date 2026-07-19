@@ -299,7 +299,7 @@ Source:
 8. `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/20260706070015_AddForecastInputsAndMrpExceptions.cs`
 9. `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/20260719045306_AddSalesOrderDemandProjection.cs`
    - adds optimistic version concurrency tokens and `ix_demand_sources_scope_type_source_document` for scoped order reconciliation;
-   - reclassifies legacy manual rows with `demand_type='sales-order'` and no upstream document id to `manual` before integrated order facts arrive.
+   - reclassifies legacy manual rows with `demand_type='sales-order'` and no upstream document id to `manual` before integrated order facts arrive; if a true `manual` row already owns the same reference, both are retained and the former sales-order reference receives a deterministic `legacy-so` suffix derived from its stable row id.
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |

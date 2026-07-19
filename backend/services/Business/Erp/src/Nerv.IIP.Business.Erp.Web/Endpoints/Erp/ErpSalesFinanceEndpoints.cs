@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggre
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.SalesFinance;
 using Nerv.IIP.ServiceAuth;
 
@@ -163,34 +164,58 @@ public sealed class ApproveQuotationEndpoint(ISender sender) : ErpEndpoint<Appro
     }
 }
 
-public sealed class CreateSalesOrderEndpoint(ISender sender) : ErpEndpoint<CreateSalesOrderRequest, ResponseData<CreateSalesOrderResponse>>
+public sealed class CreateSalesOrderEndpoint(ISender sender, IErpIntegrationEventContextAccessor eventContext) : ErpEndpoint<CreateSalesOrderRequest, ResponseData<CreateSalesOrderResponse>>
 {
     public override void Configure() => ConfigureErpContract(ErpSalesEndpointContracts.Get<CreateSalesOrderEndpoint>());
 
     public override async Task HandleAsync(CreateSalesOrderRequest req, CancellationToken ct)
     {
+        using var causationScope = eventContext.BeginScope(ErpCommandCausationIds.ForHttpCommand(
+            "create-sales-order",
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.SalesOrderNo,
+            req.QuotationNo,
+            req.SiteCode,
+            req.IdempotencyKey));
         var id = await sender.Send(new CreateSalesOrderCommand(req.OrganizationId, req.EnvironmentId, req.SalesOrderNo, req.QuotationNo, req.SiteCode, req.IdempotencyKey), ct);
         await Send.OkAsync(new CreateSalesOrderResponse(id).AsResponseData(), cancellation: ct);
     }
 }
 
-public sealed class ChangeSalesOrderLineEndpoint(ISender sender) : ErpEndpoint<ChangeSalesOrderLineRequest, ResponseData<string>>
+public sealed class ChangeSalesOrderLineEndpoint(ISender sender, IErpIntegrationEventContextAccessor eventContext) : ErpEndpoint<ChangeSalesOrderLineRequest, ResponseData<string>>
 {
     public override void Configure() => ConfigureErpContract(ErpSalesEndpointContracts.Get<ChangeSalesOrderLineEndpoint>());
 
     public override async Task HandleAsync(ChangeSalesOrderLineRequest req, CancellationToken ct)
     {
+        using var causationScope = eventContext.BeginScope(ErpCommandCausationIds.ForHttpCommand(
+            "change-sales-order-line",
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.SalesOrderNo,
+            req.LineNo,
+            req.OrderedQuantity,
+            req.UnitPrice,
+            req.RequiredDate,
+            req.Reason));
         await sender.Send(new ChangeSalesOrderLineCommand(req.OrganizationId, req.EnvironmentId, req.SalesOrderNo, req.LineNo, req.OrderedQuantity, req.UnitPrice, req.RequiredDate, req.Reason), ct);
         await Send.OkAsync("changed".AsResponseData(), cancellation: ct);
     }
 }
 
-public sealed class CancelSalesOrderEndpoint(ISender sender) : ErpEndpoint<CancelSalesOrderRequest, ResponseData<string>>
+public sealed class CancelSalesOrderEndpoint(ISender sender, IErpIntegrationEventContextAccessor eventContext) : ErpEndpoint<CancelSalesOrderRequest, ResponseData<string>>
 {
     public override void Configure() => ConfigureErpContract(ErpSalesEndpointContracts.Get<CancelSalesOrderEndpoint>());
 
     public override async Task HandleAsync(CancelSalesOrderRequest req, CancellationToken ct)
     {
+        using var causationScope = eventContext.BeginScope(ErpCommandCausationIds.ForHttpCommand(
+            "cancel-sales-order",
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.SalesOrderNo,
+            req.Reason));
         await sender.Send(new CancelSalesOrderCommand(req.OrganizationId, req.EnvironmentId, req.SalesOrderNo, req.Reason), ct);
         await Send.OkAsync("cancelled".AsResponseData(), cancellation: ct);
     }

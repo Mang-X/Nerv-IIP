@@ -91,8 +91,19 @@ function Wait-Demand {
     throw "Demand SO-DEMO-001 did not converge to version=$Version quantity=$Quantity status=$Status."
 }
 
+function Assert-DemandStable {
+    param([string]$DemandPlanningUrl, [hashtable]$Headers, [int]$Version, [decimal]$Quantity, [string]$Status, [int]$Seconds = 5)
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    do {
+        $row = Wait-Demand -DemandPlanningUrl $DemandPlanningUrl -Headers $Headers -Version $Version -Quantity $Quantity -Status $Status
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+    return $row
+}
+
 $composeFile = Join-Path $root 'infra/docker-compose.dev.yml'
-$running = @(Invoke-NativeCommandOutput -Command 'docker' -Arguments @('compose', '-f', $composeFile, 'ps', '--services', '--status', 'running') -WorkingDirectory $root -Name 'man517-compose-running')
+$runningResult = Invoke-NativeCommandOutput -Command 'docker' -Arguments @('compose', '-f', $composeFile, 'ps', '--services', '--status', 'running') -WorkingDirectory $root -Name 'man517-compose-running'
+$running = @("$($runningResult.Stdout)" -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
 $startedPostgres = $running -notcontains 'postgres'
 $startedRedis = $running -notcontains 'redis'
 $databaseName = "man517_$([Guid]::NewGuid().ToString('N'))"
@@ -193,15 +204,28 @@ try {
         NERV_IIP_TEST_REDIS = $RedisConnectionString
         NERV_IIP_TEST_CAP_VERSION = $capVersion
         NERV_IIP_TEST_SALES_ORDER_ID = "$($salesOrder.data.salesOrderId)"
+        NERV_IIP_TEST_PROBE_RUN_ID = [Guid]::NewGuid().ToString('N')
     } -ScriptBlock {
-        Invoke-DotNet -Arguments @('test', $probeProject, '--no-build', '--filter', 'FullyQualifiedName~External_process_injects_duplicate_and_out_of_order_sales_order_events') -WorkingDirectory $root -TimeoutSeconds 180 -Name 'man517-out-of-order-probe' | Out-Null
+        $probeResultsDirectory = Join-Path $root 'artifacts/acceptance/man517'
+        [System.IO.Directory]::CreateDirectory($probeResultsDirectory) | Out-Null
+        $probeResultsFile = "probe-$([Guid]::NewGuid().ToString('N')).trx"
+        $probeResults = Join-Path $probeResultsDirectory $probeResultsFile
+        Invoke-DotNet -Arguments @('test', $probeProject, '--no-build', '--filter', 'FullyQualifiedName~External_process_injects_duplicate_and_out_of_order_sales_order_events', '--results-directory', $probeResultsDirectory, '--logger', "trx;LogFileName=$probeResultsFile") -WorkingDirectory $root -TimeoutSeconds 180 -Name 'man517-out-of-order-probe' | Out-Null
+        if (-not (Test-Path -LiteralPath $probeResults)) {
+            throw 'MAN-517 fault-injection probe produced no TRX result; the selected test may be absent from a stale build.'
+        }
+        [xml]$probeTrx = Get-Content -LiteralPath $probeResults -Raw
+        $probeExecutions = @($probeTrx.SelectNodes("//*[local-name()='UnitTestResult']") | Where-Object { $_.GetAttribute('testName').EndsWith('.External_process_injects_duplicate_and_out_of_order_sales_order_events', [StringComparison]::Ordinal) })
+        if ($probeExecutions.Count -ne 1 -or $probeExecutions[0].GetAttribute('outcome') -ne 'Passed') {
+            throw 'MAN-517 fault-injection probe did not execute exactly once and pass.'
+        }
     }
     $outOfOrder = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 3 -Quantity 5 -Status 'active' # out-of-order v2 and duplicate v3 must not regress
 
     Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/cancel" -Headers $headers -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; reason = 'MAN-517 cancellation'
     } | Out-Null
-    $cancelled = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 4 -Quantity 0 -Status 'cancelled'
+    $cancelled = Assert-DemandStable -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 4 -Quantity 0 -Status 'cancelled'
 
     $evidencePath = Join-Path $root 'artifacts/acceptance/man517/sales-order-demand-planning-evidence.json'
     [System.IO.Directory]::CreateDirectory((Split-Path -Parent $evidencePath)) | Out-Null

@@ -271,6 +271,7 @@ describe('business planning composable', () => {
   it('starts with a blank demand form instead of demo production values', () => {
     const { demandForm } = useBusinessPlanning()
 
+    expect(demandForm.demandType).toBe('forecast')
     expect(demandForm.sourceReference).toBe('')
     expect(demandForm.skuCode).toBe('')
     expect(demandForm.uomCode).toBe('')

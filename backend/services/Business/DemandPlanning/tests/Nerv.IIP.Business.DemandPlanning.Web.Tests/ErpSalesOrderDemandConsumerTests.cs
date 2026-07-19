@@ -4,6 +4,8 @@ using DotNetCore.CAP.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -114,6 +116,34 @@ public sealed class ErpSalesOrderDemandConsumerTests
             Assert.Equal(4, Assert.Single(await dbContext.SalesOrderDemandProjections.AsNoTracking().ToArrayAsync()).OrderVersion);
             Assert.Equal(4, await dbContext.ProcessedIntegrationEvents.CountAsync());
         }
+    }
+
+    [DemandPlanningRealPostgresFact]
+    public async Task PostgreSql_upgrade_reclassifies_legacy_manual_and_sales_order_collision_without_losing_traceability()
+    {
+        await using var database = await TemporaryDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        await using var provider = CreatePostgresProvider(database.ConnectionString);
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var migrator = dbContext.Database.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260706070015_AddForecastInputsAndMrpExceptions");
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO demand_planning.demand_sources
+              (id, organization_id, environment_id, demand_type, source_reference, sku_code, uom_code, site_code, quantity, due_date, created_at_utc, updated_at_utc)
+            VALUES
+              ('01900000-0000-7000-8000-000000000001', 'org-001', 'env-dev', 'manual', 'SO-LEGACY-001', 'SKU-A', 'EA', 'SITE-001', 1, DATE '2026-08-15', NOW(), NOW()),
+              ('01900000-0000-7000-8000-000000000002', 'org-001', 'env-dev', 'sales-order', 'SO-LEGACY-001', 'SKU-B', 'EA', 'SITE-001', 2, DATE '2026-08-16', NOW(), NOW());
+            """);
+
+        await migrator.MigrateAsync();
+
+        var demands = await dbContext.DemandSources.AsNoTracking().OrderBy(x => x.SourceReference).ToArrayAsync();
+        Assert.Equal(2, demands.Length);
+        Assert.All(demands, demand => Assert.Equal("manual", demand.DemandType));
+        Assert.Contains(demands, demand => demand.SourceReference == "SO-LEGACY-001");
+        Assert.Contains(demands, demand => demand.SourceReference.StartsWith("SO-LEGACY-001:legacy-so:", StringComparison.Ordinal));
+        Assert.Equal(2, demands.Select(demand => demand.SourceReference).Distinct(StringComparer.Ordinal).Count());
     }
 
     [DemandPlanningRealPostgresFact]

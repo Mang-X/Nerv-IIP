@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Http;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
@@ -66,6 +67,40 @@ public sealed class ErpSalesOrderDemandIntegrationEventTests
         Assert.Equal("cancelled", cancelled.Payload.Status);
         Assert.True(Assert.Single(cancelled.Payload.Lines).Cancelled);
         Assert.Contains(":v3:cancelled", cancelled.IdempotencyKey, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Scoped_http_command_and_upstream_event_ids_are_stable_business_causation_ids()
+    {
+        var accessor = new HttpErpIntegrationEventContextAccessor(new HttpContextAccessor
+        {
+            HttpContext = new DefaultHttpContext(),
+        });
+        var commandId = ErpCommandCausationIds.ForHttpCommand(
+            "create-sales-order",
+            "org-001",
+            "env-dev",
+            "SO-DEMO-001",
+            "QUO-DEMO-001",
+            "SITE-001",
+            "idem-001");
+        Assert.Equal(
+            commandId,
+            ErpCommandCausationIds.ForHttpCommand("create-sales-order", "org-001", "env-dev", "SO-DEMO-001", "QUO-DEMO-001", "SITE-001", "idem-001"));
+
+        using (accessor.BeginScope(commandId, "corr-http-001", "user:planner-001"))
+        {
+            var integrationEvent = new SalesOrderReleasedIntegrationEventConverter(accessor)
+                .Convert(new SalesOrderReleasedDomainEvent(CreateReleasedOrder()));
+            Assert.Equal(commandId, integrationEvent.CausationId);
+            Assert.StartsWith("command:create-sales-order:", integrationEvent.CausationId, StringComparison.Ordinal);
+        }
+
+        using (accessor.BeginScope("evt-approval-approved-001", "corr-approval-001", "user:approver-001"))
+        {
+            Assert.Equal("evt-approval-approved-001", accessor.GetContext().CausationId);
+            Assert.Equal("corr-approval-001", accessor.GetContext().CorrelationId);
+        }
     }
 
     private static SalesOrder CreateReleasedOrder()

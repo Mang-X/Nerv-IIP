@@ -19,6 +19,7 @@ public sealed class SalesOrderDemandPlanningPostgresRedisAcceptanceTests
         var redis = Environment.GetEnvironmentVariable("NERV_IIP_TEST_REDIS")!;
         var capVersion = Environment.GetEnvironmentVariable("NERV_IIP_TEST_CAP_VERSION")!;
         var salesOrderId = Environment.GetEnvironmentVariable("NERV_IIP_TEST_SALES_ORDER_ID")!;
+        var probeRunId = Environment.GetEnvironmentVariable("NERV_IIP_TEST_PROBE_RUN_ID")!;
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Messaging:Provider"] = "Redis",
@@ -41,9 +42,30 @@ public sealed class SalesOrderDemandPlanningPostgresRedisAcceptanceTests
         await using var provider = services.BuildServiceProvider();
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(CancellationToken.None);
         var publisher = provider.GetRequiredService<ICapPublisher>();
-        await publisher.PublishAsync(nameof(SalesOrderChangedIntegrationEvent), Changed(salesOrderId, 3, 999m, "duplicate-v3"));
-        await publisher.PublishAsync(nameof(SalesOrderChangedIntegrationEvent), Changed(salesOrderId, 2, 888m, "out-of-order-v2"));
-        await Task.Delay(TimeSpan.FromSeconds(2));
+        var duplicateEvent = Changed(salesOrderId, 3, 999m, $"{probeRunId}-duplicate-v3");
+        var staleEvent = Changed(salesOrderId, 2, 888m, $"{probeRunId}-out-of-order-v2");
+        await publisher.PublishAsync(nameof(SalesOrderChangedIntegrationEvent), duplicateEvent);
+        await publisher.PublishAsync(nameof(SalesOrderChangedIntegrationEvent), staleEvent);
+
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(45);
+        do
+        {
+            await using var verificationScope = provider.CreateAsyncScope();
+            var dbContext = verificationScope.ServiceProvider.GetRequiredService<DemandPlanningDbContext>();
+            var consumedEventIds = await dbContext.ProcessedIntegrationEvents
+                .AsNoTracking()
+                .Where(x => x.EventId == duplicateEvent.EventId || x.EventId == staleEvent.EventId)
+                .Select(x => x.EventId)
+                .ToArrayAsync();
+            if (consumedEventIds.Distinct(StringComparer.Ordinal).Count() == 2)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+        } while (DateTimeOffset.UtcNow < deadline);
+
+        throw new TimeoutException("DemandPlanning did not persist consumer evidence for both injected duplicate-business-version/out-of-order events.");
     }
 
     private static SalesOrderChangedIntegrationEvent Changed(string salesOrderId, int version, decimal quantity, string eventSuffix) =>
@@ -58,7 +80,7 @@ public sealed class SalesOrderDemandPlanningPostgresRedisAcceptanceTests
             "org-001",
             "env-dev",
             "system:acceptance-probe",
-            $"erp:sales-order:org-001:env-dev:SO-DEMO-001:v{version}:changed",
+            $"probe:sales-order:org-001:env-dev:SO-DEMO-001:v{version}:{eventSuffix}",
             new SalesOrderLifecyclePayload(
                 salesOrderId,
                 "SO-DEMO-001",
@@ -79,6 +101,7 @@ internal sealed class RealPostgresRedisSalesOrderFactAttribute : FactAttribute
             "NERV_IIP_TEST_REDIS",
             "NERV_IIP_TEST_CAP_VERSION",
             "NERV_IIP_TEST_SALES_ORDER_ID",
+            "NERV_IIP_TEST_PROBE_RUN_ID",
         };
         if (required.Any(name => string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name))))
         {

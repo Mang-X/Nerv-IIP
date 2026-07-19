@@ -66,8 +66,18 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                 comment: "Latest accepted upstream business version and optimistic concurrency token; zero for manually managed demand.");
 
             migrationBuilder.Sql(
-                "UPDATE demand_planning.demand_sources SET demand_type = 'manual' " +
-                "WHERE demand_type = 'sales-order' AND source_document_id = '';", suppressTransaction: false);
+                "WITH legacy AS (" +
+                " SELECT id, demand_type, ROW_NUMBER() OVER (" +
+                "  PARTITION BY organization_id, environment_id, source_reference" +
+                "  ORDER BY CASE WHEN demand_type = 'manual' THEN 0 ELSE 1 END, id) AS duplicate_ordinal" +
+                " FROM demand_planning.demand_sources" +
+                " WHERE demand_type IN ('manual', 'sales-order') AND source_document_id = ''" +
+                ") UPDATE demand_planning.demand_sources AS demand" +
+                " SET demand_type = 'manual'," +
+                " source_reference = CASE WHEN legacy.duplicate_ordinal = 1 THEN demand.source_reference" +
+                " ELSE LEFT(demand.source_reference, 85) || ':legacy-so:' || REPLACE(demand.id::text, '-', '') END" +
+                " FROM legacy WHERE demand.id = legacy.id AND demand.demand_type = 'sales-order';",
+                suppressTransaction: false);
 
             migrationBuilder.CreateTable(
                 name: "integration_event_dead_letters",
