@@ -133,17 +133,19 @@ public sealed class ErpSalesOrderDemandConsumerTests
               (id, organization_id, environment_id, demand_type, source_reference, sku_code, uom_code, site_code, quantity, due_date, created_at_utc, updated_at_utc)
             VALUES
               ('01900000-0000-7000-8000-000000000001', 'org-001', 'env-dev', 'manual', 'SO-LEGACY-001', 'SKU-A', 'EA', 'SITE-001', 1, DATE '2026-08-15', NOW(), NOW()),
-              ('01900000-0000-7000-8000-000000000002', 'org-001', 'env-dev', 'sales-order', 'SO-LEGACY-001', 'SKU-B', 'EA', 'SITE-001', 2, DATE '2026-08-16', NOW(), NOW());
+              ('01900000-0000-7000-8000-000000000002', 'org-001', 'env-dev', 'sales-order', 'SO-LEGACY-001', 'SKU-B', 'EA', 'SITE-001', 2, DATE '2026-08-16', NOW(), NOW()),
+              ('01900000-0000-7000-8000-000000000003', 'org-001', 'env-dev', 'manual', 'SO-LEGACY-001:legacy-so:01900000000070008000000000000002', 'SKU-C', 'EA', 'SITE-001', 3, DATE '2026-08-17', NOW(), NOW());
             """);
 
         await migrator.MigrateAsync();
 
         var demands = await dbContext.DemandSources.AsNoTracking().OrderBy(x => x.SourceReference).ToArrayAsync();
-        Assert.Equal(2, demands.Length);
+        Assert.Equal(3, demands.Length);
         Assert.All(demands, demand => Assert.Equal("manual", demand.DemandType));
         Assert.Contains(demands, demand => demand.SourceReference == "SO-LEGACY-001");
-        Assert.Contains(demands, demand => demand.SourceReference.StartsWith("SO-LEGACY-001:legacy-so:", StringComparison.Ordinal));
-        Assert.Equal(2, demands.Select(demand => demand.SourceReference).Distinct(StringComparer.Ordinal).Count());
+        Assert.Contains(demands, demand => demand.SourceReference == "SO-LEGACY-001:legacy-so:01900000000070008000000000000002");
+        Assert.Contains(demands, demand => demand.SourceReference == "SO-LEGACY-001:legacy-so:01900000000070008000000000000002:1");
+        Assert.Equal(3, demands.Select(demand => demand.SourceReference).Distinct(StringComparer.Ordinal).Count());
     }
 
     [DemandPlanningRealPostgresFact]

@@ -95,7 +95,12 @@ function Assert-DemandStable {
     param([string]$DemandPlanningUrl, [hashtable]$Headers, [int]$Version, [decimal]$Quantity, [string]$Status, [int]$Seconds = 5)
     $deadline = (Get-Date).AddSeconds($Seconds)
     do {
-        $row = Wait-Demand -DemandPlanningUrl $DemandPlanningUrl -Headers $Headers -Version $Version -Quantity $Quantity -Status $Status
+        $response = Invoke-RestMethod -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers
+        $rows = @($response.data | Where-Object { $_.sourceReference -eq 'SO-DEMO-001' })
+        if ($rows.Count -ne 1 -or $rows[0].sourceVersion -ne $Version -or [decimal]$rows[0].quantity -ne $Quantity -or $rows[0].sourceStatus -ne $Status) {
+            throw "Demand SO-DEMO-001 changed during the stability window; expected version=$Version quantity=$Quantity status=$Status."
+        }
+        $row = $rows[0]
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)
     return $row
@@ -126,6 +131,7 @@ $masterDataProject = Join-Path $root 'backend/services/Business/MasterData/src/N
 $erpProject = Join-Path $root 'backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj'
 $demandPlanningProject = Join-Path $root 'backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Nerv.IIP.Business.DemandPlanning.Web.csproj'
 $probeProject = Join-Path $root 'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj'
+$demandPlanningTestsProject = Join-Path $root 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/Nerv.IIP.Business.DemandPlanning.Web.Tests.csproj'
 
 try {
     Invoke-DockerCompose -Arguments @('-f', $composeFile, 'up', '-d', '--pull', 'never', 'postgres', 'redis') -WorkingDirectory $root -Name 'man517-infrastructure-up' | Out-Null
@@ -133,7 +139,7 @@ try {
     $databaseCreated = $true
 
     if (-not $SkipBuild) {
-        foreach ($project in @($masterDataProject, $erpProject, $demandPlanningProject, $probeProject)) {
+        foreach ($project in @($masterDataProject, $erpProject, $demandPlanningProject, $probeProject, $demandPlanningTestsProject)) {
             Invoke-DotNet -Arguments @('build', $project, '-m:1', '-nr:false') -WorkingDirectory $root -TimeoutSeconds 600 -Name 'man517-build' | Out-Null
         }
     }
@@ -221,6 +227,25 @@ try {
         }
     }
     $outOfOrder = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 3 -Quantity 5 -Status 'active' # out-of-order v2 and duplicate v3 must not regress
+
+    Invoke-WithScopedEnvironment -Variables @{
+        NERV_IIP_TEST_POSTGRES = $PostgresAdminConnectionString
+        NERV_IIP_TEST_REDIS = $RedisConnectionString
+    } -ScriptBlock {
+        $duplicateResultsDirectory = Join-Path $root 'artifacts/acceptance/man517'
+        [System.IO.Directory]::CreateDirectory($duplicateResultsDirectory) | Out-Null
+        $duplicateResultsFile = "duplicate-$([Guid]::NewGuid().ToString('N')).trx"
+        $duplicateResults = Join-Path $duplicateResultsDirectory $duplicateResultsFile
+        Invoke-DotNet -Arguments @('test', $demandPlanningTestsProject, '--no-build', '--filter', 'FullyQualifiedName~Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres', '--results-directory', $duplicateResultsDirectory, '--logger', "trx;LogFileName=$duplicateResultsFile") -WorkingDirectory $root -TimeoutSeconds 180 -Name 'man517-identical-key-duplicate-probe' | Out-Null
+        if (-not (Test-Path -LiteralPath $duplicateResults)) {
+            throw 'MAN-517 identical-key Redis duplicate probe produced no TRX result.'
+        }
+        [xml]$duplicateTrx = Get-Content -LiteralPath $duplicateResults -Raw
+        $duplicateExecutions = @($duplicateTrx.SelectNodes("//*[local-name()='UnitTestResult']") | Where-Object { $_.GetAttribute('testName').EndsWith('.Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres', [StringComparison]::Ordinal) })
+        if ($duplicateExecutions.Count -ne 1 -or $duplicateExecutions[0].GetAttribute('outcome') -ne 'Passed') {
+            throw 'MAN-517 identical-key Redis duplicate probe did not execute exactly once and pass.'
+        }
+    }
 
     Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/cancel" -Headers $headers -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; reason = 'MAN-517 cancellation'

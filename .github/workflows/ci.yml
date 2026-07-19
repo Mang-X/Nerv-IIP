@@ -33,6 +33,38 @@ jobs:
       - name: Test backend solution
         run: dotnet test backend/Nerv.IIP.sln --configuration Release
 
+  erp-sales-order-demand-acceptance:
+    name: ERP Sales Order Demand Acceptance
+    runs-on: ubuntu-latest
+    env:
+      NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=15432;Database=nerv_iip;Username=nerv;Password=nerv
+      NERV_IIP_TEST_REDIS: 127.0.0.1:6379
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Prepare PostgreSQL and Redis images
+        run: |
+          docker pull postgres:18
+          docker pull redis:8
+
+      - name: Verify ERP sales-order demand bridge
+        shell: pwsh
+        run: ./scripts/verify-erp-sales-order-demand-planning.ps1
+
   connector-host-tests:
     name: Connector Host Tests
     runs-on: ubuntu-latest

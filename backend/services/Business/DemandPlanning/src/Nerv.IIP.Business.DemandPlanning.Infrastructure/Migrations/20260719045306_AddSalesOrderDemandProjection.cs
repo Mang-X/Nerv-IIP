@@ -66,17 +66,34 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                 comment: "Latest accepted upstream business version and optimistic concurrency token; zero for manually managed demand.");
 
             migrationBuilder.Sql(
-                "WITH legacy AS (" +
-                " SELECT id, demand_type, ROW_NUMBER() OVER (" +
-                "  PARTITION BY organization_id, environment_id, source_reference" +
-                "  ORDER BY CASE WHEN demand_type = 'manual' THEN 0 ELSE 1 END, id) AS duplicate_ordinal" +
+                "WITH legacy_sales AS (" +
+                " SELECT id, organization_id, environment_id, source_reference" +
                 " FROM demand_planning.demand_sources" +
-                " WHERE demand_type IN ('manual', 'sales-order') AND source_document_id = ''" +
+                " WHERE demand_type = 'sales-order' AND source_document_id = ''" +
+                "), colliding AS (" +
+                " SELECT sales.* FROM legacy_sales AS sales" +
+                " WHERE EXISTS (SELECT 1 FROM demand_planning.demand_sources AS existing" +
+                "  WHERE existing.id <> sales.id AND existing.organization_id = sales.organization_id" +
+                "  AND existing.environment_id = sales.environment_id AND existing.demand_type = 'manual'" +
+                "  AND existing.source_reference = sales.source_reference)" +
+                "), candidates AS (" +
+                " SELECT collision.id, collision.organization_id, collision.environment_id, series.ordinal," +
+                "  LEFT(collision.source_reference, 50) || ':legacy-so:' || REPLACE(collision.id::text, '-', '') ||" +
+                "  CASE WHEN series.ordinal = 0 THEN '' ELSE ':' || series.ordinal::text END AS candidate_reference" +
+                " FROM colliding AS collision" +
+                " CROSS JOIN LATERAL generate_series(0, (SELECT COUNT(*)::integer FROM demand_planning.demand_sources)) AS series(ordinal)" +
+                "), chosen AS (" +
+                " SELECT DISTINCT ON (candidate.id) candidate.id, candidate.candidate_reference" +
+                " FROM candidates AS candidate" +
+                " WHERE NOT EXISTS (SELECT 1 FROM demand_planning.demand_sources AS existing" +
+                "  WHERE existing.id <> candidate.id AND existing.organization_id = candidate.organization_id" +
+                "  AND existing.environment_id = candidate.environment_id AND existing.demand_type IN ('manual', 'sales-order')" +
+                "  AND existing.source_reference = candidate.candidate_reference)" +
+                " ORDER BY candidate.id, candidate.ordinal" +
                 ") UPDATE demand_planning.demand_sources AS demand" +
-                " SET demand_type = 'manual'," +
-                " source_reference = CASE WHEN legacy.duplicate_ordinal = 1 THEN demand.source_reference" +
-                " ELSE LEFT(demand.source_reference, 85) || ':legacy-so:' || REPLACE(demand.id::text, '-', '') END" +
-                " FROM legacy WHERE demand.id = legacy.id AND demand.demand_type = 'sales-order';",
+                " SET demand_type = 'manual', source_reference = COALESCE(chosen.candidate_reference, demand.source_reference)" +
+                " FROM legacy_sales AS sales LEFT JOIN chosen ON chosen.id = sales.id" +
+                " WHERE demand.id = sales.id;",
                 suppressTransaction: false);
 
             migrationBuilder.CreateTable(

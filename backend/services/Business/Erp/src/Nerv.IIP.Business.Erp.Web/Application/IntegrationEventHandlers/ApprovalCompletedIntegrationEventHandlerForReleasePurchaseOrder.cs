@@ -82,6 +82,7 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
                 try
                 {
                     salesOrder.ReleaseCreditHold();
+                    await dbContext.SaveChangesAsync(cancellationToken);
                 }
                 catch (InvalidOperationException exception)
                 {
