@@ -17,6 +17,7 @@ import { useAccessScope } from '@/access/useAccessScope'
 import LauncherCard from '@/components/launcher/LauncherCard.vue'
 import type { LauncherSummary } from '@/data/contracts/launcher'
 import { fetchLauncherSummary } from '@/data/fetchers/launcher'
+import { formatScreenFreshness } from '@/data/freshness'
 import { SCREENS } from '@/data/screens'
 
 const scope = useAccessScope()
@@ -69,12 +70,7 @@ const dateText = computed(() => {
   const d = now.value
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${WEEKDAYS[d.getDay()]}`
 })
-const updatedText = computed(() => {
-  const ts = lastUpdated.value
-  if (!ts) return '—'
-  const d = new Date(ts)
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-})
+const freshness = computed(() => formatScreenFreshness(isStale.value, lastUpdated.value))
 
 // —— 全厂脉搏 KPI 带 ——
 interface KpiCell {
@@ -164,7 +160,9 @@ const scopeCounts = computed(() => {
       </main>
 
       <footer class="hall-foot">
-        <span>数据更新 {{ updatedText }}</span>
+        <span class="scr-fresh" :class="freshness.tone"
+          ><i aria-hidden="true" />{{ freshness.text }}</span
+        >
         <span>演示数据流 · 后端接入待 #570</span>
       </footer>
     </div>

@@ -21,7 +21,9 @@ import { useAccessScope } from '@/access/useAccessScope'
 import { useBackLink } from '@/composables/useBackLink'
 import WorkshopHealthCard from '@/components/factory/WorkshopHealthCard.vue'
 import type { FactoryOverview } from '@/data/contracts/factory'
+import { OEE_PLACEHOLDER_BADGE } from '@/data/copy'
 import { fetchFactoryOverview } from '@/data/fetchers/factory'
+import { formatScreenFreshness } from '@/data/freshness'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
 const scope = useAccessScope()
@@ -29,6 +31,7 @@ const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
 const {
   data: ov,
   isStale,
+  lastUpdated,
   refresh,
 } = useScreenData<FactoryOverview>(
   () => fetchFactoryOverview(scope.currentFactoryId, scope.persona.workshopIds),
@@ -48,6 +51,7 @@ const factoryName = computed(
 )
 
 const nf = new Intl.NumberFormat('en-US')
+const freshness = computed(() => formatScreenFreshness(isStale.value, lastUpdated.value))
 
 // —— 顶部 KPI 带（达成率环 + 7 格；图标块承接语义色，异常数字同色）——
 interface BandCell {
@@ -157,10 +161,12 @@ const bandCells = computed<BandCell[]>(() => {
         <div class="side">
           <NvScreenPanel title="综合效率 OEE">
             <template #extra>
-              <NvScreenStatusTag tone="cyan" label="单机真实口径" />
+              <NvScreenStatusTag tone="amber" :label="OEE_PLACEHOLDER_BADGE" />
             </template>
             <p class="oee-note">请在设备详情查看由报工、运行时长和理论速率计算的真实单机 OEE。</p>
-            <p class="oee-note">全厂聚合仍需批量 OEE 读面，当前不以可用率或演示数据冒充综合 OEE。</p>
+            <p class="oee-note">
+              全厂聚合仍需批量 OEE 读面，当前不以可用率或演示数据冒充综合 OEE。
+            </p>
           </NvScreenPanel>
 
           <NvScreenPanel title="实时告警" class="feed">
@@ -199,6 +205,9 @@ const bandCells = computed<BandCell[]>(() => {
       <footer class="scr-foot">
         <RouterLink :to="backLink.to" class="scr-back">‹ {{ backLink.label }}</RouterLink>
         <span>车间归并 / 达成为前端聚合推算 · 待 #570；点车间卡进入车间总览</span>
+        <span class="scr-fresh" :class="freshness.tone"
+          ><i aria-hidden="true" />{{ freshness.text }}</span
+        >
       </footer>
     </div>
     <div v-else class="fx-loading">连接数据…</div>

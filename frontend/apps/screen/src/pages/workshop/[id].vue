@@ -24,6 +24,8 @@ import WorkshopLineCard from '@/components/workshop/WorkshopLineCard.vue'
 import { useBackLink } from '@/composables/useBackLink'
 import type { WorkshopBoard } from '@/data/contracts/workshop'
 import { fetchWorkshopBoard } from '@/data/fetchers/workshop'
+import { OEE_PLACEHOLDER_BADGE } from '@/data/copy'
+import { formatScreenFreshness } from '@/data/freshness'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
 // 车间总览大屏（MAN-315，spec §三）：车间主任「当班作战室」——
@@ -34,10 +36,16 @@ const router = useRouter()
 const scope = useAccessScope()
 const workshopId = computed(() => String(route.params.id ?? ''))
 
-const { data: board, refresh } = useScreenData<WorkshopBoard | null>(
+const {
+  data: board,
+  isStale,
+  lastUpdated,
+  refresh,
+} = useScreenData<WorkshopBoard | null>(
   () => fetchWorkshopBoard(workshopId.value, scope.currentFactoryId, scope.persona.workshopIds),
   { intervalMs: 5000 },
 )
+const freshness = computed(() => formatScreenFreshness(isStale.value, lastUpdated.value))
 watch(
   () => [workshopId.value, scope.currentFactoryId, scope.personaId],
   async () => {
@@ -347,7 +355,7 @@ const devSummary = computed(() => {
         <div class="wb-right">
           <NvScreenPanel title="车间效率 OEE" class="wb-oee">
             <template #extra>
-              <NvScreenStatusTag tone="amber" label="班内推算 · 待 #570" />
+              <NvScreenStatusTag tone="amber" :label="OEE_PLACEHOLDER_BADGE" />
             </template>
             <div class="wb-oee-top">
               <div
@@ -452,6 +460,9 @@ const devSummary = computed(() => {
       <footer class="wb-foot">
         <RouterLink :to="backLink.to" class="wb-back">‹ {{ backLink.label }}</RouterLink>
         <span>产量 / 达成 / 齐套为演示推算 · 待 #570；在岗 / 人效为数据缺口，仅展示花名册口径</span>
+        <span class="scr-fresh" :class="freshness.tone"
+          ><i aria-hidden="true" />{{ freshness.text }}</span
+        >
       </footer>
     </div>
 

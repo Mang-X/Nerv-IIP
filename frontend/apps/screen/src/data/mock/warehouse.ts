@@ -86,6 +86,10 @@ function hourlyOf(
   return { hourly, hourLabels }
 }
 
+function failedHourlyOf(count: number): number[] {
+  return Array.from({ length: 12 }, (_, index) => (index === 11 ? count : 0))
+}
+
 // —— 任务池素材（汽车 / 电池制造物料 + 真实库位编码）——
 const SKUS: { name: string; unit: string; lo: number; hi: number }[] = [
   { name: '电芯极片卷料', unit: '卷', lo: 6, hi: 24 },
@@ -133,7 +137,9 @@ const WAVE_MIN = 15
 // 但仍是少数 —— 异常是例外）。档位按**显式波次分组**（组间距 ≥16min > 波次
 // 粒度）：WMS 波次放单本就同批同龄，但组间必须拉开 —— 否则相邻档被 15min
 // 量化坍缩成一整列同龄期（看着像复制粘贴）。
-const PICK_AGE_SLOTS = [70, 55, 48, 31, 31, 31, 31, 15, 15, 15, 15, 15, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+const PICK_AGE_SLOTS = [
+  70, 55, 48, 31, 31, 31, 31, 15, 15, 15, 15, 15, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+]
 const PUTAWAY_AGE_SLOTS = [58, 50, 30, 30, 30, 13, 13, 13, 13, 13, 4, 4, 4, 4, 4]
 const COUNT_AGE_SLOTS = [47, 29, 29, 12, 12, 12, 12, 12]
 
@@ -163,7 +169,9 @@ function taskRows(kind: WhTaskKind, n: number, s: number, now: Date): WhTaskRow[
       const toShip = (s + i) % 5 < 3 // 60% 发运拣货 / 40% 线边配送（关联 MES 工单）
       const fromPool = (s + i) % 3 === 0 ? PICK_FACES : STORAGE_LOCS
       from = fromPool[(s + i * 3) % fromPool.length]
-      to = toShip ? SHIP_LOCS[(s + i) % SHIP_LOCS.length] : LINESIDE_LOCS[(s + i) % LINESIDE_LOCS.length]
+      to = toShip
+        ? SHIP_LOCS[(s + i) % SHIP_LOCS.length]
+        : LINESIDE_LOCS[(s + i) % LINESIDE_LOCS.length]
       ref = toShip ? seq('SO', 9800 + (s % 60) + i) : seq('WO', 1941 + ((s + i) % 20))
       qty = sku.lo + ((s * 13 + i * 29) % (sku.hi - sku.lo + 1))
     } else if (kind === 'putaway') {
@@ -196,7 +204,13 @@ function taskRows(kind: WhTaskKind, n: number, s: number, now: Date): WhTaskRow[
 }
 
 // —— WCS 适配器画像（AdapterType 语义；share 为指令量占比；六类自动化设备）——
-const ADAPTER_DEFS: { kind: WcsAdapterKind; label: string; share: number; run: number; queue: number }[] = [
+const ADAPTER_DEFS: {
+  kind: WcsAdapterKind
+  label: string
+  share: number
+  run: number
+  queue: number
+}[] = [
   { kind: 'stacker', label: '巷道堆垛机', share: 0.26, run: 6, queue: 8 },
   { kind: 'agv', label: 'AGV 调度', share: 0.3, run: 9, queue: 11 },
   { kind: 'shuttle', label: '四向穿梭车', share: 0.16, run: 5, queue: 6 },
@@ -269,7 +283,9 @@ export function buildWarehouseBoard(now = new Date(), factoryId = 'F01'): Wareho
     linesDone: inLinesDone,
     linesTotal: inLinesTotal,
     pct: Math.round((inLinesDone / inLinesTotal) * 100),
+    failedDocs: postFailedDocs,
     ...hourlyOf(inLinesTotal, now, IN_CURVE, 0.6),
+    failedHourly: failedHourlyOf(postFailedDocs),
     postFailedDocs,
     postFailedDoc: postFailedDocs > 0 ? seq('ASN', 260690 + (s % 9), 6) : undefined,
   }
@@ -285,10 +301,14 @@ export function buildWarehouseBoard(now = new Date(), factoryId = 'F01'): Wareho
     linesDone: outLinesDone,
     linesTotal: outLinesTotal,
     pct: Math.round((outLinesDone / outLinesTotal) * 100),
+    failedDocs: 0,
     ...hourlyOf(outLinesTotal, now, OUT_CURVE, 2.3),
+    failedHourly: failedHourlyOf(0),
     customers: 5 + (s % 3),
     latestShipment:
-      outDocsDone > 0 ? `${CUSTOMERS[s % CUSTOMERS.length]} · ${seq('SO', 9800 + (s % 60))}` : undefined,
+      outDocsDone > 0
+        ? `${CUSTOMERS[s % CUSTOMERS.length]} · ${seq('SO', 9800 + (s % 60))}`
+        : undefined,
   }
 
   // —— 作业任务（守恒：今日创建 = Open 积压 + 今日完成）——
@@ -358,7 +378,13 @@ export function buildWarehouseBoard(now = new Date(), factoryId = 'F01'): Wareho
     .filter((r) => r.overdue)
     .sort((a, b) => b.ageMin - a.ageMin)
     .slice(0, 5)
-    .map((r) => ({ id: r.id, kind: r.kind, kindLabel: KIND_LABELS[r.kind], sku: r.sku, ageMin: r.ageMin }))
+    .map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      kindLabel: KIND_LABELS[r.kind],
+      sku: r.sku,
+      ageMin: r.ageMin,
+    }))
 
   return {
     factoryId,

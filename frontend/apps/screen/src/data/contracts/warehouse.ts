@@ -69,8 +69,12 @@ export interface WhFlowProgress {
   linesTotal: number
   /** 行完成率 0–100 🟡 = round(linesDone / linesTotal × 100) */
   pct: number
+  /** 当日失败单据数；仅由现有 WMS status 事实聚合，不把未完成当失败。 */
+  failedDocs: number
   /** 近 12h 每小时完成行数 🟡（勾稽：工作窗内 Σ = 行完成量差） */
   hourly: number[]
+  /** 近 12h 每小时失败单据数；真实模式按现有 createdAtUtc 落桶。 */
+  failedHourly: number[]
   hourLabels: string[]
 }
 

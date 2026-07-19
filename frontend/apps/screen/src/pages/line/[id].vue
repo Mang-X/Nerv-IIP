@@ -17,6 +17,8 @@ import { paramColor } from '@/components/equipment/paramColors'
 import LineAndonHero from '@/components/line/LineAndonHero.vue'
 import type { LineBoard } from '@/data/contracts/line'
 import { fetchLineBoard } from '@/data/fetchers/line'
+import { OEE_PLACEHOLDER_BADGE } from '@/data/copy'
+import { formatScreenFreshness } from '@/data/freshness'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
 // 单线监控大屏（spec §四）：现场远距可读；横幅只在报警/停机时出现；
@@ -25,10 +27,16 @@ const route = useRoute('/line/[id]')
 const scope = useAccessScope()
 const lineId = computed(() => String(route.params.id ?? ''))
 
-const { data: board, refresh } = useScreenData<LineBoard | null>(
+const {
+  data: board,
+  isStale,
+  lastUpdated,
+  refresh,
+} = useScreenData<LineBoard | null>(
   () => fetchLineBoard(lineId.value, scope.currentFactoryId, scope.persona.workshopIds),
   { intervalMs: 4000 },
 )
+const freshness = computed(() => formatScreenFreshness(isStale.value, lastUpdated.value))
 watch(
   () => [lineId.value, scope.currentFactoryId, scope.personaId],
   () => {
@@ -274,7 +282,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
 
             <NvScreenPanel title="产线 OEE" class="lb-oee">
               <template #extra>
-                <NvScreenStatusTag tone="amber" label="班内推算 · 待 #570" />
+                <NvScreenStatusTag tone="amber" :label="OEE_PLACEHOLDER_BADGE" />
               </template>
               <div class="lb-oee-in">
                 <div
@@ -409,6 +417,9 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
       <footer class="lb-foot">
         <RouterLink :to="backLink.to" class="lb-back">‹ {{ backLink.label }}</RouterLink>
         <span>产量 / 节拍 / 合格率为演示推算 · 待 #570</span>
+        <span class="scr-fresh" :class="freshness.tone"
+          ><i aria-hidden="true" />{{ freshness.text }}</span
+        >
       </footer>
     </div>
 

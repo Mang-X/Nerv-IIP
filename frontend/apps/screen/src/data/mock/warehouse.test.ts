@@ -35,11 +35,14 @@ describe('出入库进度（行/单口径勾稽 + 单调 + 流量差分）', () 
     const b = buildWarehouseBoard(at(14, 0))
     for (const flow of [b.inbound, b.outbound]) {
       expect(flow.hourly).toHaveLength(12)
+      expect(flow.failedHourly).toHaveLength(12)
       expect(flow.hourLabels).toHaveLength(12)
       for (const v of flow.hourly) expect(v).toBeGreaterThanOrEqual(0)
+      for (const v of flow.failedHourly) expect(v).toBeGreaterThanOrEqual(0)
       for (const l of flow.hourLabels) expect(l).toMatch(/^\d{2}:00$/)
       // 12h 窗覆盖今日全部已过工时（02:00–14:00）→ Σ = 当前完成行
       expect(flow.hourly.reduce((n, v) => n + v, 0)).toBe(flow.linesDone)
+      expect(flow.failedHourly.reduce((n, v) => n + v, 0)).toBe(flow.failedDocs)
     }
   })
 
@@ -218,7 +221,9 @@ describe('确定性与多频一致（3s tick 与 5s 主数据同源）', () => {
     const f1 = buildWarehouseBoard(at(14, 0), 'F01')
     const f2 = buildWarehouseBoard(at(14, 0), 'F02')
     const sig = (x: typeof f1) =>
-      [x.inbound.linesTotal, x.outbound.linesTotal, x.pick.rows.length, x.pick.rows[0]?.id].join('|')
+      [x.inbound.linesTotal, x.outbound.linesTotal, x.pick.rows.length, x.pick.rows[0]?.id].join(
+        '|',
+      )
     expect(sig(f2)).not.toBe(sig(f1))
   })
 })

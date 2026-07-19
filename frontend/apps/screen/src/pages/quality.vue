@@ -4,6 +4,7 @@ import {
   NvScreenPareto,
   NvScreenScrollArea,
   NvSparkline,
+  NvScreenStatusTag,
   NvScreenTrendChart,
   useScreenData,
 } from '@nerv-iip/ui'
@@ -14,6 +15,8 @@ import { useAccessScope } from '@/access/useAccessScope'
 import { useBackLink } from '@/composables/useBackLink'
 import { NCR_SLA_HOURS, type QualityBoard } from '@/data/contracts/quality'
 import { fetchQualityBoard } from '@/data/fetchers/quality'
+import { MRB_PENDING_BADGE } from '@/data/copy'
+import { formatScreenFreshness } from '@/data/freshness'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
 // 质量看板（spec §六）：质量健康度 + 待办闭环 —— 一眼看清不良率是否越红线、
@@ -21,10 +24,16 @@ import ScreenLayout from '@/layouts/ScreenLayout.vue'
 // 帕累托 TOP1/2 电芯缺陷、最老超期 NCR 挂 WO-1951。5s 轮询。
 const scope = useAccessScope()
 const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
-const { data: board, refresh } = useScreenData<QualityBoard>(
+const {
+  data: board,
+  isStale,
+  lastUpdated,
+  refresh,
+} = useScreenData<QualityBoard>(
   () => fetchQualityBoard(scope.currentFactoryId, scope.persona.workshopIds),
   { intervalMs: 5000 },
 )
+const freshness = computed(() => formatScreenFreshness(isStale.value, lastUpdated.value))
 watch(
   () => [scope.currentFactoryId, scope.personaId],
   async () => {
@@ -141,6 +150,13 @@ const trendPin = computed(() => {
     <div v-if="board" class="qb">
       <!-- 顶部 KPI 带：双主角（批合格率 / 不良率-红线）+ 四格待办 -->
       <NvScreenPanel class="qb-band">
+        <template #extra>
+          <NvScreenStatusTag
+            v-if="board.kpis.mrbPending > 0"
+            tone="amber"
+            :label="MRB_PENDING_BADGE(board.kpis.mrbPending)"
+          />
+        </template>
         <div class="qb-band-in">
           <div class="qb-hero">
             <dt class="qb-hero-t">当日批次合格率</dt>
@@ -316,7 +332,7 @@ const trendPin = computed(() => {
 
         <!-- 右：缺陷帕累托 TOP5 + 检验任务积压 -->
         <div class="qb-right">
-          <NvScreenPanel title="缺陷帕累托 TOP5" class="qb-pareto">
+          <NvScreenPanel title="缺陷帕累托 TOP5 + 其他" class="qb-pareto">
             <template #extra>
               <span class="qb-cap">近 7 天 · {{ nf.format(board.paretoTotal) }} 件</span>
             </template>
@@ -377,6 +393,9 @@ const trendPin = computed(() => {
           <span>合格率 / 不良率 / 帕累托为演示推算 · NCR 与检验明细就绪</span>
         </span>
         <span>缺陷码 Quality ↔ MES 口径映射 · MRB/CAPA · 聚合端点 待 #570</span>
+        <span class="scr-fresh" :class="freshness.tone"
+          ><i aria-hidden="true" />{{ freshness.text }}</span
+        >
       </footer>
     </div>
 

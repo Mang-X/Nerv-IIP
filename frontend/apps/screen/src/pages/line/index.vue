@@ -8,6 +8,8 @@ import { useAccessScope } from '@/access/useAccessScope'
 import { useBackLink } from '@/composables/useBackLink'
 import type { LineSummaryCard } from '@/data/contracts/line'
 import { fetchLineCards } from '@/data/fetchers/line'
+import { formatScreenFreshness } from '@/data/freshness'
+import { LINE_OVERSCAN, LINE_ROW_ITEM_HEIGHT } from '@/data/line-layout'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
 // 产线选择器 = 迷你监控板（spec §四）：红线置顶（数据层排序）、scope 收窄、
@@ -15,7 +17,12 @@ import ScreenLayout from '@/layouts/ScreenLayout.vue'
 const scope = useAccessScope()
 const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
 const visibleIds = ref<string[]>([])
-const { data: cards, refresh } = useScreenData<LineSummaryCard[]>(
+const {
+  data: cards,
+  isStale,
+  lastUpdated,
+  refresh,
+} = useScreenData<LineSummaryCard[]>(
   () =>
     fetchLineCards(
       scope.currentFactoryId,
@@ -24,6 +31,7 @@ const { data: cards, refresh } = useScreenData<LineSummaryCard[]>(
     ),
   { intervalMs: 4000 },
 )
+const freshness = computed(() => formatScreenFreshness(isStale.value, lastUpdated.value))
 watch(
   () => [scope.currentFactoryId, scope.personaId],
   () => {
@@ -40,15 +48,13 @@ const rowsSrc = computed(() => {
   return out
 })
 // 行高：卡片自然高 ~258 + 行间距 16 → itemHeight 必须精确匹配，否则虚拟定位错位重叠
-const CARD_H = 258
-const ROW_GAP = 16
 const {
   list: vRows,
   containerProps,
   wrapperProps,
 } = useVirtualList(rowsSrc, {
-  itemHeight: CARD_H + ROW_GAP,
-  overscan: 1,
+  itemHeight: LINE_ROW_ITEM_HEIGHT,
+  overscan: LINE_OVERSCAN,
 })
 // 视野内产线集：滚动改变可见行 → 立即补取（避免滚入卡趋势短暂空白）
 watch(
@@ -190,6 +196,9 @@ const kpiItems = computed<KpiCell[]>(() => {
       <footer class="scr-foot">
         <RouterLink :to="backLink.to" class="scr-back">‹ {{ backLink.label }}</RouterLink>
         <span>产线状态与设备屏同源 · 产量 / 节拍为演示推算 · 待 #570；点卡进入单线屏</span>
+        <span class="scr-fresh" :class="freshness.tone"
+          ><i aria-hidden="true" />{{ freshness.text }}</span
+        >
       </footer>
     </div>
     <div v-else class="ls-loading">连接数据…</div>
@@ -247,7 +256,7 @@ const kpiItems = computed<KpiCell[]>(() => {
     box-shadow: 0 0 11px rgba(74, 166, 238, 0.55);
   }
   .sec-t {
-    font-size: 17px;
+    font-size: 15px;
     font-weight: 700;
     letter-spacing: 0.1em;
     color: #fff;

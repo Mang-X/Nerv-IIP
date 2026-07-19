@@ -343,9 +343,11 @@ function inboundOf(
   nowMs: number,
 ): InboundProgress {
   const docsTotal = todayItems.length
-  const docsDone = todayItems.filter((o) => eq(o.status, 'Completed')).length
+  const completed = todayItems.filter((o) => eq(o.status, 'Completed'))
+  const docsDone = completed.length
   const failed = todayItems.filter((o) => eq(o.status, 'InventoryPostingFailed'))
-  const { hourly, hourLabels } = hourlyBy(todayItems, nowMs, (o) => o.createdAtUtc)
+  const { hourly, hourLabels } = hourlyBy(completed, nowMs, (o) => o.createdAtUtc)
+  const { hourly: failedHourly } = hourlyBy(failed, nowMs, (o) => o.createdAtUtc)
   return {
     docsDone,
     docsTotal,
@@ -353,7 +355,9 @@ function inboundOf(
     linesDone: docsDone,
     linesTotal: docsTotal,
     pct: docsTotal > 0 ? Math.round((docsDone / docsTotal) * 100) : 0,
+    failedDocs: failed.length,
     hourly,
+    failedHourly,
     hourLabels,
     postFailedDocs: failed.length,
     postFailedDoc: failed[0]?.inboundOrderNo?.trim() || undefined,
@@ -365,8 +369,11 @@ function outboundOf(
   nowMs: number,
 ): OutboundProgress {
   const docsTotal = todayItems.length
-  const docsDone = todayItems.filter((o) => eq(o.status, 'Completed')).length
-  const { hourly, hourLabels } = hourlyBy(todayItems, nowMs, (o) => o.createdAtUtc)
+  const completed = todayItems.filter((o) => eq(o.status, 'Completed'))
+  const docsDone = completed.length
+  const failed = todayItems.filter((o) => eq(o.status, 'InventoryPostingFailed'))
+  const { hourly, hourLabels } = hourlyBy(completed, nowMs, (o) => o.createdAtUtc)
+  const { hourly: failedHourly } = hourlyBy(failed, nowMs, (o) => o.createdAtUtc)
   // 最近一票发运 = 最新已完成（发运）出库单（newest-first，取首个 Completed）。
   const latest = todayItems.find((o) => eq(o.status, 'Completed'))?.outboundOrderNo?.trim()
   return {
@@ -375,7 +382,9 @@ function outboundOf(
     linesDone: docsDone,
     linesTotal: docsTotal,
     pct: docsTotal > 0 ? Math.round((docsDone / docsTotal) * 100) : 0,
+    failedDocs: failed.length,
     hourly,
+    failedHourly,
     hourLabels,
     // 出库 facade 无客户维度 → 0（页面 real 模式隐藏「客户 N 家」）。
     customers: 0,
