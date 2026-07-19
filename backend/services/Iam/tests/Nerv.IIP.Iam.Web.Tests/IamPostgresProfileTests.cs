@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
@@ -22,6 +23,79 @@ namespace Nerv.IIP.Iam.Web.Tests;
 
 public sealed class IamPostgresProfileTests
 {
+    [Fact]
+    public async Task Fresh_Postgres_has_case_insensitive_user_unique_indexes()
+    {
+        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
+        if (string.IsNullOrWhiteSpace(postgresConnectionString))
+        {
+            return;
+        }
+
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(
+                postgresConnectionString,
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "iam"))
+            .Options;
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        await db.Database.EnsureDeletedAsync();
+        await db.Database.MigrateAsync();
+
+        var loginIndexIsUniqueLowerExpression = await IsUniqueLowerExpressionIndexAsync(
+            db,
+            "IX_users_LoginName_Lower",
+            "LoginName");
+        var emailIndexIsUniqueLowerExpression = await IsUniqueLowerExpressionIndexAsync(
+            db,
+            "IX_users_Email_Lower",
+            "Email");
+
+        Assert.True(
+            loginIndexIsUniqueLowerExpression,
+            "Expected unique lower-expression index 'IX_users_LoginName_Lower' on iam.users.LoginName.");
+        Assert.True(
+            emailIndexIsUniqueLowerExpression,
+            "Expected unique lower-expression index 'IX_users_Email_Lower' on iam.users.Email.");
+
+        db.Users.Add(new User(
+            new UserId("user-admin-upper"),
+            "Admin",
+            "Admin@nerv-iip.local",
+            "password-hash",
+            true,
+            "security-stamp-upper",
+            1));
+        await db.SaveChangesAsync();
+
+        var loginCaseDuplicate = new User(
+            new UserId("user-admin-lower"),
+            "admin",
+            "different-email@nerv-iip.local",
+            "password-hash",
+            true,
+            "security-stamp-lower",
+            1);
+        db.Users.Add(loginCaseDuplicate);
+        var loginException = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        var loginPostgresException = Assert.IsType<PostgresException>(loginException.InnerException);
+        Assert.Equal(PostgresErrorCodes.UniqueViolation, loginPostgresException.SqlState);
+        Assert.Equal("IX_users_LoginName_Lower", loginPostgresException.ConstraintName);
+        db.Entry(loginCaseDuplicate).State = EntityState.Detached;
+
+        db.Users.Add(new User(
+            new UserId("user-email-lower"),
+            "different-login",
+            "admin@nerv-iip.local",
+            "password-hash",
+            true,
+            "security-stamp-email-lower",
+            1));
+        var emailException = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        var emailPostgresException = Assert.IsType<PostgresException>(emailException.InnerException);
+        Assert.Equal(PostgresErrorCodes.UniqueViolation, emailPostgresException.SqlState);
+        Assert.Equal("IX_users_Email_Lower", emailPostgresException.ConstraintName);
+    }
+
     [Fact]
     public async Task Postgres_profile_seeds_admin_and_persists_login_refresh_logout_and_connector_validation()
     {
@@ -902,6 +976,28 @@ public sealed class IamPostgresProfileTests
     private static IReadOnlyDictionary<string, string?> PreserveEnvironment(params string[] names)
     {
         return names.ToDictionary(name => name, Environment.GetEnvironmentVariable);
+    }
+
+    private static async Task<bool> IsUniqueLowerExpressionIndexAsync(
+        ApplicationDbContext db,
+        string indexName,
+        string columnName)
+    {
+        return await db.Database.SqlQueryRaw<bool>(
+            """
+            select i.indisunique
+               and pg_get_indexdef(i.indexrelid) like '%lower(%'
+               and pg_get_indexdef(i.indexrelid) like '%' || quote_ident({1}) || '%' as "Value"
+            from pg_index i
+            join pg_class index_class on index_class.oid = i.indexrelid
+            join pg_class table_class on table_class.oid = i.indrelid
+            join pg_namespace table_namespace on table_namespace.oid = table_class.relnamespace
+            where table_namespace.nspname = 'iam'
+              and table_class.relname = 'users'
+              and index_class.relname = {0}
+            """,
+            indexName,
+            columnName).SingleOrDefaultAsync();
     }
 
     private static void RestoreEnvironment(IReadOnlyDictionary<string, string?> environment)
