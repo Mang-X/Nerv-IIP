@@ -41,35 +41,21 @@ public sealed class IamPostgresProfileTests
         await db.Database.EnsureDeletedAsync();
         await db.Database.MigrateAsync();
 
-        var loginIndexIsUniqueLowerExpression = await db.Database.SqlQueryRaw<bool>(
-            """
-            select i.indisunique
-               and pg_get_indexdef(i.indexrelid) like '%lower(%'
-               and pg_get_indexdef(i.indexrelid) like '%"LoginName"%' as "Value"
-            from pg_index i
-            join pg_class index_class on index_class.oid = i.indexrelid
-            join pg_class table_class on table_class.oid = i.indrelid
-            join pg_namespace table_namespace on table_namespace.oid = table_class.relnamespace
-            where table_namespace.nspname = 'iam'
-              and table_class.relname = 'users'
-              and index_class.relname = 'IX_users_LoginName_Lower'
-            """).SingleAsync();
-        var emailIndexIsUniqueLowerExpression = await db.Database.SqlQueryRaw<bool>(
-            """
-            select i.indisunique
-               and pg_get_indexdef(i.indexrelid) like '%lower(%'
-               and pg_get_indexdef(i.indexrelid) like '%"Email"%' as "Value"
-            from pg_index i
-            join pg_class index_class on index_class.oid = i.indexrelid
-            join pg_class table_class on table_class.oid = i.indrelid
-            join pg_namespace table_namespace on table_namespace.oid = table_class.relnamespace
-            where table_namespace.nspname = 'iam'
-              and table_class.relname = 'users'
-              and index_class.relname = 'IX_users_Email_Lower'
-            """).SingleAsync();
+        var loginIndexIsUniqueLowerExpression = await IsUniqueLowerExpressionIndexAsync(
+            db,
+            "IX_users_LoginName_Lower",
+            "LoginName");
+        var emailIndexIsUniqueLowerExpression = await IsUniqueLowerExpressionIndexAsync(
+            db,
+            "IX_users_Email_Lower",
+            "Email");
 
-        Assert.True(loginIndexIsUniqueLowerExpression);
-        Assert.True(emailIndexIsUniqueLowerExpression);
+        Assert.True(
+            loginIndexIsUniqueLowerExpression,
+            "Expected unique lower-expression index 'IX_users_LoginName_Lower' on iam.users.LoginName.");
+        Assert.True(
+            emailIndexIsUniqueLowerExpression,
+            "Expected unique lower-expression index 'IX_users_Email_Lower' on iam.users.Email.");
 
         db.Users.Add(new User(
             new UserId("user-admin-upper"),
@@ -990,6 +976,28 @@ public sealed class IamPostgresProfileTests
     private static IReadOnlyDictionary<string, string?> PreserveEnvironment(params string[] names)
     {
         return names.ToDictionary(name => name, Environment.GetEnvironmentVariable);
+    }
+
+    private static async Task<bool> IsUniqueLowerExpressionIndexAsync(
+        ApplicationDbContext db,
+        string indexName,
+        string columnName)
+    {
+        return await db.Database.SqlQueryRaw<bool>(
+            """
+            select i.indisunique
+               and pg_get_indexdef(i.indexrelid) like '%lower(%'
+               and pg_get_indexdef(i.indexrelid) like '%' || quote_ident({1}) || '%' as "Value"
+            from pg_index i
+            join pg_class index_class on index_class.oid = i.indexrelid
+            join pg_class table_class on table_class.oid = i.indrelid
+            join pg_namespace table_namespace on table_namespace.oid = table_class.relnamespace
+            where table_namespace.nspname = 'iam'
+              and table_class.relname = 'users'
+              and index_class.relname = {0}
+            """,
+            indexName,
+            columnName).SingleOrDefaultAsync();
     }
 
     private static void RestoreEnvironment(IReadOnlyDictionary<string, string?> environment)

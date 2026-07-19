@@ -41,6 +41,8 @@ public sealed class MigrationDesignerGovernanceTests
                 .Where(candidate => candidate.InterfaceType is not null)
                 .ToArray();
 
+            // Intentional fail-closed policy: every referenced Infrastructure assembly is migration-bearing
+            // and owns one design-time DbContext. Multi-context services must split governance per context.
             if (migrationTypes.Length == 0)
             {
                 failures.Add($"{assembly.GetName().Name}: no compiled Migration subclasses found.");
@@ -68,6 +70,11 @@ public sealed class MigrationDesignerGovernanceTests
                 else if (!Regex.IsMatch(migration.Id, "^[0-9]{14}_.+$", RegexOptions.CultureInvariant))
                 {
                     failures.Add($"{migrationType.FullName}: invalid EF migration id '{migration.Id}'.");
+                }
+                else if (!migration.Id.EndsWith($"_{migrationType.Name}", StringComparison.Ordinal))
+                {
+                    failures.Add(
+                        $"{migrationType.FullName}: migration id '{migration.Id}' does not match type name '{migrationType.Name}'.");
                 }
                 else if (!declaredMigrations.TryAdd(migration.Id, migrationType))
                 {
