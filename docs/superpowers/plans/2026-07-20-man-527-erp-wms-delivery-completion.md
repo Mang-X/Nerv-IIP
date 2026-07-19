@@ -112,7 +112,7 @@
 - [x] **Step 2: Run `dotnet test backend/Nerv.IIP.sln`**, script governance, OpenAPI/client drift, and `git diff --check`.
 - [x] **Step 3: Run `$env:Messaging__Provider='Redis'; .\nerv.ps1 fullstack run -Scenario smoke`** and confirm its session cleanup.
 - [x] **Step 4: Review `git status` and `git diff`** for only MAN-527/#971 changes and no generated/manual drift.
-- [ ] **Step 5: Commit, push, and create a ready PR** whose body covers behavior, root cause, tests, risk, schema/OpenAPI/facade declaration, product-doc impact, Linear MAN-527, and `Fixes #971`.
+- [x] **Step 5: Commit, push, and create a ready PR** whose body covers behavior, root cause, tests, risk, schema/OpenAPI/facade declaration, product-doc impact, Linear MAN-527, and `Fixes #971`.
 
 ## Self-Review
 
