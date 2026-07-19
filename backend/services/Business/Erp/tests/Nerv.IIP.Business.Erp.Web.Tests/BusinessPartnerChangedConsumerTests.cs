@@ -159,7 +159,7 @@ public sealed class BusinessPartnerChangedConsumerTests
                 dbContext,
                 new StaticCreditProfileReader(),
                 scope.ServiceProvider.GetRequiredService<ErpCodingService>()).Handle(
-                    new CreateSalesOrderCommand("org-001", "env-dev", null, "QT-001", "so-disabled-001"),
+                    new CreateSalesOrderCommand("org-001", "env-dev", null, "QT-001", "SITE-001", "so-disabled-001"),
                     CancellationToken.None));
         }
 
@@ -178,9 +178,12 @@ public sealed class BusinessPartnerChangedConsumerTests
         var codingService = scope.ServiceProvider.GetRequiredService<ErpCodingService>();
         await CreateApprovedQuotationAsync(dbContext);
         var purchaseCommand = PurchaseOrderCommand() with { PurchaseOrderNo = null, IdempotencyKey = "po-replay-001" };
-        var salesCommand = new CreateSalesOrderCommand("org-001", "env-dev", null, "QT-001", "so-replay-001");
+        var salesCommand = new CreateSalesOrderCommand("org-001", "env-dev", null, "QT-001", "SITE-001", "so-replay-001");
         var purchaseOrderId = await new CreatePurchaseOrderCommandHandler(dbContext, codingService).Handle(purchaseCommand, CancellationToken.None);
         var salesOrderId = await new CreateSalesOrderCommandHandler(dbContext, new StaticCreditProfileReader(), codingService).Handle(salesCommand, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var salesOrderIdempotency = Assert.Single(dbContext.CodeIdempotencyKeys.Where(x => x.RuleKey == "sales-order"));
+        dbContext.Entry(salesOrderIdempotency).Property(x => x.PayloadFingerprint).CurrentValue = ErpCodingService.Fingerprint("QT-001");
         await dbContext.SaveChangesAsync(CancellationToken.None);
         dbContext.BusinessPartnerAvailabilities.Add(BusinessPartnerAvailability.Create(
             "org-001", "env-dev", "BP-001", "disabled", DateTimeOffset.Parse("2026-07-13T04:00:00Z"), "evt-disabled"));
@@ -228,7 +231,7 @@ public sealed class BusinessPartnerChangedConsumerTests
             new CreatePurchaseOrderCommandHandler(dbContext).Handle(PurchaseOrderCommand(), CancellationToken.None));
         var salesException = await Assert.ThrowsAsync<KnownException>(() =>
             new CreateSalesOrderCommandHandler(dbContext, new StaticCreditProfileReader()).Handle(
-                new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001"),
+                new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001", "SITE-001"),
                 CancellationToken.None));
 
         Assert.Contains("disabled", purchaseException.Message, StringComparison.OrdinalIgnoreCase);
@@ -248,7 +251,7 @@ public sealed class BusinessPartnerChangedConsumerTests
         await using var dbContext = CreateDbContext(options);
         await new CreatePurchaseOrderCommandHandler(dbContext).Handle(PurchaseOrderCommand(), CancellationToken.None);
         await new CreateSalesOrderCommandHandler(dbContext, new StaticCreditProfileReader()).Handle(
-            new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001"),
+            new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001", "SITE-001"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 

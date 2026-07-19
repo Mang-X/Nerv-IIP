@@ -1,0 +1,51 @@
+# Script-Governance:
+#   Category: check
+#   SideEffects:
+#     - Parses the ERP sales-order to DemandPlanning cross-process verification script
+#   Writes:
+#     - None
+#   Cleanup:
+#     - None
+#   Requires:
+#     - PowerShell 7
+
+$ErrorActionPreference = 'Stop'
+
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
+$verifyScript = Join-Path $repoRoot 'scripts/verify-erp-sales-order-demand-planning.ps1'
+if (-not (Test-Path -LiteralPath $verifyScript)) {
+    throw 'ERP sales-order DemandPlanning cross-process verify script is missing.'
+}
+
+$content = Get-Content -LiteralPath $verifyScript -Raw
+
+function Assert-Contract {
+    param([bool]$Condition, [string]$Message)
+    if (-not $Condition) {
+        throw $Message
+    }
+}
+
+Assert-Contract ($content.Contains('# Script-Governance:')) 'Verify script must declare script governance metadata.'
+Assert-Contract ($content.Contains('scripts/lib/ScriptAutomation.ps1')) 'Verify script must use ScriptAutomation helpers.'
+Assert-Contract ($content.Contains('Start-ManagedBackgroundProcess')) 'Verify script must launch managed service processes.'
+Assert-Contract ($content.Contains('pg_isready')) 'Verify script must wait for PostgreSQL readiness before creating the disposable database.'
+Assert-Contract ($content.Contains('Nerv.IIP.Business.MasterData.Web.csproj')) 'Verify script must launch MasterData for reusable customer/credit prerequisites.'
+Assert-Contract ($content.Contains('Nerv.IIP.Business.Erp.Web.csproj')) 'Verify script must launch ERP in its own process.'
+Assert-Contract ($content.Contains('Nerv.IIP.Business.DemandPlanning.Web.csproj')) 'Verify script must launch DemandPlanning in its own process.'
+Assert-Contract ($content.Contains("Messaging__Provider = 'Redis'")) 'Verify script must use the real Redis CAP provider.'
+Assert-Contract ($content.Contains("Erp__Seed__SalesOrderDemandDemo__Enabled = 'true'")) 'Verify script must prove the reusable SO-DEMO-001 seed publishes through the real cross-process bridge.'
+Assert-Contract (-not $content.Contains('NERV_IIP_TEST_SALES_ORDER_ID')) 'Fault injection must resolve the seeded order identity from DemandPlanning persistence instead of fragile shell output.'
+Assert-Contract ($content.Contains('out-of-order')) 'Verify script must assert stale/out-of-order convergence.'
+Assert-Contract ($content.Contains('$runningResult.Stdout')) 'Verify script must parse the compose service list from Invoke-NativeCommandOutput.Stdout before cleanup ownership is decided.'
+Assert-Contract ($content.Contains('UnitTestResult')) 'Verify script must prove the external fault-injection test actually executed and passed.'
+Assert-Contract ($content.Contains('Assert-DemandStable')) 'Verify script must hold the final cancellation state stable after stale-message injection.'
+Assert-Contract ($content.Contains('Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres')) 'Verify script must execute the real Redis identical-idempotency-key duplicate test.'
+Assert-Contract ($content.Contains('changed during the stability window')) 'Verify script must fail immediately when the final demand changes during the stability window.'
+Assert-Contract ($content.Contains("Wait-Demand -DemandPlanningUrl `$demandPlanningUrl -Headers `$headers -Version 4 -Quantity 0 -Status 'cancelled'")) 'Verify script must wait for cancellation convergence before entering the strict stability window.'
+Assert-Contract ($content.Contains('sourceVersion')) 'Verify script must assert business-version convergence.'
+Assert-Contract ($content.Contains('sourceStatus')) 'Verify script must assert lifecycle-status convergence.'
+Assert-Contract ($content.Contains('finally')) 'Verify script must clean up processes and disposable infrastructure in finally.'
+Assert-Contract ($content.Contains('sales-order-demand-planning-evidence.json')) 'Verify script must write reusable acceptance evidence.'
+
+Write-Host 'ERP sales-order DemandPlanning cross-process verify script contract tests passed.'

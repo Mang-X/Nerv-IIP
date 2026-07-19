@@ -27,7 +27,11 @@ import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive } from 'vue'
-import { bindBusinessContext, hasBusinessContext, withBusinessContextEnabled } from './businessContextBinding'
+import {
+  bindBusinessContext,
+  hasBusinessContext,
+  withBusinessContextEnabled,
+} from './businessContextBinding'
 
 export interface PlanningContextFilters {
   organizationId: string
@@ -89,65 +93,86 @@ const PLANNING_QUERY_IDS = [
   'listBusinessConsolePlanningSuggestions',
 ]
 
-function defaultContextFilters(organizationId: string, environmentId: string): PlanningContextFilters {
-  return bindBusinessContext(reactive({
-    organizationId,
-    environmentId,
-  }))
+function defaultContextFilters(
+  organizationId: string,
+  environmentId: string,
+): PlanningContextFilters {
+  return bindBusinessContext(
+    reactive({
+      organizationId,
+      environmentId,
+    }),
+  )
 }
 
-function defaultSuggestionFilters(organizationId: string, environmentId: string): PlanningSuggestionFilters {
-  return bindBusinessContext(reactive({
-    organizationId,
-    environmentId,
-    status: 'open',
-  }))
+function defaultSuggestionFilters(
+  organizationId: string,
+  environmentId: string,
+): PlanningSuggestionFilters {
+  return bindBusinessContext(
+    reactive({
+      organizationId,
+      environmentId,
+      status: 'open',
+    }),
+  )
 }
 
 function defaultMpsFilters(organizationId: string, environmentId: string): PlanningMpsFilters {
-  return bindBusinessContext(reactive({
-    organizationId,
-    environmentId,
-    skuCode: undefined,
-    siteCode: undefined,
-    status: undefined,
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId,
+      environmentId,
+      skuCode: undefined,
+      siteCode: undefined,
+      status: undefined,
+    }),
+  )
 }
 
 function defaultDemandForm(organizationId: string, environmentId: string): PlanningDemandForm {
-  return bindBusinessContext(reactive({
-    organizationId,
-    environmentId,
-    demandType: 'sales-order',
-    sourceReference: '',
-    skuCode: '',
-    uomCode: '',
-    siteCode: '',
-    quantity: 0,
-    dueDate: new Date().toISOString().slice(0, 10),
-    idempotencyKey: '',
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId,
+      environmentId,
+      demandType: 'forecast',
+      sourceReference: '',
+      skuCode: '',
+      uomCode: '',
+      siteCode: '',
+      quantity: 0,
+      dueDate: new Date().toISOString().slice(0, 10),
+      idempotencyKey: '',
+    }),
+  )
 }
 
 function defaultMpsForm(organizationId: string, environmentId: string): PlanningMpsForm {
-  return bindBusinessContext(reactive({
-    organizationId,
-    environmentId,
-    skuCode: '',
-    uomCode: '',
-    siteCode: '',
-    bucketDate: new Date().toISOString().slice(0, 10),
-    quantity: 0,
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId,
+      environmentId,
+      skuCode: '',
+      uomCode: '',
+      siteCode: '',
+      bucketDate: new Date().toISOString().slice(0, 10),
+      quantity: 0,
+    }),
+  )
 }
 
-function defaultRunRequest(organizationId: string, environmentId: string): BusinessConsoleRunMrpRequest {
-  return bindBusinessContext(reactive({
-    organizationId,
-    environmentId,
-    horizonStart: new Date().toISOString().slice(0, 10),
-    horizonEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-  }))
+function defaultRunRequest(
+  organizationId: string,
+  environmentId: string,
+): BusinessConsoleRunMrpRequest {
+  return bindBusinessContext(
+    reactive({
+      organizationId,
+      environmentId,
+      horizonStart: new Date().toISOString().slice(0, 10),
+      horizonEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    }),
+  )
 }
 
 function defaultRunSelection(): PlanningRunSelection {
@@ -156,7 +181,9 @@ function defaultRunSelection(): PlanningRunSelection {
   })
 }
 
-function unwrapItems<T>(envelope: { success?: boolean; data?: { items?: T[] } | null } | undefined): T[] {
+function unwrapItems<T>(
+  envelope: { success?: boolean; data?: { items?: T[] } | null } | undefined,
+): T[] {
   if (!envelope?.success) {
     return []
   }
@@ -169,7 +196,9 @@ function isBusinessQuery(ids: string[]) {
     const keyParts = Array.isArray(entry.key) ? entry.key : [entry.key]
 
     return keyParts.some((part) => {
-      return typeof part === 'object' && part !== null && '_id' in part && ids.includes(String(part._id))
+      return (
+        typeof part === 'object' && part !== null && '_id' in part && ids.includes(String(part._id))
+      )
     })
   }
 }
@@ -179,43 +208,67 @@ function ignoreBackgroundError(_error: unknown) {}
 export function useBusinessPlanning() {
   const auth = useAuthStore()
   const businessContext = useBusinessContextStore()
-  const filters = defaultContextFilters(businessContext.organizationId, businessContext.environmentId)
-  const mpsFilters = defaultMpsFilters(businessContext.organizationId, businessContext.environmentId)
-  const suggestionFilters = defaultSuggestionFilters(businessContext.organizationId, businessContext.environmentId)
-  const demandForm = defaultDemandForm(businessContext.organizationId, businessContext.environmentId)
+  const filters = defaultContextFilters(
+    businessContext.organizationId,
+    businessContext.environmentId,
+  )
+  const mpsFilters = defaultMpsFilters(
+    businessContext.organizationId,
+    businessContext.environmentId,
+  )
+  const suggestionFilters = defaultSuggestionFilters(
+    businessContext.organizationId,
+    businessContext.environmentId,
+  )
+  const demandForm = defaultDemandForm(
+    businessContext.organizationId,
+    businessContext.environmentId,
+  )
   const mpsForm = defaultMpsForm(businessContext.organizationId, businessContext.environmentId)
-  const runRequest = defaultRunRequest(businessContext.organizationId, businessContext.environmentId)
+  const runRequest = defaultRunRequest(
+    businessContext.organizationId,
+    businessContext.environmentId,
+  )
   const runSelection = defaultRunSelection()
   // 计划建议「分型筛选」(生产/采购)，纯前端过滤，不带入后端查询。
   const suggestionTypeFilter = reactive<PlanningSuggestionTypeFilter>({ type: '' })
   const queryCache = useQueryCache()
 
   const demandsQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsolePlanningDemandsQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsolePlanningDemandsQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+        },
+      }),
+      filters,
+    ),
   )
   const runsQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsolePlanningMrpRunsQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsolePlanningMrpRunsQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+        },
+      }),
+      filters,
+    ),
   )
   const mpsBucketsQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsolePlanningMpsBucketsQueryOptions({
-      query: {
-        organizationId: mpsFilters.organizationId,
-        environmentId: mpsFilters.environmentId,
-        skuCode: mpsFilters.skuCode?.trim() || undefined,
-        siteCode: mpsFilters.siteCode?.trim() || undefined,
-        status: mpsFilters.status?.trim() || undefined,
-      },
-    }), mpsFilters),
+    withBusinessContextEnabled(
+      listBusinessConsolePlanningMpsBucketsQueryOptions({
+        query: {
+          organizationId: mpsFilters.organizationId,
+          environmentId: mpsFilters.environmentId,
+          skuCode: mpsFilters.skuCode?.trim() || undefined,
+          siteCode: mpsFilters.siteCode?.trim() || undefined,
+          status: mpsFilters.status?.trim() || undefined,
+        },
+      }),
+      mpsFilters,
+    ),
   )
   const peggingQuery = useQuery(() => ({
     ...getBusinessConsolePlanningMrpPeggingQueryOptions({
@@ -230,13 +283,16 @@ export function useBusinessPlanning() {
     enabled: hasBusinessContext(filters) && runSelection.runId.trim().length > 0,
   }))
   const suggestionsQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsolePlanningSuggestionsQueryOptions({
-      query: {
-        organizationId: suggestionFilters.organizationId,
-        environmentId: suggestionFilters.environmentId,
-        status: suggestionFilters.status,
-      },
-    }), suggestionFilters),
+    withBusinessContextEnabled(
+      listBusinessConsolePlanningSuggestionsQueryOptions({
+        query: {
+          organizationId: suggestionFilters.organizationId,
+          environmentId: suggestionFilters.environmentId,
+          status: suggestionFilters.status,
+        },
+      }),
+      suggestionFilters,
+    ),
   )
 
   const invalidatePlanningQueries = () =>
@@ -317,9 +373,9 @@ export function useBusinessPlanning() {
   }
 
   function currentPlannerIdentity() {
-    return auth.principal?.loginName?.trim()
-      || auth.principal?.principalId?.trim()
-      || 'unknown-user'
+    return (
+      auth.principal?.loginName?.trim() || auth.principal?.principalId?.trim() || 'unknown-user'
+    )
   }
 
   return {

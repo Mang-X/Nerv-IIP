@@ -32732,6 +32732,19 @@
           "demandType": {
             "type": "string"
           },
+          "sourceLineReference": {
+            "type": "string"
+          },
+          "customerCode": {
+            "type": "string"
+          },
+          "sourceVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sourceStatus": {
+            "type": "string"
+          },
           "skuCode": {
             "type": "string"
           },
@@ -43142,6 +43155,9 @@
           "customerCode": {
             "type": "string"
           },
+          "siteCode": {
+            "type": "string"
+          },
           "status": {
             "type": "string"
           },
@@ -43527,6 +43543,9 @@
             "nullable": true
           },
           "quotationNo": {
+            "type": "string"
+          },
+          "siteCode": {
             "type": "string"
           },
           "idempotencyKey": {

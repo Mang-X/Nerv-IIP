@@ -17,6 +17,8 @@
 
 procure-to-pay 与 order-to-cash 的跨服务推进按 [ADR 0017](../adr/0017-business-process-manager-and-compensation-strategy.md) 执行：当前不引入中心 saga/process-manager，继续使用 choreography、服务本地幂等/DLQ/replay 和拥有服务发布的补偿事实。
 
+销售订单到计划需求的当前事实桥按 [ERP 销售订单到 DemandPlanning 需求桥](sales-order-to-demand-planning.md) 执行：ERP 拥有订单与版本，DemandPlanning 只投影带来源引用的需求行与消费水位；MRP、pegging 和生产建议沿用销售订单编号追溯，不复制 ERP 订单详情。
+
 ## 系统取舍
 
 | 名称 | 首批处理 | 原因 |

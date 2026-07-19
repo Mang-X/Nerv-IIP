@@ -8,6 +8,20 @@ public sealed class MrpCalculatorTests
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     [Fact]
+    public void Sales_order_demand_keeps_so_demo_reference_on_production_suggestion_pegging()
+    {
+        var suggestions = MrpCalculator.Calculate(NewInput(demands:
+        [
+            new DemandSnapshot("SO-DEMO-001", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1), "sales-order"),
+        ]));
+
+        var workOrder = Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order");
+        Assert.Contains(workOrder.PeggingLinks, link =>
+            link.PeggingType == "demand" &&
+            link.DemandSourceReference == "SO-DEMO-001");
+    }
+
+    [Fact]
     public void Suggestions_expose_net_requirement_formula_from_real_mrp_inputs()
     {
         var input = NewInput(

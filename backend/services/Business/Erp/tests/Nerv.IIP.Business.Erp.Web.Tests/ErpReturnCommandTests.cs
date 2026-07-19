@@ -59,7 +59,7 @@ public sealed class ErpReturnCommandTests
         await new CreateSalesOrderCommandHandler(
                 dbContext,
                 new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 1_000_000m, "CNY"))).Handle(
-                new CreateSalesOrderCommand("org-001", "env-dev", "SO-RMA-001", "QUO-RMA-001"),
+                new CreateSalesOrderCommand("org-001", "env-dev", "SO-RMA-001", "QUO-RMA-001", "SITE-001"),
                 CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(

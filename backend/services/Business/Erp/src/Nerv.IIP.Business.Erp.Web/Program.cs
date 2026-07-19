@@ -7,7 +7,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Erp.Web.Application.MasterData;
+using Nerv.IIP.Business.Erp.Web.Application.Seed;
 using Nerv.IIP.Business.Erp.Web.Application.Wms;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 using Nerv.IIP.Localization;
@@ -30,6 +32,8 @@ try
     builder.Services.AddHealthChecks();
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddScoped<IErpIntegrationEventContextAccessor, HttpErpIntegrationEventContextAccessor>();
     var approvalBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
     builder.Services.AddHttpClient<IPurchaseOrderApprovalClient, HttpPurchaseOrderApprovalClient>(client =>
     {
@@ -74,6 +78,7 @@ try
     builder.Services.AddErpPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddScoped<ErpCodingService>();
+    builder.Services.AddScoped<SalesOrderDemandDemoSeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
@@ -110,7 +115,7 @@ try
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();
 
-    var app = builder.Build();
+    await using var app = builder.Build();
     app.UseNervIipCorrelation();
     var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
     if (autoMigrate && !app.Environment.IsDevelopment())
@@ -142,7 +147,17 @@ try
     app.MapHealthChecks("/health");
     app.MapMetrics();
 
-    await app.RunAsync();
+    await app.StartAsync();
+    if (builder.Configuration.GetValue<bool>("Erp:Seed:SalesOrderDemandDemo:Enabled"))
+    {
+        using var scope = app.Services.CreateScope();
+        var seed = scope.ServiceProvider.GetRequiredService<SalesOrderDemandDemoSeedService>();
+        await seed.SeedAsync(
+            builder.Configuration["Erp:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["Erp:Seed:EnvironmentId"] ?? "env-dev");
+    }
+
+    await app.WaitForShutdownAsync();
 }
 catch (Exception ex)
 {

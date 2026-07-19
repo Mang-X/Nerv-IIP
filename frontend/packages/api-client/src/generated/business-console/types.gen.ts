@@ -2587,6 +2587,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleD
     demandSourceId?: string;
     sourceReference?: string;
     demandType?: string;
+    sourceLineReference?: string;
+    customerCode?: string;
+    sourceVersion?: number;
+    sourceStatus?: string;
     skuCode?: string;
     uomCode?: string;
     siteCode?: string;
@@ -5300,6 +5304,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSalesOrderItem = {
     salesOrderNo?: string;
     customerCode?: string;
+    siteCode?: string;
     status?: string;
     totalAmount?: number;
 };
@@ -5415,6 +5420,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     environmentId?: string;
     salesOrderNo?: string | null;
     quotationNo?: string;
+    siteCode?: string;
     idempotencyKey?: string | null;
 };
 

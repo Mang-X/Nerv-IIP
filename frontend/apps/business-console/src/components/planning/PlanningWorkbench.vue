@@ -185,7 +185,6 @@ const mrpOpen = shallowRef(false)
 const acceptingSuggestionId = shallowRef<string | null>(null)
 
 const demandTypeOptions = [
-  { label: '销售订单', value: 'sales-order' },
   { label: '预测', value: 'forecast' },
   { label: '安全库存', value: 'safety-stock' },
 ]
@@ -312,6 +311,7 @@ const suggestionTypeFilterOptions = [
 const demandColumns: NvDataTableColumn<BusinessConsoleDemandSourceItem>[] = [
   { key: 'sourceReference', header: '来源', cellClass: 'font-medium' },
   { key: 'demandType', header: '类型', width: 'w-24' },
+  { key: 'sourceStatus', header: '状态', width: 'w-24' },
   { key: 'skuCode', header: 'SKU' },
   { key: 'siteCode', header: '工厂' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
@@ -637,6 +637,13 @@ function openPeggingSource(row: BusinessConsoleMrpPeggingItem) {
     },
   })
 }
+
+function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
+  void router.push({
+    path: '/erp/sales/orders',
+    query: { keyword: row.sourceReference },
+  })
+}
 </script>
 
 <template>
@@ -936,7 +943,27 @@ function openPeggingSource(row: BusinessConsoleMrpPeggingItem) {
         :column-settings="false"
         empty-message="当前范围没有计划需求。"
       >
+        <template #cell-sourceReference="{ row }">
+          <NvButton
+            v-if="row.demandType === 'sales-order'"
+            type="button"
+            size="sm"
+            variant="ghost"
+            :aria-label="`查看销售订单 ${row.sourceReference}`"
+            @click="openSalesOrderDemand(row)"
+          >
+            {{ row.sourceReference }}
+            <ExternalLinkIcon aria-hidden="true" />
+          </NvButton>
+          <span v-else>{{ row.sourceReference }}</span>
+        </template>
         <template #cell-demandType="{ row }">{{ demandTypeLabel(row.demandType) }}</template>
+        <template #cell-sourceStatus="{ row }">
+          <NvStatusBadge
+            :label="row.sourceStatus === 'cancelled' ? '已取消' : '有效'"
+            :tone="row.sourceStatus === 'cancelled' ? 'neutral' : 'success'"
+          />
+        </template>
         <template #cell-skuCode="{ row }">
           <div class="flex flex-col gap-0.5">
             <span>{{ skuLabel(row.skuCode) }}</span>

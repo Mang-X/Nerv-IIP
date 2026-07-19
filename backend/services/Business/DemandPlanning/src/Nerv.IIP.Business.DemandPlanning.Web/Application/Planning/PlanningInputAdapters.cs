@@ -431,6 +431,8 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
                 && x.DemandType != "forecast"
+                && x.SourceStatus == "active"
+                && x.Quantity > 0m
                 && x.DueDate >= horizonStart
                 && x.DueDate <= horizonEnd)
             .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
@@ -526,6 +528,8 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
                 && x.DemandType != "forecast"
+                && x.SourceStatus == "active"
+                && x.Quantity > 0m
                 && x.DueDate >= horizonStart
                 && x.DueDate <= horizonEnd)
             .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
@@ -1443,6 +1447,8 @@ public sealed class DemandPlanningFixtureInputSnapshotProvider(ApplicationDbCont
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
+                && x.SourceStatus == "active"
+                && x.Quantity > 0m
                 && x.DueDate >= horizonStart
                 && x.DueDate <= horizonEnd)
             .OrderBy(x => x.DueDate)
