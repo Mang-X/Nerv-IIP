@@ -15,6 +15,7 @@ const wms = vi.hoisted(() => ({
   inventoryContext: undefined as unknown,
   receivingQualityGates: [] as unknown[],
   supplierReturns: [] as unknown[],
+  qualityGateStatus: undefined as string | undefined,
   isReleasedForPutaway: true,
   refreshReceivingQuality: vi.fn(),
 }))
@@ -40,6 +41,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
         inboundOrderNo: 'IB-1',
         status: 'created',
         createdAtUtc: '2026-06-01T00:00:00Z',
+        qualityGateStatus: wms.qualityGateStatus,
         isReleasedForPutaway: wms.isReleasedForPutaway,
       },
     ]),
@@ -125,6 +127,7 @@ describe('WMS operate actions', () => {
     wms.inventoryContext = undefined
     wms.receivingQualityGates = []
     wms.supplierReturns = []
+    wms.qualityGateStatus = undefined
     wms.isReleasedForPutaway = true
   })
 
@@ -378,6 +381,7 @@ describe('WMS operate actions', () => {
       {
         inboundOrderNo: 'IB-1',
         inboundOrderLineNo: '2',
+        inspectionRecordId: 'QI-2',
         supplierReturnNo: 'RTS-IB-1-002',
         skuCode: 'SKU-002',
         locationCode: 'QUAR-01',
@@ -431,6 +435,24 @@ describe('WMS operate actions', () => {
 
     expect(wrapper.get('button[aria-label="上架 IB-1"]').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('WMS 尚未返回整单上架放行权限')
+  })
+
+  it('does not let a stale released snapshot override a stricter pending line', async () => {
+    wms.qualityGateStatus = 'passed'
+    wms.receivingQualityGates = [
+      {
+        inboundOrderNo: 'IB-1',
+        lineNo: '1',
+        skuCode: 'SKU-001',
+        qualityGateStatus: 'pending',
+      },
+    ]
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('待检')
+    expect(wrapper.get('button[aria-label="上架 IB-1"]').attributes('disabled')).toBeDefined()
   })
 
   it('blocks inbound creation when a required line field or positive quantity is missing', async () => {

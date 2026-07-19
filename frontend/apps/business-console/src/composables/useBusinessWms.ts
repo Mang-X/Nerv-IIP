@@ -63,25 +63,30 @@ async function fetchAllReceivingQualityGates(query: {
   environmentId: string
   includeNotRequired: boolean
 }) {
-  return fetchAllWmsPages((skip) =>
-    listBusinessConsoleWmsReceivingQualityGates({
-      query: { ...query, skip, take: RECEIVING_QUALITY_PAGE_SIZE },
-      throwOnError: true,
-    }).then(({ data }) => data),
+  return fetchAllWmsPages(
+    (skip) =>
+      listBusinessConsoleWmsReceivingQualityGates({
+        query: { ...query, skip, take: RECEIVING_QUALITY_PAGE_SIZE },
+        throwOnError: true,
+      }).then(({ data }) => data),
+    '收货质检门禁',
   )
 }
 
 async function fetchAllSupplierReturns(query: { organizationId: string; environmentId: string }) {
-  return fetchAllWmsPages((skip) =>
-    listBusinessConsoleWmsSupplierReturnRequests({
-      query: { ...query, skip, take: RECEIVING_QUALITY_PAGE_SIZE },
-      throwOnError: true,
-    }).then(({ data }) => data),
+  return fetchAllWmsPages(
+    (skip) =>
+      listBusinessConsoleWmsSupplierReturnRequests({
+        query: { ...query, skip, take: RECEIVING_QUALITY_PAGE_SIZE },
+        throwOnError: true,
+      }).then(({ data }) => data),
+    '供应商退供',
   )
 }
 
 async function fetchAllWmsPages<TItem>(
   fetchPage: (skip: number) => Promise<WmsListEnvelope<TItem>>,
+  label: string,
 ): Promise<WmsListEnvelope<TItem>> {
   const items: TItem[] = []
   let total = 0
@@ -91,7 +96,7 @@ async function fetchAllWmsPages<TItem>(
   while (true) {
     const page = await fetchPage(skip)
     firstPage ??= page
-    if (!page.success) return page
+    if (!page.success) throw new Error(`${label}读取失败，请刷新后重试。`)
 
     const pageItems = page.data?.items ?? []
     total = page.data?.total ?? 0

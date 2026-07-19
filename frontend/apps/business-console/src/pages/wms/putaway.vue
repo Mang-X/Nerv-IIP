@@ -26,7 +26,7 @@ import {
   toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 definePage({
@@ -38,7 +38,6 @@ definePage({
 })
 
 const route = useRoute()
-const inboundOrderNo = firstQuery(route.query.inboundOrderNo)
 const {
   filters,
   putawayTasks,
@@ -49,7 +48,15 @@ const {
   createPutaway,
   createPutawayPending,
   createPutawayError,
-} = useWmsPutawayTasks(inboundOrderNo ? { keyword: inboundOrderNo } : {})
+} = useWmsPutawayTasks()
+const inboundOrderNo = computed(() => firstQuery(route.query.inboundOrderNo))
+watch(
+  inboundOrderNo,
+  (value) => {
+    filters.keyword = value || undefined
+  },
+  { immediate: true },
+)
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.locationCode, () => filters.keyword],
 })

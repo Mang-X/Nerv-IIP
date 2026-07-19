@@ -55,12 +55,13 @@ const orderCategory = computed<GateCategory>(() => {
   const categories = orderGates.value.map((gate) => gateCategory(gate.qualityGateStatus))
   if (categories.length === 0 || categories.includes('unknown')) return 'unknown'
 
-  const serverCategory = gateCategory(props.qualityGateStatus)
-  if (serverCategory !== 'unknown') return serverCategory
-
   if (categories.includes('rejected')) return 'rejected'
   if (categories.includes('pending')) return 'pending'
   if (categories.includes('conditional-release')) return 'conditional-release'
+
+  const serverCategory = gateCategory(props.qualityGateStatus)
+  if (serverCategory !== 'unknown') return serverCategory
+
   if (categories.length > 0 && categories.every((category) => category === 'not-required')) {
     return 'not-required'
   }
@@ -160,9 +161,12 @@ const inspectionRecordIds = computed(() => [
 ])
 
 function returnFor(gate: BusinessConsoleWmsReceivingQualityGateItem) {
-  if (!gate.lineNo || !gate.skuCode) return undefined
+  if (!gate.lineNo || !gate.skuCode || !gate.inspectionRecordId) return undefined
   return orderReturns.value.find(
-    (item) => item.inboundOrderLineNo === gate.lineNo && item.skuCode === gate.skuCode,
+    (item) =>
+      item.inboundOrderLineNo === gate.lineNo &&
+      item.skuCode === gate.skuCode &&
+      item.inspectionRecordId === gate.inspectionRecordId,
   )
 }
 
@@ -258,7 +262,11 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
         v-else-if="gateCategory(line.gate.qualityGateStatus) === 'rejected'"
         class="text-muted-foreground"
       >
-        退供单：暂无真实记录
+        {{
+          line.gate.inspectionRecordId
+            ? '退供单：暂无真实记录'
+            : '退供关联缺口：门禁未返回真实检验记录引用，未猜配退供单'
+        }}
       </span>
     </div>
 

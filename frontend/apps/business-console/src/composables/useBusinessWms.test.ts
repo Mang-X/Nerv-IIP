@@ -184,6 +184,36 @@ describe('business WMS composables', () => {
     expect(gateQuery?.autoRefetch?.()).toBe(10_000)
   })
 
+  it('surfaces a later quality page failure instead of returning an empty gate list', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    vi.mocked(listBusinessConsoleWmsReceivingQualityGates).mockImplementation((({
+      query,
+    }: {
+      query?: { skip?: number }
+    }) => {
+      if ((query?.skip ?? 0) > 0) {
+        return Promise.resolve({
+          data: { success: false },
+          request: new Request('http://test.local'),
+          response: new Response(),
+        } as Awaited<ReturnType<typeof listBusinessConsoleWmsReceivingQualityGates>>)
+      }
+      return Promise.resolve({
+        data: { success: true, data: { total: 2, items: [{ inboundOrderNo: 'IN-001' }] } },
+        request: new Request('http://test.local'),
+        response: new Response(),
+      } as Awaited<ReturnType<typeof listBusinessConsoleWmsReceivingQualityGates>>)
+    }) as never)
+
+    useWmsInboundOrders()
+    const gateQuery = coladaState.queryOptionsById.get(
+      'listBusinessConsoleWmsReceivingQualityGates',
+    ) as { query?: () => Promise<unknown> } | undefined
+
+    await expect(gateQuery?.query?.()).rejects.toThrow('收货质检门禁读取失败')
+  })
+
   it('lists outbound orders with status and keyword filters', () => {
     const context = useBusinessContextStore()
     context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
