@@ -12,6 +12,8 @@ export interface NvDataTableColumn<T = Record<string, unknown>> {
   key: string
   /** Column header label. */
   header: string
+  /** Optional accessible tooltip for business guidance that belongs on the column header. */
+  headerTitle?: string
   align?: NvDataTableAlign
   /** Enable click-to-sort on this column. */
   sortable?: boolean

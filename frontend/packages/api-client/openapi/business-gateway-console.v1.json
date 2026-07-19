@@ -18509,6 +18509,15 @@
               "type": "string",
               "nullable": true
             }
+          },
+          {
+            "name": "asOfDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -18608,6 +18617,26 @@
             "schema": {
               "type": "boolean",
               "default": false,
+              "nullable": false
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1,
+              "nullable": false
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50,
               "nullable": false
             }
           }
@@ -24065,6 +24094,61 @@
           "availableQuantity": {
             "type": "number",
             "format": "decimal"
+          },
+          "productionDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "expiryDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "shelfLifeDays": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "expiryDateSource": {
+            "type": "string",
+            "nullable": true
+          },
+          "isExpired": {
+            "type": "boolean"
+          },
+          "isBlocked": {
+            "type": "boolean"
+          },
+          "blockReasonCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "blockReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "movementAllowed": {
+            "type": "boolean"
+          },
+          "movementBlockReasonCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "movementBlockReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "countAllowed": {
+            "type": "boolean"
+          },
+          "countBlockReasonCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "countBlockReason": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -41801,6 +41885,30 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryExpiryAlertLineResponse"
             }
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "expiredCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "nearExpiryCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "skuCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -41868,6 +41976,48 @@
           "availableQuantity": {
             "type": "number",
             "format": "decimal"
+          },
+          "shelfLifeDays": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "expiryDateSource": {
+            "type": "string",
+            "nullable": true
+          },
+          "isBlocked": {
+            "type": "boolean"
+          },
+          "blockReasonCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "blockReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "movementAllowed": {
+            "type": "boolean"
+          },
+          "movementBlockReasonCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "movementBlockReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "countAllowed": {
+            "type": "boolean"
+          },
+          "countBlockReasonCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "countBlockReason": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

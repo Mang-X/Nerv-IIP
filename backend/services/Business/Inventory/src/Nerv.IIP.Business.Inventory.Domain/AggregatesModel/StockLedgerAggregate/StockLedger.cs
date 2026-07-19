@@ -27,7 +27,9 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
         string ownerType,
         string? ownerId,
         DateOnly? productionDate,
-        DateOnly? expiryDate)
+        DateOnly? expiryDate,
+        int? shelfLifeDays,
+        string? expiryDateSource)
     {
         OrganizationId = InventoryText.Required(organizationId);
         EnvironmentId = InventoryText.Required(environmentId);
@@ -42,6 +44,11 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
         OwnerId = InventoryText.Optional(ownerId);
         ProductionDate = productionDate;
         ExpiryDate = expiryDate;
+        (ShelfLifeDays, ExpiryDateSource) = StockExpiryDateSource.NormalizeProvenance(
+            shelfLifeDays,
+            expiryDateSource,
+            productionDate,
+            expiryDate);
         UpdatedAtUtc = DateTime.UtcNow;
     }
 
@@ -58,6 +65,8 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
     public string? OwnerId { get; private set; }
     public DateOnly? ProductionDate { get; private set; }
     public DateOnly? ExpiryDate { get; private set; }
+    public int? ShelfLifeDays { get; private set; }
+    public string? ExpiryDateSource { get; private set; }
     public decimal OnHandQuantity { get; private set; }
     public decimal ReservedQuantity { get; private set; }
     public decimal AvailableQuantity => OnHandQuantity - ReservedQuantity;
@@ -83,7 +92,9 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
         string ownerType,
         string? ownerId,
         DateOnly? ProductionDate = null,
-        DateOnly? ExpiryDate = null)
+        DateOnly? ExpiryDate = null,
+        int? ShelfLifeDays = null,
+        string? ExpiryDateSource = null)
     {
         return new StockLedger(
             organizationId,
@@ -98,7 +109,38 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
             ownerType,
             ownerId,
             ProductionDate,
+            ExpiryDate,
+            ShelfLifeDays,
+            ExpiryDateSource);
+    }
+
+    public void MergeExpiryProvenance(int? shelfLifeDays, string? expiryDateSource)
+    {
+        var normalized = StockExpiryDateSource.NormalizeProvenance(
+            shelfLifeDays,
+            expiryDateSource,
+            ProductionDate,
             ExpiryDate);
+        var normalizedSource = normalized.Source;
+        if (OnHandQuantity == 0)
+        {
+            ShelfLifeDays = normalized.ShelfLifeDays;
+            ExpiryDateSource = normalizedSource;
+            return;
+        }
+
+        if (ExpiryDateSource is null || normalizedSource is null)
+        {
+            ShelfLifeDays = null;
+            ExpiryDateSource = null;
+            return;
+        }
+
+        if (ExpiryDateSource != normalizedSource || ShelfLifeDays != normalized.ShelfLifeDays)
+        {
+            ShelfLifeDays = null;
+            ExpiryDateSource = StockExpiryDateSource.Mixed;
+        }
     }
 
     public bool IsExpired(DateOnly asOfDate) => ExpiryDate is not null && ExpiryDate.Value < asOfDate;
@@ -327,5 +369,43 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
                 InventoryDomainFailureReason.DimensionMismatch,
                 "Stock reservation dimensions do not match the ledger dimensions.");
         }
+    }
+}
+
+public static class StockExpiryDateSource
+{
+    public const string Direct = "direct";
+    public const string Derived = "derived";
+    public const string Mixed = "mixed";
+
+    public static string? Normalize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        return value.Trim().ToLowerInvariant() switch
+        {
+            Direct => Direct,
+            Derived => Derived,
+            Mixed => Mixed,
+            _ => throw new ArgumentOutOfRangeException(nameof(value), value, "Unsupported expiry date source."),
+        };
+    }
+
+    public static (int? ShelfLifeDays, string? Source) NormalizeProvenance(
+        int? shelfLifeDays,
+        string? source,
+        DateOnly? productionDate,
+        DateOnly? expiryDate)
+    {
+        var normalizedSource = Normalize(source);
+        return normalizedSource switch
+        {
+            Direct when expiryDate is not null => (null, Direct),
+            Derived when shelfLifeDays is > 0 and <= 3660
+                && productionDate is not null
+                && expiryDate is not null
+                && expiryDate.Value.DayNumber - productionDate.Value.DayNumber == shelfLifeDays => (shelfLifeDays, Derived),
+            Mixed when expiryDate is not null => (null, Mixed),
+            _ => (null, null),
+        };
     }
 }

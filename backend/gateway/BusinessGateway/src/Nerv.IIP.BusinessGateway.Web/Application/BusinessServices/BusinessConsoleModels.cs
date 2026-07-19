@@ -820,7 +820,8 @@ public sealed record BusinessConsoleInventoryAvailabilityRequest(
     string? SerialNo,
     string? QualityStatus,
     string? OwnerType,
-    string? OwnerId);
+    string? OwnerId,
+    DateOnly? AsOfDate = null);
 
 public sealed record BusinessConsoleInventoryAvailabilityResponse(
     string OrganizationId,
@@ -848,7 +849,21 @@ public sealed record BusinessConsoleInventoryAvailabilityLineResponse(
     string? OwnerId,
     decimal OnHandQuantity,
     decimal ReservedQuantity,
-    decimal AvailableQuantity);
+    decimal AvailableQuantity,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null,
+    int? ShelfLifeDays = null,
+    string? ExpiryDateSource = null,
+    bool IsExpired = false,
+    bool IsBlocked = false,
+    string? BlockReasonCode = null,
+    string? BlockReason = null,
+    bool MovementAllowed = false,
+    string? MovementBlockReasonCode = null,
+    string? MovementBlockReason = null,
+    bool CountAllowed = false,
+    string? CountBlockReasonCode = null,
+    string? CountBlockReason = null);
 
 public sealed record BusinessConsoleInventoryExpiryAlertsRequest(
     string OrganizationId,
@@ -858,10 +873,18 @@ public sealed record BusinessConsoleInventoryExpiryAlertsRequest(
     string? LocationCode,
     DateOnly? AsOfDate,
     int? NearExpiryThresholdDays,
-    bool IncludeZeroAvailable = false);
+    bool IncludeZeroAvailable = false,
+    int Page = 1,
+    int PageSize = 50);
 
 public sealed record BusinessConsoleInventoryExpiryAlertsResponse(
-    IReadOnlyCollection<BusinessConsoleInventoryExpiryAlertLineResponse> Items);
+    IReadOnlyCollection<BusinessConsoleInventoryExpiryAlertLineResponse> Items,
+    int TotalCount = 0,
+    int ExpiredCount = 0,
+    int NearExpiryCount = 0,
+    int SkuCount = 0,
+    int Page = 1,
+    int PageSize = 50);
 
 public sealed record BusinessConsoleInventoryExpiryAlertLineResponse(
     string SkuCode,
@@ -880,7 +903,18 @@ public sealed record BusinessConsoleInventoryExpiryAlertLineResponse(
     bool IsNearExpiry,
     decimal OnHandQuantity,
     decimal ReservedQuantity,
-    decimal AvailableQuantity);
+    decimal AvailableQuantity,
+    int? ShelfLifeDays = null,
+    string? ExpiryDateSource = null,
+    bool IsBlocked = false,
+    string? BlockReasonCode = null,
+    string? BlockReason = null,
+    bool MovementAllowed = false,
+    string? MovementBlockReasonCode = null,
+    string? MovementBlockReason = null,
+    bool CountAllowed = false,
+    string? CountBlockReasonCode = null,
+    string? CountBlockReason = null);
 
 public sealed record BusinessConsolePostStockMovementRequest(
     string OrganizationId,

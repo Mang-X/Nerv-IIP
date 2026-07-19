@@ -181,6 +181,20 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleI
     onHandQuantity?: number;
     reservedQuantity?: number;
     availableQuantity?: number;
+    productionDate?: string | null;
+    expiryDate?: string | null;
+    shelfLifeDays?: number | null;
+    expiryDateSource?: string | null;
+    isExpired?: boolean;
+    isBlocked?: boolean;
+    blockReasonCode?: string | null;
+    blockReason?: string | null;
+    movementAllowed?: boolean;
+    movementBlockReasonCode?: string | null;
+    movementBlockReason?: string | null;
+    countAllowed?: boolean;
+    countBlockReasonCode?: string | null;
+    countBlockReason?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundOrderListRequest = {
@@ -4920,6 +4934,12 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryExpiryA
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryExpiryAlertsResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryExpiryAlertLineResponse>;
+    totalCount?: number;
+    expiredCount?: number;
+    nearExpiryCount?: number;
+    skuCount?: number;
+    page?: number;
+    pageSize?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryExpiryAlertLineResponse = {
@@ -4940,6 +4960,17 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleI
     onHandQuantity?: number;
     reservedQuantity?: number;
     availableQuantity?: number;
+    shelfLifeDays?: number | null;
+    expiryDateSource?: string | null;
+    isBlocked?: boolean;
+    blockReasonCode?: string | null;
+    blockReason?: string | null;
+    movementAllowed?: boolean;
+    movementBlockReasonCode?: string | null;
+    movementBlockReason?: string | null;
+    countAllowed?: boolean;
+    countBlockReasonCode?: string | null;
+    countBlockReason?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryExpiryAlertsRequest = {
@@ -14863,6 +14894,7 @@ export type GetBusinessConsoleInventoryAvailabilityData = {
         qualityStatus?: string | null;
         ownerType?: string | null;
         ownerId?: string | null;
+        asOfDate?: string | null;
     };
     url: '/api/business-console/v1/inventory/availability';
 };
@@ -14899,6 +14931,8 @@ export type ListBusinessConsoleInventoryExpiryAlertsData = {
         asOfDate?: string | null;
         nearExpiryThresholdDays?: number | null;
         includeZeroAvailable?: boolean;
+        page?: number;
+        pageSize?: number;
     };
     url: '/api/business-console/v1/inventory/expiry-alerts';
 };

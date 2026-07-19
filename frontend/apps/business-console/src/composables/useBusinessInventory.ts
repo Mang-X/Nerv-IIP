@@ -2,16 +2,19 @@ import {
   confirmBusinessConsoleInventoryCountAdjustmentMutationOptions,
   createBusinessConsoleInventoryCountTaskMutationOptions,
   getBusinessConsoleInventoryAvailabilityQueryOptions,
+  listBusinessConsoleInventoryExpiryAlertsQueryOptions,
   postBusinessConsoleInventoryMovementMutationOptions,
   type BusinessConsoleConfirmStockCountAdjustmentRequest,
   type BusinessConsoleCreateStockCountTaskRequest,
   type BusinessConsoleInventoryAvailabilityEnvelope,
   type BusinessConsoleInventoryAvailabilityLineResponse,
   type BusinessConsoleInventoryAvailabilityResponse,
+  type BusinessConsoleInventoryExpiryAlertLineResponse,
+  type BusinessConsoleInventoryExpiryAlertsResponse,
   type BusinessConsolePostStockMovementRequest,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { bindBusinessContext, type BusinessContextFields } from './businessContextBinding'
 
 export interface InventoryAvailabilityFilters {
@@ -30,23 +33,61 @@ export interface InventoryAvailabilityFilters {
 
 export interface InventoryActionContext extends BusinessContextFields {}
 
+export interface InventoryExpiryFilters extends BusinessContextFields {
+  siteCode: string
+  skuCode?: string
+  locationCode?: string
+}
+
+export function buildInventoryExpiryAlertsQuery(
+  filters: InventoryExpiryFilters,
+  page = 1,
+  pageSize = 50,
+) {
+  return {
+    organizationId: filters.organizationId,
+    environmentId: filters.environmentId,
+    siteCode: filters.siteCode,
+    ...(filters.skuCode ? { skuCode: filters.skuCode } : {}),
+    ...(filters.locationCode ? { locationCode: filters.locationCode } : {}),
+    nearExpiryThresholdDays: 30,
+    includeZeroAvailable: true,
+    page,
+    pageSize,
+  }
+}
+
+export function inventoryExpiryPagingScope(filters: InventoryExpiryFilters) {
+  return [
+    filters.organizationId,
+    filters.environmentId,
+    filters.siteCode,
+    filters.skuCode,
+    filters.locationCode,
+  ]
+}
+
 function defaultActionContext(): InventoryActionContext {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+    }),
+  )
 }
 
 function defaultAvailabilityFilters(): InventoryAvailabilityFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    skuCode: '',
-    uomCode: '',
-    siteCode: '',
-    qualityStatus: 'available',
-    ownerType: 'owned',
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      skuCode: '',
+      uomCode: '',
+      siteCode: '',
+      qualityStatus: 'available',
+      ownerType: 'owned',
+    }),
+  )
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -122,7 +163,59 @@ export function useInventoryAvailability() {
     ),
     availabilityPending: availabilityQuery.isLoading,
     filters,
-    refreshAvailability: () => availabilityEnabled.value ? availabilityQuery.refetch() : Promise.resolve(),
+    refreshAvailability: () =>
+      availabilityEnabled.value ? availabilityQuery.refetch() : Promise.resolve(),
+  }
+}
+
+export function useInventoryExpiryAlerts(enabledWhen: () => boolean = () => true) {
+  const filters = bindBusinessContext(
+    reactive<InventoryExpiryFilters>({
+      organizationId: '',
+      environmentId: '',
+      siteCode: '',
+    }),
+  )
+  const page = shallowRef(1)
+  const pageSize = shallowRef(50)
+  const enabled = computed(
+    () =>
+      enabledWhen() &&
+      filters.organizationId.trim().length > 0 &&
+      filters.environmentId.trim().length > 0 &&
+      filters.siteCode.trim().length > 0,
+  )
+  const query = useQuery(() => ({
+    ...listBusinessConsoleInventoryExpiryAlertsQueryOptions({
+      query: buildInventoryExpiryAlertsQuery(filters, page.value, pageSize.value),
+    }),
+    enabled: enabled.value,
+  }))
+  const response = computed<BusinessConsoleInventoryExpiryAlertsResponse | undefined>(() => {
+    if (!query.data.value?.success) return undefined
+    return query.data.value.data ?? undefined
+  })
+  watch(
+    () => inventoryExpiryPagingScope(filters),
+    () => {
+      page.value = 1
+    },
+    { flush: 'sync' },
+  )
+
+  return {
+    filters,
+    expiryAlertsResponse: response,
+    expiryAlerts: computed<BusinessConsoleInventoryExpiryAlertLineResponse[]>(
+      () => response.value?.items ?? [],
+    ),
+    expiryAlertsError: query.error,
+    expiryAlertsPending: query.isLoading,
+    expiryAlertsPage: page,
+    expiryAlertsPageSize: pageSize,
+    expiryAlertsTotal: computed(() => response.value?.totalCount ?? 0),
+    expiryAlertsSuccessful: computed(() => response.value !== undefined && !query.error.value),
+    refreshExpiryAlerts: () => (enabled.value ? query.refetch() : Promise.resolve()),
   }
 }
 
@@ -132,7 +225,9 @@ export function useInventoryMovement() {
     ...postBusinessConsoleInventoryMovementMutationOptions(),
     onSuccess() {
       void queryCache
-        .invalidateQueries({ predicate: isBusinessQuery('getBusinessConsoleInventoryAvailability') })
+        .invalidateQueries({
+          predicate: isBusinessQuery('getBusinessConsoleInventoryAvailability'),
+        })
         .catch(ignoreBackgroundError)
     },
   })
@@ -148,12 +243,16 @@ export function useInventoryMovement() {
 export function useInventoryCounts() {
   const filters = defaultActionContext()
   const queryCache = useQueryCache()
-  const createCountTaskMutation = useMutation(createBusinessConsoleInventoryCountTaskMutationOptions())
+  const createCountTaskMutation = useMutation(
+    createBusinessConsoleInventoryCountTaskMutationOptions(),
+  )
   const confirmAdjustmentMutation = useMutation({
     ...confirmBusinessConsoleInventoryCountAdjustmentMutationOptions(),
     onSuccess() {
       void queryCache
-        .invalidateQueries({ predicate: isBusinessQuery('getBusinessConsoleInventoryAvailability') })
+        .invalidateQueries({
+          predicate: isBusinessQuery('getBusinessConsoleInventoryAvailability'),
+        })
         .catch(ignoreBackgroundError)
     },
   })

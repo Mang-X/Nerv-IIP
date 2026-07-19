@@ -142,8 +142,14 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
                 ownerType,
                 request.OwnerId,
                 productionDate,
-                expiryDate);
+                expiryDate,
+                source.ShelfLifeDays,
+                source.ExpiryDateSource);
             dbContext.StockLedgers.Add(target);
+        }
+        else
+        {
+            target.MergeExpiryProvenance(source.ShelfLifeDays, source.ExpiryDateSource);
         }
 
         var inbound = StockMovement.Post(

@@ -107,7 +107,8 @@ public sealed record GetStockAvailabilityRequest(
     string? SerialNo,
     string? QualityStatus,
     string? OwnerType,
-    string? OwnerId);
+    string? OwnerId,
+    DateOnly? AsOfDate = null);
 
 public sealed record CreateStockCountTaskRequest(
     string OrganizationId,
@@ -200,7 +201,9 @@ public sealed record StockExpiryAlertsRequest(
     string? LocationCode = null,
     DateOnly? AsOfDate = null,
     int? NearExpiryThresholdDays = null,
-    bool IncludeZeroAvailable = false);
+    bool IncludeZeroAvailable = false,
+    int Page = 1,
+    int PageSize = 50);
 
 public sealed record ReleaseStockReservationRequest(StockReservationId ReservationId, decimal Quantity);
 
@@ -320,7 +323,8 @@ public sealed class GetStockAvailabilityEndpoint(ISender sender)
             req.SerialNo,
             req.QualityStatus,
             req.OwnerType,
-            req.OwnerId), ct);
+            req.OwnerId,
+            req.AsOfDate), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -419,7 +423,9 @@ public sealed class ListStockExpiryAlertsEndpoint(ISender sender)
             req.LocationCode,
             req.AsOfDate,
             req.NearExpiryThresholdDays,
-            req.IncludeZeroAvailable), ct);
+            req.IncludeZeroAvailable,
+            req.Page,
+            req.PageSize), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }

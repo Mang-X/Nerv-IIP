@@ -1,17 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { shallowRef } from 'vue'
+import { nextTick, shallowRef, watchEffect } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
   confirmBusinessConsoleInventoryCountAdjustmentMutationOptions,
   createBusinessConsoleInventoryCountTaskMutationOptions,
   getBusinessConsoleInventoryAvailabilityQueryOptions,
+  listBusinessConsoleInventoryExpiryAlertsQueryOptions,
   postBusinessConsoleInventoryMovementMutationOptions,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   useInventoryAvailability,
   useInventoryCounts,
+  useInventoryExpiryAlerts,
   useInventoryMovement,
 } from './useBusinessInventory'
 
@@ -38,6 +40,10 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'getBusinessConsoleInventoryAvailability' }],
     query: vi.fn(),
   })),
+  listBusinessConsoleInventoryExpiryAlertsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleInventoryExpiryAlerts' }],
+    query: vi.fn(),
+  })),
   postBusinessConsoleInventoryMovementMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
@@ -57,10 +63,13 @@ vi.mock('@pinia/colada', () => ({
     }),
   })),
   useQuery: vi.fn((optionsFactory) => {
-    const options = optionsFactory()
-    const key = Array.isArray(options.key) ? options.key[0] : undefined
-    const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
-    coladaState.queryFactoriesById.set(id, optionsFactory)
+    let id = ''
+    watchEffect(() => {
+      const options = optionsFactory()
+      const key = Array.isArray(options.key) ? options.key[0] : undefined
+      id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
+      coladaState.queryFactoriesById.set(id, optionsFactory)
+    })
 
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
@@ -153,9 +162,71 @@ describe('business inventory composables', () => {
     expect(filters.skuCode).toBe('')
     expect(filters.siteCode).toBe('')
 
-    const options = coladaState.queryFactoriesById.get('getBusinessConsoleInventoryAvailability')?.()
+    const options = coladaState.queryFactoriesById.get(
+      'getBusinessConsoleInventoryAvailability',
+    )?.()
 
     expect(options).toMatchObject({ enabled: false })
+  })
+
+  it('resets real expiry pagination for every server paging scope change', async () => {
+    const context = useBusinessContextStore()
+    const expiry = useInventoryExpiryAlerts()
+    const scopeChanges = [
+      () => context.patchContext({ organizationId: 'org-002' }),
+      () => context.patchContext({ environmentId: 'env-stage' }),
+      () => {
+        expiry.filters.siteCode = 'S2'
+      },
+      () => {
+        expiry.filters.skuCode = 'SKU-002'
+      },
+      () => {
+        expiry.filters.locationCode = 'B-02'
+      },
+    ]
+
+    for (const changeScope of scopeChanges) {
+      expiry.expiryAlertsPage.value = 4
+      await nextTick()
+      vi.mocked(listBusinessConsoleInventoryExpiryAlertsQueryOptions).mockClear()
+      changeScope()
+      await nextTick()
+      expect(expiry.expiryAlertsPage.value).toBe(1)
+      const queries = vi
+        .mocked(listBusinessConsoleInventoryExpiryAlertsQueryOptions)
+        .mock.calls.map(([options]) => options.query)
+      expect(queries.length).toBeGreaterThan(0)
+      expect(queries.every((query) => query.page === 1)).toBe(true)
+      expect(queries.at(-1)).toEqual({
+        organizationId: context.organizationId,
+        environmentId: context.environmentId,
+        siteCode: expiry.filters.siteCode,
+        ...(expiry.filters.skuCode ? { skuCode: expiry.filters.skuCode } : {}),
+        ...(expiry.filters.locationCode ? { locationCode: expiry.filters.locationCode } : {}),
+        nearExpiryThresholdDays: 30,
+        includeZeroAvailable: true,
+        page: 1,
+        pageSize: 50,
+      })
+    }
+
+    expiry.expiryAlertsPage.value = 3
+    expiry.expiryAlertsPageSize.value = 100
+    coladaState.queryFactoriesById.get('listBusinessConsoleInventoryExpiryAlerts')?.()
+    expect(listBusinessConsoleInventoryExpiryAlertsQueryOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-002',
+        environmentId: 'env-stage',
+        siteCode: 'S2',
+        skuCode: 'SKU-002',
+        locationCode: 'B-02',
+        nearExpiryThresholdDays: 30,
+        includeZeroAvailable: true,
+        page: 3,
+        pageSize: 100,
+      },
+    })
   })
 
   it('submits inventory movements with the provided body', async () => {

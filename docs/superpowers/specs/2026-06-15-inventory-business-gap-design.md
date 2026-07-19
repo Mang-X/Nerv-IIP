@@ -54,3 +54,26 @@ Focused tests must prove:
 - open count tasks freeze movements, confirmation or cancellation releases the freeze, and stale ledger versions require recount;
 - above-threshold count adjustments leave the ledger unchanged until an approved `ApprovalCompleted` event posts the movement; rejection/return voids the adjustment and requires recount;
 - Quality inspection passed/rejected events create status-transfer movements through public contracts.
+
+## Business Console expiry presentation (MAN-449 / #803)
+
+The Business Console inventory lots and availability views consume the existing
+BusinessGateway `GET /api/business-console/v1/inventory/expiry-alerts` read
+facade for a real 30-day near-expiry view. Shared frontend expiry presentation
+uses UTC calendar-day comparison and the common thresholds `>90` days normal,
+`30–90` days near, `<30` days critical, and negative days expired. The pages
+show the returned `productionDate`/`expiryDate`/`daysUntilExpiry` facts with a
+text status badge. Inventory persists whether expiry was directly supplied or
+derived from production date plus shelf life; historical or mixed-provenance
+rows remain explicitly unknown rather than guessed. The availability contract
+returns these facts at its real ledger dimension grain, so the default lots and
+availability tables can render the complete threshold range without joining or
+reconstructing alert rows. The FEFO explanation remains attached to the expiry
+column header.
+
+The expiry-alert facade accepts `page`/`pageSize`, returns the real filtered
+`totalCount`, aggregate expired/near-expiry/SKU counts, and pages in the service.
+Both availability and alert lines return backend-derived blocked state,
+operation availability, and reason codes/text. Console movement, WMS outbound,
+and count entry points are disabled only from those returned operation fields;
+the frontend does not infer authorization or business blocking from dates.

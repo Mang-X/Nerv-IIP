@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AvailabilityPage from './availability.vue'
@@ -13,13 +13,22 @@ const inventoryState = vi.hoisted(() => ({
   confirmAdjustment: vi.fn(),
   createCountTask: vi.fn(),
   postMovement: vi.fn(),
+  expiryPage: undefined as { value: number } | undefined,
+  expiryPageSize: undefined as { value: number } | undefined,
+  expiryFilters: undefined as Record<string, string | undefined> | undefined,
+  availabilityError: undefined as { value: unknown } | undefined,
+  availabilityRows: undefined as { value: Array<Record<string, unknown>> } | undefined,
+  notifyError: vi.fn(),
 }))
 
 const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }))
 const routerState = vi.hoisted(() => ({ push: vi.fn() }))
 
 vi.mock('vue-router', () => ({
-  RouterLink: { props: ['to'], template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>' },
+  RouterLink: {
+    props: ['to'],
+    template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
+  },
   useRoute: () => routeState,
   useRouter: () => routerState,
 }))
@@ -38,25 +47,91 @@ vi.mock('@/composables/useBusinessInventory', () => ({
     inventoryState.availabilityFilters = filters
 
     return {
-      availability: computed(() => ({ onHandQuantity: 10, availableQuantity: 7, reservedQuantity: 2 })),
-      availabilityError: ref(undefined),
-      availabilityLines: computed(() => [
-        {
-          locationCode: 'A-01',
-          lotNo: 'LOT-001',
-          serialNo: 'SN-001',
-          qualityStatus: 'available',
-          ownerType: 'owned',
-          reservedQuantity: 2,
-          onHandQuantity: 10,
-          availableQuantity: 7,
-        },
-      ]),
+      availability: computed(() => ({
+        onHandQuantity: 10,
+        availableQuantity: 7,
+        reservedQuantity: 2,
+      })),
+      availabilityError: (inventoryState.availabilityError = ref(undefined)),
+      availabilityLines: computed(
+        () =>
+          (inventoryState.availabilityRows ??= ref([
+            {
+              locationCode: 'A-01',
+              lotNo: 'LOT-001',
+              serialNo: 'SN-001',
+              qualityStatus: 'available',
+              ownerType: 'owned',
+              reservedQuantity: 2,
+              onHandQuantity: 10,
+              availableQuantity: 7,
+              productionDate: '2026-04-20',
+              expiryDate: '2026-07-18',
+              shelfLifeDays: 89,
+              expiryDateSource: 'derived',
+              isExpired: true,
+              isBlocked: true,
+              blockReason: '已过期，常规移动需授权放行。',
+              movementAllowed: false,
+              countAllowed: false,
+              countBlockReason: '同一盘点定位存在多个生产日期或效期，请先缩小到唯一库存台账。',
+            },
+          ])).value,
+      ),
       availabilityPending: ref(false),
       filters,
       refreshAvailability: vi.fn(),
     }
   },
+  useInventoryExpiryAlerts: () => ({
+    expiryAlerts: computed(() => [
+      {
+        skuCode: 'SKU-001',
+        uomCode: 'EA',
+        siteCode: 'S1',
+        locationCode: 'A-01',
+        lotNo: 'LOT-001',
+        serialNo: 'SN-001',
+        qualityStatus: 'available',
+        ownerType: 'owned',
+        ownerId: null,
+        productionDate: '2026-06-15',
+        expiryDate: '2026-07-25',
+        daysUntilExpiry: 6,
+        isExpired: false,
+        isNearExpiry: true,
+        shelfLifeDays: 40,
+        expiryDateSource: 'direct',
+        isBlocked: false,
+        movementAllowed: true,
+        countAllowed: true,
+        reservedQuantity: 2,
+        onHandQuantity: 10,
+        availableQuantity: 7,
+      },
+    ]),
+    expiryAlertsError: ref(undefined),
+    expiryAlertsResponse: computed(() => ({
+      items: [],
+      totalCount: 51,
+      expiredCount: 8,
+      nearExpiryCount: 43,
+      skuCount: 12,
+      page: 1,
+      pageSize: 50,
+    })),
+    expiryAlertsPage: (inventoryState.expiryPage = ref(1)),
+    expiryAlertsPageSize: (inventoryState.expiryPageSize = ref(50)),
+    expiryAlertsTotal: computed(() => 51),
+    expiryAlertsPending: ref(false),
+    expiryAlertsSuccessful: ref(true),
+    filters: (inventoryState.expiryFilters = {
+      environmentId: 'env-dev',
+      organizationId: 'org-001',
+      siteCode: 'S1',
+    }),
+    refreshExpiryAlerts: vi.fn(),
+  }),
   useInventoryCounts: () => ({
     confirmAdjustment: inventoryState.confirmAdjustment,
     confirmAdjustmentError: ref(undefined),
@@ -76,25 +151,37 @@ vi.mock('@/composables/useBusinessInventory', () => ({
   }),
 }))
 
+vi.mock('@/utils/notify', () => ({ notifyError: inventoryState.notifyError }))
+
 const uiStubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
   PageHeader: {
     props: ['title', 'breadcrumbs', 'count'],
-    template: '<header><h1>{{ title }}</h1><slot name="actions" /></header>',
+    template:
+      '<header><h1>{{ title }}</h1><span data-page-count>{{ count }}</span><slot name="actions" /></header>',
   },
   SectionCards: { template: '<div><slot /></div>' },
-  SectionCard: { props: ['description', 'value', 'hint'], template: '<div>{{ description }} {{ value }}</div>' },
+  SectionCard: {
+    props: ['description', 'value', 'hint'],
+    template: '<div>{{ description }} {{ value }}</div>',
+  },
   Toolbar: { props: ['showSearch'], template: '<div><slot name="filters" /></div>' },
   // NvDataTable stub renders rows + the cell-actions slot, exposing a design-system table marker.
   NvDataTable: {
-    props: ['rows', 'columns', 'rowKey'],
-    template: `<table data-ui-table><tbody><tr v-for="(row, i) in rows" :key="i">
+    props: ['rows', 'columns', 'rowKey', 'pagination', 'emptyMessage'],
+    template: `<table data-ui-table :data-pagination="String(pagination)" :data-empty-message="emptyMessage"><tbody><tr v-for="(row, i) in rows" :key="i">
       <td v-for="column in columns" :key="column.key" :data-cell="column.key">
         <slot :name="'cell-' + column.key" :row="row">{{ column.accessor ? column.accessor(row) : row[column.key] }}</slot>
       </td>
     </tr></tbody></table>`,
   },
   DataTablePagination: true,
+  NvPagination: {
+    props: ['page', 'pageSize', 'totalItems', 'showEdges', 'siblingCount'],
+    emits: ['update:page', 'update:pageSize'],
+    template:
+      '<div data-pagination-total :data-show-edges="String(showEdges)" :data-sibling-count="String(siblingCount)">{{ totalItems }}<button data-next-page @click="$emit(\'update:page\', page + 1)">下一页</button><button data-page-size @click="$emit(\'update:pageSize\', 100); $emit(\'update:page\', 1)">100/页</button></div>',
+  },
   RowActions: { props: ['label'], template: '<div><slot /></div>' },
   DropdownMenuItem: { template: '<button v-bind="$attrs"><slot /></button>' },
   DropdownMenuSeparator: true,
@@ -104,14 +191,18 @@ const uiStubs = {
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogTitle: { template: '<h2><slot /></h2>' },
   NvDialogDescription: { template: '<p><slot /></p>' },
-  NvButton: { template: '<button v-bind="$attrs"><slot /></button>' },
+  NvButton: {
+    props: ['disabled'],
+    template: '<button :disabled="disabled" v-bind="$attrs"><slot /></button>',
+  },
   Field: { template: '<div><slot /></div>' },
   FieldGroup: { template: '<div><slot /></div>' },
   FieldLabel: { template: '<label><slot /></label>' },
   NvInput: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    template:
+      '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
   NvSelect: { template: '<div><slot /></div>' },
   NvSelectContent: { template: '<div><slot /></div>' },
@@ -127,7 +218,10 @@ function mountInventoryPage(component: unknown) {
       plugins: [createPinia()],
       stubs: {
         ...uiStubs,
-        RouterLink: { props: ['to'], template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>' },
+        RouterLink: {
+          props: ['to'],
+          template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
+        },
       },
     },
   })
@@ -140,6 +234,8 @@ describe('inventory workflow pages', () => {
     inventoryState.confirmAdjustment.mockReset()
     inventoryState.createCountTask.mockReset()
     inventoryState.postMovement.mockReset()
+    inventoryState.notifyError.mockReset()
+    inventoryState.availabilityRows = undefined
   })
 
   it('uses design-system table components for local stock count queue', () => {
@@ -154,30 +250,153 @@ describe('inventory workflow pages', () => {
     expect(wrapper.find('[data-ui-table]').exists()).toBe(true)
   })
 
-  it('links inventory lot context to barcode scan records', () => {
+  it('links inventory lot context to barcode scan records', async () => {
     const wrapper = mountInventoryPage(AvailabilityPage)
 
-    const link = wrapper.findAll('[data-router-link]').find((item) => item.text().includes('扫码记录'))
+    const link = wrapper
+      .findAll('[data-router-link]')
+      .find((item) => item.text().includes('扫码记录'))
     expect(link?.attributes('data-to')).toContain('/barcode/scans')
     expect(link?.attributes('data-to')).toContain('inventory.count')
     expect(link?.attributes('data-to')).toContain('LOT-001')
+    expect(wrapper.get('[data-cell="productionDate"]').text()).toBe('2026-04-20')
+    expect(wrapper.get('[data-cell="expiryDate"]').text()).toBe('2026-07-18')
+    expect(wrapper.get('[data-cell="shelfLife"]').text()).toBe('89 天')
+    expect(wrapper.get('[data-cell="expirySource"]').text()).toBe('系统推导')
+    expect(wrapper.text()).toContain('已过期，常规移动需授权放行。')
+    expect(wrapper.text()).toContain('同一盘点定位存在多个生产日期或效期，请先缩小到唯一库存台账。')
+    expect(wrapper.text()).toContain('后端未提供移动禁用原因，请稍后重试或联系管理员。')
+    expect(
+      wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('发起移动'))
+        ?.attributes(),
+    ).toHaveProperty('disabled')
+    expect(wrapper.text()).not.toContain('facade 未提供 total')
+    expect(wrapper.get('[data-ui-table]').attributes('data-pagination')).toBe('false')
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('效期预警'))!
+      .trigger('click')
+    expect(wrapper.get('[data-cell="productionDate"]').text()).toBe('2026-06-15')
+    expect(wrapper.get('[data-cell="expiryDate"]').text()).toBe('2026-07-25')
+    expect(wrapper.get('[data-pagination-total]').text()).toContain('51')
+    expect(wrapper.get('[data-pagination-total]').attributes('data-show-edges')).toBe('false')
+    expect(wrapper.get('[data-pagination-total]').attributes('data-sibling-count')).toBe('0')
+    await wrapper.get('[data-next-page]').trigger('click')
+    expect(inventoryState.expiryPage?.value).toBe(2)
+    await wrapper.get('[data-page-size]').trigger('click')
+    expect(inventoryState.expiryPageSize?.value).toBe(100)
+    expect(inventoryState.expiryPage?.value).toBe(1)
   })
 
-  it('renders a facade-backed lot and reservation page with traceability links', () => {
+  it('uses a business-safe toast instead of exposing raw availability errors', async () => {
+    const wrapper = mountInventoryPage(AvailabilityPage)
+    const error = new Error('HTTP 500 downstream stack trace')
+
+    inventoryState.availabilityError!.value = error
+    await nextTick()
+
+    expect(inventoryState.notifyError).toHaveBeenCalledWith(
+      error,
+      '库存可用量加载失败，请稍后重试。',
+    )
+    expect(wrapper.get('[data-ui-table]').attributes('data-empty-message')).toBe(
+      '库存可用量加载失败，请稍后重试。',
+    )
+    expect(wrapper.text()).not.toContain('downstream stack trace')
+  })
+
+  it('distinguishes a selected factory from business context still loading', async () => {
+    const wrapper = mountInventoryPage(AvailabilityPage)
+    inventoryState.expiryFilters!.organizationId = ''
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('效期预警'))!
+      .trigger('click')
+    await nextTick()
+
+    expect(wrapper.get('[data-page-count]').text()).toBe('业务上下文加载中')
+    expect(wrapper.get('[data-ui-table]').attributes('data-empty-message')).toBe(
+      '业务上下文加载中，请稍候。',
+    )
+    expect(wrapper.text()).not.toContain('请选择工厂')
+  })
+
+  it('shows count-only operation reasons and the honest missing-reason fallback', async () => {
+    const wrapper = mountInventoryPage(AvailabilityPage)
+    const row = inventoryState.availabilityRows!.value[0]!
+    row.movementAllowed = true
+    row.countAllowed = false
+    row.countBlockReason = '该定位存在多个效期台账，请缩小盘点范围。'
+    await nextTick()
+
+    expect(wrapper.get('[data-operation-block-reason]').text()).toBe(
+      '该定位存在多个效期台账，请缩小盘点范围。',
+    )
+
+    row.countBlockReason = undefined
+    await nextTick()
+    expect(wrapper.get('[data-operation-block-reason]').text()).toBe(
+      '后端未提供盘点禁用原因，请稍后重试或联系管理员。',
+    )
+  })
+
+  it('renders a facade-backed lot and reservation page with traceability links', async () => {
     const wrapper = mountInventoryPage(LotsPage)
 
     expect(wrapper.text()).toContain('批次与预留')
-    expect(wrapper.text()).toContain('后端缺口')
     expect(wrapper.text()).toContain('LOT-001')
     expect(wrapper.text()).toContain('SN-001')
     expect(wrapper.get('[data-cell="reservedQuantity"]').text()).toBe('2')
+    expect(wrapper.get('[data-cell="productionDate"]').text()).toBe('2026-04-20')
+    expect(wrapper.get('[data-cell="expiryDate"]').text()).toBe('2026-07-18')
+    expect(wrapper.get('[data-cell="shelfLife"]').text()).toBe('89 天')
+    expect(wrapper.get('[data-cell="expirySource"]').text()).toBe('系统推导')
     expect(inventoryState.availabilityFilters?.qualityStatus).toBeUndefined()
 
-    const links = wrapper.findAll('[data-router-link]').map((link) => link.attributes('data-to') ?? '')
-    expect(links.some((to) => to.includes('/mes/traceability') && to.includes('batchOrSerial') && to.includes('SN-001'))).toBe(true)
-    expect(links.some((to) => to.includes('/barcode/scans') && to.includes('SN-001'))).toBe(true)
-    expect(links.some((to) => to.includes('/wms/picking') && to.includes('locationCode') && to.includes('A-01'))).toBe(true)
-    expect(links.some((to) => to.includes('/quality/inspections') && to.includes('batchNo') && to.includes('materialLotId') && to.includes('LOT-001'))).toBe(true)
+    const links = wrapper
+      .findAll('[data-router-link]')
+      .map((link) => link.attributes('data-to') ?? '')
+    expect(
+      links.some(
+        (to) =>
+          to.includes('/mes/traceability') && to.includes('batchOrSerial') && to.includes('SN-001'),
+      ),
+    ).toBe(true)
+    const disabledWms = wrapper.findAll('button').find((button) => button.text().trim() === 'WMS')
+    expect(disabledWms?.attributes()).toHaveProperty('disabled')
+    expect(wrapper.get('[data-operation-block-reason]').text()).toBe(
+      '后端未提供移动禁用原因，请稍后重试或联系管理员。',
+    )
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('效期预警'))!
+      .trigger('click')
+    expect(wrapper.get('[data-cell="productionDate"]').text()).toBe('2026-06-15')
+    expect(wrapper.get('[data-cell="expiryDate"]').text()).toBe('2026-07-25')
+    expect(wrapper.get('[data-pagination-total]').text()).toContain('51')
+    const nearExpiryLinks = wrapper
+      .findAll('[data-router-link]')
+      .map((link) => link.attributes('data-to') ?? '')
+    expect(nearExpiryLinks.some((to) => to.includes('/barcode/scans'))).toBe(true)
+    expect(
+      nearExpiryLinks.some(
+        (to) => to.includes('/wms/picking') && to.includes('locationCode') && to.includes('A-01'),
+      ),
+    ).toBe(true)
+    expect(
+      nearExpiryLinks.some(
+        (to) =>
+          to.includes('/quality/inspections') &&
+          to.includes('batchNo') &&
+          to.includes('materialLotId') &&
+          to.includes('LOT-001'),
+      ),
+    ).toBe(true)
   })
 
   it('generates a fresh idempotency key each time the same count task is adjusted', async () => {
@@ -190,11 +409,17 @@ describe('inventory workflow pages', () => {
     await wrapper.find('#count-task-site').setValue('S1')
     await wrapper.find('#count-task-location').setValue('A-01')
     await wrapper.findAll('form')[0]!.trigger('submit')
-    await wrapper.findAll('button').find((button) => button.text().includes('确认差异'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('确认差异'))!
+      .trigger('click')
     await wrapper.find('#count-adjust-quantity').setValue('5')
     await wrapper.findAll('form')[1]!.trigger('submit')
 
-    await wrapper.findAll('button').find((button) => button.text().includes('确认差异'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('确认差异'))!
+      .trigger('click')
     await wrapper.find('#count-adjust-quantity').setValue('6')
     await wrapper.findAll('form')[1]!.trigger('submit')
 

@@ -89,10 +89,11 @@ export {
   expiryDaysUntil,
   expiryTone,
   expiryToneFromDate,
+  expiryToneFromAlert,
   expiryToneLabel,
   isNearOrExpired,
 } from './inventory/expiry'
-export type { ExpiryTone } from './inventory/expiry'
+export type { ExpiryAlertLike, ExpiryTone } from './inventory/expiry'
 export {
   aggregateReceivingGateStatus,
   isReleasedForPutaway,

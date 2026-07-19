@@ -1474,6 +1474,7 @@
       "gateways": [
         "business"
       ],
+      "note": "MAN-449/#803 exposes ledger expiry provenance and backend operation availability through the existing additive facade contract.",
       "gatewayOperationIds": [
         "getBusinessConsoleInventoryAvailability"
       ]
@@ -1521,6 +1522,7 @@
       "gateways": [
         "business"
       ],
+      "note": "MAN-449/#803 exposes server paging, filtered totals, expiry provenance, and backend operation availability through the existing facade route.",
       "gatewayOperationIds": [
         "listBusinessConsoleInventoryExpiryAlerts"
       ]
