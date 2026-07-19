@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import QualityParetoPanel from '@/components/quality/QualityParetoPanel.vue'
+import QualitySpcCharts from '@/components/quality/QualitySpcCharts.vue'
 import { useQualityNcrs } from '@/composables/useBusinessQuality'
 import {
   buildQualityAnalysisSummary,
+  spcViolationTargetId,
   useQualitySpcAnalysis,
   type QualityAnalysisBucket,
   type QualitySpcViolation,
 } from '@/composables/useBusinessQualityAnalysis'
+import { friendlyErrorMessage } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -63,12 +67,6 @@ const spcViolationEmptyMessage = computed(() =>
     : '当前 SPC 范围没有判异。',
 )
 
-const paretoColumns: NvDataTableColumn<QualityAnalysisBucket>[] = [
-  { key: 'label', header: '缺陷原因', cellClass: 'font-medium' },
-  { key: 'count', header: 'NCR 数', align: 'end', width: 'w-24' },
-  { key: 'defectQuantity', header: '缺陷数量', align: 'end', width: 'w-28' },
-  { key: 'sharePercent', header: '缺陷占比', align: 'end', width: 'w-24' },
-]
 const dimensionColumns: NvDataTableColumn<QualityAnalysisBucket>[] = [
   { key: 'label', header: '对象', cellClass: 'font-medium' },
   { key: 'count', header: 'NCR 数', align: 'end', width: 'w-24' },
@@ -82,7 +80,7 @@ const spcViolationColumns: NvDataTableColumn<QualitySpcViolation>[] = [
 ]
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return error ? friendlyErrorMessage(error, '质量分析加载失败，请稍后重试。') : ''
 }
 function formatQuantity(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(2)
@@ -147,10 +145,6 @@ function spcViolationKey(row: QualitySpcViolation) {
       </template>
     </NvToolbar>
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
-      {{ listErrorMessage }}
-    </p>
-
     <div class="grid gap-4">
       <NvToolbar :show-search="false">
         <template #filters>
@@ -209,9 +203,12 @@ function spcViolationKey(row: QualitySpcViolation) {
         />
       </NvSectionCards>
 
-      <p v-if="spcErrorMessage" class="text-sm text-destructive" role="alert">
-        {{ spcErrorMessage }}
-      </p>
+      <QualitySpcCharts
+        :chart="spc.spcChart.value"
+        :pending="spc.spcPending.value"
+        :warmup="spc.spcWarmup.value"
+        :error-message="spcErrorMessage"
+      />
 
       <NvDataTable
         :columns="spcViolationColumns"
@@ -221,22 +218,21 @@ function spcViolationKey(row: QualitySpcViolation) {
         :searchable="false"
         :column-settings="false"
         :empty-message="spcViolationEmptyMessage"
-      />
+      >
+        <template #cell-rule="{ row }">
+          <span :id="spcViolationTargetId(row)" class="font-medium scroll-mt-24">{{
+            row.rule
+          }}</span>
+        </template>
+      </NvDataTable>
     </div>
 
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.7fr)]">
-      <NvDataTable
-        :columns="paretoColumns"
+      <QualityParetoPanel
         :rows="summary.defectPareto"
-        row-key="label"
-        :loading="ncrsPending"
-        :searchable="false"
-        :column-settings="false"
-        empty-message="当前返回窗口没有 NCR，暂无可汇总的缺陷原因。"
-      >
-        <template #cell-defectQuantity="{ row }">{{ formatQuantity(row.defectQuantity) }}</template>
-        <template #cell-sharePercent="{ row }">{{ row.sharePercent }}%</template>
-      </NvDataTable>
+        :pending="ncrsPending"
+        :error-message="listErrorMessage"
+      />
 
       <div class="grid gap-4">
         <NvDataTable

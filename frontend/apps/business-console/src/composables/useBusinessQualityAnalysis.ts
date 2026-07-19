@@ -39,6 +39,34 @@ export interface QualityAnalysisSummary {
   bySourceType: QualityAnalysisBucket[]
 }
 
+interface QualitySpcBaseChartRow extends Record<string, number | string> {
+  subgroup: string
+  centerLine: number
+  ucl: number
+  lcl: number
+}
+
+export interface QualitySpcXbarChartRow extends QualitySpcBaseChartRow {
+  xbar: number
+}
+
+export interface QualitySpcRangeChartRow extends QualitySpcBaseChartRow {
+  range: number
+}
+
+export interface QualitySpcViolationMarker {
+  key: string
+  label: string
+  message: string
+  targetId: string
+}
+
+export interface QualitySpcChartPresentation {
+  xbarRows: QualitySpcXbarChartRow[]
+  rangeRows: QualitySpcRangeChartRow[]
+  violationMarkers: QualitySpcViolationMarker[]
+}
+
 export interface QualitySpcFilters extends BusinessContextFields {
   skuCode: string
   characteristicCode: string
@@ -69,10 +97,18 @@ export function useQualitySpcAnalysis(initialFilters: Partial<QualitySpcFilters>
     filters,
     refreshSpc: () => refreshSpcQueries(filters, controlChartQuery, capabilityQuery),
     spcChart: computed(() => unwrapControlChart(controlChartQuery.data.value)),
-    spcError: computed(() => spcWarmup.value ? capabilityQuery.error.value : controlChartQuery.error.value ?? capabilityQuery.error.value),
-    spcPending: computed(() => controlChartQuery.isLoading.value || capabilityQuery.isLoading.value),
+    spcError: computed(() =>
+      spcWarmup.value
+        ? capabilityQuery.error.value
+        : (controlChartQuery.error.value ?? capabilityQuery.error.value),
+    ),
+    spcPending: computed(
+      () => controlChartQuery.isLoading.value || capabilityQuery.isLoading.value,
+    ),
     spcReady: computed(() => hasSpcScope(filters)),
-    spcViolations: computed(() => unwrapControlChart(controlChartQuery.data.value)?.ruleViolations ?? []),
+    spcViolations: computed(
+      () => unwrapControlChart(controlChartQuery.data.value)?.ruleViolations ?? [],
+    ),
     spcWarmup,
   }
 }
@@ -102,6 +138,103 @@ export function buildQualityAnalysisSummary(
   }
 }
 
+export function buildSpcChartPresentation(
+  chart: BusinessConsoleQualitySpcControlChartResponse,
+): QualitySpcChartPresentation {
+  const limits = chart.controlLimits
+  const subgroups = chart.subgroups ?? []
+
+  if (!hasCompleteControlLimits(limits)) {
+    return {
+      xbarRows: [],
+      rangeRows: [],
+      violationMarkers: buildViolationMarkers(chart.ruleViolations ?? []),
+    }
+  }
+
+  return {
+    xbarRows: subgroups.flatMap((subgroup) =>
+      isFiniteNumber(subgroup.index) && isFiniteNumber(subgroup.xbar)
+        ? [
+            {
+              subgroup: `子组 ${subgroup.index}`,
+              xbar: subgroup.xbar,
+              centerLine: limits.centerLine,
+              ucl: limits.xbarUpperControlLimit,
+              lcl: limits.xbarLowerControlLimit,
+            },
+          ]
+        : [],
+    ),
+    rangeRows: subgroups.flatMap((subgroup) =>
+      isFiniteNumber(subgroup.index) && isFiniteNumber(subgroup.range)
+        ? [
+            {
+              subgroup: `子组 ${subgroup.index}`,
+              range: subgroup.range,
+              centerLine: limits.averageRange,
+              ucl: limits.rangeUpperControlLimit,
+              lcl: limits.rangeLowerControlLimit,
+            },
+          ]
+        : [],
+    ),
+    violationMarkers: buildViolationMarkers(chart.ruleViolations ?? []),
+  }
+}
+
+export function buildParetoChartRows(buckets: ReadonlyArray<QualityAnalysisBucket>) {
+  return buckets.map((bucket) => ({
+    reason: bucket.label,
+    defectQuantity: bucket.defectQuantity,
+  }))
+}
+
+export function spcViolationTargetId(violation: QualitySpcViolation) {
+  return `spc-violation-${violation.rule ?? 'unknown'}-${violation.startSubgroupIndex ?? 0}-${violation.endSubgroupIndex ?? 0}`
+}
+
+function buildViolationMarkers(
+  violations: ReadonlyArray<BusinessConsoleQualitySpcRuleViolation>,
+): QualitySpcViolationMarker[] {
+  return violations.map((violation) => {
+    const start = violation.startSubgroupIndex ?? 0
+    const end = violation.endSubgroupIndex ?? start
+    const rule = violation.rule ?? 'unknown'
+    return {
+      key: `${rule}:${start}:${end}`,
+      label: start === end ? `子组 ${start}` : `子组 ${start}–${end}`,
+      message: violation.message?.trim() || '检测到 SPC 判异',
+      targetId: spcViolationTargetId(violation),
+    }
+  })
+}
+
+function hasCompleteControlLimits(
+  limits: BusinessConsoleQualitySpcControlChartResponse['controlLimits'],
+): limits is NonNullable<BusinessConsoleQualitySpcControlChartResponse['controlLimits']> & {
+  centerLine: number
+  averageRange: number
+  xbarUpperControlLimit: number
+  xbarLowerControlLimit: number
+  rangeUpperControlLimit: number
+  rangeLowerControlLimit: number
+} {
+  return Boolean(
+    limits &&
+    isFiniteNumber(limits.centerLine) &&
+    isFiniteNumber(limits.averageRange) &&
+    isFiniteNumber(limits.xbarUpperControlLimit) &&
+    isFiniteNumber(limits.xbarLowerControlLimit) &&
+    isFiniteNumber(limits.rangeUpperControlLimit) &&
+    isFiniteNumber(limits.rangeLowerControlLimit),
+  )
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
 type BucketMetric = 'count' | 'defectQuantity'
 
 interface SummarizeByOptions {
@@ -115,7 +248,7 @@ function summarizeBy(
   getLabel: (item: BusinessConsoleQualityItem) => string | null | undefined,
   options: SummarizeByOptions = {},
 ): QualityAnalysisBucket[] {
-  const buckets = new Map<string, { count: number, defectQuantity: number }>()
+  const buckets = new Map<string, { count: number; defectQuantity: number }>()
   const shareMetric = options.shareMetric ?? 'count'
   const sortMetric = options.sortMetric ?? 'count'
   const fallbackSortMetric: BucketMetric = sortMetric === 'count' ? 'defectQuantity' : 'count'
@@ -129,20 +262,26 @@ function summarizeBy(
     buckets.set(label, bucket)
   }
 
-  const shareDenominator = [...buckets.values()].reduce((total, bucket) => total + bucket[shareMetric], 0)
+  const shareDenominator = [...buckets.values()].reduce(
+    (total, bucket) => total + bucket[shareMetric],
+    0,
+  )
 
   return [...buckets.entries()]
     .map(([label, bucket]) => ({
       label,
       count: bucket.count,
       defectQuantity: bucket.defectQuantity,
-      sharePercent: shareDenominator ? Math.round((bucket[shareMetric] / shareDenominator) * 100) : 0,
+      sharePercent: shareDenominator
+        ? Math.round((bucket[shareMetric] / shareDenominator) * 100)
+        : 0,
     }))
-    .sort((left, right) =>
-      (unknownOrder ? unknownRank(left.label) - unknownRank(right.label) : 0) ||
-      right[sortMetric] - left[sortMetric] ||
-      right[fallbackSortMetric] - left[fallbackSortMetric] ||
-      left.label.localeCompare(right.label, 'zh-Hans-CN'),
+    .sort(
+      (left, right) =>
+        (unknownOrder ? unknownRank(left.label) - unknownRank(right.label) : 0) ||
+        right[sortMetric] - left[sortMetric] ||
+        right[fallbackSortMetric] - left[fallbackSortMetric] ||
+        left.label.localeCompare(right.label, 'zh-Hans-CN'),
     )
 }
 
@@ -172,23 +311,27 @@ function buildSampleNotice(sampledNcrCount: number, totalNcrCount: number) {
 }
 
 function defaultSpcFilters(initial: Partial<QualitySpcFilters> = {}): QualitySpcFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    skuCode: '',
-    characteristicCode: '',
-    workCenterId: '',
-    subgroupSize: 5,
-    take: 50,
-    ...initial,
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      skuCode: '',
+      characteristicCode: '',
+      workCenterId: '',
+      subgroupSize: 5,
+      take: 50,
+      ...initial,
+    }),
+  )
 }
 
 function hasSpcScope(filters: QualitySpcFilters) {
-  return hasBusinessContext(filters) &&
+  return (
+    hasBusinessContext(filters) &&
     filters.skuCode.trim().length > 0 &&
     filters.characteristicCode.trim().length > 0 &&
     filters.workCenterId.trim().length > 0
+  )
 }
 
 function toSpcQuery(filters: QualitySpcFilters) {
@@ -218,13 +361,13 @@ function toCapabilityQuery(filters: QualitySpcFilters) {
 function unwrapControlChart(
   envelope: BusinessConsoleQualitySpcControlChartEnvelope | undefined,
 ): BusinessConsoleQualitySpcControlChartResponse | null {
-  return envelope?.success ? envelope.data ?? null : null
+  return envelope?.success ? (envelope.data ?? null) : null
 }
 
 function unwrapCapability(
   envelope: BusinessConsoleQualityProcessCapabilityEnvelope | undefined,
 ): BusinessConsoleQualityProcessCapabilityResponse | null {
-  return envelope?.success ? envelope.data ?? null : null
+  return envelope?.success ? (envelope.data ?? null) : null
 }
 
 function refreshSpcQueries(
