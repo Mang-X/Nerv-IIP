@@ -17,6 +17,11 @@ const wms = vi.hoisted(() => ({
   supplierReturns: [] as unknown[],
   qualityGateStatus: undefined as string | undefined,
   isReleasedForPutaway: true,
+  permissionCodes: [
+    'business.wms.receipts.read',
+    'business.wms.receipts.manage',
+    'business.quality.inspection-records.read',
+  ] as string[],
   refreshReceivingQuality: vi.fn(),
 }))
 
@@ -30,6 +35,10 @@ vi.mock('vue-router', () => ({
     props: ['to'],
     template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
   },
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: wms.permissionCodes } }),
 }))
 
 vi.mock('@/composables/useBusinessWms', () => ({
@@ -129,6 +138,11 @@ describe('WMS operate actions', () => {
     wms.supplierReturns = []
     wms.qualityGateStatus = undefined
     wms.isReleasedForPutaway = true
+    wms.permissionCodes = [
+      'business.wms.receipts.read',
+      'business.wms.receipts.manage',
+      'business.quality.inspection-records.read',
+    ]
   })
 
   function setInput(selector: string, value: string) {
@@ -326,6 +340,9 @@ describe('WMS operate actions', () => {
     expect(wrapper.text()).toContain('检验完成前不能上架')
     expect(wrapper.text()).toContain('QA-STAGE-01')
     expect(wrapper.get('button[aria-label="上架 IB-1"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('a[aria-label="查看检验任务 IB-1"]').attributes('data-to')).toContain(
+      'sourceDocumentNo',
+    )
   })
 
   it('shows exempt receiving as released without inventing an inspection task', async () => {
@@ -349,10 +366,11 @@ describe('WMS operate actions', () => {
     expect(putawayLink.attributes('data-to')).toContain('/wms/putaway')
     expect(putawayLink.attributes('data-to')).toContain('inboundOrderNo')
     expect(putawayLink.attributes('data-to')).toContain('IB-1')
-    const taskLink = wrapper.get('a[aria-label="查看检验任务 IB-1"]')
-    expect(taskLink.attributes('data-to')).toContain('/quality/inspection-tasks')
-    expect(taskLink.attributes('data-to')).toContain('sourceDocumentNo')
-    expect(taskLink.attributes('data-to')).toContain('IB-1')
+    expect(putawayLink.attributes('data-to')).toContain('inboundOrderId')
+    expect(putawayLink.attributes('data-to')).toContain('ib-1')
+    expect(putawayLink.attributes('data-to')).toContain('create')
+    expect(wrapper.find('a[aria-label="查看检验任务 IB-1"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('免检无需检验任务')
   })
 
   it('shows conditional release as restricted putaway and rejected receiving with real return facts', async () => {
@@ -398,6 +416,14 @@ describe('WMS operate actions', () => {
     expect(wrapper.text()).toContain('退供应商')
     expect(wrapper.text()).toContain('RTS-IB-1-002')
     expect(wrapper.text()).toContain('QUAR-01')
+    expect(wrapper.find('a[aria-label="查看检验任务 IB-1"]').exists()).toBe(false)
+    const inspectionRecordLinks = wrapper
+      .findAll('[data-router-link]')
+      .map((link) => link.attributes('data-to') ?? '')
+      .filter((to) => to.includes('/quality/inspections'))
+    expect(inspectionRecordLinks).toHaveLength(2)
+    expect(inspectionRecordLinks.some((to) => to.includes('QI-1'))).toBe(true)
+    expect(inspectionRecordLinks.some((to) => to.includes('QI-2'))).toBe(true)
   })
 
   it('routes a conditionally released order to restricted putaway', async () => {
@@ -435,6 +461,44 @@ describe('WMS operate actions', () => {
 
     expect(wrapper.get('button[aria-label="上架 IB-1"]').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('WMS 尚未返回整单上架放行权限')
+  })
+
+  it('keeps putaway disabled for a read-only WMS principal', async () => {
+    wms.permissionCodes = ['business.wms.receipts.read', 'business.quality.inspection-records.read']
+    wms.qualityGateStatus = 'passed'
+    wms.receivingQualityGates = [
+      {
+        inboundOrderNo: 'IB-1',
+        lineNo: '1',
+        skuCode: 'SKU-001',
+        qualityGateStatus: 'passed',
+        inspectionRecordId: 'QI-1',
+      },
+    ]
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.get('button[aria-label="上架 IB-1"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('缺少收货管理权限')
+  })
+
+  it('does not expose quality links without inspection-record read permission', async () => {
+    wms.permissionCodes = ['business.wms.receipts.read', 'business.wms.receipts.manage']
+    wms.receivingQualityGates = [
+      {
+        inboundOrderNo: 'IB-1',
+        lineNo: '1',
+        skuCode: 'SKU-001',
+        qualityGateStatus: 'pending',
+      },
+    ]
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.find('a[aria-label="查看检验任务 IB-1"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('缺少质量检验读取权限')
   })
 
   it('does not let a stale released snapshot override a stricter pending line', async () => {

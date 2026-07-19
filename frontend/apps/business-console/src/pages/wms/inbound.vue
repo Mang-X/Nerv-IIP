@@ -6,6 +6,8 @@ import WmsReceivingQualityFlow from '@/components/wms/WmsReceivingQualityFlow.vu
 import { useWmsInboundOrders } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import {
   NvAlertDialog,
   NvAlertDialogCancel,
@@ -72,6 +74,12 @@ const {
   supplierReturnsError,
   refreshReceivingQuality,
 } = useWmsInboundOrders()
+const auth = useAuthStore()
+const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
+const canManageReceipts = computed(() => permissionCodes.value.includes(P.wmsReceiptsManage))
+const canReadQuality = computed(() =>
+  permissionCodes.value.includes(P.qualityInspectionRecordsRead),
+)
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [
     () => filters.status,
@@ -349,11 +357,14 @@ function formatError(error: unknown) {
       <template #cell-quality="{ row }">
         <WmsReceivingQualityFlow
           v-if="row.inboundOrderNo"
+          :inbound-order-id="row.inboundOrderId"
           :inbound-order-no="row.inboundOrderNo"
           :gates="receivingQualityGates"
           :supplier-returns="supplierReturns"
           :quality-gate-status="row.qualityGateStatus"
           :is-released-for-putaway="row.isReleasedForPutaway"
+          :can-manage-putaway="canManageReceipts"
+          :can-read-quality="canReadQuality"
           :loading="receivingQualityGatesPending || supplierReturnsPending"
           :error="receivingQualityGatesError || supplierReturnsError"
         />

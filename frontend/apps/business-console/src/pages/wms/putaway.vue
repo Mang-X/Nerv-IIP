@@ -5,6 +5,8 @@ import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.
 import { useWmsPutawayTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import {
   NvButton,
   NvDataTable,
@@ -38,6 +40,7 @@ definePage({
 })
 
 const route = useRoute()
+const auth = useAuthStore()
 const {
   filters,
   putawayTasks,
@@ -49,7 +52,10 @@ const {
   createPutawayPending,
   createPutawayError,
 } = useWmsPutawayTasks()
+const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
+const canManageReceipts = computed(() => permissionCodes.value.includes(P.wmsReceiptsManage))
 const inboundOrderNo = computed(() => firstQuery(route.query.inboundOrderNo))
+const inboundOrderId = computed(() => firstQuery(route.query.inboundOrderId))
 watch(
   inboundOrderNo,
   (value) => {
@@ -74,7 +80,9 @@ const createForm = reactive({
 })
 
 function openCreate() {
-  createForm.inboundOrderId = ''
+  if (!canManageReceipts.value) return
+
+  createForm.inboundOrderId = inboundOrderId.value
   createForm.taskNo = ''
   createForm.lineNo = '1'
   createForm.fromLocationCode = ''
@@ -83,7 +91,19 @@ function openCreate() {
   createError.value = ''
   createOpen.value = true
 }
+watch(
+  () => [inboundOrderId.value, firstQuery(route.query.create)] as const,
+  ([id, create]) => {
+    if (canManageReceipts.value && id && create === '1') openCreate()
+  },
+  { immediate: true },
+)
 async function submitCreate() {
+  if (!canManageReceipts.value) {
+    createError.value = '缺少收货管理权限，无法创建上架任务。'
+    return
+  }
+
   if (
     !createForm.inboundOrderId.trim() ||
     !createForm.taskNo.trim() ||
@@ -94,7 +114,7 @@ async function submitCreate() {
     createError.value = '请填写入库单、任务号、行号与起讫库位。'
     return
   }
-  if (createForm.quantity !== '' && !(Number(createForm.quantity) > 0)) {
+  if (!(Number(createForm.quantity) > 0)) {
     createError.value = '上架数量需为正数。'
     return
   }
@@ -104,7 +124,7 @@ async function submitCreate() {
       lineNo: createForm.lineNo.trim(),
       fromLocationCode: createForm.fromLocationCode.trim(),
       toLocationCode: createForm.toLocationCode.trim(),
-      quantity: createForm.quantity === '' ? undefined : Number(createForm.quantity),
+      quantity: Number(createForm.quantity),
     })
     createOpen.value = false
     toast.success('上架任务已创建')
@@ -180,7 +200,7 @@ function firstQuery(value: unknown) {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openCreate">
+        <NvButton v-if="canManageReceipts" size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建上架任务
         </NvButton>
@@ -240,7 +260,7 @@ function firstQuery(value: unknown) {
       </template>
     </NvDataTable>
 
-    <NvDialog v-model:open="createOpen">
+    <NvDialog v-if="canManageReceipts" v-model:open="createOpen">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建上架任务</NvDialogTitle>
@@ -291,10 +311,11 @@ function firstQuery(value: unknown) {
                 id="wms-putaway-qty"
                 v-model="createForm.quantity"
                 type="number"
-                min="0"
+                min="0.000001"
                 step="any"
                 autocomplete="off"
-                placeholder="可选"
+                required
+                placeholder="必填正数"
               />
             </NvField>
           </NvFieldGroup>

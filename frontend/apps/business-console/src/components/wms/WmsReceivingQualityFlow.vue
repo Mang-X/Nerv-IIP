@@ -9,11 +9,14 @@ import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
 const props = defineProps<{
+  inboundOrderId?: string
   inboundOrderNo: string
   gates: BusinessConsoleWmsReceivingQualityGateItem[]
   supplierReturns: BusinessConsoleWmsSupplierReturnItem[]
   qualityGateStatus?: string
   isReleasedForPutaway?: boolean
+  canManagePutaway: boolean
+  canReadQuality: boolean
   loading: boolean
   error?: unknown
 }>()
@@ -130,6 +133,8 @@ const summary = computed(() => {
 
 const putawayDisabled = computed(
   () =>
+    !props.inboundOrderId?.trim() ||
+    !props.canManagePutaway ||
     props.isReleasedForPutaway !== true ||
     (summary.value.value !== 'released' && summary.value.value !== 'conditional-release'),
 )
@@ -146,19 +151,38 @@ const flowLabel = computed(() => {
 })
 const putawayRoute = computed(() => ({
   path: '/wms/putaway',
-  query: { inboundOrderNo: props.inboundOrderNo },
+  query: {
+    inboundOrderNo: props.inboundOrderNo,
+    inboundOrderId: props.inboundOrderId,
+    create: '1',
+  },
 }))
-const putawayPermissionExplanation = computed(() =>
-  props.loading || props.error || props.isReleasedForPutaway === true
-    ? ''
-    : 'WMS 尚未返回整单上架放行权限，当前操作已禁用。',
-)
+const putawayPermissionExplanation = computed(() => {
+  if (props.loading || props.error) return ''
+  if (!props.canManagePutaway) return '缺少收货管理权限，当前操作已禁用。'
+  if (props.isReleasedForPutaway !== true) return 'WMS 尚未返回整单上架放行权限，当前操作已禁用。'
+  if (!props.inboundOrderId?.trim()) return 'WMS 尚未返回真实入库单标识，无法创建上架任务。'
+  return ''
+})
 const visibleLocations = computed(() => [
   ...new Set(orderGates.value.map((gate) => gate.stagingLocationCode).filter(Boolean)),
 ])
+const hasPendingInspection = computed(() =>
+  orderGates.value.some((gate) => gateCategory(gate.qualityGateStatus) === 'pending'),
+)
 const inspectionRecordIds = computed(() => [
-  ...new Set(orderGates.value.map((gate) => gate.inspectionRecordId).filter(Boolean)),
+  ...new Set(
+    orderGates.value
+      .map((gate) => gate.inspectionRecordId)
+      .filter((inspectionRecordId): inspectionRecordId is string => Boolean(inspectionRecordId)),
+  ),
 ])
+const completedInspectionWithoutRecord = computed(
+  () =>
+    !hasPendingInspection.value &&
+    orderCategory.value !== 'not-required' &&
+    inspectionRecordIds.value.length === 0,
+)
 
 function returnFor(gate: BusinessConsoleWmsReceivingQualityGateItem) {
   if (!gate.lineNo || !gate.skuCode || !gate.inspectionRecordId) return undefined
@@ -289,7 +313,13 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
       <span v-if="putawayDisabled && putawayPermissionExplanation" class="text-xs text-warning">
         {{ putawayPermissionExplanation }}
       </span>
-      <NvButton size="sm" type="button" variant="ghost" as-child>
+      <NvButton
+        v-if="hasPendingInspection && canReadQuality"
+        size="sm"
+        type="button"
+        variant="ghost"
+        as-child
+      >
         <RouterLink
           :to="{ path: '/quality/inspection-tasks', query: { sourceDocumentNo: inboundOrderNo } }"
           :aria-label="`查看检验任务 ${inboundOrderNo}`"
@@ -297,9 +327,33 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
           查看检验任务
         </RouterLink>
       </NvButton>
-      <span v-if="inspectionRecordIds.length" class="text-xs text-muted-foreground"
-        >检验记录：{{ inspectionRecordIds.join('、') }}</span
+      <NvButton
+        v-for="inspectionRecordId in canReadQuality ? inspectionRecordIds : []"
+        :key="inspectionRecordId"
+        size="sm"
+        type="button"
+        variant="ghost"
+        as-child
       >
+        <RouterLink
+          :to="{ path: '/quality/inspections', query: { inspectionRecordId } }"
+          :aria-label="`查看检验记录 ${inspectionRecordId}`"
+        >
+          查看检验记录 {{ inspectionRecordId }}
+        </RouterLink>
+      </NvButton>
+      <span v-if="orderCategory === 'not-required'" class="text-xs text-muted-foreground">
+        免检无需检验任务
+      </span>
+      <span
+        v-else-if="!canReadQuality && (hasPendingInspection || inspectionRecordIds.length)"
+        class="text-xs text-muted-foreground"
+      >
+        缺少质量检验读取权限，无法打开检验任务或记录
+      </span>
+      <span v-else-if="completedInspectionWithoutRecord" class="text-xs text-muted-foreground">
+        门禁未返回真实检验记录引用，无法定位检验记录
+      </span>
     </div>
   </div>
 </template>

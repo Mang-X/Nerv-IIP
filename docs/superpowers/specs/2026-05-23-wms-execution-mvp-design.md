@@ -146,15 +146,24 @@ a server-fact path such as `收货 → 待检 → 合格上架/不合格隔离�
    disposition reason and supplier-return number when WMS has returned one.
    The action also requires the inbound read model's
    `isReleasedForPutaway=true`; the UI never derives that permission locally.
-5. The inspection-task link uses the stable source-document contract
-   `/quality/inspection-tasks?sourceDocumentNo=<inboundOrderNo>`. Until WMS or
-   Quality supplies a stable `inspectionTaskId` in this read model, the UI does
-   not infer one from SKU, line or inspection record.
+5. While any line is still `pending`, the inspection-task link uses the stable
+   source-document contract
+   `/quality/inspection-tasks?sourceDocumentNo=<inboundOrderNo>`. Completed
+   gates link to `/quality/inspections` only when WMS returns a real
+   `inspectionRecordId`; exempt lines show that no inspection task exists. The
+   UI does not infer a task or record from SKU or line data.
 
 After a receiving mutation, the page refreshes inbound orders, quality gates
 and supplier returns from the server. The same reads auto-refetch while the
 page is open so an external Quality result converges without a manual reload.
 Quality and return list reads follow all server pages before the page filters by
 the real inbound order number. It never uses local optimistic status to claim
-that a gate or putaway has completed. The enabled putaway action links to the
-existing `/wms/putaway?inboundOrderNo=<real inbound order number>` task view.
+that a gate or putaway has completed. The enabled putaway action carries both
+the real inbound order number and `inboundOrderId` to the existing
+`/wms/putaway` flow, which opens the create form with the server identifier
+prefilled. Both the handoff and the create form require
+`business.wms.receipts.manage`, and creation requires the positive quantity
+enforced by the Gateway request validator. Inspection-task and record links
+require `business.quality.inspection-records.read`; otherwise the page explains
+the unavailable cross-domain action instead of exposing a dead or unauthorized
+link. The create mutation remains the source of truth for completion.
