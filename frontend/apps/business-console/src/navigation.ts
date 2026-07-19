@@ -571,6 +571,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
     {
       items: [
         {
+          title: '待检工作台',
+          icon: ClipboardCheckIcon,
+          to: { path: '/quality/inspection-tasks' },
+          requiredPermissions: [P.qualityInspectionRecordsRead],
+        },
+        {
           title: '检验任务与记录',
           icon: ClipboardCheckIcon,
           to: { path: '/quality/inspections' },

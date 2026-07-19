@@ -258,7 +258,8 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 库存管理 | `/inventory/lots` | 已落地（MAN-351） | 批次与预留页消费现有 Inventory availability facade，按 SKU/单位/工厂/库位/批次/序列号下推服务端查询，展示批次、序列号、预留量、可用量和按返回数量推导的冻结/其他占用；行内互链 MES 追溯、Barcode 扫码记录、WMS 作业和 Quality 检验上下文。不提供独立批次台账、冻结/解冻、预留明细或库存分析假页面。 |
 | 库存管理 | `/inventory/movements` | 已落地（FE-9 金标准） | 库存移动过账按 FE-4 原型重做（PageHeader + 受理队列 DataTable + 新建移动 Dialog）；上下文穿透：从来源单据带入 SKU/库位/批次预填。 |
 | 库存管理 | `/inventory/counts` | 已落地（FE-9 金标准） | 库存盘点按 FE-4 原型重做（PageHeader + 任务队列 DataTable + RowActions[确认差异] + 创建任务/确认差异双 Dialog）；上下文穿透：从可用量行带入 SKU/库位/批次预填。 |
-| 质量管理 | `/quality/inspections` | 已落地（FE-9 金标准） | 检验方案列表（PageHeader + SectionCards + Toolbar + DataTable + 服务端分页）；创建检验记录改 Dialog（动态检验特性）；上下文穿透：从工单/工序/收货带入来源单据/批次/序列号并自动开抽屉，含返回工单链接。 |
+| 质量管理 | `/quality/inspection-tasks` | 已落地（MAN-447/#801） | 质检员待检工作台：真实 Quality InspectionTask 列表、待检/超期/今日完成摘要、来料/过程/终检平级筛选、超期优先和来源上下文；“开始检验”带 `inspectionTaskId`、`sourceDocumentNo` 等稳定 query 契约进入既有检验记录流程，提交后回到工作台刷新。当前 facade 尚无按来源类型、日期聚合和全量超期汇总参数，页面不伪造缺失统计，后续由 MAN-471 consolidated follow-up 补齐。 |
+| 质量管理 | `/quality/inspections` | 已落地（FE-9 金标准） | 检验方案列表（PageHeader + SectionCards + Toolbar + DataTable + 服务端分页）；创建检验记录改 Dialog（动态检验特性）；上下文穿透：从工单/工序/收货带入来源单据/批次/序列号并自动开抽屉，含返回工单链接；从 `/quality/inspection-tasks` 进入时消费 `inspectionTaskId` + `sourceDocumentNo`，提交走现有从任务创建 facade 并闭合任务。 |
 | 质量管理 | `/quality/ncrs` | 已落地（FE-9 金标准） | NCR 列表按 FE-4 原型重做（DataTable + 服务端分页 + RowActions）；处置/关闭走 Sheet + AlertDialog；上下文穿透：从工单带入时关闭动作默认填返工工单，含返回工单链接。 |
 | 质量管理 | `/quality/analysis` | 已落地（MAN-353/#644，窗口分析） | 消费 BusinessGateway NCR 列表返回窗口，展示真实缺陷 Pareto、物料/来源维度摘要和 Quality 分析/CAPA 能力对照；明确不宣称全量趋势。工位/设备/班次聚合、全量质量趋势聚合和 CAPA 列表/详情/状态 facade 缺口已登记 #677。 |
 | 制造执行 | `/mes` | 已落地（FE-8 金标准） | 生产驾驶舱：按 FE-4 原型重做（PageHeader + 指挥导航卡 + SectionCards + 现场阻塞 DataTable + 角色工作台/下一步建议）；token 色替换 raw palette。 |
@@ -301,7 +302,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 需求与计划 | 需求管理、MPS、MRP 运行、计划建议、需求溯源、计划执行跟踪、正式排产工作台、需求预测 | DemandPlanning facade 和 `/planning` 已有窄化工作台，包含 MPS 主计划维护/评审/发布和 MRP 输入来源展示；`/scheduling` 消费 BusinessScheduling/APS lite facade 作为正式排产入口；预测和高级分析后置。 |
 | 高级排程（APS） | 排程设置、排程执行、排程甘特图、资源负载、冲突管理、排程版本、排程发布 | BusinessScheduling / APS lite 后端契约、内核和 BusinessGateway facade 已落地；Business Console 第一版入口为 `/scheduling`，甘特暂为明确占位。不得把 APS 算法写入 MES 页面或前端甘特。 |
 | 制造执行（MES） | 生产驾驶舱、生产计划、工单与派工、工序执行、在制跟踪、齐套与物料、报工与完工、质量与不良、设备与停机、班次交接、追溯、产能影响、规则排程过渡页 | 当前 PC 工作台已覆盖主线；PDA v1 已独立落地工序执行、报工、领料和完工入库，扫码解析、个人任务与离线 outbox/sync 仍后置。工单详情等对象页通过列表进入。 |
-| 质量管理 | 检验计划、检验记录、NCR、质量分析、CAPA | 检验/NCR 已有；`/quality/analysis` 已提供基于当前 NCR 返回窗口的真实派生摘要和能力对照；全量质量趋势聚合与 CAPA PC 闭环等待 #677。 |
+| 质量管理 | 检验计划、检验任务、检验记录、NCR、质量分析、CAPA | 检验任务工作台、检验/NCR 已有；`/quality/analysis` 已提供基于当前 NCR 返回窗口的真实派生摘要和能力对照；全量质量趋势聚合、任务来源/日期聚合和 CAPA PC 闭环仍按后续 facade 能力建设。 |
 | 仓储作业（WMS） | 仓库结构、收货、入库、出库、拣货、复核与发货、退货入库、盘点执行、库内调拨、WCS 任务监控、仓储分析 | WMS 后端已落地，BusinessGateway 已提供收货入库、出库、上架任务、拣货任务、盘点执行和 WCS 任务读面 facade，并支持服务端分页与状态过滤；#374 后上架/拣货/盘点 list 还支持库位过滤，操作员过滤参数存在但因 WMS 暂无 assigned operator 字段时返回空集。Business Console 已接入 `/wms/inbound`、`/wms/outbound`、`/wms/putaway`、`/wms/picking`、`/wms/counts` 和 `/wms/wcs`；MAN-350/#641 后，收货页显示后端返回的 Inventory 可用量上下文，上架/拣货/盘点/WCS 通过行内上下文链接穿透到 Inventory/扫码来源，出库和缺少 SKU/库位事实的 WCS 场景显示明确后端缺口，不在 WMS 页面伪造库存余额。 |
 | 库存台账/库存管理 | 库存可用量、库存台账、库存移动记录、批次、序列号、库存预留、库存冻结、库存调拨、盘点调整、库存分析 | 可用量、批次与预留（availability facade 支撑）、移动、盘点已落地；独立批次台账、序列号履历、冻结/解冻、预留明细和服务端库存分析仍缺 facade。库存事实仍归 Inventory，但用户作业入口可在 WMS/MES/ERP 页面内嵌使用。 |
 | 条码标签 | 条码规则、标签模板、打印管理、扫码记录 | 条码规则 `/barcode/rules`、标签模板 `/barcode/templates`、打印批次 `/barcode/print-batches` 与扫码记录 `/barcode/scans` 已接入 BusinessGateway BarcodeLabel facade 和 `@nerv-iip/api-client` 稳定导出；PC 端只展示打印批次、标签值/文件引用和扫码审计事实，不实现 PDA 扫码界面、离线能力、打印机驱动或完整标签预览渲染器。 |
@@ -321,7 +322,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 产品工程 | 工程版本 `/engineering`（MBOM / 工艺路线 / 生产版本 / 解析） |
 | 需求与计划 | 需求与物料计划 `/planning`、排产工作台 `/scheduling` |
 | 制造执行 | 计划与工单（生产驾驶舱 `/mes`、生产计划 `/mes/plans`、工单与派工 `/mes/work-orders`、派工看板 `/mes/dispatch`）；执行与齐套（齐套与物料 `/mes/materials`、工序执行 `/mes/operation-tasks`、在制跟踪 `/mes/wip`）；报工与完工（报工记录 `/mes/production-reports`、报工与完工汇总 `/mes/reports`、完工入库 `/mes/receipts`）；异常与协同（质量与不良 `/mes/quality`、设备与停机 `/mes/downtime`、异常与产能 `/mes/capacity`、规则排程（过渡）`/mes/schedules`、班次交接 `/mes/handovers`）；追溯与诊断（追溯查询 `/mes/traceability`、生产准备检查 `/mes/foundation`） |
-| 质量管理 | 检验任务与记录 `/quality/inspections`、不合格品处理 `/quality/ncrs`、质量分析 `/quality/analysis`、原因码目录 `/quality/reason-codes` |
+| 质量管理 | 待检工作台 `/quality/inspection-tasks`、检验任务与记录 `/quality/inspections`、不合格品处理 `/quality/ncrs`、质量分析 `/quality/analysis`、原因码目录 `/quality/reason-codes` |
 | 库存管理 | 库存可用量 `/inventory/availability`、批次与预留 `/inventory/lots`、库存移动 `/inventory/movements`、库存盘点 `/inventory/counts` |
 | 仓储作业（“更多”内） | 收货入库 `/wms/inbound`（融合库存可用量上下文）、上架任务 `/wms/putaway`、出库发货 `/wms/outbound`、拣货任务 `/wms/picking`、WCS 任务 `/wms/wcs`、盘点执行 `/wms/counts` |
 | 经营管理（“更多”内） | 采购：采购申请 `/erp`、询价 RFQ `/erp/procurement/rfqs`、供应商报价 `/erp/procurement/supplier-quotations`、采购订单 `/erp/procurement/purchase-orders`、采购收货 `/erp/procurement/receipts`；销售：销售机会 `/erp/sales`、销售报价 `/erp/sales/quotations`、销售订单 `/erp/sales/orders`、销售发货 `/erp/sales/deliveries`；财务：财务摘要 `/erp/finance`、AR/AP `/erp/finance/ar-ap`、会计凭证 `/erp/finance/vouchers`、成本候选 `/erp/finance/cost-candidates` |

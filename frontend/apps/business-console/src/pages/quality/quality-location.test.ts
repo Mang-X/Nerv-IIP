@@ -14,8 +14,18 @@ vi.mock('@/utils/notify', () => ({
   notifySuccess: notifySpies.success,
 }))
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { principalId: 'qa-user-001' } }),
+}))
+
+vi.mock('@/composables/useQualityInspectionTasks', () => ({
+  useQualityInspectionTaskActions: () => ({
+    startInspection: vi.fn(),
+  }),
+}))
+
 const qualityState = vi.hoisted(() => ({
-  inspectionFilters: undefined as { status?: string, keyword?: string } | undefined,
+  inspectionFilters: undefined as { status?: string; keyword?: string } | undefined,
   recordError: undefined as unknown,
   inspectionPlans: [
     {
@@ -25,7 +35,7 @@ const qualityState = vi.hoisted(() => ({
       status: 'active',
     },
   ],
-  ncrFilters: undefined as { status?: string, keyword?: string } | undefined,
+  ncrFilters: undefined as { status?: string; keyword?: string } | undefined,
   ncrs: [
     {
       id: 'NCR-001',
@@ -44,6 +54,7 @@ vi.mock('vue-router', async (importOriginal) => {
     ...actual,
     RouterLink: { props: ['to'], template: '<a data-router-link><slot /></a>' },
     useRoute: () => routeState.route,
+    useRouter: () => ({ push: vi.fn() }),
   }
 })
 
@@ -153,7 +164,8 @@ const uiStubs = {
   Button: { template: '<button><slot /></button>' },
   DataTable: {
     props: ['rows'],
-    template: '<table><tbody><tr v-for="(row, i) in rows" :key="i"><td><slot name="cell-code" :row="row" /></td><td><slot name="cell-actions" :row="row" /></td></tr></tbody></table>',
+    template:
+      '<table><tbody><tr v-for="(row, i) in rows" :key="i"><td><slot name="cell-code" :row="row" /></td><td><slot name="cell-actions" :row="row" /></td></tr></tbody></table>',
   },
   DataTablePagination: { props: ['page', 'pageSize', 'totalItems'], template: '<nav />' },
   Dialog: { props: ['open'], template: '<div v-if="open" data-dialog><slot /></div>' },
@@ -166,13 +178,16 @@ const uiStubs = {
   FieldDescription: { template: '<p><slot /></p>' },
   FieldGroup: { template: '<div><slot /></div>' },
   FieldLabel: { template: '<label><slot /></label>' },
-  Input: { template: '<input />' },
+  Input: { props: ['modelValue'], template: '<input :value="modelValue" />' },
   PageHeader: {
     props: ['title', 'count'],
     template: '<header><h1>{{ title }}</h1><p>{{ count }}</p><slot name="actions" /></header>',
   },
   RowActions: { template: '<div><slot /></div>' },
-  SectionCard: { props: ['description', 'value'], template: '<div>{{ description }} {{ value }}</div>' },
+  SectionCard: {
+    props: ['description', 'value'],
+    template: '<div>{{ description }} {{ value }}</div>',
+  },
   SectionCards: { template: '<div><slot /></div>' },
   Select: { template: '<div><slot /></div>' },
   SelectContent: { template: '<div><slot /></div>' },
@@ -251,6 +266,30 @@ describe('quality route location behavior', () => {
 
     expect(wrapper.find('[data-dialog]').exists()).toBe(false)
     expect(qualityState.inspectionFilters!.keyword).toBe('PLAN-001')
+  })
+
+  it('prefills the existing record flow from the stable inspection task query contract', async () => {
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      sourceDocumentNo: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+
+    const form = (
+      wrapper.vm as unknown as {
+        recordForm: { sourceDocumentId: string; skuCode: string; inspectedQuantity: string }
+      }
+    ).recordForm
+    expect(form.sourceDocumentId).toBe('GR-001')
+    expect(form.skuCode).toBe('SKU-RM-001')
+    expect(form.inspectedQuantity).toBe('12')
   })
 
   it('locates a source inspection record: opens read-only record detail from inspectionRecordId', async () => {

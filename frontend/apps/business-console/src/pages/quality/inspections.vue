@@ -6,7 +6,10 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useQualityInspectionPlans } from '@/composables/useBusinessQuality'
+import { useQualityInspectionTaskActions } from '@/composables/useQualityInspectionTasks'
 import { usePagedList } from '@/composables/usePagedList'
+import { useAuthStore } from '@/stores/auth'
+import { notifyError } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
 import {
@@ -36,7 +39,7 @@ import {
 } from '@nerv-iip/ui'
 import { ClipboardCheckIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -47,6 +50,8 @@ definePage({
 })
 
 const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
 const initialInspectionPlanKeyword = firstQuery(route.query.inspectionPlanId)
 const {
   createInspectionRecord,
@@ -61,6 +66,7 @@ const {
 } = useQualityInspectionPlans(
   initialInspectionPlanKeyword ? { keyword: initialInspectionPlanKeyword } : {},
 )
+const taskActions = useQualityInspectionTaskActions(filters)
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.keyword],
 })
@@ -127,12 +133,17 @@ watch(
   () => route.query,
   (query) => {
     const source =
+      firstQuery(query.sourceDocumentNo) ||
       firstQuery(query.sourceDocumentId) ||
       firstQuery(query.workOrderId) ||
       firstQuery(query.operationTaskId)
+    const skuCode = firstQuery(query.skuCode)
+    const quantity = firstQuery(query.quantity)
     const batch = firstQuery(query.batchNo) || firstQuery(query.materialLotId)
     const serial = firstQuery(query.serialNo)
     if (source) recordForm.sourceDocumentId = source
+    if (skuCode) recordForm.skuCode = skuCode
+    if (quantity) recordForm.inspectedQuantity = quantity
     if (batch) recordForm.batchNo = batch
     if (serial) recordForm.serialNo = serial
     // 来源类型/来源服务：优先用 query 显式值；否则按入口推断——
@@ -244,6 +255,26 @@ function removeCharacteristicRow(index: number) {
 
 async function submitInspectionRecord() {
   if (!canCreateRecord.value) return
+  const inspectionTaskId = firstQuery(route.query.inspectionTaskId)
+  if (inspectionTaskId) {
+    const inspectorUserId = auth.principal?.principalId?.trim()
+    if (!inspectorUserId) {
+      notifyError('当前账号缺少质检员身份，无法提交检验。')
+      return
+    }
+    const response = await taskActions.startInspection(inspectionTaskId, {
+      inspectorUserId,
+      resultLines: toCharacteristicResults(),
+      dispositionReason: optionalText(recordForm.dispositionReason),
+      dispositionAttachmentFileIds: splitCsv(recordForm.dispositionAttachmentFileIds),
+    })
+    recordSuccess.value = `检验记录 ${response?.data?.inspectionRecordId ?? inspectionTaskId} 已提交，待检任务已闭合。`
+    await router.push({
+      path: '/quality/inspection-tasks',
+      query: { completedTaskId: inspectionTaskId },
+    })
+    return
+  }
   const body: BusinessConsoleCreateInspectionRecordRequest = {
     organizationId: recordForm.organizationId.trim(),
     environmentId: recordForm.environmentId.trim(),
