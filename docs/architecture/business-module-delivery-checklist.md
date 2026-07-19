@@ -24,22 +24,22 @@
 
 ## 总览
 
-| 模块 | 后端服务 | BusinessGateway | PC Business Console | PDA/mobile | 大屏/看板 | 下一步缺口 |
-| --- | --- | --- | --- | --- | --- | --- |
-| MasterData 主数据 | [x] | [x] | [x] | [ ] | [ ] | PDA 字典/bootstrap、批量导入导出、主数据变更影响分析、角色化主数据工作台。 |
-| ProductEngineering 产品工程 | [x] | [x] | [x] | [ ] | [ ] | 工程对象详情/版本对比/变更影响、文档预览与 FileStorage 深集成、移动端只读准备信息。 |
-| DemandPlanning 需求/MRP | [x] | [x] | [x] 单页 | [ ] | [ ] | MRP 运行详情、pegging 可视化、建议接受后的跟踪、计划员专用工作台。 |
-| Scheduling / APS lite | [x] | [x] | [x] MES 规则排程页，[ ] 独立 APS 工作台 | [ ] | [ ] | 独立 APS/Gantt 页面、重排/RFC、排程版本对比、生产大屏甘特。 |
-| Inventory 库存 | [x] | [x] | [x] | [ ] 独立库存 PDA | [ ] | MAN-351 已补 availability facade 支撑的批次与预留 PC 视图；独立批次/序列号履历、冻结/解冻、预留明细、库存分析、WMS 作业页内库存上下文深化、移动盘点与库存 PDA 边界仍待后续。 |
-| Quality 质量 | [x] | [x] | [x] | [ ] 独立质量 PDA | [ ] | 移动检验、CAPA 深化、质量趋势/供应商质量分析、NCR 到返工/库存冻结穿透。 |
-| MES 制造执行 | [x] | [x] | [x] | [x] 部分一线作业 | [ ] | PC 详情深度、真实个人任务、扫码直达、离线报工、生产指挥大屏。 |
-| WMS 仓储作业 | [x] | [x] | [x] | [x] 部分一线作业 | [ ] | FEFO/FIFO、ASN 差异、directed putaway、LPN/HU、扫描解析与离线作业。 |
-| ERP 经营管理 | [x] | [x] | [x] 采购/销售/财务窄面 | [ ] | [ ] | 完整采购/销售/财务菜单、税务/银行/月结/报表、退货/RMA、移动审批/收货协同。 |
-| IndustrialTelemetry 设备监控 | [x] | [x] | [x] 设备看板/报警/Tag/规则/历史/OEE | [x] 报警查看 | [ ] | 报警处理闭环、OEE/停机大屏、Connector 产品化。 |
-| Maintenance 设备运维 | [x] | [x] | [x] 工单/计划 | [x] 报修/点检 | [ ] | 完整 CMMS 资产视角、备件成本、移动离线点检、维修绩效分析。 |
-| BarcodeLabel 条码标签 | [x] | [x] | [x] 规则/模板 | [ ] | [ ] | 打印批次/扫码记录页，PDA `/scan` 解析和条码业务直达。 |
-| BusinessApproval 审批中心 | [x] | [x] | [x] | [ ] | [ ] | PC 审批中心已接入模板、流程、任务、决策和委托；移动审批、工作台待办深度整合和跨域单据详情穿透仍后续。 |
-| Search / Workbench 工作台 | [x] facade | [x] | [x] 首页，[ ] Cmd/Ctrl+K 实装 | [x] 首页壳，[ ] 我的任务真实数据 | [ ] | 全局对象搜索面板、近期/星标、角色化待办、跨域指标和预警聚合。 |
+| 模块                         | 后端服务   | BusinessGateway | PC Business Console                         | PDA/mobile                       | 大屏/看板 | 下一步缺口                                                                                                                                                                   |
+| ---------------------------- | ---------- | --------------- | ------------------------------------------- | -------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MasterData 主数据            | [x]        | [x]             | [x]                                         | [ ]                              | [ ]       | PDA 字典/bootstrap、批量导入导出、主数据变更影响分析、角色化主数据工作台。                                                                                                   |
+| ProductEngineering 产品工程  | [x]        | [x]             | [x]                                         | [ ]                              | [ ]       | 工程对象详情/版本对比/变更影响、文档预览与 FileStorage 深集成、移动端只读准备信息。                                                                                          |
+| DemandPlanning 需求/MRP      | [x]        | [x]             | [x] 单页                                    | [ ]                              | [ ]       | MRP 运行详情、pegging 可视化、建议接受后的跟踪、计划员专用工作台。                                                                                                           |
+| Scheduling / APS lite        | [x]        | [x]             | [x] MES 规则排程页、独立 APS 只读甘特工作台 | [ ]                              | [ ]       | 交互式重排/RFC、排程版本对比、生产大屏甘特。                                                                                                                                 |
+| Inventory 库存               | [x]        | [x]             | [x]                                         | [ ] 独立库存 PDA                 | [ ]       | MAN-351 已补 availability facade 支撑的批次与预留 PC 视图；独立批次/序列号履历、冻结/解冻、预留明细、库存分析、WMS 作业页内库存上下文深化、移动盘点与库存 PDA 边界仍待后续。 |
+| Quality 质量                 | [x]        | [x]             | [x]                                         | [ ] 独立质量 PDA                 | [ ]       | 移动检验、CAPA 深化、质量趋势/供应商质量分析、NCR 到返工/库存冻结穿透。                                                                                                      |
+| MES 制造执行                 | [x]        | [x]             | [x]                                         | [x] 部分一线作业                 | [ ]       | PC 详情深度、真实个人任务、扫码直达、离线报工、生产指挥大屏。                                                                                                                |
+| WMS 仓储作业                 | [x]        | [x]             | [x]                                         | [x] 部分一线作业                 | [ ]       | FEFO/FIFO、ASN 差异、directed putaway、LPN/HU、扫描解析与离线作业。                                                                                                          |
+| ERP 经营管理                 | [x]        | [x]             | [x] 采购/销售/财务窄面                      | [ ]                              | [ ]       | 完整采购/销售/财务菜单、税务/银行/月结/报表、退货/RMA、移动审批/收货协同。                                                                                                   |
+| IndustrialTelemetry 设备监控 | [x]        | [x]             | [x] 设备看板/报警/Tag/规则/历史/OEE         | [x] 报警查看                     | [ ]       | 报警处理闭环、OEE/停机大屏、Connector 产品化。                                                                                                                               |
+| Maintenance 设备运维         | [x]        | [x]             | [x] 工单/计划                               | [x] 报修/点检                    | [ ]       | 完整 CMMS 资产视角、备件成本、移动离线点检、维修绩效分析。                                                                                                                   |
+| BarcodeLabel 条码标签        | [x]        | [x]             | [x] 规则/模板                               | [ ]                              | [ ]       | 打印批次/扫码记录页，PDA `/scan` 解析和条码业务直达。                                                                                                                        |
+| BusinessApproval 审批中心    | [x]        | [x]             | [x]                                         | [ ]                              | [ ]       | PC 审批中心已接入模板、流程、任务、决策和委托；移动审批、工作台待办深度整合和跨域单据详情穿透仍后续。                                                                        |
+| Search / Workbench 工作台    | [x] facade | [x]             | [x] 首页，[ ] Cmd/Ctrl+K 实装               | [x] 首页壳，[ ] 我的任务真实数据 | [ ]       | 全局对象搜索面板、近期/星标、角色化待办、跨域指标和预警聚合。                                                                                                                |
 
 ## 后端清单
 
@@ -74,6 +74,7 @@
 - [x] 覆盖 deterministic finite-capacity heuristic、preview/create/list/detail/gantt/release。
 - [x] 覆盖设备 availability provider、MES material readiness adapter、setup/changeover、技能/工装门禁、release feasibility gate、KPI metrics。
 - [x] BusinessGateway 暴露 scheduling plans preview/create/list/detail/gantt/release。
+- [x] Business Console `/scheduling` 已交付表格 + 只读资源甘特,复用 `@nerv-iip/scheduling` / `SchedulingCanvas`,覆盖班次/日缩放、冲突/锁定/未排/失效状态与明细下钻。
 - [ ] 不包含全局优化器、自动重排、人工拖拽调度、RFC 审批、模拟对比和生产大屏甘特。
 
 ### Inventory

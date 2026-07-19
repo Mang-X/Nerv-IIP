@@ -10,6 +10,7 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useBusinessScheduling } from '@/composables/useBusinessScheduling'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
+import SchedulingPlanGantt from '@/components/scheduling/SchedulingPlanGantt.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -20,6 +21,11 @@ import {
   NvSheetDescription,
   NvSheetHeader,
   NvSheetTitle,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
   NvStatusBadge,
   NvTabs,
@@ -28,8 +34,8 @@ import {
   NvTabsTrigger,
   toast,
 } from '@nerv-iip/ui'
-import { CalendarClockIcon, EyeIcon, RefreshCwIcon, SendIcon } from '@lucide/vue'
-import { computed, shallowRef } from 'vue'
+import { EyeIcon, RefreshCwIcon, SendIcon } from '@lucide/vue'
+import { computed, shallowRef, watch } from 'vue'
 
 definePage({
   meta: {
@@ -53,6 +59,11 @@ const {
 
 const activeView = shallowRef('table')
 const detailOpen = shallowRef(false)
+
+watch([activeView, plans], ([view, availablePlans]) => {
+  if (view !== 'gantt' || detailSelection.planId || availablePlans.length === 0) return
+  detailSelection.planId = availablePlans[0]?.planId ?? ''
+})
 
 const columns: NvDataTableColumn<BusinessConsoleSchedulingPlanSummaryResponse>[] = [
   {
@@ -88,6 +99,9 @@ const detailFeedback = computed(() => {
   if (detailSelection.planId) return '未返回方案明细。'
   return '请选择一个排程方案查看明细。'
 })
+const selectedPlanSummary = computed(() =>
+  plans.value.find((plan) => plan.planId === detailSelection.planId),
+)
 
 function rowKey(row: BusinessConsoleSchedulingPlanSummaryResponse) {
   return row.planId ?? row.problemId ?? 'plan'
@@ -231,6 +245,7 @@ function reasonLabel(reason?: string | null) {
     material: '物料约束',
     quality: '质量约束',
     equipment: '设备约束',
+    tooling: '工装约束',
     noEligibleResource: '无可用资源',
     outsideHorizon: '超出排程窗口',
     invalidLockedAssignment: '锁定分配无效',
@@ -311,14 +326,30 @@ function reasonLabel(reason?: string | null) {
       </NvTabsContent>
 
       <NvTabsContent value="gantt">
-        <div class="rounded-lg border bg-card p-8 text-center">
-          <CalendarClockIcon class="mx-auto size-10 text-muted-foreground" aria-hidden="true" />
-          <h2 class="mt-4 text-base font-semibold text-foreground">甘特可视化待接入</h2>
-          <p class="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
-            当前版本只展示来自 APS facade
-            的方案列表和明细。后续接入正式甘特组件后，此区域会替换为真实排程时间轴。
-          </p>
+        <div class="mb-4 flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3">
+          <label for="gantt-plan-select" class="text-sm font-medium text-foreground"
+            >排程方案</label
+          >
+          <NvSelect v-model="detailSelection.planId">
+            <NvSelectTrigger id="gantt-plan-select" class="w-full sm:w-80" aria-label="排程方案">
+              <NvSelectValue placeholder="选择排程方案" />
+            </NvSelectTrigger>
+            <NvSelectContent>
+              <NvSelectItem v-for="plan in plans" :key="rowKey(plan)" :value="plan.planId!">
+                {{ plan.planId }} · {{ statusLabel(plan.status) }}
+              </NvSelectItem>
+            </NvSelectContent>
+          </NvSelect>
         </div>
+        <SchedulingPlanGantt
+          :plan="planDetail"
+          :summary="selectedPlanSummary"
+          :loading="planDetailPending"
+          :error="planDetailError"
+          :release-pending="releasePlanPending"
+          @open-detail="detailOpen = true"
+          @release="publish(detailSelection.planId)"
+        />
       </NvTabsContent>
     </NvTabs>
 

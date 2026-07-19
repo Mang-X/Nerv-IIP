@@ -42,6 +42,25 @@ describe('GanttChart', () => {
     wrapper.unmount()
   })
 
+  it('renders the package read-only timeline when DHTMLX is unavailable', async () => {
+    const wrapper = mount(GanttChart, {
+      props: { model: toModel(samplePlan), scale: 'hour', readOnly: true },
+      attachTo: document.body,
+    })
+    await settle()
+
+    const timeline = wrapper.find('[data-testid="readonly-schedule-timeline"]')
+    expect(timeline.exists()).toBe(true)
+    expect(timeline.text()).toContain('WO-001')
+    expect(timeline.text()).toContain('冲突')
+    expect(timeline.text()).toContain('锁定')
+    expect(wrapper.find('[data-testid="engine-unavailable"]').exists()).toBe(false)
+
+    await timeline.find('[data-task-id="a2"]').trigger('click')
+    expect(wrapper.emitted('taskSelect')).toEqual([['a2']])
+    wrapper.unmount()
+  })
+
   it('shows a clear empty state when the schedule has no tasks', async () => {
     const model = { ...toModel(samplePlan), tasks: [], links: [] }
     const wrapper = mount(GanttChart, {
@@ -62,6 +81,18 @@ describe('ResourceSchedulerBoard', () => {
     })
     await settle()
     expect(wrapper.find('[data-view="resource"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('groups the read-only timeline into resource lanes', async () => {
+    const wrapper = mount(ResourceSchedulerBoard, {
+      props: { model: toModel(samplePlan), scale: 'day', readOnly: true },
+      attachTo: document.body,
+    })
+    await settle()
+
+    expect(wrapper.find('[data-testid="readonly-schedule-timeline"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-resource-lane]')).toHaveLength(2)
     wrapper.unmount()
   })
 })
