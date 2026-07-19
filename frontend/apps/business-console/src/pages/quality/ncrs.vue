@@ -6,9 +6,11 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
+import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useQualityNcrs } from '@/composables/useBusinessQuality'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError } from '@/utils/notify'
 import {
   NvAlertDialog,
   NvAlertDialogAction,
@@ -117,9 +119,15 @@ const dispositionErrorMessage = computed(() => formatError(submitDispositionErro
 const closeErrorMessage = computed(() => formatError(closeNcrError.value))
 const selectedNcrId = computed(() => selectedNcr.value?.id ?? '')
 const canSubmitDisposition = computed(
-  () => isNonEmpty(selectedNcrId.value) && isNonEmpty(dispositionForm.dispositionType),
+  () =>
+    hasBusinessContext(filters) &&
+    isNonEmpty(selectedNcrId.value) &&
+    isNonEmpty(dispositionForm.dispositionType),
 )
-const canCloseNcr = computed(() => isNonEmpty(selectedNcrId.value) && isNonEmpty(closeForm.reason))
+const canCloseNcr = computed(
+  () =>
+    hasBusinessContext(filters) && isNonEmpty(selectedNcrId.value) && isNonEmpty(closeForm.reason),
+)
 const statusFilter = computed({
   get: () => filters.status || 'all',
   set: (value: string) => {
@@ -147,6 +155,10 @@ function openNcr(ncr: BusinessConsoleQualityItem) {
 }
 
 async function submitNcrDisposition() {
+  if (!hasBusinessContext(filters)) {
+    notifyError('业务范围尚未就绪，请稍后重试。')
+    return
+  }
   if (!canSubmitDisposition.value) return
   const body: BusinessConsoleNcrDispositionRequest = {
     dispositionType: dispositionForm.dispositionType.trim(),
@@ -158,6 +170,10 @@ async function submitNcrDisposition() {
 }
 
 async function submitCloseNcr() {
+  if (!hasBusinessContext(filters)) {
+    notifyError('业务范围尚未就绪，请稍后重试。')
+    return
+  }
   if (!canCloseNcr.value) return
   const body: BusinessConsoleNcrCloseRequest = {
     reason: closeForm.reason.trim(),

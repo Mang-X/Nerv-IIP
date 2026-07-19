@@ -10,6 +10,7 @@ const routeState = vi.hoisted(() => ({
 
 const notifySpies = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
 const taskActionSpies = vi.hoisted(() => ({ startInspection: vi.fn() }))
+const ncrActionSpies = vi.hoisted(() => ({ closeNcr: vi.fn(), submitDisposition: vi.fn() }))
 vi.mock('@/utils/notify', () => ({
   notifyError: notifySpies.error,
   notifySuccess: notifySpies.success,
@@ -49,7 +50,10 @@ const qualityState = vi.hoisted(() => ({
     },
   ],
   planCharacteristicsRef: undefined as { value: Array<Record<string, unknown>> } | undefined,
-  ncrFilters: undefined as { status?: string; keyword?: string } | undefined,
+  ncrInitialContext: { organizationId: 'org-001', environmentId: 'env-dev' },
+  ncrFilters: undefined as
+    | { organizationId: string; environmentId: string; status?: string; keyword?: string }
+    | undefined,
   ncrs: [
     {
       id: 'NCR-001',
@@ -143,8 +147,7 @@ vi.mock('@/composables/useBusinessQuality', async () => {
     }),
     useQualityNcrs: (initial = {}) => {
       const filters = reactive({
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
+        ...qualityState.ncrInitialContext,
         status: undefined as string | undefined,
         keyword: undefined as string | undefined,
         skip: 0,
@@ -154,7 +157,7 @@ vi.mock('@/composables/useBusinessQuality', async () => {
       qualityState.ncrFilters = filters
 
       return {
-        closeNcr: vi.fn(),
+        closeNcr: ncrActionSpies.closeNcr,
         closeNcrError: shallowRef(),
         closeNcrPending: shallowRef(false),
         filters,
@@ -163,7 +166,7 @@ vi.mock('@/composables/useBusinessQuality', async () => {
         ncrsPending: shallowRef(false),
         ncrsTotal: computed(() => qualityState.ncrs.length),
         refreshNcrs: vi.fn(),
-        submitDisposition: vi.fn(),
+        submitDisposition: ncrActionSpies.submitDisposition,
         submitDispositionError: shallowRef(),
         submitDispositionPending: shallowRef(false),
       }
@@ -172,15 +175,15 @@ vi.mock('@/composables/useBusinessQuality', async () => {
 })
 
 const uiStubs = {
-  AlertDialog: { template: '<div><slot /></div>' },
-  AlertDialogAction: { template: '<button><slot /></button>' },
-  AlertDialogCancel: { template: '<button><slot /></button>' },
-  AlertDialogContent: { template: '<div><slot /></div>' },
-  AlertDialogDescription: { template: '<p><slot /></p>' },
-  AlertDialogFooter: { template: '<div><slot /></div>' },
-  AlertDialogHeader: { template: '<div><slot /></div>' },
-  AlertDialogTitle: { template: '<h2><slot /></h2>' },
-  AlertDialogTrigger: { template: '<div><slot /></div>' },
+  NvAlertDialog: { template: '<div><slot /></div>' },
+  NvAlertDialogAction: { template: '<button><slot /></button>' },
+  NvAlertDialogCancel: { template: '<button><slot /></button>' },
+  NvAlertDialogContent: { template: '<div><slot /></div>' },
+  NvAlertDialogDescription: { template: '<p><slot /></p>' },
+  NvAlertDialogFooter: { template: '<div><slot /></div>' },
+  NvAlertDialogHeader: { template: '<div><slot /></div>' },
+  NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
+  NvAlertDialogTrigger: { template: '<div><slot /></div>' },
   BusinessLayout: { template: '<main><slot /></main>' },
   BusinessDocumentApprovalPanel: {
     props: ['modelValue'],
@@ -260,6 +263,7 @@ describe('quality route location behavior', () => {
     routeState.route!.query = {}
     qualityState.inspectionFilters = undefined
     qualityState.inspectionContextInitiallyEmpty = false
+    qualityState.ncrInitialContext = { organizationId: 'org-001', environmentId: 'env-dev' }
     qualityState.ncrFilters = undefined
     qualityState.recordError = undefined
     qualityState.planCharacteristics = [
@@ -275,6 +279,8 @@ describe('quality route location behavior', () => {
     notifySpies.error.mockReset()
     notifySpies.success.mockReset()
     taskActionSpies.startInspection.mockReset()
+    ncrActionSpies.closeNcr.mockReset()
+    ncrActionSpies.submitDisposition.mockReset()
   })
 
   it('keeps the user-selected NCR status filter when ncrId is removed from the route', async () => {
@@ -287,6 +293,91 @@ describe('quality route location behavior', () => {
 
     expect(qualityState.ncrFilters!.keyword).toBeUndefined()
     expect(qualityState.ncrFilters!.status).toBe('open')
+  })
+
+  it.each(['organizationId', 'environmentId'] as const)(
+    'blocks both NCR actions when %s is empty and recovers when context returns',
+    async (missingField) => {
+      qualityState.ncrInitialContext[missingField] = ''
+      const wrapper = mountQualityPage(NcrsPage)
+      const vm = wrapper.vm as unknown as {
+        canCloseNcr: boolean
+        canSubmitDisposition: boolean
+        closeForm: { reason: string }
+        openNcr: (ncr: Record<string, unknown>) => void
+        submitCloseNcr: () => Promise<void>
+        submitNcrDisposition: () => Promise<void>
+      }
+      vm.openNcr(qualityState.ncrs[0]!)
+      vm.closeForm.reason = '处置结果已核验'
+      await nextRenderTick()
+
+      expect(vm.canSubmitDisposition).toBe(false)
+      expect(vm.canCloseNcr).toBe(false)
+      const dispositionButton = wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('提交处置'))
+      const closeButton = wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('关闭不合格品'))
+      expect(dispositionButton?.attributes('disabled')).toBeDefined()
+      expect(closeButton?.attributes('disabled')).toBeDefined()
+      await vm.submitNcrDisposition()
+      await vm.submitCloseNcr()
+      expect(notifySpies.error).toHaveBeenNthCalledWith(1, '业务范围尚未就绪，请稍后重试。')
+      expect(notifySpies.error).toHaveBeenNthCalledWith(2, '业务范围尚未就绪，请稍后重试。')
+      expect(ncrActionSpies.submitDisposition).not.toHaveBeenCalled()
+      expect(ncrActionSpies.closeNcr).not.toHaveBeenCalled()
+
+      qualityState.ncrFilters![missingField] =
+        missingField === 'organizationId' ? 'org-001' : 'env-dev'
+      await nextRenderTick()
+
+      expect(vm.canSubmitDisposition).toBe(true)
+      expect(vm.canCloseNcr).toBe(true)
+      expect(dispositionButton?.attributes('disabled')).toBeUndefined()
+      expect(closeButton?.attributes('disabled')).toBeUndefined()
+    },
+  )
+
+  it('rechecks business context when close is confirmed after context is lost', async () => {
+    const wrapper = mountQualityPage(NcrsPage)
+    const vm = wrapper.vm as unknown as {
+      closeForm: { reason: string }
+      openNcr: (ncr: Record<string, unknown>) => void
+      submitCloseNcr: () => Promise<void>
+    }
+    vm.openNcr(qualityState.ncrs[0]!)
+    vm.closeForm.reason = '处置结果已核验'
+    await nextRenderTick()
+    const closeButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '关闭不合格品')
+    expect(closeButton).toBeDefined()
+    await closeButton!.trigger('click')
+
+    qualityState.ncrFilters!.environmentId = ''
+    await nextRenderTick()
+    const confirmCloseButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('确认关闭'))
+
+    expect(confirmCloseButton).toBeDefined()
+    await confirmCloseButton!.trigger('click')
+    expect(notifySpies.error).toHaveBeenCalledWith('业务范围尚未就绪，请稍后重试。')
+    expect(ncrActionSpies.closeNcr).not.toHaveBeenCalled()
+  })
+
+  it('keeps existing NCR field validation silent when business context is ready', async () => {
+    const wrapper = mountQualityPage(NcrsPage)
+    const vm = wrapper.vm as unknown as {
+      submitCloseNcr: () => Promise<void>
+    }
+
+    await vm.submitCloseNcr()
+
+    expect(notifySpies.error).not.toHaveBeenCalled()
+    expect(ncrActionSpies.closeNcr).not.toHaveBeenCalled()
   })
 
   it('keeps the user-selected inspection status filter when inspectionPlanId is removed from the route', async () => {
