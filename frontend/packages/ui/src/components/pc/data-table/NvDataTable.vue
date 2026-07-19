@@ -635,7 +635,7 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
                 :data-active="sortStateOf(col.key) || undefined"
                 @click="cycleSort(col)"
               >
-                <span>{{ col.header }}</span>
+                <span :title="col.headerTitle">{{ col.header }}</span>
                 <ArrowUpIcon
                   v-if="sortStateOf(col.key) === 'asc'"
                   class="size-3.5"
@@ -652,7 +652,7 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
                   aria-hidden="true"
                 />
               </button>
-              <span v-else>{{ col.header }}</span>
+              <span v-else :title="col.headerTitle">{{ col.header }}</span>
             </TableHead>
           </TableRow>
         </TableHeader>

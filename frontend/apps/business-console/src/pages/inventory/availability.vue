@@ -1,8 +1,16 @@
 <script setup lang="ts">
-import type { BusinessConsoleInventoryAvailabilityLineResponse } from '@nerv-iip/api-client'
+import type {
+  BusinessConsoleInventoryAvailabilityLineResponse,
+  BusinessConsoleInventoryExpiryAlertLineResponse,
+} from '@nerv-iip/api-client'
+import { expiryToneFromAlert, expiryToneLabel } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import { useInventoryAvailability } from '@/composables/useBusinessInventory'
+import {
+  useInventoryAvailability,
+  useInventoryExpiryAlerts,
+} from '@/composables/useBusinessInventory'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -22,7 +30,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { ClipboardListIcon, MoveRightIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 definePage({
@@ -43,6 +51,14 @@ const {
   filters,
   refreshAvailability,
 } = useInventoryAvailability()
+const {
+  expiryAlerts,
+  expiryAlertsError,
+  expiryAlertsPending,
+  filters: expiryFilters,
+  refreshExpiryAlerts,
+} = useInventoryExpiryAlerts()
+const nearExpiryOnly = ref(false)
 
 // 上下文穿透：从 MES 齐套/领料/完工入库带入 SKU/批次/库位/工厂查询库存事实。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
@@ -60,8 +76,21 @@ watch(
   },
   { immediate: true },
 )
+watch(
+  () => [filters.siteCode, filters.skuCode, filters.locationCode] as const,
+  ([siteCode, skuCode, locationCode]) => {
+    expiryFilters.siteCode = siteCode
+    expiryFilters.skuCode = skuCode || undefined
+    expiryFilters.locationCode = locationCode || undefined
+    nearExpiryOnly.value = false
+  },
+  { immediate: true },
+)
 
 const errorMessage = computed(() => formatError(availabilityError.value))
+watch(expiryAlertsError, (error) => {
+  if (error) notifyError(error, '近效期批次加载失败，请稍后重试。')
+})
 const onHandQuantity = computed(() => availability.value?.onHandQuantity ?? 0)
 const availableQuantity = computed(() => availability.value?.availableQuantity ?? 0)
 const reservedQuantity = computed(() => availability.value?.reservedQuantity ?? 0)
@@ -84,7 +113,11 @@ const qualityStatusFilter = computed({
 })
 
 type Line = BusinessConsoleInventoryAvailabilityLineResponse
-const columns: NvDataTableColumn<Line>[] = [
+type DisplayLine = Line & Partial<BusinessConsoleInventoryExpiryAlertLineResponse>
+const rows = computed<DisplayLine[]>(() =>
+  nearExpiryOnly.value ? expiryAlerts.value : availabilityLines.value,
+)
+const columns: NvDataTableColumn<DisplayLine>[] = [
   {
     key: 'locationCode',
     header: '库位',
@@ -92,6 +125,13 @@ const columns: NvDataTableColumn<Line>[] = [
     accessor: (r) => r.locationCode ?? '无',
   },
   { key: 'lot', header: '批次/序列号' },
+  {
+    key: 'expiryDate',
+    header: '效期',
+    headerTitle: 'FEFO：预留与拣货建议优先选择更早到期的批次。',
+    accessor: (r) => formatDate(r.expiryDate),
+  },
+  { key: 'expiryStatus', header: '效期状态', accessor: (r) => expiryLabel(r) },
   { key: 'qualityStatus', header: '质量状态', width: 'w-28' },
   { key: 'owner', header: '货主', accessor: (r) => r.ownerId ?? r.ownerType ?? '无' },
   { key: 'onHandQuantity', header: '现存量', align: 'end', width: 'w-24' },
@@ -106,7 +146,17 @@ const columns: NvDataTableColumn<Line>[] = [
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
-function lineContextQuery(line: Line) {
+function expiryLabel(line: DisplayLine) {
+  return expiryToneLabel(expiryToneFromAlert(line))
+}
+function expiryToneValue(line: DisplayLine) {
+  const tone = expiryToneFromAlert(line)
+  return tone === 'fresh' ? 'success' : tone === 'near' ? 'warning' : tone ? 'danger' : 'neutral'
+}
+function formatDate(value?: string | null) {
+  return value ? value.slice(0, 10) : '接口未提供'
+}
+function lineContextQuery(line: DisplayLine) {
   return {
     skuCode: filters.skuCode || undefined,
     siteCode: filters.siteCode || undefined,
@@ -115,7 +165,7 @@ function lineContextQuery(line: Line) {
     serialNo: line.serialNo ?? undefined,
   }
 }
-function scanContextQuery(line: Line) {
+function scanContextQuery(line: DisplayLine) {
   const sourceDocumentId = line.lotNo ?? line.serialNo ?? filters.skuCode
   return {
     sourceWorkflow: 'inventory.count',
@@ -123,10 +173,10 @@ function scanContextQuery(line: Line) {
     scannedValue: line.serialNo ?? line.lotNo ?? undefined,
   }
 }
-function openMovement(line: Line) {
+function openMovement(line: DisplayLine) {
   void router.push({ path: '/inventory/movements', query: lineContextQuery(line) })
 }
-function openCount(line: Line) {
+function openCount(line: DisplayLine) {
   void router.push({ path: '/inventory/counts', query: lineContextQuery(line) })
 }
 function lineFrozen(onHand?: number, available?: number) {
@@ -142,6 +192,9 @@ function firstQuery(value: unknown) {
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
+async function refreshAll() {
+  await Promise.all([refreshAvailability(), refreshExpiryAlerts()])
+}
 </script>
 
 <template>
@@ -149,9 +202,18 @@ function formatError(error: unknown) {
     <NvPageHeader
       title="库存可用量"
       :breadcrumbs="[{ label: '库存' }]"
-      :count="`${availabilityLines.length} 条明细`"
+      :count="`${rows.length} 条明细`"
     >
       <template #actions>
+        <NvButton
+          size="sm"
+          type="button"
+          :variant="nearExpiryOnly ? 'default' : 'outline'"
+          :disabled="expiryAlertsPending"
+          @click="nearExpiryOnly = !nearExpiryOnly"
+        >
+          近效期（30天）
+        </NvButton>
         <NvButton v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
           <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`"
             >返回工单 {{ contextWorkOrderId }}</RouterLink
@@ -161,8 +223,8 @@ function formatError(error: unknown) {
           size="sm"
           type="button"
           variant="outline"
-          :disabled="availabilityPending"
-          @click="refreshAvailability"
+          :disabled="availabilityPending || expiryAlertsPending"
+          @click="refreshAll"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
@@ -190,6 +252,11 @@ function formatError(error: unknown) {
         description="冻结/其他"
         :value="formatQuantity(frozenQuantity)"
         hint="按返回数量推导"
+      />
+      <NvSectionCard
+        description="近效期批次"
+        :value="expiryAlerts.length"
+        hint="服务端返回条数；当前 facade 未提供 total 字段"
       />
     </NvSectionCards>
 
@@ -242,9 +309,9 @@ function formatError(error: unknown) {
 
     <NvDataTable
       :columns="columns"
-      :rows="availabilityLines"
+      :rows="rows"
       :row-key="(r) => `${r.locationCode ?? 'loc'}-${r.lotNo ?? ''}-${r.serialNo ?? ''}`"
-      :loading="availabilityPending"
+      :loading="availabilityPending || expiryAlertsPending"
       :searchable="false"
       :column-settings="false"
       empty-message="未返回可用量明细。确认 SKU、工厂等查询条件后再试。"
@@ -258,6 +325,13 @@ function formatError(error: unknown) {
       <template #cell-qualityStatus="{ row }"
         ><NvStatusBadge :value="row.qualityStatus"
       /></template>
+      <template #cell-expiryStatus="{ row }">
+        <NvStatusBadge
+          :value="expiryToneFromAlert(row)"
+          :label="expiryLabel(row)"
+          :tone="expiryToneValue(row)"
+        />
+      </template>
       <template #cell-onHandQuantity="{ row }"
         ><span class="tabular-nums">{{ formatQuantity(row.onHandQuantity) }}</span></template
       >

@@ -19,7 +19,10 @@ const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }))
 const routerState = vi.hoisted(() => ({ push: vi.fn() }))
 
 vi.mock('vue-router', () => ({
-  RouterLink: { props: ['to'], template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>' },
+  RouterLink: {
+    props: ['to'],
+    template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
+  },
   useRoute: () => routeState,
   useRouter: () => routerState,
 }))
@@ -38,7 +41,11 @@ vi.mock('@/composables/useBusinessInventory', () => ({
     inventoryState.availabilityFilters = filters
 
     return {
-      availability: computed(() => ({ onHandQuantity: 10, availableQuantity: 7, reservedQuantity: 2 })),
+      availability: computed(() => ({
+        onHandQuantity: 10,
+        availableQuantity: 7,
+        reservedQuantity: 2,
+      })),
       availabilityError: ref(undefined),
       availabilityLines: computed(() => [
         {
@@ -57,6 +64,17 @@ vi.mock('@/composables/useBusinessInventory', () => ({
       refreshAvailability: vi.fn(),
     }
   },
+  useInventoryExpiryAlerts: () => ({
+    expiryAlerts: computed(() => []),
+    expiryAlertsError: ref(undefined),
+    expiryAlertsPending: ref(false),
+    filters: {
+      environmentId: 'env-dev',
+      organizationId: 'org-001',
+      siteCode: 'S1',
+    },
+    refreshExpiryAlerts: vi.fn(),
+  }),
   useInventoryCounts: () => ({
     confirmAdjustment: inventoryState.confirmAdjustment,
     confirmAdjustmentError: ref(undefined),
@@ -83,7 +101,10 @@ const uiStubs = {
     template: '<header><h1>{{ title }}</h1><slot name="actions" /></header>',
   },
   SectionCards: { template: '<div><slot /></div>' },
-  SectionCard: { props: ['description', 'value', 'hint'], template: '<div>{{ description }} {{ value }}</div>' },
+  SectionCard: {
+    props: ['description', 'value', 'hint'],
+    template: '<div>{{ description }} {{ value }}</div>',
+  },
   Toolbar: { props: ['showSearch'], template: '<div><slot name="filters" /></div>' },
   // NvDataTable stub renders rows + the cell-actions slot, exposing a design-system table marker.
   NvDataTable: {
@@ -111,7 +132,8 @@ const uiStubs = {
   NvInput: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    template:
+      '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
   NvSelect: { template: '<div><slot /></div>' },
   NvSelectContent: { template: '<div><slot /></div>' },
@@ -127,7 +149,10 @@ function mountInventoryPage(component: unknown) {
       plugins: [createPinia()],
       stubs: {
         ...uiStubs,
-        RouterLink: { props: ['to'], template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>' },
+        RouterLink: {
+          props: ['to'],
+          template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
+        },
       },
     },
   })
@@ -157,7 +182,9 @@ describe('inventory workflow pages', () => {
   it('links inventory lot context to barcode scan records', () => {
     const wrapper = mountInventoryPage(AvailabilityPage)
 
-    const link = wrapper.findAll('[data-router-link]').find((item) => item.text().includes('扫码记录'))
+    const link = wrapper
+      .findAll('[data-router-link]')
+      .find((item) => item.text().includes('扫码记录'))
     expect(link?.attributes('data-to')).toContain('/barcode/scans')
     expect(link?.attributes('data-to')).toContain('inventory.count')
     expect(link?.attributes('data-to')).toContain('LOT-001')
@@ -173,11 +200,30 @@ describe('inventory workflow pages', () => {
     expect(wrapper.get('[data-cell="reservedQuantity"]').text()).toBe('2')
     expect(inventoryState.availabilityFilters?.qualityStatus).toBeUndefined()
 
-    const links = wrapper.findAll('[data-router-link]').map((link) => link.attributes('data-to') ?? '')
-    expect(links.some((to) => to.includes('/mes/traceability') && to.includes('batchOrSerial') && to.includes('SN-001'))).toBe(true)
+    const links = wrapper
+      .findAll('[data-router-link]')
+      .map((link) => link.attributes('data-to') ?? '')
+    expect(
+      links.some(
+        (to) =>
+          to.includes('/mes/traceability') && to.includes('batchOrSerial') && to.includes('SN-001'),
+      ),
+    ).toBe(true)
     expect(links.some((to) => to.includes('/barcode/scans') && to.includes('SN-001'))).toBe(true)
-    expect(links.some((to) => to.includes('/wms/picking') && to.includes('locationCode') && to.includes('A-01'))).toBe(true)
-    expect(links.some((to) => to.includes('/quality/inspections') && to.includes('batchNo') && to.includes('materialLotId') && to.includes('LOT-001'))).toBe(true)
+    expect(
+      links.some(
+        (to) => to.includes('/wms/picking') && to.includes('locationCode') && to.includes('A-01'),
+      ),
+    ).toBe(true)
+    expect(
+      links.some(
+        (to) =>
+          to.includes('/quality/inspections') &&
+          to.includes('batchNo') &&
+          to.includes('materialLotId') &&
+          to.includes('LOT-001'),
+      ),
+    ).toBe(true)
   })
 
   it('generates a fresh idempotency key each time the same count task is adjusted', async () => {
@@ -190,11 +236,17 @@ describe('inventory workflow pages', () => {
     await wrapper.find('#count-task-site').setValue('S1')
     await wrapper.find('#count-task-location').setValue('A-01')
     await wrapper.findAll('form')[0]!.trigger('submit')
-    await wrapper.findAll('button').find((button) => button.text().includes('确认差异'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('确认差异'))!
+      .trigger('click')
     await wrapper.find('#count-adjust-quantity').setValue('5')
     await wrapper.findAll('form')[1]!.trigger('submit')
 
-    await wrapper.findAll('button').find((button) => button.text().includes('确认差异'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('确认差异'))!
+      .trigger('click')
     await wrapper.find('#count-adjust-quantity').setValue('6')
     await wrapper.findAll('form')[1]!.trigger('submit')
 

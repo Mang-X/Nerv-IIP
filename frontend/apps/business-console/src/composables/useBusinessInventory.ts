@@ -2,12 +2,15 @@ import {
   confirmBusinessConsoleInventoryCountAdjustmentMutationOptions,
   createBusinessConsoleInventoryCountTaskMutationOptions,
   getBusinessConsoleInventoryAvailabilityQueryOptions,
+  listBusinessConsoleInventoryExpiryAlertsQueryOptions,
   postBusinessConsoleInventoryMovementMutationOptions,
   type BusinessConsoleConfirmStockCountAdjustmentRequest,
   type BusinessConsoleCreateStockCountTaskRequest,
   type BusinessConsoleInventoryAvailabilityEnvelope,
   type BusinessConsoleInventoryAvailabilityLineResponse,
   type BusinessConsoleInventoryAvailabilityResponse,
+  type BusinessConsoleInventoryExpiryAlertLineResponse,
+  type BusinessConsoleInventoryExpiryAlertsResponse,
   type BusinessConsolePostStockMovementRequest,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
@@ -30,23 +33,45 @@ export interface InventoryAvailabilityFilters {
 
 export interface InventoryActionContext extends BusinessContextFields {}
 
+export interface InventoryExpiryFilters extends BusinessContextFields {
+  siteCode: string
+  skuCode?: string
+  locationCode?: string
+}
+
+export function buildInventoryExpiryAlertsQuery(filters: InventoryExpiryFilters) {
+  return {
+    organizationId: filters.organizationId,
+    environmentId: filters.environmentId,
+    siteCode: filters.siteCode,
+    ...(filters.skuCode ? { skuCode: filters.skuCode } : {}),
+    ...(filters.locationCode ? { locationCode: filters.locationCode } : {}),
+    nearExpiryThresholdDays: 30,
+    includeZeroAvailable: false,
+  }
+}
+
 function defaultActionContext(): InventoryActionContext {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+    }),
+  )
 }
 
 function defaultAvailabilityFilters(): InventoryAvailabilityFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    skuCode: '',
-    uomCode: '',
-    siteCode: '',
-    qualityStatus: 'available',
-    ownerType: 'owned',
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      skuCode: '',
+      uomCode: '',
+      siteCode: '',
+      qualityStatus: 'available',
+      ownerType: 'owned',
+    }),
+  )
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -122,7 +147,44 @@ export function useInventoryAvailability() {
     ),
     availabilityPending: availabilityQuery.isLoading,
     filters,
-    refreshAvailability: () => availabilityEnabled.value ? availabilityQuery.refetch() : Promise.resolve(),
+    refreshAvailability: () =>
+      availabilityEnabled.value ? availabilityQuery.refetch() : Promise.resolve(),
+  }
+}
+
+export function useInventoryExpiryAlerts() {
+  const filters = bindBusinessContext(
+    reactive<InventoryExpiryFilters>({
+      organizationId: '',
+      environmentId: '',
+      siteCode: '',
+    }),
+  )
+  const enabled = computed(
+    () =>
+      filters.organizationId.trim().length > 0 &&
+      filters.environmentId.trim().length > 0 &&
+      filters.siteCode.trim().length > 0,
+  )
+  const query = useQuery(() => ({
+    ...listBusinessConsoleInventoryExpiryAlertsQueryOptions({
+      query: buildInventoryExpiryAlertsQuery(filters),
+    }),
+    enabled: enabled.value,
+  }))
+  const response = computed<BusinessConsoleInventoryExpiryAlertsResponse | undefined>(() => {
+    if (!query.data.value?.success) return undefined
+    return query.data.value.data ?? undefined
+  })
+
+  return {
+    filters,
+    expiryAlerts: computed<BusinessConsoleInventoryExpiryAlertLineResponse[]>(
+      () => response.value?.items ?? [],
+    ),
+    expiryAlertsError: query.error,
+    expiryAlertsPending: query.isLoading,
+    refreshExpiryAlerts: () => (enabled.value ? query.refetch() : Promise.resolve()),
   }
 }
 
@@ -132,7 +194,9 @@ export function useInventoryMovement() {
     ...postBusinessConsoleInventoryMovementMutationOptions(),
     onSuccess() {
       void queryCache
-        .invalidateQueries({ predicate: isBusinessQuery('getBusinessConsoleInventoryAvailability') })
+        .invalidateQueries({
+          predicate: isBusinessQuery('getBusinessConsoleInventoryAvailability'),
+        })
         .catch(ignoreBackgroundError)
     },
   })
@@ -148,12 +212,16 @@ export function useInventoryMovement() {
 export function useInventoryCounts() {
   const filters = defaultActionContext()
   const queryCache = useQueryCache()
-  const createCountTaskMutation = useMutation(createBusinessConsoleInventoryCountTaskMutationOptions())
+  const createCountTaskMutation = useMutation(
+    createBusinessConsoleInventoryCountTaskMutationOptions(),
+  )
   const confirmAdjustmentMutation = useMutation({
     ...confirmBusinessConsoleInventoryCountAdjustmentMutationOptions(),
     onSuccess() {
       void queryCache
-        .invalidateQueries({ predicate: isBusinessQuery('getBusinessConsoleInventoryAvailability') })
+        .invalidateQueries({
+          predicate: isBusinessQuery('getBusinessConsoleInventoryAvailability'),
+        })
         .catch(ignoreBackgroundError)
     },
   })

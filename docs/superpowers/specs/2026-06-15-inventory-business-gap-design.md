@@ -54,3 +54,20 @@ Focused tests must prove:
 - open count tasks freeze movements, confirmation or cancellation releases the freeze, and stale ledger versions require recount;
 - above-threshold count adjustments leave the ledger unchanged until an approved `ApprovalCompleted` event posts the movement; rejection/return voids the adjustment and requires recount;
 - Quality inspection passed/rejected events create status-transfer movements through public contracts.
+
+## Business Console expiry presentation (MAN-449 / #803)
+
+The Business Console inventory lots and availability views consume the existing
+BusinessGateway `GET /api/business-console/v1/inventory/expiry-alerts` read
+facade for a real 30-day near-expiry view. Shared frontend expiry presentation
+uses UTC calendar-day comparison and the common thresholds `>90` days normal,
+`30–90` days near, `<30` days critical, and negative days expired. The pages
+show the returned `expiryDate`/`daysUntilExpiry` facts with a text status badge;
+missing production date, shelf-life and expiry-source fields remain explicitly
+unknown. The FEFO explanation is attached to the expiry column header.
+
+The current facade response contains `items` only: it has no `total`, paging
+window, production/shelf-life/source details, or operation block reason. The
+Console therefore does not invent a server total, pagination, operation disable
+state, or detail panel. A follow-up facade/schema change is required before a
+true paged total card and full batch-detail/source presentation can be claimed.

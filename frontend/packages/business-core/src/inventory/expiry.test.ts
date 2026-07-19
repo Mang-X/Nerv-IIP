@@ -5,6 +5,7 @@ import {
   expiryDaysUntil,
   expiryTone,
   expiryToneFromDate,
+  expiryToneFromAlert,
   expiryToneLabel,
   isNearOrExpired,
 } from './expiry'
@@ -67,5 +68,13 @@ describe('expiry 三色口径', () => {
     expect(expiryToneLabel('critical')).toBe('临近过期')
     expect(expiryToneLabel('expired')).toBe('已过期')
     expect(expiryToneLabel(null)).toBe('效期未知')
+  })
+
+  it('expiryToneFromAlert 优先使用后端标记，缺失时回退共享日期口径', () => {
+    expect(expiryToneFromAlert({ isExpired: true, daysUntilExpiry: 90 }, asOf)).toBe('expired')
+    expect(expiryToneFromAlert({ isNearExpiry: true, daysUntilExpiry: 10 }, asOf)).toBe('critical')
+    expect(expiryToneFromAlert({ isNearExpiry: true, daysUntilExpiry: 120 }, asOf)).toBe('fresh')
+    expect(expiryToneFromAlert({ expiryDate: '2026-10-13' }, asOf)).toBe('near')
+    expect(expiryToneFromAlert({}, asOf)).toBeNull()
   })
 })
