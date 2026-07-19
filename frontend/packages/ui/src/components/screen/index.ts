@@ -31,6 +31,7 @@ export { default as NvTaktGantt } from './TaktGantt.vue'
 
 // Data & status
 export { default as NvScreenStatusCard } from './StatusCard.vue'
+export { default as NvScreenFreshness } from './ScreenFreshness.vue'
 export { default as NvKpiBar } from './KpiBar.vue'
 export { default as NvAlarmTable } from './AlarmTable.vue'
 

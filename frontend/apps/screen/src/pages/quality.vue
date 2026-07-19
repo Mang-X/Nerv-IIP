@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  NvScreenFreshness,
   NvScreenPanel,
   NvScreenPareto,
   NvScreenScrollArea,
@@ -393,9 +394,7 @@ const trendPin = computed(() => {
           <span>合格率 / 不良率 / 帕累托为演示推算 · NCR 与检验明细就绪</span>
         </span>
         <span>缺陷码 Quality ↔ MES 口径映射 · MRB/CAPA · 聚合端点 待 #570</span>
-        <span class="scr-fresh" :class="freshness.tone"
-          ><i aria-hidden="true" />{{ freshness.text }}</span
-        >
+        <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
       </footer>
     </div>
 

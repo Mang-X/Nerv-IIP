@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { NvKpiBar, NvSparkline, NvScreenStatusLight, useScreenData } from '@nerv-iip/ui'
+import {
+  NvKpiBar,
+  NvScreenFreshness,
+  NvScreenStatusLight,
+  NvSparkline,
+  useScreenData,
+} from '@nerv-iip/ui'
 import { useVirtualList } from '@vueuse/core'
 import { Activity, AlertTriangle, Factory, PackageCheck, Workflow } from '@lucide/vue'
 import { type Component, type CSSProperties, computed, ref, watch } from 'vue'
@@ -205,9 +211,7 @@ const kpiItems = computed<KpiCell[]>(() => {
       <footer class="scr-foot">
         <RouterLink :to="backLink.to" class="scr-back">‹ {{ backLink.label }}</RouterLink>
         <span>产线状态与设备屏同源 · 产量 / 节拍为演示推算 · 待 #570；点卡进入单线屏</span>
-        <span class="scr-fresh" :class="freshness.tone"
-          ><i aria-hidden="true" />{{ freshness.text }}</span
-        >
+        <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
       </footer>
     </div>
     <div v-else class="ls-loading">连接数据…</div>

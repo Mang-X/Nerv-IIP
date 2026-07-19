@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   NvRingGauge,
+  NvScreenFreshness,
   NvScreenPanel,
   NvScreenScrollArea,
   NvScreenSegmented,
@@ -349,12 +350,8 @@ const paramsFreshness = computed(() =>
       <footer class="scr-foot">
         <RouterLink :to="backLink.to" class="scr-back">‹ {{ backLink.label }}</RouterLink>
         <div class="scr-foot-r">
-          <span class="scr-fresh" :class="freshness.tone"
-            ><i aria-hidden="true" />{{ freshness.text }}</span
-          >
-          <span class="scr-fresh" :class="paramsFreshness.tone"
-            ><i aria-hidden="true" />参数 {{ paramsFreshness.text }}</span
-          >
+          <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
+          <NvScreenFreshness :tone="paramsFreshness.tone" :label="`参数 ${paramsFreshness.text}`" />
           <span>实时参数与趋势待 historian · #570 · 单机 OEE 已接入真实读面 · #738</span>
         </div>
       </footer>
@@ -410,48 +407,6 @@ const paramsFreshness = computed(() =>
     align-items: center;
     gap: 16px;
     min-width: 0;
-  }
-  .scr-fresh {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    flex: none;
-    font-variant-numeric: tabular-nums;
-  }
-  .scr-fresh i {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--nv-scr-faint);
-  }
-  .scr-fresh.live {
-    color: var(--nv-scr-green);
-  }
-  .scr-fresh.live i {
-    background: var(--nv-scr-green);
-    box-shadow: 0 0 7px var(--nv-scr-green);
-    animation: breathe 4.5s ease-in-out infinite;
-  }
-  .scr-fresh.stale {
-    color: var(--nv-scr-amber);
-  }
-  .scr-fresh.stale i {
-    background: var(--nv-scr-amber);
-    box-shadow: 0 0 7px var(--nv-scr-amber);
-  }
-  @keyframes breathe {
-    0%,
-    100% {
-      opacity: 0.55;
-    }
-    50% {
-      opacity: 1;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .scr-fresh.live i {
-      animation: none;
-    }
   }
   .main {
     flex: 1;

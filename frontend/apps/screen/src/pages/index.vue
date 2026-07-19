@@ -3,6 +3,7 @@ import * as icons from '@lucide/vue'
 import {
   NvGlowDivider,
   NvKpiBar,
+  NvScreenFreshness,
   NvScreenScaler,
   NvScreenSegmented,
   NvScreenStatusLight,
@@ -160,9 +161,7 @@ const scopeCounts = computed(() => {
       </main>
 
       <footer class="hall-foot">
-        <span class="scr-fresh" :class="freshness.tone"
-          ><i aria-hidden="true" />{{ freshness.text }}</span
-        >
+        <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
         <span>演示数据流 · 后端接入待 #570</span>
       </footer>
     </div>

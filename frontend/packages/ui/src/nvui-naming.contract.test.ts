@@ -16,7 +16,7 @@ const exported = ui as Record<string, unknown>
 const transitionalPcIdentifier = /(?:^|[\s"'`.])ds-/m
 const transitionalScreenIdentifier = /(?:^|[\s"'`.])sb-/m
 
-// --- Frozen Appendix A (ui): 181 Nv names (incl. renamed derived types) + 174 old.
+// --- Frozen Appendix A (ui): 182 Nv names (incl. renamed derived types) + 174 old.
 // (NvCombobox / NvSearchSelect added post-freeze by MAN-439 — new components, see ADR 0020 Appendix A.)
 const NV_ALL = [
   'NvAlarmTable',
@@ -135,6 +135,7 @@ const NV_ALL = [
   'NvScreenBarChart',
   'NvScreenButton',
   'NvScreenDonut',
+  'NvScreenFreshness',
   'NvScreenHeader',
   'NvScreenInput',
   'NvScreenPagination',
@@ -258,7 +259,6 @@ describe('NvUI Appendix A full-mapping freeze (@nerv-iip/ui / #787)', () => {
     }
   })
 
-
   it('exposes canonical nvFieldVariants without a transitional variant export', () => {
     expect(exported.nvFieldVariants).toBeDefined()
     expect(exported['field' + 'Pro' + 'Variants']).toBeUndefined()
@@ -294,7 +294,9 @@ describe('NvUI Appendix A full-mapping freeze (@nerv-iip/ui / #787)', () => {
 
   it('closes the transitional pro source layer and obsolete table-specific pagination name', () => {
     expect(
-      readdirSync(resolve(srcDir, 'components')).some((entry) => entry === ['p', 'r', 'o'].join('')),
+      readdirSync(resolve(srcDir, 'components')).some(
+        (entry) => entry === ['p', 'r', 'o'].join(''),
+      ),
       'transitional PC directory must be removed',
     ).toBe(false)
     expect(existsSync(resolve(srcDir, 'components/pc')), 'components/pc must exist').toBe(true)
@@ -314,7 +316,7 @@ describe('NvUI Appendix A full-mapping freeze (@nerv-iip/ui / #787)', () => {
       const source = readFileSync(file, 'utf8')
       if (new RegExp('Pro' + '\\.vue$').test(normalized))
         violations.push(`${normalized}: transitional component filename`)
-      if (new RegExp("data-slot=['\"][^'\"]*-" + 'pro').test(source))
+      if (new RegExp('data-slot=[\'"][^\'"]*-' + 'pro').test(source))
         violations.push(`${normalized}: transitional slot`)
       if (transitionalPcIdentifier.test(source))
         violations.push(`${normalized}: transitional PC identifier`)

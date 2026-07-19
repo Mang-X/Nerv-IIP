@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   NvRingGauge,
+  NvScreenFreshness,
   NvScreenPanel,
   NvScreenScrollArea,
   NvSparkline,
@@ -417,9 +418,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
       <footer class="lb-foot">
         <RouterLink :to="backLink.to" class="lb-back">‹ {{ backLink.label }}</RouterLink>
         <span>产量 / 节拍 / 合格率为演示推算 · 待 #570</span>
-        <span class="scr-fresh" :class="freshness.tone"
-          ><i aria-hidden="true" />{{ freshness.text }}</span
-        >
+        <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
       </footer>
     </div>
 

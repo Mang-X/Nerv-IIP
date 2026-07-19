@@ -2,6 +2,7 @@
 import {
   NvScreenBarChart,
   NvScreenDonut,
+  NvScreenFreshness,
   NvScreenPanel,
   NvScreenScrollArea,
   NvScrollBoard,
@@ -606,12 +607,8 @@ const wcsView = ref<'chart' | 'list'>('chart')
         <span class="wb-foot-r">
           当日吞吐 <b>{{ nf.format(board.kpis.throughputLines) }}</b> {{ flowUnit }} （入
           {{ nf.format(board.inbound.linesDone) }} · 出 {{ nf.format(board.outbound.linesDone) }}）
-          <span class="scr-fresh" :class="boardFreshness.tone"
-            ><i aria-hidden="true" />主数据 {{ boardFreshness.text }}</span
-          >
-          <span class="scr-fresh" :class="opsFreshness.tone"
-            ><i aria-hidden="true" />任务/WCS {{ opsFreshness.text }}</span
-          >
+          <NvScreenFreshness :tone="boardFreshness.tone" :label="`主数据 ${boardFreshness.text}`" />
+          <NvScreenFreshness :tone="opsFreshness.tone" :label="`任务/WCS ${opsFreshness.text}`" />
         </span>
       </footer>
     </div>

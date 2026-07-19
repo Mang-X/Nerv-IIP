@@ -66,39 +66,4 @@
     background: rgba(135, 208, 255, 0.34);
     background-clip: padding-box;
   }
-
-  .scr-fresh {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-  .scr-fresh i {
-    width: 7px;
-    height: 7px;
-    flex: none;
-    border-radius: 50%;
-    background: var(--nv-scr-faint);
-  }
-  .scr-fresh.live {
-    color: var(--nv-scr-green);
-  }
-  .scr-fresh.live i {
-    background: var(--nv-scr-green);
-    box-shadow: 0 0 7px var(--nv-scr-green);
-  }
-  .scr-fresh.stale {
-    color: var(--nv-scr-amber);
-  }
-  .scr-fresh.stale i {
-    background: var(--nv-scr-amber);
-    box-shadow: 0 0 7px var(--nv-scr-amber);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .scr-fresh.live i,
-    .scr-fresh.stale i {
-      box-shadow: none;
-    }
-  }
 }

@@ -72,7 +72,7 @@
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | 容器 / 外壳 | `ScreenPanel` · `BorderPanel` · `TechFrame` · `TitleBar` · `ScreenHeader` · `GlowDivider`                                            |
 | 指标 / 图表 | `OeeHero` · `RingGauge` · `WaterLevel` · `CapsuleBar` · `DigitalFlop` · `Sparkline` · `TrendChart` · `TaktGantt`                     |
-| 数据 / 状态 | `StatusCard` · `KpiBar` · `AlarmTable` · `StatusLight` · `StatusTag`                                                                 |
+| 数据 / 状态 | `StatusCard` · `Freshness` · `KpiBar` · `AlarmTable` · `StatusLight` · `StatusTag`                                                   |
 | 控件        | `ScreenButton` · `ScreenInput` · `ScreenSelect` · `ScreenSearch` · `ScreenTable` · `ScreenTabs` · `ScreenSegmented` · `ScreenSwitch` |
 
 **容器策略**:裸内容组件（`OeeHero` / `RingGauge` / `WaterLevel` / `CapsuleBar` / `DigitalFlop` / `Sparkline` / `KpiBar`）放进 `ScreenPanel`;自带容器组件（`TrendChart` / `TaktGantt` / `AlarmTable` / `StatusCard`）直接用。

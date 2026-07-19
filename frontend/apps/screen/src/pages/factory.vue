@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   NvRingGauge,
+  NvScreenFreshness,
   NvScreenPanel,
   NvScrollBoard,
   NvScreenStatusTag,
@@ -205,9 +206,7 @@ const bandCells = computed<BandCell[]>(() => {
       <footer class="scr-foot">
         <RouterLink :to="backLink.to" class="scr-back">‹ {{ backLink.label }}</RouterLink>
         <span>车间归并 / 达成为前端聚合推算 · 待 #570；点车间卡进入车间总览</span>
-        <span class="scr-fresh" :class="freshness.tone"
-          ><i aria-hidden="true" />{{ freshness.text }}</span
-        >
+        <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
       </footer>
     </div>
     <div v-else class="fx-loading">连接数据…</div>

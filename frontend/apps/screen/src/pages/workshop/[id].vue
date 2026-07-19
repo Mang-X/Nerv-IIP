@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  NvScreenFreshness,
   NvScreenPanel,
   NvScreenScrollArea,
   NvScreenSegmented,
@@ -460,9 +461,7 @@ const devSummary = computed(() => {
       <footer class="wb-foot">
         <RouterLink :to="backLink.to" class="wb-back">‹ {{ backLink.label }}</RouterLink>
         <span>产量 / 达成 / 齐套为演示推算 · 待 #570；在岗 / 人效为数据缺口，仅展示花名册口径</span>
-        <span class="scr-fresh" :class="freshness.tone"
-          ><i aria-hidden="true" />{{ freshness.text }}</span
-        >
+        <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
       </footer>
     </div>
 
