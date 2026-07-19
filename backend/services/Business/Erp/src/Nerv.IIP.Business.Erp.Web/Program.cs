@@ -115,7 +115,7 @@ try
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();
 
-    var app = builder.Build();
+    await using var app = builder.Build();
     app.UseNervIipCorrelation();
     var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
     if (autoMigrate && !app.Environment.IsDevelopment())
@@ -128,15 +128,6 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
-    }
-
-    if (builder.Configuration.GetValue<bool>("Erp:Seed:SalesOrderDemandDemo:Enabled"))
-    {
-        using var scope = app.Services.CreateScope();
-        var seed = scope.ServiceProvider.GetRequiredService<SalesOrderDemandDemoSeedService>();
-        await seed.SeedAsync(
-            builder.Configuration["Erp:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["Erp:Seed:EnvironmentId"] ?? "env-dev");
     }
 
     app.UseNervIipRequestLocalization();
@@ -156,7 +147,17 @@ try
     app.MapHealthChecks("/health");
     app.MapMetrics();
 
-    await app.RunAsync();
+    await app.StartAsync();
+    if (builder.Configuration.GetValue<bool>("Erp:Seed:SalesOrderDemandDemo:Enabled"))
+    {
+        using var scope = app.Services.CreateScope();
+        var seed = scope.ServiceProvider.GetRequiredService<SalesOrderDemandDemoSeedService>();
+        await seed.SeedAsync(
+            builder.Configuration["Erp:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["Erp:Seed:EnvironmentId"] ?? "env-dev");
+    }
+
+    await app.WaitForShutdownAsync();
 }
 catch (Exception ex)
 {

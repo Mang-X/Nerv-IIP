@@ -17,12 +17,14 @@ ERP 发布三个 v1 具体事件：`SalesOrderReleasedIntegrationEvent`、`Sales
 
 ## 可复用演示前置路径：SO-DEMO-001
 
-AppHost 为 ERP 显式开启 `Erp:Seed:SalesOrderDemandDemo:Enabled`。该 seed 幂等创建并保留 released 的 `QUO-DEMO-001` / `SO-DEMO-001`（客户 `CUST-DEMO-001`、SKU `SKU-DEMO-001`、UOM `EA`、站点 `SITE-001`），不会覆盖同编号的租户事实；若保留编号已被不兼容数据占用则启动明确失败。跨服务演示 profile 必须使用 Redis 或 RabbitMQ transport，不能使用仅进程内的 InMemory transport。
+AppHost 为 ERP 显式开启 `Erp:Seed:SalesOrderDemandDemo:Enabled`。该 seed 幂等创建并保留 released 的 `QUO-DEMO-001` / `SO-DEMO-001`（客户 `CUST-DEMO-001`、SKU `SKU-DEMO-001`、UOM `EA`、站点 `SITE-001`），并通过正常 Unit of Work/CAP outbox 发布 released 事实；不会覆盖同编号的租户事实，若保留编号已被不兼容数据占用则启动明确失败。跨服务演示 profile 必须使用 Redis 或 RabbitMQ transport，不能使用仅进程内的 InMemory transport。
+
+默认 AppHost 演示应直接复用 seed 订单，不要再通过创建 API 手工创建同号订单。若要演示完整手工录入流程，先关闭 `Erp:Seed:SalesOrderDemandDemo:Enabled`，再执行下列前置步骤。`scripts/verify-erp-sales-order-demand-planning.ps1` 始终创建一次性数据库和独立服务进程，不连接 AppHost dev 数据库，因此不与默认 seed 冲突。
 
 1. 在同一 organization/environment 准备 active 客户 `CUST-001`，配置足够信用额度，或先走信用冻结后审批释放路径。
 2. 准备 active SKU `SKU-FG-A`、UOM `EA`、站点 `SITE-001`，以及能生成生产建议的 released ProductionVersion/MBOM/Routing 和必要库存快照。
 3. 创建并批准报价，至少包含一行 `SKU-FG-A`、正数量和要求交期。
-4. 从报价创建销售订单 `SO-DEMO-001`，显式提交 `siteCode=SITE-001`；订单释放后等待 DemandPlanning consumer。
+4. 关闭 demo seed 时，从报价创建销售订单 `SO-DEMO-001`，显式提交 `siteCode=SITE-001`；使用默认 seed 时跳过创建，直接等待 DemandPlanning consumer 收敛 released 事实。
 5. 在 `/planning` 验证来源 `SO-DEMO-001`、订单行、客户、版本与 active 状态；点击来源可进入 `/erp/sales/orders?keyword=SO-DEMO-001`。
 6. 运行覆盖要求交期的 MRP，验证 pegging/计划工单建议的 demand source reference 为 `SO-DEMO-001`。
 7. 重放相同事件，再依次投递更高版本 change、低版本 change 和 cancel；验证重复/乱序不回滚，新数量可见，取消后 quantity=0/status=cancelled 且后续 MRP 不再使用该需求。

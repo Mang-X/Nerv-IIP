@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Seed;
 
@@ -9,7 +10,9 @@ namespace Nerv.IIP.Business.Erp.Web.Application.Seed;
 /// Explicit, idempotent demo seed for the MAN-517 ERP-to-planning bridge. It only
 /// fills the reserved SO-DEMO-001 facts and never overwrites tenant-maintained data.
 /// </summary>
-public sealed class SalesOrderDemandDemoSeedService(ApplicationDbContext dbContext)
+public sealed class SalesOrderDemandDemoSeedService(
+    ApplicationDbContext dbContext,
+    IErpIntegrationEventContextAccessor integrationEventContext)
 {
     public const string QuotationNo = "QUO-DEMO-001";
     public const string SalesOrderNo = "SO-DEMO-001";
@@ -61,6 +64,10 @@ public sealed class SalesOrderDemandDemoSeedService(ApplicationDbContext dbConte
             SiteCode,
             quotation,
             new CustomerCreditSnapshot(CustomerCode, 100_000m, 0m, 0m)));
-        await dbContext.SaveChangesAsync(cancellationToken);
+        using var causationScope = integrationEventContext.BeginScope(
+            "seed:man-517-demo",
+            "seed:man-517-demo",
+            "system:erp-demo-seed");
+        await dbContext.SaveEntitiesAsync(cancellationToken);
     }
 }

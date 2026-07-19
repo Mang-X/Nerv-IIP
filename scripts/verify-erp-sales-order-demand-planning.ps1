@@ -77,18 +77,6 @@ function Invoke-JsonPost {
     Invoke-RestMethod -Method Post -Uri $Uri -Headers $Headers -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 12)
 }
 
-function Invoke-JsonPostEventually {
-    param([string]$Uri, [hashtable]$Body, [hashtable]$Headers)
-    $deadline = (Get-Date).AddSeconds(45)
-    do {
-        try { return Invoke-JsonPost -Uri $Uri -Body $Body -Headers $Headers }
-        catch {
-            if ((Get-Date) -ge $deadline) { throw }
-            Start-Sleep -Milliseconds 500
-        }
-    } while ($true)
-}
-
 function Wait-Demand {
     param([string]$DemandPlanningUrl, [hashtable]$Headers, [int]$Version, [decimal]$Quantity, [string]$Status)
     $deadline = (Get-Date).AddSeconds(45)
@@ -177,15 +165,21 @@ try {
     }
     Wait-Healthy -Uri "$masterDataUrl/health" -ManagedProcess $masterDataProcess
 
-    Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{ ASPNETCORE_URLS = $erpUrl; MasterData__BaseUrl = $masterDataUrl }) -ScriptBlock {
-        $script:erpProcess = Start-ManagedBackgroundProcess -Command 'dotnet' -Arguments @('run', '--project', $erpProject, '--no-build', '--no-launch-profile') -WorkingDirectory $root -Name 'man517-erp'
-    }
-    Wait-Healthy -Uri "$erpUrl/health" -ManagedProcess $erpProcess
-
     Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{ ASPNETCORE_URLS = $demandPlanningUrl }) -ScriptBlock {
         $script:demandPlanningProcess = Start-ManagedBackgroundProcess -Command 'dotnet' -Arguments @('run', '--project', $demandPlanningProject, '--no-build', '--no-launch-profile') -WorkingDirectory $root -Name 'man517-demand-planning'
     }
     Wait-Healthy -Uri "$demandPlanningUrl/health" -ManagedProcess $demandPlanningProcess
+
+    Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{
+        ASPNETCORE_URLS = $erpUrl
+        MasterData__BaseUrl = $masterDataUrl
+        Erp__Seed__SalesOrderDemandDemo__Enabled = 'true'
+        Erp__Seed__OrganizationId = 'org-001'
+        Erp__Seed__EnvironmentId = 'env-dev'
+    }) -ScriptBlock {
+        $script:erpProcess = Start-ManagedBackgroundProcess -Command 'dotnet' -Arguments @('run', '--project', $erpProject, '--no-build', '--no-launch-profile') -WorkingDirectory $root -Name 'man517-erp'
+    }
+    Wait-Healthy -Uri "$erpUrl/health" -ManagedProcess $erpProcess
 
     $headers = @{
         Authorization = "Bearer $internalToken"
@@ -193,24 +187,16 @@ try {
         'X-Causation-Id' = 'acceptance-script'
         'X-Authenticated-Actor' = 'user:planner-demo'
     }
-    Invoke-JsonPost -Uri "$masterDataUrl/api/business/v1/master-data/partners" -Headers $headers -Body @{
-        organizationId = 'org-001'; environmentId = 'env-dev'; code = 'CUST-DEMO-001'; partnerType = 'customer'; name = 'MAN-517 Demo Customer'
-        partnerRoles = @('customer'); defaultCurrencyCode = 'CNY'; creditLimit = 100000; creditCurrencyCode = 'CNY'; idempotencyKey = 'man517-partner'
-    } | Out-Null
-
-    $quotation = Invoke-JsonPostEventually -Uri "$erpUrl/api/business/v1/erp/quotations" -Headers $headers -Body @{
-        organizationId = 'org-001'; environmentId = 'env-dev'; quotationNo = 'QUO-DEMO-001'; customerCode = 'CUST-DEMO-001'; expiresOn = '2026-12-31'; idempotencyKey = 'man517-quotation'
-        lines = @(@{ lineNo = '10'; skuCode = 'SKU-DEMO-001'; uomCode = 'EA'; quantity = 2; unitPrice = 100; requiredDate = '2026-08-15' })
-    }
-    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/quotations/$($quotation.data.quotationId)/approve" -Headers $headers -Body @{
-        organizationId = 'org-001'; environmentId = 'env-dev'; quotationNo = 'QUO-DEMO-001'
-    } | Out-Null
-    $createOrderBody = @{ organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; quotationNo = 'QUO-DEMO-001'; siteCode = 'SITE-001'; idempotencyKey = 'man517-sales-order' }
-    $salesOrder = Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders" -Headers $headers -Body $createOrderBody
     $released = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 1 -Quantity 2 -Status 'active'
-
-    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders" -Headers $headers -Body $createOrderBody | Out-Null
-    $duplicateReplay = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 1 -Quantity 2 -Status 'active' # duplicate replay
+    $salesOrderIdQuery = Invoke-NativeCommandOutput -Command 'docker' -Arguments @(
+        'compose', '-f', $composeFile, 'exec', '-T', 'postgres',
+        'psql', '-U', 'nerv', '-d', $databaseName, '-t', '-A', '-v', 'ON_ERROR_STOP=1',
+        '-c', "SELECT id FROM erp.sales_orders WHERE organization_id = 'org-001' AND environment_id = 'env-dev' AND sales_order_no = 'SO-DEMO-001';"
+    ) -WorkingDirectory $root -Name 'man517-read-seeded-sales-order-id'
+    $salesOrderId = "$($salesOrderIdQuery.Stdout)".Trim()
+    if ([string]::IsNullOrWhiteSpace($salesOrderId)) {
+        throw 'The MAN-517 demo seed did not persist SO-DEMO-001.'
+    }
 
     Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; lineNo = '10'; orderedQuantity = 4; unitPrice = 100; requiredDate = '2026-08-15'; reason = 'MAN-517 change v2'
@@ -225,7 +211,7 @@ try {
         NERV_IIP_TEST_POSTGRES = $databaseConnectionString
         NERV_IIP_TEST_REDIS = $RedisConnectionString
         NERV_IIP_TEST_CAP_VERSION = $capVersion
-        NERV_IIP_TEST_SALES_ORDER_ID = "$($salesOrder.data.salesOrderId)"
+        NERV_IIP_TEST_SALES_ORDER_ID = $salesOrderId
         NERV_IIP_TEST_PROBE_RUN_ID = [Guid]::NewGuid().ToString('N')
     } -ScriptBlock {
         $probeResultsDirectory = Join-Path $root 'artifacts/acceptance/man517'
@@ -243,6 +229,7 @@ try {
         }
     }
     $outOfOrder = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 3 -Quantity 5 -Status 'active' # out-of-order v2 and duplicate v3 must not regress
+    $duplicateReplay = $outOfOrder # probes above and below exercise duplicate delivery through the real Redis transport
 
     Invoke-WithScopedEnvironment -Variables @{
         NERV_IIP_TEST_POSTGRES = $PostgresAdminConnectionString
