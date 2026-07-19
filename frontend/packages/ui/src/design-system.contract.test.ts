@@ -19,8 +19,15 @@ const appEntry = (app: string) => read(`../../../apps/${app}/src/main.ts`)
 // Strip CSS block comments so structural assertions ignore prose that documents
 // removed constructs (e.g. a comment noting the `revert-layer` hack is gone).
 const stripComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '')
-const PRODUCT_APPS = ['business-console', 'business-pda', 'console', 'screen'] as const
-const HOST_APPS = [...PRODUCT_APPS, 'design-system'] as const
+const firstStatement = (source: string) =>
+  stripComments(source).trimStart().split(/\r?\n/, 1)[0].trim()
+const HOST_APPS = [
+  'business-console',
+  'business-pda',
+  'console',
+  'design-system',
+  'screen',
+] as const
 const LAYER_ORDER =
   '@layer theme, nv-tokens, base, components, nv-components, utilities, nv-overrides, app;'
 
@@ -165,8 +172,8 @@ describe('ADR 0020 §3 — token scene namespaces', () => {
 
 // ─── ADR 0020 §4 — CSS cascade-layer isolation ─────────────────────────────
 describe('ADR 0020 §4 — cascade-layer isolation', () => {
-  it('declares the full global layer order first in every product app main.css', () => {
-    for (const app of PRODUCT_APPS) {
+  it('declares the full global layer order first in every host app main.css', () => {
+    for (const app of HOST_APPS) {
       const css = appCss(app)
       // First non-comment statement must be the exact layer order.
       const firstStmt = css
@@ -180,9 +187,19 @@ describe('ADR 0020 §4 — cascade-layer isolation', () => {
 
   it('loads the host layer order before Vue and component-library modules', () => {
     for (const app of HOST_APPS) {
-      const firstImport = appEntry(app).match(/^import\s+.*$/m)?.[0]
-      expect.soft(firstImport, `${app} main.ts first import`).toBe("import './assets/main.css'")
+      expect
+        .soft(firstStatement(appEntry(app)), `${app} main.ts first statement`)
+        .toBe("import './assets/main.css'")
     }
+  })
+
+  it('ignores import-looking comments when locating the host bootstrap', () => {
+    const source = `/*
+import './assets/main.css'
+*/
+import App from './App.vue'`
+
+    expect(firstStatement(source)).toBe("import App from './App.vue'")
   })
 
   it('wraps the library token table + reset + overlay motion in layers', () => {
@@ -200,7 +217,7 @@ describe('ADR 0020 §4 — cascade-layer isolation', () => {
     // the docs import it plain. (ADR 0020 §4.3.)
     expect.soft(stripComments(overridesCss)).not.toContain('@layer')
     // Product apps import it into nv-overrides.
-    for (const app of PRODUCT_APPS) {
+    for (const app of HOST_APPS) {
       expect.soft(appCss(app)).toMatch(/overrides\.css'\s*layer\(nv-overrides\)/)
     }
   })

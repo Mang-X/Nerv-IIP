@@ -39,13 +39,13 @@ NvUI 的 token、SFC layer 包裹和 shadcn 隔离规则已经建立，但宿主
 
 ## Verification Evidence
 
-- TDD: 新契约在修复前对五个宿主全部失败；移动入口 import 后 22/22 通过。
+- TDD: 入口顺序契约在修复前对五个宿主全部失败；移动 import 后转绿。评审补充的注释伪装用例先失败，去注释首语句门禁完成后 23/23 通过。
 - Screen mock: `/`、`/factory`、`/workshop/WS-ASSY`、`/line`、`/line/LN-ASSY-1`、`/equipment`、`/warehouse`、`/quality` 均在 1920×1080 下无滚动、无面板裁切、无零 padding；大尺寸 SVG 图表均含绘制标记。
 - Screen spacing: `NvScreenPanel` 为 `17px 20px`，标题 margin 为 `12px`，状态标签为 `0px 9px`；layer 顺序 style 索引 0，ScreenPanel style 索引 45。
 - PC: `NvDescriptions` bordered cell 为 `10px 14px`；layer 顺序索引 0，组件 style 索引 19。
 - Mobile: `NvMobileGrid` item 为 `14px 4px`、gap `8px`；layer 顺序索引 0，组件 style 索引 627。
 - Screen real: 未登录访问 `/factory` 正确进入 `/login`，layer 顺序索引 0，login style 索引 608，页面仍为 1920×1080 且无滚动。
-- Package gates: UI 381 tests、UI Mobile 61 tests、Screen 172 tests、Console 141 tests、Business Console 1019 tests、PDA 340 tests 均通过；五个宿主生产构建通过。
+- Package gates: UI 382 tests、UI Mobile 61 tests、Screen 172 tests、Console 141 tests、Business Console 1019 tests、PDA 340 tests 均通过；五个宿主生产构建通过。
 
 ## Assumptions and Gaps
 
