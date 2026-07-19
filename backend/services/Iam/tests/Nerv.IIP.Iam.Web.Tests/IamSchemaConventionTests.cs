@@ -95,6 +95,16 @@ public sealed class IamSchemaConventionTests
             fixture.DbContext.Database.GetMigrations());
     }
 
+    [Fact]
+    public void User_case_insensitive_unique_index_migration_is_discoverable()
+    {
+        using var fixture = CreateFixture();
+
+        Assert.Contains(
+            "20260519032000_AddUserCaseInsensitiveUniqueIndexes",
+            fixture.DbContext.Database.GetMigrations());
+    }
+
     private static SchemaFixture CreateFixture()
     {
         var services = new ServiceCollection();
