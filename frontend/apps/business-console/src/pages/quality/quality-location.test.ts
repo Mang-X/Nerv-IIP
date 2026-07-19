@@ -175,15 +175,6 @@ vi.mock('@/composables/useBusinessQuality', async () => {
 })
 
 const uiStubs = {
-  AlertDialog: { template: '<div><slot /></div>' },
-  AlertDialogAction: { template: '<button><slot /></button>' },
-  AlertDialogCancel: { template: '<button><slot /></button>' },
-  AlertDialogContent: { template: '<div><slot /></div>' },
-  AlertDialogDescription: { template: '<p><slot /></p>' },
-  AlertDialogFooter: { template: '<div><slot /></div>' },
-  AlertDialogHeader: { template: '<div><slot /></div>' },
-  AlertDialogTitle: { template: '<h2><slot /></h2>' },
-  AlertDialogTrigger: { template: '<div><slot /></div>' },
   NvAlertDialog: { template: '<div><slot /></div>' },
   NvAlertDialogAction: { template: '<button><slot /></button>' },
   NvAlertDialogCancel: { template: '<button><slot /></button>' },
