@@ -63,20 +63,17 @@ facade for a real 30-day near-expiry view. Shared frontend expiry presentation
 uses UTC calendar-day comparison and the common thresholds `>90` days normal,
 `30–90` days near, `<30` days critical, and negative days expired. The pages
 show the returned `productionDate`/`expiryDate`/`daysUntilExpiry` facts with a
-text status badge; shelf-life and expiry-source fields remain explicitly
-unknown. Availability rows and expiry-alert rows have different aggregation
-grain, so the Console does not merge them: default rows render missing expiry
-facts as an em dash, while the 30-day alert view presents the ledger-level
-facts. The FEFO explanation is attached to the expiry column header.
+text status badge. Inventory persists whether expiry was directly supplied or
+derived from production date plus shelf life; historical or mixed-provenance
+rows remain explicitly unknown rather than guessed. The availability contract
+returns these facts at its real ledger dimension grain, so the default lots and
+availability tables can render the complete threshold range without joining or
+reconstructing alert rows. The FEFO explanation remains attached to the expiry
+column header.
 
-The current facade response contains `items` only: it has no `total`, paging
-window, shelf-life/source details, or operation block reason. The Console uses
-the returned item count without presenting it as a paged total, includes
-zero-available ledgers, and does not invent pagination, operation disable state,
-or missing detail fields. Client-side table pagination is disabled. Because the
-current alert view intentionally requests 30 days, it can present critical and
-expired rows; the shared `30–90` near and `>90` fresh tones remain reusable
-presentation rules, but complete yellow/green table coverage requires a
-non-alert batch-expiry contract. A follow-up facade/schema change is required
-before a true paged total card and full batch-detail/source presentation can be
-claimed.
+The expiry-alert facade accepts `page`/`pageSize`, returns the real filtered
+`totalCount`, aggregate expired/near-expiry/SKU counts, and pages in the service.
+Both availability and alert lines return backend-derived blocked state,
+operation availability, and reason codes/text. Console movement, WMS outbound,
+and count entry points are disabled only from those returned operation fields;
+the frontend does not infer authorization or business blocking from dates.

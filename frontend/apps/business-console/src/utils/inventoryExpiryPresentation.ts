@@ -1,10 +1,16 @@
 import type {
   BusinessConsoleInventoryAvailabilityLineResponse,
   BusinessConsoleInventoryExpiryAlertLineResponse,
+  BusinessConsoleInventoryExpiryAlertsResponse,
 } from '@nerv-iip/api-client'
 
 export type InventoryExpiryDisplayLine = BusinessConsoleInventoryAvailabilityLineResponse &
-  Partial<BusinessConsoleInventoryExpiryAlertLineResponse>
+  Partial<
+    Omit<
+      BusinessConsoleInventoryExpiryAlertLineResponse,
+      keyof BusinessConsoleInventoryAvailabilityLineResponse
+    >
+  >
 
 export interface InventoryExpirySummary {
   alertCount: number | string
@@ -28,23 +34,34 @@ export function inventoryExpiryRowKey(
 }
 
 export function summarizeInventoryExpiryAlerts(
-  alerts: BusinessConsoleInventoryExpiryAlertLineResponse[],
+  response: BusinessConsoleInventoryExpiryAlertsResponse | undefined,
   hasScope: boolean,
   hasSuccessfulResponse: boolean,
 ): InventoryExpirySummary {
-  if (!hasScope || !hasSuccessfulResponse) {
+  if (!hasScope || !hasSuccessfulResponse || !response) {
     return { alertCount: '—', expiredCount: '—', nearCount: '—', skuCount: '—' }
   }
   return {
-    alertCount: alerts.length,
-    expiredCount: alerts.filter((line) => line.isExpired).length,
-    nearCount: alerts.filter((line) => !line.isExpired && line.isNearExpiry).length,
-    skuCount: new Set(alerts.map((line) => line.skuCode)).size,
+    alertCount: response.totalCount ?? 0,
+    expiredCount: response.expiredCount ?? 0,
+    nearCount: response.nearExpiryCount ?? 0,
+    skuCount: response.skuCount ?? 0,
   }
 }
 
 export function formatInventoryExpiryDate(value?: string | null): string {
   return value ? value.slice(0, 10) : '—'
+}
+
+export function formatInventoryExpirySource(value?: string | null): string {
+  if (value === 'derived') return '系统推导'
+  if (value === 'direct') return '直接录入'
+  if (value === 'mixed') return '混合来源'
+  return '来源未知'
+}
+
+export function formatInventoryShelfLife(value?: number | null): string {
+  return value == null ? '—' : `${value} 天`
 }
 
 function inventoryLineIdentity(

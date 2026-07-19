@@ -26,6 +26,20 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayProxyTests
 {
     [Fact]
+    public void Inventory_operation_flags_fail_closed_when_an_older_service_omits_them()
+    {
+        var availability = new BusinessConsoleInventoryAvailabilityLineResponse(
+            "A-01", null, null, "qualified", "company", null, 1m, 0m, 1m);
+        var alert = new BusinessConsoleInventoryExpiryAlertLineResponse(
+            "SKU-001", "EA", "SITE-01", "A-01", null, null, "qualified", "company", null,
+            null, new DateOnly(2026, 7, 20), 1, false, true, 1m, 0m, 1m);
+
+        Assert.False(availability.MovementAllowed);
+        Assert.False(availability.CountAllowed);
+        Assert.False(alert.MovementAllowed);
+        Assert.False(alert.CountAllowed);
+    }
+    [Fact]
     public async Task Notification_facade_binds_forged_recipient_to_principal_and_uses_internal_token()
     {
         var notification = new PrincipalRecordingNotificationClient();
@@ -509,12 +523,13 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/inventory/availability?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1");
+        var response = await client.GetAsync("/api/business-console/v1/inventory/availability?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1&asOfDate=2026-07-19");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", inventory.LastInternalToken);
         Assert.Equal("SKU-001", inventory.LastAvailabilityRequest!.SkuCode);
         Assert.Equal("S1", inventory.LastAvailabilityRequest.SiteCode);
+        Assert.Equal(new DateOnly(2026, 7, 19), inventory.LastAvailabilityRequest.AsOfDate);
     }
 
     [Fact]
@@ -531,7 +546,7 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/inventory/expiry-alerts?organizationId=org-001&environmentId=env-dev&siteCode=S1&skuCode=SKU-001&asOfDate=2026-07-08&nearExpiryThresholdDays=30&includeZeroAvailable=true");
+        var response = await client.GetAsync("/api/business-console/v1/inventory/expiry-alerts?organizationId=org-001&environmentId=env-dev&siteCode=S1&skuCode=SKU-001&asOfDate=2026-07-08&nearExpiryThresholdDays=30&includeZeroAvailable=true&page=2&pageSize=25");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", inventory.LastInternalToken);
@@ -541,8 +556,12 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(new DateOnly(2026, 7, 8), inventory.LastExpiryAlertsRequest.AsOfDate);
         Assert.Equal(30, inventory.LastExpiryAlertsRequest.NearExpiryThresholdDays);
         Assert.True(inventory.LastExpiryAlertsRequest.IncludeZeroAvailable);
+        Assert.Equal(2, inventory.LastExpiryAlertsRequest.Page);
+        Assert.Equal(25, inventory.LastExpiryAlertsRequest.PageSize);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var items = document.RootElement.GetProperty("data").GetProperty("items").EnumerateArray().ToArray();
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(26, data.GetProperty("totalCount").GetInt32());
+        var items = data.GetProperty("items").EnumerateArray().ToArray();
         Assert.Equal("SKU-001", Assert.Single(items).GetProperty("skuCode").GetString());
     }
 
@@ -4128,13 +4147,13 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.GetAvailabilityAsync(
             "internal-token-001",
-            new BusinessConsoleInventoryAvailabilityRequest("org-001", "env-dev", "SKU-HTTP", "EA", "S1", null, null, null, "available", "owned", null),
+            new BusinessConsoleInventoryAvailabilityRequest("org-001", "env-dev", "SKU-HTTP", "EA", "S1", null, null, null, "available", "owned", null, new DateOnly(2026, 7, 19)),
             CancellationToken.None);
 
         Assert.Equal(8, response.AvailableQuantity);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Get, request.Method);
-        Assert.Equal("/api/inventory/v1/availability?organizationId=org-001&environmentId=env-dev&skuCode=SKU-HTTP&uomCode=EA&siteCode=S1&qualityStatus=available&ownerType=owned", request.RequestUri!.PathAndQuery);
+        Assert.Equal("/api/inventory/v1/availability?organizationId=org-001&environmentId=env-dev&skuCode=SKU-HTTP&uomCode=EA&siteCode=S1&qualityStatus=available&ownerType=owned&asOfDate=2026-07-19", request.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
     }
 
@@ -4160,14 +4179,22 @@ public sealed class BusinessGatewayProxyTests
                         ownerId = (string?)null,
                         productionDate = (string?)null,
                         expiryDate = "2026-07-20",
+                        shelfLifeDays = 90,
+                        expiryDateSource = "derived",
                         daysUntilExpiry = 12,
                         isExpired = false,
                         isNearExpiry = true,
+                        isBlocked = false,
+                        movementAllowed = true,
+                        countAllowed = true,
                         onHandQuantity = 10,
                         reservedQuantity = 2,
                         availableQuantity = 8,
                     },
                 },
+                totalCount = 51,
+                page = 2,
+                pageSize = 25,
             },
             success = true,
             message = string.Empty,
@@ -4180,16 +4207,20 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListExpiryAlertsAsync(
             "internal-token-001",
-            new BusinessConsoleInventoryExpiryAlertsRequest("org-001", "env-dev", "S1", "SKU-EXP", null, new DateOnly(2026, 7, 8), 30, true),
+            new BusinessConsoleInventoryExpiryAlertsRequest("org-001", "env-dev", "S1", "SKU-EXP", null, new DateOnly(2026, 7, 8), 30, true, 2, 25),
             CancellationToken.None);
 
         var line = Assert.Single(response.Items);
         Assert.Equal("SKU-EXP", line.SkuCode);
         Assert.True(line.IsNearExpiry);
         Assert.Equal(new DateOnly(2026, 7, 20), line.ExpiryDate);
+        Assert.Equal(90, line.ShelfLifeDays);
+        Assert.Equal("derived", line.ExpiryDateSource);
+        Assert.True(line.MovementAllowed);
+        Assert.Equal(51, response.TotalCount);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Get, request.Method);
-        Assert.Equal("/api/inventory/v1/expiry-alerts?organizationId=org-001&environmentId=env-dev&siteCode=S1&skuCode=SKU-EXP&asOfDate=2026-07-08&nearExpiryThresholdDays=30&includeZeroAvailable=true", request.RequestUri!.PathAndQuery);
+        Assert.Equal("/api/inventory/v1/expiry-alerts?organizationId=org-001&environmentId=env-dev&siteCode=S1&skuCode=SKU-EXP&asOfDate=2026-07-08&nearExpiryThresholdDays=30&includeZeroAvailable=true&page=2&pageSize=25", request.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
     }
 
@@ -6829,7 +6860,7 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
                 10,
                 2,
                 8),
-        ]));
+        ], 26, 8, 18, 6, request.Page, request.PageSize));
     }
 
     public Task<BusinessConsolePostStockMovementResponse> PostMovementAsync(

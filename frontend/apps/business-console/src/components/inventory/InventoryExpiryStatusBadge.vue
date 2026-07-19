@@ -4,7 +4,8 @@ import { expiryToneFromAlert, expiryToneLabel } from '@nerv-iip/business-core'
 import { NvStatusBadge } from '@nerv-iip/ui'
 import { computed } from 'vue'
 
-const props = defineProps<{ line: ExpiryAlertLike }>()
+type ExpiryStatusLine = ExpiryAlertLike & { blockReason?: string | null }
+const props = defineProps<{ line: ExpiryStatusLine }>()
 const expiryTone = computed(() => expiryToneFromAlert(props.line))
 const label = computed(() => expiryToneLabel(expiryTone.value))
 const statusTone = computed(() => {
@@ -16,5 +17,10 @@ const statusTone = computed(() => {
 </script>
 
 <template>
-  <NvStatusBadge :value="expiryTone" :label="label" :tone="statusTone" />
+  <div class="flex min-w-32 flex-col items-start gap-1">
+    <NvStatusBadge :value="expiryTone" :label="label" :tone="statusTone" />
+    <span v-if="line.blockReason" class="text-xs leading-4 text-muted-foreground">
+      {{ line.blockReason }}
+    </span>
+  </div>
 </template>

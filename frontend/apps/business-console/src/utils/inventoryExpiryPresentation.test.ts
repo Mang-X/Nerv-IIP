@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatInventoryExpiryDate,
+  formatInventoryExpirySource,
+  formatInventoryShelfLife,
   inventoryExpiryRowKey,
   summarizeInventoryExpiryAlerts,
 } from './inventoryExpiryPresentation'
@@ -44,29 +46,34 @@ describe('Inventory 效期展示工具', () => {
   })
 
   it('未选择工厂时计数显示空值，查询后区分过期与 30 天内到期', () => {
-    expect(summarizeInventoryExpiryAlerts([expiryAlert], false, false).alertCount).toBe('—')
-    expect(summarizeInventoryExpiryAlerts([], true, false).alertCount).toBe('—')
+    expect(summarizeInventoryExpiryAlerts(undefined, false, false).alertCount).toBe('—')
+    expect(summarizeInventoryExpiryAlerts(undefined, true, false).alertCount).toBe('—')
     expect(
       summarizeInventoryExpiryAlerts(
-        [
-          expiryAlert,
-          {
-            ...expiryAlert,
-            lotNo: 'LOT-240719-B',
-            expiryDate: '2026-08-10',
-            daysUntilExpiry: 22,
-            isExpired: false,
-            isNearExpiry: true,
-          },
-        ],
+        {
+          items: [expiryAlert],
+          totalCount: 51,
+          expiredCount: 8,
+          nearExpiryCount: 43,
+          skuCount: 12,
+        },
         true,
         true,
       ),
-    ).toEqual({ alertCount: 2, expiredCount: 1, nearCount: 1, skuCount: 1 })
+    ).toEqual({ alertCount: 51, expiredCount: 8, nearCount: 43, skuCount: 12 })
   })
 
   it('缺失日期按数据排版规则显示破折号', () => {
     expect(formatInventoryExpiryDate(undefined)).toBe('—')
     expect(formatInventoryExpiryDate('2026-07-19T12:30:00Z')).toBe('2026-07-19')
+  })
+
+  it('把后端效期来源与保质期转换为业务文案', () => {
+    expect(formatInventoryExpirySource('derived')).toBe('系统推导')
+    expect(formatInventoryExpirySource('direct')).toBe('直接录入')
+    expect(formatInventoryExpirySource('mixed')).toBe('混合来源')
+    expect(formatInventoryExpirySource(undefined)).toBe('来源未知')
+    expect(formatInventoryShelfLife(90)).toBe('90 天')
+    expect(formatInventoryShelfLife(undefined)).toBe('—')
   })
 })

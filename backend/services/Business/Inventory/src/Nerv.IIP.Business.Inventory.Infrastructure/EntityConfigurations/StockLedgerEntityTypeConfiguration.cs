@@ -13,6 +13,10 @@ public sealed class StockLedgerEntityTypeConfiguration : IEntityTypeConfiguratio
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_ledgers_sku_code_format", "sku_code");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_ledgers_site_code_format", "site_code");
             tableBuilder.HasCheckConstraint("ck_stock_ledgers_quality_status", "quality_status in ('unrestricted','quality','restricted','blocked')");
+            tableBuilder.HasCheckConstraint("ck_stock_ledgers_expiry_date_source", "expiry_date_source is null or expiry_date_source in ('direct','derived','mixed')");
+            tableBuilder.HasCheckConstraint(
+                "ck_stock_ledgers_expiry_provenance",
+                "(expiry_date_source is null and shelf_life_days is null) or (expiry_date_source is not null and ((expiry_date_source = 'derived' and production_date is not null and expiry_date is not null and shelf_life_days between 1 and 3660 and expiry_date - production_date = shelf_life_days) or (expiry_date_source in ('direct','mixed') and expiry_date is not null and shelf_life_days is null)))");
         });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Stock ledger aggregate id.");
@@ -29,6 +33,8 @@ public sealed class StockLedgerEntityTypeConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.OwnerId).HasColumnName("owner_id").HasMaxLength(100).HasComment("Optional public owner reference id.");
         builder.Property(x => x.ProductionDate).HasColumnName("production_date").HasComment("Optional batch production date captured from receipt or production completion.");
         builder.Property(x => x.ExpiryDate).HasColumnName("expiry_date").HasComment("Optional batch expiry date used by expiry alerts and FEFO allocation.");
+        builder.Property(x => x.ShelfLifeDays).HasColumnName("shelf_life_days").HasComment("Shelf-life days used when the persisted expiry date was derived; null for direct, mixed, or historical provenance.");
+        builder.Property(x => x.ExpiryDateSource).HasColumnName("expiry_date_source").HasMaxLength(20).HasComment("Persisted expiry provenance: direct, derived, mixed, or null when unknown.");
         builder.Property(x => x.OnHandQuantity).HasColumnName("on_hand_quantity").IsRequired().HasPrecision(18, 6).HasComment("Current on-hand stock quantity.");
         builder.Property(x => x.ReservedQuantity).HasColumnName("reserved_quantity").IsRequired().HasPrecision(18, 6).HasComment("Current reserved stock quantity held by Inventory reservations.");
         builder.Property(x => x.MovingAverageUnitCost).HasColumnName("moving_average_unit_cost").IsRequired().HasPrecision(18, 6).HasComment("Current moving-average unit cost for this ledger dimension.");

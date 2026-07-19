@@ -11,6 +11,7 @@ describe('InventoryExpiryStatusBadge', () => {
           daysUntilExpiry: 6,
           isExpired: false,
           isNearExpiry: true,
+          blockReason: '已过期，常规移动需授权放行。',
         },
       },
       global: {
@@ -23,7 +24,8 @@ describe('InventoryExpiryStatusBadge', () => {
       },
     })
 
-    expect(wrapper.text()).toBe('临近过期')
+    expect(wrapper.text()).toContain('临近过期')
+    expect(wrapper.text()).toContain('已过期，常规移动需授权放行。')
     expect(wrapper.get('span').attributes('data-value')).toBe('critical')
     expect(wrapper.get('span').attributes('data-tone')).toBe('danger')
   })

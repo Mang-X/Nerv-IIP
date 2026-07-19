@@ -103,7 +103,8 @@ public sealed class PostStockMovementCommandHandler(
                 existingLedger?.AvailableQuantity ?? 0m);
         }
 
-        var ledger = await GetOrCreateLedgerAsync(movement, cancellationToken);
+        var provenance = ResolveExpiryProvenance(request);
+        var ledger = await GetOrCreateLedgerAsync(movement, provenance.ShelfLifeDays, provenance.Source, cancellationToken);
         if (request.Quantity < 0 && ledger.IsExpired(GetBusinessDate(request)) && !HasExpiredStockOverride(request.AllowExpiredStock, request.ExpiryOverridePermissionGranted))
         {
             throw new InventoryPostingRejectedException(
@@ -201,11 +202,19 @@ public sealed class PostStockMovementCommandHandler(
         return query.SingleOrDefaultAsync(cancellationToken);
     }
 
-    private async Task<StockLedger> GetOrCreateLedgerAsync(StockMovement movement, CancellationToken cancellationToken)
+    private async Task<StockLedger> GetOrCreateLedgerAsync(
+        StockMovement movement,
+        int? shelfLifeDays,
+        string? expiryDateSource,
+        CancellationToken cancellationToken)
     {
         var ledger = await FindLedgerAsync(movement, cancellationToken);
         if (ledger is not null)
         {
+            if (movement.Quantity > 0)
+            {
+                ledger.MergeExpiryProvenance(shelfLifeDays, expiryDateSource);
+            }
             return ledger;
         }
 
@@ -222,9 +231,23 @@ public sealed class PostStockMovementCommandHandler(
             movement.OwnerType,
             movement.OwnerId,
             movement.ProductionDate,
-            movement.ExpiryDate);
+            movement.ExpiryDate,
+            shelfLifeDays,
+            expiryDateSource);
         dbContext.StockLedgers.Add(ledger);
         return ledger;
+    }
+
+    private static (int? ShelfLifeDays, string? Source) ResolveExpiryProvenance(PostStockMovementCommand request)
+    {
+        if (request.ExpiryDate is not null)
+        {
+            return (null, StockExpiryDateSource.Direct);
+        }
+
+        return request.ProductionDate is not null && request.ShelfLifeDays is not null
+            ? (request.ShelfLifeDays, StockExpiryDateSource.Derived)
+            : (null, null);
     }
 
     private static StockMovement CreateMovementOrReject(PostStockMovementCommand request)

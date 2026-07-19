@@ -5,6 +5,7 @@ import { useInventoryExpiryView } from './useInventoryExpiryView'
 
 const state = vi.hoisted(() => ({
   alerts: undefined as { value: unknown[] } | undefined,
+  response: undefined as { value: unknown } | undefined,
   enabledWhen: undefined as (() => boolean) | undefined,
   error: undefined as { value: unknown } | undefined,
   successful: undefined as { value: boolean } | undefined,
@@ -35,6 +36,10 @@ vi.mock('./useBusinessInventory', async () => {
       state.enabledWhen = enabledWhen
       return {
         expiryAlerts: (state.alerts = shallowRef([])),
+        expiryAlertsResponse: (state.response = shallowRef(undefined)),
+        expiryAlertsPage: shallowRef(1),
+        expiryAlertsPageSize: shallowRef(50),
+        expiryAlertsTotal: shallowRef(0),
         expiryAlertsError: state.error,
         expiryAlertsPending: shallowRef(false),
         expiryAlertsSuccessful: (state.successful = shallowRef(false)),
@@ -93,6 +98,16 @@ describe('useInventoryExpiryView', () => {
       ownerType: undefined,
       ownerId: undefined,
     })
+
+    view.toggleNearExpiryView()
+    expect(sourceFilters).toMatchObject({
+      uomCode: 'DRUM',
+      lotNo: 'LOT-240719-A',
+      serialNo: 'SN-001',
+      qualityStatus: 'blocked',
+      ownerType: 'owned',
+      ownerId: 'OWNER-01',
+    })
   })
 
   it('成功响应前不把空数组报告成服务端零条结果', async () => {
@@ -103,8 +118,20 @@ describe('useInventoryExpiryView', () => {
 
     expect(view.expirySummary.value.alertCount).toBe('—')
     state.successful!.value = true
+    state.response!.value = {
+      items: [],
+      totalCount: 27,
+      expiredCount: 9,
+      nearExpiryCount: 18,
+      skuCount: 6,
+    }
     await nextTick()
-    expect(view.expirySummary.value.alertCount).toBe(0)
+    expect(view.expirySummary.value).toEqual({
+      alertCount: 27,
+      expiredCount: 9,
+      nearCount: 18,
+      skuCount: 6,
+    })
   })
 
   it('把近效期查询错误转为统一友好 toast', async () => {
@@ -119,39 +146,5 @@ describe('useInventoryExpiryView', () => {
     await nextTick()
 
     expect(state.notifyError).toHaveBeenCalledWith(error, '近效期批次加载失败，请稍后重试。')
-  })
-
-  it('范围超过上限时提示用 SKU 或库位缩小范围', async () => {
-    state.notifyError.mockReset()
-    const view = createView(
-      reactive({ siteCode: 'PLANT-SH-01', skuCode: '', uomCode: '', locationCode: '' }),
-    )
-    view.toggleNearExpiryView()
-
-    const error = new Error('returned more than 1000 ledger lines. Add SKU or location filters')
-    state.error!.value = error
-    await nextTick()
-
-    expect(state.notifyError).toHaveBeenCalledWith(
-      error,
-      '效期预警范围过大，请添加 SKU 或库位后重试。',
-    )
-  })
-
-  it('识别生成客户端抛出的结构化错误消息', async () => {
-    state.notifyError.mockReset()
-    const view = createView(
-      reactive({ siteCode: 'PLANT-SH-01', skuCode: '', uomCode: '', locationCode: '' }),
-    )
-    view.toggleNearExpiryView()
-
-    const error = { message: 'returned more than 1000 ledger lines. Add SKU or location filters' }
-    state.error!.value = error
-    await nextTick()
-
-    expect(state.notifyError).toHaveBeenCalledWith(
-      error,
-      '效期预警范围过大，请添加 SKU 或库位后重试。',
-    )
   })
 })

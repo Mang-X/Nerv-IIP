@@ -6,8 +6,11 @@ import InventoryExpirySummaryCards from '@/components/inventory/InventoryExpiryS
 import { useInventoryAvailability } from '@/composables/useBusinessInventory'
 import { useInventoryExpiryView } from '@/composables/useInventoryExpiryView'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError } from '@/utils/notify'
 import {
   formatInventoryExpiryDate,
+  formatInventoryExpirySource,
+  formatInventoryShelfLife,
   inventoryExpiryRowKey,
   type InventoryExpiryDisplayLine,
 } from '@/utils/inventoryExpiryPresentation'
@@ -16,6 +19,7 @@ import {
   NvDataTable,
   NvInput,
   NvPageHeader,
+  NvPagination,
   NvSectionCard,
   NvSectionCards,
   NvSelect,
@@ -57,7 +61,10 @@ const {
 const {
   expiryAlertsError,
   expiryAlertsPending,
+  expiryAlertsPage,
+  expiryAlertsPageSize,
   expiryAlertsSuccessful,
+  expiryAlertsTotal,
   expirySummary,
   hasExpiryScope,
   nearExpiryOnly,
@@ -99,7 +106,11 @@ const qualityStatusFilter = computed({
   },
 })
 
-const errorMessage = computed(() => formatError(availabilityError.value))
+watch(availabilityError, (error) => {
+  if (error && !nearExpiryOnly.value) {
+    notifyError(error, '库存批次加载失败，请稍后重试。')
+  }
+})
 const rows = computed<DisplayLine[]>(() =>
   nearExpiryOnly.value ? visibleExpiryAlerts.value : availabilityLines.value,
 )
@@ -112,13 +123,13 @@ const pageCount = computed(() => {
   if (expiryAlertsPending.value) return '加载中'
   if (expiryAlertsError.value) return '加载失败'
   if (!expiryAlertsSuccessful.value) return '等待查询'
-  return `${rows.value.length} 条预警明细`
+  return `${expiryAlertsTotal.value} 条预警明细`
 })
 const tableEmptyMessage = computed(() => {
   if (nearExpiryOnly.value && !hasExpiryScope.value) return '请选择工厂查看效期预警批次。'
-  if (nearExpiryOnly.value && expiryAlertsError.value)
-    return '效期预警加载失败，请缩小筛选范围或稍后重试。'
+  if (nearExpiryOnly.value && expiryAlertsError.value) return '效期预警加载失败，请稍后重试。'
   if (nearExpiryOnly.value) return '当前范围没有已过期或未来30天内到期的批次。'
+  if (availabilityError.value) return '库存批次加载失败，请稍后重试。'
   return '输入 SKU、单位和工厂后查询批次、序列号和预留信息。'
 })
 const onHandQuantity = computed(() => availability.value?.onHandQuantity ?? 0)
@@ -155,6 +166,16 @@ const columns: NvDataTableColumn<DisplayLine>[] = [
     header: '效期',
     headerTitle: 'FEFO：预留与拣货建议优先选择更早到期的批次。',
     accessor: (r) => formatInventoryExpiryDate(r.expiryDate),
+  },
+  {
+    key: 'shelfLife',
+    header: '保质期',
+    accessor: (r) => formatInventoryShelfLife(r.shelfLifeDays),
+  },
+  {
+    key: 'expirySource',
+    header: '效期来源',
+    accessor: (r) => formatInventoryExpirySource(r.expiryDateSource),
   },
   { key: 'expiryStatus', header: '效期状态' },
   { key: 'locationCode', header: '库位', width: 'w-28', accessor: (r) => r.locationCode ?? '无' },
@@ -207,6 +228,11 @@ function lineBlockedQuantity(line: DisplayLine) {
   )
 }
 
+function movementBlockReason(line: DisplayLine) {
+  if (line.movementAllowed === true) return ''
+  return line.movementBlockReason ?? '后端未提供移动禁用原因，请稍后重试或联系管理员。'
+}
+
 function sumQuantity(lines: Line[], key: 'reservedQuantity') {
   return lines.reduce((total, line) => total + (line[key] ?? 0), 0)
 }
@@ -220,9 +246,6 @@ function firstQuery(value: unknown) {
   return typeof value === 'string' ? value : ''
 }
 
-function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
-}
 async function refreshCurrentView() {
   if (nearExpiryOnly.value) await refreshExpiryAlerts()
   else await refreshAvailability()
@@ -331,8 +354,6 @@ async function refreshCurrentView() {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <NvDataTable
       :columns="columns"
       :rows="rows"
@@ -362,36 +383,62 @@ async function refreshCurrentView() {
         ><span class="tabular-nums">{{ formatQuantity(lineBlockedQuantity(row)) }}</span></template
       >
       <template #cell-actions="{ row }">
-        <span v-if="nearExpiryOnly" class="text-xs text-muted-foreground">
-          返回批次明细后操作
-        </span>
-        <div v-else class="flex flex-wrap justify-end gap-2">
-          <NvButton size="sm" variant="ghost" as-child>
-            <RouterLink :to="{ path: '/mes/traceability', query: traceabilityQuery(row) }">
-              <RouteIcon aria-hidden="true" />
-              MES追溯
-            </RouterLink>
-          </NvButton>
-          <NvButton size="sm" variant="ghost" as-child>
-            <RouterLink :to="{ path: '/barcode/scans', query: barcodeQuery(row) }">
-              <BarcodeIcon aria-hidden="true" />
-              扫码
-            </RouterLink>
-          </NvButton>
-          <NvButton size="sm" variant="ghost" as-child>
-            <RouterLink :to="{ path: '/wms/picking', query: lineContextQuery(row) }">
+        <div class="flex min-w-56 flex-col items-end gap-1">
+          <p
+            v-if="movementBlockReason(row)"
+            data-operation-block-reason
+            class="max-w-56 text-right text-xs leading-4 text-muted-foreground"
+          >
+            {{ movementBlockReason(row) }}
+          </p>
+          <div class="flex flex-wrap justify-end gap-2">
+            <NvButton size="sm" variant="ghost" as-child>
+              <RouterLink :to="{ path: '/mes/traceability', query: traceabilityQuery(row) }">
+                <RouteIcon aria-hidden="true" />
+                MES追溯
+              </RouterLink>
+            </NvButton>
+            <NvButton size="sm" variant="ghost" as-child>
+              <RouterLink :to="{ path: '/barcode/scans', query: barcodeQuery(row) }">
+                <BarcodeIcon aria-hidden="true" />
+                扫码
+              </RouterLink>
+            </NvButton>
+            <NvButton v-if="row.movementAllowed === true" size="sm" variant="ghost" as-child>
+              <RouterLink :to="{ path: '/wms/picking', query: lineContextQuery(row) }">
+                <WarehouseIcon aria-hidden="true" />
+                WMS
+              </RouterLink>
+            </NvButton>
+            <NvButton
+              v-else
+              size="sm"
+              variant="ghost"
+              disabled
+              :title="row.movementBlockReason ?? undefined"
+            >
               <WarehouseIcon aria-hidden="true" />
               WMS
-            </RouterLink>
-          </NvButton>
-          <NvButton size="sm" variant="ghost" as-child>
-            <RouterLink :to="{ path: '/quality/inspections', query: lineContextQuery(row) }">
-              <ClipboardCheckIcon aria-hidden="true" />
-              质量
-            </RouterLink>
-          </NvButton>
+            </NvButton>
+            <NvButton size="sm" variant="ghost" as-child>
+              <RouterLink :to="{ path: '/quality/inspections', query: lineContextQuery(row) }">
+                <ClipboardCheckIcon aria-hidden="true" />
+                质量
+              </RouterLink>
+            </NvButton>
+          </div>
         </div>
       </template>
     </NvDataTable>
+    <NvPagination
+      v-if="nearExpiryOnly && hasExpiryScope"
+      v-model:page="expiryAlertsPage"
+      v-model:page-size="expiryAlertsPageSize"
+      :total-items="expiryAlertsTotal"
+      :page-size-options="[25, 50, 100, 200]"
+      :show-edges="false"
+      :sibling-count="0"
+      class="mt-4"
+    />
   </BusinessLayout>
 </template>

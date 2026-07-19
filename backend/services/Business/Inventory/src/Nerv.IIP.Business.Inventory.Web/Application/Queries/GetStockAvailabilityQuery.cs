@@ -14,7 +14,8 @@ public sealed record GetStockAvailabilityQuery(
     string? SerialNo,
     string? QualityStatus,
     string? OwnerType,
-    string? OwnerId) : IQuery<StockAvailabilityResponse>;
+    string? OwnerId,
+    DateOnly? AsOfDate = null) : IQuery<StockAvailabilityResponse>;
 
 public sealed record StockAvailabilityResponse(
     string OrganizationId,
@@ -41,6 +42,20 @@ public sealed record StockAvailabilityLineResponse(
     string QualityStatus,
     string OwnerType,
     string? OwnerId,
+    DateOnly? ProductionDate,
+    DateOnly? ExpiryDate,
+    int? ShelfLifeDays,
+    string? ExpiryDateSource,
+    bool IsExpired,
+    bool IsBlocked,
+    string? BlockReasonCode,
+    string? BlockReason,
+    bool MovementAllowed,
+    string? MovementBlockReasonCode,
+    string? MovementBlockReason,
+    bool CountAllowed,
+    string? CountBlockReasonCode,
+    string? CountBlockReason,
     decimal OnHandQuantity,
     decimal ReservedQuantity,
     decimal AvailableQuantity,
@@ -111,28 +126,103 @@ public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbCont
             query = query.Where(x => x.OwnerId == request.OwnerId);
         }
 
-        var items = await query
-            .GroupBy(x => new { x.LocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId })
+        var asOfDate = request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var projectedItems = await query
+            .GroupBy(x => new
+            {
+                x.LocationCode,
+                x.LotNo,
+                x.SerialNo,
+                x.QualityStatus,
+                x.OwnerType,
+                x.OwnerId,
+                x.ProductionDate,
+                x.ExpiryDate,
+                x.ShelfLifeDays,
+                x.ExpiryDateSource,
+                x.IsFrozenForCount,
+            })
             .OrderBy(group => group.Key.LocationCode)
             .ThenBy(group => group.Key.LotNo)
             .ThenBy(group => group.Key.SerialNo)
-            .Select(group => new StockAvailabilityLineResponse(
+            .Select(group => new
+            {
                 group.Key.LocationCode,
                 group.Key.LotNo,
                 group.Key.SerialNo,
                 group.Key.QualityStatus,
                 group.Key.OwnerType,
                 group.Key.OwnerId,
-                group.Sum(x => x.OnHandQuantity),
-                group.Sum(x => x.ReservedQuantity),
-                group.Sum(x => x.OnHandQuantity) - group.Sum(x => x.ReservedQuantity),
-                group.Sum(x => x.InventoryValue)))
+                group.Key.ProductionDate,
+                group.Key.ExpiryDate,
+                group.Key.ShelfLifeDays,
+                group.Key.ExpiryDateSource,
+                group.Key.IsFrozenForCount,
+                OnHandQuantity = group.Sum(x => x.OnHandQuantity),
+                ReservedQuantity = group.Sum(x => x.ReservedQuantity),
+                AvailableQuantity = group.Sum(x => x.OnHandQuantity) - group.Sum(x => x.ReservedQuantity),
+                InventoryValue = group.Sum(x => x.InventoryValue),
+            })
             .Take(MaxResultLines + 1)
             .ToListAsync(cancellationToken);
-        if (items.Count > MaxResultLines)
+        if (projectedItems.Count > MaxResultLines)
         {
             throw new KnownException($"Inventory availability query returned more than {MaxResultLines} dimension lines. Add location, lot, serial, quality, or owner filters to narrow the request.");
         }
+
+        var ambiguousCountScopes = projectedItems
+            .GroupBy(item => (
+                item.LocationCode,
+                item.LotNo,
+                item.SerialNo,
+                item.QualityStatus,
+                item.OwnerType,
+                item.OwnerId))
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet();
+
+        var items = projectedItems.Select(item =>
+        {
+            var countScopeAmbiguous = ambiguousCountScopes.Contains((
+                item.LocationCode,
+                item.LotNo,
+                item.SerialNo,
+                item.QualityStatus,
+                item.OwnerType,
+                item.OwnerId));
+            var operation = StockOperationAvailabilityProjection.From(
+                item.QualityStatus,
+                item.ExpiryDate,
+                item.IsFrozenForCount,
+                asOfDate,
+                countScopeAmbiguous);
+            return new StockAvailabilityLineResponse(
+                item.LocationCode,
+                item.LotNo,
+                item.SerialNo,
+                item.QualityStatus,
+                item.OwnerType,
+                item.OwnerId,
+                item.ProductionDate,
+                item.ExpiryDate,
+                item.ShelfLifeDays,
+                item.ExpiryDateSource,
+                operation.IsExpired,
+                operation.IsBlocked,
+                operation.BlockReasonCode,
+                operation.BlockReason,
+                operation.MovementAllowed,
+                operation.MovementBlockReasonCode,
+                operation.MovementBlockReason,
+                operation.CountAllowed,
+                operation.CountBlockReasonCode,
+                operation.CountBlockReason,
+                item.OnHandQuantity,
+                item.ReservedQuantity,
+                item.AvailableQuantity,
+                item.InventoryValue);
+        }).ToList();
 
         var onHand = items.Sum(x => x.OnHandQuantity);
         var reserved = items.Sum(x => x.ReservedQuantity);
@@ -164,5 +254,56 @@ public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbCont
     private static string? NormalizeOwnerType(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : StockOwnerType.Normalize(value);
+    }
+}
+
+public sealed record StockOperationAvailability(
+    bool IsExpired,
+    bool IsBlocked,
+    string? BlockReasonCode,
+    string? BlockReason,
+    bool MovementAllowed,
+    string? MovementBlockReasonCode,
+    string? MovementBlockReason,
+    bool CountAllowed,
+    string? CountBlockReasonCode,
+    string? CountBlockReason);
+
+public static class StockOperationAvailabilityProjection
+{
+    public static StockOperationAvailability From(
+        string qualityStatus,
+        DateOnly? expiryDate,
+        bool isFrozenForCount,
+        DateOnly asOfDate,
+        bool countScopeAmbiguous = false)
+    {
+        var isExpired = expiryDate is not null && expiryDate.Value < asOfDate;
+        var qualityBlocked = qualityStatus == StockQualityStatus.Blocked;
+        var blockReasonCode = isExpired ? "expired-stock" : isFrozenForCount ? "count-frozen" : qualityBlocked ? "quality-blocked" : null;
+        var blockReason = isExpired
+            ? "已过期，常规移动需授权放行。"
+            : isFrozenForCount
+                ? "库存已被盘点任务冻结。"
+                : qualityBlocked
+                    ? "库存处于冻结质量状态。"
+                    : null;
+        var movementAllowed = !isExpired && !isFrozenForCount;
+        var countAllowed = !isFrozenForCount && !countScopeAmbiguous;
+        return new StockOperationAvailability(
+            isExpired,
+            isExpired || isFrozenForCount || qualityBlocked,
+            blockReasonCode,
+            blockReason,
+            movementAllowed,
+            movementAllowed ? null : blockReasonCode,
+            movementAllowed ? null : blockReason,
+            countAllowed,
+            countAllowed ? null : isFrozenForCount ? "count-frozen" : "count-scope-ambiguous",
+            countAllowed
+                ? null
+                : isFrozenForCount
+                    ? "库存已被盘点任务冻结，不能重复创建盘点。"
+                    : "同一盘点定位存在多个生产日期或效期，请先缩小到唯一库存台账。");
     }
 }

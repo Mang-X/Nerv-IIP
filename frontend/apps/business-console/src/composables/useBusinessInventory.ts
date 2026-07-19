@@ -14,7 +14,7 @@ import {
   type BusinessConsolePostStockMovementRequest,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { bindBusinessContext, type BusinessContextFields } from './businessContextBinding'
 
 export interface InventoryAvailabilityFilters {
@@ -39,7 +39,11 @@ export interface InventoryExpiryFilters extends BusinessContextFields {
   locationCode?: string
 }
 
-export function buildInventoryExpiryAlertsQuery(filters: InventoryExpiryFilters) {
+export function buildInventoryExpiryAlertsQuery(
+  filters: InventoryExpiryFilters,
+  page = 1,
+  pageSize = 50,
+) {
   return {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
@@ -48,7 +52,19 @@ export function buildInventoryExpiryAlertsQuery(filters: InventoryExpiryFilters)
     ...(filters.locationCode ? { locationCode: filters.locationCode } : {}),
     nearExpiryThresholdDays: 30,
     includeZeroAvailable: true,
+    page,
+    pageSize,
   }
+}
+
+export function inventoryExpiryPagingScope(filters: InventoryExpiryFilters) {
+  return [
+    filters.organizationId,
+    filters.environmentId,
+    filters.siteCode,
+    filters.skuCode,
+    filters.locationCode,
+  ]
 }
 
 function defaultActionContext(): InventoryActionContext {
@@ -160,6 +176,8 @@ export function useInventoryExpiryAlerts(enabledWhen: () => boolean = () => true
       siteCode: '',
     }),
   )
+  const page = shallowRef(1)
+  const pageSize = shallowRef(50)
   const enabled = computed(
     () =>
       enabledWhen() &&
@@ -169,7 +187,7 @@ export function useInventoryExpiryAlerts(enabledWhen: () => boolean = () => true
   )
   const query = useQuery(() => ({
     ...listBusinessConsoleInventoryExpiryAlertsQueryOptions({
-      query: buildInventoryExpiryAlertsQuery(filters),
+      query: buildInventoryExpiryAlertsQuery(filters, page.value, pageSize.value),
     }),
     enabled: enabled.value,
   }))
@@ -177,14 +195,25 @@ export function useInventoryExpiryAlerts(enabledWhen: () => boolean = () => true
     if (!query.data.value?.success) return undefined
     return query.data.value.data ?? undefined
   })
+  watch(
+    () => inventoryExpiryPagingScope(filters),
+    () => {
+      page.value = 1
+    },
+    { flush: 'sync' },
+  )
 
   return {
     filters,
+    expiryAlertsResponse: response,
     expiryAlerts: computed<BusinessConsoleInventoryExpiryAlertLineResponse[]>(
       () => response.value?.items ?? [],
     ),
     expiryAlertsError: query.error,
     expiryAlertsPending: query.isLoading,
+    expiryAlertsPage: page,
+    expiryAlertsPageSize: pageSize,
+    expiryAlertsTotal: computed(() => response.value?.totalCount ?? 0),
     expiryAlertsSuccessful: computed(() => response.value !== undefined && !query.error.value),
     refreshExpiryAlerts: () => (enabled.value ? query.refetch() : Promise.resolve()),
   }

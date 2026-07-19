@@ -2448,7 +2448,8 @@ public sealed class HttpBusinessInventoryClient(
                 ("serialNo", request.SerialNo),
                 ("qualityStatus", request.QualityStatus),
                 ("ownerType", request.OwnerType),
-                ("ownerId", request.OwnerId)),
+                ("ownerId", request.OwnerId),
+                ("asOfDate", request.AsOfDate)),
             null,
             cancellationToken);
 
@@ -2467,7 +2468,9 @@ public sealed class HttpBusinessInventoryClient(
                 ("locationCode", request.LocationCode),
                 ("asOfDate", request.AsOfDate),
                 ("nearExpiryThresholdDays", request.NearExpiryThresholdDays),
-                ("includeZeroAvailable", TrueFlag(request.IncludeZeroAvailable))),
+                ("includeZeroAvailable", TrueFlag(request.IncludeZeroAvailable)),
+                ("page", request.Page),
+                ("pageSize", request.PageSize)),
             null,
             cancellationToken);
 

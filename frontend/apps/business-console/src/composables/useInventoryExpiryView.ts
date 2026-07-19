@@ -18,6 +18,13 @@ type ExpirySourceFilters = Pick<
 
 export function useInventoryExpiryView(sourceFilters: ExpirySourceFilters) {
   const nearExpiryOnly = shallowRef(false)
+  const availabilityOnlySnapshot =
+    shallowRef<
+      Pick<
+        ExpirySourceFilters,
+        'uomCode' | 'lotNo' | 'serialNo' | 'qualityStatus' | 'ownerType' | 'ownerId'
+      >
+    >()
   const query = useInventoryExpiryAlerts(() => nearExpiryOnly.value)
 
   watch(
@@ -31,11 +38,7 @@ export function useInventoryExpiryView(sourceFilters: ExpirySourceFilters) {
   )
   watch(query.expiryAlertsError, (error) => {
     if (!error || !nearExpiryOnly.value) return
-    const message = errorMessage(error)
-    const fallback = /more than \d+ ledger lines|add sku or location/i.test(message)
-      ? '效期预警范围过大，请添加 SKU 或库位后重试。'
-      : '近效期批次加载失败，请稍后重试。'
-    notifyError(error, fallback)
+    notifyError(error, '近效期批次加载失败，请稍后重试。')
   })
 
   const hasExpiryScope = computed(() => sourceFilters.siteCode.trim().length > 0)
@@ -44,7 +47,7 @@ export function useInventoryExpiryView(sourceFilters: ExpirySourceFilters) {
   )
   const expirySummary = computed(() =>
     summarizeInventoryExpiryAlerts(
-      query.expiryAlerts.value,
+      query.expiryAlertsResponse.value,
       hasExpiryScope.value,
       query.expiryAlertsSuccessful.value,
     ),
@@ -52,12 +55,23 @@ export function useInventoryExpiryView(sourceFilters: ExpirySourceFilters) {
 
   function toggleNearExpiryView() {
     if (!nearExpiryOnly.value) {
+      availabilityOnlySnapshot.value = {
+        uomCode: sourceFilters.uomCode,
+        lotNo: sourceFilters.lotNo,
+        serialNo: sourceFilters.serialNo,
+        qualityStatus: sourceFilters.qualityStatus,
+        ownerType: sourceFilters.ownerType,
+        ownerId: sourceFilters.ownerId,
+      }
       sourceFilters.uomCode = ''
       sourceFilters.lotNo = undefined
       sourceFilters.serialNo = undefined
       sourceFilters.qualityStatus = undefined
       sourceFilters.ownerType = undefined
       sourceFilters.ownerId = undefined
+    } else if (availabilityOnlySnapshot.value) {
+      Object.assign(sourceFilters, availabilityOnlySnapshot.value)
+      availabilityOnlySnapshot.value = undefined
     }
     nearExpiryOnly.value = !nearExpiryOnly.value
   }
@@ -70,13 +84,4 @@ export function useInventoryExpiryView(sourceFilters: ExpirySourceFilters) {
     expirySummary,
     toggleNearExpiryView,
   }
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const message = (error as { message?: unknown }).message
-    return typeof message === 'string' ? message : ''
-  }
-  return ''
 }

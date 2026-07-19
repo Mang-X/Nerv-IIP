@@ -6,8 +6,11 @@ import InventoryExpirySummaryCards from '@/components/inventory/InventoryExpiryS
 import { useInventoryAvailability } from '@/composables/useBusinessInventory'
 import { useInventoryExpiryView } from '@/composables/useInventoryExpiryView'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError } from '@/utils/notify'
 import {
   formatInventoryExpiryDate,
+  formatInventoryExpirySource,
+  formatInventoryShelfLife,
   inventoryExpiryRowKey,
   type InventoryExpiryDisplayLine,
 } from '@/utils/inventoryExpiryPresentation'
@@ -18,6 +21,7 @@ import {
   NvDropdownMenuSeparator,
   NvInput,
   NvPageHeader,
+  NvPagination,
   NvRowActions,
   NvSectionCard,
   NvSectionCards,
@@ -54,7 +58,10 @@ const {
 const {
   expiryAlertsError,
   expiryAlertsPending,
+  expiryAlertsPage,
+  expiryAlertsPageSize,
   expiryAlertsSuccessful,
+  expiryAlertsTotal,
   expirySummary,
   hasExpiryScope,
   nearExpiryOnly,
@@ -79,7 +86,11 @@ watch(
   },
   { immediate: true },
 )
-const errorMessage = computed(() => formatError(availabilityError.value))
+watch(availabilityError, (error) => {
+  if (error && !nearExpiryOnly.value) {
+    notifyError(error, '库存可用量加载失败，请稍后重试。')
+  }
+})
 const onHandQuantity = computed(() => availability.value?.onHandQuantity ?? 0)
 const availableQuantity = computed(() => availability.value?.availableQuantity ?? 0)
 const reservedQuantity = computed(() => availability.value?.reservedQuantity ?? 0)
@@ -115,13 +126,13 @@ const pageCount = computed(() => {
   if (expiryAlertsPending.value) return '加载中'
   if (expiryAlertsError.value) return '加载失败'
   if (!expiryAlertsSuccessful.value) return '等待查询'
-  return `${rows.value.length} 条预警明细`
+  return `${expiryAlertsTotal.value} 条预警明细`
 })
 const tableEmptyMessage = computed(() => {
   if (nearExpiryOnly.value && !hasExpiryScope.value) return '请选择工厂查看效期预警批次。'
-  if (nearExpiryOnly.value && expiryAlertsError.value)
-    return '效期预警加载失败，请缩小筛选范围或稍后重试。'
+  if (nearExpiryOnly.value && expiryAlertsError.value) return '效期预警加载失败，请稍后重试。'
   if (nearExpiryOnly.value) return '当前范围没有已过期或未来30天内到期的批次。'
+  if (availabilityError.value) return '库存可用量加载失败，请稍后重试。'
   return '未返回可用量明细。确认 SKU、单位和工厂等查询条件后再试。'
 })
 const columns: NvDataTableColumn<DisplayLine>[] = [
@@ -145,6 +156,16 @@ const columns: NvDataTableColumn<DisplayLine>[] = [
     headerTitle: 'FEFO：预留与拣货建议优先选择更早到期的批次。',
     accessor: (r) => formatInventoryExpiryDate(r.expiryDate),
   },
+  {
+    key: 'shelfLife',
+    header: '保质期',
+    accessor: (r) => formatInventoryShelfLife(r.shelfLifeDays),
+  },
+  {
+    key: 'expirySource',
+    header: '效期来源',
+    accessor: (r) => formatInventoryExpirySource(r.expiryDateSource),
+  },
   { key: 'expiryStatus', header: '效期状态' },
   { key: 'qualityStatus', header: '质量状态', width: 'w-28' },
   { key: 'owner', header: '货主', accessor: (r) => r.ownerId ?? r.ownerType ?? '无' },
@@ -165,8 +186,8 @@ function lineKey(line: DisplayLine) {
 }
 function lineContextQuery(line: DisplayLine) {
   return {
-    skuCode: filters.skuCode || undefined,
-    siteCode: filters.siteCode || undefined,
+    skuCode: (line.skuCode ?? filters.skuCode) || undefined,
+    siteCode: (line.siteCode ?? filters.siteCode) || undefined,
     locationCode: line.locationCode ?? undefined,
     lotNo: line.lotNo ?? undefined,
     serialNo: line.serialNo ?? undefined,
@@ -181,10 +202,23 @@ function scanContextQuery(line: DisplayLine) {
   }
 }
 function openMovement(line: DisplayLine) {
+  if (line.movementAllowed !== true) return
   void router.push({ path: '/inventory/movements', query: lineContextQuery(line) })
 }
 function openCount(line: DisplayLine) {
+  if (line.countAllowed !== true) return
   void router.push({ path: '/inventory/counts', query: lineContextQuery(line) })
+}
+function operationBlockReason(line: DisplayLine) {
+  const reasons = [
+    line.movementAllowed === true
+      ? undefined
+      : (line.movementBlockReason ?? '后端未提供移动禁用原因，请稍后重试或联系管理员。'),
+    line.countAllowed === true
+      ? undefined
+      : (line.countBlockReason ?? '后端未提供盘点禁用原因，请稍后重试或联系管理员。'),
+  ]
+  return [...new Set(reasons.filter(Boolean))].join('；')
 }
 function lineFrozen(onHand?: number, available?: number) {
   return Math.max((onHand ?? 0) - (available ?? 0), 0)
@@ -195,9 +229,6 @@ function formatQuantity(value?: number) {
 function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
-}
-function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
 async function refreshCurrentView() {
   if (nearExpiryOnly.value) await refreshExpiryAlerts()
@@ -317,8 +348,6 @@ async function refreshCurrentView() {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <NvDataTable
       :columns="columns"
       :rows="rows"
@@ -353,29 +382,53 @@ async function refreshCurrentView() {
         }}</span></template
       >
       <template #cell-actions="{ row }">
-        <span v-if="nearExpiryOnly" class="text-xs text-muted-foreground">
-          返回库存明细后操作
-        </span>
-        <div v-else class="flex justify-end gap-2">
-          <RouterLink
-            class="inline-flex h-8 items-center rounded-md px-2 text-sm text-primary underline-offset-4 hover:underline"
-            :to="{ path: '/barcode/scans', query: scanContextQuery(row) }"
+        <div class="flex min-w-48 flex-col items-end gap-1">
+          <p
+            v-if="operationBlockReason(row)"
+            data-operation-block-reason
+            class="max-w-56 text-right text-xs leading-4 text-muted-foreground"
           >
-            扫码记录
-          </RouterLink>
-          <NvRowActions :label="`库存操作 ${row.locationCode ?? ''}`">
-            <NvDropdownMenuItem @click="openMovement(row)">
-              <MoveRightIcon aria-hidden="true" />
-              发起移动
-            </NvDropdownMenuItem>
-            <NvDropdownMenuSeparator />
-            <NvDropdownMenuItem @click="openCount(row)">
-              <ClipboardListIcon aria-hidden="true" />
-              创建盘点
-            </NvDropdownMenuItem>
-          </NvRowActions>
+            {{ operationBlockReason(row) }}
+          </p>
+          <div class="flex justify-end gap-2">
+            <RouterLink
+              class="inline-flex h-8 items-center rounded-md px-2 text-sm text-primary underline-offset-4 hover:underline"
+              :to="{ path: '/barcode/scans', query: scanContextQuery(row) }"
+            >
+              扫码记录
+            </RouterLink>
+            <NvRowActions :label="`库存操作 ${row.locationCode ?? ''}`">
+              <NvDropdownMenuItem
+                :disabled="row.movementAllowed !== true"
+                :title="row.movementBlockReason ?? undefined"
+                @click="openMovement(row)"
+              >
+                <MoveRightIcon aria-hidden="true" />
+                发起移动
+              </NvDropdownMenuItem>
+              <NvDropdownMenuSeparator />
+              <NvDropdownMenuItem
+                :disabled="row.countAllowed !== true"
+                :title="row.countBlockReason ?? undefined"
+                @click="openCount(row)"
+              >
+                <ClipboardListIcon aria-hidden="true" />
+                创建盘点
+              </NvDropdownMenuItem>
+            </NvRowActions>
+          </div>
         </div>
       </template>
     </NvDataTable>
+    <NvPagination
+      v-if="nearExpiryOnly && hasExpiryScope"
+      v-model:page="expiryAlertsPage"
+      v-model:page-size="expiryAlertsPageSize"
+      :total-items="expiryAlertsTotal"
+      :page-size-options="[25, 50, 100, 200]"
+      :show-edges="false"
+      :sibling-count="0"
+      class="mt-4"
+    />
   </BusinessLayout>
 </template>
