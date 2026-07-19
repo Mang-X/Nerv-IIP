@@ -13,11 +13,13 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $verifyScript = Join-Path $repoRoot 'scripts/verify-erp-sales-order-demand-planning.ps1'
+$ciWorkflow = Join-Path $repoRoot '.github/workflows/ci.yml'
 if (-not (Test-Path -LiteralPath $verifyScript)) {
     throw 'ERP sales-order DemandPlanning cross-process verify script is missing.'
 }
 
 $content = Get-Content -LiteralPath $verifyScript -Raw
+$workflowContent = Get-Content -LiteralPath $ciWorkflow -Raw
 
 function Assert-Contract {
     param([bool]$Condition, [string]$Message)
@@ -41,11 +43,37 @@ Assert-Contract ($content.Contains('$runningResult.Stdout')) 'Verify script must
 Assert-Contract ($content.Contains('UnitTestResult')) 'Verify script must prove the external fault-injection test actually executed and passed.'
 Assert-Contract ($content.Contains('Assert-DemandStable')) 'Verify script must hold the final cancellation state stable after stale-message injection.'
 Assert-Contract ($content.Contains('Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres')) 'Verify script must execute the real Redis identical-idempotency-key duplicate test.'
+Assert-Contract ($content.Contains('Redis_cap_fallback_scan_converges_changed_v2_after_immediate_retries_fail')) 'Verify script must execute the real Redis fallback-scan retry test.'
 Assert-Contract ($content.Contains('changed during the stability window')) 'Verify script must fail immediately when the final demand changes during the stability window.'
 Assert-Contract ($content.Contains("Wait-Demand -DemandPlanningUrl `$demandPlanningUrl -Headers `$headers -Version 4 -Quantity 0 -Status 'cancelled'")) 'Verify script must wait for cancellation convergence before entering the strict stability window.'
 Assert-Contract ($content.Contains('sourceVersion')) 'Verify script must assert business-version convergence.'
 Assert-Contract ($content.Contains('sourceStatus')) 'Verify script must assert lifecycle-status convergence.'
 Assert-Contract ($content.Contains('finally')) 'Verify script must clean up processes and disposable infrastructure in finally.'
 Assert-Contract ($content.Contains('sales-order-demand-planning-evidence.json')) 'Verify script must write reusable acceptance evidence.'
+Assert-Contract ($content.Contains('lastHttpStatus')) 'Wait-Demand must preserve the last HTTP status.'
+Assert-Contract ($content.Contains('lastResponseBody')) 'Wait-Demand must preserve the last HTTP response body.'
+Assert-Contract ($content.Contains('lastRequestException')) 'Wait-Demand must preserve the last request exception.'
+Assert-Contract ($content.Contains('lastObservedDemand')) 'Wait-Demand must preserve the last observed version, quantity, and status.'
+Assert-Contract ($content.Contains('Export-Man517FailureDiagnostics')) 'The acceptance script must export DB, Redis, and log diagnostics before cleanup.'
+Assert-Contract ($content.Contains('Protect-ScriptAutomationText')) 'Failure diagnostics must reuse the governed shared redactor.'
+Assert-Contract ($content.Contains('Protect-Man517DiagnosticText -Text $lastObservation')) 'Wait-Demand must redact its last observation before throwing to CI logs.'
+Assert-Contract ($content.Contains("Cap__FailedRetryInterval = '2'")) 'Acceptance must configure a short failed-message scan interval.'
+Assert-Contract ($content.Contains("Cap__FallbackWindowLookbackSeconds = '30'")) 'Acceptance must configure CAP safe-minimum fallback eligibility.'
+Assert-Contract ($content.Contains('erp.cap_published_messages')) 'Failure diagnostics must capture the ERP CAP outbox state.'
+Assert-Contract ($content.Contains('demand_planning.cap_received_messages')) 'Failure diagnostics must capture the DemandPlanning CAP inbox state.'
+Assert-Contract ($content.Contains('processed_integration_events')) 'Failure diagnostics must capture the durable DemandPlanning consumer inbox.'
+Assert-Contract ($content.Contains('integration_event_dead_letters')) 'Failure diagnostics must capture the DemandPlanning DLQ.'
+Assert-Contract ($content.Contains('sales_order_demand_projections')) 'Failure diagnostics must capture the sales-order watermark projection.'
+Assert-Contract ($content.Contains('demand_sources')) 'Failure diagnostics must capture the projected demand source.'
+Assert-Contract ($content.Contains('XPENDING')) 'Failure diagnostics must capture Redis pending-entry metadata.'
+Assert-Contract ($workflowContent.Contains('if: always()')) 'CI must upload MAN-517 diagnostics even when verification fails.'
+Assert-Contract ($workflowContent.Contains('actions/upload-artifact@v4')) 'CI must retain MAN-517 diagnostics as an artifact.'
+
+. (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
+$unsafeDiagnostic = 'pwd=pwd-value token=token-value secret=secret-value client_secret=client-value Authorization: Bearer bearer-value Password=password-value'
+$safeDiagnostic = Protect-ScriptAutomationText $unsafeDiagnostic
+foreach ($sensitiveValue in @('pwd-value', 'token-value', 'secret-value', 'client-value', 'bearer-value', 'password-value')) {
+    Assert-Contract (-not $safeDiagnostic.Contains($sensitiveValue)) "Shared diagnostic redaction leaked $sensitiveValue."
+}
 
 Write-Host 'ERP sales-order DemandPlanning cross-process verify script contract tests passed.'

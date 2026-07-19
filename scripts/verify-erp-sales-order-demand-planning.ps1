@@ -8,6 +8,7 @@
 #     - bin/ and obj/ outputs for the three business services and full-chain probe
 #     - artifacts/script-logs/**
 #     - artifacts/acceptance/man517/sales-order-demand-planning-evidence.json
+#     - artifacts/acceptance/man517/diagnostics/** on failure
 #   Cleanup:
 #     - Stops every managed service process in finally
 #     - Drops the disposable PostgreSQL database in finally
@@ -79,19 +80,44 @@ function Invoke-JsonPost {
 
 function Wait-Demand {
     param([string]$DemandPlanningUrl, [hashtable]$Headers, [int]$Version, [decimal]$Quantity, [string]$Status)
-    $deadline = (Get-Date).AddSeconds(45)
+    # The acceptance profile uses a 30-second fallback lookback and a two-second
+    # failed-message scan interval. Keep enough scheduling slack for that path.
+    $deadline = (Get-Date).AddSeconds(90)
+    $lastHttpStatus = $null
+    $lastResponseBody = $null
+    $lastRequestException = $null
+    $lastObservedDemand = $null
     do {
         try {
-            $response = Invoke-RestMethod -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers
+            $httpResponse = Invoke-WebRequest -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -SkipHttpErrorCheck
+            $lastHttpStatus = [int]$httpResponse.StatusCode
+            $fullResponseBody = "$($httpResponse.Content)"
+            $lastResponseBody = if ($fullResponseBody.Length -gt 8192) { $fullResponseBody.Substring(0, 8192) } else { $fullResponseBody }
+            $lastRequestException = $null
+            $response = $fullResponseBody | ConvertFrom-Json
             $rows = @($response.data | Where-Object { $_.sourceReference -eq 'SO-DEMO-001' })
+            $lastObservedDemand = if ($rows.Count -eq 1) {
+                [ordered]@{ version = $rows[0].sourceVersion; quantity = $rows[0].quantity; status = $rows[0].sourceStatus }
+            } else {
+                [ordered]@{ matchingRowCount = $rows.Count }
+            }
             if ($rows.Count -eq 1 -and $rows[0].sourceVersion -eq $Version -and [decimal]$rows[0].quantity -eq $Quantity -and $rows[0].sourceStatus -eq $Status) {
                 return $rows[0]
             }
         }
-        catch { }
+        catch {
+            $lastRequestException = $_.Exception.Message
+        }
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)
-    throw "Demand SO-DEMO-001 did not converge to version=$Version quantity=$Quantity status=$Status."
+    $lastObservation = [ordered]@{
+        lastHttpStatus = $lastHttpStatus
+        lastResponseBody = $lastResponseBody
+        lastRequestException = $lastRequestException
+        lastObservedDemand = $lastObservedDemand
+    } | ConvertTo-Json -Depth 8 -Compress
+    $safeLastObservation = Protect-Man517DiagnosticText -Text $lastObservation
+    throw "Demand SO-DEMO-001 did not converge to version=$Version quantity=$Quantity status=$Status. Last observation: $safeLastObservation"
 }
 
 function Assert-DemandStable {
@@ -107,6 +133,135 @@ function Assert-DemandStable {
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)
     return $row
+}
+
+function Protect-Man517DiagnosticText {
+    param([AllowNull()][string]$Text)
+    if ($null -eq $Text) { return $null }
+    $safe = Protect-ScriptAutomationText $Text
+    if (-not [string]::IsNullOrWhiteSpace($internalToken)) {
+        $safe = $safe.Replace($internalToken, '[REDACTED_TOKEN]', [StringComparison]::Ordinal)
+    }
+    return $safe
+}
+
+function Write-Man517DiagnosticFile {
+    param([string]$Path, [AllowNull()][string]$Content)
+    [System.IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
+    Protect-Man517DiagnosticText -Text $Content | Set-Content -LiteralPath $Path -Encoding utf8
+}
+
+function Invoke-Man517DiagnosticCommand {
+    param([string]$Name, [string]$Command, [string[]]$Arguments, [string]$OutputPath)
+    try {
+        $result = Invoke-NativeCommandOutput -Command $Command -Arguments $Arguments -WorkingDirectory $root -Name $Name
+        Write-Man517DiagnosticFile -Path $OutputPath -Content $result.Stdout
+    }
+    catch {
+        Write-Man517DiagnosticFile -Path $OutputPath -Content "Diagnostic command failed: $($_.Exception.Message)"
+    }
+}
+
+function Export-Man517FailureDiagnostics {
+    param([object]$FailureRecord)
+    $diagnosticsRoot = Join-Path $root 'artifacts/acceptance/man517/diagnostics'
+    [System.IO.Directory]::CreateDirectory($diagnosticsRoot) | Out-Null
+    Write-Man517DiagnosticFile -Path (Join-Path $diagnosticsRoot 'failure-summary.json') -Content (@{
+        capturedAtUtc = [DateTimeOffset]::UtcNow
+        database = $databaseName
+        capVersion = $capVersion
+        failure = $FailureRecord.Exception.Message
+    } | ConvertTo-Json -Depth 8)
+
+    foreach ($entry in @{
+        masterdata = $masterDataProcess
+        erp = $erpProcess
+        demandplanning = $demandPlanningProcess
+    }.GetEnumerator()) {
+        if ($null -eq $entry.Value) { continue }
+        foreach ($stream in @('stdout', 'stderr')) {
+            $source = Join-Path $entry.Value.LogDirectory "$stream.log"
+            $target = Join-Path $diagnosticsRoot "$($entry.Key)-$stream-tail.log"
+            try {
+                $tail = Get-Content -LiteralPath $source -Tail 400 -ErrorAction Stop
+                Write-Man517DiagnosticFile -Path $target -Content ($tail -join [Environment]::NewLine)
+            }
+            catch {
+                Write-Man517DiagnosticFile -Path $target -Content "Could not read service log tail: $($_.Exception.Message)"
+            }
+        }
+    }
+
+    if ($databaseCreated) {
+        $databaseSql = @"
+SELECT 'erp.cap_published_messages' AS diagnostic_source,
+       COALESCE(jsonb_agg(to_jsonb(row_data)), '[]'::jsonb) AS rows
+FROM (SELECT "Id", "Name", "StatusName", "Retries", "Added", "ExpiresAt", "Version"
+      FROM erp.cap_published_messages WHERE "Version" = '$capVersion' ORDER BY "Id" DESC LIMIT 100) row_data
+UNION ALL
+SELECT 'erp.cap_received_messages', COALESCE(jsonb_agg(to_jsonb(row_data)), '[]'::jsonb)
+FROM (SELECT "Id", "Name", "Group", "StatusName", "Retries", "Added", "ExpiresAt", "Version"
+      FROM erp.cap_received_messages WHERE "Version" = '$capVersion' ORDER BY "Id" DESC LIMIT 100) row_data
+UNION ALL
+SELECT 'demand_planning.cap_published_messages', COALESCE(jsonb_agg(to_jsonb(row_data)), '[]'::jsonb)
+FROM (SELECT "Id", "Name", "StatusName", "Retries", "Added", "ExpiresAt", "Version"
+      FROM demand_planning.cap_published_messages WHERE "Version" = '$capVersion' ORDER BY "Id" DESC LIMIT 100) row_data
+UNION ALL
+SELECT 'demand_planning.cap_received_messages', COALESCE(jsonb_agg(to_jsonb(row_data)), '[]'::jsonb)
+FROM (SELECT "Id", "Name", "Group", "StatusName", "Retries", "Added", "ExpiresAt", "Version"
+      FROM demand_planning.cap_received_messages WHERE "Version" = '$capVersion' ORDER BY "Id" DESC LIMIT 100) row_data
+UNION ALL
+SELECT 'demand_planning.processed_integration_events', COALESCE(jsonb_agg(to_jsonb(row_data)), '[]'::jsonb)
+FROM (SELECT consumer_name, event_id, event_type, event_version, source_service, idempotency_key, processed_at_utc
+      FROM demand_planning.processed_integration_events ORDER BY processed_at_utc DESC LIMIT 100) row_data
+UNION ALL
+SELECT 'demand_planning.integration_event_dead_letters', COALESCE(jsonb_agg(to_jsonb(row_data)), '[]'::jsonb)
+FROM (SELECT consumer_name, event_id, event_type, event_version, source_service, idempotency_key, failure_code, failure_message, status, dead_lettered_at_utc
+      FROM demand_planning.integration_event_dead_letters ORDER BY dead_lettered_at_utc DESC LIMIT 100) row_data
+UNION ALL
+SELECT 'demand_planning.sales_order_demand_projections', COALESCE(jsonb_agg(to_jsonb(row_data)), '[]'::jsonb)
+FROM (SELECT organization_id, environment_id, sales_order_id, sales_order_no, order_version, status, last_event_id, occurred_at_utc
+      FROM demand_planning.sales_order_demand_projections WHERE sales_order_no = 'SO-DEMO-001') row_data
+UNION ALL
+SELECT 'demand_planning.demand_sources', COALESCE(jsonb_agg(to_jsonb(row_data)), '[]'::jsonb)
+FROM (SELECT organization_id, environment_id, source_document_id, source_reference, source_line_reference, quantity, source_version, source_status, updated_at_utc
+      FROM demand_planning.demand_sources WHERE source_reference = 'SO-DEMO-001') row_data;
+"@
+        Invoke-Man517DiagnosticCommand -Name 'man517-diagnostics-postgres' -Command 'docker' -Arguments @(
+            'compose', '-f', $composeFile, 'exec', '-T', 'postgres', 'psql', '-U', 'nerv', '-d', $databaseName,
+            '-X', '-v', 'ON_ERROR_STOP=1', '-P', 'pager=off', '-c', $databaseSql
+        ) -OutputPath (Join-Path $diagnosticsRoot 'postgres-state.txt')
+    }
+
+    $redisLines = [System.Collections.Generic.List[string]]::new()
+    # CAP appends Cap:Version to the [CapSubscribe] group. This exact shape is
+    # verified by the preceding XINFO GROUPS output on the real Redis transport.
+    $redisGroup = "business-demand-planning.erp-sales-order-demand.$capVersion"
+    foreach ($streamName in @(
+        'SalesOrderReleasedIntegrationEvent',
+        'SalesOrderChangedIntegrationEvent',
+        'SalesOrderCancelledIntegrationEvent',
+        'Nerv.IIP.Contracts.Erp.SalesOrderReleasedIntegrationEvent',
+        'Nerv.IIP.Contracts.Erp.SalesOrderChangedIntegrationEvent',
+        'Nerv.IIP.Contracts.Erp.SalesOrderCancelledIntegrationEvent'
+    )) {
+        foreach ($redisArguments in @(
+            @('XINFO', 'STREAM', $streamName),
+            @('XINFO', 'GROUPS', $streamName),
+            @('XPENDING', $streamName, $redisGroup)
+        )) {
+            try {
+                $result = Invoke-NativeCommandOutput -Command 'docker' -Arguments (@('compose', '-f', $composeFile, 'exec', '-T', 'redis', 'redis-cli') + $redisArguments) -WorkingDirectory $root -Name 'man517-diagnostics-redis'
+                $redisLines.Add("COMMAND redis-cli $($redisArguments -join ' ')")
+                $redisLines.Add("$($result.Stdout)")
+            }
+            catch {
+                $redisLines.Add("COMMAND redis-cli $($redisArguments -join ' ') FAILED: $($_.Exception.Message)")
+            }
+        }
+    }
+    Write-Man517DiagnosticFile -Path (Join-Path $diagnosticsRoot 'redis-stream-state.txt') -Content ($redisLines -join [Environment]::NewLine)
+    Write-Diagnostic -Level 'WARN' -Message "MAN-517 failure diagnostics captured before cleanup: $diagnosticsRoot"
 }
 
 $composeFile = Join-Path $root 'infra/docker-compose.dev.yml'
@@ -157,6 +312,8 @@ try {
         Messaging__Redis__ConnectionString = $RedisConnectionString
         ConnectionStrings__Redis = $RedisConnectionString
         Cap__Version = $capVersion
+        Cap__FailedRetryInterval = '2'
+        Cap__FallbackWindowLookbackSeconds = '30'
         InternalService__BearerToken = $internalToken
     }
 
@@ -225,18 +382,26 @@ try {
         NERV_IIP_TEST_POSTGRES = $PostgresAdminConnectionString
         NERV_IIP_TEST_REDIS = $RedisConnectionString
     } -ScriptBlock {
-        $duplicateResultsDirectory = Join-Path $root 'artifacts/acceptance/man517'
-        [System.IO.Directory]::CreateDirectory($duplicateResultsDirectory) | Out-Null
-        $duplicateResultsFile = "duplicate-$([Guid]::NewGuid().ToString('N')).trx"
-        $duplicateResults = Join-Path $duplicateResultsDirectory $duplicateResultsFile
-        Invoke-DotNet -Arguments @('test', $demandPlanningTestsProject, '--no-build', '--filter', 'FullyQualifiedName~Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres', '--results-directory', $duplicateResultsDirectory, '--logger', "trx;LogFileName=$duplicateResultsFile") -WorkingDirectory $root -TimeoutSeconds 180 -Name 'man517-identical-key-duplicate-probe' | Out-Null
-        if (-not (Test-Path -LiteralPath $duplicateResults)) {
-            throw 'MAN-517 identical-key Redis duplicate probe produced no TRX result.'
+        $redisProofResultsDirectory = Join-Path $root 'artifacts/acceptance/man517'
+        [System.IO.Directory]::CreateDirectory($redisProofResultsDirectory) | Out-Null
+        $redisProofResultsFile = "redis-proofs-$([Guid]::NewGuid().ToString('N')).trx"
+        $redisProofResults = Join-Path $redisProofResultsDirectory $redisProofResultsFile
+        $redisProofFilter = 'FullyQualifiedName~Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres|FullyQualifiedName~Redis_cap_fallback_scan_converges_changed_v2_after_immediate_retries_fail'
+        Invoke-DotNet -Arguments @('test', $demandPlanningTestsProject, '--no-build', '--filter', $redisProofFilter, '--results-directory', $redisProofResultsDirectory, '--logger', "trx;LogFileName=$redisProofResultsFile") -WorkingDirectory $root -TimeoutSeconds 180 -Name 'man517-redis-reliability-probes' | Out-Null
+        if (-not (Test-Path -LiteralPath $redisProofResults)) {
+            throw 'MAN-517 Redis reliability probes produced no TRX result.'
         }
-        [xml]$duplicateTrx = Get-Content -LiteralPath $duplicateResults -Raw
-        $duplicateExecutions = @($duplicateTrx.SelectNodes("//*[local-name()='UnitTestResult']") | Where-Object { $_.GetAttribute('testName').EndsWith('.Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres', [StringComparison]::Ordinal) })
-        if ($duplicateExecutions.Count -ne 1 -or $duplicateExecutions[0].GetAttribute('outcome') -ne 'Passed') {
-            throw 'MAN-517 identical-key Redis duplicate probe did not execute exactly once and pass.'
+        [xml]$redisProofTrx = Get-Content -LiteralPath $redisProofResults -Raw
+        $expectedRedisProofs = @(
+            '.Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres',
+            '.Redis_cap_fallback_scan_converges_changed_v2_after_immediate_retries_fail'
+        )
+        $redisProofExecutions = @($redisProofTrx.SelectNodes("//*[local-name()='UnitTestResult']") | Where-Object {
+            $testName = $_.GetAttribute('testName')
+            $expectedRedisProofs | Where-Object { $testName.EndsWith($_, [StringComparison]::Ordinal) }
+        })
+        if ($redisProofExecutions.Count -ne 2 -or @($redisProofExecutions | Where-Object { $_.GetAttribute('outcome') -ne 'Passed' }).Count -ne 0) {
+            throw 'MAN-517 Redis duplicate and fallback-scan retry probes did not both execute exactly once and pass.'
         }
     }
 
@@ -257,6 +422,12 @@ try {
         checkpoints = @{ released = $released; duplicateReplay = $duplicateReplay; changedV2 = $changedV2; changedV3 = $changedV3; outOfOrder = $outOfOrder; cancelled = $cancelled }
     } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $evidencePath -Encoding utf8
     Write-Host "MAN-517 separate-process PostgreSQL + Redis acceptance passed. Evidence: $evidencePath"
+}
+catch {
+    $acceptanceFailure = $_
+    try { Export-Man517FailureDiagnostics -FailureRecord $acceptanceFailure }
+    catch { Write-Diagnostic -Level 'WARN' -Message "MAN-517 diagnostic export failed: $($_.Exception.Message)" }
+    throw $acceptanceFailure
 }
 finally {
     if ($demandPlanningProcess) { $demandPlanningProcess.Stop.Invoke('MAN-517 verification cleanup') | Out-Null }

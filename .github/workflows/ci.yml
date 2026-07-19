@@ -65,6 +65,17 @@ jobs:
         shell: pwsh
         run: ./scripts/verify-erp-sales-order-demand-planning.ps1
 
+      - name: Upload ERP sales-order demand diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: erp-sales-order-demand-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/acceptance/man517
+            artifacts/script-logs/man517-*
+          if-no-files-found: warn
+          retention-days: 7
+
   connector-host-tests:
     name: Connector Host Tests
     runs-on: ubuntu-latest
