@@ -15,6 +15,7 @@ const inventoryState = vi.hoisted(() => ({
   postMovement: vi.fn(),
   expiryPage: undefined as { value: number } | undefined,
   expiryPageSize: undefined as { value: number } | undefined,
+  expiryFilters: undefined as Record<string, string | undefined> | undefined,
   availabilityError: undefined as { value: unknown } | undefined,
   availabilityRows: undefined as { value: Array<Record<string, unknown>> } | undefined,
   notifyError: vi.fn(),
@@ -124,11 +125,11 @@ vi.mock('@/composables/useBusinessInventory', () => ({
     expiryAlertsTotal: computed(() => 51),
     expiryAlertsPending: ref(false),
     expiryAlertsSuccessful: ref(true),
-    filters: {
+    filters: (inventoryState.expiryFilters = {
       environmentId: 'env-dev',
       organizationId: 'org-001',
       siteCode: 'S1',
-    },
+    }),
     refreshExpiryAlerts: vi.fn(),
   }),
   useInventoryCounts: () => ({
@@ -305,6 +306,23 @@ describe('inventory workflow pages', () => {
       '库存可用量加载失败，请稍后重试。',
     )
     expect(wrapper.text()).not.toContain('downstream stack trace')
+  })
+
+  it('distinguishes a selected factory from business context still loading', async () => {
+    const wrapper = mountInventoryPage(AvailabilityPage)
+    inventoryState.expiryFilters!.organizationId = ''
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('效期预警'))!
+      .trigger('click')
+    await nextTick()
+
+    expect(wrapper.get('[data-page-count]').text()).toBe('业务上下文加载中')
+    expect(wrapper.get('[data-ui-table]').attributes('data-empty-message')).toBe(
+      '业务上下文加载中，请稍候。',
+    )
+    expect(wrapper.text()).not.toContain('请选择工厂')
   })
 
   it('shows count-only operation reasons and the honest missing-reason fallback', async () => {

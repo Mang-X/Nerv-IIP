@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { BusinessConsoleInventoryAvailabilityLineResponse } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import InventoryExpiryStatusBadge from '@/components/inventory/InventoryExpiryStatusBadge.vue'
 import InventoryExpirySummaryCards from '@/components/inventory/InventoryExpirySummaryCards.vue'
@@ -63,6 +62,7 @@ const {
   expiryAlertsSuccessful,
   expiryAlertsTotal,
   expirySummary,
+  hasExpirySite,
   hasExpiryScope,
   nearExpiryOnly,
   refreshExpiryAlerts,
@@ -112,7 +112,6 @@ const qualityStatusFilter = computed({
   },
 })
 
-type Line = BusinessConsoleInventoryAvailabilityLineResponse
 type DisplayLine = InventoryExpiryDisplayLine
 const rows = computed<DisplayLine[]>(() =>
   nearExpiryOnly.value ? visibleExpiryAlerts.value : availabilityLines.value,
@@ -122,14 +121,16 @@ const tablePending = computed(() =>
 )
 const pageCount = computed(() => {
   if (!nearExpiryOnly.value) return `${rows.value.length} 条明细`
-  if (!hasExpiryScope.value) return '请选择工厂'
+  if (!hasExpirySite.value) return '请选择工厂'
+  if (!hasExpiryScope.value) return '业务上下文加载中'
   if (expiryAlertsPending.value) return '加载中'
   if (expiryAlertsError.value) return '加载失败'
   if (!expiryAlertsSuccessful.value) return '等待查询'
   return `${expiryAlertsTotal.value} 条预警明细`
 })
 const tableEmptyMessage = computed(() => {
-  if (nearExpiryOnly.value && !hasExpiryScope.value) return '请选择工厂查看效期预警批次。'
+  if (nearExpiryOnly.value && !hasExpirySite.value) return '请选择工厂查看效期预警批次。'
+  if (nearExpiryOnly.value && !hasExpiryScope.value) return '业务上下文加载中，请稍候。'
   if (nearExpiryOnly.value && expiryAlertsError.value) return '效期预警加载失败，请稍后重试。'
   if (nearExpiryOnly.value) return '当前范围没有已过期或未来30天内到期的批次。'
   if (availabilityError.value) return '库存可用量加载失败，请稍后重试。'

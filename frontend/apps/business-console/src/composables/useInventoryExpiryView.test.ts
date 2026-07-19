@@ -134,6 +134,31 @@ describe('useInventoryExpiryView', () => {
     })
   })
 
+  it('组织、环境和工厂均就绪后才报告效期查询范围可用', async () => {
+    const sourceFilters = reactive({
+      siteCode: 'PLANT-SH-01',
+      skuCode: '',
+      uomCode: '',
+      locationCode: '',
+    })
+    const view = createView(sourceFilters)
+
+    expect(view.hasExpiryScope.value).toBe(true)
+    state.expiryFilters!.organizationId = ''
+    await nextTick()
+    expect(view.hasExpiryScope.value).toBe(false)
+
+    state.expiryFilters!.organizationId = 'org-001'
+    state.expiryFilters!.environmentId = ''
+    await nextTick()
+    expect(view.hasExpiryScope.value).toBe(false)
+
+    state.expiryFilters!.environmentId = 'env-dev'
+    sourceFilters.siteCode = ''
+    await nextTick()
+    expect(view.hasExpiryScope.value).toBe(false)
+  })
+
   it('把近效期查询错误转为统一友好 toast', async () => {
     state.notifyError.mockReset()
     const view = createView(

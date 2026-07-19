@@ -41,7 +41,13 @@ export function useInventoryExpiryView(sourceFilters: ExpirySourceFilters) {
     notifyError(error, '近效期批次加载失败，请稍后重试。')
   })
 
-  const hasExpiryScope = computed(() => sourceFilters.siteCode.trim().length > 0)
+  const hasExpirySite = computed(() => query.filters.siteCode.trim().length > 0)
+  const hasExpiryScope = computed(
+    () =>
+      query.filters.organizationId.trim().length > 0 &&
+      query.filters.environmentId.trim().length > 0 &&
+      query.filters.siteCode.trim().length > 0,
+  )
   const visibleExpiryAlerts = computed(() =>
     hasExpiryScope.value && query.expiryAlertsSuccessful.value ? query.expiryAlerts.value : [],
   )
@@ -79,6 +85,7 @@ export function useInventoryExpiryView(sourceFilters: ExpirySourceFilters) {
   return {
     ...query,
     nearExpiryOnly,
+    hasExpirySite,
     hasExpiryScope,
     visibleExpiryAlerts,
     expirySummary,
