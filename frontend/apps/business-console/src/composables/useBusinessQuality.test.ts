@@ -5,12 +5,17 @@ import { createPinia, setActivePinia } from 'pinia'
 import {
   closeBusinessConsoleQualityNcrMutationOptions,
   createBusinessConsoleQualityInspectionRecordMutationOptions,
+  listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions,
   listBusinessConsoleQualityInspectionPlansQueryOptions,
   listBusinessConsoleQualityNcrsQueryOptions,
   submitBusinessConsoleQualityNcrDispositionMutationOptions,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { useQualityInspectionPlans, useQualityNcrs } from './useBusinessQuality'
+import {
+  useQualityInspectionPlanCharacteristics,
+  useQualityInspectionPlans,
+  useQualityNcrs,
+} from './useBusinessQuality'
 
 const coladaState = vi.hoisted(() => ({
   invalidateQueries: vi.fn(async () => undefined),
@@ -33,6 +38,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   listBusinessConsoleQualityInspectionPlansQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleQualityInspectionPlans' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleQualityInspectionPlanCharacteristics' }],
     query: vi.fn(),
   })),
   listBusinessConsoleQualityNcrsQueryOptions: vi.fn(() => ({
@@ -83,6 +92,29 @@ describe('business quality composables', () => {
     coladaState.invalidateQueries.mockClear()
     coladaState.queryFactoriesById.clear()
     coladaState.queryDataById.clear()
+  })
+
+  it('loads inspection-plan characteristics through the existing facade', () => {
+    coladaState.queryDataById.set('listBusinessConsoleQualityInspectionPlanCharacteristics', {
+      success: true,
+      data: { items: [{ characteristicCode: 'DIM-01', lowerSpecLimit: 9.8 }] },
+    })
+
+    const { planCharacteristics } = useQualityInspectionPlanCharacteristics(() => ({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      inspectionPlanId: 'PLAN-001',
+    }))
+
+    expect(
+      listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions,
+    ).toHaveBeenCalledWith({
+      path: { inspectionPlanId: 'PLAN-001' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+    })
+    expect(planCharacteristics.value).toEqual([
+      { characteristicCode: 'DIM-01', lowerSpecLimit: 9.8 },
+    ])
   })
 
   it('lists inspection plans with default context and safe items', () => {

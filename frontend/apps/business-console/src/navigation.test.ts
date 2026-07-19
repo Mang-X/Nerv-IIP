@@ -3,6 +3,19 @@ import { describe, expect, it } from 'vitest'
 import { DOMAIN_SIDE_NAV, resolveDomainId } from './navigation'
 import { BUSINESS_PERMISSION_CODES as P } from './permissions'
 
+describe('business console quality navigation', () => {
+  it('puts the inspection task workbench first and aligns its read permission', () => {
+    const qualityItems = DOMAIN_SIDE_NAV.quality?.flatMap((section) => section.items) ?? []
+    const taskWorkbench = qualityItems.find(
+      (item) => pathOf(item.to) === '/quality/inspection-tasks',
+    )
+
+    expect(resolveDomainId('/quality/inspection-tasks')).toBe('quality')
+    expect(qualityItems[0]?.title).toBe('待检工作台')
+    expect(taskWorkbench?.requiredPermissions).toEqual([P.qualityInspectionRecordsRead])
+  })
+})
+
 describe('business console scheduling navigation', () => {
   it('places the APS workbench under demand and planning', () => {
     const planningItems = DOMAIN_SIDE_NAV.planning?.flatMap((section) => section.items) ?? []
@@ -19,14 +32,19 @@ describe('business console scheduling navigation', () => {
 
     expect(resolveDomainId('/mes/schedules')).toBe('mes')
     expect(mesRuleScheduling?.title).toBe('规则排程（过渡）')
-    expect(mesRuleScheduling?.requiredPermissions).toEqual([P.mesSchedulesRead, P.mesSchedulesManage])
+    expect(mesRuleScheduling?.requiredPermissions).toEqual([
+      P.mesSchedulesRead,
+      P.mesSchedulesManage,
+    ])
   })
 })
 
 describe('business console maintenance navigation', () => {
   it('keeps CMMS deep pages under the equipment domain side navigation', () => {
     const equipmentItems = DOMAIN_SIDE_NAV.equipment?.flatMap((section) => section.items) ?? []
-    const maintenancePaths = equipmentItems.map((item) => pathOf(item.to)).filter((path) => path.startsWith('/maintenance'))
+    const maintenancePaths = equipmentItems
+      .map((item) => pathOf(item.to))
+      .filter((path) => path.startsWith('/maintenance'))
 
     expect(resolveDomainId('/maintenance/inspections')).toBe('equipment')
     expect(resolveDomainId('/maintenance/spare-parts')).toBe('equipment')
@@ -61,8 +79,12 @@ describe('business console telemetry navigation', () => {
   it('uses read permissions for telemetry analysis and manage permission for alarm-rule maintenance', () => {
     const equipmentItems = DOMAIN_SIDE_NAV.equipment?.flatMap((section) => section.items) ?? []
     const tags = equipmentItems.find((item) => pathOf(item.to) === '/equipment/telemetry/tags')
-    const alarmRules = equipmentItems.find((item) => pathOf(item.to) === '/equipment/telemetry/alarm-rules')
-    const history = equipmentItems.find((item) => pathOf(item.to) === '/equipment/telemetry/history')
+    const alarmRules = equipmentItems.find(
+      (item) => pathOf(item.to) === '/equipment/telemetry/alarm-rules',
+    )
+    const history = equipmentItems.find(
+      (item) => pathOf(item.to) === '/equipment/telemetry/history',
+    )
     const oee = equipmentItems.find((item) => pathOf(item.to) === '/equipment/telemetry/oee')
 
     expect(tags?.requiredPermissions).toEqual([P.iiotTelemetryRead])
@@ -113,7 +135,9 @@ describe('business console ERP navigation', () => {
   it('uses ERP domain permission codes for every ERP object page', () => {
     const erpSections = DOMAIN_SIDE_NAV.erp ?? []
     const byPath = new Map(
-      erpSections.flatMap((section) => section.items).map((item) => [pathOf(item.to), item.requiredPermissions]),
+      erpSections
+        .flatMap((section) => section.items)
+        .map((item) => [pathOf(item.to), item.requiredPermissions]),
     )
 
     for (const path of [
@@ -126,11 +150,21 @@ describe('business console ERP navigation', () => {
       expect(byPath.get(path)).toEqual([P.erpProcurementRead])
     }
 
-    for (const path of ['/erp/sales', '/erp/sales/quotations', '/erp/sales/orders', '/erp/sales/deliveries']) {
+    for (const path of [
+      '/erp/sales',
+      '/erp/sales/quotations',
+      '/erp/sales/orders',
+      '/erp/sales/deliveries',
+    ]) {
       expect(byPath.get(path)).toEqual([P.erpSalesRead])
     }
 
-    for (const path of ['/erp/finance', '/erp/finance/ar-ap', '/erp/finance/vouchers', '/erp/finance/cost-candidates']) {
+    for (const path of [
+      '/erp/finance',
+      '/erp/finance/ar-ap',
+      '/erp/finance/vouchers',
+      '/erp/finance/cost-candidates',
+    ]) {
       expect(byPath.get(path)).toEqual([P.erpFinanceRead])
     }
   })

@@ -14,8 +14,21 @@ vi.mock('@/utils/notify', () => ({
   notifySuccess: notifySpies.success,
 }))
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { principalId: 'qa-user-001' } }),
+}))
+
+vi.mock('@/composables/useQualityInspectionTasks', () => ({
+  useQualityInspectionTaskActions: () => ({
+    startInspection: vi.fn(),
+  }),
+}))
+
 const qualityState = vi.hoisted(() => ({
-  inspectionFilters: undefined as { status?: string, keyword?: string } | undefined,
+  inspectionFilters: undefined as
+    | { organizationId: string; environmentId: string; status?: string; keyword?: string }
+    | undefined,
+  inspectionContextInitiallyEmpty: false,
   recordError: undefined as unknown,
   inspectionPlans: [
     {
@@ -25,7 +38,17 @@ const qualityState = vi.hoisted(() => ({
       status: 'active',
     },
   ],
-  ncrFilters: undefined as { status?: string, keyword?: string } | undefined,
+  planCharacteristics: [
+    {
+      characteristicCode: 'DIM-01',
+      name: '长度',
+      lowerSpecLimit: 9.8,
+      upperSpecLimit: 10.2,
+      unitCode: 'mm',
+    },
+  ],
+  planCharacteristicsRef: undefined as { value: Array<Record<string, unknown>> } | undefined,
+  ncrFilters: undefined as { status?: string; keyword?: string } | undefined,
   ncrs: [
     {
       id: 'NCR-001',
@@ -44,6 +67,7 @@ vi.mock('vue-router', async (importOriginal) => {
     ...actual,
     RouterLink: { props: ['to'], template: '<a data-router-link><slot /></a>' },
     useRoute: () => routeState.route,
+    useRouter: () => ({ push: vi.fn() }),
   }
 })
 
@@ -62,10 +86,22 @@ vi.mock('@/composables/useBusinessQuality', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
 
   return {
+    useQualityInspectionPlanCharacteristics: (source: () => { inspectionPlanId: string }) => {
+      const planCharacteristics = shallowRef(
+        source().inspectionPlanId ? qualityState.planCharacteristics : [],
+      )
+      qualityState.planCharacteristicsRef = planCharacteristics
+      return {
+        planCharacteristics,
+        planCharacteristicsError: shallowRef(),
+        planCharacteristicsPending: shallowRef(false),
+        refreshPlanCharacteristics: vi.fn(),
+      }
+    },
     useQualityInspectionPlans: (initial = {}) => {
       const filters = reactive({
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
+        organizationId: qualityState.inspectionContextInitiallyEmpty ? '' : 'org-001',
+        environmentId: qualityState.inspectionContextInitiallyEmpty ? '' : 'env-dev',
         status: undefined as string | undefined,
         keyword: undefined as string | undefined,
         skip: 0,
@@ -153,7 +189,8 @@ const uiStubs = {
   Button: { template: '<button><slot /></button>' },
   DataTable: {
     props: ['rows'],
-    template: '<table><tbody><tr v-for="(row, i) in rows" :key="i"><td><slot name="cell-code" :row="row" /></td><td><slot name="cell-actions" :row="row" /></td></tr></tbody></table>',
+    template:
+      '<table><tbody><tr v-for="(row, i) in rows" :key="i"><td><slot name="cell-code" :row="row" /></td><td><slot name="cell-actions" :row="row" /></td></tr></tbody></table>',
   },
   DataTablePagination: { props: ['page', 'pageSize', 'totalItems'], template: '<nav />' },
   Dialog: { props: ['open'], template: '<div v-if="open" data-dialog><slot /></div>' },
@@ -166,13 +203,16 @@ const uiStubs = {
   FieldDescription: { template: '<p><slot /></p>' },
   FieldGroup: { template: '<div><slot /></div>' },
   FieldLabel: { template: '<label><slot /></label>' },
-  Input: { template: '<input />' },
+  Input: { props: ['modelValue'], template: '<input :value="modelValue" />' },
   PageHeader: {
     props: ['title', 'count'],
     template: '<header><h1>{{ title }}</h1><p>{{ count }}</p><slot name="actions" /></header>',
   },
   RowActions: { template: '<div><slot /></div>' },
-  SectionCard: { props: ['description', 'value'], template: '<div>{{ description }} {{ value }}</div>' },
+  SectionCard: {
+    props: ['description', 'value'],
+    template: '<div>{{ description }} {{ value }}</div>',
+  },
   SectionCards: { template: '<div><slot /></div>' },
   Select: { template: '<div><slot /></div>' },
   SelectContent: { template: '<div><slot /></div>' },
@@ -182,6 +222,11 @@ const uiStubs = {
   NvSelectItem: { props: ['value'], template: '<div><slot /></div>' },
   NvSelectTrigger: { template: '<button><slot /></button>' },
   NvSelectValue: true,
+  NvDialog: { props: ['open'], template: '<div v-if="open" data-dialog><slot /></div>' },
+  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
+  NvDialogHeader: { template: '<div><slot /></div>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
   SelectTrigger: { template: '<button><slot /></button>' },
   SelectValue: true,
   Sheet: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
@@ -213,8 +258,19 @@ describe('quality route location behavior', () => {
   beforeEach(() => {
     routeState.route!.query = {}
     qualityState.inspectionFilters = undefined
+    qualityState.inspectionContextInitiallyEmpty = false
     qualityState.ncrFilters = undefined
     qualityState.recordError = undefined
+    qualityState.planCharacteristics = [
+      {
+        characteristicCode: 'DIM-01',
+        name: '长度',
+        lowerSpecLimit: 9.8,
+        upperSpecLimit: 10.2,
+        unitCode: 'mm',
+      },
+    ]
+    qualityState.planCharacteristicsRef = undefined
     notifySpies.error.mockReset()
     notifySpies.success.mockReset()
   })
@@ -251,6 +307,125 @@ describe('quality route location behavior', () => {
 
     expect(wrapper.find('[data-dialog]').exists()).toBe(false)
     expect(qualityState.inspectionFilters!.keyword).toBe('PLAN-001')
+  })
+
+  it('prefills the existing record flow from the stable inspection task query contract', async () => {
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+
+    const form = (
+      wrapper.vm as unknown as {
+        recordForm: {
+          sourceDocumentId: string
+          skuCode: string
+          inspectedQuantity: string
+          resultLines: Array<{
+            characteristicCode: string
+            specification: string
+            unitCode: string
+          }>
+        }
+      }
+    ).recordForm
+    expect(form.sourceDocumentId).toBe('GR-001')
+    expect(form.skuCode).toBe('SKU-RM-001')
+    expect(form.inspectedQuantity).toBe('12')
+    expect(form.resultLines).toEqual([
+      expect.objectContaining({
+        characteristicCode: 'DIM-01',
+        specification: '9.8–10.2 mm',
+        unitCode: 'mm',
+      }),
+    ])
+  })
+
+  it('accepts whole-number quantities prefilled by an inspection task', async () => {
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '1200',
+      action: 'create',
+    }
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+
+    expect(wrapper.get('#record-quantity').attributes('step')).toBe('any')
+  })
+
+  it('enables task submission after business context arrives asynchronously', async () => {
+    qualityState.inspectionContextInitiallyEmpty = true
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    qualityState.inspectionFilters!.organizationId = 'org-001'
+    qualityState.inspectionFilters!.environmentId = 'env-dev'
+    const vm = wrapper.vm as unknown as {
+      recordForm: { resultLines: Array<{ observedValue: string }> }
+      canCreateRecord: boolean
+    }
+    vm.recordForm.resultLines[0]!.observedValue = '10.1'
+    await nextRenderTick()
+
+    expect(vm.canCreateRecord).toBe(true)
+  })
+
+  it('preserves inspector input when plan characteristics arrive asynchronously', async () => {
+    qualityState.planCharacteristics = []
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    const form = (
+      wrapper.vm as unknown as {
+        recordForm: {
+          resultLines: Array<{ characteristicCode: string; observedValue: string }>
+        }
+      }
+    ).recordForm
+    form.resultLines[0]!.characteristicCode = 'MANUAL-01'
+    form.resultLines[0]!.observedValue = '10.1'
+    qualityState.planCharacteristicsRef!.value = [
+      { characteristicCode: 'DIM-01', lowerSpecLimit: 9.8, upperSpecLimit: 10.2 },
+    ]
+    await nextRenderTick()
+
+    expect(form.resultLines).toEqual([
+      expect.objectContaining({ characteristicCode: 'MANUAL-01', observedValue: '10.1' }),
+    ])
   })
 
   it('locates a source inspection record: opens read-only record detail from inspectionRecordId', async () => {
