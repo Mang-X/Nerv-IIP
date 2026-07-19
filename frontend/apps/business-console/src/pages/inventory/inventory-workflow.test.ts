@@ -65,9 +65,30 @@ vi.mock('@/composables/useBusinessInventory', () => ({
     }
   },
   useInventoryExpiryAlerts: () => ({
-    expiryAlerts: computed(() => []),
+    expiryAlerts: computed(() => [
+      {
+        skuCode: 'SKU-001',
+        uomCode: 'EA',
+        siteCode: 'S1',
+        locationCode: 'A-01',
+        lotNo: 'LOT-001',
+        serialNo: 'SN-001',
+        qualityStatus: 'available',
+        ownerType: 'owned',
+        ownerId: null,
+        productionDate: '2026-06-15',
+        expiryDate: '2026-07-25',
+        daysUntilExpiry: 6,
+        isExpired: false,
+        isNearExpiry: true,
+        reservedQuantity: 2,
+        onHandQuantity: 10,
+        availableQuantity: 7,
+      },
+    ]),
     expiryAlertsError: ref(undefined),
     expiryAlertsPending: ref(false),
+    expiryAlertsSuccessful: ref(true),
     filters: {
       environmentId: 'env-dev',
       organizationId: 'org-001',
@@ -98,7 +119,8 @@ const uiStubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
   PageHeader: {
     props: ['title', 'breadcrumbs', 'count'],
-    template: '<header><h1>{{ title }}</h1><slot name="actions" /></header>',
+    template:
+      '<header><h1>{{ title }}</h1><span data-page-count>{{ count }}</span><slot name="actions" /></header>',
   },
   SectionCards: { template: '<div><slot /></div>' },
   SectionCard: {
@@ -108,8 +130,8 @@ const uiStubs = {
   Toolbar: { props: ['showSearch'], template: '<div><slot name="filters" /></div>' },
   // NvDataTable stub renders rows + the cell-actions slot, exposing a design-system table marker.
   NvDataTable: {
-    props: ['rows', 'columns', 'rowKey'],
-    template: `<table data-ui-table><tbody><tr v-for="(row, i) in rows" :key="i">
+    props: ['rows', 'columns', 'rowKey', 'pagination', 'emptyMessage'],
+    template: `<table data-ui-table :data-pagination="String(pagination)" :data-empty-message="emptyMessage"><tbody><tr v-for="(row, i) in rows" :key="i">
       <td v-for="column in columns" :key="column.key" :data-cell="column.key">
         <slot :name="'cell-' + column.key" :row="row">{{ column.accessor ? column.accessor(row) : row[column.key] }}</slot>
       </td>
@@ -179,7 +201,7 @@ describe('inventory workflow pages', () => {
     expect(wrapper.find('[data-ui-table]').exists()).toBe(true)
   })
 
-  it('links inventory lot context to barcode scan records', () => {
+  it('links inventory lot context to barcode scan records', async () => {
     const wrapper = mountInventoryPage(AvailabilityPage)
 
     const link = wrapper
@@ -188,16 +210,29 @@ describe('inventory workflow pages', () => {
     expect(link?.attributes('data-to')).toContain('/barcode/scans')
     expect(link?.attributes('data-to')).toContain('inventory.count')
     expect(link?.attributes('data-to')).toContain('LOT-001')
+    expect(wrapper.get('[data-cell="productionDate"]').text()).toBe('—')
+    expect(wrapper.get('[data-cell="expiryDate"]').text()).toBe('—')
+    expect(wrapper.text()).not.toContain('facade 未提供 total')
+    expect(wrapper.get('[data-ui-table]').attributes('data-pagination')).toBe('false')
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('效期预警'))!
+      .trigger('click')
+    expect(wrapper.get('[data-cell="productionDate"]').text()).toBe('2026-06-15')
+    expect(wrapper.get('[data-cell="expiryDate"]').text()).toBe('2026-07-25')
+    expect(wrapper.text()).toContain('返回库存明细后操作')
   })
 
-  it('renders a facade-backed lot and reservation page with traceability links', () => {
+  it('renders a facade-backed lot and reservation page with traceability links', async () => {
     const wrapper = mountInventoryPage(LotsPage)
 
     expect(wrapper.text()).toContain('批次与预留')
-    expect(wrapper.text()).toContain('后端缺口')
     expect(wrapper.text()).toContain('LOT-001')
     expect(wrapper.text()).toContain('SN-001')
     expect(wrapper.get('[data-cell="reservedQuantity"]').text()).toBe('2')
+    expect(wrapper.get('[data-cell="productionDate"]').text()).toBe('—')
+    expect(wrapper.get('[data-cell="expiryDate"]').text()).toBe('—')
     expect(inventoryState.availabilityFilters?.qualityStatus).toBeUndefined()
 
     const links = wrapper
@@ -209,6 +244,14 @@ describe('inventory workflow pages', () => {
           to.includes('/mes/traceability') && to.includes('batchOrSerial') && to.includes('SN-001'),
       ),
     ).toBe(true)
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('效期预警'))!
+      .trigger('click')
+    expect(wrapper.get('[data-cell="productionDate"]').text()).toBe('2026-06-15')
+    expect(wrapper.get('[data-cell="expiryDate"]').text()).toBe('2026-07-25')
+    expect(wrapper.text()).toContain('返回批次明细后操作')
     expect(links.some((to) => to.includes('/barcode/scans') && to.includes('SN-001'))).toBe(true)
     expect(
       links.some(

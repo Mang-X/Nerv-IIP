@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import type {
-  BusinessConsoleInventoryAvailabilityLineResponse,
-  BusinessConsoleInventoryExpiryAlertLineResponse,
-} from '@nerv-iip/api-client'
-import { expiryToneFromAlert, expiryToneLabel } from '@nerv-iip/business-core'
+import type { BusinessConsoleInventoryAvailabilityLineResponse } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import {
-  useInventoryAvailability,
-  useInventoryExpiryAlerts,
-} from '@/composables/useBusinessInventory'
+import InventoryExpiryStatusBadge from '@/components/inventory/InventoryExpiryStatusBadge.vue'
+import InventoryExpirySummaryCards from '@/components/inventory/InventoryExpirySummaryCards.vue'
+import { useInventoryAvailability } from '@/composables/useBusinessInventory'
+import { useInventoryExpiryView } from '@/composables/useInventoryExpiryView'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError } from '@/utils/notify'
+import {
+  formatInventoryExpiryDate,
+  inventoryExpiryRowKey,
+  type InventoryExpiryDisplayLine,
+} from '@/utils/inventoryExpiryPresentation'
 import {
   NvButton,
   NvDataTable,
@@ -34,7 +34,7 @@ import {
   RouteIcon,
   WarehouseIcon,
 } from '@lucide/vue'
-import { computed, ref, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 definePage({
@@ -55,23 +55,16 @@ const {
   refreshAvailability,
 } = useInventoryAvailability()
 const {
-  expiryAlerts,
   expiryAlertsError,
   expiryAlertsPending,
-  filters: expiryFilters,
+  expiryAlertsSuccessful,
+  expirySummary,
+  hasExpiryScope,
+  nearExpiryOnly,
   refreshExpiryAlerts,
-} = useInventoryExpiryAlerts()
-const nearExpiryOnly = ref(false)
-watch(
-  () => [filters.siteCode, filters.skuCode, filters.locationCode] as const,
-  ([siteCode, skuCode, locationCode]) => {
-    expiryFilters.siteCode = siteCode
-    expiryFilters.skuCode = skuCode || undefined
-    expiryFilters.locationCode = locationCode || undefined
-    nearExpiryOnly.value = false
-  },
-  { immediate: true },
-)
+  toggleNearExpiryView,
+  visibleExpiryAlerts,
+} = useInventoryExpiryView(filters)
 filters.qualityStatus = undefined
 
 watch(
@@ -107,12 +100,27 @@ const qualityStatusFilter = computed({
 })
 
 const errorMessage = computed(() => formatError(availabilityError.value))
-watch(expiryAlertsError, (error) => {
-  if (error) notifyError(error, '近效期批次加载失败，请稍后重试。')
-})
 const rows = computed<DisplayLine[]>(() =>
-  nearExpiryOnly.value ? expiryAlerts.value : availabilityLines.value,
+  nearExpiryOnly.value ? visibleExpiryAlerts.value : availabilityLines.value,
 )
+const tablePending = computed(() =>
+  nearExpiryOnly.value ? expiryAlertsPending.value : availabilityPending.value,
+)
+const pageCount = computed(() => {
+  if (!nearExpiryOnly.value) return `${rows.value.length} 条库存明细`
+  if (!hasExpiryScope.value) return '请选择工厂'
+  if (expiryAlertsPending.value) return '加载中'
+  if (expiryAlertsError.value) return '加载失败'
+  if (!expiryAlertsSuccessful.value) return '等待查询'
+  return `${rows.value.length} 条预警明细`
+})
+const tableEmptyMessage = computed(() => {
+  if (nearExpiryOnly.value && !hasExpiryScope.value) return '请选择工厂查看效期预警批次。'
+  if (nearExpiryOnly.value && expiryAlertsError.value)
+    return '效期预警加载失败，请缩小筛选范围或稍后重试。'
+  if (nearExpiryOnly.value) return '当前范围没有已过期或未来30天内到期的批次。'
+  return '输入 SKU、单位和工厂后查询批次、序列号和预留信息。'
+})
 const onHandQuantity = computed(() => availability.value?.onHandQuantity ?? 0)
 const reservedQuantity = computed(
   () =>
@@ -131,17 +139,24 @@ const serialCount = computed(
 )
 
 type Line = BusinessConsoleInventoryAvailabilityLineResponse
-type DisplayLine = Line & Partial<BusinessConsoleInventoryExpiryAlertLineResponse>
+type DisplayLine = InventoryExpiryDisplayLine
 const columns: NvDataTableColumn<DisplayLine>[] = [
+  { key: 'skuCode', header: 'SKU', accessor: (r) => (r.skuCode ?? filters.skuCode) || '—' },
+  { key: 'uomCode', header: '单位', accessor: (r) => (r.uomCode ?? filters.uomCode) || '—' },
   { key: 'lotNo', header: '批次', cellClass: 'font-medium', accessor: (r) => r.lotNo ?? '无批次' },
   { key: 'serialNo', header: '序列号', accessor: (r) => r.serialNo ?? '无序列号' },
+  {
+    key: 'productionDate',
+    header: '生产日期',
+    accessor: (r) => formatInventoryExpiryDate(r.productionDate),
+  },
   {
     key: 'expiryDate',
     header: '效期',
     headerTitle: 'FEFO：预留与拣货建议优先选择更早到期的批次。',
-    accessor: (r) => formatDate(r.expiryDate),
+    accessor: (r) => formatInventoryExpiryDate(r.expiryDate),
   },
-  { key: 'expiryStatus', header: '效期状态', accessor: (r) => expiryLabel(r) },
+  { key: 'expiryStatus', header: '效期状态' },
   { key: 'locationCode', header: '库位', width: 'w-28', accessor: (r) => r.locationCode ?? '无' },
   { key: 'qualityStatus', header: '质量状态', width: 'w-28' },
   { key: 'owner', header: '货主', accessor: (r) => r.ownerId ?? r.ownerType ?? '无' },
@@ -153,32 +168,13 @@ const columns: NvDataTableColumn<DisplayLine>[] = [
 ]
 
 function lineKey(line: DisplayLine) {
-  return [
-    line.locationCode ?? 'loc',
-    line.lotNo ?? 'lot',
-    line.serialNo ?? 'serial',
-    line.qualityStatus ?? 'status',
-    line.ownerType ?? 'owner',
-    line.ownerId ?? 'id',
-  ].join('|')
-}
-
-function expiryLabel(line: DisplayLine) {
-  return expiryToneLabel(expiryToneFromAlert(line))
-}
-function expiryToneValue(line: DisplayLine) {
-  const tone = expiryToneFromAlert(line)
-  return tone === 'fresh' ? 'success' : tone === 'near' ? 'warning' : tone ? 'danger' : 'neutral'
-}
-
-function formatDate(value?: string | null) {
-  return value ? value.slice(0, 10) : '接口未提供'
+  return inventoryExpiryRowKey(line, filters.skuCode)
 }
 
 function lineContextQuery(line: DisplayLine) {
   const lotNo = line.lotNo ?? undefined
   return {
-    skuCode: filters.skuCode || undefined,
+    skuCode: (line.skuCode ?? filters.skuCode) || undefined,
     siteCode: filters.siteCode || undefined,
     locationCode: line.locationCode ?? undefined,
     lotNo,
@@ -227,27 +223,23 @@ function firstQuery(value: unknown) {
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
-async function refreshAll() {
-  await Promise.all([refreshAvailability(), refreshExpiryAlerts()])
+async function refreshCurrentView() {
+  if (nearExpiryOnly.value) await refreshExpiryAlerts()
+  else await refreshAvailability()
 }
 </script>
 
 <template>
   <BusinessLayout>
-    <NvPageHeader
-      title="批次与预留"
-      :breadcrumbs="[{ label: '库存' }]"
-      :count="`${rows.length} 条库存明细`"
-    >
+    <NvPageHeader title="批次与预留" :breadcrumbs="[{ label: '库存' }]" :count="pageCount">
       <template #actions>
         <NvButton
           size="sm"
           type="button"
           :variant="nearExpiryOnly ? 'default' : 'outline'"
-          :disabled="expiryAlertsPending"
-          @click="nearExpiryOnly = !nearExpiryOnly"
+          @click="toggleNearExpiryView"
         >
-          近效期（30天）
+          效期预警（30天）
         </NvButton>
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink
@@ -267,8 +259,8 @@ async function refreshAll() {
           size="sm"
           type="button"
           variant="outline"
-          :disabled="availabilityPending || expiryAlertsPending"
-          @click="refreshAll"
+          :disabled="tablePending"
+          @click="refreshCurrentView"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
@@ -276,13 +268,9 @@ async function refreshAll() {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="4">
+    <InventoryExpirySummaryCards v-if="nearExpiryOnly" :summary="expirySummary" />
+    <NvSectionCards v-else :columns="4">
       <NvSectionCard description="批次数" :value="lotCount" hint="来自可用量明细" />
-      <NvSectionCard
-        description="近效期批次"
-        :value="expiryAlerts.length"
-        hint="服务端返回条数；当前 facade 未提供 total 字段"
-      />
       <NvSectionCard description="序列号数" :value="serialCount" hint="来自可用量明细" />
       <NvSectionCard
         description="预留量"
@@ -296,17 +284,16 @@ async function refreshAll() {
       />
     </NvSectionCards>
 
-    <div class="rounded-md border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
-      <strong class="font-medium text-foreground">后端缺口：</strong>
-      当前只消费 Inventory availability
-      facade；独立批次台账、序列号履历、冻结/解冻、预留明细和服务端库存分析尚无 BusinessGateway
-      facade，本页不做本地筛选或假分析。
-    </div>
-
     <NvToolbar :show-search="false">
       <template #filters>
         <NvInput v-model="filters.skuCode" class="h-9 w-32" placeholder="SKU" aria-label="SKU" />
-        <NvInput v-model="filters.uomCode" class="h-9 w-20" placeholder="单位" aria-label="单位" />
+        <NvInput
+          v-if="!nearExpiryOnly"
+          v-model="filters.uomCode"
+          class="h-9 w-20"
+          placeholder="单位"
+          aria-label="单位"
+        />
         <NvInput v-model="filters.siteCode" class="h-9 w-20" placeholder="工厂" aria-label="工厂" />
         <NvInput
           v-model="filters.locationCode"
@@ -314,14 +301,21 @@ async function refreshAll() {
           placeholder="库位"
           aria-label="库位"
         />
-        <NvInput v-model="filters.lotNo" class="h-9 w-28" placeholder="批次" aria-label="批次" />
         <NvInput
+          v-if="!nearExpiryOnly"
+          v-model="filters.lotNo"
+          class="h-9 w-28"
+          placeholder="批次"
+          aria-label="批次"
+        />
+        <NvInput
+          v-if="!nearExpiryOnly"
           v-model="filters.serialNo"
           class="h-9 w-28"
           placeholder="序列号"
           aria-label="序列号"
         />
-        <NvSelect v-model="qualityStatusFilter">
+        <NvSelect v-if="!nearExpiryOnly" v-model="qualityStatusFilter">
           <NvSelectTrigger class="h-9 w-28" aria-label="质量状态"
             ><NvSelectValue
           /></NvSelectTrigger>
@@ -343,20 +337,17 @@ async function refreshAll() {
       :columns="columns"
       :rows="rows"
       :row-key="lineKey"
-      :loading="availabilityPending || expiryAlertsPending"
+      :loading="tablePending"
       :searchable="false"
       :column-settings="false"
-      empty-message="输入 SKU、单位和工厂后查询批次、序列号和预留信息。"
+      :pagination="false"
+      :empty-message="tableEmptyMessage"
     >
       <template #cell-qualityStatus="{ row }">
         <NvStatusBadge :value="row.qualityStatus" />
       </template>
       <template #cell-expiryStatus="{ row }">
-        <NvStatusBadge
-          :value="expiryToneFromAlert(row)"
-          :label="expiryLabel(row)"
-          :tone="expiryToneValue(row)"
-        />
+        <InventoryExpiryStatusBadge :line="row" />
       </template>
       <template #cell-onHandQuantity="{ row }"
         ><span class="tabular-nums">{{ formatQuantity(row.onHandQuantity) }}</span></template
@@ -371,7 +362,10 @@ async function refreshAll() {
         ><span class="tabular-nums">{{ formatQuantity(lineBlockedQuantity(row)) }}</span></template
       >
       <template #cell-actions="{ row }">
-        <div class="flex flex-wrap justify-end gap-2">
+        <span v-if="nearExpiryOnly" class="text-xs text-muted-foreground">
+          返回批次明细后操作
+        </span>
+        <div v-else class="flex flex-wrap justify-end gap-2">
           <NvButton size="sm" variant="ghost" as-child>
             <RouterLink :to="{ path: '/mes/traceability', query: traceabilityQuery(row) }">
               <RouteIcon aria-hidden="true" />

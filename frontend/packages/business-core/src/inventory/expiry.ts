@@ -43,7 +43,16 @@ function toUtcDayStart(value: string | Date | null | undefined): number | null {
   const month = Number(m[2])
   const day = Number(m[3])
   if (month < 1 || month > 12 || day < 1 || day > 31) return null
-  return Date.UTC(year, month - 1, day)
+  const timestamp = Date.UTC(year, month - 1, day)
+  const parsed = new Date(timestamp)
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null
+  }
+  return timestamp
 }
 
 /**
@@ -86,9 +95,16 @@ export function expiryToneFromAlert(
   asOf: string | Date = new Date(),
 ): ExpiryTone | null {
   if (alert.isExpired === true) return 'expired'
-  if (typeof alert.daysUntilExpiry === 'number') return expiryTone(alert.daysUntilExpiry)
-  if (alert.isNearExpiry === true) return 'near'
-  return expiryToneFromDate(alert.expiryDate, asOf)
+  const calculatedTone =
+    typeof alert.daysUntilExpiry === 'number'
+      ? expiryTone(alert.daysUntilExpiry)
+      : expiryToneFromDate(alert.expiryDate, asOf)
+  // 服务端 near 标记与集中三色口径冲突时取更严重等级：既不把 <30 天降成黄色，
+  // 也不把服务端已判定的近效期覆盖成绿色。
+  if (alert.isNearExpiry === true && (calculatedTone == null || calculatedTone === 'fresh')) {
+    return 'near'
+  }
+  return calculatedTone
 }
 
 /** 是否为「临期或更差」（黄/红）——收货时是否需要黄色提示的判据。 */

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildInventoryExpiryAlertsQuery } from './useBusinessInventory'
 
 describe('Inventory 近效期查询', () => {
-  it('默认查询 30 天内且排除零可用量，保留服务端过滤字段', () => {
+  it('默认查询 30 天内并包含零可用量，保留服务端过滤字段', () => {
     expect(
       buildInventoryExpiryAlertsQuery({
         organizationId: 'org-001',
@@ -18,7 +18,7 @@ describe('Inventory 近效期查询', () => {
       skuCode: 'SKU-001',
       locationCode: 'A-01',
       nearExpiryThresholdDays: 30,
-      includeZeroAvailable: false,
+      includeZeroAvailable: true,
     })
   })
 })

@@ -62,12 +62,21 @@ BusinessGateway `GET /api/business-console/v1/inventory/expiry-alerts` read
 facade for a real 30-day near-expiry view. Shared frontend expiry presentation
 uses UTC calendar-day comparison and the common thresholds `>90` days normal,
 `30–90` days near, `<30` days critical, and negative days expired. The pages
-show the returned `expiryDate`/`daysUntilExpiry` facts with a text status badge;
-missing production date, shelf-life and expiry-source fields remain explicitly
-unknown. The FEFO explanation is attached to the expiry column header.
+show the returned `productionDate`/`expiryDate`/`daysUntilExpiry` facts with a
+text status badge; shelf-life and expiry-source fields remain explicitly
+unknown. Availability rows and expiry-alert rows have different aggregation
+grain, so the Console does not merge them: default rows render missing expiry
+facts as an em dash, while the 30-day alert view presents the ledger-level
+facts. The FEFO explanation is attached to the expiry column header.
 
 The current facade response contains `items` only: it has no `total`, paging
-window, production/shelf-life/source details, or operation block reason. The
-Console therefore does not invent a server total, pagination, operation disable
-state, or detail panel. A follow-up facade/schema change is required before a
-true paged total card and full batch-detail/source presentation can be claimed.
+window, shelf-life/source details, or operation block reason. The Console uses
+the returned item count without presenting it as a paged total, includes
+zero-available ledgers, and does not invent pagination, operation disable state,
+or missing detail fields. Client-side table pagination is disabled. Because the
+current alert view intentionally requests 30 days, it can present critical and
+expired rows; the shared `30–90` near and `>90` fresh tones remain reusable
+presentation rules, but complete yellow/green table coverage requires a
+non-alert batch-expiry contract. A follow-up facade/schema change is required
+before a true paged total card and full batch-detail/source presentation can be
+claimed.

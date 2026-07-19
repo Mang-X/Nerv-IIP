@@ -47,7 +47,7 @@ export function buildInventoryExpiryAlertsQuery(filters: InventoryExpiryFilters)
     ...(filters.skuCode ? { skuCode: filters.skuCode } : {}),
     ...(filters.locationCode ? { locationCode: filters.locationCode } : {}),
     nearExpiryThresholdDays: 30,
-    includeZeroAvailable: false,
+    includeZeroAvailable: true,
   }
 }
 
@@ -152,7 +152,7 @@ export function useInventoryAvailability() {
   }
 }
 
-export function useInventoryExpiryAlerts() {
+export function useInventoryExpiryAlerts(enabledWhen: () => boolean = () => true) {
   const filters = bindBusinessContext(
     reactive<InventoryExpiryFilters>({
       organizationId: '',
@@ -162,6 +162,7 @@ export function useInventoryExpiryAlerts() {
   )
   const enabled = computed(
     () =>
+      enabledWhen() &&
       filters.organizationId.trim().length > 0 &&
       filters.environmentId.trim().length > 0 &&
       filters.siteCode.trim().length > 0,
@@ -184,6 +185,7 @@ export function useInventoryExpiryAlerts() {
     ),
     expiryAlertsError: query.error,
     expiryAlertsPending: query.isLoading,
+    expiryAlertsSuccessful: computed(() => response.value !== undefined && !query.error.value),
     refreshExpiryAlerts: () => (enabled.value ? query.refetch() : Promise.resolve()),
   }
 }

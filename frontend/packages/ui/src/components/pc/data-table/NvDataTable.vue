@@ -5,6 +5,7 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
   ChevronsUpDownIcon,
+  CircleHelpIcon,
   ListFilterIcon,
   RotateCcwIcon,
   SearchIcon,
@@ -20,6 +21,7 @@ import { Separator } from '../../ui/separator'
 import NvButton from '../button/NvButton.vue'
 import NvInput from '../input/NvInput.vue'
 import NvPagination from '../pagination/NvPagination.vue'
+import { NvTooltip, NvTooltipContent, NvTooltipProvider, NvTooltipTrigger } from '../tooltip'
 import NvDataTableToolbar from './NvDataTableToolbar.vue'
 import type {
   NvDataTableColumn,
@@ -141,6 +143,15 @@ const widthClass = (w?: string) => (w && !isCssDimension(w) ? w : undefined)
 
 // ── Column visibility & density ──
 const hiddenKeys = ref(new Set(props.columns.filter((c) => c.defaultHidden).map((c) => c.key)))
+const headerHelpOpen = ref<Record<string, boolean>>({})
+
+function setHeaderHelpOpen(key: string, open: boolean) {
+  headerHelpOpen.value[key] = open
+}
+
+function openHeaderHelpForTouch(event: PointerEvent, key: string) {
+  if (event.pointerType === 'touch') setHeaderHelpOpen(key, true)
+}
 const visibleColumns = computed(() => props.columns.filter((c) => !hiddenKeys.value.has(c.key)))
 function toggleColumn(key: string, visible: boolean) {
   const next = new Set(hiddenKeys.value)
@@ -627,15 +638,59 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
               "
               :style="widthStyle(col.width)"
             >
+              <NvTooltipProvider v-if="col.headerTitle">
+                <NvTooltip
+                  :open="headerHelpOpen[col.key] ?? false"
+                  disable-closing-trigger
+                  @update:open="setHeaderHelpOpen(col.key, $event)"
+                >
+                  <NvTooltipTrigger as-child>
+                    <button
+                      v-if="col.sortable"
+                      type="button"
+                      class="nv-dt-sort group/sort"
+                      :class="col.align === 'end' ? 'flex-row-reverse' : ''"
+                      :data-active="sortStateOf(col.key) || undefined"
+                      :aria-label="`${col.header}：${col.headerTitle}`"
+                      @click="cycleSort(col)"
+                      @pointerup="openHeaderHelpForTouch($event, col.key)"
+                    >
+                      <span>{{ col.header }}</span>
+                      <ArrowUpIcon
+                        v-if="sortStateOf(col.key) === 'asc'"
+                        class="size-3.5"
+                        aria-hidden="true"
+                      />
+                      <ArrowDownIcon
+                        v-else-if="sortStateOf(col.key) === 'desc'"
+                        class="size-3.5"
+                        aria-hidden="true"
+                      />
+                      <ChevronsUpDownIcon v-else class="size-3.5 opacity-60" aria-hidden="true" />
+                    </button>
+                    <button
+                      v-else
+                      type="button"
+                      class="inline-flex items-center gap-1 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      :aria-label="`${col.header}：${col.headerTitle}`"
+                      @pointerup="openHeaderHelpForTouch($event, col.key)"
+                    >
+                      <span>{{ col.header }}</span>
+                      <CircleHelpIcon class="size-3.5" aria-hidden="true" />
+                    </button>
+                  </NvTooltipTrigger>
+                  <NvTooltipContent>{{ col.headerTitle }}</NvTooltipContent>
+                </NvTooltip>
+              </NvTooltipProvider>
               <button
-                v-if="col.sortable"
+                v-else-if="col.sortable"
                 type="button"
                 class="nv-dt-sort group/sort"
                 :class="col.align === 'end' ? 'flex-row-reverse' : ''"
                 :data-active="sortStateOf(col.key) || undefined"
                 @click="cycleSort(col)"
               >
-                <span :title="col.headerTitle">{{ col.header }}</span>
+                <span>{{ col.header }}</span>
                 <ArrowUpIcon
                   v-if="sortStateOf(col.key) === 'asc'"
                   class="size-3.5"
@@ -652,7 +707,7 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
                   aria-hidden="true"
                 />
               </button>
-              <span v-else :title="col.headerTitle">{{ col.header }}</span>
+              <span v-else>{{ col.header }}</span>
             </TableHead>
           </TableRow>
         </TableHeader>
