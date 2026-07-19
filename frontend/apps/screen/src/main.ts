@@ -1,9 +1,10 @@
+import './assets/main.css'
+
 import { configureApiClient } from '@nerv-iip/api-client'
 import { configureAuthenticatedApiClient } from '@nerv-iip/auth'
 import { createPinia } from 'pinia'
 import { createApp, watch } from 'vue'
 import App from './App.vue'
-import './assets/main.css'
 import { IS_REAL_DATA } from './data/config'
 import { setScreenSession } from './data/session'
 import { router } from './router'

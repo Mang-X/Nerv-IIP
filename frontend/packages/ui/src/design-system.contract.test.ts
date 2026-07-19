@@ -15,10 +15,12 @@ const overridesCss = read('styles/overrides.css')
 
 // App main.css files live outside packages/ui: src → ui → packages → frontend.
 const appCss = (app: string) => read(`../../../apps/${app}/src/assets/main.css`)
+const appEntry = (app: string) => read(`../../../apps/${app}/src/main.ts`)
 // Strip CSS block comments so structural assertions ignore prose that documents
 // removed constructs (e.g. a comment noting the `revert-layer` hack is gone).
 const stripComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '')
 const PRODUCT_APPS = ['business-console', 'business-pda', 'console', 'screen'] as const
+const HOST_APPS = [...PRODUCT_APPS, 'design-system'] as const
 const LAYER_ORDER =
   '@layer theme, nv-tokens, base, components, nv-components, utilities, nv-overrides, app;'
 
@@ -173,6 +175,13 @@ describe('ADR 0020 §4 — cascade-layer isolation', () => {
         .split('\n')[0]
         .trim()
       expect.soft(firstStmt, `${app} main.css first statement`).toBe(LAYER_ORDER)
+    }
+  })
+
+  it('loads the host layer order before Vue and component-library modules', () => {
+    for (const app of HOST_APPS) {
+      const firstImport = appEntry(app).match(/^import\s+.*$/m)?.[0]
+      expect.soft(firstImport, `${app} main.ts first import`).toBe("import './assets/main.css'")
     }
   })
 
