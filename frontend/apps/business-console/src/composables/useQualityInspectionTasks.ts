@@ -129,6 +129,9 @@ function defaultFilters(initial: Partial<InspectionTaskFilters> = {}) {
 
 export function useQualityInspectionTasks(initialFilters: Partial<InspectionTaskFilters> = {}) {
   const filters = defaultFilters(initialFilters)
+  const hasLocator = computed(
+    () => !!filters.sourceDocumentNo?.trim() || !!filters.inspectionTaskId?.trim(),
+  )
   const tasksQuery = useQuery(() => {
     const query = {
       organizationId: filters.organizationId,
@@ -141,11 +144,10 @@ export function useQualityInspectionTasks(initialFilters: Partial<InspectionTask
     const generatedOptions = listBusinessConsoleQualityInspectionTasksQueryOptions({ query })
     const sourceDocumentNo = filters.sourceDocumentNo?.trim()
     const inspectionTaskId = filters.inspectionTaskId?.trim()
-    const hasLocator = !!sourceDocumentNo || !!inspectionTaskId
 
     return {
       ...generatedOptions,
-      ...(hasLocator
+      ...(hasLocator.value
         ? {
             key: [
               ...generatedOptions.key,
@@ -188,6 +190,7 @@ export function useQualityInspectionTasks(initialFilters: Partial<InspectionTask
 
   return {
     filters,
+    hasLocator,
     tasks,
     total: computed(() =>
       tasksQuery.data.value?.success ? (tasksQuery.data.value.data?.total ?? 0) : 0,

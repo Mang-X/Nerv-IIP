@@ -46,6 +46,7 @@ const state = vi.hoisted(() => ({
   ],
   push: vi.fn(),
   query: {} as Record<string, string>,
+  hasLocator: false,
   initialFilters: undefined as Record<string, unknown> | undefined,
   pagedListOptions: undefined as { initialPageSize?: string } | undefined,
 }))
@@ -77,6 +78,7 @@ vi.mock('@/composables/useQualityInspectionTasks', () => ({
     )
     return {
       filters,
+      hasLocator: computed(() => state.hasLocator),
       tasks,
       total: computed(() => (initial.status === 'completed' ? 0 : state.tasks.length)),
       pending: shallowRef(false),
@@ -133,6 +135,7 @@ describe('quality inspection task workbench page', () => {
     state.error = undefined
     state.push.mockReset()
     state.query = {}
+    state.hasLocator = false
     state.initialFilters = undefined
     state.pagedListOptions = undefined
   })
@@ -157,6 +160,14 @@ describe('quality inspection task workbench page', () => {
     ).columns.find((column) => column.key === 'actions')
     expect(actionColumn?.headerClass).toContain('sticky')
     expect(actionColumn?.cellClass).toContain('sticky')
+  })
+
+  it('uses the composable locator state as the pagination mode source of truth', () => {
+    state.hasLocator = true
+    const wrapper = mount(InspectionTasksPage, { global: { stubs } })
+
+    expect(state.initialFilters).toEqual({ status: 'pending' })
+    expect(wrapper.get('[data-testid="task-table"]').attributes('data-manual')).toBe('false')
   })
 
   it('opens the existing inspection form without inventing a source document number', async () => {
@@ -185,6 +196,7 @@ describe('quality inspection task workbench page', () => {
 
   it('consumes the stable source document locator contract from WMS', () => {
     state.query = { sourceDocumentNo: ' ASN-20260718-0087 ' }
+    state.hasLocator = true
     const wrapper = mount(InspectionTasksPage, { global: { stubs } })
 
     expect(state.initialFilters).toEqual({
@@ -197,6 +209,7 @@ describe('quality inspection task workbench page', () => {
 
   it('uses client pagination when locating an exact inspection task', () => {
     state.query = { inspectionTaskId: ' TASK-LATE ' }
+    state.hasLocator = true
     const wrapper = mount(InspectionTasksPage, { global: { stubs } })
 
     expect(state.initialFilters).toEqual({

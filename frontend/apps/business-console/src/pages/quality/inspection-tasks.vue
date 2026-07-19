@@ -33,11 +33,12 @@ const route = useRoute()
 const router = useRouter()
 const initialSourceDocumentNo = firstQuery(route.query.sourceDocumentNo)
 const initialInspectionTaskId = firstQuery(route.query.inspectionTaskId)
-const { filters, tasks, total, pending, error, refreshTasks } = useQualityInspectionTasks({
-  status: 'pending',
-  ...(initialSourceDocumentNo ? { sourceDocumentNo: initialSourceDocumentNo } : {}),
-  ...(initialInspectionTaskId ? { inspectionTaskId: initialInspectionTaskId } : {}),
-})
+const { filters, hasLocator, tasks, total, pending, error, refreshTasks } =
+  useQualityInspectionTasks({
+    status: 'pending',
+    ...(initialSourceDocumentNo ? { sourceDocumentNo: initialSourceDocumentNo } : {}),
+    ...(initialInspectionTaskId ? { inspectionTaskId: initialInspectionTaskId } : {}),
+  })
 const { page, pageSize } = usePagedList(filters, {
   initialPageSize: '200',
   resetOn: [() => filters.sourceType, () => filters.skuCode],
@@ -57,7 +58,6 @@ const overdueCount = computed(
 )
 const completedToday = computed(() => '—')
 const completedTodayHint = '当前数据暂不提供完成时间，今日完成数暂不展示'
-const locatorActive = computed(() => !!filters.sourceDocumentNo || !!filters.inspectionTaskId)
 const locatorMessage = computed(() => {
   if (filters.sourceDocumentNo) return `正在定位收货单 ${filters.sourceDocumentNo} 的待检任务`
   if (filters.inspectionTaskId) return `正在定位待检任务 ${filters.inspectionTaskId}`
@@ -260,7 +260,7 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
 
     <NvDataTable
       v-if="!listErrorMessage"
-      :manual="!locatorActive"
+      :manual="!hasLocator"
       :page="page"
       :page-size="pageSize"
       :page-size-options="[50, 100, 200]"
