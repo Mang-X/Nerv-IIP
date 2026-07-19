@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Erp.Web.Application.MasterData;
+using Nerv.IIP.Business.Erp.Web.Application.Seed;
 using Nerv.IIP.Business.Erp.Web.Application.Wms;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 using Nerv.IIP.Localization;
@@ -77,6 +78,7 @@ try
     builder.Services.AddErpPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddScoped<ErpCodingService>();
+    builder.Services.AddScoped<SalesOrderDemandDemoSeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
@@ -126,6 +128,15 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
+    }
+
+    if (builder.Configuration.GetValue<bool>("Erp:Seed:SalesOrderDemandDemo:Enabled"))
+    {
+        using var scope = app.Services.CreateScope();
+        var seed = scope.ServiceProvider.GetRequiredService<SalesOrderDemandDemoSeedService>();
+        await seed.SeedAsync(
+            builder.Configuration["Erp:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["Erp:Seed:EnvironmentId"] ?? "env-dev");
     }
 
     app.UseNervIipRequestLocalization();

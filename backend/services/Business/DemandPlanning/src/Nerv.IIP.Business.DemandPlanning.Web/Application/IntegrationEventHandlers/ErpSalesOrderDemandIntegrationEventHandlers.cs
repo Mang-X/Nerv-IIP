@@ -137,7 +137,7 @@ internal sealed class SalesOrderDemandEventProcessor(
             x.EnvironmentId == integrationEvent.EnvironmentId &&
             x.DemandType == "sales-order" &&
             x.SourceDocumentId == payload.SalesOrderId).ToListAsync(cancellationToken);
-        var existingByLine = existingDemands.ToDictionary(x => x.SourceLineReference, StringComparer.Ordinal);
+        var existingByLine = existingDemands.ToDictionary(x => (x.SourceReference, x.SourceLineReference));
         var isOrderCancelled = string.Equals(payload.Status, "cancelled", StringComparison.Ordinal);
         var activeLineReferences = new HashSet<string>(StringComparer.Ordinal);
 
@@ -146,7 +146,7 @@ internal sealed class SalesOrderDemandEventProcessor(
             foreach (var line in payload.Lines.Where(x => !x.Cancelled))
             {
                 activeLineReferences.Add(line.SalesOrderLineNo);
-                if (existingByLine.TryGetValue(line.SalesOrderLineNo, out var demand))
+                if (existingByLine.TryGetValue((payload.SalesOrderNo, line.SalesOrderLineNo), out var demand))
                 {
                     demand.ApplySalesOrderSnapshot(line.Quantity, line.RequiredDate, payload.OrderVersion);
                 }
@@ -209,7 +209,9 @@ internal sealed class SalesOrderDemandEventProcessor(
 
         if (payload.OrderVersion <= 0 || string.IsNullOrWhiteSpace(payload.SalesOrderId) ||
             string.IsNullOrWhiteSpace(payload.SalesOrderNo) || string.IsNullOrWhiteSpace(payload.CustomerCode) ||
-            string.IsNullOrWhiteSpace(payload.SiteCode) || payload.Lines is null)
+            string.IsNullOrWhiteSpace(payload.SiteCode) ||
+            string.Equals(payload.SiteCode.Trim(), "UNSPECIFIED", StringComparison.OrdinalIgnoreCase) ||
+            payload.Lines is null)
         {
             return "Sales order identity, customer, site, positive version, and full line snapshot are required.";
         }

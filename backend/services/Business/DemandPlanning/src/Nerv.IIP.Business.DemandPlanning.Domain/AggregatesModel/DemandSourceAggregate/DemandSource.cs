@@ -23,7 +23,7 @@ public sealed class DemandSource : Entity<DemandSourceId>, IAggregateRoot
     {
         OrganizationId = DemandPlanningText.Required(organizationId, nameof(organizationId));
         EnvironmentId = DemandPlanningText.Required(environmentId, nameof(environmentId));
-        DemandType = DemandPlanningText.Required(demandType, nameof(demandType)).ToLowerInvariant();
+        DemandType = NormalizeDemandType(demandType);
         SourceReference = DemandPlanningText.Required(sourceReference, nameof(sourceReference));
         SkuCode = DemandPlanningText.Required(skuCode, nameof(skuCode));
         UomCode = DemandPlanningText.Required(uomCode, nameof(uomCode));
@@ -64,14 +64,19 @@ public sealed class DemandSource : Entity<DemandSourceId>, IAggregateRoot
         decimal quantity,
         DateOnly dueDate)
     {
-        ArgumentNullException.ThrowIfNull(demandType);
-        if (string.Equals(demandType.Trim(), "sales-order", StringComparison.OrdinalIgnoreCase))
+        if (IsSalesOrderDemandType(demandType))
         {
             throw new InvalidOperationException("Demand type 'sales-order' is integration-owned and cannot be created manually.");
         }
 
         return new DemandSource(organizationId, environmentId, demandType, sourceReference, skuCode, uomCode, siteCode, quantity, dueDate);
     }
+
+    public static string NormalizeDemandType(string demandType) =>
+        DemandPlanningText.Required(demandType, nameof(demandType)).ToLowerInvariant();
+
+    public static bool IsSalesOrderDemandType(string demandType) =>
+        string.Equals(NormalizeDemandType(demandType), "sales-order", StringComparison.Ordinal);
 
     public static DemandSource CreateSalesOrderDemand(
         string organizationId,

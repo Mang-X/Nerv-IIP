@@ -321,7 +321,7 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
             DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
             lines.Select(x => new QuotationLineDraft(x.LineNo, "SKU-FG-1000", "kg", 5m, x.UnitPrice, new DateOnly(2026, 7, 1))).ToArray());
         quotation.Approve();
-        var salesOrder = SalesOrder.CreateFromQuotation(salesOrderNo, quotation);
+        var salesOrder = SalesOrder.CreateFromQuotation(salesOrderNo, "SITE-001", quotation);
         var delivery = DeliveryOrder.Release(
             salesOrder,
             deliveryOrderNo,

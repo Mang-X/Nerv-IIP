@@ -89,10 +89,10 @@ public sealed class ErpSalesFinanceAggregateTests
             DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10)),
             [new QuotationLineDraft("L1", "SKU-FG", "ea", 2m, 10m, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(20)))]);
 
-        Assert.Throws<InvalidOperationException>(() => SalesOrder.CreateFromQuotation("SO-001", quotation));
+        Assert.Throws<InvalidOperationException>(() => SalesOrder.CreateFromQuotation("SO-001", "SITE-001", quotation));
 
         quotation.Approve();
-        var order = SalesOrder.CreateFromQuotation("SO-001", quotation);
+        var order = SalesOrder.CreateFromQuotation("SO-001", "SITE-001", quotation);
 
         Assert.Equal(20m, order.TotalAmount);
     }
@@ -135,7 +135,7 @@ public sealed class ErpSalesFinanceAggregateTests
             ]);
         quotation.Approve();
 
-        var order = SalesOrder.CreateFromQuotation("SO-002", quotation);
+        var order = SalesOrder.CreateFromQuotation("SO-002", "SITE-001", quotation);
 
         Assert.Equal("released", order.Status);
         Assert.Equal(32m, order.TotalAmount);
@@ -169,6 +169,7 @@ public sealed class ErpSalesFinanceAggregateTests
 
         var heldOrder = SalesOrder.CreateFromQuotation(
             "SO-CREDIT-001",
+            "SITE-001",
             quotation,
             new CustomerCreditSnapshot("CUST-001", 25m, OpenReceivableAmount: 10m, ActiveSalesOrderExposure: 1m));
         Assert.Equal("credit-held", heldOrder.Status);
@@ -178,6 +179,7 @@ public sealed class ErpSalesFinanceAggregateTests
 
         var order = SalesOrder.CreateFromQuotation(
             "SO-CREDIT-002",
+            "SITE-001",
             quotation,
             new CustomerCreditSnapshot("CUST-001", 40m, OpenReceivableAmount: 10m, ActiveSalesOrderExposure: 1m));
 
@@ -195,7 +197,7 @@ public sealed class ErpSalesFinanceAggregateTests
             DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10)),
             [new QuotationLineDraft("L1", "SKU-FG", "ea", 2m, 10m, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(20)))]);
         quotation.Approve();
-        var order = SalesOrder.CreateFromQuotation("SO-001", quotation);
+        var order = SalesOrder.CreateFromQuotation("SO-001", "SITE-001", quotation);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => DeliveryOrder.Release(order, "DO-001", [new DeliveryOrderLineDraft("L1", 3m)]));
     }
@@ -214,7 +216,7 @@ public sealed class ErpSalesFinanceAggregateTests
                 new QuotationLineDraft("L2", "SKU-PKG", "ea", 3m, 4m, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(20))),
             ]);
         quotation.Approve();
-        var order = SalesOrder.CreateFromQuotation("SO-CHANGE-001", quotation);
+        var order = SalesOrder.CreateFromQuotation("SO-CHANGE-001", "SITE-001", quotation);
 
         order.ChangeLine("L1", 4m, 11m, new DateOnly(2026, 7, 1), "customer change");
         order.CancelLine("L2", "customer removed line");
@@ -241,7 +243,7 @@ public sealed class ErpSalesFinanceAggregateTests
             DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10)),
             [new QuotationLineDraft("L1", "SKU-FG", "ea", 2m, 10m, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(20)))]);
         quotation.Approve();
-        var order = SalesOrder.CreateFromQuotation("SO-005", quotation);
+        var order = SalesOrder.CreateFromQuotation("SO-005", "SITE-001", quotation);
 
         var delivery = DeliveryOrder.Release(order, "DO-005", [new DeliveryOrderLineDraft("L1", 1m, "FG-SHIP", "LOT-FG-001")]);
 

@@ -72,9 +72,11 @@ public sealed class ErpSalesOrderDemandIntegrationEventTests
     [Fact]
     public void Scoped_http_command_and_upstream_event_ids_are_stable_business_causation_ids()
     {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Causation-Id"] = "caller-supplied-causation";
         var accessor = new HttpErpIntegrationEventContextAccessor(new HttpContextAccessor
         {
-            HttpContext = new DefaultHttpContext(),
+            HttpContext = httpContext,
         });
         var commandId = ErpCommandCausationIds.ForHttpCommand(
             "create-sales-order",

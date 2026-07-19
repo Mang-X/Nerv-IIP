@@ -182,6 +182,9 @@ public sealed class BusinessPartnerChangedConsumerTests
         var purchaseOrderId = await new CreatePurchaseOrderCommandHandler(dbContext, codingService).Handle(purchaseCommand, CancellationToken.None);
         var salesOrderId = await new CreateSalesOrderCommandHandler(dbContext, new StaticCreditProfileReader(), codingService).Handle(salesCommand, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        var salesOrderIdempotency = Assert.Single(dbContext.CodeIdempotencyKeys.Where(x => x.RuleKey == "sales-order"));
+        dbContext.Entry(salesOrderIdempotency).Property(x => x.PayloadFingerprint).CurrentValue = ErpCodingService.Fingerprint("QT-001");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
         dbContext.BusinessPartnerAvailabilities.Add(BusinessPartnerAvailability.Create(
             "org-001", "env-dev", "BP-001", "disabled", DateTimeOffset.Parse("2026-07-13T04:00:00Z"), "evt-disabled"));
         await dbContext.SaveChangesAsync(CancellationToken.None);

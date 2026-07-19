@@ -42,6 +42,21 @@ function Get-FreeTcpPort {
     finally { $listener.Stop() }
 }
 
+function Wait-PostgresReady {
+    param([string]$ComposeFile)
+    $deadline = (Get-Date).AddSeconds(60)
+    do {
+        try {
+            Invoke-DockerCompose -Arguments @('-f', $ComposeFile, 'exec', '-T', 'postgres', 'pg_isready', '-U', 'nerv', '-d', 'postgres') -WorkingDirectory $root -Name 'man517-postgres-ready' | Out-Null
+            return
+        }
+        catch {
+            if ((Get-Date) -ge $deadline) { throw }
+            Start-Sleep -Milliseconds 500
+        }
+    } while ($true)
+}
+
 function Wait-Healthy {
     param([string]$Uri, [object]$ManagedProcess)
     $deadline = (Get-Date).AddSeconds(90)
@@ -135,6 +150,7 @@ $demandPlanningTestsProject = Join-Path $root 'backend/services/Business/DemandP
 
 try {
     Invoke-DockerCompose -Arguments @('-f', $composeFile, 'up', '-d', '--pull', 'never', 'postgres', 'redis') -WorkingDirectory $root -Name 'man517-infrastructure-up' | Out-Null
+    Wait-PostgresReady -ComposeFile $composeFile
     Invoke-DockerCompose -Arguments @('-f', $composeFile, 'exec', '-T', 'postgres', 'psql', '-U', 'nerv', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "CREATE DATABASE $databaseName;") -WorkingDirectory $root -Name 'man517-create-database' | Out-Null
     $databaseCreated = $true
 

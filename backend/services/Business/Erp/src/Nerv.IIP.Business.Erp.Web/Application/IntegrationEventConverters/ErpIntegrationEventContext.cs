@@ -32,8 +32,8 @@ public sealed class HttpErpIntegrationEventContextAccessor(IHttpContextAccessor 
                 ?? Activity.Current?.GetTagItem("correlationId")?.ToString()
                 ?? Activity.Current?.TraceId.ToString()
                 ?? Guid.NewGuid().ToString("n"),
-            ReadHeader(headers, "X-Causation-Id")
-                ?? scoped?.CausationId
+            scoped?.CausationId
+                ?? ReadHeader(headers, "X-Causation-Id")
                 ?? throw new InvalidOperationException("ERP sales-order integration events require an explicit command or upstream-event causation id."),
             scoped?.Actor ?? ResolveActor(httpContext?.User, headers));
     }

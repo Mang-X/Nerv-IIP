@@ -82,7 +82,7 @@ public sealed class ErpBusinessGapClosureTests
             FutureDate(30),
             [new QuotationLineDraft("LINE-001", "SKU-FG-1000", "ea", 3m, 20m, FutureDate(45))]);
         quotation.Approve();
-        var salesOrder = SalesOrder.CreateFromQuotation("SO-001", quotation);
+        var salesOrder = SalesOrder.CreateFromQuotation("SO-001", "SITE-001", quotation);
         var delivery = DeliveryOrder.Release(
             salesOrder,
             "DO-001",

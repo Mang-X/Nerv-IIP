@@ -17,6 +17,8 @@ ERP 发布三个 v1 具体事件：`SalesOrderReleasedIntegrationEvent`、`Sales
 
 ## 可复用演示前置路径：SO-DEMO-001
 
+AppHost 为 ERP 显式开启 `Erp:Seed:SalesOrderDemandDemo:Enabled`。该 seed 幂等创建并保留 released 的 `QUO-DEMO-001` / `SO-DEMO-001`（客户 `CUST-DEMO-001`、SKU `SKU-DEMO-001`、UOM `EA`、站点 `SITE-001`），不会覆盖同编号的租户事实；若保留编号已被不兼容数据占用则启动明确失败。跨服务演示 profile 必须使用 Redis 或 RabbitMQ transport，不能使用仅进程内的 InMemory transport。
+
 1. 在同一 organization/environment 准备 active 客户 `CUST-001`，配置足够信用额度，或先走信用冻结后审批释放路径。
 2. 准备 active SKU `SKU-FG-A`、UOM `EA`、站点 `SITE-001`，以及能生成生产建议的 released ProductionVersion/MBOM/Routing 和必要库存快照。
 3. 创建并批准报价，至少包含一行 `SKU-FG-A`、正数量和要求交期。

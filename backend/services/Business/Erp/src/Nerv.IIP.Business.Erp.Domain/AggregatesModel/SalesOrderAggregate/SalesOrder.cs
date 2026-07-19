@@ -57,16 +57,6 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
     public IReadOnlyCollection<SalesOrderChange> ChangeHistory => changeHistory;
     public decimal OpenExposureAmount => lines.Sum(x => x.OpenQuantity * x.UnitPrice);
 
-    public static SalesOrder CreateFromQuotation(string salesOrderNo, Quotation quotation)
-    {
-        return new SalesOrder(salesOrderNo, "UNSPECIFIED", quotation, null);
-    }
-
-    public static SalesOrder CreateFromQuotation(string salesOrderNo, Quotation quotation, CustomerCreditSnapshot creditSnapshot)
-    {
-        return new SalesOrder(salesOrderNo, "UNSPECIFIED", quotation, creditSnapshot);
-    }
-
     public static SalesOrder CreateFromQuotation(string salesOrderNo, string siteCode, Quotation quotation)
     {
         return new SalesOrder(salesOrderNo, siteCode, quotation, null);

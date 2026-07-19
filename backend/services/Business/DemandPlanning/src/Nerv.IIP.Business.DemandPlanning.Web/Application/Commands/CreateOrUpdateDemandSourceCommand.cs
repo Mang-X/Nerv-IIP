@@ -25,7 +25,7 @@ public sealed class CreateOrUpdateDemandSourceCommandValidator : AbstractValidat
         RuleFor(x => x.DemandType)
             .NotEmpty()
             .MaximumLength(32)
-            .Must(value => !string.Equals(value, "sales-order", StringComparison.OrdinalIgnoreCase))
+            .Must(value => !DemandSource.IsSalesOrderDemandType(value))
             .WithMessage("Demand type 'sales-order' is integration-owned and cannot be created manually.");
         RuleFor(x => x.SourceReference).MaximumLength(128);
         RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(64);
@@ -42,7 +42,8 @@ public sealed class CreateOrUpdateDemandSourceCommandHandler(ApplicationDbContex
 
     public async Task<DemandSourceId> Handle(CreateOrUpdateDemandSourceCommand request, CancellationToken cancellationToken)
     {
-        if (string.Equals(request.DemandType, "sales-order", StringComparison.OrdinalIgnoreCase))
+        var demandType = DemandSource.NormalizeDemandType(request.DemandType);
+        if (DemandSource.IsSalesOrderDemandType(demandType))
         {
             throw new KnownException("Demand type 'sales-order' is integration-owned and cannot be created manually.");
         }
@@ -52,12 +53,12 @@ public sealed class CreateOrUpdateDemandSourceCommandHandler(ApplicationDbContex
             request.EnvironmentId,
             request.SourceReference,
             request.IdempotencyKey,
-            string.Join('|', request.DemandType, request.SkuCode, request.UomCode, request.SiteCode, request.Quantity, request.DueDate),
+            string.Join('|', demandType, request.SkuCode, request.UomCode, request.SiteCode, request.Quantity, request.DueDate),
             cancellationToken);
         var demand = await dbContext.DemandSources.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId
             && x.EnvironmentId == request.EnvironmentId
-            && x.DemandType == request.DemandType.ToLower()
+            && x.DemandType == demandType
             && x.SourceReference == allocation.Code,
             cancellationToken);
         if (demand is null)
@@ -65,7 +66,7 @@ public sealed class CreateOrUpdateDemandSourceCommandHandler(ApplicationDbContex
             demand = DemandSource.Create(
                 request.OrganizationId,
                 request.EnvironmentId,
-                request.DemandType,
+                demandType,
                 allocation.Code,
                 request.SkuCode,
                 request.UomCode,

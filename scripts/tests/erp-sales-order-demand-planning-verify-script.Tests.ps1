@@ -29,6 +29,7 @@ function Assert-Contract {
 Assert-Contract ($content.Contains('# Script-Governance:')) 'Verify script must declare script governance metadata.'
 Assert-Contract ($content.Contains('scripts/lib/ScriptAutomation.ps1')) 'Verify script must use ScriptAutomation helpers.'
 Assert-Contract ($content.Contains('Start-ManagedBackgroundProcess')) 'Verify script must launch managed service processes.'
+Assert-Contract ($content.Contains('pg_isready')) 'Verify script must wait for PostgreSQL readiness before creating the disposable database.'
 Assert-Contract ($content.Contains('Nerv.IIP.Business.MasterData.Web.csproj')) 'Verify script must launch MasterData for reusable customer/credit prerequisites.'
 Assert-Contract ($content.Contains('Nerv.IIP.Business.Erp.Web.csproj')) 'Verify script must launch ERP in its own process.'
 Assert-Contract ($content.Contains('Nerv.IIP.Business.DemandPlanning.Web.csproj')) 'Verify script must launch DemandPlanning in its own process.'

@@ -268,7 +268,10 @@ public sealed class ErpSalesOrderDemandConsumerTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
         var handler = new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
-        var invalid = Released(version: 0, quantity: 2m, lineNo: "10");
+        var invalid = Released(version: 1, quantity: 2m, lineNo: "10") with
+        {
+            Payload = Payload(1, "released", 2m, "10") with { SiteCode = "UNSPECIFIED" },
+        };
 
         await handler.HandleAsync(invalid, CancellationToken.None);
 

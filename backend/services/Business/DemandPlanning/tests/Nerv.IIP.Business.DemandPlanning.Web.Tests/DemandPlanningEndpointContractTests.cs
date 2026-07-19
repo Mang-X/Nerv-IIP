@@ -94,6 +94,23 @@ public sealed class DemandPlanningEndpointContractTests
     }
 
     [Fact]
+    public async Task Demand_source_command_normalizes_type_once_before_fingerprint_lookup_and_persistence()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateOrUpdateDemandSourceCommandHandler(dbContext);
+        var command = NewDemandCommand() with { DemandType = " Manual ", IdempotencyKey = "normalized-manual" };
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var replay = await handler.Handle(command with { DemandType = "manual" }, CancellationToken.None);
+
+        Assert.Equal(first, replay);
+        Assert.Equal("manual", Assert.Single(dbContext.DemandSources).DemandType);
+    }
+
+    [Fact]
     public async Task Cancel_demand_source_command_removes_source_from_planning_input()
     {
         await using var provider = CreateInMemoryProvider();
