@@ -14,6 +14,7 @@
 - 已发布生产版本，且 MBOM、Routing、工作中心和设备资料可解析。
 - 库存或采购计划能够满足关键物料需求。
 - 质量检验和设备可用性规则已经按当前实现完成基础配置。
+- 若需求来自 ERP 销售订单：准备客户信用、已批准报价、SKU/UOM 与履约工厂；创建订单时必须选择真实工厂编码。
 
 ## 页面入口
 
@@ -34,7 +35,7 @@
 
 ## 操作步骤
 
-1. 在 `/planning` 查看需求、运行 MRP，并检查 pegging 和计划建议。
+1. 在 `/planning` 查看需求；销售订单需求会显示真实订单号和有效/取消状态，点击订单号可钻取到 ERP 销售订单筛选页。运行 MRP，并检查 pegging 和计划建议仍沿用该订单号追溯。
 2. 接受可执行的计划建议，进入生产计划或 MES 可消费的计划视图。
 3. 发布 Scheduling 新版本时，同一组织/环境内的旧发布版本会自动标记为已取代；MES 只保留新版排程来源。无替代版本时，后端也支持显式撤销，当前产品页尚未提供该动作入口。
 4. 在 `/mes/foundation` 检查开工前基础准备，缺 SKU、生产版本、工作中心或设备范围时先补上下文。
@@ -47,7 +48,7 @@
 
 ## 业务对象/单据流
 
-Demand -> MRP Run -> Planning Suggestion -> APS/Scheduling Result -> Production Plan -> Work Order -> Operation Task -> Production Report -> Finished Goods Receipt -> Inventory Movement。
+ERP Sales Order Released/Changed/Cancelled -> Sales-order Demand -> MRP Run -> Planning Suggestion -> APS/Scheduling Result -> Production Plan -> Work Order -> Operation Task -> Production Report -> Finished Goods Receipt -> Inventory Movement。
 
 ## 状态变化
 

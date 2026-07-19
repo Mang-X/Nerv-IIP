@@ -132,6 +132,7 @@ public sealed record CreateSalesOrderCommand(
     string EnvironmentId,
     string? SalesOrderNo,
     string QuotationNo,
+    string SiteCode,
     string? IdempotencyKey = null) : ICommand<SalesOrderId>;
 
 public sealed class CreateSalesOrderCommandValidator : AbstractValidator<CreateSalesOrderCommand>
@@ -142,6 +143,7 @@ public sealed class CreateSalesOrderCommandValidator : AbstractValidator<CreateS
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.SalesOrderNo).MaximumLength(100);
         RuleFor(x => x.QuotationNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
     }
 }
 
@@ -151,7 +153,7 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
 
     public async Task<SalesOrderId> Handle(CreateSalesOrderCommand request, CancellationToken cancellationToken)
     {
-        var fingerprint = ErpCodingService.Fingerprint(request.QuotationNo);
+        var fingerprint = await ResolveCompatibleFingerprintAsync(request, cancellationToken);
         var replay = await _codingService.TryPeekReplayAsync(
             request.OrganizationId,
             request.EnvironmentId,
@@ -204,10 +206,32 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
             .Sum(x => x.OpenQuantity * x.UnitPrice);
         var creditSnapshot = new CustomerCreditSnapshot(quotation.CustomerCode, creditProfile.CreditLimit, openReceivables, activeSalesOrders);
 
-        var order = SalesOrder.CreateFromQuotation(allocation.Code, quotation, creditSnapshot);
+        var order = SalesOrder.CreateFromQuotation(allocation.Code, request.SiteCode, quotation, creditSnapshot);
 
         dbContext.SalesOrders.Add(order);
         return order.Id;
+    }
+
+    private async Task<string> ResolveCompatibleFingerprintAsync(CreateSalesOrderCommand request, CancellationToken cancellationToken)
+    {
+        var currentFingerprint = ErpCodingService.Fingerprint(request.QuotationNo, request.SiteCode);
+        if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
+        {
+            return currentFingerprint;
+        }
+
+        var storedFingerprint = await dbContext.CodeIdempotencyKeys
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.RuleKey == "sales-order" &&
+                x.IdempotencyKey == request.IdempotencyKey.Trim())
+            .Select(x => x.PayloadFingerprint)
+            .SingleOrDefaultAsync(cancellationToken);
+        var legacyFingerprint = ErpCodingService.Fingerprint(request.QuotationNo);
+        return string.Equals(storedFingerprint, legacyFingerprint, StringComparison.Ordinal)
+            ? legacyFingerprint
+            : currentFingerprint;
     }
 }
 

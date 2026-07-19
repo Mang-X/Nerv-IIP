@@ -160,7 +160,7 @@ public sealed record ListSalesOrdersQuery(
     int Take = 100) : IQuery<ListSalesOrdersResponse>;
 
 public sealed record ListSalesOrdersResponse(IReadOnlyCollection<SalesOrderResponse> Items, int Total);
-public sealed record SalesOrderResponse(string SalesOrderNo, string CustomerCode, string Status, decimal TotalAmount);
+public sealed record SalesOrderResponse(string SalesOrderNo, string CustomerCode, string SiteCode, string Status, decimal TotalAmount);
 
 public sealed record ListDeliveryOrdersQuery(
     string OrganizationId,
@@ -281,7 +281,7 @@ public sealed class ListSalesOrdersQueryHandler(ApplicationDbContext dbContext)
             .OrderByDescending(x => x.CreatedAtUtc)
             .Skip(skip)
             .Take(take)
-            .Select(x => new SalesOrderResponse(x.SalesOrderNo, x.CustomerCode, x.Status, x.TotalAmount))
+            .Select(x => new SalesOrderResponse(x.SalesOrderNo, x.CustomerCode, x.SiteCode, x.Status, x.TotalAmount))
             .ToArrayAsync(cancellationToken);
         return new ListSalesOrdersResponse(orders, total);
     }

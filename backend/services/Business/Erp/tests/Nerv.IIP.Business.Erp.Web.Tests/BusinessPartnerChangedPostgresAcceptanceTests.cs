@@ -79,7 +79,7 @@ public sealed class BusinessPartnerChangedPostgresAcceptanceTests
         await Assert.ThrowsAsync<KnownException>(() => new CreateSalesOrderCommandHandler(
             dbContext,
             new StaticCreditProfileReader()).Handle(
-                new CreateSalesOrderCommand("org-pg", "env-pg", "SO-PG-001", "QT-PG-001"),
+                new CreateSalesOrderCommand("org-pg", "env-pg", "SO-PG-001", "QT-PG-001", "SITE-001"),
                 CancellationToken.None));
     }
 

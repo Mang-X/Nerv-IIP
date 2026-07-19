@@ -8,6 +8,9 @@ public static class ErpIntegrationEventTypes
     public const string PurchaseOrderReleased = "erp.PurchaseOrderReleased";
     public const string PurchaseReceiptRecorded = "erp.PurchaseReceiptRecorded";
     public const string SalesReturnAuthorized = "erp.SalesReturnAuthorized";
+    public const string SalesOrderReleased = "erp.SalesOrderReleased";
+    public const string SalesOrderChanged = "erp.SalesOrderChanged";
+    public const string SalesOrderCancelled = "erp.SalesOrderCancelled";
     public const string DeliveryOrderReleased = "erp.DeliveryOrderReleased";
     public const string AccountPayableCreated = "erp.AccountPayableCreated";
     public const string AccountReceivableCreated = "erp.AccountReceivableCreated";
@@ -123,6 +126,74 @@ public sealed record SalesReturnAuthorizedIntegrationEvent(
     string Actor,
     string IdempotencyKey,
     SalesReturnAuthorizedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record SalesOrderLineSnapshot(
+    string SalesOrderLineNo,
+    string SkuCode,
+    decimal Quantity,
+    string UomCode,
+    DateOnly RequiredDate,
+    bool Cancelled);
+
+public sealed record SalesOrderLifecyclePayload(
+    string SalesOrderId,
+    string SalesOrderNo,
+    string CustomerCode,
+    string SiteCode,
+    int OrderVersion,
+    string Status,
+    IReadOnlyCollection<SalesOrderLineSnapshot> Lines);
+
+public sealed record SalesOrderReleasedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    SalesOrderLifecyclePayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record SalesOrderChangedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    SalesOrderLifecyclePayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record SalesOrderCancelledIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    SalesOrderLifecyclePayload Payload) : IIntegrationEventEnvelope
 {
     object? IIntegrationEventEnvelope.PayloadObject => Payload;
 }

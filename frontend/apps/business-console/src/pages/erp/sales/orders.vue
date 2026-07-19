@@ -28,15 +28,25 @@ import {
   toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
-import { formatAmount, formatError } from '../shared'
+import { computed, reactive, shallowRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { firstQueryParam, formatAmount, formatError } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: '销售订单', requiredPermissions: ['business.erp.sales.read'] },
 })
 
 const orders = useErpSalesOrders()
+const route = useRoute()
 const { page, pageSize } = usePagedList(orders.filters, { resetOn: [() => orders.filters.keyword] })
+
+watch(
+  () => route.query.keyword,
+  (keyword) => {
+    orders.filters.keyword = firstQueryParam(keyword)
+  },
+  { immediate: true },
+)
 
 const columns: NvDataTableColumn<BusinessConsoleErpSalesOrderItem>[] = [
   {
@@ -65,12 +75,13 @@ const amount = computed(() =>
 )
 
 const open = shallowRef(false)
-const form = reactive({ quotationNo: '', salesOrderNo: '' })
+const form = reactive({ quotationNo: '', salesOrderNo: '', siteCode: '' })
 const formError = shallowRef('')
 
 function openDialog() {
   form.quotationNo = ''
   form.salesOrderNo = ''
+  form.siteCode = ''
   formError.value = ''
   open.value = true
 }
@@ -80,9 +91,14 @@ async function submit() {
     formError.value = '请输入已批准报价单号。'
     return
   }
+  if (!form.siteCode.trim()) {
+    formError.value = '请输入销售订单履约工厂编码。'
+    return
+  }
   try {
     await orders.createSalesOrder({
       quotationNo: form.quotationNo.trim(),
+      siteCode: form.siteCode.trim(),
       salesOrderNo: form.salesOrderNo.trim() || undefined,
     })
     open.value = false
@@ -170,6 +186,10 @@ async function submit() {
             <NvField
               ><NvFieldLabel for="erp-so-no">销售单号（可选）</NvFieldLabel
               ><NvInput id="erp-so-no" v-model="form.salesOrderNo" autocomplete="off"
+            /></NvField>
+            <NvField
+              ><NvFieldLabel for="erp-so-site">履约工厂编码</NvFieldLabel
+              ><NvInput id="erp-so-site" v-model="form.siteCode" autocomplete="off"
             /></NvField>
           </NvFieldGroup>
           <NvFieldError v-if="formError" :errors="[formError]" />

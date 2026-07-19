@@ -2016,6 +2016,31 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-test-token", erp.LastInternalToken);
         Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "released", "CUST-001", 10, 20), erp.LastSalesOrderListRequest);
         Assert.Equal(new BusinessConsoleErpSourceDocumentRequest("org-001", "env-dev", "PR-001"), erp.LastFinanceSourceDocumentRequest);
+        using var salesDocument = JsonDocument.Parse(await sales.Content.ReadAsStringAsync());
+        Assert.Equal("SITE-001", salesDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("siteCode").GetString());
+    }
+
+    [Fact]
+    public async Task Erp_sales_order_create_forwards_real_site_code()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/sales/sales-orders",
+            new BusinessConsoleCreateErpSalesOrderRequest("org-001", "env-dev", "SO-DEMO-001", "QUO-001", "SITE-001", "idem-so-demo"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal("SITE-001", erp.LastCreateSalesOrderRequest?.SiteCode);
     }
 
     [Fact]
@@ -7922,6 +7947,10 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
             "demand-001",
             request.SourceReference ?? "DEMAND-001",
             request.DemandType,
+            string.Empty,
+            string.Empty,
+            0,
+            "active",
             request.SkuCode,
             request.UomCode,
             request.SiteCode,
@@ -8071,6 +8100,8 @@ internal sealed class RecordingErpClient : IBusinessErpClient
     public BusinessConsoleErpListRequest? LastRequestForQuotationListRequest { get; private set; }
 
     public BusinessConsoleErpListRequest? LastSalesOrderListRequest { get; private set; }
+
+    public BusinessConsoleCreateErpSalesOrderRequest? LastCreateSalesOrderRequest { get; private set; }
 
     public BusinessConsoleErpListRequest? LastOpportunityListRequest { get; private set; }
 
@@ -8254,7 +8285,7 @@ internal sealed class RecordingErpClient : IBusinessErpClient
         LastSalesOrderListRequest = request;
         return Task.FromResult(new BusinessConsoleErpSalesOrderListResponse(
         [
-            new BusinessConsoleErpSalesOrderItem("SO-001", "CUST-001", "Released", 1200m),
+            new BusinessConsoleErpSalesOrderItem("SO-001", "CUST-001", "SITE-001", "Released", 1200m),
         ],
         1));
     }
@@ -8437,6 +8468,7 @@ internal sealed class RecordingErpClient : IBusinessErpClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
+        LastCreateSalesOrderRequest = request;
         return Task.FromResult(new BusinessConsoleCreateErpSalesOrderResponse("so-id-001"));
     }
 

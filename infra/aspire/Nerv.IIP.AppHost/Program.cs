@@ -444,6 +444,7 @@ var businessErp = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("Erp__Seed__SalesOrderDemandDemo__Enabled", "true")
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessErpDatabase, "PostgreSQL")

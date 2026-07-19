@@ -2362,6 +2362,13 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("sales_order_no")
                         .HasComment("Sales order number.");
 
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("MasterData site code governing sales-order demand fulfillment.");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(50)

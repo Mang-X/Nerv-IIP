@@ -18,6 +18,13 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 public sealed class ErpSalesFinanceEndpointContractTests
 {
     [Fact]
+    public void Create_sales_order_contract_exposes_required_site_fact()
+    {
+        Assert.NotNull(typeof(CreateSalesOrderRequest).GetProperty("SiteCode"));
+        Assert.NotNull(typeof(CreateSalesOrderCommand).GetProperty("SiteCode"));
+    }
+
+    [Fact]
     public void Erp_sales_endpoints_expose_issue_138_routes_permissions_policies_and_operation_ids()
     {
         var contracts = ErpSalesEndpointContracts.All.ToArray();
@@ -437,7 +444,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         var exception = await Assert.ThrowsAsync<KnownException>(() => new CreateSalesOrderCommandHandler(
                 dbContext,
                 new StaticCustomerCreditProfileReader(null)).Handle(
-                new CreateSalesOrderCommand("org-001", "env-dev", "SO-MISSING-CREDIT", "QUO-MISSING-CREDIT"),
+                new CreateSalesOrderCommand("org-001", "env-dev", "SO-MISSING-CREDIT", "QUO-MISSING-CREDIT", "SITE-001"),
                 CancellationToken.None));
 
         Assert.Contains("credit limit", exception.Message, StringComparison.OrdinalIgnoreCase);
@@ -461,7 +468,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await new CreateSalesOrderCommandHandler(
                 dbContext,
                 new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 120m, "CNY"))).Handle(
-                new CreateSalesOrderCommand("org-001", "env-dev", "SO-CREDIT-BLOCK", "QUO-CREDIT-BLOCK"),
+                new CreateSalesOrderCommand("org-001", "env-dev", "SO-CREDIT-BLOCK", "QUO-CREDIT-BLOCK", "SITE-001"),
                 CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -482,7 +489,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         var salesOrderId = await new CreateSalesOrderCommandHandler(
                 dbContext,
                 new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 250m, "CNY"))).Handle(
-                new CreateSalesOrderCommand("org-001", "env-dev", "SO-CREDIT-PASS", "QUO-CREDIT-PASS"),
+                new CreateSalesOrderCommand("org-001", "env-dev", "SO-CREDIT-PASS", "QUO-CREDIT-PASS", "SITE-001"),
                 CancellationToken.None);
 
         Assert.NotNull(salesOrderId);
@@ -589,7 +596,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await new CreateSalesOrderCommandHandler(
             dbContext,
             new StaticCustomerCreditProfileReader(new CustomerCreditProfile(customerCode, 1_000_000m, "CNY"))).Handle(
-            new CreateSalesOrderCommand(organizationId, "env-dev", salesOrderNo, quotationNo),
+            new CreateSalesOrderCommand(organizationId, "env-dev", salesOrderNo, quotationNo, "SITE-001"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
     }

@@ -7,6 +7,8 @@ using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 using Nerv.IIP.Coding;
+using Nerv.IIP.Business.DemandPlanning.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.DemandPlanning.Infrastructure;
 
@@ -21,6 +23,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<PeggingLink> PeggingLinks => Set<PeggingLink>();
     public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();
     public DbSet<CodeIdempotencyKey> CodeIdempotencyKeys => Set<CodeIdempotencyKey>();
+    public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
+    public DbSet<SalesOrderDemandProjection> SalesOrderDemandProjections => Set<SalesOrderDemandProjection>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -29,6 +33,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         base.OnModelCreating(modelBuilder);
         modelBuilder.HasDefaultSchema(DemandPlanningFacts.Schema);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        modelBuilder.ConfigureIntegrationEventDeadLetters();
         ConfigureCapStorage(modelBuilder);
     }
 

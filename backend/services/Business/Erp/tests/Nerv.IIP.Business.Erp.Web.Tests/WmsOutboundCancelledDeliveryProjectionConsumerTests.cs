@@ -117,7 +117,7 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
             DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
             [new QuotationLineDraft(lineNo, "SKU-FG-1000", "kg", 5m, unitPrice, new DateOnly(2026, 7, 1))]);
         quotation.Approve();
-        var salesOrder = SalesOrder.CreateFromQuotation(salesOrderNo, quotation);
+        var salesOrder = SalesOrder.CreateFromQuotation(salesOrderNo, "SITE-001", quotation);
         var delivery = DeliveryOrder.Release(
             salesOrder,
             deliveryOrderNo,

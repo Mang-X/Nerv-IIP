@@ -78,6 +78,7 @@ public sealed class SalesOrderEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.SalesOrderNo).HasColumnName("sales_order_no").IsRequired().HasMaxLength(100).HasComment("Sales order number.");
         builder.Property(x => x.QuotationNo).HasColumnName("quotation_no").IsRequired().HasMaxLength(100).HasComment("Source quotation number.");
         builder.Property(x => x.CustomerCode).HasColumnName("customer_code").IsRequired().HasMaxLength(100).HasComment("MasterData customer code.");
+        builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("MasterData site code governing sales-order demand fulfillment.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(50).HasComment("Sales order lifecycle status.");
         builder.Property(x => x.TotalAmount).HasColumnName("total_amount").IsRequired().HasPrecision(18, 6).HasComment("Sales order total amount.");
         builder.Property(x => x.Version).HasColumnName("version").IsRequired().IsConcurrencyToken().HasComment("Monotonic sales order revision number.");

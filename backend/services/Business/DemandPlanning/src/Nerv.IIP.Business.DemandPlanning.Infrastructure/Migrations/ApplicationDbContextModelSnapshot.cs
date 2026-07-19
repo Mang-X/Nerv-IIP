@@ -35,6 +35,15 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC timestamp when the demand source was created.");
 
+                    b.Property<string>("CustomerCode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasDefaultValue("")
+                        .HasColumnName("customer_code")
+                        .HasComment("Customer code snapshot supplied by the upstream sales order.");
+
                     b.Property<string>("DemandType")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -81,12 +90,47 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasColumnName("sku_code")
                         .HasComment("Demanded finished-good SKU code snapshot.");
 
+                    b.Property<string>("SourceDocumentId")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasDefaultValue("")
+                        .HasColumnName("source_document_id")
+                        .HasComment("Stable upstream source document identifier; sales order public id for ERP demand.");
+
+                    b.Property<string>("SourceLineReference")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasDefaultValue("")
+                        .HasColumnName("source_line_reference")
+                        .HasComment("Stable upstream source line reference; empty for manually managed demand.");
+
                     b.Property<string>("SourceReference")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
                         .HasColumnName("source_reference")
                         .HasComment("External or manual source reference unique in the planning scope.");
+
+                    b.Property<string>("SourceStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("active")
+                        .HasColumnName("source_status")
+                        .HasComment("Explainable upstream lifecycle status: active or cancelled.");
+
+                    b.Property<int>("SourceVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("source_version")
+                        .HasComment("Latest accepted upstream business version and optimistic concurrency token; zero for manually managed demand.");
 
                     b.Property<string>("UomCode")
                         .IsRequired()
@@ -102,7 +146,10 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "DemandType", "SourceReference")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DemandType", "SourceDocumentId")
+                        .HasDatabaseName("ix_demand_sources_scope_type_source_document");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DemandType", "SourceReference", "SourceLineReference")
                         .IsUnique();
 
                     b.ToTable("demand_sources", "demand_planning", t =>
@@ -710,6 +757,151 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.DemandPlanning.Infrastructure.IntegrationEvents.ProcessedIntegrationEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Processed integration event identifier.");
+
+                    b.Property<string>("ConsumerName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("consumer_name")
+                        .HasComment("DemandPlanning integration event consumer name.");
+
+                    b.Property<string>("EventId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("event_id")
+                        .HasComment("Source event identifier retained for traceability.");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("event_type")
+                        .HasComment("Integration event type.");
+
+                    b.Property<int>("EventVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("event_version")
+                        .HasComment("Integration event contract version.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Deterministic idempotency key unique within the consumer.");
+
+                    b.Property<DateTimeOffset>("ProcessedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("processed_at_utc")
+                        .HasComment("UTC time when DemandPlanning processed the event.");
+
+                    b.Property<string>("SourceService")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("source_service")
+                        .HasComment("Service that produced the integration event.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConsumerName", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_processed_integration_events_consumer_idempotency_key");
+
+                    b.HasIndex("SourceService", "EventType", "ProcessedAtUtc")
+                        .HasDatabaseName("ix_dp_processed_events_source_type_processed_at");
+
+                    b.ToTable("processed_integration_events", "demand_planning", t =>
+                        {
+                            t.HasComment("Integration events already processed by DemandPlanning for idempotent consumption.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.DemandPlanning.Infrastructure.IntegrationEvents.SalesOrderDemandProjection", b =>
+                {
+                    b.Property<string>("OrganizationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Tenant organization id.");
+
+                    b.Property<string>("EnvironmentId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Planning environment id.");
+
+                    b.Property<string>("SalesOrderId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("sales_order_id")
+                        .HasComment("Stable ERP sales order public id.");
+
+                    b.Property<string>("CustomerCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("customer_code")
+                        .HasComment("Customer code snapshot.");
+
+                    b.Property<string>("LastEventId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("last_event_id")
+                        .HasComment("Latest accepted integration event identifier.");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at_utc")
+                        .HasComment("Source event occurrence time for audit.");
+
+                    b.Property<int>("OrderVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("order_version")
+                        .HasComment("Latest accepted ERP sales order business version and optimistic concurrency token.");
+
+                    b.Property<string>("SalesOrderNo")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("sales_order_no")
+                        .HasComment("ERP sales order number for traceability.");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("site_code")
+                        .HasComment("Planning site code snapshot.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status")
+                        .HasComment("Latest accepted ERP sales order lifecycle status.");
+
+                    b.HasKey("OrganizationId", "EnvironmentId", "SalesOrderId");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SalesOrderNo")
+                        .IsUnique()
+                        .HasDatabaseName("ux_sales_order_demand_projection_scope_order_no");
+
+                    b.ToTable("sales_order_demand_projections", "demand_planning", t =>
+                        {
+                            t.HasComment("Per-sales-order lifecycle watermark used to reject duplicate and out-of-order ERP events.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Coding.CodeCounter", b =>
                 {
                     b.Property<long>("Id")
@@ -842,6 +1034,106 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                     b.ToTable("code_idempotency_keys", "demand_planning", t =>
                         {
                             t.HasComment("Service-local idempotency records that bind create request keys to allocated codes.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Messaging.CAP.IntegrationEventDeadLetter", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Dead-letter message id.");
+
+                    b.Property<string>("ConsumerName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("consumer_name")
+                        .HasComment("Integration event consumer name that rejected the message.");
+
+                    b.Property<DateTimeOffset>("DeadLetteredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("dead_lettered_at_utc")
+                        .HasComment("UTC time when the service stored the dead-letter message.");
+
+                    b.Property<string>("EventClrType")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("event_clr_type")
+                        .HasComment("CLR contract type captured for replay diagnostics.");
+
+                    b.Property<string>("EventId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("event_id")
+                        .HasComment("Rejected integration event id when present.");
+
+                    b.Property<string>("EventJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("event_json")
+                        .HasComment("Serialized rejected integration event envelope and payload.");
+
+                    b.Property<string>("EventType")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("event_type")
+                        .HasComment("Rejected integration event type when present.");
+
+                    b.Property<int?>("EventVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("event_version")
+                        .HasComment("Rejected integration event envelope version when present.");
+
+                    b.Property<string>("FailureCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("failure_code")
+                        .HasComment("Machine-readable reason the consumer rejected the message.");
+
+                    b.Property<string>("FailureMessage")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("failure_message")
+                        .HasComment("Operator-readable rejection detail.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Rejected integration event idempotency key when present.");
+
+                    b.Property<DateTimeOffset?>("ReplayedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("replayed_at_utc")
+                        .HasComment("UTC time when the dead-letter message was marked replayed.");
+
+                    b.Property<string>("SourceService")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("source_service")
+                        .HasComment("Source service from the rejected event envelope when present.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("Dead-letter status: Pending, Replayed, Failed, or Ignored.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConsumerName", "EventId");
+
+                    b.HasIndex("ConsumerName", "Status", "DeadLetteredAtUtc");
+
+                    b.ToTable("integration_event_dead_letters", "demand_planning", t =>
+                        {
+                            t.HasComment("Integration events rejected before business handling and retained for replay triage.");
                         });
                 });
 

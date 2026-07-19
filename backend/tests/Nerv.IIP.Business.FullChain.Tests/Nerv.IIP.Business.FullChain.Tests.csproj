@@ -27,6 +27,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\services\Business\Erp\src\Nerv.IIP.Business.Erp.Web\Nerv.IIP.Business.Erp.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\DemandPlanning\src\Nerv.IIP.Business.DemandPlanning.Web\Nerv.IIP.Business.DemandPlanning.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\DemandPlanning\src\Nerv.IIP.Business.DemandPlanning.Infrastructure\Nerv.IIP.Business.DemandPlanning.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\services\Business\DemandPlanning\src\Nerv.IIP.Business.DemandPlanning.Domain\Nerv.IIP.Business.DemandPlanning.Domain.csproj" />
     <ProjectReference Include="..\..\services\Business\Wms\src\Nerv.IIP.Business.Wms.Web\Nerv.IIP.Business.Wms.Web.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Quality\Nerv.IIP.Contracts.Quality.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Wms\Nerv.IIP.Contracts.Wms.csproj" />
