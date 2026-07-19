@@ -48,7 +48,7 @@ public sealed class WmsOutboundOrderRequestedIntegrationEventHandler(
                 integrationEvent.EnvironmentId,
                 payload.DeliveryOrderNo,
                 "erp-delivery-order",
-                payload.SalesOrderNo,
+                payload.DeliveryOrderNo,
                 siteCode,
                 payload.Lines.Select(x => new WmsOutboundLineInput(
                     x.SourceLineNo,

@@ -82,13 +82,16 @@ public sealed class OutboundOrderCompletedIntegrationEventConverter
         var line = order.Lines.First();
         var status = order.Status.ToString();
         var publicQuantity = PublicOutboundQuantity(line);
+        var publicReference = string.Equals(order.SourceDocumentType, "erp-delivery-order", StringComparison.OrdinalIgnoreCase)
+            ? order.SourceDocumentId
+            : order.OutboundOrderNo;
         return WmsIntegrationEventFactory.NewEvent(
             WmsIntegrationEventTypes.OutboundOrderCompleted,
             order.OrganizationId,
             order.EnvironmentId,
             $"wms:outbound-completed:{order.OrganizationId}:{order.EnvironmentId}:{order.OutboundOrderNo}",
             new WmsIntegrationPayload(
-                order.OutboundOrderNo,
+                publicReference,
                 line.LineNo,
                 line.SkuCode,
                 line.UomCode,

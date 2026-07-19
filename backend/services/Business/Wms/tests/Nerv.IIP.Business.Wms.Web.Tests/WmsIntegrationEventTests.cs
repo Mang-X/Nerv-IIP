@@ -89,6 +89,27 @@ public sealed class WmsIntegrationEventTests
     }
 
     [Fact]
+    public void Erp_delivery_outbound_completion_uses_delivery_order_source_as_public_reference()
+    {
+        var outbound = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-SPLIT-001",
+            "erp-delivery-order",
+            "DO-001",
+            "SITE-01",
+            [new Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrderLineDraft(
+                "10", "SKU-FG-1000", "EA", 2m, "LOC-A-01", null, null, "qualified", "company", "CUST-001")]);
+        outbound.CompletePackReview("PACK-001", true, "idem-out-001");
+
+        var integrationEvent = new OutboundOrderCompletedIntegrationEventConverter()
+            .Convert(new OutboundOrderCompletedDomainEvent(outbound));
+
+        Assert.Equal("DO-001", integrationEvent.Payload.PublicReference);
+        Assert.Equal("DO-001", integrationEvent.Payload.SourceDocumentId);
+    }
+
+    [Fact]
     public void Outbound_count_and_wcs_events_use_required_event_types()
     {
         var outbound = DomainWmsFactory.OutboundOrder();

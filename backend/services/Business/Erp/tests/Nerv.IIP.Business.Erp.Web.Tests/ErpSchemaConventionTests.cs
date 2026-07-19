@@ -174,6 +174,36 @@ public sealed class ErpSchemaConventionTests
     }
 
     [Fact]
+    public void Delivery_shipment_projection_migration_preserves_existing_delivery_rows()
+    {
+        using var fixture = CreateFixture();
+        var migrations = fixture.DbContext.GetService<IMigrationsAssembly>();
+        var migrationType = migrations.Migrations["20260719165003_AddErpDeliveryShipmentProjection"];
+        var migration = migrations.CreateMigration(migrationType, fixture.DbContext.Database.ProviderName!);
+
+        var shippedQuantity = Assert.IsType<AddColumnOperation>(Assert.Single(migration.UpOperations, operation =>
+            operation is AddColumnOperation add
+            && add.Schema == ErpFacts.Schema
+            && add.Table == "delivery_order_lines"
+            && add.Name == "shipped_quantity"));
+        Assert.Equal(0m, shippedQuantity.DefaultValue);
+        Assert.False(shippedQuantity.IsNullable);
+
+        Assert.Contains(migration.UpOperations, operation =>
+            operation is AddColumnOperation add
+            && add.Schema == ErpFacts.Schema
+            && add.Table == "delivery_orders"
+            && add.Name == "shipped_at_utc"
+            && add.IsNullable);
+        Assert.Contains(migration.UpOperations, operation =>
+            operation is AddColumnOperation add
+            && add.Schema == ErpFacts.Schema
+            && add.Table == "delivery_orders"
+            && add.Name == "completed_at_utc"
+            && add.IsNullable);
+    }
+
+    [Fact]
     public void Order_revision_versions_are_optimistic_concurrency_tokens()
     {
         using var fixture = CreateFixture();
