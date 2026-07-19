@@ -101,7 +101,8 @@ async function fetchAllWmsPages<TItem>(
     const pageItems = page.data?.items ?? []
     total = page.data?.total ?? 0
     items.push(...pageItems)
-    if (pageItems.length === 0 || items.length >= total) break
+    if (items.length >= total) break
+    if (pageItems.length === 0) throw new Error(`${label}读取不完整，请刷新后重试。`)
     skip += pageItems.length
   }
 
