@@ -10,6 +10,7 @@ import {
   useQualityInspectionPlans,
 } from '@/composables/useBusinessQuality'
 import { useQualityInspectionTaskActions } from '@/composables/useQualityInspectionTasks'
+import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import { notifyError } from '@/utils/notify'
@@ -243,6 +244,7 @@ const validResultLines = computed(() =>
 )
 const canCreateRecord = computed(
   () =>
+    hasBusinessContext(filters) &&
     (isInspectionTaskFlow.value ||
       (isNonEmpty(recordForm.organizationId) && isNonEmpty(recordForm.environmentId))) &&
     isNonEmpty(recordForm.sourceType) &&
@@ -324,6 +326,10 @@ function removeCharacteristicRow(index: number) {
 }
 
 async function submitInspectionRecord() {
+  if (!hasBusinessContext(filters)) {
+    notifyError('业务范围尚未就绪，请稍后重试。')
+    return
+  }
   if (!canCreateRecord.value) return
   const inspectionTaskId = firstQuery(route.query.inspectionTaskId)
   if (inspectionTaskId) {
