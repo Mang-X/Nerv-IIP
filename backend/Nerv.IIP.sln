@@ -457,6 +457,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.FacadeCoverage.Tes
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.Business.FullChain.Tests", "tests\Nerv.IIP.Business.FullChain.Tests\Nerv.IIP.Business.FullChain.Tests.csproj", "{A5A303FA-D72E-4D10-BFB2-8033F9EE85F3}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.MigrationGovernance.Tests", "tests\Nerv.IIP.MigrationGovernance.Tests\Nerv.IIP.MigrationGovernance.Tests.csproj", "{8D3DE0BE-072B-41A5-9A4B-5A07F9F8AE52}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -2291,6 +2293,18 @@ Global
 		{A5A303FA-D72E-4D10-BFB2-8033F9EE85F3}.Release|x64.Build.0 = Release|Any CPU
 		{A5A303FA-D72E-4D10-BFB2-8033F9EE85F3}.Release|x86.ActiveCfg = Release|Any CPU
 		{A5A303FA-D72E-4D10-BFB2-8033F9EE85F3}.Release|x86.Build.0 = Release|Any CPU
+		{8D3DE0BE-072B-41A5-9A4B-5A07F9F8AE52}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8D3DE0BE-072B-41A5-9A4B-5A07F9F8AE52}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8D3DE0BE-072B-41A5-9A4B-5A07F9F8AE52}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{8D3DE0BE-072B-41A5-9A4B-5A07F9F8AE52}.Debug|x64.Build.0 = Debug|Any CPU
+		{8D3DE0BE-072B-41A5-9A4B-5A07F9F8AE52}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{8D3DE0BE-072B-41A5-9A4B-5A07F9F8AE52}.Debug|x86.Build.0 = Debug|Any CPU
+		{8D3DE0BE-072B-41A5-9A4B-5A07F9F8AE52}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8D3DE0BE-072B-41A5-9A4B-5A07F9F8AE52}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8D3DE0BE-072B-41A5-9A4B-5A07F9F8AE52}.Release|x64.ActiveCfg = Release|Any CPU
+		{8D3DE0BE-072B-41A5-9A4B-5A07F9F8AE52}.Release|x64.Build.0 = Release|Any CPU
+		{8D3DE0BE-072B-41A5-9A4B-5A07F9F8AE52}.Release|x86.ActiveCfg = Release|Any CPU
+		{8D3DE0BE-072B-41A5-9A4B-5A07F9F8AE52}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -2517,5 +2531,6 @@ Global
 		{1F625B3A-1754-4443-A343-7079A5D6C1D6} = {56787BCC-1D17-4674-3EC8-20108B77A4E0}
 		{C39B8BC4-9574-43FE-99D5-D3FA3838AD5A} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{A5A303FA-D72E-4D10-BFB2-8033F9EE85F3} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{8D3DE0BE-072B-41A5-9A4B-5A07F9F8AE52} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal
