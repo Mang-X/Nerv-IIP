@@ -2,6 +2,7 @@
 import type { BusinessConsoleWmsInboundOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
+import WmsReceivingQualityFlow from '@/components/wms/WmsReceivingQualityFlow.vue'
 import { useWmsInboundOrders } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -63,6 +64,13 @@ const {
   createInbound,
   createInboundPending,
   createInboundError,
+  receivingQualityGates,
+  receivingQualityGatesPending,
+  receivingQualityGatesError,
+  supplierReturns,
+  supplierReturnsPending,
+  supplierReturnsError,
+  refreshReceivingQuality,
 } = useWmsInboundOrders()
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [
@@ -186,8 +194,8 @@ async function submitCreate() {
     })
     createOpen.value = false
     toast.success('入库单已创建')
-  } catch {
-    // 失败信息由页面错误区呈现。
+  } catch (error) {
+    toast.error(formatError(error) || '创建入库单失败，请稍后重试。')
   }
 }
 
@@ -205,19 +213,30 @@ async function confirmComplete() {
     await completeInbound(id)
     completeOpen.value = false
     toast.success('入库单已完成')
-  } catch {
-    // 失败信息由页面错误区呈现。
+  } catch (error) {
+    toast.error(formatError(error) || '完成入库失败，请稍后重试。')
   }
 }
 
 const errorMessage = computed(() =>
-  formatError(inboundOrdersError.value ?? completeInboundError.value ?? createInboundError.value),
+  formatError(
+    inboundOrdersError.value ??
+      completeInboundError.value ??
+      createInboundError.value ??
+      receivingQualityGatesError.value ??
+      supplierReturnsError.value,
+  ),
 )
 // 库存上下文不可用时（后端未支持该维度），给出业务可读提示而非空白。
 const contextUnavailable = computed(() => {
   const status = (inventoryContext.value?.status ?? '').toLowerCase()
   return !!inventoryContext.value && status !== '' && status !== 'ok' && status !== 'available'
 })
+
+function refreshAll() {
+  void refreshInboundOrders()
+  void refreshReceivingQuality()
+}
 
 type InboundRow = BusinessConsoleWmsInboundOrderItem
 const columns: NvDataTableColumn<InboundRow>[] = [
@@ -228,6 +247,7 @@ const columns: NvDataTableColumn<InboundRow>[] = [
     accessor: (r) => r.inboundOrderNo ?? '无',
   },
   { key: 'status', header: '状态', width: 'w-28' },
+  { key: 'quality', header: '质检门禁', width: 'min-w-[22rem]' },
   { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-28' },
 ]
@@ -267,7 +287,7 @@ function formatError(error: unknown) {
           type="button"
           variant="outline"
           :disabled="inboundOrdersPending"
-          @click="refreshInboundOrders"
+          @click="refreshAll"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
@@ -320,12 +340,22 @@ function formatError(error: unknown) {
       :columns="columns"
       :rows="inboundOrders"
       :row-key="rowKey"
-      :loading="inboundOrdersPending"
+      :loading="inboundOrdersPending || receivingQualityGatesPending || supplierReturnsPending"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无入库单。收货作业产生入库单后会出现在这里。"
     >
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-quality="{ row }">
+        <WmsReceivingQualityFlow
+          v-if="row.inboundOrderNo"
+          :inbound-order-no="row.inboundOrderNo"
+          :gates="receivingQualityGates"
+          :supplier-returns="supplierReturns"
+          :loading="receivingQualityGatesPending || supplierReturnsPending"
+          :error="receivingQualityGatesError || supplierReturnsError"
+        />
+      </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end gap-2">
           <NvButton size="sm" type="button" variant="ghost" as-child>

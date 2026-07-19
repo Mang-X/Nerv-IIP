@@ -126,3 +126,26 @@ Acceptance requires:
 5. Schema convention tests using `Nerv.IIP.Testing`.
 6. Integration event converter/serialization tests for WMS events.
 7. Tests proving WMS schema does not introduce stock balance columns.
+
+## Receiving quality-gate product flow
+
+The Business Console receiving page consumes the WMS quality-gate read model as
+the source of truth for the operator-facing flow. Each inbound order presents
+the server-returned path `收货 → 待检 → 合格上架/不合格隔离退供`:
+
+1. `pending`/`inspection` blocks putaway and explains that inspection must be
+   completed before the action is available.
+2. `not-required` honestly skips the inspection step and releases the line for
+   putaway; no inspection task is invented for exempt lines.
+3. `conditional-release` keeps putaway available only as a visibly restricted
+   action and states that it is not unconditional acceptance.
+4. `rejected` blocks putaway and displays the real quarantine location,
+   disposition reason and supplier-return number when WMS has returned one.
+5. The inspection-task link uses the stable source-document contract
+   `/quality/inspection-tasks?sourceDocumentNo=<inboundOrderNo>`. Until WMS or
+   Quality supplies a stable `inspectionTaskId` in this read model, the UI does
+   not infer one from SKU, line or inspection record.
+
+After a receiving mutation, the page refreshes inbound orders, quality gates
+and supplier returns from the server. It never uses local optimistic status to
+claim that a gate or putaway has completed.

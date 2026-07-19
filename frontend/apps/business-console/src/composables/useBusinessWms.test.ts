@@ -22,6 +22,14 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleWmsInboundOrders' }],
     query: vi.fn(),
   })),
+  listBusinessConsoleWmsReceivingQualityGatesQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleWmsReceivingQualityGates' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleWmsSupplierReturnRequestsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleWmsSupplierReturnRequests' }],
+    query: vi.fn(),
+  })),
   listBusinessConsoleWmsOutboundOrdersQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleWmsOutboundOrders' }],
     query: vi.fn(),
@@ -97,7 +105,9 @@ describe('business WMS composables', () => {
         keyword: 'IN',
       },
     })
-    expect(result.inboundOrders.value).toEqual([{ inboundOrderId: 'in-1', inboundOrderNo: 'IN-001' }])
+    expect(result.inboundOrders.value).toEqual([
+      { inboundOrderId: 'in-1', inboundOrderNo: 'IN-001' },
+    ])
     expect(result.inboundOrdersTotal.value).toBe(23)
   })
 
@@ -160,7 +170,9 @@ describe('business WMS composables', () => {
     expect(listBusinessConsoleWmsInboundOrdersQueryOptions).toHaveBeenCalledWith({
       query: expect.objectContaining({ organizationId: '', environmentId: '' }),
     })
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsInboundOrders')?.enabled).toBe(false)
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsInboundOrders')?.enabled).toBe(
+      false,
+    )
   })
 
   it('does not refetch WMS lists when business context is empty', async () => {
