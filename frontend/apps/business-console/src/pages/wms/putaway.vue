@@ -27,6 +27,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
+import { useRoute } from 'vue-router'
 
 definePage({
   meta: {
@@ -36,6 +37,8 @@ definePage({
   },
 })
 
+const route = useRoute()
+const inboundOrderNo = firstQuery(route.query.inboundOrderNo)
 const {
   filters,
   putawayTasks,
@@ -46,7 +49,7 @@ const {
   createPutaway,
   createPutawayPending,
   createPutawayError,
-} = useWmsPutawayTasks()
+} = useWmsPutawayTasks(inboundOrderNo ? { keyword: inboundOrderNo } : {})
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.locationCode, () => filters.keyword],
 })
@@ -147,6 +150,9 @@ function formatDateTime(value?: string | null) {
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
+function firstQuery(value: unknown) {
+  return Array.isArray(value) ? String(value[0] ?? '') : typeof value === 'string' ? value : ''
+}
 </script>
 
 <template>
@@ -179,7 +185,7 @@ function formatError(error: unknown) {
         <NvInput
           v-model="filters.keyword"
           class="h-9 w-40"
-          placeholder="任务号/物料"
+          placeholder="任务号/来源单/物料"
           aria-label="关键字"
         />
         <NvInput

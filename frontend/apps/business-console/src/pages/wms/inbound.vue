@@ -340,7 +340,7 @@ function formatError(error: unknown) {
       :columns="columns"
       :rows="inboundOrders"
       :row-key="rowKey"
-      :loading="inboundOrdersPending || receivingQualityGatesPending || supplierReturnsPending"
+      :loading="inboundOrdersPending"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无入库单。收货作业产生入库单后会出现在这里。"
@@ -352,6 +352,8 @@ function formatError(error: unknown) {
           :inbound-order-no="row.inboundOrderNo"
           :gates="receivingQualityGates"
           :supplier-returns="supplierReturns"
+          :quality-gate-status="row.qualityGateStatus"
+          :is-released-for-putaway="row.isReleasedForPutaway"
           :loading="receivingQualityGatesPending || supplierReturnsPending"
           :error="receivingQualityGatesError || supplierReturnsError"
         />

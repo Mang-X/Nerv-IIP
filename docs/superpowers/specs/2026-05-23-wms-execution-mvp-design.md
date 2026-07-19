@@ -131,21 +131,30 @@ Acceptance requires:
 
 The Business Console receiving page consumes the WMS quality-gate read model as
 the source of truth for the operator-facing flow. Each inbound order presents
-the server-returned path `收货 → 待检 → 合格上架/不合格隔离退供`:
+a server-fact path such as `收货 → 待检 → 合格上架/不合格隔离退供` (or
+`收货 → 免检 → 上架`):
 
-1. `pending`/`inspection` blocks putaway and explains that inspection must be
-   completed before the action is available.
+1. Only the WMS gate statuses `pending`, `passed`, `conditional-release`,
+   `rejected` and `not-required` are trusted. Unknown values fail closed.
+   `pending` blocks putaway and explains that inspection must be completed
+   before the action is available.
 2. `not-required` honestly skips the inspection step and releases the line for
    putaway; no inspection task is invented for exempt lines.
 3. `conditional-release` keeps putaway available only as a visibly restricted
    action and states that it is not unconditional acceptance.
 4. `rejected` blocks putaway and displays the real quarantine location,
    disposition reason and supplier-return number when WMS has returned one.
+   The action also requires the inbound read model's
+   `isReleasedForPutaway=true`; the UI never derives that permission locally.
 5. The inspection-task link uses the stable source-document contract
    `/quality/inspection-tasks?sourceDocumentNo=<inboundOrderNo>`. Until WMS or
    Quality supplies a stable `inspectionTaskId` in this read model, the UI does
    not infer one from SKU, line or inspection record.
 
 After a receiving mutation, the page refreshes inbound orders, quality gates
-and supplier returns from the server. It never uses local optimistic status to
-claim that a gate or putaway has completed.
+and supplier returns from the server. The same reads auto-refetch while the
+page is open so an external Quality result converges without a manual reload.
+Quality and return list reads follow all server pages before the page filters by
+the real inbound order number. It never uses local optimistic status to claim
+that a gate or putaway has completed. The enabled putaway action links to the
+existing `/wms/putaway?inboundOrderNo=<real inbound order number>` task view.

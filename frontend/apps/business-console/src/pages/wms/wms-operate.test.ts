@@ -15,6 +15,7 @@ const wms = vi.hoisted(() => ({
   inventoryContext: undefined as unknown,
   receivingQualityGates: [] as unknown[],
   supplierReturns: [] as unknown[],
+  isReleasedForPutaway: true,
   refreshReceivingQuality: vi.fn(),
 }))
 
@@ -39,6 +40,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
         inboundOrderNo: 'IB-1',
         status: 'created',
         createdAtUtc: '2026-06-01T00:00:00Z',
+        isReleasedForPutaway: wms.isReleasedForPutaway,
       },
     ]),
     inventoryContext: computed(() => wms.inventoryContext),
@@ -123,6 +125,7 @@ describe('WMS operate actions', () => {
     wms.inventoryContext = undefined
     wms.receivingQualityGates = []
     wms.supplierReturns = []
+    wms.isReleasedForPutaway = true
   })
 
   function setInput(selector: string, value: string) {
@@ -339,7 +342,10 @@ describe('WMS operate actions', () => {
 
     expect(wrapper.text()).toContain('免检')
     expect(wrapper.text()).toContain('已跳过待检，可进入上架')
-    expect(wrapper.get('button[aria-label="上架 IB-1"]').attributes('disabled')).toBeUndefined()
+    const putawayLink = wrapper.get('a[aria-label="上架 IB-1"]')
+    expect(putawayLink.attributes('data-to')).toContain('/wms/putaway')
+    expect(putawayLink.attributes('data-to')).toContain('inboundOrderNo')
+    expect(putawayLink.attributes('data-to')).toContain('IB-1')
     const taskLink = wrapper.get('a[aria-label="查看检验任务 IB-1"]')
     expect(taskLink.attributes('data-to')).toContain('/quality/inspection-tasks')
     expect(taskLink.attributes('data-to')).toContain('sourceDocumentNo')
@@ -384,11 +390,47 @@ describe('WMS operate actions', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('条件放行')
-    expect(wrapper.text()).toContain('受限上架')
     expect(wrapper.text()).toContain('不合格')
     expect(wrapper.text()).toContain('退供应商')
     expect(wrapper.text()).toContain('RTS-IB-1-002')
     expect(wrapper.text()).toContain('QUAR-01')
+  })
+
+  it('routes a conditionally released order to restricted putaway', async () => {
+    wms.receivingQualityGates = [
+      {
+        inboundOrderNo: 'IB-1',
+        lineNo: '1',
+        skuCode: 'SKU-001',
+        qualityGateStatus: 'conditional-release',
+      },
+    ]
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('条件放行')
+    expect(wrapper.get('a[aria-label="受限上架 IB-1"]').attributes('data-to')).toContain(
+      '/wms/putaway',
+    )
+  })
+
+  it('keeps putaway disabled when the inbound response has not released the order', async () => {
+    wms.isReleasedForPutaway = false
+    wms.receivingQualityGates = [
+      {
+        inboundOrderNo: 'IB-1',
+        lineNo: '1',
+        skuCode: 'SKU-001',
+        qualityGateStatus: 'passed',
+      },
+    ]
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.get('button[aria-label="上架 IB-1"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('WMS 尚未返回整单上架放行权限')
   })
 
   it('blocks inbound creation when a required line field or positive quantity is missing', async () => {

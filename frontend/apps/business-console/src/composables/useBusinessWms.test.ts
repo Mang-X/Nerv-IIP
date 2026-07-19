@@ -3,7 +3,9 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
+  listBusinessConsoleWmsReceivingQualityGates,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
+  listBusinessConsoleWmsSupplierReturnRequests,
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
   listBusinessConsoleWmsWcsTasksQueryOptions,
 } from '@nerv-iip/api-client'
@@ -30,6 +32,8 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleWmsSupplierReturnRequests' }],
     query: vi.fn(),
   })),
+  listBusinessConsoleWmsReceivingQualityGates: vi.fn(),
+  listBusinessConsoleWmsSupplierReturnRequests: vi.fn(),
   listBusinessConsoleWmsOutboundOrdersQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleWmsOutboundOrders' }],
     query: vi.fn(),
@@ -109,6 +113,74 @@ describe('business WMS composables', () => {
       { inboundOrderId: 'in-1', inboundOrderNo: 'IN-001' },
     ])
     expect(result.inboundOrdersTotal.value).toBe(23)
+    expect(
+      coladaState.queryOptionsById.get('listBusinessConsoleWmsInboundOrders')?.autoRefetch?.(),
+    ).toBe(10_000)
+  })
+
+  it('reads receiving quality and supplier returns through all server pages', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    const gateSkips: number[] = []
+    const returnSkips: number[] = []
+    vi.mocked(listBusinessConsoleWmsReceivingQualityGates).mockImplementation((({
+      query,
+    }: {
+      query?: { skip?: number }
+    }) => {
+      gateSkips.push(query?.skip ?? 0)
+      return Promise.resolve({
+        data: {
+          success: true,
+          data: {
+            total: 2,
+            items: [{ inboundOrderNo: gateSkips.length === 1 ? 'IN-001' : 'IN-002' }],
+          },
+        },
+        request: new Request('http://test.local'),
+        response: new Response(),
+      } as Awaited<ReturnType<typeof listBusinessConsoleWmsReceivingQualityGates>>)
+    }) as never)
+    vi.mocked(listBusinessConsoleWmsSupplierReturnRequests).mockImplementation((({
+      query,
+    }: {
+      query?: { skip?: number }
+    }) => {
+      returnSkips.push(query?.skip ?? 0)
+      return Promise.resolve({
+        data: {
+          success: true,
+          data: {
+            total: 2,
+            items: [{ supplierReturnNo: returnSkips.length === 1 ? 'RTS-001' : 'RTS-002' }],
+          },
+        },
+        request: new Request('http://test.local'),
+        response: new Response(),
+      } as Awaited<ReturnType<typeof listBusinessConsoleWmsSupplierReturnRequests>>)
+    }) as never)
+
+    useWmsInboundOrders()
+    type QualityQueryEnvelope = { data?: { items?: unknown[] } }
+    type QualityQueryOption = {
+      query?: () => Promise<QualityQueryEnvelope>
+      autoRefetch?: () => number
+    }
+    const gateQuery = coladaState.queryOptionsById.get(
+      'listBusinessConsoleWmsReceivingQualityGates',
+    ) as QualityQueryOption | undefined
+    const returnQuery = coladaState.queryOptionsById.get(
+      'listBusinessConsoleWmsSupplierReturnRequests',
+    ) as QualityQueryOption | undefined
+
+    const gateEnvelope = await gateQuery?.query?.()
+    const returnEnvelope = await returnQuery?.query?.()
+
+    expect(gateSkips).toEqual([0, 1])
+    expect(returnSkips).toEqual([0, 1])
+    expect(gateEnvelope?.data?.items).toHaveLength(2)
+    expect(returnEnvelope?.data?.items).toHaveLength(2)
+    expect(gateQuery?.autoRefetch?.()).toBe(10_000)
   })
 
   it('lists outbound orders with status and keyword filters', () => {

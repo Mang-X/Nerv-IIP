@@ -12,6 +12,8 @@ const props = defineProps<{
   inboundOrderNo: string
   gates: BusinessConsoleWmsReceivingQualityGateItem[]
   supplierReturns: BusinessConsoleWmsSupplierReturnItem[]
+  qualityGateStatus?: string
+  isReleasedForPutaway?: boolean
   loading: boolean
   error?: unknown
 }>()
@@ -22,6 +24,51 @@ const orderGates = computed(() =>
 const orderReturns = computed(() =>
   props.supplierReturns.filter((item) => item.inboundOrderNo === props.inboundOrderNo),
 )
+
+type GateCategory =
+  | 'not-required'
+  | 'pending'
+  | 'passed'
+  | 'conditional-release'
+  | 'rejected'
+  | 'unknown'
+
+function normalize(value?: string | null) {
+  return (value ?? '').trim().toLowerCase()
+}
+
+function gateCategory(value?: string | null): GateCategory {
+  const status = normalize(value)
+  if (
+    status === 'not-required' ||
+    status === 'pending' ||
+    status === 'passed' ||
+    status === 'conditional-release' ||
+    status === 'rejected'
+  ) {
+    return status
+  }
+  return 'unknown'
+}
+
+const orderCategory = computed<GateCategory>(() => {
+  const categories = orderGates.value.map((gate) => gateCategory(gate.qualityGateStatus))
+  if (categories.length === 0 || categories.includes('unknown')) return 'unknown'
+
+  const serverCategory = gateCategory(props.qualityGateStatus)
+  if (serverCategory !== 'unknown') return serverCategory
+
+  if (categories.includes('rejected')) return 'rejected'
+  if (categories.includes('pending')) return 'pending'
+  if (categories.includes('conditional-release')) return 'conditional-release'
+  if (categories.length > 0 && categories.every((category) => category === 'not-required')) {
+    return 'not-required'
+  }
+  if (categories.length > 0 && categories.every((category) => category === 'passed')) {
+    return 'passed'
+  }
+  return 'unknown'
+})
 
 const summary = computed(() => {
   if (props.loading)
@@ -36,53 +83,41 @@ const summary = computed(() => {
       value: 'unknown',
       description: '无法确认质检状态，已停止上架操作。请刷新或联系管理员。',
     }
-  if (orderGates.value.length === 0)
+  if (orderGates.value.length === 0 || orderCategory.value === 'unknown')
     return {
       label: '门禁缺少',
       value: 'unknown',
       description: '当前响应没有这张入库单的质检行，不能据此放行上架。',
     }
 
-  const statuses = orderGates.value.map((gate) => normalize(gate.qualityGateStatus))
-  if (statuses.includes('rejected'))
+  if (orderCategory.value === 'rejected')
     return {
       label: '不合格',
       value: 'rejected',
       description: '不合格物料须留在隔离库位并按真实退供单处理。',
     }
-  if (
-    statuses.includes('pending') ||
-    statuses.includes('inspection') ||
-    statuses.includes('in-progress')
-  ) {
+  if (orderCategory.value === 'pending') {
     return {
       label: '待检',
       value: 'pending',
       description: '检验完成前不能上架，物料留在待检暂存位置。',
     }
   }
-  if (statuses.includes('conditional-release') || statuses.includes('conditionalrelease')) {
+  if (orderCategory.value === 'conditional-release') {
     return {
       label: '条件放行',
       value: 'conditional-release',
       description: '已允许受限上架，请按质量处置要求操作。',
     }
   }
-  if (
-    statuses.every(
-      (status) =>
-        status === 'not-required' ||
-        status === 'passed' ||
-        status === 'accepted' ||
-        status === 'available',
-    )
-  ) {
+  if (orderCategory.value === 'not-required' || orderCategory.value === 'passed') {
     return {
-      label: statuses.every((status) => status === 'not-required') ? '免检' : '合格',
+      label: orderCategory.value === 'not-required' ? '免检' : '合格',
       value: 'released',
-      description: statuses.every((status) => status === 'not-required')
-        ? '已跳过待检，可进入上架。'
-        : '检验已通过，可进入上架。',
+      description:
+        orderCategory.value === 'not-required'
+          ? '已跳过待检，可进入上架。'
+          : '检验已通过，可进入上架。',
     }
   }
   return {
@@ -93,15 +128,29 @@ const summary = computed(() => {
 })
 
 const putawayDisabled = computed(
-  () => summary.value.value !== 'released' && summary.value.value !== 'conditional-release',
+  () =>
+    props.isReleasedForPutaway !== true ||
+    (summary.value.value !== 'released' && summary.value.value !== 'conditional-release'),
 )
 const putawayLabel = computed(() =>
-  orderGates.value.some((gate) => {
-    const status = normalize(gate.qualityGateStatus)
-    return status === 'conditional-release' || status === 'conditionalrelease'
-  })
-    ? '受限上架'
-    : '上架',
+  orderCategory.value === 'conditional-release' ? '受限上架' : '上架',
+)
+const flowLabel = computed(() => {
+  if (summary.value.value === 'rejected') return '收货 → 待检 → 隔离/退供'
+  if (summary.value.value === 'pending') return '收货 → 待检 → 上架'
+  if (summary.value.value === 'conditional-release') return '收货 → 待检 → 受限上架'
+  if (orderCategory.value === 'not-required') return '收货 → 免检 → 上架'
+  if (summary.value.value === 'released') return '收货 → 待检 → 合格上架'
+  return '收货 → 质检门禁确认 → 上架'
+})
+const putawayRoute = computed(() => ({
+  path: '/wms/putaway',
+  query: { inboundOrderNo: props.inboundOrderNo },
+}))
+const putawayPermissionExplanation = computed(() =>
+  props.loading || props.error || props.isReleasedForPutaway === true
+    ? ''
+    : 'WMS 尚未返回整单上架放行权限，当前操作已禁用。',
 )
 const visibleLocations = computed(() => [
   ...new Set(orderGates.value.map((gate) => gate.stagingLocationCode).filter(Boolean)),
@@ -110,23 +159,24 @@ const inspectionRecordIds = computed(() => [
   ...new Set(orderGates.value.map((gate) => gate.inspectionRecordId).filter(Boolean)),
 ])
 
-function normalize(value?: string | null) {
-  return (value ?? '').trim().toLowerCase().replaceAll('_', '-')
-}
-
 function returnFor(gate: BusinessConsoleWmsReceivingQualityGateItem) {
+  if (!gate.lineNo || !gate.skuCode) return undefined
   return orderReturns.value.find(
     (item) => item.inboundOrderLineNo === gate.lineNo && item.skuCode === gate.skuCode,
   )
 }
 
+const lineFacts = computed(() =>
+  orderGates.value.map((gate) => ({ gate, supplierReturn: returnFor(gate) })),
+)
+
 function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
-  const status = normalize(gate.qualityGateStatus)
-  if (status === 'not-required') return '免检'
-  if (status === 'conditional-release' || status === 'conditionalrelease') return '条件放行'
-  if (status === 'rejected') return '不合格'
-  if (status === 'pending' || status === 'inspection' || status === 'in-progress') return '待检'
-  if (status === 'passed' || status === 'accepted' || status === 'available') return '合格'
+  const category = gateCategory(gate.qualityGateStatus)
+  if (category === 'not-required') return '免检'
+  if (category === 'conditional-release') return '条件放行'
+  if (category === 'rejected') return '不合格'
+  if (category === 'pending') return '待检'
+  if (category === 'passed') return '合格'
   return '门禁待确认'
 }
 </script>
@@ -135,7 +185,7 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
   <div class="grid gap-2 rounded-lg border bg-muted/20 p-3" data-testid="receiving-quality-flow">
     <div class="flex flex-wrap items-center gap-2">
       <NvStatusBadge :value="summary.label" />
-      <span class="text-sm font-medium">收货 → 待检 → 上架</span>
+      <span class="text-sm font-medium">{{ flowLabel }}</span>
       <span class="text-sm text-muted-foreground">{{ summary.description }}</span>
     </div>
 
@@ -153,7 +203,7 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
       role="status"
     >
       <ClipboardCheckIcon class="size-4" aria-hidden="true" />
-      待检期间上架按钮已禁用，检验状态回写后请刷新本页。
+      待检期间上架按钮已禁用，检验状态会自动刷新收敛。
     </p>
     <p
       v-else-if="summary.value === 'conditional-release'"
@@ -186,23 +236,26 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
     </div>
 
     <div
-      v-for="gate in orderGates"
-      :key="gate.inboundOrderLineId"
+      v-for="line in lineFacts"
+      :key="line.gate.inboundOrderLineId"
       class="flex flex-wrap items-center gap-2 text-xs"
     >
-      <span class="font-medium">第 {{ gate.lineNo }} 行 · {{ gate.skuCode }}</span>
-      <NvStatusBadge :value="gateLabel(gate)" />
-      <span v-if="normalize(gate.qualityGateStatus) === 'rejected'" class="text-destructive">
-        {{ gate.qualityDispositionReason || '质量不合格' }}
+      <span class="font-medium">第 {{ line.gate.lineNo }} 行 · {{ line.gate.skuCode }}</span>
+      <NvStatusBadge :value="gateLabel(line.gate)" />
+      <span
+        v-if="gateCategory(line.gate.qualityGateStatus) === 'rejected'"
+        class="text-destructive"
+      >
+        {{ line.gate.qualityDispositionReason || '质量不合格' }}
       </span>
-      <template v-if="returnFor(gate)">
+      <template v-if="line.supplierReturn">
         <span class="text-destructive"
-          >退供应商 {{ returnFor(gate)?.supplierReturnNo }} · 隔离
-          {{ returnFor(gate)?.locationCode }}</span
+          >退供应商 {{ line.supplierReturn.supplierReturnNo }} · 隔离
+          {{ line.supplierReturn.locationCode }}</span
         >
       </template>
       <span
-        v-else-if="normalize(gate.qualityGateStatus) === 'rejected'"
+        v-else-if="gateCategory(line.gate.qualityGateStatus) === 'rejected'"
         class="text-muted-foreground"
       >
         退供单：暂无真实记录
@@ -211,6 +264,7 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
 
     <div class="flex flex-wrap items-center gap-2">
       <NvButton
+        v-if="putawayDisabled"
         size="sm"
         type="button"
         variant="outline"
@@ -219,6 +273,14 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
       >
         {{ putawayLabel }}
       </NvButton>
+      <NvButton v-else size="sm" type="button" variant="outline" as-child>
+        <RouterLink :to="putawayRoute" :aria-label="`${putawayLabel} ${inboundOrderNo}`">
+          {{ putawayLabel }}
+        </RouterLink>
+      </NvButton>
+      <span v-if="putawayDisabled && putawayPermissionExplanation" class="text-xs text-warning">
+        {{ putawayPermissionExplanation }}
+      </span>
       <NvButton size="sm" type="button" variant="ghost" as-child>
         <RouterLink
           :to="{ path: '/quality/inspection-tasks', query: { sourceDocumentNo: inboundOrderNo } }"

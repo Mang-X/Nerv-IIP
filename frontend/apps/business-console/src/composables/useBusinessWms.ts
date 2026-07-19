@@ -14,6 +14,8 @@ import {
   listBusinessConsoleWmsInboundOrdersQueryOptions,
   listBusinessConsoleWmsReceivingQualityGatesQueryOptions,
   listBusinessConsoleWmsSupplierReturnRequestsQueryOptions,
+  listBusinessConsoleWmsReceivingQualityGates,
+  listBusinessConsoleWmsSupplierReturnRequests,
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
   listBusinessConsoleWmsPickingTasksQueryOptions,
   listBusinessConsoleWmsPutawayTasksQueryOptions,
@@ -48,6 +50,62 @@ import {
 } from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
+const RECEIVING_QUALITY_POLL_INTERVAL_MS = 10_000
+const RECEIVING_QUALITY_PAGE_SIZE = 500
+
+type WmsListEnvelope<TItem> = {
+  success?: boolean
+  data?: { items?: TItem[]; total?: number } | null
+}
+
+async function fetchAllReceivingQualityGates(query: {
+  organizationId: string
+  environmentId: string
+  includeNotRequired: boolean
+}) {
+  return fetchAllWmsPages((skip) =>
+    listBusinessConsoleWmsReceivingQualityGates({
+      query: { ...query, skip, take: RECEIVING_QUALITY_PAGE_SIZE },
+      throwOnError: true,
+    }).then(({ data }) => data),
+  )
+}
+
+async function fetchAllSupplierReturns(query: { organizationId: string; environmentId: string }) {
+  return fetchAllWmsPages((skip) =>
+    listBusinessConsoleWmsSupplierReturnRequests({
+      query: { ...query, skip, take: RECEIVING_QUALITY_PAGE_SIZE },
+      throwOnError: true,
+    }).then(({ data }) => data),
+  )
+}
+
+async function fetchAllWmsPages<TItem>(
+  fetchPage: (skip: number) => Promise<WmsListEnvelope<TItem>>,
+): Promise<WmsListEnvelope<TItem>> {
+  const items: TItem[] = []
+  let total = 0
+  let skip = 0
+  let firstPage: WmsListEnvelope<TItem> | undefined
+
+  while (true) {
+    const page = await fetchPage(skip)
+    firstPage ??= page
+    if (!page.success) return page
+
+    const pageItems = page.data?.items ?? []
+    total = page.data?.total ?? 0
+    items.push(...pageItems)
+    if (pageItems.length === 0 || items.length >= total) break
+    skip += pageItems.length
+  }
+
+  return {
+    ...firstPage,
+    success: true,
+    data: { ...firstPage?.data, items, total },
+  }
+}
 
 export interface WmsListFilters {
   organizationId: string
@@ -134,8 +192,8 @@ function makeIdempotencyKey(): string {
 
 export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilters> = {}) {
   const filters = defaultFilters<WmsInboundListFilters>(initialFilters)
-  const inboundOrdersQuery = useQuery(() =>
-    withBusinessContextEnabled(
+  const inboundOrdersQuery = useQuery(() => ({
+    ...withBusinessContextEnabled(
       listBusinessConsoleWmsInboundOrdersQueryOptions({
         query: {
           ...baseQuery(filters),
@@ -152,49 +210,69 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
       }),
       filters,
     ),
-  )
+    autoRefetch: () => RECEIVING_QUALITY_POLL_INTERVAL_MS,
+  }))
   const receivingQualityGatesQuery = useQuery(() =>
     withBusinessContextEnabled(
-      listBusinessConsoleWmsReceivingQualityGatesQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          skip: 0,
-          take: 500,
-          includeNotRequired: true,
-        },
-      }),
+      {
+        ...listBusinessConsoleWmsReceivingQualityGatesQueryOptions({
+          query: {
+            organizationId: filters.organizationId,
+            environmentId: filters.environmentId,
+            skip: 0,
+            take: RECEIVING_QUALITY_PAGE_SIZE,
+            includeNotRequired: true,
+          },
+        }),
+        query: () =>
+          fetchAllReceivingQualityGates({
+            organizationId: filters.organizationId,
+            environmentId: filters.environmentId,
+            includeNotRequired: true,
+          }),
+        autoRefetch: () => RECEIVING_QUALITY_POLL_INTERVAL_MS,
+      },
       filters,
     ),
   )
   const supplierReturnsQuery = useQuery(() =>
     withBusinessContextEnabled(
-      listBusinessConsoleWmsSupplierReturnRequestsQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          skip: 0,
-          take: 500,
-        },
-      }),
+      {
+        ...listBusinessConsoleWmsSupplierReturnRequestsQueryOptions({
+          query: {
+            organizationId: filters.organizationId,
+            environmentId: filters.environmentId,
+            skip: 0,
+            take: RECEIVING_QUALITY_PAGE_SIZE,
+          },
+        }),
+        query: () =>
+          fetchAllSupplierReturns({
+            organizationId: filters.organizationId,
+            environmentId: filters.environmentId,
+          }),
+        autoRefetch: () => RECEIVING_QUALITY_POLL_INTERVAL_MS,
+      },
       filters,
     ),
   )
 
+  function refreshAll() {
+    void refetchWithBusinessContext(filters, inboundOrdersQuery)
+    void refetchWithBusinessContext(filters, receivingQualityGatesQuery)
+    void refetchWithBusinessContext(filters, supplierReturnsQuery)
+  }
+
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsInboundOrderMutationOptions(),
     onSuccess() {
-      void refetchWithBusinessContext(filters, inboundOrdersQuery)
-      void refetchWithBusinessContext(filters, receivingQualityGatesQuery)
-      void refetchWithBusinessContext(filters, supplierReturnsQuery)
+      refreshAll()
     },
   })
   const createMutation = useMutation({
     ...createBusinessConsoleWmsInboundOrderMutationOptions(),
     onSuccess() {
-      void refetchWithBusinessContext(filters, inboundOrdersQuery)
-      void refetchWithBusinessContext(filters, receivingQualityGatesQuery)
-      void refetchWithBusinessContext(filters, supplierReturnsQuery)
+      refreshAll()
     },
   })
 
