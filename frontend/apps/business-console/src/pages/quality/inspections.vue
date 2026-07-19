@@ -243,8 +243,8 @@ const validResultLines = computed(() =>
 )
 const canCreateRecord = computed(
   () =>
-    isNonEmpty(recordForm.organizationId) &&
-    isNonEmpty(recordForm.environmentId) &&
+    (isInspectionTaskFlow.value ||
+      (isNonEmpty(recordForm.organizationId) && isNonEmpty(recordForm.environmentId))) &&
     isNonEmpty(recordForm.sourceType) &&
     isNonEmpty(recordForm.sourceService) &&
     isNonEmpty(recordForm.sourceDocumentId) &&
@@ -567,6 +567,7 @@ function isPresent(value: string | undefined | null): value is string {
                 inputmode="decimal"
                 min="0.000001"
                 required
+                step="any"
                 type="number"
               />
             </NvField>

@@ -91,7 +91,14 @@ const columns: NvDataTableColumn<BusinessConsoleQualityInspectionTaskItem>[] = [
     width: 'w-36',
     accessor: (row) => formatDateTime(row.dueAtUtc),
   },
-  { key: 'actions', header: '操作', width: 'w-32', accessor: () => '' },
+  {
+    key: 'actions',
+    header: '操作',
+    width: 'w-32',
+    headerClass: 'sticky right-0 z-20 bg-card shadow-[-1px_0_0_0_var(--border)]',
+    cellClass: 'sticky right-0 z-10 bg-card shadow-[-1px_0_0_0_var(--border)]',
+    accessor: () => '',
+  },
 ]
 
 function sourceLabel(value?: string | null) {
@@ -211,6 +218,7 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
     </p>
 
     <NvDataTable
+      v-if="!listErrorMessage"
       manual
       :page="page"
       :page-size="pageSize"

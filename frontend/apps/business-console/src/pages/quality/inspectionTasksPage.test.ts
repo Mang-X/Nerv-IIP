@@ -104,7 +104,7 @@ const stubs = {
   NvDataTable: {
     props: ['rows'],
     template:
-      '<div><div v-for="row in rows" :key="row.inspectionTaskId"><slot name="cell-sourceDocumentId" :row="row" /> {{ row.skuCode }}<slot name="cell-dueAtUtc" :row="row" /><slot name="cell-actions" :row="row" /></div></div>',
+      '<div data-testid="task-table"><div v-for="row in rows" :key="row.inspectionTaskId"><slot name="cell-sourceDocumentId" :row="row" /> {{ row.skuCode }}<slot name="cell-dueAtUtc" :row="row" /><slot name="cell-actions" :row="row" /></div></div>',
   },
   NvField: { template: '<div><slot /></div>' },
   NvFieldLabel: { template: '<label><slot /></label>' },
@@ -136,6 +136,13 @@ describe('quality inspection task workbench page', () => {
     expect(wrapper.find('[data-to="/mes/work-orders/WO-002"]').exists()).toBe(true)
     expect(wrapper.findAll('[data-to="/wms/inbound"]')).toHaveLength(1)
     expect(wrapper.text()).toContain('PR-001')
+    const actionColumn = (
+      wrapper.vm as unknown as {
+        columns: Array<{ key: string; headerClass?: string; cellClass?: string }>
+      }
+    ).columns.find((column) => column.key === 'actions')
+    expect(actionColumn?.headerClass).toContain('sticky')
+    expect(actionColumn?.cellClass).toContain('sticky')
   })
 
   it('opens the existing inspection form without inventing a source document number', async () => {
@@ -159,5 +166,6 @@ describe('quality inspection task workbench page', () => {
     expect(wrapper.text()).toContain('待检任务加载失败，请稍后重试。')
     expect(wrapper.text()).toContain('重试')
     expect(wrapper.text()).not.toContain('当前没有待检任务')
+    expect(wrapper.find('[data-testid="task-table"]').exists()).toBe(false)
   })
 })

@@ -25,7 +25,10 @@ vi.mock('@/composables/useQualityInspectionTasks', () => ({
 }))
 
 const qualityState = vi.hoisted(() => ({
-  inspectionFilters: undefined as { status?: string; keyword?: string } | undefined,
+  inspectionFilters: undefined as
+    | { organizationId: string; environmentId: string; status?: string; keyword?: string }
+    | undefined,
+  inspectionContextInitiallyEmpty: false,
   recordError: undefined as unknown,
   inspectionPlans: [
     {
@@ -97,8 +100,8 @@ vi.mock('@/composables/useBusinessQuality', async () => {
     },
     useQualityInspectionPlans: (initial = {}) => {
       const filters = reactive({
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
+        organizationId: qualityState.inspectionContextInitiallyEmpty ? '' : 'org-001',
+        environmentId: qualityState.inspectionContextInitiallyEmpty ? '' : 'env-dev',
         status: undefined as string | undefined,
         keyword: undefined as string | undefined,
         skip: 0,
@@ -219,6 +222,11 @@ const uiStubs = {
   NvSelectItem: { props: ['value'], template: '<div><slot /></div>' },
   NvSelectTrigger: { template: '<button><slot /></button>' },
   NvSelectValue: true,
+  NvDialog: { props: ['open'], template: '<div v-if="open" data-dialog><slot /></div>' },
+  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
+  NvDialogHeader: { template: '<div><slot /></div>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
   SelectTrigger: { template: '<button><slot /></button>' },
   SelectValue: true,
   Sheet: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
@@ -250,6 +258,7 @@ describe('quality route location behavior', () => {
   beforeEach(() => {
     routeState.route!.query = {}
     qualityState.inspectionFilters = undefined
+    qualityState.inspectionContextInitiallyEmpty = false
     qualityState.ncrFilters = undefined
     qualityState.recordError = undefined
     qualityState.planCharacteristics = [
@@ -339,6 +348,50 @@ describe('quality route location behavior', () => {
         unitCode: 'mm',
       }),
     ])
+  })
+
+  it('accepts whole-number quantities prefilled by an inspection task', async () => {
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '1200',
+      action: 'create',
+    }
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+
+    expect(wrapper.get('#record-quantity').attributes('step')).toBe('any')
+  })
+
+  it('enables task submission after business context arrives asynchronously', async () => {
+    qualityState.inspectionContextInitiallyEmpty = true
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    qualityState.inspectionFilters!.organizationId = 'org-001'
+    qualityState.inspectionFilters!.environmentId = 'env-dev'
+    const vm = wrapper.vm as unknown as {
+      recordForm: { resultLines: Array<{ observedValue: string }> }
+      canCreateRecord: boolean
+    }
+    vm.recordForm.resultLines[0]!.observedValue = '10.1'
+    await nextRenderTick()
+
+    expect(vm.canCreateRecord).toBe(true)
   })
 
   it('preserves inspector input when plan characteristics arrive asynchronously', async () => {
