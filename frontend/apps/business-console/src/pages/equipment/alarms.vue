@@ -106,6 +106,25 @@ function alarmKey(row: Alarm) {
   return row.alarmEventId ?? `${row.deviceAssetId}-${row.alarmCode}`
 }
 
+function historyQuery(row: Alarm): LocationQueryRaw {
+  const raisedAt = row.raisedAtUtc ? new Date(row.raisedAtUtc) : undefined
+  if (!raisedAt || Number.isNaN(raisedAt.getTime())) {
+    return { deviceAssetId: row.deviceAssetId }
+  }
+
+  const windowStart = new Date(raisedAt)
+  windowStart.setHours(windowStart.getHours() - 4)
+  const clearedAt = row.clearedAtUtc ? new Date(row.clearedAtUtc) : undefined
+  const windowEnd = clearedAt && !Number.isNaN(clearedAt.getTime()) ? clearedAt : new Date(raisedAt)
+  if (!clearedAt || Number.isNaN(clearedAt.getTime())) windowEnd.setHours(windowEnd.getHours() + 4)
+
+  return {
+    deviceAssetId: row.deviceAssetId,
+    windowEndUtc: windowEnd.toISOString(),
+    windowStartUtc: windowStart.toISOString(),
+  }
+}
+
 const columns: NvDataTableColumn<Alarm>[] = [
   {
     key: 'alarmEventId',
@@ -675,7 +694,7 @@ function formatError(error: unknown) {
             <RouterLink
               :to="{
                 path: '/equipment/telemetry/history',
-                query: { deviceAssetId: row.deviceAssetId },
+                query: historyQuery(row),
               }"
             >
               <LineChartIcon aria-hidden="true" />
