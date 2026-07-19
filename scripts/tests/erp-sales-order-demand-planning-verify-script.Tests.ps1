@@ -35,7 +35,7 @@ Assert-Contract ($content.Contains('Nerv.IIP.Business.Erp.Web.csproj')) 'Verify 
 Assert-Contract ($content.Contains('Nerv.IIP.Business.DemandPlanning.Web.csproj')) 'Verify script must launch DemandPlanning in its own process.'
 Assert-Contract ($content.Contains("Messaging__Provider = 'Redis'")) 'Verify script must use the real Redis CAP provider.'
 Assert-Contract ($content.Contains("Erp__Seed__SalesOrderDemandDemo__Enabled = 'true'")) 'Verify script must prove the reusable SO-DEMO-001 seed publishes through the real cross-process bridge.'
-Assert-Contract ($content.Contains('man517-read-seeded-sales-order-id')) 'Verify script must read the persisted seed identity for fault injection instead of recreating the reserved order.'
+Assert-Contract (-not $content.Contains('NERV_IIP_TEST_SALES_ORDER_ID')) 'Fault injection must resolve the seeded order identity from DemandPlanning persistence instead of fragile shell output.'
 Assert-Contract ($content.Contains('out-of-order')) 'Verify script must assert stale/out-of-order convergence.'
 Assert-Contract ($content.Contains('$runningResult.Stdout')) 'Verify script must parse the compose service list from Invoke-NativeCommandOutput.Stdout before cleanup ownership is decided.'
 Assert-Contract ($content.Contains('UnitTestResult')) 'Verify script must prove the external fault-injection test actually executed and passed.'

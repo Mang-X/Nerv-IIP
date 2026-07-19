@@ -188,15 +188,6 @@ try {
         'X-Authenticated-Actor' = 'user:planner-demo'
     }
     $released = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 1 -Quantity 2 -Status 'active'
-    $salesOrderIdQuery = Invoke-NativeCommandOutput -Command 'docker' -Arguments @(
-        'compose', '-f', $composeFile, 'exec', '-T', 'postgres',
-        'psql', '-U', 'nerv', '-d', $databaseName, '-t', '-A', '-v', 'ON_ERROR_STOP=1',
-        '-c', "SELECT id FROM erp.sales_orders WHERE organization_id = 'org-001' AND environment_id = 'env-dev' AND sales_order_no = 'SO-DEMO-001';"
-    ) -WorkingDirectory $root -Name 'man517-read-seeded-sales-order-id'
-    $salesOrderId = "$($salesOrderIdQuery.Stdout)".Trim()
-    if ([string]::IsNullOrWhiteSpace($salesOrderId)) {
-        throw 'The MAN-517 demo seed did not persist SO-DEMO-001.'
-    }
 
     Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; lineNo = '10'; orderedQuantity = 4; unitPrice = 100; requiredDate = '2026-08-15'; reason = 'MAN-517 change v2'
@@ -211,7 +202,6 @@ try {
         NERV_IIP_TEST_POSTGRES = $databaseConnectionString
         NERV_IIP_TEST_REDIS = $RedisConnectionString
         NERV_IIP_TEST_CAP_VERSION = $capVersion
-        NERV_IIP_TEST_SALES_ORDER_ID = $salesOrderId
         NERV_IIP_TEST_PROBE_RUN_ID = [Guid]::NewGuid().ToString('N')
     } -ScriptBlock {
         $probeResultsDirectory = Join-Path $root 'artifacts/acceptance/man517'

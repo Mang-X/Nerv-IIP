@@ -18,7 +18,6 @@ public sealed class SalesOrderDemandPlanningPostgresRedisAcceptanceTests
         var postgres = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
         var redis = Environment.GetEnvironmentVariable("NERV_IIP_TEST_REDIS")!;
         var capVersion = Environment.GetEnvironmentVariable("NERV_IIP_TEST_CAP_VERSION")!;
-        var salesOrderId = Environment.GetEnvironmentVariable("NERV_IIP_TEST_SALES_ORDER_ID")!;
         var probeRunId = Environment.GetEnvironmentVariable("NERV_IIP_TEST_PROBE_RUN_ID")!;
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -41,6 +40,22 @@ public sealed class SalesOrderDemandPlanningPostgresRedisAcceptanceTests
 
         await using var provider = services.BuildServiceProvider();
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(CancellationToken.None);
+        string salesOrderId;
+        await using (var sourceScope = provider.CreateAsyncScope())
+        {
+            var sourceDbContext = sourceScope.ServiceProvider.GetRequiredService<DemandPlanningDbContext>();
+            salesOrderId = await sourceDbContext.DemandSources
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == "org-001" &&
+                    x.EnvironmentId == "env-dev" &&
+                    x.DemandType == "sales-order" &&
+                    x.SourceReference == "SO-DEMO-001")
+                .Select(x => x.SourceDocumentId)
+                .Distinct()
+                .SingleAsync();
+        }
+
         var publisher = provider.GetRequiredService<ICapPublisher>();
         var duplicateEvent = Changed(salesOrderId, 3, 999m, $"{probeRunId}-duplicate-v3");
         var staleEvent = Changed(salesOrderId, 2, 888m, $"{probeRunId}-out-of-order-v2");
@@ -100,12 +115,11 @@ internal sealed class RealPostgresRedisSalesOrderFactAttribute : FactAttribute
             "NERV_IIP_TEST_POSTGRES",
             "NERV_IIP_TEST_REDIS",
             "NERV_IIP_TEST_CAP_VERSION",
-            "NERV_IIP_TEST_SALES_ORDER_ID",
             "NERV_IIP_TEST_PROBE_RUN_ID",
         };
         if (required.Any(name => string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name))))
         {
-            Skip = "Set the MAN-517 PostgreSQL, Redis, CAP version, and sales-order id variables to run the external-process fault injector.";
+            Skip = "Set the MAN-517 PostgreSQL, Redis, CAP version, and probe-run variables to run the external-process fault injector.";
         }
     }
 }
