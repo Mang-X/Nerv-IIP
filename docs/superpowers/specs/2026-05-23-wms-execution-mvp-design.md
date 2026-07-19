@@ -126,3 +126,44 @@ Acceptance requires:
 5. Schema convention tests using `Nerv.IIP.Testing`.
 6. Integration event converter/serialization tests for WMS events.
 7. Tests proving WMS schema does not introduce stock balance columns.
+
+## Receiving quality-gate product flow
+
+The Business Console receiving page consumes the WMS quality-gate read model as
+the source of truth for the operator-facing flow. Each inbound order presents
+a server-fact path such as `收货 → 待检 → 合格上架/不合格隔离退供` (or
+`收货 → 免检 → 上架`):
+
+1. Only the WMS gate statuses `pending`, `passed`, `conditional-release`,
+   `rejected` and `not-required` are trusted. Unknown values fail closed.
+   `pending` blocks putaway and explains that inspection must be completed
+   before the action is available.
+2. `not-required` honestly skips the inspection step and releases the line for
+   putaway; no inspection task is invented for exempt lines.
+3. `conditional-release` keeps putaway available only as a visibly restricted
+   action and states that it is not unconditional acceptance.
+4. `rejected` blocks putaway and displays the real quarantine location,
+   disposition reason and supplier-return number when WMS has returned one.
+   The action also requires the inbound read model's
+   `isReleasedForPutaway=true`; the UI never derives that permission locally.
+5. While any line is still `pending`, the inspection-task link uses the stable
+   source-document contract
+   `/quality/inspection-tasks?sourceDocumentNo=<inboundOrderNo>`. Completed
+   gates link to `/quality/inspections` only when WMS returns a real
+   `inspectionRecordId`; exempt lines show that no inspection task exists. The
+   UI does not infer a task or record from SKU or line data.
+
+After a receiving mutation, the page refreshes inbound orders, quality gates
+and supplier returns from the server. The same reads auto-refetch while the
+page is open so an external Quality result converges without a manual reload.
+Quality and return list reads follow all server pages before the page filters by
+the real inbound order number. It never uses local optimistic status to claim
+that a gate or putaway has completed. The enabled putaway action carries both
+the real inbound order number and `inboundOrderId` to the existing
+`/wms/putaway` flow, which opens the create form with the server identifier
+prefilled. Both the handoff and the create form require
+`business.wms.receipts.manage`, and creation requires the positive quantity
+enforced by the Gateway request validator. Inspection-task and record links
+require `business.quality.inspection-records.read`; otherwise the page explains
+the unavailable cross-domain action instead of exposing a dead or unauthorized
+link. The create mutation remains the source of truth for completion.

@@ -13,6 +13,16 @@ const wms = vi.hoisted(() => ({
   createInbound: vi.fn(),
   createOutbound: vi.fn(),
   inventoryContext: undefined as unknown,
+  receivingQualityGates: [] as unknown[],
+  supplierReturns: [] as unknown[],
+  qualityGateStatus: undefined as string | undefined,
+  isReleasedForPutaway: true,
+  permissionCodes: [
+    'business.wms.receipts.read',
+    'business.wms.receipts.manage',
+    'business.quality.inspection-records.read',
+  ] as string[],
+  refreshReceivingQuality: vi.fn(),
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -21,14 +31,28 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 }))
 
 vi.mock('vue-router', () => ({
-  RouterLink: { props: ['to'], template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>' },
+  RouterLink: {
+    props: ['to'],
+    template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
+  },
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: wms.permissionCodes } }),
 }))
 
 vi.mock('@/composables/useBusinessWms', () => ({
   useWmsInboundOrders: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
     inboundOrders: computed(() => [
-      { inboundOrderId: 'ib-1', inboundOrderNo: 'IB-1', status: 'created', createdAtUtc: '2026-06-01T00:00:00Z' },
+      {
+        inboundOrderId: 'ib-1',
+        inboundOrderNo: 'IB-1',
+        status: 'created',
+        createdAtUtc: '2026-06-01T00:00:00Z',
+        qualityGateStatus: wms.qualityGateStatus,
+        isReleasedForPutaway: wms.isReleasedForPutaway,
+      },
     ]),
     inventoryContext: computed(() => wms.inventoryContext),
     inboundOrdersError: shallowRef(undefined),
@@ -41,11 +65,23 @@ vi.mock('@/composables/useBusinessWms', () => ({
     createInbound: wms.createInbound,
     createInboundPending: shallowRef(false),
     createInboundError: shallowRef(undefined),
+    receivingQualityGates: computed(() => wms.receivingQualityGates),
+    receivingQualityGatesPending: shallowRef(false),
+    receivingQualityGatesError: shallowRef(undefined),
+    supplierReturns: computed(() => wms.supplierReturns),
+    supplierReturnsPending: shallowRef(false),
+    supplierReturnsError: shallowRef(undefined),
+    refreshReceivingQuality: wms.refreshReceivingQuality,
   }),
   useWmsOutboundOrders: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
     outboundOrders: computed(() => [
-      { outboundOrderId: 'ob-1', outboundOrderNo: 'OB-1', status: 'created', createdAtUtc: '2026-06-01T00:00:00Z' },
+      {
+        outboundOrderId: 'ob-1',
+        outboundOrderNo: 'OB-1',
+        status: 'created',
+        createdAtUtc: '2026-06-01T00:00:00Z',
+      },
     ]),
     outboundOrdersError: shallowRef(undefined),
     outboundOrdersPending: shallowRef(false),
@@ -61,7 +97,14 @@ vi.mock('@/composables/useBusinessWms', () => ({
   useWmsWcsTasks: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
     wcsTasks: computed(() => [
-      { wcsTaskId: 'w-1', externalTaskId: 'EXT-1', warehouseTaskId: 'WT-1', adapterType: 'docker', status: 'dispatched', attemptCount: 1 },
+      {
+        wcsTaskId: 'w-1',
+        externalTaskId: 'EXT-1',
+        warehouseTaskId: 'WT-1',
+        adapterType: 'docker',
+        status: 'dispatched',
+        attemptCount: 1,
+      },
     ]),
     wcsTasksError: shallowRef(undefined),
     wcsTasksPending: shallowRef(false),
@@ -91,6 +134,15 @@ describe('WMS operate actions', () => {
     wms.createInbound.mockResolvedValue(undefined)
     wms.createOutbound.mockResolvedValue(undefined)
     wms.inventoryContext = undefined
+    wms.receivingQualityGates = []
+    wms.supplierReturns = []
+    wms.qualityGateStatus = undefined
+    wms.isReleasedForPutaway = true
+    wms.permissionCodes = [
+      'business.wms.receipts.read',
+      'business.wms.receipts.manage',
+      'business.quality.inspection-records.read',
+    ]
   })
 
   function setInput(selector: string, value: string) {
@@ -109,7 +161,9 @@ describe('WMS operate actions', () => {
     expect(document.body.textContent).toContain('确认完成入库单 IB-1')
     expect(wms.completeInbound).not.toHaveBeenCalled()
 
-    const confirm = [...document.body.querySelectorAll('button')].find((b) => b.textContent?.trim() === '完成入库')
+    const confirm = [...document.body.querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === '完成入库',
+    )
     confirm?.click()
     await flushPromises()
 
@@ -124,7 +178,9 @@ describe('WMS operate actions', () => {
     await flushPromises()
 
     // Submit without a review number → validation blocks the mutation.
-    document.body.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    document.body
+      .querySelector('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
     expect(wms.completeOutbound).not.toHaveBeenCalled()
     expect(document.body.textContent).toContain('请输入复核单号。')
@@ -133,17 +189,25 @@ describe('WMS operate actions', () => {
     input.value = 'PR-1'
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
-    document.body.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    document.body
+      .querySelector('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
 
-    expect(wms.completeOutbound).toHaveBeenCalledWith('ob-1', { packReviewNo: 'PR-1', passed: true })
+    expect(wms.completeOutbound).toHaveBeenCalledWith('ob-1', {
+      packReviewNo: 'PR-1',
+      passed: true,
+    })
   })
 
   it('creates an inbound order with a line item', async () => {
     const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建入库单'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建入库单'))!
+      .trigger('click')
     await flushPromises()
 
     setInput('#wms-in-no', 'IB-NEW')
@@ -156,7 +220,9 @@ describe('WMS operate actions', () => {
     setInput('[aria-label="第 1 行暂存库位"]', 'A-01')
     await flushPromises()
 
-    document.body.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    document.body
+      .querySelector('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
 
     expect(wms.createInbound).toHaveBeenCalledTimes(1)
@@ -186,7 +252,9 @@ describe('WMS operate actions', () => {
     const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
-    const scanLink = wrapper.get('[data-router-link]')
+    const scanLink = wrapper
+      .findAll('[data-router-link]')
+      .find((link) => link.attributes('data-to')?.includes('/barcode/scans'))!
     const target = scanLink.attributes('data-to')
 
     expect(scanLink.text()).toContain('扫码记录')
@@ -231,17 +299,234 @@ describe('WMS operate actions', () => {
     expect(wrapper.text()).toContain('冻结/其他')
     expect(wrapper.text()).toContain('2')
 
-    const links = wrapper.findAll('[data-router-link]').map((link) => link.attributes('data-to') ?? '')
-    expect(links.some((to) => to.includes('/inventory/lots') && to.includes('LOT-001') && to.includes('SN-001'))).toBe(true)
-    expect(links.some((to) => to.includes('/inventory/availability') && to.includes('SKU-001') && to.includes('A-01'))).toBe(true)
-    expect(links.some((to) => to.includes('/barcode/scans') && to.includes('wms.receiving') && to.includes('IB-1'))).toBe(true)
+    const links = wrapper
+      .findAll('[data-router-link]')
+      .map((link) => link.attributes('data-to') ?? '')
+    expect(
+      links.some(
+        (to) => to.includes('/inventory/lots') && to.includes('LOT-001') && to.includes('SN-001'),
+      ),
+    ).toBe(true)
+    expect(
+      links.some(
+        (to) =>
+          to.includes('/inventory/availability') && to.includes('SKU-001') && to.includes('A-01'),
+      ),
+    ).toBe(true)
+    expect(
+      links.some(
+        (to) =>
+          to.includes('/barcode/scans') && to.includes('wms.receiving') && to.includes('IB-1'),
+      ),
+    ).toBe(true)
+  })
+
+  it('disables putaway while the server reports a pending inspection and explains the gate', async () => {
+    wms.receivingQualityGates = [
+      {
+        inboundOrderNo: 'IB-1',
+        lineNo: '1',
+        skuCode: 'SKU-001',
+        qualityGateStatus: 'pending',
+        qualityStatus: 'inspection',
+        stagingLocationCode: 'QA-STAGE-01',
+      },
+    ]
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('待检')
+    expect(wrapper.text()).toContain('检验完成前不能上架')
+    expect(wrapper.text()).toContain('QA-STAGE-01')
+    expect(wrapper.get('button[aria-label="上架 IB-1"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('a[aria-label="查看检验任务 IB-1"]').attributes('data-to')).toContain(
+      'sourceDocumentNo',
+    )
+  })
+
+  it('shows exempt receiving as released without inventing an inspection task', async () => {
+    wms.receivingQualityGates = [
+      {
+        inboundOrderNo: 'IB-1',
+        lineNo: '1',
+        skuCode: 'SKU-001',
+        qualityGateStatus: 'not-required',
+        qualityStatus: 'available',
+        stagingLocationCode: 'STAGE-01',
+      },
+    ]
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('免检')
+    expect(wrapper.text()).toContain('已跳过待检，可进入上架')
+    const putawayLink = wrapper.get('a[aria-label="上架 IB-1"]')
+    expect(putawayLink.attributes('data-to')).toContain('/wms/putaway')
+    expect(putawayLink.attributes('data-to')).toContain('inboundOrderNo')
+    expect(putawayLink.attributes('data-to')).toContain('IB-1')
+    expect(putawayLink.attributes('data-to')).toContain('inboundOrderId')
+    expect(putawayLink.attributes('data-to')).toContain('ib-1')
+    expect(putawayLink.attributes('data-to')).toContain('create')
+    expect(wrapper.find('a[aria-label="查看检验任务 IB-1"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('免检无需检验任务')
+  })
+
+  it('shows conditional release as restricted putaway and rejected receiving with real return facts', async () => {
+    wms.receivingQualityGates = [
+      {
+        inboundOrderNo: 'IB-1',
+        lineNo: '1',
+        skuCode: 'SKU-001',
+        qualityGateStatus: 'conditional-release',
+        qualityStatus: 'available',
+        stagingLocationCode: 'QA-STAGE-01',
+        inspectionRecordId: 'QI-1',
+      },
+      {
+        inboundOrderNo: 'IB-1',
+        lineNo: '2',
+        skuCode: 'SKU-002',
+        qualityGateStatus: 'rejected',
+        qualityStatus: 'rejected',
+        stagingLocationCode: 'QUAR-01',
+        inspectionRecordId: 'QI-2',
+        qualityDispositionReason: '包装破损',
+      },
+    ]
+    wms.supplierReturns = [
+      {
+        inboundOrderNo: 'IB-1',
+        inboundOrderLineNo: '2',
+        inspectionRecordId: 'QI-2',
+        supplierReturnNo: 'RTS-IB-1-002',
+        skuCode: 'SKU-002',
+        locationCode: 'QUAR-01',
+        dispositionType: 'return-to-supplier',
+        status: 'Open',
+      },
+    ]
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('条件放行')
+    expect(wrapper.text()).toContain('不合格')
+    expect(wrapper.text()).toContain('退供应商')
+    expect(wrapper.text()).toContain('RTS-IB-1-002')
+    expect(wrapper.text()).toContain('QUAR-01')
+    expect(wrapper.find('a[aria-label="查看检验任务 IB-1"]').exists()).toBe(false)
+    const inspectionRecordLinks = wrapper
+      .findAll('[data-router-link]')
+      .map((link) => link.attributes('data-to') ?? '')
+      .filter((to) => to.includes('/quality/inspections'))
+    expect(inspectionRecordLinks).toHaveLength(2)
+    expect(inspectionRecordLinks.some((to) => to.includes('QI-1'))).toBe(true)
+    expect(inspectionRecordLinks.some((to) => to.includes('QI-2'))).toBe(true)
+  })
+
+  it('routes a conditionally released order to restricted putaway', async () => {
+    wms.receivingQualityGates = [
+      {
+        inboundOrderNo: 'IB-1',
+        lineNo: '1',
+        skuCode: 'SKU-001',
+        qualityGateStatus: 'conditional-release',
+      },
+    ]
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('条件放行')
+    expect(wrapper.get('a[aria-label="受限上架 IB-1"]').attributes('data-to')).toContain(
+      '/wms/putaway',
+    )
+  })
+
+  it('keeps putaway disabled when the inbound response has not released the order', async () => {
+    wms.isReleasedForPutaway = false
+    wms.receivingQualityGates = [
+      {
+        inboundOrderNo: 'IB-1',
+        lineNo: '1',
+        skuCode: 'SKU-001',
+        qualityGateStatus: 'passed',
+      },
+    ]
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.get('button[aria-label="上架 IB-1"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('WMS 尚未返回整单上架放行权限')
+  })
+
+  it('keeps putaway disabled for a read-only WMS principal', async () => {
+    wms.permissionCodes = ['business.wms.receipts.read', 'business.quality.inspection-records.read']
+    wms.qualityGateStatus = 'passed'
+    wms.receivingQualityGates = [
+      {
+        inboundOrderNo: 'IB-1',
+        lineNo: '1',
+        skuCode: 'SKU-001',
+        qualityGateStatus: 'passed',
+        inspectionRecordId: 'QI-1',
+      },
+    ]
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.get('button[aria-label="上架 IB-1"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('缺少收货管理权限')
+  })
+
+  it('does not expose quality links without inspection-record read permission', async () => {
+    wms.permissionCodes = ['business.wms.receipts.read', 'business.wms.receipts.manage']
+    wms.receivingQualityGates = [
+      {
+        inboundOrderNo: 'IB-1',
+        lineNo: '1',
+        skuCode: 'SKU-001',
+        qualityGateStatus: 'pending',
+      },
+    ]
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.find('a[aria-label="查看检验任务 IB-1"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('缺少质量检验读取权限')
+  })
+
+  it('does not let a stale released snapshot override a stricter pending line', async () => {
+    wms.qualityGateStatus = 'passed'
+    wms.receivingQualityGates = [
+      {
+        inboundOrderNo: 'IB-1',
+        lineNo: '1',
+        skuCode: 'SKU-001',
+        qualityGateStatus: 'pending',
+      },
+    ]
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('待检')
+    expect(wrapper.get('button[aria-label="上架 IB-1"]').attributes('disabled')).toBeDefined()
   })
 
   it('blocks inbound creation when a required line field or positive quantity is missing', async () => {
     const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建入库单'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建入库单'))!
+      .trigger('click')
     await flushPromises()
 
     setInput('#wms-in-no', 'IB-NEW')
@@ -253,7 +538,9 @@ describe('WMS operate actions', () => {
     setInput('[aria-label="第 1 行收货数量"]', '0')
     await flushPromises()
 
-    document.body.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    document.body
+      .querySelector('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
 
     expect(wms.createInbound).not.toHaveBeenCalled()
@@ -264,10 +551,15 @@ describe('WMS operate actions', () => {
     const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建入库单'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建入库单'))!
+      .trigger('click')
     await flushPromises()
 
-    document.body.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    document.body
+      .querySelector('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
 
     expect(wms.createInbound).not.toHaveBeenCalled()

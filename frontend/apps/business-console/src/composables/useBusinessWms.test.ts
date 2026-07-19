@@ -3,7 +3,9 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
+  listBusinessConsoleWmsReceivingQualityGates,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
+  listBusinessConsoleWmsSupplierReturnRequests,
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
   listBusinessConsoleWmsWcsTasksQueryOptions,
 } from '@nerv-iip/api-client'
@@ -22,6 +24,16 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleWmsInboundOrders' }],
     query: vi.fn(),
   })),
+  listBusinessConsoleWmsReceivingQualityGatesQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleWmsReceivingQualityGates' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleWmsSupplierReturnRequestsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleWmsSupplierReturnRequests' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleWmsReceivingQualityGates: vi.fn(),
+  listBusinessConsoleWmsSupplierReturnRequests: vi.fn(),
   listBusinessConsoleWmsOutboundOrdersQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleWmsOutboundOrders' }],
     query: vi.fn(),
@@ -97,8 +109,169 @@ describe('business WMS composables', () => {
         keyword: 'IN',
       },
     })
-    expect(result.inboundOrders.value).toEqual([{ inboundOrderId: 'in-1', inboundOrderNo: 'IN-001' }])
+    expect(result.inboundOrders.value).toEqual([
+      { inboundOrderId: 'in-1', inboundOrderNo: 'IN-001' },
+    ])
     expect(result.inboundOrdersTotal.value).toBe(23)
+    const inboundQuery = coladaState.queryOptionsById.get('listBusinessConsoleWmsInboundOrders') as
+      | { autoRefetch?: () => number }
+      | undefined
+    expect(inboundQuery?.autoRefetch?.()).toBe(10_000)
+  })
+
+  it('reads receiving quality and supplier returns through all server pages', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    const gateSkips: number[] = []
+    const returnSkips: number[] = []
+    vi.mocked(listBusinessConsoleWmsReceivingQualityGates).mockImplementation((({
+      query,
+    }: {
+      query?: { skip?: number }
+    }) => {
+      gateSkips.push(query?.skip ?? 0)
+      return Promise.resolve({
+        data: {
+          success: true,
+          data: {
+            total: 2,
+            items: [{ inboundOrderNo: gateSkips.length === 1 ? 'IN-001' : 'IN-002' }],
+          },
+        },
+        request: new Request('http://test.local'),
+        response: new Response(),
+      } as Awaited<ReturnType<typeof listBusinessConsoleWmsReceivingQualityGates>>)
+    }) as never)
+    vi.mocked(listBusinessConsoleWmsSupplierReturnRequests).mockImplementation((({
+      query,
+    }: {
+      query?: { skip?: number }
+    }) => {
+      returnSkips.push(query?.skip ?? 0)
+      return Promise.resolve({
+        data: {
+          success: true,
+          data: {
+            total: 2,
+            items: [{ supplierReturnNo: returnSkips.length === 1 ? 'RTS-001' : 'RTS-002' }],
+          },
+        },
+        request: new Request('http://test.local'),
+        response: new Response(),
+      } as Awaited<ReturnType<typeof listBusinessConsoleWmsSupplierReturnRequests>>)
+    }) as never)
+
+    useWmsInboundOrders()
+    type QualityQueryEnvelope = { data?: { items?: unknown[] } }
+    type QualityQueryOption = {
+      query?: () => Promise<QualityQueryEnvelope>
+      autoRefetch?: () => number
+    }
+    const gateQuery = coladaState.queryOptionsById.get(
+      'listBusinessConsoleWmsReceivingQualityGates',
+    ) as QualityQueryOption | undefined
+    const returnQuery = coladaState.queryOptionsById.get(
+      'listBusinessConsoleWmsSupplierReturnRequests',
+    ) as QualityQueryOption | undefined
+
+    const gateEnvelope = await gateQuery?.query?.()
+    const returnEnvelope = await returnQuery?.query?.()
+
+    expect(gateSkips).toEqual([0, 1])
+    expect(returnSkips).toEqual([0, 1])
+    expect(gateEnvelope?.data?.items).toHaveLength(2)
+    expect(returnEnvelope?.data?.items).toHaveLength(2)
+    expect(gateQuery?.autoRefetch?.()).toBe(10_000)
+  })
+
+  it('surfaces a later quality page failure instead of returning an empty gate list', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    vi.mocked(listBusinessConsoleWmsReceivingQualityGates).mockImplementation((({
+      query,
+    }: {
+      query?: { skip?: number }
+    }) => {
+      if ((query?.skip ?? 0) > 0) {
+        return Promise.resolve({
+          data: { success: false },
+          request: new Request('http://test.local'),
+          response: new Response(),
+        } as Awaited<ReturnType<typeof listBusinessConsoleWmsReceivingQualityGates>>)
+      }
+      return Promise.resolve({
+        data: { success: true, data: { total: 2, items: [{ inboundOrderNo: 'IN-001' }] } },
+        request: new Request('http://test.local'),
+        response: new Response(),
+      } as Awaited<ReturnType<typeof listBusinessConsoleWmsReceivingQualityGates>>)
+    }) as never)
+
+    useWmsInboundOrders()
+    const gateQuery = coladaState.queryOptionsById.get(
+      'listBusinessConsoleWmsReceivingQualityGates',
+    ) as { query?: () => Promise<unknown> } | undefined
+
+    await expect(gateQuery?.query?.()).rejects.toThrow('收货质检门禁读取失败')
+  })
+
+  it('fails closed when a successful quality page is empty before the server total is reached', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    vi.mocked(listBusinessConsoleWmsReceivingQualityGates).mockImplementation((({
+      query,
+    }: {
+      query?: { skip?: number }
+    }) => {
+      if ((query?.skip ?? 0) > 0) {
+        return Promise.resolve({
+          data: { success: true, data: { total: 2, items: [] } },
+          request: new Request('http://test.local'),
+          response: new Response(),
+        } as Awaited<ReturnType<typeof listBusinessConsoleWmsReceivingQualityGates>>)
+      }
+      return Promise.resolve({
+        data: { success: true, data: { total: 2, items: [{ inboundOrderNo: 'IN-001' }] } },
+        request: new Request('http://test.local'),
+        response: new Response(),
+      } as Awaited<ReturnType<typeof listBusinessConsoleWmsReceivingQualityGates>>)
+    }) as never)
+
+    useWmsInboundOrders()
+    const gateQuery = coladaState.queryOptionsById.get(
+      'listBusinessConsoleWmsReceivingQualityGates',
+    ) as { query?: () => Promise<unknown> } | undefined
+
+    await expect(gateQuery?.query?.()).rejects.toThrow('收货质检门禁读取不完整')
+  })
+
+  it('surfaces a later supplier return page failure instead of accepting a partial return list', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    vi.mocked(listBusinessConsoleWmsSupplierReturnRequests).mockImplementation((({
+      query,
+    }: {
+      query?: { skip?: number }
+    }) => {
+      if ((query?.skip ?? 0) > 0) {
+        return Promise.resolve({
+          data: { success: false },
+          request: new Request('http://test.local'),
+          response: new Response(),
+        } as Awaited<ReturnType<typeof listBusinessConsoleWmsSupplierReturnRequests>>)
+      }
+      return Promise.resolve({
+        data: { success: true, data: { total: 2, items: [{ supplierReturnNo: 'RTS-001' }] } },
+        request: new Request('http://test.local'),
+        response: new Response(),
+      } as Awaited<ReturnType<typeof listBusinessConsoleWmsSupplierReturnRequests>>)
+    }) as never)
+
+    useWmsInboundOrders()
+    const returnQuery = coladaState.queryOptionsById.get(
+      'listBusinessConsoleWmsSupplierReturnRequests',
+    ) as { query?: () => Promise<unknown> } | undefined
+
+    await expect(returnQuery?.query?.()).rejects.toThrow('供应商退供读取失败')
   })
 
   it('lists outbound orders with status and keyword filters', () => {
@@ -160,7 +333,9 @@ describe('business WMS composables', () => {
     expect(listBusinessConsoleWmsInboundOrdersQueryOptions).toHaveBeenCalledWith({
       query: expect.objectContaining({ organizationId: '', environmentId: '' }),
     })
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsInboundOrders')?.enabled).toBe(false)
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsInboundOrders')?.enabled).toBe(
+      false,
+    )
   })
 
   it('does not refetch WMS lists when business context is empty', async () => {

@@ -5,6 +5,8 @@ import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.
 import { useWmsPutawayTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import {
   NvButton,
   NvDataTable,
@@ -26,7 +28,8 @@ import {
   toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 definePage({
   meta: {
@@ -36,6 +39,8 @@ definePage({
   },
 })
 
+const route = useRoute()
+const auth = useAuthStore()
 const {
   filters,
   putawayTasks,
@@ -47,6 +52,17 @@ const {
   createPutawayPending,
   createPutawayError,
 } = useWmsPutawayTasks()
+const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
+const canManageReceipts = computed(() => permissionCodes.value.includes(P.wmsReceiptsManage))
+const inboundOrderNo = computed(() => firstQuery(route.query.inboundOrderNo))
+const inboundOrderId = computed(() => firstQuery(route.query.inboundOrderId))
+watch(
+  inboundOrderNo,
+  (value) => {
+    filters.keyword = value || undefined
+  },
+  { immediate: true },
+)
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.locationCode, () => filters.keyword],
 })
@@ -64,7 +80,9 @@ const createForm = reactive({
 })
 
 function openCreate() {
-  createForm.inboundOrderId = ''
+  if (!canManageReceipts.value) return
+
+  createForm.inboundOrderId = inboundOrderId.value
   createForm.taskNo = ''
   createForm.lineNo = '1'
   createForm.fromLocationCode = ''
@@ -73,7 +91,19 @@ function openCreate() {
   createError.value = ''
   createOpen.value = true
 }
+watch(
+  () => [inboundOrderId.value, firstQuery(route.query.create)] as const,
+  ([id, create]) => {
+    if (canManageReceipts.value && id && create === '1') openCreate()
+  },
+  { immediate: true },
+)
 async function submitCreate() {
+  if (!canManageReceipts.value) {
+    createError.value = '缺少收货管理权限，无法创建上架任务。'
+    return
+  }
+
   if (
     !createForm.inboundOrderId.trim() ||
     !createForm.taskNo.trim() ||
@@ -84,7 +114,7 @@ async function submitCreate() {
     createError.value = '请填写入库单、任务号、行号与起讫库位。'
     return
   }
-  if (createForm.quantity !== '' && !(Number(createForm.quantity) > 0)) {
+  if (!(Number(createForm.quantity) > 0)) {
     createError.value = '上架数量需为正数。'
     return
   }
@@ -94,7 +124,7 @@ async function submitCreate() {
       lineNo: createForm.lineNo.trim(),
       fromLocationCode: createForm.fromLocationCode.trim(),
       toLocationCode: createForm.toLocationCode.trim(),
-      quantity: createForm.quantity === '' ? undefined : Number(createForm.quantity),
+      quantity: Number(createForm.quantity),
     })
     createOpen.value = false
     toast.success('上架任务已创建')
@@ -147,6 +177,9 @@ function formatDateTime(value?: string | null) {
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
+function firstQuery(value: unknown) {
+  return Array.isArray(value) ? String(value[0] ?? '') : typeof value === 'string' ? value : ''
+}
 </script>
 
 <template>
@@ -167,7 +200,7 @@ function formatError(error: unknown) {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openCreate">
+        <NvButton v-if="canManageReceipts" size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建上架任务
         </NvButton>
@@ -179,7 +212,7 @@ function formatError(error: unknown) {
         <NvInput
           v-model="filters.keyword"
           class="h-9 w-40"
-          placeholder="任务号/物料"
+          placeholder="任务号/来源单/物料"
           aria-label="关键字"
         />
         <NvInput
@@ -227,7 +260,7 @@ function formatError(error: unknown) {
       </template>
     </NvDataTable>
 
-    <NvDialog v-model:open="createOpen">
+    <NvDialog v-if="canManageReceipts" v-model:open="createOpen">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建上架任务</NvDialogTitle>
@@ -278,10 +311,11 @@ function formatError(error: unknown) {
                 id="wms-putaway-qty"
                 v-model="createForm.quantity"
                 type="number"
-                min="0"
+                min="0.000001"
                 step="any"
                 autocomplete="off"
-                placeholder="可选"
+                required
+                placeholder="必填正数"
               />
             </NvField>
           </NvFieldGroup>
