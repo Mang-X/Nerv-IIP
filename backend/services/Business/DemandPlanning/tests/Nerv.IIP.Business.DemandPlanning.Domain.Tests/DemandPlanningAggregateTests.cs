@@ -9,6 +9,41 @@ namespace Nerv.IIP.Business.DemandPlanning.Domain.Tests;
 public sealed class DemandPlanningAggregateTests
 {
     [Fact]
+    public void Sales_order_demand_tracks_line_version_customer_and_explainable_cancellation()
+    {
+        var demand = DemandSource.CreateSalesOrderDemand(
+            "org-001",
+            "env-dev",
+            "sales-order-id-001",
+            "SO-DEMO-001",
+            "10",
+            "CUST-001",
+            "SKU-FG-1000",
+            "EA",
+            "SITE-001",
+            2m,
+            new DateOnly(2026, 8, 15),
+            1);
+
+        Assert.Equal("sales-order", demand.DemandType);
+        Assert.Equal("sales-order-id-001", demand.SourceDocumentId);
+        Assert.Equal("SO-DEMO-001", demand.SourceReference);
+        Assert.Equal("10", demand.SourceLineReference);
+        Assert.Equal("CUST-001", demand.CustomerCode);
+        Assert.Equal(1, demand.SourceVersion);
+        Assert.Equal("active", demand.SourceStatus);
+
+        demand.ApplySalesOrderSnapshot(3m, new DateOnly(2026, 8, 16), 2);
+        Assert.Equal(3m, demand.Quantity);
+        Assert.Equal(2, demand.SourceVersion);
+
+        demand.CancelFromSalesOrder(3);
+        Assert.Equal(0m, demand.Quantity);
+        Assert.Equal(3, demand.SourceVersion);
+        Assert.Equal("cancelled", demand.SourceStatus);
+    }
+
+    [Fact]
     public void Demand_source_creation_requires_planning_dimensions()
     {
         Assert.Throws<ArgumentException>(() => DemandSource.Create(

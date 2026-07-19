@@ -2004,6 +2004,10 @@ public sealed record BusinessConsoleDemandSourceResponse(
     string DemandSourceId,
     string SourceReference,
     string DemandType,
+    string SourceLineReference,
+    string CustomerCode,
+    int SourceVersion,
+    string SourceStatus,
     string SkuCode,
     string UomCode,
     string SiteCode,
@@ -2560,6 +2564,7 @@ public sealed record BusinessConsoleCreateErpSalesOrderRequest(
     string EnvironmentId,
     string? SalesOrderNo,
     string QuotationNo,
+    string SiteCode,
     string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateErpSalesOrderResponse(string SalesOrderId);

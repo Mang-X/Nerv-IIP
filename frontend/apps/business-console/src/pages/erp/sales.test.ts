@@ -12,9 +12,18 @@ const state = vi.hoisted(() => ({
   salesOrders: [] as Array<Record<string, unknown>>,
 }))
 
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: { keyword: 'SO-DEMO-001' } }),
+}))
+
 function listShape(itemsRef: () => Array<Record<string, unknown>>) {
   return {
-    filters: reactive({ status: undefined as string | undefined, keyword: undefined as string | undefined, skip: 0, take: 10 }),
+    filters: reactive({
+      status: undefined as string | undefined,
+      keyword: undefined as string | undefined,
+      skip: 0,
+      take: 10,
+    }),
     items: computed(() => itemsRef()),
     total: computed(() => itemsRef().length),
     organizationId: computed(() => 'org-001'),
@@ -58,12 +67,22 @@ vi.mock('@/composables/useBusinessErp', () => ({
 }))
 
 vi.mock('@/composables/usePagedList', () => ({
-  usePagedList: () => ({ page: shallowRef(1), pageSize: shallowRef('10'), pageSizeNumber: shallowRef(10), resetPage: vi.fn() }),
+  usePagedList: () => ({
+    page: shallowRef(1),
+    pageSize: shallowRef('10'),
+    pageSizeNumber: shallowRef(10),
+    resetPage: vi.fn(),
+  }),
 }))
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const selectStubs = {
-  NvSelect: { props: ['modelValue'], emits: ['update:modelValue'], template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>' },
+  NvSelect: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+  },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
@@ -71,7 +90,10 @@ const selectStubs = {
 }
 const rowActionStubs = {
   RowActions: { template: '<div data-testid="row-actions"><slot /></div>' },
-  DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  DropdownMenuItem: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
 }
 
 beforeEach(() => {
@@ -94,10 +116,24 @@ describe('ERP sales quotation page', () => {
 
   it('renders approve action only for Draft quotations and counts Draft KPI', async () => {
     state.quotations = [
-      { quotationNo: 'QUO-DRAFT-1', customerCode: 'CUST-A', status: 'Draft', totalAmount: 1000, expiresOn: '2026-12-31' },
-      { quotationNo: 'QUO-APPROVED-1', customerCode: 'CUST-B', status: 'Approved', totalAmount: 2000, expiresOn: '2026-12-31' },
+      {
+        quotationNo: 'QUO-DRAFT-1',
+        customerCode: 'CUST-A',
+        status: 'Draft',
+        totalAmount: 1000,
+        expiresOn: '2026-12-31',
+      },
+      {
+        quotationNo: 'QUO-APPROVED-1',
+        customerCode: 'CUST-B',
+        status: 'Approved',
+        totalAmount: 2000,
+        expiresOn: '2026-12-31',
+      },
     ]
-    const wrapper = mount(QuotationsPage, { global: { stubs: { ...layoutStub, ...rowActionStubs } } })
+    const wrapper = mount(QuotationsPage, {
+      global: { stubs: { ...layoutStub, ...rowActionStubs } },
+    })
     await flushPromises()
 
     expect(wrapper.findAll('[data-testid="row-actions"]')).toHaveLength(1)
@@ -112,6 +148,9 @@ describe('ERP sales order and delivery pages', () => {
     await flushPromises()
 
     expect(wrapper.find('[aria-label="销售订单关键字"]').exists()).toBe(true)
+    expect((wrapper.get('[aria-label="销售订单关键字"]').element as HTMLInputElement).value).toBe(
+      'SO-DEMO-001',
+    )
     expect(wrapper.findAll('select')).toHaveLength(0)
   })
 

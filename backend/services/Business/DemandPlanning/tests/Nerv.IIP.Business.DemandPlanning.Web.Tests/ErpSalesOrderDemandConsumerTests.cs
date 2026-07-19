@@ -1,0 +1,371 @@
+using DotNetCore.CAP;
+using DotNetCore.CAP.Internal;
+using DotNetCore.CAP.Persistence;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
+using Nerv.IIP.Business.DemandPlanning.Domain;
+using Nerv.IIP.Business.DemandPlanning.Infrastructure;
+using Nerv.IIP.Business.DemandPlanning.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Contracts.Erp;
+using Nerv.IIP.Messaging.CAP;
+
+namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
+
+public sealed class ErpSalesOrderDemandConsumerTests
+{
+    [DemandPlanningRealPostgresRedisFact]
+    public async Task Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres()
+    {
+        await using var database = await TemporaryDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        await using var factory = CreateRedisCapFactory(
+            database.ConnectionString,
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_REDIS")!);
+        using var client = factory.CreateClient();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await dbContext.Database.MigrateAsync();
+            await scope.ServiceProvider.GetRequiredService<IStorageInitializer>().InitializeAsync(CancellationToken.None);
+            await scope.ServiceProvider.GetRequiredService<IBootstrapper>().BootstrapAsync(CancellationToken.None);
+        }
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var publisher = scope.ServiceProvider.GetRequiredService<ICapPublisher>();
+            var released = Released(1, 2m, "10");
+            await publisher.PublishAsync(nameof(SalesOrderReleasedIntegrationEvent), released);
+            await publisher.PublishAsync(nameof(SalesOrderReleasedIntegrationEvent), released with { EventId = "evt-redelivery" });
+            await publisher.PublishAsync(nameof(SalesOrderChangedIntegrationEvent), Changed(3, 5m, "10"));
+            await publisher.PublishAsync(nameof(SalesOrderChangedIntegrationEvent), Changed(2, 4m, "10"));
+            await publisher.PublishAsync(nameof(SalesOrderCancelledIntegrationEvent), Cancelled(4));
+            await publisher.PublishAsync(nameof(SalesOrderChangedIntegrationEvent), Changed(3, 9m, "10"));
+        }
+
+        await AssertEventuallyAsync(async () =>
+        {
+            using var scope = factory.Services.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var demand = await dbContext.DemandSources.AsNoTracking().SingleOrDefaultAsync();
+            Assert.NotNull(demand);
+            Assert.Equal(0m, demand.Quantity);
+            Assert.Equal(4, demand.SourceVersion);
+            Assert.Equal("cancelled", demand.SourceStatus);
+            Assert.Equal(4, (await dbContext.SalesOrderDemandProjections.AsNoTracking().SingleAsync()).OrderVersion);
+            Assert.Equal(4, await dbContext.ProcessedIntegrationEvents.CountAsync());
+        });
+    }
+
+    [DemandPlanningRealPostgresFact]
+    public async Task PostgreSql_inbox_and_order_watermark_survive_duplicate_out_of_order_change_and_cancel()
+    {
+        await using var database = await TemporaryDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        await using var provider = CreatePostgresProvider(database.ConnectionString);
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await dbContext.Database.MigrateAsync();
+            var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
+            var releasedHandler = new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+            var changedHandler = new SalesOrderChangedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+            var cancelledHandler = new SalesOrderCancelledIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+
+            var released = Released(1, 2m, "10");
+            await releasedHandler.HandleAsync(released, CancellationToken.None);
+            await releasedHandler.HandleAsync(released with { EventId = "evt-redelivery" }, CancellationToken.None);
+            await changedHandler.HandleAsync(Changed(3, 5m, "10"), CancellationToken.None);
+            await changedHandler.HandleAsync(Changed(2, 4m, "10"), CancellationToken.None);
+            await cancelledHandler.HandleAsync(Cancelled(4), CancellationToken.None);
+            await changedHandler.HandleAsync(Changed(3, 9m, "10"), CancellationToken.None);
+        }
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var demand = Assert.Single(await dbContext.DemandSources.AsNoTracking().ToArrayAsync());
+            Assert.Equal("SO-DEMO-001", demand.SourceReference);
+            Assert.Equal(0m, demand.Quantity);
+            Assert.Equal(4, demand.SourceVersion);
+            Assert.Equal("cancelled", demand.SourceStatus);
+            Assert.Equal(4, Assert.Single(await dbContext.SalesOrderDemandProjections.AsNoTracking().ToArrayAsync()).OrderVersion);
+            Assert.Equal(4, await dbContext.ProcessedIntegrationEvents.CountAsync());
+        }
+    }
+
+    [Fact]
+    public async Task Release_duplicate_change_out_of_order_and_cancel_converge_by_order_version()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
+        var releasedHandler = new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+        var changedHandler = new SalesOrderChangedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+        var cancelledHandler = new SalesOrderCancelledIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+
+        var released = Released(version: 1, quantity: 2m, lineNo: "10");
+        await releasedHandler.HandleAsync(released, CancellationToken.None);
+        await releasedHandler.HandleAsync(released with { EventId = "evt-redelivery" }, CancellationToken.None);
+
+        var first = Assert.Single(await dbContext.DemandSources.AsNoTracking().ToArrayAsync());
+        Assert.Equal("SO-DEMO-001", first.SourceReference);
+        Assert.Equal("10", first.SourceLineReference);
+        Assert.Equal(2m, first.Quantity);
+        Assert.Equal(1, first.SourceVersion);
+        Assert.Equal("active", first.SourceStatus);
+
+        await changedHandler.HandleAsync(Changed(version: 3, quantity: 5m, lineNo: "10"), CancellationToken.None);
+        await changedHandler.HandleAsync(Changed(version: 2, quantity: 4m, lineNo: "10"), CancellationToken.None);
+
+        var changed = Assert.Single(await dbContext.DemandSources.AsNoTracking().ToArrayAsync());
+        Assert.Equal(5m, changed.Quantity);
+        Assert.Equal(3, changed.SourceVersion);
+
+        await cancelledHandler.HandleAsync(Cancelled(version: 4), CancellationToken.None);
+        await changedHandler.HandleAsync(Changed(version: 3, quantity: 9m, lineNo: "10"), CancellationToken.None);
+
+        var cancelled = Assert.Single(await dbContext.DemandSources.AsNoTracking().ToArrayAsync());
+        Assert.Equal(0m, cancelled.Quantity);
+        Assert.Equal(4, cancelled.SourceVersion);
+        Assert.Equal("cancelled", cancelled.SourceStatus);
+        Assert.Equal(4, Assert.Single(await dbContext.SalesOrderDemandProjections.AsNoTracking().ToArrayAsync()).OrderVersion);
+        Assert.Equal(4, await dbContext.ProcessedIntegrationEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Full_snapshot_projects_multiple_lines_and_cancels_omitted_lines()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
+        var releasedHandler = new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+        var changedHandler = new SalesOrderChangedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+        var release = Released(1, 2m, "10") with
+        {
+            Payload = Released(1, 2m, "10").Payload with
+            {
+                Lines =
+                [
+                    new SalesOrderLineSnapshot("10", "SKU-FG-A", 2m, "EA", new DateOnly(2026, 8, 15), false),
+                    new SalesOrderLineSnapshot("20", "SKU-FG-B", 3m, "EA", new DateOnly(2026, 8, 16), false),
+                ],
+            },
+        };
+        await releasedHandler.HandleAsync(release, CancellationToken.None);
+
+        await changedHandler.HandleAsync(Changed(2, 4m, "10"), CancellationToken.None);
+
+        var demands = await dbContext.DemandSources.AsNoTracking().OrderBy(x => x.SourceLineReference).ToArrayAsync();
+        Assert.Collection(
+            demands,
+            active =>
+            {
+                Assert.Equal("10", active.SourceLineReference);
+                Assert.Equal(4m, active.Quantity);
+                Assert.Equal("active", active.SourceStatus);
+            },
+            omitted =>
+            {
+                Assert.Equal("20", omitted.SourceLineReference);
+                Assert.Equal(0m, omitted.Quantity);
+                Assert.Equal("cancelled", omitted.SourceStatus);
+            });
+    }
+
+    [Fact]
+    public async Task Invalid_business_payload_is_dead_lettered_without_throwing_or_creating_demand()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
+        var handler = new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+        var invalid = Released(version: 0, quantity: 2m, lineNo: "10");
+
+        await handler.HandleAsync(invalid, CancellationToken.None);
+
+        Assert.Empty(await dbContext.DemandSources.ToArrayAsync());
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("invalid-sales-order-demand-payload", deadLetter.FailureCode);
+    }
+
+    private static ServiceProvider CreateProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options.UseInMemoryDatabase($"sales-order-demand-{Guid.NewGuid():N}"));
+        return services.BuildServiceProvider();
+    }
+
+    private static ServiceProvider CreatePostgresProvider(string connectionString)
+    {
+        var services = new ServiceCollection();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
+            connectionString,
+            postgres => postgres.MigrationsHistoryTable("__EFMigrationsHistory", DemandPlanningFacts.Schema)));
+        return services.BuildServiceProvider();
+    }
+
+    private static WebApplicationFactory<Program> CreateRedisCapFactory(string connectionString, string redisConnectionString)
+    {
+        return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            var settings = new Dictionary<string, string?>
+            {
+                ["Persistence:Provider"] = "PostgreSQL",
+                ["Persistence:AutoMigrate"] = "false",
+                ["ConnectionStrings:PostgreSQL"] = connectionString,
+                ["Messaging:Provider"] = "Redis",
+                ["Messaging:Redis:ConnectionString"] = redisConnectionString,
+                ["ConnectionStrings:Redis"] = redisConnectionString,
+                ["Cap:Version"] = $"man517-{Guid.NewGuid():N}"[..20],
+                ["InternalService:BearerToken"] = "test-internal-token",
+            };
+            foreach (var (key, value) in settings)
+            {
+                builder.UseSetting(key, value);
+            }
+
+            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(settings));
+        });
+    }
+
+    private static async Task AssertEventuallyAsync(Func<Task> assertion)
+    {
+        var timeoutAt = DateTimeOffset.UtcNow.AddSeconds(30);
+        Exception? lastException = null;
+        while (DateTimeOffset.UtcNow < timeoutAt)
+        {
+            try
+            {
+                await assertion();
+                return;
+            }
+            catch (Exception exception) when (exception is Xunit.Sdk.XunitException or InvalidOperationException)
+            {
+                lastException = exception;
+                await Task.Delay(250);
+            }
+        }
+
+        throw lastException ?? new Xunit.Sdk.XunitException("Timed out waiting for Redis CAP sales-order demand projection.");
+    }
+
+    private static SalesOrderReleasedIntegrationEvent Released(int version, decimal quantity, string lineNo) =>
+        new(
+            $"evt-released-{version}",
+            ErpIntegrationEventTypes.SalesOrderReleased,
+            ErpIntegrationEventVersions.V1,
+            new DateTimeOffset(2026, 7, 18, 12, version, 0, TimeSpan.Zero),
+            ErpIntegrationEventSources.BusinessErp,
+            "corr-so-demo-001",
+            "SO-DEMO-001",
+            "org-001",
+            "env-dev",
+            "system:erp",
+            $"erp:sales-order:org-001:env-dev:SO-DEMO-001:v{version}:released",
+            Payload(version, "released", quantity, lineNo));
+
+    private static SalesOrderChangedIntegrationEvent Changed(int version, decimal quantity, string lineNo) =>
+        new(
+            $"evt-changed-{version}",
+            ErpIntegrationEventTypes.SalesOrderChanged,
+            ErpIntegrationEventVersions.V1,
+            new DateTimeOffset(2026, 7, 18, 13, version, 0, TimeSpan.Zero),
+            ErpIntegrationEventSources.BusinessErp,
+            "corr-so-demo-001",
+            "SO-DEMO-001",
+            "org-001",
+            "env-dev",
+            "system:erp",
+            $"erp:sales-order:org-001:env-dev:SO-DEMO-001:v{version}:changed",
+            Payload(version, "released", quantity, lineNo));
+
+    private static SalesOrderCancelledIntegrationEvent Cancelled(int version) =>
+        new(
+            $"evt-cancelled-{version}",
+            ErpIntegrationEventTypes.SalesOrderCancelled,
+            ErpIntegrationEventVersions.V1,
+            new DateTimeOffset(2026, 7, 18, 14, version, 0, TimeSpan.Zero),
+            ErpIntegrationEventSources.BusinessErp,
+            "corr-so-demo-001",
+            "SO-DEMO-001",
+            "org-001",
+            "env-dev",
+            "system:erp",
+            $"erp:sales-order:org-001:env-dev:SO-DEMO-001:v{version}:cancelled",
+            Payload(version, "cancelled", 2m, "10") with
+            {
+                Lines = [new SalesOrderLineSnapshot("10", "SKU-FG-A", 2m, "EA", new DateOnly(2026, 8, 15), true)],
+            });
+
+    private static SalesOrderLifecyclePayload Payload(int version, string status, decimal quantity, string lineNo) =>
+        new(
+            "sales-order-id-001",
+            "SO-DEMO-001",
+            "CUST-001",
+            "SITE-001",
+            version,
+            status,
+            [new SalesOrderLineSnapshot(lineNo, "SKU-FG-A", quantity, "EA", new DateOnly(2026, 8, 15), false)]);
+
+    private sealed class TemporaryDatabase(string adminConnectionString, string databaseName, string connectionString) : IAsyncDisposable
+    {
+        public string ConnectionString { get; } = connectionString;
+
+        public static async Task<TemporaryDatabase> CreateAsync(string baseConnectionString)
+        {
+            var databaseName = $"nerv_dp_sales_order_{Guid.NewGuid():N}";
+            var adminConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString) { Database = "postgres" }.ConnectionString;
+            await using var connection = new NpgsqlConnection(adminConnectionString);
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", connection);
+            await command.ExecuteNonQueryAsync();
+            return new TemporaryDatabase(
+                adminConnectionString,
+                databaseName,
+                new NpgsqlConnectionStringBuilder(baseConnectionString) { Database = databaseName }.ConnectionString);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await using var connection = new NpgsqlConnection(adminConnectionString);
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)", connection);
+            await command.ExecuteNonQueryAsync();
+        }
+    }
+}
+
+internal sealed class DemandPlanningRealPostgresFactAttribute : FactAttribute
+{
+    public DemandPlanningRealPostgresFactAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
+        {
+            Skip = "Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP sales-order demand bridge proof.";
+        }
+    }
+}
+
+internal sealed class DemandPlanningRealPostgresRedisFactAttribute : FactAttribute
+{
+    public DemandPlanningRealPostgresRedisFactAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")) ||
+            string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_REDIS")))
+        {
+            Skip = "Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL + Redis CAP bridge proof.";
+        }
+    }
+}

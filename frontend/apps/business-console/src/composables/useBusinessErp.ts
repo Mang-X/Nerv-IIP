@@ -87,16 +87,22 @@ interface ConvertPurchaseRequisitionOptions {
   rfqSupplierCodes?: string[]
 }
 
-function unwrapItems<T>(envelope: { success?: boolean, data?: { items?: T[] } | null } | undefined): T[] {
-  return envelope?.success ? envelope.data?.items ?? [] : []
+function unwrapItems<T>(
+  envelope: { success?: boolean; data?: { items?: T[] } | null } | undefined,
+): T[] {
+  return envelope?.success ? (envelope.data?.items ?? []) : []
 }
 
-function unwrapTotal(envelope: { success?: boolean, data?: { total?: number } | null } | undefined): number {
-  return envelope?.success ? envelope.data?.total ?? 0 : 0
+function unwrapTotal(
+  envelope: { success?: boolean; data?: { total?: number } | null } | undefined,
+): number {
+  return envelope?.success ? (envelope.data?.total ?? 0) : 0
 }
 
-function unwrapData<T>(envelope: { success?: boolean, data?: T | null } | undefined): T | undefined {
-  return envelope?.success ? envelope.data ?? undefined : undefined
+function unwrapData<T>(
+  envelope: { success?: boolean; data?: T | null } | undefined,
+): T | undefined {
+  return envelope?.success ? (envelope.data ?? undefined) : undefined
 }
 
 // 写操作幂等键，避免重复提交；浏览器原生 UUID，测试环境亦可用。
@@ -107,24 +113,30 @@ function makeIdempotencyKey(): string {
 }
 
 // 通用「单据列表」读面工厂：org/env + 服务端分页 skip/take + 状态/关键字过滤，无假分页。
-function useErpDocumentList<TItem, TEnvelope extends { success?: boolean, data?: { items?: TItem[], total?: number } | null }>(
+function useErpDocumentList<
+  TItem,
+  TEnvelope extends { success?: boolean; data?: { items?: TItem[]; total?: number } | null },
+>(
   buildOptions: (query: ErpListQuery) => unknown,
   initialFilters: Partial<BusinessErpListFilters> = {},
 ) {
   const businessContext = useBusinessContextStore()
   const filters = defaultFilters(initialFilters)
-  const query = useQuery(() => ({
-    // 各单据 query options 仅 data 泛型不同，统一经工厂收敛，故此处收窄类型。
-    ...(buildOptions({
-      organizationId: businessContext.organizationId,
-      environmentId: businessContext.environmentId,
-      status: filters.status,
-      keyword: filters.keyword,
-      skip: filters.skip,
-      take: filters.take,
-    }) as object),
-    enabled: hasBusinessContext(businessContext),
-  }) as never)
+  const query = useQuery(
+    () =>
+      ({
+        // 各单据 query options 仅 data 泛型不同，统一经工厂收敛，故此处收窄类型。
+        ...(buildOptions({
+          organizationId: businessContext.organizationId,
+          environmentId: businessContext.environmentId,
+          status: filters.status,
+          keyword: filters.keyword,
+          skip: filters.skip,
+          take: filters.take,
+        }) as object),
+        enabled: hasBusinessContext(businessContext),
+      }) as never,
+  )
 
   return {
     filters,
@@ -172,19 +184,32 @@ export function useBusinessErp() {
   return {
     filters,
     purchaseRequisitions: computed<BusinessConsoleErpPurchaseRequisitionItem[]>(() =>
-      unwrapItems(purchaseRequisitionsQuery.data.value as BusinessConsoleErpPurchaseRequisitionListEnvelope | undefined),
+      unwrapItems(
+        purchaseRequisitionsQuery.data.value as
+          | BusinessConsoleErpPurchaseRequisitionListEnvelope
+          | undefined,
+      ),
     ),
     purchaseRequisitionsTotal: computed(() =>
-      unwrapTotal(purchaseRequisitionsQuery.data.value as BusinessConsoleErpPurchaseRequisitionListEnvelope | undefined),
+      unwrapTotal(
+        purchaseRequisitionsQuery.data.value as
+          | BusinessConsoleErpPurchaseRequisitionListEnvelope
+          | undefined,
+      ),
     ),
     purchaseRequisitionsError: purchaseRequisitionsQuery.error,
     purchaseRequisitionsPending: purchaseRequisitionsQuery.isLoading,
-    refreshPurchaseRequisitions: () => refetchWithBusinessContext(businessContext, purchaseRequisitionsQuery),
+    refreshPurchaseRequisitions: () =>
+      refetchWithBusinessContext(businessContext, purchaseRequisitionsQuery),
     purchaseOrders: computed<BusinessConsoleErpPurchaseOrderItem[]>(() =>
-      unwrapItems(purchaseOrdersQuery.data.value as BusinessConsoleErpPurchaseOrderListEnvelope | undefined),
+      unwrapItems(
+        purchaseOrdersQuery.data.value as BusinessConsoleErpPurchaseOrderListEnvelope | undefined,
+      ),
     ),
     purchaseOrdersTotal: computed(() =>
-      unwrapTotal(purchaseOrdersQuery.data.value as BusinessConsoleErpPurchaseOrderListEnvelope | undefined),
+      unwrapTotal(
+        purchaseOrdersQuery.data.value as BusinessConsoleErpPurchaseOrderListEnvelope | undefined,
+      ),
     ),
     purchaseOrdersError: purchaseOrdersQuery.error,
     purchaseOrdersPending: purchaseOrdersQuery.isLoading,
@@ -197,10 +222,10 @@ export function useBusinessErp() {
 }
 
 export function useErpPurchaseRequisitions(initialFilters: Partial<BusinessErpListFilters> = {}) {
-  const list = useErpDocumentList<BusinessConsoleErpPurchaseRequisitionItem, BusinessConsoleErpPurchaseRequisitionListEnvelope>(
-    (query) => listBusinessConsoleErpPurchaseRequisitionsQueryOptions({ query }),
-    initialFilters,
-  )
+  const list = useErpDocumentList<
+    BusinessConsoleErpPurchaseRequisitionItem,
+    BusinessConsoleErpPurchaseRequisitionListEnvelope
+  >((query) => listBusinessConsoleErpPurchaseRequisitionsQueryOptions({ query }), initialFilters)
   const convertMutation = useMutation({
     ...convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions(),
     onSuccess() {
@@ -210,7 +235,10 @@ export function useErpPurchaseRequisitions(initialFilters: Partial<BusinessErpLi
 
   return {
     ...list,
-    convertToPurchaseOrder: (purchaseRequisitionNos: string[], options: ConvertPurchaseRequisitionOptions = {}) =>
+    convertToPurchaseOrder: (
+      purchaseRequisitionNos: string[],
+      options: ConvertPurchaseRequisitionOptions = {},
+    ) =>
       convertMutation.mutateAsync({
         body: {
           organizationId: list.organizationId.value,
@@ -227,10 +255,10 @@ export function useErpPurchaseRequisitions(initialFilters: Partial<BusinessErpLi
 }
 
 export function useErpRequestsForQuotation(initialFilters: Partial<BusinessErpListFilters> = {}) {
-  const list = useErpDocumentList<BusinessConsoleErpRequestForQuotationItem, BusinessConsoleErpRequestForQuotationListEnvelope>(
-    (query) => listBusinessConsoleErpRequestsForQuotationQueryOptions({ query }),
-    initialFilters,
-  )
+  const list = useErpDocumentList<
+    BusinessConsoleErpRequestForQuotationItem,
+    BusinessConsoleErpRequestForQuotationListEnvelope
+  >((query) => listBusinessConsoleErpRequestsForQuotationQueryOptions({ query }), initialFilters)
 
   const createMutation = useMutation({
     ...createBusinessConsoleErpRequestForQuotationMutationOptions(),
@@ -244,7 +272,13 @@ export function useErpRequestsForQuotation(initialFilters: Partial<BusinessErpLi
     createRequestForQuotation: (payload: {
       supplierCodes: string[]
       rfqNo?: string
-      lines: { lineNo: string, skuCode: string, uomCode: string, quantity: number, requiredDate: string }[]
+      lines: {
+        lineNo: string
+        skuCode: string
+        uomCode: string
+        quantity: number
+        requiredDate: string
+      }[]
     }) =>
       createMutation.mutateAsync({
         body: {
@@ -276,7 +310,14 @@ export function useErpSupplierQuotations(initialFilters: Partial<BusinessErpList
       rfqNo: string
       supplierCode: string
       quotationNo?: string
-      lines: { lineNo: string, skuCode: string, uomCode: string, quantity: number, unitPrice: number, promisedDate: string }[]
+      lines: {
+        lineNo: string
+        skuCode: string
+        uomCode: string
+        quantity: number
+        unitPrice: number
+        promisedDate: string
+      }[]
     }) =>
       receiveMutation.mutateAsync({
         body: {
@@ -295,10 +336,10 @@ export function useErpSupplierQuotations(initialFilters: Partial<BusinessErpList
 }
 
 export function useErpPurchaseOrders(initialFilters: Partial<BusinessErpListFilters> = {}) {
-  const list = useErpDocumentList<BusinessConsoleErpPurchaseOrderItem, BusinessConsoleErpPurchaseOrderListEnvelope>(
-    (query) => listBusinessConsoleErpPurchaseOrdersQueryOptions({ query }),
-    initialFilters,
-  )
+  const list = useErpDocumentList<
+    BusinessConsoleErpPurchaseOrderItem,
+    BusinessConsoleErpPurchaseOrderListEnvelope
+  >((query) => listBusinessConsoleErpPurchaseOrdersQueryOptions({ query }), initialFilters)
 
   const createMutation = useMutation({
     ...createBusinessConsoleErpPurchaseOrderMutationOptions(),
@@ -313,7 +354,14 @@ export function useErpPurchaseOrders(initialFilters: Partial<BusinessErpListFilt
       supplierCode: string
       siteCode: string
       purchaseOrderNo?: string
-      lines: { lineNo: string, skuCode: string, uomCode: string, quantity: number, unitPrice: number, promisedDate: string }[]
+      lines: {
+        lineNo: string
+        skuCode: string
+        uomCode: string
+        quantity: number
+        unitPrice: number
+        promisedDate: string
+      }[]
     }) =>
       createMutation.mutateAsync({
         body: {
@@ -345,7 +393,7 @@ export function useErpPurchaseReceipts(initialFilters: Partial<BusinessErpListFi
     recordPurchaseReceipt: (payload: {
       purchaseOrderNo: string
       purchaseReceiptNo?: string
-      lines: { purchaseOrderLineNo: string, receivedQuantity: number }[]
+      lines: { purchaseOrderLineNo: string; receivedQuantity: number }[]
     }) =>
       recordMutation.mutateAsync({
         body: {
@@ -390,20 +438,25 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
   return {
     filters,
     salesOrders: computed<BusinessConsoleErpSalesOrderItem[]>(() =>
-      unwrapItems(salesOrdersQuery.data.value as BusinessConsoleErpSalesOrderListEnvelope | undefined),
+      unwrapItems(
+        salesOrdersQuery.data.value as BusinessConsoleErpSalesOrderListEnvelope | undefined,
+      ),
     ),
     salesOrdersTotal: computed(() =>
-      unwrapTotal(salesOrdersQuery.data.value as BusinessConsoleErpSalesOrderListEnvelope | undefined),
+      unwrapTotal(
+        salesOrdersQuery.data.value as BusinessConsoleErpSalesOrderListEnvelope | undefined,
+      ),
     ),
     salesOrdersError: salesOrdersQuery.error,
     salesOrdersPending: salesOrdersQuery.isLoading,
     refreshSalesOrders: () => refetchWithBusinessContext(businessContext, salesOrdersQuery),
-    createSalesOrder: (payload: { quotationNo: string, salesOrderNo?: string }) =>
+    createSalesOrder: (payload: { quotationNo: string; siteCode: string; salesOrderNo?: string }) =>
       createMutation.mutateAsync({
         body: {
           organizationId: businessContext.organizationId,
           environmentId: businessContext.environmentId,
           quotationNo: payload.quotationNo,
+          siteCode: payload.siteCode,
           salesOrderNo: payload.salesOrderNo || null,
           idempotencyKey: makeIdempotencyKey(),
         },
@@ -415,10 +468,10 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
 
 // 报价单：读面 + 审批（approve）+ 创建（多明细行）。
 export function useErpQuotations(initialFilters: Partial<BusinessErpListFilters> = {}) {
-  const list = useErpDocumentList<BusinessConsoleErpQuotationItem, BusinessConsoleErpQuotationListEnvelope>(
-    (query) => listBusinessConsoleErpQuotationsQueryOptions({ query }),
-    initialFilters,
-  )
+  const list = useErpDocumentList<
+    BusinessConsoleErpQuotationItem,
+    BusinessConsoleErpQuotationListEnvelope
+  >((query) => listBusinessConsoleErpQuotationsQueryOptions({ query }), initialFilters)
 
   const approveMutation = useMutation({
     ...approveBusinessConsoleErpQuotationMutationOptions(),
@@ -449,7 +502,14 @@ export function useErpQuotations(initialFilters: Partial<BusinessErpListFilters>
       customerCode: string
       expiresOn: string
       quotationNo?: string
-      lines: { lineNo: string, skuCode: string, uomCode: string, quantity: number, unitPrice: number, requiredDate: string }[]
+      lines: {
+        lineNo: string
+        skuCode: string
+        uomCode: string
+        quantity: number
+        unitPrice: number
+        requiredDate: string
+      }[]
     }) =>
       createMutation.mutateAsync({
         body: {
@@ -469,10 +529,10 @@ export function useErpQuotations(initialFilters: Partial<BusinessErpListFilters>
 
 // 商机：读面 + 开立（open）。
 export function useErpOpportunities(initialFilters: Partial<BusinessErpListFilters> = {}) {
-  const list = useErpDocumentList<BusinessConsoleErpOpportunityItem, BusinessConsoleErpOpportunityListEnvelope>(
-    (query) => listBusinessConsoleErpOpportunitiesQueryOptions({ query }),
-    initialFilters,
-  )
+  const list = useErpDocumentList<
+    BusinessConsoleErpOpportunityItem,
+    BusinessConsoleErpOpportunityListEnvelope
+  >((query) => listBusinessConsoleErpOpportunitiesQueryOptions({ query }), initialFilters)
 
   const openMutation = useMutation({
     ...openBusinessConsoleErpOpportunityMutationOptions(),
@@ -483,7 +543,7 @@ export function useErpOpportunities(initialFilters: Partial<BusinessErpListFilte
 
   return {
     ...list,
-    openOpportunity: (payload: { customerCode: string, topic: string, opportunityNo?: string }) =>
+    openOpportunity: (payload: { customerCode: string; topic: string; opportunityNo?: string }) =>
       openMutation.mutateAsync({
         body: {
           organizationId: list.organizationId.value,
@@ -501,10 +561,10 @@ export function useErpOpportunities(initialFilters: Partial<BusinessErpListFilte
 
 // 发货单：读面（由销售订单履约生成）。
 export function useErpDeliveryOrders(initialFilters: Partial<BusinessErpListFilters> = {}) {
-  const list = useErpDocumentList<BusinessConsoleErpDeliveryOrderItem, BusinessConsoleErpDeliveryOrderListEnvelope>(
-    (query) => listBusinessConsoleErpDeliveryOrdersQueryOptions({ query }),
-    initialFilters,
-  )
+  const list = useErpDocumentList<
+    BusinessConsoleErpDeliveryOrderItem,
+    BusinessConsoleErpDeliveryOrderListEnvelope
+  >((query) => listBusinessConsoleErpDeliveryOrdersQueryOptions({ query }), initialFilters)
   const releaseMutation = useMutation({
     ...releaseBusinessConsoleErpDeliveryOrderMutationOptions(),
     onSuccess() {
@@ -553,10 +613,10 @@ export function useErpFinanceSummary() {
 
 // 应收账款：读面 + 登记。
 export function useErpReceivables(initialFilters: Partial<BusinessErpListFilters> = {}) {
-  const list = useErpDocumentList<BusinessConsoleErpReceivableItem, BusinessConsoleErpReceivableListEnvelope>(
-    (query) => listBusinessConsoleErpReceivablesQueryOptions({ query }),
-    initialFilters,
-  )
+  const list = useErpDocumentList<
+    BusinessConsoleErpReceivableItem,
+    BusinessConsoleErpReceivableListEnvelope
+  >((query) => listBusinessConsoleErpReceivablesQueryOptions({ query }), initialFilters)
 
   const createMutation = useMutation({
     ...createBusinessConsoleErpAccountReceivableMutationOptions(),
@@ -567,7 +627,13 @@ export function useErpReceivables(initialFilters: Partial<BusinessErpListFilters
 
   return {
     ...list,
-    createReceivable: (payload: { sourceDocumentNo: string, customerCode: string, amount: number, currencyCode: string, receivableNo?: string }) =>
+    createReceivable: (payload: {
+      sourceDocumentNo: string
+      customerCode: string
+      amount: number
+      currencyCode: string
+      receivableNo?: string
+    }) =>
       createMutation.mutateAsync({
         body: {
           organizationId: list.organizationId.value,
@@ -587,10 +653,10 @@ export function useErpReceivables(initialFilters: Partial<BusinessErpListFilters
 
 // 应付账款：读面 + 登记。
 export function useErpPayables(initialFilters: Partial<BusinessErpListFilters> = {}) {
-  const list = useErpDocumentList<BusinessConsoleErpPayableItem, BusinessConsoleErpPayableListEnvelope>(
-    (query) => listBusinessConsoleErpPayablesQueryOptions({ query }),
-    initialFilters,
-  )
+  const list = useErpDocumentList<
+    BusinessConsoleErpPayableItem,
+    BusinessConsoleErpPayableListEnvelope
+  >((query) => listBusinessConsoleErpPayablesQueryOptions({ query }), initialFilters)
 
   const createMutation = useMutation({
     ...createBusinessConsoleErpAccountPayableMutationOptions(),
@@ -601,7 +667,13 @@ export function useErpPayables(initialFilters: Partial<BusinessErpListFilters> =
 
   return {
     ...list,
-    createPayable: (payload: { sourceDocumentNo: string, supplierCode: string, amount: number, currencyCode: string, payableNo?: string }) =>
+    createPayable: (payload: {
+      sourceDocumentNo: string
+      supplierCode: string
+      amount: number
+      currencyCode: string
+      payableNo?: string
+    }) =>
       createMutation.mutateAsync({
         body: {
           organizationId: list.organizationId.value,
@@ -621,10 +693,10 @@ export function useErpPayables(initialFilters: Partial<BusinessErpListFilters> =
 
 // 会计凭证：读面 + 过账（借贷分录）。
 export function useErpJournalVouchers(initialFilters: Partial<BusinessErpListFilters> = {}) {
-  const list = useErpDocumentList<BusinessConsoleErpJournalVoucherItem, BusinessConsoleErpJournalVoucherListEnvelope>(
-    (query) => listBusinessConsoleErpJournalVouchersQueryOptions({ query }),
-    initialFilters,
-  )
+  const list = useErpDocumentList<
+    BusinessConsoleErpJournalVoucherItem,
+    BusinessConsoleErpJournalVoucherListEnvelope
+  >((query) => listBusinessConsoleErpJournalVouchersQueryOptions({ query }), initialFilters)
 
   const postMutation = useMutation({
     ...postBusinessConsoleErpJournalVoucherMutationOptions(),
@@ -638,7 +710,7 @@ export function useErpJournalVouchers(initialFilters: Partial<BusinessErpListFil
     postVoucher: (payload: {
       postingDate: string
       voucherNo?: string
-      lines: { accountCode: string, debitAmount: number, creditAmount: number, memo: string }[]
+      lines: { accountCode: string; debitAmount: number; creditAmount: number; memo: string }[]
     }) =>
       postMutation.mutateAsync({
         body: {
@@ -657,10 +729,10 @@ export function useErpJournalVouchers(initialFilters: Partial<BusinessErpListFil
 
 // 成本候选：读面 + 登记（待入账成本）。
 export function useErpCostCandidates(initialFilters: Partial<BusinessErpListFilters> = {}) {
-  const list = useErpDocumentList<BusinessConsoleErpCostCandidateItem, BusinessConsoleErpCostCandidateListEnvelope>(
-    (query) => listBusinessConsoleErpCostCandidatesQueryOptions({ query }),
-    initialFilters,
-  )
+  const list = useErpDocumentList<
+    BusinessConsoleErpCostCandidateItem,
+    BusinessConsoleErpCostCandidateListEnvelope
+  >((query) => listBusinessConsoleErpCostCandidatesQueryOptions({ query }), initialFilters)
 
   const createMutation = useMutation({
     ...createBusinessConsoleErpCostCandidateMutationOptions(),
@@ -671,7 +743,13 @@ export function useErpCostCandidates(initialFilters: Partial<BusinessErpListFilt
 
   return {
     ...list,
-    createCostCandidate: (payload: { sourceType: string, sourceDocumentNo: string, amount: number, currencyCode: string, candidateNo?: string }) =>
+    createCostCandidate: (payload: {
+      sourceType: string
+      sourceDocumentNo: string
+      amount: number
+      currencyCode: string
+      candidateNo?: string
+    }) =>
       createMutation.mutateAsync({
         body: {
           organizationId: list.organizationId.value,

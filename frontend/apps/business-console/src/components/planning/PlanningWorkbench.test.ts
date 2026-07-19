@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 import PlanningWorkbench from './PlanningWorkbench.vue'
 
+const routerPush = vi.hoisted(() => vi.fn())
+
 vi.mock('@/composables/useBusinessPlanning', async () => {
   const { reactive, shallowRef } = await vi.importActual<typeof import('vue')>('vue')
   return {
@@ -28,7 +30,22 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
         dueDate: '2026-06-01',
         idempotencyKey: '',
       }),
-      demands: shallowRef([]),
+      demands: shallowRef([
+        {
+          demandSourceId: 'demand-001',
+          sourceReference: 'SO-DEMO-001',
+          sourceLineReference: '10',
+          customerCode: 'CUST-001',
+          sourceVersion: 3,
+          sourceStatus: 'active',
+          demandType: 'sales-order',
+          skuCode: 'SKU-FG-1000',
+          uomCode: 'pcs',
+          siteCode: 'SITE-01',
+          quantity: 2,
+          dueDate: '2026-08-15',
+        },
+      ]),
       demandsError: shallowRef(null),
       demandsPending: shallowRef(false),
       mrpRuns: shallowRef([
@@ -181,7 +198,7 @@ vi.mock('@/composables/useBusinessMasterData', async () => {
 })
 
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: routerPush }),
 }))
 
 vi.mock('@/utils/notify', () => ({
@@ -252,6 +269,17 @@ vi.mock('@nerv-iip/ui', async () => {
 })
 
 describe('PlanningWorkbench', () => {
+  it('drills a sales-order demand into the ERP order search without copying order facts', async () => {
+    const wrapper = mount(PlanningWorkbench)
+
+    await wrapper.get('[aria-label="查看销售订单 SO-DEMO-001"]').trigger('click')
+
+    expect(routerPush).toHaveBeenCalledWith({
+      path: '/erp/sales/orders',
+      query: { keyword: 'SO-DEMO-001' },
+    })
+  })
+
   it('renders backend net requirement explanation instead of recalculating MRP in the browser', () => {
     const wrapper = mount(PlanningWorkbench)
 

@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.ForecastInputAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Queries;
@@ -74,6 +75,28 @@ public sealed class PlanningInputAdapterTests
         Assert.Empty(snapshot.ScheduledReceipts);
         Assert.Equal(["SKU-FG-1000", "SKU-RM-1000"], engineering.RequestedParentSkuCodes);
         Assert.Equal(["SKU-FG-1000", "SKU-RM-1000"], inventory.RequestedSkuCodes);
+    }
+
+    [Fact]
+    public async Task Upstream_adapter_excludes_cancelled_sales_order_demands_from_mrp_inputs()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var demand = DemandSource.CreateSalesOrderDemand(
+            "org-001", "env-dev", "sales-order-id-001", "SO-DEMO-001", "10", "CUST-001",
+            "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1), 1);
+        demand.CancelFromSalesOrder(2);
+        dbContext.DemandSources.Add(demand);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var snapshot = await new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext,
+            new FakePlanningProductEngineeringClient(),
+            new FakePlanningInventoryClient()).GetSnapshotAsync(
+                "org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30), CancellationToken.None);
+
+        Assert.DoesNotContain(snapshot.Demands, x => x.DemandSourceReference == "SO-DEMO-001");
     }
 
     [Fact]

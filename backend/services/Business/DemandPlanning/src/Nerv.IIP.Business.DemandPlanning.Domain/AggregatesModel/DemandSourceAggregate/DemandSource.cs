@@ -29,6 +29,7 @@ public sealed class DemandSource : Entity<DemandSourceId>, IAggregateRoot
         UomCode = DemandPlanningText.Required(uomCode, nameof(uomCode));
         SiteCode = DemandPlanningText.Required(siteCode, nameof(siteCode));
         Quantity = DemandPlanningText.Positive(quantity, nameof(quantity));
+        SourceStatus = "active";
         DueDate = dueDate;
         CreatedAtUtc = DateTimeOffset.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
@@ -39,6 +40,11 @@ public sealed class DemandSource : Entity<DemandSourceId>, IAggregateRoot
     public string EnvironmentId { get; private set; } = string.Empty;
     public string DemandType { get; private set; } = string.Empty;
     public string SourceReference { get; private set; } = string.Empty;
+    public string SourceDocumentId { get; private set; } = string.Empty;
+    public string SourceLineReference { get; private set; } = string.Empty;
+    public string CustomerCode { get; private set; } = string.Empty;
+    public int SourceVersion { get; private set; }
+    public string SourceStatus { get; private set; } = "active";
     public string SkuCode { get; private set; } = string.Empty;
     public string UomCode { get; private set; } = string.Empty;
     public string SiteCode { get; private set; } = string.Empty;
@@ -61,10 +67,77 @@ public sealed class DemandSource : Entity<DemandSourceId>, IAggregateRoot
         return new DemandSource(organizationId, environmentId, demandType, sourceReference, skuCode, uomCode, siteCode, quantity, dueDate);
     }
 
+    public static DemandSource CreateSalesOrderDemand(
+        string organizationId,
+        string environmentId,
+        string sourceDocumentId,
+        string salesOrderNo,
+        string salesOrderLineNo,
+        string customerCode,
+        string skuCode,
+        string uomCode,
+        string siteCode,
+        decimal quantity,
+        DateOnly dueDate,
+        int sourceVersion)
+    {
+        if (sourceVersion <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sourceVersion), sourceVersion, "Sales order source version must be positive.");
+        }
+
+        var demand = new DemandSource(
+            organizationId,
+            environmentId,
+            "sales-order",
+            salesOrderNo,
+            skuCode,
+            uomCode,
+            siteCode,
+            quantity,
+            dueDate)
+        {
+            SourceDocumentId = DemandPlanningText.Required(sourceDocumentId, nameof(sourceDocumentId)),
+            SourceLineReference = DemandPlanningText.Required(salesOrderLineNo, nameof(salesOrderLineNo)),
+            CustomerCode = DemandPlanningText.Required(customerCode, nameof(customerCode)),
+            SourceVersion = sourceVersion,
+        };
+        return demand;
+    }
+
     public void Update(decimal quantity, DateOnly dueDate)
     {
         Quantity = DemandPlanningText.Positive(quantity, nameof(quantity));
         DueDate = dueDate;
         UpdatedAtUtc = DateTimeOffset.UtcNow;
+    }
+
+    public bool ApplySalesOrderSnapshot(decimal quantity, DateOnly dueDate, int sourceVersion)
+    {
+        if (sourceVersion <= SourceVersion)
+        {
+            return false;
+        }
+
+        Quantity = DemandPlanningText.Positive(quantity, nameof(quantity));
+        DueDate = dueDate;
+        SourceVersion = sourceVersion;
+        SourceStatus = "active";
+        UpdatedAtUtc = DateTimeOffset.UtcNow;
+        return true;
+    }
+
+    public bool CancelFromSalesOrder(int sourceVersion)
+    {
+        if (sourceVersion <= SourceVersion)
+        {
+            return false;
+        }
+
+        Quantity = 0m;
+        SourceVersion = sourceVersion;
+        SourceStatus = "cancelled";
+        UpdatedAtUtc = DateTimeOffset.UtcNow;
+        return true;
     }
 }
