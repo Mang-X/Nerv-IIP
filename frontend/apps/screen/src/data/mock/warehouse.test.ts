@@ -46,6 +46,13 @@ describe('出入库进度（行/单口径勾稽 + 单调 + 流量差分）', () 
     }
   })
 
+  it('mock 失败按确定性创建时段落桶，不伪造成全部刚刚发生', () => {
+    const failedHourly = buildWarehouseBoard(at7(14, 0)).inbound.failedHourly
+
+    expect(failedHourly.slice(0, -1).some((count) => count > 0)).toBe(true)
+    expect(failedHourly.at(-1)).toBe(0)
+  })
+
   it('凌晨未开窗：进度归零不造假；晚间封板后冻结且完成率高', () => {
     const dawn = buildWarehouseBoard(at(4, 0))
     expect(dawn.inbound.linesDone).toBe(0)

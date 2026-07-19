@@ -69,7 +69,7 @@ export interface WhFlowProgress {
   linesTotal: number
   /** 行完成率 0–100 🟡 = round(linesDone / linesTotal × 100) */
   pct: number
-  /** 当日失败单据数；仅由现有 WMS status 事实聚合，不把未完成当失败。 */
+  /** 近 12h 失败单据数；与 failedHourly 求和守恒，不把未完成当失败。 */
   failedDocs: number
   /** 近 12h 每小时完成行数 🟡（勾稽：工作窗内 Σ = 行完成量差） */
   hourly: number[]
@@ -79,7 +79,7 @@ export interface WhFlowProgress {
 }
 
 export interface InboundProgress extends WhFlowProgress {
-  /** 收货过账失败异常单数 ✅（正常日 0–1，异常是例外） */
+  /** 当日收货过账失败异常单数 ✅（可大于近 12h failedDocs） */
   postFailedDocs: number
   /** 失败单号（有失败时给出） */
   postFailedDoc?: string

@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createSourceFile, isImportDeclaration, isStringLiteral, ScriptTarget } from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 // Design System v2 tokens live in the shared, single-source-of-truth theme file
@@ -19,8 +20,17 @@ const appEntry = (app: string) => read(`../../../apps/${app}/src/main.ts`)
 // Strip CSS block comments so structural assertions ignore prose that documents
 // removed constructs (e.g. a comment noting the `revert-layer` hack is gone).
 const stripComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '')
-const firstStatement = (source: string) =>
-  stripComments(source).trimStart().split(/\r?\n/, 1)[0].trim()
+const firstStatement = (source: string) => {
+  const file = createSourceFile('main.ts', source, ScriptTarget.Latest, true)
+  return file.statements[0]?.getText(file)
+}
+const firstImportSpecifier = (source: string) => {
+  const file = createSourceFile('main.ts', source, ScriptTarget.Latest, true)
+  const statement = file.statements[0]
+  return statement && isImportDeclaration(statement) && isStringLiteral(statement.moduleSpecifier)
+    ? statement.moduleSpecifier.text
+    : undefined
+}
 const HOST_APPS = [
   'business-console',
   'business-pda',
@@ -188,8 +198,8 @@ describe('ADR 0020 §4 — cascade-layer isolation', () => {
   it('loads the host layer order before Vue and component-library modules', () => {
     for (const app of HOST_APPS) {
       expect
-        .soft(firstStatement(appEntry(app)), `${app} main.ts first statement`)
-        .toBe("import './assets/main.css'")
+        .soft(firstImportSpecifier(appEntry(app)), `${app} main.ts first import`)
+        .toBe('./assets/main.css')
     }
   })
 
@@ -200,6 +210,15 @@ import './assets/main.css'
 import App from './App.vue'`
 
     expect(firstStatement(source)).toBe("import App from './App.vue'")
+  })
+
+  it('parses the first module statement without being fooled by comments or string contents', () => {
+    expect(firstStatement('// license\nimport "./assets/main.css";')).toBe(
+      'import "./assets/main.css";',
+    )
+    expect(firstStatement("const marker = '/* import fake */'\nimport './assets/main.css'")).toBe(
+      "const marker = '/* import fake */'",
+    )
   })
 
   it('wraps the library token table + reset + overlay motion in layers', () => {

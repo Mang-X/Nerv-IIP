@@ -2,14 +2,19 @@
 import { NvKpiBar, NvSparkline, NvScreenStatusLight, useScreenData } from '@nerv-iip/ui'
 import { useVirtualList } from '@vueuse/core'
 import { Activity, AlertTriangle, Factory, PackageCheck, Workflow } from '@lucide/vue'
-import { type Component, computed, ref, watch } from 'vue'
+import { type Component, type CSSProperties, computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
 import { useBackLink } from '@/composables/useBackLink'
 import type { LineSummaryCard } from '@/data/contracts/line'
 import { fetchLineCards } from '@/data/fetchers/line'
 import { formatScreenFreshness } from '@/data/freshness'
-import { LINE_OVERSCAN, LINE_ROW_ITEM_HEIGHT } from '@/data/line-layout'
+import {
+  LINE_CARD_HEIGHT,
+  LINE_OVERSCAN,
+  LINE_ROW_GAP,
+  LINE_ROW_ITEM_HEIGHT,
+} from '@/layouts/line-layout'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
 // 产线选择器 = 迷你监控板（spec §四）：红线置顶（数据层排序）、scope 收窄、
@@ -41,6 +46,10 @@ watch(
 
 // —— 行虚拟滚动（每行 3 卡）——
 const COLS = 3
+const virtualRowStyle = {
+  height: `${LINE_CARD_HEIGHT}px`,
+  marginBottom: `${LINE_ROW_GAP}px`,
+} as CSSProperties
 const rowsSrc = computed(() => {
   const list = cards.value ?? []
   const out: LineSummaryCard[][] = []
@@ -138,7 +147,7 @@ const kpiItems = computed<KpiCell[]>(() => {
 
       <div v-bind="containerProps" class="ls-scroll nv-scr-scroll">
         <div v-bind="wrapperProps">
-          <div v-for="row in vRows" :key="row.index" class="ls-row">
+          <div v-for="row in vRows" :key="row.index" class="ls-row" :style="virtualRowStyle">
             <RouterLink v-for="c in row.data" :key="c.id" :to="`/line/${c.id}`" class="ls-link">
               <article class="ls-card" :class="c.state">
                 <header class="ls-top">
@@ -294,8 +303,6 @@ const kpiItems = computed<KpiCell[]>(() => {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 14px;
-    height: 258px;
-    margin-bottom: 16px;
   }
   .ls-link {
     display: block;

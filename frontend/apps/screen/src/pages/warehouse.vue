@@ -337,8 +337,8 @@ const wcsView = ref<'chart' | 'list'>('chart')
             <div class="wb-flow-spark">
               <NvScreenBarChart
                 :series="[
-                  { label: '完成', color: '#4aa6ee', data: board.inbound.hourly },
-                  { label: '失败', color: '#ef5a63', data: board.inbound.failedHourly },
+                  { label: '完成', color: 'var(--nv-scr-cyan)', data: board.inbound.hourly },
+                  { label: '失败', color: 'var(--nv-scr-red)', data: board.inbound.failedHourly },
                 ]"
                 :hover-labels="board.inbound.hourLabels"
                 autoplay
@@ -375,8 +375,8 @@ const wcsView = ref<'chart' | 'list'>('chart')
             <div class="wb-flow-spark">
               <NvScreenBarChart
                 :series="[
-                  { label: '完成', color: '#8b9be6', data: board.outbound.hourly },
-                  { label: '失败', color: '#ef5a63', data: board.outbound.failedHourly },
+                  { label: '完成', color: 'var(--nv-scr-indigo)', data: board.outbound.hourly },
+                  { label: '失败', color: 'var(--nv-scr-red)', data: board.outbound.failedHourly },
                 ]"
                 :hover-labels="board.outbound.hourLabels"
                 autoplay
@@ -526,9 +526,21 @@ const wcsView = ref<'chart' | 'list'>('chart')
                       class="wa-donut"
                       :size="104"
                       :segments="[
-                        { label: '执行中', value: wcs.counts.running, color: '#4aa6ee' },
-                        { label: '已完成', value: wcs.counts.completed, color: '#3fb37f' },
-                        { label: '失败', value: wcs.counts.failed, color: '#ef5a63' },
+                        {
+                          label: '执行中',
+                          value: wcs.counts.running,
+                          color: 'var(--nv-scr-cyan)',
+                        },
+                        {
+                          label: '已完成',
+                          value: wcs.counts.completed,
+                          color: 'var(--nv-scr-green)',
+                        },
+                        {
+                          label: '失败',
+                          value: wcs.counts.failed,
+                          color: 'var(--nv-scr-red)',
+                        },
                       ]"
                     >
                       <b class="wa-dn-num">{{ nf.format(wcs.counts.completed) }}</b>

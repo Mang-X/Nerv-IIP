@@ -21,7 +21,7 @@ import { useAccessScope } from '@/access/useAccessScope'
 import { useBackLink } from '@/composables/useBackLink'
 import WorkshopHealthCard from '@/components/factory/WorkshopHealthCard.vue'
 import type { FactoryOverview } from '@/data/contracts/factory'
-import { OEE_PLACEHOLDER_BADGE } from '@/data/copy'
+import { FACTORY_OEE_PLACEHOLDER_BADGE } from '@/data/copy'
 import { fetchFactoryOverview } from '@/data/fetchers/factory'
 import { formatScreenFreshness } from '@/data/freshness'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
@@ -161,7 +161,7 @@ const bandCells = computed<BandCell[]>(() => {
         <div class="side">
           <NvScreenPanel title="综合效率 OEE">
             <template #extra>
-              <NvScreenStatusTag tone="amber" :label="OEE_PLACEHOLDER_BADGE" />
+              <NvScreenStatusTag tone="amber" :label="FACTORY_OEE_PLACEHOLDER_BADGE" />
             </template>
             <p class="oee-note">请在设备详情查看由报工、运行时长和理论速率计算的真实单机 OEE。</p>
             <p class="oee-note">

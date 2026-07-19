@@ -337,17 +337,22 @@ function wcsBoardOf(
   return { adapters, counts, failures }
 }
 
-// —— 入库 / 出库（文档级，无 completedAtUtc → 当日到货 cohort：当日创建单中已完成的）——
+// —— 入库 / 出库（文档级，无 completedAtUtc）：扫描窗口覆盖「今天 ∪ 近 12h」，
+// 当日进度只看 today cohort；完成/失败柱按完整近 12h 窗口落桶。——
 function inboundOf(
-  todayItems: BusinessConsoleWmsInboundOrderItem[],
+  scannedItems: BusinessConsoleWmsInboundOrderItem[],
   nowMs: number,
 ): InboundProgress {
+  const todayItems = scannedItems.filter((o) => isToday(o.createdAtUtc, nowMs))
   const docsTotal = todayItems.length
-  const completed = todayItems.filter((o) => eq(o.status, 'Completed'))
-  const docsDone = completed.length
-  const failed = todayItems.filter((o) => eq(o.status, 'InventoryPostingFailed'))
-  const { hourly, hourLabels } = hourlyBy(completed, nowMs, (o) => o.createdAtUtc)
-  const { hourly: failedHourly } = hourlyBy(failed, nowMs, (o) => o.createdAtUtc)
+  const completedToday = todayItems.filter((o) => eq(o.status, 'Completed'))
+  const failedToday = todayItems.filter((o) => eq(o.status, 'InventoryPostingFailed'))
+  const completedInWindow = scannedItems.filter((o) => eq(o.status, 'Completed'))
+  const failedInWindow = scannedItems.filter((o) => eq(o.status, 'InventoryPostingFailed'))
+  const docsDone = completedToday.length
+  const { hourly, hourLabels } = hourlyBy(completedInWindow, nowMs, (o) => o.createdAtUtc)
+  const { hourly: failedHourly } = hourlyBy(failedInWindow, nowMs, (o) => o.createdAtUtc)
+  const failedDocs = failedHourly.reduce((sum, count) => sum + count, 0)
   return {
     docsDone,
     docsTotal,
@@ -355,34 +360,37 @@ function inboundOf(
     linesDone: docsDone,
     linesTotal: docsTotal,
     pct: docsTotal > 0 ? Math.round((docsDone / docsTotal) * 100) : 0,
-    failedDocs: failed.length,
+    failedDocs,
     hourly,
     failedHourly,
     hourLabels,
-    postFailedDocs: failed.length,
-    postFailedDoc: failed[0]?.inboundOrderNo?.trim() || undefined,
+    postFailedDocs: failedToday.length,
+    postFailedDoc: failedToday[0]?.inboundOrderNo?.trim() || undefined,
   }
 }
 
 function outboundOf(
-  todayItems: BusinessConsoleWmsOutboundOrderItem[],
+  scannedItems: BusinessConsoleWmsOutboundOrderItem[],
   nowMs: number,
 ): OutboundProgress {
+  const todayItems = scannedItems.filter((o) => isToday(o.createdAtUtc, nowMs))
   const docsTotal = todayItems.length
-  const completed = todayItems.filter((o) => eq(o.status, 'Completed'))
-  const docsDone = completed.length
-  const failed = todayItems.filter((o) => eq(o.status, 'InventoryPostingFailed'))
-  const { hourly, hourLabels } = hourlyBy(completed, nowMs, (o) => o.createdAtUtc)
-  const { hourly: failedHourly } = hourlyBy(failed, nowMs, (o) => o.createdAtUtc)
+  const completedToday = todayItems.filter((o) => eq(o.status, 'Completed'))
+  const completedInWindow = scannedItems.filter((o) => eq(o.status, 'Completed'))
+  const failedInWindow = scannedItems.filter((o) => eq(o.status, 'InventoryPostingFailed'))
+  const docsDone = completedToday.length
+  const { hourly, hourLabels } = hourlyBy(completedInWindow, nowMs, (o) => o.createdAtUtc)
+  const { hourly: failedHourly } = hourlyBy(failedInWindow, nowMs, (o) => o.createdAtUtc)
+  const failedDocs = failedHourly.reduce((sum, count) => sum + count, 0)
   // 最近一票发运 = 最新已完成（发运）出库单（newest-first，取首个 Completed）。
-  const latest = todayItems.find((o) => eq(o.status, 'Completed'))?.outboundOrderNo?.trim()
+  const latest = completedToday[0]?.outboundOrderNo?.trim()
   return {
     docsDone,
     docsTotal,
     linesDone: docsDone,
     linesTotal: docsTotal,
     pct: docsTotal > 0 ? Math.round((docsDone / docsTotal) * 100) : 0,
-    failedDocs: failed.length,
+    failedDocs,
     hourly,
     failedHourly,
     hourLabels,
@@ -507,25 +515,29 @@ function fetchWcsBoard(ctx: Ctx, nowMs: number): Promise<WcsBoard> {
   ]).then(([failed, running, done]) => wcsBoardOf(failed, running, done, nowMs))
 }
 
-function fetchInboundToday(ctx: Ctx, nowMs: number): Promise<InboundProgress> {
+function flowScanStart(nowMs: number): number {
+  return Math.min(startOfLocalDay(nowMs), nowMs - 12 * 3_600_000)
+}
+
+function fetchInboundFlow(ctx: Ctx, nowMs: number): Promise<InboundProgress> {
   return paginate(
     (skip, take) =>
       pageOf(
         listBusinessConsoleWmsInboundOrders({ throwOnError: true, query: { ...ctx, skip, take } }),
       ),
-    '入库单(当日)',
-    (o) => tsBefore(o.createdAtUtc, startOfLocalDay(nowMs)),
+    '入库单(当日+近12h)',
+    (o) => tsBefore(o.createdAtUtc, flowScanStart(nowMs)),
   ).then((items) => inboundOf(items, nowMs))
 }
 
-function fetchOutboundToday(ctx: Ctx, nowMs: number): Promise<OutboundProgress> {
+function fetchOutboundFlow(ctx: Ctx, nowMs: number): Promise<OutboundProgress> {
   return paginate(
     (skip, take) =>
       pageOf(
         listBusinessConsoleWmsOutboundOrders({ throwOnError: true, query: { ...ctx, skip, take } }),
       ),
-    '出库单(当日)',
-    (o) => tsBefore(o.createdAtUtc, startOfLocalDay(nowMs)),
+    '出库单(当日+近12h)',
+    (o) => tsBefore(o.createdAtUtc, flowScanStart(nowMs)),
   ).then((items) => outboundOf(items, nowMs))
 }
 
@@ -535,8 +547,8 @@ export async function fetchRealWarehouseBoard(factoryId = 'F01'): Promise<Wareho
   const nowMs = Date.now()
 
   const [inbound, outbound, putaway, pick, count, wcs] = await Promise.all([
-    fetchInboundToday(ctx, nowMs),
-    fetchOutboundToday(ctx, nowMs),
+    fetchInboundFlow(ctx, nowMs),
+    fetchOutboundFlow(ctx, nowMs),
     fetchTaskGroup(listBusinessConsoleWmsPutawayTasks, ctx, 'putaway', nowMs),
     fetchTaskGroup(listBusinessConsoleWmsPickingTasks, ctx, 'pick', nowMs),
     fetchCountBoard(ctx, nowMs),

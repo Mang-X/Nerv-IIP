@@ -86,8 +86,15 @@ function hourlyOf(
   return { hourly, hourLabels }
 }
 
-function failedHourlyOf(count: number): number[] {
-  return Array.from({ length: 12 }, (_, index) => (index === 11 ? count : 0))
+/** mock 没有单据时间戳；用稳定的模拟创建小时分散失败，避免伪造成全部刚刚发生。 */
+function failedHourlyOf(count: number, seed: number): number[] {
+  const hourly = new Array(12).fill(0) as number[]
+  const bucketOrder = [8, 4, 10, 6, 2, 9, 5, 1, 7, 3, 0]
+  for (let index = 0; index < count; index++) {
+    const bucket = bucketOrder[(seed + index) % bucketOrder.length] ?? 8
+    hourly[bucket]++
+  }
+  return hourly
 }
 
 // —— 任务池素材（汽车 / 电池制造物料 + 真实库位编码）——
@@ -285,7 +292,7 @@ export function buildWarehouseBoard(now = new Date(), factoryId = 'F01'): Wareho
     pct: Math.round((inLinesDone / inLinesTotal) * 100),
     failedDocs: postFailedDocs,
     ...hourlyOf(inLinesTotal, now, IN_CURVE, 0.6),
-    failedHourly: failedHourlyOf(postFailedDocs),
+    failedHourly: failedHourlyOf(postFailedDocs, s),
     postFailedDocs,
     postFailedDoc: postFailedDocs > 0 ? seq('ASN', 260690 + (s % 9), 6) : undefined,
   }
@@ -303,7 +310,7 @@ export function buildWarehouseBoard(now = new Date(), factoryId = 'F01'): Wareho
     pct: Math.round((outLinesDone / outLinesTotal) * 100),
     failedDocs: 0,
     ...hourlyOf(outLinesTotal, now, OUT_CURVE, 2.3),
-    failedHourly: failedHourlyOf(0),
+    failedHourly: failedHourlyOf(0, s + 1),
     customers: 5 + (s % 3),
     latestShipment:
       outDocsDone > 0
