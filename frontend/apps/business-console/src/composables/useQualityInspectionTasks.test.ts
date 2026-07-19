@@ -9,6 +9,7 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   isInspectionTaskOverdue,
+  locateInspectionTasks,
   sortInspectionTasks,
   useQualityInspectionTasks,
 } from './useQualityInspectionTasks'
@@ -114,6 +115,83 @@ describe('quality inspection task workbench', () => {
       'late',
       'due',
     ])
+  })
+
+  it('scans every facade page and locates a WMS receiving task by exact source document number', async () => {
+    const loadPage = vi.fn(async (skip: number) => ({
+      success: true,
+      data: {
+        total: 201,
+        items:
+          skip === 0
+            ? Array.from({ length: 200 }, (_, index) => ({
+                inspectionTaskId: `TASK-${index}`,
+                sourceService: 'wms',
+                sourceType: 'receiving',
+                sourceDocumentId: `GR-${index}`,
+              }))
+            : [
+                {
+                  inspectionTaskId: 'TASK-LOCATED',
+                  sourceService: 'WMS',
+                  sourceType: 'receiving',
+                  sourceDocumentId: 'ASN-20260718-0087',
+                },
+              ],
+      },
+    }))
+
+    await expect(
+      locateInspectionTasks(loadPage, { sourceDocumentNo: ' ASN-20260718-0087 ' }),
+    ).resolves.toEqual([expect.objectContaining({ inspectionTaskId: 'TASK-LOCATED' })])
+    expect(loadPage).toHaveBeenNthCalledWith(1, 0, 200)
+    expect(loadPage).toHaveBeenNthCalledWith(2, 200, 200)
+  })
+
+  it('does not treat non-WMS, non-receiving or partial source references as a match', async () => {
+    const items = [
+      {
+        inspectionTaskId: 'ERP',
+        sourceService: 'erp',
+        sourceType: 'receiving',
+        sourceDocumentId: 'ASN-1',
+      },
+      {
+        inspectionTaskId: 'FINAL',
+        sourceService: 'wms',
+        sourceType: 'final',
+        sourceDocumentId: 'ASN-1',
+      },
+      {
+        inspectionTaskId: 'PARTIAL',
+        sourceService: 'wms',
+        sourceType: 'receiving',
+        sourceDocumentId: 'ASN-10',
+      },
+    ]
+
+    await expect(
+      locateInspectionTasks(async () => ({ success: true, data: { total: 3, items } }), {
+        sourceDocumentNo: 'ASN-1',
+      }),
+    ).resolves.toEqual([])
+  })
+
+  it('rejects the whole locator query when a later facade page fails', async () => {
+    const loadPage = vi.fn(async (skip: number) => {
+      if (skip === 200) throw new Error('503')
+      return {
+        success: true,
+        data: {
+          total: 201,
+          items: Array.from({ length: 200 }, (_, index) => ({ inspectionTaskId: `TASK-${index}` })),
+        },
+      }
+    })
+
+    await expect(locateInspectionTasks(loadPage, { inspectionTaskId: 'TASK-200' })).rejects.toThrow(
+      '503',
+    )
   })
 
   it('starts a task through the existing from-task record mutation and invalidates the list', async () => {

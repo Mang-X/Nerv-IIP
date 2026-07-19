@@ -18,8 +18,8 @@ import {
   NvSectionCards,
 } from '@nerv-iip/ui'
 import { AlertCircleIcon, ArrowRightIcon, ClipboardCheckIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { computed, watch } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -29,9 +29,14 @@ definePage({
   },
 })
 
+const route = useRoute()
 const router = useRouter()
+const initialSourceDocumentNo = firstQuery(route.query.sourceDocumentNo)
+const initialInspectionTaskId = firstQuery(route.query.inspectionTaskId)
 const { filters, tasks, total, pending, error, refreshTasks } = useQualityInspectionTasks({
   status: 'pending',
+  ...(initialSourceDocumentNo ? { sourceDocumentNo: initialSourceDocumentNo } : {}),
+  ...(initialInspectionTaskId ? { inspectionTaskId: initialInspectionTaskId } : {}),
 })
 const { page, pageSize } = usePagedList(filters, {
   initialPageSize: '200',
@@ -51,7 +56,32 @@ const overdueCount = computed(
   () => tasks.value.filter((task) => isInspectionTaskOverdue(task, today)).length,
 )
 const completedToday = computed(() => '—')
-const completedTodayHint = 'Quality facade 当前未返回完成时间，暂不伪造今日统计'
+const completedTodayHint = '当前数据暂不提供完成时间，今日完成数暂不展示'
+const locatorMessage = computed(() => {
+  if (filters.sourceDocumentNo) return `正在定位收货单 ${filters.sourceDocumentNo} 的待检任务`
+  if (filters.inspectionTaskId) return `正在定位待检任务 ${filters.inspectionTaskId}`
+  return ''
+})
+const emptyMessage = computed(() =>
+  locatorMessage.value
+    ? `${locatorMessage.value.replace('正在定位', '未找到')}。请确认来源单据已生成待检任务，或清除定位条件后查看全部任务。`
+    : '当前没有待检任务。免检 SKU 不会生成任务；若刚完成收货或报工，请刷新后再查看。',
+)
+const scopeHint = computed(() =>
+  locatorMessage.value
+    ? `共定位到 ${total.value} 个待检任务；已检查当前业务范围内的全部待检分页。`
+    : `共 ${total.value} 个待检任务；当前批次最多加载 200 条，来源筛选作用于当前批次。`,
+)
+
+watch(
+  () =>
+    [firstQuery(route.query.sourceDocumentNo), firstQuery(route.query.inspectionTaskId)] as const,
+  ([sourceDocumentNo, inspectionTaskId]) => {
+    filters.sourceDocumentNo = sourceDocumentNo || undefined
+    filters.inspectionTaskId = inspectionTaskId || undefined
+    filters.skip = 0
+  },
+)
 
 const columns: NvDataTableColumn<BusinessConsoleQualityInspectionTaskItem>[] = [
   {
@@ -103,6 +133,11 @@ const columns: NvDataTableColumn<BusinessConsoleQualityInspectionTaskItem>[] = [
 
 function sourceLabel(value?: string | null) {
   return sourceTabs.find((tab) => tab.value === value)?.label ?? '其他来源'
+}
+
+function firstQuery(value: unknown) {
+  const text = Array.isArray(value) ? value[0] : value
+  return typeof text === 'string' ? text.trim() : ''
 }
 
 function formatDateTime(value?: string | null) {
@@ -196,14 +231,19 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
         </div>
       </div>
 
+      <div v-if="locatorMessage" class="flex flex-wrap items-center justify-between gap-2">
+        <p class="text-sm font-medium" role="status">{{ locatorMessage }}</p>
+        <NvButton size="sm" variant="ghost" @click="router.replace('/quality/inspection-tasks')">
+          查看全部待检任务
+        </NvButton>
+      </div>
+
       <div class="grid gap-3 sm:grid-cols-[minmax(0,280px)_auto] sm:items-end">
         <NvField>
           <NvFieldLabel for="inspection-task-sku">按 SKU 查找</NvFieldLabel>
           <NvInput id="inspection-task-sku" v-model="filters.skuCode" placeholder="输入 SKU 编码" />
         </NvField>
-        <p class="text-sm text-muted-foreground">
-          共 {{ total }} 个待检任务；当前批次最多加载 200 条，来源筛选作用于当前批次。
-        </p>
+        <p class="text-sm text-muted-foreground">{{ scopeHint }}</p>
       </div>
     </div>
 
@@ -230,7 +270,7 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
       :loading="pending"
       :searchable="false"
       :column-settings="false"
-      empty-message="当前没有待检任务。免检 SKU 不会生成任务；若刚完成收货或报工，请刷新后再查看。"
+      :empty-message="emptyMessage"
       @update:page="page = $event"
       @update:page-size="(value) => (pageSize = String(value))"
     >

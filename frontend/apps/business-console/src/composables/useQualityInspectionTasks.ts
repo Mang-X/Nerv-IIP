@@ -1,5 +1,6 @@
 import {
   createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions,
+  listBusinessConsoleQualityInspectionTasks,
   listBusinessConsoleQualityInspectionTasksQueryOptions,
   type BusinessConsoleCreateInspectionRecordFromTaskRequest,
   type BusinessConsoleQualityInspectionTaskItem,
@@ -23,7 +24,24 @@ export interface InspectionTaskFilters extends BusinessContextFields {
   skuCode?: string
   skip: number
   take: number
+  sourceDocumentNo?: string
+  inspectionTaskId?: string
 }
+
+interface InspectionTaskPage {
+  success?: boolean
+  data?: {
+    items?: BusinessConsoleQualityInspectionTaskItem[] | null
+    total?: number
+  } | null
+}
+
+interface InspectionTaskLocator {
+  sourceDocumentNo?: string
+  inspectionTaskId?: string
+}
+
+type InspectionTaskPageLoader = (skip: number, take: number) => Promise<InspectionTaskPage>
 
 function isBusinessQuery(id: string) {
   return (entry: UseQueryEntry) => {
@@ -62,6 +80,40 @@ export function sortInspectionTasks(
   })
 }
 
+export async function locateInspectionTasks(
+  loadPage: InspectionTaskPageLoader,
+  locator: InspectionTaskLocator,
+) {
+  const sourceDocumentNo = locator.sourceDocumentNo?.trim()
+  const inspectionTaskId = locator.inspectionTaskId?.trim()
+  const located: BusinessConsoleQualityInspectionTaskItem[] = []
+  let skip = 0
+  let total = Number.POSITIVE_INFINITY
+
+  while (skip < total) {
+    const response = await loadPage(skip, DEFAULT_TAKE)
+    const items = response.success ? (response.data?.items ?? []) : []
+    total = Math.max(0, response.data?.total ?? 0)
+
+    located.push(
+      ...items.filter((task) => {
+        if (inspectionTaskId && task.inspectionTaskId?.trim() !== inspectionTaskId) return false
+        if (!sourceDocumentNo) return !!inspectionTaskId
+        return (
+          task.sourceService?.trim().toLowerCase() === 'wms' &&
+          task.sourceType === 'receiving' &&
+          task.sourceDocumentId?.trim() === sourceDocumentNo
+        )
+      }),
+    )
+
+    if (items.length === 0) break
+    skip += DEFAULT_TAKE
+  }
+
+  return located
+}
+
 function defaultFilters(initial: Partial<InspectionTaskFilters> = {}) {
   return bindBusinessContext(
     reactive<InspectionTaskFilters>({
@@ -77,19 +129,49 @@ function defaultFilters(initial: Partial<InspectionTaskFilters> = {}) {
 
 export function useQualityInspectionTasks(initialFilters: Partial<InspectionTaskFilters> = {}) {
   const filters = defaultFilters(initialFilters)
-  const tasksQuery = useQuery(() => ({
-    ...listBusinessConsoleQualityInspectionTasksQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        ...(filters.status ? { status: filters.status } : {}),
-        ...(filters.skuCode?.trim() ? { skuCode: filters.skuCode.trim() } : {}),
-        skip: filters.skip,
-        take: filters.take,
-      },
-    }),
-    enabled: hasBusinessContext(filters),
-  }))
+  const tasksQuery = useQuery(() => {
+    const query = {
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.skuCode?.trim() ? { skuCode: filters.skuCode.trim() } : {}),
+      skip: filters.skip,
+      take: filters.take,
+    }
+    const generatedOptions = listBusinessConsoleQualityInspectionTasksQueryOptions({ query })
+    const sourceDocumentNo = filters.sourceDocumentNo?.trim()
+    const inspectionTaskId = filters.inspectionTaskId?.trim()
+    const hasLocator = !!sourceDocumentNo || !!inspectionTaskId
+
+    return {
+      ...generatedOptions,
+      ...(hasLocator
+        ? {
+            key: [
+              ...generatedOptions.key,
+              {
+                sourceDocumentNo: sourceDocumentNo ?? '',
+                inspectionTaskId: inspectionTaskId ?? '',
+              },
+            ],
+            query: async () => {
+              const items = await locateInspectionTasks(
+                async (skip, take) => {
+                  const { data } = await listBusinessConsoleQualityInspectionTasks({
+                    query: { ...query, skip, take },
+                    throwOnError: true,
+                  })
+                  return data
+                },
+                { sourceDocumentNo, inspectionTaskId },
+              )
+              return { success: true, data: { items, total: items.length } }
+            },
+          }
+        : {}),
+      enabled: hasBusinessContext(filters),
+    }
+  })
   const taskActions = useQualityInspectionTaskActions(filters)
 
   const rawTasks = computed<BusinessConsoleQualityInspectionTaskItem[]>(() => {

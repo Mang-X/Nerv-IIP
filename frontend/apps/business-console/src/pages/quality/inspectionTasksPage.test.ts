@@ -45,13 +45,18 @@ const state = vi.hoisted(() => ({
     },
   ],
   push: vi.fn(),
+  query: {} as Record<string, string>,
+  initialFilters: undefined as Record<string, unknown> | undefined,
   pagedListOptions: undefined as { initialPageSize?: string } | undefined,
 }))
 
 vi.mock('@/composables/useQualityInspectionTasks', () => ({
   isInspectionTaskOverdue: (task: { status?: string; dueAtUtc?: string }) =>
     task.status === 'pending' && !!task.dueAtUtc && new Date(task.dueAtUtc).getTime() < Date.now(),
-  useQualityInspectionTasks: (initial: { status?: string } = {}) => {
+  useQualityInspectionTasks: (
+    initial: { status?: string; sourceDocumentNo?: string; inspectionTaskId?: string } = {},
+  ) => {
+    state.initialFilters = initial
     const filters = reactive({
       organizationId: 'org-001',
       environmentId: 'env-dev',
@@ -60,6 +65,8 @@ vi.mock('@/composables/useQualityInspectionTasks', () => ({
       skuCode: '',
       skip: 0,
       take: 200,
+      sourceDocumentNo: initial.sourceDocumentNo,
+      inspectionTaskId: initial.inspectionTaskId,
     })
     const tasks = computed(() =>
       initial.status === 'completed'
@@ -92,6 +99,7 @@ vi.mock('@/stores/auth', () => ({
 
 vi.mock('vue-router', () => ({
   RouterLink: { props: ['to'], template: '<a :data-to="to"><slot /></a>' },
+  useRoute: () => ({ query: state.query }),
   useRouter: () => ({ push: state.push }),
 }))
 
@@ -121,6 +129,8 @@ describe('quality inspection task workbench page', () => {
   beforeEach(() => {
     state.error = undefined
     state.push.mockReset()
+    state.query = {}
+    state.initialFilters = undefined
     state.pagedListOptions = undefined
   })
 
@@ -167,5 +177,16 @@ describe('quality inspection task workbench page', () => {
     expect(wrapper.text()).toContain('重试')
     expect(wrapper.text()).not.toContain('当前没有待检任务')
     expect(wrapper.find('[data-testid="task-table"]').exists()).toBe(false)
+  })
+
+  it('consumes the stable source document locator contract from WMS', () => {
+    state.query = { sourceDocumentNo: ' ASN-20260718-0087 ' }
+    const wrapper = mount(InspectionTasksPage, { global: { stubs } })
+
+    expect(state.initialFilters).toEqual({
+      status: 'pending',
+      sourceDocumentNo: 'ASN-20260718-0087',
+    })
+    expect(wrapper.text()).toContain('正在定位收货单 ASN-20260718-0087 的待检任务')
   })
 })
