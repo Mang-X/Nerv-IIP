@@ -4,6 +4,7 @@ import { CalendarClockIcon } from '@lucide/vue'
 import { computed, ref, toRef } from 'vue'
 import type { EngineCommand, TaskDragPayload, TimeScale } from '../engine/engine'
 import type { ScheduleModel } from '../model/types'
+import ReadonlyScheduleTimeline from './ReadonlyScheduleTimeline.vue'
 import { useEngine } from './useEngine'
 import '../styles/scheduling.css'
 
@@ -56,15 +57,17 @@ defineExpose({ command, engineName })
 
 <template>
   <div class="relative h-full w-full">
-    <div
-      v-if="loading"
-      data-testid="gantt-skeleton"
-      class="flex h-full w-full flex-col gap-2 p-4"
-    >
+    <div v-if="loading" data-testid="gantt-skeleton" class="flex h-full w-full flex-col gap-2 p-4">
       <Skeleton v-for="i in 6" :key="i" class="h-7 w-full" />
     </div>
     <template v-else>
-      <div ref="container" :data-view="view" :data-engine="engineName" class="h-full w-full" />
+      <div
+        v-show="engineName === 'dhtmlx'"
+        ref="container"
+        :data-view="view"
+        :data-engine="engineName"
+        class="h-full w-full"
+      />
       <!-- 无可用引擎时的优雅占位:容器仍在 DOM 中,引擎一旦可用即可挂载。 -->
       <div
         v-if="isEmpty"
@@ -79,6 +82,15 @@ defineExpose({ command, engineName })
           <p class="text-xs">调整筛选条件或生成排程后再查看甘特图。</p>
         </div>
       </div>
+      <ReadonlyScheduleTimeline
+        v-else-if="engineName === 'unavailable' && readOnly && model"
+        :model="model"
+        :view="view"
+        :scale="scale"
+        :group-by="groupBy"
+        @task-select="emit('taskSelect', $event)"
+        @conflict-click="emit('conflictClick', $event)"
+      />
       <div
         v-else-if="engineName === 'unavailable'"
         data-testid="engine-unavailable"

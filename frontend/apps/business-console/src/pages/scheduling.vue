@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type {
-  BusinessConsoleSchedulePlan,
   BusinessConsoleSchedulingAssignment,
   BusinessConsoleSchedulingConflict,
   BusinessConsoleSchedulingPlanSummaryResponse,
@@ -10,6 +9,12 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useBusinessScheduling } from '@/composables/useBusinessScheduling'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
+import {
+  schedulingPlanStatusLabel,
+  schedulingPlanStatusTone,
+  schedulingPlanTerminalReleaseReason,
+} from '@/utils/schedulingPlanPresentation'
+import SchedulingPlanGantt from '@/components/scheduling/SchedulingPlanGantt.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -20,6 +25,11 @@ import {
   NvSheetDescription,
   NvSheetHeader,
   NvSheetTitle,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
   NvStatusBadge,
   NvTabs,
@@ -28,8 +38,8 @@ import {
   NvTabsTrigger,
   toast,
 } from '@nerv-iip/ui'
-import { CalendarClockIcon, EyeIcon, RefreshCwIcon, SendIcon } from '@lucide/vue'
-import { computed, shallowRef } from 'vue'
+import { EyeIcon, RefreshCwIcon, SendIcon } from '@lucide/vue'
+import { computed, shallowRef, watch } from 'vue'
 
 definePage({
   meta: {
@@ -53,6 +63,17 @@ const {
 
 const activeView = shallowRef('table')
 const detailOpen = shallowRef(false)
+const actionablePlans = computed(() =>
+  plans.value.filter(
+    (plan): plan is BusinessConsoleSchedulingPlanSummaryResponse & { planId: string } =>
+      Boolean(plan.planId),
+  ),
+)
+
+watch([activeView, actionablePlans], ([view, availablePlans]) => {
+  if (view !== 'gantt' || detailSelection.planId || availablePlans.length === 0) return
+  detailSelection.planId = availablePlans[0]?.planId ?? ''
+})
 
 const columns: NvDataTableColumn<BusinessConsoleSchedulingPlanSummaryResponse>[] = [
   {
@@ -88,22 +109,12 @@ const detailFeedback = computed(() => {
   if (detailSelection.planId) return '未返回方案明细。'
   return '请选择一个排程方案查看明细。'
 })
+const selectedPlanSummary = computed(() =>
+  actionablePlans.value.find((plan) => plan.planId === detailSelection.planId),
+)
 
 function rowKey(row: BusinessConsoleSchedulingPlanSummaryResponse) {
   return row.planId ?? row.problemId ?? 'plan'
-}
-
-function statusLabel(status?: string | null) {
-  if (status === 'preview') return '预览'
-  if (status === 'generated') return '已生成'
-  if (status === 'released') return '已发布'
-  return status ?? '未知'
-}
-
-function statusTone(status?: string | null) {
-  if (status === 'released') return 'success'
-  if (status === 'generated') return 'warning'
-  return 'neutral'
 }
 
 function invalidationSummary(row: BusinessConsoleSchedulingPlanSummaryResponse) {
@@ -152,6 +163,8 @@ function openDetail(planId: string | undefined) {
 
 async function publish(planId: string | undefined) {
   if (!planId) return
+  const summary = actionablePlans.value.find((plan) => plan.planId === planId)
+  if (!summary || !canRelease(summary)) return
 
   try {
     await releasePlan(planId)
@@ -161,19 +174,14 @@ async function publish(planId: string | undefined) {
   }
 }
 
-function isReleased(
-  row: BusinessConsoleSchedulingPlanSummaryResponse | BusinessConsoleSchedulePlan | undefined,
-) {
-  return row?.status === 'released'
-}
-
-// 失效方案禁止发布类操作：排程前提已变化，须先重排再发布，否则会下达一份过期计划。
+// 已终止或失效的方案禁止发布，避免重复下达或下达一份过期计划。
 function canRelease(row: BusinessConsoleSchedulingPlanSummaryResponse) {
-  return !isReleased(row) && !row.isInvalidated
+  return !schedulingPlanTerminalReleaseReason(row.status) && !row.isInvalidated
 }
 
 function releaseDisabledReason(row: BusinessConsoleSchedulingPlanSummaryResponse) {
-  if (isReleased(row)) return '方案已发布'
+  const terminalReason = schedulingPlanTerminalReleaseReason(row.status)
+  if (terminalReason) return terminalReason
   if (row.isInvalidated)
     return `方案已失效（${describeScheduleInvalidationReason(row.latestInvalidationReasonCode)}），请重排后再发布`
   return '发布该排程方案'
@@ -231,6 +239,7 @@ function reasonLabel(reason?: string | null) {
     material: '物料约束',
     quality: '质量约束',
     equipment: '设备约束',
+    tooling: '工装约束',
     noEligibleResource: '无可用资源',
     outsideHorizon: '超出排程窗口',
     invalidLockedAssignment: '锁定分配无效',
@@ -246,7 +255,7 @@ function reasonLabel(reason?: string | null) {
     <NvPageHeader
       title="排产工作台"
       :breadcrumbs="[{ label: '需求与计划' }]"
-      :count="`${plans.length} 个方案`"
+      :count="`${actionablePlans.length} 个方案`"
     >
       <template #actions>
         <NvButton size="sm" variant="outline" type="button" @click="refreshPlans">
@@ -266,7 +275,7 @@ function reasonLabel(reason?: string | null) {
         <NvDataTable
           :pagination="false"
           :columns="columns"
-          :rows="plans"
+          :rows="actionablePlans"
           :row-key="rowKey"
           :loading="plansPending"
           :searchable="false"
@@ -275,7 +284,10 @@ function reasonLabel(reason?: string | null) {
         >
           <template #cell-status="{ row }">
             <div class="flex flex-wrap items-center gap-1.5">
-              <NvStatusBadge :label="statusLabel(row.status)" :tone="statusTone(row.status)" />
+              <NvStatusBadge
+                :label="schedulingPlanStatusLabel(row.status)"
+                :tone="schedulingPlanStatusTone(row.status)"
+              />
               <NvStatusBadge v-if="row.isInvalidated" label="已失效" tone="warning" />
             </div>
           </template>
@@ -311,14 +323,34 @@ function reasonLabel(reason?: string | null) {
       </NvTabsContent>
 
       <NvTabsContent value="gantt">
-        <div class="rounded-lg border bg-card p-8 text-center">
-          <CalendarClockIcon class="mx-auto size-10 text-muted-foreground" aria-hidden="true" />
-          <h2 class="mt-4 text-base font-semibold text-foreground">甘特可视化待接入</h2>
-          <p class="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
-            当前版本只展示来自 APS facade
-            的方案列表和明细。后续接入正式甘特组件后，此区域会替换为真实排程时间轴。
-          </p>
+        <div class="mb-4 flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3">
+          <label for="gantt-plan-select" class="text-sm font-medium text-foreground"
+            >排程方案</label
+          >
+          <NvSelect v-model="detailSelection.planId">
+            <NvSelectTrigger id="gantt-plan-select" class="w-full sm:w-80" aria-label="排程方案">
+              <NvSelectValue placeholder="选择排程方案" />
+            </NvSelectTrigger>
+            <NvSelectContent>
+              <NvSelectItem
+                v-for="plan in actionablePlans"
+                :key="rowKey(plan)"
+                :value="plan.planId"
+              >
+                {{ plan.planId }} · {{ schedulingPlanStatusLabel(plan.status) }}
+              </NvSelectItem>
+            </NvSelectContent>
+          </NvSelect>
         </div>
+        <SchedulingPlanGantt
+          :plan="planDetail"
+          :summary="selectedPlanSummary"
+          :loading="planDetailPending"
+          :error="planDetailError"
+          :release-pending="releasePlanPending"
+          @open-detail="detailOpen = true"
+          @release="publish(detailSelection.planId)"
+        />
       </NvTabsContent>
     </NvTabs>
 
@@ -347,8 +379,8 @@ function reasonLabel(reason?: string | null) {
                 <p class="mt-1 text-sm text-muted-foreground">{{ selectedPlanRange }}</p>
               </div>
               <NvStatusBadge
-                :label="statusLabel(planDetail.status)"
-                :tone="statusTone(planDetail.status)"
+                :label="schedulingPlanStatusLabel(planDetail.status)"
+                :tone="schedulingPlanStatusTone(planDetail.status)"
               />
             </div>
             <div class="grid gap-3 sm:grid-cols-4">

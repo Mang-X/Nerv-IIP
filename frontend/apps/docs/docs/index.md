@@ -36,6 +36,6 @@ features:
 
 ## 当前文档口径
 
-本文档站独立于 Business Console。页面入口以当前 `frontend/apps/business-console/src/pages` 中存在的路由为准，业务能力以 BusinessGateway facade 和 readiness 文档描述的当前状态为准。高级报表、完整甘特、完整 CMMS 工作台、完整打印管理体验、移动专用 `/api/mobile/v1/**`、离线同步和 MinIO/S3 multipart 仍按当前限制处理。
+本文档站独立于 Business Console。页面入口以当前 `frontend/apps/business-console/src/pages` 中存在的路由为准，业务能力以 BusinessGateway facade 和 readiness 文档描述的当前状态为准。`/scheduling` 已提供只读资源甘特；高级报表、交互式重排甘特、完整 CMMS 工作台、完整打印管理体验、移动专用 `/api/mobile/v1/**`、离线同步和 MinIO/S3 multipart 仍按当前限制处理。
 
 [内部缺口记录](/internal/gaps/product-docs-overview)

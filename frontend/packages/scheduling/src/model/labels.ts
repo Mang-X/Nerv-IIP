@@ -10,6 +10,7 @@ export const conflictReasonLabel: Record<ConflictReason, string> = {
   material: '物料未齐套',
   quality: '质量限制',
   equipment: '设备不可用',
+  tooling: '工装不可用',
   noEligibleResource: '无可用资源',
   outsideHorizon: '超出排程范围',
   invalidLockedAssignment: '锁定无效',

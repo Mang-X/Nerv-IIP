@@ -43,11 +43,15 @@ const {
   runtimeAvailabilityError,
 } = useBusinessTelemetryOee({
   deviceAssetId: routeQuery('deviceAssetId'),
+  windowEndUtc: routeQuery('windowEndUtc') || undefined,
+  windowStartUtc: routeQuery('windowStartUtc') || undefined,
 })
 
 const errorMessage = computed(() => formatError(oeeError.value || runtimeAvailabilityError.value))
 const limitation = describeTelemetryOeeLimitations()
-const oeeDegradedReasons = computed(() => (oee.value?.degradedReasons ?? []).map(describeTelemetryOeeDegradation))
+const oeeDegradedReasons = computed(() =>
+  (oee.value?.degradedReasons ?? []).map(describeTelemetryOeeDegradation),
+)
 const blockedWindowCount = computed(
   () =>
     availabilityWindows.value.filter((w) => w.availabilityStatus?.toLowerCase() === 'unavailable')
@@ -124,7 +128,11 @@ function formatError(error: unknown) {
           <RouterLink
             :to="{
               path: '/equipment/telemetry/history',
-              query: { deviceAssetId: filters.deviceAssetId },
+              query: {
+                deviceAssetId: filters.deviceAssetId,
+                windowEndUtc: filters.windowEndUtc,
+                windowStartUtc: filters.windowStartUtc,
+              },
             }"
           >
             <LineChartIcon aria-hidden="true" />
@@ -198,11 +206,7 @@ function formatError(error: unknown) {
         :value="formatOeeRate(oee?.qualityRate)"
         hint="良品 ÷ 总产出"
       />
-      <NvSectionCard
-        description="OEE"
-        :value="formatOeeRate(oee?.oeeRate)"
-        hint="三项因子的乘积"
-      />
+      <NvSectionCard description="OEE" :value="formatOeeRate(oee?.oeeRate)" hint="三项因子的乘积" />
       <NvSectionCard
         description="状态样本"
         :value="oee?.stateSampleCount ?? 0"
@@ -241,7 +245,10 @@ function formatError(error: unknown) {
             <span class="font-medium text-foreground">{{ blockedWindowCount }}</span>
           </div>
         </div>
-        <div v-if="oee?.isDegraded" class="mt-4 rounded-md bg-muted p-3 text-xs text-muted-foreground">
+        <div
+          v-if="oee?.isDegraded"
+          class="mt-4 rounded-md bg-muted p-3 text-xs text-muted-foreground"
+        >
           <p class="font-medium text-foreground">当前 OEE 数据不完整</p>
           <ul class="mt-1 list-disc pl-4">
             <li v-for="reason in oeeDegradedReasons" :key="reason">{{ reason }}</li>
