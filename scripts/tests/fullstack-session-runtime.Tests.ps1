@@ -349,6 +349,179 @@ try {
 catch { $finishedFailed = $true }
 Assert-True $finishedFailed 'A Finished Aspire project must fail smoke.'
 
+$leaderEvidenceRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-leader-evidence-$([guid]::NewGuid().ToString('N'))"
+try {
+    $requiredLeaderResources = @(
+        'iam',
+        'business-gateway',
+        'business-erp',
+        'business-demand-planning',
+        'business-product-engineering',
+        'business-scheduling',
+        'business-mes',
+        'business-quality',
+        'business-wms',
+        'business-inventory',
+        'business-industrial-telemetry',
+        'business-maintenance',
+        'postgres',
+        'redis',
+        'console',
+        'business-console',
+        'screen'
+    )
+    $leaderManifest = [pscustomobject]@{
+        sessionId = $sessionId
+        state = 'Running'
+        messagingProvider = 'Redis'
+        appHostProject = $scenarioManifest.appHostProject
+        worktreeRoot = "$repoRoot"
+        artifactPath = Join-Path $repoRoot "artifacts/fullstack/$sessionId"
+        endpoints = $scenarioManifest.endpoints
+    }
+    $healthyLeaderSnapshot = [pscustomobject]@{
+        resources = @($requiredLeaderResources | ForEach-Object {
+            [pscustomobject]@{
+                displayName = $_
+                resourceType = if ($_ -in @('postgres', 'redis')) { 'Container.v0' } else { 'Project.v0' }
+                state = 'Running'
+                urls = @()
+            }
+        })
+    }
+    $script:leaderWaitCalls = [System.Collections.Generic.List[string]]::new()
+    $script:leaderHttpCalls = [System.Collections.Generic.List[string]]::new()
+    $script:leaderFactCalls = [System.Collections.Generic.List[string]]::new()
+    $script:leaderLoginPassword = $null
+    $leaderSecretPassword = 'leader-password-that-must-not-leak'
+    $leaderSecretToken = 'leader-token-that-must-not-leak'
+    $leaderSuccess = Invoke-NervLeaderDemoVerification `
+        -Manifest $leaderManifest `
+        -Command health-check `
+        -SessionAdminPassword $leaderSecretPassword `
+        -EvidenceRoot $leaderEvidenceRoot `
+        -UtcNow ([DateTimeOffset]::Parse('2026-07-20T12:34:56Z')) `
+        -CommitAction { '0123456789abcdef0123456789abcdef01234567' } `
+        -WaitAction { param($Name, $Manifest, $TimeoutSeconds) $script:leaderWaitCalls.Add($Name) } `
+        -AspireSnapshotAction { param($Manifest) $healthyLeaderSnapshot } `
+        -HttpCheckAction { param($Name, $Url) $script:leaderHttpCalls.Add("$Name=$Url") } `
+        -LoginAction {
+            param($GatewayUrl, $Password)
+            $script:leaderLoginPassword = $Password
+            [pscustomobject]@{ data = [pscustomobject]@{ accessToken = $leaderSecretToken } }
+        } `
+        -PublicFactQueryAction {
+            param($FactName, $Url, $Headers)
+            Assert-True ($Headers.Authorization -ceq "Bearer $leaderSecretToken") "Fact '$FactName' did not use the authenticated public Gateway token."
+            $script:leaderFactCalls.Add("$FactName=$Url")
+            switch ($FactName) {
+                'SO-DEMO-001' {
+                    [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ salesOrderNo = 'SO-DEMO-001'; status = 'Released' }) } }
+                }
+                'WO-DEMO-Q01' {
+                    [pscustomobject]@{ data = [pscustomobject]@{ workOrderId = 'WO-DEMO-Q01'; status = 'released' } }
+                }
+                'DEV-CNC-DEMO' {
+                    [pscustomobject]@{ data = [pscustomobject]@{ resources = @([pscustomobject]@{ resourceType = 'device-asset'; code = 'DEV-CNC-DEMO'; active = $true }) } }
+                }
+                'MWO-DEMO-001' {
+                    [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ deviceAssetId = 'DEV-CNC-DEMO'; ruleCode = 'MWO-DEMO-001:temperature'; isEnabled = $true }) } }
+                }
+                default { throw "Unexpected fact '$FactName'." }
+            }
+        }
+
+    Assert-True ($leaderSuccess.ExitCode -eq 0) 'A healthy Redis leader-demo verification must pass.'
+    Assert-True ($script:leaderLoginPassword -ceq $leaderSecretPassword) 'The login action did not receive the process-scoped password.'
+    Assert-True ($script:leaderWaitCalls.Count -eq $requiredLeaderResources.Count) 'Every required leader-demo resource must use the bounded Aspire wait action.'
+    foreach ($resourceName in $requiredLeaderResources) {
+        Assert-True ($script:leaderWaitCalls -ccontains $resourceName) "Leader-demo health did not wait for '$resourceName'."
+    }
+    foreach ($entrypoint in @('business-gateway', 'console', 'business-console', 'screen')) {
+        Assert-True (@($script:leaderHttpCalls | Where-Object { $_.StartsWith("$entrypoint=", [StringComparison]::Ordinal) }).Count -eq 1) "Leader-demo health did not HTTP-check '$entrypoint'."
+    }
+    foreach ($factName in @('SO-DEMO-001', 'WO-DEMO-Q01', 'DEV-CNC-DEMO', 'MWO-DEMO-001')) {
+        Assert-True (@($script:leaderFactCalls | Where-Object { $_.StartsWith("$factName=", [StringComparison]::Ordinal) }).Count -eq 1) "Leader-demo health did not query '$factName' through a public facade."
+    }
+    Assert-True (Test-Path -LiteralPath $leaderSuccess.EvidencePath -PathType Leaf) 'Successful leader-demo verification did not write evidence.'
+    $leaderEvidenceText = Get-Content -LiteralPath $leaderSuccess.EvidencePath -Raw
+    $leaderEvidence = $leaderEvidenceText | ConvertFrom-Json -Depth 50
+    Assert-True ($leaderEvidence.commitSha -ceq '0123456789abcdef0123456789abcdef01234567') 'Evidence must record the current commit SHA.'
+    Assert-True ($leaderEvidence.recordedAtUtc -ceq '2026-07-20T12:34:56.0000000+00:00') 'Evidence must record the injected UTC time.'
+    Assert-True ($leaderEvidence.sessionId -ceq $sessionId -and $leaderEvidence.command -ceq 'health-check') 'Evidence must identify the exact session and command.'
+    Assert-True ($leaderEvidence.result -ceq 'passed' -and $leaderEvidence.messagingProvider -ceq 'Redis') 'Evidence must record the successful Redis result.'
+    Assert-True ($leaderEvidence.access.roles -ccontains 'Platform Administrator') 'Evidence must record the non-secret authenticated role name.'
+    Assert-True (-not [string]::IsNullOrWhiteSpace("$($leaderEvidence.access.urls.gateway)")) 'Evidence must record non-secret access URLs.'
+    Assert-True ($leaderEvidence.resources.Count -eq $requiredLeaderResources.Count) 'Evidence must contain one row per required resource.'
+    Assert-True (@($leaderEvidence.resources | Where-Object { $null -eq $_.elapsedMilliseconds -or [string]::IsNullOrWhiteSpace("$($_.state)") }).Count -eq 0) 'Every resource evidence row needs state and elapsed time.'
+    Assert-True ($leaderEvidence.facts.Count -eq 4 -and @($leaderEvidence.facts | Where-Object { -not $_.found }).Count -eq 0) 'Evidence must record all four observed public facts.'
+    Assert-True (@($leaderEvidence.facts | Where-Object { [string]::IsNullOrWhiteSpace("$($_.link)") -or [string]::IsNullOrWhiteSpace("$($_.status)") }).Count -eq 0) 'Every fact evidence row needs a result link and observed status.'
+    Assert-True (-not [string]::IsNullOrWhiteSpace("$($leaderEvidence.diagnostics.fullStackArtifactPath)")) 'Evidence must link the full-stack diagnostics.'
+    Assert-True ($leaderEvidence.cleanup.command -ceq '.\nerv.ps1 demo stop') 'Evidence must include the exact cleanup command.'
+    foreach ($secretValue in @($leaderSecretPassword, $leaderSecretToken, "Bearer $leaderSecretToken")) {
+        Assert-True (-not $leaderEvidenceText.Contains($secretValue)) "Leader-demo success evidence leaked '$secretValue'."
+    }
+
+    $nonRedisFailure = $null
+    $nonRedisManifest = $leaderManifest.PSObject.Copy()
+    $nonRedisManifest.messagingProvider = 'InMemory'
+    try {
+        Invoke-NervLeaderDemoVerification `
+            -Manifest $nonRedisManifest `
+            -Command seed `
+            -SessionAdminPassword $leaderSecretPassword `
+            -EvidenceRoot $leaderEvidenceRoot `
+            -UtcNow ([DateTimeOffset]::Parse('2026-07-20T12:35:56Z')) `
+            -CommitAction { '0123456789abcdef0123456789abcdef01234567' } `
+            -WaitAction { param($Name, $Manifest, $TimeoutSeconds) } `
+            -AspireSnapshotAction { param($Manifest) $healthyLeaderSnapshot } `
+            -HttpCheckAction { param($Name, $Url) } `
+            -LoginAction { param($GatewayUrl, $Password) throw 'login must not run for a non-Redis manifest' } `
+            -PublicFactQueryAction { param($FactName, $Url, $Headers) throw 'facts must not run for a non-Redis manifest' } | Out-Null
+    }
+    catch { $nonRedisFailure = $_.Exception.Message }
+    Assert-True ($nonRedisFailure.Contains('Redis')) 'A non-Redis leader-demo manifest must fail explicitly.'
+
+    $script:failureWaitCalls = [System.Collections.Generic.List[string]]::new()
+    $missingResourceFailure = $null
+    try {
+        Invoke-NervLeaderDemoVerification `
+            -Manifest $leaderManifest `
+            -Command health-check `
+            -SessionAdminPassword $leaderSecretPassword `
+            -EvidenceRoot $leaderEvidenceRoot `
+            -UtcNow ([DateTimeOffset]::Parse('2026-07-20T12:36:56Z')) `
+            -CommitAction { '0123456789abcdef0123456789abcdef01234567' } `
+            -WaitAction {
+                param($Name, $Manifest, $TimeoutSeconds)
+                $script:failureWaitCalls.Add($Name)
+                if ($Name -ceq 'business-quality') { throw 'simulated quality outage password=failure-secret' }
+            } `
+            -AspireSnapshotAction {
+                param($Manifest)
+                [pscustomobject]@{ resources = @($healthyLeaderSnapshot.resources | Where-Object { $_.displayName -cne 'business-quality' }) }
+            } `
+            -HttpCheckAction { param($Name, $Url) } `
+            -LoginAction { param($GatewayUrl, $Password) [pscustomobject]@{ data = [pscustomobject]@{ accessToken = $leaderSecretToken } } } `
+            -PublicFactQueryAction { param($FactName, $Url, $Headers) throw 'fact query should be skipped after an unhealthy resource gate' } | Out-Null
+    }
+    catch { $missingResourceFailure = $_.Exception.Message }
+    Assert-True ($missingResourceFailure.Contains('business-quality')) 'An unhealthy resource failure must name the resource.'
+    Assert-True ($script:failureWaitCalls.Count -eq $requiredLeaderResources.Count) 'A failed resource must not prevent bounded checks from naming every other required resource.'
+    $failedEvidencePath = Get-ChildItem -LiteralPath $leaderEvidenceRoot -Filter evidence.json -File -Recurse |
+        Sort-Object LastWriteTimeUtc -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+    $failedEvidenceText = Get-Content -LiteralPath $failedEvidencePath -Raw
+    $failedEvidence = $failedEvidenceText | ConvertFrom-Json -Depth 50
+    Assert-True ($failedEvidence.result -ceq 'failed') 'A failed leader-demo verification must still write failure evidence.'
+    $qualityEvidence = @($failedEvidence.resources | Where-Object { $_.name -ceq 'business-quality' })
+    Assert-True ($qualityEvidence.Count -eq 1 -and -not [string]::IsNullOrWhiteSpace("$($qualityEvidence[0].hint)")) 'A failed resource needs one bounded remediation hint.'
+    Assert-True (-not $failedEvidenceText.Contains('failure-secret')) 'Leader-demo failure evidence must redact sensitive error values.'
+}
+finally {
+    Remove-Item -LiteralPath $leaderEvidenceRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 $generatedDiagnosticSecret = New-NervFullStackSecretValue -Bytes 24
 $unsafeDiagnostic = "$generatedDiagnosticSecret password=secret Authorization: Bearer token Host=localhost;Port=5432;Database=nerv;Username=postgres;Password=db-secret"
 $safeDiagnostic = Protect-NervFullStackDiagnosticText -Text $unsafeDiagnostic -SensitiveValues @($generatedDiagnosticSecret)

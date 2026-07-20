@@ -550,6 +550,11 @@ try {
     Assert-True ($script:seedCalls.Count -eq 1 -and $script:seedCalls[0] -ceq $firstSessionId) 'Seed must use the recorded exact session ID.'
     Assert-True ($script:healthCalls.Count -eq 1 -and $script:healthCalls[0] -ceq $firstSessionId) 'Health-check must use the recorded exact session ID.'
 
+    $leaderDemoRuntimeText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
+    Assert-True ($leaderDemoRuntimeText.Contains('Invoke-NervLeaderDemoVerification')) 'The default seed/health actions must use the governed verification and evidence implementation.'
+    Assert-True ($leaderDemoRuntimeText.Contains("-Command 'seed'")) 'The default seed action must write seed verification evidence.'
+    Assert-True ($leaderDemoRuntimeText.Contains("-Command 'health-check'")) 'The default health action must write bounded health evidence.'
+
     $secondSessionId = Invoke-NervLeaderDemoCommand `
         -Action reset `
         -StateRoot $stateRoot `

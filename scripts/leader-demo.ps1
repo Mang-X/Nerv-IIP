@@ -3,9 +3,11 @@
 #   SideEffects:
 #     - Starts or stops one exact isolated full-stack session
 #     - Enables opt-in leader-demo prerequisite seeds for that session
+#     - Queries bounded Aspire health and authenticated public Gateway facts
 #   Writes:
 #     - Machine-local leader-demo current-session pointer
 #     - Session-owned full-stack manifests and artifacts
+#     - Redacted seed and health evidence under artifacts/leader-demo
 #   Cleanup:
 #     - Stop and reset clean only the validated recorded session ID
 #   Requires:
