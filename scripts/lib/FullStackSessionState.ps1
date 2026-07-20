@@ -1,6 +1,7 @@
 Set-StrictMode -Version Latest
 
 $script:NervFullStackSessionIdPattern = '^nerv-[a-f0-9]{4}-[a-f0-9]{6}$'
+$script:NervLeaderDemoOwnershipStates = @('Reserved', 'Current')
 $script:NervFullStackStates = @('Creating', 'Running', 'Collecting', 'Failed', 'Stopping', 'Stopped', 'CleanupFailed')
 $script:NervFullStackTransitions = @{
     Creating = @('Running', 'Failed', 'Stopping')
@@ -134,10 +135,54 @@ function Get-NervLeaderDemoSessionPointerPath {
     return (Join-Path ([System.IO.Path]::GetFullPath($StateRoot)) 'leader-demo/current.json')
 }
 
+function Get-NervLeaderDemoLifecycleLockPath {
+    param([string] $StateRoot = (Get-NervFullStackStateRoot))
+
+    return (Join-Path ([System.IO.Path]::GetFullPath($StateRoot)) 'leader-demo/.lifecycle.lock')
+}
+
+function Invoke-WithNervLeaderDemoLifecycleLock {
+    param(
+        [Parameter(Mandatory)] [scriptblock] $ScriptBlock,
+        [string] $StateRoot = (Get-NervFullStackStateRoot),
+        [ValidateRange(1, 300)] [int] $TimeoutSeconds = 30
+    )
+
+    $lockPath = Get-NervLeaderDemoLifecycleLockPath -StateRoot $StateRoot
+    [System.IO.Directory]::CreateDirectory((Split-Path -Parent $lockPath)) | Out-Null
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    $stream = $null
+
+    while ($null -eq $stream) {
+        try {
+            $stream = [System.IO.FileStream]::new(
+                $lockPath,
+                [System.IO.FileMode]::OpenOrCreate,
+                [System.IO.FileAccess]::ReadWrite,
+                [System.IO.FileShare]::None
+            )
+        }
+        catch [System.IO.IOException] {
+            if ([DateTimeOffset]::UtcNow -ge $deadline) {
+                throw "Timed out waiting for the leader-demo lifecycle lock at '$lockPath'."
+            }
+            Start-Sleep -Milliseconds 100
+        }
+    }
+
+    try {
+        return (& $ScriptBlock)
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
 function Write-NervLeaderDemoSessionPointer {
     param(
         [Parameter(Mandatory)] [string] $SessionId,
         [Parameter(Mandatory)] [string] $WorktreeRoot,
+        [ValidateSet('Reserved', 'Current')] [string] $OwnershipState = 'Current',
         [string] $StateRoot = (Get-NervFullStackStateRoot)
     )
 
@@ -153,6 +198,7 @@ function Write-NervLeaderDemoSessionPointer {
         schemaVersion = 1
         sessionId = $SessionId
         worktreeRoot = [System.IO.Path]::GetFullPath($WorktreeRoot)
+        ownershipState = $OwnershipState
         updatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
     }
 
@@ -198,6 +244,9 @@ function Read-NervLeaderDemoSessionPointer {
     if ([string]::IsNullOrWhiteSpace("$($pointer.worktreeRoot)")) {
         throw "Leader-demo session pointer at '$path' has no worktree root."
     }
+    if ($script:NervLeaderDemoOwnershipStates -cnotcontains "$($pointer.ownershipState)") {
+        throw "Leader-demo session pointer at '$path' has invalid ownership state '$($pointer.ownershipState)'."
+    }
 
     if (-not [string]::IsNullOrWhiteSpace($ExpectedWorktreeRoot)) {
         $comparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
@@ -212,9 +261,18 @@ function Read-NervLeaderDemoSessionPointer {
 }
 
 function Remove-NervLeaderDemoSessionPointer {
-    param([string] $StateRoot = (Get-NervFullStackStateRoot))
+    param(
+        [string] $StateRoot = (Get-NervFullStackStateRoot),
+        [string] $ExpectedSessionId
+    )
 
     $path = Get-NervLeaderDemoSessionPointerPath -StateRoot $StateRoot
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedSessionId) -and (Test-Path -LiteralPath $path -PathType Leaf)) {
+        $pointer = Read-NervLeaderDemoSessionPointer -StateRoot $StateRoot
+        if ("$($pointer.sessionId)" -cne $ExpectedSessionId) {
+            throw "Leader-demo pointer belongs to '$($pointer.sessionId)', not expected session '$ExpectedSessionId'."
+        }
+    }
     Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
 }
 
