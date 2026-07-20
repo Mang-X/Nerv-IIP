@@ -3909,7 +3909,94 @@ public sealed record BusinessConsoleMesReceiptRequestRow(
     DateTimeOffset? PostedAtUtc = null,
     string? InventoryPostingFailureCode = null,
     string? InventoryPostingFailureMessage = null,
-    DateTimeOffset? InventoryPostingFailedAtUtc = null);
+    DateTimeOffset? InventoryPostingFailedAtUtc = null,
+    decimal? PostedQuantity = null,
+    decimal? RemainingQuantity = null);
+
+public sealed record BusinessConsoleMesFinishedGoodsInventoryLinkRequest(
+    [property: RouteParam] string RequestNo,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string? WorkOrderId = null);
+
+public sealed record BusinessConsoleInventoryStockBySourceRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SourceService,
+    string SourceDocumentId,
+    string? SourceDocumentLineId);
+
+public sealed record BusinessConsoleInventoryStockBySourceResponse(
+    string SourceService,
+    string? SourceDocumentId,
+    string? SourceDocumentLineId,
+    bool IsEstablished,
+    IReadOnlyCollection<BusinessConsoleInventorySourceMovement> Movements,
+    IReadOnlyCollection<BusinessConsoleInventorySourceBalance> Balances);
+
+public sealed record BusinessConsoleInventorySourceMovement(
+    string MovementId,
+    string MovementType,
+    string SourceService,
+    string SourceDocumentId,
+    string? SourceDocumentLineId,
+    string IdempotencyKey,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId,
+    DateOnly? ProductionDate,
+    DateOnly? ExpiryDate,
+    decimal Quantity,
+    DateTime PostedAtUtc);
+
+public sealed record BusinessConsoleInventorySourceBalance(
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId,
+    DateOnly? ProductionDate,
+    DateOnly? ExpiryDate,
+    decimal OnHandQuantity,
+    decimal ReservedQuantity,
+    decimal AvailableQuantity,
+    long LedgerVersion,
+    DateTime UpdatedAtUtc);
+
+public sealed record BusinessConsoleMesFinishedGoodsInventoryLinkResponse(
+    string LinkStatus,
+    string RequestNo,
+    string WorkOrderId,
+    string? WorkOrderNo,
+    string SkuId,
+    string? SkuCode,
+    string? ProducedLotNo,
+    string? SerialNo,
+    decimal RequestedQuantity,
+    decimal? PostedQuantity,
+    decimal? RemainingQuantity,
+    string ReceiptStatus,
+    string? PostedInventoryMovementId,
+    DateTimeOffset? PostedAtUtc,
+    string? InventoryPostingFailureCode,
+    string? InventoryPostingFailureMessage,
+    DateTimeOffset? InventoryPostingFailedAtUtc,
+    string SourceService,
+    string SourceDocumentId,
+    string SourceDocumentLineId,
+    bool IsInventoryLinkEstablished,
+    IReadOnlyCollection<BusinessConsoleInventorySourceMovement> Movements,
+    IReadOnlyCollection<BusinessConsoleInventorySourceBalance> Balances);
 
 public sealed record BusinessConsoleMesCreateReceiptRequest(
     string OrganizationId,

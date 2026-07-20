@@ -1481,6 +1481,20 @@
     },
     {
       "service": "Inventory",
+      "method": "GET",
+      "route": "/api/inventory/v1/movements/by-source",
+      "operationId": "getInventoryStockBySource",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "MAN-528/#972 exposes exact MES receipt provenance and its current Inventory balances through a page-level aggregate; it never falls back to SKU or lot guessing.",
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesFinishedGoodsReceiptInventoryLink"
+      ]
+    },
+    {
+      "service": "Inventory",
       "method": "POST",
       "route": "/api/inventory/v1/count-tasks",
       "operationId": "createInventoryCountTask",

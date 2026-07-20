@@ -17,7 +17,7 @@ param(
     [ValidateSet('run', 'start', 'url', 'status', 'logs', 'stop', 'list', 'gc', 'help')]
     [string] $Action = 'help',
     [Parameter(Position = 1)] [string] $Target,
-    [ValidateSet('smoke')] [string] $Scenario = 'smoke',
+    [ValidateSet('smoke', 'man-528', 'leader-demo-main-chain')] [string] $Scenario = 'smoke',
     [string] $SessionId,
     [switch] $NoBuild,
     [int] $Tail = 120,
@@ -36,6 +36,8 @@ Nerv-IIP isolated full-stack sessions
 
 Usage:
   .\nerv.ps1 fullstack run -Scenario smoke [-NoBuild]
+  .\nerv.ps1 fullstack run -Scenario man-528
+  .\nerv.ps1 fullstack run -Scenario leader-demo-main-chain [-NoBuild]
   .\nerv.ps1 fullstack start [-SessionId nerv-abcd-123456] [-NoBuild]
   .\nerv.ps1 fullstack url <gateway|business-gateway|console|business-console|screen> [-SessionId ...]
   .\nerv.ps1 fullstack status [-SessionId ...]
@@ -72,6 +74,98 @@ function Get-NervFullStackGuardianIntervalSeconds {
         throw 'NERV_IIP_FULLSTACK_GUARDIAN_INTERVAL_SECONDS must be an integer from 1 through 3600.'
     }
     return $seconds
+}
+
+function Invoke-NervMan528MesInventoryAcceptance {
+    param([Parameter(Mandatory)] [object] $Manifest)
+
+    if (-not [string]::Equals($env:Messaging__Provider, 'Redis', [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'The man-528 full-stack scenario requires Messaging__Provider=Redis.'
+    }
+
+    foreach ($resourceName in @('business-mes', 'business-inventory')) {
+        Wait-NervAspireResource `
+            -AppHostProject "$($Manifest.appHostProject)" `
+            -ResourceName $resourceName `
+            -WorkingDirectory "$($Manifest.worktreeRoot)"
+    }
+
+    $containerIds = @($Manifest.runtime.containerIds | ForEach-Object { "$_" })
+    if ($containerIds.Count -eq 0) {
+        throw "Session '$($Manifest.sessionId)' has no recorded containers for MAN-528 acceptance."
+    }
+
+    $inspectResult = Invoke-NativeCommandOutput `
+        -Command 'docker' `
+        -Arguments (@('container', 'inspect') + $containerIds) `
+        -WorkingDirectory "$($Manifest.worktreeRoot)" `
+        -TimeoutSeconds 30 `
+        -Name "fullstack-$($Manifest.sessionId)-man-528-container-inspect"
+    $containers = @($inspectResult.Stdout | ConvertFrom-Json -Depth 100)
+    $postgres = @($containers | Where-Object { "$($_.Config.Image)" -match '(^|/)postgres:' })
+    $redis = @($containers | Where-Object { "$($_.Config.Image)" -match '(^|/)redis:' })
+    if ($postgres.Count -ne 1 -or $redis.Count -ne 1) {
+        throw "MAN-528 acceptance expected exactly one PostgreSQL and one Redis container; postgres=$($postgres.Count), redis=$($redis.Count)."
+    }
+
+    $postgresEnvironment = @($postgres[0].Config.Env)
+    $postgresUserEntry = $postgresEnvironment | Where-Object { $_.StartsWith('POSTGRES_USER=', [StringComparison]::Ordinal) } | Select-Object -First 1
+    $postgresPasswordEntry = $postgresEnvironment | Where-Object { $_.StartsWith('POSTGRES_PASSWORD=', [StringComparison]::Ordinal) } | Select-Object -First 1
+    $postgresUser = if ($postgresUserEntry) { $postgresUserEntry.Substring('POSTGRES_USER='.Length) } else { 'postgres' }
+    if (-not $postgresPasswordEntry) { throw 'MAN-528 acceptance could not resolve the session PostgreSQL password.' }
+    $postgresPassword = $postgresPasswordEntry.Substring('POSTGRES_PASSWORD='.Length)
+    $postgresPort = "$($postgres[0].NetworkSettings.Ports.'5432/tcp'[0].HostPort)"
+    if ([string]::IsNullOrWhiteSpace($postgresPort)) { throw 'MAN-528 acceptance could not resolve the session PostgreSQL host port.' }
+
+    $redisArguments = @($redis[0].Path) + @($redis[0].Args) + @($redis[0].Config.Entrypoint) + @($redis[0].Config.Cmd)
+    $redisEnvironment = @($redis[0].Config.Env)
+    $redisPasswordEntry = $redisEnvironment | Where-Object { $_.StartsWith('REDIS_PASSWORD=', [StringComparison]::Ordinal) } | Select-Object -First 1
+    $redisPassword = if ($redisPasswordEntry) { $redisPasswordEntry.Substring('REDIS_PASSWORD='.Length) } else { $null }
+    for ($index = 0; [string]::IsNullOrWhiteSpace($redisPassword) -and $index -lt $redisArguments.Count; $index++) {
+        $argument = "$($redisArguments[$index])"
+        if ($argument -eq '--requirepass' -and $index + 1 -lt $redisArguments.Count) {
+            $redisPassword = "$($redisArguments[$index + 1])"
+        }
+        elseif ($argument.StartsWith('--requirepass=', [StringComparison]::Ordinal)) {
+            $redisPassword = $argument.Substring('--requirepass='.Length)
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($redisPassword)) {
+        throw 'MAN-528 acceptance could not resolve the session Redis password.'
+    }
+    $redisPort = "$($redis[0].NetworkSettings.Ports.'6379/tcp'[0].HostPort)"
+    if ([string]::IsNullOrWhiteSpace($redisPort)) { throw 'MAN-528 acceptance could not resolve the session Redis host port.' }
+
+    $connectionPrefix = "Host=127.0.0.1;Port=$postgresPort;Username=$postgresUser;Password=$postgresPassword;Include Error Detail=false;"
+    $probeEnvironment = @{
+        NERV_IIP_TEST_MES_POSTGRES = $connectionPrefix + 'Database=nerv_iip_mes'
+        NERV_IIP_TEST_INVENTORY_POSTGRES = $connectionPrefix + 'Database=nerv_iip_inventory'
+        NERV_IIP_TEST_REDIS = "localhost:$redisPort,password=$redisPassword,ssl=true,abortConnect=false"
+        NERV_IIP_TEST_CAP_VERSION = 'v1'
+        NERV_IIP_TEST_PROBE_RUN_ID = "$($Manifest.sessionId)-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+    }
+    try {
+        Invoke-WithScopedEnvironment -Variables $probeEnvironment -ScriptBlock {
+            Invoke-DotNet `
+                -Arguments @(
+                    'test',
+                    'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj',
+                    '--no-restore',
+                    '--no-build',
+                    '--filter', 'FullyQualifiedName~MesInventoryProducedLotPostgresRedisAcceptanceTests',
+                    '--nologo'
+                ) `
+                -WorkingDirectory "$($Manifest.worktreeRoot)" `
+                -TimeoutSeconds 600 `
+                -Name "fullstack-$($Manifest.sessionId)-man-528-postgres-redis" | Out-Null
+        }
+    }
+    finally {
+        $probeEnvironment.Clear()
+        $postgresPassword = $null
+        $redisPassword = $null
+        $connectionPrefix = $null
+    }
 }
 
 function Start-NervFullStackGuardian {
@@ -166,6 +260,8 @@ function Start-NervFullStackSession {
                 $sessionEnvironment.NERV_IIP_MINIO_VOLUME,
                 $sessionEnvironment.NERV_IIP_VICTORIA_LOGS_VOLUME
             )
+            $latest.runtime.messagingProvider = $sessionEnvironment.Messaging__Provider
+            $latest.runtime.persistenceProvider = $sessionEnvironment.Persistence__Provider
             return $latest
         }
         $secretSet = New-NervFullStackSecretEnvironment -SessionId $newSessionId
@@ -401,6 +497,17 @@ try {
                         switch ($Scenario) {
                             'smoke' {
                                 Invoke-NervFullStackSmokeScenario `
+                                    -Manifest $InputManifest `
+                                    -SessionAdminPassword $sessionAdminPassword | Out-Null
+                            }
+                            'man-528' {
+                                Invoke-NervFullStackSmokeScenario `
+                                    -Manifest $InputManifest `
+                                    -SessionAdminPassword $sessionAdminPassword | Out-Null
+                                Invoke-NervMan528MesInventoryAcceptance -Manifest $InputManifest
+                            }
+                            'leader-demo-main-chain' {
+                                Invoke-NervLeaderDemoMainChainScenario `
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword | Out-Null
                             }

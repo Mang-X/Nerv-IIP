@@ -1128,6 +1128,130 @@ public sealed class ListBusinessConsoleMesFinishedGoodsReceiptRequestsEndpoint(
 }
 
 [Tags("Business Console MES")]
+[HttpGet("/api/business-console/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-link")]
+[BusinessGatewayOperationId("getBusinessConsoleMesFinishedGoodsReceiptInventoryLink")]
+public sealed class GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IBusinessInventoryClient inventory,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesFinishedGoodsInventoryLinkRequest, BusinessConsoleMesFinishedGoodsInventoryLinkResponse>(
+        auth,
+        BusinessGatewayPermissions.MesReceiptsRead)
+{
+    private const string MesSourceService = "business-mes";
+
+    protected override string OrganizationId(BusinessConsoleMesFinishedGoodsInventoryLinkRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesFinishedGoodsInventoryLinkRequest request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleMesFinishedGoodsInventoryLinkResponse> ForwardAsync(
+        BusinessConsoleMesFinishedGoodsInventoryLinkRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var inventoryAuthorization = await AuthorizationClient.CheckAsync(
+            bearerToken,
+            new BusinessGatewayPermissionRequirement(
+                BusinessGatewayPermissions.InventoryLedgerRead,
+                request.OrganizationId,
+                request.EnvironmentId,
+                null,
+                null),
+            cancellationToken);
+        if (!inventoryAuthorization.IsAllowed)
+        {
+            throw new BusinessServiceProxyException(
+                System.Net.HttpStatusCode.Forbidden,
+                inventoryAuthorization.DenialReason ?? "forbidden");
+        }
+
+        var receipts = await mes.ListFinishedGoodsReceiptRequestsAsync(
+            tokenProvider.BearerToken,
+            new BusinessConsoleMesListRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                WorkOrderId: request.WorkOrderId,
+                Take: 2),
+            cancellationToken,
+            request.RequestNo);
+        var receipt = receipts.Items.SingleOrDefault(item =>
+            string.Equals(item.RequestNo, request.RequestNo, StringComparison.Ordinal)
+            && (string.IsNullOrWhiteSpace(request.WorkOrderId)
+                || string.Equals(item.WorkOrderId, request.WorkOrderId, StringComparison.Ordinal)));
+        if (receipt is null)
+        {
+            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.NotFound, "finished-goods-receipt-not-found");
+        }
+
+        var stock = await inventory.GetStockBySourceAsync(
+            tokenProvider.BearerToken,
+            new BusinessConsoleInventoryStockBySourceRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                MesSourceService,
+                receipt.RequestNo,
+                receipt.WorkOrderId),
+            cancellationToken);
+
+        return new BusinessConsoleMesFinishedGoodsInventoryLinkResponse(
+            LinkStatus(receipt, stock),
+            receipt.RequestNo,
+            receipt.WorkOrderId,
+            receipt.WorkOrderNo,
+            receipt.SkuId,
+            receipt.SkuCode,
+            receipt.ProducedLotNo,
+            receipt.SerialNo,
+            receipt.Quantity,
+            receipt.PostedQuantity,
+            receipt.RemainingQuantity,
+            receipt.ReceiptStatus,
+            receipt.PostedInventoryMovementId,
+            receipt.PostedAtUtc,
+            receipt.InventoryPostingFailureCode,
+            receipt.InventoryPostingFailureMessage,
+            receipt.InventoryPostingFailedAtUtc,
+            stock.SourceService,
+            stock.SourceDocumentId ?? receipt.RequestNo,
+            stock.SourceDocumentLineId ?? receipt.WorkOrderId,
+            stock.IsEstablished,
+            stock.Movements,
+            stock.Balances);
+    }
+
+    private static string LinkStatus(
+        BusinessConsoleMesReceiptRequestRow receipt,
+        BusinessConsoleInventoryStockBySourceResponse stock)
+    {
+        if (string.Equals(receipt.ReceiptStatus, "InventoryPostingFailed", StringComparison.OrdinalIgnoreCase))
+        {
+            return stock.IsEstablished ? "partiallyPosted" : "postingFailed";
+        }
+
+        if (!stock.IsEstablished)
+        {
+            return "notPosted";
+        }
+
+        if (stock.Balances.Any(balance =>
+                balance.OnHandQuantity > 0
+                && !string.Equals(balance.QualityStatus, "unrestricted", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "qualityRestricted";
+        }
+
+        if (string.Equals(receipt.ReceiptStatus, "PartiallyPosted", StringComparison.OrdinalIgnoreCase)
+            || receipt.RemainingQuantity > 0)
+        {
+            return "partiallyPosted";
+        }
+
+        return "posted";
+    }
+}
+
+[Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/finished-goods-receipt-requests")]
 [BusinessGatewayOperationId("createBusinessConsoleMesFinishedGoodsReceiptRequest")]
 public sealed class CreateBusinessConsoleMesFinishedGoodsReceiptRequestEndpoint(

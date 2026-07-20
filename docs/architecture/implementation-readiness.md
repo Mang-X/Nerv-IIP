@@ -4,7 +4,7 @@
 
 ## 并行全栈验证基线
 
-真实浏览器全栈验证已提供一次性 session 入口：`.\nerv.ps1 fullstack run -Scenario smoke`。session 使用随机公开端口、独立 Aspire/DCP 代理、专属基础设施卷、进程身份与容器所有权标签；默认最多三个活动 session，不设置最低可用内存门槛。自动化成功或失败均精确回收运行资源并保留 `artifacts/fullstack/<sessionId>/`。持久开发仍使用 `.\nerv.ps1 dev`；交互 `.\nerv.ps1 fullstack start` 只用于诊断，完成后必须 `.\nerv.ps1 fullstack stop`。`scripts/verify-parallel-fullstack-isolation.ps1 -Sessions 2` 已在 Windows Docker Desktop 上验证两套浏览器链路、动态端口、PostgreSQL 写隔离、专属卷、单 session 停止边界和故障注入 cleanup。
+真实浏览器全栈验证已提供一次性 session 入口：`.\nerv.ps1 fullstack run -Scenario smoke`。MAN-524 销售到交付主链证据使用 `.\nerv.ps1 fullstack run -Scenario leader-demo-main-chain`：managed session 在 AppHost 启动前显式注入 Redis messaging 与 PostgreSQL persistence profile，并把实际选择写入 manifest；场景只以 BusinessGateway 公开 HTTP 作为业务断言面，再由 manifest 向浏览器证据进程盖章真实 PostgreSQL 与跨进程 Redis Streams 画像。逐跳脱敏账本写入 `artifacts/fullstack/<sessionId>/leader-demo-main-chain-evidence.json`，该运行产物不提交仓库；只有逐跳 runtime-confirmed 和已登记的 #972 查询 gap 可以通过，任何 `not-verified` 或未纳入验收基线的 gap 都使场景非零退出。session 使用随机公开端口、独立 Aspire/DCP 代理、专属基础设施卷、进程身份与容器所有权标签；默认最多三个活动 session，不设置最低可用内存门槛。自动化成功或失败均精确回收运行资源并保留 `artifacts/fullstack/<sessionId>/`。持久开发仍使用 `.\nerv.ps1 dev`；交互 `.\nerv.ps1 fullstack start` 只用于诊断，完成后必须 `.\nerv.ps1 fullstack stop`。`scripts/verify-parallel-fullstack-isolation.ps1 -Sessions 2` 已在 Windows Docker Desktop 上验证两套浏览器链路、动态端口、PostgreSQL 写隔离、专属卷、单 session 停止边界和故障注入 cleanup。
 
 ## 领导演示环境基线（MAN-519 / #960）
 
@@ -416,6 +416,10 @@ Connector Host、AppHub、IndustrialTelemetry、BusinessGateway 与 Business Con
 Connector Host 现在向 IndustrialTelemetry 上报 replace-style tag manifest。配置 shape 的 revision 与逐 tag activation observation 独立排序；connector coverage 从 current bindings 出发，仅 LEFT JOIN `telemetry_summaries`，因此可返回配置停用、启用失败、已激活但从未采样、已采样等状态，而不把 sample presence 解释为数据质量或新鲜度。旧 Host 未上报 manifest 时返回 `manifestStatus=unavailable`，不伪装成空配置。内部写 operation `reportBusinessIiotConnectorTagManifest` 分类为 `internal`；服务读 operation `getBusinessIiotConnectorTagCoverage` 通过 BusinessGateway `getBusinessConsoleTelemetryConnectorTagCoverage` 分类为 `exposed`，OpenAPI、generated client 与稳定导出已同步。
 
 受治理的默认/AppHost profile 使用 Host heartbeat 2 秒、现场连接探测 4 秒、AppHub Host liveness timeout 6 秒、backend deadline 不超过 8 秒、Business Console 10 秒轮询。Connector Host 启动校验固定 heartbeat/probe 并限制 detection budget/backend deadline；AppHub 启动校验的事实规则是 cadence 为正、liveness timeout 至少为 cadence 的 3 倍且 `liveness timeout <= backend deadline <= 8s`，因此 6 秒是默认与验收值而不是所有部署唯一可启动值。确定性协议、领域、Gateway、前端和脚本门禁已经覆盖该默认时序与四轴优先级。Docker/PostgreSQL 真实拔线验收入口为 `pwsh scripts/verify-connector-health-disconnect.ps1 -Runs 3`；2026-07-18 在当前代码头完成的最近成功证据 `artifacts/script-logs/connector-health-disconnect/20260718T062424954Z/evidence.json` 为 3/3，端到端耗时依次为 3181/1213/1267 ms，其中现场检测为 401/82/767 ms、检测后 Gateway 可见为 2783/1132/501 ms，最大值 3181 ms，未放宽固定 10 秒 deadline。复验若在 Aspire DCP 启动前失败只记录为环境诊断，不覆盖这份已完成的真实验收证据。产品文档影响：有，设备工程师的采集健康排查说明已同步更新。
+
+### 2026-07-20 MES 完工入库与库存公开关联记录（MAN-528 / #972）
+
+Inventory 现在提供按组织、环境、来源服务、来源单据和来源单据行精确查询库存移动及当前余额的内部读面，并为同一精确来源键增加 PostgreSQL 组合索引；缺少精确来源事实时返回 `isEstablished=false`，不按批次、SKU 或相似单号猜测关联。BusinessGateway 已将 MES 完工入库请求与该 Inventory 来源读面聚合为 `getBusinessConsoleMesFinishedGoodsReceiptInventoryLink`，调用前同时校验 MES receipt read 与 Inventory ledger read 权限，并明确区分 `posted`、`partiallyPosted`、`notPosted`、`postingFailed` 和 `qualityRestricted`。该 facade 在 coverage matrix 中分类为 `exposed`，OpenAPI、generated client 和稳定导出已同步。真实基础设施验收由 `nerv.ps1 fullstack run -Scenario man-528` 在 PostgreSQL + Redis profile 下覆盖成功过账和显式失败回写；本切片只交付公开后端关联能力，页面消费仍由 MAN-518 负责。
 
 ### 可以并行但不阻塞开工的事项
 

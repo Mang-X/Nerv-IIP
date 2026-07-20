@@ -39,6 +39,7 @@ public sealed class StockMovementEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.MovementAmount).HasColumnName("movement_amount").HasPrecision(18, 6).HasComment("Signed movement amount derived from quantity and unit cost.");
         builder.Property(x => x.PostedAtUtc).HasColumnName("posted_at_utc").IsRequired().HasComment("UTC time when the movement was posted.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceService, x.SourceDocumentId, x.IdempotencyKey }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceService, x.SourceDocumentId, x.SourceDocumentLineId, x.PostedAtUtc });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SkuCode, x.SiteCode, x.LocationCode, x.PostedAtUtc });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SiteCode, x.SkuCode, x.ExpiryDate });
     }

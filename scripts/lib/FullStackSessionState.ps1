@@ -115,6 +115,8 @@ function New-NervFullStackManifest {
             logFile = $null
         }
         runtime = [ordered]@{
+            messagingProvider = $null
+            persistenceProvider = $null
             processIds = @()
             containers = @()
             containerIds = @()

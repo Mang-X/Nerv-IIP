@@ -221,6 +221,11 @@ public interface IBusinessIamDirectoryClient
 
 public interface IBusinessInventoryClient
 {
+    Task<BusinessConsoleInventoryStockBySourceResponse> GetStockBySourceAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryStockBySourceRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleInventoryAvailabilityResponse> GetAvailabilityAsync(
         string internalBearerToken,
         BusinessConsoleInventoryAvailabilityRequest request,
@@ -1464,7 +1469,8 @@ public interface IBusinessMesClient
     Task<BusinessConsoleMesReceiptRequestListResponse> ListFinishedGoodsReceiptRequestsAsync(
         string internalBearerToken,
         BusinessConsoleMesListRequest request,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? exactRequestNo = null);
 
     Task<BusinessConsoleMesCreateReceiptResponse> CreateFinishedGoodsReceiptRequestAsync(
         string internalBearerToken,
@@ -2430,6 +2436,22 @@ public sealed class HttpBusinessInventoryClient(
     IOptions<BusinessGatewayInventoryForwardedPermissionOptions> forwardedPermissionOptions)
     : BusinessServiceHttpClient(httpClient), IBusinessInventoryClient
 {
+    public Task<BusinessConsoleInventoryStockBySourceResponse> GetStockBySourceAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryStockBySourceRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleInventoryStockBySourceResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/inventory/v1/movements/by-source?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("sourceService", request.SourceService),
+                ("sourceDocumentId", request.SourceDocumentId),
+                ("sourceDocumentLineId", request.SourceDocumentLineId)),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleInventoryAvailabilityResponse> GetAvailabilityAsync(
         string internalBearerToken,
         BusinessConsoleInventoryAvailabilityRequest request,
@@ -6604,11 +6626,12 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
     public Task<BusinessConsoleMesReceiptRequestListResponse> ListFinishedGoodsReceiptRequestsAsync(
         string internalBearerToken,
         BusinessConsoleMesListRequest request,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        string? exactRequestNo = null) =>
         SendAsync<BusinessConsoleMesReceiptRequestListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/mes/finished-goods-receipt-requests?" + ListQuery(request),
+            "/api/business/v1/mes/finished-goods-receipt-requests?" + ReceiptListQuery(request, exactRequestNo),
             null,
             cancellationToken);
 
@@ -6781,6 +6804,20 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("shiftId", request.ShiftId),
             ("deviceAssetId", request.DeviceAssetId),
             ("workOrderId", request.WorkOrderId),
+            ("skip", request.Skip),
+            ("take", request.Take));
+
+    private static string ReceiptListQuery(BusinessConsoleMesListRequest request, string? exactRequestNo) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("status", request.Status),
+            ("keyword", request.Keyword),
+            ("workCenterId", request.WorkCenterId),
+            ("shiftId", request.ShiftId),
+            ("deviceAssetId", request.DeviceAssetId),
+            ("workOrderId", request.WorkOrderId),
+            ("requestNo", exactRequestNo),
             ("skip", request.Skip),
             ("take", request.Take));
 

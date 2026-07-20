@@ -400,6 +400,170 @@ function Invoke-NervFullStackProxyBrowserCheck {
     return Assert-NervPlaywrightJsonReport -ReportPath $reportPath
 }
 
+function Assert-NervLeaderDemoMainChainEvidence {
+    param([Parameter(Mandatory)] [string] $EvidencePath)
+
+    if (-not (Test-Path -LiteralPath $EvidencePath -PathType Leaf)) {
+        throw "Leader-demo evidence was not created at '$EvidencePath'."
+    }
+    $evidence = Get-Content -LiteralPath $EvidencePath -Raw | ConvertFrom-Json -Depth 100
+    $requiredNodes = @(
+        'sales-order-demand-source',
+        'demand-source-mrp-suggestion',
+        'mrp-suggestion-mes-work-order',
+        'mes-work-order-schedule-plan',
+        'schedule-release-mes-execution',
+        'mes-task-production-report',
+        'production-report-quality',
+        'report-finished-goods-receipt',
+        'finished-goods-receipt-inventory-posting',
+        'inventory-produced-lot-fulfillment-lookup',
+        'sales-order-delivery-order',
+        'delivery-order-wms-outbound',
+        'wms-completed-erp-delivery-status',
+        'wms-completed-account-receivable',
+        'account-receivable-voucher'
+    )
+    if ("$($evidence.runtimeProfileSource)" -cne 'session-manifest') { throw 'Leader-demo evidence runtime profile must come from the managed session manifest.' }
+    if ("$($evidence.transport)" -cne 'redis-cross-process') { throw 'Leader-demo evidence must declare redis-cross-process transport.' }
+    if ("$($evidence.persistence)" -cne 'postgresql') { throw 'Leader-demo evidence must declare PostgreSQL persistence.' }
+    if ([string]::IsNullOrWhiteSpace("$($evidence.salesOrderNo)") -or "$($evidence.salesOrderNo)" -notlike 'SO-MAN524-*') {
+        throw 'Leader-demo evidence must identify one run-scoped SO-MAN524-* sales order.'
+    }
+    $entries = @($evidence.entries)
+    if ($entries.Count -ne $requiredNodes.Count) {
+        throw "Leader-demo evidence must contain exactly $($requiredNodes.Count) entries; found $($entries.Count)."
+    }
+    foreach ($node in $requiredNodes) {
+        $nodeEntries = @($entries | Where-Object { "$($_.node)" -ceq $node })
+        if ($nodeEntries.Count -ne 1) { throw "Leader-demo evidence must contain exactly one '$node' entry; found $($nodeEntries.Count)." }
+    }
+    foreach ($entry in $entries) {
+        if (@('runtime-confirmed', 'gap', 'not-verified') -cnotcontains "$($entry.conclusion)") {
+            throw "Leader-demo evidence node '$($entry.node)' has invalid conclusion '$($entry.conclusion)'."
+        }
+        if ([string]::IsNullOrWhiteSpace("$($entry.stableKey)") -or [string]::IsNullOrWhiteSpace("$($entry.demoWording)")) {
+            throw "Leader-demo evidence node '$($entry.node)' is missing its stable key or demo wording."
+        }
+    }
+    $notVerifiedEntries = @($entries | Where-Object { "$($_.conclusion)" -ceq 'not-verified' })
+    if ($notVerifiedEntries.Count -gt 0) {
+        throw "Leader-demo evidence cannot pass with not-verified nodes: $($notVerifiedEntries.node -join ', ')."
+    }
+    $unexpectedGaps = @($entries | Where-Object {
+        "$($_.conclusion)" -ceq 'gap' -and -not (
+            "$($_.node)" -ceq 'inventory-produced-lot-fulfillment-lookup' -and
+            "$($_.responsibilityIssue)" -match '(?<!\d)#972(?!\d)'
+        )
+    })
+    if ($unexpectedGaps.Count -gt 0) {
+        throw "Leader-demo evidence contains gaps outside the accepted #972 baseline: $($unexpectedGaps.node -join ', ')."
+    }
+    if (@($entries | Where-Object { "$($_.conclusion)" -ceq 'runtime-confirmed' }).Count -eq 0) {
+        throw 'Leader-demo evidence must contain at least one runtime-confirmed node.'
+    }
+    $raw = Get-Content -LiteralPath $EvidencePath -Raw
+    foreach ($forbiddenPattern in @('(?i)authorization', '(?i)bearer\s+', '(?i)password', '(?i)access[_-]?token', '(?i)refresh[_-]?token')) {
+        if ($raw -match $forbiddenPattern) { throw "Leader-demo evidence contains forbidden secret-shaped text matching '$forbiddenPattern'." }
+    }
+    return $evidence
+}
+
+function Invoke-NervLeaderDemoMainChainBrowserCheck {
+    param(
+        [Parameter(Mandatory)] [hashtable] $Environment,
+        [Parameter(Mandatory)] [object] $Manifest
+    )
+
+    [void] [System.IO.Directory]::CreateDirectory("$($Manifest.artifactPath)")
+    $reportPath = Join-Path "$($Manifest.artifactPath)" 'playwright-leader-demo-main-chain.json'
+    $evidencePath = Join-Path "$($Manifest.artifactPath)" 'leader-demo-main-chain-evidence.json'
+    Remove-Item -LiteralPath $reportPath, $evidencePath -Force -ErrorAction SilentlyContinue
+    $browserEnvironment = @{}
+    foreach ($entry in $Environment.GetEnumerator()) { $browserEnvironment[$entry.Key] = "$($entry.Value)" }
+    $browserEnvironment.PLAYWRIGHT_JSON_OUTPUT_FILE = $reportPath
+    $browserEnvironment.NERV_IIP_MAIN_CHAIN_EVIDENCE_PATH = $evidencePath
+    Invoke-WithScopedEnvironment -Variables $browserEnvironment -ScriptBlock {
+        Invoke-Pnpm `
+            -Arguments @(
+                '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
+                'e2e/leader-demo-main-chain.spec.ts', '--project=desktop', '--reporter=json',
+                '--output', (Join-Path "$($Manifest.artifactPath)" 'test-results')
+            ) `
+            -WorkingDirectory "$($Manifest.worktreeRoot)" `
+            -TimeoutSeconds 1200 `
+            -Name "fullstack-$($Manifest.sessionId)-leader-demo-main-chain" | Out-Null
+    }
+    Assert-NervPlaywrightJsonReport -ReportPath $reportPath | Out-Null
+    return Assert-NervLeaderDemoMainChainEvidence -EvidencePath $evidencePath
+}
+
+function Invoke-NervLeaderDemoMainChainScenario {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [scriptblock] $WaitAction,
+        [scriptblock] $AspireSnapshotAction,
+        [scriptblock] $BrowserAction
+    )
+
+    if ($null -eq $WaitAction) {
+        $WaitAction = {
+            param($Name, $InputManifest)
+            Wait-NervAspireResource `
+                -AppHostProject "$($InputManifest.appHostProject)" `
+                -ResourceName $Name `
+                -WorkingDirectory "$($InputManifest.worktreeRoot)"
+        }
+    }
+    if ($null -eq $AspireSnapshotAction) {
+        $AspireSnapshotAction = {
+            param($InputManifest)
+            Get-NervAspireDescribeObject -AppHostProject "$($InputManifest.appHostProject)" -WorkingDirectory "$($InputManifest.worktreeRoot)"
+        }
+    }
+    if ($null -eq $BrowserAction) {
+        $BrowserAction = {
+            param($Environment, $InputManifest)
+            Invoke-NervLeaderDemoMainChainBrowserCheck -Environment $Environment -Manifest $InputManifest | Out-Null
+        }
+    }
+
+    if ("$($Manifest.runtime.messagingProvider)" -cne 'Redis') {
+        throw "Leader-demo main-chain requires a Redis session profile; manifest recorded '$($Manifest.runtime.messagingProvider)'."
+    }
+    if ("$($Manifest.runtime.persistenceProvider)" -cne 'PostgreSQL') {
+        throw "Leader-demo main-chain requires a PostgreSQL session profile; manifest recorded '$($Manifest.runtime.persistenceProvider)'."
+    }
+
+    $resourceNames = @(
+        'postgres', 'redis', 'iam', 'gateway', 'business-gateway', 'business-console',
+        'business-master-data', 'business-product-engineering', 'business-inventory',
+        'business-quality', 'business-mes', 'business-demand-planning', 'business-wms',
+        'business-erp', 'business-scheduling'
+    )
+    foreach ($resourceName in $resourceNames) { & $WaitAction $resourceName $Manifest | Out-Null }
+
+    $snapshot = & $AspireSnapshotAction $Manifest
+    $finishedProjects = @($snapshot.resources | Where-Object {
+        "$($_.resourceType)" -like 'Project*' -and "$($_.state)" -eq 'Finished' -and
+        $resourceNames -ccontains "$($_.displayName)"
+    })
+    if ($finishedProjects.Count -gt 0) {
+        throw "Aspire project resources finished unexpectedly: $($finishedProjects.displayName -join ', ')."
+    }
+
+    $childEnvironment = @{
+        NERV_IIP_PLAYWRIGHT_BASE_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-console'
+        NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $SessionAdminPassword
+        NERV_IIP_MAIN_CHAIN_RUNTIME_PROFILE_SOURCE = 'session-manifest'
+        NERV_IIP_MAIN_CHAIN_TRANSPORT = 'redis-cross-process'
+        NERV_IIP_MAIN_CHAIN_PERSISTENCE = 'postgresql'
+    }
+    & $BrowserAction $childEnvironment $Manifest | Out-Null
+    return [pscustomobject]@{ ExitCode = 0; ChildEnvironment = $childEnvironment; CheckedResources = $resourceNames }
+}
+
 function Invoke-NervFullStackGuardian {
     param(
         [Parameter(Mandatory)] [string] $SessionId,
@@ -505,7 +669,14 @@ function Collect-NervFullStackDiagnostics {
     $logDirectory = Join-Path $artifactPath 'aspire-logs'
     [System.IO.Directory]::CreateDirectory($logDirectory) | Out-Null
     $collectionErrors = [System.Collections.Generic.List[string]]::new()
-    foreach ($resourceName in @('gateway', 'business-gateway', 'console', 'business-console', 'screen', 'postgres', 'redis', 'minio')) {
+    $resourceNames = @(
+        'gateway', 'business-gateway', 'console', 'business-console', 'screen',
+        'business-master-data', 'business-product-engineering', 'business-inventory',
+        'business-quality', 'business-mes', 'business-demand-planning', 'business-wms',
+        'business-erp', 'business-scheduling',
+        'postgres', 'redis', 'minio'
+    )
+    foreach ($resourceName in $resourceNames) {
         try {
             $raw = (& $LogAction $resourceName $Manifest $TimeoutSeconds) -join "`n"
             $safe = Protect-NervFullStackDiagnosticText -Text $raw -SensitiveValues $SensitiveValues
@@ -609,6 +780,7 @@ function Get-NervFullStackEnvironment {
         NERV_IIP_EPHEMERAL = 'true'
         NERV_IIP_SESSION_ID = $SessionId
         Messaging__Provider = 'Redis'
+        Persistence__Provider = 'PostgreSQL'
         ASPNETCORE_ENVIRONMENT = 'Development'
         DOTNET_ENVIRONMENT = 'Development'
         NERV_IIP_POSTGRES_VOLUME = "nerv-iip-postgres-18-$SessionId"
