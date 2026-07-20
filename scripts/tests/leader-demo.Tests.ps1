@@ -554,6 +554,9 @@ try {
     Assert-True ($leaderDemoRuntimeText.Contains('Invoke-NervLeaderDemoVerification')) 'The default seed/health actions must use the governed verification and evidence implementation.'
     Assert-True ($leaderDemoRuntimeText.Contains("-Command 'seed'")) 'The default seed action must write seed verification evidence.'
     Assert-True ($leaderDemoRuntimeText.Contains("-Command 'health-check'")) 'The default health action must write bounded health evidence.'
+    $leaderDemoEntryText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/leader-demo.ps1') -Raw
+    Assert-True ($leaderDemoEntryText.Contains('Get-NervLeaderDemoFailureExitCode')) 'The leader-demo entrypoint must extract a structured verification exit code.'
+    Assert-True ($leaderDemoEntryText.Contains('exit $exitCode')) 'The leader-demo entrypoint must propagate the structured nonzero code after evidence.'
 
     $secondSessionId = Invoke-NervLeaderDemoCommand `
         -Action reset `

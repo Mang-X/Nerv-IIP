@@ -392,6 +392,7 @@ try {
     $script:leaderWaitCalls = [System.Collections.Generic.List[string]]::new()
     $script:leaderHttpCalls = [System.Collections.Generic.List[string]]::new()
     $script:leaderFactCalls = [System.Collections.Generic.List[string]]::new()
+    $script:leaderPrincipalCalls = [System.Collections.Generic.List[string]]::new()
     $script:leaderLoginPassword = $null
     $leaderSecretPassword = 'leader-password-that-must-not-leak'
     $leaderSecretToken = 'leader-token-that-must-not-leak'
@@ -409,6 +410,22 @@ try {
             param($GatewayUrl, $Password)
             $script:leaderLoginPassword = $Password
             [pscustomobject]@{ data = [pscustomobject]@{ accessToken = $leaderSecretToken } }
+        } `
+        -PrincipalAction {
+            param($GatewayUrl, $Headers)
+            Assert-True ($Headers.Authorization -ceq "Bearer $leaderSecretToken") 'Principal observation did not use the authenticated token.'
+            $script:leaderPrincipalCalls.Add("$GatewayUrl/api/console/v1/auth/me")
+            [pscustomobject]@{
+                data = [pscustomobject]@{
+                    principalId = 'user-leader'
+                    principalType = 'user'
+                    loginName = 'leader'
+                    organizationId = 'org-001'
+                    environmentId = 'env-dev'
+                    permissionCodes = @('business.erp.sales-orders.read', 'business.mes.work-orders.read')
+                    roles = @('Observed Leader Role')
+                }
+            }
         } `
         -PublicFactQueryAction {
             param($FactName, $Url, $Headers)
@@ -450,7 +467,10 @@ try {
     Assert-True ($leaderEvidence.recordedAtUtc -ceq '2026-07-20T12:34:56.0000000+00:00') 'Evidence must record the injected UTC time.'
     Assert-True ($leaderEvidence.sessionId -ceq $sessionId -and $leaderEvidence.command -ceq 'health-check') 'Evidence must identify the exact session and command.'
     Assert-True ($leaderEvidence.result -ceq 'passed' -and $leaderEvidence.messagingProvider -ceq 'Redis') 'Evidence must record the successful Redis result.'
-    Assert-True ($leaderEvidence.access.roles -ccontains 'Platform Administrator') 'Evidence must record the non-secret authenticated role name.'
+    Assert-True ($script:leaderPrincipalCalls.Count -eq 1 -and $script:leaderPrincipalCalls[0].EndsWith('/api/console/v1/auth/me', [StringComparison]::Ordinal)) 'Verification must observe the authenticated principal through public auth/me.'
+    Assert-True ($leaderEvidence.access.roles.Count -eq 1 -and $leaderEvidence.access.roles[0] -ceq 'Observed Leader Role') 'Evidence roles must come from the authenticated principal response.'
+    Assert-True ($leaderEvidence.access.principal.loginName -ceq 'leader') 'Evidence must record the observed non-secret principal identity.'
+    Assert-True ($leaderEvidence.access.principal.permissionCodes.Count -eq 2) 'Evidence must record observed permission codes without inferring roles.'
     Assert-True (-not [string]::IsNullOrWhiteSpace("$($leaderEvidence.access.urls.gateway)")) 'Evidence must record non-secret access URLs.'
     Assert-True ($leaderEvidence.resources.Count -eq $requiredLeaderResources.Count) 'Evidence must contain one row per required resource.'
     Assert-True (@($leaderEvidence.resources | Where-Object { $null -eq $_.elapsedMilliseconds -or [string]::IsNullOrWhiteSpace("$($_.state)") }).Count -eq 0) 'Every resource evidence row needs state and elapsed time.'
@@ -477,10 +497,21 @@ try {
             -AspireSnapshotAction { param($Manifest) $healthyLeaderSnapshot } `
             -HttpCheckAction { param($Name, $Url) } `
             -LoginAction { param($GatewayUrl, $Password) throw 'login must not run for a non-Redis manifest' } `
+            -PrincipalAction { param($GatewayUrl, $Headers) throw 'auth/me must not run for a non-Redis manifest' } `
             -PublicFactQueryAction { param($FactName, $Url, $Headers) throw 'facts must not run for a non-Redis manifest' } | Out-Null
     }
     catch { $nonRedisFailure = $_.Exception.Message }
     Assert-True ($nonRedisFailure.Contains('Redis')) 'A non-Redis leader-demo manifest must fail explicitly.'
+    $nonRedisEvidencePath = Get-ChildItem -LiteralPath $leaderEvidenceRoot -Filter evidence.json -File -Recurse |
+        Where-Object { $_.Directory.Name.StartsWith('20260720T123556000Z-', [StringComparison]::Ordinal) } |
+        Select-Object -First 1 -ExpandProperty FullName
+    $nonRedisEvidence = Get-Content -LiteralPath $nonRedisEvidencePath -Raw | ConvertFrom-Json -Depth 50
+    Assert-True ($nonRedisEvidence.resources.Count -eq $requiredLeaderResources.Count) 'A non-Redis precondition failure must still emit all required resource rows.'
+    Assert-True (@($nonRedisEvidence.resources | Where-Object {
+        [string]::IsNullOrWhiteSpace("$($_.state)") -or
+        $null -eq $_.elapsedMilliseconds -or
+        [string]::IsNullOrWhiteSpace("$($_.hint)")
+    }).Count -eq 0) 'Every precondition-skipped resource row needs state, elapsed time, and remediation hint.'
 
     $script:failureWaitCalls = [System.Collections.Generic.List[string]]::new()
     $missingResourceFailure = $null
@@ -503,6 +534,7 @@ try {
             } `
             -HttpCheckAction { param($Name, $Url) } `
             -LoginAction { param($GatewayUrl, $Password) [pscustomobject]@{ data = [pscustomobject]@{ accessToken = $leaderSecretToken } } } `
+            -PrincipalAction { param($GatewayUrl, $Headers) [pscustomobject]@{ data = [pscustomobject]@{ principalId = 'user-leader'; principalType = 'user'; loginName = 'leader'; organizationId = 'org-001'; environmentId = 'env-dev'; permissionCodes = @(); roles = @() } } } `
             -PublicFactQueryAction { param($FactName, $Url, $Headers) throw 'fact query should be skipped after an unhealthy resource gate' } | Out-Null
     }
     catch { $missingResourceFailure = $_.Exception.Message }
@@ -517,6 +549,74 @@ try {
     $qualityEvidence = @($failedEvidence.resources | Where-Object { $_.name -ceq 'business-quality' })
     Assert-True ($qualityEvidence.Count -eq 1 -and -not [string]::IsNullOrWhiteSpace("$($qualityEvidence[0].hint)")) 'A failed resource needs one bounded remediation hint.'
     Assert-True (-not $failedEvidenceText.Contains('failure-secret')) 'Leader-demo failure evidence must redact sensitive error values.'
+
+    $exitCodeFailure = $null
+    try {
+        Invoke-NervLeaderDemoVerification `
+            -Manifest $leaderManifest `
+            -Command health-check `
+            -SessionAdminPassword $leaderSecretPassword `
+            -EvidenceRoot $leaderEvidenceRoot `
+            -UtcNow ([DateTimeOffset]::Parse('2026-07-20T12:37:56Z')) `
+            -CommitAction { '0123456789abcdef0123456789abcdef01234567' } `
+            -WaitAction {
+                param($Name, $Manifest, $TimeoutSeconds)
+                if ($Name -ceq 'business-mes') {
+                    $failure = [InvalidOperationException]::new('MES wait returned native exit 17')
+                    $failure.Data['ExitCode'] = 17
+                    throw $failure
+                }
+            } `
+            -AspireSnapshotAction { param($Manifest) $healthyLeaderSnapshot } `
+            -HttpCheckAction { param($Name, $Url) } `
+            -LoginAction { param($GatewayUrl, $Password) throw 'login must be skipped after exit 17' } `
+            -PrincipalAction { param($GatewayUrl, $Headers) throw 'auth/me must be skipped after exit 17' } `
+            -PublicFactQueryAction { param($FactName, $Url, $Headers) throw 'facts must be skipped after exit 17' } | Out-Null
+    }
+    catch { $exitCodeFailure = $_.Exception }
+    Assert-True ($null -ne $exitCodeFailure) 'Injected exit 17 must fail verification.'
+    Assert-True ([int] $exitCodeFailure.Data['ExitCode'] -eq 17) 'Verification must preserve the original nonzero exit code after evidence.'
+    $exitEvidencePath = Get-ChildItem -LiteralPath $leaderEvidenceRoot -Filter evidence.json -File -Recurse |
+        Where-Object { $_.Directory.Name.StartsWith('20260720T123756000Z-', [StringComparison]::Ordinal) } |
+        Select-Object -First 1 -ExpandProperty FullName
+    Assert-True (Test-Path -LiteralPath $exitEvidencePath -PathType Leaf) 'Exit 17 verification must write evidence before propagating the code.'
+    $exitEvidence = Get-Content -LiteralPath $exitEvidencePath -Raw | ConvertFrom-Json -Depth 50
+    Assert-True ($exitEvidence.result -ceq 'failed' -and $exitEvidence.exitCode -eq 17) 'Failure evidence must record the propagated exit code.'
+
+    $factFailure = $null
+    try {
+        Invoke-NervLeaderDemoVerification `
+            -Manifest $leaderManifest `
+            -Command seed `
+            -SessionAdminPassword $leaderSecretPassword `
+            -EvidenceRoot $leaderEvidenceRoot `
+            -UtcNow ([DateTimeOffset]::Parse('2026-07-20T12:38:56Z')) `
+            -CommitAction { '0123456789abcdef0123456789abcdef01234567' } `
+            -WaitAction { param($Name, $Manifest, $TimeoutSeconds) } `
+            -AspireSnapshotAction { param($Manifest) $healthyLeaderSnapshot } `
+            -HttpCheckAction { param($Name, $Url) } `
+            -LoginAction { param($GatewayUrl, $Password) [pscustomobject]@{ data = [pscustomobject]@{ accessToken = $leaderSecretToken } } } `
+            -PrincipalAction { param($GatewayUrl, $Headers) [pscustomobject]@{ data = [pscustomobject]@{ principalId = 'user-leader'; principalType = 'user'; loginName = 'leader'; organizationId = 'org-001'; environmentId = 'env-dev'; permissionCodes = @(); roles = @() } } } `
+            -PublicFactQueryAction {
+                param($FactName, $Url, $Headers)
+                switch ($FactName) {
+                    'SO-DEMO-001' { [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ salesOrderNo = 'SO-DEMO-001'; status = 'Released' }) } } }
+                    'WO-DEMO-Q01' { [pscustomobject]@{ data = [pscustomobject]@{ workOrderId = 'WO-DEMO-Q01'; status = 'released' } } }
+                    'DEV-CNC-DEMO' { [pscustomobject]@{ data = [pscustomobject]@{ resources = @() } } }
+                    'MWO-DEMO-001' { [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ deviceAssetId = 'DEV-CNC-DEMO'; ruleCode = 'MWO-DEMO-001:temperature'; isEnabled = $true }) } } }
+                }
+            } | Out-Null
+    }
+    catch { $factFailure = $_.Exception }
+    Assert-True ($null -ne $factFailure) 'A missing required public fact must fail seed verification.'
+    $factEvidencePath = Get-ChildItem -LiteralPath $leaderEvidenceRoot -Filter evidence.json -File -Recurse |
+        Where-Object { $_.Directory.Name.StartsWith('20260720T123856000Z-', [StringComparison]::Ordinal) } |
+        Select-Object -First 1 -ExpandProperty FullName
+    $factFailureEvidence = Get-Content -LiteralPath $factEvidencePath -Raw | ConvertFrom-Json -Depth 50
+    $deviceFactFailure = @($factFailureEvidence.facts | Where-Object { $_.key -ceq 'DEV-CNC-DEMO' })
+    Assert-True ($deviceFactFailure.Count -eq 1 -and -not $deviceFactFailure[0].found) 'Failed fact evidence must retain the exact missing key.'
+    Assert-True ($deviceFactFailure[0].hint.Contains($leaderManifest.artifactPath)) 'Failed fact remediation must include the diagnostic artifact path.'
+    Assert-True ($deviceFactFailure[0].hint.Contains('.\nerv.ps1 demo reset')) 'Failed fact remediation must include a bounded recovery command.'
 }
 finally {
     Remove-Item -LiteralPath $leaderEvidenceRoot -Recurse -Force -ErrorAction SilentlyContinue

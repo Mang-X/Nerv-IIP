@@ -1195,6 +1195,45 @@ function Get-NervLeaderDemoResponseData {
     return $Response
 }
 
+function Get-NervLeaderDemoFailureExitCode {
+    param(
+        [AllowNull()] [object] $Failure,
+        [ValidateRange(1, 2147483647)] [int] $Default = 1
+    )
+
+    $candidate = if ($null -ne $Failure -and $null -ne $Failure.PSObject.Properties['Exception']) {
+        $Failure.Exception
+    }
+    else { $Failure }
+    for ($depth = 0; $depth -lt 5 -and $null -ne $candidate; $depth++) {
+        foreach ($propertyName in @('ExitCode', 'NativeExitCode')) {
+            $value = Get-NervObjectPropertyValue -InputObject $candidate -Name $propertyName
+            $parsed = 0
+            if ($null -ne $value -and [int]::TryParse("$value", [ref] $parsed) -and $parsed -gt 0) {
+                return $parsed
+            }
+            if ($null -ne $candidate.Data -and $candidate.Data.Contains($propertyName)) {
+                $parsed = 0
+                if ([int]::TryParse("$($candidate.Data[$propertyName])", [ref] $parsed) -and $parsed -gt 0) {
+                    return $parsed
+                }
+            }
+        }
+        $candidate = Get-NervObjectPropertyValue -InputObject $candidate -Name 'InnerException'
+    }
+    return $Default
+}
+
+function Resolve-NervLeaderDemoFailureExitCode {
+    param(
+        [ValidateRange(0, 2147483647)] [int] $CurrentExitCode,
+        [AllowNull()] [object] $Failure
+    )
+
+    if ($CurrentExitCode -gt 0) { return $CurrentExitCode }
+    return (Get-NervLeaderDemoFailureExitCode -Failure $Failure)
+}
+
 function Get-NervLeaderDemoRequiredResources {
     return @(
         [ordered]@{ name = 'iam'; label = 'IAM' },
@@ -1258,6 +1297,7 @@ function Invoke-NervLeaderDemoVerification {
         [scriptblock] $AspireSnapshotAction,
         [scriptblock] $HttpCheckAction,
         [scriptblock] $LoginAction,
+        [scriptblock] $PrincipalAction,
         [scriptblock] $PublicFactQueryAction
     )
 
@@ -1328,6 +1368,16 @@ function Invoke-NervLeaderDemoVerification {
             Invoke-RestMethod -Method Get -Uri $Url -Headers $Headers -TimeoutSec 30
         }
     }
+    if ($null -eq $PrincipalAction) {
+        $PrincipalAction = {
+            param($GatewayUrl, $Headers)
+            Invoke-RestMethod `
+                -Method Get `
+                -Uri "$($GatewayUrl.TrimEnd('/'))/api/console/v1/auth/me" `
+                -Headers $Headers `
+                -TimeoutSec 30
+        }
+    }
 
     $requiredResources = @(Get-NervLeaderDemoRequiredResources)
     $resourceEvidence = [System.Collections.Generic.List[object]]::new()
@@ -1339,6 +1389,16 @@ function Invoke-NervLeaderDemoVerification {
     $elapsedByResource = @{}
     $snapshot = $null
     $accessToken = $null
+    $propagatedExitCode = 0
+    $observedPrincipal = [ordered]@{
+        principalId = $null
+        principalType = $null
+        loginName = $null
+        organizationId = $null
+        environmentId = $null
+        permissionCodes = @()
+    }
+    $observedRoles = @()
 
     $endpoints = Get-NervObjectPropertyValue -InputObject $Manifest -Name 'endpoints'
     $accessUrls = [ordered]@{
@@ -1351,6 +1411,12 @@ function Invoke-NervLeaderDemoVerification {
     $fullStackArtifactPath = "$(Get-NervObjectPropertyValue -InputObject $Manifest -Name 'artifactPath')"
     $messagingProvider = "$(Get-NervObjectPropertyValue -InputObject $Manifest -Name 'messagingProvider')"
     $state = "$(Get-NervObjectPropertyValue -InputObject $Manifest -Name 'state')"
+    $publicEndpointByResource = @{
+        'business-gateway' = $accessUrls.businessGateway
+        'console' = $accessUrls.console
+        'business-console' = $accessUrls.businessConsole
+        'screen' = $accessUrls.screen
+    }
 
     if ($state -cne 'Running') {
         $failures.Add([ordered]@{ name = 'session'; message = "Session '$sessionId' is '$state', expected Running."; hint = 'Run .\nerv.ps1 demo reset and retry.' })
@@ -1372,6 +1438,7 @@ function Invoke-NervLeaderDemoVerification {
                 & $WaitAction $resourceName $Manifest $ResourceTimeoutSeconds | Out-Null
             }
             catch {
+                $propagatedExitCode = Resolve-NervLeaderDemoFailureExitCode -CurrentExitCode $propagatedExitCode -Failure $_
                 $waitFailures[$resourceName] = Protect-NervFullStackDiagnosticText `
                     -Text "$($_.Exception.Message)" `
                     -SensitiveValues @($sensitiveValues)
@@ -1386,6 +1453,7 @@ function Invoke-NervLeaderDemoVerification {
             $snapshot = & $AspireSnapshotAction $Manifest
         }
         catch {
+            $propagatedExitCode = Resolve-NervLeaderDemoFailureExitCode -CurrentExitCode $propagatedExitCode -Failure $_
             $safeMessage = Protect-NervFullStackDiagnosticText -Text "$($_.Exception.Message)" -SensitiveValues @($sensitiveValues)
             $failures.Add([ordered]@{ name = 'aspire-describe'; message = $safeMessage; hint = 'Inspect the full-stack diagnostics and verify the exact AppHost session is still running.' })
         }
@@ -1408,14 +1476,7 @@ function Invoke-NervLeaderDemoVerification {
                 $hint = "Aspire describe reported '$snapshotState'. Inspect '$resourceName' logs under '$fullStackArtifactPath' and run .\nerv.ps1 demo reset if startup cannot recover."
             }
 
-            $publicEndpointKey = switch ($resourceName) {
-                'business-gateway' { 'businessGateway' }
-                'console' { 'console' }
-                'business-console' { 'businessConsole' }
-                'screen' { 'screen' }
-                default { $null }
-            }
-            $publicEndpoint = if ($null -ne $publicEndpointKey) { $accessUrls[$publicEndpointKey] } else { $null }
+            $publicEndpoint = if ($publicEndpointByResource.ContainsKey($resourceName)) { $publicEndpointByResource[$resourceName] } else { $null }
             $resourceEvidence.Add([ordered]@{
                 name = $resourceName
                 label = "$($resource.label)"
@@ -1440,12 +1501,29 @@ function Invoke-NervLeaderDemoVerification {
                 & $HttpCheckAction "$($httpTarget.name)" "$($httpTarget.url)" | Out-Null
             }
             catch {
+                $propagatedExitCode = Resolve-NervLeaderDemoFailureExitCode -CurrentExitCode $propagatedExitCode -Failure $_
                 $safeMessage = Protect-NervFullStackDiagnosticText -Text "$($_.Exception.Message)" -SensitiveValues @($sensitiveValues)
                 $hint = "Check '$($httpTarget.name)' startup logs under '$fullStackArtifactPath' and retry the health gate."
                 $failures.Add([ordered]@{ name = "$($httpTarget.name)"; message = $safeMessage; hint = $hint })
                 $resourceRow = @($resourceEvidence | Where-Object { $_.name -ceq "$($httpTarget.name)" }) | Select-Object -First 1
                 if ($null -ne $resourceRow) { $resourceRow.hint = $hint }
             }
+        }
+    }
+
+    if ($resourceEvidence.Count -eq 0) {
+        $preconditionNames = @($failures | ForEach-Object { "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'name')" } | Select-Object -Unique)
+        $preconditionSummary = if ($preconditionNames.Count -gt 0) { $preconditionNames -join ', ' } else { 'unavailable precondition' }
+        foreach ($resource in $requiredResources) {
+            $resourceName = "$($resource.name)"
+            $resourceEvidence.Add([ordered]@{
+                name = $resourceName
+                label = "$($resource.label)"
+                state = 'Skipped'
+                elapsedMilliseconds = 0
+                endpoint = if ($publicEndpointByResource.ContainsKey($resourceName)) { $publicEndpointByResource[$resourceName] } else { $null }
+                hint = "Health query skipped because $preconditionSummary failed. Inspect '$fullStackArtifactPath' and run .\nerv.ps1 demo reset before retrying."
+            })
         }
     }
 
@@ -1485,6 +1563,22 @@ function Invoke-NervLeaderDemoVerification {
             if ([string]::IsNullOrWhiteSpace($accessToken)) { throw 'Platform Gateway login returned no access token.' }
             $sensitiveValues.Add($accessToken)
             $headers = @{ Authorization = "Bearer $accessToken" }
+
+            $principalResponse = & $PrincipalAction "$($accessUrls.gateway)" $headers
+            $principalData = Get-NervLeaderDemoResponseData -Response $principalResponse
+            $principalId = "$(Get-NervObjectPropertyValue -InputObject $principalData -Name 'principalId')"
+            if ([string]::IsNullOrWhiteSpace($principalId)) { throw 'Platform Gateway auth/me returned no principal ID.' }
+            $observedPrincipal = [ordered]@{
+                principalId = $principalId
+                principalType = "$(Get-NervObjectPropertyValue -InputObject $principalData -Name 'principalType')"
+                loginName = "$(Get-NervObjectPropertyValue -InputObject $principalData -Name 'loginName')"
+                organizationId = "$(Get-NervObjectPropertyValue -InputObject $principalData -Name 'organizationId')"
+                environmentId = "$(Get-NervObjectPropertyValue -InputObject $principalData -Name 'environmentId')"
+                permissionCodes = @(Get-NervObjectPropertyValue -InputObject $principalData -Name 'permissionCodes')
+            }
+            $rolesValue = Get-NervObjectPropertyValue -InputObject $principalData -Name 'roles'
+            if ($null -eq $rolesValue) { $rolesValue = Get-NervObjectPropertyValue -InputObject $principalData -Name 'roleNames' }
+            $observedRoles = if ($null -ne $rolesValue) { @($rolesValue) } else { @() }
 
             foreach ($fact in $factDefinitions) {
                 $found = $false
@@ -1528,15 +1622,17 @@ function Invoke-NervLeaderDemoVerification {
                         }
                     }
                     if (-not $found) {
-                        $hint = "Reserved public fact '$($fact.key)' was not found. Inspect service seed/startup logs under '$fullStackArtifactPath'."
+                        $hint = "Reserved public fact '$($fact.key)' was not found. Inspect service seed/startup diagnostics under '$fullStackArtifactPath', run .\nerv.ps1 demo reset, then retry the bounded $Command command."
                     }
                     elseif (-not [string]::Equals($observedStatus, "$($fact.expectedStatus)", [StringComparison]::OrdinalIgnoreCase)) {
-                        $hint = "Reserved public fact '$($fact.key)' has status '$observedStatus', expected '$($fact.expectedStatus)'. Reset the isolated demo session; do not overwrite tenant facts."
+                        $hint = "Reserved public fact '$($fact.key)' has status '$observedStatus', expected '$($fact.expectedStatus)'. Inspect '$fullStackArtifactPath', run .\nerv.ps1 demo reset, and retry; do not overwrite tenant facts."
                     }
                 }
                 catch {
+                    $propagatedExitCode = Resolve-NervLeaderDemoFailureExitCode -CurrentExitCode $propagatedExitCode -Failure $_
                     $observedStatus = 'query-failed'
-                    $hint = Protect-NervFullStackDiagnosticText -Text "$($_.Exception.Message)" -SensitiveValues @($sensitiveValues)
+                    $safeQueryMessage = Protect-NervFullStackDiagnosticText -Text "$($_.Exception.Message)" -SensitiveValues @($sensitiveValues)
+                    $hint = "Public query failed: $safeQueryMessage Inspect diagnostics under '$fullStackArtifactPath', run .\nerv.ps1 demo reset, then retry the bounded $Command command."
                 }
 
                 $factEvidence.Add([ordered]@{
@@ -1552,6 +1648,7 @@ function Invoke-NervLeaderDemoVerification {
             }
         }
         catch {
+            $propagatedExitCode = Resolve-NervLeaderDemoFailureExitCode -CurrentExitCode $propagatedExitCode -Failure $_
             $safeMessage = Protect-NervFullStackDiagnosticText -Text "$($_.Exception.Message)" -SensitiveValues @($sensitiveValues)
             $failures.Add([ordered]@{ name = 'authentication'; message = $safeMessage; hint = "Check IAM and PlatformGateway logs under '$fullStackArtifactPath'; then rerun the bounded command." })
         }
@@ -1564,7 +1661,7 @@ function Invoke-NervLeaderDemoVerification {
                 found = $false
                 status = 'not-verified'
                 link = "$($fact.link)"
-                hint = "Prerequisite health or authentication failed; inspect '$fullStackArtifactPath' before retrying public verification."
+                hint = "Prerequisite health or authentication failed. Inspect '$fullStackArtifactPath', run .\nerv.ps1 demo reset, then retry the bounded $Command command."
             })
         }
     }
@@ -1575,6 +1672,7 @@ function Invoke-NervLeaderDemoVerification {
         if ([string]::IsNullOrWhiteSpace($commitSha)) { throw 'Commit action returned an empty SHA.' }
     }
     catch {
+        $propagatedExitCode = Resolve-NervLeaderDemoFailureExitCode -CurrentExitCode $propagatedExitCode -Failure $_
         $safeMessage = Protect-NervFullStackDiagnosticText -Text "$($_.Exception.Message)" -SensitiveValues @($sensitiveValues)
         $failures.Add([ordered]@{ name = 'commit'; message = $safeMessage; hint = 'Verify the worktree Git metadata is readable.' })
     }
@@ -1595,9 +1693,10 @@ function Invoke-NervLeaderDemoVerification {
         worktreeRoot = $worktreeRoot
         command = $Command
         result = if ($failures.Count -eq 0) { 'passed' } else { 'failed' }
+        exitCode = if ($failures.Count -eq 0) { 0 } elseif ($propagatedExitCode -gt 0) { $propagatedExitCode } else { 1 }
         messagingProvider = $messagingProvider
         scope = [ordered]@{ organizationId = $organizationId; environmentId = $environmentId }
-        access = [ordered]@{ urls = $accessUrls; roles = @('Platform Administrator') }
+        access = [ordered]@{ urls = $accessUrls; roles = @($observedRoles); principal = $observedPrincipal }
         resources = @($resourceEvidence)
         facts = @($factEvidence)
         failures = $safeFailures
@@ -1615,7 +1714,10 @@ function Invoke-NervLeaderDemoVerification {
 
     if ($failures.Count -gt 0) {
         $failureSummary = @($safeFailures | ForEach-Object { "$($_.name): $($_.message)" }) -join '; '
-        throw "Leader-demo $Command failed: $failureSummary; evidence=$evidencePath"
+        $verificationFailure = [InvalidOperationException]::new("Leader-demo $Command failed: $failureSummary; evidence=$evidencePath")
+        $verificationFailure.Data['ExitCode'] = [int] $evidence.exitCode
+        $verificationFailure.Data['EvidencePath'] = $evidencePath
+        throw $verificationFailure
     }
 
     return [pscustomobject]@{

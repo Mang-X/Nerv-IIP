@@ -58,5 +58,6 @@ try {
 }
 catch {
     Write-Error (Protect-ScriptAutomationText -Text "$($_.Exception.Message)")
-    exit 1
+    $exitCode = Get-NervLeaderDemoFailureExitCode -Failure $_
+    exit $exitCode
 }
