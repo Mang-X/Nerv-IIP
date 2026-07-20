@@ -114,6 +114,29 @@ try {
     Assert-True (
         (Get-NervProcessIdentityStatus -ProcessId ([int]::MaxValue) -ProcessStartTimeUtc $currentProcessStartTimeUtc) -ceq 'Absent'
     ) 'The real process probe must identify a missing PID as Absent.'
+
+    $deleteFailureStateRoot = Join-Path $stateRoot 'pointer-delete-failure'
+    $deleteFailureSessionId = 'nerv-7785-de1e01'
+    Write-NervLeaderDemoSessionPointer `
+        -SessionId $deleteFailureSessionId `
+        -WorktreeRoot $repoRoot `
+        -OwnershipState Current `
+        -StateRoot $deleteFailureStateRoot | Out-Null
+    $pointerDeleteFailurePropagated = $false
+    try {
+        Remove-NervLeaderDemoSessionPointer `
+            -StateRoot $deleteFailureStateRoot `
+            -ExpectedSessionId $deleteFailureSessionId `
+            -RemoveAction { param($Path) throw 'simulated pointer deletion failure' }
+    }
+    catch {
+        $pointerDeleteFailurePropagated = $_.Exception.Message.Contains('simulated pointer deletion failure')
+    }
+    Assert-True $pointerDeleteFailurePropagated 'Pointer deletion failures must propagate instead of reporting successful cleanup.'
+    Assert-True `
+        (Test-Path -LiteralPath (Get-NervLeaderDemoSessionPointerPath -StateRoot $deleteFailureStateRoot) -PathType Leaf) `
+        'A failed pointer deletion must remain authoritative for the next recovery attempt.'
+
     $script:throwingStartTimeProbe = [pscustomobject]@{}
     $script:throwingStartTimeProbe | Add-Member -MemberType ScriptProperty -Name StartTime -Value { throw 'simulated StartTime access failure' }
     Assert-True (

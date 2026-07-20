@@ -1519,6 +1519,43 @@ function Write-NervLeaderDemoEvidence {
     return $evidencePath
 }
 
+function Invoke-NervHttpSuccessCheck {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [string] $Url,
+        [scriptblock] $RequestAction
+    )
+
+    if ($null -eq $RequestAction) {
+        $RequestAction = {
+            param($RequestUrl)
+            Invoke-WebRequest -Uri $RequestUrl -Method Get -TimeoutSec 30 -UseBasicParsing
+        }
+    }
+
+    try {
+        $response = & $RequestAction $Url
+    }
+    catch {
+        $errorResponse = Get-NervObjectPropertyValue -InputObject $_.Exception -Name 'Response'
+        $errorStatusValue = Get-NervObjectPropertyValue -InputObject $errorResponse -Name 'StatusCode'
+        $errorStatus = if ($null -ne $errorStatusValue) { [int] $errorStatusValue } else { 0 }
+        if ($errorStatus -gt 0) {
+            throw "HTTP check failed for '$Name' at '$Url' with status ${errorStatus}: $($_.Exception.Message)"
+        }
+        throw "HTTP check failed for '$Name' at '$Url': $($_.Exception.Message)"
+    }
+
+    $statusValue = Get-NervObjectPropertyValue -InputObject $response -Name 'StatusCode'
+    if ($null -eq $statusValue) {
+        throw "HTTP check failed for '$Name' at '$Url': the response did not expose a status code."
+    }
+    $statusCode = [int] $statusValue
+    if ($statusCode -lt 200 -or $statusCode -ge 300) {
+        throw "HTTP check failed for '$Name' at '$Url' with status $statusCode."
+    }
+}
+
 function Invoke-NervLeaderDemoVerification {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
@@ -1573,17 +1610,7 @@ function Invoke-NervLeaderDemoVerification {
     if ($null -eq $HttpCheckAction) {
         $HttpCheckAction = {
             param($Name, $Url)
-            try {
-                Invoke-WebRequest -Uri $Url -Method Get -TimeoutSec 30 -UseBasicParsing | Out-Null
-            }
-            catch {
-                $response = Get-NervObjectPropertyValue -InputObject $_.Exception -Name 'Response'
-                $statusCodeValue = Get-NervObjectPropertyValue -InputObject $response -Name 'StatusCode'
-                $statusCode = if ($null -ne $statusCodeValue) { [int] $statusCodeValue } else { 0 }
-                if ($statusCode -le 0 -or $statusCode -ge 500) {
-                    throw "HTTP check failed for '$Name' at '$Url': $($_.Exception.Message)"
-                }
-            }
+            Invoke-NervHttpSuccessCheck -Name $Name -Url $Url
         }
     }
     if ($null -eq $LoginAction) {

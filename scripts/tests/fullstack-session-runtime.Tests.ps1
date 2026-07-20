@@ -322,6 +322,22 @@ $invalidEnvironmentFailed = $false
 try { Get-NervFullStackEnvironment -SessionId 'unsafe-session' | Out-Null } catch { $invalidEnvironmentFailed = $true }
 Assert-True $invalidEnvironmentFailed 'Invalid session IDs must be rejected by the AppHost environment contract.'
 
+Invoke-NervHttpSuccessCheck `
+    -Name 'console' `
+    -Url 'http://leader-demo.test/' `
+    -RequestAction { param($Url) [pscustomobject]@{ StatusCode = 204 } }
+$notFoundEntrypointRejected = $false
+try {
+    Invoke-NervHttpSuccessCheck `
+        -Name 'console' `
+        -Url 'http://leader-demo.test/missing' `
+        -RequestAction { param($Url) [pscustomobject]@{ StatusCode = 404 } }
+}
+catch {
+    $notFoundEntrypointRejected = $_.Exception.Message.Contains('404')
+}
+Assert-True $notFoundEntrypointRejected 'Leader-demo entrypoint checks must reject HTTP 404 instead of treating every 4xx response as healthy.'
+
 $profileManifest = New-NervFullStackManifest `
     -SessionId $sessionId `
     -WorktreeRoot $repoRoot `

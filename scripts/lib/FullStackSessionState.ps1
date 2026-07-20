@@ -316,7 +316,8 @@ function Read-NervLeaderDemoSessionPointer {
 function Remove-NervLeaderDemoSessionPointer {
     param(
         [string] $StateRoot = (Get-NervFullStackStateRoot),
-        [string] $ExpectedSessionId
+        [string] $ExpectedSessionId,
+        [scriptblock] $RemoveAction
     )
 
     $path = Get-NervLeaderDemoSessionPointerPath -StateRoot $StateRoot
@@ -326,7 +327,19 @@ function Remove-NervLeaderDemoSessionPointer {
             throw "Leader-demo pointer belongs to '$($pointer.sessionId)', not expected session '$ExpectedSessionId'."
         }
     }
-    Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        return
+    }
+    if ($null -eq $RemoveAction) {
+        $RemoveAction = {
+            param($PointerPath)
+            Remove-Item -LiteralPath $PointerPath -Force -ErrorAction Stop
+        }
+    }
+    & $RemoveAction $path
+    if (Test-Path -LiteralPath $path) {
+        throw "Leader-demo session pointer at '$path' still exists after deletion."
+    }
 }
 
 function Invoke-WithNervFullStackSessionLock {
