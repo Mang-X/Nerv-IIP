@@ -11,6 +11,8 @@
 
 Set-StrictMode -Version Latest
 
+$script:ScriptAutomationStreamDrainTimeoutMilliseconds = 5000
+
 function Get-ScriptAutomationRepoRoot {
     $root = Resolve-Path (Join-Path $PSScriptRoot '../..')
     return $root.Path
@@ -227,6 +229,90 @@ function Stop-ProcessTree {
     }
 }
 
+function Complete-ScriptAutomationRedirectedStreamDrain {
+    param(
+        [Parameter(Mandatory)] [System.Diagnostics.Process] $Process,
+        [Parameter(Mandatory)] [System.Threading.Tasks.Task] $StdoutTask,
+        [Parameter(Mandatory)] [System.Threading.Tasks.Task] $StderrTask,
+        [Parameter(Mandatory)] [string] $Name,
+        [string] $LogDirectory
+    )
+
+    $drainStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $releaseBudgetMilliseconds = [Math]::Min(
+        250,
+        [Math]::Max(0, [int] ($script:ScriptAutomationStreamDrainTimeoutMilliseconds / 4))
+    )
+    $readerCloseAfterMilliseconds = $script:ScriptAutomationStreamDrainTimeoutMilliseconds - $releaseBudgetMilliseconds
+    while (
+        (-not $StdoutTask.IsCompleted -or -not $StderrTask.IsCompleted) -and
+        $drainStopwatch.ElapsedMilliseconds -lt $readerCloseAfterMilliseconds
+    ) {
+        Start-Sleep -Milliseconds 25
+    }
+
+    $unfinished = [System.Collections.Generic.List[string]]::new()
+    if (-not $StdoutTask.IsCompleted) {
+        $unfinished.Add('stdout')
+        try { $Process.StandardOutput.Dispose() } catch { }
+    }
+    if (-not $StderrTask.IsCompleted) {
+        $unfinished.Add('stderr')
+        try { $Process.StandardError.Dispose() } catch { }
+    }
+
+    while (
+        (-not $StdoutTask.IsCompleted -or -not $StderrTask.IsCompleted) -and
+        $drainStopwatch.ElapsedMilliseconds -lt $script:ScriptAutomationStreamDrainTimeoutMilliseconds
+    ) {
+        Start-Sleep -Milliseconds 10
+    }
+
+    $resolvedLogDirectory = $LogDirectory
+    if ($unfinished.Count -gt 0) {
+        $resolvedLogDirectory = New-ScriptAutomationLogDirectory `
+            -Name "$Name-stream-drain" `
+            -LogDirectory $resolvedLogDirectory
+        Write-Diagnostic `
+            -Level 'WARN' `
+            -Message "Redirected stream drain did not complete within the $($script:ScriptAutomationStreamDrainTimeoutMilliseconds)ms bound for '$Name'; closed $($unfinished -join ', ') reader(s). Logs: $resolvedLogDirectory"
+    }
+
+    if (-not $unfinished.Contains('stdout') -and $StdoutTask.Status -in @(
+        [System.Threading.Tasks.TaskStatus]::Canceled,
+        [System.Threading.Tasks.TaskStatus]::Faulted
+    )) {
+        # The task is terminal, so this preserves its original exception without waiting.
+        [void] $StdoutTask.GetAwaiter().GetResult()
+    }
+    if (-not $unfinished.Contains('stderr') -and $StderrTask.Status -in @(
+        [System.Threading.Tasks.TaskStatus]::Canceled,
+        [System.Threading.Tasks.TaskStatus]::Faulted
+    )) {
+        # The task is terminal, so this preserves its original exception without waiting.
+        [void] $StderrTask.GetAwaiter().GetResult()
+    }
+
+    $stdout = if ($StdoutTask.Status -eq [System.Threading.Tasks.TaskStatus]::RanToCompletion) {
+        # RanToCompletion is terminal; result access cannot block.
+        [string] $StdoutTask.GetAwaiter().GetResult()
+    }
+    else { '' }
+    $stderr = if ($StderrTask.Status -eq [System.Threading.Tasks.TaskStatus]::RanToCompletion) {
+        # RanToCompletion is terminal; result access cannot block.
+        [string] $StderrTask.GetAwaiter().GetResult()
+    }
+    else { '' }
+
+    return [pscustomobject]@{
+        Stdout = $stdout
+        Stderr = $stderr
+        TimedOut = $unfinished.Count -gt 0
+        UnfinishedStreams = @($unfinished)
+        LogDirectory = $resolvedLogDirectory
+    }
+}
+
 function Invoke-NativeCommandWithTimeout {
     param(
         [Parameter(Mandatory)]
@@ -290,19 +376,25 @@ function Invoke-NativeCommandWithTimeout {
             $timedOut = $true
             Write-Diagnostic -Level 'ERROR' -Message "Command timed out: $Command (pid=$rootProcessId, timeout=${TimeoutSeconds}s, logs=$resolvedLogDirectory)"
             $cleanup = Stop-ProcessTree -ProcessId $rootProcessId -Reason "Timeout while running $Command"
-            [void] $process.WaitForExit(5000)
-            if ($stdoutTask) {
-                Write-ScriptAutomationProcessLog -Path $stdoutPath -Content $stdoutTask.GetAwaiter().GetResult()
-            }
-            if ($stderrTask) {
-                Write-ScriptAutomationProcessLog -Path $stderrPath -Content $stderrTask.GetAwaiter().GetResult()
-            }
+            $drain = Complete-ScriptAutomationRedirectedStreamDrain `
+                -Process $process `
+                -StdoutTask $stdoutTask `
+                -StderrTask $stderrTask `
+                -Name $Name `
+                -LogDirectory $resolvedLogDirectory
+            Write-ScriptAutomationProcessLog -Path $stdoutPath -Content $drain.Stdout
+            Write-ScriptAutomationProcessLog -Path $stderrPath -Content $drain.Stderr
             throw "Command '$Command' timed out after $TimeoutSeconds seconds. Stopped PIDs: $($cleanup.StoppedProcessIds -join ', '). Logs: $resolvedLogDirectory"
         }
 
-        $process.WaitForExit()
-        Write-ScriptAutomationProcessLog -Path $stdoutPath -Content $stdoutTask.GetAwaiter().GetResult()
-        Write-ScriptAutomationProcessLog -Path $stderrPath -Content $stderrTask.GetAwaiter().GetResult()
+        $drain = Complete-ScriptAutomationRedirectedStreamDrain `
+            -Process $process `
+            -StdoutTask $stdoutTask `
+            -StderrTask $stderrTask `
+            -Name $Name `
+            -LogDirectory $resolvedLogDirectory
+        Write-ScriptAutomationProcessLog -Path $stdoutPath -Content $drain.Stdout
+        Write-ScriptAutomationProcessLog -Path $stderrPath -Content $drain.Stderr
 
         $exitCode = $process.ExitCode
         $stopwatch.Stop()
@@ -363,7 +455,9 @@ function Invoke-NativeCommandOutput {
 
         [int] $TimeoutSeconds = 60,
 
-        [string] $Name
+        [string] $Name,
+
+        [string] $LogDirectory
     )
 
     if ([string]::IsNullOrWhiteSpace($Name)) {
@@ -397,11 +491,31 @@ function Invoke-NativeCommandOutput {
 
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
             Stop-ProcessTree -ProcessId $process.Id -Reason "Timeout while reading output for $Command" | Out-Null
+            $drain = Complete-ScriptAutomationRedirectedStreamDrain `
+                -Process $process `
+                -StdoutTask $stdoutTask `
+                -StderrTask $stderrTask `
+                -Name $Name `
+                -LogDirectory $LogDirectory
+            if ($drain.TimedOut) {
+                Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $drain.Stdout
+                Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $drain.Stderr
+            }
             throw "Command '$Command' timed out after $TimeoutSeconds seconds while reading output."
         }
 
-        $stdout = $stdoutTask.GetAwaiter().GetResult()
-        $stderr = $stderrTask.GetAwaiter().GetResult()
+        $drain = Complete-ScriptAutomationRedirectedStreamDrain `
+            -Process $process `
+            -StdoutTask $stdoutTask `
+            -StderrTask $stderrTask `
+            -Name $Name `
+            -LogDirectory $LogDirectory
+        $stdout = $drain.Stdout
+        $stderr = $drain.Stderr
+        if ($drain.TimedOut) {
+            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $stdout
+            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $stderr
+        }
 
         if ($process.ExitCode -ne 0) {
             $safeOutput = Protect-ScriptAutomationText (($stdout, $stderr) -join [Environment]::NewLine)
