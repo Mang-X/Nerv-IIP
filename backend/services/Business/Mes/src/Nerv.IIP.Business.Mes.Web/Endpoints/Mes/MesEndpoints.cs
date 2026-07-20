@@ -158,7 +158,8 @@ public sealed record ListFinishedGoodsReceiptRequestsRequest(
     string? WorkCenterId = null,
     string? ShiftId = null,
     string? DeviceAssetId = null,
-    string? Status = null);
+    string? Status = null,
+    string? RequestNo = null);
 
 public sealed record ListCapacityImpactsRequest(
     string OrganizationId,
@@ -1214,7 +1215,8 @@ public sealed class ListFinishedGoodsReceiptRequestsEndpoint(ISender sender)
             req.WorkCenterId,
             req.ShiftId,
             req.DeviceAssetId,
-            req.Status), ct);
+            req.Status,
+            req.RequestNo), ct);
         await Send.OkAsync(response, ct);
     }
 }

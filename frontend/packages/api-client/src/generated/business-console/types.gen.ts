@@ -3628,6 +3628,83 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     inventoryPostingFailureCode?: string | null;
     inventoryPostingFailureMessage?: string | null;
     inventoryPostingFailedAtUtc?: string | null;
+    postedQuantity?: number | null;
+    remainingQuantity?: number | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesFinishedGoodsInventoryLinkResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesFinishedGoodsInventoryLinkResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesFinishedGoodsInventoryLinkResponse = {
+    linkStatus?: string;
+    requestNo?: string;
+    workOrderId?: string;
+    workOrderNo?: string | null;
+    skuId?: string;
+    skuCode?: string | null;
+    producedLotNo?: string | null;
+    serialNo?: string | null;
+    requestedQuantity?: number;
+    postedQuantity?: number | null;
+    remainingQuantity?: number | null;
+    receiptStatus?: string;
+    postedInventoryMovementId?: string | null;
+    postedAtUtc?: string | null;
+    inventoryPostingFailureCode?: string | null;
+    inventoryPostingFailureMessage?: string | null;
+    inventoryPostingFailedAtUtc?: string | null;
+    sourceService?: string;
+    sourceDocumentId?: string;
+    sourceDocumentLineId?: string;
+    isInventoryLinkEstablished?: boolean;
+    movements?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventorySourceMovement>;
+    balances?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventorySourceBalance>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventorySourceMovement = {
+    movementId?: string;
+    movementType?: string;
+    sourceService?: string;
+    sourceDocumentId?: string;
+    sourceDocumentLineId?: string | null;
+    idempotencyKey?: string;
+    skuCode?: string;
+    uomCode?: string;
+    siteCode?: string;
+    locationCode?: string;
+    lotNo?: string | null;
+    serialNo?: string | null;
+    qualityStatus?: string;
+    ownerType?: string;
+    ownerId?: string | null;
+    productionDate?: string | null;
+    expiryDate?: string | null;
+    quantity?: number;
+    postedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventorySourceBalance = {
+    skuCode?: string;
+    uomCode?: string;
+    siteCode?: string;
+    locationCode?: string;
+    lotNo?: string | null;
+    serialNo?: string | null;
+    qualityStatus?: string;
+    ownerType?: string;
+    ownerId?: string | null;
+    productionDate?: string | null;
+    expiryDate?: string | null;
+    onHandQuantity?: number;
+    reservedQuantity?: number;
+    availableQuantity?: number;
+    ledgerVersion?: number;
+    updatedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesFinishedGoodsInventoryLinkRequest = {
+    [key: string]: never;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateReceiptRequest = {
@@ -12437,6 +12514,39 @@ export type CreateBusinessConsoleMesFinishedGoodsReceiptRequestResponses = {
 };
 
 export type CreateBusinessConsoleMesFinishedGoodsReceiptRequestResponse = CreateBusinessConsoleMesFinishedGoodsReceiptRequestResponses[keyof CreateBusinessConsoleMesFinishedGoodsReceiptRequestResponses];
+
+export type GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkData = {
+    body?: never;
+    path: {
+        requestNo: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        workOrderId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-link';
+};
+
+export type GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesFinishedGoodsInventoryLinkResponse;
+};
+
+export type GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkResponse = GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkResponses[keyof GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkResponses];
 
 export type ListBusinessConsoleMesDowntimeEventsData = {
     body?: never;

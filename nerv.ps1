@@ -37,7 +37,7 @@ param(
 
     [switch] $All,
 
-    [ValidateSet('smoke', 'leader-demo-main-chain')]
+    [ValidateSet('smoke', 'man-528', 'leader-demo-main-chain')]
     [string] $Scenario,
 
     [string] $SessionId,

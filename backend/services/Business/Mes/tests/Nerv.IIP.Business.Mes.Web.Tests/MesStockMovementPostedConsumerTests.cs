@@ -339,6 +339,47 @@ public sealed class MesStockMovementPostedConsumerTests
         Assert.Equal("INV-MOV-001", receipt.PostedInventoryMovementId);
     }
 
+    [Fact]
+    public async Task Stock_movement_posting_failed_consumer_persists_failure_without_external_save_changes()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        await using (var seedContext = CreateDbContext(
+            nameof(Stock_movement_posting_failed_consumer_persists_failure_without_external_save_changes),
+            databaseRoot))
+        {
+            seedContext.FinishedGoodsReceiptRequests.Add(FinishedGoodsReceiptRequest.Create(
+                "org-001",
+                "env-dev",
+                "FGR-001",
+                "WO-001",
+                "SKU-FG",
+                8m,
+                "PCS",
+                DateTimeOffset.Parse("2026-06-15T09:00:00Z"),
+                "LOT-FG-001",
+                null));
+            await seedContext.SaveChangesAsync();
+        }
+
+        await using (var handlerContext = CreateDbContext(
+            nameof(Stock_movement_posting_failed_consumer_persists_failure_without_external_save_changes),
+            databaseRoot))
+        {
+            var handler = new StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed(
+                handlerContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+
+            await handler.HandleAsync(CreateFailedEvent("FGR-001"), CancellationToken.None);
+        }
+
+        await using var assertionContext = CreateDbContext(
+            nameof(Stock_movement_posting_failed_consumer_persists_failure_without_external_save_changes),
+            databaseRoot);
+        var receipt = await assertionContext.FinishedGoodsReceiptRequests.SingleAsync();
+        Assert.Equal(FinishedGoodsReceiptRequest.InventoryPostingFailedStatus, receipt.Status);
+        Assert.Equal("inventory.validation.failed", receipt.InventoryPostingFailureCode);
+    }
+
     private static StockMovementPostedIntegrationEvent CreatePostedEvent(
         string sourceDocumentId,
         string payloadSourceService = "business-mes",

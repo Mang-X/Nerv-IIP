@@ -125,6 +125,27 @@ public sealed class InventorySchemaConventionTests
         }
     }
 
+    [Fact]
+    public void Stock_movements_have_an_ordered_source_lookup_index_for_public_provenance_queries()
+    {
+        using var fixture = CreateFixture();
+        var model = fixture.DbContext.GetService<IDesignTimeModel>().Model;
+        var movement = model.FindEntityType(typeof(StockMovement))!;
+        var expected = new[]
+        {
+            nameof(StockMovement.OrganizationId),
+            nameof(StockMovement.EnvironmentId),
+            nameof(StockMovement.SourceService),
+            nameof(StockMovement.SourceDocumentId),
+            nameof(StockMovement.SourceDocumentLineId),
+            nameof(StockMovement.PostedAtUtc),
+        };
+
+        Assert.Contains(
+            movement.GetIndexes(),
+            index => index.Properties.Select(property => property.Name).SequenceEqual(expected));
+    }
+
     private static SchemaFixture CreateFixture()
     {
         var services = new ServiceCollection();

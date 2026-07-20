@@ -13341,6 +13341,72 @@
         ]
       }
     },
+    "/api/business-console/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-link": {
+      "get": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleMesFinishedGoodsReceiptInventoryLink",
+        "parameters": [
+          {
+            "name": "requestNo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workOrderId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesFinishedGoodsInventoryLinkResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/mes/downtime-events": {
       "get": {
         "tags": [
@@ -36596,8 +36662,279 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "postedQuantity": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "remainingQuantity": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
           }
         }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesFinishedGoodsInventoryLinkResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesFinishedGoodsInventoryLinkResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesFinishedGoodsInventoryLinkResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "linkStatus": {
+            "type": "string"
+          },
+          "requestNo": {
+            "type": "string"
+          },
+          "workOrderId": {
+            "type": "string"
+          },
+          "workOrderNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "skuId": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "producedLotNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "postedQuantity": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "remainingQuantity": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "receiptStatus": {
+            "type": "string"
+          },
+          "postedInventoryMovementId": {
+            "type": "string",
+            "nullable": true
+          },
+          "postedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "inventoryPostingFailureCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "inventoryPostingFailureMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "inventoryPostingFailedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "sourceService": {
+            "type": "string"
+          },
+          "sourceDocumentId": {
+            "type": "string"
+          },
+          "sourceDocumentLineId": {
+            "type": "string"
+          },
+          "isInventoryLinkEstablished": {
+            "type": "boolean"
+          },
+          "movements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventorySourceMovement"
+            }
+          },
+          "balances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventorySourceBalance"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventorySourceMovement": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "movementId": {
+            "type": "string"
+          },
+          "movementType": {
+            "type": "string"
+          },
+          "sourceService": {
+            "type": "string"
+          },
+          "sourceDocumentId": {
+            "type": "string"
+          },
+          "sourceDocumentLineId": {
+            "type": "string",
+            "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "siteCode": {
+            "type": "string"
+          },
+          "locationCode": {
+            "type": "string"
+          },
+          "lotNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "qualityStatus": {
+            "type": "string"
+          },
+          "ownerType": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "productionDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "expiryDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "postedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventorySourceBalance": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "skuCode": {
+            "type": "string"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "siteCode": {
+            "type": "string"
+          },
+          "locationCode": {
+            "type": "string"
+          },
+          "lotNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "qualityStatus": {
+            "type": "string"
+          },
+          "ownerType": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "productionDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "expiryDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "onHandQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "reservedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "availableQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "ledgerVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesFinishedGoodsInventoryLinkRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateReceiptRequest": {
         "type": "object",
