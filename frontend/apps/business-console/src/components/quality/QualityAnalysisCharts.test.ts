@@ -41,13 +41,14 @@ describe('quality analysis chart presentation', () => {
     const presentation = buildSpcChartPresentation(chart)
 
     expect(presentation.xbarRows).toEqual([
-      { subgroup: '子组 1', xbar: 10.1, centerLine: 10.6, ucl: 11.4, lcl: 9.8 },
-      { subgroup: '子组 2', xbar: 10.7, centerLine: 10.6, ucl: 11.4, lcl: 9.8 },
-      { subgroup: '子组 3', xbar: 11.3, centerLine: 10.6, ucl: 11.4, lcl: 9.8 },
-      { subgroup: '子组 4', xbar: 11.5, centerLine: 10.6, ucl: 11.4, lcl: 9.8 },
-      { subgroup: '子组 5', xbar: 11.8, centerLine: 10.6, ucl: 11.4, lcl: 9.8 },
+      { subgroupIndex: 1, subgroup: '子组 1', xbar: 10.1, centerLine: 10.6, ucl: 11.4, lcl: 9.8 },
+      { subgroupIndex: 2, subgroup: '子组 2', xbar: 10.7, centerLine: 10.6, ucl: 11.4, lcl: 9.8 },
+      { subgroupIndex: 3, subgroup: '子组 3', xbar: 11.3, centerLine: 10.6, ucl: 11.4, lcl: 9.8 },
+      { subgroupIndex: 4, subgroup: '子组 4', xbar: 11.5, centerLine: 10.6, ucl: 11.4, lcl: 9.8 },
+      { subgroupIndex: 5, subgroup: '子组 5', xbar: 11.8, centerLine: 10.6, ucl: 11.4, lcl: 9.8 },
     ])
     expect(presentation.rangeRows[4]).toEqual({
+      subgroupIndex: 5,
       subgroup: '子组 5',
       range: 0.9,
       centerLine: 0.58,

@@ -40,6 +40,7 @@ export interface QualityAnalysisSummary {
 }
 
 interface QualitySpcBaseChartRow extends Record<string, number | string> {
+  subgroupIndex: number
   subgroup: string
   centerLine: number
   ucl: number
@@ -159,6 +160,7 @@ export function buildSpcChartPresentation(
       isFiniteNumber(subgroup.index) && isFiniteNumber(subgroup.xbar)
         ? [
             {
+              subgroupIndex: subgroup.index,
               subgroup: `子组 ${subgroup.index}`,
               xbar: subgroup.xbar,
               centerLine: limits.centerLine,
@@ -172,6 +174,7 @@ export function buildSpcChartPresentation(
       isFiniteNumber(subgroup.index) && isFiniteNumber(subgroup.range)
         ? [
             {
+              subgroupIndex: subgroup.index,
               subgroup: `子组 ${subgroup.index}`,
               range: subgroup.range,
               centerLine: limits.averageRange,

@@ -24,9 +24,7 @@ const presentation = computed(() =>
 const hasSubgroups = computed(() => (props.chart?.subgroups?.length ?? 0) > 0)
 const hasControlLimits = computed(() => hasCompleteSpcControlLimits(props.chart?.controlLimits))
 const violationBands = computed(() => {
-  const subgroupIndexes = presentation.value.xbarRows.map((row) =>
-    Number.parseInt(row.subgroup.replace('子组 ', ''), 10),
-  )
+  const subgroupIndexes = presentation.value.xbarRows.map((row) => row.subgroupIndex)
   const slotWidth = subgroupIndexes.length ? 100 / subgroupIndexes.length : 0
 
   return presentation.value.violationMarkers.flatMap((marker) => {
