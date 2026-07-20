@@ -114,6 +114,14 @@
 - [x] **Step 4: Review `git status` and `git diff`** for only MAN-527/#971 changes and no generated/manual drift.
 - [x] **Step 5: Commit, push, and create a ready PR** whose body covers behavior, root cause, tests, risk, schema/OpenAPI/facade declaration, product-doc impact, Linear MAN-527, and `Fixes #971`.
 
+### Review follow-up: stale state and multi-replica concurrency
+
+- [x] **RED:** prove cancelled + completion and partially-shipped + cancellation no longer escape the consumer as poison messages.
+- [x] **RED:** prove two different completion idempotency keys cannot silently overwrite cumulative shipped quantity.
+- [x] **GREEN:** map invalid delivery lifecycle order to `stale-delivery-state` before inbox mutation while preserving exact replay idempotency.
+- [x] **GREEN:** add the `delivery_orders.version` optimistic concurrency token and a bounded three-attempt CAP retry around the atomic inbox + delivery + AR save.
+- [x] **VERIFY:** cover both direct stale-write rejection and retry recovery without changing the public ERP/Gateway contract.
+
 ## Self-Review
 
 - Spec coverage: aggregate state, all-line validation, distinct-event accumulation, inbox/AR idempotency, public two-hop response, migration/catalog, Redis/PostgreSQL evidence, and ready PR are each mapped to a task.

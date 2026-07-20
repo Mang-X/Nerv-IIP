@@ -22,6 +22,7 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAcc
     : IIntegrationEventHandler<WmsIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.wms-outbound-completed-ar-accrual";
+    private const int MaxConcurrencyAttempts = 3;
     // SalesOrder has no currency snapshot yet; keep the existing ERP finance default until that source fact exists.
     private const string DefaultDeliveryAccrualCurrencyCode = "CNY";
 
@@ -50,8 +51,26 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAcc
         WmsIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
-        await HandleAsync(integrationEvent, cancellationToken);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await HandleAsync(integrationEvent, cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return;
+            }
+            catch (DbUpdateConcurrencyException exception)
+                when (attempt < MaxConcurrencyAttempts)
+            {
+                logger.LogInformation(
+                    exception,
+                    "Retrying WMS outbound completion {IdempotencyKey} after concurrent ERP delivery projection update (attempt {Attempt}/{MaxAttempts}).",
+                    integrationEvent.IdempotencyKey,
+                    attempt + 1,
+                    MaxConcurrencyAttempts);
+                dbContext.ChangeTracker.Clear();
+            }
+        }
     }
 
     private async Task HandleValidEventAsync(
@@ -100,6 +119,16 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAcc
             && x.IdempotencyKey == integrationEvent.IdempotencyKey,
             cancellationToken))
         {
+            return;
+        }
+
+        if (delivery.Status is "cancelled" or "completed")
+        {
+            await DeadLetterAsync(
+                integrationEvent,
+                "stale-delivery-state",
+                $"ERP delivery order '{delivery.DeliveryOrderNo}' in status '{delivery.Status}' cannot accept WMS shipment completion facts.",
+                cancellationToken);
             return;
         }
 

@@ -57,6 +57,7 @@ public sealed class DeliveryOrder : Entity<DeliveryOrderId>, IAggregateRoot
     public DateTime? CompletedAtUtc { get; private set; }
     public DateTime? CancelledAtUtc { get; private set; }
     public string? CancellationReason { get; private set; }
+    public int Version { get; private set; }
     public IReadOnlyCollection<DeliveryOrderLine> Lines => lines;
 
     public static DeliveryOrder Release(SalesOrder order, string deliveryOrderNo, IEnumerable<DeliveryOrderLineDraft> lines)
@@ -102,6 +103,7 @@ public sealed class DeliveryOrder : Entity<DeliveryOrderId>, IAggregateRoot
             deliveryLines[shipmentLine.SalesOrderLineNo].RegisterShipment(shipmentLine.Quantity);
         }
 
+        Version++;
         ShippedAtUtc ??= shippedAtUtc;
         if (lines.All(x => x.ShippedQuantity == x.Quantity))
         {
@@ -127,6 +129,7 @@ public sealed class DeliveryOrder : Entity<DeliveryOrderId>, IAggregateRoot
         }
 
         Status = "cancelled";
+        Version++;
         CancelledAtUtc = cancelledAtUtc;
         CancellationReason = ErpText.Required(reason, nameof(reason));
         return true;

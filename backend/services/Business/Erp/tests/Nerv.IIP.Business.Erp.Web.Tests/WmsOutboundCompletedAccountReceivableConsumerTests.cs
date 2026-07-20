@@ -2,6 +2,7 @@ extern alias WmsWeb;
 
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
@@ -183,6 +184,98 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
             WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable.ConsumerName,
             IntegrationEventDeadLetterStatus.Pending,
             CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task OutboundOrderCompletedHandler_DeadLettersCancelledDeliveryWithoutPoisonRetry()
+    {
+        await using var dbContext = CreateDbContext();
+        var delivery = await ReleaseDeliveryOrderAsync(dbContext, "DO-AR-CANCELLED", "SO-AR-CANCELLED", "SO-LINE-001", 2m, 80m);
+        delivery.Cancel("cancelled-before-delivery", DateTime.Parse("2026-07-20T02:00:00Z").ToUniversalTime());
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateHandler(dbContext, deadLetters);
+
+        await handler.HandleAsync(BuildWmsCompletedEvent(delivery), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var persisted = await dbContext.DeliveryOrders.Include(x => x.Lines).SingleAsync(CancellationToken.None);
+        Assert.Equal("cancelled", persisted.Status);
+        Assert.Equal(0m, Assert.Single(persisted.Lines).ShippedQuantity);
+        await AssertDeadLetteredWithoutReceivableAsync(dbContext, deadLetters, "stale-delivery-state");
+    }
+
+    [Fact]
+    public async Task OutboundOrderCompletedCapHandler_RetriesConcurrentDistinctPartialShipmentWithoutLostUpdate()
+    {
+        var databaseName = $"erp-wms-outbound-ar-concurrency-{Guid.CreateVersion7():N}";
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateOptions(databaseName, databaseRoot);
+        DeliveryOrder releasedDelivery;
+        await using (var seedContext = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            releasedDelivery = await ReleaseDeliveryOrderAsync(
+                seedContext,
+                "DO-AR-CONCURRENT",
+                "SO-AR-CONCURRENT",
+                "SO-LINE-001",
+                3m,
+                80m);
+        }
+
+        await using (var winnerContext = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            var winner = await winnerContext.DeliveryOrders.Include(x => x.Lines).SingleAsync(CancellationToken.None);
+            winner.ApplyShipment(
+                [new DeliveryOrderShipmentLine("SO-LINE-001", 1m)],
+                DateTime.Parse("2026-07-20T02:01:00Z").ToUniversalTime());
+            await winnerContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var integrationEvent = BuildWmsCompletedEvent(
+            releasedDelivery,
+            "CONCURRENT-LOSER",
+            new Dictionary<string, decimal>(StringComparer.Ordinal) { ["SO-LINE-001"] = 1m });
+        var interceptor = new ForceFirstConcurrencyConflictInterceptor();
+        var handlerOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName, databaseRoot)
+            .AddInterceptors(interceptor)
+            .Options;
+        await using var staleContext = new ApplicationDbContext(handlerOptions, new NoopMediator());
+        var handler = CreateHandler(staleContext, new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleCapAsync(integrationEvent, CancellationToken.None);
+
+        await using var assertionContext = new ApplicationDbContext(options, new NoopMediator());
+        var persisted = await assertionContext.DeliveryOrders.Include(x => x.Lines).SingleAsync(CancellationToken.None);
+        Assert.Equal("partially-shipped", persisted.Status);
+        Assert.Equal(2m, Assert.Single(persisted.Lines).ShippedQuantity);
+        Assert.Empty(assertionContext.AccountReceivables);
+        Assert.Single(assertionContext.ProcessedIntegrationEvents);
+        Assert.Equal(2, interceptor.SaveAttempts);
+    }
+
+    [Fact]
+    public async Task DeliveryOrderConcurrencyToken_RejectsStaleCumulativeShipmentUpdate()
+    {
+        var databaseName = $"erp-delivery-concurrency-token-{Guid.CreateVersion7():N}";
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateOptions(databaseName, databaseRoot);
+        await using (var seedContext = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await ReleaseDeliveryOrderAsync(seedContext, "DO-CONCURRENCY-TOKEN", "SO-CONCURRENCY-TOKEN", "SO-LINE-001", 2m, 80m);
+        }
+
+        await using var staleContext = new ApplicationDbContext(options, new NoopMediator());
+        await using var winnerContext = new ApplicationDbContext(options, new NoopMediator());
+        var stale = await staleContext.DeliveryOrders.Include(x => x.Lines).SingleAsync(CancellationToken.None);
+        var winner = await winnerContext.DeliveryOrders.Include(x => x.Lines).SingleAsync(CancellationToken.None);
+        stale.ApplyShipment([new DeliveryOrderShipmentLine("SO-LINE-001", 1m)], DateTime.UtcNow);
+        winner.ApplyShipment([new DeliveryOrderShipmentLine("SO-LINE-001", 1m)], DateTime.UtcNow);
+
+        await winnerContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => staleContext.SaveChangesAsync(CancellationToken.None));
     }
 
     [Fact]
@@ -529,13 +622,41 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
 
     private static ApplicationDbContext CreateDbContext()
     {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase($"erp-wms-outbound-ar-{Guid.CreateVersion7():N}", new InMemoryDatabaseRoot())
-            .Options;
+        var options = CreateOptions(
+            $"erp-wms-outbound-ar-{Guid.CreateVersion7():N}",
+            new InMemoryDatabaseRoot());
         return new ApplicationDbContext(options, new NoopMediator());
     }
 
+    private static DbContextOptions<ApplicationDbContext> CreateOptions(
+        string databaseName,
+        InMemoryDatabaseRoot databaseRoot)
+    {
+        return new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName, databaseRoot)
+            .Options;
+    }
+
     private sealed record SalesDeliveryLineSpec(string LineNo, decimal DeliveryQuantity, decimal UnitPrice);
+
+    private sealed class ForceFirstConcurrencyConflictInterceptor : SaveChangesInterceptor
+    {
+        public int SaveAttempts { get; private set; }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            SaveAttempts++;
+            if (SaveAttempts == 1)
+            {
+                throw new DbUpdateConcurrencyException("forced delivery projection concurrency conflict");
+            }
+
+            return ValueTask.FromResult(result);
+        }
+    }
 
     private sealed class TestLogger<T> : ILogger<T>
     {

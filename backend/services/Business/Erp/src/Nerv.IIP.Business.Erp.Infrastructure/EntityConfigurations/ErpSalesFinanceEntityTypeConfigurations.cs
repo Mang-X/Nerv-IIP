@@ -144,6 +144,7 @@ public sealed class DeliveryOrderEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC time when cumulative WMS shipment quantities completed every ERP delivery line.");
         builder.Property(x => x.CancelledAtUtc).HasColumnName("cancelled_at_utc").HasComment("UTC time when WMS cancellation was projected to ERP.");
         builder.Property(x => x.CancellationReason).HasColumnName("cancellation_reason").HasMaxLength(1000).HasComment("WMS cancellation reason projected to ERP delivery order.");
+        builder.Property(x => x.Version).HasColumnName("version").IsRequired().IsConcurrencyToken().HasComment("Optimistic concurrency token for cumulative WMS delivery projection updates.");
         builder.HasMany(x => x.Lines).WithOne().HasForeignKey("DeliveryOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeliveryOrderNo }).IsUnique();

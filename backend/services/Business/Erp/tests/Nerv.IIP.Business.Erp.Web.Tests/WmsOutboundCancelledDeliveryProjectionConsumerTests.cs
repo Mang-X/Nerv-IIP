@@ -91,6 +91,35 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
         Assert.Equal("delivery-already-accrued", deadLetter.FailureCode);
     }
 
+    [Fact]
+    public async Task OutboundOrderCancelledHandler_DeadLettersPartiallyShippedDeliveryWithoutPoisonRetry()
+    {
+        await using var dbContext = CreateDbContext();
+        var delivery = await ReleaseDeliveryOrderAsync(dbContext, "DO-CANCEL-PARTIAL", "SO-CANCEL-PARTIAL", "SO-LINE-PARTIAL", 2m, 80m);
+        delivery.ApplyShipment(
+            [new DeliveryOrderShipmentLine("SO-LINE-PARTIAL", 1m)],
+            DateTime.Parse("2026-07-20T02:00:00Z").ToUniversalTime());
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var integrationEvent = BuildWmsCancelledEvent(delivery, "late-cancellation");
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateHandler(dbContext, deadLetters);
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var persisted = await dbContext.DeliveryOrders
+            .Include(x => x.Lines)
+            .SingleAsync(x => x.DeliveryOrderNo == "DO-CANCEL-PARTIAL", CancellationToken.None);
+        Assert.Equal("partially-shipped", persisted.Status);
+        Assert.Equal(1m, Assert.Single(persisted.Lines).ShippedQuantity);
+        Assert.Empty(dbContext.ProcessedIntegrationEvents);
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("stale-delivery-state", deadLetter.FailureCode);
+    }
+
     private static WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection CreateHandler(
         ApplicationDbContext dbContext,
         IIntegrationEventDeadLetterStore deadLetterStore)
