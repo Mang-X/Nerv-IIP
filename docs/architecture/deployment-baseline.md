@@ -85,6 +85,8 @@ Nerv-IIP/
 
 `ConnectorHealthAcceptance:Enabled=true` 只供受治理的 Connector 断连验收脚本使用，不是普通 Development、PoC 或生产 profile。该 opt-in 拓扑把 session-scoped internal token、IndustrialTelemetry endpoint 与 loopback Modbus mapping 注入 Connector Host，并由脚本拥有模拟器和 fullstack session 的启动/清理。默认 AppHost 不启用模拟映射，也不把验收 token、端口或配置带入部署产物。默认与验收时序为 Connector Host heartbeat 2 秒、field probe 4 秒、AppHub Host liveness timeout 6 秒、backend deadline 不超过 8 秒，Business Console 10 秒轮询；AppHub 的可配置启动边界是 cadence 为正、liveness timeout 至少为 cadence 的 3 倍且 `liveness timeout <= backend deadline <= 8s`。若部署 profile 改动默认值，必须重新证明十秒产品验收，不能沿用默认 profile 的证据。
 
+BusinessMaintenance 的运行小时 PM provider 由 AppHost 显式注入 `IndustrialTelemetry:BaseUrl` 并等待 BusinessIndustrialTelemetry，禁止在动态端口 session 中回退到固定 localhost。AppHost 同时转发 `Maintenance:PmGeneration:*`，默认仍关闭；`.\nerv.ps1 fullstack run -Scenario man-440` 仅在该一次性 session 中为固定验收租户启用 1 秒调度周期，资源与数据随 session 精确清理。
+
 ## CAP Redis Streams transport
 
 `Messaging:Provider` 当前支持 `InMemory`、`RabbitMQ` 和 `Redis`。`InMemory` 只允许 Development profile；非 Development profile 必须选择 `RabbitMQ` 或 `Redis`。Redis profile 使用 CAP 官方 `DotNetCore.CAP.RedisStreams` 包，连接串读取优先级为 `Messaging:Redis:ConnectionString`、`ConnectionStrings:Redis`、`Caching:Redis`。
