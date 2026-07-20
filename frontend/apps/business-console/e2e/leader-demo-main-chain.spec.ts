@@ -509,7 +509,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         const observed = await pollRows(
           '/api/business-console/v1/planning/demands',
           { organizationId, environmentId },
-          (row) => JSON.stringify(row).includes(salesOrderNo),
+          (row) => row.sourceReference === salesOrderNo,
         )
         demandRow = observed.match
         record({
@@ -555,8 +555,8 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             },
           ),
         )
-        const peggingRow = rowsOf(pegging.payload).find((row) =>
-          JSON.stringify(row).includes(salesOrderNo),
+        const peggingRow = rowsOf(pegging.payload).find(
+          (row) => row.demandSourceReference === salesOrderNo,
         )
         const observed = await pollRows(
           '/api/business-console/v1/planning/suggestions',
@@ -616,7 +616,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           }),
         )
         const workOrder = asRecord(dataOf(detail.payload))
-        if (!JSON.stringify(workOrder).includes(salesOrderNo)) {
+        if (asRecord(workOrder.sourcePlanReference).sourceDemandReference !== salesOrderNo) {
           throw new Error(
             `MES work order ${workOrderId} did not expose ${salesOrderNo} as its source demand reference.`,
           )
@@ -1004,7 +1004,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         const outbound = await pollRows(
           '/api/business-console/v1/wms/outbound-orders',
           { organizationId, environmentId, keyword: deliveryOrderNo, take: 100 },
-          (row) => JSON.stringify(row).includes(deliveryOrderNo),
+          (row) => row.outboundOrderNo === deliveryOrderNo,
         )
         wmsOutboundId = textOf(outbound.match.outboundOrderId)
         record({
@@ -1062,7 +1062,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         const receivable = await pollRows(
           '/api/business-console/v1/erp/finance/receivables',
           { organizationId, environmentId, keyword: deliveryOrderNo, take: 100 },
-          (row) => JSON.stringify(row).includes(deliveryOrderNo),
+          (row) => row.sourceDocumentNo === deliveryOrderNo,
           60_000,
         )
         const receivableNo = textOf(
@@ -1084,7 +1084,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         const voucher = await pollRows(
           '/api/business-console/v1/erp/finance/vouchers',
           { organizationId, environmentId, keyword: receivableNo, take: 100 },
-          (row) => JSON.stringify(row).includes(receivableNo),
+          (row) => row.voucherNo === `JV-AR-${receivableNo}`,
           60_000,
         )
         record({
