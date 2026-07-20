@@ -59,8 +59,14 @@ const {
 
 const activeView = shallowRef('table')
 const detailOpen = shallowRef(false)
+const actionablePlans = computed(() =>
+  plans.value.filter(
+    (plan): plan is BusinessConsoleSchedulingPlanSummaryResponse & { planId: string } =>
+      Boolean(plan.planId),
+  ),
+)
 
-watch([activeView, plans], ([view, availablePlans]) => {
+watch([activeView, actionablePlans], ([view, availablePlans]) => {
   if (view !== 'gantt' || detailSelection.planId || availablePlans.length === 0) return
   detailSelection.planId = availablePlans[0]?.planId ?? ''
 })
@@ -100,7 +106,7 @@ const detailFeedback = computed(() => {
   return '请选择一个排程方案查看明细。'
 })
 const selectedPlanSummary = computed(() =>
-  plans.value.find((plan) => plan.planId === detailSelection.planId),
+  actionablePlans.value.find((plan) => plan.planId === detailSelection.planId),
 )
 
 function rowKey(row: BusinessConsoleSchedulingPlanSummaryResponse) {
@@ -166,6 +172,8 @@ function openDetail(planId: string | undefined) {
 
 async function publish(planId: string | undefined) {
   if (!planId) return
+  const summary = actionablePlans.value.find((plan) => plan.planId === planId)
+  if (!summary || !canRelease(summary)) return
 
   try {
     await releasePlan(planId)
@@ -183,7 +191,7 @@ function isReleased(
 
 // 失效方案禁止发布类操作：排程前提已变化，须先重排再发布，否则会下达一份过期计划。
 function canRelease(row: BusinessConsoleSchedulingPlanSummaryResponse) {
-  return !isReleased(row) && !row.isInvalidated
+  return !['released', 'superseded', 'revoked'].includes(row.status ?? '') && !row.isInvalidated
 }
 
 function releaseDisabledReason(row: BusinessConsoleSchedulingPlanSummaryResponse) {
@@ -261,7 +269,7 @@ function reasonLabel(reason?: string | null) {
     <NvPageHeader
       title="排产工作台"
       :breadcrumbs="[{ label: '需求与计划' }]"
-      :count="`${plans.length} 个方案`"
+      :count="`${actionablePlans.length} 个方案`"
     >
       <template #actions>
         <NvButton size="sm" variant="outline" type="button" @click="refreshPlans">
@@ -281,7 +289,7 @@ function reasonLabel(reason?: string | null) {
         <NvDataTable
           :pagination="false"
           :columns="columns"
-          :rows="plans"
+          :rows="actionablePlans"
           :row-key="rowKey"
           :loading="plansPending"
           :searchable="false"
@@ -335,7 +343,11 @@ function reasonLabel(reason?: string | null) {
               <NvSelectValue placeholder="选择排程方案" />
             </NvSelectTrigger>
             <NvSelectContent>
-              <NvSelectItem v-for="plan in plans" :key="rowKey(plan)" :value="plan.planId!">
+              <NvSelectItem
+                v-for="plan in actionablePlans"
+                :key="rowKey(plan)"
+                :value="plan.planId"
+              >
                 {{ plan.planId }} · {{ statusLabel(plan.status) }}
               </NvSelectItem>
             </NvSelectContent>

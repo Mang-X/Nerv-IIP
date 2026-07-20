@@ -102,8 +102,10 @@ function hasInvalidTime(assignment: BusinessConsoleSchedulingAssignment) {
   return !Number.isFinite(start) || !Number.isFinite(end) || end <= start
 }
 
-function isForbidden(error: unknown): boolean {
+function isForbidden(error: unknown, visited = new Set<object>()): boolean {
   if (!error || typeof error !== 'object') return false
+  if (visited.has(error)) return false
+  visited.add(error)
   const record = error as Record<string, unknown>
   if (
     record.status === 401 ||
@@ -113,7 +115,7 @@ function isForbidden(error: unknown): boolean {
   ) {
     return true
   }
-  return isForbidden(record.response) || isForbidden(record.cause)
+  return isForbidden(record.response, visited) || isForbidden(record.cause, visited)
 }
 
 function formatDateTime(value: string) {

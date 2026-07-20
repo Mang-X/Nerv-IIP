@@ -56,6 +56,28 @@ const resolvedScale = computed<'shift' | 'day'>(() => {
 
 const stepMs = computed(() => (resolvedScale.value === 'shift' ? EIGHT_HOURS : ONE_DAY))
 
+function floorToLocalBoundary(timestamp: number) {
+  const value = new Date(timestamp)
+  if (resolvedScale.value === 'day') {
+    value.setHours(0, 0, 0, 0)
+  } else {
+    value.setHours(Math.floor(value.getHours() / 8) * 8, 0, 0, 0)
+  }
+  return value.getTime()
+}
+
+function nextLocalBoundary(timestamp: number) {
+  const value = new Date(timestamp)
+  if (resolvedScale.value === 'day') value.setDate(value.getDate() + 1)
+  else value.setHours(value.getHours() + 8)
+  return value.getTime()
+}
+
+function ceilToLocalBoundary(timestamp: number) {
+  const floor = floorToLocalBoundary(timestamp)
+  return floor === timestamp ? floor : nextLocalBoundary(floor)
+}
+
 const range = computed(() => {
   const starts = operationTasks.value.map((task) => Date.parse(task.startUtc))
   const ends = operationTasks.value.map((task) => Date.parse(task.endUtc))
@@ -63,21 +85,27 @@ const range = computed(() => {
   const rawEnd = Date.parse(props.model.horizon.endUtc)
   const fallbackStart = starts.length > 0 ? Math.min(...starts) : Date.now()
   const fallbackEnd = ends.length > 0 ? Math.max(...ends) : fallbackStart + stepMs.value
-  const start = Number.isFinite(rawStart) ? rawStart : fallbackStart
-  const end = Number.isFinite(rawEnd) ? rawEnd : fallbackEnd
-  const axisStart = Math.floor(start / stepMs.value) * stepMs.value
-  const axisEnd = Math.max(axisStart + stepMs.value, Math.ceil(end / stepMs.value) * stepMs.value)
+  const startCandidates = [...starts, fallbackStart]
+  const endCandidates = [...ends, fallbackEnd]
+  if (Number.isFinite(rawStart)) startCandidates.push(rawStart)
+  if (Number.isFinite(rawEnd)) endCandidates.push(rawEnd)
+  const axisStart = floorToLocalBoundary(Math.min(...startCandidates))
+  const axisEnd = Math.max(
+    nextLocalBoundary(axisStart),
+    ceilToLocalBoundary(Math.max(...endCandidates)),
+  )
   return { start: axisStart, end: axisEnd, duration: axisEnd - axisStart }
 })
 
 const ticks = computed(() => {
   const result: Array<{ key: number; label: string; left: number; width: number }> = []
-  for (let time = range.value.start; time < range.value.end; time += stepMs.value) {
+  for (let time = range.value.start; time < range.value.end; time = nextLocalBoundary(time)) {
+    const next = nextLocalBoundary(time)
     result.push({
       key: time,
       label: tickLabel(time),
       left: ((time - range.value.start) / range.value.duration) * 100,
-      width: (stepMs.value / range.value.duration) * 100,
+      width: ((next - time) / range.value.duration) * 100,
     })
   }
   return result
@@ -184,6 +212,7 @@ function taskTime(task: ScheduleTask) {
 }
 
 function taskLabel(task: ScheduleTask) {
+  if (task.text.trim()) return task.text
   const sequence = task.operationSequence > 0 ? `第 ${task.operationSequence} 道` : '工序'
   return `${task.orderId || '未关联工单'} · ${sequence}`
 }
@@ -364,7 +393,7 @@ function selectTask(task: ScheduleTask) {
     z-index: 2;
     display: flex;
     height: 3rem;
-    min-width: 1.5rem;
+    min-width: 0;
     flex-direction: column;
     justify-content: center;
     gap: 0.2rem;

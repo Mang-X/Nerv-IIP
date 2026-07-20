@@ -166,6 +166,13 @@ vi.mock('@/composables/useBusinessScheduling', () => ({
     planDetailPending: shallowRef(false),
     plans: computed(() => [
       {
+        status: 'generated',
+        generatedAtUtc: '2026-07-01T08:30:00Z',
+        assignmentCount: 1,
+        conflictCount: 0,
+        unscheduledOperationCount: 0,
+      },
+      {
         planId: 'plan-001',
         status: 'generated',
         generatedAtUtc: '2026-07-01T09:30:00Z',
@@ -270,6 +277,19 @@ describe('APS scheduling workbench page', () => {
     expect(wrapper.text()).not.toContain('甘特可视化待接入')
   })
 
+  it('does not render summaries without a plan id as Gantt selector options', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特图'))!
+    await ganttTab.trigger('focus')
+    await ganttTab.trigger('mousedown')
+    await flushPromises()
+
+    expect(detailSelection.planId).toBe('plan-001')
+    expect(wrapper.findAllComponents({ name: 'NvSelectItem' })).toHaveLength(3)
+  })
+
   it('opens plan detail and releases the selected plan through the composable', async () => {
     const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
     await flushPromises()
@@ -332,6 +352,10 @@ describe('APS scheduling workbench page', () => {
       .findAll('button')
       .find((button) => button.text().includes('发布当前方案'))!
     expect(ganttPublish.attributes('disabled')).toBeDefined()
+
+    wrapper.findComponent({ name: 'SchedulingPlanGantt' }).vm.$emit('release')
+    await flushPromises()
+    expect(stub.releasePlan).not.toHaveBeenCalled()
   })
 
   it('shows a permission-specific Gantt error state', async () => {
@@ -346,6 +370,22 @@ describe('APS scheduling workbench page', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('权限不足，无法查看该排程方案')
+  })
+
+  it('handles cyclic error causes without overflowing the render stack', async () => {
+    detailSelection.planId = 'plan-empty'
+    const cyclicError: Record<string, unknown> = {}
+    cyclicError.cause = cyclicError
+    detailError.value = cyclicError
+
+    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+    const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特图'))!
+    await ganttTab.trigger('focus')
+    await ganttTab.trigger('mousedown')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('排程甘特加载失败')
   })
 
   it('shows explicit detail feedback when a plan detail request fails', async () => {

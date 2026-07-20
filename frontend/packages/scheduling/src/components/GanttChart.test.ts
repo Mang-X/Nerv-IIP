@@ -95,4 +95,86 @@ describe('ResourceSchedulerBoard', () => {
     expect(wrapper.findAll('[data-resource-lane]')).toHaveLength(2)
     wrapper.unmount()
   })
+
+  it('aligns day geometry to local calendar boundaries', async () => {
+    const model = toModel(samplePlan)
+    model.horizon = {
+      startUtc: '2026-06-10T00:00:00.000Z',
+      endUtc: '2026-06-10T23:00:00.000Z',
+    }
+    model.tasks = model.tasks.map((task) =>
+      task.id === 'a1'
+        ? {
+            ...task,
+            startUtc: '2026-06-10T16:00:00.000Z',
+            endUtc: '2026-06-10T18:00:00.000Z',
+          }
+        : task,
+    )
+
+    const wrapper = mount(ResourceSchedulerBoard, {
+      props: { model, scale: 'day', readOnly: true },
+      attachTo: document.body,
+    })
+    await settle()
+
+    const task = wrapper.find('[data-task-id="a1"]')
+    const taskStart = Date.parse('2026-06-10T16:00:00.000Z')
+    const rangeStart = new Date('2026-06-10T00:00:00.000Z')
+    rangeStart.setHours(0, 0, 0, 0)
+    const rangeEnd = new Date('2026-06-10T23:00:00.000Z')
+    rangeEnd.setHours(24, 0, 0, 0)
+    const expectedLeft =
+      ((taskStart - rangeStart.getTime()) / (rangeEnd.getTime() - rangeStart.getTime())) * 100
+    expect(Number.parseFloat((task.element as HTMLElement).style.left)).toBeCloseTo(expectedLeft, 5)
+    wrapper.unmount()
+  })
+
+  it('keeps tasks outside the declared horizon inside the timeline track', async () => {
+    const model = toModel(samplePlan)
+    model.horizon = {
+      startUtc: '2026-06-10T00:00:00.000Z',
+      endUtc: '2026-06-11T00:00:00.000Z',
+    }
+    model.tasks = model.tasks.map((task) =>
+      task.id === 'a1'
+        ? {
+            ...task,
+            startUtc: '2026-06-08T08:00:00.000Z',
+            endUtc: '2026-06-08T10:00:00.000Z',
+          }
+        : task,
+    )
+
+    const wrapper = mount(ResourceSchedulerBoard, {
+      props: { model, scale: 'day', readOnly: true },
+      attachTo: document.body,
+    })
+    await settle()
+
+    for (const task of wrapper.findAll('[data-task-id]')) {
+      const element = task.element as HTMLElement
+      const left = Number.parseFloat(element.style.left)
+      const width = Number.parseFloat(element.style.width)
+      expect(left).toBeGreaterThanOrEqual(0)
+      expect(left + width).toBeLessThanOrEqual(100)
+    }
+    wrapper.unmount()
+  })
+
+  it('uses the mapped task text in the read-only fallback', async () => {
+    const model = toModel(samplePlan)
+    model.tasks = model.tasks.map((task) =>
+      task.id === 'a1' ? { ...task, text: 'WO-001 · 第 10 道 · 激光切割' } : task,
+    )
+
+    const wrapper = mount(ResourceSchedulerBoard, {
+      props: { model, scale: 'day', readOnly: true },
+      attachTo: document.body,
+    })
+    await settle()
+
+    expect(wrapper.find('[data-task-id="a1"]').text()).toContain('激光切割')
+    wrapper.unmount()
+  })
 })
