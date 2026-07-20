@@ -66,7 +66,7 @@
 
 ## 8. 已收口能力与剩余验收
 - **保养计划编辑(#945)**:BusinessMaintenance 已提供 `updateMaintenancePlan` 命令/PUT 端点,并按组织、环境和计划 ID 收敛写范围;BusinessGateway 以 `business.maintenance.plans.manage` 暴露 `updateBusinessConsoleMaintenancePlan`,facade coverage 声明为 `exposed`,OpenAPI 与生成客户端已同步。Business Console 共用新建/编辑表单完成三态预填、字段级校验、显式清除旧触发、刷新与反馈闭环。#794 的编辑链路缺口不再是后端缺口。
-- 运行小时阈值触发的真机验收需连接器持续上报设备运行状态样本(冷启动 dev 无历史样本时运行小时=0)。Maintenance Web/命令测试以 fake `FixedAssetRuntimeHoursProvider` 覆盖阈值计算与工单生成分支,不等同于真实跨服务验收;IndustrialTelemetry 遥测事实 → 运行小时阈值 → Maintenance 工单的真实 PostgreSQL acceptance 由 `RuntimeHoursMaintenancePostgresAcceptanceTests` 覆盖,需设置 `NERV_IIP_TEST_POSTGRES` opt-in 运行。
+- 运行小时阈值触发的真机验收需连接器持续上报设备运行状态样本(冷启动 dev 无历史样本时运行小时=0)。Maintenance Web/命令测试以 fake `FixedAssetRuntimeHoursProvider` 覆盖阈值计算与工单生成分支,不等同于真实跨服务验收;IndustrialTelemetry 遥测事实 → 运行小时阈值 → Maintenance 工单的真实 PostgreSQL + Redis acceptance 由 `MaintenanceRuntimeHoursPostgresRedisAcceptanceTests` 覆盖，通过 `.\nerv.ps1 fullstack run -Scenario man-440` 在受治理的一次性 session 中运行；该验收确认 Maintenance Redis CAP consumer group 就绪，由 session-owned PostgreSQL seed 证明低于阈值不生成、追加运行状态跨阈值后由真实 scheduler 自动生成计划工单。
 
 ## 9. 验收
 - 三档触发模式可切换,运行小时模式字段/快捷值/字段级校验齐;运行小时型计划提交 `interval` 为空(真纯运行小时,起始日不产生日历工单)。
