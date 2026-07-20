@@ -551,6 +551,8 @@ try {
     Assert-True (-not $failedEvidenceText.Contains('failure-secret')) 'Leader-demo failure evidence must redact sensitive error values.'
 
     $exitCodeFailure = $null
+    $script:nativeExitPwshPath = (Get-Process -Id $PID).Path
+    $nativeExitSecret = 'native-secret-that-must-not-leak'
     try {
         Invoke-NervLeaderDemoVerification `
             -Manifest $leaderManifest `
@@ -562,9 +564,12 @@ try {
             -WaitAction {
                 param($Name, $Manifest, $TimeoutSeconds)
                 if ($Name -ceq 'business-mes') {
-                    $failure = [InvalidOperationException]::new('MES wait returned native exit 17')
-                    $failure.Data['ExitCode'] = 17
-                    throw $failure
+                    Invoke-NativeCommandOutput `
+                        -Command $script:nativeExitPwshPath `
+                        -Arguments @('-NoProfile', '-NonInteractive', '-Command', "[Console]::Error.WriteLine('token=$nativeExitSecret'); exit 17") `
+                        -WorkingDirectory $repoRoot `
+                        -TimeoutSeconds 30 `
+                        -Name 'leader-demo-native-exit-probe' | Out-Null
                 }
             } `
             -AspireSnapshotAction { param($Manifest) $healthyLeaderSnapshot } `
@@ -574,14 +579,16 @@ try {
             -PublicFactQueryAction { param($FactName, $Url, $Headers) throw 'facts must be skipped after exit 17' } | Out-Null
     }
     catch { $exitCodeFailure = $_.Exception }
-    Assert-True ($null -ne $exitCodeFailure) 'Injected exit 17 must fail verification.'
-    Assert-True ([int] $exitCodeFailure.Data['ExitCode'] -eq 17) 'Verification must preserve the original nonzero exit code after evidence.'
+    Assert-True ($null -ne $exitCodeFailure) 'A real native exit 17 must fail verification.'
+    Assert-True ([int] $exitCodeFailure.Data['ExitCode'] -eq 17) 'Verification must preserve the real native nonzero exit code after evidence.'
+    Assert-True (-not $exitCodeFailure.Message.Contains($nativeExitSecret)) 'Native failure exceptions must not expose sensitive process output.'
     $exitEvidencePath = Get-ChildItem -LiteralPath $leaderEvidenceRoot -Filter evidence.json -File -Recurse |
         Where-Object { $_.Directory.Name.StartsWith('20260720T123756000Z-', [StringComparison]::Ordinal) } |
         Select-Object -First 1 -ExpandProperty FullName
     Assert-True (Test-Path -LiteralPath $exitEvidencePath -PathType Leaf) 'Exit 17 verification must write evidence before propagating the code.'
     $exitEvidence = Get-Content -LiteralPath $exitEvidencePath -Raw | ConvertFrom-Json -Depth 50
     Assert-True ($exitEvidence.result -ceq 'failed' -and $exitEvidence.exitCode -eq 17) 'Failure evidence must record the propagated exit code.'
+    Assert-True (-not (Get-Content -LiteralPath $exitEvidencePath -Raw).Contains($nativeExitSecret)) 'Native failure evidence must not expose sensitive process output.'
 
     $factFailure = $null
     try {

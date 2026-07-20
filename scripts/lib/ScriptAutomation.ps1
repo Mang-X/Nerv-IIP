@@ -404,7 +404,10 @@ function Invoke-NativeCommandOutput {
         $stderr = $stderrTask.GetAwaiter().GetResult()
 
         if ($process.ExitCode -ne 0) {
-            throw "Command '$Command' exited with $($process.ExitCode). Output: $(Protect-ScriptAutomationText (($stdout, $stderr) -join [Environment]::NewLine))"
+            $safeOutput = Protect-ScriptAutomationText (($stdout, $stderr) -join [Environment]::NewLine)
+            $failure = [InvalidOperationException]::new("Command '$Command' exited with $($process.ExitCode). Output: $safeOutput")
+            $failure.Data['ExitCode'] = [int] $process.ExitCode
+            throw $failure
         }
 
         if (-not [string]::IsNullOrWhiteSpace($stderr)) {
