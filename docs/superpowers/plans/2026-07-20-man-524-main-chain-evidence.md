@@ -58,7 +58,7 @@
 
 ### Task 5: Publish evidence and create the review PR
 
-- [ ] Post the redacted run summary and per-hop conclusions to GitHub #965 and Linear MAN-524, linking existing follow-up #972 for the deliberate gap.
-- [ ] Commit only the reusable scenario, tests, plan, and documentation; never commit runtime credentials or generated session artifacts.
-- [ ] Push `codex/man-524-965-real-stack-evidence` and create a ready PR with scope, exact verification command, evidence location, cleanup result, docs impact, and `Fixes #965` only if every required hop has an explicit accepted conclusion.
-- [ ] Stop after PR creation and wait for review; do not merge.
+- [x] Post the redacted run summary and per-hop conclusions to GitHub #965 and Linear MAN-524, linking existing follow-up #972 for the deliberate gap.
+- [x] Commit only the reusable scenario, tests, plan, and documentation; never commit runtime credentials or generated session artifacts.
+- [x] Push `codex/man-524-965-real-stack-evidence` and create a ready PR with scope, exact verification command, evidence location, cleanup result, docs impact, and `Fixes #965` only if every required hop has an explicit accepted conclusion.
+- [x] Stop after PR creation and wait for review; do not merge.
