@@ -2062,11 +2062,14 @@ function Invoke-NervLeaderDemoCommand {
                 }
                 'reset' {
                     $password = Get-NervLeaderDemoAdminPassword
-                    $target = & $resolveLifecycleTarget
-                    if (-not $target.Reclaimed) {
-                        $oldSessionId = "$($target.SessionId)"
-                        & $StopSessionAction $oldSessionId | Out-Null
-                        Remove-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedSessionId $oldSessionId
+                    $pointerPath = Get-NervLeaderDemoSessionPointerPath -StateRoot $resolvedStateRoot
+                    if (Test-Path -LiteralPath $pointerPath -PathType Leaf) {
+                        $target = & $resolveLifecycleTarget
+                        if (-not $target.Reclaimed) {
+                            $oldSessionId = "$($target.SessionId)"
+                            & $StopSessionAction $oldSessionId | Out-Null
+                            Remove-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedSessionId $oldSessionId
+                        }
                     }
 
                     $newSessionId = & $startSession

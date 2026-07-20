@@ -528,6 +528,31 @@ try {
     Assert-True $mismatchRejected 'Stop must reject a manifest whose embedded session ID does not match the pointer session ID.'
     Assert-True ($script:mismatchStopCalls -eq 0) 'A mismatched authoritative manifest must fail before exact-session cleanup.'
 
+    $coldResetRoot = Join-Path $stateRoot 'cold-reset'
+    $coldResetStarts = [System.Collections.Generic.List[string]]::new()
+    $coldResetSeeds = [System.Collections.Generic.List[string]]::new()
+    $coldResetHealthChecks = [System.Collections.Generic.List[string]]::new()
+    $script:coldResetStopCalls = 0
+    $coldResetSessionId = Invoke-NervLeaderDemoCommand `
+        -Action reset `
+        -StateRoot $coldResetRoot `
+        -WorktreeRoot $repoRoot `
+        -StartSessionAction {
+            param($SessionId)
+            $coldResetStarts.Add($SessionId)
+            Write-TestFullStackManifest -SessionId $SessionId -ManifestWorktreeRoot $repoRoot -StateRoot $coldResetRoot
+        } `
+        -StopSessionAction { param($SessionId) $script:coldResetStopCalls++ } `
+        -SeedAction { param($SessionId) $coldResetSeeds.Add($SessionId) } `
+        -HealthCheckAction { param($SessionId) $coldResetHealthChecks.Add($SessionId) }
+    Assert-True ($coldResetStarts.Count -eq 1 -and $coldResetStarts[0] -ceq $coldResetSessionId) 'Cold reset must start exactly one fresh session.'
+    Assert-True ($script:coldResetStopCalls -eq 0) 'Cold reset must not invoke stop when no current pointer exists.'
+    Assert-True ($coldResetSeeds.Count -eq 1 -and $coldResetSeeds[0] -ceq $coldResetSessionId) 'Cold reset must seed the fresh exact session.'
+    Assert-True ($coldResetHealthChecks.Count -eq 1 -and $coldResetHealthChecks[0] -ceq $coldResetSessionId) 'Cold reset must health-check the fresh exact session.'
+    Assert-True (
+        (Read-NervLeaderDemoSessionPointer -StateRoot $coldResetRoot -ExpectedWorktreeRoot $repoRoot).sessionId -ceq $coldResetSessionId
+    ) 'Cold reset must finalize the fresh exact session pointer.'
+
     $firstSessionId = Invoke-NervLeaderDemoCommand `
         -Action start `
         -StateRoot $stateRoot `
@@ -568,6 +593,7 @@ try {
         -HealthCheckAction $healthAction
     Assert-True ($secondSessionId -ne $firstSessionId) 'Reset must allocate a fresh isolated session.'
     Assert-True ($script:stopCalls.Count -eq 1 -and $script:stopCalls[0] -ceq $firstSessionId) 'Reset must stop only the validated recorded session ID.'
+    Assert-True ($script:startCalls.Count -eq 2 -and $script:startCalls[1] -ceq $secondSessionId) 'Reset with a current pointer must start exactly one fresh replacement session.'
     Assert-True ($script:seedCalls[-1] -ceq $secondSessionId) 'Reset must seed the fresh exact session.'
     Assert-True ($script:healthCalls[-1] -ceq $secondSessionId) 'Reset must health-check the fresh exact session.'
     Assert-True ((Read-NervLeaderDemoSessionPointer -StateRoot $stateRoot -ExpectedWorktreeRoot $repoRoot).sessionId -ceq $secondSessionId) 'Reset must replace the pointer only after a fresh start succeeds.'
