@@ -270,7 +270,7 @@ public sealed class FastEndpointsArchitectureTests
             "var businessProductEngineering =",
             StringComparison.Ordinal);
         var resourceEnd = programText.IndexOf(
-            "var businessInventory =",
+            "businessProductEngineering = WithRedisMessagingTransport(",
             resourceStart,
             StringComparison.Ordinal);
 
