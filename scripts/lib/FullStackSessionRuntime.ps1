@@ -408,6 +408,7 @@ function Assert-NervLeaderDemoMainChainEvidence {
         'wms-completed-account-receivable',
         'account-receivable-voucher'
     )
+    if ("$($evidence.runtimeProfileSource)" -cne 'session-manifest') { throw 'Leader-demo evidence runtime profile must come from the managed session manifest.' }
     if ("$($evidence.transport)" -cne 'redis-cross-process') { throw 'Leader-demo evidence must declare redis-cross-process transport.' }
     if ("$($evidence.persistence)" -cne 'postgresql') { throw 'Leader-demo evidence must declare PostgreSQL persistence.' }
     if ([string]::IsNullOrWhiteSpace("$($evidence.salesOrderNo)") -or "$($evidence.salesOrderNo)" -notlike 'SO-MAN524-*') {
@@ -418,8 +419,8 @@ function Assert-NervLeaderDemoMainChainEvidence {
         throw "Leader-demo evidence must contain exactly $($requiredNodes.Count) entries; found $($entries.Count)."
     }
     foreach ($node in $requiredNodes) {
-        $matches = @($entries | Where-Object { "$($_.node)" -ceq $node })
-        if ($matches.Count -ne 1) { throw "Leader-demo evidence must contain exactly one '$node' entry; found $($matches.Count)." }
+        $nodeEntries = @($entries | Where-Object { "$($_.node)" -ceq $node })
+        if ($nodeEntries.Count -ne 1) { throw "Leader-demo evidence must contain exactly one '$node' entry; found $($nodeEntries.Count)." }
     }
     foreach ($entry in $entries) {
         if (@('runtime-confirmed', 'gap', 'not-verified') -cnotcontains "$($entry.conclusion)") {
@@ -428,6 +429,22 @@ function Assert-NervLeaderDemoMainChainEvidence {
         if ([string]::IsNullOrWhiteSpace("$($entry.stableKey)") -or [string]::IsNullOrWhiteSpace("$($entry.demoWording)")) {
             throw "Leader-demo evidence node '$($entry.node)' is missing its stable key or demo wording."
         }
+    }
+    $notVerifiedEntries = @($entries | Where-Object { "$($_.conclusion)" -ceq 'not-verified' })
+    if ($notVerifiedEntries.Count -gt 0) {
+        throw "Leader-demo evidence cannot pass with not-verified nodes: $($notVerifiedEntries.node -join ', ')."
+    }
+    $unexpectedGaps = @($entries | Where-Object {
+        "$($_.conclusion)" -ceq 'gap' -and -not (
+            "$($_.node)" -ceq 'inventory-produced-lot-fulfillment-lookup' -and
+            "$($_.responsibilityIssue)" -match '(?<!\d)#972(?!\d)'
+        )
+    })
+    if ($unexpectedGaps.Count -gt 0) {
+        throw "Leader-demo evidence contains gaps outside the accepted #972 baseline: $($unexpectedGaps.node -join ', ')."
+    }
+    if (@($entries | Where-Object { "$($_.conclusion)" -ceq 'runtime-confirmed' }).Count -eq 0) {
+        throw 'Leader-demo evidence must contain at least one runtime-confirmed node.'
     }
     $raw = Get-Content -LiteralPath $EvidencePath -Raw
     foreach ($forbiddenPattern in @('(?i)authorization', '(?i)bearer\s+', '(?i)password', '(?i)access[_-]?token', '(?i)refresh[_-]?token')) {
@@ -496,6 +513,13 @@ function Invoke-NervLeaderDemoMainChainScenario {
         }
     }
 
+    if ("$($Manifest.runtime.messagingProvider)" -cne 'Redis') {
+        throw "Leader-demo main-chain requires a Redis session profile; manifest recorded '$($Manifest.runtime.messagingProvider)'."
+    }
+    if ("$($Manifest.runtime.persistenceProvider)" -cne 'PostgreSQL') {
+        throw "Leader-demo main-chain requires a PostgreSQL session profile; manifest recorded '$($Manifest.runtime.persistenceProvider)'."
+    }
+
     $resourceNames = @(
         'postgres', 'redis', 'iam', 'gateway', 'business-gateway', 'business-console',
         'business-master-data', 'business-product-engineering', 'business-inventory',
@@ -506,7 +530,8 @@ function Invoke-NervLeaderDemoMainChainScenario {
 
     $snapshot = & $AspireSnapshotAction $Manifest
     $finishedProjects = @($snapshot.resources | Where-Object {
-        "$($_.resourceType)" -like 'Project*' -and "$($_.state)" -eq 'Finished'
+        "$($_.resourceType)" -like 'Project*' -and "$($_.state)" -eq 'Finished' -and
+        $resourceNames -ccontains "$($_.displayName)"
     })
     if ($finishedProjects.Count -gt 0) {
         throw "Aspire project resources finished unexpectedly: $($finishedProjects.displayName -join ', ')."
@@ -515,6 +540,9 @@ function Invoke-NervLeaderDemoMainChainScenario {
     $childEnvironment = @{
         NERV_IIP_PLAYWRIGHT_BASE_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-console'
         NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $SessionAdminPassword
+        NERV_IIP_MAIN_CHAIN_RUNTIME_PROFILE_SOURCE = 'session-manifest'
+        NERV_IIP_MAIN_CHAIN_TRANSPORT = 'redis-cross-process'
+        NERV_IIP_MAIN_CHAIN_PERSISTENCE = 'postgresql'
     }
     & $BrowserAction $childEnvironment $Manifest | Out-Null
     return [pscustomobject]@{ ExitCode = 0; ChildEnvironment = $childEnvironment; CheckedResources = $resourceNames }
@@ -735,6 +763,8 @@ function Get-NervFullStackEnvironment {
     return @{
         NERV_IIP_EPHEMERAL = 'true'
         NERV_IIP_SESSION_ID = $SessionId
+        Messaging__Provider = 'Redis'
+        Persistence__Provider = 'PostgreSQL'
         ASPNETCORE_ENVIRONMENT = 'Development'
         DOTNET_ENVIRONMENT = 'Development'
         NERV_IIP_POSTGRES_VOLUME = "nerv-iip-postgres-18-$SessionId"

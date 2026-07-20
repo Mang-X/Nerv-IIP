@@ -165,6 +165,8 @@ function Start-NervFullStackSession {
                 $sessionEnvironment.NERV_IIP_MINIO_VOLUME,
                 $sessionEnvironment.NERV_IIP_VICTORIA_LOGS_VOLUME
             )
+            $latest.runtime.messagingProvider = $sessionEnvironment.Messaging__Provider
+            $latest.runtime.persistenceProvider = $sessionEnvironment.Persistence__Provider
             return $latest
         }
         $secretSet = New-NervFullStackSecretEnvironment -SessionId $newSessionId

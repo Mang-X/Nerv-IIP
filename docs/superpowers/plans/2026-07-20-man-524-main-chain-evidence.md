@@ -59,6 +59,7 @@
 ### Task 5: Publish evidence and create the review PR
 
 - [x] Post the redacted run summary and per-hop conclusions to GitHub #965 and Linear MAN-524, linking existing follow-up #972 for the deliberate gap.
+- [x] Publish the full fifteen-node evidence table in [GitHub #965](https://github.com/Mang-X/Nerv-IIP/issues/965#issuecomment-5019044395); keep #989 as the owner of the public-prerequisite blocker exposed by the real-stack run.
 - [x] Commit only the reusable scenario, tests, plan, and documentation; never commit runtime credentials or generated session artifacts.
 - [x] Push `codex/man-524-965-real-stack-evidence` and create a ready PR with scope, exact verification command, evidence location, cleanup result, docs impact, and `Fixes #965` only if every required hop has an explicit accepted conclusion.
 - [x] Stop after PR creation and wait for review; do not merge.

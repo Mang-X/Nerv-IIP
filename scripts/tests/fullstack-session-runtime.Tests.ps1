@@ -207,6 +207,8 @@ Assert-True `
 $environment = Get-NervFullStackEnvironment -SessionId $sessionId
 Assert-True ($environment.NERV_IIP_EPHEMERAL -eq 'true') 'Ephemeral flag missing.'
 Assert-True ($environment.NERV_IIP_SESSION_ID -eq $sessionId) 'Session ID missing.'
+Assert-True ($environment.Messaging__Provider -ceq 'Redis') 'Managed full-stack sessions must explicitly select Redis messaging.'
+Assert-True ($environment.Persistence__Provider -ceq 'PostgreSQL') 'Managed full-stack sessions must explicitly select PostgreSQL persistence.'
 foreach ($expected in @(
     "nerv-iip-postgres-18-$sessionId",
     "nerv-iip-redis-$sessionId",
@@ -252,6 +254,10 @@ $scenarioManifest = [pscustomobject]@{
     sessionId = $sessionId
     appHostProject = Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
     worktreeRoot = "$repoRoot"
+    runtime = [pscustomobject]@{
+        messagingProvider = 'Redis'
+        persistenceProvider = 'PostgreSQL'
+    }
     endpoints = [pscustomobject]@{
         gateway = 'http://127.0.0.1:41001'
         'business-gateway' = 'http://127.0.0.1:41002'
@@ -327,9 +333,10 @@ try {
         'wms-completed-erp-delivery-status', 'wms-completed-account-receivable', 'account-receivable-voucher'
     )
     $leaderDemoEntries = @($requiredLeaderDemoNodes | ForEach-Object {
-        [ordered]@{ node = $_; stableKey = 'SO-MAN524-TEST'; conclusion = 'runtime-confirmed'; demoWording = 'verified' }
+        [ordered]@{ node = $_; stableKey = 'SO-MAN524-TEST'; conclusion = 'runtime-confirmed'; demoWording = 'verified'; responsibilityIssue = $null }
     })
     [IO.File]::WriteAllText($leaderDemoEvidencePath, ([ordered]@{
+        runtimeProfileSource = 'session-manifest'
         transport = 'redis-cross-process'
         persistence = 'postgresql'
         salesOrderNo = 'SO-MAN524-TEST'
@@ -339,15 +346,30 @@ try {
     Assert-True (@($validatedLeaderDemo.entries).Count -eq 15) 'Leader-demo evidence must validate all fifteen required nodes.'
     $leaderDemoEntries[0].conclusion = 'code-confirmed-only'
     [IO.File]::WriteAllText($leaderDemoEvidencePath, ([ordered]@{
-        transport = 'redis-cross-process'; persistence = 'postgresql'; salesOrderNo = 'SO-MAN524-TEST'; entries = $leaderDemoEntries
+        runtimeProfileSource = 'session-manifest'; transport = 'redis-cross-process'; persistence = 'postgresql'; salesOrderNo = 'SO-MAN524-TEST'; entries = $leaderDemoEntries
     } | ConvertTo-Json -Depth 10))
     $invalidConclusionFailed = $false
     try { Assert-NervLeaderDemoMainChainEvidence -EvidencePath $leaderDemoEvidencePath | Out-Null } catch { $invalidConclusionFailed = $true }
     Assert-True $invalidConclusionFailed 'Leader-demo evidence must reject conclusions outside the issue vocabulary.'
+    $leaderDemoEntries[0].conclusion = 'not-verified'
+    [IO.File]::WriteAllText($leaderDemoEvidencePath, ([ordered]@{
+        runtimeProfileSource = 'session-manifest'; transport = 'redis-cross-process'; persistence = 'postgresql'; salesOrderNo = 'SO-MAN524-TEST'; entries = $leaderDemoEntries
+    } | ConvertTo-Json -Depth 10))
+    $notVerifiedFailed = $false
+    try { Assert-NervLeaderDemoMainChainEvidence -EvidencePath $leaderDemoEvidencePath | Out-Null } catch { $notVerifiedFailed = $true }
+    Assert-True $notVerifiedFailed 'Leader-demo evidence must reject a present but not-verified node.'
     $leaderDemoEntries[0].conclusion = 'runtime-confirmed'
+    $leaderDemoEntries[9].conclusion = 'gap'
+    $leaderDemoEntries[9].responsibilityIssue = '#972 / MAN-528 (demo:defer)'
+    [IO.File]::WriteAllText($leaderDemoEvidencePath, ([ordered]@{
+        runtimeProfileSource = 'session-manifest'; transport = 'redis-cross-process'; persistence = 'postgresql'; salesOrderNo = 'SO-MAN524-TEST'; entries = $leaderDemoEntries
+    } | ConvertTo-Json -Depth 10))
+    Assert-NervLeaderDemoMainChainEvidence -EvidencePath $leaderDemoEvidencePath | Out-Null
+    $leaderDemoEntries[9].conclusion = 'runtime-confirmed'
+    $leaderDemoEntries[9].responsibilityIssue = $null
     $leaderDemoEntries += [ordered]@{ node = 'unexpected-extra'; stableKey = 'SO-MAN524-TEST'; conclusion = 'gap'; demoWording = 'unexpected' }
     [IO.File]::WriteAllText($leaderDemoEvidencePath, ([ordered]@{
-        transport = 'redis-cross-process'; persistence = 'postgresql'; salesOrderNo = 'SO-MAN524-TEST'; entries = $leaderDemoEntries
+        runtimeProfileSource = 'session-manifest'; transport = 'redis-cross-process'; persistence = 'postgresql'; salesOrderNo = 'SO-MAN524-TEST'; entries = $leaderDemoEntries
     } | ConvertTo-Json -Depth 10))
     $extraEntryFailed = $false
     try { Assert-NervLeaderDemoMainChainEvidence -EvidencePath $leaderDemoEvidencePath | Out-Null } catch { $extraEntryFailed = $true }
@@ -359,6 +381,19 @@ finally {
 
 $script:leaderDemoWaits = [System.Collections.Generic.List[string]]::new()
 $script:leaderDemoEnvironment = $null
+$invalidProfileManifest = $scenarioManifest.PSObject.Copy()
+$invalidProfileManifest.runtime = [pscustomobject]@{ messagingProvider = 'InMemory'; persistenceProvider = 'PostgreSQL' }
+$invalidProfileFailed = $false
+try {
+    Invoke-NervLeaderDemoMainChainScenario `
+        -Manifest $invalidProfileManifest `
+        -SessionAdminPassword 'process-only-password' `
+        -WaitAction { param($Name, $Manifest) } `
+        -AspireSnapshotAction { param($Manifest) $healthySnapshot } `
+        -BrowserAction { param($Environment, $Manifest) } | Out-Null
+}
+catch { $invalidProfileFailed = $true }
+Assert-True $invalidProfileFailed 'Leader-demo scenario must reject a manifest that did not start with Redis messaging.'
 $leaderDemoScenario = Invoke-NervLeaderDemoMainChainScenario `
     -Manifest $scenarioManifest `
     -SessionAdminPassword 'process-only-password' `
@@ -370,6 +405,27 @@ foreach ($name in @('postgres', 'redis', 'business-erp', 'business-demand-planni
     Assert-True ($script:leaderDemoWaits -ccontains $name) "Leader-demo scenario did not wait for '$name'."
 }
 Assert-True ($script:leaderDemoEnvironment.NERV_IIP_FULLSTACK_ADMIN_PASSWORD -ceq 'process-only-password') 'Leader-demo browser password must remain process-only.'
+Assert-True ($script:leaderDemoEnvironment.NERV_IIP_MAIN_CHAIN_RUNTIME_PROFILE_SOURCE -ceq 'session-manifest') 'Leader-demo evidence profile must be sourced from the session manifest.'
+Assert-True ($script:leaderDemoEnvironment.NERV_IIP_MAIN_CHAIN_TRANSPORT -ceq 'redis-cross-process') 'Leader-demo browser evidence must inherit the Redis transport fact.'
+Assert-True ($script:leaderDemoEnvironment.NERV_IIP_MAIN_CHAIN_PERSISTENCE -ceq 'postgresql') 'Leader-demo browser evidence must inherit the PostgreSQL persistence fact.'
+$unrelatedFinishedScenario = Invoke-NervLeaderDemoMainChainScenario `
+    -Manifest $scenarioManifest `
+    -SessionAdminPassword 'process-only-password' `
+    -WaitAction { param($Name, $Manifest) } `
+    -AspireSnapshotAction { param($Manifest) [pscustomobject]@{ resources = @([pscustomobject]@{ displayName = 'file-storage'; resourceType = 'Project.v0'; state = 'Finished' }) } } `
+    -BrowserAction { param($Environment, $Manifest) }
+Assert-True ($unrelatedFinishedScenario.ExitCode -eq 0) 'A project outside the main-chain resource contract must not block its evidence scenario.'
+$requiredFinishedFailed = $false
+try {
+    Invoke-NervLeaderDemoMainChainScenario `
+        -Manifest $scenarioManifest `
+        -SessionAdminPassword 'process-only-password' `
+        -WaitAction { param($Name, $Manifest) } `
+        -AspireSnapshotAction { param($Manifest) [pscustomobject]@{ resources = @([pscustomobject]@{ displayName = 'business-mes'; resourceType = 'Project.v0'; state = 'Finished' }) } } `
+        -BrowserAction { param($Environment, $Manifest) } | Out-Null
+}
+catch { $requiredFinishedFailed = $true }
+Assert-True $requiredFinishedFailed 'A prematurely finished required main-chain project must fail the scenario.'
 
 $generatedDiagnosticSecret = New-NervFullStackSecretValue -Bytes 24
 $unsafeDiagnostic = "$generatedDiagnosticSecret password=secret Authorization: Bearer token Host=localhost;Port=5432;Database=nerv;Username=postgres;Password=db-secret"

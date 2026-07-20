@@ -4,8 +4,19 @@ import { writeFile } from 'node:fs/promises'
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
 const evidencePath = process.env.NERV_IIP_MAIN_CHAIN_EVIDENCE_PATH
+const runtimeProfileSource = process.env.NERV_IIP_MAIN_CHAIN_RUNTIME_PROFILE_SOURCE
+const transport = process.env.NERV_IIP_MAIN_CHAIN_TRANSPORT
+const persistence = process.env.NERV_IIP_MAIN_CHAIN_PERSISTENCE
 
-test.skip(!baseURL || !adminPassword || !evidencePath, 'requires a managed full-stack session')
+test.skip(
+  !baseURL ||
+    !adminPassword ||
+    !evidencePath ||
+    !runtimeProfileSource ||
+    !transport ||
+    !persistence,
+  'requires a managed full-stack session',
+)
 test.setTimeout(18 * 60 * 1000)
 
 type JsonRecord = Record<string, unknown>
@@ -148,7 +159,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
       responseOrLog: { reason: 'upstream evidence was not established in this run' },
       conclusion: 'not-verified',
       demoWording: `${node}: this run did not establish a public runtime association.`,
-      responsibilityIssue: '#965',
+      responsibilityIssue: null,
     })
   }
 
@@ -211,7 +222,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     node: (typeof requiredNodes)[number],
     error: unknown,
     mode: EvidenceEntry['automationMode'] = 'automatic',
-    issue = '#965',
+    issue: string | null = null,
   ) =>
     record({
       ...evidence.get(node)!,
@@ -430,11 +441,23 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
       })
     } catch (error) {
       prerequisitesReady = false
+      const blockedReason = safeText(error instanceof Error ? error.message : error)
       setup.push({
         phase: 'public-prerequisites',
         conclusion: 'gap',
-        error: safeText(error instanceof Error ? error.message : error),
+        responsibilityIssue: '#989',
+        error: blockedReason,
       })
+      for (const node of requiredNodes) {
+        const entry = evidence.get(node)!
+        if (entry.conclusion !== 'not-verified') continue
+        record({
+          ...entry,
+          responseOrLog: { blockedBy: 'public-prerequisites', error: blockedReason },
+          demoWording: `${node}: this run was blocked before the business chain by the public-prerequisite gap tracked in #989.`,
+          responsibilityIssue: '#989',
+        })
+      }
     }
 
     let salesOrderCreated = false
@@ -1099,8 +1122,9 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           organizationId,
           environmentId,
           salesOrderNo,
-          transport: 'redis-cross-process',
-          persistence: 'postgresql',
+          runtimeProfileSource,
+          transport,
+          persistence,
           assertionBoundary:
             'public BusinessGateway HTTP only; no database reads as business assertions',
           setup,
@@ -1120,5 +1144,23 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     sessionCredential = ''
   }
 
-  expect(evidence.size).toBe(requiredNodes.length)
+  const entries = requiredNodes.map((node) => evidence.get(node)!)
+  const unacceptableEntries = entries.filter(
+    (entry) =>
+      entry.conclusion !== 'runtime-confirmed' &&
+      !(
+        entry.node === 'inventory-produced-lot-fulfillment-lookup' &&
+        entry.conclusion === 'gap' &&
+        /(^|\D)#972(\D|$)/.test(entry.responsibilityIssue ?? '')
+      ),
+  )
+  expect(
+    unacceptableEntries.map((entry) => ({
+      node: entry.node,
+      conclusion: entry.conclusion,
+      responsibilityIssue: entry.responsibilityIssue,
+    })),
+    'Every main-chain node must be runtime-confirmed except the explicitly accepted #972 lookup gap.',
+  ).toEqual([])
+  expect(entries.some((entry) => entry.conclusion === 'runtime-confirmed')).toBe(true)
 })

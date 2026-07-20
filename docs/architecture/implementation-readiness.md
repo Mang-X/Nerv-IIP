@@ -4,7 +4,7 @@
 
 ## 并行全栈验证基线
 
-真实浏览器全栈验证已提供一次性 session 入口：`.\nerv.ps1 fullstack run -Scenario smoke`。MAN-524 销售到交付主链证据使用 `.\nerv.ps1 fullstack run -Scenario leader-demo-main-chain`：场景只以 BusinessGateway 公开 HTTP 作为业务断言面，在 Aspire 管理的真实 PostgreSQL 与跨进程 Redis Streams 上运行，并把逐跳脱敏账本写入 `artifacts/fullstack/<sessionId>/leader-demo-main-chain-evidence.json`；该运行产物不提交仓库。session 使用随机公开端口、独立 Aspire/DCP 代理、专属基础设施卷、进程身份与容器所有权标签；默认最多三个活动 session，不设置最低可用内存门槛。自动化成功或失败均精确回收运行资源并保留 `artifacts/fullstack/<sessionId>/`。持久开发仍使用 `.\nerv.ps1 dev`；交互 `.\nerv.ps1 fullstack start` 只用于诊断，完成后必须 `.\nerv.ps1 fullstack stop`。`scripts/verify-parallel-fullstack-isolation.ps1 -Sessions 2` 已在 Windows Docker Desktop 上验证两套浏览器链路、动态端口、PostgreSQL 写隔离、专属卷、单 session 停止边界和故障注入 cleanup。
+真实浏览器全栈验证已提供一次性 session 入口：`.\nerv.ps1 fullstack run -Scenario smoke`。MAN-524 销售到交付主链证据使用 `.\nerv.ps1 fullstack run -Scenario leader-demo-main-chain`：managed session 在 AppHost 启动前显式注入 Redis messaging 与 PostgreSQL persistence profile，并把实际选择写入 manifest；场景只以 BusinessGateway 公开 HTTP 作为业务断言面，再由 manifest 向浏览器证据进程盖章真实 PostgreSQL 与跨进程 Redis Streams 画像。逐跳脱敏账本写入 `artifacts/fullstack/<sessionId>/leader-demo-main-chain-evidence.json`，该运行产物不提交仓库；只有逐跳 runtime-confirmed 和已登记的 #972 查询 gap 可以通过，任何 `not-verified` 或未纳入验收基线的 gap 都使场景非零退出。session 使用随机公开端口、独立 Aspire/DCP 代理、专属基础设施卷、进程身份与容器所有权标签；默认最多三个活动 session，不设置最低可用内存门槛。自动化成功或失败均精确回收运行资源并保留 `artifacts/fullstack/<sessionId>/`。持久开发仍使用 `.\nerv.ps1 dev`；交互 `.\nerv.ps1 fullstack start` 只用于诊断，完成后必须 `.\nerv.ps1 fullstack stop`。`scripts/verify-parallel-fullstack-isolation.ps1 -Sessions 2` 已在 Windows Docker Desktop 上验证两套浏览器链路、动态端口、PostgreSQL 写隔离、专属卷、单 session 停止边界和故障注入 cleanup。
 
 ## 当前结论
 
