@@ -37,7 +37,7 @@ param(
 
     [switch] $All,
 
-    [ValidateSet('smoke')]
+    [ValidateSet('smoke', 'man-528')]
     [string] $Scenario,
 
     [string] $SessionId,

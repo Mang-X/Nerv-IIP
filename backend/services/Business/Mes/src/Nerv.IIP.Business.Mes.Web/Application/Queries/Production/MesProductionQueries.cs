@@ -292,7 +292,8 @@ public sealed record ListFinishedGoodsReceiptRequestsQuery(
     string? WorkCenterId = null,
     string? ShiftId = null,
     string? DeviceAssetId = null,
-    string? Status = null) : IQuery<ListFinishedGoodsReceiptRequestsResponse>;
+    string? Status = null,
+    string? RequestNo = null) : IQuery<ListFinishedGoodsReceiptRequestsResponse>;
 
 public sealed record ListFinishedGoodsReceiptRequestsResponse(
     IReadOnlyCollection<FinishedGoodsReceiptRequestFact> Items,
@@ -332,6 +333,12 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
         if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
         {
             query = query.Where(x => x.WorkOrderId == request.WorkOrderId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.RequestNo))
+        {
+            var requestNo = request.RequestNo.Trim();
+            query = query.Where(x => x.RequestNo == requestNo);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))

@@ -58,18 +58,21 @@ public sealed class StockMovementPostingFailedIntegrationEventHandlerForMarkMesR
         if (IsFinishedGoodsReceipt(payload))
         {
             await MarkFinishedGoodsReceiptFailedAsync(integrationEvent, cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
         if (IsProductionConsumption(payload))
         {
             await MarkProductionConsumptionFailedAsync(integrationEvent, cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
         if (IsMaterialTransferLeg(payload))
         {
             await MarkMaterialTransferFailedAsync(integrationEvent, cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 

@@ -110,6 +110,13 @@ public sealed record GetStockAvailabilityRequest(
     string? OwnerId,
     DateOnly? AsOfDate = null);
 
+public sealed record GetStockBySourceRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SourceService,
+    string? SourceDocumentId,
+    string? SourceDocumentLineId);
+
 public sealed record CreateStockCountTaskRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -325,6 +332,26 @@ public sealed class GetStockAvailabilityEndpoint(ISender sender)
             req.OwnerType,
             req.OwnerId,
             req.AsOfDate), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetStockBySourceEndpoint(ISender sender)
+    : InventoryEndpoint<GetStockBySourceRequest, ResponseData<StockBySourceResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureInventoryContract(InventoryEndpointContracts.Get<GetStockBySourceEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetStockBySourceRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetStockBySourceQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.SourceService,
+            req.SourceDocumentId,
+            req.SourceDocumentLineId), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -577,6 +604,7 @@ public static class InventoryEndpointContracts
         new(typeof(CreateOrUpdateStockLocationEndpoint), "POST", "/api/inventory/v1/locations", InventoryPermissionCodes.LocationsManage, InternalServiceAuthorizationPolicy.Name, "createOrUpdateInventoryLocation"),
         new(typeof(PostStockMovementEndpoint), "POST", "/api/inventory/v1/movements", InventoryPermissionCodes.MovementsCreate, InternalServiceAuthorizationPolicy.Name, "postInventoryMovement"),
         new(typeof(GetStockAvailabilityEndpoint), "GET", "/api/inventory/v1/availability", InventoryPermissionCodes.LedgerRead, InternalServiceAuthorizationPolicy.Name, "getInventoryAvailability"),
+        new(typeof(GetStockBySourceEndpoint), "GET", "/api/inventory/v1/movements/by-source", InventoryPermissionCodes.LedgerRead, InternalServiceAuthorizationPolicy.Name, "getInventoryStockBySource"),
         new(typeof(CreateStockCountTaskEndpoint), "POST", "/api/inventory/v1/count-tasks", InventoryPermissionCodes.CountsManage, InternalServiceAuthorizationPolicy.Name, "createInventoryCountTask"),
         new(typeof(ConfirmStockCountAdjustmentEndpoint), "POST", "/api/inventory/v1/count-tasks/{countTaskId}/adjustments", InventoryPermissionCodes.CountsManage, InternalServiceAuthorizationPolicy.Name, "confirmInventoryCountAdjustment"),
         new(typeof(CancelStockCountTaskEndpoint), "POST", "/api/inventory/v1/count-tasks/{countTaskId}/cancel", InventoryPermissionCodes.CountsManage, InternalServiceAuthorizationPolicy.Name, "cancelInventoryCountTask"),
