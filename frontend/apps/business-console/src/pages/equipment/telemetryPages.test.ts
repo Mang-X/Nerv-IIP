@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, shallowRef } from 'vue'
+import { computed, nextTick, reactive, shallowRef } from 'vue'
 
 import TelemetryAlarmRulesPage from './telemetry/alarm-rules.vue'
 import TelemetryHistoryPage from './telemetry/history.vue'
@@ -10,7 +10,9 @@ import TelemetryTagsPage from './telemetry/tags.vue'
 const telemetryPageMocks = vi.hoisted(() => ({
   historyError: undefined as unknown,
   historyItems: [] as Array<Record<string, unknown>>,
+  historyPending: false,
   replaceRoute: vi.fn(),
+  route: undefined as unknown,
   saveAlarmRule: vi.fn(),
 }))
 
@@ -42,7 +44,12 @@ vi.mock('@nerv-iip/ui', () => ({
   NvFieldError: { props: ['errors'], template: '<div>{{ errors?.join(" ") }}</div>' },
   NvFieldGroup: { template: '<div><slot /></div>' },
   NvFieldLabel: { template: '<label><slot /></label>' },
-  NvInput: { template: '<input />' },
+  NvInput: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
   NvLineChart: {
     props: ['data', 'series'],
     template: '<div data-testid="line-chart">{{ data.length }} {{ series[0]?.label }}</div>',
@@ -75,17 +82,20 @@ vi.mock('@nerv-iip/ui', () => ({
 
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
+  const { reactive } = await import('vue')
+  const route = reactive({
+    query: {
+      deviceAssetId: 'DEV-CNC-01',
+      tagKey: 'temperature',
+      windowEndUtc: '2026-07-02T08:00:00.000Z',
+      windowStartUtc: '2026-07-02T00:00:00.000Z',
+    } as Record<string, string>,
+  })
+  telemetryPageMocks.route = route
   return {
     ...actual,
     RouterLink: { props: ['to'], template: '<a><slot /></a>' },
-    useRoute: () => ({
-      query: {
-        deviceAssetId: 'DEV-CNC-01',
-        tagKey: 'temperature',
-        windowEndUtc: '2026-07-02T08:00:00.000Z',
-        windowStartUtc: '2026-07-02T00:00:00.000Z',
-      },
-    }),
+    useRoute: () => route,
     useRouter: () => ({ replace: telemetryPageMocks.replaceRoute }),
   }
 })
@@ -121,15 +131,15 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
     saveAlarmRulePending: shallowRef(false),
   }),
   useBusinessTelemetryHistory: () => ({
-    filters: {
+    filters: reactive({
       deviceAssetId: 'DEV-CNC-01',
       tagKey: 'temperature',
       windowStartUtc: '2026-07-02T00:00:00.000Z',
       windowEndUtc: '2026-07-02T08:00:00.000Z',
-    },
+    }),
     historyError: shallowRef(telemetryPageMocks.historyError),
     historyItems: computed(() => []),
-    historyPending: shallowRef(false),
+    historyPending: shallowRef(telemetryPageMocks.historyPending),
     refreshHistory: vi.fn(),
     visibleHistoryItems: computed(() => telemetryPageMocks.historyItems),
   }),
@@ -214,7 +224,12 @@ const stubs = {
   NvFieldError: { props: ['errors'], template: '<div>{{ errors?.join(" ") }}</div>' },
   NvFieldGroup: { template: '<div><slot /></div>' },
   NvFieldLabel: { template: '<label><slot /></label>' },
-  NvInput: { template: '<input />' },
+  NvInput: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
   NvLineChart: {
     props: ['data', 'series'],
     template: '<div data-testid="line-chart">{{ data.length }} {{ series[0]?.label }}</div>',
@@ -260,6 +275,7 @@ const stubs = {
 describe('equipment telemetry pages', () => {
   beforeEach(() => {
     telemetryPageMocks.historyError = undefined
+    telemetryPageMocks.historyPending = false
     telemetryPageMocks.historyItems = [
       {
         itemType: 'sample',
@@ -292,6 +308,12 @@ describe('equipment telemetry pages', () => {
     ]
     telemetryPageMocks.replaceRoute.mockClear()
     telemetryPageMocks.saveAlarmRule.mockClear()
+    ;(telemetryPageMocks.route as { query: Record<string, string> }).query = {
+      deviceAssetId: 'DEV-CNC-01',
+      tagKey: 'temperature',
+      windowEndUtc: '2026-07-02T08:00:00.000Z',
+      windowStartUtc: '2026-07-02T00:00:00.000Z',
+    }
   })
 
   it('does not expose organization or environment context on telemetry pages', () => {
@@ -324,27 +346,59 @@ describe('equipment telemetry pages', () => {
   it('renders numeric telemetry statistics, the real trend points, and event context together', () => {
     const wrapper = mount(TelemetryHistoryPage, { global: { stubs } })
 
-    expect(wrapper.get('[data-testid="line-chart"]').text()).toContain('2 遥测值')
+    expect(wrapper.get('[data-testid="line-chart"]').text()).toContain('1 遥测值')
     expect(wrapper.text()).toContain('最新值 87.5')
-    expect(wrapper.text()).toContain('最小值 82.25')
+    expect(wrapper.text()).toContain('最小值 87.5')
     expect(wrapper.text()).toContain('最大值 87.5')
-    expect(wrapper.text()).toContain('样本数 2')
+    expect(wrapper.text()).toContain('样本数 1')
     expect(wrapper.get('[data-testid="timeline"]').text()).toContain('报警记录')
     expect(wrapper.get('[data-testid="timeline"]').text()).toContain('状态记录')
   })
 
-  it('uses local datetime inputs and preserves the complete query scope', () => {
+  it('uses local datetime inputs and preserves the complete query scope', async () => {
     const wrapper = mount(TelemetryHistoryPage, { global: { stubs } })
 
     expect(wrapper.findAll('input[type="datetime-local"]')).toHaveLength(2)
+    await wrapper.findAll('input')[1]!.setValue('spindle-temperature')
     expect(telemetryPageMocks.replaceRoute).toHaveBeenCalledWith({
       query: expect.objectContaining({
         deviceAssetId: 'DEV-CNC-01',
-        tagKey: 'temperature',
+        tagKey: 'spindle-temperature',
         windowEndUtc: '2026-07-02T08:00:00.000Z',
         windowStartUtc: '2026-07-02T00:00:00.000Z',
       }),
     })
+  })
+
+  it('restores filters when browser history changes the route query', async () => {
+    const wrapper = mount(TelemetryHistoryPage, { global: { stubs } })
+    ;(telemetryPageMocks.route as { query: Record<string, string> }).query = {
+      deviceAssetId: 'DEV-PRESS-02',
+      tagKey: 'pressure',
+      windowStartUtc: '2026-07-03T00:00:00.000Z',
+      windowEndUtc: '2026-07-03T04:00:00.000Z',
+    }
+    await nextTick()
+
+    const inputs = wrapper.findAll('input')
+    expect(inputs[0]?.element.value).toBe('DEV-PRESS-02')
+    expect(inputs[1]?.element.value).toBe('pressure')
+  })
+
+  it('keeps the previous valid window when a local datetime input is cleared', async () => {
+    const wrapper = mount(TelemetryHistoryPage, { global: { stubs } })
+    const startInput = wrapper.get<HTMLInputElement>('input[aria-label="开始时间"]')
+    await startInput.setValue('')
+
+    expect(wrapper.text()).toContain('时间范围不能为空或无效')
+    expect(startInput.element.value).toBe('2026-07-02T08:00')
+  })
+
+  it('keeps existing trend content mounted while a refresh is pending', () => {
+    telemetryPageMocks.historyPending = true
+    const wrapper = mount(TelemetryHistoryPage, { global: { stubs } })
+
+    expect(wrapper.find('[data-testid="line-chart"]').exists()).toBe(true)
   })
 
   it('degrades a non-numeric tag to its original detail without drawing a zero-valued chart', () => {

@@ -1,7 +1,7 @@
 import type { BusinessConsoleTelemetryHistoryItem } from '@nerv-iip/api-client'
 import { describe, expect, it } from 'vitest'
 
-import { projectTelemetryHistory } from './telemetryHistoryPresentation'
+import { projectTelemetryHistory } from '@/components/equipment/telemetryHistoryPresentation'
 
 const items = [
   {
@@ -35,20 +35,35 @@ const items = [
 ] satisfies BusinessConsoleTelemetryHistoryItem[]
 
 describe('telemetry history presentation', () => {
-  it('projects only real numeric measurements into the chart and its statistics', () => {
+  it('uses raw samples without mixing overlapping hourly rollups into the chart or statistics', () => {
     const result = projectTelemetryHistory(items)
 
     expect(result.chartData).toEqual([
-      { occurredAt: '2026-07-02T06:30:00.000Z', time: '07/02 14:30', value: 82.25 },
       { occurredAt: '2026-07-02T07:30:00.000Z', time: '07/02 15:30', value: 87.5 },
     ])
     expect(result.statistics).toEqual({
-      count: 2,
+      basis: 'sample',
+      count: 1,
       latest: 87.5,
       maximum: 87.5,
-      minimum: 82.25,
+      minimum: 87.5,
       lastSampleAtUtc: '2026-07-02T07:30:00.000Z',
     })
+    expect(result.excludedAggregateCount).toBe(1)
+  })
+
+  it('falls back to one aggregate grain when retained raw samples are unavailable', () => {
+    const result = projectTelemetryHistory([
+      { itemType: 'daily', value: '70', occurredAtUtc: '2026-07-01T00:00:00Z' },
+      { itemType: 'hourly', value: '80', occurredAtUtc: '2026-07-02T01:00:00Z' },
+      { itemType: 'hourly', value: '82', occurredAtUtc: '2026-07-02T02:00:00Z' },
+    ])
+
+    expect(result.chartData.map((point) => point.value)).toEqual([80, 82])
+    expect(result.statistics).toEqual(
+      expect.objectContaining({ basis: 'hourly', count: 2, latest: 82, minimum: 80, maximum: 82 }),
+    )
+    expect(result.excludedAggregateCount).toBe(1)
   })
 
   it('keeps state and alarm records in an explicitly labelled event timeline', () => {
@@ -78,5 +93,20 @@ describe('telemetry history presentation', () => {
     expect(result.chartData).toEqual([])
     expect(result.statistics).toBeUndefined()
     expect(result.nonNumericMeasurementCount).toBe(3)
+    expect(result.timelineItems).toEqual([
+      expect.objectContaining({ title: '状态值', description: '设备状态：Infinity' }),
+      expect.objectContaining({ title: '状态值', description: '设备状态：running' }),
+    ])
+  })
+
+  it('excludes numeric rows without a valid timestamp from chart order and latest statistics', () => {
+    const result = projectTelemetryHistory([
+      { itemType: 'sample', value: '99', occurredAtUtc: 'not-a-time' },
+      { itemType: 'sample', value: '42', occurredAtUtc: '2026-07-02T02:00:00Z' },
+    ])
+
+    expect(result.chartData.map((point) => point.value)).toEqual([42])
+    expect(result.statistics).toEqual(expect.objectContaining({ latest: 42, count: 1 }))
+    expect(result.invalidTimestampCount).toBe(1)
   })
 })

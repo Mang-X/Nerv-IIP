@@ -1,29 +1,53 @@
 <script setup lang="ts">
-import type { BusinessConsoleTelemetryHistoryItem } from '@nerv-iip/api-client'
 import type { LineSeries } from '@nerv-iip/ui'
-import { projectTelemetryHistory } from '@/pages/equipment/telemetry/telemetryHistoryPresentation'
+import type { TelemetryHistoryProjection } from './telemetryHistoryPresentation'
+import { formatTelemetryDateTime } from './telemetryHistoryPresentation'
 import { NvLineChart, NvSectionCard } from '@nerv-iip/ui'
 import { computed } from 'vue'
 
 const props = defineProps<{
-  items: BusinessConsoleTelemetryHistoryItem[]
+  projection: TelemetryHistoryProjection
   tagKey: string
 }>()
 
-const projection = computed(() => projectTelemetryHistory(props.items))
-const chartSeries: LineSeries[] = [{ key: 'value', label: '遥测值' }]
 const hasSelectedTag = computed(() => props.tagKey.trim().length > 0)
+const basisLabels = computed(() => {
+  const basis = props.projection.statistics?.basis ?? 'sample'
+  if (basis === 'hourly') {
+    return {
+      chart: '小时均值',
+      count: '汇总点数',
+      last: '最后汇总时间',
+      latest: '最新小时均值',
+      maximum: '最高小时均值',
+      minimum: '最低小时均值',
+    }
+  }
+  if (basis === 'daily') {
+    return {
+      chart: '日均值',
+      count: '汇总点数',
+      last: '最后汇总时间',
+      latest: '最新日均值',
+      maximum: '最高日均值',
+      minimum: '最低日均值',
+    }
+  }
+  return {
+    chart: '遥测值',
+    count: '样本数',
+    last: '最后采样时间',
+    latest: '最新值',
+    maximum: '最大值',
+    minimum: '最小值',
+  }
+})
+const chartSeries = computed<LineSeries[]>(() => [{ key: 'value', label: basisLabels.value.chart }])
 
 function metricValue(value: number | undefined) {
   return value === undefined
     ? '无样本'
     : value.toLocaleString(undefined, { maximumFractionDigits: 6 })
-}
-
-function formatDateTime(value?: string) {
-  if (!value) return '无样本'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN')
 }
 </script>
 
@@ -51,13 +75,22 @@ function formatDateTime(value?: string) {
     </div>
     <template v-else>
       <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <NvSectionCard description="最新值" :value="metricValue(projection.statistics.latest)" />
-        <NvSectionCard description="最小值" :value="metricValue(projection.statistics.minimum)" />
-        <NvSectionCard description="最大值" :value="metricValue(projection.statistics.maximum)" />
-        <NvSectionCard description="样本数" :value="projection.statistics.count" />
         <NvSectionCard
-          description="最后采样时间"
-          :value="formatDateTime(projection.statistics.lastSampleAtUtc)"
+          :description="basisLabels.latest"
+          :value="metricValue(projection.statistics.latest)"
+        />
+        <NvSectionCard
+          :description="basisLabels.minimum"
+          :value="metricValue(projection.statistics.minimum)"
+        />
+        <NvSectionCard
+          :description="basisLabels.maximum"
+          :value="metricValue(projection.statistics.maximum)"
+        />
+        <NvSectionCard :description="basisLabels.count" :value="projection.statistics.count" />
+        <NvSectionCard
+          :description="basisLabels.last"
+          :value="formatTelemetryDateTime(projection.statistics.lastSampleAtUtc)"
         />
       </div>
 
@@ -66,7 +99,23 @@ function formatDateTime(value?: string) {
         class="text-sm text-muted-foreground"
         role="status"
       >
-        {{ projection.nonNumericMeasurementCount }} 条非数值采样未进入图表，原始值仍保留在明细表中。
+        {{ projection.nonNumericMeasurementCount }}
+        条非数值采样未进入图表，已保留在事件上下文和原始明细中。
+      </p>
+      <p
+        v-if="projection.excludedAggregateCount"
+        class="text-sm text-muted-foreground"
+        role="status"
+      >
+        已排除
+        {{ projection.excludedAggregateCount }} 条不同粒度的汇总记录，避免与当前序列重复统计。
+      </p>
+      <p
+        v-if="projection.invalidTimestampCount"
+        class="text-sm text-muted-foreground"
+        role="status"
+      >
+        {{ projection.invalidTimestampCount }} 条时间无效的数值记录未进入趋势与统计。
       </p>
       <NvLineChart :data="projection.chartData" x-key="time" :series="chartSeries" :height="300" />
     </template>

@@ -3,6 +3,10 @@ import type { BusinessConsoleTelemetryHistoryItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import TelemetryEventTimeline from '@/components/equipment/TelemetryEventTimeline.vue'
 import TelemetryTrendPanel from '@/components/equipment/TelemetryTrendPanel.vue'
+import {
+  formatTelemetryDateTime,
+  projectTelemetryHistory,
+} from '@/components/equipment/telemetryHistoryPresentation'
 import { useBusinessTelemetryHistory } from '@/composables/useBusinessTelemetry'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { friendlyErrorMessage } from '@/utils/notify'
@@ -16,7 +20,7 @@ import {
   NvPageHeader,
 } from '@nerv-iip/ui'
 import { GaugeIcon, RefreshCwIcon, Settings2Icon } from '@lucide/vue'
-import { computed, watch } from 'vue'
+import { computed, nextTick, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 definePage({
@@ -36,6 +40,9 @@ const { filters, historyError, historyPending, refreshHistory, visibleHistoryIte
     windowEndUtc: routeQuery('windowEndUtc') || undefined,
     windowStartUtc: routeQuery('windowStartUtc') || undefined,
   })
+const defaultWindowStartUtc = filters.windowStartUtc
+const defaultWindowEndUtc = filters.windowEndUtc
+const windowInputError = shallowRef('')
 
 const errorMessage = computed(() =>
   historyError.value
@@ -43,23 +50,91 @@ const errorMessage = computed(() =>
     : '',
 )
 const hasDeviceScope = computed(() => filters.deviceAssetId.trim().length > 0)
-const windowStartLocal = computed({
-  get: () => toLocalDateTime(filters.windowStartUtc),
-  set: (value: string) => {
-    filters.windowStartUtc = toIsoDateTime(value)
+const projection = computed(() => projectTelemetryHistory(visibleHistoryItems.value))
+const windowStartLocal = shallowRef(toLocalDateTime(filters.windowStartUtc))
+const windowEndLocal = shallowRef(toLocalDateTime(filters.windowEndUtc))
+
+function updateWindowStart(value: string | number) {
+  updateWindow(
+    String(value),
+    windowStartLocal,
+    () => filters.windowStartUtc,
+    (parsed) => {
+      filters.windowStartUtc = parsed
+    },
+  )
+}
+
+function updateWindowEnd(value: string | number) {
+  updateWindow(
+    String(value),
+    windowEndLocal,
+    () => filters.windowEndUtc,
+    (parsed) => {
+      filters.windowEndUtc = parsed
+    },
+  )
+}
+
+function updateWindow(
+  value: string,
+  localValue: { value: string },
+  currentUtc: () => string,
+  commit: (parsed: string) => void,
+) {
+  const parsed = toIsoDateTime(value)
+  if (!parsed) {
+    windowInputError.value = '时间范围不能为空或无效，请选择有效的本地日期时间。'
+    localValue.value = value
+    void nextTick(() => {
+      localValue.value = toLocalDateTime(currentUtc())
+    })
+    return
+  }
+  windowInputError.value = ''
+  localValue.value = value
+  commit(parsed)
+}
+
+watch(
+  () =>
+    [
+      routeQuery('deviceAssetId'),
+      routeQuery('tagKey'),
+      routeQuery('windowStartUtc'),
+      routeQuery('windowEndUtc'),
+    ] as const,
+  ([deviceAssetId, tagKey, windowStartUtc, windowEndUtc]) => {
+    const nextWindowStartUtc = windowStartUtc || defaultWindowStartUtc
+    const nextWindowEndUtc = windowEndUtc || defaultWindowEndUtc
+    if (filters.deviceAssetId !== deviceAssetId) filters.deviceAssetId = deviceAssetId
+    if (filters.tagKey !== tagKey) filters.tagKey = tagKey
+    if (filters.windowStartUtc !== nextWindowStartUtc) filters.windowStartUtc = nextWindowStartUtc
+    if (filters.windowEndUtc !== nextWindowEndUtc) filters.windowEndUtc = nextWindowEndUtc
   },
-})
-const windowEndLocal = computed({
-  get: () => toLocalDateTime(filters.windowEndUtc),
-  set: (value: string) => {
-    filters.windowEndUtc = toIsoDateTime(value)
+  { immediate: true },
+)
+
+watch(
+  () => [filters.windowStartUtc, filters.windowEndUtc] as const,
+  ([windowStartUtc, windowEndUtc]) => {
+    windowStartLocal.value = toLocalDateTime(windowStartUtc)
+    windowEndLocal.value = toLocalDateTime(windowEndUtc)
   },
-})
+)
 
 watch(
   () =>
     [filters.deviceAssetId, filters.tagKey, filters.windowStartUtc, filters.windowEndUtc] as const,
   ([deviceAssetId, tagKey, windowStartUtc, windowEndUtc]) => {
+    if (
+      routeQuery('deviceAssetId') === deviceAssetId.trim() &&
+      routeQuery('tagKey') === tagKey.trim() &&
+      routeQuery('windowStartUtc') === windowStartUtc &&
+      routeQuery('windowEndUtc') === windowEndUtc
+    ) {
+      return
+    }
     void router.replace({
       query: {
         ...route.query,
@@ -98,11 +173,6 @@ function itemTypeLabel(value?: string | null) {
 function rowKey(row: BusinessConsoleTelemetryHistoryItem) {
   return `${row.deviceAssetId}-${row.tagKey ?? 'state'}-${row.occurredAtUtc}-${row.value}`
 }
-function formatDateTime(value?: string | null) {
-  if (!value) return '无'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
 function toLocalDateTime(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
@@ -110,9 +180,9 @@ function toLocalDateTime(value: string) {
   return date.toISOString().slice(0, 16)
 }
 function toIsoDateTime(value: string) {
-  if (!value) return ''
+  if (!value) return undefined
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '' : date.toISOString()
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
 }
 </script>
 
@@ -182,21 +252,26 @@ function toIsoDateTime(value: string) {
         <NvFieldLabel for="history-start">开始时间</NvFieldLabel>
         <NvInput
           id="history-start"
-          v-model="windowStartLocal"
+          :model-value="windowStartLocal"
           type="datetime-local"
           aria-label="开始时间"
+          @update:model-value="updateWindowStart"
         />
       </NvField>
       <NvField>
         <NvFieldLabel for="history-end">结束时间</NvFieldLabel>
         <NvInput
           id="history-end"
-          v-model="windowEndLocal"
+          :model-value="windowEndLocal"
           type="datetime-local"
           aria-label="结束时间"
+          @update:model-value="updateWindowEnd"
         />
       </NvField>
     </NvFieldGroup>
+    <p v-if="windowInputError" class="text-sm text-destructive" role="alert">
+      {{ windowInputError }}
+    </p>
 
     <div
       v-if="!hasDeviceScope"
@@ -213,7 +288,7 @@ function toIsoDateTime(value: string) {
       <NvButton size="sm" type="button" variant="outline" @click="refreshHistory">重试</NvButton>
     </div>
     <div
-      v-else-if="historyPending"
+      v-else-if="historyPending && !visibleHistoryItems.length"
       class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
       role="status"
     >
@@ -221,8 +296,8 @@ function toIsoDateTime(value: string) {
     </div>
 
     <template v-else>
-      <TelemetryTrendPanel :items="visibleHistoryItems" :tag-key="filters.tagKey" />
-      <TelemetryEventTimeline :items="visibleHistoryItems" />
+      <TelemetryTrendPanel :projection="projection" :tag-key="filters.tagKey" />
+      <TelemetryEventTimeline :timeline-items="projection.timelineItems" />
 
       <section class="grid gap-3" aria-labelledby="telemetry-detail-title">
         <div>
@@ -235,12 +310,14 @@ function toIsoDateTime(value: string) {
           :columns="columns"
           :rows="visibleHistoryItems"
           :row-key="rowKey"
-          :loading="false"
+          :loading="historyPending"
           :searchable="false"
           :column-settings="false"
           empty-message="当前设备、采集标签和时间范围内没有历史记录。"
         >
-          <template #cell-occurredAtUtc="{ row }">{{ formatDateTime(row.occurredAtUtc) }}</template>
+          <template #cell-occurredAtUtc="{ row }">
+            {{ formatTelemetryDateTime(row.occurredAtUtc) }}
+          </template>
           <template #cell-deviceAssetId="{ row }">
             <RouterLink
               :to="`/equipment/${row.deviceAssetId}`"

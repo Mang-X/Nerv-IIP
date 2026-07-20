@@ -1,14 +1,10 @@
 <script setup lang="ts">
-import type { BusinessConsoleTelemetryHistoryItem } from '@nerv-iip/api-client'
-import { projectTelemetryHistory } from '@/pages/equipment/telemetry/telemetryHistoryPresentation'
+import type { TimelineItem } from '@nerv-iip/ui'
 import { NvTimeline } from '@nerv-iip/ui'
-import { computed } from 'vue'
 
-const props = defineProps<{
-  items: BusinessConsoleTelemetryHistoryItem[]
+defineProps<{
+  timelineItems: TimelineItem[]
 }>()
-
-const timelineItems = computed(() => projectTelemetryHistory(props.items).timelineItems)
 </script>
 
 <template>
