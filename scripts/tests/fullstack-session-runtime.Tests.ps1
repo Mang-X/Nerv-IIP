@@ -396,6 +396,28 @@ try {
     $script:leaderLoginPassword = $null
     $leaderSecretPassword = 'leader-password-that-must-not-leak'
     $leaderSecretToken = 'leader-token-that-must-not-leak'
+
+    $atomicFailureRoot = Join-Path $leaderEvidenceRoot 'atomic-write-failure'
+    $atomicWriteFailure = $null
+    try {
+        Write-NervLeaderDemoEvidence `
+            -Evidence ([pscustomobject][ordered]@{ runId = $null; diagnostics = [ordered]@{ evidencePath = $null }; marker = 'complete-json-only' }) `
+            -EvidenceRoot $atomicFailureRoot `
+            -UtcNow ([DateTimeOffset]::Parse('2026-07-20T12:33:56Z')) `
+            -WriteTempAction {
+                param($TempPath, $Content)
+                [System.IO.File]::WriteAllText($TempPath, '{"marker":"truncated"', [System.Text.UTF8Encoding]::new($false))
+                $failure = [System.IO.IOException]::new('simulated interrupted evidence write')
+                $failure.Data['ExitCode'] = 23
+                throw $failure
+            } | Out-Null
+    }
+    catch { $atomicWriteFailure = $_.Exception }
+    Assert-True ($null -ne $atomicWriteFailure -and $atomicWriteFailure.Message -ceq 'simulated interrupted evidence write') 'Interrupted evidence writes must preserve the original write error.'
+    Assert-True ([int] $atomicWriteFailure.Data['ExitCode'] -eq 23) 'Interrupted evidence writes must preserve structured exit semantics.'
+    Assert-True (@(Get-ChildItem -LiteralPath $atomicFailureRoot -Filter evidence.json -File -Recurse -ErrorAction SilentlyContinue).Count -eq 0) 'Interrupted evidence writes must not publish a truncated authoritative file.'
+    Assert-True (@(Get-ChildItem -LiteralPath $atomicFailureRoot -Filter '*.tmp' -File -Recurse -ErrorAction SilentlyContinue).Count -eq 0) 'Interrupted evidence writes must clean the same-directory temporary file.'
+
     $leaderSuccess = Invoke-NervLeaderDemoVerification `
         -Manifest $leaderManifest `
         -Command health-check `
@@ -423,7 +445,6 @@ try {
                     organizationId = 'org-001'
                     environmentId = 'env-dev'
                     permissionCodes = @('business.erp.sales-orders.read', 'business.mes.work-orders.read')
-                    roles = @('Observed Leader Role')
                 }
             }
         } `
@@ -468,7 +489,9 @@ try {
     Assert-True ($leaderEvidence.sessionId -ceq $sessionId -and $leaderEvidence.command -ceq 'health-check') 'Evidence must identify the exact session and command.'
     Assert-True ($leaderEvidence.result -ceq 'passed' -and $leaderEvidence.messagingProvider -ceq 'Redis') 'Evidence must record the successful Redis result.'
     Assert-True ($script:leaderPrincipalCalls.Count -eq 1 -and $script:leaderPrincipalCalls[0].EndsWith('/api/console/v1/auth/me', [StringComparison]::Ordinal)) 'Verification must observe the authenticated principal through public auth/me.'
-    Assert-True ($leaderEvidence.access.roles.Count -eq 1 -and $leaderEvidence.access.roles[0] -ceq 'Observed Leader Role') 'Evidence roles must come from the authenticated principal response.'
+    Assert-True ($leaderEvidence.access.roles.Count -eq 0) 'Evidence must not infer or fabricate roles absent from the public auth contract.'
+    Assert-True (-not $leaderEvidence.access.rolesObserved) 'Evidence must state that roles were not observed.'
+    Assert-True ($leaderEvidence.access.rolesObservation -ceq 'not-exposed-by-public-auth-contract') 'Evidence must explain why authenticated roles are unavailable.'
     Assert-True ($leaderEvidence.access.principal.loginName -ceq 'leader') 'Evidence must record the observed non-secret principal identity.'
     Assert-True ($leaderEvidence.access.principal.permissionCodes.Count -eq 2) 'Evidence must record observed permission codes without inferring roles.'
     Assert-True (-not [string]::IsNullOrWhiteSpace("$($leaderEvidence.access.urls.gateway)")) 'Evidence must record non-secret access URLs.'
@@ -478,6 +501,7 @@ try {
     Assert-True (@($leaderEvidence.facts | Where-Object { [string]::IsNullOrWhiteSpace("$($_.link)") -or [string]::IsNullOrWhiteSpace("$($_.status)") }).Count -eq 0) 'Every fact evidence row needs a result link and observed status.'
     Assert-True (-not [string]::IsNullOrWhiteSpace("$($leaderEvidence.diagnostics.fullStackArtifactPath)")) 'Evidence must link the full-stack diagnostics.'
     Assert-True ($leaderEvidence.cleanup.command -ceq '.\nerv.ps1 demo stop') 'Evidence must include the exact cleanup command.'
+    Assert-True (@(Get-ChildItem -LiteralPath (Split-Path -Parent $leaderSuccess.EvidencePath) -Filter '*.tmp' -File).Count -eq 0) 'Successful evidence publication must leave only the valid authoritative JSON file.'
     foreach ($secretValue in @($leaderSecretPassword, $leaderSecretToken, "Bearer $leaderSecretToken")) {
         Assert-True (-not $leaderEvidenceText.Contains($secretValue)) "Leader-demo success evidence leaked '$secretValue'."
     }
@@ -534,7 +558,7 @@ try {
             } `
             -HttpCheckAction { param($Name, $Url) } `
             -LoginAction { param($GatewayUrl, $Password) [pscustomobject]@{ data = [pscustomobject]@{ accessToken = $leaderSecretToken } } } `
-            -PrincipalAction { param($GatewayUrl, $Headers) [pscustomobject]@{ data = [pscustomobject]@{ principalId = 'user-leader'; principalType = 'user'; loginName = 'leader'; organizationId = 'org-001'; environmentId = 'env-dev'; permissionCodes = @(); roles = @() } } } `
+            -PrincipalAction { param($GatewayUrl, $Headers) [pscustomobject]@{ data = [pscustomobject]@{ principalId = 'user-leader'; principalType = 'user'; loginName = 'leader'; organizationId = 'org-001'; environmentId = 'env-dev'; permissionCodes = @() } } } `
             -PublicFactQueryAction { param($FactName, $Url, $Headers) throw 'fact query should be skipped after an unhealthy resource gate' } | Out-Null
     }
     catch { $missingResourceFailure = $_.Exception.Message }
@@ -603,7 +627,7 @@ try {
             -AspireSnapshotAction { param($Manifest) $healthyLeaderSnapshot } `
             -HttpCheckAction { param($Name, $Url) } `
             -LoginAction { param($GatewayUrl, $Password) [pscustomobject]@{ data = [pscustomobject]@{ accessToken = $leaderSecretToken } } } `
-            -PrincipalAction { param($GatewayUrl, $Headers) [pscustomobject]@{ data = [pscustomobject]@{ principalId = 'user-leader'; principalType = 'user'; loginName = 'leader'; organizationId = 'org-001'; environmentId = 'env-dev'; permissionCodes = @(); roles = @() } } } `
+            -PrincipalAction { param($GatewayUrl, $Headers) [pscustomobject]@{ data = [pscustomobject]@{ principalId = 'user-leader'; principalType = 'user'; loginName = 'leader'; organizationId = 'org-001'; environmentId = 'env-dev'; permissionCodes = @() } } } `
             -PublicFactQueryAction {
                 param($FactName, $Url, $Headers)
                 switch ($FactName) {

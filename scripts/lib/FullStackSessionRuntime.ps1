@@ -1261,7 +1261,9 @@ function Write-NervLeaderDemoEvidence {
         [Parameter(Mandatory)] [object] $Evidence,
         [Parameter(Mandatory)] [string] $EvidenceRoot,
         [Parameter(Mandatory)] [DateTimeOffset] $UtcNow,
-        [string[]] $SensitiveValues = @()
+        [string[]] $SensitiveValues = @(),
+        [scriptblock] $WriteTempAction,
+        [scriptblock] $PromoteAction
     )
 
     $randomSuffix = [Convert]::ToHexString(
@@ -1271,6 +1273,7 @@ function Write-NervLeaderDemoEvidence {
     $artifactDirectory = Join-Path ([System.IO.Path]::GetFullPath($EvidenceRoot)) $runId
     [void] [System.IO.Directory]::CreateDirectory($artifactDirectory)
     $evidencePath = Join-Path $artifactDirectory 'evidence.json'
+    $tempPath = Join-Path $artifactDirectory ".evidence.$([Guid]::NewGuid().ToString('N')).tmp"
     $Evidence.runId = $runId
     $Evidence.diagnostics.evidencePath = $evidencePath
     $json = $Evidence | ConvertTo-Json -Depth 50
@@ -1280,7 +1283,50 @@ function Write-NervLeaderDemoEvidence {
             $safeJson = $safeJson.Replace($sensitiveValue, '<redacted>')
         }
     }
-    [System.IO.File]::WriteAllText($evidencePath, $safeJson, [System.Text.UTF8Encoding]::new($false))
+
+    if ($null -eq $WriteTempAction) {
+        $WriteTempAction = {
+            param($Path, $Content)
+            $encoding = [System.Text.UTF8Encoding]::new($false)
+            $bytes = $encoding.GetBytes($Content)
+            $stream = [System.IO.FileStream]::new(
+                $Path,
+                [System.IO.FileMode]::CreateNew,
+                [System.IO.FileAccess]::Write,
+                [System.IO.FileShare]::None
+            )
+            try {
+                $stream.Write($bytes, 0, $bytes.Length)
+                $stream.Flush($true)
+            }
+            finally {
+                $stream.Dispose()
+            }
+        }
+    }
+    if ($null -eq $PromoteAction) {
+        $PromoteAction = {
+            param($SourcePath, $DestinationPath)
+            [System.IO.File]::Move($SourcePath, $DestinationPath)
+        }
+    }
+
+    $published = $false
+    try {
+        & $WriteTempAction $tempPath $safeJson
+        & $PromoteAction $tempPath $evidencePath
+        $published = $true
+    }
+    finally {
+        if (-not $published -and [System.IO.File]::Exists($tempPath)) {
+            try {
+                [System.IO.File]::Delete($tempPath)
+            }
+            catch {
+                Write-Diagnostic -Level 'WARN' -Message "Failed to clean temporary leader-demo evidence file '$tempPath': $($_.Exception.Message)"
+            }
+        }
+    }
     return $evidencePath
 }
 
@@ -1398,7 +1444,6 @@ function Invoke-NervLeaderDemoVerification {
         environmentId = $null
         permissionCodes = @()
     }
-    $observedRoles = @()
 
     $endpoints = Get-NervObjectPropertyValue -InputObject $Manifest -Name 'endpoints'
     $accessUrls = [ordered]@{
@@ -1576,10 +1621,6 @@ function Invoke-NervLeaderDemoVerification {
                 environmentId = "$(Get-NervObjectPropertyValue -InputObject $principalData -Name 'environmentId')"
                 permissionCodes = @(Get-NervObjectPropertyValue -InputObject $principalData -Name 'permissionCodes')
             }
-            $rolesValue = Get-NervObjectPropertyValue -InputObject $principalData -Name 'roles'
-            if ($null -eq $rolesValue) { $rolesValue = Get-NervObjectPropertyValue -InputObject $principalData -Name 'roleNames' }
-            $observedRoles = if ($null -ne $rolesValue) { @($rolesValue) } else { @() }
-
             foreach ($fact in $factDefinitions) {
                 $found = $false
                 $observedStatus = 'not-found'
@@ -1696,7 +1737,13 @@ function Invoke-NervLeaderDemoVerification {
         exitCode = if ($failures.Count -eq 0) { 0 } elseif ($propagatedExitCode -gt 0) { $propagatedExitCode } else { 1 }
         messagingProvider = $messagingProvider
         scope = [ordered]@{ organizationId = $organizationId; environmentId = $environmentId }
-        access = [ordered]@{ urls = $accessUrls; roles = @($observedRoles); principal = $observedPrincipal }
+        access = [ordered]@{
+            urls = $accessUrls
+            roles = @()
+            rolesObserved = $false
+            rolesObservation = 'not-exposed-by-public-auth-contract'
+            principal = $observedPrincipal
+        }
         resources = @($resourceEvidence)
         facts = @($factEvidence)
         failures = $safeFailures
