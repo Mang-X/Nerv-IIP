@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import QualityParetoPanel from '@/components/quality/QualityParetoPanel.vue'
+import QualitySpcCharts from '@/components/quality/QualitySpcCharts.vue'
 import { useQualityNcrs } from '@/composables/useBusinessQuality'
 import {
   buildQualityAnalysisSummary,
+  formatQualityQuantity,
+  spcViolationTargetId,
   useQualitySpcAnalysis,
   type QualityAnalysisBucket,
   type QualitySpcViolation,
 } from '@/composables/useBusinessQualityAnalysis'
+import { friendlyErrorMessage } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -63,12 +68,6 @@ const spcViolationEmptyMessage = computed(() =>
     : '当前 SPC 范围没有判异。',
 )
 
-const paretoColumns: NvDataTableColumn<QualityAnalysisBucket>[] = [
-  { key: 'label', header: '缺陷原因', cellClass: 'font-medium' },
-  { key: 'count', header: 'NCR 数', align: 'end', width: 'w-24' },
-  { key: 'defectQuantity', header: '缺陷数量', align: 'end', width: 'w-28' },
-  { key: 'sharePercent', header: '缺陷占比', align: 'end', width: 'w-24' },
-]
 const dimensionColumns: NvDataTableColumn<QualityAnalysisBucket>[] = [
   { key: 'label', header: '对象', cellClass: 'font-medium' },
   { key: 'count', header: 'NCR 数', align: 'end', width: 'w-24' },
@@ -82,16 +81,13 @@ const spcViolationColumns: NvDataTableColumn<QualitySpcViolation>[] = [
 ]
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
-}
-function formatQuantity(value: number) {
-  return Number.isInteger(value) ? String(value) : value.toFixed(2)
+  return error ? friendlyErrorMessage(error, '质量分析加载失败，请稍后重试。') : ''
 }
 function formatMetric(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '-'
 }
 function spcViolationKey(row: QualitySpcViolation) {
-  return `${row.rule}:${row.startSubgroupIndex}:${row.endSubgroupIndex}`
+  return spcViolationTargetId(row, spc.spcViolations.value.indexOf(row))
 }
 </script>
 
@@ -100,7 +96,7 @@ function spcViolationKey(row: QualitySpcViolation) {
     <NvPageHeader
       title="质量分析"
       :breadcrumbs="[{ label: '质量管理' }]"
-      :count="`${summary.totalNcrCount} 条 NCR`"
+      :count="listErrorMessage ? 'NCR 数据加载失败' : `${summary.totalNcrCount} 条 NCR`"
     >
       <template #actions>
         <NvButton size="sm" type="button" variant="outline" as-child>
@@ -122,7 +118,15 @@ function spcViolationKey(row: QualitySpcViolation) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="4">
+    <p
+      v-if="listErrorMessage"
+      class="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive"
+      role="alert"
+    >
+      NCR 数据加载失败：{{ listErrorMessage }}
+    </p>
+
+    <NvSectionCards v-else :columns="4">
       <NvSectionCard
         description="当前窗口 NCR"
         :value="summary.sampledNcrCount"
@@ -136,7 +140,7 @@ function spcViolationKey(row: QualitySpcViolation) {
       />
       <NvSectionCard
         description="缺陷数量"
-        :value="formatQuantity(summary.totalDefectQuantity)"
+        :value="formatQualityQuantity(summary.totalDefectQuantity)"
         hint="按当前窗口汇总"
       />
     </NvSectionCards>
@@ -146,10 +150,6 @@ function spcViolationKey(row: QualitySpcViolation) {
         <p class="max-w-3xl text-sm text-muted-foreground">{{ trendGapText }}</p>
       </template>
     </NvToolbar>
-
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
-      {{ listErrorMessage }}
-    </p>
 
     <div class="grid gap-4">
       <NvToolbar :show-search="false">
@@ -209,9 +209,12 @@ function spcViolationKey(row: QualitySpcViolation) {
         />
       </NvSectionCards>
 
-      <p v-if="spcErrorMessage" class="text-sm text-destructive" role="alert">
-        {{ spcErrorMessage }}
-      </p>
+      <QualitySpcCharts
+        :chart="spc.spcChart.value"
+        :pending="spc.spcPending.value"
+        :warmup="spc.spcWarmup.value"
+        :error-message="spcErrorMessage"
+      />
 
       <NvDataTable
         :columns="spcViolationColumns"
@@ -221,22 +224,22 @@ function spcViolationKey(row: QualitySpcViolation) {
         :searchable="false"
         :column-settings="false"
         :empty-message="spcViolationEmptyMessage"
-      />
+      >
+        <template #cell-rule="{ row }">
+          <span
+            :id="spcViolationTargetId(row, spc.spcViolations.value.indexOf(row))"
+            class="font-medium scroll-mt-24"
+            >{{ row.rule }}</span
+          >
+        </template>
+      </NvDataTable>
     </div>
 
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.7fr)]">
-      <NvDataTable
-        :columns="paretoColumns"
-        :rows="summary.defectPareto"
-        row-key="label"
-        :loading="ncrsPending"
-        :searchable="false"
-        :column-settings="false"
-        empty-message="当前返回窗口没有 NCR，暂无可汇总的缺陷原因。"
-      >
-        <template #cell-defectQuantity="{ row }">{{ formatQuantity(row.defectQuantity) }}</template>
-        <template #cell-sharePercent="{ row }">{{ row.sharePercent }}%</template>
-      </NvDataTable>
+    <div
+      v-if="!listErrorMessage"
+      class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.7fr)]"
+    >
+      <QualityParetoPanel :rows="summary.defectPareto" :pending="ncrsPending" />
 
       <div class="grid gap-4">
         <NvDataTable
@@ -249,7 +252,7 @@ function spcViolationKey(row: QualitySpcViolation) {
           empty-message="当前返回窗口没有物料维度。"
         >
           <template #cell-defectQuantity="{ row }">{{
-            formatQuantity(row.defectQuantity)
+            formatQualityQuantity(row.defectQuantity)
           }}</template>
         </NvDataTable>
 
@@ -263,7 +266,7 @@ function spcViolationKey(row: QualitySpcViolation) {
           empty-message="当前返回窗口没有来源维度。"
         >
           <template #cell-defectQuantity="{ row }">{{
-            formatQuantity(row.defectQuantity)
+            formatQualityQuantity(row.defectQuantity)
           }}</template>
         </NvDataTable>
       </div>
