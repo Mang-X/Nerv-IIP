@@ -207,6 +207,7 @@ Assert-True `
 $environment = Get-NervFullStackEnvironment -SessionId $sessionId
 Assert-True ($environment.NERV_IIP_EPHEMERAL -eq 'true') 'Ephemeral flag missing.'
 Assert-True ($environment.NERV_IIP_SESSION_ID -eq $sessionId) 'Session ID missing.'
+Assert-True ($environment.Messaging__Provider -ceq 'Redis') 'Ephemeral full-stack sessions must force Redis messaging.'
 foreach ($expected in @(
     "nerv-iip-postgres-18-$sessionId",
     "nerv-iip-redis-$sessionId",
@@ -219,6 +220,39 @@ foreach ($expected in @(
 $invalidEnvironmentFailed = $false
 try { Get-NervFullStackEnvironment -SessionId 'unsafe-session' | Out-Null } catch { $invalidEnvironmentFailed = $true }
 Assert-True $invalidEnvironmentFailed 'Invalid session IDs must be rejected by the AppHost environment contract.'
+
+$profileManifest = New-NervFullStackManifest `
+    -SessionId $sessionId `
+    -WorktreeRoot $repoRoot `
+    -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') `
+    -ArtifactPath (Join-Path $repoRoot "artifacts/fullstack/$sessionId") `
+    -MessagingProvider $environment.Messaging__Provider
+Assert-True ($profileManifest.messagingProvider -ceq 'Redis') 'The non-secret messaging provider must be recorded in the session manifest.'
+
+$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
+Assert-True ($appHostText.Contains('NERV_IIP_LEADER_DEMO')) 'AppHost must require an explicit leader-demo profile flag.'
+Assert-True (
+    ([regex]::Matches($appHostText, 'WithEnvironment\("LeaderDemo__Seed__Enabled", leaderDemoEnabled \? "true" : "false"\)')).Count -eq 6
+) 'AppHost must explicitly pass the opt-in seed flag to all six leader-demo prerequisite services.'
+foreach ($resourceVariable in @(
+    'businessMasterData',
+    'businessProductEngineering',
+    'businessInventory',
+    'businessQuality',
+    'businessMes',
+    'businessIndustrialTelemetry'
+)) {
+    $resourceStart = $appHostText.IndexOf("var $resourceVariable =", [StringComparison]::Ordinal)
+    $resourceEnd = $appHostText.IndexOf(';', $resourceStart)
+    Assert-True (
+        $resourceStart -ge 0 -and
+        $resourceEnd -gt $resourceStart -and
+        $appHostText.Substring($resourceStart, $resourceEnd - $resourceStart).Contains('.WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")')
+    ) "AppHost must pass the leader-demo seed flag to '$resourceVariable'."
+}
+$notificationStart = $appHostText.IndexOf('var notification =', [StringComparison]::Ordinal)
+$notificationEnd = $appHostText.IndexOf(';', $notificationStart)
+Assert-True (-not $appHostText.Substring($notificationStart, $notificationEnd - $notificationStart).Contains('LeaderDemo__Seed__Enabled')) 'AppHost must not leak the business leader-demo seed flag to Notification.'
 
 $secretEnvironment = New-NervFullStackSecretEnvironment -SessionId $sessionId
 foreach ($requiredName in @(

@@ -592,6 +592,7 @@ function Get-NervFullStackEnvironment {
     return @{
         NERV_IIP_EPHEMERAL = 'true'
         NERV_IIP_SESSION_ID = $SessionId
+        Messaging__Provider = 'Redis'
         ASPNETCORE_ENVIRONMENT = 'Development'
         DOTNET_ENVIRONMENT = 'Development'
         NERV_IIP_POSTGRES_VOLUME = "nerv-iip-postgres-18-$SessionId"
@@ -1158,5 +1159,166 @@ function Stop-NervFullStackSession {
         Remaining = @($remaining)
         Errors = @($errors)
         Manifest = $manifest
+    }
+}
+
+function Get-NervLeaderDemoAdminPassword {
+    $password = [Environment]::GetEnvironmentVariable('NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD', 'Process')
+    if ([string]::IsNullOrWhiteSpace($password)) {
+        throw 'NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD must be set in the current process.'
+    }
+    return $password
+}
+
+function Invoke-NervLeaderDemoCredentialScope {
+    param(
+        [Parameter(Mandatory)] [string] $AdminPassword,
+        [Parameter(Mandatory)] [string] $StateRoot,
+        [Parameter(Mandatory)] [scriptblock] $ScriptBlock
+    )
+
+    Invoke-WithScopedEnvironment `
+        -Variables @{
+            NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $AdminPassword
+            NERV_IIP_LEADER_DEMO = 'true'
+            NERV_IIP_FULLSTACK_STATE_ROOT = [System.IO.Path]::GetFullPath($StateRoot)
+        } `
+        -ScriptBlock $ScriptBlock
+}
+
+function Invoke-NervLeaderDemoCommand {
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('start', 'reset', 'seed', 'health-check', 'stop')]
+        [string] $Action,
+
+        [string] $StateRoot = (Get-NervFullStackStateRoot),
+        [string] $WorktreeRoot = $runtimeLibraryRoot,
+        [switch] $NoBuild,
+        [scriptblock] $StartSessionAction,
+        [scriptblock] $StopSessionAction,
+        [scriptblock] $SeedAction,
+        [scriptblock] $HealthCheckAction
+    )
+
+    $resolvedStateRoot = [System.IO.Path]::GetFullPath($StateRoot)
+    $resolvedWorktreeRoot = [System.IO.Path]::GetFullPath($WorktreeRoot)
+    $fullStackScript = Join-Path $resolvedWorktreeRoot 'scripts/fullstack-session.ps1'
+
+    if ($null -eq $StartSessionAction) {
+        $StartSessionAction = {
+            param($ExactSessionId)
+            $arguments = @('start', '-SessionId', $ExactSessionId)
+            if ($NoBuild) { $arguments += '-NoBuild' }
+            Invoke-PwshScript `
+                -ScriptPath $fullStackScript `
+                -Arguments $arguments `
+                -WorkingDirectory $resolvedWorktreeRoot `
+                -TimeoutSeconds 900 `
+                -Name "leader-demo-$ExactSessionId-start" | Out-Null
+        }
+    }
+    if ($null -eq $StopSessionAction) {
+        $StopSessionAction = {
+            param($ExactSessionId)
+            Invoke-PwshScript `
+                -ScriptPath $fullStackScript `
+                -Arguments @('stop', '-SessionId', $ExactSessionId) `
+                -WorkingDirectory $resolvedWorktreeRoot `
+                -TimeoutSeconds 300 `
+                -Name "leader-demo-$ExactSessionId-stop" | Out-Null
+        }
+    }
+    if ($null -eq $SeedAction) {
+        $SeedAction = {
+            param($ExactSessionId)
+            $manifest = Read-NervFullStackManifest -SessionId $ExactSessionId -StateRoot $resolvedStateRoot
+            if ("$($manifest.state)" -ne 'Running') {
+                throw "Leader-demo session '$ExactSessionId' is '$($manifest.state)'; seed requires Running."
+            }
+            Write-Output "$ExactSessionId seed=startup-prerequisites"
+        }
+    }
+    if ($null -eq $HealthCheckAction) {
+        $HealthCheckAction = {
+            param($ExactSessionId)
+            $manifest = Read-NervFullStackManifest -SessionId $ExactSessionId -StateRoot $resolvedStateRoot
+            if ("$($manifest.state)" -ne 'Running') {
+                throw "Leader-demo session '$ExactSessionId' is '$($manifest.state)'; health-check requires Running."
+            }
+            if ("$($manifest.messagingProvider)" -cne 'Redis') {
+                throw "Leader-demo session '$ExactSessionId' must use Redis messaging; manifest reports '$($manifest.messagingProvider)'."
+            }
+            Write-Output "$ExactSessionId health=lifecycle-ready messagingProvider=Redis"
+        }
+    }
+
+    switch ($Action) {
+        'start' {
+            $password = Get-NervLeaderDemoAdminPassword
+            $pointerPath = Get-NervLeaderDemoSessionPointerPath -StateRoot $resolvedStateRoot
+            if (Test-Path -LiteralPath $pointerPath -PathType Leaf) {
+                $current = Read-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedWorktreeRoot $resolvedWorktreeRoot
+                throw "Leader-demo session '$($current.sessionId)' is already recorded; use demo reset or demo stop."
+            }
+
+            do {
+                $newSessionId = New-NervFullStackSessionId -WorktreeRoot $resolvedWorktreeRoot
+            } while (-not (Test-NervFullStackSessionIdAvailable -SessionId $newSessionId -StateRoot $resolvedStateRoot))
+
+            Invoke-NervLeaderDemoCredentialScope -AdminPassword $password -StateRoot $resolvedStateRoot -ScriptBlock {
+                & $StartSessionAction $newSessionId | Out-Null
+            }
+            Write-NervLeaderDemoSessionPointer `
+                -SessionId $newSessionId `
+                -WorktreeRoot $resolvedWorktreeRoot `
+                -StateRoot $resolvedStateRoot | Out-Null
+            return $newSessionId
+        }
+        'reset' {
+            $password = Get-NervLeaderDemoAdminPassword
+            $current = Read-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedWorktreeRoot $resolvedWorktreeRoot
+            $oldSessionId = "$($current.sessionId)"
+            & $StopSessionAction $oldSessionId | Out-Null
+            Remove-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot
+
+            $newSessionId = Invoke-NervLeaderDemoCommand `
+                -Action start `
+                -StateRoot $resolvedStateRoot `
+                -WorktreeRoot $resolvedWorktreeRoot `
+                -NoBuild:$NoBuild `
+                -StartSessionAction $StartSessionAction `
+                -StopSessionAction $StopSessionAction `
+                -SeedAction $SeedAction `
+                -HealthCheckAction $HealthCheckAction
+            Invoke-NervLeaderDemoCredentialScope -AdminPassword $password -StateRoot $resolvedStateRoot -ScriptBlock {
+                & $SeedAction $newSessionId | Out-Null
+                & $HealthCheckAction $newSessionId | Out-Null
+            }
+            return $newSessionId
+        }
+        'seed' {
+            $password = Get-NervLeaderDemoAdminPassword
+            $current = Read-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedWorktreeRoot $resolvedWorktreeRoot
+            $exactSessionId = "$($current.sessionId)"
+            Invoke-NervLeaderDemoCredentialScope -AdminPassword $password -StateRoot $resolvedStateRoot -ScriptBlock {
+                & $SeedAction $exactSessionId
+            }
+        }
+        'health-check' {
+            $password = Get-NervLeaderDemoAdminPassword
+            $current = Read-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedWorktreeRoot $resolvedWorktreeRoot
+            $exactSessionId = "$($current.sessionId)"
+            Invoke-NervLeaderDemoCredentialScope -AdminPassword $password -StateRoot $resolvedStateRoot -ScriptBlock {
+                & $HealthCheckAction $exactSessionId
+            }
+        }
+        'stop' {
+            $current = Read-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedWorktreeRoot $resolvedWorktreeRoot
+            $exactSessionId = "$($current.sessionId)"
+            & $StopSessionAction $exactSessionId | Out-Null
+            Remove-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot
+            Write-Output "$exactSessionId state=Stopped"
+        }
     }
 }

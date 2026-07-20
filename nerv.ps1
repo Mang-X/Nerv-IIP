@@ -69,6 +69,11 @@ Usage:
   .\nerv.ps1 logs [resource] [-Tail 120] [-Follow]
   .\nerv.ps1 describe [resource] [-IncludeHidden]
   .\nerv.ps1 fullstack run -Scenario smoke
+  .\nerv.ps1 demo start
+  .\nerv.ps1 demo reset
+  .\nerv.ps1 demo seed
+  .\nerv.ps1 demo health-check
+  .\nerv.ps1 demo stop
   .\nerv.ps1 publish-compose [-EnvironmentName Production] [-OutputPath artifacts/aspire-output/compose]
   .\nerv.ps1 prepare-compose [-EnvironmentName Production]
   .\nerv.ps1 deploy-compose [-EnvironmentName Production]
@@ -84,6 +89,7 @@ Commands:
   logs             Show Aspire resource logs.
   describe         Describe Aspire resources.
   fullstack        Manage isolated full-stack test sessions.
+  demo             Manage the isolated Redis-backed leader-demo environment.
   publish-compose  Generate Aspire Docker Compose artifacts.
   prepare-compose  Generate env-specific Compose artifacts and images through Aspire.
   deploy-compose   Deploy the Aspire Docker Compose target through Aspire.
@@ -134,6 +140,13 @@ Infrastructure services:
 }
 
 switch ($Command.ToLowerInvariant()) {
+    'demo' {
+        $demoScript = Join-Path $repoRoot 'scripts/leader-demo.ps1'
+        $demoParameters = @{}
+        if ($NoBuild) { $demoParameters['NoBuild'] = $true }
+        & $demoScript @demoParameters @forwardArguments
+        exit $LASTEXITCODE
+    }
     'fullstack' {
         $fullStackScript = Join-Path $repoRoot 'scripts/fullstack-session.ps1'
         $fullStackArguments = [System.Collections.Generic.List[string]]::new()

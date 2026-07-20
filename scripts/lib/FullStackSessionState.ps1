@@ -78,6 +78,7 @@ function New-NervFullStackManifest {
         [Parameter(Mandatory)] [string] $WorktreeRoot,
         [Parameter(Mandatory)] [string] $AppHostProject,
         [Parameter(Mandatory)] [string] $ArtifactPath,
+        [ValidateSet('InMemory', 'RabbitMQ', 'Redis')] [string] $MessagingProvider = 'Redis',
         [string] $StateRoot = (Get-NervFullStackStateRoot),
         [ValidateRange(1, 1440)] [int] $LeaseMinutes = 90
     )
@@ -91,6 +92,7 @@ function New-NervFullStackManifest {
         sessionId = $SessionId
         state = 'Creating'
         mode = 'ephemeral'
+        messagingProvider = $MessagingProvider
         createdAtUtc = $now.ToString('O')
         updatedAtUtc = $now.ToString('O')
         leaseExpiresAtUtc = $now.AddMinutes($LeaseMinutes).ToString('O')
@@ -124,6 +126,96 @@ function New-NervFullStackManifest {
         cleanup = [ordered]@{ completedAtUtc = $null; remaining = @(); errors = @() }
         failure = $null
     }
+}
+
+function Get-NervLeaderDemoSessionPointerPath {
+    param([string] $StateRoot = (Get-NervFullStackStateRoot))
+
+    return (Join-Path ([System.IO.Path]::GetFullPath($StateRoot)) 'leader-demo/current.json')
+}
+
+function Write-NervLeaderDemoSessionPointer {
+    param(
+        [Parameter(Mandatory)] [string] $SessionId,
+        [Parameter(Mandatory)] [string] $WorktreeRoot,
+        [string] $StateRoot = (Get-NervFullStackStateRoot)
+    )
+
+    if ($SessionId -notmatch $script:NervFullStackSessionIdPattern) {
+        throw "Invalid leader-demo session ID '$SessionId'."
+    }
+
+    $path = Get-NervLeaderDemoSessionPointerPath -StateRoot $StateRoot
+    $directory = Split-Path -Parent $path
+    [System.IO.Directory]::CreateDirectory($directory) | Out-Null
+    $temporaryPath = "$path.tmp-$([guid]::NewGuid().ToString('N'))"
+    $pointer = [ordered]@{
+        schemaVersion = 1
+        sessionId = $SessionId
+        worktreeRoot = [System.IO.Path]::GetFullPath($WorktreeRoot)
+        updatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+    }
+
+    try {
+        $json = $pointer | ConvertTo-Json -Depth 5
+        [System.IO.File]::WriteAllText($temporaryPath, $json, [System.Text.UTF8Encoding]::new($false))
+        [System.IO.File]::Move($temporaryPath, $path, $true)
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporaryPath) {
+            Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    return [pscustomobject] $pointer
+}
+
+function Read-NervLeaderDemoSessionPointer {
+    param(
+        [string] $StateRoot = (Get-NervFullStackStateRoot),
+        [string] $ExpectedWorktreeRoot
+    )
+
+    $path = Get-NervLeaderDemoSessionPointerPath -StateRoot $StateRoot
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "No current leader-demo session is recorded at '$path'."
+    }
+
+    try {
+        $pointer = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -Depth 5
+    }
+    catch {
+        throw "Leader-demo session pointer at '$path' is not valid JSON."
+    }
+
+    if ($pointer.schemaVersion -ne 1) {
+        throw "Leader-demo session pointer at '$path' has unsupported schema version '$($pointer.schemaVersion)'."
+    }
+    $sessionId = "$($pointer.sessionId)"
+    if ($sessionId -notmatch $script:NervFullStackSessionIdPattern) {
+        throw "Invalid leader-demo session ID '$sessionId' in '$path'."
+    }
+    if ([string]::IsNullOrWhiteSpace("$($pointer.worktreeRoot)")) {
+        throw "Leader-demo session pointer at '$path' has no worktree root."
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedWorktreeRoot)) {
+        $comparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+        $actualRoot = [System.IO.Path]::GetFullPath("$($pointer.worktreeRoot)")
+        $expectedRoot = [System.IO.Path]::GetFullPath($ExpectedWorktreeRoot)
+        if (-not [string]::Equals($actualRoot, $expectedRoot, $comparison)) {
+            throw "Leader-demo session '$sessionId' belongs to worktree '$actualRoot', not '$expectedRoot'."
+        }
+    }
+
+    return $pointer
+}
+
+function Remove-NervLeaderDemoSessionPointer {
+    param([string] $StateRoot = (Get-NervFullStackStateRoot))
+
+    $path = Get-NervLeaderDemoSessionPointerPath -StateRoot $StateRoot
+    Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
 }
 
 function Invoke-WithNervFullStackSessionLock {

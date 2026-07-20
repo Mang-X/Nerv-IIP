@@ -137,11 +137,13 @@ function Start-NervFullStackSession {
         $appHostProject = Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
         $artifactPath = Join-Path $repoRoot "artifacts/fullstack/$newSessionId"
         [System.IO.Directory]::CreateDirectory($artifactPath) | Out-Null
+        $sessionProfile = Get-NervFullStackEnvironment -SessionId $newSessionId
         $manifest = New-NervFullStackManifest `
             -SessionId $newSessionId `
             -WorktreeRoot $repoRoot `
             -AppHostProject $appHostProject `
             -ArtifactPath $artifactPath `
+            -MessagingProvider $sessionProfile.Messaging__Provider `
             -LeaseMinutes (Get-NervFullStackLeaseMinutes)
         Write-NervFullStackManifest -Manifest $manifest
 
