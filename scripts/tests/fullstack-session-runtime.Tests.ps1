@@ -158,17 +158,95 @@ Assert-True $missingPayloadFailed 'Aspire JSON parsing must reject missing paylo
 $multiplePayloadsFailed = $false
 try { Read-NervAspireJson -Text '{"one":1} trailing {"two":2}' | Out-Null } catch { $multiplePayloadsFailed = $true }
 Assert-True $multiplePayloadsFailed 'Aspire JSON parsing must reject multiple payloads.'
+$truncatedPayloadFailed = $false
+try { Read-NervAspireJson -Text '{"resources":[{"displayName":"gateway"}' -RequireResources | Out-Null } catch { $truncatedPayloadFailed = $true }
+Assert-True $truncatedPayloadFailed 'Aspire describe JSON parsing must reject a truncated resources payload.'
 $missingResourcesFailed = $false
 try { Read-NervAspireJson -Text '{"appHostPid":42}' -RequireResources | Out-Null } catch { $missingResourcesFailed = $true }
 Assert-True $missingResourcesFailed 'Aspire describe JSON parsing must require a resources collection.'
 $emptyResourcesFailed = $false
 try { Read-NervAspireJson -Text '{"resources":[]}' -RequireResources | Out-Null } catch { $emptyResourcesFailed = $true }
 Assert-True $emptyResourcesFailed 'Aspire describe JSON parsing must reject an empty resources collection.'
+
+$describePrefixRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-aspire-describe-prefix-$([guid]::NewGuid().ToString('N'))"
+$describePrefixIdentity = Join-Path $describePrefixRoot 'child.json'
+$originalDrainTimeout = $script:ScriptAutomationStreamDrainTimeoutMilliseconds
+try {
+    [System.IO.Directory]::CreateDirectory($describePrefixRoot) | Out-Null
+    $describePrefixChild = Join-Path $describePrefixRoot 'child.ps1'
+    $describePrefixParent = Join-Path $describePrefixRoot 'parent.ps1'
+    [System.IO.File]::WriteAllText(
+        $describePrefixChild,
+        @'
+param($IdentityPath)
+$process = Get-Process -Id $PID -ErrorAction Stop
+$identity = [ordered]@{ pid = $PID; processStartTimeUtc = $process.StartTime.ToUniversalTime().ToString('O') }
+[System.IO.File]::WriteAllText($IdentityPath, ($identity | ConvertTo-Json -Compress), [System.Text.UTF8Encoding]::new($false))
+Start-Sleep -Seconds 30
+'@,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+    [System.IO.File]::WriteAllText(
+        $describePrefixParent,
+        @'
+param($ChildScript, $IdentityPath)
+$startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+$startInfo.FileName = (Get-Process -Id $PID -ErrorAction Stop).Path
+$startInfo.UseShellExecute = $false
+$startInfo.RedirectStandardOutput = $false
+$startInfo.RedirectStandardError = $false
+foreach ($argument in @('-NoProfile', '-NonInteractive', '-File', $ChildScript, $IdentityPath)) {
+    [void] $startInfo.ArgumentList.Add($argument)
+}
+$child = [System.Diagnostics.Process]::Start($startInfo)
+$child.Dispose()
+$deadline = [DateTimeOffset]::UtcNow.AddSeconds(5)
+while (-not [System.IO.File]::Exists($IdentityPath) -and [DateTimeOffset]::UtcNow -lt $deadline) {
+    Start-Sleep -Milliseconds 25
+}
+if (-not [System.IO.File]::Exists($IdentityPath)) { throw 'Describe prefix child did not publish identity.' }
+[Console]::Out.Write('{"resources":[{"displayName":"gateway","urls":[]}]}')
+'@,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+    $script:ScriptAutomationStreamDrainTimeoutMilliseconds = 500
+    $describePrefixResult = Invoke-NativeCommandOutput `
+        -Command 'pwsh' `
+        -Arguments @('-NoProfile', '-NonInteractive', '-File', $describePrefixParent, $describePrefixChild, $describePrefixIdentity) `
+        -WorkingDirectory $repoRoot `
+        -TimeoutSeconds 10 `
+        -Name 'aspire-describe-complete-prefix' `
+        -LogDirectory (Join-Path $describePrefixRoot 'logs') `
+        -AllowPartialOutput
+    Assert-True $describePrefixResult.PartialOutput 'Inherited open handles must mark a complete captured describe prefix as partial.'
+    $describePrefixObject = Read-NervAspireJson -Text $describePrefixResult.Stdout -RequireResources
+    Assert-True (@($describePrefixObject.resources).Count -eq 1) 'A complete captured describe JSON prefix with resources must pass strict validation.'
+}
+finally {
+    $script:ScriptAutomationStreamDrainTimeoutMilliseconds = $originalDrainTimeout
+    if (Test-Path -LiteralPath $describePrefixIdentity -PathType Leaf) {
+        $identity = Get-Content -LiteralPath $describePrefixIdentity -Raw | ConvertFrom-Json
+        if (Test-NervProcessIdentity -ProcessId ([int] $identity.pid) -ProcessStartTimeUtc "$($identity.processStartTimeUtc)") {
+            $process = Get-Process -Id ([int] $identity.pid) -ErrorAction SilentlyContinue
+            if ($null -ne $process) {
+                try {
+                    $process.Kill()
+                    [void] $process.WaitForExit(10000)
+                }
+                finally { $process.Dispose() }
+            }
+        }
+    }
+    Remove-Item -LiteralPath $describePrefixRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 $describeDefinition = (Get-Command Get-NervAspireDescribeObject -ErrorAction Stop).Definition
-Assert-True (-not $describeDefinition.Contains('-AllowPartialOutput')) 'Parse-critical Aspire describe must reject partial redirected output.'
+Assert-True ($describeDefinition.Contains('-AllowPartialOutput')) 'Aspire describe must explicitly opt in before strict JSON/resources validation.'
 Assert-True ($describeDefinition.Contains('-RequireResources')) 'Aspire describe must require a complete resource collection after parsing.'
 $waitDefinition = (Get-Command Wait-NervAspireResource -ErrorAction Stop).Definition
 Assert-True ($waitDefinition.Contains('-AllowPartialOutput')) 'Aspire wait may opt in because the native exit code is authoritative and output is discarded.'
+$diagnosticsDefinition = (Get-Command Collect-NervFullStackDiagnostics -ErrorAction Stop).Definition
+Assert-True (-not $diagnosticsDefinition.Contains('-AllowPartialOutput')) 'Parse-critical Aspire logs must reject partial redirected output.'
 $stopDefinition = (Get-Command Stop-NervFullStackSession -ErrorAction Stop).Definition
 Assert-True ($stopDefinition.Contains('-AllowPartialOutput')) 'Exact full-stack Aspire stop must allow partial discarded output when exit code is authoritative.'
 $startActionIndex = $fullStackSessionText.IndexOf('-StartAction {', [StringComparison]::Ordinal)

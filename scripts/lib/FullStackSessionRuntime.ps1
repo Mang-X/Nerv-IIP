@@ -216,7 +216,8 @@ function Get-NervAspireDescribeObject {
         -Arguments @('describe', '--format', 'Json', '--apphost', $AppHostProject, '--non-interactive', '--nologo') `
         -WorkingDirectory $WorkingDirectory `
         -TimeoutSeconds 60 `
-        -Name 'fullstack-aspire-describe'
+        -Name 'fullstack-aspire-describe' `
+        -AllowPartialOutput
     return (Read-NervAspireJson -Text "$($result.Stdout)" -RequireResources)
 }
 
