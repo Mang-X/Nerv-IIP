@@ -599,6 +599,10 @@ try {
     foreach ($entrypoint in @('business-gateway', 'console', 'business-console', 'screen')) {
         Assert-True (@($script:leaderHttpCalls | Where-Object { $_.StartsWith("$entrypoint=", [StringComparison]::Ordinal) }).Count -eq 1) "Leader-demo health did not HTTP-check '$entrypoint'."
     }
+    $businessGatewayHealthCall = @($script:leaderHttpCalls | Where-Object { $_.StartsWith('business-gateway=', [StringComparison]::Ordinal) })[0]
+    Assert-True `
+        ($businessGatewayHealthCall.EndsWith('/health', [StringComparison]::Ordinal)) `
+        'BusinessGateway availability must probe its public 2xx health endpoint instead of the intentionally unmapped root path.'
     foreach ($factName in @('SO-DEMO-001', 'WO-DEMO-Q01', 'DEV-CNC-DEMO', 'MWO-DEMO-001')) {
         Assert-True (@($script:leaderFactCalls | Where-Object { $_.StartsWith("$factName=", [StringComparison]::Ordinal) }).Count -eq 1) "Leader-demo health did not query '$factName' through a public facade."
     }

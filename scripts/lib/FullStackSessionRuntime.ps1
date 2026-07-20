@@ -1753,7 +1753,7 @@ function Invoke-NervLeaderDemoVerification {
         }
 
         foreach ($httpTarget in @(
-            [ordered]@{ name = 'business-gateway'; url = $accessUrls.businessGateway },
+            [ordered]@{ name = 'business-gateway'; url = "$($accessUrls.businessGateway)".TrimEnd('/') + '/health' },
             [ordered]@{ name = 'console'; url = $accessUrls.console },
             [ordered]@{ name = 'business-console'; url = $accessUrls.businessConsole },
             [ordered]@{ name = 'screen'; url = $accessUrls.screen }
