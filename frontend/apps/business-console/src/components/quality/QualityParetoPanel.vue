@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type { BarSeries, NvDataTableColumn } from '@nerv-iip/ui'
 import { NvBarChart, NvDataTable } from '@nerv-iip/ui'
+import { LoaderCircleIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import {
   buildParetoChartRows,
+  formatQualityQuantity,
   type QualityAnalysisBucket,
 } from '@/composables/useBusinessQualityAnalysis'
 
@@ -24,10 +26,6 @@ const columns: NvDataTableColumn<QualityAnalysisBucket>[] = [
   { key: 'defectQuantity', header: '缺陷数量', align: 'end', width: 'w-28' },
   { key: 'sharePercent', header: '缺陷占比', align: 'end', width: 'w-24' },
 ]
-
-function formatQuantity(value: number) {
-  return Number.isInteger(value) ? String(value) : value.toFixed(2)
-}
 </script>
 
 <template>
@@ -47,7 +45,15 @@ function formatQuantity(value: number) {
       {{ errorMessage }}
     </p>
     <div
-      v-else-if="!pending && rows.length === 0"
+      v-else-if="pending"
+      class="flex min-h-40 items-center justify-center gap-2 rounded-xl border bg-card p-6 text-sm text-muted-foreground"
+      role="status"
+    >
+      <LoaderCircleIcon class="size-4 animate-spin" aria-hidden="true" />
+      正在加载当前返回窗口缺陷数据
+    </div>
+    <div
+      v-else-if="rows.length === 0"
       class="flex min-h-40 items-center justify-center rounded-xl border bg-card p-6 text-sm text-muted-foreground"
     >
       当前返回窗口没有 NCR，暂无可汇总的缺陷原因。
@@ -63,6 +69,7 @@ function formatQuantity(value: number) {
     </div>
 
     <NvDataTable
+      v-if="!errorMessage"
       :columns="columns"
       :rows="rows"
       row-key="label"
@@ -71,7 +78,9 @@ function formatQuantity(value: number) {
       :column-settings="false"
       empty-message="当前返回窗口没有 NCR，暂无可汇总的缺陷原因。"
     >
-      <template #cell-defectQuantity="{ row }">{{ formatQuantity(row.defectQuantity) }}</template>
+      <template #cell-defectQuantity="{ row }">{{
+        formatQualityQuantity(row.defectQuantity)
+      }}</template>
       <template #cell-sharePercent="{ row }">{{ row.sharePercent }}%</template>
     </NvDataTable>
   </section>

@@ -6,6 +6,7 @@ import QualitySpcCharts from '@/components/quality/QualitySpcCharts.vue'
 import { useQualityNcrs } from '@/composables/useBusinessQuality'
 import {
   buildQualityAnalysisSummary,
+  formatQualityQuantity,
   spcViolationTargetId,
   useQualitySpcAnalysis,
   type QualityAnalysisBucket,
@@ -82,14 +83,11 @@ const spcViolationColumns: NvDataTableColumn<QualitySpcViolation>[] = [
 function formatError(error: unknown) {
   return error ? friendlyErrorMessage(error, '质量分析加载失败，请稍后重试。') : ''
 }
-function formatQuantity(value: number) {
-  return Number.isInteger(value) ? String(value) : value.toFixed(2)
-}
 function formatMetric(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '-'
 }
 function spcViolationKey(row: QualitySpcViolation) {
-  return `${row.rule}:${row.startSubgroupIndex}:${row.endSubgroupIndex}`
+  return spcViolationTargetId(row, spc.spcViolations.value.indexOf(row))
 }
 </script>
 
@@ -98,7 +96,7 @@ function spcViolationKey(row: QualitySpcViolation) {
     <NvPageHeader
       title="质量分析"
       :breadcrumbs="[{ label: '质量管理' }]"
-      :count="`${summary.totalNcrCount} 条 NCR`"
+      :count="listErrorMessage ? 'NCR 数据加载失败' : `${summary.totalNcrCount} 条 NCR`"
     >
       <template #actions>
         <NvButton size="sm" type="button" variant="outline" as-child>
@@ -120,7 +118,15 @@ function spcViolationKey(row: QualitySpcViolation) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="4">
+    <p
+      v-if="listErrorMessage"
+      class="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive"
+      role="alert"
+    >
+      NCR 数据加载失败：{{ listErrorMessage }}
+    </p>
+
+    <NvSectionCards v-else :columns="4">
       <NvSectionCard
         description="当前窗口 NCR"
         :value="summary.sampledNcrCount"
@@ -134,7 +140,7 @@ function spcViolationKey(row: QualitySpcViolation) {
       />
       <NvSectionCard
         description="缺陷数量"
-        :value="formatQuantity(summary.totalDefectQuantity)"
+        :value="formatQualityQuantity(summary.totalDefectQuantity)"
         hint="按当前窗口汇总"
       />
     </NvSectionCards>
@@ -220,19 +226,20 @@ function spcViolationKey(row: QualitySpcViolation) {
         :empty-message="spcViolationEmptyMessage"
       >
         <template #cell-rule="{ row }">
-          <span :id="spcViolationTargetId(row)" class="font-medium scroll-mt-24">{{
-            row.rule
-          }}</span>
+          <span
+            :id="spcViolationTargetId(row, spc.spcViolations.value.indexOf(row))"
+            class="font-medium scroll-mt-24"
+            >{{ row.rule }}</span
+          >
         </template>
       </NvDataTable>
     </div>
 
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.7fr)]">
-      <QualityParetoPanel
-        :rows="summary.defectPareto"
-        :pending="ncrsPending"
-        :error-message="listErrorMessage"
-      />
+    <div
+      v-if="!listErrorMessage"
+      class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.7fr)]"
+    >
+      <QualityParetoPanel :rows="summary.defectPareto" :pending="ncrsPending" />
 
       <div class="grid gap-4">
         <NvDataTable
@@ -245,7 +252,7 @@ function spcViolationKey(row: QualitySpcViolation) {
           empty-message="当前返回窗口没有物料维度。"
         >
           <template #cell-defectQuantity="{ row }">{{
-            formatQuantity(row.defectQuantity)
+            formatQualityQuantity(row.defectQuantity)
           }}</template>
         </NvDataTable>
 
@@ -259,7 +266,7 @@ function spcViolationKey(row: QualitySpcViolation) {
           empty-message="当前返回窗口没有来源维度。"
         >
           <template #cell-defectQuantity="{ row }">{{
-            formatQuantity(row.defectQuantity)
+            formatQualityQuantity(row.defectQuantity)
           }}</template>
         </NvDataTable>
       </div>

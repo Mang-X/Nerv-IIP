@@ -4,7 +4,10 @@ import type { LineSeries } from '@nerv-iip/ui'
 import { NvLineChart } from '@nerv-iip/ui'
 import { AlertTriangleIcon, ChartNoAxesCombinedIcon, LoaderCircleIcon } from '@lucide/vue'
 import { computed } from 'vue'
-import { buildSpcChartPresentation } from '@/composables/useBusinessQualityAnalysis'
+import {
+  buildSpcChartPresentation,
+  hasCompleteSpcControlLimits,
+} from '@/composables/useBusinessQualityAnalysis'
 
 const props = defineProps<{
   chart: BusinessConsoleQualitySpcControlChartResponse | null
@@ -19,9 +22,34 @@ const presentation = computed(() =>
     : { xbarRows: [], rangeRows: [], violationMarkers: [] },
 )
 const hasSubgroups = computed(() => (props.chart?.subgroups?.length ?? 0) > 0)
-const hasControlLimits = computed(
-  () => presentation.value.xbarRows.length > 0 && presentation.value.rangeRows.length > 0,
-)
+const hasControlLimits = computed(() => hasCompleteSpcControlLimits(props.chart?.controlLimits))
+const violationBands = computed(() => {
+  const subgroupIndexes = presentation.value.xbarRows.map((row) =>
+    Number.parseInt(row.subgroup.replace('子组 ', ''), 10),
+  )
+  const slotWidth = subgroupIndexes.length ? 100 / subgroupIndexes.length : 0
+
+  return presentation.value.violationMarkers.flatMap((marker) => {
+    const coveredPositions = subgroupIndexes.flatMap((subgroupIndex, position) =>
+      subgroupIndex >= marker.startSubgroupIndex && subgroupIndex <= marker.endSubgroupIndex
+        ? [position]
+        : [],
+    )
+    if (!coveredPositions.length) return []
+
+    const first = coveredPositions[0]!
+    const last = coveredPositions.at(-1)!
+    return [
+      {
+        ...marker,
+        style: {
+          left: `${first * slotWidth}%`,
+          width: `${(last - first + 1) * slotWidth}%`,
+        },
+      },
+    ]
+  })
+})
 
 const xbarSeries: LineSeries[] = [
   { key: 'xbar', label: 'Xbar', color: 'var(--chart-1)' },
@@ -87,12 +115,36 @@ const rangeSeries: LineSeries[] = [
           <h3 class="font-semibold">Xbar 控制图</h3>
           <span class="text-xs text-muted-foreground">均值与控制限</span>
         </div>
-        <NvLineChart
-          :data="presentation.xbarRows"
-          x-key="subgroup"
-          :series="xbarSeries"
-          :height="210"
-        />
+        <div v-if="presentation.xbarRows.length" class="relative">
+          <NvLineChart
+            :data="presentation.xbarRows"
+            x-key="subgroup"
+            :series="xbarSeries"
+            :height="210"
+          />
+          <div
+            class="pointer-events-none absolute inset-x-2 bottom-8 top-10"
+            aria-label="图内判异区间"
+          >
+            <div
+              v-for="band in violationBands"
+              :key="band.key"
+              data-testid="spc-violation-band"
+              class="absolute inset-y-0 z-10 border-x border-destructive/60 bg-destructive/10"
+              :style="band.style"
+            >
+              <span
+                class="absolute left-1/2 top-1 inline-flex -translate-x-1/2 items-center gap-1 whitespace-nowrap rounded bg-card/90 px-1.5 py-0.5 text-[10px] font-semibold text-destructive shadow-sm"
+              >
+                <AlertTriangleIcon class="size-3" aria-hidden="true" />
+                判异{{ band.label }}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div v-else class="flex min-h-52 items-center justify-center text-sm text-muted-foreground">
+          完整子组缺少可绘制的 Xbar 值。
+        </div>
         <div
           v-if="presentation.violationMarkers.length"
           class="mt-2 flex flex-wrap items-center gap-2 border-t pt-3"
@@ -119,11 +171,15 @@ const rangeSeries: LineSeries[] = [
           <span class="text-xs text-muted-foreground">极差与控制限</span>
         </div>
         <NvLineChart
+          v-if="presentation.rangeRows.length"
           :data="presentation.rangeRows"
           x-key="subgroup"
           :series="rangeSeries"
           :height="210"
         />
+        <div v-else class="flex min-h-52 items-center justify-center text-sm text-muted-foreground">
+          完整子组缺少可绘制的 Range 值。
+        </div>
       </article>
     </div>
   </section>

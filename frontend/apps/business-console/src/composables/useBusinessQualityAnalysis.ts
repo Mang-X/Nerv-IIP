@@ -59,6 +59,8 @@ export interface QualitySpcViolationMarker {
   label: string
   message: string
   targetId: string
+  startSubgroupIndex: number
+  endSubgroupIndex: number
 }
 
 export interface QualitySpcChartPresentation {
@@ -144,7 +146,7 @@ export function buildSpcChartPresentation(
   const limits = chart.controlLimits
   const subgroups = chart.subgroups ?? []
 
-  if (!hasCompleteControlLimits(limits)) {
+  if (!hasCompleteSpcControlLimits(limits)) {
     return {
       xbarRows: [],
       rangeRows: [],
@@ -190,27 +192,38 @@ export function buildParetoChartRows(buckets: ReadonlyArray<QualityAnalysisBucke
   }))
 }
 
-export function spcViolationTargetId(violation: QualitySpcViolation) {
-  return `spc-violation-${violation.rule ?? 'unknown'}-${violation.startSubgroupIndex ?? 0}-${violation.endSubgroupIndex ?? 0}`
+export function formatQualityQuantity(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2)
+}
+
+export function spcViolationTargetId(violation: QualitySpcViolation, position = 0) {
+  const rule = toDomIdSegment(violation.rule)
+  const start = violation.startSubgroupIndex ?? 0
+  const end = violation.endSubgroupIndex ?? start
+  const ordinal = Math.max(0, position) + 1
+  return `spc-violation-${rule}-${start}-${end}-${ordinal}`
 }
 
 function buildViolationMarkers(
   violations: ReadonlyArray<BusinessConsoleQualitySpcRuleViolation>,
 ): QualitySpcViolationMarker[] {
-  return violations.map((violation) => {
+  return violations.map((violation, position) => {
     const start = violation.startSubgroupIndex ?? 0
     const end = violation.endSubgroupIndex ?? start
     const rule = violation.rule ?? 'unknown'
+    const targetId = spcViolationTargetId(violation, position)
     return {
-      key: `${rule}:${start}:${end}`,
+      key: targetId,
       label: start === end ? `子组 ${start}` : `子组 ${start}–${end}`,
       message: violation.message?.trim() || '检测到 SPC 判异',
-      targetId: spcViolationTargetId(violation),
+      targetId,
+      startSubgroupIndex: start,
+      endSubgroupIndex: end,
     }
   })
 }
 
-function hasCompleteControlLimits(
+export function hasCompleteSpcControlLimits(
   limits: BusinessConsoleQualitySpcControlChartResponse['controlLimits'],
 ): limits is NonNullable<BusinessConsoleQualitySpcControlChartResponse['controlLimits']> & {
   centerLine: number
@@ -228,6 +241,16 @@ function hasCompleteControlLimits(
     isFiniteNumber(limits.xbarLowerControlLimit) &&
     isFiniteNumber(limits.rangeUpperControlLimit) &&
     isFiniteNumber(limits.rangeLowerControlLimit),
+  )
+}
+
+function toDomIdSegment(value: string | null | undefined) {
+  return (
+    value
+      ?.trim()
+      .toLowerCase()
+      .replace(/[^\w-]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'rule'
   )
 }
 

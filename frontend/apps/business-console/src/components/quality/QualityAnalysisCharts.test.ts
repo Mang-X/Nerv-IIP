@@ -6,6 +6,7 @@ import QualityParetoPanel from './QualityParetoPanel.vue'
 import {
   buildParetoChartRows,
   buildSpcChartPresentation,
+  formatQualityQuantity,
   type QualityAnalysisBucket,
 } from '@/composables/useBusinessQualityAnalysis'
 
@@ -55,10 +56,12 @@ describe('quality analysis chart presentation', () => {
     })
     expect(presentation.violationMarkers).toEqual([
       {
-        key: 'trend-increasing:2:5',
+        key: 'spc-violation-trend-increasing-2-5-1',
         label: '子组 2–5',
         message: '连续上升趋势',
-        targetId: 'spc-violation-trend-increasing-2-5',
+        targetId: 'spc-violation-trend-increasing-2-5-1',
+        startSubgroupIndex: 2,
+        endSubgroupIndex: 5,
       },
     ])
   })
@@ -73,6 +76,23 @@ describe('quality analysis chart presentation', () => {
       { reason: '尺寸超差', defectQuantity: 8 },
       { reason: '表面划伤', defectQuantity: 4 },
     ])
+    expect(formatQualityQuantity(4.25)).toBe('4.25')
+  })
+
+  it('creates unique safe anchors for duplicate rule intervals', () => {
+    const presentation = buildSpcChartPresentation({
+      ...chart,
+      ruleViolations: [
+        { rule: 'trend: increasing', startSubgroupIndex: 2, endSubgroupIndex: 5 },
+        { rule: 'trend: increasing', startSubgroupIndex: 2, endSubgroupIndex: 5 },
+      ],
+    })
+
+    expect(presentation.violationMarkers.map((marker) => marker.targetId)).toEqual([
+      'spc-violation-trend-increasing-2-5-1',
+      'spc-violation-trend-increasing-2-5-2',
+    ])
+    expect(new Set(presentation.violationMarkers.map((marker) => marker.key)).size).toBe(2)
   })
 })
 
@@ -95,8 +115,9 @@ describe('QualitySpcCharts', () => {
     expect(wrapper.text()).toContain('Xbar 控制图')
     expect(wrapper.text()).toContain('R 控制图')
     expect(wrapper.text()).toContain('判异子组 2–5')
+    expect(wrapper.find('[data-testid="spc-violation-band"]').text()).toContain('判异子组 2–5')
     expect(wrapper.find('[data-testid="spc-violation-marker"]').attributes('href')).toBe(
-      '#spc-violation-trend-increasing-2-5',
+      '#spc-violation-trend-increasing-2-5-1',
     )
   })
 
@@ -140,6 +161,25 @@ describe('QualitySpcCharts', () => {
     })
     expect(withoutSubgroups.text()).toContain('当前范围没有完整子组')
   })
+
+  it('distinguishes complete limits from subgroup values that cannot be plotted', () => {
+    const withoutRangeValues = mount(QualitySpcCharts, {
+      props: {
+        chart: {
+          controlLimits: chart.controlLimits,
+          subgroups: [{ index: 1, xbar: 10.1 }],
+        },
+        pending: false,
+        warmup: false,
+        errorMessage: '',
+      },
+      global: { stubs },
+    })
+
+    expect(withoutRangeValues.text()).toContain('完整子组缺少可绘制的 Range 值')
+    expect(withoutRangeValues.text()).not.toContain('尚无完整控制限')
+    expect(withoutRangeValues.findAll('[data-testid="line-chart"]')).toHaveLength(1)
+  })
 })
 
 describe('QualityParetoPanel', () => {
@@ -180,5 +220,25 @@ describe('QualityParetoPanel', () => {
 
     expect(wrapper.text()).toContain('当前返回窗口没有 NCR')
     expect(wrapper.find('[data-testid="bar-chart"]').exists()).toBe(false)
+  })
+
+  it('does not render a no-data table while the request failed', () => {
+    const wrapper = mount(QualityParetoPanel, {
+      props: { rows: [], pending: false, errorMessage: '网络异常，请检查连接后重试。' },
+      global: { stubs },
+    })
+
+    expect(wrapper.text()).toContain('网络异常，请检查连接后重试。')
+    expect(wrapper.text()).not.toContain('当前返回窗口没有 NCR')
+    expect(wrapper.find('[data-testid="pareto-table"]').exists()).toBe(false)
+  })
+
+  it('shows an explicit loading placeholder instead of a blank chart card', () => {
+    const wrapper = mount(QualityParetoPanel, {
+      props: { rows: [], pending: true },
+      global: { stubs },
+    })
+
+    expect(wrapper.text()).toContain('正在加载当前返回窗口缺陷数据')
   })
 })
