@@ -273,14 +273,30 @@ function Read-NervLeaderDemoSessionPointer {
         throw "Leader-demo session pointer at '$path' has invalid ownership state '$($pointer.ownershipState)'."
     }
     if ("$($pointer.ownershipState)" -eq 'Reserved') {
-        try { [void] [DateTimeOffset]::Parse("$($pointer.createdAtUtc)") }
-        catch { throw "Leader-demo session pointer at '$path' has invalid creation time '$($pointer.createdAtUtc)'." }
-        $ownerPid = 0
-        if (-not [int]::TryParse("$($pointer.ownerPid)", [ref] $ownerPid) -or $ownerPid -lt 1) {
-            throw "Leader-demo Reserved pointer at '$path' has invalid owner PID '$($pointer.ownerPid)'."
+        $propertyNames = @($pointer.PSObject.Properties.Name)
+        $hasCreatedAt = $propertyNames -ccontains 'createdAtUtc'
+        $hasOwnerPid = $propertyNames -ccontains 'ownerPid'
+        $hasOwnerStart = $propertyNames -ccontains 'ownerProcessStartTimeUtc'
+        $isLegacyReservation = -not $hasCreatedAt -and -not $hasOwnerPid -and -not $hasOwnerStart
+        if ($isLegacyReservation) {
+            $fallbackCreatedAt = (Get-Item -LiteralPath $path -ErrorAction Stop).LastWriteTimeUtc.ToString('O')
+            $pointer | Add-Member -NotePropertyName createdAtUtc -NotePropertyValue $fallbackCreatedAt
+            $pointer | Add-Member -NotePropertyName ownerPid -NotePropertyValue $null
+            $pointer | Add-Member -NotePropertyName ownerProcessStartTimeUtc -NotePropertyValue $null
         }
-        try { [void] [DateTimeOffset]::Parse("$($pointer.ownerProcessStartTimeUtc)") }
-        catch { throw "Leader-demo Reserved pointer at '$path' has invalid owner process start time '$($pointer.ownerProcessStartTimeUtc)'." }
+        elseif (-not $hasCreatedAt -or -not $hasOwnerPid -or -not $hasOwnerStart) {
+            throw "Leader-demo Reserved pointer at '$path' has incomplete owner identity metadata."
+        }
+        else {
+            try { [void] [DateTimeOffset]::Parse("$($pointer.createdAtUtc)") }
+            catch { throw "Leader-demo session pointer at '$path' has invalid creation time '$($pointer.createdAtUtc)'." }
+            $ownerPid = 0
+            if (-not [int]::TryParse("$($pointer.ownerPid)", [ref] $ownerPid) -or $ownerPid -lt 1) {
+                throw "Leader-demo Reserved pointer at '$path' has invalid owner PID '$($pointer.ownerPid)'."
+            }
+            try { [void] [DateTimeOffset]::Parse("$($pointer.ownerProcessStartTimeUtc)") }
+            catch { throw "Leader-demo Reserved pointer at '$path' has invalid owner process start time '$($pointer.ownerProcessStartTimeUtc)'." }
+        }
     }
 
     if (-not [string]::IsNullOrWhiteSpace($ExpectedWorktreeRoot)) {
@@ -520,11 +536,16 @@ function Test-NervProcessIdentity {
 function Get-NervProcessIdentityStatus {
     param(
         [Parameter(Mandatory)] [int] $ProcessId,
-        [Parameter(Mandatory)] [object] $ProcessStartTimeUtc
+        [Parameter(Mandatory)] [object] $ProcessStartTimeUtc,
+        [scriptblock] $ProcessLookupAction
     )
 
+    if ($null -eq $ProcessLookupAction) {
+        $ProcessLookupAction = { param($ExactProcessId) Get-Process -Id $ExactProcessId -ErrorAction Stop }
+    }
+
     try {
-        Get-Process -Id $ProcessId -ErrorAction Stop | Out-Null
+        $process = & $ProcessLookupAction $ProcessId
     }
     catch [Microsoft.PowerShell.Commands.ProcessCommandException] {
         return 'Absent'
@@ -533,10 +554,25 @@ function Get-NervProcessIdentityStatus {
         return 'Unknown'
     }
 
-    if (Test-NervProcessIdentity -ProcessId $ProcessId -ProcessStartTimeUtc $ProcessStartTimeUtc) {
-        return 'Active'
+    try {
+        $expected = if ($ProcessStartTimeUtc -is [DateTime]) {
+            ([DateTime] $ProcessStartTimeUtc).ToUniversalTime()
+        }
+        elseif ($ProcessStartTimeUtc -is [DateTimeOffset]) {
+            ([DateTimeOffset] $ProcessStartTimeUtc).UtcDateTime
+        }
+        else {
+            [DateTimeOffset]::Parse("$ProcessStartTimeUtc").UtcDateTime
+        }
+        $actual = $process.StartTime.ToUniversalTime()
+        if ([Math]::Abs(($actual - $expected).TotalMilliseconds) -lt 1) {
+            return 'Active'
+        }
+        return 'Mismatched'
     }
-    return 'Mismatched'
+    catch {
+        return 'Unknown'
+    }
 }
 
 function Test-NervFullStackSessionStale {

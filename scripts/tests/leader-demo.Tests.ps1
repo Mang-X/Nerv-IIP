@@ -55,6 +55,32 @@ function Write-TestReservedPointer {
         -StateRoot $StateRoot | Out-Null
 }
 
+function Write-TestLegacyReservedPointer {
+    param(
+        [Parameter(Mandatory)] [string] $SessionId,
+        [Parameter(Mandatory)] [string] $WorktreeRoot,
+        [Parameter(Mandatory)] [string] $StateRoot,
+        [Parameter(Mandatory)] [DateTimeOffset] $LastWriteTimeUtc
+    )
+
+    $path = Get-NervLeaderDemoSessionPointerPath -StateRoot $StateRoot
+    [System.IO.Directory]::CreateDirectory((Split-Path -Parent $path)) | Out-Null
+    $pointer = [ordered]@{
+        schemaVersion = 1
+        sessionId = $SessionId
+        worktreeRoot = [System.IO.Path]::GetFullPath($WorktreeRoot)
+        ownershipState = 'Reserved'
+        updatedAtUtc = $LastWriteTimeUtc.ToString('O')
+    }
+    [System.IO.File]::WriteAllText(
+        $path,
+        ($pointer | ConvertTo-Json -Depth 5),
+        [System.Text.UTF8Encoding]::new($false)
+    )
+    [System.IO.File]::SetLastWriteTimeUtc($path, $LastWriteTimeUtc.UtcDateTime)
+    return $path
+}
+
 $stateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-leader-demo-$([guid]::NewGuid().ToString('N'))"
 $originalPassword = $env:NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD
 $hadOriginalPassword = Test-Path Env:NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD
@@ -76,6 +102,26 @@ $healthAction = { param($SessionId) $script:healthCalls.Add($SessionId) }
 
 try {
     $env:NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD = 'controlled-local-password'
+
+    $currentProcess = Get-Process -Id $PID -ErrorAction Stop
+    $currentProcessStartTimeUtc = $currentProcess.StartTime.ToUniversalTime()
+    Assert-True (
+        (Get-NervProcessIdentityStatus -ProcessId $PID -ProcessStartTimeUtc $currentProcessStartTimeUtc) -ceq 'Active'
+    ) 'The real process probe must identify the exact live process identity as Active.'
+    Assert-True (
+        (Get-NervProcessIdentityStatus -ProcessId $PID -ProcessStartTimeUtc $currentProcessStartTimeUtc.AddSeconds(-1)) -ceq 'Mismatched'
+    ) 'The real process probe must identify PID reuse/start-time mismatch as Mismatched.'
+    Assert-True (
+        (Get-NervProcessIdentityStatus -ProcessId ([int]::MaxValue) -ProcessStartTimeUtc $currentProcessStartTimeUtc) -ceq 'Absent'
+    ) 'The real process probe must identify a missing PID as Absent.'
+    $script:throwingStartTimeProbe = [pscustomobject]@{}
+    $script:throwingStartTimeProbe | Add-Member -MemberType ScriptProperty -Name StartTime -Value { throw 'simulated StartTime access failure' }
+    Assert-True (
+        (Get-NervProcessIdentityStatus `
+            -ProcessId 4107 `
+            -ProcessStartTimeUtc $currentProcessStartTimeUtc `
+            -ProcessLookupAction { param($ProcessId) $script:throwingStartTimeProbe }) -ceq 'Unknown'
+    ) 'A process StartTime inspection failure must be Unknown rather than a reclaimable mismatch.'
 
     $lockPath = Get-NervLeaderDemoLifecycleLockPath -StateRoot $stateRoot
     [IO.Directory]::CreateDirectory((Split-Path -Parent $lockPath)) | Out-Null
@@ -119,6 +165,93 @@ try {
     Assert-True $reservedFailed 'A Reserved ownership pointer must block another start for the same leader-demo slot.'
     Assert-True ($script:reservedStartCalls -eq 0) 'A Reserved ownership pointer must fail before starting another full-stack session.'
     Assert-True ((Read-NervLeaderDemoSessionPointer -StateRoot $reservedStateRoot).sessionId -ceq $reservedSessionId) 'An active owner must retain its Reserved pointer even after the stale TTL.'
+
+    $legacyRecentRoot = Join-Path $stateRoot 'legacy-recent'
+    $legacyRecentSessionId = 'nerv-dead-000019'
+    $legacyLastWrite = [DateTimeOffset]::Parse('2026-07-20T01:00:00Z')
+    $legacyRecentPath = Write-TestLegacyReservedPointer `
+        -SessionId $legacyRecentSessionId `
+        -WorktreeRoot $repoRoot `
+        -StateRoot $legacyRecentRoot `
+        -LastWriteTimeUtc $legacyLastWrite
+    $legacyRecentRejected = $false
+    try {
+        Invoke-NervLeaderDemoCommand `
+            -Action stop `
+            -StateRoot $legacyRecentRoot `
+            -WorktreeRoot $repoRoot `
+            -UtcNow $legacyLastWrite.AddSeconds(29) `
+            -ReservationTtlSeconds 30 `
+            -OwnerProcessIdentityAction { throw 'legacy reservation must not probe an unknowable owner' } `
+            -StopSessionAction { param($SessionId) throw 'recent legacy reservation must not stop a session' } | Out-Null
+    }
+    catch { $legacyRecentRejected = $_.Exception.Message.Contains($legacyRecentSessionId) }
+    Assert-True $legacyRecentRejected 'A recent legacy Reserved pointer must remain owned until its bounded TTL expires.'
+    Assert-True (Test-Path -LiteralPath $legacyRecentPath -PathType Leaf) 'A recent legacy Reserved pointer must not be cleared.'
+
+    $legacyStaleRoot = Join-Path $stateRoot 'legacy-stale'
+    $legacyStaleSessionId = 'nerv-dead-000020'
+    $legacyStalePath = Write-TestLegacyReservedPointer `
+        -SessionId $legacyStaleSessionId `
+        -WorktreeRoot $repoRoot `
+        -StateRoot $legacyStaleRoot `
+        -LastWriteTimeUtc $legacyLastWrite
+    $legacyStaleResult = Invoke-NervLeaderDemoCommand `
+        -Action stop `
+        -StateRoot $legacyStaleRoot `
+        -WorktreeRoot $repoRoot `
+        -UtcNow $legacyLastWrite.AddSeconds(31) `
+        -ReservationTtlSeconds 30 `
+        -OwnerProcessIdentityAction { throw 'legacy reservation must not probe an unknowable owner' } `
+        -StopSessionAction { param($SessionId) throw 'stale legacy reservation has no session to stop' }
+    Assert-True ("$legacyStaleResult" -match 'state=ReservationReclaimed') 'A stale legacy Reserved pointer must be reclaimable using its file timestamp fallback.'
+    Assert-True (-not (Test-Path -LiteralPath $legacyStalePath)) 'A stale legacy Reserved pointer must release the dead slot.'
+
+    $legacyManifestRoot = Join-Path $stateRoot 'legacy-manifest'
+    $legacyManifestSessionId = 'nerv-dead-000021'
+    $legacyManifestPath = Write-TestLegacyReservedPointer `
+        -SessionId $legacyManifestSessionId `
+        -WorktreeRoot $repoRoot `
+        -StateRoot $legacyManifestRoot `
+        -LastWriteTimeUtc $legacyLastWrite
+    Write-TestFullStackManifest -SessionId $legacyManifestSessionId -ManifestWorktreeRoot $repoRoot -StateRoot $legacyManifestRoot
+    $legacyManifestRejected = $false
+    try {
+        Invoke-NervLeaderDemoCommand `
+            -Action start `
+            -StateRoot $legacyManifestRoot `
+            -WorktreeRoot $repoRoot `
+            -UtcNow $legacyLastWrite.AddHours(1) `
+            -ReservationTtlSeconds 30 `
+            -OwnerProcessIdentityAction { throw 'manifest-backed legacy reservation must not probe its owner' } `
+            -StartSessionAction { param($SessionId) throw 'manifest-backed legacy reservation must not start' } | Out-Null
+    }
+    catch { $legacyManifestRejected = $_.Exception.Message.Contains($legacyManifestSessionId) }
+    Assert-True $legacyManifestRejected 'An authoritative manifest must preserve a stale legacy Reserved pointer.'
+    Assert-True (Test-Path -LiteralPath $legacyManifestPath -PathType Leaf) 'A manifest-backed legacy Reserved pointer must retain its cleanup route.'
+
+    $legacyForeignRoot = Join-Path $stateRoot 'legacy-foreign'
+    $legacyForeignSessionId = 'nerv-dead-000022'
+    $legacyForeignWorktree = Join-Path $stateRoot 'legacy-foreign-worktree'
+    $legacyForeignPath = Write-TestLegacyReservedPointer `
+        -SessionId $legacyForeignSessionId `
+        -WorktreeRoot $legacyForeignWorktree `
+        -StateRoot $legacyForeignRoot `
+        -LastWriteTimeUtc $legacyLastWrite
+    $legacyForeignRejected = $false
+    try {
+        Invoke-NervLeaderDemoCommand `
+            -Action stop `
+            -StateRoot $legacyForeignRoot `
+            -WorktreeRoot $repoRoot `
+            -UtcNow $legacyLastWrite.AddHours(1) `
+            -ReservationTtlSeconds 30 `
+            -OwnerProcessIdentityAction { throw 'foreign legacy reservation must not probe its owner' } `
+            -StopSessionAction { param($SessionId) throw 'foreign legacy reservation must not stop a session' } | Out-Null
+    }
+    catch { $legacyForeignRejected = $_.Exception.Message.Contains($legacyForeignWorktree) }
+    Assert-True $legacyForeignRejected 'A stale legacy Reserved pointer must not cross its recorded worktree boundary.'
+    Assert-True (Test-Path -LiteralPath $legacyForeignPath -PathType Leaf) 'A foreign legacy Reserved pointer must not be cleared.'
 
     $unknownRecentRoot = Join-Path $stateRoot 'unknown-recent'
     $unknownRecentSessionId = 'nerv-dead-000017'

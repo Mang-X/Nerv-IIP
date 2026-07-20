@@ -1316,7 +1316,15 @@ function Invoke-NervLeaderDemoCommand {
         $manifestPath = Get-NervFullStackManifestPath -SessionId $reservedSessionId -StateRoot $resolvedStateRoot
         if (Test-Path -LiteralPath $manifestPath -PathType Leaf) { return $false }
 
-        $identityStatus = "$(& $OwnerProcessIdentityAction ([int] $Pointer.ownerPid) "$($Pointer.ownerProcessStartTimeUtc)")"
+        $identityStatus = if (
+            $null -eq $Pointer.ownerPid -and
+            [string]::IsNullOrWhiteSpace("$($Pointer.ownerProcessStartTimeUtc)")
+        ) {
+            'Unknown'
+        }
+        else {
+            "$(& $OwnerProcessIdentityAction ([int] $Pointer.ownerPid) "$($Pointer.ownerProcessStartTimeUtc)")"
+        }
         if (@('Active', 'Absent', 'Mismatched', 'Unknown') -cnotcontains $identityStatus) {
             throw "Leader-demo reservation '$reservedSessionId' owner identity returned invalid status '$identityStatus'."
         }
