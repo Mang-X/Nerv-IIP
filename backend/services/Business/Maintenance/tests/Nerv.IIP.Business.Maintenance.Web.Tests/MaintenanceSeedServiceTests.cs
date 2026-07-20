@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
+using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
+using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.Seed;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
@@ -73,5 +75,78 @@ public sealed class MaintenanceSeedServiceTests
         var otherScope = await db.MaintenancePlans
             .CountAsync(x => x.OrganizationId == "org-999" || x.EnvironmentId == "env-prod");
         Assert.Equal(0, otherScope);
+    }
+
+    [Fact]
+    public async Task Leader_demo_seed_creates_one_open_alarm_sourced_work_order_without_final_repair_facts()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        var seed = new LeaderDemoSeedService(db);
+
+        await seed.SeedAsync("org-001", "env-dev");
+        await seed.SeedAsync("org-001", "env-dev");
+
+        var workOrder = Assert.Single(await db.MaintenanceWorkOrders.ToArrayAsync());
+        Assert.Equal("ALARM-DEMO-001", workOrder.SourceAlarmId);
+        Assert.Equal(LeaderDemoSeedService.WorkOrderReference, workOrder.SourceReferenceId);
+        Assert.Equal(LeaderDemoSeedService.DeviceAssetId, workOrder.DeviceAssetId);
+        Assert.Equal(MaintenanceWorkOrderStatus.Open, workOrder.Status);
+        Assert.Null(workOrder.CompletedAtUtc);
+        Assert.Null(workOrder.CompletionResult);
+        Assert.Null(workOrder.ActualLaborMinutes);
+        Assert.False(workOrder.AlarmCleared);
+    }
+
+    [Fact]
+    public async Task Leader_demo_alarm_raise_and_clear_reuse_the_seeded_work_order_lifecycle()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        await new LeaderDemoSeedService(db).SeedAsync("org-001", "env-dev");
+        var seeded = await db.MaintenanceWorkOrders.SingleAsync();
+
+        var raisedWorkOrderId = await new CreateMaintenanceWorkOrderCommandHandler(db).Handle(
+            new CreateMaintenanceWorkOrderCommand(
+                "org-001",
+                "env-dev",
+                LeaderDemoSeedService.DeviceAssetId,
+                "critical",
+                "ALARM-DEMO-001",
+                "industrialTelemetry",
+                null),
+            CancellationToken.None);
+
+        Assert.Equal(seeded.Id, raisedWorkOrderId);
+        Assert.Single(await db.MaintenanceWorkOrders.ToArrayAsync());
+
+        var clearedAtUtc = seeded.OpenedAtUtc.AddMinutes(1);
+        await new MarkMaintenanceWorkOrderAlarmClearedCommandHandler(db).Handle(
+            new MarkMaintenanceWorkOrderAlarmClearedCommand(
+                "org-001",
+                "env-dev",
+                "ALARM-DEMO-001",
+                clearedAtUtc),
+            CancellationToken.None);
+
+        Assert.True(seeded.AlarmCleared);
+        Assert.Equal(clearedAtUtc, seeded.AlarmClearedAtUtc);
+    }
+
+    [Fact]
+    public async Task Leader_demo_seed_rejects_an_incompatible_reserved_work_order_reference()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        db.MaintenanceWorkOrders.Add(MaintenanceWorkOrder.OpenFromAlarm(
+            "org-001",
+            "env-dev",
+            "DEV-OTHER",
+            "ALARM-DEMO-001",
+            "low"));
+        await db.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new LeaderDemoSeedService(db).SeedAsync("org-001", "env-dev"));
+
+        Assert.Contains(LeaderDemoSeedService.WorkOrderReference, exception.Message, StringComparison.Ordinal);
+        Assert.Equal("DEV-OTHER", (await db.MaintenanceWorkOrders.SingleAsync()).DeviceAssetId);
     }
 }

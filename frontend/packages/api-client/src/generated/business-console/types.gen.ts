@@ -4706,6 +4706,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     warrantyExpiresOn?: string | null;
     supplierPartnerCode?: string | null;
     actualTechnicianUserId?: string | null;
+    sourceReferenceId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderListRequest = {

@@ -66,6 +66,11 @@ foreach ($expected in @(
     '.\nerv.ps1 logs',
     '.\nerv.ps1 describe',
     '.\nerv.ps1 fullstack run -Scenario smoke',
+    '.\nerv.ps1 demo start',
+    '.\nerv.ps1 demo reset',
+    '.\nerv.ps1 demo seed',
+    '.\nerv.ps1 demo health-check',
+    '.\nerv.ps1 demo stop',
     '.\nerv.ps1 publish-compose',
     '.\nerv.ps1 ports',
     '.\nerv.ps1 help'
@@ -103,6 +108,10 @@ param(
 [pscustomobject]@{ action=$Action; target=$Target; scenario=$Scenario; sessionId=$SessionId; noBuild=[bool]$NoBuild; tail=$Tail; follow=[bool]$Follow } | ConvertTo-Json -Compress
 '@
     [IO.File]::WriteAllText((Join-Path $dispatchRoot 'scripts/fullstack-session.ps1'), $captureScript, [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText(
+        (Join-Path $dispatchRoot 'scripts/leader-demo.ps1'),
+        '[CmdletBinding()] param([Parameter(Position=0)][string]$Action) [pscustomobject]@{ action=$Action } | ConvertTo-Json -Compress',
+        [Text.UTF8Encoding]::new($false))
 
     $fullStackRun = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('fullstack', 'run', '-Scenario', 'smoke', '-NoBuild')
     $runCapture = $fullStackRun.Output | ConvertFrom-Json
@@ -121,6 +130,14 @@ param(
     $urlCapture = $fullStackUrl.Output | ConvertFrom-Json
     if ($fullStackUrl.ExitCode -ne 0 -or $urlCapture.action -ne 'url' -or $urlCapture.target -ne 'business-console') {
         throw "Positional full-stack URL target was not forwarded. Output: $($fullStackUrl.Output)"
+    }
+
+    foreach ($demoAction in @('start', 'reset', 'seed', 'health-check', 'stop')) {
+        $demoResult = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('demo', $demoAction)
+        $demoCapture = $demoResult.Output | ConvertFrom-Json
+        if ($demoResult.ExitCode -ne 0 -or $demoCapture.action -ne $demoAction) {
+            throw "Demo action '$demoAction' was not forwarded. Output: $($demoResult.Output)"
+        }
     }
 }
 finally {

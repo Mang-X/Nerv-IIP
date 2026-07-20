@@ -193,7 +193,8 @@ public sealed class PostgreSqlIamAuthService(
                 externalClient.OrganizationId.Id,
                 externalClient.EnvironmentId.Id,
                 externalClient.PermissionVersion,
-                externalClientPrincipal.Scope);
+                externalClientPrincipal.Scope,
+                []);
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -233,7 +234,11 @@ public sealed class PostgreSqlIamAuthService(
                 userId,
                 membership.OrganizationId,
                 membership.EnvironmentId,
-                cancellationToken));
+                cancellationToken),
+            membership.Roles
+                .Select(x => x.RoleId.Id)
+                .OrderBy(x => x, StringComparer.Ordinal)
+                .ToArray());
     }
 
     public async Task<string?> GetAuthenticatedUserIdAsync(HttpContext httpContext, CancellationToken cancellationToken)

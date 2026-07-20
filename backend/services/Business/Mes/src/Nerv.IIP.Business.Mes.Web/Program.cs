@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
+using Nerv.IIP.Business.Mes.Web.Application.Seed;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 using Nerv.IIP.Business.Mes.Web;
 using Nerv.IIP.Business.Mes.Infrastructure;
@@ -59,6 +60,7 @@ builder.Services.AddHttpClient<MesMasterDataHttpClient>(client =>
     client.BaseAddress = masterDataBaseAddress;
 });
 builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProductEngineeringMaterialRequirementSnapshotProvider>();
+builder.Services.AddScoped<LeaderDemoSeedService>();
 // Register the FluentValidation command validators (CancelWorkOrder/ReturnLineSideMaterial/... — 11 in total)
 // so the MediatR AddKnownExceptionValidationBehavior below can execute them. Without both lines the validators
 // are dead code and command-level validation never runs — matching every other business service.
@@ -122,7 +124,25 @@ app.UseFastEndpoints(c =>
             ? contract.OperationId
             : ToLowerCamelEndpointName(ctx.EndpointType.Name);
 }).UseSwaggerGen();
-app.Run();
+
+var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");
+if (leaderDemoSeedEnabled && !app.Environment.IsDevelopment())
+{
+    throw new InvalidOperationException("LeaderDemo:Seed:Enabled=true is only allowed for BusinessMES in Development.");
+}
+
+// Resolve the released ProductEngineering version through the real HTTP boundary before MES
+// accepts traffic. This keeps the normal ProductEngineering client timeout unchanged and prevents
+// /health from becoming green while the bounded leader-demo prerequisite is still converging.
+if (leaderDemoSeedEnabled)
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(
+        builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
+        builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
+}
+
+await app.RunAsync();
 
 static string ToLowerCamelEndpointName(string endpointTypeName)
 {

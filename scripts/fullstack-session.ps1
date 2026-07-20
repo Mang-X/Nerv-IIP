@@ -231,11 +231,13 @@ function Start-NervFullStackSession {
         $appHostProject = Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
         $artifactPath = Join-Path $repoRoot "artifacts/fullstack/$newSessionId"
         [System.IO.Directory]::CreateDirectory($artifactPath) | Out-Null
+        $sessionProfile = Get-NervFullStackEnvironment -SessionId $newSessionId
         $manifest = New-NervFullStackManifest `
             -SessionId $newSessionId `
             -WorktreeRoot $repoRoot `
             -AppHostProject $appHostProject `
             -ArtifactPath $artifactPath `
+            -MessagingProvider $sessionProfile.Messaging__Provider `
             -LeaseMinutes (Get-NervFullStackLeaseMinutes)
         Write-NervFullStackManifest -Manifest $manifest
 
@@ -303,7 +305,8 @@ function Start-NervFullStackSession {
                             -Arguments @('stop', '--apphost', $appHostProject, '--non-interactive', '--nologo') `
                             -WorkingDirectory $repoRoot `
                             -TimeoutSeconds 150 `
-                            -Name "fullstack-$newSessionId-transient-start-stop" | Out-Null
+                            -Name "fullstack-$newSessionId-transient-start-stop" `
+                            -AllowPartialOutput | Out-Null
                     }
                     catch { }
                 }
@@ -455,7 +458,8 @@ try {
         'status' {
             $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId
             $manifest = Renew-NervFullStackSessionLease -SessionId $resolvedSessionId -LeaseMinutes (Get-NervFullStackLeaseMinutes)
-            Write-Output "$resolvedSessionId state=$($manifest.state) containers=$(@($manifest.runtime.containerIds).Count)"
+            $statusSummary = Get-NervFullStackStatusSummary -Manifest $manifest
+            Write-Output "$resolvedSessionId state=$($manifest.state) containers=$($statusSummary.ContainerCount) recordedContainers=$($statusSummary.RecordedContainerCount) unresolved=$($statusSummary.UnresolvedCount)"
         }
         'url' {
             if ([string]::IsNullOrWhiteSpace($Target)) { throw 'fullstack url requires a resource target.' }

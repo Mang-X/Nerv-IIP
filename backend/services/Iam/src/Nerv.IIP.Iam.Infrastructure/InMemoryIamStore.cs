@@ -218,7 +218,8 @@ public sealed class InMemoryIamStore
                     .SelectMany(x => x.PermissionCodes)
                     .Distinct(StringComparer.Ordinal)
                     .OrderBy(x => x, StringComparer.Ordinal)
-                    .ToArray());
+                    .ToArray(),
+                membership.RoleIds.OrderBy(x => x, StringComparer.Ordinal).ToArray());
         }
     }
 
@@ -883,7 +884,8 @@ public sealed record CurrentPrincipalSnapshot(
     string OrganizationId,
     string EnvironmentId,
     int PermissionVersion,
-    IReadOnlyList<string> PermissionCodes);
+    IReadOnlyList<string> PermissionCodes,
+    IReadOnlyList<string> RoleIds);
 public sealed record ExternalClientFact(
     string ClientId,
     string DisplayName,

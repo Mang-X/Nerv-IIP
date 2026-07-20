@@ -9,6 +9,10 @@ var fullStackEphemeral = string.Equals(
     Environment.GetEnvironmentVariable("NERV_IIP_EPHEMERAL"),
     "true",
     StringComparison.OrdinalIgnoreCase);
+var leaderDemoEnabled = string.Equals(
+    Environment.GetEnvironmentVariable("NERV_IIP_LEADER_DEMO"),
+    "true",
+    StringComparison.OrdinalIgnoreCase);
 
 if (fullStackEphemeral &&
     (string.IsNullOrWhiteSpace(fullStackSessionId) ||
@@ -235,6 +239,7 @@ var businessMasterData = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(bu
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMasterDataDatabase, "PostgreSQL")
     .WithReference(redis)
@@ -252,6 +257,7 @@ var businessProductEngineering = WithNervIipTelemetry(WithLocalDevelopmentEnviro
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessProductEngineeringDatabase, "PostgreSQL")
@@ -271,6 +277,7 @@ var businessInventory = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(bui
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessInventoryDatabase, "PostgreSQL")
     .WaitFor(businessInventoryDatabase);
@@ -287,6 +294,7 @@ var businessQuality = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(build
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessQualityDatabase, "PostgreSQL")
     .WithReference(redis)
@@ -301,9 +309,11 @@ if (rabbitmq is not null)
 
 var businessMes = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Mes_Web>("business-mes")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5111, name: "http")
+    .WithHttpHealthCheck("/swagger/v1/swagger.json")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
@@ -412,6 +422,7 @@ var businessIndustrialTelemetry = WithNervIipTelemetry(WithLocalDevelopmentEnvir
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessIndustrialTelemetryDatabase, "PostgreSQL")
@@ -431,6 +442,7 @@ var businessMaintenance = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(b
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMaintenanceDatabase, "PostgreSQL")
     .WaitFor(businessMaintenanceDatabase);

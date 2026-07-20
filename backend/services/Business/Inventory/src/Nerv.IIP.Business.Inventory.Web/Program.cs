@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Inventory.Web.Application.Approval;
 using Nerv.IIP.Business.Inventory.Web.Application.Expiry;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Inventory.Web.Application.MasterData;
+using Nerv.IIP.Business.Inventory.Web.Application.Seed;
 using Nerv.IIP.Business.Inventory.Web.Endpoints.Inventory;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
@@ -80,6 +81,7 @@ try
     }
 
     builder.Services.AddInventoryPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
+    builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
@@ -133,6 +135,20 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
+    }
+
+    var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");
+    if (leaderDemoSeedEnabled && !app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException("LeaderDemo:Seed:Enabled=true is only allowed for BusinessInventory in Development.");
+    }
+
+    if (leaderDemoSeedEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(
+            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
     }
 
     app.UseNervIipRequestLocalization();

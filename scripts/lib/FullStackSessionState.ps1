@@ -1,6 +1,7 @@
 Set-StrictMode -Version Latest
 
 $script:NervFullStackSessionIdPattern = '^nerv-[a-f0-9]{4}-[a-f0-9]{6}$'
+$script:NervLeaderDemoOwnershipStates = @('Reserved', 'Current')
 $script:NervFullStackStates = @('Creating', 'Running', 'Collecting', 'Failed', 'Stopping', 'Stopped', 'CleanupFailed')
 $script:NervFullStackTransitions = @{
     Creating = @('Running', 'Failed', 'Stopping')
@@ -78,6 +79,7 @@ function New-NervFullStackManifest {
         [Parameter(Mandatory)] [string] $WorktreeRoot,
         [Parameter(Mandatory)] [string] $AppHostProject,
         [Parameter(Mandatory)] [string] $ArtifactPath,
+        [ValidateSet('InMemory', 'RabbitMQ', 'Redis')] [string] $MessagingProvider = 'Redis',
         [string] $StateRoot = (Get-NervFullStackStateRoot),
         [ValidateRange(1, 1440)] [int] $LeaseMinutes = 90
     )
@@ -91,6 +93,7 @@ function New-NervFullStackManifest {
         sessionId = $SessionId
         state = 'Creating'
         mode = 'ephemeral'
+        messagingProvider = $MessagingProvider
         createdAtUtc = $now.ToString('O')
         updatedAtUtc = $now.ToString('O')
         leaseExpiresAtUtc = $now.AddMinutes($LeaseMinutes).ToString('O')
@@ -125,6 +128,217 @@ function New-NervFullStackManifest {
         transitions = @([ordered]@{ state = 'Creating'; atUtc = $now.ToString('O') })
         cleanup = [ordered]@{ completedAtUtc = $null; remaining = @(); errors = @() }
         failure = $null
+    }
+}
+
+function Get-NervLeaderDemoSessionPointerPath {
+    param([string] $StateRoot = (Get-NervFullStackStateRoot))
+
+    return (Join-Path ([System.IO.Path]::GetFullPath($StateRoot)) 'leader-demo/current.json')
+}
+
+function Get-NervLeaderDemoLifecycleLockPath {
+    param([string] $StateRoot = (Get-NervFullStackStateRoot))
+
+    return (Join-Path ([System.IO.Path]::GetFullPath($StateRoot)) 'leader-demo/.lifecycle.lock')
+}
+
+function Invoke-WithNervLeaderDemoLifecycleLock {
+    param(
+        [Parameter(Mandatory)] [scriptblock] $ScriptBlock,
+        [string] $StateRoot = (Get-NervFullStackStateRoot),
+        [ValidateRange(1, 300)] [int] $TimeoutSeconds = 30
+    )
+
+    $lockPath = Get-NervLeaderDemoLifecycleLockPath -StateRoot $StateRoot
+    [System.IO.Directory]::CreateDirectory((Split-Path -Parent $lockPath)) | Out-Null
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    $stream = $null
+
+    while ($null -eq $stream) {
+        try {
+            $stream = [System.IO.FileStream]::new(
+                $lockPath,
+                [System.IO.FileMode]::OpenOrCreate,
+                [System.IO.FileAccess]::ReadWrite,
+                [System.IO.FileShare]::None
+            )
+        }
+        catch [System.IO.IOException] {
+            if ([DateTimeOffset]::UtcNow -ge $deadline) {
+                throw "Timed out waiting for the leader-demo lifecycle lock at '$lockPath'."
+            }
+            Start-Sleep -Milliseconds 100
+        }
+    }
+
+    try {
+        return (& $ScriptBlock)
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
+function Write-NervLeaderDemoSessionPointer {
+    param(
+        [Parameter(Mandatory)] [string] $SessionId,
+        [Parameter(Mandatory)] [string] $WorktreeRoot,
+        [ValidateSet('Reserved', 'Current')] [string] $OwnershipState = 'Current',
+        [Nullable[int]] $OwnerPid,
+        [string] $OwnerProcessStartTimeUtc,
+        [string] $CreatedAtUtc,
+        [string] $StateRoot = (Get-NervFullStackStateRoot)
+    )
+
+    if ($SessionId -notmatch $script:NervFullStackSessionIdPattern) {
+        throw "Invalid leader-demo session ID '$SessionId'."
+    }
+    $now = [DateTimeOffset]::UtcNow
+    $createdAt = if ([string]::IsNullOrWhiteSpace($CreatedAtUtc)) {
+        $now
+    }
+    else {
+        try { [DateTimeOffset]::Parse($CreatedAtUtc) }
+        catch { throw "Invalid leader-demo reservation creation time '$CreatedAtUtc'." }
+    }
+    $ownerStartedAt = $null
+    if ($OwnershipState -eq 'Reserved') {
+        if ($null -eq $OwnerPid -or [int] $OwnerPid -lt 1) {
+            throw 'Reserved leader-demo ownership requires a positive owner PID.'
+        }
+        if ([string]::IsNullOrWhiteSpace($OwnerProcessStartTimeUtc)) {
+            throw 'Reserved leader-demo ownership requires an owner process start time.'
+        }
+        try { $ownerStartedAt = [DateTimeOffset]::Parse($OwnerProcessStartTimeUtc) }
+        catch { throw "Invalid leader-demo owner process start time '$OwnerProcessStartTimeUtc'." }
+    }
+
+    $path = Get-NervLeaderDemoSessionPointerPath -StateRoot $StateRoot
+    $directory = Split-Path -Parent $path
+    [System.IO.Directory]::CreateDirectory($directory) | Out-Null
+    $temporaryPath = "$path.tmp-$([guid]::NewGuid().ToString('N'))"
+    $pointer = [ordered]@{
+        schemaVersion = 1
+        sessionId = $SessionId
+        worktreeRoot = [System.IO.Path]::GetFullPath($WorktreeRoot)
+        ownershipState = $OwnershipState
+        ownerPid = if ($OwnershipState -eq 'Reserved') { [int] $OwnerPid } else { $null }
+        ownerProcessStartTimeUtc = if ($null -ne $ownerStartedAt) { $ownerStartedAt.ToString('O') } else { $null }
+        createdAtUtc = $createdAt.ToString('O')
+        updatedAtUtc = $now.ToString('O')
+    }
+
+    try {
+        $json = $pointer | ConvertTo-Json -Depth 5
+        [System.IO.File]::WriteAllText($temporaryPath, $json, [System.Text.UTF8Encoding]::new($false))
+        [System.IO.File]::Move($temporaryPath, $path, $true)
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporaryPath) {
+            Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    return [pscustomobject] $pointer
+}
+
+function Read-NervLeaderDemoSessionPointer {
+    param(
+        [string] $StateRoot = (Get-NervFullStackStateRoot),
+        [string] $ExpectedWorktreeRoot
+    )
+
+    $path = Get-NervLeaderDemoSessionPointerPath -StateRoot $StateRoot
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "No current leader-demo session is recorded at '$path'."
+    }
+
+    try {
+        $pointer = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -Depth 5
+    }
+    catch {
+        throw "Leader-demo session pointer at '$path' is not valid JSON."
+    }
+
+    if ($pointer.schemaVersion -ne 1) {
+        throw "Leader-demo session pointer at '$path' has unsupported schema version '$($pointer.schemaVersion)'."
+    }
+    $sessionId = "$($pointer.sessionId)"
+    if ($sessionId -notmatch $script:NervFullStackSessionIdPattern) {
+        throw "Invalid leader-demo session ID '$sessionId' in '$path'."
+    }
+    if ([string]::IsNullOrWhiteSpace("$($pointer.worktreeRoot)")) {
+        throw "Leader-demo session pointer at '$path' has no worktree root."
+    }
+    if ($script:NervLeaderDemoOwnershipStates -cnotcontains "$($pointer.ownershipState)") {
+        throw "Leader-demo session pointer at '$path' has invalid ownership state '$($pointer.ownershipState)'."
+    }
+    if ("$($pointer.ownershipState)" -eq 'Reserved') {
+        $propertyNames = @($pointer.PSObject.Properties.Name)
+        $hasCreatedAt = $propertyNames -ccontains 'createdAtUtc'
+        $hasOwnerPid = $propertyNames -ccontains 'ownerPid'
+        $hasOwnerStart = $propertyNames -ccontains 'ownerProcessStartTimeUtc'
+        $isLegacyReservation = -not $hasCreatedAt -and -not $hasOwnerPid -and -not $hasOwnerStart
+        if ($isLegacyReservation) {
+            $fallbackCreatedAt = (Get-Item -LiteralPath $path -ErrorAction Stop).LastWriteTimeUtc.ToString('O')
+            $pointer | Add-Member -NotePropertyName createdAtUtc -NotePropertyValue $fallbackCreatedAt
+            $pointer | Add-Member -NotePropertyName ownerPid -NotePropertyValue $null
+            $pointer | Add-Member -NotePropertyName ownerProcessStartTimeUtc -NotePropertyValue $null
+        }
+        elseif (-not $hasCreatedAt -or -not $hasOwnerPid -or -not $hasOwnerStart) {
+            throw "Leader-demo Reserved pointer at '$path' has incomplete owner identity metadata."
+        }
+        else {
+            try { [void] [DateTimeOffset]::Parse("$($pointer.createdAtUtc)") }
+            catch { throw "Leader-demo session pointer at '$path' has invalid creation time '$($pointer.createdAtUtc)'." }
+            $ownerPid = 0
+            if (-not [int]::TryParse("$($pointer.ownerPid)", [ref] $ownerPid) -or $ownerPid -lt 1) {
+                throw "Leader-demo Reserved pointer at '$path' has invalid owner PID '$($pointer.ownerPid)'."
+            }
+            try { [void] [DateTimeOffset]::Parse("$($pointer.ownerProcessStartTimeUtc)") }
+            catch { throw "Leader-demo Reserved pointer at '$path' has invalid owner process start time '$($pointer.ownerProcessStartTimeUtc)'." }
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedWorktreeRoot)) {
+        $comparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+        $actualRoot = [System.IO.Path]::GetFullPath("$($pointer.worktreeRoot)")
+        $expectedRoot = [System.IO.Path]::GetFullPath($ExpectedWorktreeRoot)
+        if (-not [string]::Equals($actualRoot, $expectedRoot, $comparison)) {
+            throw "Leader-demo session '$sessionId' belongs to worktree '$actualRoot', not '$expectedRoot'."
+        }
+    }
+
+    return $pointer
+}
+
+function Remove-NervLeaderDemoSessionPointer {
+    param(
+        [string] $StateRoot = (Get-NervFullStackStateRoot),
+        [string] $ExpectedSessionId,
+        [scriptblock] $RemoveAction
+    )
+
+    $path = Get-NervLeaderDemoSessionPointerPath -StateRoot $StateRoot
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedSessionId) -and (Test-Path -LiteralPath $path -PathType Leaf)) {
+        $pointer = Read-NervLeaderDemoSessionPointer -StateRoot $StateRoot
+        if ("$($pointer.sessionId)" -cne $ExpectedSessionId) {
+            throw "Leader-demo pointer belongs to '$($pointer.sessionId)', not expected session '$ExpectedSessionId'."
+        }
+    }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        return
+    }
+    if ($null -eq $RemoveAction) {
+        $RemoveAction = {
+            param($PointerPath)
+            Remove-Item -LiteralPath $PointerPath -Force -ErrorAction Stop
+        }
+    }
+    & $RemoveAction $path
+    if (Test-Path -LiteralPath $path) {
+        throw "Leader-demo session pointer at '$path' still exists after deletion."
     }
 }
 
@@ -331,6 +545,48 @@ function Test-NervProcessIdentity {
     }
     catch {
         return $false
+    }
+}
+
+function Get-NervProcessIdentityStatus {
+    param(
+        [Parameter(Mandatory)] [int] $ProcessId,
+        [Parameter(Mandatory)] [object] $ProcessStartTimeUtc,
+        [scriptblock] $ProcessLookupAction
+    )
+
+    if ($null -eq $ProcessLookupAction) {
+        $ProcessLookupAction = { param($ExactProcessId) Get-Process -Id $ExactProcessId -ErrorAction Stop }
+    }
+
+    try {
+        $process = & $ProcessLookupAction $ProcessId
+    }
+    catch [Microsoft.PowerShell.Commands.ProcessCommandException] {
+        return 'Absent'
+    }
+    catch {
+        return 'Unknown'
+    }
+
+    try {
+        $expected = if ($ProcessStartTimeUtc -is [DateTime]) {
+            ([DateTime] $ProcessStartTimeUtc).ToUniversalTime()
+        }
+        elseif ($ProcessStartTimeUtc -is [DateTimeOffset]) {
+            ([DateTimeOffset] $ProcessStartTimeUtc).UtcDateTime
+        }
+        else {
+            [DateTimeOffset]::Parse("$ProcessStartTimeUtc").UtcDateTime
+        }
+        $actual = $process.StartTime.ToUniversalTime()
+        if ([Math]::Abs(($actual - $expected).TotalMilliseconds) -lt 1) {
+            return 'Active'
+        }
+        return 'Mismatched'
+    }
+    catch {
+        return 'Unknown'
     }
 }
 

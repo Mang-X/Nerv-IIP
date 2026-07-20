@@ -674,6 +674,7 @@ export type NervIipPlatformGatewayWebApplicationAuthConsolePrincipalResponse = {
     environmentId?: string;
     permissionVersion?: number;
     permissionCodes?: Array<string>;
+    roleIds?: Array<string>;
 };
 
 export type NervIipPlatformGatewayWebApplicationAuthConsoleLoginRequest = {

@@ -185,6 +185,7 @@ public sealed class MembershipRepository(ApplicationDbContext context)
     public async Task<Membership?> GetFirstByUserIdAsync(UserId userId, CancellationToken cancellationToken = default)
     {
         return await DbContext.Memberships
+            .Include(x => x.Roles)
             .Where(x => x.UserId == userId)
             .OrderBy(x => x.OrganizationId)
             .ThenBy(x => x.EnvironmentId)
@@ -198,6 +199,7 @@ public sealed class MembershipRepository(ApplicationDbContext context)
         CancellationToken cancellationToken = default)
     {
         return await DbContext.Memberships
+            .Include(x => x.Roles)
             .Include(x => x.DataScopes)
             .SingleOrDefaultAsync(x => x.UserId == userId
                 && x.OrganizationId == organizationId

@@ -35,7 +35,8 @@ public sealed record MaintenanceWorkOrderListItem(
     int? ActualLaborMinutes,
     decimal? SparePartCostAmount,
     decimal? ExternalServiceCostAmount,
-    string? CostCurrencyCode);
+    string? CostCurrencyCode,
+    string? SourceReferenceId = null);
 
 public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaintenanceWorkOrdersQuery, PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>
@@ -65,7 +66,8 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
                 x.ActualLaborMinutes,
                 x.SparePartCostAmount,
                 x.ExternalServiceCostAmount,
-                x.CostCurrencyCode))
+                x.CostCurrencyCode,
+                x.SourceReferenceId))
             .Skip(skip)
             .Take(take)
             .ToArrayAsync(cancellationToken);

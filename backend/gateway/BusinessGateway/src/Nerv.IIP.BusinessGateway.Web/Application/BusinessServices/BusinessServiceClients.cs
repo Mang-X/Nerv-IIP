@@ -5125,7 +5125,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 workOrder.SparePartCostAmount,
                 workOrder.ExternalServiceCostAmount,
                 workOrder.CostCurrencyCode,
-                ActualTechnicianUserId: workOrder.ActualTechnicianUserId)).ToArray(),
+                ActualTechnicianUserId: workOrder.ActualTechnicianUserId,
+                SourceReferenceId: workOrder.SourceReferenceId)).ToArray(),
             workOrders.Skip,
             workOrders.Take,
             workOrders.Total);
@@ -5460,7 +5461,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         decimal? SparePartCostAmount = null,
         decimal? ExternalServiceCostAmount = null,
         string? CostCurrencyCode = null,
-        string? ActualTechnicianUserId = null);
+        string? ActualTechnicianUserId = null,
+        string? SourceReferenceId = null);
 
     private sealed record DownstreamMaintenancePlanListItem(
         JsonElement PlanId,

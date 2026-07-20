@@ -61,6 +61,42 @@ function Invoke-GovernanceScriptCase {
     }
 }
 
+function Test-ExactTestProcessIdentity {
+    param([Parameter(Mandatory)] [string] $IdentityPath)
+
+    if (-not (Test-Path -LiteralPath $IdentityPath -PathType Leaf)) { return $false }
+    $identity = Get-Content -LiteralPath $IdentityPath -Raw | ConvertFrom-Json
+    $process = Get-Process -Id ([int] $identity.pid) -ErrorAction SilentlyContinue
+    if ($null -eq $process) { return $false }
+    try {
+        $expected = [DateTimeOffset]::Parse("$($identity.processStartTimeUtc)").UtcDateTime
+        $actual = $process.StartTime.ToUniversalTime()
+        return [Math]::Abs(($actual - $expected).TotalMilliseconds) -lt 1
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
+function Stop-ExactTestProcessIdentity {
+    param([Parameter(Mandatory)] [string] $IdentityPath)
+
+    if (-not (Test-Path -LiteralPath $IdentityPath -PathType Leaf)) { return }
+    $identity = Get-Content -LiteralPath $IdentityPath -Raw | ConvertFrom-Json
+    $process = Get-Process -Id ([int] $identity.pid) -ErrorAction SilentlyContinue
+    if ($null -eq $process) { return }
+    try {
+        $expected = [DateTimeOffset]::Parse("$($identity.processStartTimeUtc)").UtcDateTime
+        $actual = $process.StartTime.ToUniversalTime()
+        if ([Math]::Abs(($actual - $expected).TotalMilliseconds) -ge 1) { return }
+        $process.Kill()
+        [void] $process.WaitForExit(10000)
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
 Invoke-GovernanceCase -Name 'allowed-check.ps1' -ExpectedExitCode 0
 Invoke-GovernanceCase -Name 'allowed-multi-category.ps1' -ExpectedExitCode 0
 Invoke-GovernanceCase -Name 'missing-helper.ps1' -ExpectedExitCode 1
@@ -84,6 +120,402 @@ finally {
         }
 
         Remove-Item -LiteralPath $resolvedSmokeRoot.Path -Recurse -Force
+    }
+}
+
+$failurePrecedenceRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-failure-precedence-$([System.Guid]::NewGuid().ToString('N'))"
+$faultedStreamTaskAction = {
+    param($Reader, $StreamName)
+    if ($StreamName -ceq 'stdout') {
+        return [System.Threading.Tasks.Task]::FromException[string](
+            [InvalidOperationException]::new('token=super-secret-token simulated stdout drain failure')
+        )
+    }
+    return [System.Threading.Tasks.Task]::FromResult[string]('')
+}
+try {
+    [System.IO.Directory]::CreateDirectory($failurePrecedenceRoot) | Out-Null
+
+    $withTimeoutExitFailure = $null
+    try {
+        Invoke-NativeCommandWithTimeout `
+            -Command 'pwsh' `
+            -Arguments @('-NoProfile', '-NonInteractive', '-Command', 'exit 31') `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 10 `
+            -Name 'drain-precedence-with-timeout-exit' `
+            -LogDirectory (Join-Path $failurePrecedenceRoot 'with-timeout-exit') `
+            -StreamReadTaskAction $faultedStreamTaskAction | Out-Null
+    }
+    catch { $withTimeoutExitFailure = $_ }
+    if ($null -eq $withTimeoutExitFailure -or -not $withTimeoutExitFailure.Exception.Message.Contains('exited with 31')) {
+        throw 'Invoke-NativeCommandWithTimeout must prioritize the native nonzero exit over a completed drain fault.'
+    }
+    if ($withTimeoutExitFailure.Exception.Message.Contains('super-secret-token')) {
+        throw 'Invoke-NativeCommandWithTimeout nonzero diagnostics must redact drain secrets.'
+    }
+
+    $outputExitFailure = $null
+    try {
+        Invoke-NativeCommandOutput `
+            -Command 'pwsh' `
+            -Arguments @('-NoProfile', '-NonInteractive', '-Command', 'exit 32') `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 10 `
+            -Name 'drain-precedence-output-exit' `
+            -LogDirectory (Join-Path $failurePrecedenceRoot 'output-exit') `
+            -StreamReadTaskAction $faultedStreamTaskAction | Out-Null
+    }
+    catch { $outputExitFailure = $_ }
+    if ($null -eq $outputExitFailure -or [int] $outputExitFailure.Exception.Data['ExitCode'] -ne 32) {
+        throw 'Invoke-NativeCommandOutput must preserve structured native exit data over a completed drain fault.'
+    }
+    if ($outputExitFailure.Exception.Message.Contains('super-secret-token')) {
+        throw 'Invoke-NativeCommandOutput nonzero diagnostics must redact drain secrets.'
+    }
+
+    $withTimeoutTimeoutFailure = $null
+    try {
+        Invoke-NativeCommandWithTimeout `
+            -Command 'pwsh' `
+            -Arguments @('-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 5') `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 1 `
+            -Name 'drain-precedence-with-timeout-timeout' `
+            -LogDirectory (Join-Path $failurePrecedenceRoot 'with-timeout-timeout') `
+            -StreamReadTaskAction $faultedStreamTaskAction | Out-Null
+    }
+    catch { $withTimeoutTimeoutFailure = $_ }
+    if ($null -eq $withTimeoutTimeoutFailure -or -not $withTimeoutTimeoutFailure.Exception.Message.Contains('timed out after 1 seconds')) {
+        throw 'Invoke-NativeCommandWithTimeout must prioritize its timeout over a completed drain fault.'
+    }
+    if ($withTimeoutTimeoutFailure.Exception.Message.Contains('super-secret-token')) {
+        throw 'Invoke-NativeCommandWithTimeout timeout diagnostics must redact drain secrets.'
+    }
+
+    $outputTimeoutFailure = $null
+    try {
+        Invoke-NativeCommandOutput `
+            -Command 'pwsh' `
+            -Arguments @('-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 5') `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 1 `
+            -Name 'drain-precedence-output-timeout' `
+            -LogDirectory (Join-Path $failurePrecedenceRoot 'output-timeout') `
+            -StreamReadTaskAction $faultedStreamTaskAction | Out-Null
+    }
+    catch { $outputTimeoutFailure = $_ }
+    if ($null -eq $outputTimeoutFailure -or -not $outputTimeoutFailure.Exception.Message.Contains('timed out after 1 seconds')) {
+        throw 'Invoke-NativeCommandOutput must prioritize its timeout over a completed drain fault.'
+    }
+    if ($outputTimeoutFailure.Exception.Message.Contains('super-secret-token')) {
+        throw 'Invoke-NativeCommandOutput timeout diagnostics must redact drain secrets.'
+    }
+
+    foreach ($zeroExitCase in @(
+        [pscustomobject]@{
+            Name = 'Invoke-NativeCommandWithTimeout'
+            Action = {
+                Invoke-NativeCommandWithTimeout `
+                    -Command 'pwsh' `
+                    -Arguments @('-NoProfile', '-NonInteractive', '-Command', 'exit 0') `
+                    -WorkingDirectory $repoRoot `
+                    -TimeoutSeconds 10 `
+                    -Name 'drain-precedence-with-timeout-zero' `
+                    -LogDirectory (Join-Path $failurePrecedenceRoot 'with-timeout-zero') `
+                    -StreamReadTaskAction $faultedStreamTaskAction | Out-Null
+            }
+        },
+        [pscustomobject]@{
+            Name = 'Invoke-NativeCommandOutput'
+            Action = {
+                Invoke-NativeCommandOutput `
+                    -Command 'pwsh' `
+                    -Arguments @('-NoProfile', '-NonInteractive', '-Command', 'exit 0') `
+                    -WorkingDirectory $repoRoot `
+                    -TimeoutSeconds 10 `
+                    -Name 'drain-precedence-output-zero' `
+                    -LogDirectory (Join-Path $failurePrecedenceRoot 'output-zero') `
+                    -StreamReadTaskAction $faultedStreamTaskAction | Out-Null
+            }
+        }
+    )) {
+        $drainOnlyFailure = $null
+        try { & $zeroExitCase.Action }
+        catch { $drainOnlyFailure = $_ }
+        if ($null -eq $drainOnlyFailure -or -not $drainOnlyFailure.Exception.Message.Contains('redirected stream drain failed')) {
+            throw "$($zeroExitCase.Name) must surface a drain failure when the root exits zero."
+        }
+        if ($drainOnlyFailure.Exception.Message.Contains('super-secret-token')) {
+            throw "$($zeroExitCase.Name) drain-only diagnostics must redact secrets."
+        }
+        if (-not $drainOnlyFailure.Exception.Message.Contains('token=<redacted>')) {
+            throw "$($zeroExitCase.Name) drain-only diagnostics must retain a useful redacted marker."
+        }
+    }
+}
+finally {
+    $resolvedFailurePrecedenceRoot = Resolve-Path $failurePrecedenceRoot -ErrorAction SilentlyContinue
+    if ($resolvedFailurePrecedenceRoot) {
+        $tempRoot = [System.IO.Path]::GetTempPath()
+        if (-not $resolvedFailurePrecedenceRoot.Path.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove failure-precedence fixture outside temp: $($resolvedFailurePrecedenceRoot.Path)"
+        }
+        Remove-Item -LiteralPath $resolvedFailurePrecedenceRoot.Path -Recurse -Force
+    }
+}
+
+$partialEofResult = Invoke-NativeCommandOutput `
+    -Command 'pwsh' `
+    -Arguments @(
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        "[Console]::Out.Write('stdout-final-partial'); [Console]::Error.Write('stderr-final-partial')"
+    ) `
+    -WorkingDirectory $repoRoot `
+    -TimeoutSeconds 10 `
+    -Name 'partial-eof-output'
+if ($partialEofResult.Stdout -cne 'stdout-final-partial') {
+    throw "Invoke-NativeCommandOutput changed final partial stdout at normal EOF: '$($partialEofResult.Stdout)'."
+}
+if ($partialEofResult.Stderr -cne 'stderr-final-partial') {
+    throw "Invoke-NativeCommandOutput changed final partial stderr at normal EOF: '$($partialEofResult.Stderr)'."
+}
+if ($partialEofResult.PartialOutput -or @($partialEofResult.UnfinishedStreams).Count -ne 0) {
+    throw 'Invoke-NativeCommandOutput must identify normal EOF output as complete.'
+}
+$aspireOutputDefinition = (Get-Command Invoke-AspireOutput -ErrorAction Stop).Definition
+if (-not $aspireOutputDefinition.Contains('[switch] $AllowPartialOutput') -or -not $aspireOutputDefinition.Contains('-AllowPartialOutput:$AllowPartialOutput')) {
+    throw 'Invoke-AspireOutput must explicitly forward the narrow partial-output opt-in.'
+}
+
+$streamDrainRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-stream-drain-$([System.Guid]::NewGuid().ToString('N'))"
+$streamDrainOutputIdentity = Join-Path $streamDrainRoot 'output-child.json'
+$streamDrainOptInIdentity = Join-Path $streamDrainRoot 'output-opt-in-child.json'
+$streamDrainNonzeroIdentity = Join-Path $streamDrainRoot 'output-nonzero-child.json'
+$streamDrainTimeoutIdentity = Join-Path $streamDrainRoot 'timeout-child.json'
+try {
+    [System.IO.Directory]::CreateDirectory($streamDrainRoot) | Out-Null
+    $streamDrainChild = Join-Path $streamDrainRoot 'inherited-handle-child.ps1'
+    $streamDrainLauncher = Join-Path $streamDrainRoot 'inherited-handle-launcher.ps1'
+    $streamDrainParent = Join-Path $streamDrainRoot 'inherited-handle-parent.ps1'
+    [System.IO.File]::WriteAllText(
+        $streamDrainChild,
+        @'
+param($IdentityPath, $SleepSeconds)
+$process = Get-Process -Id $PID -ErrorAction Stop
+$identity = [ordered]@{ pid = $PID; processStartTimeUtc = $process.StartTime.ToUniversalTime().ToString('O') }
+[System.IO.File]::WriteAllText($IdentityPath, ($identity | ConvertTo-Json -Compress), [System.Text.UTF8Encoding]::new($false))
+[Console]::Out.WriteLine('inherited child stdout')
+[Console]::Error.WriteLine('inherited child stderr')
+Start-Sleep -Seconds $SleepSeconds
+'@,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+    [System.IO.File]::WriteAllText(
+        $streamDrainLauncher,
+        @'
+param($ChildScript, $IdentityPath, $SleepSeconds)
+$startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+$startInfo.FileName = (Get-Process -Id $PID -ErrorAction Stop).Path
+$startInfo.UseShellExecute = $false
+$startInfo.RedirectStandardOutput = $false
+$startInfo.RedirectStandardError = $false
+foreach ($argument in @('-NoProfile', '-NonInteractive', '-File', $ChildScript, $IdentityPath, "$SleepSeconds")) {
+    [void] $startInfo.ArgumentList.Add($argument)
+}
+$child = [System.Diagnostics.Process]::Start($startInfo)
+$child.Dispose()
+'@,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+    [System.IO.File]::WriteAllText(
+        $streamDrainParent,
+        @'
+param($LauncherScript, $ChildScript, $IdentityPath, $ChildSleepSeconds, $ParentSleepSeconds, $RootExitCode = 0)
+$startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+$startInfo.FileName = (Get-Process -Id $PID -ErrorAction Stop).Path
+$startInfo.UseShellExecute = $false
+$startInfo.RedirectStandardOutput = $false
+$startInfo.RedirectStandardError = $false
+foreach ($argument in @('-NoProfile', '-NonInteractive', '-File', $LauncherScript, $ChildScript, $IdentityPath, "$ChildSleepSeconds")) {
+    [void] $startInfo.ArgumentList.Add($argument)
+}
+$launcher = [System.Diagnostics.Process]::Start($startInfo)
+[void] $launcher.WaitForExit(5000)
+$launcher.Dispose()
+$deadline = [DateTimeOffset]::UtcNow.AddSeconds(5)
+while (-not [System.IO.File]::Exists($IdentityPath) -and [DateTimeOffset]::UtcNow -lt $deadline) {
+    Start-Sleep -Milliseconds 25
+}
+if (-not [System.IO.File]::Exists($IdentityPath)) { throw 'Inherited-handle child did not publish identity.' }
+[Console]::Out.WriteLine('inherited parent stdout')
+[Console]::Error.WriteLine('inherited parent stderr')
+[Console]::Out.Write('inherited parent stdout partial')
+[Console]::Error.Write('inherited parent stderr partial token=partial-output-secret')
+if ([int] $ParentSleepSeconds -gt 0) { Start-Sleep -Seconds $ParentSleepSeconds }
+if ([int] $RootExitCode -ne 0) { exit ([int] $RootExitCode) }
+'@,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+
+    $script:ScriptAutomationStreamDrainTimeoutMilliseconds = 500
+    $defaultPartialStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $defaultPartialFailure = $null
+    try {
+        Invoke-NativeCommandOutput `
+            -Command 'pwsh' `
+            -Arguments @('-NoProfile', '-NonInteractive', '-File', $streamDrainParent, $streamDrainLauncher, $streamDrainChild, $streamDrainOutputIdentity, '30', '0') `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 10 `
+            -Name 'stream-drain-output-default' `
+            -LogDirectory (Join-Path $streamDrainRoot 'output-default-logs') | Out-Null
+    }
+    catch { $defaultPartialFailure = $_ }
+    $defaultPartialStopwatch.Stop()
+    if ($null -eq $defaultPartialFailure -or -not [bool] $defaultPartialFailure.Exception.Data['PartialOutput']) {
+        throw 'Invoke-NativeCommandOutput must reject partial redirected output by default with structured failure data.'
+    }
+    if (@($defaultPartialFailure.Exception.Data['UnfinishedStreams']).Count -eq 0) {
+        throw 'Partial-output failure must identify its unfinished redirected streams.'
+    }
+    if ($defaultPartialStopwatch.Elapsed.TotalSeconds -gt 15) {
+        throw "Invoke-NativeCommandOutput default rejection waited for an inherited handle: $($defaultPartialStopwatch.Elapsed)."
+    }
+    foreach ($logName in @('stdout.log', 'stderr.log')) {
+        $logPath = Join-Path $streamDrainRoot "output-default-logs/$logName"
+        $logText = [System.IO.File]::ReadAllText($logPath)
+        if (-not $logText.Contains('[NERV-IIP PARTIAL OUTPUT:')) {
+            throw "Partial output diagnostic '$logName' must contain an explicit truncation marker."
+        }
+        if (-not $logText.Contains('inherited parent')) {
+            throw "Partial output diagnostic '$logName' discarded the captured root prefix."
+        }
+        if ($logText.Contains('partial-output-secret') -or ($logName -ceq 'stderr.log' -and -not $logText.Contains('token=<redacted>'))) {
+            throw "Partial output diagnostic '$logName' did not redact captured output before publishing the truncation marker."
+        }
+    }
+    Stop-ExactTestProcessIdentity -IdentityPath $streamDrainOutputIdentity
+    if (Test-ExactTestProcessIdentity -IdentityPath $streamDrainOutputIdentity) {
+        throw 'Default partial-output fixture exact child cleanup did not complete.'
+    }
+
+    $outputStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $outputResult = Invoke-NativeCommandOutput `
+        -Command 'pwsh' `
+        -Arguments @('-NoProfile', '-NonInteractive', '-File', $streamDrainParent, $streamDrainLauncher, $streamDrainChild, $streamDrainOptInIdentity, '30', '0') `
+        -WorkingDirectory $repoRoot `
+        -TimeoutSeconds 10 `
+        -Name 'stream-drain-output' `
+        -LogDirectory (Join-Path $streamDrainRoot 'output-logs') `
+        -AllowPartialOutput
+    $outputStopwatch.Stop()
+    if ($outputStopwatch.Elapsed.TotalSeconds -gt 15) {
+        throw "Invoke-NativeCommandOutput waited for an inherited handle after root exit: $($outputStopwatch.Elapsed)."
+    }
+    foreach ($expected in @('inherited parent stdout', 'inherited parent stdout partial')) {
+        if (-not $outputResult.Stdout.Contains($expected)) {
+            throw "Invoke-NativeCommandOutput discarded root stdout received before the inherited-handle cutoff: '$expected'."
+        }
+    }
+    foreach ($expected in @('inherited parent stderr', 'inherited parent stderr partial')) {
+        if (-not $outputResult.Stderr.Contains($expected)) {
+            throw "Invoke-NativeCommandOutput discarded root stderr received before the inherited-handle cutoff: '$expected'."
+        }
+    }
+    if (-not $outputResult.PartialOutput -or @($outputResult.UnfinishedStreams).Count -eq 0) {
+        throw 'Invoke-NativeCommandOutput opt-in result must expose partial-output state and unfinished streams.'
+    }
+    foreach ($logName in @('stdout.log', 'stderr.log')) {
+        $logPath = Join-Path $streamDrainRoot "output-logs/$logName"
+        if (-not (Test-Path -LiteralPath $logPath -PathType Leaf)) {
+            throw "Bounded output drain must publish its '$logName' diagnostic path."
+        }
+        $expected = if ($logName -ceq 'stdout.log') { 'inherited parent stdout partial' } else { 'inherited parent stderr partial' }
+        if (-not [System.IO.File]::ReadAllText($logPath).Contains($expected)) {
+            throw "Bounded output drain '$logName' discarded root output received before cutoff: '$expected'."
+        }
+        if (-not [System.IO.File]::ReadAllText($logPath).Contains('[NERV-IIP PARTIAL OUTPUT:')) {
+            throw "Bounded output drain '$logName' must retain the truncation marker when partial output is explicitly allowed."
+        }
+    }
+    Stop-ExactTestProcessIdentity -IdentityPath $streamDrainOptInIdentity
+    if (Test-ExactTestProcessIdentity -IdentityPath $streamDrainOptInIdentity) {
+        throw 'Output drain fixture exact child cleanup did not complete.'
+    }
+
+    $partialNonzeroFailure = $null
+    try {
+        Invoke-NativeCommandOutput `
+            -Command 'pwsh' `
+            -Arguments @('-NoProfile', '-NonInteractive', '-File', $streamDrainParent, $streamDrainLauncher, $streamDrainChild, $streamDrainNonzeroIdentity, '30', '0', '33') `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 10 `
+            -Name 'stream-drain-output-nonzero' `
+            -LogDirectory (Join-Path $streamDrainRoot 'output-nonzero-logs') | Out-Null
+    }
+    catch { $partialNonzeroFailure = $_ }
+    if ($null -eq $partialNonzeroFailure -or [int] $partialNonzeroFailure.Exception.Data['ExitCode'] -ne 33) {
+        throw 'Invoke-NativeCommandOutput must prioritize a native nonzero exit over partial-output rejection.'
+    }
+    Stop-ExactTestProcessIdentity -IdentityPath $streamDrainNonzeroIdentity
+    if (Test-ExactTestProcessIdentity -IdentityPath $streamDrainNonzeroIdentity) {
+        throw 'Partial nonzero fixture exact child cleanup did not complete.'
+    }
+
+    $timeoutStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $timeoutFailure = $null
+    try {
+        Invoke-NativeCommandWithTimeout `
+            -Command 'pwsh' `
+            -Arguments @('-NoProfile', '-NonInteractive', '-File', $streamDrainParent, $streamDrainLauncher, $streamDrainChild, $streamDrainTimeoutIdentity, '30', '30') `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 10 `
+            -Name 'stream-drain-timeout' `
+            -LogDirectory (Join-Path $streamDrainRoot 'timeout-logs') | Out-Null
+    }
+    catch { $timeoutFailure = $_ }
+    $timeoutStopwatch.Stop()
+    if ($null -eq $timeoutFailure -or -not $timeoutFailure.Exception.Message.Contains('timed out after 10 seconds')) {
+        throw 'Invoke-NativeCommandWithTimeout must preserve its timeout failure.'
+    }
+    if ($timeoutStopwatch.Elapsed.TotalSeconds -gt 25) {
+        throw "Invoke-NativeCommandWithTimeout waited for an inherited handle after timeout: $($timeoutStopwatch.Elapsed)."
+    }
+    foreach ($logName in @('stdout.log', 'stderr.log')) {
+        $logPath = Join-Path $streamDrainRoot "timeout-logs/$logName"
+        if (-not (Test-Path -LiteralPath $logPath -PathType Leaf)) {
+            throw "Bounded timeout drain must publish its '$logName' diagnostic path."
+        }
+        $expected = if ($logName -ceq 'stdout.log') { 'inherited parent stdout partial' } else { 'inherited parent stderr partial' }
+        if (-not [System.IO.File]::ReadAllText($logPath).Contains($expected)) {
+            throw "Bounded timeout drain '$logName' discarded root output received before cutoff: '$expected'."
+        }
+        if (-not [System.IO.File]::ReadAllText($logPath).Contains('[NERV-IIP PARTIAL OUTPUT:')) {
+            throw "Bounded timeout drain '$logName' must contain an explicit truncation marker."
+        }
+    }
+    if (-not (Test-Path -LiteralPath $streamDrainTimeoutIdentity -PathType Leaf)) {
+        throw 'Timeout drain fixture did not publish the inherited child identity before root timeout.'
+    }
+    Stop-ExactTestProcessIdentity -IdentityPath $streamDrainTimeoutIdentity
+    if (Test-ExactTestProcessIdentity -IdentityPath $streamDrainTimeoutIdentity) {
+        throw 'Timeout drain fixture exact child cleanup did not complete.'
+    }
+}
+finally {
+    Stop-ExactTestProcessIdentity -IdentityPath $streamDrainOutputIdentity
+    Stop-ExactTestProcessIdentity -IdentityPath $streamDrainOptInIdentity
+    Stop-ExactTestProcessIdentity -IdentityPath $streamDrainNonzeroIdentity
+    Stop-ExactTestProcessIdentity -IdentityPath $streamDrainTimeoutIdentity
+    $resolvedStreamDrainRoot = Resolve-Path $streamDrainRoot -ErrorAction SilentlyContinue
+    if ($resolvedStreamDrainRoot) {
+        $tempRoot = [System.IO.Path]::GetTempPath()
+        if (-not $resolvedStreamDrainRoot.Path.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove stream-drain fixture outside temp: $($resolvedStreamDrainRoot.Path)"
+        }
+        Remove-Item -LiteralPath $resolvedStreamDrainRoot.Path -Recurse -Force
     }
 }
 

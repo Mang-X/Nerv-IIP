@@ -156,7 +156,8 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string? failureModeCode = null,
         string? failureCauseCode = null,
         string? assignedTechnicianUserId = null,
-        int? estimatedLaborMinutes = null)
+        int? estimatedLaborMinutes = null,
+        string? sourceReferenceId = null)
     {
         var normalizedAlarmId = MaintenanceText.Required(sourceAlarmId, nameof(sourceAlarmId));
         return new MaintenanceWorkOrder(
@@ -167,7 +168,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
             normalizedAlarmId,
             openedBy,
             sourceType: MaintenanceWorkOrderSourceTypes.Alarm,
-            sourceReferenceId: normalizedAlarmId,
+            sourceReferenceId: sourceReferenceId ?? normalizedAlarmId,
             diagnosticDescription: diagnosticDescription,
             failureModeCode: failureModeCode,
             failureCauseCode: failureCauseCode,

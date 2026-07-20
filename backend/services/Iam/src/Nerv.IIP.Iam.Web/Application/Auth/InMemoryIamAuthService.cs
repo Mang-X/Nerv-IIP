@@ -67,7 +67,8 @@ public sealed class InMemoryIamAuthService(
                     currentPrincipal.OrganizationId,
                     currentPrincipal.EnvironmentId,
                     currentPrincipal.PermissionVersion,
-                    currentPrincipal.PermissionCodes));
+                    currentPrincipal.PermissionCodes,
+                    currentPrincipal.RoleIds));
             }
             catch (UnauthorizedAccessException)
             {
@@ -89,7 +90,8 @@ public sealed class InMemoryIamAuthService(
             externalClient.OrganizationId,
             externalClient.EnvironmentId,
             externalClient.PermissionVersion,
-            externalClient.Scope));
+            externalClient.Scope,
+            []));
     }
 
     public Task<string?> GetAuthenticatedUserIdAsync(HttpContext httpContext, CancellationToken cancellationToken)

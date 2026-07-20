@@ -76,7 +76,8 @@ public sealed class IamAuthServiceScopeTests
             "org-001",
             "env-dev",
             user.PermissionVersion,
-            ["business.mes.work-orders.read"]);
+            ["business.mes.work-orders.read"],
+            []);
 
         var result = await service.PrincipalHasPermissionAsync(
             principal,
@@ -149,7 +150,8 @@ public sealed class IamAuthServiceScopeTests
             "org-001",
             "env-dev",
             user.PermissionVersion,
-            ["business.mes.work-orders.read"]);
+            ["business.mes.work-orders.read"],
+            []);
 
         var result = await service.PrincipalHasPermissionAsync(
             principal,
@@ -245,11 +247,13 @@ public sealed class IamAuthServiceScopeTests
         Assert.Equal("org-aaa", principalAaa.OrganizationId);
         Assert.Equal("env-dev", principalAaa.EnvironmentId);
         Assert.Empty(principalAaa.PermissionCodes);
+        Assert.Equal(["role-empty"], principalAaa.RoleIds);
 
         Assert.NotNull(principalZzz);
         Assert.Equal("org-zzz", principalZzz.OrganizationId);
         Assert.Equal("env-prod", principalZzz.EnvironmentId);
         Assert.Equal(["ops.tasks.create"], principalZzz.PermissionCodes);
+        Assert.Equal(["role-ops"], principalZzz.RoleIds);
     }
 
     [Fact]
@@ -420,13 +424,13 @@ public sealed class IamAuthServiceScopeTests
             userId,
             new OrganizationId("org-aaa"),
             new IamEnvironmentId("env-dev"),
-            []);
+            [new RoleId("role-empty")]);
         private readonly Membership scopedMembership = new(
             new MembershipId("membership-scoped"),
             userId,
             new OrganizationId("org-zzz"),
             new IamEnvironmentId("env-prod"),
-            []);
+            [new RoleId("role-ops")]);
 
         public Task<Membership?> GetFirstByUserIdAsync(UserId userId, CancellationToken cancellationToken = default)
         {

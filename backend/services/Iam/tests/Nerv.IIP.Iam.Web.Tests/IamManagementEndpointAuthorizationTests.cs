@@ -130,6 +130,7 @@ public sealed class IamManagementEndpointAuthorizationTests
                 "org-target",
                 "env-prod",
                 1,
+                [],
                 []));
         }
 

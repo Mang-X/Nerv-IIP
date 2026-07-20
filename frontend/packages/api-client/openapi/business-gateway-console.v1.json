@@ -41099,6 +41099,10 @@
           "actualTechnicianUserId": {
             "type": "string",
             "nullable": true
+          },
+          "sourceReferenceId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

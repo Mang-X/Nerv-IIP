@@ -58,6 +58,42 @@ function Wait-PostgresReady {
     } while ($true)
 }
 
+function New-AcceptanceDatabase {
+    param(
+        [string]$ComposeFile,
+        [string]$DatabaseName
+    )
+
+    $deadline = (Get-Date).AddSeconds(30)
+    do {
+        try {
+            # pg_isready can briefly succeed while the container is still
+            # restarting. Use TCP and check the reserved random name before
+            # CREATE on every retry. If CREATE commits but the client loses its
+            # response, the next existence check converges without a duplicate.
+            $databaseExists = Invoke-NativeCommandOutput -Command 'docker' -Arguments @(
+                'compose', '-f', $ComposeFile, 'exec', '-T', 'postgres',
+                'psql', '-h', '127.0.0.1', '-U', 'nerv', '-d', 'postgres',
+                '-X', '-tA', '-v', 'ON_ERROR_STOP=1', '-c', "SELECT 1 FROM pg_database WHERE datname = '$DatabaseName';"
+            ) -WorkingDirectory $root -Name 'man517-check-database'
+            if ("$($databaseExists.Stdout)".Trim() -eq '1') {
+                return
+            }
+
+            Invoke-DockerCompose -Arguments @(
+                '-f', $ComposeFile, 'exec', '-T', 'postgres',
+                'psql', '-h', '127.0.0.1', '-U', 'nerv', '-d', 'postgres',
+                '-v', 'ON_ERROR_STOP=1', '-c', "CREATE DATABASE $DatabaseName;"
+            ) -WorkingDirectory $root -Name 'man517-create-database' | Out-Null
+            return
+        }
+        catch {
+            if ((Get-Date) -ge $deadline) { throw }
+            Start-Sleep -Milliseconds 500
+        }
+    } while ($true)
+}
+
 function Wait-Healthy {
     param([string]$Uri, [object]$ManagedProcess)
     $deadline = (Get-Date).AddSeconds(90)
@@ -284,6 +320,8 @@ $masterDataProcess = $null
 $erpProcess = $null
 $demandPlanningProcess = $null
 $databaseCreated = $false
+$acceptanceFailure = $null
+$cleanupFailures = [System.Collections.Generic.List[string]]::new()
 
 $masterDataProject = Join-Path $root 'backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Nerv.IIP.Business.MasterData.Web.csproj'
 $erpProject = Join-Path $root 'backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj'
@@ -294,8 +332,11 @@ $demandPlanningTestsProject = Join-Path $root 'backend/services/Business/DemandP
 try {
     Invoke-DockerCompose -Arguments @('-f', $composeFile, 'up', '-d', '--pull', 'never', 'postgres', 'redis') -WorkingDirectory $root -Name 'man517-infrastructure-up' | Out-Null
     Wait-PostgresReady -ComposeFile $composeFile
-    Invoke-DockerCompose -Arguments @('-f', $composeFile, 'exec', '-T', 'postgres', 'psql', '-U', 'nerv', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "CREATE DATABASE $databaseName;") -WorkingDirectory $root -Name 'man517-create-database' | Out-Null
+    # This random database name is reserved by this run. Record cleanup intent
+    # before the first SQL attempt because the server may commit CREATE and the
+    # client can still lose the response; the idempotent helper then safely retries.
     $databaseCreated = $true
+    New-AcceptanceDatabase -ComposeFile $composeFile -DatabaseName $databaseName
 
     if (-not $SkipBuild) {
         foreach ($project in @($masterDataProject, $erpProject, $demandPlanningProject, $probeProject, $demandPlanningTestsProject)) {
@@ -427,19 +468,47 @@ catch {
     $acceptanceFailure = $_
     try { Export-Man517FailureDiagnostics -FailureRecord $acceptanceFailure }
     catch { Write-Diagnostic -Level 'WARN' -Message "MAN-517 diagnostic export failed: $($_.Exception.Message)" }
-    throw $acceptanceFailure
 }
 finally {
-    if ($demandPlanningProcess) { $demandPlanningProcess.Stop.Invoke('MAN-517 verification cleanup') | Out-Null }
-    if ($erpProcess) { $erpProcess.Stop.Invoke('MAN-517 verification cleanup') | Out-Null }
-    if ($masterDataProcess) { $masterDataProcess.Stop.Invoke('MAN-517 verification cleanup') | Out-Null }
+    if ($demandPlanningProcess) {
+        try { $demandPlanningProcess.Stop.Invoke('MAN-517 verification cleanup') | Out-Null }
+        catch { $cleanupFailures.Add("demand-planning process: $($_.Exception.Message)") }
+    }
+    if ($erpProcess) {
+        try { $erpProcess.Stop.Invoke('MAN-517 verification cleanup') | Out-Null }
+        catch { $cleanupFailures.Add("erp process: $($_.Exception.Message)") }
+    }
+    if ($masterDataProcess) {
+        try { $masterDataProcess.Stop.Invoke('MAN-517 verification cleanup') | Out-Null }
+        catch { $cleanupFailures.Add("master-data process: $($_.Exception.Message)") }
+    }
     if ($databaseCreated) {
-        Invoke-DockerCompose -Arguments @('-f', $composeFile, 'exec', '-T', 'postgres', 'psql', '-U', 'nerv', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "DROP DATABASE IF EXISTS $databaseName WITH (FORCE);") -WorkingDirectory $root -Name 'man517-drop-database' | Out-Null
+        try {
+            Invoke-DockerCompose -Arguments @('-f', $composeFile, 'exec', '-T', 'postgres', 'psql', '-U', 'nerv', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "DROP DATABASE IF EXISTS $databaseName WITH (FORCE);") -WorkingDirectory $root -Name 'man517-drop-database' | Out-Null
+        }
+        catch { $cleanupFailures.Add("database: $($_.Exception.Message)") }
     }
     $servicesToStop = @()
     if ($startedPostgres) { $servicesToStop += 'postgres' }
     if ($startedRedis) { $servicesToStop += 'redis' }
     if ($servicesToStop.Count -gt 0) {
-        Invoke-DockerCompose -Arguments (@('-f', $composeFile, 'stop') + $servicesToStop) -WorkingDirectory $root -Name 'man517-infrastructure-stop' | Out-Null
+        try {
+            Invoke-DockerCompose -Arguments (@('-f', $composeFile, 'stop') + $servicesToStop) -WorkingDirectory $root -Name 'man517-infrastructure-stop' | Out-Null
+        }
+        catch { $cleanupFailures.Add("infrastructure: $($_.Exception.Message)") }
     }
+}
+
+if ($cleanupFailures.Count -gt 0) {
+    $cleanupSummary = @($cleanupFailures | ForEach-Object { Protect-ScriptAutomationText -Text $_ }) -join '; '
+    if ($null -ne $acceptanceFailure) {
+        Write-Diagnostic -Level 'WARN' -Message "Original acceptance failure preserved; cleanup also failed: $cleanupSummary"
+    }
+    else {
+        throw "MAN-517 cleanup failed: $cleanupSummary"
+    }
+}
+
+if ($null -ne $acceptanceFailure) {
+    throw $acceptanceFailure
 }

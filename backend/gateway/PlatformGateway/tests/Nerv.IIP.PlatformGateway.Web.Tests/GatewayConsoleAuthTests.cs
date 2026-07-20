@@ -20,7 +20,8 @@ public sealed class GatewayConsoleAuthTests
         "org-001",
         "env-dev",
         7,
-        ["iam.users.read", "iam.users.manage"]);
+        ["iam.users.read", "iam.users.manage"],
+        ["role-platform-admin"]);
 
     [Fact]
     public async Task Console_login_forwards_to_iam_and_returns_session_payload()
@@ -301,7 +302,8 @@ public sealed class GatewayConsoleAuthTests
                     organizationId = "org-001",
                     environmentId = "env-dev",
                     permissionVersion = 7,
-                    permissionCodes = new[] { "iam.users.read", "iam.users.manage" }
+                    permissionCodes = new[] { "iam.users.read", "iam.users.manage" },
+                    roleIds = new[] { "role-platform-admin" }
                 }))
             };
         });
@@ -343,6 +345,7 @@ public sealed class GatewayConsoleAuthTests
         Assert.Equal(expected.EnvironmentId, actual.EnvironmentId);
         Assert.Equal(expected.PermissionVersion, actual.PermissionVersion);
         Assert.Equal(expected.PermissionCodes, actual.PermissionCodes);
+        Assert.Equal(expected.RoleIds, actual.RoleIds);
     }
 
     private sealed class FakeGatewayIamAuthClient : IGatewayIamAuthClient
