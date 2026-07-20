@@ -544,7 +544,11 @@ function formatError(error: unknown) {
           <RouterLink
             :to="{
               path: '/equipment/telemetry/history',
-              query: { deviceAssetId: filters.deviceAssetId },
+              query: {
+                deviceAssetId: filters.deviceAssetId,
+                windowEndUtc: historyFilters.windowEndUtc,
+                windowStartUtc: historyFilters.windowStartUtc,
+              },
             }"
           >
             <LineChartIcon aria-hidden="true" />
@@ -773,7 +777,11 @@ function formatError(error: unknown) {
               <RouterLink
                 :to="{
                   path: '/equipment/telemetry/history',
-                  query: { deviceAssetId: filters.deviceAssetId },
+                  query: {
+                    deviceAssetId: filters.deviceAssetId,
+                    windowEndUtc: historyFilters.windowEndUtc,
+                    windowStartUtc: historyFilters.windowStartUtc,
+                  },
                 }"
               >
                 <LineChartIcon aria-hidden="true" />
