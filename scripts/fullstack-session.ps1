@@ -209,7 +209,8 @@ function Start-NervFullStackSession {
                             -Arguments @('stop', '--apphost', $appHostProject, '--non-interactive', '--nologo') `
                             -WorkingDirectory $repoRoot `
                             -TimeoutSeconds 150 `
-                            -Name "fullstack-$newSessionId-transient-start-stop" | Out-Null
+                            -Name "fullstack-$newSessionId-transient-start-stop" `
+                            -AllowPartialOutput | Out-Null
                     }
                     catch { }
                 }

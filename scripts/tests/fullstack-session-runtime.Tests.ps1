@@ -165,10 +165,21 @@ $emptyResourcesFailed = $false
 try { Read-NervAspireJson -Text '{"resources":[]}' -RequireResources | Out-Null } catch { $emptyResourcesFailed = $true }
 Assert-True $emptyResourcesFailed 'Aspire describe JSON parsing must reject an empty resources collection.'
 $describeDefinition = (Get-Command Get-NervAspireDescribeObject -ErrorAction Stop).Definition
-Assert-True ($describeDefinition.Contains('-AllowPartialOutput')) 'Aspire describe may opt in only when strict JSON/resource validation follows.'
+Assert-True (-not $describeDefinition.Contains('-AllowPartialOutput')) 'Parse-critical Aspire describe must reject partial redirected output.'
 Assert-True ($describeDefinition.Contains('-RequireResources')) 'Aspire describe must require a complete resource collection after parsing.'
 $waitDefinition = (Get-Command Wait-NervAspireResource -ErrorAction Stop).Definition
 Assert-True ($waitDefinition.Contains('-AllowPartialOutput')) 'Aspire wait may opt in because the native exit code is authoritative and output is discarded.'
+$stopDefinition = (Get-Command Stop-NervFullStackSession -ErrorAction Stop).Definition
+Assert-True ($stopDefinition.Contains('-AllowPartialOutput')) 'Exact full-stack Aspire stop must allow partial discarded output when exit code is authoritative.'
+$startActionIndex = $fullStackSessionText.IndexOf('-StartAction {', [StringComparison]::Ordinal)
+$cleanupActionIndex = $fullStackSessionText.IndexOf('-CleanupAction {', $startActionIndex, [StringComparison]::Ordinal)
+$startParseIndex = $fullStackSessionText.IndexOf('$startObject = Read-NervAspireJson', $cleanupActionIndex, [StringComparison]::Ordinal)
+Assert-True ($startActionIndex -ge 0 -and $cleanupActionIndex -gt $startActionIndex -and $startParseIndex -gt $cleanupActionIndex) 'Full-stack Aspire start/retry boundaries must remain explicit.'
+$startActionText = $fullStackSessionText.Substring($startActionIndex, $cleanupActionIndex - $startActionIndex)
+Assert-True (-not $startActionText.Contains('-AllowPartialOutput')) 'Parse-critical Aspire start must reject partial redirected output.'
+$transientStopText = $fullStackSessionText.Substring($cleanupActionIndex, $startParseIndex - $cleanupActionIndex)
+Assert-True ($transientStopText.Contains("@('stop'")) 'Transient Aspire start cleanup must invoke stop.'
+Assert-True ($transientStopText.Contains('-AllowPartialOutput')) 'Transient Aspire start cleanup must allow partial discarded stop output.'
 
 Assert-True `
     (Test-NervDockerResourceOwnership -InspectObject $inspectObjects[0] -SessionId $sessionId -RecordedIds $recordedContainerIds) `

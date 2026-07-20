@@ -216,8 +216,7 @@ function Get-NervAspireDescribeObject {
         -Arguments @('describe', '--format', 'Json', '--apphost', $AppHostProject, '--non-interactive', '--nologo') `
         -WorkingDirectory $WorkingDirectory `
         -TimeoutSeconds 60 `
-        -Name 'fullstack-aspire-describe' `
-        -AllowPartialOutput
+        -Name 'fullstack-aspire-describe'
     return (Read-NervAspireJson -Text "$($result.Stdout)" -RequireResources)
 }
 
@@ -1078,7 +1077,8 @@ function Stop-NervFullStackSession {
                 -Arguments @('stop', '--apphost', "$($Manifest.appHostProject)", '--non-interactive', '--nologo') `
                 -WorkingDirectory (Get-NervFullStackCleanupWorkingDirectory -StateRoot $StateRoot) `
                 -TimeoutSeconds 150 `
-                -Name "fullstack-$($Manifest.sessionId)-aspire-stop" | Out-Null
+                -Name "fullstack-$($Manifest.sessionId)-aspire-stop" `
+                -AllowPartialOutput | Out-Null
         }
     }
     if ($null -eq $ProcessStopAction) {
