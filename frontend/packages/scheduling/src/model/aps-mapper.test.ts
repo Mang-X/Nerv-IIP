@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { samplePlan } from './fixtures'
 import { toLockedAssignments, toModel } from './aps-mapper'
+import { conflictReasonLabel } from './labels'
 
 describe('toModel', () => {
   it('maps assignments to operation tasks with stable ids and grouping parents', () => {
@@ -15,9 +16,7 @@ describe('toModel', () => {
 
   it('derives finish_to_start links from operationSequence within an order', () => {
     const m = toModel(samplePlan)
-    expect(m.links).toEqual([
-      { id: 'a1->a2', source: 'a1', target: 'a2', type: 'finish_to_start' },
-    ])
+    expect(m.links).toEqual([{ id: 'a1->a2', source: 'a1', target: 'a2', type: 'finish_to_start' }])
   })
 
   it('flags conflicts onto their tasks and carries taskId', () => {
@@ -36,7 +35,29 @@ describe('toModel', () => {
     expect(m.changes[0].taskId).toBe('a2')
     expect(m.horizon.startUtc).toBe('2026-06-10T08:00:00.000Z')
     expect(m.horizon.endUtc).toBe('2026-06-10T12:00:00.000Z')
-    expect(m.meta).toEqual({ planId: 'plan-1', status: 'generated', algorithmVersion: 'heuristic-1' })
+    expect(m.meta).toEqual({
+      planId: 'plan-1',
+      status: 'generated',
+      algorithmVersion: 'heuristic-1',
+    })
+  })
+
+  it('keeps the current tooling conflict in business language', () => {
+    const m = toModel({
+      ...samplePlan,
+      conflicts: [
+        {
+          conflictId: 'tooling-conflict',
+          reasonCode: 'tooling',
+          severity: 'error',
+          orderId: 'WO-001',
+          operationId: 'op-10',
+          message: '所需工装不可用',
+        },
+      ],
+    })
+
+    expect(conflictReasonLabel[m.conflicts[0]!.reason]).toBe('工装不可用')
   })
 })
 

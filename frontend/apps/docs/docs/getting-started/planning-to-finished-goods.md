@@ -1,6 +1,6 @@
 # 需求计划到完工入库
 
-这条路径帮助计划员、生产主管和 MES 班组长理解从需求到完工入库的当前闭环。它覆盖 DemandPlanning、Scheduling、MES、Quality、Inventory/WMS 的已暴露入口，不把完整高级 APS 或甘特工作台写成已实现。
+这条路径帮助计划员、生产主管和 MES 班组长理解从需求到完工入库的当前闭环。它覆盖 DemandPlanning、Scheduling、MES、Quality、Inventory/WMS 的已暴露入口；`/scheduling` 已有只读资源甘特,但不把交互式重排或高级 APS 写成已实现。
 
 ## 适用角色
 
@@ -18,26 +18,26 @@
 
 ## 页面入口
 
-| 环节 | Business Console 路由 | 当前事实或缺口 |
-| --- | --- | --- |
-| 需求与 MRP | `/planning` | 已在需求与计划域暴露，用于需求、MRP 和计划建议。 |
-| 排产工作台 | `/scheduling` | 已在需求与计划域暴露，消费 APS lite / Scheduling facade；甘特仍是缺口。 |
-| MES 生产驾驶舱 | `/mes` | 已在制造执行域暴露。 |
-| 生产计划 | `/mes/plans` | 已在制造执行域暴露，可查看来源计划和转工单状态。 |
-| 工单列表 | `/mes/work-orders` | 已在制造执行域暴露。 |
-| 工单详情 | `/mes/work-orders/:workOrderId` | 已有对象详情页；不作为常驻菜单。 |
-| 齐套与物料 | `/mes/materials` | 已在制造执行域暴露。 |
-| 派工 | `/mes/dispatch` | 已在制造执行域暴露。 |
-| 工序执行 | `/mes/operation-tasks` | 已在制造执行域暴露。 |
-| 报工记录 | `/mes/production-reports` | 已在制造执行域暴露。 |
-| 完工入库请求 | `/mes/receipts` | 已在制造执行域暴露。 |
-| 规则排程结果 | `/mes/schedules` | 已在制造执行域暴露为过渡入口，不等同高级 APS。 |
+| 环节           | Business Console 路由           | 当前事实或缺口                                                                                    |
+| -------------- | ------------------------------- | ------------------------------------------------------------------------------------------------- |
+| 需求与 MRP     | `/planning`                     | 已在需求与计划域暴露，用于需求、MRP 和计划建议。                                                  |
+| 排产工作台     | `/scheduling`                   | 已在需求与计划域暴露，消费 APS lite / Scheduling facade；表格与只读资源甘特都只展示后端真实方案。 |
+| MES 生产驾驶舱 | `/mes`                          | 已在制造执行域暴露。                                                                              |
+| 生产计划       | `/mes/plans`                    | 已在制造执行域暴露，可查看来源计划和转工单状态。                                                  |
+| 工单列表       | `/mes/work-orders`              | 已在制造执行域暴露。                                                                              |
+| 工单详情       | `/mes/work-orders/:workOrderId` | 已有对象详情页；不作为常驻菜单。                                                                  |
+| 齐套与物料     | `/mes/materials`                | 已在制造执行域暴露。                                                                              |
+| 派工           | `/mes/dispatch`                 | 已在制造执行域暴露。                                                                              |
+| 工序执行       | `/mes/operation-tasks`          | 已在制造执行域暴露。                                                                              |
+| 报工记录       | `/mes/production-reports`       | 已在制造执行域暴露。                                                                              |
+| 完工入库请求   | `/mes/receipts`                 | 已在制造执行域暴露。                                                                              |
+| 规则排程结果   | `/mes/schedules`                | 已在制造执行域暴露为过渡入口，不等同高级 APS。                                                    |
 
 ## 操作步骤
 
 1. 在 `/planning` 查看需求；销售订单需求会显示真实订单号和有效/取消状态，点击订单号可钻取到 ERP 销售订单筛选页。运行 MRP，并检查 pegging 和计划建议仍沿用该订单号追溯。
 2. 接受可执行的计划建议，进入生产计划或 MES 可消费的计划视图。
-3. 发布 Scheduling 新版本时，同一组织/环境内的旧发布版本会自动标记为已取代；MES 只保留新版排程来源。无替代版本时，后端也支持显式撤销，当前产品页尚未提供该动作入口。
+3. 在 `/scheduling` 选择方案,用表格核查状态与统计,用只读资源甘特核查工序起止时间和工作中心/设备。冲突、锁定、未排和失效方案都有文字说明；点击工序块打开方案明细。发布新版本时，同一组织/环境内的旧发布版本会自动标记为已取代；MES 只保留新版排程来源。失效方案不能从甘特发布。无替代版本时，后端也支持显式撤销，当前产品页尚未提供该动作入口。
 4. 在 `/mes/foundation` 检查开工前基础准备，缺 SKU、生产版本、工作中心或设备范围时先补上下文。
 5. 在 `/mes/plans` 查看可转入 MES 执行的计划，确认计划就绪状态。
 6. 在 `/mes/work-orders` 创建或释放工单；进入 `/mes/work-orders/:workOrderId` 查看工序、用料和阻塞原因。
@@ -74,7 +74,7 @@ ERP Sales Order Released/Changed/Cancelled -> Sales-order Demand -> MRP Run -> P
 ## 当前限制
 
 - `/mes/schedules` 是规则排程结果和显式运行动作，不承载甘特，也不承担高级 APS 算法。
-- 高级 APS 优化器、甘特/RFC 展示和跨域高级报表仍是后续工作。
+- 高级 APS 优化器、交互式拖拽/RFC、自动重排和跨域高级报表仍是后续工作；当前甘特严格只读。
 - PDA 当前复用 business-console facade；独立 `/api/mobile/v1/**` 和离线 outbox/sync 后置。
 
 [内部缺口记录](/internal/gaps/planning-to-finished-goods)
