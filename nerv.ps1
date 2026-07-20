@@ -37,7 +37,7 @@ param(
 
     [switch] $All,
 
-    [ValidateSet('smoke')]
+    [ValidateSet('smoke', 'leader-demo-main-chain')]
     [string] $Scenario,
 
     [string] $SessionId,
@@ -69,6 +69,7 @@ Usage:
   .\nerv.ps1 logs [resource] [-Tail 120] [-Follow]
   .\nerv.ps1 describe [resource] [-IncludeHidden]
   .\nerv.ps1 fullstack run -Scenario smoke
+  .\nerv.ps1 fullstack run -Scenario leader-demo-main-chain
   .\nerv.ps1 publish-compose [-EnvironmentName Production] [-OutputPath artifacts/aspire-output/compose]
   .\nerv.ps1 prepare-compose [-EnvironmentName Production]
   .\nerv.ps1 deploy-compose [-EnvironmentName Production]

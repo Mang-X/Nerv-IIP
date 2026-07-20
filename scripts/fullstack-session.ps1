@@ -17,7 +17,7 @@ param(
     [ValidateSet('run', 'start', 'url', 'status', 'logs', 'stop', 'list', 'gc', 'help')]
     [string] $Action = 'help',
     [Parameter(Position = 1)] [string] $Target,
-    [ValidateSet('smoke')] [string] $Scenario = 'smoke',
+    [ValidateSet('smoke', 'leader-demo-main-chain')] [string] $Scenario = 'smoke',
     [string] $SessionId,
     [switch] $NoBuild,
     [int] $Tail = 120,
@@ -36,6 +36,7 @@ Nerv-IIP isolated full-stack sessions
 
 Usage:
   .\nerv.ps1 fullstack run -Scenario smoke [-NoBuild]
+  .\nerv.ps1 fullstack run -Scenario leader-demo-main-chain [-NoBuild]
   .\nerv.ps1 fullstack start [-SessionId nerv-abcd-123456] [-NoBuild]
   .\nerv.ps1 fullstack url <gateway|business-gateway|console|business-console|screen> [-SessionId ...]
   .\nerv.ps1 fullstack status [-SessionId ...]
@@ -398,6 +399,11 @@ try {
                         switch ($Scenario) {
                             'smoke' {
                                 Invoke-NervFullStackSmokeScenario `
+                                    -Manifest $InputManifest `
+                                    -SessionAdminPassword $sessionAdminPassword | Out-Null
+                            }
+                            'leader-demo-main-chain' {
+                                Invoke-NervLeaderDemoMainChainScenario `
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword | Out-Null
                             }
