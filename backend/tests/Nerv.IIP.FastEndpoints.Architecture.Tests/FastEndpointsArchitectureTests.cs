@@ -260,6 +260,32 @@ public sealed class FastEndpointsArchitectureTests
             programText);
     }
 
+    [Fact]
+    public void Aspire_apphost_product_engineering_uses_master_data_service_discovery()
+    {
+        var root = FindRepositoryRoot();
+        var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var resourceStart = programText.IndexOf(
+            "var businessProductEngineering =",
+            StringComparison.Ordinal);
+        var resourceEnd = programText.IndexOf(
+            "businessProductEngineering = WithRedisMessagingTransport(",
+            resourceStart,
+            StringComparison.Ordinal);
+
+        Assert.True(resourceStart >= 0, "BusinessProductEngineering Aspire resource is missing.");
+        Assert.True(resourceEnd > resourceStart, "BusinessProductEngineering Aspire resource block is incomplete.");
+
+        var resourceBlock = programText[resourceStart..resourceEnd];
+        Assert.Contains(
+            ".WithEnvironment(\"MasterData__BaseUrl\", businessMasterData.GetEndpoint(\"http\"))",
+            resourceBlock);
+        Assert.Contains(".WithReference(businessMasterData)", resourceBlock);
+        Assert.Contains(".WaitFor(businessMasterData)", resourceBlock);
+        Assert.DoesNotContain("localhost:5107", resourceBlock);
+    }
+
     [Theory]
     [MemberData(nameof(LocalPostgreSqlAppHostResources))]
     public void Aspire_apphost_local_postgresql_resources_enable_development_automigration(string resourceVariable)
