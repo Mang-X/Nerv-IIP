@@ -252,9 +252,12 @@ var businessProductEngineering = WithNervIipTelemetry(WithLocalDevelopmentEnviro
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessProductEngineeringDatabase, "PostgreSQL")
-    .WaitFor(businessProductEngineeringDatabase);
+    .WithReference(businessMasterData)
+    .WaitFor(businessProductEngineeringDatabase)
+    .WaitFor(businessMasterData);
 businessProductEngineering = WithRedisMessagingTransport(businessProductEngineering);
 if (rabbitmq is not null)
 {
