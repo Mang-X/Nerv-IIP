@@ -11,6 +11,11 @@ import {
   type TimeScale,
 } from '@nerv-iip/scheduling'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
+import {
+  schedulingPlanStatusLabel,
+  schedulingPlanStatusTone,
+  schedulingPlanTerminalReleaseReason,
+} from '@/utils/schedulingPlanPresentation'
 import { NvButton, NvStatusBadge, Spinner } from '@nerv-iip/ui'
 import {
   CalendarDaysIcon,
@@ -84,9 +89,7 @@ const releaseDisabled = computed(
   () =>
     props.releasePending ||
     props.summary?.isInvalidated ||
-    ['released', 'superseded', 'revoked'].includes(
-      props.plan?.status ?? props.summary?.status ?? '',
-    ),
+    Boolean(schedulingPlanTerminalReleaseReason(props.plan?.status ?? props.summary?.status ?? '')),
 )
 const feedback = computed(() => {
   if (isForbidden(props.error))
@@ -121,21 +124,6 @@ function isForbidden(error: unknown, visited = new Set<object>()): boolean {
 function formatDateTime(value: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false })
-}
-
-function statusLabel(status?: string | null) {
-  if (status === 'preview') return '预览'
-  if (status === 'generated') return '已生成'
-  if (status === 'released') return '已发布'
-  if (status === 'superseded') return '已取代'
-  if (status === 'revoked') return '已撤销'
-  return status ?? '未知'
-}
-
-function statusTone(status?: string | null): 'success' | 'warning' | 'neutral' {
-  if (status === 'released') return 'success'
-  if (status === 'generated') return 'warning'
-  return 'neutral'
 }
 </script>
 
@@ -187,7 +175,10 @@ function statusTone(status?: string | null): 'success' | 'warning' | 'neutral' {
             <h2 class="truncate text-base font-semibold text-foreground">
               {{ plan.planId || '未命名方案' }}
             </h2>
-            <NvStatusBadge :label="statusLabel(plan.status)" :tone="statusTone(plan.status)" />
+            <NvStatusBadge
+              :label="schedulingPlanStatusLabel(plan.status)"
+              :tone="schedulingPlanStatusTone(plan.status)"
+            />
             <NvStatusBadge v-if="summary?.isInvalidated" label="已失效" tone="warning" />
           </div>
           <p class="mt-1 text-sm text-muted-foreground">{{ planRange }}</p>

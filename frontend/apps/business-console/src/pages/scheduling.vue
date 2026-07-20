@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type {
-  BusinessConsoleSchedulePlan,
   BusinessConsoleSchedulingAssignment,
   BusinessConsoleSchedulingConflict,
   BusinessConsoleSchedulingPlanSummaryResponse,
@@ -10,6 +9,11 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useBusinessScheduling } from '@/composables/useBusinessScheduling'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
+import {
+  schedulingPlanStatusLabel,
+  schedulingPlanStatusTone,
+  schedulingPlanTerminalReleaseReason,
+} from '@/utils/schedulingPlanPresentation'
 import SchedulingPlanGantt from '@/components/scheduling/SchedulingPlanGantt.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -113,19 +117,6 @@ function rowKey(row: BusinessConsoleSchedulingPlanSummaryResponse) {
   return row.planId ?? row.problemId ?? 'plan'
 }
 
-function statusLabel(status?: string | null) {
-  if (status === 'preview') return '预览'
-  if (status === 'generated') return '已生成'
-  if (status === 'released') return '已发布'
-  return status ?? '未知'
-}
-
-function statusTone(status?: string | null) {
-  if (status === 'released') return 'success'
-  if (status === 'generated') return 'warning'
-  return 'neutral'
-}
-
 function invalidationSummary(row: BusinessConsoleSchedulingPlanSummaryResponse) {
   return row.isInvalidated
     ? describeScheduleInvalidationReason(row.latestInvalidationReasonCode)
@@ -183,19 +174,14 @@ async function publish(planId: string | undefined) {
   }
 }
 
-function isReleased(
-  row: BusinessConsoleSchedulingPlanSummaryResponse | BusinessConsoleSchedulePlan | undefined,
-) {
-  return row?.status === 'released'
-}
-
-// 失效方案禁止发布类操作：排程前提已变化，须先重排再发布，否则会下达一份过期计划。
+// 已终止或失效的方案禁止发布，避免重复下达或下达一份过期计划。
 function canRelease(row: BusinessConsoleSchedulingPlanSummaryResponse) {
-  return !['released', 'superseded', 'revoked'].includes(row.status ?? '') && !row.isInvalidated
+  return !schedulingPlanTerminalReleaseReason(row.status) && !row.isInvalidated
 }
 
 function releaseDisabledReason(row: BusinessConsoleSchedulingPlanSummaryResponse) {
-  if (isReleased(row)) return '方案已发布'
+  const terminalReason = schedulingPlanTerminalReleaseReason(row.status)
+  if (terminalReason) return terminalReason
   if (row.isInvalidated)
     return `方案已失效（${describeScheduleInvalidationReason(row.latestInvalidationReasonCode)}），请重排后再发布`
   return '发布该排程方案'
@@ -298,7 +284,10 @@ function reasonLabel(reason?: string | null) {
         >
           <template #cell-status="{ row }">
             <div class="flex flex-wrap items-center gap-1.5">
-              <NvStatusBadge :label="statusLabel(row.status)" :tone="statusTone(row.status)" />
+              <NvStatusBadge
+                :label="schedulingPlanStatusLabel(row.status)"
+                :tone="schedulingPlanStatusTone(row.status)"
+              />
               <NvStatusBadge v-if="row.isInvalidated" label="已失效" tone="warning" />
             </div>
           </template>
@@ -348,7 +337,7 @@ function reasonLabel(reason?: string | null) {
                 :key="rowKey(plan)"
                 :value="plan.planId"
               >
-                {{ plan.planId }} · {{ statusLabel(plan.status) }}
+                {{ plan.planId }} · {{ schedulingPlanStatusLabel(plan.status) }}
               </NvSelectItem>
             </NvSelectContent>
           </NvSelect>
@@ -390,8 +379,8 @@ function reasonLabel(reason?: string | null) {
                 <p class="mt-1 text-sm text-muted-foreground">{{ selectedPlanRange }}</p>
               </div>
               <NvStatusBadge
-                :label="statusLabel(planDetail.status)"
-                :tone="statusTone(planDetail.status)"
+                :label="schedulingPlanStatusLabel(planDetail.status)"
+                :tone="schedulingPlanStatusTone(planDetail.status)"
               />
             </div>
             <div class="grid gap-3 sm:grid-cols-4">

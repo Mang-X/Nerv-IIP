@@ -200,6 +200,20 @@ vi.mock('@/composables/useBusinessScheduling', () => ({
         latestInvalidationReasonCode: 'equipmentUnavailable',
         latestInvalidatedAtUtc: '2026-07-01T12:00:00Z',
       },
+      {
+        planId: 'plan-superseded',
+        status: 'superseded',
+        assignmentCount: 3,
+        conflictCount: 0,
+        unscheduledOperationCount: 0,
+      },
+      {
+        planId: 'plan-revoked',
+        status: 'revoked',
+        assignmentCount: 2,
+        conflictCount: 0,
+        unscheduledOperationCount: 0,
+      },
     ]),
     plansPending: shallowRef(false),
     releasePlan: stub.releasePlan,
@@ -287,7 +301,7 @@ describe('APS scheduling workbench page', () => {
     await flushPromises()
 
     expect(detailSelection.planId).toBe('plan-001')
-    expect(wrapper.findAllComponents({ name: 'NvSelectItem' })).toHaveLength(3)
+    expect(wrapper.findAllComponents({ name: 'NvSelectItem' })).toHaveLength(5)
   })
 
   it('opens plan detail and releases the selected plan through the composable', async () => {
@@ -331,6 +345,28 @@ describe('APS scheduling workbench page', () => {
       .findAll('button')
       .find((button) => button.text().includes('发布'))!
     expect(releaseButton.attributes('disabled')).toBeDefined()
+  })
+
+  it('localizes terminal plan statuses and explains why they cannot be released', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const rows = wrapper.findAll('tbody tr')
+    const supersededRow = rows.find((row) => row.text().includes('plan-superseded'))!
+    const revokedRow = rows.find((row) => row.text().includes('plan-revoked'))!
+    const supersededRelease = supersededRow
+      .findAll('button')
+      .find((button) => button.text().includes('发布'))!
+    const revokedRelease = revokedRow
+      .findAll('button')
+      .find((button) => button.text().includes('发布'))!
+
+    expect(supersededRow.text()).toContain('已取代')
+    expect(supersededRelease.attributes('disabled')).toBeDefined()
+    expect(supersededRelease.attributes('title')).toBe('方案已被后续方案取代')
+    expect(revokedRow.text()).toContain('已撤销')
+    expect(revokedRelease.attributes('disabled')).toBeDefined()
+    expect(revokedRelease.attributes('title')).toBe('方案已撤销')
   })
 
   it('explains invalidated, invalid-time, and missing-resource assignments in the Gantt view', async () => {
