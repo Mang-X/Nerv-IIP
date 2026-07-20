@@ -4456,6 +4456,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "roleIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

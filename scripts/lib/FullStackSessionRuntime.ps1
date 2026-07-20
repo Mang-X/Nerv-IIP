@@ -1678,6 +1678,9 @@ function Invoke-NervLeaderDemoVerification {
     $snapshot = $null
     $accessToken = $null
     $propagatedExitCode = 0
+    $observedRoles = @()
+    $rolesObserved = $false
+    $rolesObservation = 'not-observed'
     $observedPrincipal = [ordered]@{
         principalId = $null
         principalType = $null
@@ -1685,6 +1688,7 @@ function Invoke-NervLeaderDemoVerification {
         organizationId = $null
         environmentId = $null
         permissionCodes = @()
+        roleIds = @()
     }
 
     $endpoints = Get-NervObjectPropertyValue -InputObject $Manifest -Name 'endpoints'
@@ -1822,23 +1826,33 @@ function Invoke-NervLeaderDemoVerification {
     $factDefinitions = @(
         [ordered]@{
             key = 'SO-DEMO-001'
+            event = 'sales-order-released'
             link = "$businessGatewayUrl/api/business-console/v1/erp/sales/sales-orders?organizationId=$encodedOrganization&environmentId=$encodedEnvironment&keyword=SO-DEMO-001&skip=0&take=10"
             expectedStatus = 'released'
         },
         [ordered]@{
             key = 'WO-DEMO-Q01'
+            event = 'mes-work-order-released'
             link = "$businessGatewayUrl/api/business-console/v1/mes/work-orders/WO-DEMO-Q01?organizationId=$encodedOrganization&environmentId=$encodedEnvironment"
             expectedStatus = 'released'
         },
         [ordered]@{
             key = 'DEV-CNC-DEMO'
+            event = 'device-asset-active'
             link = "$businessGatewayUrl/api/business-console/v1/master-data/device-assets?organizationId=$encodedOrganization&environmentId=$encodedEnvironment&keyword=DEV-CNC-DEMO&skip=0&take=10"
             expectedStatus = 'active'
         },
         [ordered]@{
-            key = 'MWO-DEMO-001'
+            key = 'ALARM-DEMO-001'
+            event = 'alarm-rule-enabled'
             link = "$businessGatewayUrl/api/business-console/v1/telemetry/alarm-rules?organizationId=$encodedOrganization&environmentId=$encodedEnvironment&deviceAssetId=DEV-CNC-DEMO&isEnabled=true&skip=0&take=100"
             expectedStatus = 'enabled'
+        },
+        [ordered]@{
+            key = 'MWO-DEMO-001'
+            event = 'maintenance-work-order-open'
+            link = "$businessGatewayUrl/api/business-console/v1/maintenance/work-orders?organizationId=$encodedOrganization&environmentId=$encodedEnvironment&deviceAssetIds=DEV-CNC-DEMO"
+            expectedStatus = 'open'
         }
     )
 
@@ -1855,6 +1869,13 @@ function Invoke-NervLeaderDemoVerification {
             $principalData = Get-NervLeaderDemoResponseData -Response $principalResponse
             $principalId = "$(Get-NervObjectPropertyValue -InputObject $principalData -Name 'principalId')"
             if ([string]::IsNullOrWhiteSpace($principalId)) { throw 'Platform Gateway auth/me returned no principal ID.' }
+            $principalRoleIds = @(
+                Get-NervObjectPropertyValue -InputObject $principalData -Name 'roleIds' |
+                    ForEach-Object { "$_" } |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                    Select-Object -Unique
+            )
+            if ($principalRoleIds.Count -eq 0) { throw 'Platform Gateway auth/me returned no membership role IDs.' }
             $observedPrincipal = [ordered]@{
                 principalId = $principalId
                 principalType = "$(Get-NervObjectPropertyValue -InputObject $principalData -Name 'principalType')"
@@ -1862,50 +1883,83 @@ function Invoke-NervLeaderDemoVerification {
                 organizationId = "$(Get-NervObjectPropertyValue -InputObject $principalData -Name 'organizationId')"
                 environmentId = "$(Get-NervObjectPropertyValue -InputObject $principalData -Name 'environmentId')"
                 permissionCodes = @(Get-NervObjectPropertyValue -InputObject $principalData -Name 'permissionCodes')
+                roleIds = @($principalRoleIds)
             }
+
+            $roleCatalogUrl = "$($accessUrls.gateway.TrimEnd('/'))/api/console/v1/iam/roles?pageIndex=1&pageSize=100"
+            $roleCatalogResponse = & $PublicFactQueryAction 'ACCOUNT-ROLES' $roleCatalogUrl $headers
+            $roleCatalogData = Get-NervLeaderDemoResponseData -Response $roleCatalogResponse
+            $roleItems = @(Get-NervObjectPropertyValue -InputObject $roleCatalogData -Name 'items')
+            $resolvedRoles = [System.Collections.Generic.List[object]]::new()
+            foreach ($roleId in $principalRoleIds) {
+                $role = @($roleItems | Where-Object {
+                    "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'roleId')" -ceq $roleId
+                }) | Select-Object -First 1
+                if ($null -eq $role) { throw "Membership role '$roleId' was not found in the public IAM role catalog." }
+                $roleName = "$(Get-NervObjectPropertyValue -InputObject $role -Name 'roleName')"
+                if ([string]::IsNullOrWhiteSpace($roleName)) { throw "Membership role '$roleId' has no public role name." }
+                $resolvedRoles.Add([ordered]@{ roleId = $roleId; roleName = $roleName })
+            }
+            $observedRoles = @($resolvedRoles)
+            $rolesObserved = $true
+            $rolesObservation = 'public-auth-me-and-role-catalog'
+
             foreach ($fact in $factDefinitions) {
                 $found = $false
+                $matchCount = 0
                 $observedStatus = 'not-found'
                 $hint = $null
                 try {
                     $response = & $PublicFactQueryAction "$($fact.key)" "$($fact.link)" $headers
                     $data = Get-NervLeaderDemoResponseData -Response $response
+                    $matches = @()
                     switch ("$($fact.key)") {
                         'SO-DEMO-001' {
                             $items = @(Get-NervObjectPropertyValue -InputObject $data -Name 'items')
-                            $match = @($items | Where-Object { "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'salesOrderNo')" -ceq 'SO-DEMO-001' }) | Select-Object -First 1
-                            $found = $null -ne $match
-                            if ($found) { $observedStatus = "$(Get-NervObjectPropertyValue -InputObject $match -Name 'status')" }
+                            $matches = @($items | Where-Object { "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'salesOrderNo')" -ceq 'SO-DEMO-001' })
+                            if ($matches.Count -gt 0) { $observedStatus = "$(Get-NervObjectPropertyValue -InputObject $matches[0] -Name 'status')" }
                         }
                         'WO-DEMO-Q01' {
-                            $found = "$(Get-NervObjectPropertyValue -InputObject $data -Name 'workOrderId')" -ceq 'WO-DEMO-Q01'
-                            if ($found) { $observedStatus = "$(Get-NervObjectPropertyValue -InputObject $data -Name 'status')" }
+                            if ("$(Get-NervObjectPropertyValue -InputObject $data -Name 'workOrderId')" -ceq 'WO-DEMO-Q01') { $matches = @($data) }
+                            if ($matches.Count -gt 0) { $observedStatus = "$(Get-NervObjectPropertyValue -InputObject $matches[0] -Name 'status')" }
                         }
                         'DEV-CNC-DEMO' {
                             $items = @(Get-NervObjectPropertyValue -InputObject $data -Name 'resources')
-                            $match = @($items | Where-Object {
+                            $matches = @($items | Where-Object {
                                 "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'resourceType')" -ceq 'device-asset' -and
                                 "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'code')" -ceq 'DEV-CNC-DEMO'
-                            }) | Select-Object -First 1
-                            $found = $null -ne $match
-                            if ($found) {
-                                $observedStatus = if ([bool] (Get-NervObjectPropertyValue -InputObject $match -Name 'active')) { 'active' } else { 'disabled' }
+                            })
+                            if ($matches.Count -gt 0) {
+                                $observedStatus = if ([bool] (Get-NervObjectPropertyValue -InputObject $matches[0] -Name 'active')) { 'active' } else { 'disabled' }
+                            }
+                        }
+                        'ALARM-DEMO-001' {
+                            $items = @(Get-NervObjectPropertyValue -InputObject $data -Name 'items')
+                            $matches = @($items | Where-Object {
+                                "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'deviceAssetId')" -ceq 'DEV-CNC-DEMO' -and
+                                "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'ruleCode')" -ceq 'ALARM-DEMO-001'
+                            })
+                            if ($matches.Count -gt 0) {
+                                $observedStatus = if ([bool] (Get-NervObjectPropertyValue -InputObject $matches[0] -Name 'isEnabled')) { 'enabled' } else { 'disabled' }
                             }
                         }
                         'MWO-DEMO-001' {
                             $items = @(Get-NervObjectPropertyValue -InputObject $data -Name 'items')
-                            $match = @($items | Where-Object {
+                            $matches = @($items | Where-Object {
                                 "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'deviceAssetId')" -ceq 'DEV-CNC-DEMO' -and
-                                "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'ruleCode')".StartsWith('MWO-DEMO-001', [StringComparison]::Ordinal)
-                            }) | Select-Object -First 1
-                            $found = $null -ne $match
-                            if ($found) {
-                                $observedStatus = if ([bool] (Get-NervObjectPropertyValue -InputObject $match -Name 'isEnabled')) { 'enabled' } else { 'disabled' }
-                            }
+                                "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'sourceAlarmId')" -ceq 'ALARM-DEMO-001' -and
+                                "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'sourceReferenceId')" -ceq 'MWO-DEMO-001'
+                            })
+                            if ($matches.Count -gt 0) { $observedStatus = "$(Get-NervObjectPropertyValue -InputObject $matches[0] -Name 'status')" }
                         }
                     }
-                    if (-not $found) {
+                    $matchCount = @($matches).Count
+                    $found = $matchCount -eq 1
+                    if ($matchCount -eq 0) {
                         $hint = "Reserved public fact '$($fact.key)' was not found. Inspect service seed/startup diagnostics under '$fullStackArtifactPath', run .\nerv.ps1 demo reset, then retry the bounded $Command command."
+                    }
+                    elseif ($matchCount -gt 1) {
+                        $hint = "Reserved public fact '$($fact.key)' matched $matchCount rows; repeated reset/seed must converge to exactly one row. Inspect '$fullStackArtifactPath', resolve the duplicate without overwriting unrelated tenant facts, then run .\nerv.ps1 demo reset and retry."
                     }
                     elseif (-not [string]::Equals($observedStatus, "$($fact.expectedStatus)", [StringComparison]::OrdinalIgnoreCase)) {
                         $hint = "Reserved public fact '$($fact.key)' has status '$observedStatus', expected '$($fact.expectedStatus)'. Inspect '$fullStackArtifactPath', run .\nerv.ps1 demo reset, and retry; do not overwrite tenant facts."
@@ -1920,6 +1974,9 @@ function Invoke-NervLeaderDemoVerification {
 
                 $factEvidence.Add([ordered]@{
                     key = "$($fact.key)"
+                    event = "$($fact.event)"
+                    observedAtUtc = $UtcNow
+                    matchCount = $matchCount
                     found = $found
                     status = $observedStatus
                     link = "$($fact.link)"
@@ -1941,6 +1998,9 @@ function Invoke-NervLeaderDemoVerification {
         if (@($factEvidence | Where-Object { $_.key -ceq "$($fact.key)" }).Count -eq 0) {
             $factEvidence.Add([ordered]@{
                 key = "$($fact.key)"
+                event = "$($fact.event)"
+                observedAtUtc = $UtcNow
+                matchCount = 0
                 found = $false
                 status = 'not-verified'
                 link = "$($fact.link)"
@@ -1981,9 +2041,9 @@ function Invoke-NervLeaderDemoVerification {
         scope = [ordered]@{ organizationId = $organizationId; environmentId = $environmentId }
         access = [ordered]@{
             urls = $accessUrls
-            roles = @()
-            rolesObserved = $false
-            rolesObservation = 'not-exposed-by-public-auth-contract'
+            roles = @($observedRoles)
+            rolesObserved = $rolesObserved
+            rolesObservation = $rolesObservation
             principal = $observedPrincipal
         }
         resources = @($resourceEvidence)
@@ -2325,6 +2385,7 @@ function Invoke-NervLeaderDemoCommand {
                     $password = Get-NervLeaderDemoAdminPassword
                     $current = Resolve-NervLeaderDemoOwnedSession -StateRoot $resolvedStateRoot -ExpectedWorktreeRoot $resolvedWorktreeRoot
                     $exactSessionId = "$($current.SessionId)"
+                    Write-Host 'Leader-demo prerequisites were created by opt-in service startup; demo seed verifies those public facts and does not write tables directly.'
                     Invoke-NervLeaderDemoCredentialScope -AdminPassword $password -StateRoot $resolvedStateRoot -ScriptBlock {
                         & $SeedAction $exactSessionId
                     }

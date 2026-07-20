@@ -21,7 +21,7 @@ public sealed class LeaderDemoSeedServiceTests
         Assert.Equal("DEV-CNC-DEMO", tag.DeviceAssetId);
         Assert.Equal(LeaderDemoSeedService.TemperatureTagKey, tag.TagKey);
         var rule = Assert.Single(await db.AlarmRules.ToArrayAsync());
-        Assert.Equal("MWO-DEMO-001", rule.RuleCode);
+        Assert.Equal("ALARM-DEMO-001", rule.RuleCode);
         Assert.True(rule.IsEnabled);
         Assert.Empty(await db.TelemetryRawSamples.ToArrayAsync());
         Assert.Empty(await db.TelemetrySummaries.ToArrayAsync());

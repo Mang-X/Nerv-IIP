@@ -37,7 +37,8 @@ public sealed record CurrentPrincipalResponse(
     string OrganizationId,
     string EnvironmentId,
     int PermissionVersion,
-    IReadOnlyList<string> PermissionCodes);
+    IReadOnlyList<string> PermissionCodes,
+    IReadOnlyList<string> RoleIds);
 public sealed record ConnectorPrincipalResponse(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
 public sealed record IamAuthorizationCheckResult(bool Allowed, AuthorizationDataScope? DataScope = null);
 

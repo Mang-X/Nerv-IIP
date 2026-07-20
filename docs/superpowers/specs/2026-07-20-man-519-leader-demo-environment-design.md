@@ -51,8 +51,8 @@ All demo facts use organization `org-001` and environment `env-dev`.
 - ERP retains its existing released `SO-DEMO-001` prerequisite.
 - MES provides released `WO-DEMO-Q01`, ready for operator execution and linked to the demo production version/routing facts. It has no production report or completion quantity.
 - Quality provides an active variable-characteristic operation inspection plan with explicit limits. It has no inspection record, NCR, hold disposition, or approval result.
-- IndustrialTelemetry provides a temperature tag and enabled alarm rule for `DEV-CNC-DEMO`. The rule code uses `MWO-DEMO-001` as the stable maintenance-case source prefix; no alarm event or telemetry sample is seeded.
-- Maintenance retains reusable plans and receives the real alarm event during the demonstration. No maintenance work order completion is seeded.
+- IndustrialTelemetry provides a temperature tag and enabled alarm rule `ALARM-DEMO-001` for `DEV-CNC-DEMO`; no alarm event or telemetry sample is seeded.
+- Maintenance provides one open alarm-sourced prerequisite work order with lifecycle correlation `SourceAlarmId=ALARM-DEMO-001` and stable demo reference `SourceReferenceId=MWO-DEMO-001`. The real alarm raise therefore reuses it and the matching clear event updates it; the seed does not mark it repaired, alarm-cleared, or completed.
 
 Each service owns its own idempotent seed implementation and tests. Startup enables the demo seeds only under the explicit AppHost demo profile; ordinary production configuration remains unchanged.
 
@@ -62,9 +62,9 @@ Every successful or failed seed/health run writes a JSON evidence manifest under
 
 - UTC time, current commit SHA, session ID, worktree, command, and overall result;
 - messaging provider and non-secret organization/environment identifiers;
-- access URLs and account role names, never the password or tokens;
+- access URLs and account role names resolved from `/auth/me` role IDs through the public role catalog, never the password or tokens;
 - per-resource Aspire state, endpoint if public, elapsed time, and failure remediation hint;
-- frozen business identifiers, public result links, observed status, and whether the fact was found;
+- frozen business identifiers, public result links, key event, observation time, exact match count, observed status, and whether exactly one fact was found;
 - full-stack diagnostic directory and the exact cleanup command.
 
 Failure evidence is still written before returning non-zero. Sensitive text uses the existing script redaction helper.
@@ -87,4 +87,4 @@ Product documentation is unaffected: this is operator/demo engineering and does 
 - Seed facts stop before every prohibited final business outcome.
 - Reset is isolated and recoverable; it cannot delete shared development or customer data.
 - Redis, fixed business identifiers, public-fact verification, failure diagnostics, and evidence retention are explicit.
-- No endpoint or Gateway contract change is required, so OpenAPI and generated clients remain unchanged.
+- Two compatible read-contract extensions support factual evidence: PlatformGateway `/auth/me` exposes membership `roleIds`, and the already-`exposed` BusinessGateway Maintenance work-order list carries `sourceReferenceId`. Both Gateway OpenAPI snapshots and generated clients are refreshed; no new endpoint or page is introduced.

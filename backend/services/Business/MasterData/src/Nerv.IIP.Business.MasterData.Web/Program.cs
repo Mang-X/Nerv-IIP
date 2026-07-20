@@ -231,7 +231,9 @@ try
     if (leaderDemoSeedEnabled)
     {
         using var scope = app.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync("org-001", "env-dev");
+        await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(
+            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
     }
 
     app.UseNervIipRequestLocalization();

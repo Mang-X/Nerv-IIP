@@ -252,6 +252,7 @@ public static class GatewayAuthorization
             environmentId,
             permissionVersion,
             // Claims carry principal context only; authorization still flows through CheckAsync.
+            [],
             []);
     }
 

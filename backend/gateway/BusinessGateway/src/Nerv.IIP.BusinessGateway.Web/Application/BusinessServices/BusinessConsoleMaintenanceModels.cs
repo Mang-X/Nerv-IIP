@@ -134,7 +134,8 @@ public sealed record BusinessConsoleMaintenanceWorkOrderItem(
     string? WarrantyStatus = null,
     DateOnly? WarrantyExpiresOn = null,
     string? SupplierPartnerCode = null,
-    string? ActualTechnicianUserId = null);
+    string? ActualTechnicianUserId = null,
+    string? SourceReferenceId = null);
 
 public sealed record BusinessConsoleMaintenancePlanListResponse(
     IReadOnlyCollection<BusinessConsoleMaintenancePlanItem> Items,

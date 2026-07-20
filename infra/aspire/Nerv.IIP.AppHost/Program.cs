@@ -309,6 +309,7 @@ if (rabbitmq is not null)
 
 var businessMes = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Mes_Web>("business-mes")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5111, name: "http")
+    .WithHttpHealthCheck("/swagger/v1/swagger.json")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
@@ -441,6 +442,7 @@ var businessMaintenance = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(b
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMaintenanceDatabase, "PostgreSQL")
     .WaitFor(businessMaintenanceDatabase);

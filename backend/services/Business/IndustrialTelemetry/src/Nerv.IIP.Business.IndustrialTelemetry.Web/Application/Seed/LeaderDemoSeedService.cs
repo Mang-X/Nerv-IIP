@@ -9,7 +9,7 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
 {
     public const string DeviceAssetId = "DEV-CNC-DEMO";
     public const string TemperatureTagKey = "temperature";
-    public const string RuleCode = "MWO-DEMO-001";
+    public const string RuleCode = "ALARM-DEMO-001";
 
     public async Task SeedAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default)
     {

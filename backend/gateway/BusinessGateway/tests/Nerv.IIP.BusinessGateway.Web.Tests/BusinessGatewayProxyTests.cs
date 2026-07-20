@@ -3380,6 +3380,7 @@ public sealed class BusinessGatewayProxyTests
                         priority = "high",
                         status = "Open",
                         sourceAlarmId = "alarm-001",
+                        sourceReferenceId = "MWO-DEMO-001",
                         openedAtUtc = "2026-06-01T08:10:00Z",
                     },
                 },
@@ -3398,6 +3399,7 @@ public sealed class BusinessGatewayProxyTests
 
         var item = Assert.Single(response.Items);
         Assert.Equal("alarm-001", item.SourceAlarmId);
+        Assert.Equal("MWO-DEMO-001", item.SourceReferenceId);
         Assert.Null(item.RelatedAlarmId);
     }
 

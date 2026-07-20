@@ -103,10 +103,13 @@ Both `seed` and `health-check` fail unless the session manifest reports
 `Messaging Provider=Redis` and the required PostgreSQL, Redis, services, and
 public entrypoints are healthy.
 
-The seed boundary is prerequisite-only. It prepares the fixed keys
-`SO-DEMO-001`, `WO-DEMO-Q01`, `DEV-CNC-DEMO`, and the `MWO-DEMO-001` alarm-rule
-source prefix, along with their master, engineering, raw-material, quality-plan,
-and telemetry-rule prerequisites. It must not create any production report or
+The seed boundary is prerequisite-only. Service-owned opt-in startup seeds
+prepare the fixed keys `SO-DEMO-001`, `WO-DEMO-Q01`, and `DEV-CNC-DEMO`, the
+enabled telemetry rule `ALARM-DEMO-001`, and one open alarm-sourced Maintenance
+work order correlated by `SourceAlarmId=ALARM-DEMO-001` with demo reference
+`SourceReferenceId=MWO-DEMO-001`; `demo seed` verifies those public facts and
+does not write tables itself. The prerequisites also include master, engineering,
+raw-material, and quality-plan facts. They must not create any production report or
 completed quantity, finished-goods stock, inspection conclusion, NCR/hold/
 approval disposition, shipment, receivable, telemetry sample, alarm event, or
 completed maintenance work order. Those outcomes must be produced by the actual
@@ -114,8 +117,10 @@ demo workflow.
 
 Every successful or failed `seed` and `health-check` preserves redacted evidence
 at `artifacts/leader-demo/<UTC-run-id>/evidence.json`. The manifest includes the
-session ID, commit, resource states, non-secret URLs and roles, observed fixed
-facts, Redis assertion, related `artifacts/fullstack/<sessionId>/` diagnostics,
+session ID, commit, resource states, non-secret URLs, actual account role IDs
+from `/auth/me` resolved through the public role catalog, observed fixed facts
+with key event, observation time, and exact match count (duplicates fail),
+Redis assertion, related `artifacts/fullstack/<sessionId>/` diagnostics,
 and exact cleanup command; it never contains the password or bearer token.
 
 For the three-reset acceptance gate, retain each returned session ID and every

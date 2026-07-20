@@ -260,7 +260,9 @@ Connector configured-tag coverage 的两跳契约固定如下：IndustrialTeleme
 
 Phase 8 已在 PlatformGateway 暴露 Console IAM Admin facade。控制台仍只消费 `/api/console/v1/**`，Gateway 负责 IAM-backed permission enforcement、bearer token 转发和下游错误映射；前端通过 `@nerv-iip/api-client` 的稳定导出消费 generated SDK、Pinia Colada query/mutation options 与类型别名。
 
-Console auth `/api/console/v1/auth/me` 返回的 principal 包含 `permissionCodes`，用于前端提前禁用无权限的 IAM admin 写操作按钮；后端 Gateway/IAM permission enforcement 仍是最终授权边界。
+Console auth `/api/console/v1/auth/me` 返回的 principal 包含当前 organization/environment membership 的 `roleIds` 和有效 `permissionCodes`。前者可与公开 IAM role catalog 对照显示实际账号角色，后者用于前端提前禁用无权限的 IAM admin 写操作按钮；后端 Gateway/IAM permission enforcement 仍是最终授权边界。
+
+MAN-519 领导演示证据复用既有 Maintenance work-order 两跳读面：服务端 `GET /api/business/v1/maintenance/work-orders` 与 BusinessGateway `GET /api/business-console/v1/maintenance/work-orders` 的 classification 继续为 `exposed`，响应兼容增加 `sourceReferenceId`。`sourceAlarmId` 保留真实报警 raise/clear 生命周期关联，`sourceReferenceId` 承载稳定案例引用；Gateway 只透传两者，不互相复制或推断。
 
 Console login/refresh 响应透传 IAM 的 `passwordChangeRequired` 标记；Console IAM 用户 DTO 暴露 `accountExpiresAtUtc`、`passwordChangeRequired`、`passwordExpiresAtUtc` 和 `lockoutUntilUtc`，用于 `/iam/users` 页面展示账号生命周期和密码策略状态。
 

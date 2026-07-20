@@ -19,6 +19,8 @@ public sealed class LeaderDemoSeedService(
     public const string MbomVersionId = "MBOM-DEMO-001:1";
     public const string RoutingVersionId = "ROUTING-DEMO-001:1";
     private const int ResolutionAttempts = 5;
+    private static readonly TimeSpan InitialRetryDelay = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan ResolutionAttemptTimeout = TimeSpan.FromSeconds(3);
     private static readonly DateTimeOffset EarliestStartUtc = new(2026, 7, 20, 0, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset DueUtc = new(2026, 8, 15, 0, 0, 0, TimeSpan.Zero);
 
@@ -85,6 +87,8 @@ public sealed class LeaderDemoSeedService(
         {
             try
             {
+                using var attemptCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                attemptCancellation.CancelAfter(ResolutionAttemptTimeout);
                 using var request = new HttpRequestMessage(HttpMethod.Get, query);
                 var token = internalTokenProvider.BearerToken;
                 if (!string.IsNullOrWhiteSpace(token))
@@ -92,10 +96,10 @@ public sealed class LeaderDemoSeedService(
                     request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
                 }
 
-                using var response = await productEngineeringClient.HttpClient.SendAsync(request, cancellationToken);
+                using var response = await productEngineeringClient.HttpClient.SendAsync(request, attemptCancellation.Token);
                 if (response.IsSuccessStatusCode)
                 {
-                    var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<ResolveProductionVersionResponse>>(cancellationToken);
+                    var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<ResolveProductionVersionResponse>>(attemptCancellation.Token);
                     if (envelope?.Success == true && envelope.Data is not null)
                     {
                         return envelope.Data;
@@ -108,10 +112,16 @@ public sealed class LeaderDemoSeedService(
             {
                 lastFailure = exception;
             }
+            catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                lastFailure = exception;
+            }
 
             if (attempt < ResolutionAttempts)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
+                var retryDelay = TimeSpan.FromMilliseconds(
+                    InitialRetryDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));
+                await Task.Delay(retryDelay, cancellationToken);
             }
         }
 

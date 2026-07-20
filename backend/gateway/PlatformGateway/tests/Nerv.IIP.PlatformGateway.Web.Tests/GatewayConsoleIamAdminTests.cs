@@ -24,7 +24,8 @@ public sealed class GatewayConsoleIamAdminTests
         "org-001",
         "env-dev",
         7,
-        ["iam.users.read", "iam.users.manage"]);
+        ["iam.users.read", "iam.users.manage"],
+        ["role-platform-admin"]);
 
     [Fact]
     public void Console_iam_admin_endpoints_use_authorized_proxy_endpoint()

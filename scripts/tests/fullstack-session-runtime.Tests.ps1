@@ -365,15 +365,16 @@ Assert-True ($statusSummary.UnresolvedCount -eq 0) 'A clean stopped session must
 $appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
 Assert-True ($appHostText.Contains('NERV_IIP_LEADER_DEMO')) 'AppHost must require an explicit leader-demo profile flag.'
 Assert-True (
-    ([regex]::Matches($appHostText, 'WithEnvironment\("LeaderDemo__Seed__Enabled", leaderDemoEnabled \? "true" : "false"\)')).Count -eq 6
-) 'AppHost must explicitly pass the opt-in seed flag to all six leader-demo prerequisite services.'
+    ([regex]::Matches($appHostText, 'WithEnvironment\("LeaderDemo__Seed__Enabled", leaderDemoEnabled \? "true" : "false"\)')).Count -eq 7
+) 'AppHost must explicitly pass the opt-in seed flag to all seven leader-demo prerequisite services.'
 foreach ($resourceVariable in @(
     'businessMasterData',
     'businessProductEngineering',
     'businessInventory',
     'businessQuality',
     'businessMes',
-    'businessIndustrialTelemetry'
+    'businessIndustrialTelemetry',
+    'businessMaintenance'
 )) {
     $resourceStart = $appHostText.IndexOf("var $resourceVariable =", [StringComparison]::Ordinal)
     $resourceEnd = $appHostText.IndexOf(';', $resourceStart)
@@ -383,6 +384,13 @@ foreach ($resourceVariable in @(
         $appHostText.Substring($resourceStart, $resourceEnd - $resourceStart).Contains('.WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")')
     ) "AppHost must pass the leader-demo seed flag to '$resourceVariable'."
 }
+$businessMesStart = $appHostText.IndexOf('var businessMes =', [StringComparison]::Ordinal)
+$businessMesEnd = $appHostText.IndexOf(';', $businessMesStart)
+Assert-True (
+    $businessMesStart -ge 0 -and
+    $businessMesEnd -gt $businessMesStart -and
+    $appHostText.Substring($businessMesStart, $businessMesEnd - $businessMesStart).Contains('.WithHttpHealthCheck("/swagger/v1/swagger.json")')
+) 'AppHost must not report BusinessMES healthy until its startup seed has completed and HTTP is accepting traffic.'
 $notificationStart = $appHostText.IndexOf('var notification =', [StringComparison]::Ordinal)
 $notificationEnd = $appHostText.IndexOf(';', $notificationStart)
 Assert-True (-not $appHostText.Substring($notificationStart, $notificationEnd - $notificationStart).Contains('LeaderDemo__Seed__Enabled')) 'AppHost must not leak the business leader-demo seed flag to Notification.'
@@ -582,6 +590,7 @@ try {
                     organizationId = 'org-001'
                     environmentId = 'env-dev'
                     permissionCodes = @('business.erp.sales-orders.read', 'business.mes.work-orders.read')
+                    roleIds = @('role-platform-admin')
                 }
             }
         } `
@@ -590,6 +599,9 @@ try {
             Assert-True ($Headers.Authorization -ceq "Bearer $leaderSecretToken") "Fact '$FactName' did not use the authenticated public Gateway token."
             $script:leaderFactCalls.Add("$FactName=$Url")
             switch ($FactName) {
+                'ACCOUNT-ROLES' {
+                    [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ roleId = 'role-platform-admin'; roleName = 'Platform Administrator'; permissionCodes = @('business.erp.sales-orders.read', 'business.mes.work-orders.read') }) } }
+                }
                 'SO-DEMO-001' {
                     [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ salesOrderNo = 'SO-DEMO-001'; status = 'Released' }) } }
                 }
@@ -599,8 +611,11 @@ try {
                 'DEV-CNC-DEMO' {
                     [pscustomobject]@{ data = [pscustomobject]@{ resources = @([pscustomobject]@{ resourceType = 'device-asset'; code = 'DEV-CNC-DEMO'; active = $true }) } }
                 }
+                'ALARM-DEMO-001' {
+                    [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ deviceAssetId = 'DEV-CNC-DEMO'; ruleCode = 'ALARM-DEMO-001'; isEnabled = $true }) } }
+                }
                 'MWO-DEMO-001' {
-                    [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ deviceAssetId = 'DEV-CNC-DEMO'; ruleCode = 'MWO-DEMO-001:temperature'; isEnabled = $true }) } }
+                    [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ deviceAssetId = 'DEV-CNC-DEMO'; sourceAlarmId = 'ALARM-DEMO-001'; sourceReferenceId = 'MWO-DEMO-001'; status = 'Open' }) } }
                 }
                 default { throw "Unexpected fact '$FactName'." }
             }
@@ -619,7 +634,7 @@ try {
     Assert-True `
         ($businessGatewayHealthCall.EndsWith('/health', [StringComparison]::Ordinal)) `
         'BusinessGateway availability must probe its public 2xx health endpoint instead of the intentionally unmapped root path.'
-    foreach ($factName in @('SO-DEMO-001', 'WO-DEMO-Q01', 'DEV-CNC-DEMO', 'MWO-DEMO-001')) {
+    foreach ($factName in @('SO-DEMO-001', 'WO-DEMO-Q01', 'DEV-CNC-DEMO', 'ALARM-DEMO-001', 'MWO-DEMO-001')) {
         Assert-True (@($script:leaderFactCalls | Where-Object { $_.StartsWith("$factName=", [StringComparison]::Ordinal) }).Count -eq 1) "Leader-demo health did not query '$factName' through a public facade."
     }
     Assert-True (Test-Path -LiteralPath $leaderSuccess.EvidencePath -PathType Leaf) 'Successful leader-demo verification did not write evidence.'
@@ -630,16 +645,19 @@ try {
     Assert-True ($leaderEvidence.sessionId -ceq $sessionId -and $leaderEvidence.command -ceq 'health-check') 'Evidence must identify the exact session and command.'
     Assert-True ($leaderEvidence.result -ceq 'passed' -and $leaderEvidence.messagingProvider -ceq 'Redis') 'Evidence must record the successful Redis result.'
     Assert-True ($script:leaderPrincipalCalls.Count -eq 1 -and $script:leaderPrincipalCalls[0].EndsWith('/api/console/v1/auth/me', [StringComparison]::Ordinal)) 'Verification must observe the authenticated principal through public auth/me.'
-    Assert-True ($leaderEvidence.access.roles.Count -eq 0) 'Evidence must not infer or fabricate roles absent from the public auth contract.'
-    Assert-True (-not $leaderEvidence.access.rolesObserved) 'Evidence must state that roles were not observed.'
-    Assert-True ($leaderEvidence.access.rolesObservation -ceq 'not-exposed-by-public-auth-contract') 'Evidence must explain why authenticated roles are unavailable.'
+    Assert-True ($leaderEvidence.access.roles.Count -eq 1) 'Evidence must record the authenticated membership role observed through public contracts.'
+    Assert-True ($leaderEvidence.access.roles[0].roleId -ceq 'role-platform-admin' -and $leaderEvidence.access.roles[0].roleName -ceq 'Platform Administrator') 'Evidence must map the exact membership role ID to its public role name.'
+    Assert-True ($leaderEvidence.access.rolesObserved) 'Evidence must state that account roles were observed.'
+    Assert-True ($leaderEvidence.access.rolesObservation -ceq 'public-auth-me-and-role-catalog') 'Evidence must name the public role observation path.'
     Assert-True ($leaderEvidence.access.principal.loginName -ceq 'leader') 'Evidence must record the observed non-secret principal identity.'
     Assert-True ($leaderEvidence.access.principal.permissionCodes.Count -eq 2) 'Evidence must record observed permission codes without inferring roles.'
     Assert-True (-not [string]::IsNullOrWhiteSpace("$($leaderEvidence.access.urls.gateway)")) 'Evidence must record non-secret access URLs.'
     Assert-True ($leaderEvidence.resources.Count -eq $requiredLeaderResources.Count) 'Evidence must contain one row per required resource.'
     Assert-True (@($leaderEvidence.resources | Where-Object { $null -eq $_.elapsedMilliseconds -or [string]::IsNullOrWhiteSpace("$($_.state)") }).Count -eq 0) 'Every resource evidence row needs state and elapsed time.'
-    Assert-True ($leaderEvidence.facts.Count -eq 4 -and @($leaderEvidence.facts | Where-Object { -not $_.found }).Count -eq 0) 'Evidence must record all four observed public facts.'
+    Assert-True ($leaderEvidence.facts.Count -eq 5 -and @($leaderEvidence.facts | Where-Object { -not $_.found }).Count -eq 0) 'Evidence must record all five observed public facts.'
     Assert-True (@($leaderEvidence.facts | Where-Object { [string]::IsNullOrWhiteSpace("$($_.link)") -or [string]::IsNullOrWhiteSpace("$($_.status)") }).Count -eq 0) 'Every fact evidence row needs a result link and observed status.'
+    Assert-True (@($leaderEvidence.facts | Where-Object { $_.matchCount -ne 1 }).Count -eq 0) 'Every reserved fact must have exactly one public match so repeated resets cannot hide duplicates.'
+    Assert-True (@($leaderEvidence.facts | Where-Object { [string]::IsNullOrWhiteSpace("$($_.event)") -or [string]::IsNullOrWhiteSpace("$($_.observedAtUtc)") }).Count -eq 0) 'Every fact evidence row needs a key event and observation time.'
     Assert-True (-not [string]::IsNullOrWhiteSpace("$($leaderEvidence.diagnostics.fullStackArtifactPath)")) 'Evidence must link the full-stack diagnostics.'
     Assert-True ($leaderEvidence.cleanup.command -ceq '.\nerv.ps1 demo stop') 'Evidence must include the exact cleanup command.'
     Assert-True (@(Get-ChildItem -LiteralPath (Split-Path -Parent $leaderSuccess.EvidencePath) -Filter '*.tmp' -File).Count -eq 0) 'Successful evidence publication must leave only the valid authoritative JSON file.'
@@ -699,7 +717,7 @@ try {
             } `
             -HttpCheckAction { param($Name, $Url) } `
             -LoginAction { param($GatewayUrl, $Password) [pscustomobject]@{ data = [pscustomobject]@{ accessToken = $leaderSecretToken } } } `
-            -PrincipalAction { param($GatewayUrl, $Headers) [pscustomobject]@{ data = [pscustomobject]@{ principalId = 'user-leader'; principalType = 'user'; loginName = 'leader'; organizationId = 'org-001'; environmentId = 'env-dev'; permissionCodes = @() } } } `
+            -PrincipalAction { param($GatewayUrl, $Headers) [pscustomobject]@{ data = [pscustomobject]@{ principalId = 'user-leader'; principalType = 'user'; loginName = 'leader'; organizationId = 'org-001'; environmentId = 'env-dev'; permissionCodes = @(); roleIds = @('role-platform-admin') } } } `
             -PublicFactQueryAction { param($FactName, $Url, $Headers) throw 'fact query should be skipped after an unhealthy resource gate' } | Out-Null
     }
     catch { $missingResourceFailure = $_.Exception.Message }
@@ -768,25 +786,31 @@ try {
             -AspireSnapshotAction { param($Manifest) $healthyLeaderSnapshot } `
             -HttpCheckAction { param($Name, $Url) } `
             -LoginAction { param($GatewayUrl, $Password) [pscustomobject]@{ data = [pscustomobject]@{ accessToken = $leaderSecretToken } } } `
-            -PrincipalAction { param($GatewayUrl, $Headers) [pscustomobject]@{ data = [pscustomobject]@{ principalId = 'user-leader'; principalType = 'user'; loginName = 'leader'; organizationId = 'org-001'; environmentId = 'env-dev'; permissionCodes = @() } } } `
+            -PrincipalAction { param($GatewayUrl, $Headers) [pscustomobject]@{ data = [pscustomobject]@{ principalId = 'user-leader'; principalType = 'user'; loginName = 'leader'; organizationId = 'org-001'; environmentId = 'env-dev'; permissionCodes = @(); roleIds = @('role-platform-admin') } } } `
             -PublicFactQueryAction {
                 param($FactName, $Url, $Headers)
                 switch ($FactName) {
+                    'ACCOUNT-ROLES' { [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ roleId = 'role-platform-admin'; roleName = 'Platform Administrator'; permissionCodes = @() }) } } }
                     'SO-DEMO-001' { [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ salesOrderNo = 'SO-DEMO-001'; status = 'Released' }) } } }
                     'WO-DEMO-Q01' { [pscustomobject]@{ data = [pscustomobject]@{ workOrderId = 'WO-DEMO-Q01'; status = 'released' } } }
-                    'DEV-CNC-DEMO' { [pscustomobject]@{ data = [pscustomobject]@{ resources = @() } } }
-                    'MWO-DEMO-001' { [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ deviceAssetId = 'DEV-CNC-DEMO'; ruleCode = 'MWO-DEMO-001:temperature'; isEnabled = $true }) } } }
+                    'DEV-CNC-DEMO' { [pscustomobject]@{ data = [pscustomobject]@{ resources = @(
+                        [pscustomobject]@{ resourceType = 'device-asset'; code = 'DEV-CNC-DEMO'; active = $true },
+                        [pscustomobject]@{ resourceType = 'device-asset'; code = 'DEV-CNC-DEMO'; active = $true }
+                    ) } } }
+                    'ALARM-DEMO-001' { [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ deviceAssetId = 'DEV-CNC-DEMO'; ruleCode = 'ALARM-DEMO-001'; isEnabled = $true }) } } }
+                    'MWO-DEMO-001' { [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ deviceAssetId = 'DEV-CNC-DEMO'; sourceAlarmId = 'ALARM-DEMO-001'; sourceReferenceId = 'MWO-DEMO-001'; status = 'Open' }) } } }
                 }
             } | Out-Null
     }
     catch { $factFailure = $_.Exception }
-    Assert-True ($null -ne $factFailure) 'A missing required public fact must fail seed verification.'
+    Assert-True ($null -ne $factFailure) 'A duplicated reserved public fact must fail seed verification.'
     $factEvidencePath = Get-ChildItem -LiteralPath $leaderEvidenceRoot -Filter evidence.json -File -Recurse |
         Where-Object { $_.Directory.Name.StartsWith('20260720T123856000Z-', [StringComparison]::Ordinal) } |
         Select-Object -First 1 -ExpandProperty FullName
     $factFailureEvidence = Get-Content -LiteralPath $factEvidencePath -Raw | ConvertFrom-Json -Depth 50
     $deviceFactFailure = @($factFailureEvidence.facts | Where-Object { $_.key -ceq 'DEV-CNC-DEMO' })
-    Assert-True ($deviceFactFailure.Count -eq 1 -and -not $deviceFactFailure[0].found) 'Failed fact evidence must retain the exact missing key.'
+    Assert-True ($deviceFactFailure.Count -eq 1 -and -not $deviceFactFailure[0].found) 'Failed fact evidence must retain the exact duplicated key.'
+    Assert-True ($deviceFactFailure[0].matchCount -eq 2) 'Failed fact evidence must expose the duplicate match count.'
     Assert-True ($deviceFactFailure[0].hint.Contains($leaderManifest.artifactPath)) 'Failed fact remediation must include the diagnostic artifact path.'
     Assert-True ($deviceFactFailure[0].hint.Contains('.\nerv.ps1 demo reset')) 'Failed fact remediation must include a bounded recovery command.'
 }

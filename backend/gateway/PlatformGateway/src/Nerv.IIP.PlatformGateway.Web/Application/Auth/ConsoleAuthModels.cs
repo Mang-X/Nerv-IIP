@@ -14,7 +14,8 @@ public sealed record ConsolePrincipalResponse(
     string OrganizationId,
     string EnvironmentId,
     int PermissionVersion,
-    IReadOnlyList<string> PermissionCodes);
+    IReadOnlyList<string> PermissionCodes,
+    IReadOnlyList<string> RoleIds);
 
 public sealed record ConsoleAuthResponse(
     string AccessToken,

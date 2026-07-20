@@ -131,14 +131,18 @@ if (leaderDemoSeedEnabled && !app.Environment.IsDevelopment())
     throw new InvalidOperationException("LeaderDemo:Seed:Enabled=true is only allowed for BusinessMES in Development.");
 }
 
-await app.StartAsync();
+// Resolve the released ProductEngineering version through the real HTTP boundary before MES
+// accepts traffic. This keeps the normal ProductEngineering client timeout unchanged and prevents
+// /health from becoming green while the bounded leader-demo prerequisite is still converging.
 if (leaderDemoSeedEnabled)
 {
     using var scope = app.Services.CreateScope();
-    await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync("org-001", "env-dev");
+    await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(
+        builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
+        builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
 }
 
-await app.WaitForShutdownAsync();
+await app.RunAsync();
 
 static string ToLowerCamelEndpointName(string endpointTypeName)
 {

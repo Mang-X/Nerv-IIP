@@ -109,7 +109,7 @@ Run the two affected script test files. Expected: failures because health/eviden
 
 - [ ] **Step 3: Implement bounded health and evidence**
 
-Use Aspire `describe`/`wait` through existing helpers for infrastructure and service states. Use the Platform Gateway login and BusinessGateway public read facades for `SO-DEMO-001`, `WO-DEMO-Q01`, `DEV-CNC-DEMO`, and the `MWO-DEMO-001` alarm-rule/source prefix. Write evidence on success and failure before returning the original non-zero result.
+Use Aspire `describe`/`wait` through existing helpers for infrastructure and service states. Use the Platform Gateway login and BusinessGateway public read facades for `SO-DEMO-001`, `WO-DEMO-Q01`, `DEV-CNC-DEMO`, the `ALARM-DEMO-001` enabled alarm rule, and the open alarm-sourced Maintenance work order reference `MWO-DEMO-001`. Resolve the principal's actual role IDs through the public role catalog. Write evidence on success and failure before returning the original non-zero result.
 
 - [ ] **Step 4: Verify secret redaction and failure hints**
 
@@ -144,7 +144,7 @@ Set `NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD` only in process scope. Run `demo reset
 
 - [ ] **Step 4: Review scope and requirements**
 
-Compare the diff to MAN-519/#960 line by line. Confirm no final business status is seeded, no endpoint/OpenAPI/client change occurred, and product docs are unaffected.
+Compare the diff to MAN-519/#960 line by line. Confirm no final business status is seeded; confirm the compatible `/auth/me.roleIds` and Maintenance `sourceReferenceId` read-contract changes are reflected in exported OpenAPI/generated clients; confirm product docs are unaffected.
 
 - [ ] **Step 5: Commit documentation and verification notes**
 
@@ -152,4 +152,4 @@ Commit with message `docs(demo): document repeatable leader environment`.
 
 - [ ] **Step 6: Push and create ready PR**
 
-Push `codex/man-519-960-demo-environment` and create a non-draft PR targeting `main`. The body includes summary, tests, real-stack evidence, risks, schema/OpenAPI impact, product-doc impact, per-endpoint facade declaration (`none`), and `Fixes #960`. Do not merge.
+Push `codex/man-519-960-demo-environment` and create a non-draft PR targeting `main`. The body includes summary, tests, real-stack evidence, risks, schema/OpenAPI impact, product-doc impact, and facade declarations: existing PlatformGateway `/api/console/v1/auth/me` remains a Console facade, while Maintenance `GET /api/business/v1/maintenance/work-orders` remains `exposed` through BusinessGateway with its source-reference response field. Confirm the existing facade matrix row remains `exposed`, include `Fixes #960`, and do not merge.

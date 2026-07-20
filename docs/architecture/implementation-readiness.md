@@ -10,7 +10,7 @@
 
 领导演示使用受治理的 `.\nerv.ps1 demo start|reset|seed|health-check|stop` 入口，复用隔离 full-stack session 和唯一 Aspire AppHost 拓扑。启动前必须仅在当前 PowerShell 进程设置 `NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD`；不得通过命令行参数、`setx`、仓库文件或日志传递/保存密码。`demo reset` 只停止机器本地 pointer 记录的精确 session，确认其自有资源清理后重建新 session，不会删除共享开发数据库或对客户数据执行写入。
 
-该 profile 强制使用 PostgreSQL + Redis 跨进程消息；`seed` 只验证各服务 opt-in startup seed 已收敛到 `SO-DEMO-001`、`WO-DEMO-Q01`、`DEV-CNC-DEMO` / `MWO-DEMO-001` 等固定前置事实，不直接写表。种子不得创建生产报工/完工数量、成品库存、检验结论或 NCR/隔离/审批结果、发货、应收、遥测样本/报警事件或已完成维修工单。每次 `seed` 和 `health-check` 成功或失败都保留脱敏证据到 `artifacts/leader-demo/<UTC-run-id>/evidence.json`；该证据必须显示 `Messaging Provider=Redis`、公开 HTTP 事实校验结果和精确 cleanup 命令。完整操作手册见 `infra/aspire/README.md`。
+该 profile 强制使用 PostgreSQL + Redis 跨进程消息；`seed` 只验证各服务 opt-in startup seed 已收敛到 `SO-DEMO-001`、`WO-DEMO-Q01`、`DEV-CNC-DEMO`、`ALARM-DEMO-001` enabled alarm rule 和 `MWO-DEMO-001` open alarm-sourced Maintenance work order 等固定前置事实，不直接写表。维修前置工单以 `SourceAlarmId=ALARM-DEMO-001` 参与真实 raise/clear 生命周期，以 `SourceReferenceId=MWO-DEMO-001` 保留演示案例引用。种子不得创建生产报工/完工数量、成品库存、检验结论或 NCR/隔离/审批结果、发货、应收、遥测样本/报警事件或已完成维修工单。每次 `seed` 和 `health-check` 成功或失败都保留脱敏证据到 `artifacts/leader-demo/<UTC-run-id>/evidence.json`；该证据必须显示 `Messaging Provider=Redis`、`/auth/me` 返回的实际角色 ID 经公开角色 catalog 解析后的账号角色，以及每个公开固定事实的 key event、观测时间和唯一匹配计数，重复 reset/seed 产生重复事实时必须失败；同时记录精确 cleanup 命令。完整操作手册见 `infra/aspire/README.md`。
 
 ## 当前结论
 

@@ -45,6 +45,23 @@ public sealed class LeaderDemoSeedServiceTests
     }
 
     [Fact]
+    public async Task Seed_retries_a_transient_http_timeout_instead_of_aborting_startup()
+    {
+        await using var db = CreateDbContext();
+        var handler = new ProductionVersionHandler(timeoutsBeforeSuccess: 1);
+        var client = new HttpClient(handler) { BaseAddress = new Uri("http://product-engineering") };
+        var seed = new LeaderDemoSeedService(
+            db,
+            new MesProductEngineeringHttpClient(client),
+            new TestInternalServiceTokenProvider(InternalServiceToken));
+
+        await seed.SeedAsync("org-001", "env-dev");
+
+        Assert.Single(await db.WorkOrders.ToArrayAsync());
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
     public async Task Seed_rejects_an_incompatible_reserved_work_order_before_remote_resolution()
     {
         await using var db = CreateDbContext();
@@ -103,7 +120,9 @@ public sealed class LeaderDemoSeedServiceTests
         return new ApplicationDbContext(options, new MesSeedTestMediator());
     }
 
-    private sealed class ProductionVersionHandler(int failuresBeforeSuccess = 0) : HttpMessageHandler
+    private sealed class ProductionVersionHandler(
+        int failuresBeforeSuccess = 0,
+        int timeoutsBeforeSuccess = 0) : HttpMessageHandler
     {
         public const string ProductionVersionId = "019b03d4-fac4-7000-8000-000000000001";
         public int RequestCount { get; private set; }
@@ -112,6 +131,11 @@ public sealed class LeaderDemoSeedServiceTests
         {
             RequestCount++;
             Assert.Equal($"Bearer {InternalServiceToken}", request.Headers.Authorization?.ToString());
+            if (RequestCount <= timeoutsBeforeSuccess)
+            {
+                throw new TaskCanceledException("Simulated ProductEngineering timeout.");
+            }
+
             if (RequestCount <= failuresBeforeSuccess)
             {
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
