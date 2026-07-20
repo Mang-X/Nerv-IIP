@@ -123,6 +123,148 @@ finally {
     }
 }
 
+$failurePrecedenceRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-failure-precedence-$([System.Guid]::NewGuid().ToString('N'))"
+$faultedStreamTaskAction = {
+    param($Reader, $StreamName)
+    if ($StreamName -ceq 'stdout') {
+        return [System.Threading.Tasks.Task]::FromException[string](
+            [InvalidOperationException]::new('token=super-secret-token simulated stdout drain failure')
+        )
+    }
+    return [System.Threading.Tasks.Task]::FromResult[string]('')
+}
+try {
+    [System.IO.Directory]::CreateDirectory($failurePrecedenceRoot) | Out-Null
+
+    $withTimeoutExitFailure = $null
+    try {
+        Invoke-NativeCommandWithTimeout `
+            -Command 'pwsh' `
+            -Arguments @('-NoProfile', '-NonInteractive', '-Command', 'exit 31') `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 10 `
+            -Name 'drain-precedence-with-timeout-exit' `
+            -LogDirectory (Join-Path $failurePrecedenceRoot 'with-timeout-exit') `
+            -StreamReadTaskAction $faultedStreamTaskAction | Out-Null
+    }
+    catch { $withTimeoutExitFailure = $_ }
+    if ($null -eq $withTimeoutExitFailure -or -not $withTimeoutExitFailure.Exception.Message.Contains('exited with 31')) {
+        throw 'Invoke-NativeCommandWithTimeout must prioritize the native nonzero exit over a completed drain fault.'
+    }
+    if ($withTimeoutExitFailure.Exception.Message.Contains('super-secret-token')) {
+        throw 'Invoke-NativeCommandWithTimeout nonzero diagnostics must redact drain secrets.'
+    }
+
+    $outputExitFailure = $null
+    try {
+        Invoke-NativeCommandOutput `
+            -Command 'pwsh' `
+            -Arguments @('-NoProfile', '-NonInteractive', '-Command', 'exit 32') `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 10 `
+            -Name 'drain-precedence-output-exit' `
+            -LogDirectory (Join-Path $failurePrecedenceRoot 'output-exit') `
+            -StreamReadTaskAction $faultedStreamTaskAction | Out-Null
+    }
+    catch { $outputExitFailure = $_ }
+    if ($null -eq $outputExitFailure -or [int] $outputExitFailure.Exception.Data['ExitCode'] -ne 32) {
+        throw 'Invoke-NativeCommandOutput must preserve structured native exit data over a completed drain fault.'
+    }
+    if ($outputExitFailure.Exception.Message.Contains('super-secret-token')) {
+        throw 'Invoke-NativeCommandOutput nonzero diagnostics must redact drain secrets.'
+    }
+
+    $withTimeoutTimeoutFailure = $null
+    try {
+        Invoke-NativeCommandWithTimeout `
+            -Command 'pwsh' `
+            -Arguments @('-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 5') `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 1 `
+            -Name 'drain-precedence-with-timeout-timeout' `
+            -LogDirectory (Join-Path $failurePrecedenceRoot 'with-timeout-timeout') `
+            -StreamReadTaskAction $faultedStreamTaskAction | Out-Null
+    }
+    catch { $withTimeoutTimeoutFailure = $_ }
+    if ($null -eq $withTimeoutTimeoutFailure -or -not $withTimeoutTimeoutFailure.Exception.Message.Contains('timed out after 1 seconds')) {
+        throw 'Invoke-NativeCommandWithTimeout must prioritize its timeout over a completed drain fault.'
+    }
+    if ($withTimeoutTimeoutFailure.Exception.Message.Contains('super-secret-token')) {
+        throw 'Invoke-NativeCommandWithTimeout timeout diagnostics must redact drain secrets.'
+    }
+
+    $outputTimeoutFailure = $null
+    try {
+        Invoke-NativeCommandOutput `
+            -Command 'pwsh' `
+            -Arguments @('-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 5') `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 1 `
+            -Name 'drain-precedence-output-timeout' `
+            -LogDirectory (Join-Path $failurePrecedenceRoot 'output-timeout') `
+            -StreamReadTaskAction $faultedStreamTaskAction | Out-Null
+    }
+    catch { $outputTimeoutFailure = $_ }
+    if ($null -eq $outputTimeoutFailure -or -not $outputTimeoutFailure.Exception.Message.Contains('timed out after 1 seconds')) {
+        throw 'Invoke-NativeCommandOutput must prioritize its timeout over a completed drain fault.'
+    }
+    if ($outputTimeoutFailure.Exception.Message.Contains('super-secret-token')) {
+        throw 'Invoke-NativeCommandOutput timeout diagnostics must redact drain secrets.'
+    }
+
+    foreach ($zeroExitCase in @(
+        [pscustomobject]@{
+            Name = 'Invoke-NativeCommandWithTimeout'
+            Action = {
+                Invoke-NativeCommandWithTimeout `
+                    -Command 'pwsh' `
+                    -Arguments @('-NoProfile', '-NonInteractive', '-Command', 'exit 0') `
+                    -WorkingDirectory $repoRoot `
+                    -TimeoutSeconds 10 `
+                    -Name 'drain-precedence-with-timeout-zero' `
+                    -LogDirectory (Join-Path $failurePrecedenceRoot 'with-timeout-zero') `
+                    -StreamReadTaskAction $faultedStreamTaskAction | Out-Null
+            }
+        },
+        [pscustomobject]@{
+            Name = 'Invoke-NativeCommandOutput'
+            Action = {
+                Invoke-NativeCommandOutput `
+                    -Command 'pwsh' `
+                    -Arguments @('-NoProfile', '-NonInteractive', '-Command', 'exit 0') `
+                    -WorkingDirectory $repoRoot `
+                    -TimeoutSeconds 10 `
+                    -Name 'drain-precedence-output-zero' `
+                    -LogDirectory (Join-Path $failurePrecedenceRoot 'output-zero') `
+                    -StreamReadTaskAction $faultedStreamTaskAction | Out-Null
+            }
+        }
+    )) {
+        $drainOnlyFailure = $null
+        try { & $zeroExitCase.Action }
+        catch { $drainOnlyFailure = $_ }
+        if ($null -eq $drainOnlyFailure -or -not $drainOnlyFailure.Exception.Message.Contains('redirected stream drain failed')) {
+            throw "$($zeroExitCase.Name) must surface a drain failure when the root exits zero."
+        }
+        if ($drainOnlyFailure.Exception.Message.Contains('super-secret-token')) {
+            throw "$($zeroExitCase.Name) drain-only diagnostics must redact secrets."
+        }
+        if (-not $drainOnlyFailure.Exception.Message.Contains('token=<redacted>')) {
+            throw "$($zeroExitCase.Name) drain-only diagnostics must retain a useful redacted marker."
+        }
+    }
+}
+finally {
+    $resolvedFailurePrecedenceRoot = Resolve-Path $failurePrecedenceRoot -ErrorAction SilentlyContinue
+    if ($resolvedFailurePrecedenceRoot) {
+        $tempRoot = [System.IO.Path]::GetTempPath()
+        if (-not $resolvedFailurePrecedenceRoot.Path.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove failure-precedence fixture outside temp: $($resolvedFailurePrecedenceRoot.Path)"
+        }
+        Remove-Item -LiteralPath $resolvedFailurePrecedenceRoot.Path -Recurse -Force
+    }
+}
+
 $streamDrainRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-stream-drain-$([System.Guid]::NewGuid().ToString('N'))"
 $streamDrainOutputIdentity = Join-Path $streamDrainRoot 'output-child.json'
 $streamDrainTimeoutIdentity = Join-Path $streamDrainRoot 'timeout-child.json'

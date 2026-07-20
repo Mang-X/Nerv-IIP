@@ -278,19 +278,20 @@ function Complete-ScriptAutomationRedirectedStreamDrain {
             -Message "Redirected stream drain did not complete within the $($script:ScriptAutomationStreamDrainTimeoutMilliseconds)ms bound for '$Name'; closed $($unfinished -join ', ') reader(s). Logs: $resolvedLogDirectory"
     }
 
-    if (-not $unfinished.Contains('stdout') -and $StdoutTask.Status -in @(
-        [System.Threading.Tasks.TaskStatus]::Canceled,
-        [System.Threading.Tasks.TaskStatus]::Faulted
+    $drainErrors = [System.Collections.Generic.List[string]]::new()
+    foreach ($stream in @(
+        [pscustomobject]@{ Name = 'stdout'; Task = $StdoutTask },
+        [pscustomobject]@{ Name = 'stderr'; Task = $StderrTask }
     )) {
-        # The task is terminal, so this preserves its original exception without waiting.
-        [void] $StdoutTask.GetAwaiter().GetResult()
-    }
-    if (-not $unfinished.Contains('stderr') -and $StderrTask.Status -in @(
-        [System.Threading.Tasks.TaskStatus]::Canceled,
-        [System.Threading.Tasks.TaskStatus]::Faulted
-    )) {
-        # The task is terminal, so this preserves its original exception without waiting.
-        [void] $StderrTask.GetAwaiter().GetResult()
+        if ($unfinished.Contains($stream.Name)) { continue }
+        if ($stream.Task.Status -eq [System.Threading.Tasks.TaskStatus]::Canceled) {
+            $drainErrors.Add("$($stream.Name) drain was canceled")
+        }
+        elseif ($stream.Task.Status -eq [System.Threading.Tasks.TaskStatus]::Faulted) {
+            $drainFailure = $stream.Task.Exception.GetBaseException()
+            $safeDrainMessage = Protect-ScriptAutomationText "$($drainFailure.Message)"
+            $drainErrors.Add("$($stream.Name) drain failed: $safeDrainMessage")
+        }
     }
 
     $stdout = if ($StdoutTask.Status -eq [System.Threading.Tasks.TaskStatus]::RanToCompletion) {
@@ -309,7 +310,19 @@ function Complete-ScriptAutomationRedirectedStreamDrain {
         Stderr = $stderr
         TimedOut = $unfinished.Count -gt 0
         UnfinishedStreams = @($unfinished)
+        DrainErrors = @($drainErrors)
         LogDirectory = $resolvedLogDirectory
+    }
+}
+
+function Write-ScriptAutomationStreamDrainDiagnostics {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [object] $Drain
+    )
+
+    foreach ($diagnostic in @($Drain.DrainErrors)) {
+        Write-Diagnostic -Level 'WARN' -Message "Redirected stream diagnostic for '$Name': $diagnostic"
     }
 }
 
@@ -328,11 +341,16 @@ function Invoke-NativeCommandWithTimeout {
 
         [string] $LogDirectory,
 
-        [int[]] $SensitiveArgumentIndexes = @()
+        [int[]] $SensitiveArgumentIndexes = @(),
+
+        [scriptblock] $StreamReadTaskAction
     )
 
     if ([string]::IsNullOrWhiteSpace($Name)) {
         $Name = [System.IO.Path]::GetFileNameWithoutExtension($Command)
+    }
+    if ($null -eq $StreamReadTaskAction) {
+        $StreamReadTaskAction = { param($Reader, $StreamName) $Reader.ReadToEndAsync() }
     }
 
     $resolvedLogDirectory = New-ScriptAutomationLogDirectory -Name $Name -LogDirectory $LogDirectory
@@ -369,8 +387,8 @@ function Invoke-NativeCommandWithTimeout {
         }
 
         $rootProcessId = $process.Id
-        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $stdoutTask = & $StreamReadTaskAction $process.StandardOutput 'stdout'
+        $stderrTask = & $StreamReadTaskAction $process.StandardError 'stderr'
 
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
             $timedOut = $true
@@ -382,25 +400,30 @@ function Invoke-NativeCommandWithTimeout {
                 -StderrTask $stderrTask `
                 -Name $Name `
                 -LogDirectory $resolvedLogDirectory
+            Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain
             Write-ScriptAutomationProcessLog -Path $stdoutPath -Content $drain.Stdout
             Write-ScriptAutomationProcessLog -Path $stderrPath -Content $drain.Stderr
             throw "Command '$Command' timed out after $TimeoutSeconds seconds. Stopped PIDs: $($cleanup.StoppedProcessIds -join ', '). Logs: $resolvedLogDirectory"
         }
 
+        $exitCode = $process.ExitCode
         $drain = Complete-ScriptAutomationRedirectedStreamDrain `
             -Process $process `
             -StdoutTask $stdoutTask `
             -StderrTask $stderrTask `
             -Name $Name `
             -LogDirectory $resolvedLogDirectory
+        Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain
         Write-ScriptAutomationProcessLog -Path $stdoutPath -Content $drain.Stdout
         Write-ScriptAutomationProcessLog -Path $stderrPath -Content $drain.Stderr
 
-        $exitCode = $process.ExitCode
         $stopwatch.Stop()
 
         if ($exitCode -ne 0) {
             throw "Command '$Command' exited with $exitCode after $($stopwatch.Elapsed). Logs: $resolvedLogDirectory"
+        }
+        if (@($drain.DrainErrors).Count -gt 0) {
+            throw "Command '$Command' redirected stream drain failed: $($drain.DrainErrors -join '; '). Logs: $resolvedLogDirectory"
         }
 
         Write-Diagnostic "Command completed: $Command (pid=$rootProcessId, durationMs=$($stopwatch.ElapsedMilliseconds), logs=$resolvedLogDirectory)"
@@ -457,11 +480,16 @@ function Invoke-NativeCommandOutput {
 
         [string] $Name,
 
-        [string] $LogDirectory
+        [string] $LogDirectory,
+
+        [scriptblock] $StreamReadTaskAction
     )
 
     if ([string]::IsNullOrWhiteSpace($Name)) {
         $Name = [System.IO.Path]::GetFileNameWithoutExtension($Command)
+    }
+    if ($null -eq $StreamReadTaskAction) {
+        $StreamReadTaskAction = { param($Reader, $StreamName) $Reader.ReadToEndAsync() }
     }
 
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
@@ -486,8 +514,8 @@ function Invoke-NativeCommandOutput {
             throw "Failed to start command '$Command'."
         }
 
-        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $stdoutTask = & $StreamReadTaskAction $process.StandardOutput 'stdout'
+        $stderrTask = & $StreamReadTaskAction $process.StandardError 'stderr'
 
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
             Stop-ProcessTree -ProcessId $process.Id -Reason "Timeout while reading output for $Command" | Out-Null
@@ -497,6 +525,7 @@ function Invoke-NativeCommandOutput {
                 -StderrTask $stderrTask `
                 -Name $Name `
                 -LogDirectory $LogDirectory
+            Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain
             if ($drain.TimedOut) {
                 Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $drain.Stdout
                 Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $drain.Stderr
@@ -504,12 +533,14 @@ function Invoke-NativeCommandOutput {
             throw "Command '$Command' timed out after $TimeoutSeconds seconds while reading output."
         }
 
+        $exitCode = $process.ExitCode
         $drain = Complete-ScriptAutomationRedirectedStreamDrain `
             -Process $process `
             -StdoutTask $stdoutTask `
             -StderrTask $stderrTask `
             -Name $Name `
             -LogDirectory $LogDirectory
+        Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain
         $stdout = $drain.Stdout
         $stderr = $drain.Stderr
         if ($drain.TimedOut) {
@@ -517,11 +548,16 @@ function Invoke-NativeCommandOutput {
             Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $stderr
         }
 
-        if ($process.ExitCode -ne 0) {
+        if ($exitCode -ne 0) {
             $safeOutput = Protect-ScriptAutomationText (($stdout, $stderr) -join [Environment]::NewLine)
-            $failure = [InvalidOperationException]::new("Command '$Command' exited with $($process.ExitCode). Output: $safeOutput")
-            $failure.Data['ExitCode'] = [int] $process.ExitCode
+            $failure = [InvalidOperationException]::new("Command '$Command' exited with $exitCode. Output: $safeOutput")
+            $failure.Data['ExitCode'] = [int] $exitCode
             throw $failure
+        }
+        if (@($drain.DrainErrors).Count -gt 0) {
+            throw [InvalidOperationException]::new(
+                "Command '$Command' redirected stream drain failed: $($drain.DrainErrors -join '; ')."
+            )
         }
 
         if (-not [string]::IsNullOrWhiteSpace($stderr)) {
@@ -532,7 +568,7 @@ function Invoke-NativeCommandOutput {
             Command = $Command
             Arguments = $Arguments
             WorkingDirectory = $WorkingDirectory
-            ExitCode = $process.ExitCode
+            ExitCode = $exitCode
             Stdout = $stdout
             Stderr = $stderr
         }
