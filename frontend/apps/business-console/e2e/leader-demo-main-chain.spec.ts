@@ -413,7 +413,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           organizationId,
           environmentId,
           skuCode: finishedSku,
-          mbomVersionId: textOf(mbom.versionId ?? mbom),
+          mbomVersionId: textOf(mbom.id),
           routingVersionId: textOf(routing.versionId ?? routing),
           validFrom: dateOnly(now),
           lotSizeMin: 1,
@@ -442,10 +442,13 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     } catch (error) {
       prerequisitesReady = false
       const blockedReason = safeText(error instanceof Error ? error.message : error)
+      const responsibilityIssue = blockedReason.includes("MBOM version '")
+        ? '#1024 / MAN-564'
+        : '#989'
       setup.push({
         phase: 'public-prerequisites',
         conclusion: 'gap',
-        responsibilityIssue: '#989',
+        responsibilityIssue,
         error: blockedReason,
       })
       for (const node of requiredNodes) {
@@ -454,8 +457,8 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         record({
           ...entry,
           responseOrLog: { blockedBy: 'public-prerequisites', error: blockedReason },
-          demoWording: `${node}: this run was blocked before the business chain by the public-prerequisite gap tracked in #989.`,
-          responsibilityIssue: '#989',
+          demoWording: `${node}: this run was blocked before the business chain by the public-prerequisite gap tracked in ${responsibilityIssue}.`,
+          responsibilityIssue,
         })
       }
     }
