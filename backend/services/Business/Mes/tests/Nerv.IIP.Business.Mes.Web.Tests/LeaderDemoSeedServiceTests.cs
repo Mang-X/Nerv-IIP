@@ -6,18 +6,24 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Seed;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class LeaderDemoSeedServiceTests
 {
+    private const string InternalServiceToken = "leader-demo-internal-token";
+
     [Fact]
     public async Task Seed_retries_active_version_resolution_then_creates_released_prerequisite_once()
     {
         await using var db = CreateDbContext();
         var handler = new ProductionVersionHandler(failuresBeforeSuccess: 1);
         var client = new HttpClient(handler) { BaseAddress = new Uri("http://product-engineering") };
-        var seed = new LeaderDemoSeedService(db, new MesProductEngineeringHttpClient(client));
+        var seed = new LeaderDemoSeedService(
+            db,
+            new MesProductEngineeringHttpClient(client),
+            new TestInternalServiceTokenProvider(InternalServiceToken));
 
         await seed.SeedAsync("org-001", "env-dev");
         await seed.SeedAsync("org-001", "env-dev");
@@ -52,7 +58,10 @@ public sealed class LeaderDemoSeedServiceTests
         var client = new HttpClient(handler) { BaseAddress = new Uri("http://product-engineering") };
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new LeaderDemoSeedService(db, new MesProductEngineeringHttpClient(client)).SeedAsync("org-001", "env-dev"));
+            new LeaderDemoSeedService(
+                db,
+                new MesProductEngineeringHttpClient(client),
+                new TestInternalServiceTokenProvider(InternalServiceToken)).SeedAsync("org-001", "env-dev"));
 
         Assert.Contains("WO-DEMO-Q01", exception.Message, StringComparison.Ordinal);
         Assert.Equal(0, handler.RequestCount);
@@ -76,7 +85,10 @@ public sealed class LeaderDemoSeedServiceTests
         var client = new HttpClient(handler) { BaseAddress = new Uri("http://product-engineering") };
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new LeaderDemoSeedService(db, new MesProductEngineeringHttpClient(client)).SeedAsync("org-001", "env-dev"));
+            new LeaderDemoSeedService(
+                db,
+                new MesProductEngineeringHttpClient(client),
+                new TestInternalServiceTokenProvider(InternalServiceToken)).SeedAsync("org-001", "env-dev"));
 
         Assert.Contains("WO-DEMO-Q01", exception.Message, StringComparison.Ordinal);
         Assert.Equal(1, handler.RequestCount);
@@ -99,6 +111,7 @@ public sealed class LeaderDemoSeedServiceTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestCount++;
+            Assert.Equal($"Bearer {InternalServiceToken}", request.Headers.Authorization?.ToString());
             if (RequestCount <= failuresBeforeSuccess)
             {
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
@@ -130,6 +143,8 @@ public sealed class LeaderDemoSeedServiceTests
             });
         }
     }
+
+    private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 
     private sealed class MesSeedTestMediator : IMediator
     {

@@ -1,15 +1,18 @@
 using System.Globalization;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Seed;
 
 public sealed class LeaderDemoSeedService(
     ApplicationDbContext dbContext,
-    MesProductEngineeringHttpClient productEngineeringClient)
+    MesProductEngineeringHttpClient productEngineeringClient,
+    IInternalServiceTokenProvider internalTokenProvider)
 {
     public const string WorkOrderId = "WO-DEMO-Q01";
     public const string SkuCode = "SKU-DEMO-001";
@@ -82,7 +85,14 @@ public sealed class LeaderDemoSeedService(
         {
             try
             {
-                using var response = await productEngineeringClient.HttpClient.GetAsync(query, cancellationToken);
+                using var request = new HttpRequestMessage(HttpMethod.Get, query);
+                var token = internalTokenProvider.BearerToken;
+                if (!string.IsNullOrWhiteSpace(token))
+                {
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                }
+
+                using var response = await productEngineeringClient.HttpClient.SendAsync(request, cancellationToken);
                 if (response.IsSuccessStatusCode)
                 {
                     var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<ResolveProductionVersionResponse>>(cancellationToken);
