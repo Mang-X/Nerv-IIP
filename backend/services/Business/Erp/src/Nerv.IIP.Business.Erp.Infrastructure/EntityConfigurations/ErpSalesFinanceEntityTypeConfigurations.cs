@@ -140,8 +140,11 @@ public sealed class DeliveryOrderEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.CustomerCode).HasColumnName("customer_code").IsRequired().HasMaxLength(100).HasComment("MasterData customer code.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(50).HasComment("ERP delivery order lifecycle status projected from WMS execution facts.");
         builder.Property(x => x.ReleasedAtUtc).HasColumnName("released_at_utc").IsRequired().HasComment("UTC release time.");
+        builder.Property(x => x.ShippedAtUtc).HasColumnName("shipped_at_utc").HasComment("UTC time when the first positive WMS shipment quantity was projected to ERP.");
+        builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC time when cumulative WMS shipment quantities completed every ERP delivery line.");
         builder.Property(x => x.CancelledAtUtc).HasColumnName("cancelled_at_utc").HasComment("UTC time when WMS cancellation was projected to ERP.");
         builder.Property(x => x.CancellationReason).HasColumnName("cancellation_reason").HasMaxLength(1000).HasComment("WMS cancellation reason projected to ERP delivery order.");
+        builder.Property(x => x.Version).HasColumnName("version").IsRequired().IsConcurrencyToken().HasComment("Optimistic concurrency token for cumulative WMS delivery projection updates.");
         builder.HasMany(x => x.Lines).WithOne().HasForeignKey("DeliveryOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeliveryOrderNo }).IsUnique();
@@ -162,6 +165,7 @@ public sealed class DeliveryOrderLineEntityTypeConfiguration : IEntityTypeConfig
         builder.Property(x => x.LocationCode).HasColumnName("location_code").IsRequired().HasMaxLength(100).HasComment("Outbound source location code.");
         builder.Property(x => x.LotNo).HasColumnName("lot_no").HasMaxLength(100).HasComment("Optional outbound lot number.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Requested delivery quantity.");
+        builder.Property(x => x.ShippedQuantity).HasColumnName("shipped_quantity").IsRequired().HasPrecision(18, 6).HasDefaultValue(0m).HasComment("Cumulative WMS shipped quantity projected idempotently for this delivery line.");
     }
 }
 

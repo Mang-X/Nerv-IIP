@@ -43766,6 +43766,16 @@
           "releasedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "shippedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -43777,6 +43787,10 @@
             "type": "string"
           },
           "quantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "shippedQuantity": {
             "type": "number",
             "format": "decimal"
           }

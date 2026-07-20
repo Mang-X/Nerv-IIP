@@ -2628,11 +2628,14 @@ public sealed record BusinessConsoleErpDeliveryOrderItem(
     string CustomerCode,
     string Status,
     IReadOnlyCollection<BusinessConsoleErpDeliveryOrderLineItem> Lines,
-    DateTime ReleasedAtUtc);
+    DateTime ReleasedAtUtc,
+    DateTime? ShippedAtUtc,
+    DateTime? CompletedAtUtc);
 
 public sealed record BusinessConsoleErpDeliveryOrderLineItem(
     string SalesOrderLineNo,
-    decimal Quantity);
+    decimal Quantity,
+    decimal ShippedQuantity);
 
 public sealed record BusinessConsoleCreateErpAccountPayableRequest(
     string OrganizationId,

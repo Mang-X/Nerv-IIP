@@ -5471,11 +5471,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     status?: string;
     lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpDeliveryOrderLineItem>;
     releasedAtUtc?: string;
+    shippedAtUtc?: string | null;
+    completedAtUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpDeliveryOrderLineItem = {
     salesOrderLineNo?: string;
     quantity?: number;
+    shippedQuantity?: number;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReleaseErpDeliveryOrderResponse = NetCorePalExtensionsDtoResponseData & {

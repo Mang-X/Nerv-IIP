@@ -13,6 +13,8 @@ public sealed record DeliveryOrderLineDraft(
     string? LocationCode = null,
     string? LotNo = null);
 
+public sealed record DeliveryOrderShipmentLine(string SalesOrderLineNo, decimal Quantity);
+
 public sealed class DeliveryOrder : Entity<DeliveryOrderId>, IAggregateRoot
 {
     private readonly List<DeliveryOrderLine> lines = [];
@@ -51,13 +53,67 @@ public sealed class DeliveryOrder : Entity<DeliveryOrderId>, IAggregateRoot
     public string CustomerCode { get; private set; } = string.Empty;
     public string Status { get; private set; } = "released";
     public DateTime ReleasedAtUtc { get; private set; }
+    public DateTime? ShippedAtUtc { get; private set; }
+    public DateTime? CompletedAtUtc { get; private set; }
     public DateTime? CancelledAtUtc { get; private set; }
     public string? CancellationReason { get; private set; }
+    public int Version { get; private set; }
     public IReadOnlyCollection<DeliveryOrderLine> Lines => lines;
 
     public static DeliveryOrder Release(SalesOrder order, string deliveryOrderNo, IEnumerable<DeliveryOrderLineDraft> lines)
     {
         return new DeliveryOrder(order, deliveryOrderNo, lines);
+    }
+
+    public bool ApplyShipment(IEnumerable<DeliveryOrderShipmentLine> shipmentLines, DateTime shippedAtUtc)
+    {
+        ArgumentNullException.ThrowIfNull(shipmentLines);
+        if (Status is "cancelled" or "completed")
+        {
+            throw new InvalidOperationException($"Delivery order in status '{Status}' cannot accept shipment quantities.");
+        }
+
+        var shipment = shipmentLines.ToArray();
+        if (shipment.Length == 0 || shipment.All(x => x.Quantity == 0m))
+        {
+            throw new InvalidOperationException("At least one positive shipment quantity is required.");
+        }
+
+        var duplicateLine = shipment
+            .GroupBy(x => x.SalesOrderLineNo, StringComparer.Ordinal)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicateLine is not null)
+        {
+            throw new InvalidOperationException($"Shipment line '{duplicateLine.Key}' is duplicated.");
+        }
+
+        var deliveryLines = lines.ToDictionary(x => x.SalesOrderLineNo, StringComparer.Ordinal);
+        foreach (var shipmentLine in shipment)
+        {
+            if (!deliveryLines.TryGetValue(shipmentLine.SalesOrderLineNo, out var deliveryLine))
+            {
+                throw new InvalidOperationException($"Delivery order line '{shipmentLine.SalesOrderLineNo}' was not found.");
+            }
+
+            deliveryLine.EnsureCanShip(shipmentLine.Quantity);
+        }
+
+        foreach (var shipmentLine in shipment.Where(x => x.Quantity > 0m))
+        {
+            deliveryLines[shipmentLine.SalesOrderLineNo].RegisterShipment(shipmentLine.Quantity);
+        }
+
+        Version++;
+        ShippedAtUtc ??= shippedAtUtc;
+        if (lines.All(x => x.ShippedQuantity == x.Quantity))
+        {
+            Status = "completed";
+            CompletedAtUtc = shippedAtUtc;
+            return true;
+        }
+
+        Status = "partially-shipped";
+        return false;
     }
 
     public bool Cancel(string reason, DateTime cancelledAtUtc)
@@ -67,7 +123,13 @@ public sealed class DeliveryOrder : Entity<DeliveryOrderId>, IAggregateRoot
             return false;
         }
 
+        if (!string.Equals(Status, "released", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Delivery order in status '{Status}' cannot be cancelled.");
+        }
+
         Status = "cancelled";
+        Version++;
         CancelledAtUtc = cancelledAtUtc;
         CancellationReason = ErpText.Required(reason, nameof(reason));
         return true;
@@ -106,6 +168,7 @@ public sealed class DeliveryOrderLine : Entity<DeliveryOrderLineId>
     public string LocationCode { get; private set; } = string.Empty;
     public string? LotNo { get; private set; }
     public decimal Quantity { get; private set; }
+    public decimal ShippedQuantity { get; private set; }
 
     public static DeliveryOrderLine Create(DeliveryOrderLineDraft draft)
     {
@@ -115,5 +178,19 @@ public sealed class DeliveryOrderLine : Entity<DeliveryOrderLineId>
     public static DeliveryOrderLine Create(DeliveryOrderLineDraft draft, SalesOrderLine orderLine)
     {
         return new DeliveryOrderLine(draft, orderLine);
+    }
+
+    internal void EnsureCanShip(decimal quantity)
+    {
+        if (quantity < 0m || quantity > Quantity - ShippedQuantity)
+        {
+            throw new InvalidOperationException($"Shipment quantity for delivery line '{SalesOrderLineNo}' must be within the remaining delivery quantity.");
+        }
+    }
+
+    internal void RegisterShipment(decimal quantity)
+    {
+        EnsureCanShip(quantity);
+        ShippedQuantity += quantity;
     }
 }

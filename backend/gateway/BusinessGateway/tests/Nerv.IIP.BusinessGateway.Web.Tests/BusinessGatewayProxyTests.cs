@@ -2189,6 +2189,12 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "posted", "6001", 5, 15), erp.LastJournalVoucherListRequest);
         using var document = JsonDocument.Parse(await quotations.Content.ReadAsStringAsync());
         Assert.Equal("QUO-001", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("quotationNo").GetString());
+        using var deliveryDocument = JsonDocument.Parse(await deliveries.Content.ReadAsStringAsync());
+        var delivery = deliveryDocument.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("completed", delivery.GetProperty("status").GetString());
+        Assert.Equal("2026-06-02T00:00:00Z", delivery.GetProperty("shippedAtUtc").GetDateTime().ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture));
+        Assert.Equal("2026-06-02T00:00:00Z", delivery.GetProperty("completedAtUtc").GetDateTime().ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture));
+        Assert.Equal(1m, delivery.GetProperty("lines")[0].GetProperty("shippedQuantity").GetDecimal());
     }
 
     [Fact]
@@ -8367,9 +8373,11 @@ internal sealed class RecordingErpClient : IBusinessErpClient
                     "DO-001",
                     "SO-001",
                     "CUST-001",
-                    "released",
-                    [new BusinessConsoleErpDeliveryOrderLineItem("10", 1m)],
-                    DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture)),
+                    "completed",
+                    [new BusinessConsoleErpDeliveryOrderLineItem("10", 1m, 1m)],
+                    DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture),
+                    DateTime.Parse("2026-06-02T00:00:00Z", CultureInfo.InvariantCulture),
+                    DateTime.Parse("2026-06-02T00:00:00Z", CultureInfo.InvariantCulture)),
             ],
             1));
     }

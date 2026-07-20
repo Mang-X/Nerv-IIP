@@ -255,6 +255,101 @@ public sealed class ErpSalesFinanceAggregateTests
     }
 
     [Fact]
+    public void Delivery_order_accumulates_partial_shipments_before_completing_all_lines()
+    {
+        var quotation = Quotation.Create(
+            "org-001",
+            "env-dev",
+            "QT-SHIP-001",
+            "CUST-001",
+            new DateOnly(2026, 8, 1),
+            [
+                new QuotationLineDraft("10", "SKU-A", "EA", 3m, 10m, new DateOnly(2026, 8, 15)),
+                new QuotationLineDraft("20", "SKU-B", "EA", 2m, 20m, new DateOnly(2026, 8, 15)),
+            ]);
+        quotation.Approve();
+        var order = SalesOrder.CreateFromQuotation("SO-SHIP-001", "SITE-001", quotation);
+        var delivery = DeliveryOrder.Release(
+            order,
+            "DO-SHIP-001",
+            [new DeliveryOrderLineDraft("10", 3m), new DeliveryOrderLineDraft("20", 2m)]);
+        var firstShipmentAtUtc = new DateTime(2026, 7, 20, 1, 2, 3, DateTimeKind.Utc);
+
+        var firstCompleted = delivery.ApplyShipment(
+            [new DeliveryOrderShipmentLine("10", 1m), new DeliveryOrderShipmentLine("20", 2m)],
+            firstShipmentAtUtc);
+
+        Assert.False(firstCompleted);
+        Assert.Equal("partially-shipped", delivery.Status);
+        Assert.Equal(firstShipmentAtUtc, delivery.ShippedAtUtc);
+        Assert.Null(delivery.CompletedAtUtc);
+        Assert.Equal(1m, delivery.Lines.Single(x => x.SalesOrderLineNo == "10").ShippedQuantity);
+        Assert.Equal(2m, delivery.Lines.Single(x => x.SalesOrderLineNo == "20").ShippedQuantity);
+
+        var completedAtUtc = firstShipmentAtUtc.AddMinutes(5);
+        var completed = delivery.ApplyShipment([new DeliveryOrderShipmentLine("10", 2m)], completedAtUtc);
+
+        Assert.True(completed);
+        Assert.Equal("completed", delivery.Status);
+        Assert.Equal(firstShipmentAtUtc, delivery.ShippedAtUtc);
+        Assert.Equal(completedAtUtc, delivery.CompletedAtUtc);
+        Assert.All(delivery.Lines, line => Assert.Equal(line.Quantity, line.ShippedQuantity));
+    }
+
+    [Fact]
+    public void Delivery_order_rejects_duplicate_unknown_or_excess_shipment_lines_without_mutation()
+    {
+        var quotation = Quotation.Create(
+            "org-001",
+            "env-dev",
+            "QT-SHIP-INVALID",
+            "CUST-001",
+            new DateOnly(2026, 8, 1),
+            [new QuotationLineDraft("10", "SKU-A", "EA", 2m, 10m, new DateOnly(2026, 8, 15))]);
+        quotation.Approve();
+        var order = SalesOrder.CreateFromQuotation("SO-SHIP-INVALID", "SITE-001", quotation);
+        var delivery = DeliveryOrder.Release(order, "DO-SHIP-INVALID", [new DeliveryOrderLineDraft("10", 2m)]);
+        var shippedAtUtc = new DateTime(2026, 7, 20, 1, 2, 3, DateTimeKind.Utc);
+
+        Assert.Throws<InvalidOperationException>(() => delivery.ApplyShipment(
+            [new DeliveryOrderShipmentLine("10", 1m), new DeliveryOrderShipmentLine("10", 1m)],
+            shippedAtUtc));
+        Assert.Throws<InvalidOperationException>(() => delivery.ApplyShipment(
+            [new DeliveryOrderShipmentLine("missing", 1m)],
+            shippedAtUtc));
+        Assert.Throws<InvalidOperationException>(() => delivery.ApplyShipment(
+            [new DeliveryOrderShipmentLine("10", 3m)],
+            shippedAtUtc));
+
+        Assert.Equal("released", delivery.Status);
+        Assert.Null(delivery.ShippedAtUtc);
+        Assert.Null(delivery.CompletedAtUtc);
+        Assert.Equal(0m, Assert.Single(delivery.Lines).ShippedQuantity);
+    }
+
+    [Fact]
+    public void Delivery_order_cannot_be_cancelled_after_any_shipment()
+    {
+        var quotation = Quotation.Create(
+            "org-001",
+            "env-dev",
+            "QT-SHIP-CANCEL",
+            "CUST-001",
+            new DateOnly(2026, 8, 1),
+            [new QuotationLineDraft("10", "SKU-A", "EA", 2m, 10m, new DateOnly(2026, 8, 15))]);
+        quotation.Approve();
+        var order = SalesOrder.CreateFromQuotation("SO-SHIP-CANCEL", "SITE-001", quotation);
+        var delivery = DeliveryOrder.Release(order, "DO-SHIP-CANCEL", [new DeliveryOrderLineDraft("10", 2m)]);
+        delivery.ApplyShipment(
+            [new DeliveryOrderShipmentLine("10", 1m)],
+            new DateTime(2026, 7, 20, 1, 2, 3, DateTimeKind.Utc));
+
+        Assert.Throws<InvalidOperationException>(() => delivery.Cancel(
+            "too late",
+            new DateTime(2026, 7, 20, 1, 3, 3, DateTimeKind.Utc)));
+    }
+
+    [Fact]
     public void Finance_rejects_overpayment_and_unbalanced_vouchers()
     {
         var payable = AccountPayable.Create("org-001", "env-dev", "AP-001", "RCV-001", "SUP-001", 100m, "cny");

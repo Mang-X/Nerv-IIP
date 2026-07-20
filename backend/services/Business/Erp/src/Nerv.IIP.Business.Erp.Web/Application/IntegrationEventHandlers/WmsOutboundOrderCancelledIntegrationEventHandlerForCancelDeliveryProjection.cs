@@ -89,6 +89,14 @@ public sealed class WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDel
             return;
         }
 
+        if (await dbContext.ProcessedIntegrationEvents.AnyAsync(x =>
+            x.ConsumerName == ConsumerName
+            && x.IdempotencyKey == integrationEvent.IdempotencyKey,
+            cancellationToken))
+        {
+            return;
+        }
+
         var hasAccountReceivable = await dbContext.AccountReceivables.AnyAsync(x =>
             x.OrganizationId == integrationEvent.OrganizationId
             && x.EnvironmentId == integrationEvent.EnvironmentId
@@ -100,6 +108,16 @@ public sealed class WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDel
                 integrationEvent,
                 "delivery-already-accrued",
                 $"ERP delivery order '{delivery.DeliveryOrderNo}' already has account receivable; WMS cancellation cannot project delivery cancellation after AR accrual.",
+                cancellationToken);
+            return;
+        }
+
+        if (!string.Equals(delivery.Status, "released", StringComparison.Ordinal))
+        {
+            await DeadLetterAsync(
+                integrationEvent,
+                "stale-delivery-state",
+                $"ERP delivery order '{delivery.DeliveryOrderNo}' in status '{delivery.Status}' cannot accept WMS cancellation facts.",
                 cancellationToken);
             return;
         }

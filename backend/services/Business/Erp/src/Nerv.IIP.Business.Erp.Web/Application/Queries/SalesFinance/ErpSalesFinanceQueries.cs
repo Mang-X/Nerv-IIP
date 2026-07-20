@@ -178,9 +178,11 @@ public sealed record DeliveryOrderListItem(
     string CustomerCode,
     string Status,
     IReadOnlyCollection<DeliveryOrderLineListItem> Lines,
-    DateTime ReleasedAtUtc);
+    DateTime ReleasedAtUtc,
+    DateTime? ShippedAtUtc,
+    DateTime? CompletedAtUtc);
 
-public sealed record DeliveryOrderLineListItem(string SalesOrderLineNo, decimal Quantity);
+public sealed record DeliveryOrderLineListItem(string SalesOrderLineNo, decimal Quantity, decimal ShippedQuantity);
 
 public sealed class ListDeliveryOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListDeliveryOrdersQuery, ListDeliveryOrdersResponse>
@@ -194,7 +196,7 @@ public sealed class ListDeliveryOrdersQueryHandler(ApplicationDbContext dbContex
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
             var status = request.Status.Trim().ToLowerInvariant();
-            query = status is "released" or "cancelled"
+            query = status is "released" or "partially-shipped" or "completed" or "cancelled"
                 ? query.Where(x => x.Status == status)
                 : query.Where(x => false);
         }
@@ -222,9 +224,11 @@ public sealed class ListDeliveryOrdersQueryHandler(ApplicationDbContext dbContex
                 x.Status,
                 x.Lines
                     .OrderBy(line => line.SalesOrderLineNo)
-                    .Select(line => new DeliveryOrderLineListItem(line.SalesOrderLineNo, line.Quantity))
+                    .Select(line => new DeliveryOrderLineListItem(line.SalesOrderLineNo, line.Quantity, line.ShippedQuantity))
                     .ToArray(),
-                x.ReleasedAtUtc))
+                x.ReleasedAtUtc,
+                x.ShippedAtUtc,
+                x.CompletedAtUtc))
             .ToArrayAsync(cancellationToken);
 
         return new ListDeliveryOrdersResponse(items, total);

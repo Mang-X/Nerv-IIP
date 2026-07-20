@@ -22,6 +22,7 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAcc
     : IIntegrationEventHandler<WmsIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.wms-outbound-completed-ar-accrual";
+    private const int MaxConcurrencyAttempts = 3;
     // SalesOrder has no currency snapshot yet; keep the existing ERP finance default until that source fact exists.
     private const string DefaultDeliveryAccrualCurrencyCode = "CNY";
 
@@ -46,11 +47,30 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAcc
     }
 
     [CapSubscribe(nameof(WmsIntegrationEvent), Group = ConsumerName)]
-    public Task HandleCapAsync(
+    public async Task HandleCapAsync(
         WmsIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
-        return HandleAsync(integrationEvent, cancellationToken);
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await HandleAsync(integrationEvent, cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return;
+            }
+            catch (DbUpdateConcurrencyException exception)
+                when (attempt < MaxConcurrencyAttempts)
+            {
+                logger.LogInformation(
+                    exception,
+                    "Retrying WMS outbound completion {IdempotencyKey} after concurrent ERP delivery projection update (attempt {Attempt}/{MaxAttempts}).",
+                    integrationEvent.IdempotencyKey,
+                    attempt + 1,
+                    MaxConcurrencyAttempts);
+                dbContext.ChangeTracker.Clear();
+            }
+        }
     }
 
     private async Task HandleValidEventAsync(
@@ -94,14 +114,35 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAcc
             return;
         }
 
-        // WMS completion is currently order-level; LineReference carries the first completed line only as a sanity check.
-        if (!string.IsNullOrWhiteSpace(integrationEvent.Payload.LineReference)
-            && !delivery.Lines.Any(x => string.Equals(x.SalesOrderLineNo, integrationEvent.Payload.LineReference, StringComparison.Ordinal)))
+        if (await dbContext.ProcessedIntegrationEvents.AnyAsync(x =>
+            x.ConsumerName == ConsumerName
+            && x.IdempotencyKey == integrationEvent.IdempotencyKey,
+            cancellationToken))
+        {
+            return;
+        }
+
+        if (delivery.Status is "cancelled" or "completed")
         {
             await DeadLetterAsync(
                 integrationEvent,
-                "missing-source-facts",
-                $"Delivery order '{delivery.DeliveryOrderNo}' does not contain completed WMS line '{integrationEvent.Payload.LineReference}'.",
+                "stale-delivery-state",
+                $"ERP delivery order '{delivery.DeliveryOrderNo}' in status '{delivery.Status}' cannot accept WMS shipment completion facts.",
+                cancellationToken);
+            return;
+        }
+
+        if (!TryBuildShipment(
+            delivery,
+            integrationEvent,
+            out var shipmentLines,
+            out var shipmentFailureCode,
+            out var shipmentFailureMessage))
+        {
+            await DeadLetterAsync(
+                integrationEvent,
+                shipmentFailureCode,
+                shipmentFailureMessage,
                 cancellationToken);
             return;
         }
@@ -139,6 +180,12 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAcc
             return;
         }
 
+        var becameCompleted = delivery.ApplyShipment(shipmentLines, integrationEvent.OccurredAtUtc.UtcDateTime);
+        if (!becameCompleted)
+        {
+            return;
+        }
+
         if (await dbContext.AccountReceivables.AnyAsync(x =>
             x.OrganizationId == delivery.OrganizationId
             && x.EnvironmentId == delivery.EnvironmentId
@@ -149,6 +196,13 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAcc
         }
 
         var lineSignature = BuildLineSignature(delivery);
+        var accrualIdempotencyKey = StableIdempotencyKey(
+            "delivery-ar",
+            delivery.OrganizationId,
+            delivery.EnvironmentId,
+            delivery.DeliveryOrderNo,
+            lineSignature,
+            integrationEvent.IdempotencyKey);
         await new CreateAccountReceivableCommandHandler(dbContext, codingService).Handle(
             new CreateAccountReceivableCommand(
                 delivery.OrganizationId,
@@ -161,8 +215,91 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAcc
                 DateOnly.FromDateTime(integrationEvent.OccurredAtUtc.UtcDateTime),
                 null,
                 "DELIVERY-AR",
-                $"{ConsumerName}:{delivery.OrganizationId}:{delivery.EnvironmentId}:{delivery.DeliveryOrderNo}:{lineSignature}:{integrationEvent.IdempotencyKey}"),
+                accrualIdempotencyKey),
             cancellationToken);
+    }
+
+    private static bool TryBuildShipment(
+        DeliveryOrder delivery,
+        WmsIntegrationEvent integrationEvent,
+        out DeliveryOrderShipmentLine[] shipmentLines,
+        out string failureCode,
+        out string failureMessage)
+    {
+        shipmentLines = [];
+        failureCode = string.Empty;
+        failureMessage = string.Empty;
+        var payloadLines = integrationEvent.Payload.Lines?.ToArray();
+        if (payloadLines is null || payloadLines.Length == 0)
+        {
+            failureCode = "invalid-shipment-lines";
+            failureMessage = "WMS outbound completion payload must include all emitted shipment lines.";
+            return false;
+        }
+
+        var invalidReference = payloadLines.FirstOrDefault(x => string.IsNullOrWhiteSpace(x.LineReference));
+        if (invalidReference is not null)
+        {
+            failureCode = "invalid-shipment-lines";
+            failureMessage = "WMS outbound completion payload contains a blank line reference.";
+            return false;
+        }
+
+        var duplicateLine = payloadLines
+            .GroupBy(x => x.LineReference, StringComparer.Ordinal)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicateLine is not null)
+        {
+            failureCode = "invalid-shipment-lines";
+            failureMessage = $"WMS outbound completion payload contains duplicate line '{duplicateLine.Key}'.";
+            return false;
+        }
+
+        var deliveryLines = delivery.Lines.ToDictionary(x => x.SalesOrderLineNo, StringComparer.Ordinal);
+        foreach (var payloadLine in payloadLines)
+        {
+            if (!deliveryLines.TryGetValue(payloadLine.LineReference, out var deliveryLine))
+            {
+                failureCode = "missing-source-facts";
+                failureMessage = $"Delivery order '{delivery.DeliveryOrderNo}' does not contain completed WMS line '{payloadLine.LineReference}'.";
+                return false;
+            }
+
+            if (!string.Equals(deliveryLine.SkuCode, payloadLine.SkuCode, StringComparison.Ordinal)
+                || !string.Equals(deliveryLine.UomCode, payloadLine.UomCode, StringComparison.OrdinalIgnoreCase))
+            {
+                failureCode = "missing-source-facts";
+                failureMessage = $"WMS outbound completion line '{payloadLine.LineReference}' does not match ERP delivery SKU/UOM facts.";
+                return false;
+            }
+
+            if (payloadLine.Quantity < 0m || payloadLine.Quantity > deliveryLine.Quantity - deliveryLine.ShippedQuantity)
+            {
+                failureCode = "invalid-shipment-lines";
+                failureMessage = $"WMS outbound completion quantity for line '{payloadLine.LineReference}' exceeds the remaining ERP delivery quantity.";
+                return false;
+            }
+        }
+
+        if (payloadLines.All(x => x.Quantity == 0m))
+        {
+            failureCode = "invalid-shipment-lines";
+            failureMessage = "WMS outbound completion payload must contain at least one positive shipment quantity.";
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(integrationEvent.Payload.LineReference)
+            && !deliveryLines.ContainsKey(integrationEvent.Payload.LineReference))
+        {
+            failureCode = "missing-source-facts";
+            failureMessage = $"Delivery order '{delivery.DeliveryOrderNo}' does not contain completed WMS line '{integrationEvent.Payload.LineReference}'.";
+            return false;
+        }
+
+        shipmentLines = payloadLines
+            .Select(x => new DeliveryOrderShipmentLine(x.LineReference, x.Quantity))
+            .ToArray();
+        return true;
     }
 
     private static DeliveryAccrualDecision TryCalculateDeliveryAmount(
@@ -205,6 +342,13 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAcc
             delivery.Lines
                 .OrderBy(x => x.SalesOrderLineNo, StringComparer.Ordinal)
                 .Select(x => $"{x.SalesOrderLineNo}:{x.Quantity}"));
+    }
+
+    private static string StableIdempotencyKey(string prefix, params object?[] parts)
+    {
+        var raw = ErpCodingService.Fingerprint(parts);
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw)))[..32].ToLowerInvariant();
+        return $"{prefix}:{hash}";
     }
 
     private Task DeadLetterAsync(

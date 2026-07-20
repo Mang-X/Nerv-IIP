@@ -29,7 +29,7 @@ public sealed class WmsOutboundOrderRequestedConsumerTests
         var line = Assert.Single(order.Lines);
         Assert.Equal("DO-001", order.OutboundOrderNo);
         Assert.Equal("erp-delivery-order", order.SourceDocumentType);
-        Assert.Equal("SO-001", order.SourceDocumentId);
+        Assert.Equal("DO-001", order.SourceDocumentId);
         Assert.Equal("SITE-01", order.SiteCode);
         Assert.Equal("SO-LINE-001", line.LineNo);
         Assert.Equal("SKU-FG-1000", line.SkuCode);
