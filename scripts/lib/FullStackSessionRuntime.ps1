@@ -1148,6 +1148,32 @@ function Remove-NervSessionDockerResources {
     }
 }
 
+function Get-NervFullStackStatusSummary {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [string] $WorkingDirectory = (Get-NervFullStackCleanupWorkingDirectory),
+        [scriptblock] $DockerResourcesAction
+    )
+
+    if ($null -eq $DockerResourcesAction) {
+        $DockerResourcesAction = {
+            param($InputManifest, $InputWorkingDirectory)
+            Get-NervSessionDockerResources -Manifest $InputManifest -WorkingDirectory $InputWorkingDirectory
+        }
+    }
+
+    $resources = & $DockerResourcesAction $Manifest $WorkingDirectory
+    if ($null -eq $resources) {
+        throw "Full-stack status Docker ownership inspection returned no result for '$($Manifest.sessionId)'."
+    }
+
+    return [pscustomobject]@{
+        ContainerCount = @($resources.Containers).Count
+        RecordedContainerCount = @($Manifest.runtime.containerIds).Count
+        UnresolvedCount = @($resources.Unresolved).Count
+    }
+}
+
 function Invoke-NervDockerCleanupWithRetry {
     param(
         [Parameter(Mandatory)] [object] $Manifest,

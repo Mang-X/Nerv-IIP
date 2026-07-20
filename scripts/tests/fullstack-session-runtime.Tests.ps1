@@ -346,6 +346,22 @@ $profileManifest = New-NervFullStackManifest `
     -MessagingProvider $environment.Messaging__Provider
 Assert-True ($profileManifest.messagingProvider -ceq 'Redis') 'The non-secret messaging provider must be recorded in the session manifest.'
 
+$statusManifest = New-NervFullStackManifest `
+    -SessionId 'nerv-abcd-5a7a50' `
+    -WorktreeRoot $repoRoot `
+    -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') `
+    -ArtifactPath (Join-Path $repoRoot 'artifacts/fullstack/nerv-abcd-5a7a50')
+$statusManifest.runtime.containerIds = @('recorded-container-1', 'recorded-container-2')
+$statusSummary = Get-NervFullStackStatusSummary `
+    -Manifest $statusManifest `
+    -DockerResourcesAction {
+        param($Manifest, $WorkingDirectory)
+        [pscustomobject]@{ Containers = @(); Networks = @(); Volumes = @(); Unresolved = @() }
+    }
+Assert-True ($statusSummary.ContainerCount -eq 0) 'Full-stack status must report current owned containers, not historical manifest IDs.'
+Assert-True ($statusSummary.RecordedContainerCount -eq 2) 'Full-stack status may retain the historical recorded-container count as a separate diagnostic.'
+Assert-True ($statusSummary.UnresolvedCount -eq 0) 'A clean stopped session must have no unresolved Docker ownership.'
+
 $appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
 Assert-True ($appHostText.Contains('NERV_IIP_LEADER_DEMO')) 'AppHost must require an explicit leader-demo profile flag.'
 Assert-True (

@@ -458,7 +458,8 @@ try {
         'status' {
             $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId
             $manifest = Renew-NervFullStackSessionLease -SessionId $resolvedSessionId -LeaseMinutes (Get-NervFullStackLeaseMinutes)
-            Write-Output "$resolvedSessionId state=$($manifest.state) containers=$(@($manifest.runtime.containerIds).Count)"
+            $statusSummary = Get-NervFullStackStatusSummary -Manifest $manifest
+            Write-Output "$resolvedSessionId state=$($manifest.state) containers=$($statusSummary.ContainerCount) recordedContainers=$($statusSummary.RecordedContainerCount) unresolved=$($statusSummary.UnresolvedCount)"
         }
         'url' {
             if ([string]::IsNullOrWhiteSpace($Target)) { throw 'fullstack url requires a resource target.' }
