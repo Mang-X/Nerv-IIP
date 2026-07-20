@@ -207,6 +207,8 @@ Assert-True `
 $environment = Get-NervFullStackEnvironment -SessionId $sessionId
 Assert-True ($environment.NERV_IIP_EPHEMERAL -eq 'true') 'Ephemeral flag missing.'
 Assert-True ($environment.NERV_IIP_SESSION_ID -eq $sessionId) 'Session ID missing.'
+Assert-True ($environment.Messaging__Provider -ceq 'Redis') 'Managed full-stack sessions must explicitly select Redis messaging.'
+Assert-True ($environment.Persistence__Provider -ceq 'PostgreSQL') 'Managed full-stack sessions must explicitly select PostgreSQL persistence.'
 foreach ($expected in @(
     "nerv-iip-postgres-18-$sessionId",
     "nerv-iip-redis-$sessionId",
@@ -252,6 +254,10 @@ $scenarioManifest = [pscustomobject]@{
     sessionId = $sessionId
     appHostProject = Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
     worktreeRoot = "$repoRoot"
+    runtime = [pscustomobject]@{
+        messagingProvider = 'Redis'
+        persistenceProvider = 'PostgreSQL'
+    }
     endpoints = [pscustomobject]@{
         gateway = 'http://127.0.0.1:41001'
         'business-gateway' = 'http://127.0.0.1:41002'
@@ -315,6 +321,112 @@ try {
 catch { $finishedFailed = $true }
 Assert-True $finishedFailed 'A Finished Aspire project must fail smoke.'
 
+$leaderDemoEvidenceRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-leader-demo-$([guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($leaderDemoEvidenceRoot) | Out-Null
+    $leaderDemoEvidencePath = Join-Path $leaderDemoEvidenceRoot 'evidence.json'
+    $requiredLeaderDemoNodes = @(
+        'sales-order-demand-source', 'demand-source-mrp-suggestion', 'mrp-suggestion-mes-work-order',
+        'mes-work-order-schedule-plan', 'schedule-release-mes-execution', 'mes-task-production-report',
+        'production-report-quality', 'report-finished-goods-receipt', 'finished-goods-receipt-inventory-posting',
+        'inventory-produced-lot-fulfillment-lookup', 'sales-order-delivery-order', 'delivery-order-wms-outbound',
+        'wms-completed-erp-delivery-status', 'wms-completed-account-receivable', 'account-receivable-voucher'
+    )
+    $leaderDemoEntries = @($requiredLeaderDemoNodes | ForEach-Object {
+        [ordered]@{ node = $_; stableKey = 'SO-MAN524-TEST'; conclusion = 'runtime-confirmed'; demoWording = 'verified'; responsibilityIssue = $null }
+    })
+    [IO.File]::WriteAllText($leaderDemoEvidencePath, ([ordered]@{
+        runtimeProfileSource = 'session-manifest'
+        transport = 'redis-cross-process'
+        persistence = 'postgresql'
+        salesOrderNo = 'SO-MAN524-TEST'
+        entries = $leaderDemoEntries
+    } | ConvertTo-Json -Depth 10))
+    $validatedLeaderDemo = Assert-NervLeaderDemoMainChainEvidence -EvidencePath $leaderDemoEvidencePath
+    Assert-True (@($validatedLeaderDemo.entries).Count -eq 15) 'Leader-demo evidence must validate all fifteen required nodes.'
+    $leaderDemoEntries[0].conclusion = 'code-confirmed-only'
+    [IO.File]::WriteAllText($leaderDemoEvidencePath, ([ordered]@{
+        runtimeProfileSource = 'session-manifest'; transport = 'redis-cross-process'; persistence = 'postgresql'; salesOrderNo = 'SO-MAN524-TEST'; entries = $leaderDemoEntries
+    } | ConvertTo-Json -Depth 10))
+    $invalidConclusionFailed = $false
+    try { Assert-NervLeaderDemoMainChainEvidence -EvidencePath $leaderDemoEvidencePath | Out-Null } catch { $invalidConclusionFailed = $true }
+    Assert-True $invalidConclusionFailed 'Leader-demo evidence must reject conclusions outside the issue vocabulary.'
+    $leaderDemoEntries[0].conclusion = 'not-verified'
+    [IO.File]::WriteAllText($leaderDemoEvidencePath, ([ordered]@{
+        runtimeProfileSource = 'session-manifest'; transport = 'redis-cross-process'; persistence = 'postgresql'; salesOrderNo = 'SO-MAN524-TEST'; entries = $leaderDemoEntries
+    } | ConvertTo-Json -Depth 10))
+    $notVerifiedFailed = $false
+    try { Assert-NervLeaderDemoMainChainEvidence -EvidencePath $leaderDemoEvidencePath | Out-Null } catch { $notVerifiedFailed = $true }
+    Assert-True $notVerifiedFailed 'Leader-demo evidence must reject a present but not-verified node.'
+    $leaderDemoEntries[0].conclusion = 'runtime-confirmed'
+    $leaderDemoEntries[9].conclusion = 'gap'
+    $leaderDemoEntries[9].responsibilityIssue = '#972 / MAN-528 (demo:defer)'
+    [IO.File]::WriteAllText($leaderDemoEvidencePath, ([ordered]@{
+        runtimeProfileSource = 'session-manifest'; transport = 'redis-cross-process'; persistence = 'postgresql'; salesOrderNo = 'SO-MAN524-TEST'; entries = $leaderDemoEntries
+    } | ConvertTo-Json -Depth 10))
+    Assert-NervLeaderDemoMainChainEvidence -EvidencePath $leaderDemoEvidencePath | Out-Null
+    $leaderDemoEntries[9].conclusion = 'runtime-confirmed'
+    $leaderDemoEntries[9].responsibilityIssue = $null
+    $leaderDemoEntries += [ordered]@{ node = 'unexpected-extra'; stableKey = 'SO-MAN524-TEST'; conclusion = 'gap'; demoWording = 'unexpected' }
+    [IO.File]::WriteAllText($leaderDemoEvidencePath, ([ordered]@{
+        runtimeProfileSource = 'session-manifest'; transport = 'redis-cross-process'; persistence = 'postgresql'; salesOrderNo = 'SO-MAN524-TEST'; entries = $leaderDemoEntries
+    } | ConvertTo-Json -Depth 10))
+    $extraEntryFailed = $false
+    try { Assert-NervLeaderDemoMainChainEvidence -EvidencePath $leaderDemoEvidencePath | Out-Null } catch { $extraEntryFailed = $true }
+    Assert-True $extraEntryFailed 'Leader-demo evidence must reject entries outside the fifteen-node contract.'
+}
+finally {
+    Remove-Item -LiteralPath $leaderDemoEvidenceRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$script:leaderDemoWaits = [System.Collections.Generic.List[string]]::new()
+$script:leaderDemoEnvironment = $null
+$invalidProfileManifest = $scenarioManifest.PSObject.Copy()
+$invalidProfileManifest.runtime = [pscustomobject]@{ messagingProvider = 'InMemory'; persistenceProvider = 'PostgreSQL' }
+$invalidProfileFailed = $false
+try {
+    Invoke-NervLeaderDemoMainChainScenario `
+        -Manifest $invalidProfileManifest `
+        -SessionAdminPassword 'process-only-password' `
+        -WaitAction { param($Name, $Manifest) } `
+        -AspireSnapshotAction { param($Manifest) $healthySnapshot } `
+        -BrowserAction { param($Environment, $Manifest) } | Out-Null
+}
+catch { $invalidProfileFailed = $true }
+Assert-True $invalidProfileFailed 'Leader-demo scenario must reject a manifest that did not start with Redis messaging.'
+$leaderDemoScenario = Invoke-NervLeaderDemoMainChainScenario `
+    -Manifest $scenarioManifest `
+    -SessionAdminPassword 'process-only-password' `
+    -WaitAction { param($Name, $Manifest) $script:leaderDemoWaits.Add($Name) } `
+    -AspireSnapshotAction { param($Manifest) $healthySnapshot } `
+    -BrowserAction { param($Environment, $Manifest) $script:leaderDemoEnvironment = $Environment }
+Assert-True ($leaderDemoScenario.ExitCode -eq 0) 'Healthy injected leader-demo scenario must pass.'
+foreach ($name in @('postgres', 'redis', 'business-erp', 'business-demand-planning', 'business-mes', 'business-scheduling', 'business-quality', 'business-inventory', 'business-wms')) {
+    Assert-True ($script:leaderDemoWaits -ccontains $name) "Leader-demo scenario did not wait for '$name'."
+}
+Assert-True ($script:leaderDemoEnvironment.NERV_IIP_FULLSTACK_ADMIN_PASSWORD -ceq 'process-only-password') 'Leader-demo browser password must remain process-only.'
+Assert-True ($script:leaderDemoEnvironment.NERV_IIP_MAIN_CHAIN_RUNTIME_PROFILE_SOURCE -ceq 'session-manifest') 'Leader-demo evidence profile must be sourced from the session manifest.'
+Assert-True ($script:leaderDemoEnvironment.NERV_IIP_MAIN_CHAIN_TRANSPORT -ceq 'redis-cross-process') 'Leader-demo browser evidence must inherit the Redis transport fact.'
+Assert-True ($script:leaderDemoEnvironment.NERV_IIP_MAIN_CHAIN_PERSISTENCE -ceq 'postgresql') 'Leader-demo browser evidence must inherit the PostgreSQL persistence fact.'
+$unrelatedFinishedScenario = Invoke-NervLeaderDemoMainChainScenario `
+    -Manifest $scenarioManifest `
+    -SessionAdminPassword 'process-only-password' `
+    -WaitAction { param($Name, $Manifest) } `
+    -AspireSnapshotAction { param($Manifest) [pscustomobject]@{ resources = @([pscustomobject]@{ displayName = 'file-storage'; resourceType = 'Project.v0'; state = 'Finished' }) } } `
+    -BrowserAction { param($Environment, $Manifest) }
+Assert-True ($unrelatedFinishedScenario.ExitCode -eq 0) 'A project outside the main-chain resource contract must not block its evidence scenario.'
+$requiredFinishedFailed = $false
+try {
+    Invoke-NervLeaderDemoMainChainScenario `
+        -Manifest $scenarioManifest `
+        -SessionAdminPassword 'process-only-password' `
+        -WaitAction { param($Name, $Manifest) } `
+        -AspireSnapshotAction { param($Manifest) [pscustomobject]@{ resources = @([pscustomobject]@{ displayName = 'business-mes'; resourceType = 'Project.v0'; state = 'Finished' }) } } `
+        -BrowserAction { param($Environment, $Manifest) } | Out-Null
+}
+catch { $requiredFinishedFailed = $true }
+Assert-True $requiredFinishedFailed 'A prematurely finished required main-chain project must fail the scenario.'
+
 $generatedDiagnosticSecret = New-NervFullStackSecretValue -Bytes 24
 $unsafeDiagnostic = "$generatedDiagnosticSecret password=secret Authorization: Bearer token Host=localhost;Port=5432;Database=nerv;Username=postgres;Password=db-secret"
 $safeDiagnostic = Protect-NervFullStackDiagnosticText -Text $unsafeDiagnostic -SensitiveValues @($generatedDiagnosticSecret)
@@ -341,6 +453,15 @@ try {
     $diagnosticText = (Get-ChildItem -LiteralPath $diagnosticRoot -File -Recurse | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
     foreach ($forbidden in @($generatedDiagnosticSecret, 'password=secret', 'Bearer token', 'db-secret')) {
         Assert-True (-not $diagnosticText.Contains($forbidden)) "Collected diagnostics leaked '$forbidden'."
+    }
+    foreach ($requiredDiagnosticResource in @(
+        'business-master-data', 'business-product-engineering', 'business-inventory',
+        'business-quality', 'business-mes', 'business-demand-planning', 'business-wms',
+        'business-erp', 'business-scheduling'
+    )) {
+        Assert-True `
+            (Test-Path -LiteralPath (Join-Path $diagnosticRoot "aspire-logs/$requiredDiagnosticResource.ndjson")) `
+            "Full-stack diagnostics did not collect '$requiredDiagnosticResource'."
     }
     Assert-True (Test-Path -LiteralPath (Join-Path $diagnosticRoot 'summary.json')) 'Diagnostic summary was not written.'
     Assert-True (Test-Path -LiteralPath (Join-Path $diagnosticRoot 'traces/preserved.txt')) 'Existing trace artifacts must be preserved.'

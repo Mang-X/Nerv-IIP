@@ -23,6 +23,8 @@ try {
 
     Assert-True ($manifest.schemaVersion -eq 1) 'Manifest schema must be 1.'
     Assert-True ($manifest.state -eq 'Creating') 'New manifests must be Creating.'
+    Assert-True ($null -eq $manifest.runtime.messagingProvider) 'A new manifest must not claim a messaging provider before startup records it.'
+    Assert-True ($null -eq $manifest.runtime.persistenceProvider) 'A new manifest must not claim a persistence provider before startup records it.'
     Assert-True (-not ($manifest | ConvertTo-Json -Depth 20).Contains('connectionString')) 'Manifest must not contain connection strings.'
 
     Write-NervFullStackManifest -Manifest $manifest -StateRoot $testRoot
