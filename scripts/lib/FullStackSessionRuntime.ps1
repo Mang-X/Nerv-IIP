@@ -1296,6 +1296,31 @@ function Invoke-NervLeaderDemoCommand {
         }
     }
 
+    $compensateExactSession = {
+        param($ExactSessionId)
+
+        $cleanupDiagnostics = [System.Collections.Generic.List[string]]::new()
+        $cleanupComplete = $false
+        try {
+            & $StopSessionAction $ExactSessionId | Out-Null
+            $cleanupComplete = $true
+            $cleanupDiagnostics.Add('exact-session cleanup completed')
+        }
+        catch {
+            $cleanupDiagnostics.Add("exact-session cleanup failed: $($_.Exception.Message)")
+        }
+        if ($cleanupComplete) {
+            try {
+                Remove-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedSessionId $ExactSessionId
+                $cleanupDiagnostics.Add('Reserved ownership removed')
+            }
+            catch {
+                $cleanupDiagnostics.Add("Reserved ownership removal failed: $($_.Exception.Message)")
+            }
+        }
+        return @($cleanupDiagnostics)
+    }
+
     $startSession = {
         $password = Get-NervLeaderDemoAdminPassword
         $pointerPath = Get-NervLeaderDemoSessionPointerPath -StateRoot $resolvedStateRoot
@@ -1315,8 +1340,30 @@ function Invoke-NervLeaderDemoCommand {
             }
         }
         catch {
-            Remove-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedSessionId $newSessionId
-            throw
+            $startupFailure = $_
+            $startupError = "$($_.Exception.Message)"
+            $manifestPath = Get-NervFullStackManifestPath -SessionId $newSessionId -StateRoot $resolvedStateRoot
+            if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+                try {
+                    Remove-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedSessionId $newSessionId
+                }
+                catch {
+                    throw "Leader-demo session startup failed for '$newSessionId': $startupError; Reserved ownership removal failed: $($_.Exception.Message)."
+                }
+                throw $startupFailure
+            }
+
+            try {
+                Resolve-NervLeaderDemoOwnedSession `
+                    -StateRoot $resolvedStateRoot `
+                    -ExpectedWorktreeRoot $resolvedWorktreeRoot | Out-Null
+            }
+            catch {
+                throw "Leader-demo session startup failed for '$newSessionId': $startupError; exact-session cleanup skipped because manifest authority validation failed: $($_.Exception.Message)."
+            }
+
+            $cleanupDiagnostics = @(& $compensateExactSession $newSessionId)
+            throw "Leader-demo session startup failed for '$newSessionId': $startupError; $($cleanupDiagnostics -join '; ')."
         }
 
         try {
@@ -1324,25 +1371,7 @@ function Invoke-NervLeaderDemoCommand {
         }
         catch {
             $finalizationError = "$($_.Exception.Message)"
-            $cleanupDiagnostics = [System.Collections.Generic.List[string]]::new()
-            $cleanupComplete = $false
-            try {
-                & $StopSessionAction $newSessionId | Out-Null
-                $cleanupComplete = $true
-                $cleanupDiagnostics.Add('exact-session cleanup completed')
-            }
-            catch {
-                $cleanupDiagnostics.Add("exact-session cleanup failed: $($_.Exception.Message)")
-            }
-            if ($cleanupComplete) {
-                try {
-                    Remove-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedSessionId $newSessionId
-                    $cleanupDiagnostics.Add('Reserved ownership removed')
-                }
-                catch {
-                    $cleanupDiagnostics.Add("Reserved ownership removal failed: $($_.Exception.Message)")
-                }
-            }
+            $cleanupDiagnostics = @(& $compensateExactSession $newSessionId)
             throw "Leader-demo pointer finalization failed for '$newSessionId': $finalizationError; $($cleanupDiagnostics -join '; ')."
         }
         return $newSessionId

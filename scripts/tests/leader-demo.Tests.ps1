@@ -126,6 +126,79 @@ try {
     Assert-True ($finalizationCleanupIds.Count -eq 1 -and $finalizationCleanupIds[0] -ceq $finalizationSessionIds[0]) 'Pointer finalization failure must clean only the exact started session.'
     Assert-True (-not (Test-Path -LiteralPath (Get-NervLeaderDemoSessionPointerPath -StateRoot $finalizationStateRoot))) 'Successful compensation must remove the exact Reserved pointer.'
 
+    $partialStartupStateRoot = Join-Path $stateRoot 'partial-startup'
+    $partialStartupIds = [System.Collections.Generic.List[string]]::new()
+    $partialStartupCleanupIds = [System.Collections.Generic.List[string]]::new()
+    $script:partialStartupOwnershipAtCleanup = $null
+    $partialStartupError = ''
+    try {
+        Invoke-NervLeaderDemoCommand `
+            -Action start `
+            -StateRoot $partialStartupStateRoot `
+            -WorktreeRoot $repoRoot `
+            -StartSessionAction {
+                param($SessionId)
+                $partialStartupIds.Add($SessionId)
+                Write-TestFullStackManifest -SessionId $SessionId -ManifestWorktreeRoot $repoRoot -StateRoot $partialStartupStateRoot
+                throw 'simulated partial startup failure'
+            } `
+            -StopSessionAction {
+                param($SessionId)
+                $script:partialStartupOwnershipAtCleanup = (Read-NervLeaderDemoSessionPointer -StateRoot $partialStartupStateRoot).ownershipState
+                $partialStartupCleanupIds.Add($SessionId)
+            } | Out-Null
+    }
+    catch { $partialStartupError = $_.Exception.Message }
+    Assert-True ($partialStartupError.Contains('simulated partial startup failure')) 'Partial-startup compensation must preserve the original startup error.'
+    Assert-True ($partialStartupError.Contains('exact-session cleanup completed')) 'Partial-startup compensation must report successful exact cleanup.'
+    Assert-True ($partialStartupIds.Count -eq 1) 'The partial-startup fixture must reserve exactly one session.'
+    Assert-True ($partialStartupCleanupIds.Count -eq 1 -and $partialStartupCleanupIds[0] -ceq $partialStartupIds[0]) 'A partial startup with an authoritative manifest must clean only the exact reserved session.'
+    Assert-True ($script:partialStartupOwnershipAtCleanup -ceq 'Reserved') 'The Reserved pointer must remain available until exact cleanup is confirmed.'
+    Assert-True (-not (Test-Path -LiteralPath (Get-NervLeaderDemoSessionPointerPath -StateRoot $partialStartupStateRoot))) 'Successful partial-startup cleanup must remove the exact Reserved pointer.'
+
+    $failedCleanupStateRoot = Join-Path $stateRoot 'partial-cleanup-failed'
+    $failedCleanupIds = [System.Collections.Generic.List[string]]::new()
+    $failedCleanupError = ''
+    try {
+        Invoke-NervLeaderDemoCommand `
+            -Action start `
+            -StateRoot $failedCleanupStateRoot `
+            -WorktreeRoot $repoRoot `
+            -StartSessionAction {
+                param($SessionId)
+                Write-TestFullStackManifest -SessionId $SessionId -ManifestWorktreeRoot $repoRoot -StateRoot $failedCleanupStateRoot
+                throw 'simulated startup failure before cleanup failure'
+            } `
+            -StopSessionAction {
+                param($SessionId)
+                $failedCleanupIds.Add($SessionId)
+                throw 'simulated partial-startup cleanup failure'
+            } | Out-Null
+    }
+    catch { $failedCleanupError = $_.Exception.Message }
+    Assert-True ($failedCleanupError.Contains('simulated startup failure before cleanup failure')) 'Failed compensation must preserve the original startup error.'
+    Assert-True ($failedCleanupError.Contains('simulated partial-startup cleanup failure')) 'Failed compensation must append exact cleanup diagnostics.'
+    Assert-True ($failedCleanupIds.Count -eq 1) 'Failed compensation must attempt exact cleanup once.'
+    $failedOwnership = Read-NervLeaderDemoSessionPointer -StateRoot $failedCleanupStateRoot
+    Assert-True ($failedOwnership.ownershipState -ceq 'Reserved') 'Failed compensation must retain actionable Reserved ownership.'
+    Assert-True ($failedOwnership.sessionId -ceq $failedCleanupIds[0]) 'Failed compensation must retain the exact session route.'
+
+    $noManifestStateRoot = Join-Path $stateRoot 'startup-no-manifest'
+    $script:noManifestCleanupCalls = 0
+    $noManifestError = ''
+    try {
+        Invoke-NervLeaderDemoCommand `
+            -Action start `
+            -StateRoot $noManifestStateRoot `
+            -WorktreeRoot $repoRoot `
+            -StartSessionAction { param($SessionId) throw 'simulated failure before manifest creation' } `
+            -StopSessionAction { param($SessionId) $script:noManifestCleanupCalls++ } | Out-Null
+    }
+    catch { $noManifestError = $_.Exception.Message }
+    Assert-True ($noManifestError.Contains('simulated failure before manifest creation')) 'A pre-manifest failure must preserve the original startup error.'
+    Assert-True ($script:noManifestCleanupCalls -eq 0) 'A pre-manifest failure must not invoke exact cleanup without authority.'
+    Assert-True (-not (Test-Path -LiteralPath (Get-NervLeaderDemoSessionPointerPath -StateRoot $noManifestStateRoot))) 'A pre-manifest failure may release its Reserved pointer.'
+
     $foreignStateRoot = Join-Path $stateRoot 'foreign'
     $foreignSessionId = 'nerv-dead-000011'
     Write-NervLeaderDemoSessionPointer `
