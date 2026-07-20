@@ -131,7 +131,7 @@ finally {
 }
 
 $start = Read-NervAspireJson -Text (Get-Content -LiteralPath $startFixture -Raw)
-$describe = Read-NervAspireJson -Text (Get-Content -LiteralPath $describeFixture -Raw)
+$describe = Read-NervAspireJson -Text (Get-Content -LiteralPath $describeFixture -Raw) -RequireResources
 $identity = Get-NervAspireStartIdentity -StartObject $start
 $endpoint = Get-NervAspireResourceEndpoint -DescribeObject $describe -ResourceName 'business-console' -EndpointName 'http'
 Assert-True (-not [string]::IsNullOrWhiteSpace($identity.AppHostId)) 'AppHost ID was not parsed.'
@@ -158,6 +158,17 @@ Assert-True $missingPayloadFailed 'Aspire JSON parsing must reject missing paylo
 $multiplePayloadsFailed = $false
 try { Read-NervAspireJson -Text '{"one":1} trailing {"two":2}' | Out-Null } catch { $multiplePayloadsFailed = $true }
 Assert-True $multiplePayloadsFailed 'Aspire JSON parsing must reject multiple payloads.'
+$missingResourcesFailed = $false
+try { Read-NervAspireJson -Text '{"appHostPid":42}' -RequireResources | Out-Null } catch { $missingResourcesFailed = $true }
+Assert-True $missingResourcesFailed 'Aspire describe JSON parsing must require a resources collection.'
+$emptyResourcesFailed = $false
+try { Read-NervAspireJson -Text '{"resources":[]}' -RequireResources | Out-Null } catch { $emptyResourcesFailed = $true }
+Assert-True $emptyResourcesFailed 'Aspire describe JSON parsing must reject an empty resources collection.'
+$describeDefinition = (Get-Command Get-NervAspireDescribeObject -ErrorAction Stop).Definition
+Assert-True ($describeDefinition.Contains('-AllowPartialOutput')) 'Aspire describe may opt in only when strict JSON/resource validation follows.'
+Assert-True ($describeDefinition.Contains('-RequireResources')) 'Aspire describe must require a complete resource collection after parsing.'
+$waitDefinition = (Get-Command Wait-NervAspireResource -ErrorAction Stop).Definition
+Assert-True ($waitDefinition.Contains('-AllowPartialOutput')) 'Aspire wait may opt in because the native exit code is authoritative and output is discarded.'
 
 Assert-True `
     (Test-NervDockerResourceOwnership -InspectObject $inspectObjects[0] -SessionId $sessionId -RecordedIds $recordedContainerIds) `

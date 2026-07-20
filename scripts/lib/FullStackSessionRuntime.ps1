@@ -102,7 +102,8 @@ function Test-NervFullStackAppHostAvailable {
 function Read-NervAspireJson {
     param(
         [Parameter(Mandatory)] [AllowEmptyString()] [string] $Text,
-        [ValidateRange(1, 4194304)] [int] $MaxCharacters = 1048576
+        [ValidateRange(1, 4194304)] [int] $MaxCharacters = 1048576,
+        [switch] $RequireResources
     )
 
     if ($Text.Length -gt $MaxCharacters) {
@@ -143,7 +144,20 @@ function Read-NervAspireJson {
         $safeText = Protect-ScriptAutomationText -Text $Text
         throw "Expected exactly one Aspire JSON object, found $($payloads.Count); redacted output length was $($safeText.Length)."
     }
-    return $payloads[0]
+    $payload = $payloads[0]
+    if ($RequireResources) {
+        $resourcesProperty = $payload.PSObject.Properties['resources']
+        $resources = if ($null -eq $resourcesProperty -or $null -eq $resourcesProperty.Value) {
+            @()
+        }
+        else {
+            @($resourcesProperty.Value)
+        }
+        if ($resources.Count -eq 0) {
+            throw 'Aspire describe JSON did not contain a non-empty resources collection.'
+        }
+    }
+    return $payload
 }
 
 function Get-NervAspireStartIdentity {
@@ -202,8 +216,9 @@ function Get-NervAspireDescribeObject {
         -Arguments @('describe', '--format', 'Json', '--apphost', $AppHostProject, '--non-interactive', '--nologo') `
         -WorkingDirectory $WorkingDirectory `
         -TimeoutSeconds 60 `
-        -Name 'fullstack-aspire-describe'
-    return (Read-NervAspireJson -Text "$($result.Stdout)")
+        -Name 'fullstack-aspire-describe' `
+        -AllowPartialOutput
+    return (Read-NervAspireJson -Text "$($result.Stdout)" -RequireResources)
 }
 
 function Wait-NervAspireResource {
@@ -218,7 +233,8 @@ function Wait-NervAspireResource {
         -Arguments @('wait', $ResourceName, '--status', 'healthy', '--timeout', "$TimeoutSeconds", '--apphost', $AppHostProject, '--non-interactive', '--nologo') `
         -WorkingDirectory $WorkingDirectory `
         -TimeoutSeconds ($TimeoutSeconds + 30) `
-        -Name "fullstack-aspire-wait-$ResourceName" | Out-Null
+        -Name "fullstack-aspire-wait-$ResourceName" `
+        -AllowPartialOutput | Out-Null
 }
 
 function Save-NervFullStackEndpoints {

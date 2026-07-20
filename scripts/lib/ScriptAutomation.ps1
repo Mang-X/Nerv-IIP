@@ -199,10 +199,23 @@ function Write-ScriptAutomationProcessLog {
         [string] $Path,
 
         [AllowNull()]
-        [string] $Content
+        [string] $Content,
+
+        [switch] $PartialOutput,
+
+        [string[]] $UnfinishedStreams = @()
     )
 
-    [System.IO.File]::WriteAllText($Path, (Protect-ScriptAutomationText $Content), [System.Text.UTF8Encoding]::new($false))
+    $logContent = [string] $Content
+    if ($PartialOutput) {
+        if ($logContent.Length -gt 0 -and -not $logContent.EndsWith("`n", [StringComparison]::Ordinal)) {
+            $logContent += [Environment]::NewLine
+        }
+        $safeStreams = Protect-ScriptAutomationText (@($UnfinishedStreams) -join ', ')
+        $logContent += "[NERV-IIP PARTIAL OUTPUT: bounded redirected stream capture ended before EOF; unfinished streams: $safeStreams]$([Environment]::NewLine)"
+    }
+
+    [System.IO.File]::WriteAllText($Path, (Protect-ScriptAutomationText $logContent), [System.Text.UTF8Encoding]::new($false))
 }
 
 function Protect-ScriptAutomationLogFile {
@@ -510,8 +523,8 @@ function Invoke-NativeCommandWithTimeout {
                 -StdoutCapture $stdoutCapture `
                 -StderrCapture $stderrCapture
             Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain
-            Write-ScriptAutomationProcessLog -Path $stdoutPath -Content $drain.Stdout
-            Write-ScriptAutomationProcessLog -Path $stderrPath -Content $drain.Stderr
+            Write-ScriptAutomationProcessLog -Path $stdoutPath -Content $drain.Stdout -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams
+            Write-ScriptAutomationProcessLog -Path $stderrPath -Content $drain.Stderr -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams
             throw "Command '$Command' timed out after $TimeoutSeconds seconds. Stopped PIDs: $($cleanup.StoppedProcessIds -join ', '). Logs: $resolvedLogDirectory"
         }
 
@@ -525,8 +538,8 @@ function Invoke-NativeCommandWithTimeout {
             -StdoutCapture $stdoutCapture `
             -StderrCapture $stderrCapture
         Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain
-        Write-ScriptAutomationProcessLog -Path $stdoutPath -Content $drain.Stdout
-        Write-ScriptAutomationProcessLog -Path $stderrPath -Content $drain.Stderr
+        Write-ScriptAutomationProcessLog -Path $stdoutPath -Content $drain.Stdout -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams
+        Write-ScriptAutomationProcessLog -Path $stderrPath -Content $drain.Stderr -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams
 
         $stopwatch.Stop()
 
@@ -550,6 +563,8 @@ function Invoke-NativeCommandWithTimeout {
             LogDirectory = $resolvedLogDirectory
             StdoutPath = $stdoutPath
             StderrPath = $stderrPath
+            PartialOutput = [bool] $drain.TimedOut
+            UnfinishedStreams = @($drain.UnfinishedStreams)
         }
     }
     finally {
@@ -594,6 +609,8 @@ function Invoke-NativeCommandOutput {
         [string] $Name,
 
         [string] $LogDirectory,
+
+        [switch] $AllowPartialOutput,
 
         [scriptblock] $StreamReadTaskAction
     )
@@ -648,8 +665,8 @@ function Invoke-NativeCommandOutput {
                 -StderrCapture $stderrCapture
             Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain
             if ($drain.TimedOut) {
-                Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $drain.Stdout
-                Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $drain.Stderr
+                Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $drain.Stdout -PartialOutput -UnfinishedStreams $drain.UnfinishedStreams
+                Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $drain.Stderr -PartialOutput -UnfinishedStreams $drain.UnfinishedStreams
             }
             throw "Command '$Command' timed out after $TimeoutSeconds seconds while reading output."
         }
@@ -667,8 +684,8 @@ function Invoke-NativeCommandOutput {
         $stdout = $drain.Stdout
         $stderr = $drain.Stderr
         if ($drain.TimedOut) {
-            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $stdout
-            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $stderr
+            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $stdout -PartialOutput -UnfinishedStreams $drain.UnfinishedStreams
+            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $stderr -PartialOutput -UnfinishedStreams $drain.UnfinishedStreams
         }
 
         if ($exitCode -ne 0) {
@@ -682,6 +699,15 @@ function Invoke-NativeCommandOutput {
                 "Command '$Command' redirected stream drain failed: $($drain.DrainErrors -join '; ')."
             )
         }
+        if ($drain.TimedOut -and -not $AllowPartialOutput) {
+            $failure = [InvalidOperationException]::new(
+                "Command '$Command' exited successfully but redirected output was incomplete. Unfinished streams: $($drain.UnfinishedStreams -join ', '). Logs: $($drain.LogDirectory)"
+            )
+            $failure.Data['PartialOutput'] = $true
+            $failure.Data['UnfinishedStreams'] = [string[]] @($drain.UnfinishedStreams)
+            $failure.Data['LogDirectory'] = "$($drain.LogDirectory)"
+            throw $failure
+        }
 
         if (-not [string]::IsNullOrWhiteSpace($stderr)) {
             Write-Diagnostic -Level 'WARN' -Message "Stderr from ${Name}: $stderr"
@@ -694,6 +720,8 @@ function Invoke-NativeCommandOutput {
             ExitCode = $exitCode
             Stdout = $stdout
             Stderr = $stderr
+            PartialOutput = [bool] $drain.TimedOut
+            UnfinishedStreams = @($drain.UnfinishedStreams)
         }
     }
     finally {
@@ -850,10 +878,12 @@ function Invoke-AspireOutput {
 
         [int] $TimeoutSeconds = 60,
 
-        [string] $Name = 'aspire'
+        [string] $Name = 'aspire',
+
+        [switch] $AllowPartialOutput
     )
 
-    Invoke-NativeCommandOutput -Command (Get-AspireCliCommand) -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
+    Invoke-NativeCommandOutput -Command (Get-AspireCliCommand) -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name -AllowPartialOutput:$AllowPartialOutput
 }
 
 function Invoke-AspireInteractive {

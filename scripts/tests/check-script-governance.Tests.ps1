@@ -282,9 +282,18 @@ if ($partialEofResult.Stdout -cne 'stdout-final-partial') {
 if ($partialEofResult.Stderr -cne 'stderr-final-partial') {
     throw "Invoke-NativeCommandOutput changed final partial stderr at normal EOF: '$($partialEofResult.Stderr)'."
 }
+if ($partialEofResult.PartialOutput -or @($partialEofResult.UnfinishedStreams).Count -ne 0) {
+    throw 'Invoke-NativeCommandOutput must identify normal EOF output as complete.'
+}
+$aspireOutputDefinition = (Get-Command Invoke-AspireOutput -ErrorAction Stop).Definition
+if (-not $aspireOutputDefinition.Contains('[switch] $AllowPartialOutput') -or -not $aspireOutputDefinition.Contains('-AllowPartialOutput:$AllowPartialOutput')) {
+    throw 'Invoke-AspireOutput must explicitly forward the narrow partial-output opt-in.'
+}
 
 $streamDrainRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-stream-drain-$([System.Guid]::NewGuid().ToString('N'))"
 $streamDrainOutputIdentity = Join-Path $streamDrainRoot 'output-child.json'
+$streamDrainOptInIdentity = Join-Path $streamDrainRoot 'output-opt-in-child.json'
+$streamDrainNonzeroIdentity = Join-Path $streamDrainRoot 'output-nonzero-child.json'
 $streamDrainTimeoutIdentity = Join-Path $streamDrainRoot 'timeout-child.json'
 try {
     [System.IO.Directory]::CreateDirectory($streamDrainRoot) | Out-Null
@@ -324,7 +333,7 @@ $child.Dispose()
     [System.IO.File]::WriteAllText(
         $streamDrainParent,
         @'
-param($LauncherScript, $ChildScript, $IdentityPath, $ChildSleepSeconds, $ParentSleepSeconds)
+param($LauncherScript, $ChildScript, $IdentityPath, $ChildSleepSeconds, $ParentSleepSeconds, $RootExitCode = 0)
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
 $startInfo.FileName = (Get-Process -Id $PID -ErrorAction Stop).Path
 $startInfo.UseShellExecute = $false
@@ -344,21 +353,63 @@ if (-not [System.IO.File]::Exists($IdentityPath)) { throw 'Inherited-handle chil
 [Console]::Out.WriteLine('inherited parent stdout')
 [Console]::Error.WriteLine('inherited parent stderr')
 [Console]::Out.Write('inherited parent stdout partial')
-[Console]::Error.Write('inherited parent stderr partial')
+[Console]::Error.Write('inherited parent stderr partial token=partial-output-secret')
 if ([int] $ParentSleepSeconds -gt 0) { Start-Sleep -Seconds $ParentSleepSeconds }
+if ([int] $RootExitCode -ne 0) { exit ([int] $RootExitCode) }
 '@,
         [System.Text.UTF8Encoding]::new($false)
     )
 
     $script:ScriptAutomationStreamDrainTimeoutMilliseconds = 500
+    $defaultPartialStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $defaultPartialFailure = $null
+    try {
+        Invoke-NativeCommandOutput `
+            -Command 'pwsh' `
+            -Arguments @('-NoProfile', '-NonInteractive', '-File', $streamDrainParent, $streamDrainLauncher, $streamDrainChild, $streamDrainOutputIdentity, '30', '0') `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 10 `
+            -Name 'stream-drain-output-default' `
+            -LogDirectory (Join-Path $streamDrainRoot 'output-default-logs') | Out-Null
+    }
+    catch { $defaultPartialFailure = $_ }
+    $defaultPartialStopwatch.Stop()
+    if ($null -eq $defaultPartialFailure -or -not [bool] $defaultPartialFailure.Exception.Data['PartialOutput']) {
+        throw 'Invoke-NativeCommandOutput must reject partial redirected output by default with structured failure data.'
+    }
+    if (@($defaultPartialFailure.Exception.Data['UnfinishedStreams']).Count -eq 0) {
+        throw 'Partial-output failure must identify its unfinished redirected streams.'
+    }
+    if ($defaultPartialStopwatch.Elapsed.TotalSeconds -gt 15) {
+        throw "Invoke-NativeCommandOutput default rejection waited for an inherited handle: $($defaultPartialStopwatch.Elapsed)."
+    }
+    foreach ($logName in @('stdout.log', 'stderr.log')) {
+        $logPath = Join-Path $streamDrainRoot "output-default-logs/$logName"
+        $logText = [System.IO.File]::ReadAllText($logPath)
+        if (-not $logText.Contains('[NERV-IIP PARTIAL OUTPUT:')) {
+            throw "Partial output diagnostic '$logName' must contain an explicit truncation marker."
+        }
+        if (-not $logText.Contains('inherited parent')) {
+            throw "Partial output diagnostic '$logName' discarded the captured root prefix."
+        }
+        if ($logText.Contains('partial-output-secret') -or ($logName -ceq 'stderr.log' -and -not $logText.Contains('token=<redacted>'))) {
+            throw "Partial output diagnostic '$logName' did not redact captured output before publishing the truncation marker."
+        }
+    }
+    Stop-ExactTestProcessIdentity -IdentityPath $streamDrainOutputIdentity
+    if (Test-ExactTestProcessIdentity -IdentityPath $streamDrainOutputIdentity) {
+        throw 'Default partial-output fixture exact child cleanup did not complete.'
+    }
+
     $outputStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $outputResult = Invoke-NativeCommandOutput `
         -Command 'pwsh' `
-        -Arguments @('-NoProfile', '-NonInteractive', '-File', $streamDrainParent, $streamDrainLauncher, $streamDrainChild, $streamDrainOutputIdentity, '30', '0') `
+        -Arguments @('-NoProfile', '-NonInteractive', '-File', $streamDrainParent, $streamDrainLauncher, $streamDrainChild, $streamDrainOptInIdentity, '30', '0') `
         -WorkingDirectory $repoRoot `
         -TimeoutSeconds 10 `
         -Name 'stream-drain-output' `
-        -LogDirectory (Join-Path $streamDrainRoot 'output-logs')
+        -LogDirectory (Join-Path $streamDrainRoot 'output-logs') `
+        -AllowPartialOutput
     $outputStopwatch.Stop()
     if ($outputStopwatch.Elapsed.TotalSeconds -gt 15) {
         throw "Invoke-NativeCommandOutput waited for an inherited handle after root exit: $($outputStopwatch.Elapsed)."
@@ -373,6 +424,9 @@ if ([int] $ParentSleepSeconds -gt 0) { Start-Sleep -Seconds $ParentSleepSeconds 
             throw "Invoke-NativeCommandOutput discarded root stderr received before the inherited-handle cutoff: '$expected'."
         }
     }
+    if (-not $outputResult.PartialOutput -or @($outputResult.UnfinishedStreams).Count -eq 0) {
+        throw 'Invoke-NativeCommandOutput opt-in result must expose partial-output state and unfinished streams.'
+    }
     foreach ($logName in @('stdout.log', 'stderr.log')) {
         $logPath = Join-Path $streamDrainRoot "output-logs/$logName"
         if (-not (Test-Path -LiteralPath $logPath -PathType Leaf)) {
@@ -382,10 +436,32 @@ if ([int] $ParentSleepSeconds -gt 0) { Start-Sleep -Seconds $ParentSleepSeconds 
         if (-not [System.IO.File]::ReadAllText($logPath).Contains($expected)) {
             throw "Bounded output drain '$logName' discarded root output received before cutoff: '$expected'."
         }
+        if (-not [System.IO.File]::ReadAllText($logPath).Contains('[NERV-IIP PARTIAL OUTPUT:')) {
+            throw "Bounded output drain '$logName' must retain the truncation marker when partial output is explicitly allowed."
+        }
     }
-    Stop-ExactTestProcessIdentity -IdentityPath $streamDrainOutputIdentity
-    if (Test-ExactTestProcessIdentity -IdentityPath $streamDrainOutputIdentity) {
+    Stop-ExactTestProcessIdentity -IdentityPath $streamDrainOptInIdentity
+    if (Test-ExactTestProcessIdentity -IdentityPath $streamDrainOptInIdentity) {
         throw 'Output drain fixture exact child cleanup did not complete.'
+    }
+
+    $partialNonzeroFailure = $null
+    try {
+        Invoke-NativeCommandOutput `
+            -Command 'pwsh' `
+            -Arguments @('-NoProfile', '-NonInteractive', '-File', $streamDrainParent, $streamDrainLauncher, $streamDrainChild, $streamDrainNonzeroIdentity, '30', '0', '33') `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 10 `
+            -Name 'stream-drain-output-nonzero' `
+            -LogDirectory (Join-Path $streamDrainRoot 'output-nonzero-logs') | Out-Null
+    }
+    catch { $partialNonzeroFailure = $_ }
+    if ($null -eq $partialNonzeroFailure -or [int] $partialNonzeroFailure.Exception.Data['ExitCode'] -ne 33) {
+        throw 'Invoke-NativeCommandOutput must prioritize a native nonzero exit over partial-output rejection.'
+    }
+    Stop-ExactTestProcessIdentity -IdentityPath $streamDrainNonzeroIdentity
+    if (Test-ExactTestProcessIdentity -IdentityPath $streamDrainNonzeroIdentity) {
+        throw 'Partial nonzero fixture exact child cleanup did not complete.'
     }
 
     $timeoutStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -416,6 +492,9 @@ if ([int] $ParentSleepSeconds -gt 0) { Start-Sleep -Seconds $ParentSleepSeconds 
         if (-not [System.IO.File]::ReadAllText($logPath).Contains($expected)) {
             throw "Bounded timeout drain '$logName' discarded root output received before cutoff: '$expected'."
         }
+        if (-not [System.IO.File]::ReadAllText($logPath).Contains('[NERV-IIP PARTIAL OUTPUT:')) {
+            throw "Bounded timeout drain '$logName' must contain an explicit truncation marker."
+        }
     }
     if (-not (Test-Path -LiteralPath $streamDrainTimeoutIdentity -PathType Leaf)) {
         throw 'Timeout drain fixture did not publish the inherited child identity before root timeout.'
@@ -427,6 +506,8 @@ if ([int] $ParentSleepSeconds -gt 0) { Start-Sleep -Seconds $ParentSleepSeconds 
 }
 finally {
     Stop-ExactTestProcessIdentity -IdentityPath $streamDrainOutputIdentity
+    Stop-ExactTestProcessIdentity -IdentityPath $streamDrainOptInIdentity
+    Stop-ExactTestProcessIdentity -IdentityPath $streamDrainNonzeroIdentity
     Stop-ExactTestProcessIdentity -IdentityPath $streamDrainTimeoutIdentity
     $resolvedStreamDrainRoot = Resolve-Path $streamDrainRoot -ErrorAction SilentlyContinue
     if ($resolvedStreamDrainRoot) {
