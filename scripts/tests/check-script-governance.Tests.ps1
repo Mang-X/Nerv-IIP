@@ -265,6 +265,24 @@ finally {
     }
 }
 
+$partialEofResult = Invoke-NativeCommandOutput `
+    -Command 'pwsh' `
+    -Arguments @(
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        "[Console]::Out.Write('stdout-final-partial'); [Console]::Error.Write('stderr-final-partial')"
+    ) `
+    -WorkingDirectory $repoRoot `
+    -TimeoutSeconds 10 `
+    -Name 'partial-eof-output'
+if ($partialEofResult.Stdout -cne 'stdout-final-partial') {
+    throw "Invoke-NativeCommandOutput changed final partial stdout at normal EOF: '$($partialEofResult.Stdout)'."
+}
+if ($partialEofResult.Stderr -cne 'stderr-final-partial') {
+    throw "Invoke-NativeCommandOutput changed final partial stderr at normal EOF: '$($partialEofResult.Stderr)'."
+}
+
 $streamDrainRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-stream-drain-$([System.Guid]::NewGuid().ToString('N'))"
 $streamDrainOutputIdentity = Join-Path $streamDrainRoot 'output-child.json'
 $streamDrainTimeoutIdentity = Join-Path $streamDrainRoot 'timeout-child.json'
@@ -325,6 +343,8 @@ while (-not [System.IO.File]::Exists($IdentityPath) -and [DateTimeOffset]::UtcNo
 if (-not [System.IO.File]::Exists($IdentityPath)) { throw 'Inherited-handle child did not publish identity.' }
 [Console]::Out.WriteLine('inherited parent stdout')
 [Console]::Error.WriteLine('inherited parent stderr')
+[Console]::Out.Write('inherited parent stdout partial')
+[Console]::Error.Write('inherited parent stderr partial')
 if ([int] $ParentSleepSeconds -gt 0) { Start-Sleep -Seconds $ParentSleepSeconds }
 '@,
         [System.Text.UTF8Encoding]::new($false)
@@ -343,9 +363,24 @@ if ([int] $ParentSleepSeconds -gt 0) { Start-Sleep -Seconds $ParentSleepSeconds 
     if ($outputStopwatch.Elapsed.TotalSeconds -gt 15) {
         throw "Invoke-NativeCommandOutput waited for an inherited handle after root exit: $($outputStopwatch.Elapsed)."
     }
+    foreach ($expected in @('inherited parent stdout', 'inherited parent stdout partial')) {
+        if (-not $outputResult.Stdout.Contains($expected)) {
+            throw "Invoke-NativeCommandOutput discarded root stdout received before the inherited-handle cutoff: '$expected'."
+        }
+    }
+    foreach ($expected in @('inherited parent stderr', 'inherited parent stderr partial')) {
+        if (-not $outputResult.Stderr.Contains($expected)) {
+            throw "Invoke-NativeCommandOutput discarded root stderr received before the inherited-handle cutoff: '$expected'."
+        }
+    }
     foreach ($logName in @('stdout.log', 'stderr.log')) {
-        if (-not (Test-Path -LiteralPath (Join-Path $streamDrainRoot "output-logs/$logName") -PathType Leaf)) {
+        $logPath = Join-Path $streamDrainRoot "output-logs/$logName"
+        if (-not (Test-Path -LiteralPath $logPath -PathType Leaf)) {
             throw "Bounded output drain must publish its '$logName' diagnostic path."
+        }
+        $expected = if ($logName -ceq 'stdout.log') { 'inherited parent stdout partial' } else { 'inherited parent stderr partial' }
+        if (-not [System.IO.File]::ReadAllText($logPath).Contains($expected)) {
+            throw "Bounded output drain '$logName' discarded root output received before cutoff: '$expected'."
         }
     }
     Stop-ExactTestProcessIdentity -IdentityPath $streamDrainOutputIdentity
@@ -373,8 +408,13 @@ if ([int] $ParentSleepSeconds -gt 0) { Start-Sleep -Seconds $ParentSleepSeconds 
         throw "Invoke-NativeCommandWithTimeout waited for an inherited handle after timeout: $($timeoutStopwatch.Elapsed)."
     }
     foreach ($logName in @('stdout.log', 'stderr.log')) {
-        if (-not (Test-Path -LiteralPath (Join-Path $streamDrainRoot "timeout-logs/$logName") -PathType Leaf)) {
+        $logPath = Join-Path $streamDrainRoot "timeout-logs/$logName"
+        if (-not (Test-Path -LiteralPath $logPath -PathType Leaf)) {
             throw "Bounded timeout drain must publish its '$logName' diagnostic path."
+        }
+        $expected = if ($logName -ceq 'stdout.log') { 'inherited parent stdout partial' } else { 'inherited parent stderr partial' }
+        if (-not [System.IO.File]::ReadAllText($logPath).Contains($expected)) {
+            throw "Bounded timeout drain '$logName' discarded root output received before cutoff: '$expected'."
         }
     }
     if (-not (Test-Path -LiteralPath $streamDrainTimeoutIdentity -PathType Leaf)) {
