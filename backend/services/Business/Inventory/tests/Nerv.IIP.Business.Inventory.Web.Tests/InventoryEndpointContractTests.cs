@@ -34,7 +34,7 @@ public sealed class InventoryEndpointContractTests
     {
         var contracts = InventoryEndpointContracts.All.ToArray();
 
-        Assert.Equal(12, contracts.Length);
+        Assert.Equal(13, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/inventory/v1/locations"
             && x.PermissionCode == InventoryPermissionCodes.LocationsManage
@@ -50,6 +50,11 @@ public sealed class InventoryEndpointContractTests
             && x.PermissionCode == InventoryPermissionCodes.LedgerRead
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "getInventoryAvailability");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/inventory/v1/movements/by-source"
+            && x.PermissionCode == InventoryPermissionCodes.LedgerRead
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "getInventoryStockBySource");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/inventory/v1/count-tasks"
             && x.PermissionCode == InventoryPermissionCodes.CountsManage
@@ -101,6 +106,7 @@ public sealed class InventoryEndpointContractTests
     [InlineData(typeof(CreateOrUpdateStockLocationEndpoint))]
     [InlineData(typeof(PostStockMovementEndpoint))]
     [InlineData(typeof(GetStockAvailabilityEndpoint))]
+    [InlineData(typeof(GetStockBySourceEndpoint))]
     [InlineData(typeof(CreateStockCountTaskEndpoint))]
     [InlineData(typeof(ConfirmStockCountAdjustmentEndpoint))]
     [InlineData(typeof(CancelStockCountTaskEndpoint))]

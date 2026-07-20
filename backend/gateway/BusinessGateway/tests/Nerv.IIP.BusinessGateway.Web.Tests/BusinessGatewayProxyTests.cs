@@ -1365,6 +1365,167 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Finished_goods_receipt_inventory_link_uses_exact_source_keys_requires_both_permissions_and_reports_quality_restriction()
+    {
+        var mes = new RecordingMesClient { ReceiptRequests = [Receipt("Posted")] };
+        var inventory = new RecordingInventoryClient
+        {
+            StockBySourceResponse = new BusinessConsoleInventoryStockBySourceResponse(
+                "business-mes",
+                "FGR-001",
+                "WO-001",
+                true,
+                [new BusinessConsoleInventorySourceMovement(
+                    "MOVE-001", "inbound", "business-mes", "FGR-001", "WO-001", "mes:fgr:1",
+                    "SKU-FG-001", "EA", "finished-goods", "receiving", "LOT-FG-001", null,
+                    "unrestricted", "production", null, null, null, 10m, DateTime.Parse("2026-07-20T02:00:00Z"))],
+                [new BusinessConsoleInventorySourceBalance(
+                    "SKU-FG-001", "EA", "finished-goods", "receiving", "LOT-FG-001", null,
+                    "restricted", "production", null, null, null, 10m, 0m, 10m, 2,
+                    DateTime.Parse("2026-07-20T02:01:00Z"))])
+        };
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-link-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/finished-goods-receipt-requests/FGR-001/inventory-link?organizationId=org-001&environmentId=env-dev&workOrderId=WO-001");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(
+            new[] { BusinessGatewayPermissions.MesReceiptsRead, BusinessGatewayPermissions.InventoryLedgerRead },
+            auth.Requirements.Select(x => x.PermissionCode).ToArray());
+        Assert.Equal(new BusinessConsoleInventoryStockBySourceRequest(
+            "org-001", "env-dev", "business-mes", "FGR-001", "WO-001"), inventory.LastStockBySourceRequest);
+        Assert.Equal("internal-link-token", mes.LastInternalToken);
+        Assert.Equal("internal-link-token", inventory.LastInternalToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("qualityRestricted", data.GetProperty("linkStatus").GetString());
+        Assert.Equal("FGR-001", data.GetProperty("requestNo").GetString());
+        Assert.Equal("WO-001", data.GetProperty("workOrderId").GetString());
+        Assert.Equal("LOT-FG-001", data.GetProperty("producedLotNo").GetString());
+        Assert.Equal("MOVE-001", data.GetProperty("movements")[0].GetProperty("movementId").GetString());
+        Assert.Equal("restricted", data.GetProperty("balances")[0].GetProperty("qualityStatus").GetString());
+    }
+
+    [Fact]
+    public async Task Finished_goods_receipt_inventory_link_preserves_posting_failure_when_no_inventory_movement_exists()
+    {
+        var mes = new RecordingMesClient
+        {
+            ReceiptRequests = [Receipt("InventoryPostingFailed", "posting-rejected", "Inventory rejected receipt")]
+        };
+        var inventory = new RecordingInventoryClient
+        {
+            StockBySourceResponse = new BusinessConsoleInventoryStockBySourceResponse(
+                "business-mes", "FGR-001", "WO-001", false, [], [])
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/finished-goods-receipt-requests/FGR-001/inventory-link?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("postingFailed", data.GetProperty("linkStatus").GetString());
+        Assert.Equal("posting-rejected", data.GetProperty("inventoryPostingFailureCode").GetString());
+        Assert.Equal("Inventory rejected receipt", data.GetProperty("inventoryPostingFailureMessage").GetString());
+        Assert.Empty(data.GetProperty("movements").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Finished_goods_receipt_inventory_link_denies_before_downstream_calls_without_inventory_read_permission()
+    {
+        var mes = new RecordingMesClient { ReceiptRequests = [Receipt("Posted")] };
+        var inventory = new RecordingInventoryClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.MesReceiptsRead);
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/finished-goods-receipt-requests/FGR-001/inventory-link?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, mes.FinishedGoodsReceiptListCallCount);
+        Assert.Equal(0, inventory.StockBySourceCallCount);
+    }
+
+    [Fact]
+    public async Task Finished_goods_receipt_inventory_link_returns_not_found_instead_of_guessing_a_similar_receipt()
+    {
+        var mes = new RecordingMesClient
+        {
+            ReceiptRequests = [Receipt("Posted") with { RequestNo = "FGR-001-SIMILAR" }]
+        };
+        var inventory = new RecordingInventoryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/finished-goods-receipt-requests/FGR-001/inventory-link?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(1, mes.FinishedGoodsReceiptListCallCount);
+        Assert.Equal("FGR-001", mes.LastFinishedGoodsReceiptExactRequestNo);
+        Assert.Equal(0, inventory.StockBySourceCallCount);
+    }
+
+    private static BusinessConsoleMesReceiptRequestRow Receipt(
+        string status,
+        string? failureCode = null,
+        string? failureMessage = null) =>
+        new(
+            "receipt-001",
+            "FGR-001",
+            "WO-001",
+            "SKU-FG-001",
+            10m,
+            12.5m,
+            status,
+            DateTimeOffset.Parse("2026-07-20T01:00:00Z"),
+            WorkOrderNo: "WO-001",
+            SkuCode: "SKU-FG-001",
+            ProducedLotNo: "LOT-FG-001",
+            PostedInventoryMovementId: status == "Posted" ? "MOVE-001" : null,
+            PostedAtUtc: status == "Posted" ? DateTimeOffset.Parse("2026-07-20T02:00:00Z") : null,
+            InventoryPostingFailureCode: failureCode,
+            InventoryPostingFailureMessage: failureMessage,
+            InventoryPostingFailedAtUtc: failureCode is null ? null : DateTimeOffset.Parse("2026-07-20T02:00:00Z"));
+
+    [Fact]
     public async Task Engineering_production_version_resolve_uses_internal_service_token_for_downstream_business_service()
     {
         var engineering = new RecordingProductEngineeringClient();
@@ -6807,6 +6968,36 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
 
     public Exception? AvailabilityFailure { get; init; }
 
+    public int StockBySourceCallCount { get; private set; }
+
+    public BusinessConsoleInventoryStockBySourceRequest? LastStockBySourceRequest { get; private set; }
+
+    public BusinessConsoleInventoryStockBySourceResponse? StockBySourceResponse { get; init; }
+
+    public Exception? StockBySourceFailure { get; init; }
+
+    public Task<BusinessConsoleInventoryStockBySourceResponse> GetStockBySourceAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryStockBySourceRequest request,
+        CancellationToken cancellationToken)
+    {
+        StockBySourceCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastStockBySourceRequest = request;
+        if (StockBySourceFailure is not null)
+        {
+            throw StockBySourceFailure;
+        }
+
+        return Task.FromResult(StockBySourceResponse ?? new BusinessConsoleInventoryStockBySourceResponse(
+            request.SourceService,
+            request.SourceDocumentId,
+            request.SourceDocumentLineId,
+            false,
+            [],
+            []));
+    }
+
     public Task<BusinessConsoleInventoryAvailabilityResponse> GetAvailabilityAsync(
         string internalBearerToken,
         BusinessConsoleInventoryAvailabilityRequest request,
@@ -9635,6 +9826,14 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest? LastRetryFinishedGoodsReceiptInventoryPostingRequest { get; private set; }
 
+    public IReadOnlyCollection<BusinessConsoleMesReceiptRequestRow>? ReceiptRequests { get; init; }
+
+    public int FinishedGoodsReceiptListCallCount { get; private set; }
+
+    public BusinessConsoleMesListRequest? LastFinishedGoodsReceiptListRequest { get; private set; }
+
+    public string? LastFinishedGoodsReceiptExactRequestNo { get; private set; }
+
     public Task<BusinessConsoleMesReadinessArea> GetFoundationReadinessAreaAsync(
         string internalBearerToken,
         string areaCode,
@@ -10041,10 +10240,15 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public Task<BusinessConsoleMesReceiptRequestListResponse> ListFinishedGoodsReceiptRequestsAsync(
         string internalBearerToken,
         BusinessConsoleMesListRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? exactRequestNo = null)
     {
+        FinishedGoodsReceiptListCallCount++;
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleMesReceiptRequestListResponse([], 0));
+        LastFinishedGoodsReceiptListRequest = request;
+        LastFinishedGoodsReceiptExactRequestNo = exactRequestNo;
+        var items = ReceiptRequests ?? [];
+        return Task.FromResult(new BusinessConsoleMesReceiptRequestListResponse(items, items.Count));
     }
 
     public Task<BusinessConsoleMesCreateReceiptResponse> CreateFinishedGoodsReceiptRequestAsync(

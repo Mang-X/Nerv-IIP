@@ -1177,6 +1177,9 @@ public sealed class MesEndpointContractTests
         var receipts = await new ListFinishedGoodsReceiptRequestsQueryHandler(dbContext).Handle(
             new ListFinishedGoodsReceiptRequestsQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Keyword: "SKU-FILTER", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER"),
             CancellationToken.None);
+        var exactReceipt = await new ListFinishedGoodsReceiptRequestsQueryHandler(dbContext).Handle(
+            new ListFinishedGoodsReceiptRequestsQuery("org-001", "env-dev", null, RequestNo: "FGR-FILTER"),
+            CancellationToken.None);
         var materialIssues = await new ListMaterialIssueRequestsQueryHandler(dbContext).Handle(
             new ListMaterialIssueRequestsQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Keyword: "MAT-FILTER", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER"),
             CancellationToken.None);
@@ -1218,6 +1221,8 @@ public sealed class MesEndpointContractTests
         var receipt = Assert.Single(receipts.Items);
         Assert.Equal("FGR-FILTER", receipt.RequestNo);
         Assert.Equal("WO-FILTER", receipt.WorkOrderNo);
+        Assert.Equal("FGR-FILTER", Assert.Single(exactReceipt.Items).RequestNo);
+        Assert.Equal(1, exactReceipt.Total);
         Assert.Equal("SKU-FILTER", receipt.SkuCode);
         Assert.Equal(1, receipts.Total);
         var materialIssue = Assert.Single(materialIssues.Items);

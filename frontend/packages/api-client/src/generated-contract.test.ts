@@ -25,6 +25,8 @@ import type {
   BusinessConsoleForecastInputListEnvelope,
   BusinessConsoleForecastInputListResponse,
   BusinessConsoleMaintenanceAssetReliabilityEnvelope,
+  BusinessConsoleMesFinishedGoodsInventoryLinkEnvelope,
+  BusinessConsoleMesFinishedGoodsInventoryLinkResponse,
   BusinessConsoleMesQualityHoldTimelineItem,
   BusinessConsoleMesQualityHoldTimelineRequest,
   BusinessConsoleMesQualityHoldTimelineResponse,
@@ -60,6 +62,7 @@ import type {
   GetBusinessConsoleErpCostCandidateBySourceDocumentData,
   GetBusinessConsoleErpPayableBySourceDocumentData,
   GetBusinessConsoleErpReceivableBySourceDocumentData,
+  GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkData,
   ListBusinessConsoleDeviceAssetsData,
   ListBusinessConsolePlanningForecastsData,
   ListBusinessConsoleQualityInspectionRecordsData,
@@ -98,6 +101,7 @@ import {
   getBusinessConsoleMesBatchTraceabilityQueryOptions,
   getBusinessConsoleInventoryAvailabilityQueryOptions,
   getBusinessConsoleMesFoundationReadinessQueryOptions,
+  getBusinessConsoleMesFinishedGoodsReceiptInventoryLinkQueryOptions,
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
   getBusinessConsoleMesMaterialReadinessQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
@@ -276,6 +280,9 @@ describe('generated API client contract', () => {
     expect(recordBusinessConsoleMesDefectMutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesRelatedQualityItemsQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesFinishedGoodsReceiptInventoryLinkQueryOptions).toBeTypeOf(
+      'function',
+    )
     expect(createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions).toBeTypeOf(
       'function',
     )
@@ -291,6 +298,20 @@ describe('generated API client contract', () => {
     expect(listBusinessConsoleWmsInboundOrdersQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleWmsOutboundOrdersQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleWmsWcsTasksQueryOptions).toBeTypeOf('function')
+  })
+
+  it('exposes the MAN-528 exact MES to Inventory link through the stable boundary', () => {
+    expect(businessConsoleClient.getBusinessConsoleMesFinishedGoodsReceiptInventoryLink).toBeTypeOf(
+      'function',
+    )
+    expectTypeOf<
+      GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkData['path']
+    >().toEqualTypeOf<{
+      requestNo: string
+    }>()
+    expectTypeOf<BusinessConsoleMesFinishedGoodsInventoryLinkEnvelope['data']>().toEqualTypeOf<
+      BusinessConsoleMesFinishedGoodsInventoryLinkResponse | null | undefined
+    >()
   })
 
   it('exports deep Business Console generated capabilities through stable api-client entry points', () => {
