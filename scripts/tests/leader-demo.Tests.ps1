@@ -35,6 +35,26 @@ function Write-TestFullStackManifest {
     Write-NervFullStackManifest -Manifest $manifest -StateRoot $StateRoot
 }
 
+function Write-TestReservedPointer {
+    param(
+        [Parameter(Mandatory)] [string] $SessionId,
+        [Parameter(Mandatory)] [string] $WorktreeRoot,
+        [Parameter(Mandatory)] [string] $StateRoot,
+        [Parameter(Mandatory)] [int] $OwnerPid,
+        [Parameter(Mandatory)] [string] $OwnerProcessStartTimeUtc,
+        [Parameter(Mandatory)] [string] $CreatedAtUtc
+    )
+
+    Write-NervLeaderDemoSessionPointer `
+        -SessionId $SessionId `
+        -WorktreeRoot $WorktreeRoot `
+        -OwnershipState Reserved `
+        -OwnerPid $OwnerPid `
+        -OwnerProcessStartTimeUtc $OwnerProcessStartTimeUtc `
+        -CreatedAtUtc $CreatedAtUtc `
+        -StateRoot $StateRoot | Out-Null
+}
+
 $stateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-leader-demo-$([guid]::NewGuid().ToString('N'))"
 $originalPassword = $env:NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD
 $hadOriginalPassword = Test-Path Env:NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD
@@ -74,11 +94,15 @@ try {
 
     $reservedStateRoot = Join-Path $stateRoot 'reserved'
     $reservedSessionId = 'nerv-dead-000010'
-    Write-NervLeaderDemoSessionPointer `
+    $reservationCreatedAt = [DateTimeOffset]::Parse('2026-07-20T00:00:00Z')
+    $reservationOwnerStartedAt = '2026-07-19T23:59:00.0000000Z'
+    Write-TestReservedPointer `
         -SessionId $reservedSessionId `
         -WorktreeRoot $repoRoot `
-        -OwnershipState Reserved `
-        -StateRoot $reservedStateRoot | Out-Null
+        -StateRoot $reservedStateRoot `
+        -OwnerPid 4101 `
+        -OwnerProcessStartTimeUtc $reservationOwnerStartedAt `
+        -CreatedAtUtc $reservationCreatedAt.ToString('O')
     $script:reservedStartCalls = 0
     $reservedFailed = $false
     try {
@@ -86,22 +110,145 @@ try {
             -Action start `
             -StateRoot $reservedStateRoot `
             -WorktreeRoot $repoRoot `
+            -UtcNow $reservationCreatedAt.AddHours(1) `
+            -ReservationTtlSeconds 30 `
+            -OwnerProcessIdentityAction { param($OwnerPid, $OwnerStartedAt) 'Active' } `
             -StartSessionAction { param($SessionId) $script:reservedStartCalls++ } | Out-Null
     }
     catch { $reservedFailed = $_.Exception.Message.Contains($reservedSessionId) }
     Assert-True $reservedFailed 'A Reserved ownership pointer must block another start for the same leader-demo slot.'
     Assert-True ($script:reservedStartCalls -eq 0) 'A Reserved ownership pointer must fail before starting another full-stack session.'
+    Assert-True ((Read-NervLeaderDemoSessionPointer -StateRoot $reservedStateRoot).sessionId -ceq $reservedSessionId) 'An active owner must retain its Reserved pointer even after the stale TTL.'
+
+    $unknownRecentRoot = Join-Path $stateRoot 'unknown-recent'
+    $unknownRecentSessionId = 'nerv-dead-000017'
+    Write-TestReservedPointer `
+        -SessionId $unknownRecentSessionId `
+        -WorktreeRoot $repoRoot `
+        -StateRoot $unknownRecentRoot `
+        -OwnerPid 4105 `
+        -OwnerProcessStartTimeUtc $reservationOwnerStartedAt `
+        -CreatedAtUtc $reservationCreatedAt.AddSeconds(1).ToString('O')
+    $unknownRecentRejected = $false
+    try {
+        Invoke-NervLeaderDemoCommand `
+            -Action start `
+            -StateRoot $unknownRecentRoot `
+            -WorktreeRoot $repoRoot `
+            -UtcNow $reservationCreatedAt.AddSeconds(30) `
+            -ReservationTtlSeconds 30 `
+            -OwnerProcessIdentityAction { param($OwnerPid, $OwnerStartedAt) 'Unknown' } `
+            -StartSessionAction { param($SessionId) throw 'recent unknown reservation must not start' } | Out-Null
+    }
+    catch { $unknownRecentRejected = $_.Exception.Message.Contains($unknownRecentSessionId) }
+    Assert-True $unknownRecentRejected 'An unknown but non-stale reservation must remain owned.'
+    Assert-True ((Read-NervLeaderDemoSessionPointer -StateRoot $unknownRecentRoot).sessionId -ceq $unknownRecentSessionId) 'A non-stale unknown reservation must not be cleared.'
+
+    $unknownStaleRoot = Join-Path $stateRoot 'unknown-stale'
+    $unknownStaleSessionId = 'nerv-dead-000018'
+    Write-TestReservedPointer `
+        -SessionId $unknownStaleSessionId `
+        -WorktreeRoot $repoRoot `
+        -StateRoot $unknownStaleRoot `
+        -OwnerPid 4106 `
+        -OwnerProcessStartTimeUtc $reservationOwnerStartedAt `
+        -CreatedAtUtc $reservationCreatedAt.ToString('O')
+    $unknownStaleResult = Invoke-NervLeaderDemoCommand `
+        -Action stop `
+        -StateRoot $unknownStaleRoot `
+        -WorktreeRoot $repoRoot `
+        -UtcNow $reservationCreatedAt.AddSeconds(31) `
+        -ReservationTtlSeconds 30 `
+        -OwnerProcessIdentityAction { param($OwnerPid, $OwnerStartedAt) 'Unknown' } `
+        -StopSessionAction { param($SessionId) throw 'stale unknown reservation has no session to stop' }
+    Assert-True ("$unknownStaleResult" -match 'state=ReservationReclaimed') 'An unknown reservation past the bounded TTL with no manifest must be reclaimed.'
+    Assert-True (-not (Test-Path -LiteralPath (Get-NervLeaderDemoSessionPointerPath -StateRoot $unknownStaleRoot))) 'A stale unknown reservation must release the dead slot.'
+
+    $deadOwnerStateRoot = Join-Path $stateRoot 'dead-owner'
+    $deadOwnerSessionId = 'nerv-dead-000014'
+    Write-TestReservedPointer `
+        -SessionId $deadOwnerSessionId `
+        -WorktreeRoot $repoRoot `
+        -StateRoot $deadOwnerStateRoot `
+        -OwnerPid 4102 `
+        -OwnerProcessStartTimeUtc $reservationOwnerStartedAt `
+        -CreatedAtUtc $reservationCreatedAt.ToString('O')
+    $script:deadOwnerCleanupCalls = 0
+    $deadOwnerStopResult = Invoke-NervLeaderDemoCommand `
+        -Action stop `
+        -StateRoot $deadOwnerStateRoot `
+        -WorktreeRoot $repoRoot `
+        -OwnerProcessIdentityAction { param($OwnerPid, $OwnerStartedAt) 'Absent' } `
+        -StopSessionAction { param($SessionId) $script:deadOwnerCleanupCalls++ }
+    Assert-True ($script:deadOwnerCleanupCalls -eq 0) 'A dead-owner reservation without a manifest must be reclaimed without invoking session cleanup.'
+    Assert-True ("$deadOwnerStopResult" -match 'state=ReservationReclaimed') 'Stop must report abandoned reservation reclaim.'
+    Assert-True (-not (Test-Path -LiteralPath (Get-NervLeaderDemoSessionPointerPath -StateRoot $deadOwnerStateRoot))) 'Stop must remove a definitively abandoned reservation with no manifest.'
+
+    $pidReuseStateRoot = Join-Path $stateRoot 'pid-reuse'
+    $pidReuseSessionId = 'nerv-dead-000015'
+    Write-TestReservedPointer `
+        -SessionId $pidReuseSessionId `
+        -WorktreeRoot $repoRoot `
+        -StateRoot $pidReuseStateRoot `
+        -OwnerPid 4103 `
+        -OwnerProcessStartTimeUtc $reservationOwnerStartedAt `
+        -CreatedAtUtc $reservationCreatedAt.ToString('O')
+    $script:pidReuseIdentityChecked = $false
+    $pidReuseReplacementId = Invoke-NervLeaderDemoCommand `
+        -Action reset `
+        -StateRoot $pidReuseStateRoot `
+        -WorktreeRoot $repoRoot `
+        -OwnerProcessIdentityAction {
+            param($OwnerPid, $OwnerStartedAt)
+            $script:pidReuseIdentityChecked =
+                $OwnerPid -eq 4103 -and
+                [DateTimeOffset]::Parse("$OwnerStartedAt") -eq [DateTimeOffset]::Parse($reservationOwnerStartedAt)
+            return 'Mismatched'
+        } `
+        -StartSessionAction { param($SessionId) } `
+        -SeedAction { param($SessionId) } `
+        -HealthCheckAction { param($SessionId) }
+    Assert-True $script:pidReuseIdentityChecked 'PID-reuse recovery must compare the recorded process start time, not PID alone.'
+    Assert-True ($pidReuseReplacementId -ne $pidReuseSessionId) 'Reset must reclaim a start-time-mismatched reservation and allocate a fresh session.'
+
+    $manifestOwnedReservationRoot = Join-Path $stateRoot 'reserved-with-manifest'
+    $manifestOwnedSessionId = 'nerv-dead-000016'
+    Write-TestReservedPointer `
+        -SessionId $manifestOwnedSessionId `
+        -WorktreeRoot $repoRoot `
+        -StateRoot $manifestOwnedReservationRoot `
+        -OwnerPid 4104 `
+        -OwnerProcessStartTimeUtc $reservationOwnerStartedAt `
+        -CreatedAtUtc $reservationCreatedAt.ToString('O')
+    Write-TestFullStackManifest -SessionId $manifestOwnedSessionId -ManifestWorktreeRoot $repoRoot -StateRoot $manifestOwnedReservationRoot
+    $script:manifestOwnedReplacementStarts = 0
+    $manifestOwnedRejected = $false
+    try {
+        Invoke-NervLeaderDemoCommand `
+            -Action start `
+            -StateRoot $manifestOwnedReservationRoot `
+            -WorktreeRoot $repoRoot `
+            -OwnerProcessIdentityAction { param($OwnerPid, $OwnerStartedAt) 'Absent' } `
+            -StartSessionAction { param($SessionId) $script:manifestOwnedReplacementStarts++ } | Out-Null
+    }
+    catch { $manifestOwnedRejected = $_.Exception.Message.Contains($manifestOwnedSessionId) }
+    Assert-True $manifestOwnedRejected 'A Reserved pointer with an authoritative manifest must never be reclaimed by start.'
+    Assert-True ($script:manifestOwnedReplacementStarts -eq 0) 'Manifest-backed ownership must block replacement startup.'
+    Assert-True ((Read-NervLeaderDemoSessionPointer -StateRoot $manifestOwnedReservationRoot).sessionId -ceq $manifestOwnedSessionId) 'Manifest-backed ownership must retain its sole cleanup route.'
 
     $finalizationStateRoot = Join-Path $stateRoot 'finalization'
     $finalizationSessionIds = [System.Collections.Generic.List[string]]::new()
     $finalizationCleanupIds = [System.Collections.Generic.List[string]]::new()
     $pointerWriteAction = {
-        param($SessionId, $WorktreeRoot, $InputStateRoot, $OwnershipState)
+        param($SessionId, $WorktreeRoot, $InputStateRoot, $OwnershipState, $OwnerPid, $OwnerProcessStartTimeUtc, $CreatedAtUtc)
         if ($OwnershipState -eq 'Current') { throw 'simulated pointer finalization failure' }
         Write-NervLeaderDemoSessionPointer `
             -SessionId $SessionId `
             -WorktreeRoot $WorktreeRoot `
             -OwnershipState $OwnershipState `
+            -OwnerPid $OwnerPid `
+            -OwnerProcessStartTimeUtc $OwnerProcessStartTimeUtc `
+            -CreatedAtUtc $CreatedAtUtc `
             -StateRoot $InputStateRoot | Out-Null
     }
     $finalizationFailed = $false

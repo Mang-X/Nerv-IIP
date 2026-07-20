@@ -1231,6 +1231,9 @@ function Invoke-NervLeaderDemoCommand {
         [scriptblock] $SeedAction,
         [scriptblock] $HealthCheckAction,
         [scriptblock] $WritePointerAction,
+        [scriptblock] $OwnerProcessIdentityAction,
+        [DateTimeOffset] $UtcNow = [DateTimeOffset]::UtcNow,
+        [ValidateRange(30, 3600)] [int] $ReservationTtlSeconds = 300,
         [ValidateRange(1, 300)] [int] $LifecycleLockTimeoutSeconds = 30
     )
 
@@ -1287,13 +1290,60 @@ function Invoke-NervLeaderDemoCommand {
     }
     if ($null -eq $WritePointerAction) {
         $WritePointerAction = {
-            param($ExactSessionId, $ExactWorktreeRoot, $ExactStateRoot, $OwnershipState)
+            param($ExactSessionId, $ExactWorktreeRoot, $ExactStateRoot, $OwnershipState, $OwnerPid, $OwnerProcessStartTimeUtc, $CreatedAtUtc)
             Write-NervLeaderDemoSessionPointer `
                 -SessionId $ExactSessionId `
                 -WorktreeRoot $ExactWorktreeRoot `
                 -OwnershipState $OwnershipState `
+                -OwnerPid $OwnerPid `
+                -OwnerProcessStartTimeUtc $OwnerProcessStartTimeUtc `
+                -CreatedAtUtc $CreatedAtUtc `
                 -StateRoot $ExactStateRoot | Out-Null
         }
+    }
+    if ($null -eq $OwnerProcessIdentityAction) {
+        $OwnerProcessIdentityAction = {
+            param($OwnerPid, $OwnerProcessStartTimeUtc)
+            Get-NervProcessIdentityStatus -ProcessId $OwnerPid -ProcessStartTimeUtc $OwnerProcessStartTimeUtc
+        }
+    }
+
+    $testReservationReclaimable = {
+        param($Pointer)
+
+        if ("$($Pointer.ownershipState)" -cne 'Reserved') { return $false }
+        $reservedSessionId = "$($Pointer.sessionId)"
+        $manifestPath = Get-NervFullStackManifestPath -SessionId $reservedSessionId -StateRoot $resolvedStateRoot
+        if (Test-Path -LiteralPath $manifestPath -PathType Leaf) { return $false }
+
+        $identityStatus = "$(& $OwnerProcessIdentityAction ([int] $Pointer.ownerPid) "$($Pointer.ownerProcessStartTimeUtc)")"
+        if (@('Active', 'Absent', 'Mismatched', 'Unknown') -cnotcontains $identityStatus) {
+            throw "Leader-demo reservation '$reservedSessionId' owner identity returned invalid status '$identityStatus'."
+        }
+        if ($identityStatus -eq 'Active') { return $false }
+        if ($identityStatus -in @('Absent', 'Mismatched')) { return $true }
+
+        $createdAt = [DateTimeOffset]::Parse("$($Pointer.createdAtUtc)")
+        return ($UtcNow - $createdAt).TotalSeconds -ge $ReservationTtlSeconds
+    }
+
+    $resolveLifecycleTarget = {
+        $pointer = Read-NervLeaderDemoSessionPointer `
+            -StateRoot $resolvedStateRoot `
+            -ExpectedWorktreeRoot $resolvedWorktreeRoot
+        $pointerSessionId = "$($pointer.sessionId)"
+        if ("$($pointer.ownershipState)" -eq 'Reserved') {
+            $manifestPath = Get-NervFullStackManifestPath -SessionId $pointerSessionId -StateRoot $resolvedStateRoot
+            if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+                if (& $testReservationReclaimable $pointer) {
+                    Remove-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedSessionId $pointerSessionId
+                    return [pscustomobject]@{ Reclaimed = $true; SessionId = $pointerSessionId; OwnedSession = $null }
+                }
+                throw "Leader-demo session '$pointerSessionId' has an active or non-stale Reserved ownership and no authoritative manifest."
+            }
+        }
+        $owned = Resolve-NervLeaderDemoOwnedSession -StateRoot $resolvedStateRoot -ExpectedWorktreeRoot $resolvedWorktreeRoot
+        return [pscustomobject]@{ Reclaimed = $false; SessionId = "$($owned.SessionId)"; OwnedSession = $owned }
     }
 
     $compensateExactSession = {
@@ -1325,15 +1375,31 @@ function Invoke-NervLeaderDemoCommand {
         $password = Get-NervLeaderDemoAdminPassword
         $pointerPath = Get-NervLeaderDemoSessionPointerPath -StateRoot $resolvedStateRoot
         if (Test-Path -LiteralPath $pointerPath -PathType Leaf) {
-            $current = Read-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot
-            throw "Leader-demo session '$($current.sessionId)' is already recorded with ownership '$($current.ownershipState)'; use demo reset or demo stop."
+            $current = Read-NervLeaderDemoSessionPointer `
+                -StateRoot $resolvedStateRoot `
+                -ExpectedWorktreeRoot $resolvedWorktreeRoot
+            if (& $testReservationReclaimable $current) {
+                Remove-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedSessionId "$($current.sessionId)"
+            }
+            else {
+                throw "Leader-demo session '$($current.sessionId)' is already recorded with ownership '$($current.ownershipState)'; use demo reset or demo stop."
+            }
         }
 
         do {
             $newSessionId = New-NervFullStackSessionId -WorktreeRoot $resolvedWorktreeRoot
         } while (-not (Test-NervFullStackSessionIdAvailable -SessionId $newSessionId -StateRoot $resolvedStateRoot))
 
-        & $WritePointerAction $newSessionId $resolvedWorktreeRoot $resolvedStateRoot 'Reserved' | Out-Null
+        $ownerProcess = Get-Process -Id $PID -ErrorAction Stop
+        $ownerProcessStartTimeUtc = $ownerProcess.StartTime.ToUniversalTime().ToString('O')
+        & $WritePointerAction `
+            $newSessionId `
+            $resolvedWorktreeRoot `
+            $resolvedStateRoot `
+            'Reserved' `
+            $PID `
+            $ownerProcessStartTimeUtc `
+            $UtcNow.ToString('O') | Out-Null
         try {
             Invoke-NervLeaderDemoCredentialScope -AdminPassword $password -StateRoot $resolvedStateRoot -ScriptBlock {
                 & $StartSessionAction $newSessionId | Out-Null
@@ -1367,7 +1433,7 @@ function Invoke-NervLeaderDemoCommand {
         }
 
         try {
-            & $WritePointerAction $newSessionId $resolvedWorktreeRoot $resolvedStateRoot 'Current' | Out-Null
+            & $WritePointerAction $newSessionId $resolvedWorktreeRoot $resolvedStateRoot 'Current' $null $null $UtcNow.ToString('O') | Out-Null
         }
         catch {
             $finalizationError = "$($_.Exception.Message)"
@@ -1387,10 +1453,12 @@ function Invoke-NervLeaderDemoCommand {
                 }
                 'reset' {
                     $password = Get-NervLeaderDemoAdminPassword
-                    $current = Resolve-NervLeaderDemoOwnedSession -StateRoot $resolvedStateRoot -ExpectedWorktreeRoot $resolvedWorktreeRoot
-                    $oldSessionId = "$($current.SessionId)"
-                    & $StopSessionAction $oldSessionId | Out-Null
-                    Remove-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedSessionId $oldSessionId
+                    $target = & $resolveLifecycleTarget
+                    if (-not $target.Reclaimed) {
+                        $oldSessionId = "$($target.SessionId)"
+                        & $StopSessionAction $oldSessionId | Out-Null
+                        Remove-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedSessionId $oldSessionId
+                    }
 
                     $newSessionId = & $startSession
                     Invoke-NervLeaderDemoCredentialScope -AdminPassword $password -StateRoot $resolvedStateRoot -ScriptBlock {
@@ -1416,8 +1484,12 @@ function Invoke-NervLeaderDemoCommand {
                     }
                 }
                 'stop' {
-                    $current = Resolve-NervLeaderDemoOwnedSession -StateRoot $resolvedStateRoot -ExpectedWorktreeRoot $resolvedWorktreeRoot
-                    $exactSessionId = "$($current.SessionId)"
+                    $target = & $resolveLifecycleTarget
+                    $exactSessionId = "$($target.SessionId)"
+                    if ($target.Reclaimed) {
+                        Write-Output "$exactSessionId state=ReservationReclaimed"
+                        return
+                    }
                     & $StopSessionAction $exactSessionId | Out-Null
                     Remove-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedSessionId $exactSessionId
                     Write-Output "$exactSessionId state=Stopped"
