@@ -116,6 +116,7 @@ try
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<QualityCodingService>();
     builder.Services.AddScoped<QualitySeedService>();
+    builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddSingleton<IInspectionUomConversionClient>(NullInspectionUomConversionClient.Instance);
     builder.Services.AddScoped<IInspectionSourceDocumentVerifier, ErpPurchaseReceiptInspectionSourceDocumentVerifier>();
     builder.Services.AddScoped<IQualityIntegrationEventContextAccessor, HttpQualityIntegrationEventContextAccessor>();
@@ -194,6 +195,18 @@ try
         await seed.SeedAsync(
             builder.Configuration["Quality:Seed:OrganizationId"] ?? "org-001",
             builder.Configuration["Quality:Seed:EnvironmentId"] ?? "env-dev");
+    }
+
+    var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");
+    if (leaderDemoSeedEnabled && !app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException("LeaderDemo:Seed:Enabled=true is only allowed for BusinessQuality in Development.");
+    }
+
+    if (leaderDemoSeedEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync("org-001", "env-dev");
     }
 
     app.UseNervIipRequestLocalization();

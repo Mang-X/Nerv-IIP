@@ -12,7 +12,7 @@ public sealed class QualityLeaderDemoSeedServiceTests
     public async Task Seed_creates_active_variable_operation_plan_once_without_results()
     {
         await using var db = CreateDbContext();
-        var seed = new QualitySeedService(db);
+        var seed = new LeaderDemoSeedService(db);
 
         await seed.SeedAsync("org-001", "env-dev");
         await seed.SeedAsync("org-001", "env-dev");
@@ -36,14 +36,25 @@ public sealed class QualityLeaderDemoSeedServiceTests
     {
         await using var db = CreateDbContext();
         db.InspectionPlans.Add(InspectionPlan.Create(
-            "org-001", "env-dev", QualitySeedService.LeaderDemoPlanCode, "operation", "OTHER-SKU", null, "WC-CNC-DEMO", null, null));
+            "org-001", "env-dev", LeaderDemoSeedService.PlanCode, "operation", "OTHER-SKU", null, "WC-CNC-DEMO", null, null));
         await db.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new QualitySeedService(db).SeedAsync("org-001", "env-dev"));
+            new LeaderDemoSeedService(db).SeedAsync("org-001", "env-dev"));
 
-        Assert.Contains(QualitySeedService.LeaderDemoPlanCode, exception.Message, StringComparison.Ordinal);
+        Assert.Contains(LeaderDemoSeedService.PlanCode, exception.Message, StringComparison.Ordinal);
         Assert.Equal("OTHER-SKU", (await db.InspectionPlans.SingleAsync()).SkuCode);
+    }
+
+    [Fact]
+    public async Task Ordinary_quality_seed_does_not_create_leader_demo_plan()
+    {
+        await using var db = CreateDbContext();
+
+        await new QualitySeedService(db).SeedAsync("org-001", "env-dev");
+
+        Assert.Empty(await db.InspectionPlans.ToArrayAsync());
+        Assert.Equal(7, await db.QualityReasons.CountAsync());
     }
 
     private static ApplicationDbContext CreateDbContext()

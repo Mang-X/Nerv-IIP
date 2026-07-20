@@ -36,15 +36,18 @@ public sealed class LeaderDemoSeedService(
                 throw Collision();
             }
 
+            var expectedProductionVersion = await ResolveProductionVersionAsync(organizationId, environmentId, cancellationToken);
+            ValidateProductionVersion(expectedProductionVersion);
+            if (existing.ProductionVersionId != expectedProductionVersion.ProductionVersionId)
+            {
+                throw Collision();
+            }
+
             return;
         }
 
         var productionVersion = await ResolveProductionVersionAsync(organizationId, environmentId, cancellationToken);
-        if (productionVersion.SkuCode != SkuCode || productionVersion.MbomVersionId != MbomVersionId ||
-            productionVersion.RoutingVersionId != RoutingVersionId || !string.Equals(productionVersion.Status, "active", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("The active ProductEngineering leader-demo production version is incompatible with the frozen MES prerequisite.");
-        }
+        ValidateProductionVersion(productionVersion);
 
         var workOrder = WorkOrder.Create(
             organizationId, environmentId, WorkOrderId, SkuCode, productionVersion.ProductionVersionId, 10m, 1, DueUtc, "pcs");
@@ -55,6 +58,15 @@ public sealed class LeaderDemoSeedService(
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.AddRange(operations);
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static void ValidateProductionVersion(ResolveProductionVersionResponse productionVersion)
+    {
+        if (productionVersion.SkuCode != SkuCode || productionVersion.MbomVersionId != MbomVersionId ||
+            productionVersion.RoutingVersionId != RoutingVersionId || !string.Equals(productionVersion.Status, "active", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("The active ProductEngineering leader-demo production version is incompatible with the frozen MES prerequisite.");
+        }
     }
 
     private async Task<ResolveProductionVersionResponse> ResolveProductionVersionAsync(

@@ -131,6 +131,7 @@ try
     builder.Services.AddScoped<MasterDataCodingService>();
     builder.Services.AddScoped<CodeRuleVersionActivationService>();
     builder.Services.AddScoped<MasterDataSeedService>();
+    builder.Services.AddScoped<LeaderDemoSeedService>();
     var productEngineeringBaseAddress = ResolveServiceBaseAddress(
         builder.Configuration,
         builder.Environment,
@@ -219,6 +220,18 @@ try
         await seed.SeedAsync(
             builder.Configuration["MasterData:Seed:OrganizationId"] ?? "org-001",
             builder.Configuration["MasterData:Seed:EnvironmentId"] ?? "env-dev");
+    }
+
+    var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");
+    if (leaderDemoSeedEnabled && !app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException("LeaderDemo:Seed:Enabled=true is only allowed for BusinessMasterData in Development.");
+    }
+
+    if (leaderDemoSeedEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync("org-001", "env-dev");
     }
 
     app.UseNervIipRequestLocalization();

@@ -12,7 +12,7 @@ public sealed class MasterDataLeaderDemoSeedServiceTests
     public async Task Seed_creates_each_reserved_demo_fact_once()
     {
         await using var db = CreateDbContext();
-        var seed = new MasterDataSeedService(db);
+        var seed = new LeaderDemoSeedService(db);
 
         await seed.SeedAsync("org-001", "env-dev");
         await seed.SeedAsync("org-001", "env-dev");
@@ -37,10 +37,22 @@ public sealed class MasterDataLeaderDemoSeedServiceTests
         await db.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new MasterDataSeedService(db).SeedAsync("org-001", "env-dev"));
+            new LeaderDemoSeedService(db).SeedAsync("org-001", "env-dev"));
 
         Assert.Contains("SITE-001", exception.Message, StringComparison.Ordinal);
         Assert.Equal("Tenant Site", (await db.Sites.SingleAsync()).Name);
+    }
+
+    [Fact]
+    public async Task Ordinary_master_data_seed_does_not_create_leader_demo_facts()
+    {
+        await using var db = CreateDbContext();
+
+        await new MasterDataSeedService(db).SeedAsync("org-001", "env-dev");
+
+        Assert.Empty(await db.Sites.Where(x => x.Code == "SITE-001").ToArrayAsync());
+        Assert.Empty(await db.Skus.Where(x => x.Code.StartsWith("SKU-DEMO-")).ToArrayAsync());
+        Assert.Empty(await db.DeviceAssets.Where(x => x.Code == "DEV-CNC-DEMO").ToArrayAsync());
     }
 
     private static ApplicationDbContext CreateDbContext()

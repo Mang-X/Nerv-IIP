@@ -31,7 +31,7 @@ public sealed class LeaderDemoSeedServiceTests
         var operation = Assert.Single(await db.OperationTasks.ToArrayAsync());
         Assert.True(operation.RequiresQualityInspection);
         Assert.Equal("WC-CNC-DEMO", operation.WorkCenterId);
-        Assert.Equal(2, handler.RequestCount);
+        Assert.Equal(3, handler.RequestCount);
         Assert.Empty(await db.ProductionReports.ToArrayAsync());
         Assert.Empty(await db.DefectRecords.ToArrayAsync());
         Assert.Empty(await db.QualityHoldContexts.ToArrayAsync());
@@ -57,6 +57,30 @@ public sealed class LeaderDemoSeedServiceTests
         Assert.Contains("WO-DEMO-Q01", exception.Message, StringComparison.Ordinal);
         Assert.Equal(0, handler.RequestCount);
         Assert.Equal("OTHER-SKU", (await db.WorkOrders.SingleAsync()).SkuId);
+    }
+
+    [Fact]
+    public async Task Seed_rejects_reserved_work_order_bound_to_a_different_production_version()
+    {
+        await using var db = CreateDbContext();
+        var existing = WorkOrder.Create(
+            "org-001", "env-dev", "WO-DEMO-Q01", "SKU-DEMO-001", "019b03d4-fac4-7000-8000-000000000099", 10m, 1,
+            new DateTimeOffset(2026, 8, 15, 0, 0, 0, TimeSpan.Zero), "pcs");
+        var operations = existing.Release(
+            new DateTimeOffset(2026, 7, 20, 0, 0, 0, TimeSpan.Zero),
+            [new RoutingStepSnapshot("OP-DEMO-Q01-010", 10, "WC-CNC-DEMO", [], TimeSpan.FromMinutes(30), true, "OP-CNC-DEMO")]);
+        db.WorkOrders.Add(existing);
+        db.OperationTasks.AddRange(operations);
+        await db.SaveChangesAsync();
+        var handler = new ProductionVersionHandler();
+        var client = new HttpClient(handler) { BaseAddress = new Uri("http://product-engineering") };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new LeaderDemoSeedService(db, new MesProductEngineeringHttpClient(client)).SeedAsync("org-001", "env-dev"));
+
+        Assert.Contains("WO-DEMO-Q01", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(1, handler.RequestCount);
+        Assert.Equal("019b03d4-fac4-7000-8000-000000000099", (await db.WorkOrders.SingleAsync()).ProductionVersionId);
     }
 
     private static ApplicationDbContext CreateDbContext()
