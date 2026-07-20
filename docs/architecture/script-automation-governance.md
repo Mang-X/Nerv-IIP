@@ -14,6 +14,7 @@
 8. macOS/Linux 支持必须通过跨平台兼容门禁后才能声明；当前 IAM core verify 已在 Ubuntu 22.04.3 WSL 环境完成兼容门禁，后续脚本仍需按脚本粒度记录证据。
 9. Agent-owned 真实全栈验证必须使用 `.\nerv.ps1 fullstack run -Scenario smoke`；交互 `fullstack start` 只用于诊断，并必须在交接前停止。
 10. Connector 现场断连验收使用受治理入口 `pwsh scripts/verify-connector-health-disconnect.ps1 -Runs 3`；固定 10 秒 deadline，不得因 CI 或现场抖动放宽。确定性门禁通过不等于 Docker/PostgreSQL 真实验收通过。
+11. MAN-519 领导演示环境必须使用 `.\nerv.ps1 demo start|reset|seed|health-check|stop`；密码仅从当前 PowerShell 进程的 `NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD` 读取，运行 profile 强制断言 Redis，reset/stop 只清理本地 pointer 授权的精确 full-stack session。
 
 ## 分类矩阵
 
@@ -82,6 +83,7 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
 6. 并行全栈 session 必须用 session ID 同时绑定 manifest、动态 endpoint、进程身份、容器标签、专属卷和 artifact；不得按通用名称前缀清理，也不得自动执行 `aspire stop --all` 或 Docker prune。
 7. 一次性 full-stack session 默认最多三个活动实例，不设置最低可用内存门槛。端口从 manifest 发现，每个 session 使用自己的 Aspire/DCP 代理，不维护共享 Nginx 路由表。
 8. 自动化 `fullstack run` 无论成功或失败都必须进入 finally 清理运行资源，并保留 `artifacts/fullstack/<sessionId>/`；`fullstack gc` 只回收可以证明陈旧且属于本系统的 session。
+9. 领导演示 `demo reset` 先校验机器本地 current-session pointer 与权威 manifest 的 worktree/所有权，再停止该精确 session；无权威 manifest 或所有权不匹配时必须失败，不得扩大到名称前缀、`aspire stop --all`、Docker prune 或共享卷删除。重置后的 seed 只能创建可重复的前置事实，禁止预制生产报工/完工、成品库存、检验结论/NCR/隔离/审批、发货、应收、遥测样本/报警事件或维修完工等最终态。
 
 ## 日志与诊断
 
@@ -90,6 +92,7 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
 3. 脚本失败时输出最近失败命令、exit code、duration、log path、root PID 和 cleanup 结果。
 4. release/install 脚本必须额外输出 release id、service、profile、target、migration from/to、seed step、correlation id 和诊断包位置。
 5. 日志不得包含完整连接串、密码、token、client secret、authorization header 或客户密钥。
+6. 领导演示的每次 `seed` / `health-check` 在成功或失败时均必须写入 `artifacts/leader-demo/<UTC-run-id>/evidence.json`，包含 commit/session/worktree、非敏感 profile、Aspire 资源状态、公开 HTTP 事实与链接、`Messaging Provider=Redis`、full-stack 诊断目录与精确 cleanup 命令；不得写入密码或 token。
 
 ## 验证矩阵
 
@@ -98,6 +101,7 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
 | fast | 快速发现脚本解析、治理和无外部依赖测试问题 | `pwsh scripts/check-script-governance.ps1`、`git diff --check` |
 | infra | 验证 Docker、本地依赖、真实 PostgreSQL profile、disposable database、现场连接断连和 opt-in 发布演练 | `pwsh scripts/verify-fourth-slice-real-infra.ps1`、`pwsh scripts/verify-fifth-slice-persistence-foundation.ps1`、`pwsh scripts/verify-iam-persistent-auth-foundation.ps1`、`pwsh scripts/verify-connector-health-disconnect.ps1 -Runs 3`、`pwsh scripts/verify-production-release-rehearsal.ps1 -Profile dependencies` |
 | full | 串联 OpenAPI 导出、api-client 生成、前端质量门禁、后端和 Connector Host 回归；真实浏览器全栈使用一次性 session | `.\nerv.ps1 fullstack run -Scenario smoke`、`pwsh scripts/verify-parallel-fullstack-isolation.ps1 -Sessions 2`、`pwsh scripts/verify-third-slice-console.ps1` |
+| leader-demo | 重建隔离 PostgreSQL/Redis 演示 session，验证固定前置事实、公开 HTTP 查询、证据与精确清理 | `.\nerv.ps1 demo reset`、`.\nerv.ps1 demo health-check`、`.\nerv.ps1 demo stop`；停止后对同一 ID 执行 `.\nerv.ps1 fullstack stop -SessionId <sessionId>` 确认 `state=Stopped remaining=0`，再用 `fullstack status` 确认 `state=Stopped containers=0` |
 
 ## 跨平台兼容门禁
 

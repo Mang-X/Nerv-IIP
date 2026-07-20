@@ -68,6 +68,82 @@ Each session gets a validated ID, dynamically allocated public ports, session-sp
 
 `fullstack run` always attempts exact cleanup on success and failure while preserving `artifacts/fullstack/<sessionId>/`. Interactive `fullstack start` is diagnostic-only and must be paired with `fullstack stop`; `fullstack gc` reconciles abandoned or expired sessions without pruning unrelated Docker or Aspire resources. Ephemeral PostgreSQL uses a higher connection ceiling for the complete platform topology, but persistent `dev` image tags, volume names, and database settings remain unchanged.
 
+## Repeatable leader-demo environment
+
+MAN-519/#960 adds a governed operator workflow on top of the isolated full-stack
+runtime. Run it from the repository root in PowerShell 7. Generate the admin
+password into the current process only; do not print it, pass it as a command-line
+argument, persist it with `setx`, place it in user secrets, or write it to a file:
+
+```powershell
+$env:NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD = `
+  [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)) + 'Aa1!'
+
+.\nerv.ps1 demo reset
+.\nerv.ps1 demo health-check
+```
+
+The complete command surface is:
+
+```powershell
+.\nerv.ps1 demo start
+.\nerv.ps1 demo reset
+.\nerv.ps1 demo seed
+.\nerv.ps1 demo health-check
+.\nerv.ps1 demo stop
+```
+
+`start` creates one fresh isolated session. `reset` stops only the exact session
+authorized by the machine-local leader-demo pointer, verifies that its owned
+resources are gone, starts a clean session, and runs `seed` plus `health-check`.
+It never deletes the persistent `dev` database, shared volumes, or unrelated
+Aspire/Docker resources. `seed` does not write tables directly; it verifies the
+opt-in service-owned startup seeds through authenticated public Gateway facts.
+Both `seed` and `health-check` fail unless the session manifest reports
+`Messaging Provider=Redis` and the required PostgreSQL, Redis, services, and
+public entrypoints are healthy.
+
+The seed boundary is prerequisite-only. It prepares the fixed keys
+`SO-DEMO-001`, `WO-DEMO-Q01`, `DEV-CNC-DEMO`, and the `MWO-DEMO-001` alarm-rule
+source prefix, along with their master, engineering, raw-material, quality-plan,
+and telemetry-rule prerequisites. It must not create any production report or
+completed quantity, finished-goods stock, inspection conclusion, NCR/hold/
+approval disposition, shipment, receivable, telemetry sample, alarm event, or
+completed maintenance work order. Those outcomes must be produced by the actual
+demo workflow.
+
+Every successful or failed `seed` and `health-check` preserves redacted evidence
+at `artifacts/leader-demo/<UTC-run-id>/evidence.json`. The manifest includes the
+session ID, commit, resource states, non-secret URLs and roles, observed fixed
+facts, Redis assertion, related `artifacts/fullstack/<sessionId>/` diagnostics,
+and exact cleanup command; it never contains the password or bearer token.
+
+For the three-reset acceptance gate, retain each returned session ID and every
+evidence path, and compare the fixed-key observations/counts across all three
+fresh databases:
+
+```powershell
+$session1 = (.\nerv.ps1 demo reset | Select-Object -Last 1)
+.\nerv.ps1 demo health-check
+$session2 = (.\nerv.ps1 demo reset | Select-Object -Last 1)
+.\nerv.ps1 demo health-check
+$session3 = (.\nerv.ps1 demo reset | Select-Object -Last 1)
+.\nerv.ps1 demo health-check
+
+.\nerv.ps1 demo stop
+.\nerv.ps1 fullstack stop -SessionId $session3
+.\nerv.ps1 fullstack status -SessionId $session3
+Remove-Item Env:NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD
+```
+
+The idempotent exact-session `fullstack stop` check must report `state=Stopped`
+and `remaining=0`; the following status must report `state=Stopped` and
+`containers=0`. If a reset or health check fails, preserve the printed evidence
+path, then investigate only through the governed `.\nerv.ps1 fullstack
+status|logs` commands for that exact session. Do not use manual Docker cleanup,
+broad Aspire stop, or diagnostic-only `fullstack start` for this acceptance
+workflow.
+
 ## Local observability
 
 For normal local development, `.\nerv.ps1 dev` lets the Aspire AppHost inject the
