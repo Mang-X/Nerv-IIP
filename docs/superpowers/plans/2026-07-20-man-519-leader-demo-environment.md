@@ -153,4 +153,3 @@ Commit with message `docs(demo): document repeatable leader environment`.
 - [ ] **Step 6: Push and create ready PR**
 
 Push `codex/man-519-960-demo-environment` and create a non-draft PR targeting `main`. The body includes summary, tests, real-stack evidence, risks, schema/OpenAPI impact, product-doc impact, per-endpoint facade declaration (`none`), and `Fixes #960`. Do not merge.
-

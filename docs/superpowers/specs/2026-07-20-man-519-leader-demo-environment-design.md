@@ -88,4 +88,3 @@ Product documentation is unaffected: this is operator/demo engineering and does 
 - Reset is isolated and recoverable; it cannot delete shared development or customer data.
 - Redis, fixed business identifiers, public-fact verification, failure diagnostics, and evidence retention are explicit.
 - No endpoint or Gateway contract change is required, so OpenAPI and generated clients remain unchanged.
-
