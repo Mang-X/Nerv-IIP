@@ -6592,16 +6592,31 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         return result.ToBusinessConsoleResult();
     }
 
-    public Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(
+    public async Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(
         string internalBearerToken,
         BusinessConsoleRecordProductionReportRequest request,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleRecordProductionReportResponse>(
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamRecordProductionReportResponse>(
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/mes/production-reports",
             request,
             cancellationToken);
+
+        if (response.ProductionReportId is null ||
+            response.ProductionReportId.Id == Guid.Empty ||
+            string.IsNullOrWhiteSpace(response.ReportNo))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return new BusinessConsoleRecordProductionReportResponse(
+            response.ProductionReportId.Id.ToString(),
+            response.ReportNo);
+    }
 
     public Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(
         string internalBearerToken,
@@ -6894,6 +6909,12 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                 Assignments,
                 AffectedWorkOrderIds);
     }
+
+    private sealed record DownstreamRecordProductionReportResponse(
+        DownstreamStronglyTypedGuidId? ProductionReportId,
+        string? ReportNo);
+
+    private sealed record DownstreamStronglyTypedGuidId(Guid Id);
 
     // Downstream force-release body carries the actor injected by the gateway from the
     // authenticated principal; the request DTO no longer exposes a caller-supplied actor.
