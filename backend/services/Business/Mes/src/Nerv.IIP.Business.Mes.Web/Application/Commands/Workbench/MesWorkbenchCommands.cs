@@ -557,12 +557,69 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
             }
         }
 
+        await EnsureRoutingSnapshotPreconditionsAsync(request, cancellationToken);
+        var routingSnapshot = await CaptureRoutingSnapshotAsync(request, allocation.Code, cancellationToken);
         return await skuAvailabilityScopeCoordinator.ExecuteAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.SkuId,
-            token => CreateWorkOrderAsync(request, allocation.Code, sourceSystem, sourceDocumentType, sourceDocumentId, token),
+            token => CreateWorkOrderAsync(
+                request,
+                allocation.Code,
+                sourceSystem,
+                sourceDocumentType,
+                sourceDocumentId,
+                routingSnapshot,
+                token),
             cancellationToken);
+    }
+
+    private async Task EnsureRoutingSnapshotPreconditionsAsync(
+        ConvertPlanToWorkOrderCommand request,
+        CancellationToken cancellationToken)
+    {
+        await MesSkuAvailabilityGate.EnsureActiveAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SkuId,
+            cancellationToken);
+        await MesArchivedProductionVersionGuard.ThrowIfArchivedAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.ProductionVersionId,
+            cancellationToken);
+    }
+
+    private async Task<MesRoutingSnapshotResult?> CaptureRoutingSnapshotAsync(
+        ConvertPlanToWorkOrderCommand request,
+        string workOrderId,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(request.WorkCenterId))
+        {
+            return null;
+        }
+
+        var routingSnapshot = routingSnapshotProvider is null
+            ? MesRoutingSnapshotResult.Missing(MesRoutingSnapshotSources.NotConfigured)
+            : await routingSnapshotProvider.GetSnapshotAsync(
+                new MesRoutingSnapshotRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    workOrderId,
+                    request.SkuId,
+                    request.ProductionVersionId,
+                    request.PlannedQuantity,
+                    request.RequestedAtUtc),
+                cancellationToken);
+        if (routingSnapshot.Status != MesRoutingSnapshotStatus.Captured || routingSnapshot.Operations.Count == 0)
+        {
+            throw new MesRoutingSnapshotMissingException(routingSnapshot.SourceSystem);
+        }
+
+        return routingSnapshot;
     }
 
     private async Task<MesAcceptedResponse> CreateWorkOrderAsync(
@@ -571,6 +628,7 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
         string sourceSystem,
         string sourceDocumentType,
         string sourceDocumentId,
+        MesRoutingSnapshotResult? routingSnapshot,
         CancellationToken cancellationToken)
     {
         await MesSkuAvailabilityGate.EnsureActiveAsync(
@@ -593,27 +651,6 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
         if (alreadyExists)
         {
             throw new KnownException($"生产工单已存在，WorkOrderId = {workOrderId}");
-        }
-
-        MesRoutingSnapshotResult? routingSnapshot = null;
-        if (string.IsNullOrWhiteSpace(request.WorkCenterId))
-        {
-            routingSnapshot = routingSnapshotProvider is null
-                ? MesRoutingSnapshotResult.Missing("product-engineering:not-configured")
-                : await routingSnapshotProvider.GetSnapshotAsync(
-                    new MesRoutingSnapshotRequest(
-                        request.OrganizationId,
-                        request.EnvironmentId,
-                        workOrderId,
-                        request.SkuId,
-                        request.ProductionVersionId,
-                        request.PlannedQuantity,
-                        request.RequestedAtUtc),
-                    cancellationToken);
-            if (routingSnapshot.Status != MesRoutingSnapshotStatus.Captured || routingSnapshot.Operations.Count == 0)
-            {
-                throw new KnownException($"ROUTING_SNAPSHOT_MISSING: 工单缺少已发布生产版本的工艺路线快照，Source = {routingSnapshot.SourceSystem}。");
-            }
         }
 
         var sourceReference = new SourcePlanReference(

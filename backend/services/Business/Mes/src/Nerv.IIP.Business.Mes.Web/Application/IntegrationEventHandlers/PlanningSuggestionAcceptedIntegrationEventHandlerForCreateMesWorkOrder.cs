@@ -132,6 +132,10 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
         {
             await AddDisabledSkuDeadLetterAsync(integrationEvent, cancellationToken);
         }
+        catch (MesRoutingSnapshotMissingException exception)
+        {
+            await AddRoutingSnapshotMissingDeadLetterAsync(integrationEvent, exception, cancellationToken);
+        }
     }
 
     private Task AddDisabledSkuDeadLetterAsync(
@@ -145,6 +149,21 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
                 integrationEvent,
                 "mes.planningSuggestionAccepted.skuDisabled",
                 $"Planning suggestion '{payload.SuggestionId}' references disabled SKU '{payload.SkuCode}'."),
+            cancellationToken);
+    }
+
+    private Task AddRoutingSnapshotMissingDeadLetterAsync(
+        PlanningSuggestionAcceptedIntegrationEvent integrationEvent,
+        MesRoutingSnapshotMissingException exception,
+        CancellationToken cancellationToken)
+    {
+        var payload = integrationEvent.Payload;
+        return deadLetterStore.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                ConsumerName,
+                integrationEvent,
+                "mes.planningSuggestionAccepted.routingSnapshotMissing",
+                $"Planning suggestion '{payload.SuggestionId}' cannot create a MES work order because routing snapshot '{exception.DiagnosticSource}' is deterministically missing."),
             cancellationToken);
     }
 }

@@ -21,8 +21,11 @@ public sealed class ProductionVersionApiContractTests
     {
         var contracts = ProductionVersionEndpointContracts.All;
 
-        Assert.Equal(5, contracts.Count);
+        Assert.Equal(6, contracts.Count);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/production-versions/resolve");
+        Assert.Contains(contracts, x =>
+            x.HttpMethod == "GET" &&
+            x.Route == "/api/business/v1/engineering/production-versions/{productionVersionId}/routing-snapshot");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/production-versions");
         Assert.All(contracts, contract =>
         {
@@ -39,6 +42,7 @@ public sealed class ProductionVersionApiContractTests
     [InlineData(typeof(ArchiveProductionVersionEndpoint))]
     [InlineData(typeof(ListProductionVersionsEndpoint))]
     [InlineData(typeof(ResolveProductionVersionEndpoint))]
+    [InlineData(typeof(GetProductionVersionRoutingSnapshotEndpoint))]
     public void Production_version_endpoints_route_through_mediator(Type endpointType)
     {
         var parameterTypes = endpointType
@@ -341,6 +345,64 @@ public sealed class ProductionVersionApiContractTests
         Assert.Equal("routing-cell", response.RoutingVersionId);
         Assert.Equal("active", response.Status);
         Assert.False(string.IsNullOrWhiteSpace(response.ProductionVersionId));
+    }
+
+    [Fact]
+    public async Task Routing_snapshot_query_reads_the_exact_pinned_production_version()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var pinned = ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "MBOM-PINNED:A",
+            "ROUTE-PINNED:A",
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            10,
+            false,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        dbContext.ProductionVersions.AddRange(
+            pinned,
+            ProductionVersion.Create(
+                "org-001",
+                "env-dev",
+                "SKU-FG-1000",
+                "MBOM-CURRENT:A",
+                "ROUTE-CURRENT:A",
+                new DateOnly(2026, 1, 1),
+                null,
+                null,
+                null,
+                100,
+                true,
+                EngineeringVersionStatus.Published,
+                EngineeringVersionStatus.Published));
+        dbContext.Routings.AddRange(
+            ReleasedRouting("ROUTE-PINNED", "A", "SKU-FG-1000", new DateOnly(2026, 1, 1)),
+            ReleasedRouting("ROUTE-CURRENT", "A", "SKU-FG-1000", new DateOnly(2026, 1, 1)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetProductionVersionRoutingSnapshotQueryHandler(
+            dbContext,
+            new RoutingRepository(dbContext)).Handle(
+                new GetProductionVersionRoutingSnapshotQuery(
+                    "org-001",
+                    "env-dev",
+                    pinned.Id.Id.ToString("D")),
+                CancellationToken.None);
+
+        Assert.Equal(pinned.Id.Id.ToString("D"), response.ProductionVersionId);
+        Assert.Equal("ROUTE-PINNED:A", response.RoutingVersionId);
+        Assert.Equal("ROUTE-PINNED", response.RoutingCode);
+        Assert.Equal("active", response.ProductionVersionStatus);
+        Assert.Equal("published", response.RoutingStatus);
+        Assert.Equal("mixing", Assert.Single(response.Operations).OperationCode);
     }
 
     [Fact]

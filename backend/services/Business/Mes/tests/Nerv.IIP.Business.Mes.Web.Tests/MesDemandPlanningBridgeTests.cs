@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Contracts.DemandPlanning;
@@ -10,6 +11,32 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesDemandPlanningBridgeTests
 {
+    [Fact]
+    public async Task Missing_routing_snapshot_is_dead_lettered_as_terminal_without_retry_poisoning()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder(
+            dbContext,
+            deadLetters,
+            routingSnapshotProvider: MissingRoutingSnapshotProvider.Instance);
+        var acceptedAtUtc = DateTimeOffset.Parse("2026-07-21T08:00:00Z");
+        var integrationEvent = NewAcceptedSuggestionEvent(acceptedAtUtc, "SUG-MISSING-ROUTING");
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Empty(await dbContext.WorkOrders.ToListAsync(CancellationToken.None));
+        Assert.Contains(
+            await deadLetters.ListAsync(
+                PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder.ConsumerName,
+                IntegrationEventDeadLetterStatus.Pending,
+                CancellationToken.None),
+            x => x.FailureCode == "mes.planningSuggestionAccepted.routingSnapshotMissing");
+    }
+
     [Fact]
     public async Task Accepted_suggestion_for_consumed_disabled_sku_is_terminally_rejected_without_retry_poisoning()
     {
@@ -144,5 +171,50 @@ public sealed class MesDemandPlanningBridgeTests
         Assert.Equal("SUG-WO-001", productionPlan.ProductionPlanId);
         Assert.Equal("SUG-WO-001", productionPlan.SourceDocumentId);
         Assert.Equal("created", productionPlan.Status);
+    }
+
+    private static PlanningSuggestionAcceptedIntegrationEvent NewAcceptedSuggestionEvent(
+        DateTimeOffset acceptedAtUtc,
+        string suggestionId)
+    {
+        return new PlanningSuggestionAcceptedIntegrationEvent(
+            EventId: $"evt-{suggestionId}",
+            EventType: DemandPlanningIntegrationEventTypes.PlanningSuggestionAccepted,
+            EventVersion: DemandPlanningIntegrationEventVersions.V1,
+            OccurredAtUtc: acceptedAtUtc,
+            SourceService: DemandPlanningIntegrationEventSources.BusinessDemandPlanning,
+            CorrelationId: $"corr-{suggestionId}",
+            CausationId: $"cause-{suggestionId}",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-dev",
+            Actor: "user:planner",
+            IdempotencyKey: $"demand-planning:planning-suggestion-accepted:org-001:env-dev:{suggestionId}",
+            Payload: new PlanningSuggestionAcceptedPayload(
+                suggestionId,
+                "MRP-001",
+                "planned-work-order",
+                "SKU-FG-1000",
+                "PCS",
+                "SITE-A",
+                12m,
+                new DateOnly(2026, 7, 31),
+                new DateOnly(2026, 7, 21),
+                "DEMAND-001",
+                "PV-001",
+                "BusinessMes",
+                "WorkOrder",
+                null));
+    }
+
+    private sealed class MissingRoutingSnapshotProvider : IMesRoutingSnapshotProvider
+    {
+        public static readonly MissingRoutingSnapshotProvider Instance = new();
+
+        public Task<MesRoutingSnapshotResult> GetSnapshotAsync(
+            MesRoutingSnapshotRequest request,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(MesRoutingSnapshotResult.Missing("product-engineering:routing:missing"));
+        }
     }
 }

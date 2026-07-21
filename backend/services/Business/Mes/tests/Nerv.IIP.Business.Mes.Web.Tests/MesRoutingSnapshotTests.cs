@@ -107,7 +107,7 @@ public sealed class MesRoutingSnapshotTests
             new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
             routingProvider);
 
-        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+        var exception = await Assert.ThrowsAsync<MesRoutingSnapshotMissingException>(() => handler.Handle(
             NewCommand(DateTimeOffset.Parse("2026-07-21T08:00:00Z"), "routing-snapshot-missing"),
             CancellationToken.None));
 
@@ -117,14 +117,14 @@ public sealed class MesRoutingSnapshotTests
     }
 
     [Fact]
-    public async Task Http_provider_resolves_exact_production_version_and_preserves_routing_operation_contract()
+    public async Task Http_provider_reads_exact_pinned_production_version_snapshot_without_parsing_routing_identity()
     {
         var requests = new List<string>();
         var httpHandler = new StubHttpMessageHandler(request =>
         {
             var pathAndQuery = request.RequestUri!.PathAndQuery;
             requests.Add(pathAndQuery);
-            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions/resolve?", StringComparison.Ordinal))
+            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions/PV-001/routing-snapshot?", StringComparison.Ordinal))
             {
                 return JsonEnvelope(new
                 {
@@ -132,23 +132,11 @@ public sealed class MesRoutingSnapshotTests
                     organizationId = "org-001",
                     environmentId = "env-dev",
                     skuCode = "SKU-FG-1000",
-                    mbomVersionId = "MBOM-1000:A",
-                    routingVersionId = "ROUTE-1000:A",
-                    effectiveDate = "2026-07-21",
-                    lotSize = 12m,
-                    status = "active",
-                });
-            }
-
-            if (pathAndQuery.StartsWith("/api/business/v1/engineering/routings/ROUTE-1000/A?", StringComparison.Ordinal))
-            {
-                return JsonEnvelope(new
-                {
+                    productionVersionStatus = "active",
+                    routingVersionId = "opaque-routing-version-token",
                     routingCode = "ROUTE-1000",
-                    revision = "A",
-                    skuCode = "SKU-FG-1000",
-                    status = "Published",
-                    effectiveDate = "2026-07-01",
+                    routingRevision = "A",
+                    routingStatus = "Published",
                     operations = new object[]
                     {
                         new
@@ -205,7 +193,7 @@ public sealed class MesRoutingSnapshotTests
             CancellationToken.None);
 
         Assert.Equal(MesRoutingSnapshotStatus.Captured, result.Status);
-        Assert.Equal("product-engineering-http:PV-001:ROUTE-1000:A", result.SourceSystem);
+        Assert.Equal("product-engineering-http:PV-001:opaque-routing-version-token", result.SourceSystem);
         Assert.Collection(
             result.Operations,
             operation =>
@@ -218,11 +206,10 @@ public sealed class MesRoutingSnapshotTests
                 Assert.True(operation.RequiresQualityInspection);
             },
             operation => Assert.Equal("PACK", operation.OperationCode));
-        Assert.Equal(2, requests.Count);
+        Assert.Single(requests);
         Assert.Contains("organizationId=org-001", requests[0], StringComparison.Ordinal);
         Assert.Contains("environmentId=env-dev", requests[0], StringComparison.Ordinal);
-        Assert.Contains("skuCode=SKU-FG-1000", requests[0], StringComparison.Ordinal);
-        Assert.Contains("lotSize=12", requests[0], StringComparison.Ordinal);
+        Assert.DoesNotContain("resolve", requests[0], StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -231,29 +218,17 @@ public sealed class MesRoutingSnapshotTests
         var httpHandler = new StubHttpMessageHandler(request =>
         {
             var pathAndQuery = request.RequestUri!.PathAndQuery;
-            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions/resolve?", StringComparison.Ordinal))
-            {
-                return JsonEnvelope(new
-                {
-                    productionVersionId = "PV-001",
-                    organizationId = "org-001",
-                    environmentId = "env-dev",
-                    skuCode = "SKU-FG-1000",
-                    mbomVersionId = "MBOM-1000:A",
-                    routingVersionId = "ROUTE-1000:A",
-                    effectiveDate = "2026-07-21",
-                    lotSize = 12m,
-                    status = "active",
-                });
-            }
-
             return JsonEnvelope(new
             {
-                routingCode = "ROUTE-1000",
-                revision = "A",
+                productionVersionId = "PV-001",
+                organizationId = "org-001",
+                environmentId = "env-dev",
                 skuCode = "SKU-FG-1000",
-                status = "Draft",
-                effectiveDate = "2026-07-01",
+                productionVersionStatus = "active",
+                routingVersionId = "opaque-routing-version-token",
+                routingCode = "ROUTE-1000",
+                routingRevision = "A",
+                routingStatus = "Draft",
                 operations = new[]
                 {
                     new
@@ -293,7 +268,7 @@ public sealed class MesRoutingSnapshotTests
 
         Assert.Equal(MesRoutingSnapshotStatus.Missing, result.Status);
         Assert.Empty(result.Operations);
-        Assert.Equal("product-engineering:routing:ROUTE-1000:A", result.SourceSystem);
+        Assert.Equal("product-engineering:routing:opaque-routing-version-token", result.SourceSystem);
     }
 
     [Fact]
@@ -310,11 +285,12 @@ public sealed class MesRoutingSnapshotTests
                     organizationId = "org-other",
                     environmentId = "env-dev",
                     skuCode = "SKU-FG-1000",
-                    mbomVersionId = "MBOM-1000:A",
-                    routingVersionId = "ROUTE-1000:A",
-                    effectiveDate = "2026-07-21",
-                    lotSize = 12m,
-                    status = "active",
+                    productionVersionStatus = "active",
+                    routingVersionId = "opaque-routing-version-token",
+                    routingCode = "ROUTE-1000",
+                    routingRevision = "A",
+                    routingStatus = "Published",
+                    operations = Array.Empty<object>(),
                 });
             }))
             {
@@ -335,6 +311,55 @@ public sealed class MesRoutingSnapshotTests
         Assert.Equal(MesRoutingSnapshotStatus.Missing, result.Status);
         Assert.Equal("product-engineering:production-version:PV-001", result.SourceSystem);
         Assert.Equal(1, requestCount);
+    }
+
+    [Fact]
+    public async Task Routing_snapshot_is_fetched_before_entering_sku_availability_scope()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var coordinator = new RecordingSkuAvailabilityScopeCoordinator();
+        var routingProvider = new ScopeAssertingRoutingSnapshotProvider(coordinator);
+        var handler = new ConvertPlanToWorkOrderCommandHandler(
+            dbContext,
+            new RuleScheduler(),
+            null,
+            NoMaterialRequirementsProvider.Instance,
+            coordinator,
+            routingProvider);
+
+        await handler.Handle(
+            NewCommand(DateTimeOffset.Parse("2026-07-21T08:00:00Z"), "routing-snapshot-outside-lock"),
+            CancellationToken.None);
+
+        Assert.Equal(1, coordinator.ExecutionCount);
+        Assert.Equal(1, routingProvider.RequestCount);
+    }
+
+    [Fact]
+    public async Task Http_provider_surfaces_server_failure_as_retryable_source_unavailable()
+    {
+        var snapshotProvider = new HttpMesProductEngineeringRoutingSnapshotProvider(
+            new MesProductEngineeringHttpClient(
+                new HttpClient(new StubHttpMessageHandler(_ =>
+                    new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)))
+                {
+                    BaseAddress = new Uri("http://product-engineering"),
+                }));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => snapshotProvider.GetSnapshotAsync(
+            new MesRoutingSnapshotRequest(
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "SKU-FG-1000",
+                "PV-001",
+                12m,
+                DateTimeOffset.Parse("2026-07-21T08:00:00Z")),
+            CancellationToken.None));
+
+        Assert.Contains("ROUTING_SNAPSHOT_SOURCE_UNAVAILABLE", exception.Message, StringComparison.Ordinal);
     }
 
     private static ConvertPlanToWorkOrderCommand NewCommand(DateTimeOffset requestedAtUtc, string idempotencyKey)
@@ -398,6 +423,67 @@ public sealed class MesRoutingSnapshotTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             return Task.FromResult(handle(request));
+        }
+    }
+
+    private sealed class RecordingSkuAvailabilityScopeCoordinator : IMesSkuAvailabilityScopeCoordinator
+    {
+        public bool IsExecuting { get; private set; }
+        public int ExecutionCount { get; private set; }
+
+        public async Task ExecuteAsync(
+            string organizationId,
+            string environmentId,
+            string skuCode,
+            Func<CancellationToken, Task> action,
+            CancellationToken cancellationToken)
+        {
+            await ExecuteAsync(
+                organizationId,
+                environmentId,
+                skuCode,
+                async token =>
+                {
+                    await action(token);
+                    return true;
+                },
+                cancellationToken);
+        }
+
+        public async Task<T> ExecuteAsync<T>(
+            string organizationId,
+            string environmentId,
+            string skuCode,
+            Func<CancellationToken, Task<T>> action,
+            CancellationToken cancellationToken)
+        {
+            ExecutionCount++;
+            IsExecuting = true;
+            try
+            {
+                return await action(cancellationToken);
+            }
+            finally
+            {
+                IsExecuting = false;
+            }
+        }
+    }
+
+    private sealed class ScopeAssertingRoutingSnapshotProvider(RecordingSkuAvailabilityScopeCoordinator coordinator)
+        : IMesRoutingSnapshotProvider
+    {
+        public int RequestCount { get; private set; }
+
+        public Task<MesRoutingSnapshotResult> GetSnapshotAsync(
+            MesRoutingSnapshotRequest request,
+            CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            Assert.False(coordinator.IsExecuting);
+            return Task.FromResult(MesRoutingSnapshotResult.Captured(
+                "test:outside-lock",
+                [new MesRoutingOperationSnapshot(10, "OP-10", "WC-TEST", [], 30, false)]));
         }
     }
 }
