@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.ServiceAuth;
@@ -96,10 +96,19 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
             var client = httpClientFactory.CreateClient(MesClientName);
             using var response = await client.SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();
-            var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<MesMaterialReadinessResponse>>(
-                SchedulingJson.Options,
-                cancellationToken);
-            return ToSchedulingReadiness(envelope?.Data, workOrderId);
+            var readiness = await ReadReadinessResponseAsync(response.Content, cancellationToken);
+            if (readiness is not null &&
+                !string.Equals(readiness.WorkOrderId, workOrderId, StringComparison.Ordinal))
+            {
+                logger.LogWarning(
+                    "Scheduling material readiness source MES returned work order {ResponseWorkOrderId} for requested work order {WorkOrderId} in problem {ProblemId}.",
+                    readiness.WorkOrderId,
+                    workOrderId,
+                    problem.ProblemId);
+                return SourceUnavailable(workOrderId);
+            }
+
+            return ToSchedulingReadiness(readiness, workOrderId);
         }
         catch (HttpRequestException exception)
         {
@@ -119,6 +128,52 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
                 workOrderId);
             return SourceUnavailable(workOrderId);
         }
+        catch (JsonException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Scheduling material readiness source MES returned an invalid response for problem {ProblemId}, work order {WorkOrderId}.",
+                problem.ProblemId,
+                workOrderId);
+            return SourceUnavailable(workOrderId);
+        }
+    }
+
+    private static async Task<MesMaterialReadinessResponse?> ReadReadinessResponseAsync(
+        HttpContent content,
+        CancellationToken cancellationToken)
+    {
+        var json = await content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        if (root.ValueKind == JsonValueKind.Object &&
+            root.TryGetProperty("success", out var success) &&
+            success.ValueKind == JsonValueKind.False)
+        {
+            return null;
+        }
+
+        var payload = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("data", out var data)
+            ? data
+            : root;
+        if (payload.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        var readiness = payload.Deserialize<MesMaterialReadinessResponse>(SchedulingJson.Options);
+        return readiness is null ||
+               string.IsNullOrWhiteSpace(readiness.WorkOrderId) ||
+               string.IsNullOrWhiteSpace(readiness.ReadinessStatus) ||
+               readiness.BlockingReasons is null ||
+               readiness.Items is null
+            ? null
+            : readiness;
     }
 
     private static IReadOnlyCollection<SchedulingMaterialReadinessContract> ToSchedulingReadiness(
@@ -175,8 +230,6 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
             .Select(x => $"{Uri.EscapeDataString(x.Name)}={Uri.EscapeDataString(Convert.ToString(x.Value, CultureInfo.InvariantCulture) ?? string.Empty)}");
         return string.Join('&', pairs);
     }
-
-    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 
     private sealed record MesMaterialReadinessResponse(
         string WorkOrderId,
