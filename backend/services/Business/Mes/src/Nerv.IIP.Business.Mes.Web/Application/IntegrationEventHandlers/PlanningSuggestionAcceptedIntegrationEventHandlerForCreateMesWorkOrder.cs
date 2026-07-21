@@ -33,7 +33,8 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
         ApplicationDbContext dbContext,
         IIntegrationEventDeadLetterStore deadLetterStore,
         IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null,
-        IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator = null)
+        IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator = null,
+        IMesRoutingSnapshotProvider? routingSnapshotProvider = null)
         : this(
             dbContext,
             new ConvertPlanToWorkOrderCommandHandler(
@@ -41,7 +42,8 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
                 new RuleScheduler(),
                 null,
                 materialSnapshotProvider,
-                skuAvailabilityScopeCoordinator ?? new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext)),
+                skuAvailabilityScopeCoordinator ?? new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
+                routingSnapshotProvider),
             deadLetterStore)
     {
     }

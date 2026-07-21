@@ -186,7 +186,13 @@ public sealed class SkuDisabledConsumerTests
         var changedAtUtc = DateTimeOffset.Parse("2026-07-18T08:00:00Z");
         await using var dbContext = CreateContext(options);
         var codingService = new MesCodingService();
-        var planHandler = new ConvertPlanToWorkOrderCommandHandler(dbContext, codingService);
+        var planHandler = new ConvertPlanToWorkOrderCommandHandler(
+            dbContext,
+            new RuleScheduler(),
+            codingService,
+            null,
+            new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
+            SingleOperationRoutingSnapshotProvider.Instance);
         var planCommand = new ConvertPlanToWorkOrderCommand(
             "org-001", "env-dev", "PLAN-REPLAY", null, changedAtUtc.AddMinutes(-1),
             "SKU-DISABLED", "PV-001", 1m, "PCS", changedAtUtc.AddDays(1), null,

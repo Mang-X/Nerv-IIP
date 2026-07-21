@@ -28,6 +28,7 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
             Assert.Equal(suggestion.Id.ToString(), root.GetProperty("productionPlanId").GetString());
             Assert.Equal("SKU-FG-1000", root.GetProperty("skuId").GetString());
             Assert.Equal("PV-001", root.GetProperty("productionVersionId").GetString());
+            Assert.Equal(JsonValueKind.Null, root.GetProperty("workCenterId").ValueKind);
             Assert.Equal("DemandPlanning", root.GetProperty("sourceSystem").GetString());
             Assert.Equal("PlanningSuggestion", root.GetProperty("sourceDocumentType").GetString());
             Assert.Equal(suggestion.Id.ToString(), root.GetProperty("sourceDocumentId").GetString());

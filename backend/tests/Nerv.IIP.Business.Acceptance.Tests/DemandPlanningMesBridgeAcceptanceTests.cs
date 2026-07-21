@@ -3,8 +3,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
+using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using DemandPlanningDbContext = Nerv.IIP.Business.DemandPlanning.Infrastructure.ApplicationDbContext;
 using MesDbContext = Nerv.IIP.Business.Mes.Infrastructure.ApplicationDbContext;
 
@@ -38,7 +40,13 @@ public sealed class DemandPlanningMesBridgeAcceptanceTests
         await demandDb.SaveChangesAsync(CancellationToken.None);
 
         var mesBridge = new MesCommandPlanningSuggestionDownstreamBridge(
-            new ConvertPlanToWorkOrderCommandHandler(mesDb));
+            new ConvertPlanToWorkOrderCommandHandler(
+                mesDb,
+                new RuleScheduler(),
+                null,
+                null,
+                new PostgreSqlMesSkuAvailabilityScopeCoordinator(mesDb),
+                AcceptanceRoutingSnapshotProvider.Instance));
         await new AcceptPlanningSuggestionCommandHandler(demandDb, mesBridge).Handle(
             new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessMes", "WorkOrder", null),
             CancellationToken.None);
@@ -116,6 +124,20 @@ public sealed class DemandPlanningMesBridgeAcceptanceTests
                     request.IdempotencyKey),
                 cancellationToken);
             return new PlanningSuggestionDownstreamReference("BusinessMes", "WorkOrder", result.ReferenceId);
+        }
+    }
+
+    private sealed class AcceptanceRoutingSnapshotProvider : IMesRoutingSnapshotProvider
+    {
+        public static readonly AcceptanceRoutingSnapshotProvider Instance = new();
+
+        public Task<MesRoutingSnapshotResult> GetSnapshotAsync(
+            MesRoutingSnapshotRequest request,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(MesRoutingSnapshotResult.Captured(
+                "acceptance:PV-FG-1000:ROUTING-001:A",
+                [new MesRoutingOperationSnapshot(10, "MIX", "WC-MIX", [], 30, false)]));
         }
     }
 

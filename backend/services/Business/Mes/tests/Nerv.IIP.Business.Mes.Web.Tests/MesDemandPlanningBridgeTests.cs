@@ -84,7 +84,10 @@ public sealed class MesDemandPlanningBridgeTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = new PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder(dbContext, deadLetters);
+        var handler = new PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder(
+            dbContext,
+            deadLetters,
+            routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance);
         var acceptedAtUtc = DateTimeOffset.Parse("2026-06-24T08:00:00Z");
         var integrationEvent = new PlanningSuggestionAcceptedIntegrationEvent(
             EventId: "evt-demand-mes-001",
