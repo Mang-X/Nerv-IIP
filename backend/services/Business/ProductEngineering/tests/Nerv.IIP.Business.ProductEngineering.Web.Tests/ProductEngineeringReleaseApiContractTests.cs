@@ -25,6 +25,7 @@ using Nerv.IIP.Business.ProductEngineering.Infrastructure;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Auth;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands.ProductionVersions;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Queries;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Scheduling;
@@ -39,6 +40,97 @@ namespace Nerv.IIP.Business.ProductEngineering.Web.Tests;
 
 public sealed class ProductEngineeringReleaseApiContractTests
 {
+    [Fact]
+    public async Task Release_results_feed_production_version_identity_without_caller_construction()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-CHAIN", "A", "SKU-FG-CHAIN")
+            .AddLine("SKU-RM-CHAIN", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 7, 21));
+        dbContext.EngineeringBoms.Add(ebom);
+        dbContext.StandardOperations.Add(StandardOperation.Create(
+            "org-001",
+            "env-dev",
+            "assembly",
+            "Assembly",
+            "WC-ASSEMBLY",
+            5,
+            20,
+            "INHOUSE",
+            requiresReporting: true,
+            requiresQualityInspection: false,
+            isOutsourced: false,
+            description: null));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var manufacturingBomRepository = new ManufacturingBomRepository(dbContext);
+        var routingRepository = new RoutingRepository(dbContext);
+        var manufacturingBomHandler = new ReleaseManufacturingBomCommandHandler(
+            new EngineeringBomRepository(dbContext),
+            manufacturingBomRepository,
+            codingService: new ProductEngineeringCodingService());
+        var manufacturingBomCommand = new ReleaseManufacturingBomCommand(
+            "org-001",
+            "env-dev",
+            "MBOM-CHAIN",
+            "A",
+            "SKU-FG-CHAIN",
+            "EBOM-CHAIN",
+            "A",
+            new DateOnly(2026, 7, 21),
+            [new ManufacturingBomMaterialLineCommand("SKU-RM-CHAIN", 1m, "EA", 0m)],
+            [],
+            "mbom-chain-release");
+        var mbomResult = await manufacturingBomHandler.Handle(manufacturingBomCommand, CancellationToken.None);
+        var routingHandler = new ReleaseRoutingCommandHandler(
+            routingRepository,
+            new StandardOperationRepository(dbContext),
+            codingService: new ProductEngineeringCodingService());
+        var routingCommand = new ReleaseRoutingCommand(
+            "org-001",
+            "env-dev",
+            "ROUTE-CHAIN",
+            "A",
+            "SKU-FG-CHAIN",
+            new DateOnly(2026, 7, 21),
+            [new RoutingOperationCommand(10, "WC-IGNORED", "assembly", "Ignored", 1)],
+            "routing-chain-release");
+        var routingResult = await routingHandler.Handle(routingCommand, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var replayedMbomResult = await manufacturingBomHandler.Handle(manufacturingBomCommand, CancellationToken.None);
+        var replayedRoutingResult = await routingHandler.Handle(routingCommand, CancellationToken.None);
+
+        var mbomVersionId = mbomResult.VersionId;
+        var routingVersionId = routingResult.VersionId;
+        Assert.Equal("MBOM-CHAIN:A", mbomVersionId);
+        Assert.Equal("ROUTE-CHAIN:A", routingVersionId);
+        Assert.Equal(mbomResult, replayedMbomResult);
+        Assert.Equal(routingResult, replayedRoutingResult);
+
+        var productionVersionResult = await new CreateProductionVersionCommandHandler(
+            new ProductionVersionRepository(dbContext),
+            manufacturingBomRepository,
+            routingRepository).Handle(
+                new CreateProductionVersionCommand(
+                    "org-001",
+                    "env-dev",
+                    "SKU-FG-CHAIN",
+                    mbomVersionId,
+                    routingVersionId,
+                    new DateOnly(2026, 7, 21),
+                    null,
+                    1,
+                    100,
+                    10,
+                    true),
+                CancellationToken.None);
+
+        Assert.False(string.IsNullOrWhiteSpace(productionVersionResult.ProductionVersionId));
+    }
+
     [Fact]
     public void Product_engineering_release_endpoint_contracts_cover_issue_127_surface()
     {

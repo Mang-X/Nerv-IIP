@@ -31,6 +31,16 @@ public sealed record RegisterEngineeringDocumentCommand(
 
 public sealed record EntityCommandResult(string Id);
 
+public sealed record ReleasedEngineeringVersionResult(string Id, string VersionId)
+{
+    public static ReleasedEngineeringVersionResult Create(string id, string revision)
+    {
+        var normalizedId = id.Trim();
+        var normalizedRevision = revision.Trim();
+        return new ReleasedEngineeringVersionResult(normalizedId, $"{normalizedId}:{normalizedRevision}");
+    }
+}
+
 public sealed class RegisterEngineeringDocumentCommandValidator : AbstractValidator<RegisterEngineeringDocumentCommand>
 {
     public RegisterEngineeringDocumentCommandValidator()
@@ -355,7 +365,7 @@ public sealed record ReleaseManufacturingBomCommand(
     DateOnly EffectiveDate,
     IReadOnlyCollection<ManufacturingBomMaterialLineCommand> MaterialLines,
     IReadOnlyCollection<RecipeLineCommand> RecipeLines,
-    string? IdempotencyKey = null) : ICommand<EntityCommandResult>;
+    string? IdempotencyKey = null) : ICommand<ReleasedEngineeringVersionResult>;
 
 public sealed record ManufacturingBomMaterialLineCommand(
     string SkuCode,
@@ -399,12 +409,12 @@ public sealed class ReleaseManufacturingBomCommandHandler(
     IManufacturingBomRepository manufacturingBomRepository,
     IProductEngineeringMasterDataReferenceValidator? masterDataReferenceValidator = null,
     ProductEngineeringCodingService? codingService = null)
-    : ICommandHandler<ReleaseManufacturingBomCommand, EntityCommandResult>
+    : ICommandHandler<ReleaseManufacturingBomCommand, ReleasedEngineeringVersionResult>
 {
     private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
     private readonly IProductEngineeringMasterDataReferenceValidator _masterDataReferenceValidator = masterDataReferenceValidator ?? NoopProductEngineeringMasterDataReferenceValidator.Instance;
 
-    public async Task<EntityCommandResult> Handle(ReleaseManufacturingBomCommand request, CancellationToken cancellationToken)
+    public async Task<ReleasedEngineeringVersionResult> Handle(ReleaseManufacturingBomCommand request, CancellationToken cancellationToken)
     {
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
@@ -415,7 +425,7 @@ public sealed class ReleaseManufacturingBomCommandHandler(
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return new EntityCommandResult(allocation.Code);
+            return ReleasedEngineeringVersionResult.Create(allocation.Code, request.Revision);
         }
 
         if (await manufacturingBomRepository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
@@ -471,7 +481,7 @@ public sealed class ReleaseManufacturingBomCommandHandler(
             return draft;
         });
         await manufacturingBomRepository.AddAsync(bom, cancellationToken);
-        return new EntityCommandResult(bom.BomCode);
+        return ReleasedEngineeringVersionResult.Create(bom.BomCode, bom.Revision);
     }
 
     private static IReadOnlyCollection<string> GetManufacturingBomSkuCodes(ReleaseManufacturingBomCommand request)
@@ -493,7 +503,7 @@ public sealed record ReleaseRoutingCommand(
     string SkuCode,
     DateOnly EffectiveDate,
     IReadOnlyCollection<RoutingOperationCommand> Operations,
-    string? IdempotencyKey = null) : ICommand<EntityCommandResult>;
+    string? IdempotencyKey = null) : ICommand<ReleasedEngineeringVersionResult>;
 
 public sealed record RoutingOperationCommand(int Sequence, string? WorkCenterCode, string OperationCode, string? OperationName, int StandardMinutes = 0);
 
@@ -523,12 +533,12 @@ public sealed class ReleaseRoutingCommandHandler(
     IStandardOperationRepository standardOperationRepository,
     IProductEngineeringMasterDataReferenceValidator? masterDataReferenceValidator = null,
     ProductEngineeringCodingService? codingService = null)
-    : ICommandHandler<ReleaseRoutingCommand, EntityCommandResult>
+    : ICommandHandler<ReleaseRoutingCommand, ReleasedEngineeringVersionResult>
 {
     private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
     private readonly IProductEngineeringMasterDataReferenceValidator _masterDataReferenceValidator = masterDataReferenceValidator ?? NoopProductEngineeringMasterDataReferenceValidator.Instance;
 
-    public async Task<EntityCommandResult> Handle(ReleaseRoutingCommand request, CancellationToken cancellationToken)
+    public async Task<ReleasedEngineeringVersionResult> Handle(ReleaseRoutingCommand request, CancellationToken cancellationToken)
     {
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
@@ -539,7 +549,7 @@ public sealed class ReleaseRoutingCommandHandler(
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return new EntityCommandResult(allocation.Code);
+            return ReleasedEngineeringVersionResult.Create(allocation.Code, request.Revision);
         }
 
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
@@ -603,7 +613,7 @@ public sealed class ReleaseRoutingCommandHandler(
             return draft;
         });
         await repository.AddAsync(routing, cancellationToken);
-        return new EntityCommandResult(routing.RoutingCode);
+        return ReleasedEngineeringVersionResult.Create(routing.RoutingCode, routing.Revision);
     }
 }
 

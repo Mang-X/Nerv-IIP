@@ -470,7 +470,7 @@ public sealed class ReleaseBusinessConsoleEngineeringManufacturingBomEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessProductEngineeringClient engineering,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleReleaseManufacturingBomRequest, BusinessConsoleEngineeringEntityResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleReleaseManufacturingBomRequest, BusinessConsoleReleasedEngineeringVersionResponse>(
         auth,
         BusinessGatewayPermissions.EngineeringBomsManage)
 {
@@ -478,7 +478,7 @@ public sealed class ReleaseBusinessConsoleEngineeringManufacturingBomEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleReleaseManufacturingBomRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleEngineeringEntityResponse> ForwardAsync(
+    protected override Task<BusinessConsoleReleasedEngineeringVersionResponse> ForwardAsync(
         BusinessConsoleReleaseManufacturingBomRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
@@ -546,7 +546,7 @@ public sealed class ReleaseBusinessConsoleEngineeringRoutingEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessProductEngineeringClient engineering,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleReleaseRoutingRequest, BusinessConsoleEngineeringEntityResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleReleaseRoutingRequest, BusinessConsoleReleasedEngineeringVersionResponse>(
         auth,
         BusinessGatewayPermissions.EngineeringRoutingsManage)
 {
@@ -554,7 +554,7 @@ public sealed class ReleaseBusinessConsoleEngineeringRoutingEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleReleaseRoutingRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleEngineeringEntityResponse> ForwardAsync(
+    protected override Task<BusinessConsoleReleasedEngineeringVersionResponse> ForwardAsync(
         BusinessConsoleReleaseRoutingRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>

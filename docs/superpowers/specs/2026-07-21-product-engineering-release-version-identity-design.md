@@ -60,4 +60,3 @@ sales-to-delivery failure exposed after production-version creation.
 - `./nerv.ps1 fullstack run -Scenario leader-demo-main-chain` must pass the
   production-version checkpoint. Any next earliest failure is recorded separately, with
   the governed session cleaned up and no fix bundled into this PR.
-

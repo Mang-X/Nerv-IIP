@@ -171,4 +171,3 @@ and state the product-doc impact accurately.
 - [ ] **Step 4: Stop for review**
 
 Report the ready PR URL and live checks state. Do not merge.
-

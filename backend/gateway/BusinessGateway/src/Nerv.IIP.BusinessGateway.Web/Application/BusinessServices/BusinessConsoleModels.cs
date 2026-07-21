@@ -1583,6 +1583,8 @@ public sealed record BusinessConsoleRegisterEngineeringDocumentRequest(
 
 public sealed record BusinessConsoleEngineeringEntityResponse(string Id);
 
+public sealed record BusinessConsoleReleasedEngineeringVersionResponse(string Id, string VersionId);
+
 public sealed record BusinessConsoleCreateEngineeringItemRevisionRequest(
     string OrganizationId,
     string EnvironmentId,

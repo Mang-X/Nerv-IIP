@@ -43,6 +43,8 @@ public sealed record RegisterEngineeringDocumentRequest(
 
 public sealed record EntityResponse(string Id);
 
+public sealed record ReleasedEngineeringVersionResponse(string Id, string VersionId);
+
 public sealed class RegisterEngineeringDocumentEndpoint(ISender sender)
     : ProductEngineeringEndpoint<RegisterEngineeringDocumentRequest, ResponseData<EntityResponse>>
 {
@@ -164,7 +166,7 @@ public sealed record ReleaseManufacturingBomRequest(
     string? IdempotencyKey = null);
 
 public sealed class ReleaseManufacturingBomEndpoint(ISender sender)
-    : ProductEngineeringEndpoint<ReleaseManufacturingBomRequest, ResponseData<EntityResponse>>
+    : ProductEngineeringEndpoint<ReleaseManufacturingBomRequest, ResponseData<ReleasedEngineeringVersionResponse>>
 {
     public override void Configure()
     {
@@ -174,7 +176,7 @@ public sealed class ReleaseManufacturingBomEndpoint(ISender sender)
     public override async Task HandleAsync(ReleaseManufacturingBomRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new ReleaseManufacturingBomCommand(req.OrganizationId, req.EnvironmentId, req.BomCode, req.Revision, req.SkuCode, req.EngineeringBomCode, req.EngineeringBomRevision, req.EffectiveDate, req.MaterialLines, req.RecipeLines, req.IdempotencyKey), ct);
-        await Send.OkAsync(new EntityResponse(result.Id).AsResponseData(), ct);
+        await Send.OkAsync(new ReleasedEngineeringVersionResponse(result.Id, result.VersionId).AsResponseData(), ct);
     }
 }
 
@@ -210,7 +212,7 @@ public sealed class ReleaseRoutingRequestValidator : Validator<ReleaseRoutingReq
 }
 
 public sealed class ReleaseRoutingEndpoint(ISender sender)
-    : ProductEngineeringEndpoint<ReleaseRoutingRequest, ResponseData<EntityResponse>>
+    : ProductEngineeringEndpoint<ReleaseRoutingRequest, ResponseData<ReleasedEngineeringVersionResponse>>
 {
     public override void Configure()
     {
@@ -220,7 +222,7 @@ public sealed class ReleaseRoutingEndpoint(ISender sender)
     public override async Task HandleAsync(ReleaseRoutingRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new ReleaseRoutingCommand(req.OrganizationId, req.EnvironmentId, req.RoutingCode, req.Revision, req.SkuCode, req.EffectiveDate, req.Operations, req.IdempotencyKey), ct);
-        await Send.OkAsync(new EntityResponse(result.Id).AsResponseData(), ct);
+        await Send.OkAsync(new ReleasedEngineeringVersionResponse(result.Id, result.VersionId).AsResponseData(), ct);
     }
 }
 
