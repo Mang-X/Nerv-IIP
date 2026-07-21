@@ -100,7 +100,6 @@ public sealed class CreateInboundOrderCommandHandler(ApplicationDbContext dbCont
         }
 
         dbContext.InboundOrders.Add(proposedOrder);
-        await Task.CompletedTask;
         return proposedOrder.Id;
     }
 
@@ -180,22 +179,109 @@ public sealed class CompleteInboundOrderCommandHandler(ApplicationDbContext dbCo
     {
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.InboundOrderId, cancellationToken)
             ?? throw new KnownException($"Inbound order was not found: {request.InboundOrderId}");
-        var replayRequest = await dbContext.InventoryMovementRequests
+        var baseIdempotencyKey = WmsText.Required(request.IdempotencyKey, nameof(request.IdempotencyKey));
+        var singleLine = inbound.Lines.Count == 1;
+        var expectedKeysByLine = inbound.Lines.ToDictionary(
+            line => line.LineNo,
+            line => singleLine ? baseIdempotencyKey : WmsText.LineIdempotencyKey(baseIdempotencyKey, line.LineNo),
+            StringComparer.Ordinal);
+        var expectedKeys = expectedKeysByLine.Values.ToArray();
+        var replayRequests = await dbContext.InventoryMovementRequests
             .Where(x => x.OrganizationId == inbound.OrganizationId
                 && x.EnvironmentId == inbound.EnvironmentId
                 && x.SourceDocumentId == inbound.InboundOrderNo
-                && (x.IdempotencyKey == request.IdempotencyKey
-                    || x.IdempotencyKey.StartsWith(request.IdempotencyKey + ":")))
-            .OrderBy(x => x.SourceDocumentLineId)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (replayRequest is not null)
+                && expectedKeys.Contains(x.IdempotencyKey))
+            .ToArrayAsync(cancellationToken);
+        if (replayRequests.Length > 0)
         {
+            if (!HasSameCompletionFacts(inbound, request.Lines, expectedKeysByLine, replayRequests))
+            {
+                throw new KnownException($"Inbound order '{inbound.InboundOrderNo}' was already completed with different completion facts.");
+            }
+
+            var replayRequest = CanonicalRequest(replayRequests);
             return new CompleteWmsMovementResult(replayRequest.Id, replayRequest.InventoryMovementId);
         }
 
-        var movementRequests = inbound.Complete(request.IdempotencyKey, request.Lines);
+        var movementRequests = inbound.Complete(baseIdempotencyKey, request.Lines);
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
-        return new CompleteWmsMovementResult(movementRequests.First().Id, null);
+        return new CompleteWmsMovementResult(CanonicalRequest(movementRequests).Id, null);
+    }
+
+    private static bool HasSameCompletionFacts(
+        InboundOrder inbound,
+        IReadOnlyCollection<InboundOrderLineCapture>? captures,
+        IReadOnlyDictionary<string, string> expectedKeysByLine,
+        IReadOnlyCollection<InventoryMovementRequest> replayRequests)
+    {
+        if (replayRequests.Count != inbound.Lines.Count)
+        {
+            return false;
+        }
+
+        var requestsByLine = new Dictionary<string, InventoryMovementRequest>(StringComparer.Ordinal);
+        foreach (var replayRequest in replayRequests)
+        {
+            if (replayRequest.SourceDocumentLineId is null
+                || !requestsByLine.TryAdd(replayRequest.SourceDocumentLineId, replayRequest))
+            {
+                return false;
+            }
+        }
+
+        foreach (var line in inbound.Lines)
+        {
+            if (!requestsByLine.TryGetValue(line.LineNo, out var replayRequest)
+                || replayRequest.MovementType != "inbound"
+                || replayRequest.IdempotencyKey != expectedKeysByLine[line.LineNo]
+                || replayRequest.SkuCode != line.SkuCode
+                || replayRequest.UomCode != line.UomCode
+                || replayRequest.SiteCode != inbound.SiteCode
+                || replayRequest.LocationCode != line.StagingLocationCode
+                || replayRequest.LotNo != line.LotNo
+                || replayRequest.SerialNo != line.SerialNo
+                || replayRequest.QualityStatus != line.ReceiptQualityStatus
+                || replayRequest.OwnerType != line.OwnerType
+                || replayRequest.OwnerId != line.OwnerId
+                || replayRequest.Quantity != line.ReceivedQuantity
+                || replayRequest.ProductionDate != line.ProductionDate
+                || replayRequest.ExpiryDate != line.ExpiryDate)
+            {
+                return false;
+            }
+        }
+
+        if (captures is null || captures.Count == 0)
+        {
+            return true;
+        }
+
+        var linesByNumber = inbound.Lines.ToDictionary(x => x.LineNo, StringComparer.Ordinal);
+        var capturedLineNumbers = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var capture in captures)
+        {
+            if (string.IsNullOrWhiteSpace(capture.LineNo))
+            {
+                return false;
+            }
+
+            var lineNo = capture.LineNo.Trim();
+            if (!capturedLineNumbers.Add(lineNo)
+                || !linesByNumber.TryGetValue(lineNo, out var line)
+                || WmsText.Optional(capture.LotNo) != line.LotNo
+                || capture.ProductionDate != line.ProductionDate
+                || capture.ExpiryDate != line.ExpiryDate)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static InventoryMovementRequest CanonicalRequest(IEnumerable<InventoryMovementRequest> requests)
+    {
+        return requests.OrderBy(x => x.SourceDocumentLineId, StringComparer.Ordinal).First();
     }
 }
 

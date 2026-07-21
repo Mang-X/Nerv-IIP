@@ -582,7 +582,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           },
         ),
       )
-      const releasedPurchaseOrder = await pollRows(
+      await pollRows(
         purchaseOrderPath,
         { organizationId, environmentId, keyword: purchaseOrderNo },
         (row) =>
@@ -648,6 +648,14 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
       const completedInboundReplay = asRecord(
         await create(completeInboundPath, completeInboundRequest),
       )
+      const completedInboundRequestId = textOf(completedInbound.requestId).trim()
+      const completeInboundReplayConfirmed =
+        Boolean(completedInboundRequestId) &&
+        textOf(completedInboundReplay.requestId).trim() === completedInboundRequestId
+      if (!completeInboundReplayConfirmed)
+        throw new Error(
+          'WMS inbound completion replay did not return the original movement request.',
+        )
 
       const receivedPurchaseOrder = await pollRows(
         purchaseOrderPath,
@@ -683,7 +691,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           completedInboundReplay,
         }),
         inventory: publicJson(rawMaterialAvailability.data),
-        replayConfirmed: true,
+        replayConfirmed: completeInboundReplayConfirmed,
       }
       setup.push({
         phase: 'raw-material-supply',

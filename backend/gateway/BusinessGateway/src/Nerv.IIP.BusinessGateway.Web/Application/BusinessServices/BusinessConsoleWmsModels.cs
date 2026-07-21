@@ -64,7 +64,7 @@ public sealed record BusinessConsoleWmsInboundLineCaptureInput(
     DateOnly? ProductionDate,
     DateOnly? ExpiryDate);
 
-public sealed record BusinessConsoleCompleteWmsMovementResponse(string InventoryMovementId);
+public sealed record BusinessConsoleCompleteWmsMovementResponse(string? RequestId, string? InventoryMovementId);
 
 public sealed record BusinessConsoleCreateWmsOutboundOrderRequest(
     string OrganizationId,

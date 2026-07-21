@@ -182,6 +182,7 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurc
         }
         catch (Exception exception) when (exception is KnownException or ArgumentException or InvalidOperationException)
         {
+            dbContext.ChangeTracker.Clear();
             await DeadLetterAsync(
                 integrationEvent,
                 "receipt-recording-rejected",

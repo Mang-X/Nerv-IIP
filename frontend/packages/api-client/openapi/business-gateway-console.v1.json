@@ -24422,8 +24422,13 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "requestId": {
+            "type": "string",
+            "nullable": true
+          },
           "inventoryMovementId": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           }
         }
       },

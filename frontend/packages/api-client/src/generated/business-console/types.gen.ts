@@ -255,7 +255,8 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCompleteWmsMovem
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsMovementResponse = {
-    inventoryMovementId?: string;
+    requestId?: string | null;
+    inventoryMovementId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsInboundOrderRequest = {

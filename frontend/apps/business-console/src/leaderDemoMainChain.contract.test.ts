@@ -63,6 +63,13 @@ describe('leader demo main-chain public prerequisites', () => {
     )
     expect(supplyFlow).toContain('idempotencyKey: `purchase-order-${suffix}`')
     expect(supplyFlow).toContain('idempotencyKey: `complete-inbound-${suffix}`')
+    expect(supplyFlow).toContain(
+      'textOf(completedInboundReplay.requestId).trim() === completedInboundRequestId',
+    )
+    expect(supplyFlow).toContain(
+      'WMS inbound completion replay did not return the original movement request.',
+    )
+    expect(supplyFlow).toContain('replayConfirmed: completeInboundReplayConfirmed')
   })
 
   it('observes exact run-scoped Inventory availability before accepting the MES work order', () => {

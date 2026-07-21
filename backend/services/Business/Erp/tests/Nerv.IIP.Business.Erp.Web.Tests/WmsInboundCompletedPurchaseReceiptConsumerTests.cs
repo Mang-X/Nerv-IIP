@@ -90,6 +90,77 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
     }
 
     [Fact]
+    public async Task InboundOrderCompletedHandler_RejectedReceiptDoesNotPersistInboxAndCanBeReplayed()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var databaseName = $"erp-wms-inbound-replay-{Guid.CreateVersion7():N}";
+        ApplicationDbContext CreateSharedContext()
+        {
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase(databaseName, databaseRoot)
+                .Options;
+            return new ApplicationDbContext(options, new NoopMediator());
+        }
+
+        await using (var setupContext = CreateSharedContext())
+        {
+            setupContext.PurchaseOrders.Add(PurchaseOrder.Create(
+                "org-001",
+                "env-dev",
+                "PO-WMS-REPLAY-AFTER-REJECT",
+                "SUP-001",
+                "SITE-01",
+                [new PurchaseOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 2m, 12.5m, new DateOnly(2026, 7, 1))]));
+            await setupContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var integrationEvent = BuildWmsCompletedEvent(
+            "WMS-IN-REPLAY-AFTER-REJECT",
+            "purchase-order",
+            "PO-WMS-REPLAY-AFTER-REJECT",
+            "LINE-001",
+            2m);
+        await using (var rejectedContext = CreateSharedContext())
+        {
+            var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(rejectedContext);
+            await CreateInboundHandler(rejectedContext, deadLetters)
+                .HandleAsync(integrationEvent, CancellationToken.None);
+        }
+
+        await using (var releaseContext = CreateSharedContext())
+        {
+            Assert.Empty(releaseContext.ProcessedIntegrationEvents);
+            Assert.Empty(releaseContext.PurchaseReceipts);
+            var deadLetter = Assert.Single(releaseContext.Set<IntegrationEventDeadLetter>());
+            Assert.Equal("receipt-recording-rejected", deadLetter.FailureCode);
+            var order = await releaseContext.PurchaseOrders
+                .Include(x => x.Lines)
+                .SingleAsync(x => x.PurchaseOrderNo == "PO-WMS-REPLAY-AFTER-REJECT");
+            Assert.Equal(0m, Assert.Single(order.Lines).ReceivedQuantity);
+            order.MarkApprovalRequested("chain-PO-WMS-REPLAY-AFTER-REJECT");
+            order.ReleaseAfterApproval("chain-PO-WMS-REPLAY-AFTER-REJECT");
+            await releaseContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using (var replayContext = CreateSharedContext())
+        {
+            var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(replayContext);
+            await CreateInboundHandler(replayContext, deadLetters)
+                .HandleAsync(integrationEvent, CancellationToken.None);
+
+            Assert.Single(replayContext.ProcessedIntegrationEvents);
+            Assert.Single(replayContext.PurchaseReceipts);
+            Assert.Equal(
+                2m,
+                await replayContext.PurchaseOrders
+                    .Where(x => x.PurchaseOrderNo == "PO-WMS-REPLAY-AFTER-REJECT")
+                    .SelectMany(x => x.Lines)
+                    .Select(x => x.ReceivedQuantity)
+                    .SingleAsync());
+        }
+    }
+
+    [Fact]
     public async Task InboundOrderCompletedHandler_DeadLettersWhenNoPayableQualityLinesRemain()
     {
         await using var dbContext = CreateDbContext();
