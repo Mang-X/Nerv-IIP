@@ -478,12 +478,15 @@ var businessErp = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("Erp__Seed__SalesOrderDemandDemo__Enabled", "true")
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
+    .WithEnvironment("Approval__BaseUrl", businessApproval.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessErpDatabase, "PostgreSQL")
     .WithReference(businessMasterData)
+    .WithReference(businessApproval)
     .WithReference(iam)
     .WaitFor(businessErpDatabase)
     .WaitFor(businessMasterData)
+    .WaitFor(businessApproval)
     .WaitFor(iam);
 businessErp = WithRedisMessagingTransport(businessErp);
 if (rabbitmq is not null)

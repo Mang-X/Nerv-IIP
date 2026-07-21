@@ -33,7 +33,6 @@ public sealed class ApprovalCompletedConsumerReliabilityTests
                 dbContext,
                 new InMemoryIntegrationEventDeadLetterStore());
             await handler.HandleAsync(integrationEvent, CancellationToken.None);
-            await dbContext.SaveChangesAsync(CancellationToken.None);
         }
 
         await using (var dbContext = CreateDbContext(options))
@@ -42,7 +41,6 @@ public sealed class ApprovalCompletedConsumerReliabilityTests
                 dbContext,
                 new InMemoryIntegrationEventDeadLetterStore());
             await handler.HandleAsync(integrationEvent, CancellationToken.None);
-            await dbContext.SaveChangesAsync(CancellationToken.None);
         }
 
         await using var assertionDbContext = CreateDbContext(options);

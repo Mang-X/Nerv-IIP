@@ -24,7 +24,7 @@ public sealed class BusinessGatewayWmsTests
             {
                 "/api/business/v1/wms/inbound-orders" => new { inboundOrderId = "inbound-order-http" },
                 "/api/business/v1/wms/inbound-orders/inbound-order-001/putaway-tasks" => new { warehouseTaskId = "warehouse-task-http" },
-                "/api/business/v1/wms/inbound-orders/inbound-order-001/complete" => new { inventoryMovementId = "movement-in-http" },
+                "/api/business/v1/wms/inbound-orders/inbound-order-001/complete" => new { requestId = "request-in-http", inventoryMovementId = "movement-in-http" },
                 "/api/business/v1/wms/outbound-orders" => new { outboundOrderId = "outbound-order-http" },
                 "/api/business/v1/wms/outbound-orders/outbound-order-001/picking-tasks" => new { warehouseTaskId = "warehouse-task-http" },
                 "/api/business/v1/wms/outbound-orders/outbound-order-001/complete" => new { inventoryMovementId = "movement-out-http" },
@@ -49,7 +49,7 @@ public sealed class BusinessGatewayWmsTests
 
         await client.CreateInboundOrderAsync("internal-token-001", ValidInboundRequest(), CancellationToken.None);
         await client.CreatePutawayTaskAsync("internal-token-001", "inbound-order-001", ValidPutawayRequest(), CancellationToken.None);
-        await client.CompleteInboundOrderAsync("internal-token-001", "inbound-order-001", ValidCompleteInboundRequest(), CancellationToken.None);
+        var completedInbound = await client.CompleteInboundOrderAsync("internal-token-001", "inbound-order-001", ValidCompleteInboundRequest(), CancellationToken.None);
         await client.CreateOutboundOrderAsync("internal-token-001", ValidOutboundRequest(), CancellationToken.None);
         await client.CreatePickingTaskAsync("internal-token-001", "outbound-order-001", ValidPickingRequest(), CancellationToken.None);
         await client.CompleteOutboundOrderAsync("internal-token-001", "outbound-order-001", ValidCompleteOutboundRequest(), CancellationToken.None);
@@ -75,6 +75,7 @@ public sealed class BusinessGatewayWmsTests
         ],
         handler.Requests.Select(request => $"{request.Method} {request.RequestUri!.AbsolutePath}").ToArray());
         Assert.All(handler.Requests, request => Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter));
+        Assert.Equal("request-in-http", completedInbound.RequestId);
 
         using var createInboundBody = JsonDocument.Parse(handler.RequestBodies[0]!);
         var createInboundLine = createInboundBody.RootElement.GetProperty("lines")[0];
@@ -267,6 +268,8 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(HttpStatusCode.OK, completeInbound.StatusCode);
         Assert.Equal(HttpStatusCode.OK, count.StatusCode);
         Assert.Equal(HttpStatusCode.OK, completeCount.StatusCode);
+        var completeInboundResponse = await completeInbound.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("request-in-001", completeInboundResponse.GetProperty("data").GetProperty("requestId").GetString());
         Assert.All(auth.Requirements, requirement => Assert.Equal(BusinessGatewayPermissions.WmsReceiptsManage, requirement.PermissionCode));
         Assert.Equal(["create-inbound", "create-putaway", "complete-inbound", "create-count", "complete-count"], wms.Calls);
         Assert.Equal("internal-test-token", wms.LastInternalToken);
@@ -830,7 +833,7 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
         LastInternalToken = internalBearerToken;
         LastCompleteInboundRequest = request;
         Calls.Add("complete-inbound");
-        return Task.FromResult(new BusinessConsoleCompleteWmsMovementResponse("movement-in-001"));
+        return Task.FromResult(new BusinessConsoleCompleteWmsMovementResponse("request-in-001", "movement-in-001"));
     }
 
     public Task<BusinessConsoleCreateWmsOutboundOrderResponse> CreateOutboundOrderAsync(
@@ -865,7 +868,7 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
         LastInternalToken = internalBearerToken;
         LastCompleteOutboundRequest = request;
         Calls.Add("complete-outbound");
-        return Task.FromResult(new BusinessConsoleCompleteWmsMovementResponse("movement-out-001"));
+        return Task.FromResult(new BusinessConsoleCompleteWmsMovementResponse("request-out-001", "movement-out-001"));
     }
 
     public Task<BusinessConsoleCreateWmsCountExecutionResponse> CreateCountExecutionAsync(
@@ -888,7 +891,7 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
         LastInternalToken = internalBearerToken;
         LastCompleteCountRequest = request;
         Calls.Add("complete-count");
-        return Task.FromResult(new BusinessConsoleCompleteWmsMovementResponse("movement-count-001"));
+        return Task.FromResult(new BusinessConsoleCompleteWmsMovementResponse("request-count-001", "movement-count-001"));
     }
 
     public Task<BusinessConsoleDispatchWmsWcsTaskResponse> DispatchWcsTaskAsync(

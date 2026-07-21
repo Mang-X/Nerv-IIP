@@ -19,6 +19,215 @@ namespace Nerv.IIP.Business.Wms.Web.Tests;
 public sealed class WmsInventoryBoundaryTests
 {
     [Fact]
+    public async Task Create_inbound_replay_returns_existing_order_without_duplicate()
+    {
+        await using var dbContext = CreateContext();
+        var command = new CreateInboundOrderCommand(
+            "org-001",
+            "env-dev",
+            "IN-REPLAY-001",
+            "purchase-order",
+            "PO-REPLAY-001",
+            "SITE-01",
+            [new WmsInboundLineInput("LINE-001", "SKU-RM-1000", "kg", 10m, "LINE-SIDE", "LOT-001", null, "qualified", "company", null)]);
+        var handler = new CreateInboundOrderCommandHandler(dbContext);
+
+        var firstId = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var replayId = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(firstId, replayId);
+        Assert.Equal(1, await dbContext.InboundOrders.CountAsync());
+    }
+
+    [Fact]
+    public async Task Create_inbound_replay_rejects_different_business_facts()
+    {
+        await using var dbContext = CreateContext();
+        var handler = new CreateInboundOrderCommandHandler(dbContext);
+        var first = new CreateInboundOrderCommand(
+            "org-001",
+            "env-dev",
+            "IN-REPLAY-CONFLICT-001",
+            "purchase-order",
+            "PO-REPLAY-001",
+            "SITE-01",
+            [new WmsInboundLineInput("LINE-001", "SKU-RM-1000", "kg", 10m, "LINE-SIDE", "LOT-001", null, "qualified", "company", null)]);
+        await handler.Handle(first, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+        var conflict = first with
+        {
+            Lines = [new WmsInboundLineInput("LINE-001", "SKU-RM-1000", "kg", 11m, "LINE-SIDE", "LOT-001", null, "qualified", "company", null)],
+        };
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(conflict, CancellationToken.None));
+
+        Assert.Contains("different inbound facts", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(1, await dbContext.InboundOrders.CountAsync());
+    }
+
+    [Fact]
+    public async Task Create_putaway_task_replay_returns_existing_task_without_duplicate()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-PUTAWAY-REPLAY-001",
+            "purchase-order",
+            "PO-PUTAWAY-REPLAY-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 10m, "LINE-SIDE", "LOT-001", null, "qualified", "company", null)]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var command = new CreatePutawayTaskCommand(inbound.Id, "PUT-REPLAY-001", "LINE-001", "RECEIVING", "LINE-SIDE", 10m);
+        var handler = new CreatePutawayTaskCommandHandler(dbContext);
+
+        var firstId = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var replayId = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(firstId, replayId);
+        Assert.Equal(1, await dbContext.WarehouseTasks.CountAsync());
+    }
+
+    [Fact]
+    public async Task Complete_inbound_replay_returns_existing_movement_request_without_duplicate()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-COMPLETE-REPLAY-001",
+            "purchase-order",
+            "PO-COMPLETE-REPLAY-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 10m, "LINE-SIDE", "LOT-001", null, "qualified", "company", null)]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var command = new CompleteInboundOrderCommand(inbound.Id, "complete-inbound-replay-001");
+        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var replay = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(first.RequestId, replay.RequestId);
+        Assert.Equal(1, await dbContext.InventoryMovementRequests.CountAsync());
+    }
+
+    [Fact]
+    public async Task Complete_inbound_replay_rejects_conflicting_line_capture_facts()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-COMPLETE-REPLAY-CONFLICT-001",
+            "purchase-order",
+            "PO-COMPLETE-REPLAY-CONFLICT-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 10m, "LINE-SIDE", "LOT-ORIGINAL", null, "qualified", "company", null)]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        const string idempotencyKey = "complete-inbound-replay-conflict-001";
+
+        await handler.Handle(
+            new CompleteInboundOrderCommand(
+                inbound.Id,
+                idempotencyKey,
+                [new InboundOrderLineCapture("LINE-001", "LOT-FIRST", null, null)]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CompleteInboundOrderCommand(
+                inbound.Id,
+                idempotencyKey,
+                [new InboundOrderLineCapture("LINE-001", "LOT-CONFLICT", null, null)]),
+            CancellationToken.None));
+
+        Assert.Contains("different completion facts", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(1, await dbContext.InventoryMovementRequests.CountAsync());
+        Assert.Equal("LOT-FIRST", await dbContext.InventoryMovementRequests.Select(x => x.LotNo).SingleAsync());
+    }
+
+    [Fact]
+    public async Task Complete_inbound_replay_resolves_hashed_line_idempotency_keys()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-COMPLETE-LONG-KEY-001",
+            "purchase-order",
+            "PO-COMPLETE-LONG-KEY-001",
+            "SITE-01",
+            [
+                new InboundOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 10m, "LINE-SIDE", "LOT-001", null, "qualified", "company", null),
+                new InboundOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 5m, "LINE-SIDE", "LOT-002", null, "qualified", "company", null),
+            ]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var command = new CompleteInboundOrderCommand(inbound.Id, new string('k', 128));
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var replay = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(first.RequestId, replay.RequestId);
+        Assert.Equal(2, await dbContext.InventoryMovementRequests.CountAsync());
+        Assert.All(
+            await dbContext.InventoryMovementRequests.Select(x => x.IdempotencyKey).ToArrayAsync(),
+            key => Assert.StartsWith("wms-line:", key, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Complete_inbound_multiline_replay_returns_the_same_canonical_request_id()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-COMPLETE-ORDER-001",
+            "purchase-order",
+            "PO-COMPLETE-ORDER-001",
+            "SITE-01",
+            [
+                new InboundOrderLineDraft("2", "SKU-RM-2000", "kg", 5m, "LINE-SIDE", "LOT-002", null, "qualified", "company", null),
+                new InboundOrderLineDraft("10", "SKU-RM-1000", "kg", 10m, "LINE-SIDE", "LOT-010", null, "qualified", "company", null),
+            ]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var command = new CompleteInboundOrderCommand(inbound.Id, "complete-inbound-order-001");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var replay = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(first.RequestId, replay.RequestId);
+        Assert.Equal(2, await dbContext.InventoryMovementRequests.CountAsync());
+    }
+
+    [Fact]
     public async Task Complete_inbound_atomically_captures_authoritative_line_batch_values()
     {
         await using var dbContext = CreateContext();
