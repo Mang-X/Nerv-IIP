@@ -312,6 +312,38 @@ public sealed class FastEndpointsArchitectureTests
         Assert.DoesNotContain("localhost:5111", resourceBlock);
     }
 
+    [Fact]
+    public void Aspire_apphost_scheduling_waits_for_equipment_availability_sources()
+    {
+        var root = FindRepositoryRoot();
+        var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var resourceStart = programText.IndexOf(
+            "var businessScheduling =",
+            StringComparison.Ordinal);
+        var resourceEnd = programText.IndexOf(
+            "businessScheduling = WithRedisMessagingTransport(",
+            resourceStart,
+            StringComparison.Ordinal);
+
+        Assert.True(resourceStart >= 0, "BusinessScheduling Aspire resource is missing.");
+        Assert.True(resourceEnd > resourceStart, "BusinessScheduling Aspire resource block is incomplete.");
+
+        var resourceBlock = programText[resourceStart..resourceEnd];
+        Assert.Contains(
+            ".WithEnvironment(\"IndustrialTelemetry__BaseUrl\", businessIndustrialTelemetry.GetEndpoint(\"http\"))",
+            resourceBlock);
+        Assert.Contains(
+            ".WithEnvironment(\"Maintenance__BaseUrl\", businessMaintenance.GetEndpoint(\"http\"))",
+            resourceBlock);
+        Assert.Contains(".WithReference(businessIndustrialTelemetry)", resourceBlock);
+        Assert.Contains(".WithReference(businessMaintenance)", resourceBlock);
+        Assert.Contains(".WaitFor(businessIndustrialTelemetry)", resourceBlock);
+        Assert.Contains(".WaitFor(businessMaintenance)", resourceBlock);
+        Assert.DoesNotContain("localhost:5116", resourceBlock);
+        Assert.DoesNotContain("localhost:5117", resourceBlock);
+    }
+
     [Theory]
     [MemberData(nameof(LocalPostgreSqlAppHostResources))]
     public void Aspire_apphost_local_postgresql_resources_enable_development_automigration(string resourceVariable)

@@ -160,6 +160,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
   const workshopCode = `SHOP-M524-${suffix}`
   const lineCode = `LINE-M524-${suffix}`
   const workCenterCode = `WC-M524-${suffix}`
+  const deviceCode = `DEV-M524-${suffix}`
   const customerCode = `CUST-M524-${suffix}`
   const supplierCode = `SUP-M524-${suffix}`
   const finishedSku = `FG-M524-${suffix}`
@@ -176,6 +177,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
   const evidence = new Map<string, EvidenceEntry>()
   const setup: JsonRecord[] = []
   let sessionCredential = ''
+  let deviceAssetId = ''
 
   for (const node of requiredNodes) {
     evidence.set(node, {
@@ -372,6 +374,53 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         workshopCode,
         idempotencyKey: `wc-${suffix}`,
       })
+      await create('/api/business-console/v1/master-data/device-assets', {
+        organizationId,
+        environmentId,
+        code: deviceCode,
+        model: 'MAN-524 scheduling machine',
+        lineCode,
+        workCenterCode,
+        assetClassCode: 'machine',
+        manufacturer: 'Nerv Automation',
+        serialNo: `SN-M524-${suffix}`,
+        minimumCapacity: 1,
+        maximumCapacity: 1,
+        capacityUomCode: uomCode,
+        criticality: 'normal',
+        maintainable: true,
+        telemetryEnabled: true,
+        externalReferences: { mainChainRun: suffix },
+        idempotencyKey: `device-${suffix}`,
+        siteCode,
+        workshopCode,
+      })
+      const deviceList = await call(
+        'GET',
+        queryPath('/api/business-console/v1/master-data/device-assets', {
+          organizationId,
+          environmentId,
+          workCenterCode,
+          keyword: deviceCode,
+          take: 100,
+        }),
+      )
+      const deviceResources = asRecord(dataOf(deviceList.payload)).resources
+      const device = (Array.isArray(deviceResources) ? deviceResources : [])
+        .map(asRecord)
+        .find((row) => textOf(row.code).trim() === deviceCode)
+      if (!device) {
+        throw new Error(
+          `MasterData did not expose the run-scoped device ${deviceCode} for work center ${workCenterCode}.`,
+        )
+      }
+      deviceAssetId = textOf(device.deviceAssetId).trim()
+      if (!deviceAssetId || deviceAssetId === workCenterCode) {
+        throw new Error(
+          `MasterData device ${deviceCode} did not expose a stable device asset id distinct from ${workCenterCode}.`,
+        )
+      }
+      setup.push({ request: deviceList.summary, response: deviceList.publicPayload })
       await create('/api/business-console/v1/master-data/business-partners', {
         organizationId,
         environmentId,
@@ -931,10 +980,51 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     }
 
     let scheduleReleased = false
-    if (workOrderId && operationTask) {
+    if (workOrderId && operationTask && deviceAssetId) {
       try {
         const taskId = textOf(operationTask.operationTaskId)
-        const horizonStart = new Date(now.getTime() + 60_000)
+        const runtimeObservedAt = new Date()
+        const runtimeState = await call('POST', '/api/business-console/v1/telemetry/samples', {
+          organizationId,
+          environmentId,
+          deviceAssetId,
+          tagKey: 'runtime.state',
+          bucketStartUtc: new Date(runtimeObservedAt.getTime() - 1_000).toISOString(),
+          bucketEndUtc: runtimeObservedAt.toISOString(),
+          sampleCount: 1,
+          minValue: 1,
+          maxValue: 1,
+          averageValue: 1,
+          sourceSequence: `main-chain-available-${suffix}`,
+          sourceSystem: 'leader-main-chain',
+          sourceConnector: 'business-gateway',
+          deviceState: 'available',
+          stateOccurredAtUtc: runtimeObservedAt.toISOString(),
+          firstValue: 1,
+          lastValue: 1,
+        })
+        const runtimeStateData = asRecord(dataOf(runtimeState.payload))
+        if (!textOf(runtimeStateData.deviceStateSnapshotId).trim()) {
+          throw new Error(`IIoT did not persist a state snapshot for device ${deviceAssetId}.`)
+        }
+        const deviceDetail = await call(
+          'GET',
+          queryPath(
+            `/api/business-console/v1/equipment/devices/${encodeURIComponent(deviceAssetId)}`,
+            { organizationId, environmentId },
+          ),
+        )
+        const currentState = asRecord(asRecord(dataOf(deviceDetail.payload)).currentState)
+        if (
+          textOf(currentState.deviceAssetId).trim() !== deviceAssetId ||
+          textOf(currentState.currentState).trim().toLowerCase() !== 'available' ||
+          currentState.isSourceFresh !== true
+        ) {
+          throw new Error(
+            `Equipment detail did not expose fresh Available state for device ${deviceAssetId}.`,
+          )
+        }
+        const horizonStart = new Date(runtimeObservedAt.getTime() + 60_000)
         const horizonEnd = new Date(horizonStart.getTime() + 8 * 3_600_000)
         const plan = await call('POST', '/api/business-console/v1/scheduling/plans', {
           problem: {
@@ -959,8 +1049,8 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
                     predecessorOperationIds: [],
                     durationMinutes: 5,
                     requiredCapabilityCode: operationCode,
-                    eligibleResourceIds: [workCenterCode],
-                    primaryResourceId: workCenterCode,
+                    eligibleResourceIds: [deviceAssetId],
+                    primaryResourceId: deviceAssetId,
                     earliestStartUtc: horizonStart.toISOString(),
                     dueUtc: horizonEnd.toISOString(),
                     priority: 1,
@@ -977,12 +1067,12 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             ],
             resources: [
               {
-                resourceId: workCenterCode,
+                resourceId: deviceAssetId,
                 workCenterId: workCenterCode,
                 capabilityCodes: [operationCode],
                 capacityUnits: 1,
                 calendarId: `CAL-M524-${suffix}`,
-                sortKey: workCenterCode,
+                sortKey: deviceAssetId,
               },
             ],
             calendars: [
@@ -1018,17 +1108,24 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           node: 'mes-work-order-schedule-plan',
           sourceObject: workOrderId,
           downstreamObject: planId,
-          stableKey: `${salesOrderNo} -> ${workOrderId} -> ${planId}`,
+          stableKey: `${salesOrderNo} -> ${workOrderId} -> ${workCenterCode} -> ${deviceAssetId} -> ${planId}`,
           automationMode: 'manual',
           request: plan.summary,
           responseOrLog: {
             plan: plan.publicPayload,
             rawMaterialSupply: rawMaterialSupplyEvidence,
+            deviceIdentity: {
+              deviceCode,
+              deviceAssetId,
+              workCenterCode,
+            },
+            runtimeState: runtimeState.publicPayload,
+            equipmentAudit: deviceDetail.publicPayload,
           },
           conclusion: 'runtime-confirmed',
           demoWording:
             'The public scheduling contract created a plan whose order, operation, and source reference all belong to the same sales-order chain.',
-          responsibilityIssue: '#965',
+          responsibilityIssue: '#1040',
         })
         const released = await call(
           'POST',
