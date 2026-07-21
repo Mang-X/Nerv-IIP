@@ -22,6 +22,28 @@ test.setTimeout(18 * 60 * 1000)
 type JsonRecord = Record<string, unknown>
 type Conclusion = 'runtime-confirmed' | 'gap' | 'not-verified'
 
+class PublicCallError extends Error {
+  constructor(
+    readonly method: 'GET' | 'POST',
+    readonly path: string,
+    readonly status: number,
+    payload: unknown,
+  ) {
+    super(`${method} ${path} returned HTTP ${status}: ${safeText(JSON.stringify(payload))}`)
+    this.name = 'PublicCallError'
+  }
+}
+
+class TrackedSetupError extends Error {
+  constructor(
+    readonly responsibilityIssue: string,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'TrackedSetupError'
+  }
+}
+
 type EvidenceEntry = {
   node: string
   sourceObject: string
@@ -182,9 +204,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
       body: body ? publicJson(body) : null,
     }
     if (!response.ok()) {
-      throw new Error(
-        `${method} ${summary.path} returned HTTP ${response.status()}: ${safeText(JSON.stringify(payload))}`,
-      )
+      throw new PublicCallError(method, summary.path, response.status(), payload)
     }
     return { payload, summary, publicPayload: publicJson(payload) as JsonRecord }
   }
@@ -408,12 +428,19 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           idempotencyKey: `routing-${suffix}`,
         }),
       )
+      const mbomVersionId = textOf(mbom.id).trim()
+      if (!mbomVersionId) {
+        throw new TrackedSetupError(
+          '#1024 / MAN-564',
+          'MBOM release response did not expose data.id.',
+        )
+      }
       const productionVersion = asRecord(
         await create('/api/business-console/v1/engineering/production-versions', {
           organizationId,
           environmentId,
           skuCode: finishedSku,
-          mbomVersionId: textOf(mbom.id),
+          mbomVersionId,
           routingVersionId: textOf(routing.versionId ?? routing),
           validFrom: dateOnly(now),
           lotSizeMin: 1,
@@ -442,9 +469,13 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     } catch (error) {
       prerequisitesReady = false
       const blockedReason = safeText(error instanceof Error ? error.message : error)
-      const responsibilityIssue = blockedReason.includes("MBOM version '")
-        ? '#1024 / MAN-564'
-        : '#989'
+      const responsibilityIssue =
+        error instanceof TrackedSetupError
+          ? error.responsibilityIssue
+          : error instanceof PublicCallError &&
+              error.path === '/api/business-console/v1/engineering/production-versions'
+            ? '#1024 / MAN-564'
+            : 'unattributed / requires follow-up issue'
       setup.push({
         phase: 'public-prerequisites',
         conclusion: 'gap',
