@@ -17,7 +17,7 @@ param(
     [ValidateSet('run', 'start', 'url', 'status', 'logs', 'stop', 'list', 'gc', 'help')]
     [string] $Action = 'help',
     [Parameter(Position = 1)] [string] $Target,
-    [ValidateSet('smoke', 'man-528', 'leader-demo-main-chain')] [string] $Scenario = 'smoke',
+    [ValidateSet('smoke', 'man-440', 'man-528', 'leader-demo-main-chain')] [string] $Scenario = 'smoke',
     [string] $SessionId,
     [switch] $NoBuild,
     [int] $Tail = 120,
@@ -36,6 +36,7 @@ Nerv-IIP isolated full-stack sessions
 
 Usage:
   .\nerv.ps1 fullstack run -Scenario smoke [-NoBuild]
+  .\nerv.ps1 fullstack run -Scenario man-440
   .\nerv.ps1 fullstack run -Scenario man-528
   .\nerv.ps1 fullstack run -Scenario leader-demo-main-chain [-NoBuild]
   .\nerv.ps1 fullstack start [-SessionId nerv-abcd-123456] [-NoBuild]
@@ -168,6 +169,99 @@ function Invoke-NervMan528MesInventoryAcceptance {
     }
 }
 
+function Invoke-NervMan440RuntimeHoursAcceptance {
+    param([Parameter(Mandatory)] [object] $Manifest)
+
+    if (-not [string]::Equals("$($Manifest.runtime.messagingProvider)", 'Redis', [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'The man-440 full-stack scenario requires Messaging__Provider=Redis.'
+    }
+
+    foreach ($resourceName in @('business-industrial-telemetry', 'business-maintenance')) {
+        Wait-NervAspireResource `
+            -AppHostProject "$($Manifest.appHostProject)" `
+            -ResourceName $resourceName `
+            -WorkingDirectory "$($Manifest.worktreeRoot)"
+    }
+
+    $containerIds = @($Manifest.runtime.containerIds | ForEach-Object { "$_" })
+    if ($containerIds.Count -eq 0) {
+        throw "Session '$($Manifest.sessionId)' has no recorded containers for MAN-440 acceptance."
+    }
+
+    $inspectResult = Invoke-NativeCommandOutput `
+        -Command 'docker' `
+        -Arguments (@('container', 'inspect') + $containerIds) `
+        -WorkingDirectory "$($Manifest.worktreeRoot)" `
+        -TimeoutSeconds 30 `
+        -Name "fullstack-$($Manifest.sessionId)-man-440-container-inspect"
+    $containers = @($inspectResult.Stdout | ConvertFrom-Json -Depth 100)
+    $postgres = @($containers | Where-Object { "$($_.Config.Image)" -match '(^|/)postgres:' })
+    $redis = @($containers | Where-Object { "$($_.Config.Image)" -match '(^|/)redis:' })
+    if ($postgres.Count -ne 1 -or $redis.Count -ne 1) {
+        throw "MAN-440 acceptance expected exactly one PostgreSQL and one Redis container; postgres=$($postgres.Count), redis=$($redis.Count)."
+    }
+
+    $postgresEnvironment = @($postgres[0].Config.Env)
+    $postgresUserEntry = $postgresEnvironment | Where-Object { $_.StartsWith('POSTGRES_USER=', [StringComparison]::Ordinal) } | Select-Object -First 1
+    $postgresPasswordEntry = $postgresEnvironment | Where-Object { $_.StartsWith('POSTGRES_PASSWORD=', [StringComparison]::Ordinal) } | Select-Object -First 1
+    $postgresUser = if ($postgresUserEntry) { $postgresUserEntry.Substring('POSTGRES_USER='.Length) } else { 'postgres' }
+    if (-not $postgresPasswordEntry) { throw 'MAN-440 acceptance could not resolve the session PostgreSQL password.' }
+    $postgresPassword = $postgresPasswordEntry.Substring('POSTGRES_PASSWORD='.Length)
+    $postgresPortBindings = @($postgres[0].NetworkSettings.Ports.'5432/tcp')
+    if ($postgresPortBindings.Count -eq 0) { throw 'MAN-440 acceptance found no session PostgreSQL host-port binding.' }
+    $postgresPort = "$($postgresPortBindings[0].HostPort)"
+    if ([string]::IsNullOrWhiteSpace($postgresPort)) { throw 'MAN-440 acceptance could not resolve the session PostgreSQL host port.' }
+
+    $redisArguments = @($redis[0].Path) + @($redis[0].Args) + @($redis[0].Config.Entrypoint) + @($redis[0].Config.Cmd)
+    $redisEnvironment = @($redis[0].Config.Env)
+    $redisPasswordEntry = $redisEnvironment | Where-Object { $_.StartsWith('REDIS_PASSWORD=', [StringComparison]::Ordinal) } | Select-Object -First 1
+    $redisPassword = if ($redisPasswordEntry) { $redisPasswordEntry.Substring('REDIS_PASSWORD='.Length) } else { $null }
+    for ($index = 0; [string]::IsNullOrWhiteSpace($redisPassword) -and $index -lt $redisArguments.Count; $index++) {
+        $argument = "$($redisArguments[$index])"
+        if ($argument -eq '--requirepass' -and $index + 1 -lt $redisArguments.Count) {
+            $redisPassword = "$($redisArguments[$index + 1])"
+        }
+        elseif ($argument.StartsWith('--requirepass=', [StringComparison]::Ordinal)) {
+            $redisPassword = $argument.Substring('--requirepass='.Length)
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($redisPassword)) {
+        throw 'MAN-440 acceptance could not resolve the session Redis password.'
+    }
+    $redisPortBindings = @($redis[0].NetworkSettings.Ports.'6379/tcp')
+    if ($redisPortBindings.Count -eq 0) { throw 'MAN-440 acceptance found no session Redis host-port binding.' }
+    $redisPort = "$($redisPortBindings[0].HostPort)"
+    if ([string]::IsNullOrWhiteSpace($redisPort)) { throw 'MAN-440 acceptance could not resolve the session Redis host port.' }
+
+    $connectionPrefix = "Host=127.0.0.1;Port=$postgresPort;Username=$postgresUser;Password=$postgresPassword;Include Error Detail=false;"
+    $probeEnvironment = @{
+        NERV_IIP_TEST_MAINTENANCE_POSTGRES = $connectionPrefix + 'Database=nerv_iip_maintenance'
+        NERV_IIP_TEST_INDUSTRIAL_TELEMETRY_POSTGRES = $connectionPrefix + 'Database=nerv_iip_industrial_telemetry'
+        NERV_IIP_TEST_REDIS = "localhost:$redisPort,password=$redisPassword,ssl=true,abortConnect=false"
+        NERV_IIP_TEST_CAP_VERSION = 'v1'
+        NERV_IIP_TEST_PROBE_RUN_ID = "$($Manifest.sessionId)-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+    }
+    try {
+        Invoke-WithScopedEnvironment -Variables $probeEnvironment -ScriptBlock {
+            Invoke-DotNet `
+                -Arguments @(
+                    'test',
+                    'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj',
+                    '--no-restore',
+                    '--no-build',
+                    '--filter', 'FullyQualifiedName~MaintenanceRuntimeHoursPostgresRedisAcceptanceTests',
+                    '--nologo'
+                ) `
+                -WorkingDirectory "$($Manifest.worktreeRoot)" `
+                -TimeoutSeconds 600 `
+                -Name "fullstack-$($Manifest.sessionId)-man-440-postgres-redis" | Out-Null
+        }
+    }
+    finally {
+        $probeEnvironment.Clear()
+    }
+}
+
 function Start-NervFullStackGuardian {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
@@ -249,9 +343,15 @@ function Start-NervFullStackSession {
     $appHostProject = "$($manifest.appHostProject)"
 
     $sessionEnvironment = Get-NervFullStackEnvironment -SessionId $newSessionId
-        $sessionEnvironment['ASPIRE_CLI_START_TIMEOUT'] = '300'
-        $sessionEnvironment['MSBUILDDISABLENODEREUSE'] = '1'
-        $sessionEnvironment['DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'
+    if ($Scenario -eq 'man-440') {
+        $sessionEnvironment['Maintenance__PmGeneration__Enabled'] = 'true'
+        $sessionEnvironment['Maintenance__PmGeneration__OrganizationId'] = 'org-man440'
+        $sessionEnvironment['Maintenance__PmGeneration__EnvironmentId'] = 'env-man440'
+        $sessionEnvironment['Maintenance__PmGeneration__Interval'] = '00:00:01'
+    }
+    $sessionEnvironment['ASPIRE_CLI_START_TIMEOUT'] = '300'
+    $sessionEnvironment['MSBUILDDISABLENODEREUSE'] = '1'
+    $sessionEnvironment['DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'
         $manifest = Update-NervFullStackManifest -SessionId $newSessionId -AllowedStates @('Creating') -UpdateAction {
             param($latest)
             $latest.runtime.volumeNames = @(
@@ -333,7 +433,13 @@ function Start-NervFullStackSession {
                 return $latest
             }
 
-            foreach ($resourceName in @('iam', 'business-master-data', 'gateway', 'business-gateway', 'console', 'business-console', 'screen')) {
+            $startupResources = if ($Scenario -eq 'man-440') {
+                @('business-industrial-telemetry', 'business-maintenance')
+            }
+            else {
+                @('iam', 'business-master-data', 'gateway', 'business-gateway', 'console', 'business-console', 'screen')
+            }
+            foreach ($resourceName in $startupResources) {
                 Wait-NervAspireResource `
                     -AppHostProject $appHostProject `
                     -ResourceName $resourceName `
@@ -344,13 +450,20 @@ function Start-NervFullStackSession {
                 -SessionId $newSessionId `
                 -ContainerRecords $containerRecords `
                 -WorkingDirectory $repoRoot)
-            $describe = Get-NervAspireDescribeObject -AppHostProject $appHostProject -WorkingDirectory $repoRoot
+            $describe = if ($Scenario -eq 'man-440') {
+                $null
+            }
+            else {
+                Get-NervAspireDescribeObject -AppHostProject $appHostProject -WorkingDirectory $repoRoot
+            }
             $manifest = Update-NervFullStackManifest -SessionId $newSessionId -AllowedStates @('Creating') -UpdateAction {
                 param($latest)
                 $latest.runtime.containers = @($containerRecords)
                 $latest.runtime.containerIds = @($containerRecords | ForEach-Object { "$($_.id)" })
                 $latest.runtime.networkIds = @($networkIds)
-                $latest = Save-NervFullStackEndpoints -Manifest $latest -DescribeObject $describe
+                if ($null -ne $describe) {
+                    $latest = Save-NervFullStackEndpoints -Manifest $latest -DescribeObject $describe
+                }
                 $latest = Move-NervFullStackSessionState -Manifest $latest -State Running
                 $latest = Renew-NervFullStackLease -Manifest $latest -LeaseMinutes (Get-NervFullStackLeaseMinutes)
                 return $latest
@@ -506,6 +619,9 @@ try {
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword | Out-Null
                                 Invoke-NervMan528MesInventoryAcceptance -Manifest $InputManifest
+                            }
+                            'man-440' {
+                                Invoke-NervMan440RuntimeHoursAcceptance -Manifest $InputManifest
                             }
                             'leader-demo-main-chain' {
                                 Invoke-NervLeaderDemoMainChainScenario `

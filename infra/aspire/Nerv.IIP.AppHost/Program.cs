@@ -48,6 +48,10 @@ var connectorHostId = builder.Configuration["ConnectorHost:ConnectorHostId"] ?? 
 var connectorHostOrganizationId = builder.Configuration["ConnectorHost:OrganizationId"] ?? "org-001";
 var connectorHostEnvironmentId = builder.Configuration["ConnectorHost:EnvironmentId"] ?? "env-dev";
 var connectorHealthAcceptanceEnabled = builder.Configuration.GetValue("ConnectorHealthAcceptance:Enabled", false);
+var maintenancePmGenerationEnabled = builder.Configuration.GetValue("Maintenance:PmGeneration:Enabled", false);
+var maintenancePmGenerationOrganizationId = builder.Configuration["Maintenance:PmGeneration:OrganizationId"];
+var maintenancePmGenerationEnvironmentId = builder.Configuration["Maintenance:PmGeneration:EnvironmentId"];
+var maintenancePmGenerationInterval = builder.Configuration["Maintenance:PmGeneration:Interval"];
 var gatewayCorsAllowedOrigins = builder.Configuration["Security:Cors:AllowedOrigins"];
 if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
 {
@@ -443,9 +447,19 @@ var businessMaintenance = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(b
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
+    .WithEnvironment("Maintenance__PmGeneration__Enabled", maintenancePmGenerationEnabled ? "true" : "false")
+    .WithEnvironment("Maintenance__PmGeneration__OrganizationId", maintenancePmGenerationOrganizationId ?? string.Empty)
+    .WithEnvironment("Maintenance__PmGeneration__EnvironmentId", maintenancePmGenerationEnvironmentId ?? string.Empty)
+    .WithEnvironment("IndustrialTelemetry__BaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMaintenanceDatabase, "PostgreSQL")
-    .WaitFor(businessMaintenanceDatabase);
+    .WithReference(businessIndustrialTelemetry)
+    .WaitFor(businessMaintenanceDatabase)
+    .WaitFor(businessIndustrialTelemetry);
+if (!string.IsNullOrWhiteSpace(maintenancePmGenerationInterval))
+{
+    businessMaintenance = businessMaintenance.WithEnvironment("Maintenance__PmGeneration__Interval", maintenancePmGenerationInterval);
+}
 businessMaintenance = WithRedisMessagingTransport(businessMaintenance);
 if (rabbitmq is not null)
 {
