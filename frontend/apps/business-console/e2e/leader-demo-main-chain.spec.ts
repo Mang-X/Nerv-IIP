@@ -1024,6 +1024,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             `Equipment detail did not expose fresh Available state for device ${deviceAssetId}.`,
           )
         }
+        // The five-minute rush operation must start within the 60-minute freshness window; the later horizon remains fail closed.
         const horizonStart = new Date(runtimeObservedAt.getTime() + 60_000)
         const horizonEnd = new Date(horizonStart.getTime() + 8 * 3_600_000)
         const plan = await call('POST', '/api/business-console/v1/scheduling/plans', {
@@ -1166,7 +1167,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         })
       } catch (error) {
         if (evidence.get('mes-work-order-schedule-plan')?.conclusion !== 'runtime-confirmed') {
-          markFailure('mes-work-order-schedule-plan', error, 'manual')
+          markFailure('mes-work-order-schedule-plan', error, 'manual', '#1040')
         } else {
           markFailure('schedule-release-mes-execution', error, 'automatic')
         }

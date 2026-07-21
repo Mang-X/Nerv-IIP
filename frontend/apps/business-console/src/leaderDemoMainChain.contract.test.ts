@@ -131,11 +131,14 @@ describe('leader demo main-chain public prerequisites', () => {
     const auditStateIndex = equipmentFlow.indexOf(
       '/api/business-console/v1/equipment/devices/${encodeURIComponent(deviceAssetId)}',
     )
+    const deviceLookup = sourceBetween('const deviceList = await call(', 'const deviceResources =')
 
     expect(registerIndex).toBeGreaterThanOrEqual(0)
     expect(recordStateIndex).toBeGreaterThan(registerIndex)
     expect(auditStateIndex).toBeGreaterThan(recordStateIndex)
-    expect(equipmentFlow).toContain('workCenterCode,')
+    expect(deviceLookup).toMatch(
+      /queryPath\([\s\S]*?\/master-data\/device-assets[\s\S]*?\{\s*organizationId,\s*environmentId,\s*workCenterCode,\s*keyword:\s*deviceCode,/,
+    )
     expect(equipmentFlow).toContain('deviceAssetId = textOf(device.deviceAssetId)')
     expect(equipmentFlow).toContain("deviceState: 'available'")
     expect(equipmentFlow).toContain(
@@ -152,6 +155,9 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(schedulingFlow).not.toContain('eligibleResourceIds: [workCenterCode]')
     expect(schedulingFlow).not.toContain('primaryResourceId: workCenterCode')
     expect(schedulingFlow).not.toContain('resourceId: workCenterCode')
+    expect(schedulingFlow).toContain(
+      "markFailure('mes-work-order-schedule-plan', error, 'manual', '#1040')",
+    )
   })
 
   it('starts the run-scoped MES operation task with the required business context query', () => {
