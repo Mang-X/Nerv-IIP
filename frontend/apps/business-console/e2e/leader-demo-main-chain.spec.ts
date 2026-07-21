@@ -218,6 +218,15 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     return `${url.pathname}${url.search}`
   }
 
+  const fetchWorkOrder = (workOrderId: string) =>
+    call(
+      'GET',
+      queryPath(`/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}`, {
+        organizationId,
+        environmentId,
+      }),
+    )
+
   const pollRows = async (
     path: string,
     query: JsonRecord,
@@ -652,13 +661,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         workOrderId = textOf(asRecord(dataOf(accepted.payload)).downstreamDocumentId)
         if (!workOrderId)
           throw new Error('Planning acceptance returned no MES downstream document ID.')
-        const detail = await call(
-          'GET',
-          queryPath(`/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}`, {
-            organizationId,
-            environmentId,
-          }),
-        )
+        const detail = await fetchWorkOrder(workOrderId)
         const workOrder = asRecord(dataOf(detail.payload))
         if (asRecord(workOrder.sourcePlanReference).sourceDemandReference !== salesOrderNo) {
           throw new Error(
@@ -696,13 +699,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             idempotencyKey: `release-wo-${suffix}`,
           },
         )
-        const releasedDetail = await call(
-          'GET',
-          queryPath(`/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}`, {
-            organizationId,
-            environmentId,
-          }),
-        )
+        const releasedDetail = await fetchWorkOrder(workOrderId)
         const releasedWorkOrder = asRecord(dataOf(releasedDetail.payload))
         operationTask =
           (Array.isArray(releasedWorkOrder.operationTasks)
@@ -825,13 +822,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           ),
         )
         await page.waitForTimeout(1_500)
-        const detail = await call(
-          'GET',
-          queryPath(`/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}`, {
-            organizationId,
-            environmentId,
-          }),
-        )
+        const detail = await fetchWorkOrder(workOrderId)
         const scheduledTask = (
           asRecord(dataOf(detail.payload)).operationTasks as unknown[] | undefined
         )

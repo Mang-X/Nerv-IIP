@@ -17,6 +17,18 @@ function sourceBetween(start: string, end: string): string {
   return scenarioSource.slice(startIndex, endIndex)
 }
 
+function expectScopedQuery(source: string, endpoint: string): void {
+  const endpointIndex = source.indexOf(endpoint)
+  const queryStartIndex = source.lastIndexOf('queryPath(', endpointIndex)
+  const nextQueryIndex = source.indexOf('queryPath(', endpointIndex + endpoint.length)
+
+  expect(endpointIndex, `source should contain ${endpoint}`).toBeGreaterThanOrEqual(0)
+  expect(queryStartIndex, `${endpoint} should be wrapped in queryPath`).toBeGreaterThanOrEqual(0)
+  expect(
+    source.slice(queryStartIndex, nextQueryIndex >= 0 ? nextQueryIndex : source.length),
+  ).toMatch(/\{\s*organizationId,\s*environmentId\s*\}/)
+}
+
 describe('leader demo main-chain public prerequisites', () => {
   it('posts raw-material stock through the supported external inbound contract with stable business keys', () => {
     const movementCall = scenarioSource.match(
@@ -36,12 +48,10 @@ describe('leader demo main-chain public prerequisites', () => {
   it('accepts the run-scoped MRP suggestion with the required business context query', () => {
     const acceptCall = sourceBetween('const accepted = await call(', 'workOrderId = textOf(')
 
-    expect(acceptCall).toContain('queryPath(')
-    expect(acceptCall).toContain(
+    expectScopedQuery(
+      acceptCall,
       '/planning/suggestions/${encodeURIComponent(textOf(suggestion.suggestionId))}/accept`',
     )
-    expect(acceptCall).toContain('organizationId')
-    expect(acceptCall).toContain('environmentId')
     expect(acceptCall).toContain('idempotencyKey: `accept-wo-${suffix}`')
   })
 
@@ -60,9 +70,10 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(acceptedNodeIndex).toBeGreaterThanOrEqual(0)
     expect(releaseIndex).toBeGreaterThan(acceptedNodeIndex)
     expect(operationTaskIndex).toBeGreaterThan(releaseIndex)
-    expect(acceptedWorkOrderFlow).toContain('queryPath(')
-    expect(acceptedWorkOrderFlow).toContain('organizationId')
-    expect(acceptedWorkOrderFlow).toContain('environmentId')
+    expectScopedQuery(
+      acceptedWorkOrderFlow,
+      '/mes/work-orders/${encodeURIComponent(workOrderId)}/release`',
+    )
     expect(acceptedWorkOrderFlow).toContain('idempotencyKey: `release-wo-${suffix}`')
   })
 
@@ -72,26 +83,25 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(productionFlow).not.toContain(
       '/mes/work-orders/${encodeURIComponent(workOrderId)}/release',
     )
-    expect(productionFlow).toContain('queryPath(')
-    expect(productionFlow).toContain('/mes/operation-tasks/${encodeURIComponent(taskId)}/start')
-    expect(productionFlow).toContain('organizationId')
-    expect(productionFlow).toContain('environmentId')
+    expectScopedQuery(productionFlow, '/mes/operation-tasks/${encodeURIComponent(taskId)}/start`')
     expect(productionFlow).toContain('idempotencyKey: `start-task-${suffix}`')
   })
 
   it('completes the run-scoped WMS outbound with the required business context query', () => {
-    const completeCall = sourceBetween(
+    const completionFlow = sourceBetween(
       'const completed = await call(',
-      'const delivery = await pollRows(',
+      "node: 'wms-completed-erp-delivery-status'",
     )
 
-    expect(completeCall).toContain('queryPath(')
-    expect(completeCall).toContain(
+    expectScopedQuery(
+      completionFlow,
       '/wms/outbound-orders/${encodeURIComponent(wmsOutboundId)}/complete`',
     )
-    expect(completeCall).toContain('organizationId')
-    expect(completeCall).toContain('environmentId')
-    expect(completeCall).toContain('packReviewNo: `PACK-${suffix}`')
-    expect(completeCall).toContain('idempotencyKey: `complete-outbound-${suffix}`')
+    expect(completionFlow).toContain('packReviewNo: `PACK-${suffix}`')
+    expect(completionFlow).toContain('idempotencyKey: `complete-outbound-${suffix}`')
+    expect(completionFlow).toContain('{ organizationId, environmentId, keyword: deliveryOrderNo')
+    expect(completionFlow).toContain(
+      "row.deliveryOrderNo === deliveryOrderNo && row.status === 'completed'",
+    )
   })
 })
