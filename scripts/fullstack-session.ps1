@@ -207,7 +207,9 @@ function Invoke-NervMan440RuntimeHoursAcceptance {
     $postgresUser = if ($postgresUserEntry) { $postgresUserEntry.Substring('POSTGRES_USER='.Length) } else { 'postgres' }
     if (-not $postgresPasswordEntry) { throw 'MAN-440 acceptance could not resolve the session PostgreSQL password.' }
     $postgresPassword = $postgresPasswordEntry.Substring('POSTGRES_PASSWORD='.Length)
-    $postgresPort = "$($postgres[0].NetworkSettings.Ports.'5432/tcp'[0].HostPort)"
+    $postgresPortBindings = @($postgres[0].NetworkSettings.Ports.'5432/tcp')
+    if ($postgresPortBindings.Count -eq 0) { throw 'MAN-440 acceptance found no session PostgreSQL host-port binding.' }
+    $postgresPort = "$($postgresPortBindings[0].HostPort)"
     if ([string]::IsNullOrWhiteSpace($postgresPort)) { throw 'MAN-440 acceptance could not resolve the session PostgreSQL host port.' }
 
     $redisArguments = @($redis[0].Path) + @($redis[0].Args) + @($redis[0].Config.Entrypoint) + @($redis[0].Config.Cmd)
@@ -226,7 +228,9 @@ function Invoke-NervMan440RuntimeHoursAcceptance {
     if ([string]::IsNullOrWhiteSpace($redisPassword)) {
         throw 'MAN-440 acceptance could not resolve the session Redis password.'
     }
-    $redisPort = "$($redis[0].NetworkSettings.Ports.'6379/tcp'[0].HostPort)"
+    $redisPortBindings = @($redis[0].NetworkSettings.Ports.'6379/tcp')
+    if ($redisPortBindings.Count -eq 0) { throw 'MAN-440 acceptance found no session Redis host-port binding.' }
+    $redisPort = "$($redisPortBindings[0].HostPort)"
     if ([string]::IsNullOrWhiteSpace($redisPort)) { throw 'MAN-440 acceptance could not resolve the session Redis host port.' }
 
     $connectionPrefix = "Host=127.0.0.1;Port=$postgresPort;Username=$postgresUser;Password=$postgresPassword;Include Error Detail=false;"
@@ -255,9 +259,6 @@ function Invoke-NervMan440RuntimeHoursAcceptance {
     }
     finally {
         $probeEnvironment.Clear()
-        $postgresPassword = $null
-        $redisPassword = $null
-        $connectionPrefix = $null
     }
 }
 

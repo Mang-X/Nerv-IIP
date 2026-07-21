@@ -64,9 +64,9 @@ $parallelAcceptanceText = Get-Content -LiteralPath $parallelAcceptanceScript -Ra
 $fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Raw
 $nervEntrypointText = Get-Content -LiteralPath (Join-Path $repoRoot 'nerv.ps1') -Raw
 $appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
-Assert-True ($fullStackSessionText.Contains("'man-440'")) 'Full-stack scenarios must expose the MAN-440 runtime-hour PM acceptance.'
-Assert-True ($nervEntrypointText.Contains("'man-440'")) 'The governed root entrypoint must accept the MAN-440 full-stack scenario.'
-Assert-True ($fullStackSessionText.Contains('Invoke-NervMan440RuntimeHoursAcceptance')) 'MAN-440 must run its PostgreSQL and Redis external-process acceptance probe.'
+Assert-True ($fullStackSessionText -match '(?s)\[ValidateSet\((?:(?!\)\]).)*''man-440''(?:(?!\)\]).)*\)\]\s*\[string\]\s+\$Scenario') 'Full-stack scenarios must expose the MAN-440 runtime-hour PM acceptance.'
+Assert-True ($nervEntrypointText -match '(?s)\[ValidateSet\((?:(?!\)\]).)*''man-440''(?:(?!\)\]).)*\)\]\s*\[string\]\s+\$Scenario') 'The governed root entrypoint must accept the MAN-440 full-stack scenario.'
+Assert-True ($fullStackSessionText -match '(?m)^function Invoke-NervMan440RuntimeHoursAcceptance\s*\{') 'MAN-440 must run its PostgreSQL and Redis external-process acceptance probe.'
 Assert-True ($fullStackSessionText.Contains("['Maintenance__PmGeneration__Enabled'] = 'true'")) 'MAN-440 must enable the real Maintenance PM scheduler for its acceptance scope.'
 Assert-True ($fullStackSessionText.Contains('"$($Manifest.runtime.messagingProvider)"')) 'MAN-440 must verify the Redis profile recorded in the authoritative session manifest.'
 Assert-True ($fullStackSessionText.Contains("@('business-industrial-telemetry', 'business-maintenance')")) 'MAN-440 startup must wait only for the two services in its narrowed acceptance scope.'

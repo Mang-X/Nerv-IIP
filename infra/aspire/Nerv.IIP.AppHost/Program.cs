@@ -450,13 +450,16 @@ var businessMaintenance = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(b
     .WithEnvironment("Maintenance__PmGeneration__Enabled", maintenancePmGenerationEnabled ? "true" : "false")
     .WithEnvironment("Maintenance__PmGeneration__OrganizationId", maintenancePmGenerationOrganizationId ?? string.Empty)
     .WithEnvironment("Maintenance__PmGeneration__EnvironmentId", maintenancePmGenerationEnvironmentId ?? string.Empty)
-    .WithEnvironment("Maintenance__PmGeneration__Interval", maintenancePmGenerationInterval ?? "01:00:00")
     .WithEnvironment("IndustrialTelemetry__BaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMaintenanceDatabase, "PostgreSQL")
     .WithReference(businessIndustrialTelemetry)
     .WaitFor(businessMaintenanceDatabase)
     .WaitFor(businessIndustrialTelemetry);
+if (!string.IsNullOrWhiteSpace(maintenancePmGenerationInterval))
+{
+    businessMaintenance = businessMaintenance.WithEnvironment("Maintenance__PmGeneration__Interval", maintenancePmGenerationInterval);
+}
 businessMaintenance = WithRedisMessagingTransport(businessMaintenance);
 if (rabbitmq is not null)
 {

@@ -35,6 +35,13 @@ public sealed class MaintenanceRuntimeHoursPostgresRedisAcceptanceTests
                 Assert.Equal(1.25m, facts.LastGeneratedRuntimeHours);
                 Assert.Equal(2m, facts.NextDueRuntimeHours);
                 Assert.Equal($"{source.PlanCode}:runtime:1:1", facts.SourceReferenceId);
+
+                await Task.Delay(TimeSpan.FromSeconds(2));
+                var afterTwoMoreSchedulerTicks = await ReadFactsAsync(maintenancePostgres, source);
+                Assert.Equal(1, afterTwoMoreSchedulerTicks.WorkOrderCount);
+                Assert.Equal(1.25m, afterTwoMoreSchedulerTicks.LastGeneratedRuntimeHours);
+                Assert.Equal(2m, afterTwoMoreSchedulerTicks.NextDueRuntimeHours);
+                Assert.Equal(facts.SourceReferenceId, afterTwoMoreSchedulerTicks.SourceReferenceId);
                 return;
             }
 
@@ -50,6 +57,7 @@ public sealed class MaintenanceRuntimeHoursPostgresRedisAcceptanceTests
 
     private static async Task WaitForMaintenanceRedisConsumerAsync(string redisConnectionString, string capVersion)
     {
+        // The CAP consumer group proves that Maintenance is ready on Redis; runtime-hour scheduling itself pulls telemetry over HTTP.
         var options = ConfigurationOptions.Parse(redisConnectionString);
         options.AbortOnConnectFail = false;
         await using var connection = await ConnectionMultiplexer.ConnectAsync(options);
