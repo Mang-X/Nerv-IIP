@@ -40,6 +40,60 @@ public sealed class SchedulingProviderDegradationTests
     }
 
     [Fact]
+    public async Task MaterialReadinessProvider_AcceptsSuccessfulResponseDataEnvelope()
+    {
+        var provider = new HttpSchedulingMaterialReadinessProvider(
+            new StaticResponseHttpClientFactory(
+                """
+                {
+                  "success": true,
+                  "message": "",
+                  "code": 0,
+                  "data": {
+                    "workOrderId": "WO-SNAPSHOT-001",
+                    "readinessStatus": "Ready",
+                    "blockingReasons": [],
+                    "items": []
+                  }
+                }
+                """),
+            new TestInternalServiceTokenProvider("test-internal-token"),
+            NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
+
+        var readiness = await provider.QueryAsync(CreateSingleOperationProblem(), CancellationToken.None);
+
+        Assert.Empty(readiness);
+    }
+
+    [Fact]
+    public async Task MaterialReadinessProvider_FailsClosedForUnsuccessfulResponseDataEnvelope()
+    {
+        var provider = new HttpSchedulingMaterialReadinessProvider(
+            new StaticResponseHttpClientFactory(
+                """
+                {
+                  "success": false,
+                  "message": "MES rejected the request",
+                  "code": 400,
+                  "data": {
+                    "workOrderId": "WO-SNAPSHOT-001",
+                    "readinessStatus": "Ready",
+                    "blockingReasons": [],
+                    "items": []
+                  }
+                }
+                """),
+            new TestInternalServiceTokenProvider("test-internal-token"),
+            NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
+
+        var readiness = await provider.QueryAsync(CreateSingleOperationProblem(), CancellationToken.None);
+
+        var block = Assert.Single(readiness);
+        Assert.Equal("WO-SNAPSHOT-001", block.ScopeId);
+        Assert.Contains("mes.materialReadinessSourceUnavailable", block.ReasonCodes);
+    }
+
+    [Fact]
     public async Task MaterialReadinessProvider_ReturnsOpenEndedBlockForMalformedSuccessfulResponse()
     {
         var provider = new HttpSchedulingMaterialReadinessProvider(
@@ -52,6 +106,27 @@ public sealed class SchedulingProviderDegradationTests
         var block = Assert.Single(readiness);
         Assert.Equal("WO-SNAPSHOT-001", block.ScopeId);
         Assert.False(block.IsReady);
+        Assert.Contains("mes.materialReadinessSourceUnavailable", block.ReasonCodes);
+    }
+
+    [Fact]
+    public async Task MaterialReadinessProvider_FailsClosedWhenRequiredCollectionsAreMissing()
+    {
+        var provider = new HttpSchedulingMaterialReadinessProvider(
+            new StaticResponseHttpClientFactory(
+                """
+                {
+                  "workOrderId": "WO-SNAPSHOT-001",
+                  "readinessStatus": "Blocked"
+                }
+                """),
+            new TestInternalServiceTokenProvider("test-internal-token"),
+            NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
+
+        var readiness = await provider.QueryAsync(CreateSingleOperationProblem(), CancellationToken.None);
+
+        var block = Assert.Single(readiness);
+        Assert.Equal("WO-SNAPSHOT-001", block.ScopeId);
         Assert.Contains("mes.materialReadinessSourceUnavailable", block.ReasonCodes);
     }
 

@@ -166,7 +166,14 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
             return null;
         }
 
-        return payload.Deserialize<MesMaterialReadinessResponse>(SchedulingJson.Options);
+        var readiness = payload.Deserialize<MesMaterialReadinessResponse>(SchedulingJson.Options);
+        return readiness is null ||
+               string.IsNullOrWhiteSpace(readiness.WorkOrderId) ||
+               string.IsNullOrWhiteSpace(readiness.ReadinessStatus) ||
+               readiness.BlockingReasons is null ||
+               readiness.Items is null
+            ? null
+            : readiness;
     }
 
     private static IReadOnlyCollection<SchedulingMaterialReadinessContract> ToSchedulingReadiness(
