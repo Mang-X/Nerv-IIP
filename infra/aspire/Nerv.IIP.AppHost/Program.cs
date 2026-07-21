@@ -520,7 +520,9 @@ var businessScheduling = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(bu
     .WithReference(businessIndustrialTelemetry)
     .WithReference(businessMaintenance)
     .WaitFor(businessSchedulingDatabase)
-    .WaitFor(businessMes);
+    .WaitFor(businessMes)
+    .WaitFor(businessIndustrialTelemetry)
+    .WaitFor(businessMaintenance);
 businessScheduling = WithRedisMessagingTransport(businessScheduling);
 if (rabbitmq is not null)
 {

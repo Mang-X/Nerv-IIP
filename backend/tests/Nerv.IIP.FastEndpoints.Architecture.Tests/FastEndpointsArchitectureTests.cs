@@ -266,18 +266,7 @@ public sealed class FastEndpointsArchitectureTests
         var root = FindRepositoryRoot();
         var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
         var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
-        var resourceStart = programText.IndexOf(
-            "var businessProductEngineering =",
-            StringComparison.Ordinal);
-        var resourceEnd = programText.IndexOf(
-            "businessProductEngineering = WithRedisMessagingTransport(",
-            resourceStart,
-            StringComparison.Ordinal);
-
-        Assert.True(resourceStart >= 0, "BusinessProductEngineering Aspire resource is missing.");
-        Assert.True(resourceEnd > resourceStart, "BusinessProductEngineering Aspire resource block is incomplete.");
-
-        var resourceBlock = programText[resourceStart..resourceEnd];
+        var resourceBlock = GetAspireResourceBlock(programText, "businessProductEngineering");
         Assert.Contains(
             ".WithEnvironment(\"MasterData__BaseUrl\", businessMasterData.GetEndpoint(\"http\"))",
             resourceBlock);
@@ -292,24 +281,34 @@ public sealed class FastEndpointsArchitectureTests
         var root = FindRepositoryRoot();
         var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
         var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
-        var resourceStart = programText.IndexOf(
-            "var businessScheduling =",
-            StringComparison.Ordinal);
-        var resourceEnd = programText.IndexOf(
-            "businessScheduling = WithRedisMessagingTransport(",
-            resourceStart,
-            StringComparison.Ordinal);
-
-        Assert.True(resourceStart >= 0, "BusinessScheduling Aspire resource is missing.");
-        Assert.True(resourceEnd > resourceStart, "BusinessScheduling Aspire resource block is incomplete.");
-
-        var resourceBlock = programText[resourceStart..resourceEnd];
+        var resourceBlock = GetAspireResourceBlock(programText, "businessScheduling");
         Assert.Contains(
             ".WithEnvironment(\"Mes__BaseUrl\", businessMes.GetEndpoint(\"http\"))",
             resourceBlock);
         Assert.Contains(".WithReference(businessMes)", resourceBlock);
         Assert.Contains(".WaitFor(businessMes)", resourceBlock);
         Assert.DoesNotContain("localhost:5111", resourceBlock);
+    }
+
+    [Fact]
+    public void Aspire_apphost_scheduling_waits_for_equipment_availability_sources()
+    {
+        var root = FindRepositoryRoot();
+        var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var resourceBlock = GetAspireResourceBlock(programText, "businessScheduling");
+        Assert.Contains(
+            ".WithEnvironment(\"IndustrialTelemetry__BaseUrl\", businessIndustrialTelemetry.GetEndpoint(\"http\"))",
+            resourceBlock);
+        Assert.Contains(
+            ".WithEnvironment(\"Maintenance__BaseUrl\", businessMaintenance.GetEndpoint(\"http\"))",
+            resourceBlock);
+        Assert.Contains(".WithReference(businessIndustrialTelemetry)", resourceBlock);
+        Assert.Contains(".WithReference(businessMaintenance)", resourceBlock);
+        Assert.Contains(".WaitFor(businessIndustrialTelemetry)", resourceBlock);
+        Assert.Contains(".WaitFor(businessMaintenance)", resourceBlock);
+        Assert.DoesNotContain("localhost:5116", resourceBlock);
+        Assert.DoesNotContain("localhost:5117", resourceBlock);
     }
 
     [Theory]
@@ -422,6 +421,20 @@ public sealed class FastEndpointsArchitectureTests
             Assert.Contains("b.RegisterServicesFromAssemblies(typeof(Program))", programText);
             Assert.Contains("b.AddContextIntegrationFilters()", programText);
         }
+    }
+
+    private static string GetAspireResourceBlock(string programText, string resourceVariable)
+    {
+        var resourceStart = programText.IndexOf($"var {resourceVariable} =", StringComparison.Ordinal);
+        Assert.True(resourceStart >= 0, $"Aspire resource '{resourceVariable}' is missing.");
+
+        var resourceEnd = programText.IndexOf(
+            $"{resourceVariable} = WithRedisMessagingTransport(",
+            resourceStart,
+            StringComparison.Ordinal);
+        Assert.True(resourceEnd > resourceStart, $"Aspire resource block '{resourceVariable}' is incomplete.");
+
+        return programText[resourceStart..resourceEnd];
     }
 
     private static string FindRepositoryRoot()

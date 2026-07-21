@@ -122,6 +122,44 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(acceptedWorkOrderFlow).toContain('idempotencyKey: `release-wo-${suffix}`')
   })
 
+  it('maps the run-scoped work center to a real device asset with fresh availability before scheduling', () => {
+    const equipmentFlow = sourceBetween("let deviceAssetId = ''", "let productionReportId = ''")
+    const registerIndex = equipmentFlow.indexOf(
+      '/api/business-console/v1/master-data/device-assets',
+    )
+    const recordStateIndex = equipmentFlow.indexOf('/api/business-console/v1/telemetry/samples')
+    const auditStateIndex = equipmentFlow.indexOf(
+      '/api/business-console/v1/equipment/devices/${encodeURIComponent(deviceAssetId)}',
+    )
+    const deviceLookup = sourceBetween('const deviceList = await call(', 'const deviceResources =')
+
+    expect(registerIndex).toBeGreaterThanOrEqual(0)
+    expect(recordStateIndex).toBeGreaterThan(registerIndex)
+    expect(auditStateIndex).toBeGreaterThan(recordStateIndex)
+    expect(deviceLookup).toMatch(
+      /queryPath\([\s\S]*?\/master-data\/device-assets[\s\S]*?\{\s*organizationId,\s*environmentId,\s*workCenterCode,\s*keyword:\s*deviceCode,/,
+    )
+    expect(equipmentFlow).toContain('deviceAssetId = textOf(device.deviceAssetId)')
+    expect(equipmentFlow).toContain("deviceState: 'available'")
+    expect(equipmentFlow).toContain(
+      "textOf(currentState.currentState).trim().toLowerCase() !== 'available'",
+    )
+
+    const schedulingFlow = sourceBetween(
+      'let scheduleReleased = false',
+      "let productionReportId = ''",
+    )
+    expect(schedulingFlow).toContain('eligibleResourceIds: [deviceAssetId]')
+    expect(schedulingFlow).toContain('primaryResourceId: deviceAssetId')
+    expect(schedulingFlow).toContain('resourceId: deviceAssetId')
+    expect(schedulingFlow).not.toContain('eligibleResourceIds: [workCenterCode]')
+    expect(schedulingFlow).not.toContain('primaryResourceId: workCenterCode')
+    expect(schedulingFlow).not.toContain('resourceId: workCenterCode')
+    expect(schedulingFlow).toContain(
+      "markFailure('mes-work-order-schedule-plan', error, 'manual', '#1040')",
+    )
+  })
+
   it('starts the run-scoped MES operation task with the required business context query', () => {
     const productionFlow = sourceBetween("let productionReportId = ''", 'if (productionReportId) {')
 

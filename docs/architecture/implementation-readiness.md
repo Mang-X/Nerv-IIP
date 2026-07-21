@@ -10,6 +10,10 @@
 
 BusinessScheduling 的 `HttpSchedulingMaterialReadinessProvider` 通过 MES 受管内部 endpoint 读取同一 organization/environment/work-order 的权威齐套事实，不信任调用方提交的 `isReady`。MES FastEndpoints 成功响应当前可直接返回 readiness DTO；provider 同时兼容平台 `ResponseData` envelope，避免把 HTTP 200 的 raw DTO 误判为 `mes.materialReadinessSourceUnavailable`。AppHost 为 Scheduling 注入 MES 动态 BaseUrl、resource reference、内部 bearer token，并在启动 Scheduling 前等待 MES 健康。MES 非 2xx、不可达、超时、空响应、畸形 JSON 或响应工单与请求不一致时继续 fail closed 为 `mes.materialReadinessSourceUnavailable`；本修复没有新增或修改业务 HTTP endpoint，现有 `getBusinessMesMaterialReadiness` 仍按 facade matrix 的 `exposed` 两跳策略由 BusinessGateway 暴露，无需刷新 OpenAPI 或 generated client。
 
+## Scheduling 工位设备身份与运行态主链（MAN-574 / #1040）
+
+`leader-demo-main-chain` 通过现有 BusinessGateway 公开路径为 run-scoped 工位注册 MasterData `DeviceAsset`，再按 organization/environment/workCenter/code 读回稳定 `deviceAssetId`；该 ID 与 `workCenterCode` 保持不同身份，Scheduling problem 的 `eligibleResourceIds`、`primaryResourceId` 和 resource `resourceId` 均使用真实设备资产 ID，`workCenterId` 只保留工位上下文。场景随后通过公开 telemetry sample 写入带稳定 source sequence 的 `Available` `DeviceStateSnapshot`，并以公开 Equipment device detail 验证同一组织/环境/设备的 current state 与 freshness，最后才创建并公开 release MES Ready 工单对应的方案。Scheduling 到 IndustrialTelemetry/Maintenance 仍使用受管内部契约、内部 bearer token 和 organization/environment/device scope；AppHost 在启动 Scheduling 前等待这两个运行态来源健康。Unknown、陈旧、超时、非 2xx 或下游不可达继续由现有 equipment provider/adapter fail closed，没有删除或绕过设备门禁。本变更没有新增或修改业务 HTTP endpoint，复用 facade matrix 中既有 `exposed` 的 MasterData device、telemetry sample、Equipment detail 与 Scheduling plan/release 两跳，无需刷新 OpenAPI 或 generated client。
+
 ## 领导演示环境基线（MAN-519 / #960）
 
 领导演示使用受治理的 `.\nerv.ps1 demo start|reset|seed|health-check|stop` 入口，复用隔离 full-stack session 和唯一 Aspire AppHost 拓扑。启动前必须仅在当前 PowerShell 进程设置 `NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD`；不得通过命令行参数、`setx`、仓库文件或日志传递/保存密码。`demo reset` 只停止机器本地 pointer 记录的精确 session，确认其自有资源清理后重建新 session，不会删除共享开发数据库或对客户数据执行写入。
