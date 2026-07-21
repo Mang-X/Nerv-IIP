@@ -144,6 +144,7 @@ public sealed class MesCapSubscriptionTests
         AssertRequiredParameter<IMesSkuAvailabilityScopeCoordinator>(rushConstructor);
         AssertRequiredParameter<ApplicationDbContext>(convertConstructor);
         AssertRequiredParameter<IMesSkuAvailabilityScopeCoordinator>(convertConstructor);
+        AssertRequiredParameter<IMesRoutingSnapshotProvider>(convertConstructor);
 
         var services = new ServiceCollection();
         services.AddSingleton<IMesPlanningStore>(new InMemoryMesPlanningStore());

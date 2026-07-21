@@ -457,19 +457,22 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
     private readonly MesCodingService _codingService;
     private readonly IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider;
     private readonly IMesSkuAvailabilityScopeCoordinator skuAvailabilityScopeCoordinator;
+    private readonly IMesRoutingSnapshotProvider? routingSnapshotProvider;
 
     public ConvertPlanToWorkOrderCommandHandler(
         ApplicationDbContext dbContext,
         RuleScheduler scheduler,
         MesCodingService codingService,
         IMesSkuAvailabilityScopeCoordinator skuAvailabilityScopeCoordinator,
-        IMesMaterialRequirementSnapshotProvider materialSnapshotProvider)
+        IMesMaterialRequirementSnapshotProvider materialSnapshotProvider,
+        IMesRoutingSnapshotProvider routingSnapshotProvider)
     {
         this.dbContext = dbContext;
         this.scheduler = scheduler;
         _codingService = codingService;
         this.materialSnapshotProvider = materialSnapshotProvider;
         this.skuAvailabilityScopeCoordinator = skuAvailabilityScopeCoordinator;
+        this.routingSnapshotProvider = routingSnapshotProvider;
     }
 
     internal ConvertPlanToWorkOrderCommandHandler(
@@ -482,7 +485,8 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
             scheduler,
             codingService,
             materialSnapshotProvider,
-            new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext))
+            new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
+            null)
     {
     }
 
@@ -491,13 +495,15 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
         RuleScheduler scheduler,
         MesCodingService? codingService,
         IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider,
-        IMesSkuAvailabilityScopeCoordinator skuAvailabilityScopeCoordinator)
+        IMesSkuAvailabilityScopeCoordinator skuAvailabilityScopeCoordinator,
+        IMesRoutingSnapshotProvider? routingSnapshotProvider = null)
     {
         this.dbContext = dbContext;
         this.scheduler = scheduler;
         _codingService = codingService ?? new MesCodingService();
         this.materialSnapshotProvider = materialSnapshotProvider;
         this.skuAvailabilityScopeCoordinator = skuAvailabilityScopeCoordinator;
+        this.routingSnapshotProvider = routingSnapshotProvider;
     }
 
     internal ConvertPlanToWorkOrderCommandHandler(ApplicationDbContext dbContext)
@@ -551,12 +557,69 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
             }
         }
 
+        await EnsureRoutingSnapshotPreconditionsAsync(request, cancellationToken);
+        var routingSnapshot = await CaptureRoutingSnapshotAsync(request, allocation.Code, cancellationToken);
         return await skuAvailabilityScopeCoordinator.ExecuteAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.SkuId,
-            token => CreateWorkOrderAsync(request, allocation.Code, sourceSystem, sourceDocumentType, sourceDocumentId, token),
+            token => CreateWorkOrderAsync(
+                request,
+                allocation.Code,
+                sourceSystem,
+                sourceDocumentType,
+                sourceDocumentId,
+                routingSnapshot,
+                token),
             cancellationToken);
+    }
+
+    private async Task EnsureRoutingSnapshotPreconditionsAsync(
+        ConvertPlanToWorkOrderCommand request,
+        CancellationToken cancellationToken)
+    {
+        await MesSkuAvailabilityGate.EnsureActiveAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SkuId,
+            cancellationToken);
+        await MesArchivedProductionVersionGuard.ThrowIfArchivedAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.ProductionVersionId,
+            cancellationToken);
+    }
+
+    private async Task<MesRoutingSnapshotResult?> CaptureRoutingSnapshotAsync(
+        ConvertPlanToWorkOrderCommand request,
+        string workOrderId,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(request.WorkCenterId))
+        {
+            return null;
+        }
+
+        var routingSnapshot = routingSnapshotProvider is null
+            ? MesRoutingSnapshotResult.Missing(MesRoutingSnapshotSources.NotConfigured)
+            : await routingSnapshotProvider.GetSnapshotAsync(
+                new MesRoutingSnapshotRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    workOrderId,
+                    request.SkuId,
+                    request.ProductionVersionId,
+                    request.PlannedQuantity,
+                    request.RequestedAtUtc),
+                cancellationToken);
+        if (routingSnapshot.Status != MesRoutingSnapshotStatus.Captured || routingSnapshot.Operations.Count == 0)
+        {
+            throw new MesRoutingSnapshotMissingException(routingSnapshot.SourceSystem);
+        }
+
+        return routingSnapshot;
     }
 
     private async Task<MesAcceptedResponse> CreateWorkOrderAsync(
@@ -565,6 +628,7 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
         string sourceSystem,
         string sourceDocumentType,
         string sourceDocumentId,
+        MesRoutingSnapshotResult? routingSnapshot,
         CancellationToken cancellationToken)
     {
         await MesSkuAvailabilityGate.EnsureActiveAsync(
@@ -629,6 +693,27 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
                 await GetScheduleOperationsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken),
                 await GetUnavailabilitiesAsync(request.OrganizationId, request.EnvironmentId, cancellationToken));
             await AddScheduleResultAsync(RescheduleTrigger.Manual, request.RequestedAtUtc, plan, baselinePlan.Assignments, cancellationToken);
+        }
+        else
+        {
+            foreach (var operation in routingSnapshot!.Operations.OrderBy(x => x.Sequence))
+            {
+                dbContext.OperationTasks.Add(OperationTask.Queue(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    workOrderId,
+                    $"{workOrderId}-OP-{operation.Sequence}",
+                    operation.Sequence,
+                    operation.WorkCenterId,
+                    operation.AlternativeWorkCenterIds,
+                    request.RequestedAtUtc,
+                    TimeSpan.FromMinutes(operation.StandardMinutes),
+                    request.SkuId,
+                    request.UomCode,
+                    request.PlannedQuantity,
+                    operation.RequiresQualityInspection,
+                    operation.OperationCode));
+            }
         }
 
         if (materialSnapshotProvider is not null)

@@ -3422,6 +3422,14 @@
     },
     {
       "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/production-versions/{productionVersionId}/routing-snapshot",
+      "operationId": "getBusinessProductionVersionRoutingSnapshot",
+      "classification": "internal",
+      "rationale": "Service-to-service exact production-version routing snapshot consumed by MES work-order conversion; the opaque routing identity is resolved only by ProductEngineering (#1034)."
+    },
+    {
+      "service": "ProductEngineering",
       "method": "POST",
       "route": "/api/business/v1/engineering/production-versions/{productionVersionId}/archive",
       "operationId": "archiveBusinessProductionVersion",

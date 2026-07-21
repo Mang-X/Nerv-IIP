@@ -181,6 +181,32 @@ public sealed class ResolveProductionVersionEndpoint(ISender sender)
     }
 }
 
+public sealed record GetProductionVersionRoutingSnapshotRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ProductionVersionId);
+
+public sealed class GetProductionVersionRoutingSnapshotEndpoint(ISender sender)
+    : ProductionVersionEndpoint<GetProductionVersionRoutingSnapshotRequest, ResponseData<ProductionVersionRoutingSnapshotResponse>>
+{
+    public override void Configure()
+    {
+        var contract = ProductionVersionEndpointContracts.Get<GetProductionVersionRoutingSnapshotEndpoint>();
+        ConfigureProductionVersionContract(contract);
+    }
+
+    public override async Task HandleAsync(GetProductionVersionRoutingSnapshotRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new GetProductionVersionRoutingSnapshotQuery(
+                req.OrganizationId,
+                req.EnvironmentId,
+                req.ProductionVersionId),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
 public sealed record ProductionVersionEndpointContract(
     Type EndpointType,
     string HttpMethod,
@@ -194,6 +220,7 @@ public static class ProductionVersionEndpointContracts
     [
         new(typeof(ListProductionVersionsEndpoint), "GET", "/api/business/v1/engineering/production-versions", EngineeringPermissionCodes.ProductionVersionsRead, "listBusinessProductionVersions"),
         new(typeof(ResolveProductionVersionEndpoint), "GET", "/api/business/v1/engineering/production-versions/resolve", EngineeringPermissionCodes.ProductionVersionsRead, "resolveBusinessProductionVersion"),
+        new(typeof(GetProductionVersionRoutingSnapshotEndpoint), "GET", "/api/business/v1/engineering/production-versions/{productionVersionId}/routing-snapshot", EngineeringPermissionCodes.ProductionVersionsRead, "getBusinessProductionVersionRoutingSnapshot"),
         new(typeof(CreateProductionVersionEndpoint), "POST", "/api/business/v1/engineering/production-versions", EngineeringPermissionCodes.ProductionVersionsManage, "createBusinessProductionVersion"),
         new(typeof(UpdateProductionVersionEndpoint), "PUT", "/api/business/v1/engineering/production-versions/{productionVersionId}", EngineeringPermissionCodes.ProductionVersionsManage, "updateBusinessProductionVersion"),
         new(typeof(ArchiveProductionVersionEndpoint), "POST", "/api/business/v1/engineering/production-versions/{productionVersionId}/archive", EngineeringPermissionCodes.ProductionVersionsManage, "archiveBusinessProductionVersion"),
