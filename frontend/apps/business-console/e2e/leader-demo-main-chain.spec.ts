@@ -460,7 +460,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
       await create('/api/business-console/v1/inventory/movements', {
         organizationId,
         environmentId,
-        movementType: 'receipt',
+        movementType: 'inbound',
         sourceService: 'MAN-524-Acceptance',
         sourceDocumentId: `RM-SEED-${suffix}`,
         idempotencyKey: `rm-stock-${suffix}`,
