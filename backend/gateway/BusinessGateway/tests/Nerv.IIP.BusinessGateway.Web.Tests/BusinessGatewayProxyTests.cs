@@ -1740,6 +1740,10 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("MBOM-001", engineering.LastReleaseManufacturingBomRequest!.BomCode);
         Assert.Equal("SKU-001", engineering.LastReleaseManufacturingBomRequest.SkuCode);
         Assert.Equal("RM-001", engineering.LastReleaseManufacturingBomRequest.MaterialLines.Single().SkuCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "released-mbom-version-token",
+            document.RootElement.GetProperty("data").GetProperty("versionId").GetString());
     }
 
     [Fact]
@@ -4542,7 +4546,7 @@ public sealed class BusinessGatewayProxyTests
             new BusinessConsoleListManufacturingBomsRequest("org-001", "env-dev", "SKU-001", "Published", Skip: 3, Take: 25),
             CancellationToken.None);
         await client.GetManufacturingBomAsync("internal-token-001", "MBOM-001", "A", new BusinessConsoleEngineeringContextRequest("org-001", "env-dev"), CancellationToken.None);
-        await client.ReleaseManufacturingBomAsync(
+        var releasedManufacturingBom = await client.ReleaseManufacturingBomAsync(
             "internal-token-001",
             new BusinessConsoleReleaseManufacturingBomRequest("org-001", "env-dev", "MBOM-001", "A", "SKU-001", "EBOM-001", "A", new DateOnly(2026, 6, 1), [new BusinessConsoleManufacturingBomMaterialLineRequest("RM-001", 1, "EA", 0)], []),
             CancellationToken.None);
@@ -4551,7 +4555,7 @@ public sealed class BusinessGatewayProxyTests
             new BusinessConsoleListRoutingsRequest("org-001", "env-dev", "SKU-001", "Published", Skip: 6, Take: 35),
             CancellationToken.None);
         await client.GetRoutingAsync("internal-token-001", "RTG-001", "A", new BusinessConsoleEngineeringContextRequest("org-001", "env-dev"), CancellationToken.None);
-        await client.ReleaseRoutingAsync(
+        var releasedRouting = await client.ReleaseRoutingAsync(
             "internal-token-001",
             new BusinessConsoleReleaseRoutingRequest("org-001", "env-dev", "RTG-001", "A", "SKU-001", new DateOnly(2026, 6, 1), [new BusinessConsoleRoutingOperationRequest(10, "WC-001", "assembly", "装配", 15)]),
             CancellationToken.None);
@@ -4591,9 +4595,11 @@ public sealed class BusinessGatewayProxyTests
             "internal-token-001",
             new BusinessConsoleRescheduleEngineeringChangeRequest("org-001", "env-dev", "ECO-001", new DateOnly(2026, 6, 8), "Supplier delay"),
             CancellationToken.None);
+        var mbomVersionId = releasedManufacturingBom.VersionId;
+        var routingVersionId = releasedRouting.VersionId;
         await client.CreateProductionVersionAsync(
             "internal-token-001",
-            new BusinessConsoleCreateProductionVersionRequest("org-001", "env-dev", "SKU-001", "MBOM-001:A", "RTG-001:A", new DateOnly(2026, 6, 1), null, 1, 100, 10, true),
+            new BusinessConsoleCreateProductionVersionRequest("org-001", "env-dev", "SKU-001", mbomVersionId, routingVersionId, new DateOnly(2026, 6, 1), null, 1, 100, 10, true),
             CancellationToken.None);
         await client.UpdateProductionVersionAsync(
             "internal-token-001",
@@ -4643,6 +4649,12 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("org-001", archiveProductionVersionDocument.RootElement.GetProperty("organizationId").GetString());
         Assert.Equal("env-dev", archiveProductionVersionDocument.RootElement.GetProperty("environmentId").GetString());
         Assert.Equal("pv-001", archiveProductionVersionDocument.RootElement.GetProperty("productionVersionId").GetString());
+
+        var createProductionVersionRequestIndex = handler.Requests.FindIndex(request =>
+            request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath.EndsWith("/production-versions", StringComparison.Ordinal));
+        using var createProductionVersionDocument = JsonDocument.Parse(handler.RequestBodies[createProductionVersionRequestIndex]!);
+        Assert.Equal("MBOM-001:A", createProductionVersionDocument.RootElement.GetProperty("mbomVersionId").GetString());
+        Assert.Equal("RTG-001:A", createProductionVersionDocument.RootElement.GetProperty("routingVersionId").GetString());
     }
 
     [Fact]
@@ -6297,6 +6309,36 @@ public sealed class BusinessGatewayProxyTests
             };
         }
 
+        if (path.EndsWith("/manufacturing-boms/release", StringComparison.Ordinal))
+        {
+            return new
+            {
+                data = new
+                {
+                    id = "MBOM-001",
+                    versionId = "MBOM-001:A",
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            };
+        }
+
+        if (path.EndsWith("/routings/release", StringComparison.Ordinal))
+        {
+            return new
+            {
+                data = new
+                {
+                    id = "RTG-001",
+                    versionId = "RTG-001:A",
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            };
+        }
+
         if (path.Contains("/production-versions", StringComparison.Ordinal) &&
             !path.EndsWith("/archive", StringComparison.Ordinal))
         {
@@ -7764,7 +7806,7 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         return Task.FromResult(new BusinessConsoleBomWhereUsedResponse(request.ComponentCode, []));
     }
 
-    public Task<BusinessConsoleEngineeringEntityResponse> ReleaseManufacturingBomAsync(
+    public Task<BusinessConsoleReleasedEngineeringVersionResponse> ReleaseManufacturingBomAsync(
         string internalBearerToken,
         BusinessConsoleReleaseManufacturingBomRequest request,
         CancellationToken cancellationToken)
@@ -7772,7 +7814,8 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         WriteCallCount++;
         LastInternalToken = internalBearerToken;
         LastReleaseManufacturingBomRequest = request;
-        return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.BomCode ?? "MBOM-001"));
+        var id = request.BomCode ?? "MBOM-001";
+        return Task.FromResult(new BusinessConsoleReleasedEngineeringVersionResponse(id, "released-mbom-version-token"));
     }
 
     public Task<BusinessConsoleRoutingListResponse> ListRoutingsAsync(
@@ -7795,14 +7838,15 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         return Task.FromResult(new BusinessConsoleRoutingItem(routingCode, revision, "SKU-001", "Published", DateOnly.FromDateTime(DateTime.UtcNow), []));
     }
 
-    public Task<BusinessConsoleEngineeringEntityResponse> ReleaseRoutingAsync(
+    public Task<BusinessConsoleReleasedEngineeringVersionResponse> ReleaseRoutingAsync(
         string internalBearerToken,
         BusinessConsoleReleaseRoutingRequest request,
         CancellationToken cancellationToken)
     {
         WriteCallCount++;
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.RoutingCode ?? "RTG-001"));
+        var id = request.RoutingCode ?? "RTG-001";
+        return Task.FromResult(new BusinessConsoleReleasedEngineeringVersionResponse(id, "released-routing-version-token"));
     }
 
     public Task<BusinessConsoleStandardOperationListResponse> ListStandardOperationsAsync(

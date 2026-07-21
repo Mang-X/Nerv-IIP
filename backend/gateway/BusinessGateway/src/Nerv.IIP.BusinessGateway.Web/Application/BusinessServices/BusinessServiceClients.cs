@@ -475,7 +475,7 @@ public interface IBusinessProductEngineeringClient
         BusinessConsoleBomWhereUsedRequest request,
         CancellationToken cancellationToken);
 
-    Task<BusinessConsoleEngineeringEntityResponse> ReleaseManufacturingBomAsync(
+    Task<BusinessConsoleReleasedEngineeringVersionResponse> ReleaseManufacturingBomAsync(
         string internalBearerToken,
         BusinessConsoleReleaseManufacturingBomRequest request,
         CancellationToken cancellationToken);
@@ -492,7 +492,7 @@ public interface IBusinessProductEngineeringClient
         BusinessConsoleEngineeringContextRequest request,
         CancellationToken cancellationToken);
 
-    Task<BusinessConsoleEngineeringEntityResponse> ReleaseRoutingAsync(
+    Task<BusinessConsoleReleasedEngineeringVersionResponse> ReleaseRoutingAsync(
         string internalBearerToken,
         BusinessConsoleReleaseRoutingRequest request,
         CancellationToken cancellationToken);
@@ -3605,11 +3605,11 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             null,
             cancellationToken);
 
-    public Task<BusinessConsoleEngineeringEntityResponse> ReleaseManufacturingBomAsync(
+    public Task<BusinessConsoleReleasedEngineeringVersionResponse> ReleaseManufacturingBomAsync(
         string internalBearerToken,
         BusinessConsoleReleaseManufacturingBomRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleEngineeringEntityResponse>(
+        SendAsync<BusinessConsoleReleasedEngineeringVersionResponse>(
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/engineering/manufacturing-boms/release",
@@ -3646,11 +3646,11 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             null,
             cancellationToken);
 
-    public Task<BusinessConsoleEngineeringEntityResponse> ReleaseRoutingAsync(
+    public Task<BusinessConsoleReleasedEngineeringVersionResponse> ReleaseRoutingAsync(
         string internalBearerToken,
         BusinessConsoleReleaseRoutingRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleEngineeringEntityResponse>(
+        SendAsync<BusinessConsoleReleasedEngineeringVersionResponse>(
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/engineering/routings/release",

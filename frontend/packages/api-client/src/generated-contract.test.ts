@@ -37,6 +37,8 @@ import type {
   BusinessConsoleOpenNcrFromInspectionRequest,
   BusinessConsoleOpenNcrFromInspectionResponse,
   BusinessConsolePublishSopDocumentRequest,
+  BusinessConsoleReleasedEngineeringVersionEnvelope,
+  BusinessConsoleReleasedEngineeringVersionResponse,
   BusinessConsoleRescheduleEngineeringChangeRequest,
   BusinessConsoleSchedulingPlanSummaryResponse,
   BusinessConsoleSearchResponse,
@@ -311,6 +313,18 @@ describe('generated API client contract', () => {
     }>()
     expectTypeOf<BusinessConsoleMesFinishedGoodsInventoryLinkEnvelope['data']>().toEqualTypeOf<
       BusinessConsoleMesFinishedGoodsInventoryLinkResponse | null | undefined
+    >()
+  })
+
+  it('exports released engineering version identity through the stable boundary', () => {
+    expectTypeOf<BusinessConsoleReleasedEngineeringVersionResponse['id']>().toEqualTypeOf<
+      string | undefined
+    >()
+    expectTypeOf<BusinessConsoleReleasedEngineeringVersionResponse['versionId']>().toEqualTypeOf<
+      string | undefined
+    >()
+    expectTypeOf<BusinessConsoleReleasedEngineeringVersionEnvelope['data']>().toEqualTypeOf<
+      BusinessConsoleReleasedEngineeringVersionResponse | null | undefined
     >()
   })
 

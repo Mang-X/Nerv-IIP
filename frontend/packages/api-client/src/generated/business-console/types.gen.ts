@@ -2170,6 +2170,15 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReleasedEngineeringVersionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleasedEngineeringVersionResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleasedEngineeringVersionResponse = {
+    id?: string;
+    versionId?: string;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseManufacturingBomRequest = {
     organizationId: string;
     environmentId: string;
@@ -9703,7 +9712,7 @@ export type ReleaseBusinessConsoleEngineeringManufacturingBomResponses = {
     /**
      * Success
      */
-    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringEntityResponse;
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReleasedEngineeringVersionResponse;
 };
 
 export type ReleaseBusinessConsoleEngineeringManufacturingBomResponse = ReleaseBusinessConsoleEngineeringManufacturingBomResponses[keyof ReleaseBusinessConsoleEngineeringManufacturingBomResponses];
@@ -9803,7 +9812,7 @@ export type ReleaseBusinessConsoleEngineeringRoutingResponses = {
     /**
      * Success
      */
-    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringEntityResponse;
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReleasedEngineeringVersionResponse;
 };
 
 export type ReleaseBusinessConsoleEngineeringRoutingResponse = ReleaseBusinessConsoleEngineeringRoutingResponses[keyof ReleaseBusinessConsoleEngineeringRoutingResponses];

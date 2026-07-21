@@ -428,11 +428,18 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           idempotencyKey: `routing-${suffix}`,
         }),
       )
-      const mbomVersionId = textOf(mbom.id).trim()
+      const mbomVersionId = textOf(mbom.versionId).trim()
       if (!mbomVersionId) {
         throw new TrackedSetupError(
           '#1024 / MAN-564',
-          'MBOM release response did not expose data.id.',
+          'MBOM release response did not expose data.versionId.',
+        )
+      }
+      const routingVersionId = textOf(routing.versionId).trim()
+      if (!routingVersionId) {
+        throw new TrackedSetupError(
+          '#1024 / MAN-564',
+          'Routing release response did not expose data.versionId.',
         )
       }
       const productionVersion = asRecord(
@@ -441,7 +448,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           environmentId,
           skuCode: finishedSku,
           mbomVersionId,
-          routingVersionId: textOf(routing.versionId ?? routing),
+          routingVersionId,
           validFrom: dateOnly(now),
           lotSizeMin: 1,
           lotSizeMax: 1_000,
