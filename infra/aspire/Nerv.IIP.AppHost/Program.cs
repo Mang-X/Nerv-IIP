@@ -349,15 +349,18 @@ var businessDemandPlanning = WithNervIipTelemetry(WithLocalDevelopmentEnvironmen
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
+    .WithEnvironment("Mes__BaseUrl", businessMes.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessDemandPlanningDatabase, "PostgreSQL")
     .WithReference(businessMasterData)
     .WithReference(businessProductEngineering)
     .WithReference(businessInventory)
+    .WithReference(businessMes)
     .WaitFor(businessDemandPlanningDatabase)
     .WaitFor(businessMasterData)
     .WaitFor(businessProductEngineering)
-    .WaitFor(businessInventory);
+    .WaitFor(businessInventory)
+    .WaitFor(businessMes);
 businessDemandPlanning = WithRedisMessagingTransport(businessDemandPlanning);
 if (rabbitmq is not null)
 {
