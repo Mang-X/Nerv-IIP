@@ -286,6 +286,32 @@ public sealed class FastEndpointsArchitectureTests
         Assert.DoesNotContain("localhost:5107", resourceBlock);
     }
 
+    [Fact]
+    public void Aspire_apphost_scheduling_waits_for_mes_material_readiness_source()
+    {
+        var root = FindRepositoryRoot();
+        var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var resourceStart = programText.IndexOf(
+            "var businessScheduling =",
+            StringComparison.Ordinal);
+        var resourceEnd = programText.IndexOf(
+            "businessScheduling = WithRedisMessagingTransport(",
+            resourceStart,
+            StringComparison.Ordinal);
+
+        Assert.True(resourceStart >= 0, "BusinessScheduling Aspire resource is missing.");
+        Assert.True(resourceEnd > resourceStart, "BusinessScheduling Aspire resource block is incomplete.");
+
+        var resourceBlock = programText[resourceStart..resourceEnd];
+        Assert.Contains(
+            ".WithEnvironment(\"Mes__BaseUrl\", businessMes.GetEndpoint(\"http\"))",
+            resourceBlock);
+        Assert.Contains(".WithReference(businessMes)", resourceBlock);
+        Assert.Contains(".WaitFor(businessMes)", resourceBlock);
+        Assert.DoesNotContain("localhost:5111", resourceBlock);
+    }
+
     [Theory]
     [MemberData(nameof(LocalPostgreSqlAppHostResources))]
     public void Aspire_apphost_local_postgresql_resources_enable_development_automigration(string resourceVariable)

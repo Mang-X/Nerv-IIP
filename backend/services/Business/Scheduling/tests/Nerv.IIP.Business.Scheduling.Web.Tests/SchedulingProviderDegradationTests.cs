@@ -1,12 +1,84 @@
+using System.Net;
+using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Scheduling;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
 public sealed class SchedulingProviderDegradationTests
 {
+    [Fact]
+    public async Task MaterialReadinessProvider_AcceptsRawMesResponseForExactScope()
+    {
+        var factory = new StaticResponseHttpClientFactory(
+            """
+            {
+              "workOrderId": "WO-SNAPSHOT-001",
+              "readinessStatus": "Ready",
+              "blockingReasons": [],
+              "items": []
+            }
+            """);
+        var provider = new HttpSchedulingMaterialReadinessProvider(
+            factory,
+            new TestInternalServiceTokenProvider("test-internal-token"),
+            NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
+
+        var readiness = await provider.QueryAsync(CreateSingleOperationProblem(), CancellationToken.None);
+
+        Assert.Empty(readiness);
+        var request = Assert.Single(factory.Requests);
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal(
+            "/api/business/v1/mes/work-orders/WO-SNAPSHOT-001/material-readiness?organizationId=org-001&environmentId=prod",
+            request.PathAndQuery);
+        Assert.Equal("Bearer", request.AuthorizationScheme);
+        Assert.Equal("test-internal-token", request.AuthorizationParameter);
+    }
+
+    [Fact]
+    public async Task MaterialReadinessProvider_ReturnsOpenEndedBlockForMalformedSuccessfulResponse()
+    {
+        var provider = new HttpSchedulingMaterialReadinessProvider(
+            new StaticResponseHttpClientFactory("{ invalid-json"),
+            new TestInternalServiceTokenProvider("test-internal-token"),
+            NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
+
+        var readiness = await provider.QueryAsync(CreateSingleOperationProblem(), CancellationToken.None);
+
+        var block = Assert.Single(readiness);
+        Assert.Equal("WO-SNAPSHOT-001", block.ScopeId);
+        Assert.False(block.IsReady);
+        Assert.Contains("mes.materialReadinessSourceUnavailable", block.ReasonCodes);
+    }
+
+    [Fact]
+    public async Task MaterialReadinessProvider_FailsClosedWhenMesResponseTargetsAnotherWorkOrder()
+    {
+        var provider = new HttpSchedulingMaterialReadinessProvider(
+            new StaticResponseHttpClientFactory(
+                """
+                {
+                  "workOrderId": "WO-OTHER-001",
+                  "readinessStatus": "Ready",
+                  "blockingReasons": [],
+                  "items": []
+                }
+                """),
+            new TestInternalServiceTokenProvider("test-internal-token"),
+            NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
+
+        var readiness = await provider.QueryAsync(CreateSingleOperationProblem(), CancellationToken.None);
+
+        var block = Assert.Single(readiness);
+        Assert.Equal("WO-SNAPSHOT-001", block.ScopeId);
+        Assert.False(block.IsReady);
+        Assert.Contains("mes.materialReadinessSourceUnavailable", block.ReasonCodes);
+    }
+
     [Fact]
     public async Task EquipmentAvailabilityProvider_ReturnsBlockingUnknownWindowWhenSourceIsUnavailable()
     {
@@ -131,4 +203,47 @@ public sealed class SchedulingProviderDegradationTests
             throw new HttpRequestException("source unavailable");
         }
     }
+
+    private sealed class StaticResponseHttpClientFactory(string responseBody) : IHttpClientFactory
+    {
+        private readonly List<CapturedRequest> requests = [];
+
+        public IReadOnlyCollection<CapturedRequest> Requests => requests;
+
+        public HttpClient CreateClient(string name)
+        {
+            return new HttpClient(new StaticResponseHandler(responseBody, requests))
+            {
+                BaseAddress = new Uri("http://mes.local")
+            };
+        }
+    }
+
+    private sealed class StaticResponseHandler(
+        string responseBody,
+        ICollection<CapturedRequest> requests) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            requests.Add(new CapturedRequest(
+                request.Method,
+                request.RequestUri?.PathAndQuery ?? string.Empty,
+                request.Headers.Authorization?.Scheme,
+                request.Headers.Authorization?.Parameter));
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    private sealed record CapturedRequest(
+        HttpMethod Method,
+        string PathAndQuery,
+        string? AuthorizationScheme,
+        string? AuthorizationParameter);
+
+    private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 }

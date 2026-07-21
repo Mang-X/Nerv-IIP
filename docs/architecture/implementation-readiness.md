@@ -6,6 +6,10 @@
 
 真实浏览器全栈验证已提供一次性 session 入口：`.\nerv.ps1 fullstack run -Scenario smoke`。MAN-524 销售到交付主链证据使用 `.\nerv.ps1 fullstack run -Scenario leader-demo-main-chain`：managed session 在 AppHost 启动前显式注入 Redis messaging 与 PostgreSQL persistence profile，并把实际选择写入 manifest；场景只以 BusinessGateway 公开 HTTP 作为业务断言面，再由 manifest 向浏览器证据进程盖章真实 PostgreSQL 与跨进程 Redis Streams 画像。逐跳脱敏账本写入 `artifacts/fullstack/<sessionId>/leader-demo-main-chain-evidence.json`，该运行产物不提交仓库；只有逐跳 runtime-confirmed 和已登记的 #972 查询 gap 可以通过，任何 `not-verified` 或未纳入验收基线的 gap 都使场景非零退出。session 使用随机公开端口、独立 Aspire/DCP 代理、专属基础设施卷、进程身份与容器所有权标签；默认最多三个活动 session，不设置最低可用内存门槛。自动化成功或失败均精确回收运行资源并保留 `artifacts/fullstack/<sessionId>/`。持久开发仍使用 `.\nerv.ps1 dev`；交互 `.\nerv.ps1 fullstack start` 只用于诊断，完成后必须 `.\nerv.ps1 fullstack stop`。`scripts/verify-parallel-fullstack-isolation.ps1 -Sessions 2` 已在 Windows Docker Desktop 上验证两套浏览器链路、动态端口、PostgreSQL 写隔离、专属卷、单 session 停止边界和故障注入 cleanup。
 
+## MES 到 Scheduling 齐套读取（MAN-572 / #1037）
+
+BusinessScheduling 的 `HttpSchedulingMaterialReadinessProvider` 通过 MES 受管内部 endpoint 读取同一 organization/environment/work-order 的权威齐套事实，不信任调用方提交的 `isReady`。MES FastEndpoints 成功响应当前可直接返回 readiness DTO；provider 同时兼容平台 `ResponseData` envelope，避免把 HTTP 200 的 raw DTO 误判为 `mes.materialReadinessSourceUnavailable`。AppHost 为 Scheduling 注入 MES 动态 BaseUrl、resource reference、内部 bearer token，并在启动 Scheduling 前等待 MES 健康。MES 非 2xx、不可达、超时、空响应、畸形 JSON 或响应工单与请求不一致时继续 fail closed 为 `mes.materialReadinessSourceUnavailable`；本修复没有新增或修改业务 HTTP endpoint，现有 `getBusinessMesMaterialReadiness` 仍按 facade matrix 的 `exposed` 两跳策略由 BusinessGateway 暴露，无需刷新 OpenAPI 或 generated client。
+
 ## 领导演示环境基线（MAN-519 / #960）
 
 领导演示使用受治理的 `.\nerv.ps1 demo start|reset|seed|health-check|stop` 入口，复用隔离 full-stack session 和唯一 Aspire AppHost 拓扑。启动前必须仅在当前 PowerShell 进程设置 `NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD`；不得通过命令行参数、`setx`、仓库文件或日志传递/保存密码。`demo reset` 只停止机器本地 pointer 记录的精确 session，确认其自有资源清理后重建新 session，不会删除共享开发数据库或对客户数据执行写入。
