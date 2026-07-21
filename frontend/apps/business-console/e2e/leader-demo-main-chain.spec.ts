@@ -638,7 +638,10 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
       try {
         const accepted = await call(
           'POST',
-          `/api/business-console/v1/planning/suggestions/${encodeURIComponent(textOf(suggestion.suggestionId))}/accept`,
+          queryPath(
+            `/api/business-console/v1/planning/suggestions/${encodeURIComponent(textOf(suggestion.suggestionId))}/accept`,
+            { organizationId, environmentId },
+          ),
           {
             downstreamService: 'BusinessMes',
             downstreamDocumentType: 'WorkOrder',
@@ -662,10 +665,6 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             `MES work order ${workOrderId} did not expose ${salesOrderNo} as its source demand reference.`,
           )
         }
-        operationTask =
-          (Array.isArray(workOrder.operationTasks) ? workOrder.operationTasks : []).map(
-            asRecord,
-          )[0] ?? null
         record({
           node: 'mrp-suggestion-mes-work-order',
           sourceObject: textOf(suggestion.suggestionId),
@@ -681,6 +680,40 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         })
       } catch (error) {
         markFailure('mrp-suggestion-mes-work-order', error, 'manual')
+      }
+    }
+
+    if (workOrderId) {
+      try {
+        await call(
+          'POST',
+          queryPath(
+            `/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}/release`,
+            { organizationId, environmentId },
+          ),
+          {
+            confirmWarnings: true,
+            idempotencyKey: `release-wo-${suffix}`,
+          },
+        )
+        const releasedDetail = await call(
+          'GET',
+          queryPath(`/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}`, {
+            organizationId,
+            environmentId,
+          }),
+        )
+        const releasedWorkOrder = asRecord(dataOf(releasedDetail.payload))
+        operationTask =
+          (Array.isArray(releasedWorkOrder.operationTasks)
+            ? releasedWorkOrder.operationTasks
+            : []
+          ).map(asRecord)[0] ?? null
+        if (!operationTask) {
+          throw new Error(`Released MES work order ${workOrderId} exposed no operation task.`)
+        }
+      } catch (error) {
+        markFailure('mes-work-order-schedule-plan', error, 'manual')
       }
     }
 
@@ -839,15 +872,10 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         const taskId = textOf(operationTask.operationTaskId)
         await call(
           'POST',
-          `/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}/release`,
-          {
-            confirmWarnings: true,
-            idempotencyKey: `release-wo-${suffix}`,
-          },
-        )
-        await call(
-          'POST',
-          `/api/business-console/v1/mes/operation-tasks/${encodeURIComponent(taskId)}/start`,
+          queryPath(
+            `/api/business-console/v1/mes/operation-tasks/${encodeURIComponent(taskId)}/start`,
+            { organizationId, environmentId },
+          ),
           {
             reasonCode: scheduleReleased ? 'scheduled-execution' : 'manual-evidence-transition',
             idempotencyKey: `start-task-${suffix}`,
@@ -1074,7 +1102,10 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
       try {
         const completed = await call(
           'POST',
-          `/api/business-console/v1/wms/outbound-orders/${encodeURIComponent(wmsOutboundId)}/complete`,
+          queryPath(
+            `/api/business-console/v1/wms/outbound-orders/${encodeURIComponent(wmsOutboundId)}/complete`,
+            { organizationId, environmentId },
+          ),
           {
             packReviewNo: `PACK-${suffix}`,
             passed: true,
