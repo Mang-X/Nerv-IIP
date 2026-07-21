@@ -32,9 +32,7 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
         var inboundHandler = CreateInboundHandler(dbContext, deadLetters);
 
         await inboundHandler.HandleAsync(integrationEvent, CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
         await inboundHandler.HandleAsync(integrationEvent, CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var receipt = Assert.Single(dbContext.PurchaseReceipts.Include(x => x.Lines));
         Assert.Equal("WMS-IN-GRIR-001", receipt.PurchaseReceiptNo);

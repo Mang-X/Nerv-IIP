@@ -30,19 +30,57 @@ function expectScopedQuery(source: string, endpoint: string): void {
 }
 
 describe('leader demo main-chain public prerequisites', () => {
-  it('posts raw-material stock through the supported external inbound contract with stable business keys', () => {
-    const movementCall = scenarioSource.match(
-      /await create\('\/api\/business-console\/v1\/inventory\/movements',[\s\S]*?\n\s*\}\)/,
-    )?.[0]
+  it('establishes raw material through public ERP, approval, WMS, and Inventory facts', () => {
+    const supplyFlow = sourceBetween(
+      "const approvalTemplateCode = 'erp-purchase-order-release'",
+      'let salesOrderCreated = false',
+    )
 
-    expect(movementCall).toBeDefined()
-    expect(movementCall).toContain("movementType: 'inbound'")
-    expect(movementCall).toContain("sourceService: 'MAN-524-Acceptance'")
-    expect(movementCall).toContain('sourceDocumentId: `RM-SEED-${suffix}`')
-    expect(movementCall).toContain('idempotencyKey: `rm-stock-${suffix}`')
-    expect(movementCall).toContain('skuCode: materialSku')
-    expect(movementCall).toContain("locationCode: 'LINE-SIDE'")
-    expect(movementCall).toContain('lotNo: `RMLOT-${suffix}`')
+    expect(supplyFlow).not.toContain('/api/business-console/v1/inventory/movements')
+    expect(supplyFlow).toContain('/api/business-console/v1/approval/templates')
+    expect(supplyFlow).toContain('/api/business-console/v1/erp/procurement/purchase-orders')
+    expect(supplyFlow).toContain('/api/business-console/v1/approval/chains/${encodeURIComponent')
+    expect(supplyFlow).toContain('/api/business-console/v1/wms/inbound-orders')
+    expect(supplyFlow).toContain('/putaway-tasks')
+    expect(supplyFlow).toContain('/complete')
+    expect(supplyFlow).toContain('/api/business-console/v1/inventory/availability')
+    expect(supplyFlow).toContain("textOf(row.status).trim().toLowerCase() === 'released'")
+    expect(supplyFlow).toContain('availableQuantity === rawMaterialQuantity')
+    expect(supplyFlow).toContain('receivedQuantity === rawMaterialQuantity')
+  })
+
+  it('replays stable procurement and receiving requests without multiplying facts', () => {
+    const supplyFlow = sourceBetween(
+      "const approvalTemplateCode = 'erp-purchase-order-release'",
+      'let salesOrderCreated = false',
+    )
+
+    expect(supplyFlow.match(/create\(purchaseOrderPath, purchaseOrderRequest\)/g)).toHaveLength(2)
+    expect(supplyFlow.match(/create\(wmsInboundPath, wmsInboundRequest\)/g)).toHaveLength(2)
+    expect(supplyFlow.match(/create\(putawayPath, putawayRequest\)/g)).toHaveLength(2)
+    expect(supplyFlow.match(/create\(completeInboundPath, completeInboundRequest\)/g)).toHaveLength(
+      2,
+    )
+    expect(supplyFlow).toContain('idempotencyKey: `purchase-order-${suffix}`')
+    expect(supplyFlow).toContain('idempotencyKey: `complete-inbound-${suffix}`')
+  })
+
+  it('observes exact run-scoped Inventory availability before accepting the MES work order', () => {
+    const availabilityIndex = scenarioSource.indexOf(
+      '/api/business-console/v1/inventory/availability',
+    )
+    const acceptIndex = scenarioSource.indexOf(
+      '/planning/suggestions/${encodeURIComponent(textOf(suggestion.suggestionId))}/accept',
+    )
+
+    expect(availabilityIndex).toBeGreaterThanOrEqual(0)
+    expect(acceptIndex).toBeGreaterThan(availabilityIndex)
+    expect(scenarioSource).toContain('skuCode: materialSku')
+    expect(scenarioSource).toContain("const materialSiteCode = 'production'")
+    expect(scenarioSource).toContain('siteCode: materialSiteCode')
+    expect(scenarioSource).toContain('lotNo: rawMaterialLotNo')
+    expect(scenarioSource).toContain("qualityStatus: 'unrestricted'")
+    expect(scenarioSource).toContain("ownerType: 'company'")
   })
 
   it('accepts the run-scoped MRP suggestion with the required business context query', () => {

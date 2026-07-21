@@ -74,7 +74,7 @@ public sealed class CreateInboundOrderCommandHandler(ApplicationDbContext dbCont
 {
     public async Task<InboundOrderId> Handle(CreateInboundOrderCommand request, CancellationToken cancellationToken)
     {
-        var order = InboundOrder.Create(
+        var proposedOrder = InboundOrder.Create(
             request.OrganizationId,
             request.EnvironmentId,
             request.InboundOrderNo,
@@ -82,9 +82,52 @@ public sealed class CreateInboundOrderCommandHandler(ApplicationDbContext dbCont
             request.SourceDocumentId,
             request.SiteCode,
             request.Lines.Select(x => new InboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.ReceivedQuantity, x.StagingLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId, x.ProductionDate, x.ExpiryDate)));
-        dbContext.InboundOrders.Add(order);
+        var existingOrder = await dbContext.InboundOrders
+            .Include(x => x.Lines)
+            .SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.InboundOrderNo == request.InboundOrderNo,
+            cancellationToken);
+        if (existingOrder is not null)
+        {
+            if (!HasSameInboundFacts(existingOrder, proposedOrder))
+            {
+                throw new KnownException($"Inbound order '{request.InboundOrderNo}' already exists with different inbound facts.");
+            }
+
+            return existingOrder.Id;
+        }
+
+        dbContext.InboundOrders.Add(proposedOrder);
         await Task.CompletedTask;
-        return order.Id;
+        return proposedOrder.Id;
+    }
+
+    private static bool HasSameInboundFacts(InboundOrder existing, InboundOrder proposed)
+    {
+        if (existing.SourceDocumentType != proposed.SourceDocumentType
+            || existing.SourceDocumentId != proposed.SourceDocumentId
+            || existing.SiteCode != proposed.SiteCode
+            || existing.Lines.Count != proposed.Lines.Count)
+        {
+            return false;
+        }
+
+        var proposedLines = proposed.Lines.ToDictionary(x => x.LineNo, StringComparer.Ordinal);
+        return existing.Lines.All(existingLine =>
+            proposedLines.TryGetValue(existingLine.LineNo, out var proposedLine)
+            && existingLine.SkuCode == proposedLine.SkuCode
+            && existingLine.UomCode == proposedLine.UomCode
+            && existingLine.ReceivedQuantity == proposedLine.ReceivedQuantity
+            && existingLine.StagingLocationCode == proposedLine.StagingLocationCode
+            && existingLine.LotNo == proposedLine.LotNo
+            && existingLine.SerialNo == proposedLine.SerialNo
+            && existingLine.QualityStatus == proposedLine.QualityStatus
+            && existingLine.OwnerType == proposedLine.OwnerType
+            && existingLine.OwnerId == proposedLine.OwnerId
+            && existingLine.ProductionDate == proposedLine.ProductionDate
+            && existingLine.ExpiryDate == proposedLine.ExpiryDate);
     }
 }
 
@@ -97,6 +140,26 @@ public sealed class CreatePutawayTaskCommandHandler(ApplicationDbContext dbConte
     {
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.InboundOrderId, cancellationToken)
             ?? throw new KnownException($"Inbound order was not found: {request.InboundOrderId}");
+        var existingTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(
+            x => x.OrganizationId == inbound.OrganizationId
+                && x.EnvironmentId == inbound.EnvironmentId
+                && x.TaskNo == request.TaskNo,
+            cancellationToken);
+        if (existingTask is not null)
+        {
+            if (existingTask.TaskType != WarehouseTaskType.Putaway
+                || existingTask.SourceOrderNo != inbound.InboundOrderNo
+                || existingTask.SourceOrderLineNo != request.LineNo
+                || existingTask.FromLocationCode != request.FromLocationCode
+                || existingTask.ToLocationCode != request.ToLocationCode
+                || existingTask.PlannedQuantity != request.Quantity)
+            {
+                throw new KnownException($"Warehouse task '{request.TaskNo}' already exists with different putaway facts.");
+            }
+
+            return existingTask.Id;
+        }
+
         var task = inbound.CreatePutawayTask(request.TaskNo, request.LineNo, request.FromLocationCode, request.ToLocationCode, request.Quantity);
         dbContext.WarehouseTasks.Add(task);
         return task.Id;
@@ -117,6 +180,19 @@ public sealed class CompleteInboundOrderCommandHandler(ApplicationDbContext dbCo
     {
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.InboundOrderId, cancellationToken)
             ?? throw new KnownException($"Inbound order was not found: {request.InboundOrderId}");
+        var replayRequest = await dbContext.InventoryMovementRequests
+            .Where(x => x.OrganizationId == inbound.OrganizationId
+                && x.EnvironmentId == inbound.EnvironmentId
+                && x.SourceDocumentId == inbound.InboundOrderNo
+                && (x.IdempotencyKey == request.IdempotencyKey
+                    || x.IdempotencyKey.StartsWith(request.IdempotencyKey + ":")))
+            .OrderBy(x => x.SourceDocumentLineId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (replayRequest is not null)
+        {
+            return new CompleteWmsMovementResult(replayRequest.Id, replayRequest.InventoryMovementId);
+        }
+
         var movementRequests = inbound.Complete(request.IdempotencyKey, request.Lines);
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
         return new CompleteWmsMovementResult(movementRequests.First().Id, null);

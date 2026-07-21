@@ -147,6 +147,8 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
         {
             throw new KnownException(exception.Message, exception);
         }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 }
 

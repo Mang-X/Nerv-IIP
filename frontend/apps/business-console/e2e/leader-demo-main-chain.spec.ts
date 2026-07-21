@@ -156,12 +156,19 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
   const producedLotNo = `LOT-MAN524-${suffix}`
   const uomCode = `UOM-M524-${suffix}`
   const siteCode = `SITE-M524-${suffix}`
+  const materialSiteCode = 'production'
   const workshopCode = `SHOP-M524-${suffix}`
   const lineCode = `LINE-M524-${suffix}`
   const workCenterCode = `WC-M524-${suffix}`
   const customerCode = `CUST-M524-${suffix}`
+  const supplierCode = `SUP-M524-${suffix}`
   const finishedSku = `FG-M524-${suffix}`
   const materialSku = `RM-M524-${suffix}`
+  const rawMaterialQuantity = 10
+  const rawMaterialLotNo = `RMLOT-M524-${suffix}`
+  const purchaseOrderNo = `PO-M524-${suffix}`
+  const inboundOrderNo = `IN-M524-${suffix}`
+  const putawayTaskNo = `PUT-M524-${suffix}`
   const operationCode = `OP-M524-${suffix}`
   const engineeringBomCode = `EB-M524-${suffix}`
   const manufacturingBomCode = `MB-M524-${suffix}`
@@ -247,6 +254,25 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     )
   }
 
+  const pollData = async (
+    path: string,
+    query: JsonRecord,
+    predicate: (data: JsonRecord) => boolean,
+    timeoutMs = 45_000,
+  ) => {
+    const deadline = Date.now() + timeoutMs
+    let lastData: JsonRecord = {}
+    do {
+      const response = await call('GET', queryPath(path, query))
+      lastData = asRecord(dataOf(response.payload))
+      if (predicate(lastData)) return { data: lastData, call: response }
+      await page.waitForTimeout(1_000)
+    } while (Date.now() < deadline)
+    throw new Error(
+      `Timed out waiting for run-scoped data from ${path}; last data=${safeText(JSON.stringify(lastData))}.`,
+    )
+  }
+
   const markFailure = (
     node: (typeof requiredNodes)[number],
     error: unknown,
@@ -276,9 +302,11 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     const principal = asRecord(auth.principal)
     organizationId = textOf(principal.organizationId)
     environmentId = textOf(principal.environmentId)
-    if (!organizationId || !environmentId) {
+    const principalType = textOf(principal.principalType).trim().toLowerCase()
+    const principalId = textOf(principal.principalId).trim()
+    if (!organizationId || !environmentId || !principalType || !principalId) {
       throw new Error(
-        'The public login response did not expose the authenticated organization/environment scope.',
+        'The public login response did not expose the authenticated principal and organization/environment scope.',
       )
     }
     await expect(page).toHaveURL(new URL('/', baseURL!).toString())
@@ -292,6 +320,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
 
     let prerequisitesReady = true
     let productionVersionId = ''
+    let rawMaterialSupplyEvidence: JsonRecord | null = null
     try {
       await create('/api/business-console/v1/master-data/units-of-measure', {
         organizationId,
@@ -353,6 +382,17 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         creditLimit: 100_000,
         creditCurrencyCode: 'CNY',
         idempotencyKey: `customer-${suffix}`,
+      })
+      await create('/api/business-console/v1/master-data/business-partners', {
+        organizationId,
+        environmentId,
+        code: supplierCode,
+        partnerType: 'supplier',
+        name: 'MAN-524 supplier',
+        partnerRoles: ['supplier'],
+        creditLimit: 0,
+        creditCurrencyCode: 'CNY',
+        idempotencyKey: `supplier-${suffix}`,
       })
       for (const [code, name, materialType] of [
         [finishedSku, 'MAN-524 finished good', 'finished-goods'],
@@ -466,21 +506,189 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         }),
       )
       productionVersionId = textOf(productionVersion.productionVersionId ?? productionVersion)
-      await create('/api/business-console/v1/inventory/movements', {
+
+      const approvalTemplateCode = 'erp-purchase-order-release'
+      await create('/api/business-console/v1/approval/templates', {
         organizationId,
         environmentId,
-        movementType: 'inbound',
-        sourceService: 'MAN-524-Acceptance',
-        sourceDocumentId: `RM-SEED-${suffix}`,
-        idempotencyKey: `rm-stock-${suffix}`,
-        skuCode: materialSku,
-        uomCode,
-        siteCode,
-        locationCode: 'LINE-SIDE',
-        lotNo: `RMLOT-${suffix}`,
-        qualityStatus: 'available',
-        ownerType: 'owned',
-        quantity: 100,
+        templateCode: approvalTemplateCode,
+        documentType: 'purchase-order',
+        version: 1,
+        isActive: true,
+        steps: [
+          {
+            stepNo: 1,
+            stepName: 'MAN-524 procurement approval',
+            approverType: principalType,
+            approverRef: principalId,
+            dueInHours: 24,
+            completionPolicy: 'all',
+          },
+        ],
+      })
+
+      const purchaseOrderPath = '/api/business-console/v1/erp/procurement/purchase-orders'
+      const purchaseOrderRequest = {
+        organizationId,
+        environmentId,
+        purchaseOrderNo,
+        supplierCode,
+        siteCode: materialSiteCode,
+        lines: [
+          {
+            lineNo: '1',
+            skuCode: materialSku,
+            uomCode,
+            quantity: rawMaterialQuantity,
+            unitPrice: 1,
+            promisedDate: dateOnly(new Date(now.getTime() + 7 * 86_400_000)),
+          },
+        ],
+        idempotencyKey: `purchase-order-${suffix}`,
+      }
+      const purchaseOrder = asRecord(await create(purchaseOrderPath, purchaseOrderRequest))
+      const purchaseOrderReplay = asRecord(await create(purchaseOrderPath, purchaseOrderRequest))
+      const purchaseOrderId = textOf(purchaseOrder.purchaseOrderId).trim()
+      if (
+        !purchaseOrderId ||
+        textOf(purchaseOrderReplay.purchaseOrderId).trim() !== purchaseOrderId
+      )
+        throw new Error('Purchase-order replay did not return the original run-scoped order.')
+
+      const approval = await pollRows(
+        '/api/business-console/v1/approval/chains',
+        {
+          organizationId,
+          environmentId,
+          status: 'pending',
+          documentType: 'purchase-order',
+          documentId: purchaseOrderNo,
+        },
+        (row) => row.documentId === purchaseOrderNo && row.status === 'pending',
+      )
+      const approvalChainId = textOf(approval.match.chainId).trim()
+      if (!approvalChainId)
+        throw new Error(`Purchase order ${purchaseOrderNo} exposed no approval chain ID.`)
+      const approvalDecision = asRecord(
+        await create(
+          `/api/business-console/v1/approval/chains/${encodeURIComponent(approvalChainId)}/steps/1/resolve`,
+          {
+            organizationId,
+            environmentId,
+            actorType: principalType,
+            actorRef: principalId,
+            decision: 'approve',
+            comment: 'MAN-524 run-scoped raw-material procurement approval',
+          },
+        ),
+      )
+      const releasedPurchaseOrder = await pollRows(
+        purchaseOrderPath,
+        { organizationId, environmentId, keyword: purchaseOrderNo },
+        (row) =>
+          row.purchaseOrderNo === purchaseOrderNo &&
+          textOf(row.status).trim().toLowerCase() === 'released',
+      )
+
+      const wmsInboundPath = '/api/business-console/v1/wms/inbound-orders'
+      const wmsInboundRequest = {
+        organizationId,
+        environmentId,
+        inboundOrderNo,
+        sourceDocumentType: 'purchase-order',
+        sourceDocumentId: purchaseOrderNo,
+        siteCode: materialSiteCode,
+        lines: [
+          {
+            lineNo: '1',
+            skuCode: materialSku,
+            uomCode,
+            receivedQuantity: rawMaterialQuantity,
+            stagingLocationCode: 'LINE-SIDE',
+            lotNo: rawMaterialLotNo,
+            serialNo: null,
+            qualityStatus: 'qualified',
+            ownerType: 'company',
+            ownerId: null,
+          },
+        ],
+      }
+      const wmsInbound = asRecord(await create(wmsInboundPath, wmsInboundRequest))
+      const wmsInboundReplay = asRecord(await create(wmsInboundPath, wmsInboundRequest))
+      const inboundOrderId = textOf(wmsInbound.inboundOrderId).trim()
+      if (!inboundOrderId || textOf(wmsInboundReplay.inboundOrderId).trim() !== inboundOrderId)
+        throw new Error('WMS inbound replay did not return the original run-scoped order.')
+
+      const putawayPath = queryPath(
+        `/api/business-console/v1/wms/inbound-orders/${encodeURIComponent(inboundOrderId)}/putaway-tasks`,
+        { organizationId, environmentId },
+      )
+      const putawayRequest = {
+        taskNo: putawayTaskNo,
+        lineNo: '1',
+        fromLocationCode: 'RECEIVING',
+        toLocationCode: 'LINE-SIDE',
+        quantity: rawMaterialQuantity,
+      }
+      const putaway = asRecord(await create(putawayPath, putawayRequest))
+      const putawayReplay = asRecord(await create(putawayPath, putawayRequest))
+      const warehouseTaskId = textOf(putaway.warehouseTaskId).trim()
+      if (!warehouseTaskId || textOf(putawayReplay.warehouseTaskId).trim() !== warehouseTaskId)
+        throw new Error('WMS putaway replay did not return the original run-scoped task.')
+
+      const completeInboundPath = queryPath(
+        `/api/business-console/v1/wms/inbound-orders/${encodeURIComponent(inboundOrderId)}/complete`,
+        { organizationId, environmentId },
+      )
+      const completeInboundRequest = {
+        idempotencyKey: `complete-inbound-${suffix}`,
+        lines: [{ lineNo: '1', lotNo: rawMaterialLotNo }],
+      }
+      const completedInbound = asRecord(await create(completeInboundPath, completeInboundRequest))
+      const completedInboundReplay = asRecord(
+        await create(completeInboundPath, completeInboundRequest),
+      )
+
+      const receivedPurchaseOrder = await pollRows(
+        purchaseOrderPath,
+        { organizationId, environmentId, keyword: purchaseOrderNo },
+        (row) =>
+          row.purchaseOrderNo === purchaseOrderNo &&
+          (Array.isArray(row.lines) ? row.lines : [])
+            .map(asRecord)
+            .some((line) => line.lineNo === '1' && line.receivedQuantity === rawMaterialQuantity),
+      )
+      const rawMaterialAvailability = await pollData(
+        '/api/business-console/v1/inventory/availability',
+        {
+          organizationId,
+          environmentId,
+          skuCode: materialSku,
+          uomCode,
+          siteCode: materialSiteCode,
+          locationCode: 'LINE-SIDE',
+          lotNo: rawMaterialLotNo,
+          qualityStatus: 'unrestricted',
+          ownerType: 'company',
+        },
+        (availability) => availability.availableQuantity === rawMaterialQuantity,
+      )
+      rawMaterialSupplyEvidence = {
+        purchaseOrder: publicJson(receivedPurchaseOrder.match),
+        approval: publicJson({ chain: approval.match, decision: approvalDecision }),
+        wms: publicJson({
+          inboundOrderId,
+          warehouseTaskId,
+          completedInbound,
+          completedInboundReplay,
+        }),
+        inventory: publicJson(rawMaterialAvailability.data),
+        replayConfirmed: true,
+      }
+      setup.push({
+        phase: 'raw-material-supply',
+        conclusion: 'runtime-confirmed',
+        response: rawMaterialSupplyEvidence,
       })
     } catch (error) {
       prerequisitesReady = false
@@ -805,7 +1013,10 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           stableKey: `${salesOrderNo} -> ${workOrderId} -> ${planId}`,
           automationMode: 'manual',
           request: plan.summary,
-          responseOrLog: plan.publicPayload,
+          responseOrLog: {
+            plan: plan.publicPayload,
+            rawMaterialSupply: rawMaterialSupplyEvidence,
+          },
           conclusion: 'runtime-confirmed',
           demoWording:
             'The public scheduling contract created a plan whose order, operation, and source reference all belong to the same sales-order chain.',

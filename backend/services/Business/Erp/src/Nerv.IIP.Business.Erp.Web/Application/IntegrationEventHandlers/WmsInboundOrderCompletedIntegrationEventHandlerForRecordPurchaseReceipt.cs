@@ -187,7 +187,10 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurc
                 "receipt-recording-rejected",
                 exception.Message,
                 cancellationToken);
+            return;
         }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static ReceiptProjectionDecision TryBuildReceiptLines(

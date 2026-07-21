@@ -14,7 +14,11 @@ Close GitHub #1035 / Linear MAN-571 only. The managed `leader-demo-main-chain` s
 
 The scenario creates a run-scoped supplier and an `erp-purchase-order-release` approval template assigned to the authenticated principal. It creates the raw-material purchase order with a stable idempotency key, approves the generated chain through the public approval facade, and waits until ERP exposes the released order.
 
-The scenario then creates a WMS inbound order sourced from that purchase order, creates a run-scoped putaway task, and completes the inbound order with a stable receipt idempotency key. WMS publishes its existing Inventory movement request; Inventory posts the real stock; ERP consumes the WMS completion to project the purchase receipt. The scenario polls both ERP received quantity and Inventory availability for the exact organization, environment, SKU, UOM, site, location, lot, quality status, and owner type.
+ERP's purchase-order approval client is wired to the Aspire `business-approval` endpoint through an endpoint expression, `WithReference`, and `WaitFor`. This keeps the cross-service bridge valid when managed full-stack runs allocate an ephemeral Approval port instead of the local fixed-port fallback.
+
+The Approval-completed and WMS-inbound-completed ERP consumers persist their projected aggregate changes and processed-event inbox in the handler invocation. Tests no longer call `SaveChangesAsync` on behalf of production consumers; this keeps a successful CAP delivery from being acknowledged while its purchase-order release or receipt projection remains only tracked in memory.
+
+The scenario then creates a WMS inbound order sourced from that purchase order, creates a run-scoped putaway task, and completes the inbound order with a stable receipt idempotency key. WMS publishes its existing Inventory movement request; Inventory posts the real stock; ERP consumes the WMS completion to project the purchase receipt. The material is received into the managed MES Inventory configuration's canonical `production` site (MES currently queries only its configured `warehouse` / `production` sites), while the SKU, lot, purchase order, inbound order, task, organization, and environment remain run-scoped. The scenario polls both ERP received quantity and Inventory availability for that exact organization, environment, SKU, UOM, site, location, lot, quality status, and owner type.
 
 Only after availability equals the ordered quantity does the scenario create/accept the Planning work order. MES therefore captures the already-established Inventory quantity in its existing material requirement snapshot and its unchanged release guard can enter the releasable path.
 
@@ -24,12 +28,12 @@ The scenario deliberately repeats purchase-order creation, inbound-order creatio
 
 ## Contract and schema impact
 
-No endpoint, OpenAPI, generated client, facade classification, database schema, or migration changes are required. Existing exposed BusinessGateway operations are reused. WMS handler behavior and tests change, but route shapes and facade coverage remain unchanged.
+No endpoint, OpenAPI, generated client, facade classification, database schema, or migration changes are required. Existing exposed BusinessGateway operations are reused. WMS handler behavior, ERP consumer persistence, and the ERP-to-Approval AppHost bridge change, but route shapes and facade coverage remain unchanged.
 
 ## Verification
 
 - Focused WMS red/green tests prove same-key replay returns the same ids and does not add rows.
 - Business Console contract tests prove the scenario removed direct Inventory writes and orders the public ERP/WMS/Inventory chain before Planning acceptance.
 - Existing MES tests continue proving insufficient inventory remains a release blocker.
-- `fullstack run -Scenario leader-demo-main-chain` must produce runtime-confirmed `mes-work-order-schedule-plan` evidence and clean up all managed resources.
-
+- Managed run `nerv-827e-543002` produced runtime-confirmed raw-material supply, exact Inventory availability 10, MES readiness `Ready`, and a successful MES release with an operation task. Cleanup left no session-labeled containers, volumes, or networks and reported no cleanup errors.
+- The next independent breakpoint is Scheduling's `mes.materialReadinessSourceUnavailable` after MES release; it is tracked separately by GitHub #1037 / Linear MAN-572 and is not part of this change.
