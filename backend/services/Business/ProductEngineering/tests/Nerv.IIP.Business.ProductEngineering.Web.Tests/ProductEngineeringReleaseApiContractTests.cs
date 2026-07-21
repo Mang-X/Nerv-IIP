@@ -110,6 +110,19 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Equal(mbomResult, replayedMbomResult);
         Assert.Equal(routingResult, replayedRoutingResult);
 
+        var mbomConflict = await Assert.ThrowsAsync<KnownException>(() =>
+            manufacturingBomHandler.Handle(
+                manufacturingBomCommand with { Revision = "B" },
+                CancellationToken.None));
+        var routingConflict = await Assert.ThrowsAsync<KnownException>(() =>
+            routingHandler.Handle(
+                routingCommand with { Revision = "B" },
+                CancellationToken.None));
+        Assert.Contains("Idempotency key", mbomConflict.Message, StringComparison.Ordinal);
+        Assert.Contains("conflicts", mbomConflict.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Idempotency key", routingConflict.Message, StringComparison.Ordinal);
+        Assert.Contains("conflicts", routingConflict.Message, StringComparison.OrdinalIgnoreCase);
+
         var productionVersionResult = await new CreateProductionVersionCommandHandler(
             new ProductionVersionRepository(dbContext),
             manufacturingBomRepository,

@@ -1740,6 +1740,10 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("MBOM-001", engineering.LastReleaseManufacturingBomRequest!.BomCode);
         Assert.Equal("SKU-001", engineering.LastReleaseManufacturingBomRequest.SkuCode);
         Assert.Equal("RM-001", engineering.LastReleaseManufacturingBomRequest.MaterialLines.Single().SkuCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "released-mbom-version-token",
+            document.RootElement.GetProperty("data").GetProperty("versionId").GetString());
     }
 
     [Fact]
@@ -7811,7 +7815,7 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         LastInternalToken = internalBearerToken;
         LastReleaseManufacturingBomRequest = request;
         var id = request.BomCode ?? "MBOM-001";
-        return Task.FromResult(new BusinessConsoleReleasedEngineeringVersionResponse(id, $"{id}:{request.Revision}"));
+        return Task.FromResult(new BusinessConsoleReleasedEngineeringVersionResponse(id, "released-mbom-version-token"));
     }
 
     public Task<BusinessConsoleRoutingListResponse> ListRoutingsAsync(
@@ -7842,7 +7846,7 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         WriteCallCount++;
         LastInternalToken = internalBearerToken;
         var id = request.RoutingCode ?? "RTG-001";
-        return Task.FromResult(new BusinessConsoleReleasedEngineeringVersionResponse(id, $"{id}:{request.Revision}"));
+        return Task.FromResult(new BusinessConsoleReleasedEngineeringVersionResponse(id, "released-routing-version-token"));
     }
 
     public Task<BusinessConsoleStandardOperationListResponse> ListStandardOperationsAsync(
