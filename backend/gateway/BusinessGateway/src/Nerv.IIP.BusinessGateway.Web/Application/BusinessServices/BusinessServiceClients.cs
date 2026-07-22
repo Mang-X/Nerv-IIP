@@ -6707,16 +6707,31 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             null,
             cancellationToken);
 
-    public Task<BusinessConsoleMesCreateReceiptResponse> CreateFinishedGoodsReceiptRequestAsync(
+    public async Task<BusinessConsoleMesCreateReceiptResponse> CreateFinishedGoodsReceiptRequestAsync(
         string internalBearerToken,
         BusinessConsoleMesCreateReceiptRequest request,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleMesCreateReceiptResponse>(
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamCreateFinishedGoodsReceiptRequestResponse>(
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/mes/finished-goods-receipt-requests",
             request,
             cancellationToken);
+
+        if (response.FinishedGoodsReceiptRequestId is null ||
+            response.FinishedGoodsReceiptRequestId.Id == Guid.Empty ||
+            string.IsNullOrWhiteSpace(response.RequestNo))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return new BusinessConsoleMesCreateReceiptResponse(
+            response.FinishedGoodsReceiptRequestId.Id.ToString(),
+            response.RequestNo);
+    }
 
     public Task<BusinessConsoleMesDowntimeEventListResponse> ListDowntimeEventsAsync(
         string internalBearerToken,
@@ -6970,6 +6985,12 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string? ReportNo);
 
     private sealed record DownstreamProductionReportId(Guid Id);
+
+    private sealed record DownstreamCreateFinishedGoodsReceiptRequestResponse(
+        DownstreamFinishedGoodsReceiptRequestId? FinishedGoodsReceiptRequestId,
+        string? RequestNo);
+
+    private sealed record DownstreamFinishedGoodsReceiptRequestId(Guid Id);
 
     // Downstream force-release body carries the actor injected by the gateway from the
     // authenticated principal; the request DTO no longer exposes a caller-supplied actor.

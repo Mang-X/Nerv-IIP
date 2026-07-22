@@ -5688,10 +5688,11 @@ public sealed class BusinessGatewayProxyTests
     [Fact]
     public async Task Mes_http_client_forwards_finished_goods_receipt_unit_cost()
     {
+        const string receiptRequestId = "019f88b9-1d59-7cb3-b4a0-37b88e78422e";
         var requestedAtUtc = DateTimeOffset.Parse("2026-06-23T08:00:00Z");
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
         {
-            finishedGoodsReceiptRequestId = "receipt-001",
+            finishedGoodsReceiptRequestId = new { id = receiptRequestId },
             requestNo = "FGR-001",
         }));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
@@ -5712,6 +5713,7 @@ public sealed class BusinessGatewayProxyTests
                 "LOT-FG-001"),
             CancellationToken.None);
 
+        Assert.Equal(receiptRequestId, response.FinishedGoodsReceiptRequestId);
         Assert.Equal("FGR-001", response.RequestNo);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Post, request.Method);
@@ -5722,6 +5724,96 @@ public sealed class BusinessGatewayProxyTests
         using var document = JsonDocument.Parse(requestBody);
         Assert.Equal(12.34m, document.RootElement.GetProperty("unitCost").GetDecimal());
         Assert.Equal("idem-fgr-001", document.RootElement.GetProperty("idempotencyKey").GetString());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Mes_http_client_maps_finished_goods_receipt_strong_id_from_raw_or_enveloped_wire_shape(bool enveloped)
+    {
+        const string receiptRequestId = "019f88b9-1d59-7cb3-b4a0-37b88e78422e";
+        var payload = new
+        {
+            finishedGoodsReceiptRequestId = new { id = receiptRequestId },
+            requestNo = "FGR-WIRE-001",
+        };
+        var handler = new RecordingHandler(_ => JsonResponse(
+            HttpStatusCode.OK,
+            enveloped ? new { success = true, data = (object)payload, message = string.Empty, code = 0 } : payload));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var response = await client.CreateFinishedGoodsReceiptRequestAsync(
+            "internal-token-001",
+            FinishedGoodsReceiptRequest(),
+            CancellationToken.None);
+
+        Assert.Equal(receiptRequestId, response.FinishedGoodsReceiptRequestId);
+        Assert.Equal("FGR-WIRE-001", response.RequestNo);
+    }
+
+    [Theory]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"not-a-guid\"},\"requestNo\":\"FGR-WIRE-001\"}", false)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"not-a-guid\"},\"requestNo\":\"FGR-WIRE-001\"}", true)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"00000000-0000-0000-0000-000000000000\"},\"requestNo\":\"FGR-WIRE-001\"}", false)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"00000000-0000-0000-0000-000000000000\"},\"requestNo\":\"FGR-WIRE-001\"}", true)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{},\"requestNo\":\"FGR-WIRE-001\"}", false)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{},\"requestNo\":\"FGR-WIRE-001\"}", true)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":null,\"requestNo\":\"FGR-WIRE-001\"}", false)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":null,\"requestNo\":\"FGR-WIRE-001\"}", true)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"019f88b9-1d59-7cb3-b4a0-37b88e78422e\"},\"requestNo\":\"\"}", false)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"019f88b9-1d59-7cb3-b4a0-37b88e78422e\"},\"requestNo\":\"\"}", true)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"019f88b9-1d59-7cb3-b4a0-37b88e78422e\"},\"requestNo\":\"   \"}", false)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"019f88b9-1d59-7cb3-b4a0-37b88e78422e\"},\"requestNo\":\"   \"}", true)]
+    [InlineData("", false)]
+    [InlineData("", true)]
+    [InlineData("{not-json", false)]
+    [InlineData("{not-json", true)]
+    public async Task Mes_http_client_rejects_malformed_finished_goods_receipt_wire_shape(string body, bool enveloped)
+    {
+        var responseBody = enveloped
+            ? $"{{\"success\":true,\"data\":{body},\"message\":\"\",\"code\":0}}"
+            : body;
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK, responseBody));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.CreateFinishedGoodsReceiptRequestAsync(
+                "internal-token-001",
+                FinishedGoodsReceiptRequest(),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Mes_http_client_preserves_fail_closed_business_error_for_finished_goods_receipt_request()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = false,
+            message = "finished-goods-receipt-validation-failed",
+            code = 400,
+            errorData = Array.Empty<object>(),
+            data = new
+            {
+                finishedGoodsReceiptRequestId = new { id = "019f88b9-1d59-7cb3-b4a0-37b88e78422e" },
+                requestNo = "FGR-WIRE-001",
+            },
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.CreateFinishedGoodsReceiptRequestAsync(
+                "internal-token-001",
+                FinishedGoodsReceiptRequest(),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Equal("finished-goods-receipt-validation-failed", exception.Message);
     }
 
     [Fact]
@@ -5973,6 +6065,18 @@ public sealed class BusinessGatewayProxyTests
         false,
         DateTimeOffset.Parse("2026-07-21T15:46:24Z"),
         "wire-shape-001");
+
+    private static BusinessConsoleMesCreateReceiptRequest FinishedGoodsReceiptRequest() => new(
+        "org-001",
+        "env-dev",
+        "WO-WIRE-001",
+        "SKU-FG-WIRE-001",
+        1m,
+        "PCS",
+        DateTimeOffset.Parse("2026-07-22T07:00:00Z"),
+        12.34m,
+        "wire-shape-001",
+        "LOT-FG-WIRE-001");
 
     private static object ValidMasterDataCreateBody(string path) =>
         BusinessConsoleTestRequestBodies.ValidMasterDataCreateBody(path);
