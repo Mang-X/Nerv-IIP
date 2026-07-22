@@ -5910,6 +5910,35 @@ public sealed class BusinessGatewayProxyTests
             sent.RequestUri!.PathAndQuery);
     }
 
+    [Fact]
+    public async Task Mes_http_client_preserves_fail_closed_business_error_for_retry_finished_goods_receipt_request()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = false,
+            message = "finished-goods-receipt-retry-validation-failed",
+            code = 400,
+            errorData = Array.Empty<object>(),
+            data = new
+            {
+                finishedGoodsReceiptRequestId = new { id = "019f88b9-1d59-7cb3-b4a0-37b88e78422e" },
+                requestNo = "FGR-WIRE-RETRY-001",
+            },
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.RetryFinishedGoodsReceiptInventoryPostingAsync(
+                "internal-token-001",
+                "FGR-WIRE-RETRY-001",
+                RetryFinishedGoodsReceiptRequest(),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Equal("finished-goods-receipt-retry-validation-failed", exception.Message);
+    }
+
     [Theory]
     [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"not-a-guid\"},\"requestNo\":\"FGR-WIRE-RETRY-001\"}", false)]
     [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"not-a-guid\"},\"requestNo\":\"FGR-WIRE-RETRY-001\"}", true)]
