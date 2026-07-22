@@ -63,4 +63,9 @@
     </PackageReference>
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nerv.IIP.Business.Performance.Tests" />
+    <InternalsVisibleTo Include="Nerv.IIP.Business.Scheduling.Web.Tests" />
+  </ItemGroup>
+
 </Project>

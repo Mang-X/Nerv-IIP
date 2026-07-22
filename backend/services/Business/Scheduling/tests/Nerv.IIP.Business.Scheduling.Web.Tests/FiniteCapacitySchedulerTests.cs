@@ -26,6 +26,23 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void ScheduleNormalized_matches_public_schedule_for_normalized_input()
+    {
+        var scheduler = new FiniteCapacityScheduler();
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var normalized = SchedulingProblemNormalizer.Normalize(problem);
+
+        var expected = scheduler.Schedule(problem, "plan-parity", GeneratedAtUtc);
+        var actual = scheduler.ScheduleNormalized(normalized, "plan-parity", GeneratedAtUtc);
+
+        Assert.Equal(expected.Metrics, actual.Metrics);
+        Assert.Equal(expected.Assignments, actual.Assignments);
+        Assert.Equal(expected.ResourceLoads, actual.ResourceLoads);
+        Assert.Equal(expected.Conflicts, actual.Conflicts);
+        Assert.Equal(expected.UnscheduledOperations, actual.UnscheduledOperations);
+    }
+
+    [Fact]
     public void Schedule_preserves_operation_precedence()
     {
         var plan = ScheduleShockAbsorber();
