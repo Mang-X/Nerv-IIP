@@ -2,10 +2,12 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Reflection;
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
@@ -25,6 +27,47 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesEndpointContractTests
 {
+    [Fact]
+    public async Task Record_production_report_endpoint_returns_strong_id_wire_shape()
+    {
+        var productionReportId = Guid.Parse("019f855b-5cb0-7550-a509-d2ee7b021689");
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(new ProductionReportWireShapeSender(productionReportId));
+                });
+            });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/mes/production-reports", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-WIRE-001",
+            operationTaskId = "OP-WIRE-10",
+            goodQuantity = 1m,
+            scrapQuantity = 0m,
+            completesOperation = false,
+            reportedAtUtc = "2026-07-21T15:46:24Z",
+            idempotencyKey = "wire-shape-001",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var rawBody = await response.Content.ReadAsStringAsync();
+        using var body = JsonDocument.Parse(rawBody);
+        var root = body.RootElement;
+        var wireId = root.GetProperty("productionReportId");
+        Assert.Equal(JsonValueKind.Object, wireId.ValueKind);
+        Assert.True(wireId.TryGetProperty("id", out var id), rawBody);
+        Assert.Equal(productionReportId, id.GetGuid());
+        Assert.Equal("PRPT-WIRE-001", root.GetProperty("reportNo").GetString());
+    }
+
     [Fact]
     public void Force_release_request_uses_authenticated_principal_and_governed_headers()
     {
@@ -1673,6 +1716,30 @@ public sealed class MesEndpointContractTests
             _ = cancellationToken;
             Command = Assert.IsType<ReverseProductionReportCommand>(request);
             return Task.FromException<TResponse>(new InvalidOperationException("command captured"));
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class ProductionReportWireShapeSender(Guid productionReportId) : ISender
+    {
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+            Assert.IsType<RecordProductionReportCommand>(request);
+            return Task.FromResult((TResponse)(object)new ProductionReportCommandResult(
+                new Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId(productionReportId),
+                "PRPT-WIRE-001"));
         }
 
         public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest =>
