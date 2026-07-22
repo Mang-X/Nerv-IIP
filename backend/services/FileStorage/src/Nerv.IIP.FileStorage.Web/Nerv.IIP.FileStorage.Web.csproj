@@ -8,6 +8,7 @@
     <ProjectReference Include="..\..\..\..\common\Caching\Nerv.IIP.Caching\Nerv.IIP.Caching.csproj" />
     <ProjectReference Include="..\..\..\..\common\Localization\Nerv.IIP.Localization\Nerv.IIP.Localization.csproj" />
     <ProjectReference Include="..\..\..\..\common\Observability\Nerv.IIP.Observability\Nerv.IIP.Observability.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Persistence\Nerv.IIP.Persistence\Nerv.IIP.Persistence.csproj" />
     <ProjectReference Include="..\..\..\..\common\ServiceAuth\Nerv.IIP.ServiceAuth\Nerv.IIP.ServiceAuth.csproj" />
   </ItemGroup>
 

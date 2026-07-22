@@ -24,7 +24,7 @@ public sealed class SchedulingListPlansPostgresProfileTests
             return;
         }
 
-        await using var database = await SchedulingTemporaryDatabase.CreateAsync(connectionString);
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(connectionString, "nerv_scheduling_test");
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddSchedulingPostgreSqlPersistence(database.ConnectionString);
@@ -71,7 +71,7 @@ public sealed class SchedulingListPlansPostgresProfileTests
             return;
         }
 
-        await using var database = await SchedulingTemporaryDatabase.CreateAsync(connectionString);
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(connectionString, "nerv_scheduling_test");
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddSchedulingPostgreSqlPersistence(database.ConnectionString);

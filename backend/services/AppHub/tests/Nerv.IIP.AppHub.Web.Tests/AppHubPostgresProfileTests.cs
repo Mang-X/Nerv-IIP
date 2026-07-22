@@ -254,7 +254,7 @@ public sealed class AppHubPostgresProfileTests
                 ["ConnectionStrings:AppHubDb"] = connectionString,
             })
             .Build();
-        services.AddAppHubPersistence(configuration);
+        services.AddAppHubPersistence(configuration, usePostgreSql: true);
         services.AddSingleton<IConnectorIngestionTokenService>(
             new ConnectorIngestionTokenService(configuration, new TestHostEnvironment(), TimeProvider.System));
         if (interceptor is not null)

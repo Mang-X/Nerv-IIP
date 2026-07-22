@@ -358,6 +358,13 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
                 builder.UseEnvironment("Production");
                 builder.UseSetting("Iam:BaseUrl", "http://127.0.0.1:1");
                 builder.UseSetting("InternalService:BearerToken", "production-internal-token");
+                builder.UseSetting("Persistence:Provider", "PostgreSQL");
+                builder.UseSetting(
+                    "ConnectionStrings:OpsDb",
+                    "Host=127.0.0.1;Port=1;Database=ops_test;Username=ops_test");
+                builder.UseSetting("Messaging:Provider", "RabbitMQ");
+                builder.UseSetting("RabbitMQ:HostName", "127.0.0.1");
+                builder.UseSetting("RabbitMQ:Port", "1");
             });
         var client = CreateInternalServiceClient(productionFactory, "production-internal-token");
         AddConnectorHeaders(client, "local-connector-secret");

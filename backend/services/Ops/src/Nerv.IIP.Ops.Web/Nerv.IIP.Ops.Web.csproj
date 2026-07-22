@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\..\..\common\Messaging\Nerv.IIP.Messaging.CAP\Nerv.IIP.Messaging.CAP.csproj" />
     <ProjectReference Include="..\..\..\..\common\Messaging\Nerv.IIP.Messaging.CAP.EntityFrameworkCore\Nerv.IIP.Messaging.CAP.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\..\..\..\common\Observability\Nerv.IIP.Observability\Nerv.IIP.Observability.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Persistence\Nerv.IIP.Persistence\Nerv.IIP.Persistence.csproj" />
     <ProjectReference Include="..\..\..\..\common\ServiceAuth\Nerv.IIP.ServiceAuth\Nerv.IIP.ServiceAuth.csproj" />
   </ItemGroup>
 

@@ -9,6 +9,7 @@ using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Web.Application.Auth;
 using Nerv.IIP.Ops.Web.Application.Commands;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Persistence;
 using NetCorePal.Extensions.AspNetCore;
 using Nerv.IIP.Ops.Web.Application.IntegrationEvents;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -17,12 +18,11 @@ using NetCorePal.Extensions.DependencyInjection;
 using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
-var usePostgreSql = string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
-var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
-if (usePostgreSql && autoMigrate && !builder.Environment.IsDevelopment())
-{
-    throw new InvalidOperationException("Persistence:AutoMigrate=true is only allowed for Ops in Development. Use an explicit migrator, release script or migration bundle outside Development.");
-}
+var persistence = PersistenceStartupGovernance.Resolve(
+    builder.Configuration,
+    builder.Environment,
+    new PersistenceStartupRequirements("Ops", ["OpsDb"]));
+var usePostgreSql = persistence.UsePostgreSql;
 
 builder.Services
     .AddFastEndpoints()
@@ -68,7 +68,7 @@ else
     builder.Services.AddIntegrationEvents(typeof(Program));
     builder.Services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
 }
-builder.Services.AddOpsPersistence(builder.Configuration);
+builder.Services.AddOpsPersistence(builder.Configuration, usePostgreSql);
 builder.Services.Configure<OpsConnectorCredentialOptions>(
     builder.Configuration.GetSection(OpsConnectorCredentialOptions.SectionName));
 builder.Services.Configure<OperationLeaseReaperOptions>(
@@ -97,7 +97,7 @@ builder.Services.AddNervIipObservability(builder.Configuration, "ops");
 builder.Services.AddNervIipLocalization();
 
 var app = builder.Build();
-if (usePostgreSql && autoMigrate)
+if (usePostgreSql && persistence.AutoMigrate)
 {
     using var scope = app.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<OpsDatabaseMigrationRunner>().MigrateAsync();

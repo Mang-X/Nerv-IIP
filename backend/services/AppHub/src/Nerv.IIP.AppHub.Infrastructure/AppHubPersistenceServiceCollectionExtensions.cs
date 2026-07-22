@@ -9,10 +9,12 @@ namespace Nerv.IIP.AppHub.Infrastructure;
 
 public static class AppHubPersistenceServiceCollectionExtensions
 {
-    public static IServiceCollection AddAppHubPersistence(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddAppHubPersistence(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        bool usePostgreSql)
     {
-        var provider = configuration["Persistence:Provider"] ?? "InMemory";
-        if (string.Equals(provider, "PostgreSQL", StringComparison.OrdinalIgnoreCase))
+        if (usePostgreSql)
         {
             var connectionString = configuration.GetConnectionString("AppHubDb")
                 ?? configuration.GetConnectionString("PostgreSQL")
@@ -28,14 +30,9 @@ public static class AppHubPersistenceServiceCollectionExtensions
             return services;
         }
 
-        if (string.Equals(provider, "InMemory", StringComparison.OrdinalIgnoreCase))
-        {
-            services.AddSingleton<InMemoryAppHubStateStore>();
-            services.AddSingleton<IAppHubStateStore>(provider => provider.GetRequiredService<InMemoryAppHubStateStore>());
-            services.AddSingleton<IInstanceStateSnapshotRecorder>(provider => provider.GetRequiredService<InMemoryAppHubStateStore>());
-            return services;
-        }
-
-        throw new NotSupportedException($"Persistence provider '{provider}' is not supported by AppHub yet.");
+        services.AddSingleton<InMemoryAppHubStateStore>();
+        services.AddSingleton<IAppHubStateStore>(provider => provider.GetRequiredService<InMemoryAppHubStateStore>());
+        services.AddSingleton<IInstanceStateSnapshotRecorder>(provider => provider.GetRequiredService<InMemoryAppHubStateStore>());
+        return services;
     }
 }

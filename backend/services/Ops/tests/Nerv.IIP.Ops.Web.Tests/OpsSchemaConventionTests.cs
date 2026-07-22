@@ -126,7 +126,7 @@ public sealed class OpsSchemaConventionTests
                 ["ConnectionStrings:OpsDb"] = "Host=localhost;Database=nerv_iip_schema_conventions;Username=nerv;Password=nerv",
             })
             .Build();
-        services.AddOpsPersistence(configuration);
+        services.AddOpsPersistence(configuration, usePostgreSql: true);
 
         return new SchemaFixture(services.BuildServiceProvider());
     }

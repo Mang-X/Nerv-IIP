@@ -13,6 +13,7 @@ using Nerv.IIP.Notification.Web.Application.IntegrationEvents;
 using Nerv.IIP.Notification.Web.Application.Notifications;
 using Nerv.IIP.Notification.Web.Application.ObservabilityAlerts;
 using Nerv.IIP.Observability;
+using Nerv.IIP.Persistence;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.AspNetCore;
 using NetCorePal.Extensions.DependencyInjection;
@@ -21,12 +22,11 @@ using NetCorePal.Extensions.DistributedTransactions.CAP;
 using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
-var usePostgreSql = string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
-var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
-if (usePostgreSql && autoMigrate && !builder.Environment.IsDevelopment())
-{
-    throw new InvalidOperationException("Persistence:AutoMigrate=true is only allowed for Notification in Development. Use an explicit migrator, release script or migration bundle outside Development.");
-}
+var persistence = PersistenceStartupGovernance.Resolve(
+    builder.Configuration,
+    builder.Environment,
+    new PersistenceStartupRequirements("Notification", ["NotificationDb", "PostgreSQL"]));
+var usePostgreSql = persistence.UsePostgreSql;
 
 builder.Services
     .AddFastEndpoints()
@@ -71,7 +71,7 @@ else
     builder.Services.AddIntegrationEvents(typeof(Program));
     builder.Services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
 }
-builder.Services.AddNotificationPersistence(builder.Configuration);
+builder.Services.AddNotificationPersistence(builder.Configuration, usePostgreSql);
 builder.Services.Configure<NotificationDeliveryOptions>(
     builder.Configuration.GetSection("Notification:Delivery"));
 builder.Services.Configure<NotificationDeadLetterAlertOptions>(
@@ -135,7 +135,7 @@ builder.Services.AddScoped<InspectionTaskOverdueIntegrationEventHandlerForNotifi
 builder.Services.AddScoped<SpcAlertRaisedIntegrationEventHandlerForNotification>();
 
 var app = builder.Build();
-if (usePostgreSql && autoMigrate)
+if (usePostgreSql && persistence.AutoMigrate)
 {
     using var scope = app.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<NotificationDatabaseMigrationRunner>().MigrateAsync();

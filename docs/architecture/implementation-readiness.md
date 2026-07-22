@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## 持久化启动治理与 PostgreSQL 测试基建（#1075）
+
+FileStorage、AppHub、Ops、Notification 已统一通过 `Nerv.IIP.Persistence` 解析显式 provider、Development-only AutoMigrate、PostgreSQL 连接配置和非 Development fail-fast；四个服务的 Development InMemory profile 均写入配置，不再由代码静默回退。统一异常只报告服务、环境、provider、连接是否配置和 AutoMigrate 状态，不输出连接串或凭据。服务自己的 DbContext、schema、migration runner 和发布修复建议仍留在服务边界内。
+
+Npgsql-backed 临时 database 生命周期进入独立 `Nerv.IIP.Testing.PostgreSql`，没有扩大通用 `Nerv.IIP.Testing` 的依赖面。设施使用唯一 version-7 GUID database 名，支持并行创建、初始化/迁移回调、取消、初始化失败清理、强制 drop 和脱敏诊断；FileStorage restart persistence 与 BusinessScheduling PostgreSQL profile tests 已迁移为首批两个消费者。完整 18 个启动面的 provider/连接串/环境盘点及后续未迁移范围见 `docs/architecture/persistence-startup-governance.md`。
+
 ## 跨域统一紧急度模型 V1（MAN-584 / #1053）
 
 BusinessScheduling 现拥有 `order-urgency-v1` 的确定性派生模型：业务优先级、CR/Slack 时间紧迫度和执行风险三类贡献项分别保留，最终等级取三者最高值，不折叠为黑盒分数。输入复用 Scheduling 已组合的权威 due、工序周期、物料齐套、设备可用、质量阻断、工装与产能冲突；不跨 schema 查询，也不复制 ERP、DemandPlanning、MES、Inventory、Quality 或设备域主数据。缺失 due、缺失来源、未捕获引用或超过 2 小时未刷新均 fail closed 为高风险并输出稳定原因码；既有方案重放会补齐缺失快照。方案生成和人工业务优先级变更在命令 UoW 内捕获快照，失效事实由 15 分钟后台周期生成 stale 快照；GET 只执行数据库端 latest-per-order 读取，不写数据库。人工 P0-P3、可选有效期、操作者与原因通过追加式变更表审计，首条记录的 previous level 显式为空。统一读 facade 允许 ERP 销售、需求池、MES 工单或 Scheduling 任一宿主域读权限，写入仍只允许 Scheduling manage。四个关键页面已使用同一结果展示综合 badge、Hover 摘要、含阈值判定表的解释 Sheet 与可定位订单的排产入口；七种显示模式、独立排序及 Sheet 内优先级编辑/审计时间线由 #1061 继续完成。

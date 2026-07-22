@@ -20,7 +20,7 @@ public sealed class ScheduleReleaseGovernancePostgresProfileTests
     public async Task Migration_normalizes_historical_duplicate_releases_with_exact_timestamp_tie()
     {
         var adminConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-        await using var database = await SchedulingTemporaryDatabase.CreateAsync(adminConnectionString);
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(adminConnectionString, "nerv_scheduling_test");
         await using var context = CreateContext(database.ConnectionString);
         var migrator = context.GetService<IMigrator>();
         await migrator.MigrateAsync(PreviousMigration);
@@ -71,7 +71,7 @@ public sealed class ScheduleReleaseGovernancePostgresProfileTests
     public async Task Concurrent_releases_converge_to_one_active_plan_with_monotonic_revisions()
     {
         var adminConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-        await using var database = await SchedulingTemporaryDatabase.CreateAsync(adminConnectionString);
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(adminConnectionString, "nerv_scheduling_test");
         await using (var setup = CreateContext(database.ConnectionString))
         {
             await setup.Database.MigrateAsync();
