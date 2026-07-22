@@ -1228,7 +1228,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             idempotencyKey: `start-task-${suffix}`,
           },
         )
-        const report = await call('POST', '/api/business-console/v1/mes/production-reports', {
+        const productionReportRequest = {
           organizationId,
           environmentId,
           workOrderId,
@@ -1241,9 +1241,26 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           consumedMaterialLots: [],
           reworkQuantity: 0,
           producedLotNo,
-        })
+        }
+        const report = await call(
+          'POST',
+          '/api/business-console/v1/mes/production-reports',
+          productionReportRequest,
+        )
         const reportData = asRecord(dataOf(report.payload))
         productionReportId = textOf(reportData.productionReportId)
+        const reportReplay = await call(
+          'POST',
+          '/api/business-console/v1/mes/production-reports',
+          productionReportRequest,
+        )
+        const reportReplayData = asRecord(dataOf(reportReplay.payload))
+        const reportReplayId = textOf(reportReplayData.productionReportId)
+        if (!productionReportId || reportReplayId !== productionReportId) {
+          throw new Error(
+            `Production-report replay returned ${reportReplayId || 'no id'} instead of ${productionReportId || 'no original id'}.`,
+          )
+        }
         record({
           node: 'mes-task-production-report',
           sourceObject: taskId,
@@ -1251,10 +1268,14 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           stableKey: `${salesOrderNo} -> ${workOrderId} -> ${producedLotNo}`,
           automationMode: scheduleReleased ? 'mixed' : 'manual',
           request: report.summary,
-          responseOrLog: report.publicPayload,
+          responseOrLog: {
+            original: report.publicPayload,
+            replay: reportReplay.publicPayload,
+            replayConfirmed: true,
+          },
           conclusion: 'runtime-confirmed',
           demoWording:
-            'The exact MES task was released, started, and reported through public HTTP while preserving the run-scoped produced lot.',
+            'The exact MES task was released, started, and reported through public HTTP; replaying the same idempotency key returned the same report while preserving the run-scoped produced lot.',
           responsibilityIssue: '#965',
         })
       } catch (error) {

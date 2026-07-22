@@ -264,7 +264,6 @@ public interface IBusinessQualityClient
     Task<BusinessConsoleAcceptedResponse> ActivateInspectionPlanAsync(
         string internalBearerToken,
         string inspectionPlanId,
-        BusinessConsoleActivateInspectionPlanRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleQualityListResponse> ListInspectionPlansAsync(
@@ -2621,7 +2620,6 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
     public Task<BusinessConsoleAcceptedResponse> ActivateInspectionPlanAsync(
         string internalBearerToken,
         string inspectionPlanId,
-        BusinessConsoleActivateInspectionPlanRequest request,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(inspectionPlanId, out var parsedInspectionPlanId) || parsedInspectionPlanId == Guid.Empty)

@@ -4772,6 +4772,18 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public void Activate_quality_inspection_plan_validator_rejects_non_guid_route_id()
+    {
+        var validator = new Nerv.IIP.BusinessGateway.Web.Endpoints.Quality.BusinessConsoleActivateInspectionPlanRequestValidator();
+
+        var result = validator.Validate(
+            new BusinessConsoleActivateInspectionPlanRequest("not-a-guid", "org-001", "env-dev"));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage == "InspectionPlanId must be a non-empty GUID.");
+    }
+
+    [Fact]
     public async Task Quality_http_client_maps_real_downstream_inspection_plan_payload_to_console_items()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
@@ -4891,7 +4903,6 @@ public sealed class BusinessGatewayProxyTests
         var response = await client.ActivateInspectionPlanAsync(
             "internal-token-001",
             "019f87d0-3f7f-7ad0-a829-7724ea91c111",
-            new BusinessConsoleActivateInspectionPlanRequest("019f87d0-3f7f-7ad0-a829-7724ea91c111", "org-001", "env-dev"),
             CancellationToken.None);
 
         Assert.True(response.Accepted);
@@ -7366,7 +7377,6 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
     public Task<BusinessConsoleAcceptedResponse> ActivateInspectionPlanAsync(
         string internalBearerToken,
         string inspectionPlanId,
-        BusinessConsoleActivateInspectionPlanRequest request,
         CancellationToken cancellationToken) =>
         Task.FromResult(new BusinessConsoleAcceptedResponse(true));
 

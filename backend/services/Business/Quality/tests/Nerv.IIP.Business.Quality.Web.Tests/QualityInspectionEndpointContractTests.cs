@@ -202,6 +202,18 @@ public sealed class QualityInspectionEndpointContractTests
     }
 
     [Fact]
+    public void Inspection_plan_repository_uses_an_explicit_aggregate_load_method()
+    {
+        var declaredMethods = typeof(IInspectionPlanRepository).GetMethods()
+            .Where(method => method.DeclaringType == typeof(IInspectionPlanRepository))
+            .Select(method => method.Name)
+            .ToArray();
+
+        Assert.DoesNotContain(nameof(IInspectionPlanRepository.GetAsync), declaredMethods);
+        Assert.Contains("GetWithCharacteristicsByIdAsync", declaredMethods);
+    }
+
+    [Fact]
     public async Task Inspection_plan_repository_loads_characteristics_for_activation()
     {
         await using var provider = CreateInMemoryProvider();
@@ -213,7 +225,7 @@ public sealed class QualityInspectionEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         dbContext.ChangeTracker.Clear();
 
-        var reloaded = await new InspectionPlanRepository(dbContext).GetAsync(plan.Id, CancellationToken.None);
+        var reloaded = await new InspectionPlanRepository(dbContext).GetWithCharacteristicsByIdAsync(plan.Id, CancellationToken.None);
 
         Assert.NotNull(reloaded);
         Assert.Single(reloaded.Characteristics);

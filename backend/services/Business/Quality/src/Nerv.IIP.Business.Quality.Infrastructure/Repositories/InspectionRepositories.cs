@@ -7,7 +7,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 
 public interface IInspectionPlanRepository : IRepository<InspectionPlan, InspectionPlanId>
 {
-    new Task<InspectionPlan?> GetAsync(
+    Task<InspectionPlan?> GetWithCharacteristicsByIdAsync(
         InspectionPlanId id,
         CancellationToken cancellationToken = default);
 
@@ -22,7 +22,7 @@ public interface IInspectionPlanRepository : IRepository<InspectionPlan, Inspect
 public sealed class InspectionPlanRepository(ApplicationDbContext context)
     : RepositoryBase<InspectionPlan, InspectionPlanId, ApplicationDbContext>(context), IInspectionPlanRepository
 {
-    public new Task<InspectionPlan?> GetAsync(
+    public Task<InspectionPlan?> GetWithCharacteristicsByIdAsync(
         InspectionPlanId id,
         CancellationToken cancellationToken = default)
     {

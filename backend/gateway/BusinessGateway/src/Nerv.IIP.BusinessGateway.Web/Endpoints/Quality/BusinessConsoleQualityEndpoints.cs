@@ -253,7 +253,10 @@ public sealed class BusinessConsoleActivateInspectionPlanRequestValidator
 {
     public BusinessConsoleActivateInspectionPlanRequestValidator()
     {
-        RuleFor(x => x.InspectionPlanId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.InspectionPlanId)
+            .NotEmpty()
+            .Must(value => Guid.TryParse(value, out var parsed) && parsed != Guid.Empty)
+            .WithMessage("InspectionPlanId must be a non-empty GUID.");
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
     }
@@ -310,7 +313,6 @@ public sealed class ActivateBusinessConsoleQualityInspectionPlanEndpoint(
         return quality.ActivateInspectionPlanAsync(
             tokenProvider.BearerToken,
             inspectionPlanId,
-            request with { InspectionPlanId = inspectionPlanId },
             cancellationToken);
     }
 }
