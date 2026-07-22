@@ -11,15 +11,15 @@ namespace Nerv.IIP.Business.Performance.Tests;
 
 public sealed class SchedulingScaleBenchmarkTests(ITestOutputHelper output)
 {
+    private const string EvidenceDirectoryEnvironmentVariable = "NERV_IIP_APS_SCALE_EVIDENCE_DIRECTORY";
     private static readonly DateTimeOffset GeneratedAtUtc = new(2026, 8, 3, 7, 0, 0, TimeSpan.Zero);
 
     [Trait("Category", "scheduling")]
-    [PerformanceBaselineFact("scheduling")]
+    [PerformanceBaselineFact("scheduling", EvidenceDirectoryEnvironmentVariable)]
     public async Task SchedulingScale_APS_Lite_100_500_1000_outputs_repeatable_PostgreSQL_evidence()
     {
         var settings = PerformanceBaselineSettings.FromEnvironment();
-        var evidenceDirectory = Environment.GetEnvironmentVariable("NERV_IIP_APS_SCALE_EVIDENCE_DIRECTORY")
-            ?? throw new InvalidOperationException("NERV_IIP_APS_SCALE_EVIDENCE_DIRECTORY is required.");
+        var evidenceDirectory = Environment.GetEnvironmentVariable(EvidenceDirectoryEnvironmentVariable)!;
         await using var provider = BusinessPerformanceServiceProvider.CreateSchedulingProvider(settings);
         await BusinessPerformanceServiceProvider.MigrateSchedulingAsync(provider, CancellationToken.None);
         var scheduler = new FiniteCapacityScheduler();
@@ -56,7 +56,7 @@ public sealed class SchedulingScaleBenchmarkTests(ITestOutputHelper output)
                         Repetition: repetition,
                         TotalMilliseconds: total.ElapsedMilliseconds,
                         InputAssemblyMilliseconds: input.ElapsedMilliseconds,
-                        ConstraintCheckMilliseconds: normalized.ElapsedMilliseconds,
+                        NormalizationMilliseconds: normalized.ElapsedMilliseconds,
                         AlgorithmCalculationMilliseconds: scheduled.ElapsedMilliseconds,
                         PersistenceMilliseconds: persistenceMilliseconds,
                         PeakWorkingSetBytes: memory.PeakWorkingSetBytes,

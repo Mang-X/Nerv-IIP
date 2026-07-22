@@ -33,8 +33,8 @@ Profiles are frozen at:
 Each repetition records monotonic elapsed milliseconds for:
 
 1. input assembly: deterministic contract construction;
-2. constraint check: production normalization and structural validation;
-3. algorithm calculation: the existing deterministic finite-capacity heuristic over the normalized input;
+2. normalization: production problem normalization and structural validation;
+3. algorithm calculation: the existing deterministic finite-capacity heuristic over the normalized input, including material, quality, tooling, and finite-capacity constraint evaluation;
 4. persistence: adding the production problem snapshot and generated plan aggregate and calling PostgreSQL `SaveChangesAsync`;
 5. total: the complete measured pipeline.
 

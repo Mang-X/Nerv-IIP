@@ -2,16 +2,25 @@ namespace Nerv.IIP.Business.Performance.Tests;
 
 internal sealed class ProcessMemorySampler : IAsyncDisposable
 {
+    private static readonly TimeSpan DefaultSamplingInterval = TimeSpan.FromMilliseconds(10);
     private readonly Process process;
     private readonly CancellationTokenSource cancellation = new();
     private readonly Task samplingTask;
+    private readonly TimeSpan samplingInterval;
+    private readonly object stopLock = new();
     private readonly long baselineWorkingSetBytes;
     private long peakWorkingSetBytes;
     private long peakManagedHeapBytes;
-    private bool stopped;
+    private Task? stopTask;
 
-    private ProcessMemorySampler()
+    private ProcessMemorySampler(TimeSpan samplingInterval)
     {
+        if (samplingInterval <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(samplingInterval), "Sampling interval must be positive.");
+        }
+
+        this.samplingInterval = samplingInterval;
         process = Process.GetCurrentProcess();
         process.Refresh();
         baselineWorkingSetBytes = process.WorkingSet64;
@@ -24,19 +33,22 @@ internal sealed class ProcessMemorySampler : IAsyncDisposable
     public long PeakManagedHeapBytes => Interlocked.Read(ref peakManagedHeapBytes);
     public long WorkingSetIncreaseBytes => Math.Max(0, PeakWorkingSetBytes - baselineWorkingSetBytes);
 
-    public static ProcessMemorySampler Start() => new();
+    public static ProcessMemorySampler Start(TimeSpan? samplingInterval = null) =>
+        new(samplingInterval ?? DefaultSamplingInterval);
 
-    public async Task StopAsync()
+    public Task StopAsync()
     {
-        if (stopped)
+        lock (stopLock)
         {
-            return;
+            return stopTask ??= StopCoreAsync();
         }
+    }
 
-        stopped = true;
-        Observe();
+    private async Task StopCoreAsync()
+    {
         await cancellation.CancelAsync();
         await samplingTask;
+        Observe();
     }
 
     public async ValueTask DisposeAsync()
@@ -48,7 +60,7 @@ internal sealed class ProcessMemorySampler : IAsyncDisposable
 
     private async Task SampleAsync(CancellationToken cancellationToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(2));
+        using var timer = new PeriodicTimer(samplingInterval);
         try
         {
             while (await timer.WaitForNextTickAsync(cancellationToken))

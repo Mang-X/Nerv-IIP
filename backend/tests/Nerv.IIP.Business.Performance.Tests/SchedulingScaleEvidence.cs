@@ -7,7 +7,7 @@ public sealed record SchedulingScaleRunEvidence(
     int Repetition,
     long TotalMilliseconds,
     long InputAssemblyMilliseconds,
-    long ConstraintCheckMilliseconds,
+    long NormalizationMilliseconds,
     long AlgorithmCalculationMilliseconds,
     long PersistenceMilliseconds,
     long PeakWorkingSetBytes,
@@ -42,7 +42,7 @@ public sealed record SchedulingScaleStatisticSummary(long Minimum, decimal Media
 public sealed record SchedulingScaleProfileSummary(
     SchedulingScaleStatisticSummary TotalMilliseconds,
     SchedulingScaleStatisticSummary InputAssemblyMilliseconds,
-    SchedulingScaleStatisticSummary ConstraintCheckMilliseconds,
+    SchedulingScaleStatisticSummary NormalizationMilliseconds,
     SchedulingScaleStatisticSummary AlgorithmCalculationMilliseconds,
     SchedulingScaleStatisticSummary PersistenceMilliseconds,
     SchedulingScaleStatisticSummary PeakWorkingSetBytes,
@@ -64,7 +64,7 @@ public sealed record SchedulingScaleProfileEvidence(
     public SchedulingScaleProfileSummary Summary => new(
         SchedulingScaleStatisticSummary.From(Runs.Select(x => x.TotalMilliseconds)),
         SchedulingScaleStatisticSummary.From(Runs.Select(x => x.InputAssemblyMilliseconds)),
-        SchedulingScaleStatisticSummary.From(Runs.Select(x => x.ConstraintCheckMilliseconds)),
+        SchedulingScaleStatisticSummary.From(Runs.Select(x => x.NormalizationMilliseconds)),
         SchedulingScaleStatisticSummary.From(Runs.Select(x => x.AlgorithmCalculationMilliseconds)),
         SchedulingScaleStatisticSummary.From(Runs.Select(x => x.PersistenceMilliseconds)),
         SchedulingScaleStatisticSummary.From(Runs.Select(x => x.PeakWorkingSetBytes)),
@@ -130,13 +130,13 @@ public sealed record SchedulingScaleEvidenceDocument(
         builder.AppendLine();
         builder.AppendLine("## Median results");
         builder.AppendLine();
-        builder.AppendLine("| Profile | Total ms | Input ms | Constraint ms | Algorithm ms | Persistence ms | Peak working set max MiB | On-time rate | Tardiness min | Utilization | Scheduled | Unscheduled |");
+        builder.AppendLine("| Profile | Total ms | Input ms | Normalization ms | Algorithm ms | Persistence ms | Peak working set max MiB | On-time rate | Tardiness min | Utilization | Scheduled | Unscheduled |");
         builder.AppendLine("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
         foreach (var profile in Profiles)
         {
             var representative = profile.Runs[profile.Runs.Count / 2];
             builder.AppendLine(
-                $"| {profile.Profile} | {Format(profile.Summary.TotalMilliseconds.Median)} | {Format(profile.Summary.InputAssemblyMilliseconds.Median)} | {Format(profile.Summary.ConstraintCheckMilliseconds.Median)} | {Format(profile.Summary.AlgorithmCalculationMilliseconds.Median)} | {Format(profile.Summary.PersistenceMilliseconds.Median)} | {Format(profile.Summary.PeakWorkingSetBytes.Maximum / 1024m / 1024m)} | {representative.OnTimeRate.ToString("0.####", CultureInfo.InvariantCulture)} | {representative.TotalTardinessMinutes} | {representative.AverageResourceUtilization.ToString("0.####", CultureInfo.InvariantCulture)} | {representative.ScheduledOperationCount} | {representative.UnscheduledOperationCount} |");
+                $"| {profile.Profile} | {Format(profile.Summary.TotalMilliseconds.Median)} | {Format(profile.Summary.InputAssemblyMilliseconds.Median)} | {Format(profile.Summary.NormalizationMilliseconds.Median)} | {Format(profile.Summary.AlgorithmCalculationMilliseconds.Median)} | {Format(profile.Summary.PersistenceMilliseconds.Median)} | {Format(profile.Summary.PeakWorkingSetBytes.Maximum / 1024m / 1024m)} | {representative.OnTimeRate.ToString("0.####", CultureInfo.InvariantCulture)} | {representative.TotalTardinessMinutes} | {representative.AverageResourceUtilization.ToString("0.####", CultureInfo.InvariantCulture)} | {representative.ScheduledOperationCount} | {representative.UnscheduledOperationCount} |");
         }
 
         builder.AppendLine();

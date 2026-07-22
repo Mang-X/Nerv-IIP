@@ -49,7 +49,8 @@ public sealed class SchedulingScaleEvidenceTests
         var markdown = document.ToMarkdown();
 
         Assert.Contains("inputAssemblyMilliseconds", json, StringComparison.Ordinal);
-        Assert.Contains("constraintCheckMilliseconds", json, StringComparison.Ordinal);
+        Assert.Contains("normalizationMilliseconds", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("constraintCheckMilliseconds", json, StringComparison.Ordinal);
         Assert.Contains("algorithmCalculationMilliseconds", json, StringComparison.Ordinal);
         Assert.Contains("persistenceMilliseconds", json, StringComparison.Ordinal);
         Assert.Contains("peakWorkingSetBytes", json, StringComparison.Ordinal);
@@ -60,6 +61,7 @@ public sealed class SchedulingScaleEvidenceTests
         Assert.Contains(SchedulingScaleEvidenceDocument.CapabilityDisclaimer, json, StringComparison.Ordinal);
         Assert.Contains(SchedulingScaleEvidenceDocument.CapabilityDisclaimer, markdown, StringComparison.Ordinal);
         Assert.Contains("| demo | 100 | 400 | 24 | 3 | yes |", markdown, StringComparison.Ordinal);
+        Assert.Contains("| Profile | Total ms | Input ms | Normalization ms |", markdown, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -100,7 +102,7 @@ public sealed class SchedulingScaleEvidenceTests
             Repetition: index + 1,
             TotalMilliseconds: 10 + index,
             InputAssemblyMilliseconds: 1,
-            ConstraintCheckMilliseconds: 2,
+            NormalizationMilliseconds: 2,
             AlgorithmCalculationMilliseconds: 3,
             PersistenceMilliseconds: 4,
             PeakWorkingSetBytes: 100_000,
