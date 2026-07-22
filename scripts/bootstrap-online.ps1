@@ -131,7 +131,7 @@ function Test-DotNet10Sdk {
 
     try {
         $result = Invoke-DotNetOutput -Arguments @('--list-sdks') -WorkingDirectory $root -Name 'bootstrap-dotnet-sdks'
-        return ($result.Stdout -split '\r?\n' | Where-Object { $_ -match '^10\.' }).Count -gt 0
+        return @($result.Stdout -split '\r?\n' | Where-Object { $_ -match '^10\.' }).Count -gt 0
     }
     catch {
         return $false
