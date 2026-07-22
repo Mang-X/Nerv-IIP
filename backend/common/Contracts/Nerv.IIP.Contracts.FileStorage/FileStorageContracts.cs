@@ -1,5 +1,13 @@
 namespace Nerv.IIP.Contracts.FileStorage;
 
+public static class VersionedArchiveLimits
+{
+    // MinIO 7 switches to multipart at 5 MiB. Conditional If-None-Match is
+    // guaranteed on the single PutObject path, so compliance archives remain
+    // strictly below that boundary.
+    public const int MaximumConditionallyWritableBytes = (5 * 1024 * 1024) - 1;
+}
+
 public sealed record OwnerReference(string OwnerService, string OwnerType, string OwnerId);
 
 public sealed record TransferInstructions(string Url, IReadOnlyDictionary<string, string> Headers);

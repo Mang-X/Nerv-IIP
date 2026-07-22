@@ -23,6 +23,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<OrderUrgencyBusinessPriorityChange> OrderUrgencyBusinessPriorityChanges => Set<OrderUrgencyBusinessPriorityChange>();
     public DbSet<OrderUrgencySnapshot> OrderUrgencySnapshots => Set<OrderUrgencySnapshot>();
     public DbSet<OrderUrgencyArchiveBatch> OrderUrgencyArchiveBatches => Set<OrderUrgencyArchiveBatch>();
+    public DbSet<OrderUrgencyArchiveBatchSnapshot> OrderUrgencyArchiveBatchSnapshots => Set<OrderUrgencyArchiveBatchSnapshot>();
     public DbSet<OrderUrgencyRetentionLease> OrderUrgencyRetentionLeases => Set<OrderUrgencyRetentionLease>();
     public DbSet<OrderUrgencyRestoreAudit> OrderUrgencyRestoreAudits => Set<OrderUrgencyRestoreAudit>();
     public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();

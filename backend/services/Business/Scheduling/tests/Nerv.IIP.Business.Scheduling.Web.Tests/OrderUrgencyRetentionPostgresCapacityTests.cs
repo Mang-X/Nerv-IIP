@@ -55,10 +55,14 @@ public sealed class OrderUrgencyRetentionPostgresCapacityTests
         var firstService = new OrderUrgencyRetentionService(firstContext, archive, new FixedTimeProvider(Now), "worker-a");
         var secondService = new OrderUrgencyRetentionService(secondContext, archive, new FixedTimeProvider(Now), "worker-b");
         var firstRun = firstService.RunScopeAsync(policy, CancellationToken.None);
+        var secondRun = secondService.RunScopeAsync(policy, CancellationToken.None);
         await archive.PutStarted.Task.WaitAsync(TimeSpan.FromSeconds(60));
-        var overlappingRun = await secondService.RunScopeAsync(policy, CancellationToken.None);
+        var nonOwnerTask = await Task.WhenAny(firstRun, secondRun).WaitAsync(TimeSpan.FromSeconds(60));
+        var nonOwnerRun = await nonOwnerTask;
+        Assert.False(nonOwnerRun.LeaseAcquired);
         archive.ReleasePut.TrySetResult();
-        var completedRun = await firstRun;
+        var runs = await Task.WhenAll(firstRun, secondRun);
+        var completedRun = Assert.Single(runs, x => x.LeaseAcquired);
         stopwatch.Stop();
 
         await using var assertion = CreateContext(database.ConnectionString);
@@ -66,7 +70,7 @@ public sealed class OrderUrgencyRetentionPostgresCapacityTests
         var latestRemaining = await assertion.OrderUrgencySnapshots.CountAsync(x => x.BusinessPriorityRevision == 2);
         var batches = await assertion.OrderUrgencyArchiveBatches.ToArrayAsync();
 
-        Assert.False(overlappingRun.LeaseAcquired);
+        Assert.False(nonOwnerRun.LeaseAcquired);
         Assert.Equal(OrderCount, completedRun.EligibleSnapshots);
         Assert.Equal(BatchSize, completedRun.ArchivedSnapshots);
         Assert.Equal(BatchSize, completedRun.SourceDeletedSnapshots);
@@ -86,7 +90,7 @@ public sealed class OrderUrgencyRetentionPostgresCapacityTests
             sourceDeletedSnapshots = completedRun.SourceDeletedSnapshots,
             latestSnapshotsRemaining = latestRemaining,
             remainingSnapshots = remaining,
-            overlappingWorkerLeaseAcquired = overlappingRun.LeaseAcquired,
+            overlappingWorkerLeaseAcquired = nonOwnerRun.LeaseAcquired,
             archiveBatchCount = batches.Length,
             elapsedMilliseconds = stopwatch.ElapsedMilliseconds,
         });

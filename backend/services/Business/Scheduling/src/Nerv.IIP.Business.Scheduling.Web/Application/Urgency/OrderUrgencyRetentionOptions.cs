@@ -1,3 +1,6 @@
+using System.Globalization;
+using Nerv.IIP.Contracts.FileStorage;
+
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Urgency;
 
 public sealed record OrderUrgencyDeletionAuthorization(
@@ -24,7 +27,8 @@ public sealed record OrderUrgencyRetentionScope(
     int BatchSize,
     bool LegalHoldActive,
     OrderUrgencyDeletionAuthorization? SourceDeletionAuthorization,
-    OrderUrgencyDeletionAuthorization? ArchiveDeletionAuthorization)
+    OrderUrgencyDeletionAuthorization? ArchiveDeletionAuthorization,
+    int MaxArchiveBytes = VersionedArchiveLimits.MaximumConditionallyWritableBytes)
 {
     public bool CanDeleteSource(DateTimeOffset now) =>
         !LegalHoldActive && SourceDeletionAuthorization?.IsValidAt(now) == true;
@@ -56,13 +60,18 @@ public sealed record OrderUrgencyRetentionPolicy(
             var onlineDays = section.GetValue<int?>("OnlineRetentionDays") ?? 180;
             var totalDays = section.GetValue<int?>("TotalRetentionDays") ?? 1095;
             var batchSize = section.GetValue<int?>("BatchSize") ?? 100;
+            var maxArchiveBytes = section.GetValue<int?>("MaxArchiveBytes") ??
+                VersionedArchiveLimits.MaximumConditionallyWritableBytes;
             var prefix = $"OrderUrgencyRetention scope {section.Key}";
             if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId))
             {
                 errors.Add($"{prefix} requires organization and environment ids.");
                 continue;
             }
-            if (onlineDays <= 0 || totalDays <= onlineDays || batchSize is < 1 or > 5000)
+            if (onlineDays <= 0 ||
+                totalDays <= onlineDays ||
+                batchSize is < 1 or > 5000 ||
+                maxArchiveBytes is < 1 or > VersionedArchiveLimits.MaximumConditionallyWritableBytes)
             {
                 errors.Add($"{prefix} has invalid retention days or batch size.");
                 continue;
@@ -92,7 +101,8 @@ public sealed record OrderUrgencyRetentionPolicy(
                 batchSize,
                 section.GetValue<bool>("LegalHoldActive"),
                 sourceAuthorization,
-                archiveAuthorization));
+                archiveAuthorization,
+                maxArchiveBytes));
         }
 
         return new OrderUrgencyRetentionPolicy(scopes, errors);
@@ -101,8 +111,9 @@ public sealed record OrderUrgencyRetentionPolicy(
     private static OrderUrgencyDeletionAuthorization? ReadAuthorization(IConfigurationSection section)
     {
         if (!section.Exists()) return null;
-        if (!DateTimeOffset.TryParse(section["ApprovedAtUtc"], out var approvedAtUtc) ||
-            !DateTimeOffset.TryParse(section["ExpiresAtUtc"], out var expiresAtUtc))
+        const DateTimeStyles utcStyles = DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal;
+        if (!DateTimeOffset.TryParse(section["ApprovedAtUtc"], CultureInfo.InvariantCulture, utcStyles, out var approvedAtUtc) ||
+            !DateTimeOffset.TryParse(section["ExpiresAtUtc"], CultureInfo.InvariantCulture, utcStyles, out var expiresAtUtc))
         {
             return null;
         }

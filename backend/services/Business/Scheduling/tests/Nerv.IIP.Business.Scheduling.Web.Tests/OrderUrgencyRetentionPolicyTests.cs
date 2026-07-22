@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Nerv.IIP.Business.Scheduling.Web.Application.Urgency;
+using Nerv.IIP.Contracts.FileStorage;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
@@ -47,6 +48,20 @@ public sealed class OrderUrgencyRetentionPolicyTests
         Assert.False(scope.LegalHoldActive);
         Assert.False(scope.CanDeleteSource(Now));
         Assert.False(scope.CanDeleteArchive(Now));
+        Assert.Equal(VersionedArchiveLimits.MaximumConditionallyWritableBytes, scope.MaxArchiveBytes);
+    }
+
+    [Fact]
+    public void Archive_byte_limit_above_the_atomic_single_put_boundary_fails_closed()
+    {
+        var values = EnabledScope();
+        values["OrderUrgencyRetention:Scopes:0:MaxArchiveBytes"] =
+            (VersionedArchiveLimits.MaximumConditionallyWritableBytes + 1).ToString();
+
+        var policy = OrderUrgencyRetentionPolicy.Load(Configuration(values), Now);
+
+        Assert.Empty(policy.Scopes);
+        Assert.NotEmpty(policy.Errors);
     }
 
     [Fact]
@@ -66,6 +81,25 @@ public sealed class OrderUrgencyRetentionPolicyTests
         values["OrderUrgencyRetention:Scopes:0:LegalHoldActive"] = "true";
         var held = Assert.Single(OrderUrgencyRetentionPolicy.Load(Configuration(values), Now).Scopes);
         Assert.False(held.CanDeleteSource(Now));
+    }
+
+    [Fact]
+    public void Offsetless_authorization_timestamps_are_interpreted_as_utc_independent_of_host_timezone()
+    {
+        var values = EnabledScope();
+        values["OrderUrgencyRetention:Scopes:0:SourceDeletionAuthorization:Reference"] = "CAB-2026-0042";
+        values["OrderUrgencyRetention:Scopes:0:SourceDeletionAuthorization:Actor"] = "user:compliance";
+        values["OrderUrgencyRetention:Scopes:0:SourceDeletionAuthorization:Reason"] = "Approved retention enforcement";
+        values["OrderUrgencyRetention:Scopes:0:SourceDeletionAuthorization:ApprovedAtUtc"] = "2026-07-22T11:00:00";
+        values["OrderUrgencyRetention:Scopes:0:SourceDeletionAuthorization:ExpiresAtUtc"] = "2026-07-22T13:00:00";
+
+        var authorization = Assert.Single(OrderUrgencyRetentionPolicy.Load(Configuration(values), Now).Scopes)
+            .SourceDeletionAuthorization;
+
+        Assert.NotNull(authorization);
+        Assert.Equal(TimeSpan.Zero, authorization.ApprovedAtUtc.Offset);
+        Assert.Equal(new DateTimeOffset(2026, 7, 22, 11, 0, 0, TimeSpan.Zero), authorization.ApprovedAtUtc);
+        Assert.True(authorization.IsValidAt(Now));
     }
 
     private static Dictionary<string, string?> EnabledScope(

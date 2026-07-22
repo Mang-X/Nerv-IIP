@@ -10,7 +10,7 @@ public sealed class OrderUrgencyArchiveBatchEntityTypeConfiguration : IEntityTyp
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever().HasComment("Archive batch audit row id.");
         Scope(builder);
-        builder.Property(x => x.BatchId).HasColumnName("batch_id").HasMaxLength(64).IsRequired().HasComment("Stable content-derived archive batch id.");
+        builder.Property(x => x.BatchId).HasColumnName("batch_id").HasMaxLength(64).IsRequired().HasComment("Stable source-row-generation-derived archive batch id.");
         builder.Property(x => x.SnapshotIdsJson).HasColumnName("snapshot_ids_json").HasColumnType("jsonb").IsRequired().HasComment("JSON array of Scheduling-owned source snapshot ids; produced and consumed by the retention worker with additive compatibility.");
         builder.Property(x => x.SnapshotCount).HasColumnName("snapshot_count").HasComment("Number of snapshots represented by the archive batch.");
         builder.Property(x => x.MinCalculatedAtUtc).HasColumnName("min_calculated_at_utc").HasComment("Oldest UTC calculation time in the batch.");
@@ -33,6 +33,7 @@ public sealed class OrderUrgencyArchiveBatchEntityTypeConfiguration : IEntityTyp
         builder.Property(x => x.ErrorCode).HasColumnName("error_code").HasMaxLength(128).HasComment("Stable failure classification for the latest attempt.");
         builder.Property(x => x.ErrorMessage).HasColumnName("error_message").HasMaxLength(2000).HasComment("Sanitized latest failure detail.");
         builder.Property(x => x.AttemptCount).HasColumnName("attempt_count").HasComment("Number of archive attempts for this stable batch.");
+        builder.Property(x => x.Revision).HasColumnName("revision").IsConcurrencyToken().HasComment("Monotonic optimistic concurrency revision protecting lifecycle transitions.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.BatchId })
             .IsUnique()
             .HasDatabaseName("ix_urgency_archive_scope_batch");
@@ -63,6 +64,32 @@ public sealed class OrderUrgencyRetentionLeaseEntityTypeConfiguration : IEntityT
             .IsUnique()
             .HasDatabaseName("ix_urgency_retention_lease_scope");
         builder.HasIndex(x => x.ExpiresAtUtc).HasDatabaseName("ix_urgency_retention_lease_expiry");
+    }
+}
+
+public sealed class OrderUrgencyArchiveBatchSnapshotEntityTypeConfiguration : IEntityTypeConfiguration<OrderUrgencyArchiveBatchSnapshot>
+{
+    public void Configure(EntityTypeBuilder<OrderUrgencyArchiveBatchSnapshot> builder)
+    {
+        builder.ToTable(
+            "order_urgency_archive_batch_snapshots",
+            table => table.HasComment("Indexed source snapshot membership for a durable urgency archive batch intent."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever().HasComment("Archive batch membership row id.");
+        OrderUrgencyArchiveBatchEntityTypeConfiguration.Scope(builder);
+        builder.Property(x => x.ArchiveBatchId).HasColumnName("archive_batch_id").HasComment("Owning durable archive batch audit row id.");
+        builder.Property(x => x.SnapshotId).HasColumnName("snapshot_id").HasComment("Scheduling-owned source snapshot id reserved by this archive intent.");
+        builder.Property(x => x.Sequence).HasColumnName("sequence").HasComment("Stable zero-based position in the archived payload.");
+        builder.HasIndex(x => new { x.ArchiveBatchId, x.Sequence })
+            .IsUnique()
+            .HasDatabaseName("ix_urgency_archive_membership_batch_sequence");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SnapshotId })
+            .IsUnique()
+            .HasDatabaseName("ix_urgency_archive_membership_scope_snapshot");
+        builder.HasOne<OrderUrgencyArchiveBatch>()
+            .WithMany()
+            .HasForeignKey(x => x.ArchiveBatchId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
 

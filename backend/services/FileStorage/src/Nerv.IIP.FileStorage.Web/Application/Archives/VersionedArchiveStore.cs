@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Minio;
 using Minio.DataModel.Args;
+using Minio.Exceptions;
 using Nerv.IIP.Contracts.FileStorage;
 
 namespace Nerv.IIP.FileStorage.Web.Application.Archives;
@@ -55,6 +56,14 @@ public sealed class MinioVersionedObjectStore(IMinioClient client, string bucket
         string sha256,
         CancellationToken cancellationToken)
     {
+        var existingVersion = await TryGetMatchingCurrentVersionAsync(
+            objectKey, content.Length, sha256, cancellationToken);
+        if (existingVersion is not null)
+        {
+            return existingVersion;
+        }
+
+        var uploadId = Guid.CreateVersion7().ToString("N");
         await using var stream = new MemoryStream(content.ToArray(), writable: false);
         await client.PutObjectAsync(
             new PutObjectArgs()
@@ -63,14 +72,67 @@ public sealed class MinioVersionedObjectStore(IMinioClient client, string bucket
                 .WithStreamData(stream)
                 .WithObjectSize(content.Length)
                 .WithContentType(contentType)
+                .WithNotMatchETag("*")
                 .WithHeaders(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["x-amz-meta-sha256"] = sha256,
+                    ["x-amz-meta-upload-id"] = uploadId,
                 }),
             cancellationToken);
         var stat = await client.StatObjectAsync(
             new StatObjectArgs().WithBucket(bucket).WithObject(objectKey), cancellationToken);
+        if (stat.Size != content.Length ||
+            !HasMetadata(stat.MetaData, "sha256", sha256) ||
+            !HasMetadata(stat.MetaData, "upload-id", uploadId))
+        {
+            throw new InvalidOperationException(
+                "Versioned archive storage could not prove that the observed object version belongs to this upload.");
+        }
         return stat.VersionId;
+    }
+
+    private async Task<string?> TryGetMatchingCurrentVersionAsync(
+        string objectKey,
+        long sizeBytes,
+        string sha256,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var stat = await client.StatObjectAsync(
+                new StatObjectArgs().WithBucket(bucket).WithObject(objectKey), cancellationToken);
+            if (stat.Size != sizeBytes || !HasMetadata(stat.MetaData, "sha256", sha256))
+            {
+                return null;
+            }
+            if (string.IsNullOrWhiteSpace(stat.VersionId))
+            {
+                throw new InvalidOperationException(
+                    "Matching archive content exists but versioned storage did not return its exact version id.");
+            }
+            return stat.VersionId;
+        }
+        catch (ObjectNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    private static bool HasMetadata(
+        IReadOnlyDictionary<string, string> metadata,
+        string name,
+        string expected)
+    {
+        foreach (var (key, value) in metadata)
+        {
+            if ((string.Equals(key, name, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(key, $"x-amz-meta-{name}", StringComparison.OrdinalIgnoreCase)) &&
+                string.Equals(value, expected, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     public async Task<byte[]> GetAsync(
@@ -139,6 +201,12 @@ public sealed partial class VersionedArchiveService(
         catch (FormatException exception)
         {
             throw new ArgumentException("Archive content is not valid base64.", nameof(request), exception);
+        }
+        if (content.LongLength > VersionedArchiveLimits.MaximumConditionallyWritableBytes)
+        {
+            throw new ArgumentException(
+                $"Versioned archive content must not exceed {VersionedArchiveLimits.MaximumConditionallyWritableBytes} bytes so the conditional write remains atomic.",
+                nameof(request));
         }
 
         var sha256 = Hash(content);

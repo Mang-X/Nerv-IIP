@@ -199,7 +199,8 @@ public sealed class OrderUrgencyApplicationTests
                 "WO-001", "org-001", "prod", level, "line stop"));
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, error => error.PropertyName == "Level");
+        Assert.Contains(result.Errors, error =>
+            string.Equals(error.PropertyName, "Level", StringComparison.OrdinalIgnoreCase));
     }
 
     private static ServiceProvider CreateProvider()

@@ -44,6 +44,18 @@ public sealed class VersionedArchiveStoreTests
     }
 
     [Fact]
+    public async Task Multipart_sized_archive_is_rejected_before_object_storage_is_called()
+    {
+        var backend = new FakeVersionedObjectStore();
+        var service = new VersionedArchiveService(backend, TimeProvider.System);
+        var content = new string('x', VersionedArchiveLimits.MaximumConditionallyWritableBytes + 1);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.PutAsync(Request(content), CancellationToken.None));
+
+        Assert.Equal(0, backend.PutCount);
+    }
+
+    [Fact]
     public async Task Legal_hold_is_applied_to_the_exact_archived_version()
     {
         var backend = new FakeVersionedObjectStore();

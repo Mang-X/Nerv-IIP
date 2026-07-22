@@ -9,41 +9,48 @@ public static class OrderUrgencyRetentionMetrics
     private static readonly Counter Runs = Metrics.CreateCounter(
         "nerv_iip_order_urgency_retention_runs_total",
         "Order urgency retention run outcomes.",
-        new CounterConfiguration { LabelNames = ["outcome"] });
+        new CounterConfiguration { LabelNames = ["outcome", "organization", "environment"] });
     private static readonly Counter Snapshots = Metrics.CreateCounter(
         "nerv_iip_order_urgency_retention_snapshots_total",
         "Order urgency snapshots processed by retention lifecycle outcome.",
-        new CounterConfiguration { LabelNames = ["outcome"] });
+        new CounterConfiguration { LabelNames = ["outcome", "organization", "environment"] });
     private static readonly Gauge EligibleBacklog = Metrics.CreateGauge(
         "nerv_iip_order_urgency_retention_eligible_snapshots",
-        "Eligible urgency snapshots observed before the most recent retention batch.");
+        "Eligible urgency snapshots observed before the most recent retention batch.",
+        new GaugeConfiguration { LabelNames = ["organization", "environment"] });
     private static readonly Gauge OldestEligibleAge = Metrics.CreateGauge(
         "nerv_iip_order_urgency_retention_oldest_eligible_age_seconds",
-        "Age in seconds of the oldest eligible urgency snapshot observed before the most recent retention batch.");
+        "Age in seconds of the oldest eligible urgency snapshot observed before the most recent retention batch.",
+        new GaugeConfiguration { LabelNames = ["organization", "environment"] });
+    private static readonly Counter OperationFailures = Metrics.CreateCounter(
+        "nerv_iip_order_urgency_retention_operation_failures_total",
+        "Stable retention operation failure classifications that escaped a scope run.",
+        new CounterConfiguration { LabelNames = ["error_code", "organization", "environment"] });
 
-    public static void Observe(OrderUrgencyRetentionRunResult result)
+    public static void Observe(OrderUrgencyRetentionScope scope, OrderUrgencyRetentionRunResult result)
     {
         var outcome = result.LegalHoldActive
             ? "held"
             : !result.LeaseAcquired
                 ? "lease-skipped"
                 : result.Failures > 0 ? "failed" : "succeeded";
-        Runs.WithLabels(outcome).Inc();
-        Snapshots.WithLabels("archived").Inc(result.ArchivedSnapshots);
-        Snapshots.WithLabels("source-deleted").Inc(result.SourceDeletedSnapshots);
-        Snapshots.WithLabels("archive-deleted").Inc(result.ArchiveDeletedBatches);
-        EligibleBacklog.Set(result.EligibleSnapshots);
-        OldestEligibleAge.Set(result.OldestEligibleAgeSeconds);
+        Runs.WithLabels(outcome, scope.OrganizationId, scope.EnvironmentId).Inc();
+        Snapshots.WithLabels("archived", scope.OrganizationId, scope.EnvironmentId).Inc(result.ArchivedSnapshots);
+        Snapshots.WithLabels("source-deleted", scope.OrganizationId, scope.EnvironmentId).Inc(result.SourceDeletedSnapshots);
+        Snapshots.WithLabels("archive-deleted", scope.OrganizationId, scope.EnvironmentId).Inc(result.ArchiveDeletedBatches);
+        EligibleBacklog.WithLabels(scope.OrganizationId, scope.EnvironmentId).Set(result.EligibleSnapshots);
+        OldestEligibleAge.WithLabels(scope.OrganizationId, scope.EnvironmentId).Set(result.OldestEligibleAgeSeconds);
     }
 
     public static void ConfigurationRejected(int count)
     {
-        Runs.WithLabels("configuration-rejected").Inc(count);
+        Runs.WithLabels("configuration-rejected", "unknown", "unknown").Inc(count);
     }
 
-    public static void Crashed()
+    public static void Crashed(OrderUrgencyRetentionScope scope, string errorCode)
     {
-        Runs.WithLabels("crashed").Inc();
+        Runs.WithLabels("crashed", scope.OrganizationId, scope.EnvironmentId).Inc();
+        OperationFailures.WithLabels(errorCode, scope.OrganizationId, scope.EnvironmentId).Inc();
     }
 }
 
@@ -93,7 +100,7 @@ public sealed class OrderUrgencyRetentionWorker(
                 await using var scope = scopeFactory.CreateAsyncScope();
                 var service = scope.ServiceProvider.GetRequiredService<OrderUrgencyRetentionService>();
                 var result = await service.RunScopeAsync(retentionScope, cancellationToken);
-                OrderUrgencyRetentionMetrics.Observe(result);
+                OrderUrgencyRetentionMetrics.Observe(retentionScope, result);
                 if (result.Failures > 0)
                 {
                     logger.LogError(
@@ -130,12 +137,16 @@ public sealed class OrderUrgencyRetentionWorker(
             }
             catch (Exception exception)
             {
-                OrderUrgencyRetentionMetrics.Crashed();
+                var errorCode = exception is OrderUrgencyRetentionOperationException operationException
+                    ? operationException.ErrorCode
+                    : "unclassified-crash";
+                OrderUrgencyRetentionMetrics.Crashed(retentionScope, errorCode);
                 logger.LogError(
                     exception,
-                    "Order urgency retention crashed for organization {OrganizationId}, environment {EnvironmentId}; source rows were preserved.",
+                    "Order urgency retention crashed for organization {OrganizationId}, environment {EnvironmentId}, error code {ErrorCode}; source rows were preserved.",
                     retentionScope.OrganizationId,
-                    retentionScope.EnvironmentId);
+                    retentionScope.EnvironmentId,
+                    errorCode);
             }
         }
     }

@@ -1,7 +1,15 @@
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OrderUrgencyAggregate;
+
 namespace Nerv.IIP.Business.Scheduling.Infrastructure.Urgency;
 
 public sealed class OrderUrgencyArchiveBatch
 {
+    public const string PendingStatus = "pending";
+    public const string ArchivedStatus = "archived";
+    public const string FailedStatus = "failed";
+    public const string SourceDeletedStatus = "source-deleted";
+    public const string ArchiveDeletedStatus = "archive-deleted";
+
     private OrderUrgencyArchiveBatch()
     {
     }
@@ -25,7 +33,8 @@ public sealed class OrderUrgencyArchiveBatch
         MinCalculatedAtUtc = minCalculatedAtUtc;
         MaxCalculatedAtUtc = maxCalculatedAtUtc;
         CreatedAtUtc = createdAtUtc;
-        Status = "pending";
+        Status = PendingStatus;
+        Revision = 1;
     }
 
     public Guid Id { get; private set; }
@@ -54,6 +63,7 @@ public sealed class OrderUrgencyArchiveBatch
     public string? ErrorCode { get; private set; }
     public string? ErrorMessage { get; private set; }
     public int AttemptCount { get; private set; }
+    public long Revision { get; private set; }
 
     public static OrderUrgencyArchiveBatch Create(
         string batchId,
@@ -73,23 +83,27 @@ public sealed class OrderUrgencyArchiveBatch
         long sizeBytes,
         DateTimeOffset archivedAtUtc)
     {
+        RequireStatus(PendingStatus, FailedStatus);
         ObjectKey = objectKey;
         ObjectVersionId = objectVersionId;
         Sha256 = sha256;
         SizeBytes = sizeBytes;
         ArchivedAtUtc = archivedAtUtc;
-        Status = "archived";
+        Status = ArchivedStatus;
         ErrorCode = null;
         ErrorMessage = null;
         AttemptCount++;
+        Revision++;
     }
 
     public void MarkFailed(string errorCode, string errorMessage)
     {
-        Status = "failed";
+        RequireStatus(PendingStatus, FailedStatus);
+        Status = FailedStatus;
         ErrorCode = errorCode;
         ErrorMessage = errorMessage.Length <= 2000 ? errorMessage : errorMessage[..2000];
         AttemptCount++;
+        Revision++;
     }
 
     public void MarkSourceDeleted(
@@ -98,11 +112,13 @@ public sealed class OrderUrgencyArchiveBatch
         string reason,
         DateTimeOffset deletedAtUtc)
     {
-        Status = "source-deleted";
+        RequireStatus(ArchivedStatus);
+        Status = SourceDeletedStatus;
         SourceDeletedAtUtc = deletedAtUtc;
         SourceDeletionAuthorizationReference = authorizationReference;
         SourceDeletionActor = actor;
         SourceDeletionReason = reason;
+        Revision++;
     }
 
     public void MarkArchiveDeleted(
@@ -111,12 +127,59 @@ public sealed class OrderUrgencyArchiveBatch
         string reason,
         DateTimeOffset deletedAtUtc)
     {
-        Status = "archive-deleted";
+        RequireStatus(SourceDeletedStatus);
+        Status = ArchiveDeletedStatus;
         ArchiveDeletedAtUtc = deletedAtUtc;
         ArchiveDeletionAuthorizationReference = authorizationReference;
         ArchiveDeletionActor = actor;
         ArchiveDeletionReason = reason;
+        Revision++;
     }
+
+    public bool HasCompleteArchiveEvidence() =>
+        !string.IsNullOrWhiteSpace(ObjectKey) &&
+        !string.IsNullOrWhiteSpace(ObjectVersionId) &&
+        !string.IsNullOrWhiteSpace(Sha256) &&
+        SizeBytes.HasValue &&
+        ArchivedAtUtc.HasValue;
+
+    private void RequireStatus(params string[] allowed)
+    {
+        if (!allowed.Contains(Status, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Archive batch {BatchId} cannot transition from {Status} using this operation.");
+        }
+    }
+}
+
+public sealed class OrderUrgencyArchiveBatchSnapshot
+{
+    private OrderUrgencyArchiveBatchSnapshot()
+    {
+    }
+
+    public OrderUrgencyArchiveBatchSnapshot(
+        Guid archiveBatchId,
+        OrderUrgencySnapshotId snapshotId,
+        string organizationId,
+        string environmentId,
+        int sequence)
+    {
+        Id = Guid.CreateVersion7();
+        ArchiveBatchId = archiveBatchId;
+        SnapshotId = snapshotId;
+        OrganizationId = organizationId;
+        EnvironmentId = environmentId;
+        Sequence = sequence;
+    }
+
+    public Guid Id { get; private set; }
+    public Guid ArchiveBatchId { get; private set; }
+    public OrderUrgencySnapshotId SnapshotId { get; private set; } = default!;
+    public string OrganizationId { get; private set; } = string.Empty;
+    public string EnvironmentId { get; private set; } = string.Empty;
+    public int Sequence { get; private set; }
 }
 
 public sealed class OrderUrgencyRetentionLease
@@ -163,6 +226,16 @@ public sealed class OrderUrgencyRetentionLease
     {
         if (!string.Equals(OwnerId, ownerId, StringComparison.Ordinal)) return;
         ExpiresAtUtc = now;
+        Revision++;
+    }
+
+    public void Renew(string ownerId, DateTimeOffset now, DateTimeOffset expiresAtUtc)
+    {
+        if (!string.Equals(OwnerId, ownerId, StringComparison.Ordinal) || !IsActiveAt(now))
+        {
+            throw new InvalidOperationException("The retention lease is no longer owned by this worker.");
+        }
+        ExpiresAtUtc = expiresAtUtc;
         Revision++;
     }
 }
