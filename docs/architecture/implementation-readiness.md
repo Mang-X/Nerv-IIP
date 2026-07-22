@@ -4,7 +4,7 @@
 
 ## 跨域统一紧急度模型 V1（MAN-584 / #1053）
 
-BusinessScheduling 现拥有 `order-urgency-v1` 的确定性派生模型：业务优先级、CR/Slack 时间紧迫度和执行风险三类贡献项分别保留，最终等级取三者最高值，不折叠为黑盒分数。输入复用 Scheduling 已组合的权威 due、工序周期、物料齐套、设备可用、质量阻断、工装与产能冲突；不跨 schema 查询，也不复制 ERP、DemandPlanning、MES、Inventory、Quality 或设备域主数据。缺失 due、缺失来源、未捕获引用或超过 2 小时未刷新均 fail closed 为高风险并输出稳定原因码；既有方案重放会补齐缺失快照。方案生成、人工业务优先级变更、15 分钟后台周期和读时跨桶检查会生成幂等不可变快照；人工 P0-P3、可选有效期、操作者与原因通过追加式变更表审计。统一读 facade 允许 ERP 销售、需求池、MES 工单或 Scheduling 任一宿主域读权限，写入仍只允许 Scheduling manage。四个关键页面已使用同一结果展示综合 badge、Hover 摘要、解释 Sheet 与排产入口；七种显示模式、独立排序及 Sheet 内优先级编辑/审计时间线由 #1061 继续完成。
+BusinessScheduling 现拥有 `order-urgency-v1` 的确定性派生模型：业务优先级、CR/Slack 时间紧迫度和执行风险三类贡献项分别保留，最终等级取三者最高值，不折叠为黑盒分数。输入复用 Scheduling 已组合的权威 due、工序周期、物料齐套、设备可用、质量阻断、工装与产能冲突；不跨 schema 查询，也不复制 ERP、DemandPlanning、MES、Inventory、Quality 或设备域主数据。缺失 due、缺失来源、未捕获引用或超过 2 小时未刷新均 fail closed 为高风险并输出稳定原因码；既有方案重放会补齐缺失快照。方案生成和人工业务优先级变更在命令 UoW 内捕获快照，失效事实由 15 分钟后台周期生成 stale 快照；GET 只执行数据库端 latest-per-order 读取，不写数据库。人工 P0-P3、可选有效期、操作者与原因通过追加式变更表审计，首条记录的 previous level 显式为空。统一读 facade 允许 ERP 销售、需求池、MES 工单或 Scheduling 任一宿主域读权限，写入仍只允许 Scheduling manage。四个关键页面已使用同一结果展示综合 badge、Hover 摘要、含阈值判定表的解释 Sheet 与可定位订单的排产入口；七种显示模式、独立排序及 Sheet 内优先级编辑/审计时间线由 #1061 继续完成。
 
 BusinessGateway 已以 `business.scheduling.plans.read/manage` 暴露紧急度列表、详情/历史和业务优先级写入三条 facade，OpenAPI 与 generated client 已刷新。Business Console 的销售订单、计划需求、MES 工单和排程方案明细使用同一 `orderId / businessReference` 结果与 NvUI 解释面板；没有修改 `SchedulingCanvas`/Gantt，也没有实现 MAN-580 拖拽重排或 MAN-588 局部重排求解。
 

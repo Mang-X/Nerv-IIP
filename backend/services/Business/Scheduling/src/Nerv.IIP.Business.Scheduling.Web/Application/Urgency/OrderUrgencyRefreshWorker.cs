@@ -39,7 +39,7 @@ public sealed class OrderUrgencyRefreshWorker(
             .ToArrayAsync(cancellationToken);
         foreach (var context in contexts)
         {
-            await urgencyService.ListAsync(context.OrganizationId, context.EnvironmentId, [], cancellationToken);
+            await urgencyService.RefreshContextAsync(context.OrganizationId, context.EnvironmentId, cancellationToken);
         }
     }
 }

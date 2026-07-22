@@ -194,11 +194,15 @@ public static class OrderUrgencyCalculator
             level = OrderUrgencyLevel.Urgent;
             reasons.Add("time.cr.belowOne");
         }
-        if (level < OrderUrgencyLevel.Attention && (slackHours < ShiftHours || criticalRatio is <= 1.2m))
+        if (level < OrderUrgencyLevel.HighRisk && slackHours < ShiftHours)
+        {
+            level = OrderUrgencyLevel.HighRisk;
+            reasons.Add("time.slack.withinShift");
+        }
+        if (level < OrderUrgencyLevel.Attention && criticalRatio is <= 1.2m)
         {
             level = OrderUrgencyLevel.Attention;
-            if (slackHours < ShiftHours) reasons.Add("time.slack.withinShift");
-            if (criticalRatio is <= 1.2m) reasons.Add("time.cr.attention");
+            reasons.Add("time.cr.attention");
         }
         if (reasons.Count == 0) reasons.Add("time.withinCommitment");
 

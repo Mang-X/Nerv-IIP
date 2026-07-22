@@ -443,7 +443,7 @@ public sealed record OrderUrgencyContract(
 
 public sealed record OrderUrgencyBusinessPriorityChangeContract(
     long Revision,
-    string PreviousLevel,
+    string? PreviousLevel,
     string NewLevel,
     string ChangedBy,
     string Reason,

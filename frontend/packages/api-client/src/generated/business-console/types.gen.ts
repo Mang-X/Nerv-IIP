@@ -1486,7 +1486,7 @@ export type NervIipContractsSchedulingOrderUrgencyDetailContract = {
 
 export type NervIipContractsSchedulingOrderUrgencyBusinessPriorityChangeContract = {
     revision?: number;
-    previousLevel?: string;
+    previousLevel?: string | null;
     newLevel?: string;
     changedBy?: string;
     reason?: string;

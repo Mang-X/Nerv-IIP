@@ -15,6 +15,7 @@ import {
   NvTooltipTrigger,
 } from '@nerv-iip/ui'
 import { computed, shallowRef } from 'vue'
+import { RouterLink } from 'vue-router'
 
 const props = defineProps<{
   orderReference: string
@@ -36,11 +37,15 @@ const summaryLabel = computed(() => {
     ? `${presentation.value.label} · ${primaryReason.value}`
     : presentation.value.label
 })
+const schedulingRoute = computed(() => ({
+  path: '/scheduling',
+  query: { orderReference: props.urgency?.orderId?.trim() || props.orderReference.trim() },
+}))
 
 function urgencyPresentation(level?: string | null): { label: string; tone: StatusTone } {
   switch ((level ?? '').toLowerCase()) {
     case 'critical':
-      return { label: '关键', tone: 'danger' }
+      return { label: '特急', tone: 'danger' }
     case 'urgent':
       return { label: '紧急', tone: 'danger' }
     case 'highrisk':
@@ -87,6 +92,10 @@ function formatDateTime(value?: string | null) {
   if (!value) return '—'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('zh-CN', { hour12: false })
+}
+
+function hasTimeReason(code: string) {
+  return props.urgency?.timeCriticality?.reasonCodes?.includes(code) ?? false
 }
 </script>
 
@@ -188,6 +197,52 @@ function formatDateTime(value?: string | null) {
               </dd>
             </div>
           </dl>
+          <div class="mt-4 overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="text-muted-foreground">
+                <tr>
+                  <th class="pb-2 pr-3 font-medium">判定项</th>
+                  <th class="pb-2 pr-3 font-medium">当前值</th>
+                  <th class="pb-2 pr-3 font-medium">阈值</th>
+                  <th class="pb-2 font-medium">结果</th>
+                </tr>
+              </thead>
+              <tbody class="text-foreground">
+                <tr class="border-t">
+                  <td class="py-2 pr-3">CR</td>
+                  <td class="py-2 pr-3">
+                    {{ formatNumber(urgency.timeCriticality?.criticalRatio) }}
+                  </td>
+                  <td class="py-2 pr-3">&lt; 1 紧急；≤ 1.2 关注</td>
+                  <td class="py-2">
+                    {{
+                      hasTimeReason('time.cr.belowOne')
+                        ? '紧急'
+                        : hasTimeReason('time.cr.attention')
+                          ? '关注'
+                          : '未触发'
+                    }}
+                  </td>
+                </tr>
+                <tr class="border-t">
+                  <td class="py-2 pr-3">Slack</td>
+                  <td class="py-2 pr-3">
+                    {{ formatNumber(urgency.timeCriticality?.slackHours) }} h
+                  </td>
+                  <td class="py-2 pr-3">&lt; 0 紧急；&lt; 8 h 高风险</td>
+                  <td class="py-2">
+                    {{
+                      hasTimeReason('time.slack.negative')
+                        ? '紧急'
+                        : hasTimeReason('time.slack.withinShift')
+                          ? '高风险'
+                          : '未触发'
+                    }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <ul class="mt-3 grid gap-1 text-sm text-muted-foreground">
             <li v-for="code in urgency.timeCriticality?.reasonCodes ?? []" :key="code">
               {{ reasonLabel(code) }} <span class="font-mono text-xs">({{ code }})</span>
@@ -212,9 +267,7 @@ function formatDateTime(value?: string | null) {
         </section>
 
         <NvButton as-child class="w-full">
-          <a :href="`/scheduling?orderReference=${encodeURIComponent(orderReference)}`">
-            进入排产调整
-          </a>
+          <RouterLink :to="schedulingRoute">进入排产调整</RouterLink>
         </NvButton>
       </div>
     </NvSheetContent>

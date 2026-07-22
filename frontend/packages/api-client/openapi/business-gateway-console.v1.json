@@ -29202,7 +29202,8 @@
             "format": "int64"
           },
           "previousLevel": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "newLevel": {
             "type": "string"

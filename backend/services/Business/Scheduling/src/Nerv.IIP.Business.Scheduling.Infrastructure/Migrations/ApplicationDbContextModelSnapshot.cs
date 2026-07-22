@@ -169,11 +169,10 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasComment("Tenant organization id.");
 
                     b.Property<string>("PreviousLevel")
-                        .IsRequired()
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)")
                         .HasColumnName("previous_level")
-                        .HasComment("Priority before the change.");
+                        .HasComment("Priority before the change; null for the initial setting.");
 
                     b.Property<string>("Reason")
                         .IsRequired()
@@ -279,8 +278,11 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "BusinessReference", "CalculatedAtUtc");
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "OrderId", "CalculatedAtUtc");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "OrderId", "ModelVersion", "InputFingerprint", "BusinessPriorityRevision", "CalculationBucketUtc")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("IX_order_urgency_snapshots_organization_id_environment_id_ord~1");
 
                     b.ToTable("order_urgency_snapshots", "scheduling", t =>
                         {

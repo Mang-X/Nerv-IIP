@@ -42,6 +42,7 @@ import {
 } from '@nerv-iip/ui'
 import { EyeIcon, RefreshCwIcon, SendIcon } from '@lucide/vue'
 import { computed, shallowRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 definePage({
   meta: {
@@ -62,12 +63,18 @@ const {
   releasePlan,
   releasePlanPending,
 } = useBusinessScheduling()
+const route = useRoute()
 const orderUrgencies = useOrderUrgencies(
   computed(() => (planDetail.value?.assignments ?? []).map((assignment) => assignment.orderId)),
 )
 
 const activeView = shallowRef('table')
 const detailOpen = shallowRef(false)
+const targetedOrderReference = computed(() => {
+  const value = route.query.orderReference
+  return (Array.isArray(value) ? value[0] : value)?.trim() ?? ''
+})
+const routeLookupVisited = new Set<string>()
 const actionablePlans = computed(() =>
   plans.value.filter(
     (plan): plan is BusinessConsoleSchedulingPlanSummaryResponse & { planId: string } =>
@@ -116,6 +123,40 @@ const detailFeedback = computed(() => {
 })
 const selectedPlanSummary = computed(() =>
   actionablePlans.value.find((plan) => plan.planId === detailSelection.planId),
+)
+const targetedAssignmentFound = computed(() =>
+  Boolean(
+    targetedOrderReference.value &&
+    planDetail.value?.assignments?.some(
+      (assignment) => assignment.orderId === targetedOrderReference.value,
+    ),
+  ),
+)
+
+watch(targetedOrderReference, () => routeLookupVisited.clear())
+watch(
+  [targetedOrderReference, actionablePlans, planDetail, planDetailPending],
+  ([target, availablePlans, detail, pending]) => {
+    if (!target || availablePlans.length === 0 || pending) return
+    if (!detailSelection.planId) {
+      detailSelection.planId = availablePlans[0]?.planId ?? ''
+      detailOpen.value = Boolean(detailSelection.planId)
+      return
+    }
+    if (!detail || detail.planId !== detailSelection.planId) return
+    if (detail.assignments?.some((assignment) => assignment.orderId === target)) {
+      detailOpen.value = true
+      return
+    }
+
+    routeLookupVisited.add(detailSelection.planId)
+    const next = availablePlans.find((plan) => !routeLookupVisited.has(plan.planId))
+    if (next?.planId) {
+      detailSelection.planId = next.planId
+      detailOpen.value = true
+    }
+  },
+  { immediate: true },
 )
 
 function rowKey(row: BusinessConsoleSchedulingPlanSummaryResponse) {
@@ -368,6 +409,18 @@ function reasonLabel(reason?: string | null) {
           </NvSheetDescription>
         </NvSheetHeader>
 
+        <p
+          v-if="targetedOrderReference"
+          class="mt-4 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground"
+          role="status"
+        >
+          {{
+            targetedAssignmentFound
+              ? `已定位订单 ${targetedOrderReference}`
+              : `正在定位订单 ${targetedOrderReference}`
+          }}
+        </p>
+
         <div
           v-if="planDetailPending"
           class="mt-6 flex items-center gap-2 text-sm text-muted-foreground"
@@ -429,6 +482,12 @@ function reasonLabel(reason?: string | null) {
                 v-for="assignment in planDetail.assignments"
                 :key="assignment.assignmentId ?? assignmentText(assignment)"
                 class="rounded-md border bg-background p-3"
+                :class="{
+                  'border-primary/50 bg-primary/5': assignment.orderId === targetedOrderReference,
+                }"
+                :data-targeted-order="
+                  assignment.orderId === targetedOrderReference ? 'true' : undefined
+                "
               >
                 <div class="flex items-center justify-between gap-3">
                   <p class="text-sm font-medium text-foreground">

@@ -40,6 +40,19 @@ public sealed class OrderUrgencyBusinessPriorityTests
     }
 
     [Fact]
+    public void Initial_change_has_no_fabricated_previous_priority()
+    {
+        var priority = OrderUrgencyBusinessPriority.Create(
+            "org", "env", "WO-1", "SO-1", BusinessPriorityLevel.P0,
+            "planner-1", "line stop", Now, null);
+
+        var change = priority.InitialChange();
+
+        Assert.False(change.PreviousLevel.HasValue);
+        Assert.Equal(BusinessPriorityLevel.P0, change.NewLevel);
+    }
+
+    [Fact]
     public void Expired_priority_is_retained_for_audit_but_not_effective()
     {
         var priority = OrderUrgencyBusinessPriority.Create(
@@ -49,5 +62,8 @@ public sealed class OrderUrgencyBusinessPriorityTests
         Assert.True(priority.IsEffectiveAt(Now.AddMinutes(59)));
         Assert.False(priority.IsEffectiveAt(Now.AddHours(1)));
         Assert.Equal(BusinessPriorityLevel.P1, priority.Level);
+        var expiredFact = priority.ToFact(Now.AddHours(1));
+        Assert.Equal(BusinessPriorityLevel.P1, expiredFact.Level);
+        Assert.Equal("expired-manual", expiredFact.Source);
     }
 }

@@ -107,6 +107,19 @@ public sealed class OrderUrgencyCalculatorTests
     }
 
     [Fact]
+    public void Slack_within_one_shift_is_high_risk_even_when_cr_is_not_close_to_one()
+    {
+        var result = OrderUrgencyCalculator.Calculate(Input(
+            dueUtc: Now.AddHours(15),
+            remainingCycle: TimeSpan.FromHours(8)));
+
+        Assert.Equal(7m, result.SlackHours);
+        Assert.Equal(1.875m, result.CriticalRatio);
+        Assert.Equal(OrderUrgencyLevel.HighRisk, result.TimeCriticality.Level);
+        Assert.Contains("time.slack.withinShift", result.TimeCriticality.ReasonCodes);
+    }
+
+    [Fact]
     public void Reason_codes_are_distinct_and_stably_sorted()
     {
         var result = OrderUrgencyCalculator.Calculate(Input(

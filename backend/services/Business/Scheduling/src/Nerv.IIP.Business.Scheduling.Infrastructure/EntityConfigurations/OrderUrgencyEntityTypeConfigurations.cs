@@ -38,7 +38,7 @@ public sealed class OrderUrgencyBusinessPriorityChangeEntityTypeConfiguration : 
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Priority-change row id.");
         OrderUrgencyBusinessPriorityEntityTypeConfiguration.ConfigureScope(builder);
         builder.Property(x => x.Revision).HasColumnName("revision").HasComment("Monotonic priority revision.");
-        builder.Property(x => x.PreviousLevel).HasColumnName("previous_level").HasConversion<string>().HasMaxLength(16).HasComment("Priority before the change.");
+        builder.Property(x => x.PreviousLevel).HasColumnName("previous_level").HasConversion<string>().HasMaxLength(16).HasComment("Priority before the change; null for the initial setting.");
         builder.Property(x => x.NewLevel).HasColumnName("new_level").HasConversion<string>().HasMaxLength(16).HasComment("Priority after the change.");
         builder.Property(x => x.ChangedBy).HasColumnName("changed_by").HasMaxLength(256).IsRequired().HasComment("Authenticated actor reference.");
         builder.Property(x => x.Reason).HasColumnName("reason").HasMaxLength(1000).IsRequired().HasComment("Human-readable change reason.");
@@ -64,6 +64,7 @@ public sealed class OrderUrgencySnapshotEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.CalculatedAtUtc).HasColumnName("calculated_at_utc").HasComment("UTC model calculation timestamp.");
         builder.Property(x => x.ResultJson).HasColumnName("result_json").HasColumnType("jsonb").IsRequired().HasComment("Explainable contributions, reason codes, and source timestamps.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OrderId, x.ModelVersion, x.InputFingerprint, x.BusinessPriorityRevision, x.CalculationBucketUtc }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OrderId, x.CalculatedAtUtc });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.BusinessReference, x.CalculatedAtUtc });
     }
 }

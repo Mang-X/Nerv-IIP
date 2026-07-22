@@ -45,7 +45,7 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     order_id = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false, comment: "Scheduling order/work-order id."),
                     business_reference = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false, comment: "Stable upstream business reference used across ERP, planning, MES, and scheduling."),
                     revision = table.Column<long>(type: "bigint", nullable: false, comment: "Monotonic priority revision."),
-                    previous_level = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false, comment: "Priority before the change."),
+                    previous_level = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: true, comment: "Priority before the change; null for the initial setting."),
                     new_level = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false, comment: "Priority after the change."),
                     changed_by = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false, comment: "Authenticated actor reference."),
                     reason = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: false, comment: "Human-readable change reason."),
@@ -109,11 +109,17 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                 columns: new[] { "organization_id", "environment_id", "business_reference", "calculated_at_utc" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_order_urgency_snapshots_organization_id_environment_id_orde~",
+                name: "IX_order_urgency_snapshots_organization_id_environment_id_ord~1",
                 schema: "scheduling",
                 table: "order_urgency_snapshots",
                 columns: new[] { "organization_id", "environment_id", "order_id", "model_version", "input_fingerprint", "business_priority_revision", "calculation_bucket_utc" },
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_order_urgency_snapshots_organization_id_environment_id_orde~",
+                schema: "scheduling",
+                table: "order_urgency_snapshots",
+                columns: new[] { "organization_id", "environment_id", "order_id", "calculated_at_utc" });
         }
 
         /// <inheritdoc />

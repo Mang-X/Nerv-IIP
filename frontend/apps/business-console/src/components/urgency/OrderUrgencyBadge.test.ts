@@ -2,6 +2,13 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import OrderUrgencyBadge from './OrderUrgencyBadge.vue'
 
+const routerLinkStub = {
+  RouterLink: {
+    props: ['to'],
+    template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
+  },
+}
+
 describe('OrderUrgencyBadge', () => {
   it('shows the unified level and all three explainable contributions', async () => {
     const wrapper = mount(OrderUrgencyBadge, {
@@ -40,6 +47,7 @@ describe('OrderUrgencyBadge', () => {
           },
         },
       },
+      global: { stubs: routerLinkStub },
     })
 
     expect(wrapper.text()).toContain('紧急 · CR 0.8')
@@ -49,5 +57,24 @@ describe('OrderUrgencyBadge', () => {
     expect(document.body.textContent).toContain('执行风险')
     expect(document.body.textContent).toContain('order-urgency-v1')
     expect(document.body.textContent).toContain('进入排产调整')
+  })
+
+  it('uses the issue vocabulary and routes to the scheduling order id without a page reload', async () => {
+    const wrapper = mount(OrderUrgencyBadge, {
+      props: {
+        orderReference: 'SO-001',
+        urgency: {
+          orderId: 'WO-001',
+          businessReference: 'SO-001',
+          level: 'critical',
+        },
+      },
+      global: { stubs: routerLinkStub },
+    })
+
+    expect(wrapper.text()).toContain('特急')
+    await wrapper.get('button').trigger('click')
+    const link = document.body.querySelector('[data-router-link]')
+    expect(link?.getAttribute('data-to')).toContain('WO-001')
   })
 })

@@ -4,6 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SchedulingPage from './scheduling.vue'
 
+const routeStub = vi.hoisted(() => ({ query: {} as Record<string, string> }))
+vi.mock('vue-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('vue-router')>()),
+  useRoute: () => ({ query: routeStub.query }),
+}))
+
 vi.mock('@/composables/useOrderUrgency', () => ({
   useOrderUrgencies: () => ({ byReference: { value: new Map() } }),
 }))
@@ -245,6 +251,7 @@ const sheetStubs = {
 }
 
 beforeEach(() => {
+  routeStub.query = {}
   detailSelection.planId = ''
   detailError.value = undefined
   stub.releasePlan.mockClear()
@@ -335,6 +342,16 @@ describe('APS scheduling workbench page', () => {
 
     expect(stub.releasePlan).toHaveBeenCalledWith('plan-001')
     expect(stub.toastSuccess).toHaveBeenCalled()
+  })
+
+  it('consumes the order reference route and opens the matching assignment in plan detail', async () => {
+    routeStub.query = { orderReference: 'WO-20260701-001' }
+    const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
+    await flushPromises()
+
+    expect(detailSelection.planId).toBe('plan-001')
+    expect(wrapper.find('[data-targeted-order="true"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('已定位订单 WO-20260701-001')
   })
 
   it('marks invalidated plans with their reason and blocks release', async () => {

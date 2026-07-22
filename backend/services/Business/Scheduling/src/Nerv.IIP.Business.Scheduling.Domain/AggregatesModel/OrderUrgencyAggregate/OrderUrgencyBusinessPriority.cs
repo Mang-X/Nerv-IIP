@@ -62,7 +62,7 @@ public sealed class OrderUrgencyBusinessPriority : Entity<OrderUrgencyBusinessPr
     public OrderUrgencyBusinessPriorityChange InitialChange() =>
         OrderUrgencyBusinessPriorityChange.Record(
             OrganizationId, EnvironmentId, OrderId, BusinessReference, Revision,
-            BusinessPriorityLevel.P2, Level, SetBy, Reason, SetAtUtc, ExpiresAtUtc);
+            null, Level, SetBy, Reason, SetAtUtc, ExpiresAtUtc);
 
     public OrderUrgencyBusinessPriorityChange Change(
         BusinessPriorityLevel level,
@@ -89,9 +89,13 @@ public sealed class OrderUrgencyBusinessPriority : Entity<OrderUrgencyBusinessPr
 
     public bool IsEffectiveAt(DateTimeOffset atUtc) => !ExpiresAtUtc.HasValue || ExpiresAtUtc > atUtc;
 
-    public BusinessPriorityFact ToFact(DateTimeOffset atUtc) => IsEffectiveAt(atUtc)
-        ? new BusinessPriorityFact(Level, "manual", Reason, SetAtUtc, ExpiresAtUtc, Revision)
-        : new BusinessPriorityFact(BusinessPriorityLevel.P2, "expired-manual", Reason, SetAtUtc, ExpiresAtUtc, Revision);
+    public BusinessPriorityFact ToFact(DateTimeOffset atUtc) => new(
+        Level,
+        IsEffectiveAt(atUtc) ? "manual" : "expired-manual",
+        Reason,
+        SetAtUtc,
+        ExpiresAtUtc,
+        Revision);
 
     private static void ValidateExpiry(DateTimeOffset setAtUtc, DateTimeOffset? expiresAtUtc)
     {
@@ -162,7 +166,7 @@ public sealed class OrderUrgencyBusinessPriorityChange : Entity<OrderUrgencyBusi
     public string OrderId { get; private set; } = string.Empty;
     public string BusinessReference { get; private set; } = string.Empty;
     public long Revision { get; private set; }
-    public BusinessPriorityLevel PreviousLevel { get; private set; }
+    public BusinessPriorityLevel? PreviousLevel { get; private set; }
     public BusinessPriorityLevel NewLevel { get; private set; }
     public string ChangedBy { get; private set; } = string.Empty;
     public string Reason { get; private set; } = string.Empty;
@@ -175,7 +179,7 @@ public sealed class OrderUrgencyBusinessPriorityChange : Entity<OrderUrgencyBusi
         string orderId,
         string businessReference,
         long revision,
-        BusinessPriorityLevel previousLevel,
+        BusinessPriorityLevel? previousLevel,
         BusinessPriorityLevel newLevel,
         string changedBy,
         string reason,

@@ -37,7 +37,7 @@ public sealed class CreateSchedulePlanCommandHandler(
     ISchedulingEquipmentAvailabilityProvider equipmentAvailabilityProvider,
     ISchedulingMaterialReadinessProvider materialReadinessProvider,
     ISchedulingOperationOverrideOverlay overrideOverlay,
-    OrderUrgencyService? urgencyService = null) : ICommandHandler<CreateSchedulePlanCommand, SchedulePlanContract>
+    OrderUrgencyService urgencyService) : ICommandHandler<CreateSchedulePlanCommand, SchedulePlanContract>
 {
     public async Task<SchedulePlanContract> Handle(CreateSchedulePlanCommand request, CancellationToken cancellationToken)
     {
@@ -70,20 +70,17 @@ public sealed class CreateSchedulePlanCommandHandler(
                     cancellationToken)
                 ?? throw new KnownException($"Schedule problem snapshot exists but generated plan was not found, ProblemId = {request.Problem.ProblemId}");
             var existingPlanContract = SchedulePlanContractMapper.ToContract(existingPlan);
-            if (urgencyService is not null)
-            {
-                var currentAvailability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
-                var currentMaterialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
-                var currentProblem = MaterialReadinessSchedulingAdapter.Apply(
-                    EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, currentAvailability),
-                    currentMaterialReadiness);
-                await urgencyService.CapturePlanAsync(
-                    currentProblem,
-                    existingPlanContract,
-                    CalculateProblemFingerprint(currentProblem),
-                    timeProvider.GetUtcNow(),
-                    cancellationToken);
-            }
+            var currentAvailability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
+            var currentMaterialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
+            var currentProblem = MaterialReadinessSchedulingAdapter.Apply(
+                EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, currentAvailability),
+                currentMaterialReadiness);
+            await urgencyService.CapturePlanAsync(
+                currentProblem,
+                existingPlanContract,
+                CalculateProblemFingerprint(currentProblem),
+                timeProvider.GetUtcNow(),
+                cancellationToken);
             return existingPlanContract;
         }
 
@@ -110,11 +107,8 @@ public sealed class CreateSchedulePlanCommandHandler(
             overlaidProblem.OrganizationId,
             overlaidProblem.EnvironmentId,
             SchedulePlanContractMapper.ToDomainSnapshot(generated)));
-        if (urgencyService is not null)
-        {
-            await urgencyService.CapturePlanAsync(
-                schedulingProblem, generated, urgencyInputFingerprint, generatedAtUtc, cancellationToken);
-        }
+        await urgencyService.CapturePlanAsync(
+            schedulingProblem, generated, urgencyInputFingerprint, generatedAtUtc, cancellationToken);
         return generated;
     }
 

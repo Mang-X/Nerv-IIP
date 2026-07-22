@@ -79,36 +79,8 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
         var requested = references.Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => x.Trim())
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var latest = await LoadLatestAsync(organizationId, environmentId, cancellationToken);
+        var latest = await LoadLatestAsync(organizationId, environmentId, requested, cancellationToken);
         var now = timeProvider.GetUtcNow();
-        var changed = false;
-        foreach (var snapshot in latest.Values.ToArray())
-        {
-            var refreshed = await RefreshFromSnapshotAsync(snapshot, now, null, cancellationToken);
-            if (refreshed is not null)
-            {
-                latest[snapshot.OrderId] = refreshed;
-                changed = true;
-            }
-        }
-        if (changed)
-        {
-            try
-            {
-                await dbContext.SaveChangesAsync(cancellationToken);
-            }
-            catch (DbUpdateException exception) when (
-                exception.Entries.Count > 0 &&
-                exception.Entries.All(entry => entry.Entity is OrderUrgencySnapshot))
-            {
-                foreach (var entry in exception.Entries)
-                {
-                    entry.State = EntityState.Detached;
-                }
-                latest = await LoadLatestAsync(organizationId, environmentId, cancellationToken);
-            }
-        }
-
         var known = latest.Values
             .Where(x => requested.Count == 0 || requested.Contains(x.OrderId) || requested.Contains(x.BusinessReference))
             .Select(x => OrderUrgencyContractMapper.Deserialize(x.ResultJson))
@@ -129,7 +101,6 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
         string orderReference,
         CancellationToken cancellationToken)
     {
-        await ListAsync(organizationId, environmentId, [orderReference], cancellationToken);
         var snapshots = await dbContext.OrderUrgencySnapshots.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
                 (x.OrderId == orderReference || x.BusinessReference == orderReference))
@@ -141,14 +112,8 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
             var missing = MissingContract(organizationId, environmentId, orderReference, timeProvider.GetUtcNow());
             return new OrderUrgencyDetailContract(missing, [missing], []);
         }
-        var orderId = snapshots[0].OrderId;
-        var changes = await dbContext.OrderUrgencyBusinessPriorityChanges.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.OrderId == orderId)
-            .OrderByDescending(x => x.Revision)
-            .Select(x => new OrderUrgencyBusinessPriorityChangeContract(
-                x.Revision, x.PreviousLevel.ToString().ToLower(), x.NewLevel.ToString().ToLower(),
-                x.ChangedBy, x.Reason, x.ChangedAtUtc, x.ExpiresAtUtc))
-            .ToArrayAsync(cancellationToken);
+        var changes = await LoadPriorityChangesAsync(
+            organizationId, environmentId, snapshots[0].OrderId, cancellationToken);
         var history = snapshots.Select(x => OrderUrgencyContractMapper.Deserialize(x.ResultJson)).ToArray();
         return new OrderUrgencyDetailContract(history[0], history, changes);
     }
@@ -163,12 +128,16 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
         DateTimeOffset? expiresAtUtc,
         CancellationToken cancellationToken)
     {
-        var latest = await dbContext.OrderUrgencySnapshots.AsNoTracking()
+        var snapshots = await dbContext.OrderUrgencySnapshots.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
                 (x.OrderId == orderReference || x.BusinessReference == orderReference))
             .OrderByDescending(x => x.CalculatedAtUtc)
-            .FirstOrDefaultAsync(cancellationToken)
+            .ThenByDescending(x => x.BusinessPriorityRevision)
+            .ToArrayAsync(cancellationToken);
+        var latest = snapshots.FirstOrDefault()
             ?? throw new KnownException($"Order urgency was not found, Reference = {orderReference}");
+        var existingChanges = await LoadPriorityChangesAsync(
+            organizationId, environmentId, latest.OrderId, cancellationToken);
         var now = timeProvider.GetUtcNow();
         var priority = await dbContext.OrderUrgencyBusinessPriorities.SingleOrDefaultAsync(
             x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.OrderId == latest.OrderId,
@@ -187,32 +156,106 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
             change = priority.Change(level, changedBy, reason, now, expiresAtUtc);
         }
         dbContext.OrderUrgencyBusinessPriorityChanges.Add(change);
-        await RefreshFromSnapshotAsync(latest, now, priority.ToFact(now), cancellationToken, force: true);
+        var refreshed = await RefreshFromSnapshotAsync(
+            latest, now, priority.ToFact(now), cancellationToken, force: true)
+            ?? throw new InvalidOperationException("A forced priority refresh must produce an urgency snapshot.");
+        var current = OrderUrgencyContractMapper.Deserialize(refreshed.ResultJson);
+        var history = new[] { current }
+            .Concat(snapshots.Select(x => OrderUrgencyContractMapper.Deserialize(x.ResultJson)))
+            .DistinctBy(
+                x => $"{x.ModelVersion}\u001f{x.InputFingerprint}\u001f{x.BusinessPriority.Revision}\u001f{x.CalculatedAtUtc:O}",
+                StringComparer.Ordinal)
+            .ToArray();
+        var changes = new[] { ToContract(change) }
+            .Concat(existingChanges)
+            .OrderByDescending(x => x.Revision)
+            .ToArray();
+        return new OrderUrgencyDetailContract(current, history, changes);
+    }
+
+    private async Task<Dictionary<string, OrderUrgencySnapshot>> LoadLatestAsync(
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<string> references,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.OrderUrgencySnapshots.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId);
+        if (references.Count > 0)
+        {
+            var requested = references.ToArray();
+            query = query.Where(x => requested.Contains(x.OrderId) || requested.Contains(x.BusinessReference));
+        }
+
+        var latestCalculationTimes = query
+            .GroupBy(x => x.OrderId)
+            .Select(group => new
+            {
+                OrderId = group.Key,
+                CalculatedAtUtc = group.Max(x => x.CalculatedAtUtc),
+            });
+        var snapshots = await query
+            .Join(
+                latestCalculationTimes,
+                snapshot => new { snapshot.OrderId, snapshot.CalculatedAtUtc },
+                latest => new { latest.OrderId, latest.CalculatedAtUtc },
+                (snapshot, _) => snapshot)
+            .OrderByDescending(x => x.BusinessPriorityRevision)
+            .ToArrayAsync(cancellationToken);
+        return snapshots.GroupBy(x => x.OrderId, StringComparer.Ordinal).ToDictionary(x => x.Key, x => x.First(), StringComparer.Ordinal);
+    }
+
+    public async Task RefreshContextAsync(
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        var latest = await LoadLatestAsync(organizationId, environmentId, [], cancellationToken);
+        var now = timeProvider.GetUtcNow();
+        var changed = false;
+        foreach (var snapshot in latest.Values)
+        {
+            changed |= await RefreshFromSnapshotAsync(snapshot, now, null, cancellationToken) is not null;
+        }
+        if (!changed) return;
+
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateException exception) when (
+            exception.Entries.Count > 0 &&
+            exception.Entries.All(entry => entry.Entity is OrderUrgencySnapshot))
         {
-            throw new KnownException("Order business priority changed concurrently; reload the latest revision and retry.");
+            foreach (var entry in exception.Entries)
+            {
+                entry.State = EntityState.Detached;
+            }
         }
-        catch (DbUpdateException)
-        {
-            throw new KnownException("Order business priority could not be recorded atomically; reload and retry.");
-        }
-        return await GetAsync(organizationId, environmentId, latest.OrderId, cancellationToken);
     }
 
-    private async Task<Dictionary<string, OrderUrgencySnapshot>> LoadLatestAsync(
-        string organizationId, string environmentId, CancellationToken cancellationToken)
+    private async Task<IReadOnlyCollection<OrderUrgencyBusinessPriorityChangeContract>> LoadPriorityChangesAsync(
+        string organizationId,
+        string environmentId,
+        string orderId,
+        CancellationToken cancellationToken)
     {
-        var snapshots = await dbContext.OrderUrgencySnapshots.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
-            .OrderByDescending(x => x.CalculatedAtUtc)
-            .ThenByDescending(x => x.BusinessPriorityRevision)
+        var changes = await dbContext.OrderUrgencyBusinessPriorityChanges.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.OrderId == orderId)
+            .OrderByDescending(x => x.Revision)
             .ToArrayAsync(cancellationToken);
-        return snapshots.GroupBy(x => x.OrderId, StringComparer.Ordinal).ToDictionary(x => x.Key, x => x.First(), StringComparer.Ordinal);
+        return changes.Select(ToContract).ToArray();
     }
+
+    private static OrderUrgencyBusinessPriorityChangeContract ToContract(
+        OrderUrgencyBusinessPriorityChange change) => new(
+            change.Revision,
+            change.PreviousLevel.HasValue ? change.PreviousLevel.Value.ToString().ToLowerInvariant() : null,
+            change.NewLevel.ToString().ToLowerInvariant(),
+            change.ChangedBy,
+            change.Reason,
+            change.ChangedAtUtc,
+            change.ExpiresAtUtc);
 
     private async Task<OrderUrgencySnapshot?> RefreshFromSnapshotAsync(
         OrderUrgencySnapshot snapshot,
@@ -360,6 +403,29 @@ public sealed record SetOrderUrgencyBusinessPriorityCommand(
     string ChangedBy,
     string Reason,
     DateTimeOffset? ExpiresAtUtc) : ICommand<OrderUrgencyDetailContract>;
+
+public sealed class OrderUrgencyPriorityConflictBehavior
+    : IPipelineBehavior<SetOrderUrgencyBusinessPriorityCommand, OrderUrgencyDetailContract>
+{
+    public async Task<OrderUrgencyDetailContract> Handle(
+        SetOrderUrgencyBusinessPriorityCommand request,
+        RequestHandlerDelegate<OrderUrgencyDetailContract> next,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await next(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new KnownException("Order business priority changed concurrently; reload the latest revision and retry.");
+        }
+        catch (DbUpdateException)
+        {
+            throw new KnownException("Order business priority could not be recorded atomically; reload and retry.");
+        }
+    }
+}
 
 public sealed class SetOrderUrgencyBusinessPriorityCommandHandler(OrderUrgencyService service)
     : ICommandHandler<SetOrderUrgencyBusinessPriorityCommand, OrderUrgencyDetailContract>

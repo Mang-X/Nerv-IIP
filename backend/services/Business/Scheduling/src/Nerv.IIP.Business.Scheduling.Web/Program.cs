@@ -150,6 +150,7 @@ try
             .AddCommandLockBehavior()
             .AddKnownExceptionValidationBehavior()
             .AddBehavior<ReleaseSchedulePlanUniqueConflictBehavior>()
+            .AddBehavior<OrderUrgencyPriorityConflictBehavior>()
             .AddUnitOfWorkBehaviors());
 
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = SchedulingFacts.ServiceName)

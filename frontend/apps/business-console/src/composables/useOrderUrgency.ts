@@ -5,6 +5,35 @@ import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { bindBusinessContext, hasBusinessContext } from './businessContextBinding'
 
+const urgencyRank: Record<string, number> = {
+  critical: 5,
+  urgent: 4,
+  highrisk: 3,
+  attention: 2,
+  normal: 1,
+}
+
+function isMoreUrgent(
+  candidate: BusinessConsoleOrderUrgency,
+  current: BusinessConsoleOrderUrgency,
+) {
+  const candidateRank = urgencyRank[candidate.level?.toLowerCase() ?? ''] ?? 0
+  const currentRank = urgencyRank[current.level?.toLowerCase() ?? ''] ?? 0
+  if (candidateRank !== currentRank) return candidateRank > currentRank
+  return (candidate.orderId ?? '').localeCompare(current.orderId ?? '') < 0
+}
+
+export function indexOrderUrgenciesByReference(items: BusinessConsoleOrderUrgency[]) {
+  const map = new Map<string, BusinessConsoleOrderUrgency>()
+  for (const item of items) {
+    if (item.orderId) map.set(item.orderId, item)
+    if (!item.businessReference) continue
+    const current = map.get(item.businessReference)
+    if (!current || isMoreUrgent(item, current)) map.set(item.businessReference, item)
+  }
+  return map
+}
+
 export function useOrderUrgencies(
   references: MaybeRefOrGetter<readonly (string | null | undefined)[]>,
 ) {
@@ -41,12 +70,7 @@ export function useOrderUrgencies(
     return envelope?.success ? (envelope.data ?? []) : []
   })
   const byReference = computed(() => {
-    const map = new Map<string, BusinessConsoleOrderUrgency>()
-    for (const item of items.value) {
-      if (item.orderId) map.set(item.orderId, item)
-      if (item.businessReference) map.set(item.businessReference, item)
-    }
-    return map
+    return indexOrderUrgenciesByReference(items.value)
   })
 
   return {

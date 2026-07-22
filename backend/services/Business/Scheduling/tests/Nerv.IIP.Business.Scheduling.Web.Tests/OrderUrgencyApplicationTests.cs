@@ -6,6 +6,8 @@ using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Business.Scheduling.Web.Application.Urgency;
+using Nerv.IIP.Business.Scheduling.Web.Endpoints.Scheduling;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
@@ -49,6 +51,7 @@ public sealed class OrderUrgencyApplicationTests
         var detail = await service.SetBusinessPriorityAsync(
             "org-001", "prod", "SO-URG-001", BusinessPriorityLevel.P0,
             "user:test", "Customer line-stop escalation", null, CancellationToken.None);
+        await db.SaveChangesAsync(CancellationToken.None);
 
         Assert.Equal("critical", detail.Current.Level);
         var change = Assert.Single(detail.BusinessPriorityChanges);
@@ -58,7 +61,7 @@ public sealed class OrderUrgencyApplicationTests
     }
 
     [Fact]
-    public async Task Periodic_query_marks_old_source_facts_stale_and_records_a_new_snapshot()
+    public async Task Read_is_side_effect_free_and_periodic_refresh_records_a_stale_snapshot()
     {
         await using var provider = CreateProvider();
         using var scope = provider.CreateScope();
@@ -75,6 +78,10 @@ public sealed class OrderUrgencyApplicationTests
         var before = await db.OrderUrgencySnapshots.CountAsync();
 
         clock.UtcNow = Now.AddHours(3);
+        await service.ListAsync("org-001", "prod", ["WO-RUSH-REAR-001"], CancellationToken.None);
+        Assert.Equal(before, await db.OrderUrgencySnapshots.CountAsync());
+
+        await service.RefreshContextAsync("org-001", "prod", CancellationToken.None);
         var refreshed = await service.ListAsync("org-001", "prod", ["WO-RUSH-REAR-001"], CancellationToken.None);
 
         Assert.True(Assert.Single(refreshed).ExecutionRisk.IsSourceStale);
@@ -106,6 +113,7 @@ public sealed class OrderUrgencyApplicationTests
             "quality-hold", null, "WO-RUSH-REAR-001", null, null, clock.UtcNow, clock.UtcNow));
         await db.SaveChangesAsync(CancellationToken.None);
 
+        await service.RefreshContextAsync("org-001", "prod", CancellationToken.None);
         var refreshed = Assert.Single(await service.ListAsync(
             "org-001", "prod", ["WO-RUSH-REAR-001"], CancellationToken.None));
 
@@ -143,15 +151,17 @@ public sealed class OrderUrgencyApplicationTests
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var clock = new MutableTimeProvider(Now);
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var service = new OrderUrgencyService(db, clock);
         var first = new CreateSchedulePlanCommandHandler(
             db, new FiniteCapacityScheduler(), clock,
             new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
-            new SchedulingOperationOverrideOverlay(db));
+            new SchedulingOperationOverrideOverlay(db), service);
         await first.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
+        await db.SaveChangesAsync(CancellationToken.None);
+        db.OrderUrgencySnapshots.RemoveRange(await db.OrderUrgencySnapshots.ToArrayAsync());
         await db.SaveChangesAsync(CancellationToken.None);
         Assert.Empty(await db.OrderUrgencySnapshots.ToArrayAsync());
 
-        var service = new OrderUrgencyService(db, clock);
         var replay = new CreateSchedulePlanCommandHandler(
             db, new FiniteCapacityScheduler(), clock,
             new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
@@ -160,6 +170,36 @@ public sealed class OrderUrgencyApplicationTests
         await db.SaveChangesAsync(CancellationToken.None);
 
         Assert.Equal(problem.Orders.Count, await db.OrderUrgencySnapshots.CountAsync());
+    }
+
+    [Fact]
+    public async Task Priority_conflict_behavior_translates_unit_of_work_concurrency_failures()
+    {
+        var behavior = new OrderUrgencyPriorityConflictBehavior();
+        var request = new SetOrderUrgencyBusinessPriorityCommand(
+            "org-001", "prod", "WO-001", BusinessPriorityLevel.P0,
+            "user:test", "line stop", null);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => behavior.Handle(
+            request,
+            _ => throw new DbUpdateConcurrencyException("forced"),
+            CancellationToken.None));
+
+        Assert.Contains("concurrently", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("7")]
+    [InlineData("-1")]
+    [InlineData("P4")]
+    public void Priority_validator_rejects_numeric_and_out_of_range_levels(string level)
+    {
+        var result = new SetOrderUrgencyBusinessPriorityRequestValidator().Validate(
+            new SetOrderUrgencyBusinessPriorityRequest(
+                "WO-001", "org-001", "prod", level, "line stop"));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.PropertyName == "Level");
     }
 
     private static ServiceProvider CreateProvider()
