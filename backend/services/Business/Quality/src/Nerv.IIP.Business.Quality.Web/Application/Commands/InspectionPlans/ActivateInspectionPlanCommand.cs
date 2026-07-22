@@ -18,7 +18,7 @@ public sealed class ActivateInspectionPlanCommandHandler(IInspectionPlanReposito
 {
     public async Task Handle(ActivateInspectionPlanCommand request, CancellationToken cancellationToken)
     {
-        var plan = await repository.GetAsync(request.InspectionPlanId, cancellationToken)
+        var plan = await repository.GetWithCharacteristicsByIdAsync(request.InspectionPlanId, cancellationToken)
             ?? throw new KnownException($"Inspection plan '{request.InspectionPlanId}' was not found.");
         plan.Activate();
     }

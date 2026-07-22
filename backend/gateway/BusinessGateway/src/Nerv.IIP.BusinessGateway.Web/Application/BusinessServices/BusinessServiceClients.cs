@@ -256,6 +256,16 @@ public interface IBusinessInventoryClient
 
 public interface IBusinessQualityClient
 {
+    Task<BusinessConsoleCreateInspectionPlanResponse> CreateInspectionPlanAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateInspectionPlanRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> ActivateInspectionPlanAsync(
+        string internalBearerToken,
+        string inspectionPlanId,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleQualityListResponse> ListInspectionPlansAsync(
         string internalBearerToken,
         BusinessConsoleQualityListRequest request,
@@ -2586,6 +2596,47 @@ public sealed class HttpBusinessInventoryClient(
 public sealed class HttpBusinessQualityClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessQualityClient
 {
+    public async Task<BusinessConsoleCreateInspectionPlanResponse> CreateInspectionPlanAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateInspectionPlanRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamCreateInspectionPlanResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/quality/inspection-plans",
+            request,
+            cancellationToken);
+        if (!Guid.TryParse(response.InspectionPlanId, out var inspectionPlanId) || inspectionPlanId == Guid.Empty)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return new BusinessConsoleCreateInspectionPlanResponse(inspectionPlanId.ToString());
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> ActivateInspectionPlanAsync(
+        string internalBearerToken,
+        string inspectionPlanId,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(inspectionPlanId, out var parsedInspectionPlanId) || parsedInspectionPlanId == Guid.Empty)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return SendAsync<BusinessConsoleAcceptedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/quality/inspection-plans/{Uri.EscapeDataString(inspectionPlanId)}/activate",
+            new DownstreamActivateInspectionPlanRequest(parsedInspectionPlanId.ToString()),
+            cancellationToken);
+    }
+
     public async Task<BusinessConsoleQualityListResponse> ListInspectionPlansAsync(
         string internalBearerToken,
         BusinessConsoleQualityListRequest request,
@@ -3035,6 +3086,10 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
     private sealed record DownstreamInspectionPlanListResponse(
         IReadOnlyCollection<DownstreamInspectionPlanItem> Items,
         int Total);
+
+    private sealed record DownstreamCreateInspectionPlanResponse(string? InspectionPlanId);
+
+    private sealed record DownstreamActivateInspectionPlanRequest(string InspectionPlanId);
 
     private sealed record DownstreamInspectionRecordListResponse(
         IReadOnlyCollection<DownstreamInspectionRecordItem> Items,

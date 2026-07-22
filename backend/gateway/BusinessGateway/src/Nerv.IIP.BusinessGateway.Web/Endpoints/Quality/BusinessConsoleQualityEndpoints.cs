@@ -213,9 +213,107 @@ public sealed class BusinessConsoleQualityInspectionPlanCharacteristicsRequestVa
 {
     public BusinessConsoleQualityInspectionPlanCharacteristicsRequestValidator()
     {
-        RuleFor(x => x.InspectionPlanId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.InspectionPlanId)
+            .NotEmpty()
+            .Must(value => Guid.TryParse(value, out var parsed) && parsed != Guid.Empty)
+            .WithMessage("InspectionPlanId must be a non-empty GUID.");
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleCreateInspectionPlanRequestValidator
+    : Validator<BusinessConsoleCreateInspectionPlanRequest>
+{
+    public BusinessConsoleCreateInspectionPlanRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PlanCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Category).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.SkuCode).MaximumLength(100);
+        RuleFor(x => x.PartnerId).MaximumLength(100);
+        RuleFor(x => x.WorkCenterId).MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).MaximumLength(100);
+        RuleFor(x => x.DocumentType).MaximumLength(100);
+        RuleFor(x => x.Characteristics).NotEmpty();
+        RuleForEach(x => x.Characteristics).ChildRules(characteristic =>
+        {
+            characteristic.RuleFor(x => x.CharacteristicCode).NotEmpty().MaximumLength(100);
+            characteristic.RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+            characteristic.RuleFor(x => x.Method).NotEmpty().MaximumLength(100);
+            characteristic.RuleFor(x => x.Severity).NotEmpty().MaximumLength(50);
+            characteristic.RuleFor(x => x.SamplingRule).NotEmpty().MaximumLength(200);
+        });
+    }
+}
+
+public sealed class BusinessConsoleActivateInspectionPlanRequestValidator
+    : Validator<BusinessConsoleActivateInspectionPlanRequest>
+{
+    public BusinessConsoleActivateInspectionPlanRequestValidator()
+    {
+        RuleFor(x => x.InspectionPlanId)
+            .NotEmpty()
+            .Must(value => Guid.TryParse(value, out var parsed) && parsed != Guid.Empty)
+            .WithMessage("InspectionPlanId must be a non-empty GUID.");
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+    }
+}
+
+[Tags("Business Console Quality")]
+[HttpPost("/api/business-console/v1/quality/inspection-plans")]
+[BusinessGatewayOperationId("createBusinessConsoleQualityInspectionPlan")]
+public sealed class CreateBusinessConsoleQualityInspectionPlanEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateInspectionPlanRequest, BusinessConsoleCreateInspectionPlanResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionPlansManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateInspectionPlanRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateInspectionPlanRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleCreateInspectionPlanResponse> ForwardAsync(
+        BusinessConsoleCreateInspectionPlanRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        quality.CreateInspectionPlanAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Quality")]
+[HttpPost("/api/business-console/v1/quality/inspection-plans/{inspectionPlanId}/activate")]
+[BusinessGatewayOperationId("activateBusinessConsoleQualityInspectionPlan")]
+public sealed class ActivateBusinessConsoleQualityInspectionPlanEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleActivateInspectionPlanRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionPlansManage)
+{
+    protected override string OrganizationId(BusinessConsoleActivateInspectionPlanRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleActivateInspectionPlanRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleActivateInspectionPlanRequest request) => "inspection-plan";
+
+    protected override string? ResourceId(BusinessConsoleActivateInspectionPlanRequest request) =>
+        Route<string>("inspectionPlanId") ?? request.InspectionPlanId;
+
+    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleActivateInspectionPlanRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var inspectionPlanId = Route<string>("inspectionPlanId") ?? request.InspectionPlanId;
+        return quality.ActivateInspectionPlanAsync(
+            tokenProvider.BearerToken,
+            inspectionPlanId,
+            cancellationToken);
     }
 }
 

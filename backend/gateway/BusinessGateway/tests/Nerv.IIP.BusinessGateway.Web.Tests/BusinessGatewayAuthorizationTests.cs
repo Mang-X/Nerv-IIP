@@ -581,6 +581,34 @@ public sealed class BusinessGatewayAuthorizationTests
             environmentId = "env-dev",
             defectReason = "Supplier certificate mismatch",
         },
+        "/api/business-console/v1/quality/inspection-plans" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            planCode = "IP-RUN-001",
+            category = "operation",
+            skuCode = "SKU-RUN-001",
+            workCenterId = "WC-RUN-001",
+            documentType = "operation-task",
+            characteristics = new[]
+            {
+                new
+                {
+                    characteristicCode = "ATTR-RUN-001",
+                    name = "Operation acceptance",
+                    method = "visual",
+                    severity = "major",
+                    required = true,
+                    samplingRule = "100-percent",
+                },
+            },
+        },
+        "/api/business-console/v1/quality/inspection-plans/019f87d0-3f7f-7ad0-a829-7724ea91c111/activate" => new
+        {
+            inspectionPlanId = "019f87d0-3f7f-7ad0-a829-7724ea91c111",
+            organizationId = "org-001",
+            environmentId = "env-dev",
+        },
         "/api/business-console/v1/telemetry/samples" => new
         {
             organizationId = "org-001",
@@ -994,6 +1022,8 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks", BusinessGatewayPermissions.InventoryCountsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks/count-001/adjustments", BusinessGatewayPermissions.InventoryCountsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/inspection-plans", BusinessGatewayPermissions.QualityInspectionRecordsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-plans", BusinessGatewayPermissions.QualityInspectionPlansManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-plans/019f87d0-3f7f-7ad0-a829-7724ea91c111/activate", BusinessGatewayPermissions.QualityInspectionPlansManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/inspection-records", BusinessGatewayPermissions.QualityInspectionRecordsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records", BusinessGatewayPermissions.QualityInspectionRecordsCreate);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records/inspection-001/failures/ncr", BusinessGatewayPermissions.QualityNcrManage);

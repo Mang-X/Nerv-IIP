@@ -178,6 +178,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
   const setup: JsonRecord[] = []
   let sessionCredential = ''
   let deviceAssetId = ''
+  let inspectionPlanId = ''
 
   for (const node of requiredNodes) {
     evidence.set(node, {
@@ -465,6 +466,42 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           idempotencyKey: `sku-${code}`,
         })
       }
+      const inspectionPlan = asRecord(
+        await create('/api/business-console/v1/quality/inspection-plans', {
+          organizationId,
+          environmentId,
+          planCode: `IP-M524-${suffix}`,
+          category: 'operation',
+          skuCode: finishedSku,
+          partnerId: null,
+          workCenterId: workCenterCode,
+          deviceAssetId: null,
+          documentType: 'operation-task',
+          characteristics: [
+            {
+              characteristicCode: `ATTR-M524-${suffix}`,
+              name: 'MAN-524 operation acceptance',
+              method: 'visual',
+              severity: 'major',
+              required: true,
+              samplingRule: '100-percent',
+              characteristicType: 'attribute',
+            },
+          ],
+        }),
+      )
+      inspectionPlanId = textOf(inspectionPlan.inspectionPlanId).trim()
+      if (!inspectionPlanId) {
+        throw new Error('Quality did not return the run-scoped inspection plan id.')
+      }
+      await create(
+        `/api/business-console/v1/quality/inspection-plans/${encodeURIComponent(inspectionPlanId)}/activate`,
+        {
+          organizationId,
+          environmentId,
+          inspectionPlanId,
+        },
+      )
       await create('/api/business-console/v1/engineering/standard-operations', {
         organizationId,
         environmentId,
@@ -1175,9 +1212,11 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     }
 
     let productionReportId = ''
+    let operationTaskId = ''
     if (workOrderId && operationTask) {
       try {
         const taskId = textOf(operationTask.operationTaskId)
+        operationTaskId = taskId
         await call(
           'POST',
           queryPath(
@@ -1189,7 +1228,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             idempotencyKey: `start-task-${suffix}`,
           },
         )
-        const report = await call('POST', '/api/business-console/v1/mes/production-reports', {
+        const productionReportRequest = {
           organizationId,
           environmentId,
           workOrderId,
@@ -1202,9 +1241,26 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           consumedMaterialLots: [],
           reworkQuantity: 0,
           producedLotNo,
-        })
+        }
+        const report = await call(
+          'POST',
+          '/api/business-console/v1/mes/production-reports',
+          productionReportRequest,
+        )
         const reportData = asRecord(dataOf(report.payload))
         productionReportId = textOf(reportData.productionReportId)
+        const reportReplay = await call(
+          'POST',
+          '/api/business-console/v1/mes/production-reports',
+          productionReportRequest,
+        )
+        const reportReplayData = asRecord(dataOf(reportReplay.payload))
+        const reportReplayId = textOf(reportReplayData.productionReportId)
+        if (!productionReportId || reportReplayId !== productionReportId) {
+          throw new Error(
+            `Production-report replay returned ${reportReplayId || 'no id'} instead of ${productionReportId || 'no original id'}.`,
+          )
+        }
         record({
           node: 'mes-task-production-report',
           sourceObject: taskId,
@@ -1212,10 +1268,14 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           stableKey: `${salesOrderNo} -> ${workOrderId} -> ${producedLotNo}`,
           automationMode: scheduleReleased ? 'mixed' : 'manual',
           request: report.summary,
-          responseOrLog: report.publicPayload,
+          responseOrLog: {
+            original: report.publicPayload,
+            replay: reportReplay.publicPayload,
+            replayConfirmed: true,
+          },
           conclusion: 'runtime-confirmed',
           demoWording:
-            'The exact MES task was released, started, and reported through public HTTP while preserving the run-scoped produced lot.',
+            'The exact MES task was released, started, and reported through public HTTP; replaying the same idempotency key returned the same report while preserving the run-scoped produced lot.',
           responsibilityIssue: '#965',
         })
       } catch (error) {
@@ -1223,26 +1283,54 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
       }
     }
 
-    if (productionReportId) {
+    if (productionReportId && operationTaskId && inspectionPlanId) {
       try {
-        const quality = await pollRows(
-          '/api/business-console/v1/quality/inspection-tasks',
-          { organizationId, environmentId, skuCode: finishedSku, take: 100 },
-          (row) =>
-            row.sourceDocumentId === productionReportId || row.sourceDocumentId === workOrderId,
-        )
+        const qualityPath = '/api/business-console/v1/quality/inspection-tasks'
+        const qualityQuery = { organizationId, environmentId, skuCode: finishedSku, take: 100 }
+        const qualityDeadline = Date.now() + 45_000
+        let qualityCall: Awaited<ReturnType<typeof call>> | null = null
+        let matchingTasks: JsonRecord[] = []
+        do {
+          qualityCall = await call('GET', queryPath(qualityPath, qualityQuery))
+          matchingTasks = rowsOf(qualityCall.payload).filter(
+            (row) =>
+              textOf(row.sourceDocumentId) === workOrderId &&
+              textOf(row.sourceDocumentLineId) === operationTaskId &&
+              textOf(row.skuCode) === finishedSku,
+          )
+          if (matchingTasks.length === 1) break
+          if (matchingTasks.length > 1) {
+            throw new Error(
+              `Quality created ${matchingTasks.length} inspection tasks for ${workOrderId}/${operationTaskId}; expected exactly one.`,
+            )
+          }
+          await page.waitForTimeout(1_000)
+        } while (Date.now() < qualityDeadline)
+        if (!qualityCall || matchingTasks.length !== 1) {
+          throw new Error(
+            `Timed out waiting for the unique run-scoped Quality task for ${workOrderId}/${operationTaskId}.`,
+          )
+        }
+        const inspectionTask = matchingTasks[0]!
         record({
           node: 'production-report-quality',
           sourceObject: productionReportId,
-          downstreamObject: textOf(quality.match.inspectionTaskId),
-          stableKey: `${productionReportId} -> ${textOf(quality.match.inspectionTaskId)}`,
+          downstreamObject: textOf(inspectionTask.inspectionTaskId),
+          stableKey: `${inspectionPlanId} -> ${workOrderId} -> ${operationTaskId} -> ${textOf(inspectionTask.inspectionTaskId)}`,
           automationMode: 'automatic',
-          request: quality.call.summary,
-          responseOrLog: publicJson(quality.match) as JsonRecord,
+          request: qualityCall.summary,
+          responseOrLog: {
+            inspectionPlanId,
+            workOrderId,
+            operationTaskId,
+            skuCode: finishedSku,
+            workCenterId: workCenterCode,
+            inspectionTask: publicJson(inspectionTask),
+          },
           conclusion: 'runtime-confirmed',
           demoWording:
-            'Quality exposed an inspection task whose source document belongs to this production report/work order.',
-          responsibilityIssue: '#965',
+            'Quality matched the active run-scoped operation plan and exposed exactly one task for this work order and operation task.',
+          responsibilityIssue: '#1046',
         })
       } catch (error) {
         markFailure('production-report-quality', error)
