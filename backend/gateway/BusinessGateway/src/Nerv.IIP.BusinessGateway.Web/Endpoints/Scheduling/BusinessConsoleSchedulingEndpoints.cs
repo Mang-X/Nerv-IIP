@@ -13,11 +13,28 @@ public sealed record BusinessConsoleSchedulingProblemRequest(SchedulingProblemCo
 
 public abstract class AuthorizedBusinessSchedulingProxyEndpoint<TRequest, TResponse>(
     IBusinessGatewayAuthorizationClient auth,
-    string permissionCode)
-    : AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(auth, permissionCode)
+    IReadOnlyCollection<string> permissionCodes)
+    : AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(auth, permissionCodes)
     where TRequest : notnull
 {
+    protected AuthorizedBusinessSchedulingProxyEndpoint(
+        IBusinessGatewayAuthorizationClient auth,
+        string permissionCode) : this(auth, [permissionCode])
+    {
+    }
+
     protected override JsonSerializerOptions? ResponseJsonOptions => SchedulingJson.Options;
+}
+
+internal static class OrderUrgencyReadPermissions
+{
+    public static readonly string[] All =
+    [
+        BusinessGatewayPermissions.SchedulingPlansRead,
+        BusinessGatewayPermissions.ErpSalesRead,
+        BusinessGatewayPermissions.PlanningDemandsRead,
+        BusinessGatewayPermissions.MesWorkOrdersRead,
+    ];
 }
 
 [Tags("Business Console Scheduling")]
@@ -213,6 +230,62 @@ public sealed class UpsertBusinessConsoleSchedulingOperationOverrideEndpoint(
             cancellationToken);
 }
 
+[Tags("Business Console Scheduling")]
+[HttpGet("/api/business-console/v1/scheduling/order-urgencies")]
+[BusinessGatewayOperationId("listBusinessConsoleOrderUrgencies")]
+public sealed class ListBusinessConsoleOrderUrgenciesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessSchedulingClient scheduling,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessSchedulingProxyEndpoint<BusinessConsoleOrderUrgencyListRequest, IReadOnlyCollection<OrderUrgencyContract>>(
+        auth, OrderUrgencyReadPermissions.All)
+{
+    protected override string OrganizationId(BusinessConsoleOrderUrgencyListRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleOrderUrgencyListRequest request) => request.EnvironmentId;
+    protected override Task<IReadOnlyCollection<OrderUrgencyContract>> ForwardAsync(
+        BusinessConsoleOrderUrgencyListRequest request, string bearerToken, CancellationToken cancellationToken) =>
+        scheduling.ListOrderUrgenciesAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Scheduling")]
+[HttpGet("/api/business-console/v1/scheduling/order-urgencies/{orderReference}")]
+[BusinessGatewayOperationId("getBusinessConsoleOrderUrgency")]
+public sealed class GetBusinessConsoleOrderUrgencyEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessSchedulingClient scheduling,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessSchedulingProxyEndpoint<BusinessConsoleOrderUrgencyRequest, OrderUrgencyDetailContract>(
+        auth, OrderUrgencyReadPermissions.All)
+{
+    protected override string OrganizationId(BusinessConsoleOrderUrgencyRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleOrderUrgencyRequest request) => request.EnvironmentId;
+    protected override string ResourceType(BusinessConsoleOrderUrgencyRequest request) => "scheduling-order";
+    protected override string? ResourceId(BusinessConsoleOrderUrgencyRequest request) => request.OrderReference;
+    protected override Task<OrderUrgencyDetailContract> ForwardAsync(
+        BusinessConsoleOrderUrgencyRequest request, string bearerToken, CancellationToken cancellationToken) =>
+        scheduling.GetOrderUrgencyAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Scheduling")]
+[HttpPut("/api/business-console/v1/scheduling/order-urgencies/{orderReference}/business-priority")]
+[BusinessGatewayOperationId("setBusinessConsoleOrderUrgencyBusinessPriority")]
+public sealed class SetBusinessConsoleOrderUrgencyBusinessPriorityEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessSchedulingClient scheduling,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessSchedulingProxyEndpoint<BusinessConsoleSetOrderUrgencyBusinessPriorityRequest, OrderUrgencyDetailContract>(
+        auth, BusinessGatewayPermissions.SchedulingPlansManage)
+{
+    protected override string OrganizationId(BusinessConsoleSetOrderUrgencyBusinessPriorityRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleSetOrderUrgencyBusinessPriorityRequest request) => request.EnvironmentId;
+    protected override string ResourceType(BusinessConsoleSetOrderUrgencyBusinessPriorityRequest request) => "scheduling-order";
+    protected override string? ResourceId(BusinessConsoleSetOrderUrgencyBusinessPriorityRequest request) => request.OrderReference;
+    protected override Task<OrderUrgencyDetailContract> ForwardAsync(
+        BusinessConsoleSetOrderUrgencyBusinessPriorityRequest request, string bearerToken, CancellationToken cancellationToken) =>
+        scheduling.SetOrderUrgencyBusinessPriorityAsync(
+            tokenProvider.BearerToken, request, RequireAuthorizedPrincipalActorReference(), cancellationToken);
+}
+
 public sealed class BusinessConsoleSchedulingProblemRequestValidator : Validator<BusinessConsoleSchedulingProblemRequest>
 {
     public BusinessConsoleSchedulingProblemRequestValidator()
@@ -260,5 +333,39 @@ public sealed class BusinessConsoleScheduleOperationOverrideRequestValidator : V
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.ResourceId).NotEmpty().MaximumLength(128);
         RuleFor(x => x.EndUtc).GreaterThan(x => x.StartUtc);
+    }
+}
+
+public sealed class BusinessConsoleOrderUrgencyListRequestValidator : Validator<BusinessConsoleOrderUrgencyListRequest>
+{
+    public BusinessConsoleOrderUrgencyListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.OrderReferences).MaximumLength(4000);
+    }
+}
+
+public sealed class BusinessConsoleOrderUrgencyRequestValidator : Validator<BusinessConsoleOrderUrgencyRequest>
+{
+    public BusinessConsoleOrderUrgencyRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.OrderReference).NotEmpty().MaximumLength(128);
+    }
+}
+
+public sealed class BusinessConsoleSetOrderUrgencyBusinessPriorityRequestValidator : Validator<BusinessConsoleSetOrderUrgencyBusinessPriorityRequest>
+{
+    private static readonly string[] Levels = ["p0", "p1", "p2", "p3"];
+
+    public BusinessConsoleSetOrderUrgencyBusinessPriorityRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.OrderReference).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.Level).Must(value => Levels.Contains(value, StringComparer.OrdinalIgnoreCase));
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(1000);
     }
 }

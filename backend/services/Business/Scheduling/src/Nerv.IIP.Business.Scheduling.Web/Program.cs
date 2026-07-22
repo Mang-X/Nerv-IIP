@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
+using Nerv.IIP.Business.Scheduling.Web.Application.Urgency;
 using Nerv.IIP.Business.Scheduling.Web.Endpoints.Scheduling;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
@@ -86,6 +87,7 @@ try
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
     builder.Services.AddScoped<ISchedulingOperationOverrideOverlay, SchedulingOperationOverrideOverlay>();
+    builder.Services.AddScoped<OrderUrgencyService>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<ISchedulingIntegrationEventContextAccessor, HttpSchedulingIntegrationEventContextAccessor>();
     builder.Services.AddScoped<SchedulePlanInvalidatedIntegrationEventConverter>();
@@ -98,6 +100,7 @@ try
     {
         builder.Services.AddScoped<ISchedulingEquipmentAvailabilityProvider, HttpSchedulingEquipmentAvailabilityProvider>();
         builder.Services.AddScoped<ISchedulingMaterialReadinessProvider, HttpSchedulingMaterialReadinessProvider>();
+        builder.Services.AddHostedService<OrderUrgencyRefreshWorker>();
     }
 
     var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
@@ -147,6 +150,7 @@ try
             .AddCommandLockBehavior()
             .AddKnownExceptionValidationBehavior()
             .AddBehavior<ReleaseSchedulePlanUniqueConflictBehavior>()
+            .AddBehavior<OrderUrgencyPriorityConflictBehavior>()
             .AddUnitOfWorkBehaviors());
 
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = SchedulingFacts.ServiceName)

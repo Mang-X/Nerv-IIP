@@ -146,6 +146,9 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/scheduling/plans/{planId}/gantt", "get", "getBusinessConsoleSchedulingPlanGantt");
         AssertOperationId(paths, "/api/business-console/v1/scheduling/plans/{planId}/release", "post", "releaseBusinessConsoleSchedulingPlan");
         AssertOperationId(paths, "/api/business-console/v1/scheduling/plans/{planId}/revoke", "post", "revokeBusinessConsoleSchedulingPlan");
+        AssertOperationId(paths, "/api/business-console/v1/scheduling/order-urgencies", "get", "listBusinessConsoleOrderUrgencies");
+        AssertOperationId(paths, "/api/business-console/v1/scheduling/order-urgencies/{orderReference}", "get", "getBusinessConsoleOrderUrgency");
+        AssertOperationId(paths, "/api/business-console/v1/scheduling/order-urgencies/{orderReference}/business-priority", "put", "setBusinessConsoleOrderUrgencyBusinessPriority");
         AssertOperationId(paths, "/api/business-console/v1/equipment/overview", "get", "getBusinessConsoleEquipmentOverview");
         AssertOperationId(paths, "/api/business-console/v1/equipment/devices/{deviceAssetId}", "get", "getBusinessConsoleEquipmentDevice");
         AssertOperationId(paths, "/api/business-console/v1/equipment/availability", "get", "getBusinessConsoleEquipmentAvailability");

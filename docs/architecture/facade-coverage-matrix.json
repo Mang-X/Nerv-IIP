@@ -3931,6 +3931,45 @@
     {
       "service": "Scheduling",
       "method": "GET",
+      "route": "/api/business/v1/scheduling/order-urgencies",
+      "operationId": "listOrderUrgencies",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleOrderUrgencies"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "GET",
+      "route": "/api/business/v1/scheduling/order-urgencies/{orderReference}",
+      "operationId": "getOrderUrgency",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleOrderUrgency"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "PUT",
+      "route": "/api/business/v1/scheduling/order-urgencies/{orderReference}/business-priority",
+      "operationId": "setOrderUrgencyBusinessPriority",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "setBusinessConsoleOrderUrgencyBusinessPriority"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "GET",
       "route": "/api/business/v1/scheduling/plans",
       "operationId": "listSchedulingPlans",
       "classification": "exposed",

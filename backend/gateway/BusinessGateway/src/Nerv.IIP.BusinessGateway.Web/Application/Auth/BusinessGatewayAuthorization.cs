@@ -289,8 +289,20 @@ public static class BusinessGatewayAuthorization
         HttpContext context,
         IBusinessGatewayAuthorizationClient auth,
         BusinessGatewayPermissionRequirement requirement,
+        CancellationToken cancellationToken) =>
+        await RequireAnyPermissionAsync(context, auth, [requirement], cancellationToken);
+
+    public static async Task<string?> RequireAnyPermissionAsync(
+        HttpContext context,
+        IBusinessGatewayAuthorizationClient auth,
+        IReadOnlyCollection<BusinessGatewayPermissionRequirement> requirements,
         CancellationToken cancellationToken)
     {
+        if (requirements.Count == 0)
+        {
+            throw new ArgumentException("At least one permission requirement is required.", nameof(requirements));
+        }
+        var scope = requirements.First();
         var bearerToken = await context.GetTokenAsync("access_token");
         if (string.IsNullOrWhiteSpace(bearerToken))
         {
@@ -304,8 +316,11 @@ public static class BusinessGatewayAuthorization
 
         var principalOrganizationId = FirstClaimValue(context.User, "organizationId");
         var principalEnvironmentId = FirstClaimValue(context.User, "environmentId");
-        if (!string.Equals(principalOrganizationId, requirement.OrganizationId, StringComparison.Ordinal)
-            || !string.Equals(principalEnvironmentId, requirement.EnvironmentId, StringComparison.Ordinal))
+        if (requirements.Any(requirement =>
+                !string.Equals(requirement.OrganizationId, scope.OrganizationId, StringComparison.Ordinal) ||
+                !string.Equals(requirement.EnvironmentId, scope.EnvironmentId, StringComparison.Ordinal)) ||
+            !string.Equals(principalOrganizationId, scope.OrganizationId, StringComparison.Ordinal) ||
+            !string.Equals(principalEnvironmentId, scope.EnvironmentId, StringComparison.Ordinal))
         {
             await ResponseDataEndpointResults.WriteErrorAsync(
                 context,
@@ -315,37 +330,40 @@ public static class BusinessGatewayAuthorization
             return null;
         }
 
-        BusinessGatewayAuthorizationResult result;
-        try
+        foreach (var requirement in requirements)
         {
-            result = await auth.CheckAsync(
-                bearerToken,
-                requirement,
-                ContinuityModeFor(context.Request.Method),
-                cancellationToken);
-        }
-        catch (Exception ex) when (IsAuthorizationUnavailable(ex, cancellationToken))
-        {
-            await ResponseDataEndpointResults.WriteErrorAsync(
-                context,
-                StatusCodes.Status503ServiceUnavailable,
-                "Authorization service unavailable.",
-                cancellationToken);
-            return null;
+            BusinessGatewayAuthorizationResult result;
+            try
+            {
+                result = await auth.CheckAsync(
+                    bearerToken,
+                    requirement,
+                    ContinuityModeFor(context.Request.Method),
+                    cancellationToken);
+            }
+            catch (Exception ex) when (IsAuthorizationUnavailable(ex, cancellationToken))
+            {
+                await ResponseDataEndpointResults.WriteErrorAsync(
+                    context,
+                    StatusCodes.Status503ServiceUnavailable,
+                    "Authorization service unavailable.",
+                    cancellationToken);
+                return null;
+            }
+
+            if (result.IsAllowed)
+            {
+                context.Items[PrincipalItemKey] = result;
+                return bearerToken;
+            }
         }
 
-        if (!result.IsAllowed)
-        {
-            await ResponseDataEndpointResults.WriteErrorAsync(
-                context,
-                StatusCodes.Status403Forbidden,
-                "Forbidden.",
-                cancellationToken);
-            return null;
-        }
-
-        context.Items[PrincipalItemKey] = result;
-        return bearerToken;
+        await ResponseDataEndpointResults.WriteErrorAsync(
+            context,
+            StatusCodes.Status403Forbidden,
+            "Forbidden.",
+            cancellationToken);
+        return null;
     }
 
     private static string? FirstClaimValue(ClaimsPrincipal user, params string[] claimTypes)

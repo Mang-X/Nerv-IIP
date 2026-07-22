@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Scheduling;
+using Nerv.IIP.Business.Scheduling.Web.Application.Urgency;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 
@@ -35,7 +36,8 @@ public sealed class CreateSchedulePlanCommandHandler(
     TimeProvider timeProvider,
     ISchedulingEquipmentAvailabilityProvider equipmentAvailabilityProvider,
     ISchedulingMaterialReadinessProvider materialReadinessProvider,
-    ISchedulingOperationOverrideOverlay overrideOverlay) : ICommandHandler<CreateSchedulePlanCommand, SchedulePlanContract>
+    ISchedulingOperationOverrideOverlay overrideOverlay,
+    OrderUrgencyService urgencyService) : ICommandHandler<CreateSchedulePlanCommand, SchedulePlanContract>
 {
     public async Task<SchedulePlanContract> Handle(CreateSchedulePlanCommand request, CancellationToken cancellationToken)
     {
@@ -67,7 +69,19 @@ public sealed class CreateSchedulePlanCommandHandler(
                         x.ProblemId == request.Problem.ProblemId,
                     cancellationToken)
                 ?? throw new KnownException($"Schedule problem snapshot exists but generated plan was not found, ProblemId = {request.Problem.ProblemId}");
-            return SchedulePlanContractMapper.ToContract(existingPlan);
+            var existingPlanContract = SchedulePlanContractMapper.ToContract(existingPlan);
+            var currentAvailability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
+            var currentMaterialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
+            var currentProblem = MaterialReadinessSchedulingAdapter.Apply(
+                EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, currentAvailability),
+                currentMaterialReadiness);
+            await urgencyService.CapturePlanAsync(
+                currentProblem,
+                existingPlanContract,
+                CalculateProblemFingerprint(currentProblem),
+                timeProvider.GetUtcNow(),
+                cancellationToken);
+            return existingPlanContract;
         }
 
         var generatedAtUtc = timeProvider.GetUtcNow();
@@ -76,6 +90,7 @@ public sealed class CreateSchedulePlanCommandHandler(
         var schedulingProblem = MaterialReadinessSchedulingAdapter.Apply(
             EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability),
             materialReadiness);
+        var urgencyInputFingerprint = CalculateProblemFingerprint(schedulingProblem);
         var preview = scheduler.Schedule(schedulingProblem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc);
         var generated = SchedulePlanContractMapper.WithStatus(preview, SchedulePlanStatusContract.Generated);
         dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(
@@ -92,6 +107,8 @@ public sealed class CreateSchedulePlanCommandHandler(
             overlaidProblem.OrganizationId,
             overlaidProblem.EnvironmentId,
             SchedulePlanContractMapper.ToDomainSnapshot(generated)));
+        await urgencyService.CapturePlanAsync(
+            schedulingProblem, generated, urgencyInputFingerprint, generatedAtUtc, cancellationToken);
         return generated;
     }
 

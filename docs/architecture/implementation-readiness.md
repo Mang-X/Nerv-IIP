@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## 跨域统一紧急度模型 V1（MAN-584 / #1053）
+
+BusinessScheduling 现拥有 `order-urgency-v1` 的确定性派生模型：业务优先级、CR/Slack 时间紧迫度和执行风险三类贡献项分别保留，最终等级取三者最高值，不折叠为黑盒分数。输入复用 Scheduling 已组合的权威 due、工序周期、物料齐套、设备可用、质量阻断、工装与产能冲突；不跨 schema 查询，也不复制 ERP、DemandPlanning、MES、Inventory、Quality 或设备域主数据。缺失 due、缺失来源、未捕获引用或超过 2 小时未刷新均 fail closed 为高风险并输出稳定原因码；既有方案重放会补齐缺失快照。方案生成和人工业务优先级变更在命令 UoW 内捕获快照，失效事实由 15 分钟后台周期生成 stale 快照；GET 只执行数据库端 latest-per-order 读取，不写数据库。人工 P0-P3、可选有效期、操作者与原因通过追加式变更表审计，首条记录的 previous level 显式为空。统一读 facade 允许 ERP 销售、需求池、MES 工单或 Scheduling 任一宿主域读权限，写入仍只允许 Scheduling manage。四个关键页面已使用同一结果展示综合 badge、Hover 摘要、含阈值判定表的解释 Sheet 与可定位订单的排产入口；七种显示模式、独立排序及 Sheet 内优先级编辑/审计时间线由 #1061 继续完成。
+
+BusinessGateway 已以 `business.scheduling.plans.read/manage` 暴露紧急度列表、详情/历史和业务优先级写入三条 facade，OpenAPI 与 generated client 已刷新。Business Console 的销售订单、计划需求、MES 工单和排程方案明细使用同一 `orderId / businessReference` 结果与 NvUI 解释面板；没有修改 `SchedulingCanvas`/Gantt，也没有实现 MAN-580 拖拽重排或 MAN-588 局部重排求解。
+
 ## 并行全栈验证基线
 
 真实浏览器全栈验证已提供一次性 session 入口：`.\nerv.ps1 fullstack run -Scenario smoke`。MAN-524 销售到交付主链证据使用 `.\nerv.ps1 fullstack run -Scenario leader-demo-main-chain`：managed session 在 AppHost 启动前显式注入 Redis messaging 与 PostgreSQL persistence profile，并把实际选择写入 manifest；场景只以 BusinessGateway 公开 HTTP 作为业务断言面，再由 manifest 向浏览器证据进程盖章真实 PostgreSQL 与跨进程 Redis Streams 画像。逐跳脱敏账本写入 `artifacts/fullstack/<sessionId>/leader-demo-main-chain-evidence.json`，该运行产物不提交仓库；只有逐跳 runtime-confirmed 和已登记的 #972 查询 gap 可以通过，任何 `not-verified` 或未纳入验收基线的 gap 都使场景非零退出。session 使用随机公开端口、独立 Aspire/DCP 代理、专属基础设施卷、进程身份与容器所有权标签；默认最多三个活动 session，不设置最低可用内存门槛。自动化成功或失败均精确回收运行资源并保留 `artifacts/fullstack/<sessionId>/`。持久开发仍使用 `.\nerv.ps1 dev`；交互 `.\nerv.ps1 fullstack start` 只用于诊断，完成后必须 `.\nerv.ps1 fullstack stop`。`scripts/verify-parallel-fullstack-isolation.ps1 -Sessions 2` 已在 Windows Docker Desktop 上验证两套浏览器链路、动态端口、PostgreSQL 写隔离、专属卷、单 session 停止边界和故障注入 cleanup。

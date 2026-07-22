@@ -5,6 +5,9 @@ using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Scheduling;
+using Nerv.IIP.Business.Scheduling.Domain.Services;
+using Nerv.IIP.Business.Scheduling.Web.Application.Urgency;
+using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Endpoints.Scheduling;
@@ -72,6 +75,24 @@ public sealed record UpsertScheduleOperationOverrideRequest(
     string ResourceId,
     DateTimeOffset StartUtc,
     DateTimeOffset EndUtc);
+
+public sealed record ListOrderUrgenciesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? OrderReferences = null);
+
+public sealed record GetOrderUrgencyRequest(
+    [property: RouteParam] string OrderReference,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record SetOrderUrgencyBusinessPriorityRequest(
+    [property: RouteParam] string OrderReference,
+    string OrganizationId,
+    string EnvironmentId,
+    string Level,
+    string Reason,
+    DateTimeOffset? ExpiresAtUtc = null);
 
 public sealed class PreviewSchedulePlanEndpoint(ISender sender)
     : SchedulingEndpoint<PreviewSchedulePlanRequest, ResponseData<SchedulePlanContract>>
@@ -219,6 +240,49 @@ public sealed class UpsertScheduleOperationOverrideEndpoint(ISender sender)
     }
 }
 
+public sealed class ListOrderUrgenciesEndpoint(ISender sender)
+    : SchedulingEndpoint<ListOrderUrgenciesRequest, ResponseData<IReadOnlyCollection<OrderUrgencyContract>>>
+{
+    public override void Configure() => ConfigureSchedulingContract(SchedulingEndpointContracts.Get<ListOrderUrgenciesEndpoint>());
+
+    public override async Task HandleAsync(ListOrderUrgenciesRequest req, CancellationToken ct)
+    {
+        var references = (req.OrderReferences ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var response = await sender.Send(new ListOrderUrgenciesQuery(req.OrganizationId, req.EnvironmentId, references), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetOrderUrgencyEndpoint(ISender sender)
+    : SchedulingEndpoint<GetOrderUrgencyRequest, ResponseData<OrderUrgencyDetailContract>>
+{
+    public override void Configure() => ConfigureSchedulingContract(SchedulingEndpointContracts.Get<GetOrderUrgencyEndpoint>());
+
+    public override async Task HandleAsync(GetOrderUrgencyRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetOrderUrgencyQuery(req.OrganizationId, req.EnvironmentId, req.OrderReference), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class SetOrderUrgencyBusinessPriorityEndpoint(
+    ISender sender,
+    ISchedulingIntegrationEventContextAccessor contextAccessor)
+    : SchedulingEndpoint<SetOrderUrgencyBusinessPriorityRequest, ResponseData<OrderUrgencyDetailContract>>
+{
+    public override void Configure() => ConfigureSchedulingContract(SchedulingEndpointContracts.Get<SetOrderUrgencyBusinessPriorityEndpoint>());
+
+    public override async Task HandleAsync(SetOrderUrgencyBusinessPriorityRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new SetOrderUrgencyBusinessPriorityCommand(
+            req.OrganizationId, req.EnvironmentId, req.OrderReference,
+            Enum.Parse<BusinessPriorityLevel>(req.Level, true), contextAccessor.GetContext().Actor,
+            req.Reason, req.ExpiresAtUtc), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class ListSchedulePlansRequestValidator : Validator<ListSchedulePlansRequest>
 {
     public ListSchedulePlansRequestValidator()
@@ -285,6 +349,39 @@ public sealed class UpsertScheduleOperationOverrideRequestValidator : Validator<
     }
 }
 
+public sealed class ListOrderUrgenciesRequestValidator : Validator<ListOrderUrgenciesRequest>
+{
+    public ListOrderUrgenciesRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.OrderReferences).MaximumLength(4000);
+    }
+}
+
+public sealed class GetOrderUrgencyRequestValidator : Validator<GetOrderUrgencyRequest>
+{
+    public GetOrderUrgencyRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.OrderReference).NotEmpty().MaximumLength(128);
+    }
+}
+
+public sealed class SetOrderUrgencyBusinessPriorityRequestValidator : Validator<SetOrderUrgencyBusinessPriorityRequest>
+{
+    public SetOrderUrgencyBusinessPriorityRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.OrderReference).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.Level).Must(value => new[] { "P0", "P1", "P2", "P3" }.Contains(value, StringComparer.OrdinalIgnoreCase))
+            .WithMessage("Level must be P0, P1, P2, or P3.");
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(1000);
+    }
+}
+
 public sealed record SchedulingEndpointContract(
     Type EndpointType,
     string HttpMethod,
@@ -306,6 +403,9 @@ public static class SchedulingEndpointContracts
         new(typeof(ReleaseSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/{planId}/release", SchedulingPermissionCodes.PlansRelease, InternalServiceAuthorizationPolicy.Name, "releaseSchedulingPlan"),
         new(typeof(RevokeSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/{planId}/revoke", SchedulingPermissionCodes.PlansRelease, InternalServiceAuthorizationPolicy.Name, "revokeSchedulingPlan"),
         new(typeof(UpsertScheduleOperationOverrideEndpoint), "PUT", "/api/business/v1/scheduling/plans/{planId}/operations/{operationId}/override", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "upsertSchedulingOperationOverride"),
+        new(typeof(ListOrderUrgenciesEndpoint), "GET", "/api/business/v1/scheduling/order-urgencies", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listOrderUrgencies"),
+        new(typeof(GetOrderUrgencyEndpoint), "GET", "/api/business/v1/scheduling/order-urgencies/{orderReference}", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getOrderUrgency"),
+        new(typeof(SetOrderUrgencyBusinessPriorityEndpoint), "PUT", "/api/business/v1/scheduling/order-urgencies/{orderReference}/business-priority", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "setOrderUrgencyBusinessPriority"),
     ];
 
     public static SchedulingEndpointContract Get<TEndpoint>()

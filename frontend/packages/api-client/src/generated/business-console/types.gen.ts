@@ -1258,6 +1258,7 @@ export type NervIipContractsSchedulingSchedulingOrderContract = {
     priority?: number;
     isRush?: boolean;
     operations?: Array<NervIipContractsSchedulingSchedulingOperationContract>;
+    businessReference?: string | null;
 };
 
 export type NervIipContractsSchedulingSchedulingOperationContract = {
@@ -1413,6 +1414,96 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     resourceId: string;
     startUtc?: string;
     endUtc?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfOrderUrgencyContract = NetCorePalExtensionsDtoResponseData & {
+    data?: Array<NervIipContractsSchedulingOrderUrgencyContract> | null;
+};
+
+export type NervIipContractsSchedulingOrderUrgencyContract = {
+    orderId?: string;
+    businessReference?: string;
+    level?: string;
+    businessPriority?: NervIipContractsSchedulingOrderUrgencyBusinessPriorityContract;
+    timeCriticality?: NervIipContractsSchedulingOrderUrgencyTimeCriticalityContract;
+    executionRisk?: NervIipContractsSchedulingOrderUrgencyExecutionRiskContract;
+    calculatedAtUtc?: string;
+    modelVersion?: string;
+    inputFingerprint?: string;
+};
+
+export type NervIipContractsSchedulingOrderUrgencyBusinessPriorityContract = {
+    level?: string;
+    source?: string;
+    reason?: string;
+    setAtUtc?: string;
+    expiresAtUtc?: string | null;
+    revision?: number;
+    reasonCodes?: Array<string>;
+};
+
+export type NervIipContractsSchedulingOrderUrgencyTimeCriticalityContract = {
+    level?: string;
+    criticalRatio?: number | null;
+    slackHours?: number | null;
+    expectedDelayHours?: number;
+    dueUtc?: string | null;
+    estimatedCompletionUtc?: string;
+    remainingCycleHours?: number;
+    reasonCodes?: Array<string>;
+};
+
+export type NervIipContractsSchedulingOrderUrgencyExecutionRiskContract = {
+    level?: string;
+    isSourceMissing?: boolean;
+    isSourceStale?: boolean;
+    factsObservedAtUtc?: string | null;
+    reasonCodes?: Array<string>;
+    facts?: Array<NervIipContractsSchedulingOrderUrgencyExecutionRiskFactContract>;
+};
+
+export type NervIipContractsSchedulingOrderUrgencyExecutionRiskFactContract = {
+    reasonCode?: string;
+    category?: string;
+    isBlocking?: boolean;
+    sourceReference?: string;
+    observedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOrderUrgencyListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfOrderUrgencyDetailContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingOrderUrgencyDetailContract | null;
+};
+
+export type NervIipContractsSchedulingOrderUrgencyDetailContract = {
+    current?: NervIipContractsSchedulingOrderUrgencyContract;
+    history?: Array<NervIipContractsSchedulingOrderUrgencyContract>;
+    businessPriorityChanges?: Array<NervIipContractsSchedulingOrderUrgencyBusinessPriorityChangeContract>;
+};
+
+export type NervIipContractsSchedulingOrderUrgencyBusinessPriorityChangeContract = {
+    revision?: number;
+    previousLevel?: string | null;
+    newLevel?: string;
+    changedBy?: string;
+    reason?: string;
+    changedAtUtc?: string;
+    expiresAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOrderUrgencyRequest = {
+    [key: string]: never;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSetOrderUrgencyBusinessPriorityRequest = {
+    organizationId: string;
+    environmentId: string;
+    level?: string;
+    reason: string;
+    expiresAtUtc?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateInspectionPlanResponse = NetCorePalExtensionsDtoResponseData & {
@@ -8412,6 +8503,116 @@ export type UpsertBusinessConsoleSchedulingOperationOverrideResponses = {
 };
 
 export type UpsertBusinessConsoleSchedulingOperationOverrideResponse = UpsertBusinessConsoleSchedulingOperationOverrideResponses[keyof UpsertBusinessConsoleSchedulingOperationOverrideResponses];
+
+export type ListBusinessConsoleOrderUrgenciesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        orderReferences?: string | null;
+    };
+    url: '/api/business-console/v1/scheduling/order-urgencies';
+};
+
+export type ListBusinessConsoleOrderUrgenciesErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleOrderUrgenciesError = ListBusinessConsoleOrderUrgenciesErrors[keyof ListBusinessConsoleOrderUrgenciesErrors];
+
+export type ListBusinessConsoleOrderUrgenciesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfOrderUrgencyContract;
+};
+
+export type ListBusinessConsoleOrderUrgenciesResponse = ListBusinessConsoleOrderUrgenciesResponses[keyof ListBusinessConsoleOrderUrgenciesResponses];
+
+export type GetBusinessConsoleOrderUrgencyData = {
+    body?: never;
+    path: {
+        orderReference: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/order-urgencies/{orderReference}';
+};
+
+export type GetBusinessConsoleOrderUrgencyErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleOrderUrgencyError = GetBusinessConsoleOrderUrgencyErrors[keyof GetBusinessConsoleOrderUrgencyErrors];
+
+export type GetBusinessConsoleOrderUrgencyResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfOrderUrgencyDetailContract;
+};
+
+export type GetBusinessConsoleOrderUrgencyResponse = GetBusinessConsoleOrderUrgencyResponses[keyof GetBusinessConsoleOrderUrgencyResponses];
+
+export type SetBusinessConsoleOrderUrgencyBusinessPriorityData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSetOrderUrgencyBusinessPriorityRequest;
+    path: {
+        orderReference: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/scheduling/order-urgencies/{orderReference}/business-priority';
+};
+
+export type SetBusinessConsoleOrderUrgencyBusinessPriorityErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type SetBusinessConsoleOrderUrgencyBusinessPriorityError = SetBusinessConsoleOrderUrgencyBusinessPriorityErrors[keyof SetBusinessConsoleOrderUrgencyBusinessPriorityErrors];
+
+export type SetBusinessConsoleOrderUrgencyBusinessPriorityResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfOrderUrgencyDetailContract;
+};
+
+export type SetBusinessConsoleOrderUrgencyBusinessPriorityResponse = SetBusinessConsoleOrderUrgencyBusinessPriorityResponses[keyof SetBusinessConsoleOrderUrgencyBusinessPriorityResponses];
 
 export type ListBusinessConsoleQualityInspectionPlansData = {
     body?: never;

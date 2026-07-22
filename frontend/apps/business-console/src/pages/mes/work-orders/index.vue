@@ -13,6 +13,8 @@ import {
   useBusinessSkus,
 } from '@/composables/useBusinessMasterData'
 import { useMesWorkOrders } from '@/composables/useBusinessMes'
+import { useOrderUrgencies } from '@/composables/useOrderUrgency'
+import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -82,6 +84,9 @@ const {
   workOrdersPending,
   workOrdersTotal,
 } = useMesWorkOrders()
+const orderUrgencies = useOrderUrgencies(
+  computed(() => workOrders.value.map((order) => order.workOrderId)),
+)
 
 const route = useRoute()
 const router = useRouter()
@@ -235,6 +240,7 @@ watch(
 const columns: NvDataTableColumn<Row>[] = [
   { key: 'workOrderId', header: '工单', sortable: true, cellClass: 'font-medium' },
   { key: 'status', header: '状态', sortable: true, width: 'w-24' },
+  { key: 'urgency', header: '紧急度', width: 'w-28' },
   {
     key: 'quantity',
     header: '数量',
@@ -509,6 +515,14 @@ function isNonEmpty(value: string) {
             title="存在有效质量保留，需处理后才能放行或开工"
           />
         </div>
+      </template>
+      <template #cell-urgency="{ row }">
+        <OrderUrgencyBadge
+          :order-reference="row.workOrderId ?? ''"
+          :urgency="
+            row.workOrderId ? orderUrgencies.byReference.value.get(row.workOrderId) : undefined
+          "
+        />
       </template>
       <template #cell-quantity="{ row }"
         ><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template

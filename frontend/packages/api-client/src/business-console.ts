@@ -191,6 +191,9 @@ export {
   listBusinessConsoleSchedulingPlansQueryOptions,
   getBusinessConsoleSchedulingPlanQueryOptions,
   getBusinessConsoleSchedulingPlanGanttQueryOptions,
+  listBusinessConsoleOrderUrgenciesQueryOptions,
+  getBusinessConsoleOrderUrgencyQueryOptions,
+  setBusinessConsoleOrderUrgencyBusinessPriorityMutationOptions,
   listBusinessConsoleErpCostCandidatesQueryOptions,
   listBusinessConsoleErpDeliveryOrdersQueryOptions,
   listBusinessConsoleErpJournalVouchersQueryOptions,
@@ -518,6 +521,9 @@ export {
   createBusinessConsoleSchedulingPlan,
   getBusinessConsoleSchedulingPlan,
   getBusinessConsoleSchedulingPlanGantt,
+  listBusinessConsoleOrderUrgencies,
+  getBusinessConsoleOrderUrgency,
+  setBusinessConsoleOrderUrgencyBusinessPriority,
   startBusinessConsoleApprovalChain,
   releaseBusinessConsolePlanningMpsBucket,
   reviewBusinessConsolePlanningMpsBucket,
@@ -2287,4 +2293,18 @@ export type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest as BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesForceReleaseQualityHoldRequest as BusinessConsoleMesForceReleaseQualityHoldRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderQualityHoldSummary as BusinessConsoleMesWorkOrderQualityHoldSummary,
+} from './generated/business-console'
+
+// MAN-584 / #1053: shared explainable urgency contracts for ERP, planning, MES, and scheduling surfaces.
+export type {
+  GetBusinessConsoleOrderUrgencyData,
+  ListBusinessConsoleOrderUrgenciesData,
+  SetBusinessConsoleOrderUrgencyBusinessPriorityData,
+  NervIipContractsSchedulingOrderUrgencyContract as BusinessConsoleOrderUrgency,
+  NervIipContractsSchedulingOrderUrgencyDetailContract as BusinessConsoleOrderUrgencyDetail,
+  NervIipContractsSchedulingOrderUrgencyBusinessPriorityContract as BusinessConsoleOrderUrgencyBusinessPriority,
+  NervIipContractsSchedulingOrderUrgencyBusinessPriorityChangeContract as BusinessConsoleOrderUrgencyBusinessPriorityChange,
+  NervIipContractsSchedulingOrderUrgencyTimeCriticalityContract as BusinessConsoleOrderUrgencyTimeCriticality,
+  NervIipContractsSchedulingOrderUrgencyExecutionRiskContract as BusinessConsoleOrderUrgencyExecutionRisk,
+  NervIipContractsSchedulingOrderUrgencyExecutionRiskFactContract as BusinessConsoleOrderUrgencyExecutionRiskFact,
 } from './generated/business-console'

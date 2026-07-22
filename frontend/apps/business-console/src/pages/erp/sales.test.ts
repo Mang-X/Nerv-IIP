@@ -6,6 +6,13 @@ import DeliveriesPage from './sales/deliveries.vue'
 import OrdersPage from './sales/orders.vue'
 import QuotationsPage from './sales/quotations.vue'
 
+vi.mock('@/composables/useOrderUrgency', () => ({
+  useOrderUrgencies: () => ({ byReference: { value: new Map() } }),
+}))
+vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
+  default: { template: '<span data-testid="order-urgency">未计算</span>' },
+}))
+
 const state = vi.hoisted(() => ({
   quotations: [] as Array<Record<string, unknown>>,
   deliveries: [] as Array<Record<string, unknown>>,

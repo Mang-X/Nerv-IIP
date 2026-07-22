@@ -34,7 +34,8 @@ public sealed record SchedulingOrderContract(
     DateTimeOffset DueUtc,
     int Priority,
     bool IsRush,
-    IReadOnlyCollection<SchedulingOperationContract> Operations);
+    IReadOnlyCollection<SchedulingOperationContract> Operations,
+    string? BusinessReference = null);
 
 public sealed record SchedulingOperationContract(
     string OperationId,
@@ -394,3 +395,62 @@ public enum ScheduleChangeTypeContract
     Preserved = 3,
     Blocked = 4
 }
+
+public sealed record OrderUrgencyBusinessPriorityContract(
+    string Level,
+    string Source,
+    string Reason,
+    DateTimeOffset SetAtUtc,
+    DateTimeOffset? ExpiresAtUtc,
+    long Revision,
+    IReadOnlyCollection<string> ReasonCodes);
+
+public sealed record OrderUrgencyTimeCriticalityContract(
+    string Level,
+    decimal? CriticalRatio,
+    decimal? SlackHours,
+    decimal ExpectedDelayHours,
+    DateTimeOffset? DueUtc,
+    DateTimeOffset EstimatedCompletionUtc,
+    decimal RemainingCycleHours,
+    IReadOnlyCollection<string> ReasonCodes);
+
+public sealed record OrderUrgencyExecutionRiskFactContract(
+    string ReasonCode,
+    string Category,
+    bool IsBlocking,
+    string SourceReference,
+    DateTimeOffset ObservedAtUtc);
+
+public sealed record OrderUrgencyExecutionRiskContract(
+    string Level,
+    bool IsSourceMissing,
+    bool IsSourceStale,
+    DateTimeOffset? FactsObservedAtUtc,
+    IReadOnlyCollection<string> ReasonCodes,
+    IReadOnlyCollection<OrderUrgencyExecutionRiskFactContract> Facts);
+
+public sealed record OrderUrgencyContract(
+    string OrderId,
+    string BusinessReference,
+    string Level,
+    OrderUrgencyBusinessPriorityContract BusinessPriority,
+    OrderUrgencyTimeCriticalityContract TimeCriticality,
+    OrderUrgencyExecutionRiskContract ExecutionRisk,
+    DateTimeOffset CalculatedAtUtc,
+    string ModelVersion,
+    string InputFingerprint);
+
+public sealed record OrderUrgencyBusinessPriorityChangeContract(
+    long Revision,
+    string? PreviousLevel,
+    string NewLevel,
+    string ChangedBy,
+    string Reason,
+    DateTimeOffset ChangedAtUtc,
+    DateTimeOffset? ExpiresAtUtc);
+
+public sealed record OrderUrgencyDetailContract(
+    OrderUrgencyContract Current,
+    IReadOnlyCollection<OrderUrgencyContract> History,
+    IReadOnlyCollection<OrderUrgencyBusinessPriorityChangeContract> BusinessPriorityChanges);

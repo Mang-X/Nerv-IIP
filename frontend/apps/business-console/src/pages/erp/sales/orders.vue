@@ -3,6 +3,8 @@ import type { BusinessConsoleErpSalesOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useErpSalesOrders } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
+import { useOrderUrgencies } from '@/composables/useOrderUrgency'
+import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -37,6 +39,9 @@ definePage({
 })
 
 const orders = useErpSalesOrders()
+const orderUrgencies = useOrderUrgencies(
+  computed(() => orders.salesOrders.value.map((order) => order.salesOrderNo)),
+)
 const route = useRoute()
 const { page, pageSize } = usePagedList(orders.filters, { resetOn: [() => orders.filters.keyword] })
 
@@ -57,6 +62,7 @@ const columns: NvDataTableColumn<BusinessConsoleErpSalesOrderItem>[] = [
   },
   { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '-' },
   { key: 'status', header: '状态', width: 'w-28' },
+  { key: 'urgency', header: '紧急度', width: 'w-28' },
   {
     key: 'totalAmount',
     header: '金额',
@@ -166,6 +172,14 @@ async function submit() {
       @update:page-size="(v) => (pageSize = String(v))"
     >
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
+      <template #cell-urgency="{ row }">
+        <OrderUrgencyBadge
+          :order-reference="row.salesOrderNo ?? ''"
+          :urgency="
+            row.salesOrderNo ? orderUrgencies.byReference.value.get(row.salesOrderNo) : undefined
+          "
+        />
+      </template>
       <template #cell-totalAmount="{ row }"
         ><span class="tabular-nums">{{ formatAmount(row.totalAmount) }}</span></template
       >
