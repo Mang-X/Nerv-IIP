@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\services\Business\Inventory\src\Nerv.IIP.Business.Inventory.Web\Nerv.IIP.Business.Inventory.Web.csproj" />
     <ProjectReference Include="..\..\services\Business\Mes\src\Nerv.IIP.Business.Mes.Web\Nerv.IIP.Business.Mes.Web.csproj" />
     <ProjectReference Include="..\..\services\Business\Erp\src\Nerv.IIP.Business.Erp.Web\Nerv.IIP.Business.Erp.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\Scheduling\src\Nerv.IIP.Business.Scheduling.Web\Nerv.IIP.Business.Scheduling.Web.csproj" />
   </ItemGroup>
 
 </Project>

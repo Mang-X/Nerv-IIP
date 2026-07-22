@@ -16,7 +16,16 @@ public sealed class FiniteCapacityScheduler
     {
         ArgumentNullException.ThrowIfNull(problem);
 
-        var normalizedProblem = SchedulingProblemNormalizer.Normalize(problem);
+        return ScheduleNormalized(SchedulingProblemNormalizer.Normalize(problem), planId, generatedAtUtc);
+    }
+
+    internal SchedulePlanContract ScheduleNormalized(
+        SchedulingProblemContract normalizedProblem,
+        string planId,
+        DateTimeOffset generatedAtUtc)
+    {
+        ArgumentNullException.ThrowIfNull(normalizedProblem);
+
         var state = SchedulerState.From(normalizedProblem, planId, generatedAtUtc);
         state.ReserveLockedAssignments();
         state.ScheduleOpenOperations();

@@ -1,9 +1,11 @@
 using InventoryInfrastructure = Nerv.IIP.Business.Inventory.Infrastructure;
 using MesInfrastructure = Nerv.IIP.Business.Mes.Infrastructure;
 using ErpInfrastructure = Nerv.IIP.Business.Erp.Infrastructure;
+using SchedulingInfrastructure = Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Scheduling.Infrastructure;
 
 namespace Nerv.IIP.Business.Performance.Tests;
 
@@ -30,6 +32,13 @@ internal static class BusinessPerformanceServiceProvider
         return services.BuildServiceProvider();
     }
 
+    public static ServiceProvider CreateSchedulingProvider(PerformanceBaselineSettings settings)
+    {
+        var services = CreateBaseServices();
+        services.AddSchedulingPostgreSqlPersistence(settings.ConnectionString);
+        return services.BuildServiceProvider();
+    }
+
     public static Task MigrateInventoryAsync(IServiceProvider provider, CancellationToken cancellationToken)
     {
         return provider.GetRequiredService<InventoryInfrastructure.ApplicationDbContext>()
@@ -45,6 +54,12 @@ internal static class BusinessPerformanceServiceProvider
     public static Task MigrateErpAsync(IServiceProvider provider, CancellationToken cancellationToken)
     {
         return provider.GetRequiredService<ErpInfrastructure.ApplicationDbContext>()
+            .Database.MigrateAsync(cancellationToken);
+    }
+
+    public static Task MigrateSchedulingAsync(IServiceProvider provider, CancellationToken cancellationToken)
+    {
+        return provider.GetRequiredService<SchedulingInfrastructure.ApplicationDbContext>()
             .Database.MigrateAsync(cancellationToken);
     }
 
