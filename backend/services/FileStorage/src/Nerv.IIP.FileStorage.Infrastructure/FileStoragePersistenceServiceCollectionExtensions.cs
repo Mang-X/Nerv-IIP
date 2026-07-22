@@ -8,7 +8,11 @@ public static class FileStoragePersistenceServiceCollectionExtensions
 {
     public static IServiceCollection AddFileStoragePersistence(this IServiceCollection services, IConfiguration configuration)
     {
-        var provider = configuration["Persistence:Provider"] ?? "InMemory";
+        var provider = configuration["Persistence:Provider"];
+        if (string.IsNullOrWhiteSpace(provider))
+        {
+            throw new InvalidOperationException("FileStorage persistence provider must be explicitly configured.");
+        }
         if (string.Equals(provider, "PostgreSQL", StringComparison.OrdinalIgnoreCase))
         {
             var connectionString = configuration.GetConnectionString("FileStorageDb")

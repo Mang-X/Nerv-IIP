@@ -1,6 +1,7 @@
 using FastEndpoints;
 using Nerv.IIP.Caching;
 using Nerv.IIP.FileStorage.Infrastructure;
+using Nerv.IIP.FileStorage.Web;
 using Nerv.IIP.FileStorage.Web.Application.Files;
 using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
@@ -9,7 +10,8 @@ using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
 
 var builder = WebApplication.CreateBuilder(args);
-var usePostgreSql = string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
+var persistence = FileStoragePersistenceStartup.Validate(builder.Configuration, builder.Environment);
+var usePostgreSql = persistence.UsePostgreSql;
 builder.Services.AddFastEndpoints();
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton<ILocalTusFileStoreAccessor, LocalTusFileStoreAccessor>();
@@ -38,7 +40,7 @@ builder.Services.AddNervIipObservability(builder.Configuration, "file-storage");
 builder.Services.AddNervIipLocalization();
 
 var app = builder.Build();
-if (usePostgreSql && builder.Configuration.GetValue<bool>("Persistence:AutoMigrate"))
+if (usePostgreSql && persistence.AutoMigrate)
 {
     using var scope = app.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<FileStorageDatabaseMigrationRunner>().MigrateAsync();

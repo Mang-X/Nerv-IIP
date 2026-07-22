@@ -6,7 +6,7 @@
 
 | Profile | Current status | Release-supported? | Evidence |
 | --- | --- | --- | --- |
-| PostgreSQL | AppHub/Ops/IAM 已有初始 migrations 和 schema governance metadata/profile 门禁，并通过第五/第六/第七阶段本地验证。 | Not yet for customer release. 需要安装脚本、备份恢复演练、seed 清单和诊断输出契约。 | `scripts/verify-fifth-slice-persistence-foundation.ps1`、`scripts/verify-iam-persistent-auth-foundation.ps1` |
+| PostgreSQL | AppHub/Ops/IAM/FileStorage 已有 migrations 和 schema governance metadata/profile 门禁；FileStorage 另有显式受治理 migrator 与重启持久化 smoke。 | Not yet for complete customer release. FileStorage migration step 已具备，但仍需全服务安装编排、备份恢复演练、seed 清单和现场诊断契约。 | `scripts/verify-fifth-slice-persistence-foundation.ps1`、`scripts/verify-iam-persistent-auth-foundation.ps1`、`scripts/install/migrate-file-storage.ps1` |
 | GaussDB | Candidate only. | No. | 需要 provider、CAP storage/outbox、migration、JSON、时间、事务和集成测试证据。 |
 | DMDB | Candidate only. | No. | 需要 provider、CAP storage/outbox、migration、JSON、时间、事务和集成测试证据。 |
 | Other databases | Evaluation only. | No. | 不在 NetCorePal.Template 当前公开 profile 基线内。 |
@@ -29,7 +29,7 @@
 2. 确认目标数据库是预期库，不是开发默认库、共享验证库或误连客户生产库。
 3. 确认 PostgreSQL、Redis、对象存储和观测依赖版本满足当前 release 要求；当 release profile 设置 `Messaging:Provider=Redis` 时确认 Redis 持久卷、RDB/AOF 持久化和备份策略；仅当 release profile 设置 `Messaging:Provider=RabbitMQ` 时确认 RabbitMQ 版本和连通性。
 4. 确认安装脚本不会直接拼 SQL 写业务表，也不会使用绕过 EF migrations history 的建表路径。
-5. 确认待执行服务清单和顺序。当前 AppHub/Ops/IAM 可独立迁移；后续 FileStorage、Notification、Knowledge、AI Integration、Observability 必须在各自 catalog 和迁移准备完成后加入顺序。
+5. 确认待执行服务清单和顺序。当前 AppHub/Ops/IAM 可独立迁移，FileStorage 通过受治理专用入口迁移；Notification、Knowledge、AI Integration、Observability 必须在各自 catalog 和迁移准备完成后加入顺序。
 6. 确认备份或快照已完成，并记录备份位置、时间、校验方式和恢复负责人。
 7. 确认本次 release 的 seed 清单、幂等键、默认管理员/凭据处理方式和重复执行语义。
 8. 确认失败停止条件：任一服务 migration 或 seed 失败时，不继续启动新版本业务服务。
@@ -96,7 +96,7 @@ SELECT * FROM ops."__EFMigrationsHistory" ORDER BY "MigrationId";
 
 确认目标 service schema 已包含旧库已应用的 `InitialCreate` migration 后，才可以执行下面的 AppHub/Ops/IAM 手动迁移命令。不要在同一个 release 中删除 `public.__EFMigrationsHistory`；等备份、迁移和服务健康验证都完成后，再单独评估清理。
 
-## 当前 AppHub/Ops/IAM 手动迁移命令
+## 当前 AppHub/Ops/IAM 手动迁移命令与 FileStorage 受治理入口
 
 第五阶段已经为 AppHub/Ops 提供 migration runner 和 migrations，第七阶段已经为 IAM 提供 migration runner 和初始 persistent auth migration，但尚未提供最终发布用 bundle。当前只允许开发者或 CI 在受控环境中使用以下手动命令；客户交付前必须封装为安装脚本或 migration bundle。
 
@@ -141,6 +141,17 @@ dotnet tool run dotnet-ef database update `
 Remove-Item Env:\Persistence__Provider -ErrorAction SilentlyContinue
 Remove-Item Env:\ConnectionStrings__IamDb -ErrorAction SilentlyContinue
 ```
+
+FileStorage 不再要求操作者直接拼接 `dotnet-ef` 命令。先完成备份 preflight，再把连接串只放入当前 PowerShell 进程并执行受治理 migrator：
+
+```powershell
+$env:NERV_IIP_FILE_STORAGE_DB = "<file-storage-postgres-connection-string>"
+pwsh scripts/install/migrate-file-storage.ps1 -ValidateOnly -ReleaseId "<release-id>"
+pwsh scripts/install/migrate-file-storage.ps1 -ReleaseId "<release-id>"
+Remove-Item Env:\NERV_IIP_FILE_STORAGE_DB -ErrorAction SilentlyContinue
+```
+
+该脚本只应用仓库中的 FileStorage EF migrations，不删除或重建数据库、不执行 seed，并对命令参数和日志中的连接串做脱敏。`-ValidateOnly` 只确认变量、目标 database alias 和 release metadata，不连接数据库。PoC/private/prod 的 FileStorage Web host 必须保持 `Persistence:AutoMigrate=false`。
 
 重跑语义：
 
@@ -238,7 +249,7 @@ CAP tables 是 system-owned，不是业务表：
 面向 PoC 或私有化交付前，至少完成：
 
 1. AppHub/Ops/IAM 发布脚本或 migration bundle。
-2. FileStorage 等新增服务的 schema catalog、migration、seed 和 profile 测试。
+2. FileStorage 受治理 migrator、schema catalog、migration、startup profile matrix 和重启持久化 smoke；完整安装流程仍需在调用 migrator 前后编排备份、健康检查与诊断归档。
 3. PostgreSQL 备份/恢复演练记录。
 4. seed 清单和初始凭据安全处理方案。
 5. CAP system tables retention 和排障说明。
