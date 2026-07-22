@@ -14,6 +14,7 @@
 - Do not change MES, Inventory, BusinessGateway, OpenAPI, generated clients, schemas, or business behavior.
 - Do not read service databases as business evidence and do not treat HTTP 200 alone as posting success.
 - If the real run exposes a new business defect, create a separate GitHub/Linear issue and do not fix it in this branch.
+- Use the existing FGR contract's explicit positive `unitCost` input to isolate the Inventory posting/link proof. The default cost-capitalization path is intentionally not claimed by this scenario: the real run exposed its missing public work-center cost-rate configuration as GitHub #1070 / Linear MAN-595, which owns that path and its future regression evidence.
 - The PR must be ready for review, include `Fixes #1063`, link MAN-591, and must not be merged by the implementing agent.
 
 ---
@@ -105,9 +106,11 @@ const finishedGoodsLocationCode = 'receiving'
 
 Use `pollData` with the exact run-scoped SKU, UOM, canonical site/location, and produced lot. Accept only positive on-hand. Record the final public request summary with correlation ID plus `{ poll, availability }` in `finished-goods-receipt-inventory-posting`.
 
+Send `unitCost: finishedGoodsUnitCost` on the FGR request so this evidence-only slice deterministically exercises the existing explicit-cost Inventory posting contract. Do not present that as proof of the separate default capitalization path tracked by #1070 / MAN-595.
+
 - [ ] **Step 3: Poll and validate the real inventory-link facade**
 
-Call the receipt-scoped public endpoint with the same `receiptRequestNo` and `workOrderId`. Poll until `linkStatus` is no longer `notPosted`, then fail closed unless all of these hold:
+Call the receipt-scoped public endpoint with the same `receiptRequestNo` and `workOrderId`. Retry a transient 404 within the same bounded budget, retain its public request/response evidence, and continue polling unknown or empty statuses. Stop only for the explicit terminal statuses `posted`, `postingFailed`, or `qualityRestricted`, then fail closed unless all of these hold:
 
 ```ts
 linkStatus === 'posted'

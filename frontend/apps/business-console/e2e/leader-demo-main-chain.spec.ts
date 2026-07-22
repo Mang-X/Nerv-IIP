@@ -27,7 +27,8 @@ class PublicCallError extends Error {
     readonly method: 'GET' | 'POST',
     readonly path: string,
     readonly status: number,
-    payload: unknown,
+    readonly request: JsonRecord,
+    readonly payload: unknown,
   ) {
     super(`${method} ${path} returned HTTP ${status}: ${safeText(JSON.stringify(payload))}`)
     this.name = 'PublicCallError'
@@ -229,7 +230,13 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
       body: body ? publicJson(body) : null,
     }
     if (!response.ok()) {
-      throw new PublicCallError(method, summary.path, response.status(), payload)
+      throw new PublicCallError(
+        method,
+        summary.path,
+        response.status(),
+        summary,
+        publicJson(payload),
+      )
     }
     return { payload, summary, publicPayload: publicJson(payload) as JsonRecord }
   }
@@ -285,17 +292,24 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     let lastRequest: JsonRecord | null = null
     do {
       attempts += 1
-      const response = await call('GET', queryPath(path, query))
-      lastRequest = response.summary
-      lastData = asRecord(dataOf(response.payload))
-      if (predicate(lastData)) {
-        return {
-          data: lastData,
-          call: response,
-          poll: { attempts, elapsedMs: Date.now() - startedAt, timeoutMs },
+      try {
+        const response = await call('GET', queryPath(path, query))
+        lastRequest = response.summary
+        lastData = asRecord(dataOf(response.payload))
+        if (predicate(lastData)) {
+          return {
+            data: lastData,
+            call: response,
+            poll: { attempts, elapsedMs: Date.now() - startedAt, timeoutMs },
+          }
         }
+      } catch (error) {
+        if (!(error instanceof PublicCallError && error.status === 404)) throw error
+        lastRequest = error.request
+        lastData = asRecord(error.payload)
       }
-      await page.waitForTimeout(1_000)
+      const remainingMs = deadline - Date.now()
+      if (remainingMs > 0) await page.waitForTimeout(Math.min(1_000, remainingMs))
     } while (Date.now() < deadline)
     throw new PollTimeoutError(
       lastRequest,
@@ -313,17 +327,23 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
   ) => {
     const current = evidence.get(node)!
     const pollFailure = error instanceof PollTimeoutError ? error : null
+    const callFailure = error instanceof PublicCallError ? error : null
     record({
       ...current,
       automationMode: mode,
-      request: pollFailure?.request ?? current.request,
+      request: pollFailure?.request ?? callFailure?.request ?? current.request,
       responseOrLog: pollFailure
         ? {
             error: safeText(pollFailure.message),
             poll: pollFailure.poll,
             lastData: publicJson(pollFailure.lastData),
           }
-        : { error: safeText(error instanceof Error ? error.message : error) },
+        : callFailure
+          ? {
+              error: safeText(callFailure.message),
+              response: publicJson(callFailure.payload),
+            }
+          : { error: safeText(error instanceof Error ? error.message : error) },
       conclusion: 'gap',
       demoWording: `${node}: the public runtime attempt did not converge; present this as a gap, not a completed automatic hop.`,
       responsibilityIssue: issue,
@@ -1452,12 +1472,13 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
 
     if (receiptRequestNo) {
       try {
+        const terminalStatuses = new Set(['posted', 'postingfailed', 'qualityrestricted'])
         const inventoryLink = await pollData(
           `/api/business-console/v1/mes/finished-goods-receipt-requests/${encodeURIComponent(receiptRequestNo)}/inventory-link`,
           { organizationId, environmentId, workOrderId },
           (data) => {
             const status = textOf(data.linkStatus).trim().toLowerCase()
-            return status !== 'notposted' && status !== 'partiallyposted'
+            return terminalStatuses.has(status)
           },
         )
         const link = inventoryLink.data
@@ -1480,7 +1501,8 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             textOf(balance.siteCode) === finishedGoodsSiteCode &&
             textOf(balance.locationCode) === finishedGoodsLocationCode &&
             textOf(balance.lotNo) === producedLotNo &&
-            Number(balance.onHandQuantity ?? 0) > 0,
+            Number(balance.onHandQuantity ?? 0) > 0 &&
+            Number(balance.ledgerVersion ?? 0) > 0,
         )
         const hasExactInventoryLink =
           textOf(link.linkStatus).trim().toLowerCase() === 'posted' &&
@@ -1503,7 +1525,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           sourceObject: receiptRequestNo,
           downstreamObject: textOf(sourceMovement.movementId),
           stableKey: `${receiptRequestNo} -> ${workOrderId} -> ${producedLotNo} -> ${textOf(sourceMovement.movementId)}`,
-          automationMode: 'manual',
+          automationMode: 'automatic',
           request: inventoryLink.call.summary,
           responseOrLog: {
             poll: inventoryLink.poll,
@@ -1514,10 +1536,10 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           conclusion: 'runtime-confirmed',
           demoWording:
             'The public Inventory link resolved the exact MES receipt and work order to its source movement, produced lot, and current balance.',
-          responsibilityIssue: '#972 (closed)',
+          responsibilityIssue: null,
         })
       } catch (error) {
-        markFailure('inventory-produced-lot-fulfillment-lookup', error, 'manual')
+        markFailure('inventory-produced-lot-fulfillment-lookup', error)
       }
     }
 

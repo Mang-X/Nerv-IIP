@@ -182,7 +182,7 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(receiptFlow).toContain('lotNo: producedLotNo')
     expect(receiptFlow).toContain('(data) => Number(data.onHandQuantity ?? 0) > 0')
     expect(receiptFlow).toContain('poll: availability.poll')
-    expect(receiptFlow).not.toContain('() => false')
+    expect(receiptFlow).not.toMatch(/\(\s*\)\s*=>\s*false/)
     expect(receiptFlow).not.toMatch(/pollRows\([\s\S]*?producedLotNo[\s\S]*?,\s*1,?\s*\)/)
   })
 
@@ -198,9 +198,35 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(pollingFlow).toContain('readonly poll: JsonRecord')
     expect(pollingFlow).toContain('throw new PollTimeoutError(')
     expect(failureFlow).toContain('error instanceof PollTimeoutError')
-    expect(failureFlow).toContain('request: pollFailure?.request ?? current.request')
+    expect(failureFlow).toContain(
+      'request: pollFailure?.request ?? callFailure?.request ?? current.request',
+    )
     expect(failureFlow).toContain('lastData: publicJson(pollFailure.lastData)')
     expect(failureFlow).toContain('poll: pollFailure.poll')
+  })
+
+  it('retries a transient 404 within the polling budget and preserves its public evidence', () => {
+    const pollingFlow = sourceBetween('const pollData = async (', 'const markFailure = (')
+    const failureFlow = sourceBetween('const markFailure = (', 'try {\n    await page.goto')
+
+    expect(pollingFlow).toContain('error instanceof PublicCallError && error.status === 404')
+    expect(pollingFlow).toContain('lastRequest = error.request')
+    expect(pollingFlow).toContain('lastData = asRecord(error.payload)')
+    expect(failureFlow).toContain(
+      'const callFailure = error instanceof PublicCallError ? error : null',
+    )
+    expect(failureFlow).toContain('callFailure?.request')
+    expect(failureFlow).toContain('response: publicJson(callFailure.payload)')
+  })
+
+  it('keeps polling unknown Inventory link statuses and stops only on explicit terminal states', () => {
+    const receiptFlow = sourceBetween("let receiptRequestNo = ''", "let wmsOutboundId = ''")
+
+    expect(receiptFlow).toContain(
+      "const terminalStatuses = new Set(['posted', 'postingfailed', 'qualityrestricted'])",
+    )
+    expect(receiptFlow).toContain('return terminalStatuses.has(status)')
+    expect(receiptFlow).not.toContain("status !== 'notposted' && status !== 'partiallyposted'")
   })
 
   it('proves the receipt Inventory link through the real public facade and exact source keys', () => {
@@ -214,7 +240,13 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(receiptFlow).toContain(
       '/mes/finished-goods-receipt-requests/${encodeURIComponent(receiptRequestNo)}/inventory-link`',
     )
-    expect(receiptFlow).toMatch(/\{\s*organizationId,\s*environmentId,\s*workOrderId\s*\}/)
+    const inventoryLinkCall = sourceBetween(
+      'const inventoryLink = await pollData(',
+      'const link = inventoryLink.data',
+    )
+    expect(inventoryLinkCall).toContain('organizationId')
+    expect(inventoryLinkCall).toContain('environmentId')
+    expect(inventoryLinkCall).toContain('workOrderId')
     expect(receiptFlow).toContain("textOf(link.linkStatus).trim().toLowerCase() === 'posted'")
     expect(receiptFlow).toContain('link.isInventoryLinkEstablished === true')
     expect(receiptFlow).toContain('textOf(link.requestNo) === receiptRequestNo')
@@ -225,8 +257,15 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(receiptFlow).toContain('textOf(link.sourceDocumentLineId) === workOrderId')
     expect(receiptFlow).toContain('const sourceMovement = movements.find(')
     expect(receiptFlow).toContain('const sourceBalance = balances.find(')
+    expect(receiptFlow).toContain('Number(balance.ledgerVersion ?? 0) > 0')
     expect(receiptFlow).toContain("node: 'inventory-produced-lot-fulfillment-lookup'")
     expect(receiptFlow).toContain('poll: inventoryLink.poll')
+    const inventoryLinkEvidence = sourceBetween(
+      "node: 'inventory-produced-lot-fulfillment-lookup'",
+      "markFailure('inventory-produced-lot-fulfillment-lookup', error)",
+    )
+    expect(inventoryLinkEvidence).toContain("automationMode: 'automatic'")
+    expect(inventoryLinkEvidence).toContain('responsibilityIssue: null')
     expect(receiptFlow).not.toContain("responsibilityIssue: '#972 / MAN-528 (demo:defer)'")
     expect(finalAcceptance).toContain("entry.conclusion !== 'runtime-confirmed'")
     expect(finalAcceptance).not.toContain(
