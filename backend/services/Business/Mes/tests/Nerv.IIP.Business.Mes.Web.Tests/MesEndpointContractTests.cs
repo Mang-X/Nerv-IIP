@@ -69,6 +69,47 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Create_finished_goods_receipt_endpoint_returns_strong_id_wire_shape()
+    {
+        var receiptRequestId = Guid.Parse("019f88b9-1d59-7cb3-b4a0-37b88e78422e");
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(new FinishedGoodsReceiptWireShapeSender(receiptRequestId));
+                });
+            });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/mes/finished-goods-receipt-requests", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-WIRE-001",
+            skuId = "SKU-FG-WIRE-001",
+            quantity = 1m,
+            uomCode = "PCS",
+            requestedAtUtc = "2026-07-22T07:00:00Z",
+            idempotencyKey = "wire-shape-001",
+            producedLotNo = "LOT-FG-WIRE-001",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var rawBody = await response.Content.ReadAsStringAsync();
+        using var body = JsonDocument.Parse(rawBody);
+        var root = body.RootElement;
+        var wireId = root.GetProperty("finishedGoodsReceiptRequestId");
+        Assert.Equal(JsonValueKind.Object, wireId.ValueKind);
+        Assert.True(wireId.TryGetProperty("id", out var id), rawBody);
+        Assert.Equal(receiptRequestId, id.GetGuid());
+        Assert.Equal("FGR-WIRE-001", root.GetProperty("requestNo").GetString());
+    }
+
+    [Fact]
     public void Force_release_request_uses_authenticated_principal_and_governed_headers()
     {
         Assert.Null(typeof(ForceReleaseQualityHoldRequest).GetProperty("Actor"));
@@ -1740,6 +1781,30 @@ public sealed class MesEndpointContractTests
             return Task.FromResult((TResponse)(object)new ProductionReportCommandResult(
                 new Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId(productionReportId),
                 "PRPT-WIRE-001"));
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class FinishedGoodsReceiptWireShapeSender(Guid receiptRequestId) : ISender
+    {
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+            Assert.IsType<CreateFinishedGoodsReceiptRequestCommand>(request);
+            return Task.FromResult((TResponse)(object)new FinishedGoodsReceiptRequestCommandResult(
+                new FinishedGoodsReceiptRequestId(receiptRequestId),
+                "FGR-WIRE-001"));
         }
 
         public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest =>
