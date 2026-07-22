@@ -44,6 +44,18 @@ class TrackedSetupError extends Error {
   }
 }
 
+class PollTimeoutError extends Error {
+  constructor(
+    readonly request: JsonRecord | null,
+    readonly lastData: JsonRecord,
+    readonly poll: JsonRecord,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'PollTimeoutError'
+  }
+}
+
 type EvidenceEntry = {
   node: string
   sourceObject: string
@@ -168,6 +180,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
   const finishedSku = `FG-M524-${suffix}`
   const materialSku = `RM-M524-${suffix}`
   const rawMaterialQuantity = 10
+  const finishedGoodsUnitCost = 25
   const rawMaterialLotNo = `RMLOT-M524-${suffix}`
   const purchaseOrderNo = `PO-M524-${suffix}`
   const inboundOrderNo = `IN-M524-${suffix}`
@@ -269,9 +282,11 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     const deadline = startedAt + timeoutMs
     let attempts = 0
     let lastData: JsonRecord = {}
+    let lastRequest: JsonRecord | null = null
     do {
       attempts += 1
       const response = await call('GET', queryPath(path, query))
+      lastRequest = response.summary
       lastData = asRecord(dataOf(response.payload))
       if (predicate(lastData)) {
         return {
@@ -282,7 +297,10 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
       }
       await page.waitForTimeout(1_000)
     } while (Date.now() < deadline)
-    throw new Error(
+    throw new PollTimeoutError(
+      lastRequest,
+      lastData,
+      { attempts, elapsedMs: Date.now() - startedAt, timeoutMs },
       `Timed out after ${attempts} attempts in ${timeoutMs}ms waiting for run-scoped data from ${path}; last data=${safeText(JSON.stringify(lastData))}.`,
     )
   }
@@ -292,15 +310,25 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     error: unknown,
     mode: EvidenceEntry['automationMode'] = 'automatic',
     issue: string | null = null,
-  ) =>
+  ) => {
+    const current = evidence.get(node)!
+    const pollFailure = error instanceof PollTimeoutError ? error : null
     record({
-      ...evidence.get(node)!,
+      ...current,
       automationMode: mode,
-      responseOrLog: { error: safeText(error instanceof Error ? error.message : error) },
+      request: pollFailure?.request ?? current.request,
+      responseOrLog: pollFailure
+        ? {
+            error: safeText(pollFailure.message),
+            poll: pollFailure.poll,
+            lastData: publicJson(pollFailure.lastData),
+          }
+        : { error: safeText(error instanceof Error ? error.message : error) },
       conclusion: 'gap',
       demoWording: `${node}: the public runtime attempt did not converge; present this as a gap, not a completed automatic hop.`,
       responsibilityIssue: issue,
     })
+  }
 
   try {
     await page.goto('/login')
@@ -1361,6 +1389,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             skuId: finishedSku,
             quantity: 10,
             uomCode,
+            unitCost: finishedGoodsUnitCost,
             requestedAtUtc: new Date().toISOString(),
             idempotencyKey: `fg-receipt-${suffix}`,
             producedLotNo,

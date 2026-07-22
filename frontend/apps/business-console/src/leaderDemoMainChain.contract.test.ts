@@ -173,6 +173,7 @@ describe('leader demo main-chain public prerequisites', () => {
   it('polls exact finished-goods Inventory availability with a bounded public wait', () => {
     const receiptFlow = sourceBetween("let receiptRequestNo = ''", "let wmsOutboundId = ''")
 
+    expect(receiptFlow).toContain('unitCost: finishedGoodsUnitCost')
     expect(receiptFlow).toContain('const availability = await pollData(')
     expect(receiptFlow).toContain("'/api/business-console/v1/inventory/availability'")
     expect(receiptFlow).toContain('skuCode: finishedSku')
@@ -183,6 +184,23 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(receiptFlow).toContain('poll: availability.poll')
     expect(receiptFlow).not.toContain('() => false')
     expect(receiptFlow).not.toMatch(/pollRows\([\s\S]*?producedLotNo[\s\S]*?,\s*1,?\s*\)/)
+  })
+
+  it('keeps the last public request, correlation, and response when bounded polling times out', () => {
+    const pollingFlow = sourceBetween(
+      'class PollTimeoutError extends Error',
+      'const markFailure = (',
+    )
+    const failureFlow = sourceBetween('const markFailure = (', 'try {\n    await page.goto')
+
+    expect(pollingFlow).toContain('readonly request: JsonRecord | null')
+    expect(pollingFlow).toContain('readonly lastData: JsonRecord')
+    expect(pollingFlow).toContain('readonly poll: JsonRecord')
+    expect(pollingFlow).toContain('throw new PollTimeoutError(')
+    expect(failureFlow).toContain('error instanceof PollTimeoutError')
+    expect(failureFlow).toContain('request: pollFailure?.request ?? current.request')
+    expect(failureFlow).toContain('lastData: publicJson(pollFailure.lastData)')
+    expect(failureFlow).toContain('poll: pollFailure.poll')
   })
 
   it('proves the receipt Inventory link through the real public facade and exact source keys', () => {
