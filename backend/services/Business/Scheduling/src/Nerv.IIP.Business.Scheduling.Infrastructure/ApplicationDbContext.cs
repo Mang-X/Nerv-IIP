@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleOperationOverrideAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OrderUrgencyAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Business.Scheduling.Infrastructure.Urgency;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 
@@ -21,6 +22,9 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<OrderUrgencyBusinessPriority> OrderUrgencyBusinessPriorities => Set<OrderUrgencyBusinessPriority>();
     public DbSet<OrderUrgencyBusinessPriorityChange> OrderUrgencyBusinessPriorityChanges => Set<OrderUrgencyBusinessPriorityChange>();
     public DbSet<OrderUrgencySnapshot> OrderUrgencySnapshots => Set<OrderUrgencySnapshot>();
+    public DbSet<OrderUrgencyArchiveBatch> OrderUrgencyArchiveBatches => Set<OrderUrgencyArchiveBatch>();
+    public DbSet<OrderUrgencyRetentionLease> OrderUrgencyRetentionLeases => Set<OrderUrgencyRetentionLease>();
+    public DbSet<OrderUrgencyRestoreAudit> OrderUrgencyRestoreAudits => Set<OrderUrgencyRestoreAudit>();
     public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

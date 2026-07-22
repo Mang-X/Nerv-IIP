@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleOperationOverrideAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OrderUrgencyAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
+using Nerv.IIP.Business.Scheduling.Infrastructure.Urgency;
 using Nerv.IIP.Testing.EntityFramework;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
@@ -41,6 +42,9 @@ public sealed class SchedulingSchemaConventionTests
             typeof(OrderUrgencyBusinessPriority),
             typeof(OrderUrgencyBusinessPriorityChange),
             typeof(OrderUrgencySnapshot),
+            typeof(OrderUrgencyArchiveBatch),
+            typeof(OrderUrgencyRetentionLease),
+            typeof(OrderUrgencyRestoreAudit),
         };
 
         var failures = new List<string>();

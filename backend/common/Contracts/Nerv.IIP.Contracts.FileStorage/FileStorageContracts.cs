@@ -75,3 +75,41 @@ public sealed record DownloadGrantResponse(
     string FileId,
     DateTimeOffset ExpiresAtUtc,
     TransferInstructions Download);
+
+public sealed record PutVersionedArchiveRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ArchiveKind,
+    string BatchId,
+    string ContentBase64,
+    string ContentType,
+    string Sha256,
+    bool LegalHold);
+
+public sealed record VersionedArchiveEvidence(
+    string ObjectKey,
+    string VersionId,
+    string Sha256,
+    long SizeBytes,
+    DateTimeOffset VerifiedAtUtc);
+
+public sealed record GetVersionedArchiveRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ObjectKey,
+    string VersionId,
+    string Sha256,
+    long SizeBytes);
+
+public sealed record GetVersionedArchiveResponse(
+    VersionedArchiveEvidence Evidence,
+    string ContentBase64);
+
+public sealed record DeleteVersionedArchiveRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ObjectKey,
+    string VersionId,
+    string AuthorizationReference,
+    string Actor,
+    string Reason);

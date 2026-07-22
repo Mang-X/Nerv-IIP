@@ -182,6 +182,7 @@ var fileStorage = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("Storage__MinIO__Endpoint", minio.GetEndpoint("api"))
     .WithEnvironment("Storage__MinIO__AccessKey", minioRootUser)
     .WithEnvironment("Storage__MinIO__SecretKey", minioRootPassword)
+    .WithEnvironment("Storage__MinIO__ComplianceArchiveBucket", "nerv-iip-compliance-archive")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(redis)
     .WaitFor(redis)
@@ -514,15 +515,18 @@ var businessScheduling = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(bu
     .WithEnvironment("Mes__BaseUrl", businessMes.GetEndpoint("http"))
     .WithEnvironment("IndustrialTelemetry__BaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
     .WithEnvironment("Maintenance__BaseUrl", businessMaintenance.GetEndpoint("http"))
+    .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessSchedulingDatabase, "PostgreSQL")
     .WithReference(businessMes)
     .WithReference(businessIndustrialTelemetry)
     .WithReference(businessMaintenance)
+    .WithReference(fileStorage)
     .WaitFor(businessSchedulingDatabase)
     .WaitFor(businessMes)
     .WaitFor(businessIndustrialTelemetry)
     .WaitFor(businessMaintenance);
+businessScheduling = businessScheduling.WaitFor(fileStorage);
 businessScheduling = WithRedisMessagingTransport(businessScheduling);
 if (rabbitmq is not null)
 {
