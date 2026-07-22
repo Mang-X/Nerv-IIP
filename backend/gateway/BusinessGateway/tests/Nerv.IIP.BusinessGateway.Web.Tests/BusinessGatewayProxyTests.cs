@@ -5417,6 +5417,93 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Mes_http_client_maps_record_production_report_strong_id_from_raw_or_enveloped_wire_shape(bool enveloped)
+    {
+        const string productionReportId = "019f855b-5cb0-7550-a509-d2ee7b021689";
+        var payload = new
+        {
+            productionReportId = new { id = productionReportId },
+            reportNo = "PRPT-WIRE-001",
+        };
+        var handler = new RecordingHandler(_ => JsonResponse(
+            HttpStatusCode.OK,
+            enveloped ? new { success = true, data = (object)payload, message = string.Empty, code = 0 } : payload));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var response = await client.RecordProductionReportAsync(
+            "internal-token-001",
+            ProductionReportRequest(),
+            CancellationToken.None);
+
+        Assert.Equal(productionReportId, response.ProductionReportId);
+        Assert.Equal("PRPT-WIRE-001", response.ReportNo);
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("/api/business/v1/mes/production-reports", request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+        using var requestBody = JsonDocument.Parse(Assert.Single(handler.RequestBodies)!);
+        Assert.Equal("org-001", requestBody.RootElement.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", requestBody.RootElement.GetProperty("environmentId").GetString());
+        Assert.Equal("wire-shape-001", requestBody.RootElement.GetProperty("idempotencyKey").GetString());
+    }
+
+    [Theory]
+    [InlineData("{\"productionReportId\":{\"id\":\"not-a-guid\"},\"reportNo\":\"PRPT-WIRE-001\"}", false)]
+    [InlineData("{\"productionReportId\":{\"id\":\"not-a-guid\"},\"reportNo\":\"PRPT-WIRE-001\"}", true)]
+    [InlineData("{\"productionReportId\":{},\"reportNo\":\"PRPT-WIRE-001\"}", false)]
+    [InlineData("{\"productionReportId\":{\"id\":\"019f855b-5cb0-7550-a509-d2ee7b021689\"},\"reportNo\":\"\"}", false)]
+    [InlineData("{not-json", false)]
+    public async Task Mes_http_client_rejects_malformed_record_production_report_wire_shape(string body, bool enveloped)
+    {
+        var responseBody = enveloped
+            ? $"{{\"success\":true,\"data\":{body},\"message\":\"\",\"code\":0}}"
+            : body;
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK, responseBody));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.RecordProductionReportAsync(
+                "internal-token-001",
+                ProductionReportRequest(),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Mes_http_client_preserves_fail_closed_business_error_for_record_production_report()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = false,
+            message = "production-report-validation-failed",
+            code = 400,
+            errorData = Array.Empty<object>(),
+            data = new
+            {
+                productionReportId = new { id = "019f855b-5cb0-7550-a509-d2ee7b021689" },
+                reportNo = "PRPT-WIRE-001",
+            },
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.RecordProductionReportAsync(
+                "internal-token-001",
+                ProductionReportRequest(),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Equal("production-report-validation-failed", exception.Message);
+    }
+
     [Fact]
     public async Task Mes_http_client_rebuilds_production_report_reversal_body_with_injected_actor()
     {
@@ -5774,6 +5861,17 @@ public sealed class BusinessGatewayProxyTests
     {
         Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json"),
     };
+
+    private static BusinessConsoleRecordProductionReportRequest ProductionReportRequest() => new(
+        "org-001",
+        "env-dev",
+        "WO-WIRE-001",
+        "OP-WIRE-10",
+        1m,
+        0m,
+        false,
+        DateTimeOffset.Parse("2026-07-21T15:46:24Z"),
+        "wire-shape-001");
 
     private static object ValidMasterDataCreateBody(string path) =>
         BusinessConsoleTestRequestBodies.ValidMasterDataCreateBody(path);
