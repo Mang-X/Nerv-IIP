@@ -376,9 +376,7 @@ public sealed class SetOrderUrgencyBusinessPriorityRequestValidator : Validator<
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.OrderReference).NotEmpty().MaximumLength(128);
-        RuleFor(x => x.Level)
-            .Must(value => new[] { "P0", "P1", "P2", "P3" }.Contains(value, StringComparer.OrdinalIgnoreCase))
-            .OverridePropertyName("level")
+        RuleFor(x => x.Level).Must(value => new[] { "P0", "P1", "P2", "P3" }.Contains(value, StringComparer.OrdinalIgnoreCase))
             .WithMessage("Level must be P0, P1, P2, or P3.");
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(1000);
     }

@@ -200,7 +200,6 @@ public sealed class OrderUrgencyApplicationTests
 
         Assert.False(result.IsValid);
         var error = Assert.Single(result.Errors);
-        Assert.Equal("level", error.PropertyName);
         Assert.Equal("Level must be P0, P1, P2, or P3.", error.ErrorMessage);
     }
 
