@@ -157,6 +157,8 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
   const uomCode = `UOM-M524-${suffix}`
   const siteCode = `SITE-M524-${suffix}`
   const materialSiteCode = 'production'
+  const finishedGoodsSiteCode = 'finished-goods'
+  const finishedGoodsLocationCode = 'receiving'
   const workshopCode = `SHOP-M524-${suffix}`
   const lineCode = `LINE-M524-${suffix}`
   const workCenterCode = `WC-M524-${suffix}`
@@ -263,16 +265,25 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     predicate: (data: JsonRecord) => boolean,
     timeoutMs = 45_000,
   ) => {
-    const deadline = Date.now() + timeoutMs
+    const startedAt = Date.now()
+    const deadline = startedAt + timeoutMs
+    let attempts = 0
     let lastData: JsonRecord = {}
     do {
+      attempts += 1
       const response = await call('GET', queryPath(path, query))
       lastData = asRecord(dataOf(response.payload))
-      if (predicate(lastData)) return { data: lastData, call: response }
+      if (predicate(lastData)) {
+        return {
+          data: lastData,
+          call: response,
+          poll: { attempts, elapsedMs: Date.now() - startedAt, timeoutMs },
+        }
+      }
       await page.waitForTimeout(1_000)
     } while (Date.now() < deadline)
     throw new Error(
-      `Timed out waiting for run-scoped data from ${path}; last data=${safeText(JSON.stringify(lastData))}.`,
+      `Timed out after ${attempts} attempts in ${timeoutMs}ms waiting for run-scoped data from ${path}; last data=${safeText(JSON.stringify(lastData))}.`,
     )
   }
 
@@ -1369,78 +1380,117 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             'A public finished-goods receipt request used the exact work order and authoritative produced lot from the production report.',
           responsibilityIssue: '#965',
         })
-        const availability = await pollRows(
+      } catch (error) {
+        markFailure('report-finished-goods-receipt', error, 'manual')
+      }
+    }
+
+    if (receiptRequestNo) {
+      try {
+        const availability = await pollData(
           '/api/business-console/v1/inventory/availability',
           {
             organizationId,
             environmentId,
             skuCode: finishedSku,
             uomCode,
-            siteCode,
+            siteCode: finishedGoodsSiteCode,
+            locationCode: finishedGoodsLocationCode,
             lotNo: producedLotNo,
           },
-          () => false,
-          1,
-        ).catch(async () => {
-          const response = await call(
-            'GET',
-            queryPath('/api/business-console/v1/inventory/availability', {
-              organizationId,
-              environmentId,
-              skuCode: finishedSku,
-              uomCode,
-              siteCode,
-              lotNo: producedLotNo,
-            }),
-          )
-          return { match: asRecord(dataOf(response.payload)), call: response }
-        })
-        if (Number(availability.match.onHandQuantity ?? 0) <= 0) {
-          throw new Error(
-            `${receiptRequestNo} did not converge to positive Inventory on-hand for ${producedLotNo}.`,
-          )
-        }
+          (data) => Number(data.onHandQuantity ?? 0) > 0,
+        )
         record({
           node: 'finished-goods-receipt-inventory-posting',
           sourceObject: receiptRequestNo,
           downstreamObject: producedLotNo,
-          stableKey: `${receiptRequestNo} -> ${producedLotNo}`,
+          stableKey: `${receiptRequestNo} -> ${finishedGoodsSiteCode}/${finishedGoodsLocationCode}/${producedLotNo}`,
           automationMode: 'automatic',
           request: availability.call.summary,
-          responseOrLog: publicJson(availability.match) as JsonRecord,
+          responseOrLog: {
+            poll: availability.poll,
+            availability: publicJson(availability.data),
+          },
           conclusion: 'runtime-confirmed',
           demoWording:
             'MES receipt posting crossed Redis into Inventory and produced positive on-hand for the authoritative lot.',
           responsibilityIssue: '#965',
         })
       } catch (error) {
-        if (evidence.get('report-finished-goods-receipt')?.conclusion !== 'runtime-confirmed') {
-          markFailure('report-finished-goods-receipt', error, 'manual')
-        } else {
-          markFailure('finished-goods-receipt-inventory-posting', error)
-        }
+        markFailure('finished-goods-receipt-inventory-posting', error)
       }
     }
 
-    record({
-      node: 'inventory-produced-lot-fulfillment-lookup',
-      sourceObject: receiptRequestNo || producedLotNo,
-      downstreamObject: producedLotNo,
-      stableKey: `${salesOrderNo} -> ${producedLotNo}`,
-      automationMode: 'manual',
-      request: null,
-      responseOrLog: {
-        observedByLot:
-          evidence.get('finished-goods-receipt-inventory-posting')?.conclusion ===
-          'runtime-confirmed',
-        missingPublicAssociation:
-          'Inventory has no public source-reference lookup from work order or finished-goods receipt to produced lot.',
-      },
-      conclusion: 'gap',
-      demoWording:
-        'The lot can be checked when already known, but the public API still cannot discover it from the work order or receipt; do not present this as automatic traceability.',
-      responsibilityIssue: '#972 / MAN-528 (demo:defer)',
-    })
+    if (receiptRequestNo) {
+      try {
+        const inventoryLink = await pollData(
+          `/api/business-console/v1/mes/finished-goods-receipt-requests/${encodeURIComponent(receiptRequestNo)}/inventory-link`,
+          { organizationId, environmentId, workOrderId },
+          (data) => {
+            const status = textOf(data.linkStatus).trim().toLowerCase()
+            return status !== 'notposted' && status !== 'partiallyposted'
+          },
+        )
+        const link = inventoryLink.data
+        const movements = Array.isArray(link.movements) ? link.movements.map(asRecord) : []
+        const balances = Array.isArray(link.balances) ? link.balances.map(asRecord) : []
+        const sourceMovement = movements.find(
+          (movement) =>
+            textOf(movement.sourceService) === 'business-mes' &&
+            textOf(movement.sourceDocumentId) === receiptRequestNo &&
+            textOf(movement.sourceDocumentLineId) === workOrderId &&
+            textOf(movement.skuCode) === finishedSku &&
+            textOf(movement.siteCode) === finishedGoodsSiteCode &&
+            textOf(movement.locationCode) === finishedGoodsLocationCode &&
+            textOf(movement.lotNo) === producedLotNo &&
+            Number(movement.quantity ?? 0) > 0,
+        )
+        const sourceBalance = balances.find(
+          (balance) =>
+            textOf(balance.skuCode) === finishedSku &&
+            textOf(balance.siteCode) === finishedGoodsSiteCode &&
+            textOf(balance.locationCode) === finishedGoodsLocationCode &&
+            textOf(balance.lotNo) === producedLotNo &&
+            Number(balance.onHandQuantity ?? 0) > 0,
+        )
+        const hasExactInventoryLink =
+          textOf(link.linkStatus).trim().toLowerCase() === 'posted' &&
+          link.isInventoryLinkEstablished === true &&
+          textOf(link.requestNo) === receiptRequestNo &&
+          textOf(link.workOrderId) === workOrderId &&
+          textOf(link.producedLotNo) === producedLotNo &&
+          textOf(link.sourceService) === 'business-mes' &&
+          textOf(link.sourceDocumentId) === receiptRequestNo &&
+          textOf(link.sourceDocumentLineId) === workOrderId &&
+          Boolean(sourceMovement) &&
+          Boolean(sourceBalance)
+        if (!hasExactInventoryLink || !sourceMovement || !sourceBalance) {
+          throw new Error(
+            `${receiptRequestNo} returned an incomplete Inventory source link: ${safeText(JSON.stringify(link))}.`,
+          )
+        }
+        record({
+          node: 'inventory-produced-lot-fulfillment-lookup',
+          sourceObject: receiptRequestNo,
+          downstreamObject: textOf(sourceMovement.movementId),
+          stableKey: `${receiptRequestNo} -> ${workOrderId} -> ${producedLotNo} -> ${textOf(sourceMovement.movementId)}`,
+          automationMode: 'manual',
+          request: inventoryLink.call.summary,
+          responseOrLog: {
+            poll: inventoryLink.poll,
+            movementId: textOf(sourceMovement.movementId),
+            balanceLedgerVersion: sourceBalance.ledgerVersion ?? null,
+            link: publicJson(link),
+          },
+          conclusion: 'runtime-confirmed',
+          demoWording:
+            'The public Inventory link resolved the exact MES receipt and work order to its source movement, produced lot, and current balance.',
+          responsibilityIssue: '#972 (closed)',
+        })
+      } catch (error) {
+        markFailure('inventory-produced-lot-fulfillment-lookup', error, 'manual')
+      }
+    }
 
     let wmsOutboundId = ''
     if (salesOrderCreated) {
@@ -1613,22 +1663,14 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
   }
 
   const entries = requiredNodes.map((node) => evidence.get(node)!)
-  const unacceptableEntries = entries.filter(
-    (entry) =>
-      entry.conclusion !== 'runtime-confirmed' &&
-      !(
-        entry.node === 'inventory-produced-lot-fulfillment-lookup' &&
-        entry.conclusion === 'gap' &&
-        /(^|\D)#972(\D|$)/.test(entry.responsibilityIssue ?? '')
-      ),
-  )
+  const unacceptableEntries = entries.filter((entry) => entry.conclusion !== 'runtime-confirmed')
   expect(
     unacceptableEntries.map((entry) => ({
       node: entry.node,
       conclusion: entry.conclusion,
       responsibilityIssue: entry.responsibilityIssue,
     })),
-    'Every main-chain node must be runtime-confirmed except the explicitly accepted #972 lookup gap.',
+    'Every main-chain node must be runtime-confirmed through public BusinessGateway evidence.',
   ).toEqual([])
   expect(entries.some((entry) => entry.conclusion === 'runtime-confirmed')).toBe(true)
 })

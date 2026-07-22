@@ -170,6 +170,53 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(productionFlow).toContain('idempotencyKey: `start-task-${suffix}`')
   })
 
+  it('polls exact finished-goods Inventory availability with a bounded public wait', () => {
+    const receiptFlow = sourceBetween("let receiptRequestNo = ''", "let wmsOutboundId = ''")
+
+    expect(receiptFlow).toContain('const availability = await pollData(')
+    expect(receiptFlow).toContain("'/api/business-console/v1/inventory/availability'")
+    expect(receiptFlow).toContain('skuCode: finishedSku')
+    expect(receiptFlow).toContain('siteCode: finishedGoodsSiteCode')
+    expect(receiptFlow).toContain('locationCode: finishedGoodsLocationCode')
+    expect(receiptFlow).toContain('lotNo: producedLotNo')
+    expect(receiptFlow).toContain('(data) => Number(data.onHandQuantity ?? 0) > 0')
+    expect(receiptFlow).toContain('poll: availability.poll')
+    expect(receiptFlow).not.toContain('() => false')
+    expect(receiptFlow).not.toMatch(/pollRows\([\s\S]*?producedLotNo[\s\S]*?,\s*1,?\s*\)/)
+  })
+
+  it('proves the receipt Inventory link through the real public facade and exact source keys', () => {
+    const receiptFlow = sourceBetween("let receiptRequestNo = ''", "let wmsOutboundId = ''")
+    const finalAcceptance = sourceBetween(
+      'const unacceptableEntries = entries.filter(',
+      "expect(entries.some((entry) => entry.conclusion === 'runtime-confirmed'))",
+    )
+
+    expect(receiptFlow).toContain('const inventoryLink = await pollData(')
+    expect(receiptFlow).toContain(
+      '/mes/finished-goods-receipt-requests/${encodeURIComponent(receiptRequestNo)}/inventory-link`',
+    )
+    expect(receiptFlow).toMatch(/\{\s*organizationId,\s*environmentId,\s*workOrderId\s*\}/)
+    expect(receiptFlow).toContain("textOf(link.linkStatus).trim().toLowerCase() === 'posted'")
+    expect(receiptFlow).toContain('link.isInventoryLinkEstablished === true')
+    expect(receiptFlow).toContain('textOf(link.requestNo) === receiptRequestNo')
+    expect(receiptFlow).toContain('textOf(link.workOrderId) === workOrderId')
+    expect(receiptFlow).toContain('textOf(link.producedLotNo) === producedLotNo')
+    expect(receiptFlow).toContain("textOf(link.sourceService) === 'business-mes'")
+    expect(receiptFlow).toContain('textOf(link.sourceDocumentId) === receiptRequestNo')
+    expect(receiptFlow).toContain('textOf(link.sourceDocumentLineId) === workOrderId')
+    expect(receiptFlow).toContain('const sourceMovement = movements.find(')
+    expect(receiptFlow).toContain('const sourceBalance = balances.find(')
+    expect(receiptFlow).toContain("node: 'inventory-produced-lot-fulfillment-lookup'")
+    expect(receiptFlow).toContain('poll: inventoryLink.poll')
+    expect(receiptFlow).not.toContain("responsibilityIssue: '#972 / MAN-528 (demo:defer)'")
+    expect(finalAcceptance).toContain("entry.conclusion !== 'runtime-confirmed'")
+    expect(finalAcceptance).not.toContain(
+      "entry.node === 'inventory-produced-lot-fulfillment-lookup'",
+    )
+    expect(finalAcceptance).not.toContain('#972')
+  })
+
   it('completes the run-scoped WMS outbound with the required business context query', () => {
     const completionFlow = sourceBetween(
       'const completed = await call(',
