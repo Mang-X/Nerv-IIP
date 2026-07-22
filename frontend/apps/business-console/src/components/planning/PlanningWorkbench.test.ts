@@ -3,6 +3,13 @@ import { describe, expect, it, vi } from 'vitest'
 
 import PlanningWorkbench from './PlanningWorkbench.vue'
 
+vi.mock('@/composables/useOrderUrgency', () => ({
+  useOrderUrgencies: () => ({ byReference: { value: new Map() } }),
+}))
+vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
+  default: { template: '<span data-testid="order-urgency">未计算</span>' },
+}))
+
 const routerPush = vi.hoisted(() => vi.fn())
 
 vi.mock('@/composables/useBusinessPlanning', async () => {

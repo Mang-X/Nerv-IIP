@@ -59,7 +59,7 @@ public sealed class BusinessGatewayAuthorizationTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal(1, auth.CallCount);
         Assert.Equal(BusinessGatewayPermissions.MasterDataProductsRead, auth.LastRequirement!.PermissionCode);
-        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+        Assert.Equal("org-001", auth.LastRequirement!.OrganizationId);
         Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
     }
 
@@ -436,9 +436,22 @@ public sealed class BusinessGatewayAuthorizationTests
         Assert.True(
             response.StatusCode == HttpStatusCode.Forbidden,
             $"Expected Forbidden for {method} {path}, got {(int)response.StatusCode}: {responseBody}");
-        Assert.Equal(1, auth.CallCount);
-        Assert.Equal(expectedPermission, auth.LastRequirement!.PermissionCode);
-        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+        var isCrossDomainUrgencyRead = method == HttpMethod.Get &&
+            path.Contains("/scheduling/order-urgencies", StringComparison.Ordinal);
+        Assert.Equal(isCrossDomainUrgencyRead ? 4 : 1, auth.CallCount);
+        Assert.Equal(expectedPermission, auth.Requirements[0].PermissionCode);
+        if (isCrossDomainUrgencyRead)
+        {
+            Assert.Equal(
+                [
+                    BusinessGatewayPermissions.SchedulingPlansRead,
+                    BusinessGatewayPermissions.ErpSalesRead,
+                    BusinessGatewayPermissions.PlanningDemandsRead,
+                    BusinessGatewayPermissions.MesWorkOrdersRead,
+                ],
+                auth.Requirements.Select(x => x.PermissionCode));
+        }
+        Assert.Equal("org-001", auth.LastRequirement!.OrganizationId);
         Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
     }
 
@@ -558,6 +571,13 @@ public sealed class BusinessGatewayAuthorizationTests
         "/api/business-console/v1/scheduling/plans/preview" or "/api/business-console/v1/scheduling/plans" => new
         {
             problem = SchedulingProblemBody(),
+        },
+        "/api/business-console/v1/scheduling/order-urgencies/WO-001/business-priority" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            level = "p1",
+            reason = "authorization test",
         },
         "/api/business-console/v1/planning/suggestions/suggestion-001/accept" => new
         {
@@ -1094,6 +1114,9 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/plans/plan-001", BusinessGatewayPermissions.SchedulingPlansRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/plans/plan-001/gantt", BusinessGatewayPermissions.SchedulingPlansRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans/plan-001/release", BusinessGatewayPermissions.SchedulingPlansRelease);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/order-urgencies", BusinessGatewayPermissions.SchedulingPlansRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/order-urgencies/WO-001", BusinessGatewayPermissions.SchedulingPlansRead);
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/scheduling/order-urgencies/WO-001/business-priority", BusinessGatewayPermissions.SchedulingPlansManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/overview?deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/devices/DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/availability?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);

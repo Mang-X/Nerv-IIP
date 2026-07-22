@@ -1,5 +1,7 @@
 # Order Urgency Model V1 Implementation Plan
 
+> 实施收敛（2026-07-22）：本 PR 完成统一计算、审计 API、facade/codegen、四入口一致 badge、Hover、解释 Sheet 与排产跳转。Task 7/8 中的七种表格显示模式、独立排序、Sheet 内人工优先级编辑和完整审计时间线拆至 #1061；它必须复用本计划交付的唯一模型与 facade，不改变后端计算结果。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver one audited, explainable order-urgency result across sales, demand, scheduling, and MES work-order entry points.

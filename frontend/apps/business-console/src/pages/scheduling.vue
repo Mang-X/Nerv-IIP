@@ -8,6 +8,8 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useBusinessScheduling } from '@/composables/useBusinessScheduling'
+import { useOrderUrgencies } from '@/composables/useOrderUrgency'
+import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
 import {
   schedulingPlanStatusLabel,
@@ -60,6 +62,9 @@ const {
   releasePlan,
   releasePlanPending,
 } = useBusinessScheduling()
+const orderUrgencies = useOrderUrgencies(
+  computed(() => (planDetail.value?.assignments ?? []).map((assignment) => assignment.orderId)),
+)
 
 const activeView = shallowRef('table')
 const detailOpen = shallowRef(false)
@@ -425,7 +430,19 @@ function reasonLabel(reason?: string | null) {
                 :key="assignment.assignmentId ?? assignmentText(assignment)"
                 class="rounded-md border bg-background p-3"
               >
-                <p class="text-sm font-medium text-foreground">{{ assignmentText(assignment) }}</p>
+                <div class="flex items-center justify-between gap-3">
+                  <p class="text-sm font-medium text-foreground">
+                    {{ assignmentText(assignment) }}
+                  </p>
+                  <OrderUrgencyBadge
+                    :order-reference="assignment.orderId ?? ''"
+                    :urgency="
+                      assignment.orderId
+                        ? orderUrgencies.byReference.value.get(assignment.orderId)
+                        : undefined
+                    "
+                  />
+                </div>
                 <p class="mt-1 text-sm text-muted-foreground">
                   {{ formatDateTime(assignment.startUtc) }} 至
                   {{ formatDateTime(assignment.endUtc) }}

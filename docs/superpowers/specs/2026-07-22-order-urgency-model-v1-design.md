@@ -71,7 +71,7 @@ CR = (dueAt - calculatedAt) / remainingCycle
 - 计划创建、问题快照变化、计划失效和业务优先级变化时立即重算受影响订单；
 - 后台扫描器周期重算未完成主题，使时间自然流逝能够升级/降级；
 - list/detail 查询会补算缺失或已跨过当前时间桶的主题，避免后台短暂停止时返回旧结论；
-- 普通订单使用小时桶，已接近交期或已有风险的订单使用 15 分钟桶；桶起点是计算时点，纯计算器不读取系统时间；
+- V1 统一使用 15 分钟桶，以同一确定性口径覆盖普通订单和近交期/风险订单；按风险分级降低普通订单刷新频率属于后续性能优化，纯计算器不读取系统时间；
 - 幂等键由组织、环境、订单、模型版本、标准化输入指纹、有效业务优先级 revision 和计算时间桶组成；重复重算返回同一快照，不追加重复历史；
 - 仅综合等级、贡献等级、reason code 集合或关键数值变化时记录新的可见变化，所有快照仍保留可审计输入。
 
@@ -91,7 +91,7 @@ BusinessScheduling 新增：
 - `GET /api/business/v1/scheduling/order-urgencies/{orderReference}`：详情与历史；
 - `PUT /api/business/v1/scheduling/order-urgencies/{orderReference}/business-priority`：设置 P0-P3、原因和有效期。
 
-三者都分类为 `exposed`，同 PR 完成 BusinessGateway facade、OpenAPI 导出、generated api-client 和稳定 barrel。服务 endpoint 使用 internal policy；Gateway 使用 Scheduling read/manage 权限，并由 Gateway 注入 actor。
+三者都分类为 `exposed`，同 PR 完成 BusinessGateway facade、OpenAPI 导出、generated api-client 和稳定 barrel。服务 endpoint 使用 internal policy；统一结果的读 facade 接受 Scheduling、ERP Sales、DemandPlanning Demand 或 MES WorkOrder 任一宿主域读权限，优先级写 facade 仍要求 Scheduling manage。Gateway 注入 actor，客户端不能伪造。
 
 前端新增共享 `OrderUrgencyCell` 和 composable。同一 facade 结果以引用索引，进入以下关键入口：
 
@@ -100,7 +100,7 @@ BusinessScheduling 新增：
 3. MES 工单列表：按 `workOrderId`，有 `sourceDemandReference` 时同时命中销售/需求别名；
 4. 排程方案详情的订单 assignment：按 `orderId`。
 
-单元格显示综合等级和主原因，hover 展示三类摘要，点击右侧 Sheet 展示贡献、阈值、计算版本/时间、历史和业务优先级修改。共享显示模式支持综合、业务优先级、CR、Slack、执行风险和预计迟交，只改变表现，不改变结果。详情提供进入 `/scheduling` 的入口，不实现拖拽或自动重排。
+V1 单元格显示综合等级和 CR/主原因，hover 展示三类摘要，点击右侧 Sheet 展示贡献、原因码、计算版本/时间，并提供进入 `/scheduling` 的入口；不实现拖拽或自动重排。七种共享显示模式、独立排序、Sheet 内人工优先级编辑和审计时间线由子 issue #1061 承接，继续复用本 PR 的同一 facade 与生成客户端，不得建立第二套计算。
 
 所有 UI 使用现有 `Nv*` 组件与语义 token，不修改 NvUI 基础组件，也不触碰 #178 的可视化包。
 

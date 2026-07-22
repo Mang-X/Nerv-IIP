@@ -27,7 +27,8 @@ public sealed record SchedulingProblemSourceOrder(
     bool IsRush,
     DateTimeOffset EarliestStartUtc,
     string RoutingVersionId,
-    IReadOnlyCollection<SchedulingProblemOperationConstraint>? OperationConstraints = null);
+    IReadOnlyCollection<SchedulingProblemOperationConstraint>? OperationConstraints = null,
+    string? BusinessReference = null);
 
 public sealed record SchedulingProblemOperationConstraint(
     string OperationCode,
@@ -158,7 +159,8 @@ public sealed class SchedulingProblemProducer(
             order.DueUtc,
             order.Priority,
             order.IsRush,
-            operations);
+            operations,
+            order.BusinessReference);
     }
 
     private static IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> BuildTransitions(

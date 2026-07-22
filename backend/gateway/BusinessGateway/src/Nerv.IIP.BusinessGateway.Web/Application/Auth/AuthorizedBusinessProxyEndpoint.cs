@@ -10,22 +10,29 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.Auth;
 [Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
 public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
     IBusinessGatewayAuthorizationClient auth,
-    string permissionCode) : Endpoint<TRequest, ResponseData<TResponse>>
+    IReadOnlyCollection<string> permissionCodes) : Endpoint<TRequest, ResponseData<TResponse>>
     where TRequest : notnull
 {
+    protected AuthorizedBusinessProxyEndpoint(
+        IBusinessGatewayAuthorizationClient auth,
+        string permissionCode) : this(auth, [permissionCode])
+    {
+    }
+
     protected IBusinessGatewayAuthorizationClient AuthorizationClient => auth;
 
     public override async Task HandleAsync(TRequest req, CancellationToken ct)
     {
-        var bearerToken = await BusinessGatewayAuthorization.RequirePermissionAsync(
+        var bearerToken = await BusinessGatewayAuthorization.RequireAnyPermissionAsync(
             HttpContext,
             auth,
-            new BusinessGatewayPermissionRequirement(
-                permissionCode,
-                OrganizationId(req),
-                EnvironmentId(req),
-                ResourceType(req),
-                ResourceId(req)),
+            permissionCodes.Select(permissionCode => new BusinessGatewayPermissionRequirement(
+                    permissionCode,
+                    OrganizationId(req),
+                    EnvironmentId(req),
+                    ResourceType(req),
+                    ResourceId(req)))
+                .ToArray(),
             ct);
         if (bearerToken is null)
         {

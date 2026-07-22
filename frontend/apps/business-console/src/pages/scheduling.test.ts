@@ -4,6 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SchedulingPage from './scheduling.vue'
 
+vi.mock('@/composables/useOrderUrgency', () => ({
+  useOrderUrgencies: () => ({ byReference: { value: new Map() } }),
+}))
+vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
+  default: { template: '<span data-testid="order-urgency">未计算</span>' },
+}))
+
 const stub = vi.hoisted(() => ({
   releasePlan: vi
     .fn()

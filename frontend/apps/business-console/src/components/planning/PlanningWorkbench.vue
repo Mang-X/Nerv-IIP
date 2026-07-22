@@ -12,6 +12,8 @@ import {
   useBusinessMasterDataResources,
 } from '@/composables/useBusinessMasterData'
 import { useBusinessPlanning } from '@/composables/useBusinessPlanning'
+import { useOrderUrgencies } from '@/composables/useOrderUrgency'
+import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
@@ -97,6 +99,9 @@ const {
   suggestionsPending,
 } = useBusinessPlanning()
 const router = useRouter()
+const orderUrgencies = useOrderUrgencies(
+  computed(() => demands.value.map((demand) => demand.sourceReference)),
+)
 
 // 主数据：SKU / 工厂 / 计量单位（Select 显名称、绑定编码，码→名解析复用）。
 const { skus } = useBusinessSkus()
@@ -257,19 +262,6 @@ function runHorizonLabel(run?: BusinessConsoleMrpRunItem | null): string {
 const selectedRun = computed(
   () => mrpRuns.value.find((r) => r.runId === runSelection.runId) ?? null,
 )
-
-// 需求紧迫度：按 dueDate 距今天数。逾期 danger / 7 天内 warning / 正常 neutral。
-function dueUrgency(dueDate?: string | null): { label: string; tone: StatusTone } {
-  if (!dueDate) return { label: '未排期', tone: 'neutral' }
-  const due = new Date(dueDate.slice(0, 10))
-  if (Number.isNaN(due.getTime())) return { label: '未排期', tone: 'neutral' }
-  const today = new Date(new Date().toISOString().slice(0, 10))
-  const days = Math.round((due.getTime() - today.getTime()) / 86_400_000)
-  if (days < 0) return { label: `逾期 ${Math.abs(days)} 天`, tone: 'danger' }
-  if (days === 0) return { label: '今日到期', tone: 'warning' }
-  if (days <= 7) return { label: `${days} 天内`, tone: 'warning' }
-  return { label: `${days} 天后`, tone: 'neutral' }
-}
 
 // 需求覆盖状态：建议里出现该 SKU → 已生成建议；否则未覆盖。
 function demandCoverage(skuCode?: string | null): { label: string; tone: StatusTone } {
@@ -984,11 +976,16 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
           }}</span></template
         >
         <template #cell-dueDate="{ row }">{{ formatDate(row.dueDate) }}</template>
-        <template #cell-urgency="{ row }"
-          ><NvStatusBadge
-            :label="dueUrgency(row.dueDate).label"
-            :tone="dueUrgency(row.dueDate).tone"
-        /></template>
+        <template #cell-urgency="{ row }">
+          <OrderUrgencyBadge
+            :order-reference="row.sourceReference ?? ''"
+            :urgency="
+              row.sourceReference
+                ? orderUrgencies.byReference.value.get(row.sourceReference)
+                : undefined
+            "
+          />
+        </template>
         <template #cell-coverage="{ row }"
           ><NvStatusBadge
             :label="demandCoverage(row.skuCode).label"

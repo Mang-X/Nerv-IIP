@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OrderUrgencyAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Infrastructure.Repositories;
@@ -10,6 +11,26 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
 public sealed class SchedulingPersistenceTests
 {
+    [Fact]
+    public void Order_urgency_persistence_is_scoped_and_idempotent()
+    {
+        using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var priority = dbContext.Model.FindEntityType(typeof(OrderUrgencyBusinessPriority))
+            ?? throw new InvalidOperationException("Order urgency business priority metadata was not found.");
+        var snapshot = dbContext.Model.FindEntityType(typeof(OrderUrgencySnapshot))
+            ?? throw new InvalidOperationException("Order urgency snapshot metadata was not found.");
+
+        Assert.Contains(priority.GetIndexes(), index => index.IsUnique &&
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                ["OrganizationId", "EnvironmentId", "OrderId"]));
+        Assert.Contains(snapshot.GetIndexes(), index => index.IsUnique &&
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                ["OrganizationId", "EnvironmentId", "OrderId", "ModelVersion", "InputFingerprint", "BusinessPriorityRevision", "CalculationBucketUtc"]));
+    }
+
     [Fact]
     public void Schedule_problem_snapshot_uniqueness_is_scoped_to_business_context()
     {

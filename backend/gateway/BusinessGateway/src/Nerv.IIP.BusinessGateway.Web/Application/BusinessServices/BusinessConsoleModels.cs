@@ -2239,6 +2239,24 @@ public sealed record BusinessConsoleSchedulingPlanRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId);
 
+public sealed record BusinessConsoleOrderUrgencyListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? OrderReferences = null);
+
+public sealed record BusinessConsoleOrderUrgencyRequest(
+    [property: RouteParam] string OrderReference,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleSetOrderUrgencyBusinessPriorityRequest(
+    [property: RouteParam] string OrderReference,
+    string OrganizationId,
+    string EnvironmentId,
+    string Level,
+    string Reason,
+    DateTimeOffset? ExpiresAtUtc = null);
+
 public sealed record BusinessConsoleScheduleOperationOverrideRequest(
     [property: RouteParam] string PlanId,
     [property: RouteParam] string OperationId,

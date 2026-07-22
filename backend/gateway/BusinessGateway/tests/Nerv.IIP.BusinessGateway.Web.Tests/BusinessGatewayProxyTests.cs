@@ -2675,6 +2675,68 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Scheduling_urgency_facade_keeps_one_result_and_audited_actor_across_routes()
+    {
+        var scheduling = new RecordingSchedulingClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(scheduling);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var list = await client.GetAsync(
+            "/api/business-console/v1/scheduling/order-urgencies?organizationId=org-001&environmentId=env-dev&orderReferences=SO-001");
+        var detail = await client.GetAsync(
+            "/api/business-console/v1/scheduling/order-urgencies/SO-001?organizationId=org-001&environmentId=env-dev");
+        var priority = await client.PutAsJsonAsync(
+            "/api/business-console/v1/scheduling/order-urgencies/SO-001/business-priority",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                level = "p0",
+                reason = "Customer line-stop escalation",
+                expiresAtUtc = "2026-06-02T08:00:00Z",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, priority.StatusCode);
+        Assert.Equal("internal-test-token", scheduling.LastInternalToken);
+        Assert.Equal("user:user-admin", scheduling.LastOverrideActor);
+    }
+
+    [Theory]
+    [InlineData(BusinessGatewayPermissions.SchedulingPlansRead)]
+    [InlineData(BusinessGatewayPermissions.ErpSalesRead)]
+    [InlineData(BusinessGatewayPermissions.PlanningDemandsRead)]
+    [InlineData(BusinessGatewayPermissions.MesWorkOrdersRead)]
+    public async Task Scheduling_urgency_read_accepts_each_host_domain_read_permission(string permission)
+    {
+        var scheduling = new RecordingSchedulingClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(permission);
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(scheduling);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/scheduling/order-urgencies?organizationId=org-001&environmentId=env-dev&orderReferences=SO-001");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains(auth.Requirements, requirement => requirement.PermissionCode == permission);
+    }
+
+    [Fact]
     public async Task Mes_dispatch_facade_forwards_the_authorized_principal_as_actor()
     {
         var mes = new RecordingMesClient();
@@ -9380,6 +9442,48 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
         return Task.FromResult(new BusinessConsoleScheduleOperationOverrideResponse(
             request.OperationId, "WO-001", request.ResourceId, "WC-001",
             request.StartUtc, request.EndUtc, "manual-override"));
+    }
+
+    public Task<IReadOnlyCollection<OrderUrgencyContract>> ListOrderUrgenciesAsync(
+        string internalBearerToken,
+        BusinessConsoleOrderUrgencyListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult<IReadOnlyCollection<OrderUrgencyContract>>([CreateUrgency(request.OrderReferences ?? "WO-001")]);
+    }
+
+    public Task<OrderUrgencyDetailContract> GetOrderUrgencyAsync(
+        string internalBearerToken,
+        BusinessConsoleOrderUrgencyRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        var urgency = CreateUrgency(request.OrderReference);
+        return Task.FromResult(new OrderUrgencyDetailContract(urgency, [urgency], []));
+    }
+
+    public Task<OrderUrgencyDetailContract> SetOrderUrgencyBusinessPriorityAsync(
+        string internalBearerToken,
+        BusinessConsoleSetOrderUrgencyBusinessPriorityRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastOverrideActor = actor;
+        var urgency = CreateUrgency(request.OrderReference);
+        return Task.FromResult(new OrderUrgencyDetailContract(urgency, [urgency], []));
+    }
+
+    private static OrderUrgencyContract CreateUrgency(string orderReference)
+    {
+        var now = DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture);
+        return new OrderUrgencyContract(
+            orderReference, orderReference, "attention",
+            new OrderUrgencyBusinessPriorityContract("p2", "default", "default", now, null, 0, ["business.priority.p2"]),
+            new OrderUrgencyTimeCriticalityContract("attention", 1.1m, 2m, 0m, now.AddHours(10), now.AddHours(8), 8m, ["time.cr.attention"]),
+            new OrderUrgencyExecutionRiskContract("normal", false, false, now, ["execution.risk.none"], []),
+            now, "order-urgency-v1", "fingerprint");
     }
 }
 

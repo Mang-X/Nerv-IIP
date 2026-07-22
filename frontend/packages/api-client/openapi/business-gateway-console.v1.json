@@ -3922,6 +3922,207 @@
         ]
       }
     },
+    "/api/business-console/v1/scheduling/order-urgencies": {
+      "get": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleOrderUrgencies",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "orderReferences",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfOrderUrgencyContract"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/scheduling/order-urgencies/{orderReference}": {
+      "get": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleOrderUrgency",
+        "parameters": [
+          {
+            "name": "orderReference",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfOrderUrgencyDetailContract"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/scheduling/order-urgencies/{orderReference}/business-priority": {
+      "put": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "setBusinessConsoleOrderUrgencyBusinessPriority",
+        "parameters": [
+          {
+            "name": "orderReference",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleSetOrderUrgencyBusinessPriorityRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSetOrderUrgencyBusinessPriorityRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfOrderUrgencyDetailContract"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/quality/inspection-plans": {
       "post": {
         "tags": [
@@ -28219,6 +28420,10 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingOperationContract"
             }
+          },
+          "businessReference": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -28755,6 +28960,308 @@
           "endUtc": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfOrderUrgencyContract": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "type": "array",
+                "nullable": true,
+                "items": {
+                  "$ref": "#/components/schemas/NervIIPContractsSchedulingOrderUrgencyContract"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsSchedulingOrderUrgencyContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "businessReference": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "businessPriority": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingOrderUrgencyBusinessPriorityContract"
+          },
+          "timeCriticality": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingOrderUrgencyTimeCriticalityContract"
+          },
+          "executionRisk": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingOrderUrgencyExecutionRiskContract"
+          },
+          "calculatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modelVersion": {
+            "type": "string"
+          },
+          "inputFingerprint": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingOrderUrgencyBusinessPriorityContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "level": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "setAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reasonCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingOrderUrgencyTimeCriticalityContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "level": {
+            "type": "string"
+          },
+          "criticalRatio": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "slackHours": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "expectedDelayHours": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "dueUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "estimatedCompletionUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "remainingCycleHours": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "reasonCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingOrderUrgencyExecutionRiskContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "level": {
+            "type": "string"
+          },
+          "isSourceMissing": {
+            "type": "boolean"
+          },
+          "isSourceStale": {
+            "type": "boolean"
+          },
+          "factsObservedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reasonCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "facts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingOrderUrgencyExecutionRiskFactContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingOrderUrgencyExecutionRiskFactContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reasonCode": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "isBlocking": {
+            "type": "boolean"
+          },
+          "sourceReference": {
+            "type": "string"
+          },
+          "observedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOrderUrgencyListRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfOrderUrgencyDetailContract": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsSchedulingOrderUrgencyDetailContract"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsSchedulingOrderUrgencyDetailContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingOrderUrgencyContract"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingOrderUrgencyContract"
+            }
+          },
+          "businessPriorityChanges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingOrderUrgencyBusinessPriorityChangeContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingOrderUrgencyBusinessPriorityChangeContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "previousLevel": {
+            "type": "string"
+          },
+          "newLevel": {
+            "type": "string"
+          },
+          "changedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "changedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOrderUrgencyRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSetOrderUrgencyBusinessPriorityRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "reason"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 0,
+            "nullable": false
+          },
+          "environmentId": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 0,
+            "nullable": false
+          },
+          "level": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 0,
+            "nullable": false
+          },
+          "expiresAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },

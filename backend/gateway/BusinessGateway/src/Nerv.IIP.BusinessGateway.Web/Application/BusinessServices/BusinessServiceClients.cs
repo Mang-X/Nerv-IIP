@@ -719,6 +719,22 @@ public interface IBusinessSchedulingClient
         BusinessConsoleScheduleOperationOverrideRequest request,
         string actor,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<OrderUrgencyContract>> ListOrderUrgenciesAsync(
+        string internalBearerToken,
+        BusinessConsoleOrderUrgencyListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<OrderUrgencyDetailContract> GetOrderUrgencyAsync(
+        string internalBearerToken,
+        BusinessConsoleOrderUrgencyRequest request,
+        CancellationToken cancellationToken);
+
+    Task<OrderUrgencyDetailContract> SetOrderUrgencyBusinessPriorityAsync(
+        string internalBearerToken,
+        BusinessConsoleSetOrderUrgencyBusinessPriorityRequest request,
+        string actor,
+        CancellationToken cancellationToken);
 }
 
 public interface IBusinessErpClient
@@ -4512,7 +4528,57 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
             SchedulingJson.Options,
             message => message.Headers.TryAddWithoutValidation("X-Actor", actor));
 
+    public Task<IReadOnlyCollection<OrderUrgencyContract>> ListOrderUrgenciesAsync(
+        string internalBearerToken,
+        BusinessConsoleOrderUrgencyListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<IReadOnlyCollection<OrderUrgencyContract>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/scheduling/order-urgencies?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("orderReferences", request.OrderReferences)),
+            null,
+            cancellationToken,
+            SchedulingJson.Options);
+
+    public Task<OrderUrgencyDetailContract> GetOrderUrgencyAsync(
+        string internalBearerToken,
+        BusinessConsoleOrderUrgencyRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<OrderUrgencyDetailContract>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/scheduling/order-urgencies/{Uri.EscapeDataString(request.OrderReference)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken,
+            SchedulingJson.Options);
+
+    public Task<OrderUrgencyDetailContract> SetOrderUrgencyBusinessPriorityAsync(
+        string internalBearerToken,
+        BusinessConsoleSetOrderUrgencyBusinessPriorityRequest request,
+        string actor,
+        CancellationToken cancellationToken) =>
+        SendAsync<OrderUrgencyDetailContract>(
+            internalBearerToken,
+            HttpMethod.Put,
+            $"/api/business/v1/scheduling/order-urgencies/{Uri.EscapeDataString(request.OrderReference)}/business-priority",
+            new SetOrderUrgencyBusinessPriorityForwardRequest(
+                request.OrderReference, request.OrganizationId, request.EnvironmentId,
+                request.Level, request.Reason, request.ExpiresAtUtc),
+            cancellationToken,
+            SchedulingJson.Options,
+            message => message.Headers.TryAddWithoutValidation("X-Actor", actor));
+
     private sealed record SchedulingProblemRequest(SchedulingProblemContract Problem);
+    private sealed record SetOrderUrgencyBusinessPriorityForwardRequest(
+        string OrderReference,
+        string OrganizationId,
+        string EnvironmentId,
+        string Level,
+        string Reason,
+        DateTimeOffset? ExpiresAtUtc);
 
     private static string ContextQuery(string organizationId, string environmentId) =>
         Query(("organizationId", organizationId), ("environmentId", environmentId));
