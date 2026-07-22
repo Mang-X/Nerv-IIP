@@ -5452,13 +5452,17 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Theory]
-    [InlineData("{\"productionReportId\":{\"id\":\"not-a-guid\"},\"reportNo\":\"PRPT-WIRE-001\"}")]
-    [InlineData("{\"productionReportId\":{},\"reportNo\":\"PRPT-WIRE-001\"}")]
-    [InlineData("{\"productionReportId\":{\"id\":\"019f855b-5cb0-7550-a509-d2ee7b021689\"},\"reportNo\":\"\"}")]
-    [InlineData("{not-json")]
-    public async Task Mes_http_client_rejects_malformed_record_production_report_wire_shape(string body)
+    [InlineData("{\"productionReportId\":{\"id\":\"not-a-guid\"},\"reportNo\":\"PRPT-WIRE-001\"}", false)]
+    [InlineData("{\"productionReportId\":{\"id\":\"not-a-guid\"},\"reportNo\":\"PRPT-WIRE-001\"}", true)]
+    [InlineData("{\"productionReportId\":{},\"reportNo\":\"PRPT-WIRE-001\"}", false)]
+    [InlineData("{\"productionReportId\":{\"id\":\"019f855b-5cb0-7550-a509-d2ee7b021689\"},\"reportNo\":\"\"}", false)]
+    [InlineData("{not-json", false)]
+    public async Task Mes_http_client_rejects_malformed_record_production_report_wire_shape(string body, bool enveloped)
     {
-        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK, body));
+        var responseBody = enveloped
+            ? $"{{\"success\":true,\"data\":{body},\"message\":\"\",\"code\":0}}"
+            : body;
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK, responseBody));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
         var client = new HttpBusinessMesClient(httpClient);
 
@@ -5481,6 +5485,11 @@ public sealed class BusinessGatewayProxyTests
             message = "production-report-validation-failed",
             code = 400,
             errorData = Array.Empty<object>(),
+            data = new
+            {
+                productionReportId = new { id = "019f855b-5cb0-7550-a509-d2ee7b021689" },
+                reportNo = "PRPT-WIRE-001",
+            },
         }));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
         var client = new HttpBusinessMesClient(httpClient);

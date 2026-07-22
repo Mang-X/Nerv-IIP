@@ -6911,10 +6911,10 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
     }
 
     private sealed record DownstreamRecordProductionReportResponse(
-        DownstreamStronglyTypedGuidId? ProductionReportId,
+        DownstreamProductionReportId? ProductionReportId,
         string? ReportNo);
 
-    private sealed record DownstreamStronglyTypedGuidId(Guid Id);
+    private sealed record DownstreamProductionReportId(Guid Id);
 
     // Downstream force-release body carries the actor injected by the gateway from the
     // authenticated principal; the request DTO no longer exposes a caller-supplied actor.
