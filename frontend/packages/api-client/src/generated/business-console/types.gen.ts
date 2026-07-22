@@ -1415,6 +1415,55 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     endUtc?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateInspectionPlanResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionPlanResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionPlanResponse = {
+    inspectionPlanId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionPlanRequest = {
+    organizationId: string;
+    environmentId: string;
+    planCode: string;
+    category: string;
+    skuCode?: string | null;
+    partnerId?: string | null;
+    workCenterId?: string | null;
+    deviceAssetId?: string | null;
+    documentType?: string | null;
+    characteristics: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionPlanCharacteristicInput>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionPlanCharacteristicInput = {
+    characteristicCode?: string;
+    name?: string;
+    method?: string;
+    severity?: string;
+    required?: boolean;
+    samplingRule?: string;
+    characteristicType?: string | null;
+    nominalValue?: number | null;
+    lowerSpecLimit?: number | null;
+    upperSpecLimit?: number | null;
+    unitCode?: string | null;
+    samplingPlan?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionSamplingPlanInput | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionSamplingPlanInput = {
+    inspectionLevel?: string;
+    aql?: string;
+    sampleSize?: number;
+    acceptanceNumber?: number;
+    rejectionNumber?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleActivateInspectionPlanRequest = {
+    organizationId: string;
+    environmentId: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListResponse | null;
 };
@@ -8397,6 +8446,74 @@ export type ListBusinessConsoleQualityInspectionPlansResponses = {
 };
 
 export type ListBusinessConsoleQualityInspectionPlansResponse = ListBusinessConsoleQualityInspectionPlansResponses[keyof ListBusinessConsoleQualityInspectionPlansResponses];
+
+export type CreateBusinessConsoleQualityInspectionPlanData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionPlanRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/quality/inspection-plans';
+};
+
+export type CreateBusinessConsoleQualityInspectionPlanErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleQualityInspectionPlanError = CreateBusinessConsoleQualityInspectionPlanErrors[keyof CreateBusinessConsoleQualityInspectionPlanErrors];
+
+export type CreateBusinessConsoleQualityInspectionPlanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateInspectionPlanResponse;
+};
+
+export type CreateBusinessConsoleQualityInspectionPlanResponse = CreateBusinessConsoleQualityInspectionPlanResponses[keyof CreateBusinessConsoleQualityInspectionPlanResponses];
+
+export type ActivateBusinessConsoleQualityInspectionPlanData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleActivateInspectionPlanRequest;
+    path: {
+        inspectionPlanId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/quality/inspection-plans/{inspectionPlanId}/activate';
+};
+
+export type ActivateBusinessConsoleQualityInspectionPlanErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ActivateBusinessConsoleQualityInspectionPlanError = ActivateBusinessConsoleQualityInspectionPlanErrors[keyof ActivateBusinessConsoleQualityInspectionPlanErrors];
+
+export type ActivateBusinessConsoleQualityInspectionPlanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type ActivateBusinessConsoleQualityInspectionPlanResponse = ActivateBusinessConsoleQualityInspectionPlanResponses[keyof ActivateBusinessConsoleQualityInspectionPlanResponses];
 
 export type ListBusinessConsoleQualityInspectionRecordsData = {
     body?: never;

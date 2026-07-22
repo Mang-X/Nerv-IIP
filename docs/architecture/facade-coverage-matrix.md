@@ -99,13 +99,13 @@ declaration against what actually shipped (facade + codegen + barrel for
 | MasterData | 46 | 38 | 4 | 4 |
 | Mes | 53 | 50 | 3 | 0 |
 | ProductEngineering | 39 | 38 | 0 | 1 |
-| Quality | 32 | 18 | 14 | 0 |
+| Quality | 32 | 20 | 12 | 0 |
 | Scheduling | 9 | 8 | 1 | 0 |
 | Wms | 30 | 19 | 6 | 5 |
-| **Total** | **363** | **290** | **51** | **22** |
+| **Total** | **363** | **292** | **49** | **22** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-The `exposed` rows (290) — each with its verified facade `gatewayOperationIds` — are
+The `exposed` rows (292) — each with its verified facade `gatewayOperationIds` — are
 enumerated in the JSON registry. The `deferred` and `internal` rows, the actual
 governance decisions, are listed in full below.
 
@@ -152,8 +152,6 @@ current manifest rather than from samples, so the facade must preserve
 | Quality | POST | `/api/business/v1/quality/capas/{correctiveActionId}/actions/{correctiveActionItemId}/complete` | BusinessGateway facade pending; CAPA management facade tracked by #677, unlocks frontend #804. |
 | Quality | POST | `/api/business/v1/quality/capas/{correctiveActionId}/close` | BusinessGateway facade pending; CAPA management facade tracked by #677, unlocks frontend #804. |
 | Quality | POST | `/api/business/v1/quality/capas/{correctiveActionId}/effectiveness` | BusinessGateway facade pending; CAPA management facade tracked by #677, unlocks frontend #804. |
-| Quality | POST | `/api/business/v1/quality/inspection-plans` | BusinessGateway facade pending; inspection-plan create follows the Quality plan-config menu phase (only plan list GET is exposed today). |
-| Quality | POST | `/api/business/v1/quality/inspection-plans/{inspectionPlanId}/activate` | BusinessGateway facade pending; inspection-plan activation follows the Quality plan-lifecycle menu phase. |
 | Quality | POST | `/api/business/v1/quality/ncrs` | BusinessGateway facade pending; generic NCR create follows the Quality NCR menu phase (only NCR-from-inspection is exposed today via openBusinessConsoleQualityNcrFromInspection). |
 | Quality | POST | `/api/business/v1/quality/spc/control-chart/evaluate` | BusinessGateway facade pending; SPC control-chart read is exposed, evaluate (write) follows the SPC analysis menu phase (#725). |
 | Quality | POST | `/api/business/v1/quality/spc/control-chart/lock` | BusinessGateway facade pending; SPC control-limit lock (write) follows the SPC analysis menu phase (#725). |

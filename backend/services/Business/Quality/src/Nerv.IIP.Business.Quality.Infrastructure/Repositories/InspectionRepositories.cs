@@ -7,6 +7,10 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 
 public interface IInspectionPlanRepository : IRepository<InspectionPlan, InspectionPlanId>
 {
+    new Task<InspectionPlan?> GetAsync(
+        InspectionPlanId id,
+        CancellationToken cancellationToken = default);
+
     Task<bool> CodeExistsAsync(string organizationId, string environmentId, string planCode, CancellationToken cancellationToken = default);
     Task<InspectionPlan?> GetWithCharacteristicsAsync(
         string organizationId,
@@ -18,6 +22,15 @@ public interface IInspectionPlanRepository : IRepository<InspectionPlan, Inspect
 public sealed class InspectionPlanRepository(ApplicationDbContext context)
     : RepositoryBase<InspectionPlan, InspectionPlanId, ApplicationDbContext>(context), IInspectionPlanRepository
 {
+    public new Task<InspectionPlan?> GetAsync(
+        InspectionPlanId id,
+        CancellationToken cancellationToken = default)
+    {
+        return DbContext.InspectionPlans
+            .Include(x => x.Characteristics)
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+    }
+
     public async Task<bool> CodeExistsAsync(string organizationId, string environmentId, string planCode, CancellationToken cancellationToken = default)
     {
         return await DbContext.InspectionPlans.AnyAsync(

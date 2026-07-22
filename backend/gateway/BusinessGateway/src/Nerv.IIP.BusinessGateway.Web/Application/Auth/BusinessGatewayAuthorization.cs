@@ -72,6 +72,7 @@ public static class BusinessGatewayPermissions
     public const string InventoryExpiredStockOverride = "business.inventory.expired-stock.override";
     public const string QualityInspectionRecordsRead = "business.quality.inspection-records.read";
     public const string QualityInspectionRecordsCreate = "business.quality.inspection-records.create";
+    public const string QualityInspectionPlansManage = "business.quality.inspection-plans.manage";
     public const string QualityNcrRead = "business.quality.ncr.read";
     public const string QualityNcrManage = "business.quality.ncr.manage";
     public const string EngineeringDocumentsRead = "business.engineering.documents.read";

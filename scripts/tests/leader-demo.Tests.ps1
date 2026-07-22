@@ -602,6 +602,16 @@ try {
     Assert-True ($leaderDemoRuntimeText.Contains('Invoke-NervLeaderDemoVerification')) 'The default seed/health actions must use the governed verification and evidence implementation.'
     Assert-True ($leaderDemoRuntimeText.Contains("-Command 'seed'")) 'The default seed action must write seed verification evidence.'
     Assert-True ($leaderDemoRuntimeText.Contains("-Command 'health-check'")) 'The default health action must write bounded health evidence.'
+    $mainChainScenarioText = Get-Content -LiteralPath (Join-Path $repoRoot 'frontend/apps/business-console/e2e/leader-demo-main-chain.spec.ts') -Raw
+    $planCreateIndex = $mainChainScenarioText.IndexOf("'/api/business-console/v1/quality/inspection-plans'", [StringComparison]::Ordinal)
+    $productionReportIndex = $mainChainScenarioText.IndexOf("'/api/business-console/v1/mes/production-reports'", [StringComparison]::Ordinal)
+    Assert-True ($planCreateIndex -ge 0) 'The leader-demo main chain must create its Quality inspection plan through the public BusinessGateway facade.'
+    Assert-True ($mainChainScenarioText.Contains('/activate`')) 'The leader-demo main chain must activate the exact created Quality inspection plan through the public facade.'
+    Assert-True ($mainChainScenarioText.Contains("category: 'operation'")) 'The run-scoped Quality plan must match the MES operation-completed category.'
+    Assert-True ($mainChainScenarioText.Contains('skuCode: finishedSku')) 'The run-scoped Quality plan must match the dynamically created finished SKU.'
+    Assert-True ($mainChainScenarioText.Contains('workCenterId: workCenterCode')) 'The run-scoped Quality plan must match the dynamically created work center.'
+    Assert-True ($mainChainScenarioText.Contains("documentType: 'operation-task'")) 'The run-scoped Quality plan must match the MES operation-task document type.'
+    Assert-True ($planCreateIndex -lt $productionReportIndex) 'The Quality plan must be active before the MES production report publishes its completion event.'
     $leaderDemoEntryText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/leader-demo.ps1') -Raw
     Assert-True ($leaderDemoEntryText.Contains('Get-NervLeaderDemoFailureExitCode')) 'The leader-demo entrypoint must extract a structured verification exit code.'
     Assert-True ($leaderDemoEntryText.Contains('exit $exitCode')) 'The leader-demo entrypoint must propagate the structured nonzero code after evidence.'

@@ -1002,6 +1002,46 @@ public sealed record BusinessConsoleQualityListResponse(
     IReadOnlyCollection<BusinessConsoleQualityItem> Items,
     int Total);
 
+public sealed record BusinessConsoleCreateInspectionPlanRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string PlanCode,
+    string Category,
+    string? SkuCode,
+    string? PartnerId,
+    string? WorkCenterId,
+    string? DeviceAssetId,
+    string? DocumentType,
+    IReadOnlyCollection<BusinessConsoleInspectionPlanCharacteristicInput> Characteristics);
+
+public sealed record BusinessConsoleInspectionPlanCharacteristicInput(
+    string CharacteristicCode,
+    string Name,
+    string Method,
+    string Severity,
+    bool Required,
+    string SamplingRule,
+    string? CharacteristicType = null,
+    decimal? NominalValue = null,
+    decimal? LowerSpecLimit = null,
+    decimal? UpperSpecLimit = null,
+    string? UnitCode = null,
+    BusinessConsoleInspectionSamplingPlanInput? SamplingPlan = null);
+
+public sealed record BusinessConsoleInspectionSamplingPlanInput(
+    string InspectionLevel,
+    string Aql,
+    int SampleSize,
+    int AcceptanceNumber,
+    int RejectionNumber);
+
+public sealed record BusinessConsoleCreateInspectionPlanResponse(string InspectionPlanId);
+
+public sealed record BusinessConsoleActivateInspectionPlanRequest(
+    [property: RouteParam] string InspectionPlanId,
+    string OrganizationId,
+    string EnvironmentId);
+
 public sealed record BusinessConsoleQualitySpcRequest(
     string OrganizationId,
     string EnvironmentId,

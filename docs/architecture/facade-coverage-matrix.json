@@ -3630,16 +3630,26 @@
       "method": "POST",
       "route": "/api/business/v1/quality/inspection-plans",
       "operationId": "createBusinessQualityInspectionPlan",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; inspection-plan create follows the Quality plan-config menu phase (only plan list GET is exposed today)."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleQualityInspectionPlan"
+      ]
     },
     {
       "service": "Quality",
       "method": "POST",
       "route": "/api/business/v1/quality/inspection-plans/{inspectionPlanId}/activate",
       "operationId": "activateBusinessQualityInspectionPlan",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; inspection-plan activation follows the Quality plan-lifecycle menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "activateBusinessConsoleQualityInspectionPlan"
+      ]
     },
     {
       "service": "Quality",

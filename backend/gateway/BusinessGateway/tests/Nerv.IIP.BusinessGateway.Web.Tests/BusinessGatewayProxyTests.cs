@@ -4815,6 +4815,96 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Quality_http_client_creates_run_scoped_operation_inspection_plan()
+    {
+        string? requestBody = null;
+        var handler = new RecordingHandler(request =>
+        {
+            requestBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new { inspectionPlanId = "019f87d0-3f7f-7ad0-a829-7724ea91c111" },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var response = await client.CreateInspectionPlanAsync(
+            "internal-token-001",
+            new BusinessConsoleCreateInspectionPlanRequest(
+                "org-001",
+                "env-dev",
+                "IP-RUN-001",
+                "operation",
+                "SKU-RUN-001",
+                null,
+                "WC-RUN-001",
+                null,
+                "operation-task",
+                [new BusinessConsoleInspectionPlanCharacteristicInput(
+                    "ATTR-RUN-001",
+                    "Operation acceptance",
+                    "visual",
+                    "major",
+                    true,
+                    "100-percent",
+                    "attribute")]),
+            CancellationToken.None);
+
+        Assert.Equal("019f87d0-3f7f-7ad0-a829-7724ea91c111", response.InspectionPlanId);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("/api/business/v1/quality/inspection-plans", request.RequestUri!.AbsolutePath);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+        using var document = JsonDocument.Parse(requestBody!);
+        var root = document.RootElement;
+        Assert.Equal("org-001", root.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", root.GetProperty("environmentId").GetString());
+        Assert.Equal("operation", root.GetProperty("category").GetString());
+        Assert.Equal("SKU-RUN-001", root.GetProperty("skuCode").GetString());
+        Assert.Equal("WC-RUN-001", root.GetProperty("workCenterId").GetString());
+        Assert.Equal("operation-task", root.GetProperty("documentType").GetString());
+        Assert.Equal("ATTR-RUN-001", root.GetProperty("characteristics")[0].GetProperty("characteristicCode").GetString());
+    }
+
+    [Fact]
+    public async Task Quality_http_client_activates_the_route_scoped_inspection_plan()
+    {
+        string? requestBody = null;
+        var handler = new RecordingHandler(request =>
+        {
+            requestBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new { accepted = true },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var response = await client.ActivateInspectionPlanAsync(
+            "internal-token-001",
+            "019f87d0-3f7f-7ad0-a829-7724ea91c111",
+            new BusinessConsoleActivateInspectionPlanRequest("019f87d0-3f7f-7ad0-a829-7724ea91c111", "org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.True(response.Accepted);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("/api/business/v1/quality/inspection-plans/019f87d0-3f7f-7ad0-a829-7724ea91c111/activate", request.RequestUri!.AbsolutePath);
+        using var document = JsonDocument.Parse(requestBody!);
+        Assert.Equal(
+            "019f87d0-3f7f-7ad0-a829-7724ea91c111",
+            document.RootElement.GetProperty("inspectionPlanId").GetString());
+    }
+
+    [Fact]
     public async Task Quality_http_client_maps_real_downstream_ncr_payload_to_console_items()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
@@ -7266,6 +7356,19 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
     public BusinessConsoleArchiveQualityReasonRequest? LastArchiveQualityReasonRequest { get; private set; }
 
     public int? NcrTotal { get; init; }
+
+    public Task<BusinessConsoleCreateInspectionPlanResponse> CreateInspectionPlanAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateInspectionPlanRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new BusinessConsoleCreateInspectionPlanResponse("inspection-plan-001"));
+
+    public Task<BusinessConsoleAcceptedResponse> ActivateInspectionPlanAsync(
+        string internalBearerToken,
+        string inspectionPlanId,
+        BusinessConsoleActivateInspectionPlanRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new BusinessConsoleAcceptedResponse(true));
 
     public Task<BusinessConsoleQualityListResponse> ListInspectionPlansAsync(
         string internalBearerToken,

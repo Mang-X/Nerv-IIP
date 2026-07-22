@@ -202,6 +202,26 @@ public sealed class QualityInspectionEndpointContractTests
     }
 
     [Fact]
+    public async Task Inspection_plan_repository_loads_characteristics_for_activation()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var plan = NewInspectionPlan("IQP-ACTIVATE-001");
+        plan.AddCharacteristic("appearance", "Appearance", "visual", "critical", true, "zero-defect");
+        dbContext.InspectionPlans.Add(plan);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var reloaded = await new InspectionPlanRepository(dbContext).GetAsync(plan.Id, CancellationToken.None);
+
+        Assert.NotNull(reloaded);
+        Assert.Single(reloaded.Characteristics);
+        reloaded.Activate();
+        Assert.Equal("active", reloaded.Status);
+    }
+
+    [Fact]
     public void Create_inspection_record_validator_requires_disposition_reason_for_non_passed_lines()
     {
         var validator = new CreateInspectionRecordCommandValidator();

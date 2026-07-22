@@ -173,7 +173,7 @@ Run:
 
 ```powershell
 dotnet test backend/tests/Nerv.IIP.FacadeCoverage.Tests/Nerv.IIP.FacadeCoverage.Tests.csproj --no-restore --nologo
-pwsh -NoProfile -File scripts/verify-openapi-client-drift.ps1 -SkipGeneration
+pwsh -NoProfile -File scripts/verify-openapi-client-drift.ps1 -SkipRegenerate -SkipFrontendInstall
 pwsh -NoProfile -File scripts/check-script-governance.ps1
 ```
 
