@@ -72,6 +72,28 @@ public sealed class SchedulingScaleEvidenceTests
         Assert.Contains("demo", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void SchedulingScale_markdown_reports_maximum_peak_working_set()
+    {
+        var baseline = CreateEvidence("stable-hash", "stable-hash", "stable-hash");
+        var profile = baseline.Profiles.Single();
+        var runs = profile.Runs
+            .Select((run, index) => run with
+            {
+                PeakWorkingSetBytes = (index + 1) * 1024L * 1024L,
+            })
+            .ToArray();
+        var document = baseline with
+        {
+            Profiles = [profile with { Runs = runs }],
+        };
+
+        var markdown = document.ToMarkdown();
+
+        Assert.Contains("Peak working set max MiB", markdown, StringComparison.Ordinal);
+        Assert.Contains("| demo | 11 | 1 | 2 | 3 | 4 | 3 |", markdown, StringComparison.Ordinal);
+    }
+
     private static SchedulingScaleEvidenceDocument CreateEvidence(params string[] hashes)
     {
         var runs = hashes.Select((hash, index) => new SchedulingScaleRunEvidence(

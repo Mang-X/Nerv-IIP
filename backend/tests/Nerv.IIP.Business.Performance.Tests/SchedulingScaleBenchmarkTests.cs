@@ -31,46 +31,52 @@ public sealed class SchedulingScaleBenchmarkTests(ITestOutputHelper output)
             for (var repetition = 1; repetition <= 3; repetition++)
             {
                 await CleanupAsync(provider, profile, CancellationToken.None);
-                GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
-                await using var memory = ProcessMemorySampler.Start();
-                var total = Stopwatch.StartNew();
+                try
+                {
+                    GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+                    await using var memory = ProcessMemorySampler.Start();
+                    var total = Stopwatch.StartNew();
 
-                var input = Measure(() => SchedulingScaleProblemFactory.Create(profile));
-                var normalized = Measure(() => SchedulingProblemNormalizer.Normalize(input.Value));
-                var scheduled = Measure(() => scheduler.ScheduleNormalized(
-                    normalized.Value,
-                    $"plan-aps-scale-{profile.Name}",
-                    GeneratedAtUtc));
-                var persistenceMilliseconds = await PersistAsync(
-                    provider,
-                    normalized.Value,
-                    scheduled.Value,
-                    CancellationToken.None);
+                    var input = Measure(() => SchedulingScaleProblemFactory.Create(profile));
+                    var normalized = Measure(() => SchedulingProblemNormalizer.Normalize(input.Value));
+                    var scheduled = Measure(() => scheduler.ScheduleNormalized(
+                        normalized.Value,
+                        $"plan-aps-scale-{profile.Name}",
+                        GeneratedAtUtc));
+                    var persistenceMilliseconds = await PersistAsync(
+                        provider,
+                        normalized.Value,
+                        scheduled.Value,
+                        CancellationToken.None);
 
-                total.Stop();
-                await memory.StopAsync();
-                var plan = scheduled.Value;
-                runs.Add(new SchedulingScaleRunEvidence(
-                    Repetition: repetition,
-                    TotalMilliseconds: total.ElapsedMilliseconds,
-                    InputAssemblyMilliseconds: input.ElapsedMilliseconds,
-                    ConstraintCheckMilliseconds: normalized.ElapsedMilliseconds,
-                    AlgorithmCalculationMilliseconds: scheduled.ElapsedMilliseconds,
-                    PersistenceMilliseconds: persistenceMilliseconds,
-                    PeakWorkingSetBytes: memory.PeakWorkingSetBytes,
-                    PeakManagedHeapBytes: memory.PeakManagedHeapBytes,
-                    WorkingSetIncreaseBytes: memory.WorkingSetIncreaseBytes,
-                    ScheduledOperationCount: plan.Metrics.ScheduledOperationCount,
-                    UnscheduledOperationCount: plan.Metrics.UnscheduledOperationCount,
-                    OnTimeRate: plan.Metrics.OnTimeRate,
-                    TotalTardinessMinutes: plan.Metrics.TotalTardinessMinutes,
-                    AverageResourceUtilization: plan.Metrics.AverageResourceUtilization,
-                    UnscheduledReasonDistribution: plan.UnscheduledOperations
-                        .GroupBy(x => JsonNamingPolicy.CamelCase.ConvertName(x.ReasonCode.ToString()))
-                        .OrderBy(x => x.Key, StringComparer.Ordinal)
-                        .ToDictionary(x => x.Key, x => x.Count(), StringComparer.Ordinal),
-                    OutputHash: CalculateOutputHash(plan)));
-                await CleanupAsync(provider, profile, CancellationToken.None);
+                    total.Stop();
+                    await memory.StopAsync();
+                    var plan = scheduled.Value;
+                    runs.Add(new SchedulingScaleRunEvidence(
+                        Repetition: repetition,
+                        TotalMilliseconds: total.ElapsedMilliseconds,
+                        InputAssemblyMilliseconds: input.ElapsedMilliseconds,
+                        ConstraintCheckMilliseconds: normalized.ElapsedMilliseconds,
+                        AlgorithmCalculationMilliseconds: scheduled.ElapsedMilliseconds,
+                        PersistenceMilliseconds: persistenceMilliseconds,
+                        PeakWorkingSetBytes: memory.PeakWorkingSetBytes,
+                        PeakManagedHeapBytes: memory.PeakManagedHeapBytes,
+                        WorkingSetIncreaseBytes: memory.WorkingSetIncreaseBytes,
+                        ScheduledOperationCount: plan.Metrics.ScheduledOperationCount,
+                        UnscheduledOperationCount: plan.Metrics.UnscheduledOperationCount,
+                        OnTimeRate: plan.Metrics.OnTimeRate,
+                        TotalTardinessMinutes: plan.Metrics.TotalTardinessMinutes,
+                        AverageResourceUtilization: plan.Metrics.AverageResourceUtilization,
+                        UnscheduledReasonDistribution: plan.UnscheduledOperations
+                            .GroupBy(x => JsonNamingPolicy.CamelCase.ConvertName(x.ReasonCode.ToString()))
+                            .OrderBy(x => x.Key, StringComparer.Ordinal)
+                            .ToDictionary(x => x.Key, x => x.Count(), StringComparer.Ordinal),
+                        OutputHash: CalculateOutputHash(plan)));
+                }
+                finally
+                {
+                    await CleanupAsync(provider, profile, CancellationToken.None);
+                }
             }
 
             profileEvidence.Add(new SchedulingScaleProfileEvidence(
