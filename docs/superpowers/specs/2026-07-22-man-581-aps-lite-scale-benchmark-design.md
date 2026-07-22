@@ -38,7 +38,7 @@ Each repetition records monotonic elapsed milliseconds for:
 4. persistence: adding the production problem snapshot and generated plan aggregate and calling PostgreSQL `SaveChangesAsync`;
 5. total: the complete measured pipeline.
 
-The test samples process working set and managed heap during the measured pipeline and reports the peak values plus the working-set increase over the run baseline. Timings are observational evidence for the named machine/profile, not release SLOs.
+The test samples process working set and managed heap during the measured pipeline and reports the peak values plus the working-set increase over the run baseline. The sampler defaults to a configurable 10 ms interval, cancels and joins its background loop before taking the final observation, and therefore avoids concurrent `Process.Refresh()` calls during shutdown. Timings are observational evidence for the named machine/profile, not release SLOs.
 
 ## Stability proof
 
