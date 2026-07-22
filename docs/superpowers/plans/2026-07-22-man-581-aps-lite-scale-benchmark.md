@@ -308,4 +308,3 @@ Push `codex/man-581-aps-lite-scale-benchmark` and create a non-draft PR targetin
 - [ ] **Step 4: Verify live PR state and stop**
 
 Use `gh pr view --json number,url,isDraft,state,mergeable,headRefName,baseRefName,statusCheckRollup` and confirm `isDraft=false`, `state=OPEN`, `headRefName` is the feature branch, and `baseRefName=main`. Report the PR URL and wait for review; do not merge.
-

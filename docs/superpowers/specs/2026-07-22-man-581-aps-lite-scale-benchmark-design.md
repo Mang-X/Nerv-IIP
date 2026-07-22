@@ -72,4 +72,3 @@ The Markdown report is leadership-readable, but always retains the machine/profi
 - The Scheduling focused tests prove the scheduler refactor preserves behavior.
 - The governed scale script runs all three profiles against PostgreSQL and writes both evidence formats.
 - Script governance and the full backend solution gate run before PR creation.
-
