@@ -5878,6 +5878,75 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("finished-goods-receipt-validation-failed", exception.Message);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Mes_http_client_maps_retry_finished_goods_receipt_strong_id_from_raw_or_enveloped_wire_shape(bool enveloped)
+    {
+        const string receiptRequestId = "019f88b9-1d59-7cb3-b4a0-37b88e78422e";
+        var payload = new
+        {
+            finishedGoodsReceiptRequestId = new { id = receiptRequestId },
+            requestNo = "FGR-WIRE-RETRY-001",
+        };
+        var handler = new RecordingHandler(_ => JsonResponse(
+            HttpStatusCode.OK,
+            enveloped ? new { success = true, data = (object)payload, message = string.Empty, code = 0 } : payload));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var response = await client.RetryFinishedGoodsReceiptInventoryPostingAsync(
+            "internal-token-001",
+            "FGR/WIRE-RETRY-001",
+            RetryFinishedGoodsReceiptRequest(),
+            CancellationToken.None);
+
+        Assert.Equal(receiptRequestId, response.FinishedGoodsReceiptRequestId);
+        Assert.Equal("FGR-WIRE-RETRY-001", response.RequestNo);
+        var sent = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Post, sent.Method);
+        Assert.Equal(
+            "/api/business/v1/mes/finished-goods-receipt-requests/FGR%2FWIRE-RETRY-001/inventory-posting/retry",
+            sent.RequestUri!.PathAndQuery);
+    }
+
+    [Theory]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"not-a-guid\"},\"requestNo\":\"FGR-WIRE-RETRY-001\"}", false)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"not-a-guid\"},\"requestNo\":\"FGR-WIRE-RETRY-001\"}", true)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"00000000-0000-0000-0000-000000000000\"},\"requestNo\":\"FGR-WIRE-RETRY-001\"}", false)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"00000000-0000-0000-0000-000000000000\"},\"requestNo\":\"FGR-WIRE-RETRY-001\"}", true)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{},\"requestNo\":\"FGR-WIRE-RETRY-001\"}", false)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{},\"requestNo\":\"FGR-WIRE-RETRY-001\"}", true)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":null,\"requestNo\":\"FGR-WIRE-RETRY-001\"}", false)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":null,\"requestNo\":\"FGR-WIRE-RETRY-001\"}", true)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"019f88b9-1d59-7cb3-b4a0-37b88e78422e\"},\"requestNo\":\"\"}", false)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"019f88b9-1d59-7cb3-b4a0-37b88e78422e\"},\"requestNo\":\"\"}", true)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"019f88b9-1d59-7cb3-b4a0-37b88e78422e\"},\"requestNo\":\"   \"}", false)]
+    [InlineData("{\"finishedGoodsReceiptRequestId\":{\"id\":\"019f88b9-1d59-7cb3-b4a0-37b88e78422e\"},\"requestNo\":\"   \"}", true)]
+    [InlineData("", false)]
+    [InlineData("", true)]
+    [InlineData("{not-json", false)]
+    [InlineData("{not-json", true)]
+    public async Task Mes_http_client_rejects_malformed_retry_finished_goods_receipt_wire_shape(string body, bool enveloped)
+    {
+        var responseBody = enveloped
+            ? $"{{\"success\":true,\"data\":{body},\"message\":\"\",\"code\":0}}"
+            : body;
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK, responseBody));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.RetryFinishedGoodsReceiptInventoryPostingAsync(
+                "internal-token-001",
+                "FGR-WIRE-RETRY-001",
+                RetryFinishedGoodsReceiptRequest(),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
     [Fact]
     public async Task Master_data_http_client_forwards_accept_language_through_gateway_handler()
     {
@@ -6139,6 +6208,12 @@ public sealed class BusinessGatewayProxyTests
         12.34m,
         "wire-shape-001",
         "LOT-FG-WIRE-001");
+
+    private static BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest RetryFinishedGoodsReceiptRequest() => new(
+        "org-001",
+        "env-dev",
+        "FGR-WIRE-RETRY-001",
+        "retry-wire-shape-001");
 
     private static object ValidMasterDataCreateBody(string path) =>
         BusinessConsoleTestRequestBodies.ValidMasterDataCreateBody(path);
