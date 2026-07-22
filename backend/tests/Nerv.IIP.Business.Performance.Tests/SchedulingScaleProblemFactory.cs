@@ -17,8 +17,9 @@ public sealed record SchedulingScaleProfile(string Name, int OrderCount)
 
 public static class SchedulingScaleProblemFactory
 {
-    private static readonly DateTimeOffset HorizonStartUtc = new(2026, 8, 3, 8, 0, 0, TimeSpan.Zero);
-    private static readonly DateTimeOffset HorizonEndUtc = HorizonStartUtc.AddDays(45).Date.AddHours(20);
+    private static readonly DateTimeOffset BenchmarkDateUtc = new(2026, 8, 3, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset HorizonStartUtc = BenchmarkDateUtc.AddHours(8);
+    private static readonly DateTimeOffset HorizonEndUtc = BenchmarkDateUtc.AddDays(45).AddHours(20);
 
     private static readonly OperationStage[] Stages =
     [
@@ -72,7 +73,7 @@ public static class SchedulingScaleProblemFactory
     private static SchedulingOrderContract CreateOrder(int index)
     {
         var orderId = OrderId(index);
-        var dueUtc = HorizonStartUtc.AddDays(5 + (index % 35)).Date.AddHours(18);
+        var dueUtc = BenchmarkDateUtc.AddDays(5 + (index % 35)).AddHours(18);
         var isRush = index % 29 == 0;
         var priority = isRush ? 100 : 1 + (index % 9);
         var operations = Stages.Select((stage, stageIndex) =>
@@ -135,8 +136,8 @@ public static class SchedulingScaleProblemFactory
     {
         var shifts = Enumerable.Range(0, 45)
             .Select(day => new SchedulingTimeWindowContract(
-                HorizonStartUtc.AddDays(day).Date.AddHours(8),
-                HorizonStartUtc.AddDays(day).Date.AddHours(20),
+                BenchmarkDateUtc.AddDays(day).AddHours(8),
+                BenchmarkDateUtc.AddDays(day).AddHours(20),
                 "day-shift"))
             .ToArray();
         return new SchedulingCalendarContract("CAL-APS-SCALE", shifts);
@@ -147,8 +148,8 @@ public static class SchedulingScaleProblemFactory
         return Stages.Select((stage, index) => new SchedulingUnavailabilityWindowContract(
             ResourceId: ResourceId(stage.ResourcePrefix, 1),
             WorkCenterId: stage.WorkCenterId,
-            StartUtc: HorizonStartUtc.AddDays(10 + index).Date.AddHours(8),
-            EndUtc: HorizonStartUtc.AddDays(10 + index).Date.AddHours(12),
+            StartUtc: BenchmarkDateUtc.AddDays(10 + index).AddHours(8),
+            EndUtc: BenchmarkDateUtc.AddDays(10 + index).AddHours(12),
             ReasonCode: "planned-maintenance"))
             .ToArray();
     }

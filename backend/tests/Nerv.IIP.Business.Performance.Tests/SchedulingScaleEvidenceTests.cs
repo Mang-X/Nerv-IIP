@@ -24,6 +24,22 @@ public sealed class SchedulingScaleEvidenceTests
     }
 
     [Fact]
+    public void SchedulingScale_factory_uses_UTC_for_all_persisted_timestamps()
+    {
+        var problem = SchedulingScaleProblemFactory.Create(SchedulingScaleProfile.All[0]);
+        var timestamps = new[] { problem.HorizonStartUtc, problem.HorizonEndUtc }
+            .Concat(problem.Orders.Select(x => x.DueUtc))
+            .Concat(problem.Orders.SelectMany(x => x.Operations)
+                .SelectMany(x => new[] { x.EarliestStartUtc, x.DueUtc }))
+            .Concat(problem.Calendars.SelectMany(x => x.ShiftWindows)
+                .SelectMany(x => new[] { x.StartUtc, x.EndUtc }))
+            .Concat(problem.UnavailabilityWindows
+                .SelectMany(x => new[] { x.StartUtc, x.EndUtc }));
+
+        Assert.All(timestamps, timestamp => Assert.Equal(TimeSpan.Zero, timestamp.Offset));
+    }
+
+    [Fact]
     public void SchedulingScale_evidence_contains_required_fields_and_capability_boundary()
     {
         var document = CreateEvidence("stable-hash", "stable-hash", "stable-hash");
