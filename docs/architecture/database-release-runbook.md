@@ -151,7 +151,7 @@ pwsh scripts/install/migrate-file-storage.ps1 -ReleaseId "<release-id>"
 Remove-Item Env:\NERV_IIP_FILE_STORAGE_DB -ErrorAction SilentlyContinue
 ```
 
-该脚本只应用仓库中的 FileStorage EF migrations，不删除或重建数据库、不执行 seed，并对命令参数和日志中的连接串做脱敏。`-ValidateOnly` 只确认变量、目标 database alias 和 release metadata，不连接数据库。PoC/private/prod 的 FileStorage Web host 必须保持 `Persistence:AutoMigrate=false`。
+该脚本只应用仓库中的 FileStorage EF migrations，不删除或重建数据库、不执行 seed，并对命令参数和日志中的连接串做脱敏。`-ValidateOnly` 只确认变量、目标 database alias 和 release metadata，不连接数据库。目标数据库默认必须精确匹配 `nerv_iip_filestorage`；只有受控环境明确采用其他库名时，才同时传入 `-ExpectedDatabase <database-name>`，避免把 `filestorage` schema 误建到相邻服务数据库。PoC/private/prod 的 FileStorage Web host 必须保持 `Persistence:AutoMigrate=false`。
 
 重跑语义：
 

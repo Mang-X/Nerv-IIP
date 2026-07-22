@@ -42,11 +42,43 @@ try {
     $secret = 'migration-test-secret'
     [Environment]::SetEnvironmentVariable(
         $connectionVariable,
+        "Host=localhost;Port=5432;Database=nerv_iip_iam;Username=nerv;Password=$secret",
+        'Process')
+    $wrongDatabaseFailure = $null
+    try {
+        Invoke-NativeCommandOutput `
+            -Command 'pwsh' `
+            -Arguments @('-NoProfile', '-File', $migrationScript, '-ValidateOnly') `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 60 `
+            -Name 'file-storage-migration-wrong-database' | Out-Null
+    }
+    catch {
+        $wrongDatabaseFailure = $_
+    }
+    if ($null -eq $wrongDatabaseFailure) {
+        throw 'FileStorage migration validation must reject an unexpected target database.'
+    }
+    foreach ($expected in @('nerv_iip_iam', 'nerv_iip_filestorage')) {
+        if (-not $wrongDatabaseFailure.Exception.Message.Contains($expected)) {
+            throw "Wrong-database diagnostics must contain '$expected'. Output: $($wrongDatabaseFailure.Exception.Message)"
+        }
+    }
+    if ($wrongDatabaseFailure.Exception.Message.Contains($secret)) {
+        throw 'Wrong-database diagnostics must not disclose the connection string password.'
+    }
+
+    [Environment]::SetEnvironmentVariable(
+        $connectionVariable,
         "Host=localhost;Port=5432;Database=nerv_iip_filestorage_release;Username=nerv;Password=$secret",
         'Process')
     $validResult = Invoke-NativeCommandOutput `
         -Command 'pwsh' `
-        -Arguments @('-NoProfile', '-File', $migrationScript, '-ValidateOnly', '-ReleaseId', 'release-man-533-test') `
+        -Arguments @(
+            '-NoProfile', '-File', $migrationScript,
+            '-ValidateOnly',
+            '-ReleaseId', 'release-man-533-test',
+            '-ExpectedDatabase', 'nerv_iip_filestorage_release') `
         -WorkingDirectory $repoRoot `
         -TimeoutSeconds 60 `
         -Name 'file-storage-migration-valid-config'

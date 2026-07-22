@@ -21,6 +21,9 @@ param(
 
     [string] $CorrelationId = [Guid]::NewGuid().ToString('D'),
 
+    [ValidateNotNullOrEmpty()]
+    [string] $ExpectedDatabase = 'nerv_iip_filestorage',
+
     [switch] $ValidateOnly
 )
 
@@ -46,6 +49,10 @@ if (-not $databaseMatch.Success -or [string]::IsNullOrWhiteSpace($databaseMatch.
 }
 
 $targetDatabase = $databaseMatch.Groups[1].Value.Trim()
+if (-not $targetDatabase.Equals($ExpectedDatabase, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Target database '$targetDatabase' does not match ExpectedDatabase '$ExpectedDatabase'."
+}
+
 $validationLogDirectory = New-ScriptAutomationLogDirectory -Name 'file-storage-migration-validation'
 $summary = "releaseId=$ReleaseId service=file-storage dbProfile=PostgreSQL targetDatabase=$targetDatabase migrationFrom=database-current migrationTo=repository-latest seedStep=none correlationId=$CorrelationId logPath=$validationLogDirectory"
 Write-Diagnostic $summary
@@ -69,11 +76,15 @@ $migrationArguments = @(
     '--context', 'ApplicationDbContext',
     '--connection', $connectionString
 )
+$connectionArgumentIndex = $migrationArguments.IndexOf($connectionString)
+if ($connectionArgumentIndex -lt 0) {
+    throw 'FileStorage migration connection argument could not be marked as sensitive.'
+}
 $migration = Invoke-DotNet `
     -Arguments $migrationArguments `
     -WorkingDirectory $root `
     -TimeoutSeconds 900 `
     -Name "file-storage-migration-apply-$ReleaseId" `
-    -SensitiveArgumentIndexes @(10)
+    -SensitiveArgumentIndexes @($connectionArgumentIndex)
 
 Write-Diagnostic "FileStorage migration completed releaseId=$ReleaseId service=file-storage targetDatabase=$targetDatabase correlationId=$CorrelationId restoreLog=$($restore.LogDirectory) migrationLog=$($migration.LogDirectory) exitCode=0."

@@ -47,6 +47,50 @@ public sealed class FileStorageStartupGovernanceTests
     }
 
     [Fact]
+    public void Development_postgresql_provider_ignores_surrounding_whitespace()
+    {
+        using var factory = CreateFactory(
+            "Development",
+            provider: " PostgreSQL ",
+            connectionString: PostgreSqlConnectionString);
+
+        using var client = factory.CreateClient();
+
+        Assert.NotNull(client);
+    }
+
+    [Fact]
+    public void Development_inmemory_rejects_automigrate_with_specific_remedy()
+    {
+        using var factory = CreateFactory(
+            "Development",
+            provider: "InMemory",
+            autoMigrate: true);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains(
+            "Persistence:AutoMigrate must be false when Persistence:Provider=InMemory.",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Development_postgresql_without_connection_recommends_the_missing_connection()
+    {
+        using var factory = CreateFactory(
+            "Development",
+            provider: "PostgreSQL");
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains(
+            "PostgreSQL requires ConnectionStrings:FileStorageDb.",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Production_postgresql_with_connection_and_automigrate_disabled_starts()
     {
         using var factory = CreateFactory(

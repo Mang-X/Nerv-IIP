@@ -80,7 +80,7 @@ public sealed class FileStorageSchemaConventionTests
                 ["ConnectionStrings:FileStorageDb"] = "Host=localhost;Database=nerv_iip_schema_conventions;Username=nerv;Password=nerv",
             })
             .Build();
-        services.AddFileStoragePersistence(configuration);
+        services.AddFileStoragePersistence(configuration, usePostgreSql: true);
 
         return new SchemaFixture(services.BuildServiceProvider());
     }

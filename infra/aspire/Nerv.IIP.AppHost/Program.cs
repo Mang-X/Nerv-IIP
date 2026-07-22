@@ -177,7 +177,7 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var fileStorage = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-storage")))
+var fileStorage = WithNervIipTelemetry(builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-storage"))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5104, name: "http")
     .WithEnvironment("ASPNETCORE_ENVIRONMENT", builder.Environment.EnvironmentName)
     .WithEnvironment("DOTNET_ENVIRONMENT", builder.Environment.EnvironmentName)

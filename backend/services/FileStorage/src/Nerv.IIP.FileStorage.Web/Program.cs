@@ -34,7 +34,7 @@ else
     builder.Services.AddSingleton<IFileStorageService, InMemoryFileStorageService>();
 }
 
-builder.Services.AddFileStoragePersistence(builder.Configuration);
+builder.Services.AddFileStoragePersistence(builder.Configuration, persistence.UsePostgreSql);
 builder.Services.AddNervIipCaching(builder.Configuration, "file-storage");
 builder.Services.AddNervIipObservability(builder.Configuration, "file-storage");
 builder.Services.AddNervIipLocalization();
