@@ -57,7 +57,11 @@ const canManagePriority = computed(() =>
 const orderReferenceForDetail = computed(
   () => props.urgency?.orderId?.trim() || props.orderReference.trim(),
 )
-const { detail, pending: detailPending } = useOrderUrgencyDetail(orderReferenceForDetail, {
+const {
+  detail,
+  pending: detailPending,
+  refresh: refreshDetail,
+} = useOrderUrgencyDetail(orderReferenceForDetail, {
   enabled: open,
 })
 const {
@@ -105,27 +109,39 @@ async function submitPriority() {
     formError.value = '请填写调整原因。'
     return
   }
+  const expiry = toIsoOrError(form.expiresAt)
+  if (expiry === INVALID_EXPIRY) {
+    formError.value = '有效期格式无效，请重新选择或留空表示长期有效。'
+    return
+  }
   try {
     await setBusinessPriority({
       orderReference: orderReferenceForDetail.value,
       level: form.level,
       reason: form.reason.trim(),
-      expiresAtUtc: toIsoOrNull(form.expiresAt),
+      expiresAtUtc: expiry,
     })
     form.reason = ''
     form.expiresAt = ''
-    // Refresh the shared list/detail so the new revision propagates everywhere.
+    // Refresh this Sheet's detail/audit history first so the just-saved revision
+    // is visible immediately (stale detail must not shadow the new write), then
+    // notify the parent to refresh the shared list.
+    await refreshDetail()
     emit('refresh')
   } catch {
     formError.value = formatError(mutationError.value) || '优先级调整失败，请稍后重试。'
   }
 }
 
-function toIsoOrNull(value: string): string | null {
+const INVALID_EXPIRY = Symbol('invalid-expiry')
+
+// Returns the ISO string, null for an empty (long-lived) window, or a sentinel
+// when a non-empty value cannot be parsed — never silently drops a bad expiry.
+function toIsoOrError(value: string): string | null | typeof INVALID_EXPIRY {
   const trimmed = value.trim()
   if (!trimmed) return null
   const date = new Date(trimmed)
-  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+  return Number.isNaN(date.getTime()) ? INVALID_EXPIRY : date.toISOString()
 }
 
 function formatError(error: unknown) {

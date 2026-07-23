@@ -12,6 +12,9 @@ const selectStubs = {
   // Trigger/content render as fragments so the option stubs stay direct <select>
   // children — otherwise native setValue cannot resolve the option by value.
   NvSelectTrigger: { template: '<slot />' },
+  // Keyed `SelectValue` (reka's component name) not `NvSelectValue` (the barrel
+  // alias): test-utils matches the resolved component name, so an `NvSelectValue`
+  // key misses and the real reka value throws "must be used within SelectRoot".
   SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },

@@ -10,7 +10,11 @@ import OrderUrgencyBadge from './OrderUrgencyBadge.vue'
 const state = vi.hoisted(() => ({
   permissionCodes: ['business.scheduling.plans.manage'] as string[],
   detail: undefined as BusinessConsoleOrderUrgencyDetail | undefined,
+  // Detail returned by refresh() after a successful write — proves the Sheet
+  // re-reads the authoritative detail instead of showing stale data.
+  refreshedDetail: undefined as BusinessConsoleOrderUrgencyDetail | undefined,
   setBusinessPriority: vi.fn(),
+  refreshDetail: vi.fn(),
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -20,10 +24,13 @@ vi.mock('@/stores/auth', () => ({
 vi.mock('@/composables/useOrderUrgencyDetail', async () => {
   const { shallowRef } = await vi.importActual<typeof import('vue')>('vue')
   return {
-    useOrderUrgencyDetail: () => ({
-      detail: shallowRef(state.detail),
-      pending: shallowRef(false),
-    }),
+    useOrderUrgencyDetail: () => {
+      const detail = shallowRef(state.detail)
+      state.refreshDetail = vi.fn(async () => {
+        if (state.refreshedDetail) detail.value = state.refreshedDetail
+      })
+      return { detail, pending: shallowRef(false), refresh: state.refreshDetail }
+    },
     useSetOrderUrgencyBusinessPriority: () => ({
       error: shallowRef(undefined),
       pending: shallowRef(false),
@@ -93,10 +100,13 @@ const stubs = {
   NvFieldLabel: { template: '<label><slot /></label>' },
   NvFieldError: { props: ['errors'], template: '<p class="field-error">{{ errors?.[0] }}</p>' },
   NvInput: {
+    // inheritAttrs:false so the datetime-local `type` is not applied — jsdom would
+    // otherwise coerce an unparseable value to empty and hide the validation path.
     props: ['modelValue'],
+    inheritAttrs: false,
     emits: ['update:modelValue'],
     template:
-      '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+      '<input :id="$attrs.id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
   NvSelect: {
     props: ['modelValue'],
@@ -105,6 +115,10 @@ const stubs = {
       '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
+  // `NvSelectValue` is reka's `SelectValue` re-exported under an Nv alias; the
+  // component's own name stays `SelectValue`, which is the key test-utils matches
+  // when stubbing (an `NvSelectValue` key misses and the real reka value throws
+  // "must be used within SelectRoot").
   SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<span><slot /></span>' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
@@ -121,6 +135,7 @@ function mountBadge(props: {
 beforeEach(() => {
   state.permissionCodes = ['business.scheduling.plans.manage']
   state.detail = undefined
+  state.refreshedDetail = undefined
   state.setBusinessPriority = vi.fn().mockResolvedValue({ success: true })
 })
 
@@ -172,8 +187,81 @@ describe('OrderUrgencyBadge priority editing', () => {
       reason: '重点客户插单',
     })
     expect(payload.expiresAtUtc).toBe(new Date('2026-08-01T00:00').toISOString())
-    // The list/detail refresh is signalled so the new revision propagates.
+    // The Sheet's own detail is refreshed AND the parent list refresh is signalled.
+    expect(state.refreshDetail).toHaveBeenCalledTimes(1)
     expect(wrapper.emitted('refresh')).toHaveLength(1)
+  })
+
+  it('refreshes the detail and audit history so the just-saved revision is visible', async () => {
+    state.detail = {
+      current: urgency,
+      history: [],
+      businessPriorityChanges: [
+        {
+          revision: 2,
+          previousLevel: 'p2',
+          newLevel: 'p1',
+          changedBy: 'planner@nerv',
+          reason: '重点客户',
+          changedAtUtc: '2026-07-22T07:00:00Z',
+          expiresAtUtc: null,
+        },
+      ],
+    }
+    // After the write, refresh() returns the authoritative P0 revision + new row.
+    state.refreshedDetail = {
+      current: { ...urgency, businessPriority: { level: 'p0', revision: 3, source: 'manual' } },
+      history: [],
+      businessPriorityChanges: [
+        {
+          revision: 3,
+          previousLevel: 'p1',
+          newLevel: 'p0',
+          changedBy: 'dispatcher@nerv',
+          reason: '客户升级为特急',
+          changedAtUtc: '2026-07-23T07:00:00Z',
+          expiresAtUtc: null,
+        },
+        {
+          revision: 2,
+          previousLevel: 'p2',
+          newLevel: 'p1',
+          changedBy: 'planner@nerv',
+          reason: '重点客户',
+          changedAtUtc: '2026-07-22T07:00:00Z',
+          expiresAtUtc: null,
+        },
+      ],
+    }
+    const wrapper = mountBadge({ orderReference: 'SO-001', urgency, mode: 'level' })
+
+    // Before the write the Sheet shows the current P1 revision only.
+    expect(wrapper.findAll('[data-testid="priority-audit-row"]')).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('P1 → P0')
+
+    await wrapper.get('#urgency-priority-reason').setValue('客户升级为特急')
+    await wrapper.get('[data-testid="priority-editor"]').trigger('submit')
+    await flushPromises()
+
+    expect(state.refreshDetail).toHaveBeenCalledTimes(1)
+    // The new revision and its audit row are now visible without a page reload.
+    const rows = wrapper.findAll('[data-testid="priority-audit-row"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.text()).toContain('P1 → P0')
+    expect(rows[0]!.text()).toContain('dispatcher@nerv')
+    expect(wrapper.text()).toContain('dispatcher@nerv')
+  })
+
+  it('rejects an unparseable expiry instead of silently dropping it', async () => {
+    const wrapper = mountBadge({ orderReference: 'SO-001', urgency, mode: 'level' })
+
+    await wrapper.get('#urgency-priority-reason').setValue('临时插单')
+    await wrapper.get('#urgency-priority-expiry').setValue('not-a-date')
+    await wrapper.get('[data-testid="priority-editor"]').trigger('submit')
+    await flushPromises()
+
+    expect(state.setBusinessPriority).not.toHaveBeenCalled()
+    expect(wrapper.get('.field-error').text()).toContain('有效期格式无效')
   })
 
   it('blocks the write and shows an error when the reason is missing', async () => {

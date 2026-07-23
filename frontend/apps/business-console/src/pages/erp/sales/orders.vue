@@ -51,6 +51,7 @@ const orderUrgencies = useOrderUrgencies(
 )
 const displayMode = shallowRef<UrgencyDisplayMode>(DEFAULT_URGENCY_DISPLAY_MODE)
 // 排序独立于显示模式：默认按统一紧急度排序（等级→CR→预计延迟→due→等待）。
+// 后端分页下仅对当前页行生效；跨页排序需后端支持（已知契约限制，本 PR 不实现）。
 const orderedSalesOrders = computed(() =>
   orderRowsByUrgency(
     orders.salesOrders.value,

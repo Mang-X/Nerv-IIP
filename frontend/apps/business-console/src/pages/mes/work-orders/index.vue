@@ -199,6 +199,7 @@ const canRecordReport = computed(
 
 // --- Sort (page-owned, before pagination) ---
 // 默认无列排序：按统一紧急度（等级→CR→预计延迟→due→等待）排序；用户点列头后按列排序。
+// 后端分页，紧急度排序仅对当前页行生效；跨页排序需后端支持（已知契约限制）。
 const sort = ref<NvDataTableSort | null>(null)
 function sortValue(order: Row, key: string): string | number {
   if (key === 'quantity') return order.quantity ?? 0
