@@ -4,10 +4,14 @@ import { describe, expect, it, vi } from 'vitest'
 import PlanningWorkbench from './PlanningWorkbench.vue'
 
 vi.mock('@/composables/useOrderUrgency', () => ({
-  useOrderUrgencies: () => ({ byReference: { value: new Map() } }),
+  useOrderUrgencies: () => ({ byReference: { value: new Map() }, refresh: vi.fn() }),
 }))
 vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
-  default: { template: '<span data-testid="order-urgency">未计算</span>' },
+  default: {
+    props: ['orderReference', 'mode', 'urgency'],
+    template:
+      '<span data-testid="order-urgency" :data-ref="orderReference" :data-mode="mode">未计算</span>',
+  },
 }))
 
 const routerPush = vi.hoisted(() => vi.fn())
@@ -296,6 +300,15 @@ describe('PlanningWorkbench', () => {
     expect(wrapper.text()).toContain('组件毛需求')
     expect(wrapper.text()).toContain('scrap/yield 已计入组件毛需求')
     expect(wrapper.text()).toContain('SO-1001')
+  })
+
+  it('maps the demand source reference into the shared urgency badge', () => {
+    const wrapper = mount(PlanningWorkbench)
+
+    const badge = wrapper.find('[data-testid="order-urgency"]')
+    expect(badge.exists()).toBe(true)
+    expect(badge.attributes('data-ref')).toBe('SO-DEMO-001')
+    expect(badge.attributes('data-mode')).toBe('level')
   })
 
   it('renders MRP exception suggestions as non-acceptance workbench rows', () => {
