@@ -170,6 +170,110 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(productionFlow).toContain('idempotencyKey: `start-task-${suffix}`')
   })
 
+  it('polls exact finished-goods Inventory availability with a bounded public wait', () => {
+    const receiptFlow = sourceBetween("let receiptRequestNo = ''", "let wmsOutboundId = ''")
+
+    expect(receiptFlow).toContain('unitCost: finishedGoodsUnitCost')
+    expect(receiptFlow).toContain('const availability = await pollData(')
+    expect(receiptFlow).toContain("'/api/business-console/v1/inventory/availability'")
+    expect(receiptFlow).toContain('skuCode: finishedSku')
+    expect(receiptFlow).toContain('siteCode: finishedGoodsSiteCode')
+    expect(receiptFlow).toContain('locationCode: finishedGoodsLocationCode')
+    expect(receiptFlow).toContain('lotNo: producedLotNo')
+    expect(receiptFlow).toContain('(data) => Number(data.onHandQuantity ?? 0) > 0')
+    expect(receiptFlow).toContain('poll: availability.poll')
+    expect(receiptFlow).not.toMatch(/\(\s*\)\s*=>\s*false/)
+    expect(receiptFlow).not.toMatch(/pollRows\([\s\S]*?producedLotNo[\s\S]*?,\s*1,?\s*\)/)
+  })
+
+  it('keeps the last public request, correlation, and response when bounded polling times out', () => {
+    const pollingFlow = sourceBetween(
+      'class PollTimeoutError extends Error',
+      'const markFailure = (',
+    )
+    const failureFlow = sourceBetween('const markFailure = (', 'try {\n    await page.goto')
+
+    expect(pollingFlow).toContain('readonly request: JsonRecord | null')
+    expect(pollingFlow).toContain('readonly lastData: JsonRecord')
+    expect(pollingFlow).toContain('readonly poll: JsonRecord')
+    expect(pollingFlow).toContain('throw new PollTimeoutError(')
+    expect(failureFlow).toContain('error instanceof PollTimeoutError')
+    expect(failureFlow).toContain(
+      'request: pollFailure?.request ?? callFailure?.request ?? current.request',
+    )
+    expect(failureFlow).toContain('lastData: publicJson(pollFailure.lastData)')
+    expect(failureFlow).toContain('poll: pollFailure.poll')
+  })
+
+  it('retries a transient 404 within the polling budget and preserves its public evidence', () => {
+    const pollingFlow = sourceBetween('const pollData = async (', 'const markFailure = (')
+    const failureFlow = sourceBetween('const markFailure = (', 'try {\n    await page.goto')
+
+    expect(pollingFlow).toContain('error instanceof PublicCallError && error.status === 404')
+    expect(pollingFlow).toContain('lastRequest = error.request')
+    expect(pollingFlow).toContain('lastData = asRecord(error.payload)')
+    expect(failureFlow).toContain(
+      'const callFailure = error instanceof PublicCallError ? error : null',
+    )
+    expect(failureFlow).toContain('callFailure?.request')
+    expect(failureFlow).toContain('response: publicJson(callFailure.payload)')
+  })
+
+  it('keeps polling unknown Inventory link statuses and stops only on explicit terminal states', () => {
+    const receiptFlow = sourceBetween("let receiptRequestNo = ''", "let wmsOutboundId = ''")
+
+    expect(receiptFlow).toContain(
+      "const terminalStatuses = new Set(['posted', 'postingfailed', 'qualityrestricted'])",
+    )
+    expect(receiptFlow).toContain('return terminalStatuses.has(status)')
+    expect(receiptFlow).not.toContain("status !== 'notposted' && status !== 'partiallyposted'")
+  })
+
+  it('proves the receipt Inventory link through the real public facade and exact source keys', () => {
+    const receiptFlow = sourceBetween("let receiptRequestNo = ''", "let wmsOutboundId = ''")
+    const finalAcceptance = sourceBetween(
+      'const unacceptableEntries = entries.filter(',
+      "expect(entries.some((entry) => entry.conclusion === 'runtime-confirmed'))",
+    )
+
+    expect(receiptFlow).toContain('const inventoryLink = await pollData(')
+    expect(receiptFlow).toContain(
+      '/mes/finished-goods-receipt-requests/${encodeURIComponent(receiptRequestNo)}/inventory-link`',
+    )
+    const inventoryLinkCall = sourceBetween(
+      'const inventoryLink = await pollData(',
+      'const link = inventoryLink.data',
+    )
+    expect(inventoryLinkCall).toContain('organizationId')
+    expect(inventoryLinkCall).toContain('environmentId')
+    expect(inventoryLinkCall).toContain('workOrderId')
+    expect(receiptFlow).toContain("textOf(link.linkStatus).trim().toLowerCase() === 'posted'")
+    expect(receiptFlow).toContain('link.isInventoryLinkEstablished === true')
+    expect(receiptFlow).toContain('textOf(link.requestNo) === receiptRequestNo')
+    expect(receiptFlow).toContain('textOf(link.workOrderId) === workOrderId')
+    expect(receiptFlow).toContain('textOf(link.producedLotNo) === producedLotNo')
+    expect(receiptFlow).toContain("textOf(link.sourceService) === 'business-mes'")
+    expect(receiptFlow).toContain('textOf(link.sourceDocumentId) === receiptRequestNo')
+    expect(receiptFlow).toContain('textOf(link.sourceDocumentLineId) === workOrderId')
+    expect(receiptFlow).toContain('const sourceMovement = movements.find(')
+    expect(receiptFlow).toContain('const sourceBalance = balances.find(')
+    expect(receiptFlow).toContain('Number(balance.ledgerVersion ?? 0) > 0')
+    expect(receiptFlow).toContain("node: 'inventory-produced-lot-fulfillment-lookup'")
+    expect(receiptFlow).toContain('poll: inventoryLink.poll')
+    const inventoryLinkEvidence = sourceBetween(
+      "node: 'inventory-produced-lot-fulfillment-lookup'",
+      "markFailure('inventory-produced-lot-fulfillment-lookup', error)",
+    )
+    expect(inventoryLinkEvidence).toContain("automationMode: 'automatic'")
+    expect(inventoryLinkEvidence).toContain('responsibilityIssue: null')
+    expect(receiptFlow).not.toContain("responsibilityIssue: '#972 / MAN-528 (demo:defer)'")
+    expect(finalAcceptance).toContain("entry.conclusion !== 'runtime-confirmed'")
+    expect(finalAcceptance).not.toContain(
+      "entry.node === 'inventory-produced-lot-fulfillment-lookup'",
+    )
+    expect(finalAcceptance).not.toContain('#972')
+  })
+
   it('completes the run-scoped WMS outbound with the required business context query', () => {
     const completionFlow = sourceBetween(
       'const completed = await call(',
