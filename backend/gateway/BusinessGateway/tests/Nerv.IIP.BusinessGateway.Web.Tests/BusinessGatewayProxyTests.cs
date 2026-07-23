@@ -12,6 +12,7 @@ using Microsoft.Extensions.Options;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
+using Nerv.IIP.BusinessGateway.Web.Endpoints.Erp;
 using Nerv.IIP.BusinessGateway.Web.Endpoints.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.FileStorage;
@@ -2167,6 +2168,42 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public void Erp_work_center_cost_rate_validator_rejects_an_omitted_effective_start()
+    {
+        var request = new BusinessConsoleConfigureErpWorkCenterCostRateRequest(
+            "org-001", "env-dev", "WC-001", 2500m, "CNY", default, null, "governed rate");
+
+        var result = new BusinessConsoleConfigureErpWorkCenterCostRateRequestValidator().Validate(request);
+
+        Assert.False(result.IsValid);
+        Assert.NotEmpty(result.Errors);
+    }
+
+    [Fact]
+    public async Task Erp_work_center_cost_rate_facade_rejects_an_omitted_effective_start_before_authorization()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/work-center-cost-rates",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                workCenterId = "WC-001",
+                hourlyRate = 2500m,
+                currencyCode = "CNY",
+                reason = "governed rate",
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, auth.CallCount);
+    }
+
+    [Fact]
     public async Task Erp_work_center_cost_rate_http_client_preserves_wire_shape_and_forwards_actor_header()
     {
         var requestCount = 0;
@@ -2252,6 +2289,117 @@ public sealed class BusinessGatewayProxyTests
             "/api/business/v1/erp/finance/work-center-cost-rates?organizationId=org-001&environmentId=env-dev&workCenterId=WC-001&atUtc=2026-07-23T02%3A00%3A00.0000000%2B00%3A00",
             handler.Requests[1].RequestUri!.PathAndQuery);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Erp_work_center_cost_rate_http_client_accepts_raw_and_enveloped_strong_id(bool enveloped)
+    {
+        const string data = "{\"workCenterCostRateId\":{\"id\":\"018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9\"}}";
+        var responseBody = enveloped
+            ? $"{{\"success\":true,\"data\":{data},\"message\":\"\",\"code\":0}}"
+            : data;
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK, responseBody));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.local") };
+        var client = new HttpBusinessErpClient(httpClient);
+
+        var response = await client.ConfigureWorkCenterCostRateAsync(
+            "internal-token",
+            WorkCenterCostRateRequest(),
+            "user:user-admin",
+            CancellationToken.None);
+
+        Assert.Equal("018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9", response.WorkCenterCostRateId);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"workCenterCostRateId\":null}")]
+    [InlineData("{\"workCenterCostRateId\":{}}")]
+    [InlineData("{\"workCenterCostRateId\":{\"id\":null}}")]
+    [InlineData("{\"workCenterCostRateId\":{\"id\":\"not-a-guid\"}}")]
+    [InlineData("{\"workCenterCostRateId\":\"018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9\"}")]
+    [InlineData("{not-json")]
+    public async Task Erp_work_center_cost_rate_http_client_rejects_missing_null_or_malformed_strong_id(string responseBody)
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK, responseBody));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.local") };
+        var client = new HttpBusinessErpClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.ConfigureWorkCenterCostRateAsync(
+                "internal-token",
+                WorkCenterCostRateRequest(),
+                "user:user-admin",
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Erp_work_center_cost_rate_http_client_preserves_success_false_business_error()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = false,
+            message = "work-center-cost-rate-validation-failed",
+            code = 400,
+            data = new
+            {
+                workCenterCostRateId = new { id = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9" },
+            },
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.local") };
+        var client = new HttpBusinessErpClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.ConfigureWorkCenterCostRateAsync(
+                "internal-token",
+                WorkCenterCostRateRequest(),
+                "user:user-admin",
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Equal("work-center-cost-rate-validation-failed", exception.Message);
+    }
+
+    [Fact]
+    public async Task Erp_work_center_cost_rate_facade_maps_downstream_invalid_response_to_bad_gateway()
+    {
+        var erp = new RecordingErpClient
+        {
+            ConfigureWorkCenterCostRateFailure = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/work-center-cost-rates",
+            WorkCenterCostRateRequest());
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("downstream-invalid-response", document.RootElement.GetProperty("message").GetString());
+    }
+
+    private static BusinessConsoleConfigureErpWorkCenterCostRateRequest WorkCenterCostRateRequest() =>
+        new(
+            "org-001",
+            "env-dev",
+            "WC-001",
+            2500m,
+            "CNY",
+            DateTimeOffset.Parse("2026-07-23T01:00:00Z", CultureInfo.InvariantCulture),
+            null,
+            "governed rate");
 
     [Fact]
     public async Task Erp_procurement_purchase_requisition_list_uses_internal_service_token_for_downstream_business_service()
@@ -9053,12 +9201,19 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
     public string? LastConfigureWorkCenterCostRateActor { get; private set; }
 
+    public BusinessServiceProxyException? ConfigureWorkCenterCostRateFailure { get; init; }
+
     public Task<BusinessConsoleConfigureErpWorkCenterCostRateResponse> ConfigureWorkCenterCostRateAsync(
         string internalBearerToken,
         BusinessConsoleConfigureErpWorkCenterCostRateRequest request,
         string actor,
         CancellationToken cancellationToken)
     {
+        if (ConfigureWorkCenterCostRateFailure is not null)
+        {
+            throw ConfigureWorkCenterCostRateFailure;
+        }
+
         LastInternalToken = internalBearerToken;
         LastConfigureWorkCenterCostRateRequest = request;
         LastConfigureWorkCenterCostRateActor = actor;

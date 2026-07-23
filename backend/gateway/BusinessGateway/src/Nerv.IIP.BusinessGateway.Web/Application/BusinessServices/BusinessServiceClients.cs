@@ -5896,7 +5896,8 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             configureRequest: message =>
                 message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor));
 
-        if (response.WorkCenterCostRateId.Id == Guid.Empty)
+        if (response.WorkCenterCostRateId is not { Id: var workCenterCostRateId }
+            || workCenterCostRateId == Guid.Empty)
         {
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                 HttpStatusCode.BadGateway,
@@ -5904,7 +5905,7 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
         }
 
         return new BusinessConsoleConfigureErpWorkCenterCostRateResponse(
-            response.WorkCenterCostRateId.Id.ToString());
+            workCenterCostRateId.ToString());
     }
 
     public Task<BusinessConsoleErpWorkCenterCostRateListResponse> ListWorkCenterCostRatesAsync(
@@ -6258,7 +6259,7 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
     private sealed record DownstreamPurchaseOrderListResponse(IReadOnlyCollection<DownstreamPurchaseOrderItem> Items, int Total);
 
     private sealed record DownstreamConfigureWorkCenterCostRateResponse(
-        DownstreamWorkCenterCostRateId WorkCenterCostRateId);
+        DownstreamWorkCenterCostRateId? WorkCenterCostRateId);
 
     private sealed record DownstreamWorkCenterCostRateId(Guid Id);
 

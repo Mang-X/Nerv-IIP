@@ -76,7 +76,7 @@ public sealed class BusinessConsoleConfigureErpWorkCenterCostRateRequestValidato
         RuleFor(x => x.CurrencyCode)
             .Must(value => value is not null && Regex.IsMatch(value, "^[A-Z]{3}$", RegexOptions.CultureInvariant))
             .WithMessage("CurrencyCode must be a three-letter uppercase ISO currency code.");
-        RuleFor(x => x.EffectiveFromUtc).Must(value => value.Offset == TimeSpan.Zero);
+        RuleFor(x => x.EffectiveFromUtc).NotEmpty().Must(value => value.Offset == TimeSpan.Zero);
         RuleFor(x => x.EffectiveToUtc).Must(value => value is null || value.Value.Offset == TimeSpan.Zero);
         RuleFor(x => x.EffectiveToUtc)
             .Must((request, value) => value is null || value > request.EffectiveFromUtc);

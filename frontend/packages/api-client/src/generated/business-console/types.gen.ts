@@ -6133,7 +6133,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     workCenterId: string;
     hourlyRate?: number;
     currencyCode?: string;
-    effectiveFromUtc?: string;
+    effectiveFromUtc: string;
     effectiveToUtc?: string | null;
     reason: string;
 };

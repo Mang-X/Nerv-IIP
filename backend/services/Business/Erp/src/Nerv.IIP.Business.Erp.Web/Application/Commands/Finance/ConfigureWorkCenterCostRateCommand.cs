@@ -26,7 +26,7 @@ public sealed class ConfigureWorkCenterCostRateCommandValidator : AbstractValida
         RuleFor(x => x.WorkCenterId).Must(BeNonBlank).MaximumLength(100);
         RuleFor(x => x.HourlyRate).GreaterThan(0m);
         RuleFor(x => x.CurrencyCode).Must(BeAsciiCurrencyCode);
-        RuleFor(x => x.EffectiveFromUtc).Must(BeUtc);
+        RuleFor(x => x.EffectiveFromUtc).NotEmpty().Must(BeUtc);
         RuleFor(x => x.EffectiveToUtc)
             .Must(value => value is null || BeUtc(value.Value))
             .Must((command, value) => value is null || value > command.EffectiveFromUtc);

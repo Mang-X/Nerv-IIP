@@ -83,6 +83,18 @@ public sealed class WorkCenterCostRateApplicationTests
     }
 
     [Fact]
+    public void Configure_validator_rejects_an_omitted_effective_start()
+    {
+        var command = new ConfigureWorkCenterCostRateCommand(
+            "org", "env", "WC", 1m, "USD", default, null, "user:a", "reason", July1);
+
+        var result = new ConfigureWorkCenterCostRateCommandValidator().Validate(command);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.PropertyName == nameof(command.EffectiveFromUtc));
+    }
+
+    [Fact]
     public void Domain_rejects_noncanonical_actor_whitespace()
     {
         Assert.Throws<ArgumentException>(() => WorkCenterCostRate.Define(

@@ -46678,6 +46678,7 @@
           "organizationId",
           "environmentId",
           "workCenterId",
+          "effectiveFromUtc",
           "reason"
         ],
         "properties": {
@@ -46710,7 +46711,9 @@
           },
           "effectiveFromUtc": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "minLength": 1,
+            "nullable": false
           },
           "effectiveToUtc": {
             "type": "string",
