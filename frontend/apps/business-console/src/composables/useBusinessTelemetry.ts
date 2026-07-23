@@ -1,5 +1,6 @@
 import {
   createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions,
+  getBusinessConsoleEquipmentDeviceHealthQueryOptions,
   getBusinessConsoleTelemetryConnectorTagCoverageQueryOptions,
   getBusinessConsoleTelemetryTagCurrentValueQueryOptions,
   listBusinessConsoleTelemetryAlarmRulesQueryOptions,
@@ -15,6 +16,8 @@ import {
   type BusinessConsoleConnectorTagCoverageEnvelope,
   type BusinessConsoleConnectorTagCoverageResponse,
   type BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest,
+  type BusinessConsoleEquipmentHealthEnvelope,
+  type BusinessConsoleEquipmentHealthResponse,
   type BusinessConsoleTelemetryRuntimeHoursEnvelope,
   type BusinessConsoleTelemetryRuntimeHoursResponse,
   type BusinessConsoleTelemetryTagCurrentValueEnvelope,
@@ -36,6 +39,7 @@ import { useBusinessContextStore } from '@/stores/businessContext'
 import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
+export const EQUIPMENT_HEALTH_POLL_INTERVAL_MS = 5_000
 
 export type TelemetryEnabledFilter = 'all' | 'enabled' | 'disabled'
 
@@ -259,6 +263,37 @@ export function useBusinessTelemetryTagCurrentValue(
     currentValueError: currentValueQuery.error,
     currentValuePending: currentValueQuery.isLoading,
     refreshCurrentValue: () => (enabled.value ? currentValueQuery.refetch() : Promise.resolve()),
+  }
+}
+
+/**
+ * 设备健康评分读面。只有业务上下文与设备范围同时有效时才启用，并由 Pinia Colada
+ * 官方 auto-refetch 插件每 5 秒刷新；刷新期间保留 query cache 中的上一份健康事实。
+ */
+export function useBusinessEquipmentHealth(deviceAssetId: Ref<string>) {
+  const businessContext = useBusinessContextStore()
+  const normalizedDeviceAssetId = computed(() => deviceAssetId.value.trim())
+  const enabled = computed(
+    () => hasBusinessContext(businessContext) && normalizedDeviceAssetId.value.length > 0,
+  )
+  const healthQuery = useQuery(() => ({
+    ...getBusinessConsoleEquipmentDeviceHealthQueryOptions({
+      path: { deviceAssetId: normalizedDeviceAssetId.value },
+      query: toContextQuery(businessContext),
+    }),
+    enabled: enabled.value,
+    autoRefetch: () => EQUIPMENT_HEALTH_POLL_INTERVAL_MS,
+  }))
+
+  return {
+    health: computed<BusinessConsoleEquipmentHealthResponse | undefined>(() =>
+      unwrapData<BusinessConsoleEquipmentHealthResponse>(
+        healthQuery.data.value as BusinessConsoleEquipmentHealthEnvelope | undefined,
+      ),
+    ),
+    healthError: healthQuery.error,
+    healthPending: healthQuery.isLoading,
+    refreshHealth: () => (enabled.value ? healthQuery.refetch() : Promise.resolve()),
   }
 }
 
