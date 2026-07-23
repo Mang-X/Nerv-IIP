@@ -47,9 +47,9 @@ function showTip(e: MouseEvent) {
 </script>
 
 <template>
-  <NvCard :class="cn('overflow-hidden p-5', props.class)">
-    <div class="flex items-center gap-[18px]">
-      <div class="relative size-[84px] flex-none" @mousemove="showTip" @mouseleave="tip.hide">
+  <NvCard :class="cn('nv-ring-card overflow-hidden p-5', props.class)">
+    <div class="nv-ring-layout flex gap-[18px]">
+      <div class="nv-ring relative flex-none" @mousemove="showTip" @mouseleave="tip.hide">
         <svg class="size-full -rotate-90" viewBox="0 0 84 84">
           <circle cx="42" cy="42" :r="R" fill="none" stroke="var(--muted)" stroke-width="8" />
           <circle
@@ -63,9 +63,23 @@ function showTip(e: MouseEvent) {
             :stroke-dasharray="dash"
             class="nv-ring-arc"
           />
+          <!-- hover halo: a wider, very faint copy of the arc that fades in, so the
+               emphasis reads as the gauge lighting up rather than just thickening -->
+          <circle
+            cx="42"
+            cy="42"
+            :r="R"
+            fill="none"
+            :stroke="metricToneStroke[tone]"
+            stroke-width="14"
+            stroke-linecap="round"
+            :stroke-dasharray="dash"
+            class="nv-ring-halo"
+            aria-hidden="true"
+          />
         </svg>
         <span
-          class="absolute inset-0 grid place-items-center text-[17px] font-semibold tabular-nums tracking-tight"
+          class="nv-ring-center absolute inset-0 grid place-items-center font-semibold tabular-nums tracking-tight"
         >
           {{ value }}
         </span>
@@ -111,8 +125,48 @@ function showTip(e: MouseEvent) {
 
 <style scoped>
 @layer nv-components {
+  /* Hover emphasis: the arc thickens and a faint halo fades in, so pointing at
+     the gauge reads as "this is inspectable" before the tooltip even lands.
+     stroke-width/opacity are safe to own here — no Tailwind utility sets them,
+     unlike `display`, so nv-components is late enough to win. */
   .nv-ring-arc {
-    transition: stroke-dasharray var(--nv-duration-slow, 320ms) var(--nv-ease-out-quart, ease-out);
+    transition:
+      stroke-dasharray var(--nv-duration-slow, 320ms) var(--nv-ease-out-quart, ease-out),
+      stroke-width var(--nv-duration-fast, 150ms) var(--nv-ease-out-quart, ease-out);
+  }
+  .nv-ring-halo {
+    opacity: 0;
+    transition: opacity var(--nv-duration-fast, 150ms) var(--nv-ease-out-quart, ease-out);
+  }
+  .nv-ring:hover .nv-ring-arc {
+    stroke-width: 10;
+  }
+  .nv-ring:hover .nv-ring-halo {
+    opacity: 0.16;
+  }
+  /* Size and layout are declared here rather than as Tailwind utilities so the
+     container query below can actually win — utilities sit in a later layer. */
+  .nv-ring-card {
+    container-type: inline-size;
+  }
+  .nv-ring-layout {
+    align-items: center;
+  }
+  .nv-ring {
+    width: 84px;
+    height: 84px;
+  }
+  .nv-ring-center {
+    font-size: 17px;
+  }
+  /* Too narrow to seat the gauge beside its factors — stack them, so the factor
+     rows get the full card width instead of truncating to a single character. */
+  @container (max-width: 232px) {
+    .nv-ring-layout {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 14px;
+    }
   }
   /* Same frosted readout surface the chart crosshair tooltips use (--nv-glass-*),
      so a metric's micro-viz and a full chart read as one system. */
@@ -127,6 +181,8 @@ function showTip(e: MouseEvent) {
   }
   @media (prefers-reduced-motion: reduce) {
     .nv-ring-arc,
+    .nv-ring-halo,
+    .nv-ring-center,
     .nv-metric-tip {
       transition: none;
     }

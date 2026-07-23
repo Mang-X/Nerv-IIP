@@ -227,16 +227,17 @@ function showTargetTip(e: MouseEvent) {
       <span
         v-if="icon"
         :class="
-          cn('grid size-11 flex-none place-items-center rounded-[10px]', metricToneTint[tone])
+          cn(
+            'nv-metric-iconbox size-11 flex-none place-items-center rounded-[10px]',
+            metricToneTint[tone],
+          )
         "
       >
         <component :is="icon" class="size-[21px]" aria-hidden="true" />
       </span>
-      <div class="flex min-w-0 flex-col gap-0.5">
+      <div class="flex min-w-0 flex-1 flex-col gap-0.5">
         <p class="truncate text-sm text-muted-foreground">{{ label }}</p>
-        <p
-          class="whitespace-nowrap text-[22px] font-semibold leading-tight tabular-nums tracking-tight"
-        >
+        <p class="truncate text-[22px] font-semibold leading-tight tabular-nums tracking-tight">
           {{ value
           }}<span v-if="unit" class="ml-0.5 text-sm font-medium text-muted-foreground">{{
             unit
@@ -247,7 +248,7 @@ function showTargetTip(e: MouseEvent) {
         v-if="trend"
         :class="
           cn(
-            'ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums',
+            'nv-metric-chip ml-auto shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums',
             metricToneTint[deltaTone],
           )
         "
@@ -259,12 +260,12 @@ function showTargetTip(e: MouseEvent) {
     <!-- all other variants: vertical, shared header -->
     <template v-else>
       <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
+        <div class="min-w-0 flex-1">
           <p class="truncate text-sm text-muted-foreground">{{ label }}</p>
           <p
             :class="
               cn(
-                'mt-1.5 whitespace-nowrap text-2xl font-semibold tabular-nums tracking-tight',
+                'mt-1.5 truncate text-2xl font-semibold tabular-nums tracking-tight',
                 valueToneClass,
               )
             "
@@ -278,7 +279,12 @@ function showTargetTip(e: MouseEvent) {
 
         <span
           v-if="variant === 'alert' && status"
-          :class="cn('rounded-full px-2 py-0.5 text-xs font-semibold', metricToneTint[status.tone])"
+          :class="
+            cn(
+              'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
+              metricToneTint[status.tone],
+            )
+          "
         >
           {{ status.label }}
         </span>
@@ -292,7 +298,7 @@ function showTargetTip(e: MouseEvent) {
           v-else-if="trend"
           :class="
             cn(
-              'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums',
+              'nv-metric-chip shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums',
               metricToneTint[deltaTone],
             )
           "
@@ -452,7 +458,7 @@ function showTargetTip(e: MouseEvent) {
           v-if="footStart || action"
           class="mt-3 flex items-center justify-between gap-3 border-t border-border/60 pt-2.5 text-xs text-muted-foreground"
         >
-          <span class="min-w-0 truncate">{{ footStart }}</span>
+          <span class="line-clamp-2 min-w-0">{{ footStart }}</span>
           <a
             v-if="action?.href"
             :href="action.href"
@@ -519,6 +525,35 @@ function showTargetTip(e: MouseEvent) {
 
 <style scoped>
 @layer nv-components {
+  /* A KPI card can't know how wide its grid cell is, so it degrades on its own
+     container. Priority is label > value > delta chip: when the cell gets too
+     tight the *supplementary* chip yields first, then the icon — the identity
+     (label) and the number must never be the thing that disappears. */
+  .nv-metric {
+    container-type: inline-size;
+  }
+  /* `display` for these two is declared here rather than via a Tailwind utility
+     on purpose: utilities land in a layer that outranks nv-components, so a
+     `display: none` written here could never win against an `inline-flex`/`grid`
+     class. Owning the property outright keeps the container queries below
+     effective — they're later in the same layer, so they simply win. */
+  .nv-metric-chip {
+    display: inline-flex;
+  }
+  .nv-metric-iconbox {
+    display: grid;
+  }
+  @container (max-width: 208px) {
+    .nv-metric-chip {
+      display: none;
+    }
+  }
+  @container (max-width: 152px) {
+    .nv-metric-iconbox {
+      display: none;
+    }
+  }
+
   /* Same frosted readout surface the chart crosshair tooltips use (--nv-glass-*),
      so a metric's micro-viz and a full chart read as one system. */
   .nv-metric-tip {

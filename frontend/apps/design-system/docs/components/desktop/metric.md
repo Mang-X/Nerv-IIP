@@ -31,7 +31,7 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 `tone` 决定左侧图标位配色，`trend` 出右上环比 chip。
 
 <Demo>
-  <div class="grid w-full gap-4 sm:grid-cols-2 xl:grid-cols-4">
+  <div class="grid w-full gap-4 sm:grid-cols-2">
     <NvMetricCard variant="icon" tone="brand" :icon="WrenchIcon" label="在制工单" :value="38" :trend="{ value: '5', direction: 'up' }" />
     <NvMetricCard variant="icon" tone="success" :icon="CircleCheckIcon" label="一次合格率" value="98.6" unit="%" :trend="{ value: '0.4pt', direction: 'up' }" />
     <NvMetricCard variant="icon" tone="warning" :icon="ClockIcon" label="待派工" :value="9" :trend="{ value: '持平', direction: 'flat' }" />
@@ -268,7 +268,7 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 比率类主指标 + 构成因子并列：环里是结果，右侧是成因（OEE 的 A / P / Q、齐套率的各档）——主管一眼知道该去查哪个因子。悬浮环出完整构成 tooltip。
 
 <Demo>
-  <div class="grid w-full gap-4 sm:grid-cols-2 xl:grid-cols-3">
+  <div class="grid w-full gap-4 sm:grid-cols-2">
     <NvMetricRing
       label="OEE · 总装一线"
       value="82.4%"
