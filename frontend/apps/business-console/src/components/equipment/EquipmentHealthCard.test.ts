@@ -139,6 +139,38 @@ describe('EquipmentHealthCard', () => {
     expect(text).not.toContain('accumulating')
   })
 
+  it('keeps server-formatted values intact and presents units separately without duplication', () => {
+    const wrapper = mount(EquipmentHealthCard, {
+      props: { health: healthFixture(), pending: false },
+    })
+
+    const row = (name: string) => {
+      const article = wrapper
+        .findAll('article')
+        .find((candidate) => candidate.get('h3').text() === name)
+      expect(article).toBeDefined()
+      return article!
+    }
+
+    const alarm = row('近24小时报警频次')
+    expect(alarm.findAll('dd').map((cell) => cell.text())).toEqual([
+      '0个活动，24小时1次',
+      '任一活动或24小时≥3次',
+      '次',
+    ])
+
+    const trend = row('趋势恶化')
+    expect(trend.findAll('dd').map((cell) => cell.text())).toEqual(['8%', '20%', '%'])
+
+    const accumulating = row('持续超限')
+    expect(accumulating.findAll('dd').map((cell) => cell.text())).toEqual([
+      '3',
+      '≥6个/≥30分钟/超限≥80%',
+      '样本',
+    ])
+    expect(accumulating.text()).toContain('历史数据积累中')
+  })
+
   it.each([
     ['healthy', '健康'],
     ['watch', '关注'],

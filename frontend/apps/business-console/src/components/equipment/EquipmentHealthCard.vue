@@ -161,18 +161,18 @@ function statusFor(status: BusinessConsoleEquipmentHealthRuleStatus) {
             </NvBadge>
           </div>
 
-          <dl class="grid gap-2 text-xs sm:grid-cols-2">
+          <dl class="grid gap-2 text-xs sm:grid-cols-3">
             <div>
               <dt class="text-muted-foreground">当前值</dt>
-              <dd class="mt-0.5 font-medium text-foreground">
-                {{ evaluation.currentValue }} {{ evaluation.unit }}
-              </dd>
+              <dd class="mt-0.5 font-medium text-foreground">{{ evaluation.currentValue }}</dd>
             </div>
             <div>
               <dt class="text-muted-foreground">判定阈值</dt>
-              <dd class="mt-0.5 font-medium text-foreground">
-                {{ evaluation.threshold }} {{ evaluation.unit }}
-              </dd>
+              <dd class="mt-0.5 font-medium text-foreground">{{ evaluation.threshold }}</dd>
+            </div>
+            <div v-if="evaluation.unit">
+              <dt class="text-muted-foreground">单位</dt>
+              <dd class="mt-0.5 font-medium text-foreground">{{ evaluation.unit }}</dd>
             </div>
           </dl>
 
