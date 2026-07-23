@@ -2114,6 +2114,146 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Erp_work_center_cost_rate_facades_forward_authenticated_actor_scope_and_effective_query()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        var effectiveFromUtc = DateTimeOffset.Parse("2026-07-23T01:00:00Z", CultureInfo.InvariantCulture);
+        var atUtc = DateTimeOffset.Parse("2026-07-23T02:00:00Z", CultureInfo.InvariantCulture);
+
+        var configure = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/work-center-cost-rates",
+            new BusinessConsoleConfigureErpWorkCenterCostRateRequest(
+                "org-001",
+                "env-dev",
+                "WC-001",
+                2500m,
+                "CNY",
+                effectiveFromUtc,
+                null,
+                "leader demo governed rate"));
+        var list = await client.GetAsync(
+            "/api/business-console/v1/erp/finance/work-center-cost-rates"
+            + "?organizationId=org-001&environmentId=env-dev&workCenterId=WC-001"
+            + $"&atUtc={Uri.EscapeDataString(atUtc.ToString("O", CultureInfo.InvariantCulture))}");
+
+        Assert.Equal(HttpStatusCode.OK, configure.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal("user:user-admin", erp.LastConfigureWorkCenterCostRateActor);
+        Assert.NotNull(erp.LastConfigureWorkCenterCostRateRequest);
+        Assert.Equal("org-001", erp.LastConfigureWorkCenterCostRateRequest!.OrganizationId);
+        Assert.Equal("env-dev", erp.LastConfigureWorkCenterCostRateRequest.EnvironmentId);
+        Assert.Equal("WC-001", erp.LastConfigureWorkCenterCostRateRequest.WorkCenterId);
+        Assert.Equal(2500m, erp.LastConfigureWorkCenterCostRateRequest.HourlyRate);
+        Assert.Equal("CNY", erp.LastConfigureWorkCenterCostRateRequest.CurrencyCode);
+        Assert.Equal(effectiveFromUtc, erp.LastConfigureWorkCenterCostRateRequest.EffectiveFromUtc);
+        Assert.Equal("leader demo governed rate", erp.LastConfigureWorkCenterCostRateRequest.Reason);
+        Assert.Equal(new BusinessConsoleListErpWorkCenterCostRatesRequest("org-001", "env-dev", "WC-001", atUtc), erp.LastListWorkCenterCostRatesRequest);
+
+        using var configureDocument = JsonDocument.Parse(await configure.Content.ReadAsStringAsync());
+        Assert.Equal("018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9", configureDocument.RootElement.GetProperty("data").GetProperty("workCenterCostRateId").GetString());
+        using var listDocument = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        Assert.Equal("CNY", listDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("currencyCode").GetString());
+        Assert.Equal("user:user-admin", listDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("changedBy").GetString());
+    }
+
+    [Fact]
+    public async Task Erp_work_center_cost_rate_http_client_preserves_wire_shape_and_forwards_actor_header()
+    {
+        var requestCount = 0;
+        string? postedJson = null;
+        var handler = new RecordingHandler(request =>
+        {
+            requestCount++;
+            if (request.Method == HttpMethod.Post)
+            {
+                postedJson = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            }
+
+            return request.Method == HttpMethod.Post
+                ? JsonResponse(HttpStatusCode.OK, new
+                {
+                    data = new
+                    {
+                        workCenterCostRateId = new { id = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9" },
+                    },
+                    success = true,
+                    message = string.Empty,
+                    code = 0,
+                })
+                : JsonResponse(HttpStatusCode.OK, new
+                {
+                    data = new
+                    {
+                        organizationId = "org-001",
+                        environmentId = "env-dev",
+                        workCenterId = "WC-001",
+                        atUtc = "2026-07-23T02:00:00Z",
+                        currentEffectiveRevision = 1,
+                        items = new[]
+                        {
+                            new
+                            {
+                                workCenterCostRateId = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9",
+                                workCenterId = "WC-001",
+                                hourlyRate = 2500m,
+                                currencyCode = "CNY",
+                                effectiveFromUtc = "2026-07-23T01:00:00Z",
+                                effectiveToUtc = (string?)null,
+                                revision = 1,
+                                changedBy = "user:user-admin",
+                                reason = "leader demo governed rate",
+                                changedAtUtc = "2026-07-23T00:59:00Z",
+                                effectiveStatus = "effective",
+                                isEffectiveAtUtc = true,
+                                isCurrentEffectiveRevision = true,
+                            },
+                        },
+                    },
+                    success = true,
+                    message = string.Empty,
+                    code = 0,
+                });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.local") };
+        var subject = new HttpBusinessErpClient(httpClient);
+        var effectiveFromUtc = DateTimeOffset.Parse("2026-07-23T01:00:00Z", CultureInfo.InvariantCulture);
+        var atUtc = DateTimeOffset.Parse("2026-07-23T02:00:00Z", CultureInfo.InvariantCulture);
+        var request = new BusinessConsoleConfigureErpWorkCenterCostRateRequest(
+            "org-001", "env-dev", "WC-001", 2500m, "CNY", effectiveFromUtc, null, "leader demo governed rate");
+
+        var configured = await subject.ConfigureWorkCenterCostRateAsync(
+            "internal-test-token", request, "user:user-admin", CancellationToken.None);
+        var listed = await subject.ListWorkCenterCostRatesAsync(
+            "internal-test-token",
+            new BusinessConsoleListErpWorkCenterCostRatesRequest("org-001", "env-dev", "WC-001", atUtc),
+            CancellationToken.None);
+
+        Assert.Equal(2, requestCount);
+        Assert.Equal("018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9", configured.WorkCenterCostRateId);
+        Assert.Equal("CNY", listed.Items.Single().CurrencyCode);
+        Assert.Equal(HttpMethod.Post, handler.Requests[0].Method);
+        Assert.Equal("/api/business/v1/erp/finance/work-center-cost-rates", handler.Requests[0].RequestUri!.PathAndQuery);
+        Assert.Equal("user:user-admin", handler.Requests[0].Headers.GetValues("X-Authenticated-Actor").Single());
+        Assert.Equal("Bearer", handler.Requests[0].Headers.Authorization!.Scheme);
+        Assert.Equal("internal-test-token", handler.Requests[0].Headers.Authorization!.Parameter);
+        Assert.NotNull(postedJson);
+        Assert.DoesNotContain("actor", postedJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            "/api/business/v1/erp/finance/work-center-cost-rates?organizationId=org-001&environmentId=env-dev&workCenterId=WC-001&atUtc=2026-07-23T02%3A00%3A00.0000000%2B00%3A00",
+            handler.Requests[1].RequestUri!.PathAndQuery);
+    }
+
+    [Fact]
     public async Task Erp_procurement_purchase_requisition_list_uses_internal_service_token_for_downstream_business_service()
     {
         var erp = new RecordingErpClient();
@@ -8906,6 +9046,55 @@ internal sealed class RecordingErpClient : IBusinessErpClient
     public BusinessConsoleExecuteErpPaymentExecutionRequest? LastExecutePaymentExecutionRequest { get; private set; }
 
     public BusinessConsoleMatchErpCashReceiptRequest? LastMatchCashReceiptRequest { get; private set; }
+
+    public BusinessConsoleConfigureErpWorkCenterCostRateRequest? LastConfigureWorkCenterCostRateRequest { get; private set; }
+
+    public BusinessConsoleListErpWorkCenterCostRatesRequest? LastListWorkCenterCostRatesRequest { get; private set; }
+
+    public string? LastConfigureWorkCenterCostRateActor { get; private set; }
+
+    public Task<BusinessConsoleConfigureErpWorkCenterCostRateResponse> ConfigureWorkCenterCostRateAsync(
+        string internalBearerToken,
+        BusinessConsoleConfigureErpWorkCenterCostRateRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastConfigureWorkCenterCostRateRequest = request;
+        LastConfigureWorkCenterCostRateActor = actor;
+        return Task.FromResult(new BusinessConsoleConfigureErpWorkCenterCostRateResponse("018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9"));
+    }
+
+    public Task<BusinessConsoleErpWorkCenterCostRateListResponse> ListWorkCenterCostRatesAsync(
+        string internalBearerToken,
+        BusinessConsoleListErpWorkCenterCostRatesRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastListWorkCenterCostRatesRequest = request;
+        return Task.FromResult(new BusinessConsoleErpWorkCenterCostRateListResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkCenterId,
+            request.AtUtc ?? DateTimeOffset.Parse("2026-07-23T02:00:00Z", CultureInfo.InvariantCulture),
+            1,
+            [
+                new BusinessConsoleErpWorkCenterCostRateItem(
+                    "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9",
+                    request.WorkCenterId,
+                    2500m,
+                    "CNY",
+                    DateTimeOffset.Parse("2026-07-23T01:00:00Z", CultureInfo.InvariantCulture),
+                    null,
+                    1,
+                    "user:user-admin",
+                    "leader demo governed rate",
+                    DateTimeOffset.Parse("2026-07-23T00:59:00Z", CultureInfo.InvariantCulture),
+                    "effective",
+                    true,
+                    true),
+            ]));
+    }
 
     public Task<BusinessConsoleCreateErpPurchaseRequisitionResponse> CreatePurchaseRequisitionFromSuggestionAsync(
         string internalBearerToken,

@@ -2406,6 +2406,47 @@ public sealed record BusinessConsoleErpListRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record BusinessConsoleConfigureErpWorkCenterCostRateRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkCenterId,
+    decimal HourlyRate,
+    string CurrencyCode,
+    DateTimeOffset EffectiveFromUtc,
+    DateTimeOffset? EffectiveToUtc,
+    string Reason);
+
+public sealed record BusinessConsoleConfigureErpWorkCenterCostRateResponse(string WorkCenterCostRateId);
+
+public sealed record BusinessConsoleListErpWorkCenterCostRatesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkCenterId,
+    DateTimeOffset? AtUtc = null);
+
+public sealed record BusinessConsoleErpWorkCenterCostRateListResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkCenterId,
+    DateTimeOffset AtUtc,
+    int? CurrentEffectiveRevision,
+    IReadOnlyCollection<BusinessConsoleErpWorkCenterCostRateItem> Items);
+
+public sealed record BusinessConsoleErpWorkCenterCostRateItem(
+    string WorkCenterCostRateId,
+    string WorkCenterId,
+    decimal HourlyRate,
+    string CurrencyCode,
+    DateTimeOffset EffectiveFromUtc,
+    DateTimeOffset? EffectiveToUtc,
+    int Revision,
+    string ChangedBy,
+    string Reason,
+    DateTimeOffset ChangedAtUtc,
+    string EffectiveStatus,
+    bool IsEffectiveAtUtc,
+    bool IsCurrentEffectiveRevision);
+
 public sealed record BusinessConsoleErpSourceDocumentRequest(
     string OrganizationId,
     string EnvironmentId,

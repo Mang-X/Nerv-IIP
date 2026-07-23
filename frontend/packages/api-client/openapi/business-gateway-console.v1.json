@@ -21933,6 +21933,136 @@
         ]
       }
     },
+    "/api/business-console/v1/erp/finance/work-center-cost-rates": {
+      "post": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "configureBusinessConsoleErpWorkCenterCostRate",
+        "requestBody": {
+          "x-name": "BusinessConsoleConfigureErpWorkCenterCostRateRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterCostRateRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConfigureErpWorkCenterCostRateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleErpWorkCenterCostRates",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workCenterId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "atUtc",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkCenterCostRateListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/equipment/overview": {
       "get": {
         "tags": [
@@ -46510,6 +46640,196 @@
             "format": "date-time"
           }
         }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConfigureErpWorkCenterCostRateResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterCostRateResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterCostRateResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workCenterCostRateId": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterCostRateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "workCenterId",
+          "reason"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "environmentId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "workCenterId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "hourlyRate": {
+            "type": "number",
+            "format": "decimal",
+            "minimum": 0.0,
+            "exclusiveMinimum": true
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "effectiveFromUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "effectiveToUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 0,
+            "nullable": false
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkCenterCostRateListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterCostRateListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterCostRateListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "workCenterId": {
+            "type": "string"
+          },
+          "atUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "currentEffectiveRevision": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterCostRateItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterCostRateItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workCenterCostRateId": {
+            "type": "string"
+          },
+          "workCenterId": {
+            "type": "string"
+          },
+          "hourlyRate": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "effectiveFromUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "effectiveToUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "changedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "changedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "effectiveStatus": {
+            "type": "string"
+          },
+          "isEffectiveAtUtc": {
+            "type": "boolean"
+          },
+          "isCurrentEffectiveRevision": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListErpWorkCenterCostRatesRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentOverviewResponse": {
         "allOf": [

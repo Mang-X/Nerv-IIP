@@ -2321,3 +2321,21 @@ export type {
   NervIipContractsSchedulingOrderUrgencyExecutionRiskContract as BusinessConsoleOrderUrgencyExecutionRisk,
   NervIipContractsSchedulingOrderUrgencyExecutionRiskFactContract as BusinessConsoleOrderUrgencyExecutionRiskFact,
 } from './generated/business-console'
+
+// MAN-595 / #1070: governed ERP work-center cost-rate configuration and effective revision audit.
+export {
+  configureBusinessConsoleErpWorkCenterCostRate,
+  configureBusinessConsoleErpWorkCenterCostRateMutationOptions,
+  listBusinessConsoleErpWorkCenterCostRates,
+  listBusinessConsoleErpWorkCenterCostRatesQueryOptions,
+} from './generated/business-console'
+
+export type {
+  ConfigureBusinessConsoleErpWorkCenterCostRateData,
+  ListBusinessConsoleErpWorkCenterCostRatesData,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterCostRateRequest as BusinessConsoleConfigureErpWorkCenterCostRateRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterCostRateResponse as BusinessConsoleConfigureErpWorkCenterCostRateResponse,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterCostRateItem as BusinessConsoleErpWorkCenterCostRateItem,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterCostRateListResponse as BusinessConsoleErpWorkCenterCostRateListResponse,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListErpWorkCenterCostRatesRequest as BusinessConsoleListErpWorkCenterCostRatesRequest,
+} from './generated/business-console'

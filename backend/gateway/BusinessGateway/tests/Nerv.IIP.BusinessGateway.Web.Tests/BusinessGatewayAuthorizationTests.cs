@@ -853,6 +853,16 @@ public sealed class BusinessGatewayAuthorizationTests
             purchaseRequisitionNos = new[] { "PR-001", "PR-002" },
             purchaseOrderNo = "PO-REQ-001",
         },
+        "/api/business-console/v1/erp/finance/work-center-cost-rates" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workCenterId = "WC-001",
+            hourlyRate = 2500,
+            currencyCode = "CNY",
+            effectiveFromUtc = "2026-07-23T01:00:00Z",
+            reason = "governed rate",
+        },
         "/api/business-console/v1/wms/inbound-orders" => new
         {
             organizationId = "org-001",
@@ -1197,6 +1207,8 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/payables", BusinessGatewayPermissions.ErpFinanceManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/receivables", BusinessGatewayPermissions.ErpFinanceManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/cost-candidates", BusinessGatewayPermissions.ErpFinanceManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/work-center-cost-rates", BusinessGatewayPermissions.ErpFinanceManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/finance/work-center-cost-rates?workCenterId=WC-001", BusinessGatewayPermissions.ErpFinanceRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/vouchers", BusinessGatewayPermissions.ErpFinanceManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/finance/vouchers", BusinessGatewayPermissions.ErpFinanceRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/finance/summary", BusinessGatewayPermissions.ErpFinanceRead);

@@ -6119,6 +6119,58 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     createdAtUtc?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConfigureErpWorkCenterCostRateResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterCostRateResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterCostRateResponse = {
+    workCenterCostRateId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterCostRateRequest = {
+    organizationId: string;
+    environmentId: string;
+    workCenterId: string;
+    hourlyRate?: number;
+    currencyCode?: string;
+    effectiveFromUtc?: string;
+    effectiveToUtc?: string | null;
+    reason: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkCenterCostRateListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterCostRateListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterCostRateListResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    workCenterId?: string;
+    atUtc?: string;
+    currentEffectiveRevision?: number | null;
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterCostRateItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterCostRateItem = {
+    workCenterCostRateId?: string;
+    workCenterId?: string;
+    hourlyRate?: number;
+    currencyCode?: string;
+    effectiveFromUtc?: string;
+    effectiveToUtc?: string | null;
+    revision?: number;
+    changedBy?: string;
+    reason?: string;
+    changedAtUtc?: string;
+    effectiveStatus?: string;
+    isEffectiveAtUtc?: boolean;
+    isCurrentEffectiveRevision?: boolean;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListErpWorkCenterCostRatesRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentOverviewResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentOverviewResponse | null;
 };
@@ -16938,6 +16990,77 @@ export type GetBusinessConsoleErpCostCandidateBySourceDocumentResponses = {
 };
 
 export type GetBusinessConsoleErpCostCandidateBySourceDocumentResponse = GetBusinessConsoleErpCostCandidateBySourceDocumentResponses[keyof GetBusinessConsoleErpCostCandidateBySourceDocumentResponses];
+
+export type ListBusinessConsoleErpWorkCenterCostRatesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        workCenterId: string;
+        atUtc?: string | null;
+    };
+    url: '/api/business-console/v1/erp/finance/work-center-cost-rates';
+};
+
+export type ListBusinessConsoleErpWorkCenterCostRatesErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleErpWorkCenterCostRatesError = ListBusinessConsoleErpWorkCenterCostRatesErrors[keyof ListBusinessConsoleErpWorkCenterCostRatesErrors];
+
+export type ListBusinessConsoleErpWorkCenterCostRatesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkCenterCostRateListResponse;
+};
+
+export type ListBusinessConsoleErpWorkCenterCostRatesResponse = ListBusinessConsoleErpWorkCenterCostRatesResponses[keyof ListBusinessConsoleErpWorkCenterCostRatesResponses];
+
+export type ConfigureBusinessConsoleErpWorkCenterCostRateData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterCostRateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/erp/finance/work-center-cost-rates';
+};
+
+export type ConfigureBusinessConsoleErpWorkCenterCostRateErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ConfigureBusinessConsoleErpWorkCenterCostRateError = ConfigureBusinessConsoleErpWorkCenterCostRateErrors[keyof ConfigureBusinessConsoleErpWorkCenterCostRateErrors];
+
+export type ConfigureBusinessConsoleErpWorkCenterCostRateResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConfigureErpWorkCenterCostRateResponse;
+};
+
+export type ConfigureBusinessConsoleErpWorkCenterCostRateResponse = ConfigureBusinessConsoleErpWorkCenterCostRateResponses[keyof ConfigureBusinessConsoleErpWorkCenterCostRateResponses];
 
 export type GetBusinessConsoleEquipmentOverviewData = {
     body?: never;

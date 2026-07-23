@@ -831,6 +831,17 @@ public interface IBusinessErpClient
         BusinessConsoleErpListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleConfigureErpWorkCenterCostRateResponse> ConfigureWorkCenterCostRateAsync(
+        string internalBearerToken,
+        BusinessConsoleConfigureErpWorkCenterCostRateRequest request,
+        string actor,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleErpWorkCenterCostRateListResponse> ListWorkCenterCostRatesAsync(
+        string internalBearerToken,
+        BusinessConsoleListErpWorkCenterCostRatesRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleErpJournalVoucherListResponse> ListJournalVouchersAsync(
         string internalBearerToken,
         BusinessConsoleErpListRequest request,
@@ -5870,6 +5881,47 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public async Task<BusinessConsoleConfigureErpWorkCenterCostRateResponse> ConfigureWorkCenterCostRateAsync(
+        string internalBearerToken,
+        BusinessConsoleConfigureErpWorkCenterCostRateRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamConfigureWorkCenterCostRateResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/erp/finance/work-center-cost-rates",
+            request,
+            cancellationToken,
+            configureRequest: message =>
+                message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor));
+
+        if (response.WorkCenterCostRateId.Id == Guid.Empty)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return new BusinessConsoleConfigureErpWorkCenterCostRateResponse(
+            response.WorkCenterCostRateId.Id.ToString());
+    }
+
+    public Task<BusinessConsoleErpWorkCenterCostRateListResponse> ListWorkCenterCostRatesAsync(
+        string internalBearerToken,
+        BusinessConsoleListErpWorkCenterCostRatesRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpWorkCenterCostRateListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/finance/work-center-cost-rates?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("workCenterId", request.WorkCenterId),
+                ("atUtc", request.AtUtc)),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleErpJournalVoucherListResponse> ListJournalVouchersAsync(
         string internalBearerToken,
         BusinessConsoleErpListRequest request,
@@ -6204,6 +6256,11 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             ("take", request.Take));
 
     private sealed record DownstreamPurchaseOrderListResponse(IReadOnlyCollection<DownstreamPurchaseOrderItem> Items, int Total);
+
+    private sealed record DownstreamConfigureWorkCenterCostRateResponse(
+        DownstreamWorkCenterCostRateId WorkCenterCostRateId);
+
+    private sealed record DownstreamWorkCenterCostRateId(Guid Id);
 
     private sealed record DownstreamPurchaseOrderItem(
         string PurchaseOrderNo,

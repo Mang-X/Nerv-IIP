@@ -228,6 +228,8 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/receivables", "get", "listBusinessConsoleErpReceivables");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/cost-candidates", "post", "createBusinessConsoleErpCostCandidate");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/cost-candidates", "get", "listBusinessConsoleErpCostCandidates");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-cost-rates", "post", "configureBusinessConsoleErpWorkCenterCostRate");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-cost-rates", "get", "listBusinessConsoleErpWorkCenterCostRates");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/vouchers", "post", "postBusinessConsoleErpJournalVoucher");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/payment-executions", "post", "approveBusinessConsoleErpPaymentExecution");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/payment-executions/{paymentExecutionNo}/execute", "post", "executeBusinessConsoleErpPaymentExecution");

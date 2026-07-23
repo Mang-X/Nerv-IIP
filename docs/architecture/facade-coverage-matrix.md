@@ -92,7 +92,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Approval | 16 | 11 | 4 | 1 |
 | BarcodeLabel | 12 | 9 | 0 | 3 |
 | DemandPlanning | 15 | 15 | 0 | 0 |
-| Erp | 51 | 39 | 11 | 1 |
+| Erp | 53 | 41 | 11 | 1 |
 | IndustrialTelemetry | 26 | 23 | 1 | 2 |
 | Inventory | 13 | 6 | 2 | 5 |
 | Maintenance | 21 | 16 | 5 | 0 |
