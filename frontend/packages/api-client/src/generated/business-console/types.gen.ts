@@ -1340,6 +1340,58 @@ export type NervIipContractsSchedulingSchedulingLockedAssignmentContract = {
     lockReasonCode?: string;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulingWorkbenchPlanRequest = {
+    organizationId: string;
+    environmentId: string;
+    horizonStartUtc?: string;
+    horizonEndUtc?: string;
+    orders: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingWorkbenchOrderSelection>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingWorkbenchOrderSelection = {
+    workOrderId?: string;
+    priority?: number;
+    isRush?: boolean;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfSchedulePlanRevisionContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulePlanRevisionContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulePlanRevisionContract = {
+    candidate?: NervIipContractsSchedulingSchedulePlanContract;
+    impact?: NervIipContractsSchedulingSchedulePlanImpactContract;
+    comparison?: NervIipContractsSchedulingSchedulePlanComparisonContract;
+};
+
+export type NervIipContractsSchedulingSchedulePlanImpactContract = {
+    isInvalidated?: boolean;
+    reasonCode?: string | null;
+    sourceEventType?: string | null;
+    sourceEventId?: string | null;
+    occurredAtUtc?: string | null;
+    affectedResourceIds?: Array<string>;
+    affectedWorkOrderIds?: Array<string>;
+    affectedOperationIds?: Array<string>;
+};
+
+export type NervIipContractsSchedulingSchedulePlanComparisonContract = {
+    basePlanId?: string;
+    candidatePlanId?: string;
+    baseMetrics?: NervIipContractsSchedulingSchedulePlanMetricsContract;
+    candidateMetrics?: NervIipContractsSchedulingSchedulePlanMetricsContract;
+    movedOperationCount?: number;
+    lockedOperationCount?: number;
+    unscheduledOperationCount?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulePlanRevisionRequest = {
+    organizationId: string;
+    environmentId: string;
+    includedOrderIds: Array<string>;
+    lockedAssignments?: Array<NervIipContractsSchedulingSchedulingLockedAssignmentContract>;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleSchedulePlanSummaryResponse = NetCorePalExtensionsDtoResponseData & {
     data?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse> | null;
 };
@@ -8315,6 +8367,74 @@ export type CreateBusinessConsoleSchedulingPlanResponses = {
 };
 
 export type CreateBusinessConsoleSchedulingPlanResponse = CreateBusinessConsoleSchedulingPlanResponses[keyof CreateBusinessConsoleSchedulingPlanResponses];
+
+export type CreateBusinessConsoleSchedulingWorkbenchPlanData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulingWorkbenchPlanRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/scheduling/workbench/plans';
+};
+
+export type CreateBusinessConsoleSchedulingWorkbenchPlanErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleSchedulingWorkbenchPlanError = CreateBusinessConsoleSchedulingWorkbenchPlanErrors[keyof CreateBusinessConsoleSchedulingWorkbenchPlanErrors];
+
+export type CreateBusinessConsoleSchedulingWorkbenchPlanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract;
+};
+
+export type CreateBusinessConsoleSchedulingWorkbenchPlanResponse = CreateBusinessConsoleSchedulingWorkbenchPlanResponses[keyof CreateBusinessConsoleSchedulingWorkbenchPlanResponses];
+
+export type CreateBusinessConsoleSchedulingPlanRevisionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulePlanRevisionRequest;
+    path: {
+        planId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/scheduling/plans/{planId}/revisions';
+};
+
+export type CreateBusinessConsoleSchedulingPlanRevisionErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleSchedulingPlanRevisionError = CreateBusinessConsoleSchedulingPlanRevisionErrors[keyof CreateBusinessConsoleSchedulingPlanRevisionErrors];
+
+export type CreateBusinessConsoleSchedulingPlanRevisionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulePlanRevisionContract;
+};
+
+export type CreateBusinessConsoleSchedulingPlanRevisionResponse = CreateBusinessConsoleSchedulingPlanRevisionResponses[keyof CreateBusinessConsoleSchedulingPlanRevisionResponses];
 
 export type GetBusinessConsoleSchedulingPlanData = {
     body?: never;

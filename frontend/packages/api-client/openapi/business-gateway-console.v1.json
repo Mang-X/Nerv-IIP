@@ -3577,6 +3577,126 @@
         ]
       }
     },
+    "/api/business-console/v1/scheduling/workbench/plans": {
+      "post": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "createBusinessConsoleSchedulingWorkbenchPlan",
+        "requestBody": {
+          "x-name": "BusinessConsoleCreateSchedulingWorkbenchPlanRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulingWorkbenchPlanRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/scheduling/plans/{planId}/revisions": {
+      "post": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "createBusinessConsoleSchedulingPlanRevision",
+        "parameters": [
+          {
+            "name": "planId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleCreateSchedulePlanRevisionRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulePlanRevisionRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfSchedulePlanRevisionContract"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/scheduling/plans/{planId}": {
       "get": {
         "tags": [
@@ -28686,6 +28806,208 @@
           },
           "lockReasonCode": {
             "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulingWorkbenchPlanRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "orders"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 0,
+            "nullable": false
+          },
+          "environmentId": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 0,
+            "nullable": false
+          },
+          "horizonStartUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "horizonEndUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "orders": {
+            "type": "array",
+            "minLength": 1,
+            "nullable": false,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingWorkbenchOrderSelection"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingWorkbenchOrderSelection": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workOrderId": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "isRush": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfSchedulePlanRevisionContract": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanRevisionContract"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsSchedulingSchedulePlanRevisionContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanContract"
+          },
+          "impact": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanImpactContract"
+          },
+          "comparison": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanComparisonContract"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanImpactContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "isInvalidated": {
+            "type": "boolean"
+          },
+          "reasonCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceEventType": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceEventId": {
+            "type": "string",
+            "nullable": true
+          },
+          "occurredAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "affectedResourceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "affectedWorkOrderIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "affectedOperationIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanComparisonContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "basePlanId": {
+            "type": "string"
+          },
+          "candidatePlanId": {
+            "type": "string"
+          },
+          "baseMetrics": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanMetricsContract"
+          },
+          "candidateMetrics": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanMetricsContract"
+          },
+          "movedOperationCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lockedOperationCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unscheduledOperationCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulePlanRevisionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "includedOrderIds"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 0,
+            "nullable": false
+          },
+          "environmentId": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 0,
+            "nullable": false
+          },
+          "includedOrderIds": {
+            "type": "array",
+            "minLength": 1,
+            "nullable": false,
+            "items": {
+              "type": "string"
+            }
+          },
+          "lockedAssignments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingLockedAssignmentContract"
+            }
           }
         }
       },

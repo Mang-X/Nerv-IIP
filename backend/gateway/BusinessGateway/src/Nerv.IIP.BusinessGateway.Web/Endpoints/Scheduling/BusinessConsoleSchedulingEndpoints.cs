@@ -82,6 +82,48 @@ public sealed class CreateBusinessConsoleSchedulingPlanEndpoint(
 }
 
 [Tags("Business Console Scheduling")]
+[HttpPost("/api/business-console/v1/scheduling/workbench/plans")]
+[BusinessGatewayOperationId("createBusinessConsoleSchedulingWorkbenchPlan")]
+public sealed class CreateBusinessConsoleSchedulingWorkbenchPlanEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessSchedulingClient scheduling,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessSchedulingProxyEndpoint<BusinessConsoleCreateSchedulingWorkbenchPlanRequest, SchedulePlanContract>(
+        auth,
+        BusinessGatewayPermissions.SchedulingPlansManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateSchedulingWorkbenchPlanRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleCreateSchedulingWorkbenchPlanRequest request) => request.EnvironmentId;
+    protected override Task<SchedulePlanContract> ForwardAsync(
+        BusinessConsoleCreateSchedulingWorkbenchPlanRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        scheduling.CreateWorkbenchPlanAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Scheduling")]
+[HttpPost("/api/business-console/v1/scheduling/plans/{planId}/revisions")]
+[BusinessGatewayOperationId("createBusinessConsoleSchedulingPlanRevision")]
+public sealed class CreateBusinessConsoleSchedulingPlanRevisionEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessSchedulingClient scheduling,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessSchedulingProxyEndpoint<BusinessConsoleCreateSchedulePlanRevisionRequest, SchedulePlanRevisionContract>(
+        auth,
+        BusinessGatewayPermissions.SchedulingPlansManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateSchedulePlanRevisionRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleCreateSchedulePlanRevisionRequest request) => request.EnvironmentId;
+    protected override string ResourceType(BusinessConsoleCreateSchedulePlanRevisionRequest request) => "scheduling-plan";
+    protected override string? ResourceId(BusinessConsoleCreateSchedulePlanRevisionRequest request) => request.PlanId;
+    protected override Task<SchedulePlanRevisionContract> ForwardAsync(
+        BusinessConsoleCreateSchedulePlanRevisionRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        scheduling.CreatePlanRevisionAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Scheduling")]
 [HttpGet("/api/business-console/v1/scheduling/plans")]
 [BusinessGatewayOperationId("listBusinessConsoleSchedulingPlans")]
 public sealed class ListBusinessConsoleSchedulingPlansEndpoint(
@@ -308,6 +350,33 @@ public sealed class BusinessConsoleSchedulingContextRequestValidator : Validator
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.PageIndex).GreaterThanOrEqualTo(0).When(x => x.PageIndex.HasValue);
         RuleFor(x => x.PageSize).InclusiveBetween(1, 100).When(x => x.PageSize.HasValue);
+    }
+}
+
+public sealed class BusinessConsoleCreateSchedulingWorkbenchPlanRequestValidator
+    : Validator<BusinessConsoleCreateSchedulingWorkbenchPlanRequest>
+{
+    public BusinessConsoleCreateSchedulingWorkbenchPlanRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.HorizonEndUtc).GreaterThan(x => x.HorizonStartUtc);
+        RuleFor(x => x.Orders).NotEmpty().Must(x => x.Count <= 500);
+        RuleForEach(x => x.Orders).ChildRules(order => order.RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(128));
+    }
+}
+
+public sealed class BusinessConsoleCreateSchedulePlanRevisionRequestValidator
+    : Validator<BusinessConsoleCreateSchedulePlanRevisionRequest>
+{
+    public BusinessConsoleCreateSchedulePlanRevisionRequestValidator()
+    {
+        RuleFor(x => x.PlanId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.IncludedOrderIds).NotEmpty().Must(x => x.Count <= 500);
+        RuleForEach(x => x.LockedAssignments).ChildRules(assignment =>
+            assignment.RuleFor(x => x.EndUtc).GreaterThan(x => x.StartUtc));
     }
 }
 

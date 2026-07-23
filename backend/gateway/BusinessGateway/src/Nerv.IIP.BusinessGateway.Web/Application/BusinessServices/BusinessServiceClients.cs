@@ -679,6 +679,18 @@ public interface IBusinessPlanningClient
 
 public interface IBusinessSchedulingClient
 {
+    Task<SchedulePlanContract> CreateWorkbenchPlanAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSchedulingWorkbenchPlanRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromException<SchedulePlanContract>(new NotSupportedException());
+
+    Task<SchedulePlanRevisionContract> CreatePlanRevisionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSchedulePlanRevisionRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromException<SchedulePlanRevisionContract>(new NotSupportedException());
+
     Task<SchedulePlanContract> PreviewPlanAsync(
         string internalBearerToken,
         SchedulingProblemContract problem,
@@ -4426,6 +4438,30 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
 public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessSchedulingClient
 {
+    public Task<SchedulePlanContract> CreateWorkbenchPlanAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSchedulingWorkbenchPlanRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<SchedulePlanContract>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/scheduling/workbench/plans",
+            request,
+            cancellationToken,
+            SchedulingJson.Options);
+
+    public Task<SchedulePlanRevisionContract> CreatePlanRevisionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSchedulePlanRevisionRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<SchedulePlanRevisionContract>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/revisions",
+            request,
+            cancellationToken,
+            SchedulingJson.Options);
+
     public Task<SchedulePlanContract> PreviewPlanAsync(
         string internalBearerToken,
         SchedulingProblemContract problem,

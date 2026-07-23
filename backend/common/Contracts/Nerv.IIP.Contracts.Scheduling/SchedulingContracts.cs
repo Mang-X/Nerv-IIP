@@ -122,6 +122,30 @@ public sealed record SchedulePlanContract(
     IReadOnlyCollection<ScheduleChangeContract> ChangeSummary,
     IReadOnlyCollection<GanttScheduleItemContract> GanttItems);
 
+public sealed record SchedulePlanImpactContract(
+    bool IsInvalidated,
+    string? ReasonCode,
+    string? SourceEventType,
+    string? SourceEventId,
+    DateTimeOffset? OccurredAtUtc,
+    IReadOnlyCollection<string> AffectedResourceIds,
+    IReadOnlyCollection<string> AffectedWorkOrderIds,
+    IReadOnlyCollection<string> AffectedOperationIds);
+
+public sealed record SchedulePlanComparisonContract(
+    string BasePlanId,
+    string CandidatePlanId,
+    SchedulePlanMetricsContract BaseMetrics,
+    SchedulePlanMetricsContract CandidateMetrics,
+    int MovedOperationCount,
+    int LockedOperationCount,
+    int UnscheduledOperationCount);
+
+public sealed record SchedulePlanRevisionContract(
+    SchedulePlanContract Candidate,
+    SchedulePlanImpactContract Impact,
+    SchedulePlanComparisonContract Comparison);
+
 public sealed record SchedulePlanMetricsContract(
     int ScheduledOperationCount,
     int UnscheduledOperationCount,

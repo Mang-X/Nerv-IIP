@@ -41,6 +41,20 @@ public sealed record PreviewSchedulePlanRequest(SchedulingProblemContract Proble
 
 public sealed record CreateSchedulePlanRequest(SchedulingProblemContract Problem);
 
+public sealed record CreateSchedulingWorkbenchPlanRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset HorizonStartUtc,
+    DateTimeOffset HorizonEndUtc,
+    IReadOnlyCollection<SchedulingWorkbenchOrderSelection> Orders);
+
+public sealed record CreateSchedulePlanRevisionRequest(
+    [property: RouteParam] string PlanId,
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<string> IncludedOrderIds,
+    IReadOnlyCollection<SchedulingLockedAssignmentContract> LockedAssignments);
+
 public sealed record ListSchedulePlansRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -126,6 +140,42 @@ public sealed class CreateSchedulePlanEndpoint(ISender sender)
     public override async Task HandleAsync(CreateSchedulePlanRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new CreateSchedulePlanCommand(req.Problem), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CreateSchedulingWorkbenchPlanEndpoint(ISender sender)
+    : SchedulingEndpoint<CreateSchedulingWorkbenchPlanRequest, ResponseData<SchedulePlanContract>>
+{
+    public override void Configure() =>
+        ConfigureSchedulingContract(SchedulingEndpointContracts.Get<CreateSchedulingWorkbenchPlanEndpoint>());
+
+    public override async Task HandleAsync(CreateSchedulingWorkbenchPlanRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new CreateSchedulingWorkbenchPlanCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.HorizonStartUtc,
+            req.HorizonEndUtc,
+            req.Orders), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CreateSchedulePlanRevisionEndpoint(ISender sender)
+    : SchedulingEndpoint<CreateSchedulePlanRevisionRequest, ResponseData<SchedulePlanRevisionContract>>
+{
+    public override void Configure() =>
+        ConfigureSchedulingContract(SchedulingEndpointContracts.Get<CreateSchedulePlanRevisionEndpoint>());
+
+    public override async Task HandleAsync(CreateSchedulePlanRevisionRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new CreateSchedulePlanRevisionCommand(
+            req.PlanId,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.IncludedOrderIds,
+            req.LockedAssignments), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -323,6 +373,30 @@ public sealed class ListSchedulePlansRequestValidator : Validator<ListSchedulePl
     }
 }
 
+public sealed class CreateSchedulingWorkbenchPlanRequestValidator : Validator<CreateSchedulingWorkbenchPlanRequest>
+{
+    public CreateSchedulingWorkbenchPlanRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.HorizonEndUtc).GreaterThan(x => x.HorizonStartUtc);
+        RuleFor(x => x.Orders).NotEmpty().Must(x => x.Count <= HttpSchedulingWorkbenchSourceProvider.MaxOrderCount);
+    }
+}
+
+public sealed class CreateSchedulePlanRevisionRequestValidator : Validator<CreateSchedulePlanRevisionRequest>
+{
+    public CreateSchedulePlanRevisionRequestValidator()
+    {
+        RuleFor(x => x.PlanId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.IncludedOrderIds).NotEmpty().Must(x => x.Count <= HttpSchedulingWorkbenchSourceProvider.MaxOrderCount);
+        RuleForEach(x => x.LockedAssignments).ChildRules(assignment =>
+            assignment.RuleFor(x => x.EndUtc).GreaterThan(x => x.StartUtc));
+    }
+}
+
 public sealed class GetSchedulePlanRequestValidator : Validator<GetSchedulePlanRequest>
 {
     public GetSchedulePlanRequestValidator()
@@ -434,6 +508,8 @@ public static class SchedulingEndpointContracts
     [
         new(typeof(PreviewSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/preview", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "previewSchedulingPlan"),
         new(typeof(CreateSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createSchedulingPlan"),
+        new(typeof(CreateSchedulingWorkbenchPlanEndpoint), "POST", "/api/business/v1/scheduling/workbench/plans", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createSchedulingWorkbenchPlan"),
+        new(typeof(CreateSchedulePlanRevisionEndpoint), "POST", "/api/business/v1/scheduling/plans/{planId}/revisions", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createSchedulingPlanRevision"),
         new(typeof(AssembleSchedulingProblemEndpoint), "POST", "/api/business/v1/scheduling/problems/assemble", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "assembleSchedulingProblem"),
         new(typeof(ListSchedulePlansEndpoint), "GET", "/api/business/v1/scheduling/plans", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listSchedulingPlans"),
         new(typeof(GetSchedulePlanEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingPlan"),

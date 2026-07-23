@@ -287,6 +287,14 @@ public interface ISchedulingProblemProductEngineeringClient
         string environmentId,
         string routingVersionId,
         CancellationToken cancellationToken);
+
+    Task<SchedulingProblemProductionVersionSnapshot> GetProductionVersionRoutingAsync(
+        string organizationId,
+        string environmentId,
+        string productionVersionId,
+        CancellationToken cancellationToken) =>
+        Task.FromException<SchedulingProblemProductionVersionSnapshot>(
+            new NotSupportedException("Production-version routing lookup is not configured."));
 }
 
 public interface ISchedulingProblemMasterDataClient
@@ -324,6 +332,11 @@ public sealed record SchedulingProblemRoutingSnapshot(
     string SkuCode,
     IReadOnlyCollection<SchedulingProblemRoutingOperationSnapshot> Operations);
 
+public sealed record SchedulingProblemProductionVersionSnapshot(
+    string ProductionVersionId,
+    string SkuCode,
+    string RoutingVersionId);
+
 public sealed record SchedulingProblemRoutingOperationSnapshot(
     int Sequence,
     string WorkCenterCode,
@@ -357,6 +370,19 @@ public sealed class HttpSchedulingProblemProductEngineeringClient(
     HttpClient httpClient,
     IInternalServiceTokenProvider? internalTokenProvider = null) : ISchedulingProblemProductEngineeringClient
 {
+    public async Task<SchedulingProblemProductionVersionSnapshot> GetProductionVersionRoutingAsync(
+        string organizationId,
+        string environmentId,
+        string productionVersionId,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<ProductEngineeringProductionVersionRoutingResponse>(
+            $"/api/business/v1/engineering/production-versions/{Uri.EscapeDataString(productionVersionId)}/routing-snapshot?" +
+            SchedulingProblemHttp.Query(("organizationId", organizationId), ("environmentId", environmentId)),
+            cancellationToken);
+        return new(response.ProductionVersionId, response.SkuCode, response.RoutingVersionId);
+    }
+
     public async Task<SchedulingProblemRoutingSnapshot> GetRoutingAsync(
         string organizationId,
         string environmentId,
@@ -418,6 +444,11 @@ public sealed class HttpSchedulingProblemProductEngineeringClient(
         string Status,
         DateOnly? EffectiveDate,
         IReadOnlyCollection<ProductEngineeringRoutingOperationResponse> Operations);
+
+    private sealed record ProductEngineeringProductionVersionRoutingResponse(
+        string ProductionVersionId,
+        string SkuCode,
+        string RoutingVersionId);
 
     private sealed record ProductEngineeringRoutingOperationResponse(
         int Sequence,
