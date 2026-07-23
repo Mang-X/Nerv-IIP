@@ -38,7 +38,7 @@ function metaToneClass(tone?: string) {
       <p
         :class="
           cn(
-            'text-xl font-semibold tabular-nums tracking-tight',
+            'whitespace-nowrap text-xl font-semibold tabular-nums tracking-tight',
             cell.valueTone ? metricToneText[cell.valueTone] : '',
           )
         "

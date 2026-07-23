@@ -234,7 +234,9 @@ function showTargetTip(e: MouseEvent) {
       </span>
       <div class="flex min-w-0 flex-col gap-0.5">
         <p class="truncate text-sm text-muted-foreground">{{ label }}</p>
-        <p class="text-[22px] font-semibold leading-tight tabular-nums tracking-tight">
+        <p
+          class="whitespace-nowrap text-[22px] font-semibold leading-tight tabular-nums tracking-tight"
+        >
           {{ value
           }}<span v-if="unit" class="ml-0.5 text-sm font-medium text-muted-foreground">{{
             unit
@@ -260,7 +262,12 @@ function showTargetTip(e: MouseEvent) {
         <div class="min-w-0">
           <p class="truncate text-sm text-muted-foreground">{{ label }}</p>
           <p
-            :class="cn('mt-1.5 text-2xl font-semibold tabular-nums tracking-tight', valueToneClass)"
+            :class="
+              cn(
+                'mt-1.5 whitespace-nowrap text-2xl font-semibold tabular-nums tracking-tight',
+                valueToneClass,
+              )
+            "
           >
             {{ value
             }}<span v-if="unit" class="ml-0.5 text-sm font-medium text-muted-foreground">{{

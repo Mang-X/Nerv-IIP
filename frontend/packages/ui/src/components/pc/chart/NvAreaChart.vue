@@ -33,6 +33,21 @@ const y = (d: ChartPoint) => d.value
 const xTickFormat = (i: number) => props.data[i]?.label ?? ''
 const tooltipTemplate = (d: ChartPoint) =>
   `<div class="nv-vis-tt"><span>${escapeHtml(d.label)}</span><b>${escapeHtml(d.value)}${escapeHtml(props.valueSuffix)}</b></div>`
+/**
+ * Sparklines scale to the series' own range. A zero-based axis squashes a
+ * 1052→1284 trend into a near-flat line sitting on a solid block of fill —
+ * the shape, which is the entire reason the sparkline is there, disappears.
+ * Full-size charts keep unovis' default domain, where zero-based is honest.
+ */
+const yDomain = computed<[number, number] | undefined>(() => {
+  if (!props.minimal || props.data.length < 2) return undefined
+  const values = props.data.map((d) => d.value)
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  if (min === max) return undefined
+  const pad = (max - min) * 0.18
+  return [min - pad, max + pad]
+})
 const chartMargin = computed(() =>
   props.minimal
     ? { top: 4, right: 2, bottom: 2, left: 2 }
@@ -42,7 +57,7 @@ const chartMargin = computed(() =>
 
 <template>
   <div :class="cn('nv-chart w-full', props.class)">
-    <VisXYContainer :data="data" :height="height" :margin="chartMargin">
+    <VisXYContainer :data="data" :height="height" :margin="chartMargin" :y-domain="yDomain">
       <VisArea :x="x" :y="y" color="var(--nv-brand)" :opacity="0.13" />
       <VisLine :x="x" :y="y" color="var(--nv-brand)" :line-width="2" />
       <VisAxis
