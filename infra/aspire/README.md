@@ -183,6 +183,8 @@ production log retention or audit backend.
 
 The same MinIO root user and password are passed to FileStorage as the local MinIO access key and secret key. If a future local profile provisions a separate MinIO service account, update both the AppHost parameter wiring and this document together.
 
+FileStorage metadata is not stored in MinIO or Redis. The AppHost provisions the independent `file-storage-db` PostgreSQL resource (`nerv_iip_filestorage`), injects it as `ConnectionStrings__FileStorageDb`, selects `Persistence__Provider=PostgreSQL`, and waits for that database before starting FileStorage. FileStorage follows the AppHost environment instead of the local-development compatibility override used by older resources: local Development enables Web-host auto-migration, while Aspire production publish emits `ASPNETCORE_ENVIRONMENT=Production`, `DOTNET_ENVIRONMENT=Production`, and `Persistence__AutoMigrate=false`. PoC and production operators apply migrations first through `scripts/install/migrate-file-storage.ps1` with `NERV_IIP_FILE_STORAGE_DB` supplied from the current process or secret manager.
+
 These values are for local development only. Do not commit real credentials to `appsettings*.json`, source files or documentation examples.
 
 ## Runtime image versions
