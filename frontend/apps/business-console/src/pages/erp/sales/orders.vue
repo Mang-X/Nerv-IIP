@@ -4,7 +4,13 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useErpSalesOrders } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
+import {
+  DEFAULT_URGENCY_DISPLAY_MODE,
+  orderRowsByUrgency,
+  type UrgencyDisplayMode,
+} from '@/composables/useUrgencyDisplayMode'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
+import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import FulfillmentTimelineSheet from '@/components/fulfillment/FulfillmentTimelineSheet.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -43,6 +49,19 @@ const orders = useErpSalesOrders()
 const orderUrgencies = useOrderUrgencies(
   computed(() => orders.salesOrders.value.map((order) => order.salesOrderNo)),
 )
+const displayMode = shallowRef<UrgencyDisplayMode>(DEFAULT_URGENCY_DISPLAY_MODE)
+// 排序独立于显示模式：默认按统一紧急度排序（等级→CR→预计延迟→due→等待）。
+const orderedSalesOrders = computed(() =>
+  orderRowsByUrgency(
+    orders.salesOrders.value,
+    (order) => order.salesOrderNo,
+    orderUrgencies.byReference.value,
+  ),
+)
+function refreshUrgency() {
+  void orderUrgencies.refresh()
+  orders.refreshSalesOrders()
+}
 const route = useRoute()
 const { page, pageSize } = usePagedList(orders.filters, { resetOn: [() => orders.filters.keyword] })
 
@@ -165,6 +184,9 @@ async function submit() {
           aria-label="销售订单关键字"
         />
       </template>
+      <template #actions>
+        <UrgencyDisplayModeSelect v-model="displayMode" />
+      </template>
     </NvToolbar>
 
     <NvDataTable
@@ -173,7 +195,7 @@ async function submit() {
       :page-size="pageSize"
       :total-items="orders.salesOrdersTotal.value"
       :columns="columns"
-      :rows="orders.salesOrders.value"
+      :rows="orderedSalesOrders"
       :row-key="(r: BusinessConsoleErpSalesOrderItem) => r.salesOrderNo ?? '销售订单'"
       :loading="orders.salesOrdersPending.value"
       :searchable="false"
@@ -186,9 +208,11 @@ async function submit() {
       <template #cell-urgency="{ row }">
         <OrderUrgencyBadge
           :order-reference="row.salesOrderNo ?? ''"
+          :mode="displayMode"
           :urgency="
             row.salesOrderNo ? orderUrgencies.byReference.value.get(row.salesOrderNo) : undefined
           "
+          @refresh="refreshUrgency"
         />
       </template>
       <template #cell-totalAmount="{ row }"
