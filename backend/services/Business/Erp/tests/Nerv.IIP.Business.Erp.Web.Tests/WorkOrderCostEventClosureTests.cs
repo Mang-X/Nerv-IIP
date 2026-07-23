@@ -15,6 +15,59 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 public sealed class WorkOrderCostEventClosureTests
 {
     [Fact]
+    public async Task Completion_before_report_waits_then_dispatches_after_cost_arrives()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"erp-cost-out-of-order-{Guid.CreateVersion7():N}")
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
+        var occurredAtUtc = DateTimeOffset.Parse("2026-07-23T07:45:55Z");
+
+        await using (var seed = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            seed.WorkCenterCostRates.Add(WorkCenterCostRate.Define(
+                "org-001", "env-dev", "WC-01", 50m, "CNY",
+                DateTimeOffset.Parse("2026-01-01T00:00:00Z"), null, 1,
+                "system:test", "test baseline rate", DateTimeOffset.Parse("2026-01-01T00:00:00Z")));
+            await seed.SaveChangesAsync();
+        }
+
+        var completionMediator = new RecordingMediator();
+        var completed = new WorkOrderCompletedIntegrationEvent(
+            "evt-completed-first", MesIntegrationEventTypes.WorkOrderCompleted, 1, occurredAtUtc,
+            MesIntegrationEventSources.BusinessMes, "WO-001", "WO-001", "org-001", "env-dev",
+            "mes", "completed-first-001",
+            new WorkOrderCompletedPayload("WO-001", "FG-001", 10m, 10m, 0m, occurredAtUtc, 1, 0));
+        await using (var completionDb = new ApplicationDbContext(options, completionMediator))
+        {
+            await new WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(completionDb)
+                .HandleAsync(completed, CancellationToken.None);
+        }
+        Assert.DoesNotContain(completionMediator.Published, notification => notification is WorkOrderCostCompletedDomainEvent);
+
+        var reportMediator = new RecordingMediator();
+        var report = new ProductionReportRecordedIntegrationEvent(
+            "evt-report-later", MesIntegrationEventTypes.ProductionReportRecorded, 1, occurredAtUtc.AddSeconds(-1),
+            MesIntegrationEventSources.BusinessMes, "RPT-001", "WO-001", "org-001", "env-dev",
+            "operator", "report-later-001",
+            new ProductionReportRecordedPayload(
+                "RPT-001", "WO-001", "OP-001", "WC-01", null,
+                10m, 0m, 0m, "ea", 5m, occurredAtUtc.AddSeconds(-1), false, MaterialMovementCount: 0));
+        await using (var reportDb = new ApplicationDbContext(options, reportMediator))
+        {
+            await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
+                    reportDb, new InMemoryIntegrationEventDeadLetterStore())
+                .HandleAsync(report, CancellationToken.None);
+        }
+
+        Assert.Contains(reportMediator.Published, notification => notification is WorkOrderCostCompletedDomainEvent);
+        await using var verification = new ApplicationDbContext(options, new NoopMediator());
+        var cost = await verification.WorkOrderCosts.Include(item => item.Details).SingleAsync();
+        Assert.Equal(100m, cost.LaborCost);
+        Assert.True(cost.CapitalizationPublished);
+    }
+
+    [Fact]
     public async Task Cap_handlers_persist_cost_closure_without_an_external_save()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()

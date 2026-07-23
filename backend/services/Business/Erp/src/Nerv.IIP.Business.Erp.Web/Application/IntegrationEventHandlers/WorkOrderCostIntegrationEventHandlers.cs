@@ -181,7 +181,11 @@ public sealed class WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(A
         if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken)) return;
         var payload = integrationEvent.Payload;
         var cost = await dbContext.WorkOrderCosts.Include(x => x.Details).SingleOrDefaultAsync(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.WorkOrderId == payload.WorkOrderId, cancellationToken);
-        if (cost is null || cost.TotalAccumulatedCost <= 0m) throw new InvalidOperationException($"Work order '{payload.WorkOrderId}' has no actual cost to capitalize.");
+        if (cost is null)
+        {
+            cost = WorkOrderCost.Open(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, payload.WorkOrderId, payload.SkuCode);
+            dbContext.WorkOrderCosts.Add(cost);
+        }
         cost.AssignSku(payload.SkuCode);
         cost.Complete(payload.GoodQuantity, Math.Max(payload.ExpectedCostReportCount, cost.ReceivedReportCount), payload.ExpectedMaterialMovementCount, payload.CompletedAtUtc);
         await dbContext.SaveEntitiesAsync(cancellationToken);
