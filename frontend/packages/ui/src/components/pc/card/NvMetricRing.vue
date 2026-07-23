@@ -72,9 +72,14 @@ const centerValue = computed(() => {
   const seg = hovered.value === null ? null : props.segments[hovered.value]
   return seg ? String(seg.value) : `${props.value}${props.unit ?? ''}`
 })
+/**
+ * On hover the caption stays short — just the share. Which slice it is, is
+ * already said twice over by the lit arc and the undimmed legend row, and the
+ * ring's inner clearance is far too small to hold a label as well.
+ */
 const centerCaptionText = computed(() => {
   const seg = hovered.value === null ? null : props.segments[hovered.value]
-  return seg ? `${seg.label} · ${share(seg)}%` : props.centerCaption
+  return seg ? `${share(seg)}%` : props.centerCaption
 })
 </script>
 
@@ -114,7 +119,7 @@ const centerCaptionText = computed(() => {
             </span>
             <span
               v-if="centerCaptionText"
-              class="mt-0.5 block truncate text-[10px] text-muted-foreground"
+              class="mt-px block truncate text-[10px] leading-tight text-muted-foreground"
             >
               {{ centerCaptionText }}
             </span>
@@ -156,8 +161,18 @@ const centerCaptionText = computed(() => {
     width: 84px;
     height: 84px;
   }
+  /* Bound the readout to the ring's inner clearance (84 − 2×11px hover stroke),
+     otherwise `truncate` has no width to work against and a long caption or
+     value spills straight over the arc. */
+  .nv-ring-center > span {
+    max-width: 58px;
+  }
   .nv-ring-figure {
     font-size: 17px;
+    /* the readout inherits the host's body leading (~1.6), which leaves a band of
+       empty line-box under the digits and pushes the caption away — the two lines
+       belong together as one reading, so set the leading tight here. */
+    line-height: 1.05;
   }
 
   /* Hover emphasis: the pointed-at arc thickens while the rest recede, matching

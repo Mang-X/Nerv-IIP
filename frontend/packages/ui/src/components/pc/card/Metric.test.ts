@@ -278,7 +278,11 @@ describe('NvMetricRing / NvMetricStrip', () => {
     })
     await wrapper.findAll('.nv-ring-seg')[0].trigger('mouseenter')
     expect(wrapper.findAll('.nv-ring-dim').length).toBe(4)
-    expect(wrapper.find('.nv-ring-center').text()).toContain('进行中 · 68.6%')
+    // 中心只留占比：段的身份由亮起的弧 + 未淡出的图例行表达，环内也放不下标签
+    const arcCentre = wrapper.find('.nv-ring-center').text()
+    expect(arcCentre).toContain('24')
+    expect(arcCentre).toContain('68.6%')
+    expect(arcCentre).not.toContain('进行中')
   })
 
   it('ring 悬浮图例项：其余分段淡出，中心切到该段读数', async () => {
@@ -293,7 +297,7 @@ describe('NvMetricRing / NvMetricStrip', () => {
     expect(dimmed()).toBe(4)
     const center = wrapper.find('.nv-ring-center').text()
     expect(center).toContain('2') // 超期 = 2
-    expect(center).toContain('超期 · 5.7%')
+    expect(center).toContain('5.7%')
 
     await wrapper.findAll('.nv-ring-row')[2].trigger('mouseleave')
     expect(dimmed()).toBe(0)

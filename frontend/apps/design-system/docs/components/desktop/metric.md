@@ -265,7 +265,7 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 
 ## NvMetricRing 环形构成型
 
-`breakdown` 的环形表达：每段一种语义色，各自对应一条图例，中心放**最该被看到的数**（通常是总数）。悬浮任一段弧或图例行——该段加粗点亮、其余淡出，中心随即切成该段的读数与占比，所以不需要一个 tooltip 盖住卡片自己。
+`breakdown` 的环形表达：每段一种语义色，各自对应一条图例，中心放**最该被看到的数**（通常是总数）。悬浮任一段弧或图例行——该段加粗点亮、其余淡出，中心随即切成该段的读数与占比，所以不需要一个 tooltip 盖住卡片自己。段的身份由亮起的弧和未淡出的图例行表达，中心只留数值与占比（环内放不下标签）。
 
 > 只适用于**部分与整体**（工单状态 / 齐套 / 库位）。**相乘型比率不能画成环**：OEE = A × P × Q，A/P/Q 并不是环的三段；那类指标用 `variant="facets"` 或独立成行呈现。
 
@@ -374,7 +374,7 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 | `centerCaption` | 中心数下方小字，如 `总计`          | `string`            | —    |
 | `segments`      | 各分段 `{ label, value, tone? }`   | `NvMetricSegment[]` | `[]` |
 
-悬浮分段或图例行时，中心自动切换为该段的数值与 `标签 · 占比%`，无需额外配置。
+悬浮分段或图例行时，中心自动切换为该段的数值与占比，无需额外配置。
 
 ## NvMetricStrip 属性
 
