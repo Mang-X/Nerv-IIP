@@ -38,6 +38,8 @@ param(
     [ValidateRange(1, 1440)]
     [int] $HistoricalIntervalMinutes = 15,
 
+    [switch] $ReplayExisting,
+
     [ValidatePattern('^[a-zA-Z0-9][a-zA-Z0-9._-]{0,47}$')]
     [string] $RunId,
 
@@ -118,6 +120,12 @@ try {
     if ([string]::IsNullOrWhiteSpace($effectiveRunId)) {
         $effectiveRunId = "$sessionId-$($effectiveStart.UtcDateTime.ToString('yyyyMMddHHmmss'))"
     }
+    if ($ReplayExisting -and (
+        -not $PSBoundParameters.ContainsKey('RunId') -or
+        -not $PSBoundParameters.ContainsKey('ScenarioStartUtc')
+    )) {
+        throw 'ReplayExisting requires the exact original RunId and ScenarioStartUtc.'
+    }
     $durationSeconds = $DurationMinutes * 60
     $degradingAtSeconds = [int][Math]::Round($DegradingAtMinutes * 60)
     $alarmAtSeconds = [int][Math]::Round($AlarmAtMinutes * 60)
@@ -145,7 +153,11 @@ try {
         HttpAction = $httpAction
     }
     if ($HistoricalBackfill) { $simulationParameters['HistoricalBackfill'] = $true }
+    if ($ReplayExisting) { $simulationParameters['DelayAction'] = { param($Seconds) } }
     $simulation = Invoke-NervLeaderDemoTelemetrySimulator @simulationParameters
+    $simulation | Add-Member `
+        -NotePropertyName ExecutionMode `
+        -NotePropertyValue $(if ($ReplayExisting) { 'replay-existing' } else { 'real-time' })
 }
 catch {
     $failureMessage = Protect-ScriptAutomationText -Text "$($_.Exception.Message)"
@@ -162,6 +174,7 @@ catch {
 }
 finally {
     if ([string]::IsNullOrWhiteSpace($effectiveRunId)) { $effectiveRunId = 'unresolved' }
+    $executionMode = if ($ReplayExisting) { 'replay-existing' } else { 'real-time' }
     $commit = try {
         (Invoke-NativeCommandOutput `
             -Command 'git' `
@@ -182,6 +195,7 @@ finally {
         completedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
         publicWritePath = '/api/business-console/v1/telemetry/samples'
         backgroundProcessesCreated = 0
+        executionMode = $executionMode
         simulation = $simulation
     }
     $paths = Write-NervLeaderDemoTelemetryEvidence `

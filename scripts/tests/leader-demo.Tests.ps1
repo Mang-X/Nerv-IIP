@@ -625,6 +625,7 @@ try {
     Assert-True ($simulatorEntryText.Contains('scripts/lib/LeaderDemoTelemetrySimulator.ps1')) 'The simulator entrypoint must use the deterministic simulator core.'
     Assert-True ([regex]::IsMatch($simulatorEntryText, '\[int\]\s*\$SampleIntervalSeconds\s*=\s*2')) 'The simulator must default to a two-second public sample cadence.'
     Assert-True ($simulatorEntryText.Contains('[switch] $HistoricalBackfill')) 'The simulator must expose the governed historical backfill probe.'
+    Assert-True ($simulatorEntryText.Contains('[switch] $ReplayExisting')) 'The simulator must expose an explicit no-delay replay mode for an exact run identity.'
     Assert-True ($simulatorEntryText.Contains('artifacts/leader-demo')) 'The simulator must write redacted evidence under artifacts/leader-demo.'
     Assert-True ($simulatorEntryText.Contains('NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD')) 'The simulator must accept the local password only through the controlled environment variable.'
     $simulatorCoreText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/LeaderDemoTelemetrySimulator.ps1') -Raw
