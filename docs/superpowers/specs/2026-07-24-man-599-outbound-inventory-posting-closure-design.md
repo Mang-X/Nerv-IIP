@@ -107,4 +107,3 @@ receiving location, waits for WMS posting success, verifies the finished-goods
 balance decreases from 10 to 0, and only then accepts ERP completed,
 receivable, and posted voucher facts. The managed full-stack run supplies the
 required PostgreSQL and cross-process Redis evidence.
-

@@ -130,10 +130,10 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await CreateReleasedSalesOrderAsync(dbContext, "SO-001", "QUO-001", "CUST-001", "SKU-FG-001");
         await CreateReleasedSalesOrderAsync(dbContext, "SO-002", "QUO-002", "CUST-002", "SKU-FG-002");
         await new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(
-            new ReleaseDeliveryOrderCommand("org-001", "env-dev", "DO-001", "SO-001", [new DeliveryOrderCommandLine("LINE-001", 1m)]),
+            new ReleaseDeliveryOrderCommand("org-001", "env-dev", "DO-001", "SO-001", [new DeliveryOrderCommandLine("LINE-001", 1m, "receiving", "LOT-FG-001")]),
             CancellationToken.None);
         await new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(
-            new ReleaseDeliveryOrderCommand("org-001", "env-dev", "DO-002", "SO-002", [new DeliveryOrderCommandLine("LINE-001", 1m)]),
+            new ReleaseDeliveryOrderCommand("org-001", "env-dev", "DO-002", "SO-002", [new DeliveryOrderCommandLine("LINE-001", 1m, "receiving", "LOT-FG-002")]),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -146,7 +146,15 @@ public sealed class ErpSalesFinanceEndpointContractTests
         Assert.Equal("DO-002", item.DeliveryOrderNo);
         Assert.Equal("SO-002", item.SalesOrderNo);
         Assert.Equal("released", item.Status);
-        Assert.Equal(1m, Assert.Single(item.Lines).Quantity);
+        var siteCode = item.GetType().GetProperty("SiteCode");
+        var line = Assert.Single(item.Lines);
+        Assert.NotNull(siteCode);
+        Assert.Equal("SITE-001", siteCode.GetValue(item));
+        Assert.Equal("SKU-FG-002", line.GetType().GetProperty("SkuCode")?.GetValue(line));
+        Assert.Equal("EA", line.GetType().GetProperty("UomCode")?.GetValue(line));
+        Assert.Equal("receiving", line.GetType().GetProperty("LocationCode")?.GetValue(line));
+        Assert.Equal("LOT-FG-002", line.GetType().GetProperty("LotNo")?.GetValue(line));
+        Assert.Equal(1m, line.Quantity);
     }
 
     [Fact]

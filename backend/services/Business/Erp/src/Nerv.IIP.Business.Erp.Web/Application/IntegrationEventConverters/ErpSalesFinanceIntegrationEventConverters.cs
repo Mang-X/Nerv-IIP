@@ -155,7 +155,7 @@ public sealed class DeliveryOrderOutboundOrderRequestedIntegrationEventConverter
                 delivery.DeliveryOrderNo,
                 delivery.SalesOrderNo,
                 delivery.CustomerCode,
-                null,
+                delivery.SiteCode,
                 delivery.Lines
                     .OrderBy(x => x.SalesOrderLineNo, StringComparer.Ordinal)
                     .Select(x => new WmsOutboundOrderRequestedLine(

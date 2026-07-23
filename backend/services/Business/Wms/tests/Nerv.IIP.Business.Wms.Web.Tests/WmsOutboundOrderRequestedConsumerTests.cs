@@ -37,7 +37,9 @@ public sealed class WmsOutboundOrderRequestedConsumerTests
         Assert.Equal(4m, line.RequestedQuantity);
         Assert.Equal("LOC-A-01", line.PickLocationCode);
         Assert.Equal("LOT-001", line.LotNo);
-        Assert.Equal("customer-001", line.OwnerId);
+        Assert.Equal("unrestricted", line.QualityStatus);
+        Assert.Equal("production", line.OwnerType);
+        Assert.Null(line.OwnerId);
     }
 
     [Fact]

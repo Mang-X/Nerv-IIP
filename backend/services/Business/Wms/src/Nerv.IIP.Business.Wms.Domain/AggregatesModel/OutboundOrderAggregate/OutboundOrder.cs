@@ -14,6 +14,7 @@ public enum OutboundOrderStatus
     Completed = 1,
     InventoryPostingFailed = 2,
     Cancelled = 3,
+    InventoryPostingPending = 4,
 }
 
 public sealed record OutboundOrderLineDraft(
@@ -161,8 +162,8 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         EnsureHasLines();
         PackReviewNo = WmsText.Required(packReviewNo, nameof(packReviewNo));
         PackReviewPassed = true;
-        Status = OutboundOrderStatus.Completed;
-        CompletedAtUtc = DateTime.UtcNow;
+        Status = OutboundOrderStatus.InventoryPostingPending;
+        CompletedAtUtc = null;
         var singleLine = lines.Count == 1;
         foreach (var line in lines)
         {
@@ -195,7 +196,6 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
                 line.IssuedQuantity,
                 line.InventoryReservationId))
             .ToArray();
-        this.AddDomainEvent(new OutboundOrderCompletedDomainEvent(this));
         return requests;
     }
 
@@ -221,12 +221,30 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
             return;
         }
 
-        if (Status != OutboundOrderStatus.Completed)
+        if (Status != OutboundOrderStatus.InventoryPostingPending)
         {
-            throw new InvalidOperationException("Only completed outbound orders can be marked as Inventory posting failed.");
+            throw new InvalidOperationException("Only outbound orders with pending Inventory posting can be marked as Inventory posting failed.");
         }
 
         Status = OutboundOrderStatus.InventoryPostingFailed;
+        CompletedAtUtc = null;
+    }
+
+    public void MarkInventoryPostingCompleted()
+    {
+        if (Status == OutboundOrderStatus.Completed)
+        {
+            return;
+        }
+
+        if (Status != OutboundOrderStatus.InventoryPostingPending)
+        {
+            throw new InvalidOperationException("Only outbound orders with pending Inventory posting can be completed.");
+        }
+
+        Status = OutboundOrderStatus.Completed;
+        CompletedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new OutboundOrderCompletedDomainEvent(this));
     }
 
     public void EnsureCanCancel()
@@ -285,7 +303,8 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
     {
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
         EnsureCanRetryInventoryPosting(inventoryReservationIds.Keys.ToArray());
-        Status = OutboundOrderStatus.Completed;
+        Status = OutboundOrderStatus.InventoryPostingPending;
+        CompletedAtUtc = null;
         var retryLines = lines
             .Where(line => inventoryReservationIds.ContainsKey(line.LineNo))
             .OrderBy(line => line.LineNo, StringComparer.Ordinal)

@@ -1001,6 +1001,77 @@
         ]
       }
     },
+    "/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry": {
+      "post": {
+        "tags": [
+          "Business Console WMS",
+          "Api"
+        ],
+        "operationId": "retryBusinessConsoleWmsOutboundInventoryPosting",
+        "parameters": [
+          {
+            "name": "outboundOrderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleRetryWmsOutboundInventoryPostingRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRetryWmsOutboundInventoryPostingRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCompleteWmsMovementResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/wms/count-executions": {
       "post": {
         "tags": [
@@ -25231,9 +25302,89 @@
           "status": {
             "type": "string"
           },
+          "siteCode": {
+            "type": "string"
+          },
+          "inventoryPostingStatus": {
+            "type": "string"
+          },
+          "failureCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "failureMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundOrderLineItem"
+            }
+          },
           "createdAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "completedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundOrderLineItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "lineNo": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "requestedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "issuedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "locationCode": {
+            "type": "string"
+          },
+          "lotNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "qualityStatus": {
+            "type": "string"
+          },
+          "ownerType": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "inventoryPostingStatus": {
+            "type": "string"
+          },
+          "failureCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "failureMessage": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -25305,6 +25456,15 @@
             "maxLength": 150,
             "minLength": 0,
             "nullable": false
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRetryWmsOutboundInventoryPostingRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "idempotencyKey": {
+            "type": "string"
           }
         }
       },
@@ -45417,6 +45577,9 @@
           "customerCode": {
             "type": "string"
           },
+          "siteCode": {
+            "type": "string"
+          },
           "status": {
             "type": "string"
           },
@@ -45449,6 +45612,12 @@
           "salesOrderLineNo": {
             "type": "string"
           },
+          "skuCode": {
+            "type": "string"
+          },
+          "uomCode": {
+            "type": "string"
+          },
           "quantity": {
             "type": "number",
             "format": "decimal"
@@ -45456,6 +45625,13 @@
           "shippedQuantity": {
             "type": "number",
             "format": "decimal"
+          },
+          "locationCode": {
+            "type": "string"
+          },
+          "lotNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -45528,6 +45704,14 @@
           "quantity": {
             "type": "number",
             "format": "decimal"
+          },
+          "locationCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "lotNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

@@ -247,7 +247,10 @@ public sealed class ErpSalesFinanceAggregateTests
 
         var delivery = DeliveryOrder.Release(order, "DO-005", [new DeliveryOrderLineDraft("L1", 1m, "FG-SHIP", "LOT-FG-001")]);
 
+        var siteCode = typeof(DeliveryOrder).GetProperty("SiteCode");
         var line = Assert.Single(delivery.Lines);
+        Assert.NotNull(siteCode);
+        Assert.Equal("SITE-001", siteCode.GetValue(delivery));
         Assert.Equal("SKU-FG", line.SkuCode);
         Assert.Equal("ea", line.UomCode);
         Assert.Equal("FG-SHIP", line.LocationCode);

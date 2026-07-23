@@ -508,6 +508,48 @@ public sealed class WmsEndpointContractTests
     }
 
     [Fact]
+    public async Task Outbound_order_query_exposes_exact_posting_key_and_failure()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "DO-FAILED-001",
+            "erp-delivery-order",
+            "DO-FAILED-001",
+            "finished-goods",
+            [new OutboundOrderLineDraft("SO-LINE-001", "SKU-FG-1000", "kg", 4m, "receiving", "LOT-001", null, "unrestricted", "production", null)]);
+        var movementRequest = Assert.Single(outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
+        movementRequest.MarkFailed("NEGATIVE_ON_HAND", "Stock movement would make on-hand quantity negative.");
+        outbound.MarkInventoryPostingFailed();
+        dbContext.OutboundOrders.Add(outbound);
+        dbContext.InventoryMovementRequests.Add(movementRequest);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ListOutboundOrdersQueryHandler(dbContext).Handle(
+            new ListOutboundOrdersQuery("org-001", "env-dev", 0, 10, "InventoryPostingFailed", "DO-FAILED"),
+            CancellationToken.None);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal("finished-goods", item.SiteCode);
+        Assert.Equal("failed", item.InventoryPostingStatus);
+        Assert.Equal("NEGATIVE_ON_HAND", item.FailureCode);
+        Assert.Contains("negative", item.FailureMessage, StringComparison.OrdinalIgnoreCase);
+        var line = Assert.Single(item.Lines);
+        Assert.Equal("SKU-FG-1000", line.SkuCode);
+        Assert.Equal("kg", line.UomCode);
+        Assert.Equal("receiving", line.LocationCode);
+        Assert.Equal("LOT-001", line.LotNo);
+        Assert.Equal("unrestricted", line.QualityStatus);
+        Assert.Equal("production", line.OwnerType);
+        Assert.Null(line.OwnerId);
+        Assert.Equal("failed", line.InventoryPostingStatus);
+        Assert.Equal("NEGATIVE_ON_HAND", line.FailureCode);
+    }
+
+    [Fact]
     public async Task Wcs_task_query_filters_status_failed_keyword_before_offset_page_and_total_count()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();

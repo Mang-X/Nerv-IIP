@@ -41,7 +41,7 @@ public sealed class WmsOutboundOrderRequestedIntegrationEventHandler(
         }
 
         var payload = integrationEvent.Payload;
-        var siteCode = string.IsNullOrWhiteSpace(payload.SiteCode) ? "default" : payload.SiteCode.Trim();
+        var siteCode = payload.SiteCode?.Trim() ?? string.Empty;
         await sender.Send(
             new CreateOutboundOrderCommand(
                 integrationEvent.OrganizationId,
@@ -58,9 +58,9 @@ public sealed class WmsOutboundOrderRequestedIntegrationEventHandler(
                     x.LocationCode,
                     x.LotNo,
                     null,
-                    "qualified",
-                    "company",
-                    payload.CustomerCode)).ToArray()),
+                    "unrestricted",
+                    "production",
+                    null)).ToArray()),
             cancellationToken);
     }
 }
