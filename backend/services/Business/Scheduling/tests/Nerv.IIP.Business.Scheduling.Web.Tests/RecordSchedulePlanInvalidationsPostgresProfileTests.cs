@@ -33,7 +33,7 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
     {
         var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
 
-        await using var database = await SchedulingTemporaryDatabase.CreateAsync(connectionString);
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(connectionString, "nerv_scheduling_test");
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddSchedulingPostgreSqlPersistence(database.ConnectionString);
@@ -74,7 +74,7 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
     {
         var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
 
-        await using var database = await SchedulingTemporaryDatabase.CreateAsync(connectionString);
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(connectionString, "nerv_scheduling_test");
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddSchedulingPostgreSqlPersistence(database.ConnectionString);
@@ -120,7 +120,7 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
     {
         var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
 
-        await using var database = await SchedulingTemporaryDatabase.CreateAsync(connectionString);
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(connectionString, "nerv_scheduling_test");
         var services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(new FixedTimeProvider(FixedNow));
         services.AddScoped<ISchedulingIntegrationEventContextAccessor, StubSchedulingIntegrationEventContextAccessor>();

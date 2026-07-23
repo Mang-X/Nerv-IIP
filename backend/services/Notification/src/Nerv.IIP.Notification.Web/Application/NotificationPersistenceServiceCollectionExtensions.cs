@@ -8,13 +8,14 @@ namespace Nerv.IIP.Notification.Web.Application;
 
 internal static class NotificationPersistenceServiceCollectionExtensions
 {
-    public static IServiceCollection AddNotificationPersistence(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddNotificationPersistence(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        string? postgreSqlConnectionStringName)
     {
-        var provider = configuration["Persistence:Provider"] ?? "InMemory";
-        if (string.Equals(provider, "PostgreSQL", StringComparison.OrdinalIgnoreCase))
+        if (postgreSqlConnectionStringName is not null)
         {
-            var connectionString = configuration.GetConnectionString("NotificationDb")
-                ?? configuration.GetConnectionString("PostgreSQL")
+            var connectionString = configuration.GetConnectionString(postgreSqlConnectionStringName)
                 ?? throw new InvalidOperationException("PostgreSQL persistence requires ConnectionStrings:NotificationDb.");
 
             services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
@@ -22,18 +23,13 @@ internal static class NotificationPersistenceServiceCollectionExtensions
                 npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "notification")));
             services.AddScoped<NotificationDatabaseMigrationRunner>();
         }
-        else if (string.Equals(provider, "InMemory", StringComparison.OrdinalIgnoreCase))
+        else
         {
             var databaseName = configuration["Persistence:InMemoryDatabaseName"] ?? $"notification-{Guid.NewGuid():N}";
             services.AddDbContext<ApplicationDbContext>(options => options
                 .UseInMemoryDatabase(databaseName)
                 .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
         }
-        else
-        {
-            throw new NotSupportedException($"Persistence provider '{provider}' is not supported by Notification.");
-        }
-
         services.AddUnitOfWork<ApplicationDbContext>();
         services.AddScoped<INotificationIntentRepository, NotificationIntentRepository>();
         return services;

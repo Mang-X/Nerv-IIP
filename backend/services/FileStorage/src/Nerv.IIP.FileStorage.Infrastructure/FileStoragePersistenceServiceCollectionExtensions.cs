@@ -9,15 +9,14 @@ public static class FileStoragePersistenceServiceCollectionExtensions
     public static IServiceCollection AddFileStoragePersistence(
         this IServiceCollection services,
         IConfiguration configuration,
-        bool usePostgreSql)
+        string? postgreSqlConnectionStringName)
     {
-        if (!usePostgreSql)
+        if (postgreSqlConnectionStringName is null)
         {
             return services;
         }
 
-        var connectionString = configuration.GetConnectionString("FileStorageDb")
-            ?? configuration.GetConnectionString("PostgreSQL")
+        var connectionString = configuration.GetConnectionString(postgreSqlConnectionStringName)
             ?? throw new InvalidOperationException("PostgreSQL persistence requires ConnectionStrings:FileStorageDb.");
 
         services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(

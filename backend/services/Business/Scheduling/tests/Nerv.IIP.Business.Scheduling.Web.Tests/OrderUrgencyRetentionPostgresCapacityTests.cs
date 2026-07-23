@@ -20,7 +20,9 @@ public sealed class OrderUrgencyRetentionPostgresCapacityTests
     public async Task Representative_capacity_scan_and_overlapping_workers_are_safe_on_PostgreSQL()
     {
         var adminConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-        await using var database = await SchedulingTemporaryDatabase.CreateAsync(adminConnectionString);
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            adminConnectionString,
+            "nerv_scheduling_retention_capacity");
         await using (var setup = CreateContext(database.ConnectionString))
         {
             await setup.Database.MigrateAsync();

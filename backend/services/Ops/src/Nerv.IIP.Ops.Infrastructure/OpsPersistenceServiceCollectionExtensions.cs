@@ -9,12 +9,14 @@ namespace Nerv.IIP.Ops.Infrastructure;
 
 public static class OpsPersistenceServiceCollectionExtensions
 {
-    public static IServiceCollection AddOpsPersistence(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddOpsPersistence(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        string? postgreSqlConnectionStringName)
     {
-        var provider = configuration["Persistence:Provider"] ?? "InMemory";
-        if (string.Equals(provider, "PostgreSQL", StringComparison.OrdinalIgnoreCase))
+        if (postgreSqlConnectionStringName is not null)
         {
-            var connectionString = configuration.GetConnectionString("OpsDb")
+            var connectionString = configuration.GetConnectionString(postgreSqlConnectionStringName)
                 ?? throw new InvalidOperationException("Connection string 'OpsDb' is required when Ops uses PostgreSQL persistence.");
 
             services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
@@ -27,12 +29,7 @@ public static class OpsPersistenceServiceCollectionExtensions
             return services;
         }
 
-        if (string.Equals(provider, "InMemory", StringComparison.OrdinalIgnoreCase))
-        {
-            services.AddSingleton<IOpsStateStore, InMemoryOpsStateStore>();
-            return services;
-        }
-
-        throw new NotSupportedException($"Persistence provider '{provider}' is not supported by Ops yet.");
+        services.AddSingleton<IOpsStateStore, InMemoryOpsStateStore>();
+        return services;
     }
 }
