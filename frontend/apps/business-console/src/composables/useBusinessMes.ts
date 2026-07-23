@@ -228,13 +228,13 @@ export interface MesTraceabilityFilters extends MesContextFilters {
   mode: 'work-order' | 'batch' | 'material-lot'
 }
 
-function defaultFilters(): MesListFilters {
+function defaultFilters(initialTake = DEFAULT_TAKE): MesListFilters {
   return bindBusinessContext(
     reactive({
       organizationId: '',
       environmentId: '',
       skip: 0,
-      take: DEFAULT_TAKE,
+      take: initialTake,
     }),
   )
 }
@@ -424,8 +424,12 @@ function invalidateWorkOrders(queryCache: ReturnType<typeof useQueryCache>) {
   return invalidateMesQueries(queryCache, ['listBusinessConsoleMesWorkOrders'])
 }
 
-export function useMesWorkOrders() {
-  const filters = defaultFilters()
+export interface UseMesWorkOrdersOptions {
+  initialTake?: number
+}
+
+export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
+  const filters = defaultFilters(options.initialTake)
   const queryCache = useQueryCache()
 
   const workOrdersQuery = useQuery(() =>

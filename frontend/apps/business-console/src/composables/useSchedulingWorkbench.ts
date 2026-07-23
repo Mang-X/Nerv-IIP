@@ -7,21 +7,30 @@ import {
   type BusinessConsoleSchedulingPlanRevision,
 } from '@nerv-iip/api-client'
 import { useMutation, useQueryCache } from '@pinia/colada'
+import type { UseQueryEntry } from '@pinia/colada'
 import { computed } from 'vue'
 import { useMesWorkOrders } from './useBusinessMes'
 
 const SCHEDULING_IDS = ['listBusinessConsoleSchedulingPlans', 'getBusinessConsoleSchedulingPlan']
+const SCHEDULING_WORKBENCH_TERMINAL_WORK_ORDER_STATUSES = new Set([
+  // UX prefilter only. The Scheduling service remains authoritative; keep aligned with
+  // SchedulingWorkbenchSourceProvider.TerminalStatuses.
+  'completed',
+  'closed',
+  'cancelled',
+  'canceled',
+  'scrapped',
+])
 
 export function useSchedulingWorkbench() {
-  const mes = useMesWorkOrders()
+  const mes = useMesWorkOrders({ initialTake: 500 })
   const queryCache = useQueryCache()
-  mes.filters.take = 500
 
   const invalidatePlans = () =>
     Promise.all(
       SCHEDULING_IDS.map((id) =>
         queryCache.invalidateQueries({
-          predicate: (entry) => JSON.stringify(entry.key).includes(id),
+          predicate: isSchedulingWorkbenchQuery([id]),
         }),
       ),
     )
@@ -53,15 +62,33 @@ export function useSchedulingWorkbench() {
         await revisionMutation.mutateAsync({ path: { planId }, body }),
       ),
     schedulableCandidates: computed(() =>
-      mes.workOrders.value.filter(
-        (order) =>
-          Boolean(order.workOrderId && order.productionVersionId) &&
-          !['completed', 'closed', 'cancelled', 'canceled', 'scrapped'].includes(
-            order.status?.toLowerCase() ?? '',
-          ),
-      ),
+      mes.workOrders.value.filter(isSchedulableWorkbenchCandidate),
     ),
   }
+}
+
+export function isSchedulingWorkbenchQuery(ids: string[]) {
+  return (entry: UseQueryEntry) => {
+    const keyParts = Array.isArray(entry.key) ? entry.key : [entry.key]
+    return keyParts.some(
+      (part) =>
+        typeof part === 'object' &&
+        part !== null &&
+        '_id' in part &&
+        ids.includes(String(part._id)),
+    )
+  }
+}
+
+export function isSchedulableWorkbenchCandidate(order: {
+  workOrderId?: string | null
+  productionVersionId?: string | null
+  status?: string | null
+}) {
+  return (
+    Boolean(order.workOrderId && order.productionVersionId) &&
+    !SCHEDULING_WORKBENCH_TERMINAL_WORK_ORDER_STATUSES.has(order.status?.toLowerCase() ?? '')
+  )
 }
 
 function unwrap<T>(envelope: unknown): T {

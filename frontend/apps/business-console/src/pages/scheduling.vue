@@ -270,6 +270,10 @@ async function generateWorkbenchPlan() {
 async function repreviewLockedDraft() {
   const planId = draft.model.value?.meta.planId
   if (!canManage.value || !planId || draft.includedOrders.value.length === 0) return
+  if (draft.modifiedUnlockedTaskIds.value.length > 0) {
+    toast.error('有未锁定的人工修改；请先锁定全部修改再重预览')
+    return
+  }
   try {
     const revision = await workbench.revisePlan(planId, {
       organizationId: schedulingFilters.organizationId,
@@ -279,13 +283,17 @@ async function repreviewLockedDraft() {
     })
     revisionResult.value = revision
     if (revision.candidate) {
-      draft.loadPlan(revision.candidate)
+      draft.loadPlan(revision.candidate, revision.impact)
       detailSelection.planId = revision.candidate.planId ?? ''
     }
     toast.success('已生成锁定约束下的新版本')
   } catch {
     toast.error('重预览失败，请检查锁定资源与时间窗口')
   }
+}
+
+function onLockedDragAttempt() {
+  toast.error('该工序已锁定；请先解锁再调整资源或时间')
 }
 
 async function publishCandidate() {
@@ -467,6 +475,24 @@ function reasonLabel(reason?: string | null) {
         >
           当前账号只有读取权限，可查看历史方案但不能编辑或生成新版本。
         </p>
+        <div
+          v-if="draft.modifiedUnlockedTaskIds.value.length > 0"
+          class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
+          role="status"
+        >
+          <span>
+            {{ draft.modifiedUnlockedTaskIds.value.length }}
+            道人工修改尚未锁定；重预览前需锁定，避免修改被候选方案覆盖。
+          </span>
+          <NvButton
+            size="sm"
+            variant="outline"
+            type="button"
+            :disabled="!canManage"
+            @click="draft.lockModifiedTasks"
+            >锁定全部修改</NvButton
+          >
+        </div>
         <SchedulingOrderPool
           :candidates="workbench.schedulableCandidates.value"
           :draft-orders="draft.orders.value"
@@ -477,10 +503,14 @@ function reasonLabel(reason?: string | null) {
         />
         <SchedulingDraftBoard
           :model="draft.model.value"
+          :pending-operations="draft.pendingOperations.value"
           :read-only="!canManage"
           @move="draft.moveTask"
           @update="draft.updateTask"
           @lock="draft.setLocked"
+          @locked-attempt="onLockedDragAttempt"
+          @move-to-pending="draft.moveTaskToPending"
+          @restore-pending="draft.restorePendingTask"
         />
         <ScheduleRevisionReview :revision="revisionResult" />
       </NvTabsContent>

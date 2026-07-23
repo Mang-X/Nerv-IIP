@@ -12,7 +12,7 @@ Npgsql-backed 临时 database 生命周期进入独立 `Nerv.IIP.Testing.Postgre
 
 BusinessScheduling 已新增批量工作台生成与 base-plan 修订两条受管内部端点。批量生成只接受 1–500 个 distinct MES 工单 ID，由服务端读取 organization/environment 范围内的权威 SKU、数量、交期、工序最早开始与生产版本，并通过 ProductEngineering active production-version routing snapshot 解析已发布路线；缺工单、终态工单、缺生产版本或 SKU/版本不一致均 fail closed。修订从已持久化 normalized problem snapshot 过滤 included orders，校验显式锁定工序、可选资源、时间窗口和 scope，再复用既有 override overlay、设备/物料适配器与有限产能调度器持久化新 Generated 方案。响应按最新失效来源事件聚合受影响资源/工单/工序，并返回 base/candidate 权威 KPI、移动、锁定和未排计数；不新增 schema、调度引擎或合并评分。
 
-BusinessGateway 以 `business.scheduling.plans.manage` 暴露 `POST /api/business-console/v1/scheduling/workbench/plans` 和 `POST /api/business-console/v1/scheduling/plans/{planId}/revisions`，两条均在 facade matrix 登记为 `exposed`，OpenAPI 与 `@nerv-iip/api-client` 已刷新。Business Console `/scheduling` 新增领导演示工作台，MES 待排池、既有 `@nerv-iip/scheduling` Gantt/Resource 组件和表格编辑共享一个 `WorkingScheduleDraft`，拖拽、改派、改期、锁定、撤销/重做只修改该草稿；重预览与发布继续由后端版本治理决定。路由读取、编辑、发布分别使用 plans.read/manage/release。MAN-582 偏差预测、MAN-583 拆分/转移批/并行机和 MAN-588 无人值守候选引擎仍明确后置；旧 scheduling visualization package 未修改。
+BusinessGateway 以 `business.scheduling.plans.manage` 暴露 `POST /api/business-console/v1/scheduling/workbench/plans` 和 `POST /api/business-console/v1/scheduling/plans/{planId}/revisions`，两条均在 facade matrix 登记为 `exposed`，OpenAPI 与 `@nerv-iip/api-client` 已刷新。Business Console `/scheduling` 新增领导演示工作台，MES 工单待排池、工序待排池、既有 `@nerv-iip/scheduling` Gantt/Resource 组件和表格编辑共享一个 `WorkingScheduleDraft`；求解未排、规划员移回及受失效影响的工序在工序池中分因展示，拖拽、改派、改期、锁定、移回/恢复、撤销/重做只修改该草稿。人工修改必须先锁定才允许重预览，避免候选方案静默覆盖；重预览与发布继续由后端版本治理决定。路由读取、编辑、发布分别使用 plans.read/manage/release。MAN-582 偏差预测、MAN-583 拆分/转移批/并行机和 MAN-588 无人值守候选引擎仍明确后置；旧 scheduling visualization package 未修改。
 
 ## 跨域统一紧急度模型 V1（MAN-584 / #1053）
 

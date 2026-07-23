@@ -1,5 +1,8 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Scheduling;
@@ -21,7 +24,7 @@ public sealed class CreateSchedulingWorkbenchPlanCommandValidator
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.HorizonEndUtc).GreaterThan(x => x.HorizonStartUtc);
-        RuleFor(x => x.Orders).NotEmpty().Must(x => x.Count <= HttpSchedulingWorkbenchSourceProvider.MaxOrderCount);
+        RuleFor(x => x.Orders).NotEmpty().Must(x => x.Count <= SchedulingWorkbenchLimits.MaxOrderCount);
         RuleForEach(x => x.Orders).ChildRules(order =>
         {
             order.RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(128);
@@ -76,7 +79,7 @@ public sealed class CreateSchedulePlanRevisionCommandValidator
         RuleFor(x => x.PlanId).NotEmpty().MaximumLength(128);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
-        RuleFor(x => x.IncludedOrderIds).NotEmpty().Must(x => x.Count <= HttpSchedulingWorkbenchSourceProvider.MaxOrderCount);
+        RuleFor(x => x.IncludedOrderIds).NotEmpty().Must(x => x.Count <= SchedulingWorkbenchLimits.MaxOrderCount);
         RuleFor(x => x.IncludedOrderIds).Must(x => x.Distinct(StringComparer.Ordinal).Count() == x.Count)
             .WithMessage("Included work-order ids must be distinct.");
         RuleForEach(x => x.LockedAssignments).ChildRules(assignment =>
@@ -85,8 +88,9 @@ public sealed class CreateSchedulePlanRevisionCommandValidator
             assignment.RuleFor(x => x.ResourceId).NotEmpty().MaximumLength(128);
             assignment.RuleFor(x => x.EndUtc).GreaterThan(x => x.StartUtc);
         });
-        RuleFor(x => x.LockedAssignments).Must(x => x.Select(y => y.OperationId).Distinct(StringComparer.Ordinal).Count() == x.Count)
-            .WithMessage("Locked operation ids must be distinct.");
+        RuleFor(x => x.LockedAssignments)
+            .Must(x => x.Select(y => (y.OrderId, y.OperationId)).Distinct().Count() == x.Count)
+            .WithMessage("Locked order-operation ids must be distinct.");
     }
 }
 
@@ -134,7 +138,7 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
             LockedAssignments = normalizedLocks,
         };
         var basePlan = SchedulePlanContractMapper.ToContract(basePlanEntity);
-        var impact = await LoadLatestImpactAsync(request, cancellationToken);
+        var impact = await LoadLatestImpactAsync(request, baseProblem, basePlan, cancellationToken);
         var candidate = await sender.Send(new CreateSchedulePlanCommand(revisionProblem), cancellationToken);
         return new SchedulePlanRevisionContract(candidate, impact, Compare(basePlan, candidate));
     }
@@ -144,13 +148,13 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
         IReadOnlyCollection<SchedulingOrderContract> includedOrders,
         IReadOnlyCollection<SchedulingLockedAssignmentContract> locks)
     {
-        var operations = includedOrders.SelectMany(x => x.Operations.Select(operation => (x.OrderId, Operation: operation)))
-            .ToDictionary(x => x.Operation.OperationId, StringComparer.Ordinal);
+        var operations = includedOrders
+            .SelectMany(x => x.Operations.Select(operation => (x.OrderId, Operation: operation)))
+            .ToDictionary(x => (x.OrderId, x.Operation.OperationId));
         var resources = problem.Resources.ToDictionary(x => x.ResourceId, StringComparer.Ordinal);
         return locks.Select(assignment =>
         {
-            if (!operations.TryGetValue(assignment.OperationId, out var source) ||
-                !string.Equals(source.OrderId, assignment.OrderId, StringComparison.Ordinal))
+            if (!operations.TryGetValue((assignment.OrderId, assignment.OperationId), out var source))
             {
                 throw new KnownException($"Locked operation '{assignment.OperationId}' is not part of the revision.");
             }
@@ -170,7 +174,7 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
             return assignment with
             {
                 AssignmentId = string.IsNullOrWhiteSpace(assignment.AssignmentId)
-                    ? $"lock-{assignment.OperationId}"
+                    ? CreateLockAssignmentId(assignment.OrderId, assignment.OperationId)
                     : assignment.AssignmentId.Trim(),
                 OperationSequence = source.Operation.OperationSequence,
                 WorkCenterId = resource.WorkCenterId,
@@ -179,8 +183,16 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
         }).ToArray();
     }
 
+    private static string CreateLockAssignmentId(string orderId, string operationId)
+    {
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes($"{orderId}\n{operationId}"));
+        return $"lock-{Convert.ToHexString(digest.AsSpan(0, 16)).ToLowerInvariant()}";
+    }
+
     private async Task<SchedulePlanImpactContract> LoadLatestImpactAsync(
         CreateSchedulePlanRevisionCommand request,
+        SchedulingProblemContract problem,
+        SchedulePlanContract basePlan,
         CancellationToken cancellationToken)
     {
         var latest = await dbContext.SchedulePlanInvalidations.AsNoTracking()
@@ -204,22 +216,77 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
                 x.SourceEventType == latest.SourceEventType &&
                 x.SourceEventId == latest.SourceEventId)
             .ToArrayAsync(cancellationToken);
+        var affectedAssignments = basePlan.Assignments
+            .Where(assignment => rows.Any(row => IsAffected(row, assignment, problem)))
+            .ToArray();
         return new(
             true,
             latest.ReasonCode,
             latest.SourceEventType,
             latest.SourceEventId,
             latest.OccurredAtUtc,
-            rows.Select(x => x.AffectedResourceId).Where(x => x is not null).Cast<string>().Distinct(StringComparer.Ordinal).ToArray(),
-            rows.Select(x => x.AffectedWorkOrderId).Where(x => x is not null).Cast<string>().Distinct(StringComparer.Ordinal).ToArray(),
-            rows.Select(x => x.AffectedOperationId).Where(x => x is not null).Cast<string>().Distinct(StringComparer.Ordinal).ToArray());
+            rows.Select(x => x.AffectedResourceId)
+                .Where(x => x is not null)
+                .Cast<string>()
+                .Concat(affectedAssignments.Select(x => x.ResourceId))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            rows.Select(x => x.AffectedWorkOrderId)
+                .Where(x => x is not null)
+                .Cast<string>()
+                .Concat(affectedAssignments.Select(x => x.OrderId))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            rows.Select(x => x.AffectedOperationId)
+                .Where(x => x is not null)
+                .Cast<string>()
+                .Concat(affectedAssignments.Select(x => x.OperationId))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray());
+    }
+
+    private static bool IsAffected(
+        SchedulePlanInvalidation invalidation,
+        ScheduleAssignmentContract assignment,
+        SchedulingProblemContract problem)
+    {
+        if (!string.IsNullOrWhiteSpace(invalidation.AffectedOperationId))
+        {
+            return string.Equals(invalidation.AffectedOperationId, assignment.OperationId, StringComparison.Ordinal) &&
+                   (string.IsNullOrWhiteSpace(invalidation.AffectedWorkOrderId) ||
+                    string.Equals(invalidation.AffectedWorkOrderId, assignment.OrderId, StringComparison.Ordinal));
+        }
+
+        if (!string.IsNullOrWhiteSpace(invalidation.AffectedWorkOrderId))
+        {
+            return string.Equals(invalidation.AffectedWorkOrderId, assignment.OrderId, StringComparison.Ordinal);
+        }
+
+        if (!string.IsNullOrWhiteSpace(invalidation.AffectedResourceId))
+        {
+            return string.Equals(invalidation.AffectedResourceId, assignment.ResourceId, StringComparison.Ordinal) ||
+                   string.Equals(invalidation.AffectedResourceId, assignment.WorkCenterId, StringComparison.Ordinal);
+        }
+
+        if (!string.IsNullOrWhiteSpace(invalidation.AffectedSkuCode) &&
+            problem.Orders.Any(order =>
+                string.Equals(order.OrderId, assignment.OrderId, StringComparison.Ordinal) &&
+                string.Equals(order.SkuCode, invalidation.AffectedSkuCode, StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        return string.IsNullOrWhiteSpace(invalidation.AffectedResourceId) &&
+               string.IsNullOrWhiteSpace(invalidation.AffectedWorkOrderId) &&
+               string.IsNullOrWhiteSpace(invalidation.AffectedOperationId) &&
+               string.IsNullOrWhiteSpace(invalidation.AffectedSkuCode);
     }
 
     private static SchedulePlanComparisonContract Compare(SchedulePlanContract basePlan, SchedulePlanContract candidate)
     {
-        var baseAssignments = basePlan.Assignments.ToDictionary(x => x.OperationId, StringComparer.Ordinal);
+        var baseAssignments = basePlan.Assignments.ToDictionary(x => (x.OrderId, x.OperationId));
         var moved = candidate.Assignments.Count(x =>
-            baseAssignments.TryGetValue(x.OperationId, out var previous) &&
+            baseAssignments.TryGetValue((x.OrderId, x.OperationId), out var previous) &&
             (previous.ResourceId != x.ResourceId || previous.StartUtc != x.StartUtc || previous.EndUtc != x.EndUtc));
         return new(
             basePlan.PlanId,

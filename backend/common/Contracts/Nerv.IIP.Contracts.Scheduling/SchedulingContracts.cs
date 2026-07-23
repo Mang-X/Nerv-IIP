@@ -4,6 +4,11 @@ using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.Contracts.Scheduling;
 
+public static class SchedulingWorkbenchLimits
+{
+    public const int MaxOrderCount = 500;
+}
+
 public static class SchedulingJson
 {
     public static JsonSerializerOptions Options { get; } = new(JsonSerializerDefaults.Web)

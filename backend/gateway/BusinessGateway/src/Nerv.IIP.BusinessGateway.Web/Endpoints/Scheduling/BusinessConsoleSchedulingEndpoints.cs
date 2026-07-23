@@ -361,8 +361,11 @@ public sealed class BusinessConsoleCreateSchedulingWorkbenchPlanRequestValidator
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.HorizonEndUtc).GreaterThan(x => x.HorizonStartUtc);
-        RuleFor(x => x.Orders).NotEmpty().Must(x => x.Count <= 500);
+        RuleFor(x => x.Orders).NotEmpty().Must(x => x.Count <= SchedulingWorkbenchLimits.MaxOrderCount);
         RuleForEach(x => x.Orders).ChildRules(order => order.RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(128));
+        RuleFor(x => x.Orders)
+            .Must(x => x.Select(order => order.WorkOrderId).Distinct(StringComparer.Ordinal).Count() == x.Count)
+            .WithMessage("Work-order selections must be distinct.");
     }
 }
 
@@ -374,9 +377,15 @@ public sealed class BusinessConsoleCreateSchedulePlanRevisionRequestValidator
         RuleFor(x => x.PlanId).NotEmpty().MaximumLength(128);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
-        RuleFor(x => x.IncludedOrderIds).NotEmpty().Must(x => x.Count <= 500);
+        RuleFor(x => x.IncludedOrderIds).NotEmpty().Must(x => x.Count <= SchedulingWorkbenchLimits.MaxOrderCount);
+        RuleFor(x => x.IncludedOrderIds)
+            .Must(x => x.Distinct(StringComparer.Ordinal).Count() == x.Count)
+            .WithMessage("Included work-order ids must be distinct.");
         RuleForEach(x => x.LockedAssignments).ChildRules(assignment =>
             assignment.RuleFor(x => x.EndUtc).GreaterThan(x => x.StartUtc));
+        RuleFor(x => x.LockedAssignments)
+            .Must(x => x.Select(assignment => (assignment.OrderId, assignment.OperationId)).Distinct().Count() == x.Count)
+            .WithMessage("Locked order-operation ids must be distinct.");
     }
 }
 

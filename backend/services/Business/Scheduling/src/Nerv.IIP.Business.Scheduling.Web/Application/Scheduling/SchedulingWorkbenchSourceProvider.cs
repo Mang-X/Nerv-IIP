@@ -22,8 +22,6 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
     ISchedulingProblemProductEngineeringClient productEngineeringClient,
     IInternalServiceTokenProvider? internalTokenProvider = null) : ISchedulingWorkbenchSourceProvider
 {
-    public const int MaxOrderCount = 500;
-
     public async Task<IReadOnlyCollection<SchedulingProblemSourceOrder>> ResolveOrdersAsync(
         string organizationId,
         string environmentId,
@@ -34,19 +32,19 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
         var requested = selections
             .Select(x => x with { WorkOrderId = x.WorkOrderId.Trim() })
             .ToArray();
-        if (requested.Length is < 1 or > MaxOrderCount ||
+        if (requested.Length is < 1 or > SchedulingWorkbenchLimits.MaxOrderCount ||
             requested.Any(x => string.IsNullOrWhiteSpace(x.WorkOrderId)) ||
             requested.Select(x => x.WorkOrderId).Distinct(StringComparer.Ordinal).Count() != requested.Length)
         {
-            throw new KnownException($"Scheduling workbench requires between 1 and {MaxOrderCount} distinct work orders.");
+            throw new KnownException($"Scheduling workbench requires between 1 and {SchedulingWorkbenchLimits.MaxOrderCount} distinct work orders.");
         }
 
         var firstPage = await ListWorkOrdersAsync(organizationId, environmentId, 0, cancellationToken);
         var byId = firstPage.Items.ToDictionary(x => x.WorkOrderId, StringComparer.Ordinal);
         var requestedIds = requested.Select(x => x.WorkOrderId).ToHashSet(StringComparer.Ordinal);
-        for (var skip = MaxOrderCount;
+        for (var skip = SchedulingWorkbenchLimits.MaxOrderCount;
              skip < firstPage.Total && !requestedIds.IsSubsetOf(byId.Keys);
-             skip += MaxOrderCount)
+             skip += SchedulingWorkbenchLimits.MaxOrderCount)
         {
             var page = await ListWorkOrdersAsync(organizationId, environmentId, skip, cancellationToken);
             foreach (var item in page.Items)
@@ -60,19 +58,25 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
             throw new KnownException($"MES work orders were not found in the requested scope: {string.Join(", ", missing)}");
         }
 
-        var routingTasks = requested
+        var productionVersionIds = requested
             .Select(x => byId[x.WorkOrderId].ProductionVersionId)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Distinct(StringComparer.Ordinal)
-            .ToDictionary(
-                x => x!,
-                x => productEngineeringClient.GetProductionVersionRoutingAsync(
+            .Select(x => x!)
+            .ToArray();
+        var routingResults = await Task.WhenAll(productionVersionIds.Select(async productionVersionId => new
+        {
+            ProductionVersionId = productionVersionId,
+            Routing = await productEngineeringClient.GetProductionVersionRoutingAsync(
                     organizationId,
                     environmentId,
-                    x!,
-                    cancellationToken),
-                StringComparer.Ordinal);
-        await Task.WhenAll(routingTasks.Values);
+                    productionVersionId,
+                    cancellationToken)
+        }));
+        var routingsByVersion = routingResults.ToDictionary(
+            x => x.ProductionVersionId,
+            x => x.Routing,
+            StringComparer.Ordinal);
 
         return requested.Select(selection =>
         {
@@ -87,7 +91,7 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
                 throw new KnownException($"MES work order '{order.WorkOrderId}' has no production version.");
             }
 
-            var routing = routingTasks[order.ProductionVersionId].Result;
+            var routing = routingsByVersion[order.ProductionVersionId];
             if (!string.Equals(order.SkuCode ?? order.SkuId, routing.SkuCode, StringComparison.OrdinalIgnoreCase))
             {
                 throw new KnownException($"MES work order '{order.WorkOrderId}' does not match production version '{order.ProductionVersionId}'.");
@@ -120,7 +124,7 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
                 ("organizationId", organizationId),
                 ("environmentId", environmentId),
                 ("skip", skip),
-                ("take", MaxOrderCount)));
+                ("take", SchedulingWorkbenchLimits.MaxOrderCount)));
         var bearerToken = internalTokenProvider?.BearerToken;
         if (!string.IsNullOrWhiteSpace(bearerToken))
         {
@@ -135,6 +139,7 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
         return envelope?.Data ?? throw new InvalidOperationException("MES returned an empty work-order response envelope.");
     }
 
+    // Service-side authority. The Business Console mirrors these values only to improve pool UX.
     private static readonly HashSet<string> TerminalStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
         "completed", "closed", "cancelled", "canceled", "scrapped"

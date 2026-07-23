@@ -17,6 +17,55 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 public sealed class SchedulingWorkbenchTests
 {
     [Fact]
+    public void Command_validators_use_the_contract_limit_and_reject_duplicate_ids()
+    {
+        var start = new DateTimeOffset(2026, 7, 24, 0, 0, 0, TimeSpan.Zero);
+        var overLimit = Enumerable.Range(1, SchedulingWorkbenchLimits.MaxOrderCount + 1)
+            .Select(index => new SchedulingWorkbenchOrderSelection($"WO-{index}", 10, false))
+            .ToArray();
+        var createResult = new CreateSchedulingWorkbenchPlanCommandValidator().Validate(
+            new CreateSchedulingWorkbenchPlanCommand("org-001", "env-dev", start, start.AddDays(1), overLimit));
+        var revisionResult = new CreateSchedulePlanRevisionCommandValidator().Validate(
+            new CreateSchedulePlanRevisionCommand(
+                "plan-001",
+                "org-001",
+                "env-dev",
+                ["WO-001", "WO-001"],
+                []));
+        var manyLocks = Enumerable.Range(1, SchedulingWorkbenchLimits.MaxOrderCount + 1)
+            .Select(index => new SchedulingLockedAssignmentContract(
+                $"assignment-{index}",
+                $"WO-{index}",
+                "OP-10",
+                10,
+                "RES-1",
+                "WC-1",
+                start,
+                start.AddHours(1),
+                "ui"))
+            .ToArray();
+        var manyCommandLocksResult = new CreateSchedulePlanRevisionCommandValidator().Validate(
+            new CreateSchedulePlanRevisionCommand(
+                "plan-001",
+                "org-001",
+                "env-dev",
+                ["WO-001"],
+                manyLocks));
+        var manyEndpointLocksResult = new CreateSchedulePlanRevisionRequestValidator().Validate(
+            new CreateSchedulePlanRevisionRequest(
+                "plan-001",
+                "org-001",
+                "env-dev",
+                ["WO-001"],
+                manyLocks));
+
+        Assert.False(createResult.IsValid);
+        Assert.False(revisionResult.IsValid);
+        Assert.True(manyCommandLocksResult.IsValid);
+        Assert.True(manyEndpointLocksResult.IsValid);
+    }
+
+    [Fact]
     public async Task Source_provider_accepts_one_authoritative_batch_of_100_distinct_work_orders()
     {
         var start = new DateTimeOffset(2026, 7, 24, 0, 0, 0, TimeSpan.Zero);
@@ -152,24 +201,24 @@ public sealed class SchedulingWorkbenchTests
             problem.HorizonStartUtc,
             problem.HorizonEndUtc,
             problem.HorizonStartUtc));
-        var affected = basePlan.Assignments.Take(2).ToArray();
-        foreach (var assignment in affected)
-        {
-            db.SchedulePlanInvalidations.Add(SchedulePlanInvalidation.Create(
-                problem.OrganizationId,
-                problem.EnvironmentId,
-                basePlan.PlanId,
-                "event-latest",
-                "maintenance.AssetUnavailable",
-                "maintenance",
-                "equipmentUnavailable",
-                assignment.ResourceId,
-                assignment.OrderId,
-                assignment.OperationId,
-                null,
-                problem.HorizonStartUtc.AddHours(2),
-                problem.HorizonStartUtc.AddHours(2)));
-        }
+        var affectedResourceId = basePlan.Assignments.First().ResourceId;
+        var affected = basePlan.Assignments
+            .Where(assignment => assignment.ResourceId == affectedResourceId)
+            .ToArray();
+        db.SchedulePlanInvalidations.Add(SchedulePlanInvalidation.Create(
+            problem.OrganizationId,
+            problem.EnvironmentId,
+            basePlan.PlanId,
+            "event-latest",
+            "maintenance.AssetUnavailable",
+            "maintenance",
+            "equipmentUnavailable",
+            affectedResourceId,
+            null,
+            null,
+            null,
+            problem.HorizonStartUtc.AddHours(2),
+            problem.HorizonStartUtc.AddHours(2)));
         await db.SaveChangesAsync();
         var original = basePlan.Assignments.First();
         var movedStart = original.StartUtc.AddMinutes(1);
@@ -200,6 +249,77 @@ public sealed class SchedulingWorkbenchTests
         Assert.True(result.Impact.IsInvalidated);
         Assert.Equal(2, result.Impact.AffectedOperationIds.Count);
         Assert.Equal("event-latest", result.Impact.SourceEventId);
+    }
+
+    [Fact]
+    public async Task Revision_supports_local_operation_ids_reused_across_work_orders()
+    {
+        await using var db = CreateDbContext();
+        var template = ShockAbsorberSchedulingFixture.CreateProblem();
+        var firstOrder = template.Orders.First();
+        var problem = template with
+        {
+            ProblemId = "problem-reused-operation-ids",
+            Orders =
+            [
+                firstOrder,
+                firstOrder with
+                {
+                    OrderId = $"{firstOrder.OrderId}-2",
+                    BusinessReference = $"{firstOrder.BusinessReference}-2",
+                },
+            ],
+        };
+        var basePlan = SchedulePlanContractMapper.WithStatus(
+            new FiniteCapacityScheduler().Schedule(problem, "plan-base-reused-operation-ids", problem.HorizonStartUtc),
+            SchedulePlanStatusContract.Generated);
+        db.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(
+            problem.OrganizationId,
+            problem.EnvironmentId,
+            SchedulePlanContractMapper.ToDomainSnapshot(basePlan)));
+        db.ScheduleProblems.Add(new ScheduleProblemSnapshot(
+            problem.ProblemId,
+            problem.ContractVersion,
+            problem.OrganizationId,
+            problem.EnvironmentId,
+            "fingerprint",
+            JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            problem.HorizonStartUtc,
+            problem.HorizonEndUtc,
+            problem.HorizonStartUtc));
+        await db.SaveChangesAsync();
+        var handler = new CreateSchedulePlanRevisionCommandHandler(
+            db,
+            new SchedulingCreateSender(problem.HorizonStartUtc));
+        var repeatedOperationId = basePlan.Assignments.First().OperationId;
+        var locks = basePlan.Assignments
+            .Where(assignment => assignment.OperationId == repeatedOperationId)
+            .Take(2)
+            .Select(assignment => new SchedulingLockedAssignmentContract(
+                string.Empty,
+                assignment.OrderId,
+                assignment.OperationId,
+                assignment.OperationSequence,
+                assignment.ResourceId,
+                assignment.WorkCenterId,
+                assignment.StartUtc,
+                assignment.EndUtc,
+                "ui"))
+            .ToArray();
+
+        var result = await handler.Handle(new CreateSchedulePlanRevisionCommand(
+            basePlan.PlanId,
+            problem.OrganizationId,
+            problem.EnvironmentId,
+            problem.Orders.Select(x => x.OrderId).ToArray(),
+            locks), CancellationToken.None);
+
+        Assert.Equal(problem.Orders.Count, result.Candidate.Assignments.Select(x => x.OrderId).Distinct().Count());
+        Assert.Equal(2, result.Candidate.Assignments
+            .Where(x => x.IsLocked && x.OperationId == repeatedOperationId)
+            .Select(x => x.AssignmentId)
+            .Distinct(StringComparer.Ordinal)
+            .Count());
     }
 
     private sealed class StubProductEngineeringClient : ISchedulingProblemProductEngineeringClient

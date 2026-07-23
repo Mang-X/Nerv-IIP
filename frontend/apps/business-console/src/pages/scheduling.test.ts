@@ -309,7 +309,8 @@ describe('APS scheduling workbench page', () => {
 
     expect(wrapper.text()).toContain('批量待排 → 编辑锁定 → 重预览 → 对比发布')
     expect(wrapper.text()).toContain('待排工单池')
-    expect(wrapper.text()).toContain('WorkingScheduleDraft')
+    expect(wrapper.text()).toContain('排程草案工作区')
+    expect(wrapper.text()).toContain('工序待排池')
     expect(wrapper.text()).toContain('锁定重预览')
     expect(wrapper.text()).toContain('发布新版')
   })
