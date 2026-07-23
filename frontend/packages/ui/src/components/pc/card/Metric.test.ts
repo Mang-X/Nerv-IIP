@@ -263,6 +263,24 @@ describe('NvMetricRing / NvMetricStrip', () => {
     expect(wrapper.find('.nv-ring-center').text()).toContain('总计')
   })
 
+  // 回归：中心读数层是 absolute inset-0，会盖住整个环。少了 pointer-events-none，
+  // 弧就完全收不到 hover（jsdom 不做命中测试，只能锁类名，真机由浏览器探针兜底）。
+  it('ring 中心读数不拦截指针，弧才能被悬浮', () => {
+    const wrapper = mount(NvMetricRing, {
+      props: { label: '在制工单', value: 35, segments: ringSegments },
+    })
+    expect(wrapper.find('.nv-ring-center').classes()).toContain('pointer-events-none')
+  })
+
+  it('ring 悬浮弧本身：与图例行等效地联动', async () => {
+    const wrapper = mount(NvMetricRing, {
+      props: { label: '在制工单', value: 35, centerCaption: '总计', segments: ringSegments },
+    })
+    await wrapper.findAll('.nv-ring-seg')[0].trigger('mouseenter')
+    expect(wrapper.findAll('.nv-ring-dim').length).toBe(4)
+    expect(wrapper.find('.nv-ring-center').text()).toContain('进行中 · 68.6%')
+  })
+
   it('ring 悬浮图例项：其余分段淡出，中心切到该段读数', async () => {
     const wrapper = mount(NvMetricRing, {
       props: { label: '在制工单', value: 35, centerCaption: '总计', segments: ringSegments },

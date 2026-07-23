@@ -103,7 +103,11 @@ const centerCaptionText = computed(() => {
           />
         </svg>
 
-        <span class="nv-ring-center absolute inset-0 grid place-items-center px-2 text-center">
+        <!-- pointer-events-none is load-bearing: this readout covers the whole
+             ring, so without it the arcs beneath never receive hover at all. -->
+        <span
+          class="nv-ring-center pointer-events-none absolute inset-0 grid place-items-center px-2 text-center"
+        >
           <span>
             <span class="nv-ring-figure block truncate font-semibold tabular-nums tracking-tight">
               {{ centerValue }}
