@@ -80,6 +80,7 @@ public sealed class EquipmentHealthScoringPolicyTests
     }
 
     [Theory]
+    [InlineData(EquipmentHealthAlarmSeverity.Other, 20)]
     [InlineData(EquipmentHealthAlarmSeverity.Warning, 45)]
     [InlineData(EquipmentHealthAlarmSeverity.Critical, 65)]
     public void Active_alarm_uses_severity_specific_penalty(
@@ -97,6 +98,95 @@ public sealed class EquipmentHealthScoringPolicyTests
 
         Assert.Equal(EquipmentHealthRuleStatus.Risk, evaluation.Status);
         Assert.Equal(expectedPenalty, evaluation.Penalty);
+    }
+
+    [Fact]
+    public void Alarm_risk_evidence_uses_the_fact_that_determines_each_penalty()
+    {
+        var activeCritical = Alarm(
+            EquipmentHealthAlarmSeverity.Critical,
+            isActive: true,
+            minutesAgo: 10);
+        var newerActiveWarning = Alarm(
+            EquipmentHealthAlarmSeverity.Warning,
+            isActive: true,
+            minutesAgo: 1);
+        var criticalResult = EquipmentHealthScoringPolicy.Evaluate(
+            NormalInput() with { Alarms = [activeCritical, newerActiveWarning] });
+
+        Assert.Equal(
+            activeCritical.SourceFact,
+            Evaluation(criticalResult, EquipmentHealthScoringPolicy.AlarmFrequencyRuleCode).SourceFact);
+
+        var activeWarning = Alarm(
+            EquipmentHealthAlarmSeverity.Warning,
+            isActive: true,
+            minutesAgo: 10);
+        var newerClearedCritical = Alarm(
+            EquipmentHealthAlarmSeverity.Critical,
+            isActive: false,
+            minutesAgo: 1);
+        var warningResult = EquipmentHealthScoringPolicy.Evaluate(
+            NormalInput() with { Alarms = [activeWarning, newerClearedCritical] });
+
+        Assert.Equal(
+            activeWarning.SourceFact,
+            Evaluation(warningResult, EquipmentHealthScoringPolicy.AlarmFrequencyRuleCode).SourceFact);
+
+        var oldestRecentRaise = Alarm(
+            EquipmentHealthAlarmSeverity.Other,
+            isActive: false,
+            minutesAgo: 180);
+        var middleRecentRaise = Alarm(
+            EquipmentHealthAlarmSeverity.Other,
+            isActive: false,
+            minutesAgo: 120);
+        var newestRecentRaise = Alarm(
+            EquipmentHealthAlarmSeverity.Other,
+            isActive: false,
+            minutesAgo: 60);
+        var irrelevantOldRaiseWithNewClear = Alarm(
+            EquipmentHealthAlarmSeverity.Critical,
+            isActive: false,
+            minutesAgo: 1,
+            raisedMinutesAgo: 1_500);
+        var repeatedResult = EquipmentHealthScoringPolicy.Evaluate(
+            EmptyInput() with
+            {
+                Alarms =
+                [
+                    oldestRecentRaise,
+                    middleRecentRaise,
+                    newestRecentRaise,
+                    irrelevantOldRaiseWithNewClear,
+                ],
+            });
+
+        Assert.Equal(
+            newestRecentRaise.SourceFact,
+            Evaluation(repeatedResult, EquipmentHealthScoringPolicy.AlarmFrequencyRuleCode).SourceFact);
+        Assert.Equal(irrelevantOldRaiseWithNewClear.SourceFact, repeatedResult.NewestSourceFact);
+    }
+
+    [Fact]
+    public void Cleared_alarm_counts_by_raise_time_but_uses_latest_lifecycle_fact_for_freshness()
+    {
+        var recentClearOfOldAlarm = Alarm(
+            EquipmentHealthAlarmSeverity.Other,
+            isActive: false,
+            minutesAgo: 1,
+            raisedMinutesAgo: 1_500);
+        var input = EmptyInput() with { Alarms = [recentClearOfOldAlarm] };
+
+        var result = EquipmentHealthScoringPolicy.Evaluate(input);
+        var evaluation = Evaluation(result, EquipmentHealthScoringPolicy.AlarmFrequencyRuleCode);
+
+        Assert.Equal(EquipmentHealthRuleStatus.Normal, evaluation.Status);
+        Assert.Equal(0, evaluation.Penalty);
+        Assert.Contains("24小时0次", evaluation.Current, StringComparison.Ordinal);
+        Assert.Equal(recentClearOfOldAlarm.SourceFact, evaluation.SourceFact);
+        Assert.Equal(recentClearOfOldAlarm.SourceFact, result.NewestSourceFact);
+        Assert.Equal(EquipmentHealthFreshness.Fresh, result.Freshness);
     }
 
     [Fact]
@@ -423,14 +513,16 @@ public sealed class EquipmentHealthScoringPolicyTests
     private static EquipmentHealthAlarmFact Alarm(
         EquipmentHealthAlarmSeverity severity,
         bool isActive,
-        double minutesAgo)
+        double minutesAgo,
+        double? raisedMinutesAgo = null)
     {
         var state = isActive ? "活动" : "已清除";
         return new EquipmentHealthAlarmFact(
             severity,
             isActive,
+            AsOfUtc.AddMinutes(-(raisedMinutesAgo ?? minutesAgo)),
             new EquipmentHealthSourceFact(
-                "alarm-event",
+                isActive ? "alarm-raised" : "alarm-cleared",
                 $"{severity}-{state}",
                 AsOfUtc.AddMinutes(-minutesAgo)));
     }

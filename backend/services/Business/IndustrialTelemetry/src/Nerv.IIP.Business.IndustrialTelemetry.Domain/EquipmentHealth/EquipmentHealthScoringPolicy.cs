@@ -11,6 +11,7 @@ public enum EquipmentHealthRiskDirection
 
 public enum EquipmentHealthAlarmSeverity
 {
+    Other,
     Warning,
     Critical,
 }
@@ -56,6 +57,7 @@ public sealed record EquipmentHealthRuntimeFact(
 public sealed record EquipmentHealthAlarmFact(
     EquipmentHealthAlarmSeverity Severity,
     bool IsActive,
+    DateTimeOffset RaisedAtUtc,
     EquipmentHealthSourceFact SourceFact);
 
 public sealed record EquipmentHealthHistorySample(
@@ -140,11 +142,7 @@ public static class EquipmentHealthScoringPolicy
                     evaluation.SourceFact))
             .ToImmutableArray();
         var score = Math.Clamp(100 - riskFactors.Sum(factor => factor.Penalty), 0, 100);
-        var newestSourceFact = evaluations
-            .Select(evaluation => evaluation.SourceFact)
-            .Where(sourceFact => sourceFact is not null)
-            .OrderByDescending(sourceFact => sourceFact!.OccurredAtUtc)
-            .FirstOrDefault();
+        var newestSourceFact = FindNewestSourceFact(input);
 
         return new EquipmentHealthScoringResult(
             score,
@@ -244,43 +242,59 @@ public static class EquipmentHealthScoringPolicy
     {
         const string label = "近24小时报警频次";
         var alarms = input.Alarms.IsDefault ? [] : input.Alarms;
-        var sourceFact = alarms
-            .OrderByDescending(alarm => alarm.SourceFact.OccurredAtUtc)
-            .Select(alarm => alarm.SourceFact)
-            .FirstOrDefault();
         var activeAlarms = alarms.Where(alarm => alarm.IsActive).ToImmutableArray();
         var windowStartUtc = input.EvaluatedAtUtc.Subtract(AlarmWindow);
-        var alarmsInWindow = alarms.Count(
-            alarm => alarm.SourceFact.OccurredAtUtc >= windowStartUtc
-                && alarm.SourceFact.OccurredAtUtc <= input.EvaluatedAtUtc);
+        var alarmsInWindow = alarms
+            .Where(
+                alarm => alarm.RaisedAtUtc >= windowStartUtc
+                    && alarm.RaisedAtUtc <= input.EvaluatedAtUtc)
+            .ToImmutableArray();
 
         int penalty;
-        if (activeAlarms.Any(alarm => alarm.Severity == EquipmentHealthAlarmSeverity.Critical))
+        EquipmentHealthSourceFact? sourceFact;
+        string evidence;
+        var activeCritical = NewestAlarm(
+            activeAlarms.Where(alarm => alarm.Severity == EquipmentHealthAlarmSeverity.Critical));
+        var activeWarning = NewestAlarm(
+            activeAlarms.Where(alarm => alarm.Severity == EquipmentHealthAlarmSeverity.Warning));
+        var activeOther = NewestAlarm(
+            activeAlarms.Where(alarm => alarm.Severity == EquipmentHealthAlarmSeverity.Other));
+        if (activeCritical is not null)
         {
             penalty = ActiveCriticalAlarmPenalty;
+            sourceFact = activeCritical.SourceFact;
+            evidence = $"存在活动严重报警；近24小时共 {alarmsInWindow.Length} 次报警。";
         }
-        else if (activeAlarms.Any(alarm => alarm.Severity == EquipmentHealthAlarmSeverity.Warning))
+        else if (activeWarning is not null)
         {
             penalty = ActiveWarningAlarmPenalty;
+            sourceFact = activeWarning.SourceFact;
+            evidence = $"存在活动警告报警；近24小时共 {alarmsInWindow.Length} 次报警。";
         }
-        else if (alarmsInWindow >= 3)
+        else if (activeOther is not null)
         {
             penalty = RepeatedAlarmPenalty;
+            sourceFact = activeOther.SourceFact;
+            evidence = $"存在活动一般报警；近24小时共 {alarmsInWindow.Length} 次报警。";
+        }
+        else if (alarmsInWindow.Length >= 3)
+        {
+            penalty = RepeatedAlarmPenalty;
+            sourceFact = alarmsInWindow
+                .OrderByDescending(alarm => alarm.RaisedAtUtc)
+                .First()
+                .SourceFact;
+            evidence = $"无活动报警，但近24小时发生 {alarmsInWindow.Length} 次报警，达到重复报警门槛。";
         }
         else
         {
             penalty = 0;
+            sourceFact = NewestAlarm(alarms)?.SourceFact;
+            evidence = $"无活动报警，近24小时发生 {alarmsInWindow.Length} 次报警，未达到3次门槛。";
         }
 
         var isRisk = penalty > 0;
-        var current = $"{activeAlarms.Length}个活动，24小时{alarmsInWindow}次";
-        var evidence = penalty switch
-        {
-            ActiveCriticalAlarmPenalty => $"存在活动严重报警；近24小时共 {alarmsInWindow} 次报警。",
-            ActiveWarningAlarmPenalty => $"存在活动警告报警；近24小时共 {alarmsInWindow} 次报警。",
-            RepeatedAlarmPenalty => $"无活动报警，但近24小时发生 {alarmsInWindow} 次报警，达到重复报警门槛。",
-            _ => $"无活动报警，近24小时发生 {alarmsInWindow} 次报警，未达到3次门槛。",
-        };
+        var current = $"{activeAlarms.Length}个活动，24小时{alarmsInWindow.Length}次";
 
         return new EquipmentHealthRuleEvaluation(
             AlarmFrequencyRuleCode,
@@ -473,6 +487,43 @@ public static class EquipmentHealthScoringPolicy
         return direction == EquipmentHealthRiskDirection.High
             ? value >= threshold
             : value <= threshold;
+    }
+
+    private static EquipmentHealthAlarmFact? NewestAlarm(
+        IEnumerable<EquipmentHealthAlarmFact> alarms)
+    {
+        return alarms
+            .OrderByDescending(alarm => alarm.SourceFact.OccurredAtUtc)
+            .FirstOrDefault();
+    }
+
+    private static EquipmentHealthSourceFact? FindNewestSourceFact(
+        EquipmentHealthScoringInput input)
+    {
+        var sourceFacts = Enumerable.Empty<EquipmentHealthSourceFact>();
+        if (input.Threshold is not null)
+        {
+            sourceFacts = sourceFacts.Append(input.Threshold.SourceFact);
+        }
+
+        if (input.Runtime is not null)
+        {
+            sourceFacts = sourceFacts.Append(input.Runtime.SourceFact);
+        }
+
+        if (!input.Alarms.IsDefaultOrEmpty)
+        {
+            sourceFacts = sourceFacts.Concat(input.Alarms.Select(alarm => alarm.SourceFact));
+        }
+
+        if (!input.History.IsDefaultOrEmpty)
+        {
+            sourceFacts = sourceFacts.Concat(input.History.Select(sample => sample.SourceFact));
+        }
+
+        return sourceFacts
+            .OrderByDescending(sourceFact => sourceFact.OccurredAtUtc)
+            .FirstOrDefault();
     }
 
     private static EquipmentHealthFreshness ClassifyFreshness(
