@@ -88,6 +88,20 @@ try
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
     builder.Services.AddScoped<ISchedulingOperationOverrideOverlay, SchedulingOperationOverrideOverlay>();
     builder.Services.AddScoped<OrderUrgencyService>();
+    builder.Services.AddSingleton(new OrderUrgencyRetentionWorkerIdentity(
+        $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}"));
+    builder.Services.AddHttpClient<IOrderUrgencyArchiveStore, HttpOrderUrgencyArchiveStore>(client =>
+    {
+        if (Uri.TryCreate(builder.Configuration["FileStorage:BaseUrl"], UriKind.Absolute, out var baseAddress))
+        {
+            client.BaseAddress = baseAddress;
+        }
+    }).UseHttpClientMetrics();
+    builder.Services.AddScoped(services => new OrderUrgencyRetentionService(
+        services.GetRequiredService<ApplicationDbContext>(),
+        services.GetRequiredService<IOrderUrgencyArchiveStore>(),
+        services.GetRequiredService<TimeProvider>(),
+        services.GetRequiredService<OrderUrgencyRetentionWorkerIdentity>().Value));
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<ISchedulingIntegrationEventContextAccessor, HttpSchedulingIntegrationEventContextAccessor>();
     builder.Services.AddScoped<SchedulePlanInvalidatedIntegrationEventConverter>();
@@ -101,6 +115,7 @@ try
         builder.Services.AddScoped<ISchedulingEquipmentAvailabilityProvider, HttpSchedulingEquipmentAvailabilityProvider>();
         builder.Services.AddScoped<ISchedulingMaterialReadinessProvider, HttpSchedulingMaterialReadinessProvider>();
         builder.Services.AddHostedService<OrderUrgencyRefreshWorker>();
+        builder.Services.AddHostedService<OrderUrgencyRetentionWorker>();
     }
 
     var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");

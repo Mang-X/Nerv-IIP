@@ -100,9 +100,9 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Mes | 53 | 50 | 3 | 0 |
 | ProductEngineering | 39 | 38 | 0 | 1 |
 | Quality | 32 | 20 | 12 | 0 |
-| Scheduling | 12 | 11 | 1 | 0 |
+| Scheduling | 13 | 11 | 1 | 1 |
 | Wms | 30 | 19 | 6 | 5 |
-| **Total** | **366** | **295** | **49** | **22** |
+| **Total** | **367** | **295** | **49** | **23** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
 The `exposed` rows (295) — each with its verified facade `gatewayOperationIds` — are
@@ -182,6 +182,7 @@ current manifest rather than from samples, so the facade must preserve
 | MasterData | GET | `/api/business/v1/master-data/partners/{customerCode}/credit` | Service-to-service public credit read consumed by ERP sales-order credit check (#436). |
 | MasterData | POST | `/api/business/v1/master-data/references/resolve` | Service-to-service batch reference-data resolve consumed by other business services. |
 | MasterData | POST | `/api/business/v1/master-data/references/validate` | Service-to-service batch reference-data validate consumed by other business services. |
+| Scheduling | POST | `/api/business/internal/v1/scheduling/order-urgency-archives/restore` | Authenticated operator recovery for exact-version compliance archives; never a Business Console action. |
 | Wms | POST | `/api/business/v1/wms/inbound-orders/cancel-by-source` | Service-to-service ERP purchase-order cancellation closes matching open WMS inbound expectations; not a direct Console action. |
 | Wms | POST | `/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete` | Internal warehouse-task completion endpoint consumed by the WCS adapter/callback boundary (#413). |
 | Wms | POST | `/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/progress` | Internal warehouse-task progress endpoint consumed by the WCS adapter/callback boundary (#413). |
