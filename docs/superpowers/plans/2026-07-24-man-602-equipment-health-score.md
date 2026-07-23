@@ -89,4 +89,3 @@
 - [ ] **Step 5: Commit final documentation if needed.** Use `docs(iiot): record equipment health readiness`.
 - [ ] **Step 6: Push and create a ready PR.** Use `gh`, include `Fixes #1087`, Linear MAN-602 URL, the `exposed` facade declaration, product-doc impact, exact test evidence, and the unexecuted #1086-dependent real scenario. Do not merge.
 - [ ] **Step 7: Verify PR state.** Confirm `isDraft=false`, base `main`, head branch, mergeability/check state, linked issue, and then wait for user review.
-

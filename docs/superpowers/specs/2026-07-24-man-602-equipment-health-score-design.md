@@ -52,4 +52,3 @@ The page keeps prior health data mounted while polling and distinguishes loading
 ## #1086 Dependency
 
 Deterministic tests and all build/contract gates are independently executable in this branch. The real `normal/degrading/alarm/recovered` acceptance requires #1086 to be merged and running through its public ingestion path. This PR must report that dependency honestly and must not add a private data injector or seed workaround.
-
