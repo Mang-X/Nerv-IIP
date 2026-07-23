@@ -408,6 +408,24 @@ public static class EquipmentHealthScoringPolicy
                 selectedInsufficient.History);
         }
 
+        var hasRisk = sufficientCandidates.Any(
+            candidate => candidate.BreachRatio >= HistoricalBreachRatio);
+        if (!hasRisk && candidates.Any(candidate => !candidate.IsSufficient))
+        {
+            var selectedInsufficient = candidates
+                .Where(candidate => !candidate.IsSufficient)
+                .OrderByDescending(candidate => candidate.History.Length)
+                .ThenByDescending(candidate => HistorySpan(candidate.History))
+                .ThenBy(candidate => candidate.Observation.RuleCode, StringComparer.Ordinal)
+                .ThenBy(candidate => candidate.Observation.TagKey, StringComparer.Ordinal)
+                .First();
+            return HistoricalAccumulating(
+                SustainedExceedanceRuleCode,
+                label,
+                selectedInsufficient.Observation,
+                selectedInsufficient.History);
+        }
+
         var selected = sufficientCandidates[0];
         var isRisk = selected.BreachRatio >= HistoricalBreachRatio;
         var evidence =
@@ -492,6 +510,24 @@ public static class EquipmentHealthScoringPolicy
         if (sufficientCandidates.IsDefaultOrEmpty)
         {
             var selectedInsufficient = candidates
+                .OrderByDescending(candidate => candidate.History.Length)
+                .ThenByDescending(candidate => HistorySpan(candidate.History))
+                .ThenBy(candidate => candidate.Observation.RuleCode, StringComparer.Ordinal)
+                .ThenBy(candidate => candidate.Observation.TagKey, StringComparer.Ordinal)
+                .First();
+            return HistoricalAccumulating(
+                TrendGrowthRuleCode,
+                label,
+                selectedInsufficient.Observation,
+                selectedInsufficient.History);
+        }
+
+        var hasRisk = sufficientCandidates.Any(
+            candidate => candidate.DeteriorationPercent >= 20);
+        if (!hasRisk && candidates.Any(candidate => !candidate.IsSufficient))
+        {
+            var selectedInsufficient = candidates
+                .Where(candidate => !candidate.IsSufficient)
                 .OrderByDescending(candidate => candidate.History.Length)
                 .ThenByDescending(candidate => HistorySpan(candidate.History))
                 .ThenBy(candidate => candidate.Observation.RuleCode, StringComparer.Ordinal)

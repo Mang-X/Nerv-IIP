@@ -320,6 +320,56 @@ public sealed class EquipmentHealthScoringPolicyTests
         Assert.Equal(0, trend.Penalty);
     }
 
+    [Fact]
+    public void Sustained_exceedance_accumulates_when_history_is_mixed_normal_and_insufficient()
+    {
+        var sufficientNormal = Rule(
+            ruleCode: "temperature-high",
+            tagKey: "temperature",
+            history: History(50, 50, 50, 50, 50, 50));
+        var insufficient = Rule(
+            ruleCode: "pressure-high",
+            tagKey: "pressure",
+            severity: EquipmentHealthAlarmSeverity.Critical,
+            history: History(101, 102, 103, 104, 105));
+        var input = EmptyInput() with { RuleObservations = [sufficientNormal, insufficient] };
+
+        var result = EquipmentHealthScoringPolicy.Evaluate(input);
+        var evaluation = Evaluation(
+            result,
+            EquipmentHealthScoringPolicy.SustainedExceedanceRuleCode);
+
+        Assert.Equal(EquipmentHealthRuleStatus.Accumulating, evaluation.Status);
+        Assert.Equal(0, evaluation.Penalty);
+        Assert.DoesNotContain(
+            result.RiskFactors,
+            factor => factor.RuleCode == EquipmentHealthScoringPolicy.SustainedExceedanceRuleCode);
+    }
+
+    [Fact]
+    public void Trend_accumulates_when_history_is_mixed_normal_and_insufficient()
+    {
+        var sufficientNormal = Rule(
+            ruleCode: "temperature-high",
+            tagKey: "temperature",
+            history: History(50, 50, 50, 50, 50, 50));
+        var insufficient = Rule(
+            ruleCode: "pressure-high",
+            tagKey: "pressure",
+            severity: EquipmentHealthAlarmSeverity.Critical,
+            history: History(80, 90, 100, 110, 120));
+        var input = EmptyInput() with { RuleObservations = [sufficientNormal, insufficient] };
+
+        var result = EquipmentHealthScoringPolicy.Evaluate(input);
+        var evaluation = Evaluation(result, EquipmentHealthScoringPolicy.TrendGrowthRuleCode);
+
+        Assert.Equal(EquipmentHealthRuleStatus.Accumulating, evaluation.Status);
+        Assert.Equal(0, evaluation.Penalty);
+        Assert.DoesNotContain(
+            result.RiskFactors,
+            factor => factor.RuleCode == EquipmentHealthScoringPolicy.TrendGrowthRuleCode);
+    }
+
     [Theory]
     [InlineData(EquipmentHealthRiskDirection.High, 100, 120)]
     [InlineData(EquipmentHealthRiskDirection.Low, 100, 80)]
