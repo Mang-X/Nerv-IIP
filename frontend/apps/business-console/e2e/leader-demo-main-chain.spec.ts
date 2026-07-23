@@ -187,6 +187,9 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
   const workCenterHourlyRate = 3_000
   const finishedGoodsUnitCost = 25
   const finishedGoodsCapitalizedCost = finishedGoodsQuantity * finishedGoodsUnitCost
+  // CAP's durable outbox recovery interval can be longer than the ordinary public-read
+  // convergence window. Keep the costing proof bounded while allowing one recovery pass.
+  const costingConvergenceTimeoutMs = 360_000
   const expectedTheoreticalRatePerHour = finishedGoodsQuantity / (operationDurationMinutes / 60)
   const ticksPerHour = 36_000_000_000
   const workCenterCostRateReason = `MAN-595 governed main-chain rate ${suffix}`
@@ -1642,7 +1645,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             lotNo: producedLotNo,
           },
           (data) => Number(data.onHandQuantity ?? 0) > 0,
-          120_000,
+          costingConvergenceTimeoutMs,
         )
         record({
           node: 'finished-goods-receipt-inventory-posting',
@@ -1682,7 +1685,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             textOf(row.producedLotNo) === producedLotNo &&
             Number(row.quantity ?? 0) === finishedGoodsQuantity &&
             Number(row.unitCost ?? 0) === finishedGoodsUnitCost,
-          120_000,
+          costingConvergenceTimeoutMs,
         )
         const terminalStatuses = new Set(['posted', 'postingfailed', 'qualityrestricted'])
         const inventoryLink = await pollData(
