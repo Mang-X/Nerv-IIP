@@ -608,6 +608,34 @@ public sealed class SchedulingEndpointContractTests
         Assert.Contains("\"status\":\"preview\"", responseBody, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("7")]
+    [InlineData("-1")]
+    [InlineData("P4")]
+    public async Task Priority_http_endpoint_rejects_invalid_levels_with_stable_wire_field(string level)
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        using var response = await client.PutAsJsonAsync(
+            "/api/business/v1/scheduling/order-urgencies/WO-001/business-priority",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "prod",
+                level,
+                reason = "invalid priority contract test",
+            });
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var errors = document.RootElement.GetProperty("errors");
+        Assert.False(errors.TryGetProperty("Level", out _));
+        var message = Assert.Single(errors.GetProperty("level").EnumerateArray()).GetString();
+        Assert.Equal("Level must be P0, P1, P2, or P3.", message);
+    }
+
     [Fact]
     public async Task Scheduling_authorized_http_endpoints_scope_plan_routes_by_requested_context()
     {
