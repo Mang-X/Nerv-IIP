@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 using Nerv.IIP.Business.Erp.Infrastructure;
@@ -10,6 +11,7 @@ using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.Repository;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
@@ -65,6 +67,9 @@ public sealed class WorkOrderCostEventClosureTests
 
         Assert.NotNull(reportUnitOfWork);
         Assert.Equal(1, reportUnitOfWork.SaveEntitiesCallCount);
+        Assert.Equal(1, reportUnitOfWork.BeginTransactionCallCount);
+        Assert.Equal(1, reportUnitOfWork.CommitCallCount);
+        Assert.Equal(0, reportUnitOfWork.RollbackCallCount);
         Assert.Contains(reportMediator.Published, notification => notification is WorkOrderCostCompletedDomainEvent);
         await using var verification = new ApplicationDbContext(options, new NoopMediator());
         var cost = await verification.WorkOrderCosts.Include(item => item.Details).SingleAsync();
@@ -320,9 +325,18 @@ public sealed class WorkOrderCostEventClosureTests
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
-    private sealed class RecordingUnitOfWork(IUnitOfWork inner) : IUnitOfWork
+    private sealed class RecordingUnitOfWork(ITransactionUnitOfWork inner) : ITransactionUnitOfWork
     {
         public int SaveEntitiesCallCount { get; private set; }
+        public int BeginTransactionCallCount { get; private set; }
+        public int CommitCallCount { get; private set; }
+        public int RollbackCallCount { get; private set; }
+
+        public IDbContextTransaction? CurrentTransaction
+        {
+            get => inner.CurrentTransaction;
+            set => inner.CurrentTransaction = value;
+        }
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
             inner.SaveChangesAsync(cancellationToken);
@@ -330,7 +344,25 @@ public sealed class WorkOrderCostEventClosureTests
         public Task<bool> SaveEntitiesAsync(CancellationToken cancellationToken = default)
         {
             SaveEntitiesCallCount++;
-            return inner.SaveEntitiesAsync(cancellationToken);
+            return ((IUnitOfWork)inner).SaveEntitiesAsync(cancellationToken);
+        }
+
+        public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+        {
+            BeginTransactionCallCount++;
+            return inner.BeginTransactionAsync(cancellationToken);
+        }
+
+        public Task CommitAsync(CancellationToken cancellationToken = default)
+        {
+            CommitCallCount++;
+            return inner.CommitAsync(cancellationToken);
+        }
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default)
+        {
+            RollbackCallCount++;
+            return inner.RollbackAsync(cancellationToken);
         }
 
         public void Dispose() { }

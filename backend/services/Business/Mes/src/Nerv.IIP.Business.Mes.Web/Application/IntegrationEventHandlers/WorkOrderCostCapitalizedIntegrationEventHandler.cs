@@ -6,6 +6,7 @@ using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Repository;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 
@@ -13,7 +14,7 @@ namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    IUnitOfWork? unitOfWork = null)
+    ITransactionUnitOfWork? unitOfWork = null)
     : IIntegrationEventHandler<WorkOrderCostCapitalizedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-mes.work-order-cost-capitalized";
@@ -40,6 +41,35 @@ public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
         {
             receipt.ApplyCapitalizedUnitCost(integrationEvent.Payload.UnitCost);
         }
-        await (unitOfWork ?? dbContext).SaveEntitiesAsync(cancellationToken);
+        await SaveEntitiesAsync(cancellationToken);
+    }
+
+    private async Task SaveEntitiesAsync(CancellationToken cancellationToken)
+    {
+        if (unitOfWork is null)
+        {
+            await dbContext.SaveEntitiesAsync(cancellationToken);
+            return;
+        }
+
+        if (unitOfWork.CurrentTransaction is not null)
+        {
+            await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
+            return;
+        }
+
+        await using var transaction = await unitOfWork.BeginTransactionAsync(cancellationToken);
+        unitOfWork.CurrentTransaction = transaction;
+        await using var currentTransaction = unitOfWork.CurrentTransaction;
+        try
+        {
+            await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
+            await unitOfWork.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await unitOfWork.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 }

@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.Repository;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -51,6 +52,9 @@ public sealed class WorkOrderCostCapitalizedPersistenceTests
 
         Assert.NotNull(unitOfWork);
         Assert.Equal(1, unitOfWork.SaveEntitiesCallCount);
+        Assert.Equal(1, unitOfWork.BeginTransactionCallCount);
+        Assert.Equal(1, unitOfWork.CommitCallCount);
+        Assert.Equal(0, unitOfWork.RollbackCallCount);
         Assert.Contains(mediator.Published, notification => notification is FinishedGoodsReceiptRequestedDomainEvent);
         await using var verification = new ApplicationDbContext(options, new RecordingMediator());
         Assert.Equal(25m, (await verification.FinishedGoodsReceiptRequests.SingleAsync()).UnitCost);
@@ -82,9 +86,18 @@ public sealed class WorkOrderCostCapitalizedPersistenceTests
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
-    private sealed class RecordingUnitOfWork(IUnitOfWork inner) : IUnitOfWork
+    private sealed class RecordingUnitOfWork(ITransactionUnitOfWork inner) : ITransactionUnitOfWork
     {
         public int SaveEntitiesCallCount { get; private set; }
+        public int BeginTransactionCallCount { get; private set; }
+        public int CommitCallCount { get; private set; }
+        public int RollbackCallCount { get; private set; }
+
+        public IDbContextTransaction? CurrentTransaction
+        {
+            get => inner.CurrentTransaction;
+            set => inner.CurrentTransaction = value;
+        }
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
             inner.SaveChangesAsync(cancellationToken);
@@ -92,7 +105,25 @@ public sealed class WorkOrderCostCapitalizedPersistenceTests
         public Task<bool> SaveEntitiesAsync(CancellationToken cancellationToken = default)
         {
             SaveEntitiesCallCount++;
-            return inner.SaveEntitiesAsync(cancellationToken);
+            return ((IUnitOfWork)inner).SaveEntitiesAsync(cancellationToken);
+        }
+
+        public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+        {
+            BeginTransactionCallCount++;
+            return inner.BeginTransactionAsync(cancellationToken);
+        }
+
+        public Task CommitAsync(CancellationToken cancellationToken = default)
+        {
+            CommitCallCount++;
+            return inner.CommitAsync(cancellationToken);
+        }
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default)
+        {
+            RollbackCallCount++;
+            return inner.RollbackAsync(cancellationToken);
         }
 
         public void Dispose() { }
