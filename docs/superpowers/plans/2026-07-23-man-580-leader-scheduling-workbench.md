@@ -226,6 +226,6 @@ If shared-machine resource pressure blocks a full gate, preserve the exact outpu
 
 Confirm `git diff -- frontend/packages/scheduling` is empty; generated changes correspond to the new Gateway contract; no MAN-582/583/588 behavior appears; every acceptance line maps to a test or backend contract.
 
-- [ ] **Step 4: Commit, push and create a non-draft PR**
+- [x] **Step 4: Commit, push and create a non-draft PR**
 
 PR body must include `Fixes #1049`, Linear `MAN-580`, product-doc impact, endpoint facade declarations, verification evidence, risks and excluded follow-ups. Verify `isDraft=false`, base `main`, expected head branch and live checks, then stop without merging.
