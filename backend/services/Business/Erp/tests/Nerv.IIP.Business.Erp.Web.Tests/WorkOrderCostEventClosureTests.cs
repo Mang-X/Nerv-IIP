@@ -14,6 +14,87 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 public sealed class WorkOrderCostEventClosureTests
 {
     [Fact]
+    public async Task Cap_handlers_persist_cost_closure_without_an_external_save()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"erp-cost-cap-{Guid.CreateVersion7():N}")
+            .Options;
+        var occurredAtUtc = DateTimeOffset.Parse("2026-07-11T01:00:00Z");
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        await using (var seed = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            seed.WorkCenterCostRates.Add(WorkCenterCostRate.Define(
+                "org-001", "env-dev", "WC-01", 50m, "CNY",
+                DateTimeOffset.Parse("2026-01-01T00:00:00Z"), null, 1,
+                "system:test", "test baseline rate", DateTimeOffset.Parse("2026-01-01T00:00:00Z")));
+            await seed.SaveChangesAsync();
+        }
+
+        var report = new ProductionReportRecordedIntegrationEvent(
+            "evt-report", MesIntegrationEventTypes.ProductionReportRecorded, 1, occurredAtUtc,
+            MesIntegrationEventSources.BusinessMes, "RPT-001", "WO-001", "org-001", "env-dev",
+            "operator", "report-001",
+            new ProductionReportRecordedPayload(
+                "RPT-001", "WO-001", "OP-001", "WC-01", null,
+                10m, 0m, 0m, "ea", 5m, occurredAtUtc, false, MaterialMovementCount: 0));
+        await using (var reportDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(reportDb, deadLetters)
+                .HandleAsync(report, CancellationToken.None);
+        }
+
+        await using (var assertReportDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            var cost = await assertReportDb.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+            Assert.Equal(100m, cost.LaborCost);
+            Assert.Contains(await assertReportDb.ProcessedIntegrationEvents.ToListAsync(),
+                item => item.ConsumerName == ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost.ConsumerName);
+        }
+
+        var completed = new WorkOrderCompletedIntegrationEvent(
+            "evt-completed", MesIntegrationEventTypes.WorkOrderCompleted, 1, occurredAtUtc.AddMinutes(1),
+            MesIntegrationEventSources.BusinessMes, "WO-001", "WO-001", "org-001", "env-dev",
+            "mes", "completed-001",
+            new WorkOrderCompletedPayload(
+                "WO-001", "FG-001", 10m, 10m, 0m, occurredAtUtc.AddMinutes(1), 1, 0));
+        await using (var completionDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await new WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(completionDb)
+                .HandleAsync(completed, CancellationToken.None);
+        }
+
+        await using (var assertCompletionDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            var cost = await assertCompletionDb.WorkOrderCosts.SingleAsync();
+            Assert.True(cost.CapitalizationPublished);
+            Assert.Equal(10m, cost.CompletedQuantity);
+        }
+
+        var receiptPosting = new StockMovementPostedIntegrationEvent(
+            "evt-finished-goods", InventoryIntegrationEventTypes.StockMovementPosted, 1,
+            occurredAtUtc.AddMinutes(2), InventoryIntegrationEventSources.BusinessInventory,
+            "FGR-001", "FGR-001", "org-001", "env-dev", "inventory", "move-fg-001",
+            new StockMovementPostedPayload(
+                "MOVE-FG-001", "inbound", InventoryIntegrationEventSources.BusinessMes,
+                "FGR-001", "WO-001", "mes:finished-goods-receipt:FGR-001", "FG-001", "ea",
+                "finished-goods", "receiving", "LOT-001", null, "unrestricted", "organization",
+                "org-001", 10m, occurredAtUtc.AddMinutes(2), 10m, 100m));
+        await using (var receiptDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(receiptDb, deadLetters)
+                .HandleAsync(receiptPosting, CancellationToken.None);
+        }
+
+        await using (var assertReceiptDb = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            var cost = await assertReceiptDb.WorkOrderCosts.SingleAsync();
+            Assert.Equal(100m, cost.CapitalizedCost);
+            Assert.Equal(100m, cost.WipClearedCost);
+            Assert.Single(await assertReceiptDb.JournalVouchers.ToListAsync());
+        }
+    }
+
+    [Fact]
     public async Task Real_mes_and_inventory_events_close_actual_work_order_cost()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase($"erp-cost-{Guid.CreateVersion7():N}").Options;
