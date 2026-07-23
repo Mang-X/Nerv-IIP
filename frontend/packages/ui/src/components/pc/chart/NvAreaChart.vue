@@ -31,8 +31,15 @@ const props = withDefaults(
 const x = (_d: ChartPoint, i: number) => i
 const y = (d: ChartPoint) => d.value
 const xTickFormat = (i: number) => props.data[i]?.label ?? ''
+// unovis renders the template as raw HTML, so every interpolated value is an
+// HTML sink — point labels and units routinely carry server-sourced text.
+const escapeHtml = (value: unknown) =>
+  String(value).replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string,
+  )
 const tooltipTemplate = (d: ChartPoint) =>
-  `<div class="nv-vis-tt"><span>${d.label}</span><b>${d.value}${props.valueSuffix}</b></div>`
+  `<div class="nv-vis-tt"><span>${escapeHtml(d.label)}</span><b>${escapeHtml(d.value)}${escapeHtml(props.valueSuffix)}</b></div>`
 const chartMargin = computed(() =>
   props.minimal
     ? { top: 4, right: 2, bottom: 2, left: 2 }

@@ -127,6 +127,79 @@ describe('NvMetricCard 变体契约', () => {
     expect(bars[0].classes()).toContain('bg-brand/30')
   })
 
+  // 回归：tone + 透明度决不能拼接得到（`bg-${tone}/70` Tailwind 扫不到 → 柱子没背景色）
+  it('bars 的 tone 覆盖落在字面类名上，非当前柱也有背景色', () => {
+    const wrapper = mount(NvMetricCard, {
+      props: {
+        variant: 'bars',
+        label: '设备报警次数',
+        value: 14,
+        series: [5, 4, 6, 5, 7, 6, 14],
+        currentIndex: 6,
+        barTones: ['neutral', 'warning', 'neutral', 'neutral', 'neutral', 'neutral', 'danger'],
+      },
+    })
+    const bars = wrapper.findAll('.nv-metric-bars > span')
+    expect(bars[1].classes()).toContain('bg-warning/70')
+    expect(bars[6].classes()).toContain('bg-destructive')
+  })
+
+  it('breakdown 悬浮图例项，联动淡出其余分段', async () => {
+    const wrapper = mount(NvMetricCard, {
+      props: {
+        variant: 'breakdown',
+        label: '在制工单',
+        value: 38,
+        segments: [
+          { label: '进行中', value: 24, tone: 'brand' },
+          { label: '待派工', value: 9, tone: 'neutral' },
+          { label: '超期', value: 2, tone: 'danger' },
+        ],
+      },
+    })
+    const dimmed = () =>
+      wrapper.findAll('.nv-metric-slice').filter((s) => s.classes().includes('nv-metric-dim'))
+    expect(dimmed()).toHaveLength(0)
+
+    await wrapper.findAll('li')[0].trigger('mousemove', { clientX: 10, clientY: 10 })
+    // 分段条 3 + 图例 3 = 6 个 slice；命中下标的那两个保持高亮，其余 4 个淡出
+    expect(dimmed()).toHaveLength(4)
+
+    await wrapper.findAll('li')[0].trigger('mouseleave')
+    expect(dimmed()).toHaveLength(0)
+  })
+
+  it('bars / target 给键盘与读屏用户留下文本等价物（微图本身只响应指针）', () => {
+    const bars = mount(NvMetricCard, {
+      props: {
+        variant: 'bars',
+        label: '日产量',
+        value: '12,480',
+        series: [7050, 8680, 12480],
+        seriesLabels: ['07-21', '07-22', '07-23'],
+        seriesUnit: ' 件',
+      },
+    })
+    const viz = bars.find('[role="img"]')
+    expect(viz.exists()).toBe(true)
+    expect(viz.attributes('aria-label')).toContain('07-23: 12480 件')
+
+    const target = mount(NvMetricCard, {
+      props: {
+        variant: 'target',
+        label: '本月产量达成',
+        value: '13,847',
+        unit: '件',
+        targetLabel: '目标 15,000 件',
+        progress: 92.3,
+      },
+    })
+    const meter = target.find('[role="progressbar"]')
+    expect(meter.attributes('aria-valuenow')).toBe('92.3')
+    expect(meter.attributes('aria-valuemax')).toBe('100')
+    expect(meter.attributes('aria-valuetext')).toContain('92.3%')
+  })
+
   it('facets 点击维度 chip 抛出 facet 事件，异常维度被染色', async () => {
     const wrapper = mount(NvMetricCard, {
       props: {

@@ -104,11 +104,16 @@ export const metricToneFill: Record<NvMetricTone, string> = {
   neutral: 'bg-muted-foreground/40',
 }
 
-/** tone → gauge stroke colour (CSS var for the SVG ring arc). */
+/**
+ * tone → gauge stroke colour (CSS var for the SVG ring arc). Canonical `--nv-*`
+ * tokens, not the one-cycle `--brand`/`--success`/`--warning` aliases theme.css
+ * marks for removal; `--destructive`/`--muted-foreground` have no `--nv-` form
+ * (same split NvStatusDot uses).
+ */
 export const metricToneStroke: Record<NvMetricTone, string> = {
-  brand: 'var(--brand)',
-  success: 'var(--success)',
-  warning: 'var(--warning)',
+  brand: 'var(--nv-brand)',
+  success: 'var(--nv-success)',
+  warning: 'var(--nv-warning)',
   danger: 'var(--destructive)',
   neutral: 'var(--muted-foreground)',
 }

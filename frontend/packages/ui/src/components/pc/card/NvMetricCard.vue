@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Component, HTMLAttributes } from 'vue'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { ChevronRightIcon, MinusIcon, TrendingDownIcon, TrendingUpIcon } from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 import NvAreaChart from '../chart/NvAreaChart.vue'
@@ -118,12 +118,35 @@ function barTone(i: number): NvMetricTone {
   if (props.barTones?.[i]) return props.barTones[i]
   return i === props.currentIndex ? 'brand' : 'neutral'
 }
-function barClass(i: number) {
-  const t = barTone(i)
-  // non-current bars sit at a lighter weight so the emphasised bar reads first
-  if (t === 'neutral') return 'bg-brand/30'
-  return `${metricToneFill[t]}${i === props.currentIndex ? '' : '/70'}`
+// Literal class strings on both sides — Tailwind only emits classes it can see
+// verbatim in source, so a tone+opacity pair must never be built by concatenation
+// (`bg-${tone}/70` silently produces an unstyled, invisible bar).
+const BAR_EMPHASIS: Record<NvMetricTone, string> = {
+  brand: 'bg-brand',
+  success: 'bg-success',
+  warning: 'bg-warning',
+  danger: 'bg-destructive',
+  neutral: 'bg-brand/30',
 }
+const BAR_QUIET: Record<NvMetricTone, string> = {
+  brand: 'bg-brand/70',
+  success: 'bg-success/70',
+  warning: 'bg-warning/70',
+  danger: 'bg-destructive/70',
+  neutral: 'bg-brand/30',
+}
+function barClass(i: number) {
+  // non-current bars sit at a lighter weight so the emphasised bar reads first
+  return (i === props.currentIndex ? BAR_EMPHASIS : BAR_QUIET)[barTone(i)]
+}
+/** Text equivalent of the bar series — the viz itself is pointer-only. */
+const barsAriaLabel = computed(() => {
+  const unit = props.seriesUnit ?? ''
+  const points = (props.series ?? []).map(
+    (v, i) => `${props.seriesLabels?.[i] ?? i + 1}: ${v}${unit}`,
+  )
+  return `${props.label}，${points.length} 期：${points.join('；')}`
+})
 
 // --- target progress --------------------------------------------------------
 const progressPct = computed(() => Math.max(0, Math.min(100, props.progress ?? 0)))
@@ -162,7 +185,10 @@ function showPointTip(e: MouseEvent, i: number) {
     rows: [{ label: props.label, value: `${raw}${props.seriesUnit ?? ''}` }],
   })
 }
-function showSegmentTip(e: MouseEvent, seg: NvMetricSegment) {
+/** Hovered slice — drives the segment ↔ legend linked highlight. */
+const hoveredSeg = ref<number | null>(null)
+function showSegmentTip(e: MouseEvent, seg: NvMetricSegment, i: number) {
+  hoveredSeg.value = i
   const pct = ((seg.value / segTotal.value) * 100).toFixed(1)
   tip.move(e, {
     rows: [
@@ -173,6 +199,14 @@ function showSegmentTip(e: MouseEvent, seg: NvMetricSegment) {
       },
     ],
   })
+}
+function clearSegment() {
+  hoveredSeg.value = null
+  tip.hide()
+}
+/** Dim every slice but the pointed-at one (either bar or legend row). */
+function segDimmed(i: number) {
+  return hoveredSeg.value !== null && hoveredSeg.value !== i
 }
 function showTargetTip(e: MouseEvent) {
   const rows = [{ label: props.label, value: `${props.value}${props.unit ?? ''}` }]
@@ -284,6 +318,12 @@ function showTargetTip(e: MouseEvent) {
       <template v-else-if="variant === 'target'">
         <div
           class="nv-metric-bar relative mt-4 h-1.5 rounded-full bg-muted"
+          role="progressbar"
+          :aria-valuenow="progressPct"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          :aria-label="label"
+          :aria-valuetext="`${value}${unit ?? ''}${targetLabel ? ` / ${targetLabel}` : ''}，达成 ${progressPct.toFixed(1)}%`"
           @mousemove="showTargetTip"
           @mouseleave="tip.hide"
         >
@@ -314,22 +354,28 @@ function showTargetTip(e: MouseEvent) {
             :key="i"
             :class="
               cn(
-                'block rounded-sm first:rounded-l-full last:rounded-r-full',
+                'nv-metric-slice block rounded-sm first:rounded-l-full last:rounded-r-full',
                 metricToneFill[seg.tone ?? 'neutral'],
+                segDimmed(i) && 'nv-metric-dim',
               )
             "
             :style="{ flex: seg.value }"
-            @mousemove="(e) => showSegmentTip(e, seg)"
-            @mouseleave="tip.hide"
+            @mousemove="(e) => showSegmentTip(e, seg, i)"
+            @mouseleave="clearSegment"
           />
         </div>
         <ul class="mt-3 flex flex-wrap gap-x-3.5 gap-y-1.5">
           <li
             v-for="(seg, i) in segments"
             :key="i"
-            class="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-            @mousemove="(e) => showSegmentTip(e, seg)"
-            @mouseleave="tip.hide"
+            :class="
+              cn(
+                'nv-metric-slice inline-flex items-center gap-1.5 text-xs text-muted-foreground',
+                segDimmed(i) && 'nv-metric-dim',
+              )
+            "
+            @mousemove="(e) => showSegmentTip(e, seg, i)"
+            @mouseleave="clearSegment"
           >
             <span
               :class="cn('size-2 flex-none rounded-sm', metricToneFill[seg.tone ?? 'neutral'])"
@@ -342,12 +388,17 @@ function showTargetTip(e: MouseEvent) {
 
       <!-- mini bars -->
       <template v-else-if="variant === 'bars'">
-        <div class="nv-metric-bars mt-4 flex h-[46px] items-end gap-1">
+        <div
+          class="nv-metric-bars mt-4 flex h-[46px] items-end gap-1"
+          role="img"
+          :aria-label="barsAriaLabel"
+        >
           <span
             v-for="(v, i) in series"
             :key="i"
             :class="cn('min-h-1 flex-1 rounded-t-sm', barClass(i))"
             :style="{ height: barHeight(v) }"
+            aria-hidden="true"
             @mousemove="(e) => showPointTip(e, i)"
             @mouseleave="tip.hide"
           />
@@ -479,13 +530,21 @@ function showTargetTip(e: MouseEvent) {
     text-underline-offset: 3px;
   }
   .nv-metric-action:focus-visible {
-    outline: 2px solid var(--brand);
+    outline: 2px solid var(--nv-brand);
     outline-offset: 2px;
     border-radius: 4px;
   }
+  /* segment ↔ legend linked highlight: pointing at either dims the other slices */
+  .nv-metric-slice {
+    transition: opacity var(--nv-duration-fast, 150ms) var(--nv-ease-out-quart, ease-out);
+  }
+  .nv-metric-dim {
+    opacity: 0.4;
+  }
   @media (prefers-reduced-motion: reduce) {
     .nv-metric-tip,
-    .nv-metric-bars > span {
+    .nv-metric-bars > span,
+    .nv-metric-slice {
       transition: none;
     }
   }
