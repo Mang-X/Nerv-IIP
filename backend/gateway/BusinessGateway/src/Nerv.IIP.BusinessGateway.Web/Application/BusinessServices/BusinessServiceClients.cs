@@ -4648,6 +4648,13 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         "sustained-exceedance",
         "trend-growth",
     };
+    private static readonly JsonSerializerOptions EquipmentHealthJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters =
+        {
+            new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false),
+        },
+    };
 
     public Task<BusinessConsoleConnectorTagCoverageResponse> GetConnectorTagCoverageAsync(
         string internalBearerToken,
@@ -5048,7 +5055,7 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             $"/api/business/v1/iiot/devices/{Uri.EscapeDataString(deviceAssetId)}/health?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
             cancellationToken,
-            EquipmentRuntimeJson.Options);
+            EquipmentHealthJsonOptions);
 
         ValidateEquipmentHealthResponse(response, deviceAssetId, request);
         return response;
