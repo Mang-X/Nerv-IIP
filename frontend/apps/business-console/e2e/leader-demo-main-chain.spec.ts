@@ -76,6 +76,7 @@ const requiredNodes = [
   'mrp-suggestion-mes-work-order',
   'mes-work-order-schedule-plan',
   'schedule-release-mes-execution',
+  'erp-work-center-cost-rate',
   'mes-task-production-report',
   'production-report-quality',
   'report-finished-goods-receipt',
@@ -181,7 +182,14 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
   const finishedSku = `FG-M524-${suffix}`
   const materialSku = `RM-M524-${suffix}`
   const rawMaterialQuantity = 10
+  const finishedGoodsQuantity = 10
+  const operationDurationMinutes = 5
+  const workCenterHourlyRate = 3_000
   const finishedGoodsUnitCost = 25
+  const finishedGoodsCapitalizedCost = finishedGoodsQuantity * finishedGoodsUnitCost
+  const expectedTheoreticalRatePerHour = finishedGoodsQuantity / (operationDurationMinutes / 60)
+  const ticksPerHour = 36_000_000_000
+  const workCenterCostRateReason = `MAN-595 governed main-chain rate ${suffix}`
   const rawMaterialLotNo = `RMLOT-M524-${suffix}`
   const purchaseOrderNo = `PO-M524-${suffix}`
   const inboundOrderNo = `IN-M524-${suffix}`
@@ -434,6 +442,84 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         workshopCode,
         idempotencyKey: `wc-${suffix}`,
       })
+      const workCenterCostRatePath = '/api/business-console/v1/erp/finance/work-center-cost-rates'
+      const rateEffectiveFromUtc = new Date(now.getTime() - 3_600_000)
+      const rateEffectiveToUtc = new Date(now.getTime() + 86_400_000)
+      const rateAuditAtUtc = new Date(now)
+      const expectedRateActor = `${principalType}:${principalId}`
+      try {
+        const configuredRate = await call('POST', workCenterCostRatePath, {
+          organizationId,
+          environmentId,
+          workCenterId: workCenterCode,
+          hourlyRate: workCenterHourlyRate,
+          currencyCode: 'CNY',
+          effectiveFromUtc: rateEffectiveFromUtc.toISOString(),
+          effectiveToUtc: rateEffectiveToUtc.toISOString(),
+          reason: workCenterCostRateReason,
+        })
+        const configuredRateId = textOf(
+          asRecord(dataOf(configuredRate.payload)).workCenterCostRateId,
+        ).trim()
+        const rateAuditCall = await call(
+          'GET',
+          queryPath(workCenterCostRatePath, {
+            organizationId,
+            environmentId,
+            workCenterId: workCenterCode,
+            atUtc: rateAuditAtUtc.toISOString(),
+          }),
+        )
+        const rateAudit = asRecord(dataOf(rateAuditCall.payload))
+        const rateItems = Array.isArray(rateAudit.items) ? rateAudit.items.map(asRecord) : []
+        const currentRate = rateItems.find(
+          (item) => item.isEffectiveAtUtc === true && item.isCurrentEffectiveRevision === true,
+        )
+        const hasExactGovernedRate =
+          configuredRateId.length > 0 &&
+          textOf(rateAudit.organizationId) === organizationId &&
+          textOf(rateAudit.environmentId) === environmentId &&
+          textOf(rateAudit.workCenterId) === workCenterCode &&
+          rateAudit.currentEffectiveRevision === 1 &&
+          currentRate !== undefined &&
+          textOf(currentRate.workCenterCostRateId) === configuredRateId &&
+          textOf(currentRate.workCenterId) === workCenterCode &&
+          Number(currentRate.hourlyRate ?? 0) === workCenterHourlyRate &&
+          textOf(currentRate.currencyCode) === 'CNY' &&
+          new Date(textOf(currentRate.effectiveFromUtc)).getTime() ===
+            rateEffectiveFromUtc.getTime() &&
+          new Date(textOf(currentRate.effectiveToUtc)).getTime() === rateEffectiveToUtc.getTime() &&
+          currentRate.revision === 1 &&
+          textOf(currentRate.changedBy) === expectedRateActor &&
+          textOf(currentRate.reason) === workCenterCostRateReason &&
+          Number.isFinite(new Date(textOf(currentRate.changedAtUtc)).getTime()) &&
+          currentRate.isEffectiveAtUtc === true &&
+          currentRate.isCurrentEffectiveRevision === true
+        if (!hasExactGovernedRate || !currentRate) {
+          throw new Error(
+            `ERP did not return the exact governed work-center rate revision: ${safeText(JSON.stringify(rateAudit))}.`,
+          )
+        }
+        record({
+          node: 'erp-work-center-cost-rate',
+          sourceObject: `${organizationId}/${environmentId}/${workCenterCode}`,
+          downstreamObject: configuredRateId,
+          stableKey: `${organizationId} -> ${environmentId} -> ${workCenterCode} -> revision 1 -> ${configuredRateId}`,
+          automationMode: 'manual',
+          request: configuredRate.summary,
+          responseOrLog: {
+            configured: configuredRate.publicPayload,
+            audited: rateAuditCall.publicPayload,
+          },
+          conclusion: 'runtime-confirmed',
+          demoWording:
+            'ERP publicly audited the run-scoped CNY work-center rate, effective window, revision, actor, and reason before MES production reporting.',
+          responsibilityIssue: null,
+        })
+      } catch (error) {
+        markFailure('erp-work-center-cost-rate', error, 'manual', '#1070 / MAN-595')
+        throw error
+      }
       await create('/api/business-console/v1/master-data/device-assets', {
         organizationId,
         environmentId,
@@ -568,7 +654,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         operationName: 'MAN-524 assembly',
         defaultWorkCenterCode: workCenterCode,
         standardSetupMinutes: 1,
-        standardRunMinutes: 5,
+        standardRunMinutes: operationDurationMinutes,
         controlKey: 'internal',
         requiresReporting: true,
         requiresQualityInspection: true,
@@ -616,7 +702,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
               workCenterCode,
               operationCode,
               operationName: 'MAN-524 assembly',
-              standardMinutes: 5,
+              standardMinutes: operationDurationMinutes,
             },
           ],
           idempotencyKey: `routing-${suffix}`,
@@ -885,7 +971,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
               lineNo: '1',
               skuCode: finishedSku,
               uomCode,
-              quantity: 10,
+              quantity: finishedGoodsQuantity,
               unitPrice: 100,
               requiredDate: dateOnly(new Date(now.getTime() + 7 * 86_400_000)),
             },
@@ -1135,7 +1221,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
               {
                 orderId: workOrderId,
                 skuCode: finishedSku,
-                quantity: 10,
+                quantity: finishedGoodsQuantity,
                 dueUtc: horizonEnd.toISOString(),
                 priority: 1,
                 isRush: true,
@@ -1144,7 +1230,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
                     operationId: taskId,
                     operationSequence: 10,
                     predecessorOperationIds: [],
-                    durationMinutes: 5,
+                    durationMinutes: operationDurationMinutes,
                     requiredCapabilityCode: operationCode,
                     eligibleResourceIds: [deviceAssetId],
                     primaryResourceId: deviceAssetId,
@@ -1287,12 +1373,50 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             idempotencyKey: `start-task-${suffix}`,
           },
         )
+        const costBasisCall = await call(
+          'GET',
+          queryPath('/api/business-console/v1/mes/work-orders', {
+            organizationId,
+            environmentId,
+            keyword: workOrderId,
+            take: 100,
+          }),
+        )
+        const costBasisWorkOrder = rowsOf(costBasisCall.payload).find(
+          (row) => textOf(row.workOrderId) === workOrderId,
+        )
+        const costBasisTasks =
+          costBasisWorkOrder && Array.isArray(costBasisWorkOrder.operationTasks)
+            ? costBasisWorkOrder.operationTasks.map(asRecord)
+            : []
+        const costBasisTask = costBasisTasks.find((row) => textOf(row.operationTaskId) === taskId)
+        const durationTicks = Number(costBasisTask?.durationTicks ?? 0)
+        const theoreticalRatePerHour =
+          durationTicks > 0
+            ? Number(costBasisWorkOrder?.quantity ?? 0) / (durationTicks / ticksPerHour)
+            : 0
+        const expectedLaborHours =
+          theoreticalRatePerHour > 0 ? finishedGoodsQuantity / theoreticalRatePerHour : 0
+        const expectedLaborCost = expectedLaborHours * workCenterHourlyRate
+        if (
+          !costBasisWorkOrder ||
+          !costBasisTask ||
+          Number(costBasisWorkOrder.quantity ?? 0) !== finishedGoodsQuantity ||
+          textOf(costBasisTask.workCenterId) !== workCenterCode ||
+          durationTicks !== operationDurationMinutes * 60 * 10_000_000 ||
+          theoreticalRatePerHour !== expectedTheoreticalRatePerHour ||
+          expectedLaborCost !== finishedGoodsCapitalizedCost
+        ) {
+          throw new Error(
+            `MES did not publicly expose the deterministic costing basis for ${workOrderId}/${taskId}: ${safeText(JSON.stringify(costBasisWorkOrder))}.`,
+          )
+        }
         const productionReportRequest = {
           organizationId,
           environmentId,
           workOrderId,
           operationTaskId: taskId,
-          goodQuantity: 10,
+          goodQuantity: finishedGoodsQuantity,
           scrapQuantity: 0,
           completesOperation: true,
           reportedAtUtc: new Date().toISOString(),
@@ -1331,6 +1455,14 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             original: report.publicPayload,
             replay: reportReplay.publicPayload,
             replayConfirmed: true,
+            publicCostBasis: {
+              workOrder: publicJson(costBasisWorkOrder),
+              operationTask: publicJson(costBasisTask),
+              derivedTheoreticalRatePerHour: theoreticalRatePerHour,
+              derivedLaborHours: expectedLaborHours,
+              configuredHourlyRate: workCenterHourlyRate,
+              derivedLaborCost: expectedLaborCost,
+            },
           },
           conclusion: 'runtime-confirmed',
           demoWording:
@@ -1407,9 +1539,8 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             environmentId,
             workOrderId,
             skuId: finishedSku,
-            quantity: 10,
+            quantity: finishedGoodsQuantity,
             uomCode,
-            unitCost: finishedGoodsUnitCost,
             requestedAtUtc: new Date().toISOString(),
             idempotencyKey: `fg-receipt-${suffix}`,
             producedLotNo,
@@ -1426,8 +1557,8 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           responseOrLog: receipt.publicPayload,
           conclusion: 'runtime-confirmed',
           demoWording:
-            'A public finished-goods receipt request used the exact work order and authoritative produced lot from the production report.',
-          responsibilityIssue: '#965',
+            'A public finished-goods receipt request used the exact work order and authoritative produced lot while omitting client-supplied unit cost so ERP capitalization remained authoritative.',
+          responsibilityIssue: null,
         })
       } catch (error) {
         markFailure('report-finished-goods-receipt', error, 'manual')
@@ -1472,6 +1603,22 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
 
     if (receiptRequestNo) {
       try {
+        const capitalizedReceipt = await pollRows(
+          '/api/business-console/v1/mes/finished-goods-receipt-requests',
+          {
+            organizationId,
+            environmentId,
+            workOrderId,
+            take: 100,
+          },
+          (row) =>
+            textOf(row.requestNo) === receiptRequestNo &&
+            textOf(row.workOrderId) === workOrderId &&
+            textOf(row.skuId) === finishedSku &&
+            textOf(row.producedLotNo) === producedLotNo &&
+            Number(row.quantity ?? 0) === finishedGoodsQuantity &&
+            Number(row.unitCost ?? 0) === finishedGoodsUnitCost,
+        )
         const terminalStatuses = new Set(['posted', 'postingfailed', 'qualityrestricted'])
         const inventoryLink = await pollData(
           `/api/business-console/v1/mes/finished-goods-receipt-requests/${encodeURIComponent(receiptRequestNo)}/inventory-link`,
@@ -1493,7 +1640,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             textOf(movement.siteCode) === finishedGoodsSiteCode &&
             textOf(movement.locationCode) === finishedGoodsLocationCode &&
             textOf(movement.lotNo) === producedLotNo &&
-            Number(movement.quantity ?? 0) > 0,
+            Number(movement.quantity ?? 0) === finishedGoodsQuantity,
         )
         const sourceBalance = balances.find(
           (balance) =>
@@ -1501,9 +1648,12 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             textOf(balance.siteCode) === finishedGoodsSiteCode &&
             textOf(balance.locationCode) === finishedGoodsLocationCode &&
             textOf(balance.lotNo) === producedLotNo &&
-            Number(balance.onHandQuantity ?? 0) > 0 &&
+            Number(balance.onHandQuantity ?? 0) === finishedGoodsQuantity &&
             Number(balance.ledgerVersion ?? 0) > 0,
         )
+        const mesReceipt = capitalizedReceipt.match
+        const publicDerivedCapitalizedCost =
+          Number(mesReceipt.unitCost ?? 0) * Number(sourceMovement?.quantity ?? 0)
         const hasExactInventoryLink =
           textOf(link.linkStatus).trim().toLowerCase() === 'posted' &&
           link.isInventoryLinkEstablished === true &&
@@ -1513,6 +1663,10 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           textOf(link.sourceService) === 'business-mes' &&
           textOf(link.sourceDocumentId) === receiptRequestNo &&
           textOf(link.sourceDocumentLineId) === workOrderId &&
+          Number(link.requestedQuantity ?? 0) === finishedGoodsQuantity &&
+          Number(link.postedQuantity ?? 0) === finishedGoodsQuantity &&
+          Number(mesReceipt.unitCost ?? 0) === finishedGoodsUnitCost &&
+          publicDerivedCapitalizedCost === finishedGoodsCapitalizedCost &&
           Boolean(sourceMovement) &&
           Boolean(sourceBalance)
         if (!hasExactInventoryLink || !sourceMovement || !sourceBalance) {
@@ -1529,13 +1683,18 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           request: inventoryLink.call.summary,
           responseOrLog: {
             poll: inventoryLink.poll,
+            mesReceiptCost: publicJson(mesReceipt),
             movementId: textOf(sourceMovement.movementId),
+            movementQuantity: sourceMovement.quantity ?? null,
+            publicDerivedCapitalizedCost,
+            inventoryValuationDisclosure:
+              'The public source movement exposes exact quantity and lineage but not unitCost or movementAmount; no hidden valuation field is fabricated.',
             balanceLedgerVersion: sourceBalance.ledgerVersion ?? null,
             link: publicJson(link),
           },
           conclusion: 'runtime-confirmed',
           demoWording:
-            'The public Inventory link resolved the exact MES receipt and work order to its source movement, produced lot, and current balance.',
+            'Public evidence links report labor accumulation -> ERP capitalization -> MES unit cost -> Inventory posting with the same work order, receipt, lot, exact unit cost, and exact posted quantity.',
           responsibilityIssue: null,
         })
       } catch (error) {
@@ -1551,7 +1710,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           environmentId,
           deliveryOrderNo,
           salesOrderNo,
-          lines: [{ salesOrderLineNo: '1', quantity: 10 }],
+          lines: [{ salesOrderLineNo: '1', quantity: finishedGoodsQuantity }],
           idempotencyKey: `delivery-${suffix}`,
         })
         record({

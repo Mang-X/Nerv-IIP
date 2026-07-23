@@ -168,12 +168,46 @@ describe('leader demo main-chain public prerequisites', () => {
     )
     expectScopedQuery(productionFlow, '/mes/operation-tasks/${encodeURIComponent(taskId)}/start`')
     expect(productionFlow).toContain('idempotencyKey: `start-task-${suffix}`')
+    expect(productionFlow).toContain("queryPath('/api/business-console/v1/mes/work-orders'")
+    expect(productionFlow).toContain('Number(costBasisWorkOrder.quantity ?? 0)')
+    expect(productionFlow).toContain('durationTicks / ticksPerHour')
+    expect(productionFlow).toContain('theoreticalRatePerHour !== expectedTheoreticalRatePerHour')
+    expect(productionFlow).toContain('expectedLaborCost !== finishedGoodsCapitalizedCost')
+  })
+
+  it('configures and audits the run-scoped ERP work-center cost rate before production reporting', () => {
+    const costFlow = sourceBetween('const workCenterCostRatePath =', "let productionReportId = ''")
+    const configureIndex = scenarioSource.indexOf('const workCenterCostRatePath =')
+    const workCenterIndex = scenarioSource.indexOf(
+      "await create('/api/business-console/v1/master-data/work-centers'",
+    )
+    const productionReportIndex = scenarioSource.indexOf(
+      "'/api/business-console/v1/mes/production-reports'",
+    )
+
+    expect(configureIndex).toBeGreaterThan(workCenterIndex)
+    expect(productionReportIndex).toBeGreaterThan(configureIndex)
+    expect(costFlow).toContain("'/api/business-console/v1/erp/finance/work-center-cost-rates'")
+    expect(costFlow).toContain('hourlyRate: workCenterHourlyRate')
+    expect(costFlow).toContain("currencyCode: 'CNY'")
+    expect(costFlow).toContain('effectiveFromUtc: rateEffectiveFromUtc.toISOString()')
+    expect(costFlow).toContain('effectiveToUtc: rateEffectiveToUtc.toISOString()')
+    expect(costFlow).toContain('reason: workCenterCostRateReason')
+    expect(costFlow).toContain('const rateAuditCall = await call(')
+    expect(costFlow).toContain("'GET',")
+    expect(costFlow).toContain('workCenterId: workCenterCode')
+    expect(costFlow).toContain('atUtc: rateAuditAtUtc.toISOString()')
+    expect(costFlow).toContain('rateAudit.currentEffectiveRevision === 1')
+    expect(costFlow).toContain('textOf(currentRate.changedBy) === expectedRateActor')
+    expect(costFlow).toContain('currentRate.isEffectiveAtUtc === true')
+    expect(costFlow).toContain('currentRate.isCurrentEffectiveRevision === true')
+    expect(costFlow).toContain("node: 'erp-work-center-cost-rate'")
   })
 
   it('polls exact finished-goods Inventory availability with a bounded public wait', () => {
     const receiptFlow = sourceBetween("let receiptRequestNo = ''", "let wmsOutboundId = ''")
 
-    expect(receiptFlow).toContain('unitCost: finishedGoodsUnitCost')
+    expect(receiptFlow).not.toContain('unitCost: finishedGoodsUnitCost')
     expect(receiptFlow).toContain('const availability = await pollData(')
     expect(receiptFlow).toContain("'/api/business-console/v1/inventory/availability'")
     expect(receiptFlow).toContain('skuCode: finishedSku')
@@ -257,6 +291,9 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(receiptFlow).toContain('textOf(link.sourceDocumentLineId) === workOrderId')
     expect(receiptFlow).toContain('const sourceMovement = movements.find(')
     expect(receiptFlow).toContain('const sourceBalance = balances.find(')
+    expect(receiptFlow).toContain('const capitalizedReceipt = await pollRows(')
+    expect(receiptFlow).toContain('Number(row.unitCost ?? 0) === finishedGoodsUnitCost')
+    expect(receiptFlow).toContain('Number(movement.quantity ?? 0) === finishedGoodsQuantity')
     expect(receiptFlow).toContain('Number(balance.ledgerVersion ?? 0) > 0')
     expect(receiptFlow).toContain("node: 'inventory-produced-lot-fulfillment-lookup'")
     expect(receiptFlow).toContain('poll: inventoryLink.poll')
@@ -266,6 +303,10 @@ describe('leader demo main-chain public prerequisites', () => {
     )
     expect(inventoryLinkEvidence).toContain("automationMode: 'automatic'")
     expect(inventoryLinkEvidence).toContain('responsibilityIssue: null')
+    expect(inventoryLinkEvidence).toContain('report labor accumulation')
+    expect(inventoryLinkEvidence).toContain('ERP capitalization')
+    expect(inventoryLinkEvidence).toContain('MES unit cost')
+    expect(inventoryLinkEvidence).toContain('Inventory posting')
     expect(receiptFlow).not.toContain("responsibilityIssue: '#972 / MAN-528 (demo:defer)'")
     expect(finalAcceptance).toContain("entry.conclusion !== 'runtime-confirmed'")
     expect(finalAcceptance).not.toContain(
