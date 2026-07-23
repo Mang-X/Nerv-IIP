@@ -425,11 +425,24 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         } catch (replayError) {
           if (replayError instanceof PublicCallError) {
             setup.push({
-              retry: { idempotencyKey, attempt: 2, outcome: 'server-error' },
+              retry: {
+                idempotencyKey,
+                attempt: 2,
+                outcome: replayError.status >= 500 ? 'server-error' : 'client-error',
+              },
               request: replayError.request,
               response: {
                 status: replayError.status,
                 payload: publicJson(replayError.payload),
+              },
+            })
+          } else {
+            setup.push({
+              retry: { idempotencyKey, attempt: 2, outcome: 'non-http-error' },
+              request: null,
+              response: {
+                errorType: replayError instanceof Error ? replayError.name : typeof replayError,
+                error: safeText(replayError instanceof Error ? replayError.message : replayError),
               },
             })
           }

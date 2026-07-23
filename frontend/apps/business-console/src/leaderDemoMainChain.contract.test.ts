@@ -59,7 +59,7 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(costRateFlow).not.toContain('create(workCenterCostRatePath')
   })
 
-  it('surfaces a failed replay after auditing it instead of retrying a third time', () => {
+  it('audits replay HTTP and non-HTTP failures before identity-preserving rethrow', () => {
     const createFlow = sourceBetween(
       'const create = async (path: string, body: JsonRecord) => {',
       'let prerequisitesReady = true',
@@ -68,9 +68,20 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(createFlow.match(/call\('POST', path, body\)/g)).toHaveLength(2)
     expect(createFlow).toContain('catch (replayError)')
     expect(createFlow).toContain('replayError instanceof PublicCallError')
+    expect(createFlow).toContain(
+      "outcome: replayError.status >= 500 ? 'server-error' : 'client-error'",
+    )
     expect(createFlow).toContain('request: replayError.request')
     expect(createFlow).toContain('status: replayError.status')
     expect(createFlow).toContain('payload: publicJson(replayError.payload)')
+    expect(createFlow).toContain("retry: { idempotencyKey, attempt: 2, outcome: 'non-http-error' }")
+    expect(createFlow).toContain('request: null')
+    expect(createFlow).toContain(
+      'errorType: replayError instanceof Error ? replayError.name : typeof replayError',
+    )
+    expect(createFlow).toContain(
+      'error: safeText(replayError instanceof Error ? replayError.message : replayError)',
+    )
     expect(createFlow).toContain('throw replayError')
   })
 
