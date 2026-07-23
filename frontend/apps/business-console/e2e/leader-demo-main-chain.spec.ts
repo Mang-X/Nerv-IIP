@@ -716,7 +716,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         operationCode,
         operationName: 'MAN-524 assembly',
         defaultWorkCenterCode: workCenterCode,
-        standardSetupMinutes: 1,
+        standardSetupMinutes: 0,
         standardRunMinutes: operationDurationMinutes,
         controlKey: 'internal',
         requiresReporting: true,

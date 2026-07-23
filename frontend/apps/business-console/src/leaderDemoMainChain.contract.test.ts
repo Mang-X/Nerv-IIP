@@ -177,6 +177,16 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(acceptedWorkOrderFlow).toContain('idempotencyKey: `release-wo-${suffix}`')
   })
 
+  it('keeps the five-minute costing basis free of setup-time inflation', () => {
+    const standardOperation = sourceBetween(
+      "await create('/api/business-console/v1/engineering/standard-operations'",
+      "await create('/api/business-console/v1/engineering/engineering-boms/release'",
+    )
+
+    expect(standardOperation).toContain('standardSetupMinutes: 0')
+    expect(standardOperation).toContain('standardRunMinutes: operationDurationMinutes')
+  })
+
   it('maps the run-scoped work center to a real device asset with fresh availability before scheduling', () => {
     const equipmentFlow = sourceBetween("let deviceAssetId = ''", "let productionReportId = ''")
     const registerIndex = equipmentFlow.indexOf(
