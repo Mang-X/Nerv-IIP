@@ -77,57 +77,72 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
             cancellationToken);
         if (source is null)
         {
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
-        var existing = await dbContext.QualityHoldContexts.SingleOrDefaultAsync(
-            x => x.OrganizationId == integrationEvent.OrganizationId &&
-                x.EnvironmentId == integrationEvent.EnvironmentId &&
-                x.SourceService == sourceService &&
-                x.SourceDocumentId == sourceDocumentId,
-            cancellationToken);
-        if (existing is null)
+        try
         {
-            var hold = QualityHoldContext.Capture(
-                integrationEvent.OrganizationId,
-                integrationEvent.EnvironmentId,
-                source.WorkOrderId,
-                source.OperationTaskId,
-                sourceService,
-                sourceDocumentId,
-                payload.InspectionRecordId,
-                payload.InspectionPlanId,
-                payload.Result,
-                integrationEvent.EventType,
-                payload.DispositionReason,
-                payload.RecordedAtUtc,
-                integrationEvent.Actor);
-            dbContext.QualityHoldContexts.Add(hold);
-            if (hold.Active)
+            var existing = await dbContext.QualityHoldContexts.SingleOrDefaultAsync(
+                x => x.OrganizationId == integrationEvent.OrganizationId &&
+                    x.EnvironmentId == integrationEvent.EnvironmentId &&
+                    x.SourceService == sourceService &&
+                    x.SourceDocumentId == sourceDocumentId,
+                cancellationToken);
+            if (existing is null)
             {
-                AddTransition(integrationEvent, sourceService, "hold-applied", payload.InspectionRecordId);
+                var hold = QualityHoldContext.Capture(
+                    integrationEvent.OrganizationId,
+                    integrationEvent.EnvironmentId,
+                    source.WorkOrderId,
+                    source.OperationTaskId,
+                    sourceService,
+                    sourceDocumentId,
+                    payload.InspectionRecordId,
+                    payload.InspectionPlanId,
+                    payload.Result,
+                    integrationEvent.EventType,
+                    payload.DispositionReason,
+                    payload.RecordedAtUtc,
+                    integrationEvent.Actor);
+                dbContext.QualityHoldContexts.Add(hold);
+                if (hold.Active)
+                {
+                    AddTransition(integrationEvent, sourceService, "hold-applied", payload.InspectionRecordId);
+                }
             }
-            return;
+            else
+            {
+                var wasActive = existing.Active;
+                if (existing.ApplyInspectionResult(
+                    payload.InspectionRecordId,
+                    payload.InspectionPlanId,
+                    payload.Result,
+                    integrationEvent.EventType,
+                    payload.DispositionReason,
+                    payload.RecordedAtUtc,
+                    integrationEvent.Actor))
+                {
+                    AddTransition(
+                        integrationEvent,
+                        sourceService,
+                        wasActive ? "inspection-released" : "hold-applied",
+                        wasActive ? existing.HeldInspectionRecordId! : payload.InspectionRecordId);
+                }
+            }
         }
-
-        var wasActive = existing.Active;
-        if (!existing.ApplyInspectionResult(
-            payload.InspectionRecordId,
-            payload.InspectionPlanId,
-            payload.Result,
-            integrationEvent.EventType,
-            payload.DispositionReason,
-            payload.RecordedAtUtc,
-            integrationEvent.Actor))
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
-            return;
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    "quality-inspection-result-divergence",
+                    exception.Message),
+                cancellationToken);
         }
 
-        AddTransition(
-            integrationEvent,
-            sourceService,
-            wasActive ? "inspection-released" : "hold-applied",
-            wasActive ? existing.HeldInspectionRecordId! : payload.InspectionRecordId);
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private void AddTransition(InspectionResultIntegrationEvent integrationEvent, string sourceService, string eventKind, string holdCycleId)

@@ -8,6 +8,12 @@ FileStorage、AppHub、Ops、Notification 已统一通过 `Nerv.IIP.Persistence`
 
 Npgsql-backed 临时 database 生命周期进入独立 `Nerv.IIP.Testing.PostgreSql`，没有扩大通用 `Nerv.IIP.Testing` 的依赖面。设施使用唯一 version-7 GUID database 名，支持并行创建、初始化/迁移回调、取消、初始化失败清理、强制 drop 和脱敏诊断；FileStorage restart persistence 与 BusinessScheduling PostgreSQL profile tests 已迁移为首批两个消费者。完整 18 个启动面的 provider/连接串/环境盘点及后续未迁移范围见 `docs/architecture/persistence-startup-governance.md`。
 
+## MES Quality hold CAP 持久化边界（MAN-429 / #777）
+
+MES `business-mes.quality-inspection-result` 消费者在记录 inbox 并新建、更新或释放 `QualityHoldContext` 后显式调用 `ApplicationDbContext.SaveChangesAsync`，不再依赖 CAP 消费管道隐式提交；该 DbContext 的既有 inbox 唯一冲突恢复继续保证并发重投幂等。`ArgumentException` / `InvalidOperationException` 业务分歧被收敛为 `quality-inspection-result-divergence` dead letter，不再逃逸为 CAP 毒消息。真实 PostgreSQL + CAP InMemory transport 测试通过独立 scope 验证 rejected、passed、再次 rejected、conditional-release 四次投递的 hold 状态、生命周期转换与 inbox 均已落库。
+
+本修复没有新增或修改 HTTP endpoint、schema、migration、公开契约或 facade。对当前 58 个 `[IntegrationEventConsumer]` 文件的跨服务保守扫描仍发现其他“注入 `ApplicationDbContext` 但文件内无可见保存/命令/UoW 边界”的候选；MES 同类治理继续由 MAN-421 / #754 独立跟踪，本项不扩修其他消费者。
+
 ## 领导演示排产工作台闭环（MAN-580 / #1049）
 
 BusinessScheduling 已新增批量工作台生成与 base-plan 修订两条受管内部端点。批量生成只接受 1–500 个 distinct MES 工单 ID，由服务端读取 organization/environment 范围内的权威 SKU、数量、交期、工序最早开始与生产版本，并通过 ProductEngineering active production-version routing snapshot 解析已发布路线；缺工单、终态工单、缺生产版本或 SKU/版本不一致均 fail closed。修订从已持久化 normalized problem snapshot 过滤 included orders，校验显式锁定工序、可选资源、时间窗口和 scope，再复用既有 override overlay、设备/物料适配器与有限产能调度器持久化新 Generated 方案。响应按最新失效来源事件聚合受影响资源/工单/工序，并返回 base/candidate 权威 KPI、移动、锁定和未排计数；不新增 schema、调度引擎或合并评分。

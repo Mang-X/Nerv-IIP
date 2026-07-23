@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
@@ -193,6 +194,61 @@ public sealed class MesCapSubscriptionTests
         });
     }
 
+    [PostgreSqlFact]
+    [Trait("Category", "cap-inmemory")]
+    public async Task PostgreSQL_cap_quality_results_persist_rejected_passed_and_conditional_hold_states()
+    {
+        var adminConnectionString = ReadPostgresConnectionString();
+        await using var database = await DisposablePostgresDatabase.CreateAsync(adminConnectionString, "mes_quality_hold_cap");
+        await using var factory = CreateFactory(database.ConnectionString);
+        await MigrateAsync(factory);
+        await InitializeCapStorageAsync(factory);
+        var occurredAtUtc = DateTimeOffset.Parse("2026-07-24T01:00:00Z");
+
+        using (var seedScope = factory.Services.CreateScope())
+        {
+            var seed = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            seed.WorkOrders.Add(WorkOrder.Create(
+                "org-001",
+                "env-dev",
+                "WO-MAN-429",
+                "FG-MAN-429",
+                "PV-MAN-429",
+                10m,
+                20,
+                occurredAtUtc.AddHours(8)));
+            await seed.SaveChangesAsync();
+        }
+
+        await PublishAsync(factory, CreateInspectionResultEvent(
+            "evt-man-429-rejected",
+            QualityIntegrationEventTypes.InspectionRejected,
+            "QI-MAN-429-1",
+            occurredAtUtc.AddMinutes(1)));
+        await AssertQualityHoldAsync(factory, active: true, "QI-MAN-429-1", expectedInboxCount: 1);
+
+        await PublishAsync(factory, CreateInspectionResultEvent(
+            "evt-man-429-passed",
+            QualityIntegrationEventTypes.InspectionPassed,
+            "QI-MAN-429-2",
+            occurredAtUtc.AddMinutes(2)));
+        await AssertQualityHoldAsync(factory, active: false, "QI-MAN-429-1", expectedInboxCount: 2);
+
+        await PublishAsync(factory, CreateInspectionResultEvent(
+            "evt-man-429-rejected-again",
+            QualityIntegrationEventTypes.InspectionRejected,
+            "QI-MAN-429-3",
+            occurredAtUtc.AddMinutes(3)));
+        await AssertQualityHoldAsync(factory, active: true, "QI-MAN-429-3", expectedInboxCount: 3);
+
+        await PublishAsync(factory, CreateInspectionResultEvent(
+            "evt-man-429-conditional",
+            QualityIntegrationEventTypes.InspectionConditionalReleased,
+            "QI-MAN-429-4",
+            occurredAtUtc.AddMinutes(4)));
+        await AssertQualityHoldAsync(factory, active: false, "QI-MAN-429-3", expectedInboxCount: 4);
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(string connectionString)
     {
         return new WebApplicationFactory<Program>()
@@ -259,6 +315,74 @@ public sealed class MesCapSubscriptionTests
         using var scope = factory.Services.CreateScope();
         var publisher = scope.ServiceProvider.GetRequiredService<ICapPublisher>();
         await publisher.PublishAsync(AssetUnavailableTopic, integrationEvent);
+    }
+
+    private static async Task PublishAsync(WebApplicationFactory<Program> factory, InspectionResultIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        var publisher = scope.ServiceProvider.GetRequiredService<ICapPublisher>();
+        await publisher.PublishAsync(InspectionResultTopic, integrationEvent);
+    }
+
+    private static async Task AssertQualityHoldAsync(
+        WebApplicationFactory<Program> factory,
+        bool active,
+        string expectedHeldInspectionRecordId,
+        int expectedInboxCount)
+    {
+        await AssertEventuallyAsync(async () =>
+        {
+            using var scope = factory.Services.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var hold = await dbContext.QualityHoldContexts.AsNoTracking().SingleOrDefaultAsync(x =>
+                x.OrganizationId == "org-001" &&
+                x.EnvironmentId == "env-dev" &&
+                x.SourceDocumentId == "WO-MAN-429");
+            var inboxCount = await dbContext.ProcessedIntegrationEvents.AsNoTracking().CountAsync(x =>
+                x.ConsumerName == QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext.ConsumerName);
+
+            Assert.NotNull(hold);
+            Assert.Equal(active, hold.Active);
+            Assert.Equal(expectedHeldInspectionRecordId, hold.HeldInspectionRecordId);
+            Assert.Equal(expectedInboxCount, inboxCount);
+        });
+    }
+
+    private static InspectionResultIntegrationEvent CreateInspectionResultEvent(
+        string eventId,
+        string eventType,
+        string inspectionRecordId,
+        DateTimeOffset occurredAtUtc)
+    {
+        var result = eventType == QualityIntegrationEventTypes.InspectionPassed
+            ? "passed"
+            : eventType == QualityIntegrationEventTypes.InspectionConditionalReleased
+                ? "conditional-release"
+                : "rejected";
+        return new InspectionResultIntegrationEvent(
+            eventId,
+            eventType,
+            QualityIntegrationEventVersions.V1,
+            occurredAtUtc,
+            QualityIntegrationEventSources.BusinessQuality,
+            $"corr-{eventId}",
+            $"cause-{eventId}",
+            "org-001",
+            "env-dev",
+            "quality",
+            $"quality:inspection-result:org-001:env-dev:{inspectionRecordId}:{eventType}",
+            new InspectionResultPayload(
+                inspectionRecordId,
+                "PLAN-MAN-429",
+                "in-process",
+                "mes",
+                "WO-MAN-429",
+                "FG-MAN-429",
+                10m,
+                result,
+                eventType == QualityIntegrationEventTypes.InspectionRejected ? "critical-defect" : null,
+                [],
+                occurredAtUtc));
     }
 
     private static AssetUnavailableIntegrationEvent CreateUnavailableEvent(DateTimeOffset fromUtc)

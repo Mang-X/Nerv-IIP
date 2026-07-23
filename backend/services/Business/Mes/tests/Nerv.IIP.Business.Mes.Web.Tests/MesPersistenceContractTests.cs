@@ -731,6 +731,45 @@ public sealed class MesPersistenceContractTests
     }
 
     [Fact]
+    public async Task Quality_inspection_domain_divergence_is_dead_lettered_without_escaping_cap_handler()
+    {
+        var services = CreateServices(nameof(Quality_inspection_domain_divergence_is_dead_lettered_without_escaping_cap_handler));
+        var now = DateTimeOffset.Parse("2026-07-24T01:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001", "env-dev", "WO-MAN-429-DIVERGENCE", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        await dbContext.SaveChangesAsync();
+        var validEvent = CreateInspectionResultEvent(
+            "evt-man-429-divergence",
+            QualityIntegrationEventTypes.InspectionRejected,
+            "QI-MAN-429-DIVERGENCE",
+            "WO-MAN-429-DIVERGENCE",
+            now.AddMinutes(1),
+            sourceService: "mes");
+        var invalidEvent = validEvent with
+        {
+            Payload = validEvent.Payload with
+            {
+                Result = string.Empty,
+            },
+        };
+
+        var consumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
+        await consumer.HandleAsync(invalidEvent, CancellationToken.None);
+
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("quality-inspection-result-divergence", deadLetter.FailureCode);
+        Assert.Empty(await dbContext.QualityHoldContexts.ToArrayAsync());
+        Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+    }
+
+    [Fact]
     public async Task Conditional_release_clears_only_matching_operation_hold_and_allows_dispatch_without_manual_intervention()
     {
         var services = CreateServices(nameof(Conditional_release_clears_only_matching_operation_hold_and_allows_dispatch_without_manual_intervention));
