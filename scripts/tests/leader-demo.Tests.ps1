@@ -617,6 +617,21 @@ try {
     $leaderDemoEntryText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/leader-demo.ps1') -Raw
     Assert-True ($leaderDemoEntryText.Contains('Get-NervLeaderDemoFailureExitCode')) 'The leader-demo entrypoint must extract a structured verification exit code.'
     Assert-True ($leaderDemoEntryText.Contains('exit $exitCode')) 'The leader-demo entrypoint must propagate the structured nonzero code after evidence.'
+    $simulatorEntryPath = Join-Path $repoRoot 'scripts/verify-leader-demo-telemetry-simulator.ps1'
+    Assert-True (Test-Path -LiteralPath $simulatorEntryPath -PathType Leaf) 'The governed leader-demo telemetry simulator entrypoint must exist.'
+    $simulatorEntryText = Get-Content -LiteralPath $simulatorEntryPath -Raw
+    Assert-True ($simulatorEntryText.Contains('scripts/lib/ScriptAutomation.ps1')) 'The simulator entrypoint must use the governed script helper.'
+    Assert-True ($simulatorEntryText.Contains('scripts/lib/FullStackSessionRuntime.ps1')) 'The simulator entrypoint must resolve the exact current leader-demo session.'
+    Assert-True ($simulatorEntryText.Contains('scripts/lib/LeaderDemoTelemetrySimulator.ps1')) 'The simulator entrypoint must use the deterministic simulator core.'
+    Assert-True ([regex]::IsMatch($simulatorEntryText, '\[int\]\s*\$SampleIntervalSeconds\s*=\s*2')) 'The simulator must default to a two-second public sample cadence.'
+    Assert-True ($simulatorEntryText.Contains('[switch] $HistoricalBackfill')) 'The simulator must expose the governed historical backfill probe.'
+    Assert-True ($simulatorEntryText.Contains('artifacts/leader-demo')) 'The simulator must write redacted evidence under artifacts/leader-demo.'
+    Assert-True ($simulatorEntryText.Contains('NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD')) 'The simulator must accept the local password only through the controlled environment variable.'
+    $simulatorCoreText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/LeaderDemoTelemetrySimulator.ps1') -Raw
+    Assert-True ($simulatorCoreText.Contains('/api/business-console/v1/telemetry/samples')) 'Simulator writes must use the public telemetry sample facade.'
+    Assert-True ($simulatorCoreText.Contains('/api/business-console/v1/telemetry/devices/')) 'Simulator verification must use the public history facade.'
+    Assert-True ($simulatorCoreText.Contains('/api/business-console/v1/telemetry/alarms')) 'Simulator verification must use the public alarm facade.'
+    Assert-True (-not [regex]::IsMatch($simulatorCoreText, '(?i)\b(sql|npgsql|dbcontext|invoke-sqlcmd)\b')) 'The simulator core must not contain a database write path.'
 
     $secondSessionId = Invoke-NervLeaderDemoCommand `
         -Action reset `
