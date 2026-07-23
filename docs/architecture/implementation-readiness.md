@@ -8,6 +8,12 @@ FileStorage、AppHub、Ops、Notification 已统一通过 `Nerv.IIP.Persistence`
 
 Npgsql-backed 临时 database 生命周期进入独立 `Nerv.IIP.Testing.PostgreSql`，没有扩大通用 `Nerv.IIP.Testing` 的依赖面。设施使用唯一 version-7 GUID database 名，支持并行创建、初始化/迁移回调、取消、初始化失败清理、强制 drop 和脱敏诊断；FileStorage restart persistence 与 BusinessScheduling PostgreSQL profile tests 已迁移为首批两个消费者。完整 18 个启动面的 provider/连接串/环境盘点及后续未迁移范围见 `docs/architecture/persistence-startup-governance.md`。
 
+## 领导演示排产工作台闭环（MAN-580 / #1049）
+
+BusinessScheduling 已新增批量工作台生成与 base-plan 修订两条受管内部端点。批量生成只接受 1–500 个 distinct MES 工单 ID，由服务端读取 organization/environment 范围内的权威 SKU、数量、交期、工序最早开始与生产版本，并通过 ProductEngineering active production-version routing snapshot 解析已发布路线；缺工单、终态工单、缺生产版本或 SKU/版本不一致均 fail closed。修订从已持久化 normalized problem snapshot 过滤 included orders，校验显式锁定工序、可选资源、时间窗口和 scope，再复用既有 override overlay、设备/物料适配器与有限产能调度器持久化新 Generated 方案。响应按最新失效来源事件聚合受影响资源/工单/工序，并返回 base/candidate 权威 KPI、移动、锁定和未排计数；不新增 schema、调度引擎或合并评分。
+
+BusinessGateway 以 `business.scheduling.plans.manage` 暴露 `POST /api/business-console/v1/scheduling/workbench/plans` 和 `POST /api/business-console/v1/scheduling/plans/{planId}/revisions`，两条均在 facade matrix 登记为 `exposed`，OpenAPI 与 `@nerv-iip/api-client` 已刷新。Business Console `/scheduling` 新增领导演示工作台，MES 工单待排池、工序待排池、既有 `@nerv-iip/scheduling` Gantt/Resource 组件和表格编辑共享一个 `WorkingScheduleDraft`；求解未排、规划员移回及受失效影响的工序在工序池中分因展示，拖拽、改派、改期、锁定、移回/恢复、撤销/重做只修改该草稿。人工修改必须先锁定才允许重预览，避免候选方案静默覆盖；重预览与发布继续由后端版本治理决定。路由读取、编辑、发布分别使用 plans.read/manage/release。MAN-582 偏差预测、MAN-583 拆分/转移批/并行机和 MAN-588 无人值守候选引擎仍明确后置；旧 scheduling visualization package 未修改。
+
 ## 跨域统一紧急度模型 V1（MAN-584 / #1053）
 
 BusinessScheduling 现拥有 `order-urgency-v1` 的确定性派生模型：业务优先级、CR/Slack 时间紧迫度和执行风险三类贡献项分别保留，最终等级取三者最高值，不折叠为黑盒分数。输入复用 Scheduling 已组合的权威 due、工序周期、物料齐套、设备可用、质量阻断、工装与产能冲突；不跨 schema 查询，也不复制 ERP、DemandPlanning、MES、Inventory、Quality 或设备域主数据。缺失 due、缺失来源、未捕获引用或超过 2 小时未刷新均 fail closed 为高风险并输出稳定原因码；既有方案重放会补齐缺失快照。方案生成和人工业务优先级变更在命令 UoW 内捕获快照，失效事实由 15 分钟后台周期生成 stale 快照；GET 只执行数据库端 latest-per-order 读取，不写数据库。人工 P0-P3、可选有效期、操作者与原因通过追加式变更表审计，首条记录的 previous level 显式为空。统一读 facade 允许 ERP 销售、需求池、MES 工单或 Scheduling 任一宿主域读权限，写入仍只允许 Scheduling manage。四个关键页面已使用同一结果展示综合 badge、Hover 摘要、含阈值判定表的解释 Sheet 与可定位订单的排产入口；七种显示模式、独立排序及 Sheet 内优先级编辑/审计时间线由 #1061 继续完成。

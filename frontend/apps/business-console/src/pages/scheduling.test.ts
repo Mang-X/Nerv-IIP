@@ -16,6 +16,29 @@ vi.mock('@/composables/useOrderUrgency', () => ({
 vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
   default: { template: '<span data-testid="order-urgency">未计算</span>' },
 }))
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    principal: {
+      permissionCodes: [
+        'business.scheduling.plans.read',
+        'business.scheduling.plans.manage',
+        'business.scheduling.plans.release',
+      ],
+    },
+  }),
+}))
+vi.mock('@/composables/useSchedulingWorkbench', () => ({
+  useSchedulingWorkbench: () => ({
+    candidatesPending: shallowRef(false),
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
+    generatePending: shallowRef(false),
+    generatePlan: vi.fn(),
+    refreshCandidates: vi.fn(),
+    revisionPending: shallowRef(false),
+    revisePlan: vi.fn(),
+    schedulableCandidates: computed(() => []),
+  }),
+}))
 
 const stub = vi.hoisted(() => ({
   releasePlan: vi
@@ -172,6 +195,7 @@ const detail = computed(() => {
 vi.mock('@/composables/useBusinessScheduling', () => ({
   useBusinessScheduling: () => ({
     detailSelection,
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
     page: shallowRef(1),
     pageSize: shallowRef('100'),
     planDetail: detail,
@@ -270,6 +294,25 @@ describe('APS scheduling workbench page', () => {
     expect(wrapper.text()).toContain('8')
     expect(wrapper.text()).toContain('1 项冲突')
     expect(wrapper.text()).toContain('2 项未排')
+  })
+
+  it('exposes the complete leader-demo workbench loop from one route', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const workbenchTab = wrapper
+      .findAll('[role="tab"]')
+      .find((tab) => tab.text().includes('领导演示工作台'))!
+    await workbenchTab.trigger('focus')
+    await workbenchTab.trigger('mousedown')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('批量待排 → 编辑锁定 → 重预览 → 对比发布')
+    expect(wrapper.text()).toContain('待排工单池')
+    expect(wrapper.text()).toContain('排程草案工作区')
+    expect(wrapper.text()).toContain('工序待排池')
+    expect(wrapper.text()).toContain('锁定重预览')
+    expect(wrapper.text()).toContain('发布新版')
   })
 
   it('uses a single-page table while the facade does not return a total count', async () => {

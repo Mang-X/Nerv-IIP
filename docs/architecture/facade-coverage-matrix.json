@@ -4017,6 +4017,32 @@
     {
       "service": "Scheduling",
       "method": "POST",
+      "route": "/api/business/v1/scheduling/workbench/plans",
+      "operationId": "createSchedulingWorkbenchPlan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleSchedulingWorkbenchPlan"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
+      "route": "/api/business/v1/scheduling/plans/{planId}/revisions",
+      "operationId": "createSchedulingPlanRevision",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleSchedulingPlanRevision"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
       "route": "/api/business/v1/scheduling/plans/preview",
       "operationId": "previewSchedulingPlan",
       "classification": "exposed",

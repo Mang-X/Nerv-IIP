@@ -3306,6 +3306,13 @@ public sealed class BusinessGatewayProxyTests
         await client.GetPlanGanttAsync("internal-token-001", planRequest, CancellationToken.None);
         await client.ReleasePlanAsync("internal-token-001", planRequest, CancellationToken.None);
         await client.RevokePlanAsync("internal-token-001", planRequest, CancellationToken.None);
+        await client.CreateWorkbenchPlanAsync("internal-token-001", new(
+            "org-001", "env-dev",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-06-02T08:00:00Z", CultureInfo.InvariantCulture),
+            [new("WO-001", 1, true)]), CancellationToken.None);
+        await client.CreatePlanRevisionAsync("internal-token-001", new(
+            "plan-001", "org-001", "env-dev", ["WO-001"], []), CancellationToken.None);
 
         Assert.All(handler.Requests, request => Assert.Equal("Bearer", request.Headers.Authorization?.Scheme));
         Assert.All(handler.Requests, request => Assert.Equal("internal-token-001", request.Headers.Authorization?.Parameter));
@@ -3326,6 +3333,10 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpMethod.Post, handler.Requests[6].Method);
         Assert.Equal("/api/business/v1/scheduling/plans/plan-001/revoke", handler.Requests[6].RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[6].RequestUri!.Query.TrimStart('?'));
+        Assert.Equal("/api/business/v1/scheduling/workbench/plans", handler.Requests[7].RequestUri!.AbsolutePath);
+        Assert.Contains("\"workOrderId\":\"WO-001\"", handler.RequestBodies[7]);
+        Assert.Equal("/api/business/v1/scheduling/plans/plan-001/revisions", handler.Requests[8].RequestUri!.AbsolutePath);
+        Assert.Contains("\"includedOrderIds\":[\"WO-001\"]", handler.RequestBodies[8]);
     }
 
     [Fact]
@@ -6620,6 +6631,22 @@ public sealed class BusinessGatewayProxyTests
                     DateTimeOffset.Parse("2026-06-01T11:00:00Z", CultureInfo.InvariantCulture),
                     "explicit",
                     null),
+                success = true,
+                message = string.Empty,
+                code = 0,
+            };
+        }
+
+        if (path.EndsWith("/revisions", StringComparison.Ordinal))
+        {
+            var plan = CreateSchedulePlan();
+            return new
+            {
+                data = new SchedulePlanRevisionContract(
+                    plan,
+                    new SchedulePlanImpactContract(false, null, null, null, null, [], [], []),
+                    new SchedulePlanComparisonContract(
+                        "plan-001", plan.PlanId, plan.Metrics, plan.Metrics, 0, 0, 0)),
                 success = true,
                 message = string.Empty,
                 code = 0,

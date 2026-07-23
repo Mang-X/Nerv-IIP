@@ -50,6 +50,10 @@ try
     {
         client.BaseAddress = productEngineeringBaseAddress;
     }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient<ISchedulingWorkbenchSourceProvider, HttpSchedulingWorkbenchSourceProvider>(client =>
+    {
+        client.BaseAddress = mesBaseAddress;
+    }).UseHttpClientMetrics();
     builder.Services.AddHttpClient(HttpSchedulingMaterialReadinessProvider.MesClientName, client =>
     {
         client.BaseAddress = mesBaseAddress;

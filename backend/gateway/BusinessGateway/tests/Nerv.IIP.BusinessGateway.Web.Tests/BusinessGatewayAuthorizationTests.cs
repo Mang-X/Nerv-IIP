@@ -572,6 +572,29 @@ public sealed class BusinessGatewayAuthorizationTests
         {
             problem = SchedulingProblemBody(),
         },
+        "/api/business-console/v1/scheduling/workbench/plans" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            horizonStartUtc = "2026-06-01T00:00:00Z",
+            horizonEndUtc = "2026-06-02T00:00:00Z",
+            orders = new[]
+            {
+                new
+                {
+                    workOrderId = "WO-001",
+                    priority = 100,
+                    isRush = false,
+                },
+            },
+        },
+        "/api/business-console/v1/scheduling/plans/plan-001/revisions" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            includedOrderIds = new[] { "WO-001" },
+            lockedAssignments = Array.Empty<object>(),
+        },
         "/api/business-console/v1/scheduling/order-urgencies/WO-001/business-priority" => new
         {
             organizationId = "org-001",
@@ -1110,6 +1133,8 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/demands/demand-001/cancel", BusinessGatewayPermissions.PlanningDemandsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans/preview", BusinessGatewayPermissions.SchedulingPlansManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans", BusinessGatewayPermissions.SchedulingPlansManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/workbench/plans", BusinessGatewayPermissions.SchedulingPlansManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans/plan-001/revisions", BusinessGatewayPermissions.SchedulingPlansManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/plans", BusinessGatewayPermissions.SchedulingPlansRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/plans/plan-001", BusinessGatewayPermissions.SchedulingPlansRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/plans/plan-001/gantt", BusinessGatewayPermissions.SchedulingPlansRead);
