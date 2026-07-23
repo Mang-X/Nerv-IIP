@@ -43,7 +43,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
     {
         var contracts = IndustrialTelemetryEndpointContracts.All.ToArray();
 
-        Assert.Equal(26, contracts.Length);
+        Assert.Equal(27, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/connector-tag-manifests" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryWrite && x.OperationId == "reportBusinessIiotConnectorTagManifest");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/connectors/{collectionConnectorId}/tag-coverage" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "getBusinessIiotConnectorTagCoverage");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/tags" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TagsManage && x.OperationId == "createBusinessIiotTelemetryTag");
@@ -70,6 +70,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/devices/{deviceAssetId}/runtime-availability" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "getBusinessIiotDeviceRuntimeAvailability");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/runtime-availability" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "queryBusinessIiotRuntimeAvailability");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/devices/{deviceAssetId}/current-state" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "getBusinessIiotDeviceCurrentState");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/devices/{deviceAssetId}/health" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "getBusinessIiotEquipmentHealth");
         Assert.All(contracts, x => Assert.Equal(InternalServiceAuthorizationPolicy.Name, x.AuthorizationPolicy));
     }
 
@@ -518,6 +519,41 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal("2026-06-02", daily[1].GetProperty("businessDate").GetString());
         Assert.Equal(1.5m, daily[1].GetProperty("runtimeHours").GetDecimal());
         Assert.Equal(2m, daily[1].GetProperty("loadingHours").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Equipment_health_endpoint_returns_stable_frontend_friendly_shape()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        using var response = await client.GetAsync(
+            "/api/business/v1/iiot/devices/DEV-HEALTH-EMPTY/health?organizationId=org-001&environmentId=env-dev");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("org-001", data.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", data.GetProperty("environmentId").GetString());
+        Assert.Equal("DEV-HEALTH-EMPTY", data.GetProperty("deviceAssetId").GetString());
+        Assert.Equal(100, data.GetProperty("healthScore").GetInt32());
+        Assert.Equal("healthy", data.GetProperty("level").GetString());
+        Assert.Equal("unavailable", data.GetProperty("dataFreshness").GetProperty("status").GetString());
+        Assert.Equal(0, data.GetProperty("riskFactors").GetArrayLength());
+        Assert.Equal(5, data.GetProperty("ruleEvaluations").GetArrayLength());
+        Assert.All(
+            data.GetProperty("ruleEvaluations").EnumerateArray(),
+            evaluation =>
+            {
+                Assert.False(string.IsNullOrWhiteSpace(evaluation.GetProperty("ruleCode").GetString()));
+                Assert.False(string.IsNullOrWhiteSpace(evaluation.GetProperty("ruleName").GetString()));
+                Assert.False(string.IsNullOrWhiteSpace(evaluation.GetProperty("status").GetString()));
+                Assert.False(string.IsNullOrWhiteSpace(evaluation.GetProperty("currentValue").GetString()));
+                Assert.False(string.IsNullOrWhiteSpace(evaluation.GetProperty("threshold").GetString()));
+                Assert.False(string.IsNullOrWhiteSpace(evaluation.GetProperty("evidence").GetString()));
+            });
     }
 
     [Fact]

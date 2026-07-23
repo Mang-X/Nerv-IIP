@@ -164,6 +164,7 @@ public sealed record QueryRuntimeHoursRequest(string OrganizationId, string Envi
 public sealed record GetDeviceRuntimeAvailabilityRequest(string DeviceAssetId, string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, int FreshnessMaxAgeMinutes = 60);
 public sealed record QueryRuntimeAvailabilityRequest(string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, string? DeviceAssetIds, string? WorkCenterIds, int FreshnessMaxAgeMinutes = 60);
 public sealed record GetDeviceCurrentStateRequest(string DeviceAssetId, string OrganizationId, string EnvironmentId, DateTimeOffset? AsOfUtc, int FreshnessMaxAgeMinutes = 60);
+public sealed record GetEquipmentHealthRequest(string DeviceAssetId, string OrganizationId, string EnvironmentId);
 public sealed record GetDeviceControlCommandRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId);
 public sealed record ListDeviceControlCommandsRequest(
     string OrganizationId,
@@ -477,6 +478,19 @@ public sealed class GetDeviceCurrentStateEndpoint(ISender sender) : IndustrialTe
     }
 }
 
+public sealed class GetEquipmentHealthEndpoint(ISender sender) : IndustrialTelemetryEndpoint<GetEquipmentHealthRequest, ResponseData<EquipmentHealthResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<GetEquipmentHealthEndpoint>());
+
+    public override async Task HandleAsync(GetEquipmentHealthRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(
+            new GetEquipmentHealthQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId),
+            ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class ListAlarmEventsEndpoint(ISender sender) : IndustrialTelemetryEndpoint<ListAlarmEventsRequest, ResponseData<PagedListResponse<AlarmEventListItem>>>
 {
     public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<ListAlarmEventsEndpoint>());
@@ -714,6 +728,7 @@ public static class IndustrialTelemetryEndpointContracts
         new(typeof(GetDeviceRuntimeAvailabilityEndpoint), "GET", "/api/business/v1/iiot/devices/{deviceAssetId}/runtime-availability", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotDeviceRuntimeAvailability"),
         new(typeof(QueryRuntimeAvailabilityEndpoint), "GET", "/api/business/v1/iiot/runtime-availability", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotRuntimeAvailability"),
         new(typeof(GetDeviceCurrentStateEndpoint), "GET", "/api/business/v1/iiot/devices/{deviceAssetId}/current-state", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotDeviceCurrentState"),
+        new(typeof(GetEquipmentHealthEndpoint), "GET", "/api/business/v1/iiot/devices/{deviceAssetId}/health", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotEquipmentHealth"),
     ];
 
     public static IndustrialTelemetryEndpointContract Get<TEndpoint>() => All.Single(x => x.EndpointType == typeof(TEndpoint));
