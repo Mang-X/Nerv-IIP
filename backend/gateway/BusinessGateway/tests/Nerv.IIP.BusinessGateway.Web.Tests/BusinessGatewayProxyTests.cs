@@ -3862,6 +3862,10 @@ public sealed class BusinessGatewayProxyTests
     [InlineData("invalid-level")]
     [InlineData("invalid-freshness")]
     [InlineData("invalid-rule-status")]
+    [InlineData("numeric-level")]
+    [InlineData("numeric-freshness")]
+    [InlineData("numeric-rule-status")]
+    [InlineData("numeric-risk-factor-status")]
     [InlineData("four-rule-evaluations")]
     [InlineData("unexpected-rule-code")]
     [InlineData("duplicate-rule-code")]
@@ -6882,6 +6886,18 @@ public sealed class BusinessGatewayProxyTests
                 break;
             case "invalid-rule-status":
                 riskEvaluation["status"] = "unavailable";
+                break;
+            case "numeric-level":
+                data["level"] = 99;
+                break;
+            case "numeric-freshness":
+                freshness["status"] = 99;
+                break;
+            case "numeric-rule-status":
+                normalEvaluation["status"] = 99;
+                break;
+            case "numeric-risk-factor-status":
+                riskFactor["status"] = 99;
                 break;
             case "four-rule-evaluations":
                 evaluations.RemoveAt(evaluations.Count - 1);

@@ -5063,6 +5063,7 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             || !string.Equals(response.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal)
             || !string.Equals(response.DeviceAssetId, deviceAssetId, StringComparison.Ordinal)
             || response.HealthScore is < 0 or > 100
+            || !Enum.IsDefined(response.Level)
             || response.CalculatedAtUtc == default
             || response.CalculatedAtUtc.Offset != TimeSpan.Zero
             || response.DataFreshness is null
@@ -5088,6 +5089,7 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                     evaluation.Threshold,
                     evaluation.Unit,
                     evaluation.Evidence)
+                || !Enum.IsDefined(evaluation.Status)
                 || !HasCoherentPenalty(evaluation.Status, evaluation.Penalty)
                 || !HasCoherentEvidenceSource(
                     evaluation.SourceFactType,
@@ -5116,6 +5118,7 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                     factor.Threshold,
                     factor.Unit,
                     factor.Evidence)
+                || !Enum.IsDefined(factor.Status)
                 || factor.Status != BusinessConsoleEquipmentHealthRuleStatus.Risk
                 || factor.Penalty <= 0
                 || !HasCoherentEvidenceSource(
@@ -5190,6 +5193,11 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         BusinessConsoleEquipmentHealthDataFreshness freshness,
         DateTimeOffset calculatedAtUtc)
     {
+        if (!Enum.IsDefined(freshness.Status))
+        {
+            return false;
+        }
+
         if (freshness.Status == BusinessConsoleEquipmentHealthFreshness.Unavailable)
         {
             return freshness.AgeSeconds is null
