@@ -5097,7 +5097,7 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                     evaluation.Unit,
                     evaluation.Evidence)
                 || !Enum.IsDefined(evaluation.Status)
-                || !HasCoherentPenalty(evaluation.Status, evaluation.Penalty)
+                || !HasCanonicalPenalty(evaluation.RuleCode, evaluation.Status, evaluation.Penalty)
                 || !HasCoherentEvidenceSource(
                     evaluation.SourceFactType,
                     evaluation.SourceFactLabel,
@@ -5140,8 +5140,17 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             }
         }
 
+        var expectedScore = Math.Clamp(
+            100 - riskEvaluations.Values.Sum(evaluation => evaluation.Penalty),
+            0,
+            100);
         if (!riskFactorCodes.SetEquals(riskEvaluations.Keys)
-            || !HasCoherentFreshness(response.DataFreshness, response.CalculatedAtUtc))
+            || response.HealthScore != expectedScore
+            || response.Level != ClassifyEquipmentHealth(expectedScore)
+            || !HasCoherentFreshness(
+                response.DataFreshness,
+                response.CalculatedAtUtc,
+                response.RuleEvaluations))
         {
             throw InvalidEquipmentHealthResponse();
         }
@@ -5161,10 +5170,35 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         && !string.IsNullOrWhiteSpace(unit)
         && !string.IsNullOrWhiteSpace(evidence);
 
-    private static bool HasCoherentPenalty(BusinessConsoleEquipmentHealthRuleStatus status, int penalty) =>
-        status == BusinessConsoleEquipmentHealthRuleStatus.Risk
-            ? penalty > 0
-            : penalty == 0;
+    private static bool HasCanonicalPenalty(
+        string ruleCode,
+        BusinessConsoleEquipmentHealthRuleStatus status,
+        int penalty)
+    {
+        if (status != BusinessConsoleEquipmentHealthRuleStatus.Risk)
+        {
+            return penalty == 0;
+        }
+
+        return ruleCode switch
+        {
+            "threshold-proximity" => penalty == 15,
+            "runtime-hours-24h" => penalty == 10,
+            "alarm-frequency-24h" => penalty is 20 or 45 or 65,
+            "sustained-exceedance" => penalty == 20,
+            "trend-growth" => penalty == 15,
+            _ => false,
+        };
+    }
+
+    private static BusinessConsoleEquipmentHealthLevel ClassifyEquipmentHealth(int score) =>
+        score switch
+        {
+            >= 90 => BusinessConsoleEquipmentHealthLevel.Healthy,
+            >= 70 => BusinessConsoleEquipmentHealthLevel.Watch,
+            >= 40 => BusinessConsoleEquipmentHealthLevel.Warning,
+            _ => BusinessConsoleEquipmentHealthLevel.Critical,
+        };
 
     private static bool HasCoherentEvidenceSource(
         string? sourceFactType,
@@ -5198,7 +5232,8 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
 
     private static bool HasCoherentFreshness(
         BusinessConsoleEquipmentHealthDataFreshness freshness,
-        DateTimeOffset calculatedAtUtc)
+        DateTimeOffset calculatedAtUtc,
+        IReadOnlyCollection<BusinessConsoleEquipmentHealthRuleEvaluation> evaluations)
     {
         if (!Enum.IsDefined(freshness.Status))
         {
@@ -5210,7 +5245,8 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             return freshness.AgeSeconds is null
                 && freshness.LatestFactAtUtc is null
                 && freshness.SourceFactType is null
-                && freshness.SourceFactLabel is null;
+                && freshness.SourceFactLabel is null
+                && evaluations.All(evaluation => evaluation.SourceFactOccurredAtUtc is null);
         }
 
         if (freshness.AgeSeconds is null or < 0
@@ -5224,8 +5260,15 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             return false;
         }
 
-        return (long)(calculatedAtUtc - freshness.LatestFactAtUtc.Value).TotalSeconds
-            == freshness.AgeSeconds.Value;
+        var ageSeconds = (long)(calculatedAtUtc - freshness.LatestFactAtUtc.Value).TotalSeconds;
+        var expectedStatus = ageSeconds switch
+        {
+            <= 120 => BusinessConsoleEquipmentHealthFreshness.Fresh,
+            <= 600 => BusinessConsoleEquipmentHealthFreshness.Delayed,
+            _ => BusinessConsoleEquipmentHealthFreshness.Stale,
+        };
+        return ageSeconds == freshness.AgeSeconds.Value
+            && freshness.Status == expectedStatus;
     }
 
     private static BusinessServiceProxyException InvalidEquipmentHealthResponse() =>

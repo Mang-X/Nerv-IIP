@@ -3857,6 +3857,8 @@ public sealed class BusinessGatewayProxyTests
     [InlineData("mismatched-device")]
     [InlineData("negative-score")]
     [InlineData("score-over-100")]
+    [InlineData("score-does-not-match-risk-penalties")]
+    [InlineData("level-does-not-match-score")]
     [InlineData("default-calculated-at")]
     [InlineData("non-utc-calculated-at")]
     [InlineData("invalid-level")]
@@ -3883,7 +3885,15 @@ public sealed class BusinessGatewayProxyTests
     [InlineData("blank-risk-factor-evidence")]
     [InlineData("negative-freshness-age")]
     [InlineData("incoherent-freshness-age")]
+    [InlineData("fresh-status-with-delayed-age")]
+    [InlineData("delayed-status-with-stale-age")]
+    [InlineData("unavailable-status-with-rule-source-facts")]
     [InlineData("freshness-source-without-latest-fact")]
+    [InlineData("invalid-threshold-proximity-penalty")]
+    [InlineData("invalid-runtime-hours-penalty")]
+    [InlineData("invalid-alarm-frequency-penalty")]
+    [InlineData("invalid-sustained-exceedance-penalty")]
+    [InlineData("invalid-trend-growth-penalty")]
     public async Task Equipment_health_http_client_rejects_malformed_downstream_contract(string scenario)
     {
         var handler = new RecordingHandler(_ => EquipmentHealthJsonResponse(
@@ -6876,6 +6886,12 @@ public sealed class BusinessGatewayProxyTests
             case "score-over-100":
                 data["healthScore"] = 101;
                 break;
+            case "score-does-not-match-risk-penalties":
+                data["healthScore"] = 84;
+                break;
+            case "level-does-not-match-score":
+                data["level"] = "warning";
+                break;
             case "default-calculated-at":
                 data["calculatedAtUtc"] = "0001-01-01T00:00:00Z";
                 break;
@@ -6958,12 +6974,64 @@ public sealed class BusinessGatewayProxyTests
             case "incoherent-freshness-age":
                 freshness["ageSeconds"] = 120;
                 break;
+            case "fresh-status-with-delayed-age":
+                freshness["status"] = "fresh";
+                break;
+            case "delayed-status-with-stale-age":
+                freshness["status"] = "delayed";
+                freshness["ageSeconds"] = 601;
+                freshness["latestFactAtUtc"] = "2026-07-24T00:52:02Z";
+                break;
+            case "unavailable-status-with-rule-source-facts":
+                freshness["status"] = "unavailable";
+                freshness["ageSeconds"] = null;
+                freshness["latestFactAtUtc"] = null;
+                freshness["sourceFactType"] = null;
+                freshness["sourceFactLabel"] = null;
+                break;
             case "freshness-source-without-latest-fact":
                 freshness["latestFactAtUtc"] = null;
+                break;
+            case "invalid-threshold-proximity-penalty":
+                riskEvaluation["penalty"] = 14;
+                riskFactor["penalty"] = 14;
+                data["healthScore"] = 86;
+                break;
+            case "invalid-runtime-hours-penalty":
+                AddRiskEvaluation(data, evaluations[1]!.AsObject(), 11);
+                break;
+            case "invalid-alarm-frequency-penalty":
+                AddRiskEvaluation(data, evaluations[2]!.AsObject(), 21);
+                break;
+            case "invalid-sustained-exceedance-penalty":
+                AddRiskEvaluation(data, evaluations[3]!.AsObject(), 21);
+                break;
+            case "invalid-trend-growth-penalty":
+                AddRiskEvaluation(data, evaluations[4]!.AsObject(), 14);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(scenario), scenario, "Unknown equipment-health contract mutation.");
         }
+    }
+
+    private static void AddRiskEvaluation(JsonObject data, JsonObject evaluation, int penalty)
+    {
+        evaluation["status"] = "risk";
+        evaluation["penalty"] = penalty;
+        data["riskFactors"]!.AsArray().Add(evaluation.DeepClone());
+
+        var riskPenalty = data["riskFactors"]!
+            .AsArray()
+            .Sum(factor => factor!["penalty"]!.GetValue<int>());
+        var score = Math.Clamp(100 - riskPenalty, 0, 100);
+        data["healthScore"] = score;
+        data["level"] = score switch
+        {
+            >= 90 => "healthy",
+            >= 70 => "watch",
+            >= 40 => "warning",
+            _ => "critical",
+        };
     }
 
     private static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, object payload) => new(statusCode)
