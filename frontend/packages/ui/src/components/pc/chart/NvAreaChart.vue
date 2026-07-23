@@ -21,9 +21,11 @@ const props = withDefaults(
     valueSuffix?: string
     /** Sparkline mode: no axes, tight margins — for in-card trends. */
     minimal?: boolean
+    /** Keep the hover crosshair + tooltip even in `minimal` mode (in-card trend scrubbing). */
+    crosshair?: boolean
     class?: HTMLAttributes['class']
   }>(),
-  { height: 240, valueSuffix: '', minimal: false },
+  { height: 240, valueSuffix: '', minimal: false, crosshair: false },
 )
 
 const x = (_d: ChartPoint, i: number) => i
@@ -53,7 +55,7 @@ const chartMargin = computed(() =>
         :domain-line="false"
       />
       <VisAxis v-if="!minimal" type="y" :num-ticks="4" :tick-line="false" :domain-line="false" />
-      <template v-if="!minimal">
+      <template v-if="!minimal || crosshair">
         <VisCrosshair color="var(--nv-brand)" :template="tooltipTemplate" />
         <VisTooltip />
       </template>

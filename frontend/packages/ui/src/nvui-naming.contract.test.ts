@@ -18,6 +18,7 @@ const transitionalScreenIdentifier = /(?:^|[\s"'`.])sb-/m
 
 // --- Frozen Appendix A (ui): 182 Nv names (incl. renamed derived types) + 174 old.
 // (NvCombobox / NvSearchSelect added post-freeze by MAN-439 — new components, see ADR 0020 Appendix A.)
+// (NvMetricRing / NvMetricStrip added post-freeze — metric-card family variants, ADR 0020 R1–R5.)
 const NV_ALL = [
   'NvAlarmTable',
   'NvAlertDialog',
@@ -109,6 +110,8 @@ const NV_ALL = [
   'NvLoader',
   'NvMetricCard',
   'NvMetricComparison',
+  'NvMetricRing',
+  'NvMetricStrip',
   'NvNavigationMenu',
   'NvNavigationMenuContent',
   'NvNavigationMenuIndicator',
