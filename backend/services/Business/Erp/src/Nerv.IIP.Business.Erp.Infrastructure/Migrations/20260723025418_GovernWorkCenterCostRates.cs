@@ -202,6 +202,16 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("""
+                -- Downgrade intentionally discards newer audit history because the legacy schema permits one row per scope.
+                DELETE FROM erp.work_center_cost_rates AS candidate
+                USING erp.work_center_cost_rates AS winner
+                WHERE candidate.organization_id = winner.organization_id
+                  AND candidate.environment_id = winner.environment_id
+                  AND candidate.work_center_id = winner.work_center_id
+                  AND candidate.revision < winner.revision;
+                """);
+
             migrationBuilder.DropIndex(
                 name: "ix_work_center_cost_rates_effective_lookup",
                 schema: "erp",

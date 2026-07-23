@@ -52,7 +52,9 @@ public sealed class ConfigureWorkCenterCostRateCommandValidator : AbstractValida
     private static bool BeUtc(DateTimeOffset value) => value.Offset == TimeSpan.Zero;
 }
 
-public sealed class ConfigureWorkCenterCostRateCommandHandler(ApplicationDbContext dbContext)
+public sealed class ConfigureWorkCenterCostRateCommandHandler(
+    ApplicationDbContext dbContext,
+    IWorkCenterCostRateRevisionLock revisionLock)
     : ICommandHandler<ConfigureWorkCenterCostRateCommand, WorkCenterCostRateId>
 {
     public async Task<WorkCenterCostRateId> Handle(ConfigureWorkCenterCostRateCommand request, CancellationToken cancellationToken)
@@ -60,6 +62,7 @@ public sealed class ConfigureWorkCenterCostRateCommandHandler(ApplicationDbConte
         var organizationId = request.OrganizationId.Trim();
         var environmentId = request.EnvironmentId.Trim();
         var workCenterId = request.WorkCenterId.Trim();
+        await revisionLock.AcquireAsync(organizationId, environmentId, workCenterId, cancellationToken);
         var databaseRevision = await dbContext.WorkCenterCostRates
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId

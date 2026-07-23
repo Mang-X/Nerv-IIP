@@ -206,6 +206,31 @@ public sealed class ErpSchemaConventionTests
     }
 
     [Fact]
+    public void Work_center_cost_rate_down_migration_collapses_to_highest_revision_before_dropping_revision()
+    {
+        using var fixture = CreateFixture();
+        var migrations = fixture.DbContext.GetService<IMigrationsAssembly>();
+        var migrationType = migrations.Migrations["20260723025418_GovernWorkCenterCostRates"];
+        var migration = migrations.CreateMigration(migrationType, fixture.DbContext.Database.ProviderName!);
+        var downOperations = migration.DownOperations.ToArray();
+
+        var collapseIndex = Array.FindIndex(downOperations, operation =>
+            operation is SqlOperation sql
+            && sql.Sql.Contains("DELETE FROM erp.work_center_cost_rates AS candidate", StringComparison.Ordinal)
+            && sql.Sql.Contains("candidate.revision < winner.revision", StringComparison.Ordinal)
+            && sql.Sql.Contains("downgrade intentionally discards newer audit history", StringComparison.OrdinalIgnoreCase));
+        var revisionDropIndex = Array.FindIndex(downOperations, operation =>
+            operation is DropColumnOperation drop
+            && drop.Schema == ErpFacts.Schema
+            && drop.Table == "work_center_cost_rates"
+            && drop.Name == "revision");
+
+        Assert.True(collapseIndex >= 0, "The downgrade must explicitly collapse each scope to its highest revision.");
+        Assert.True(revisionDropIndex >= 0, "The downgrade must drop the governed revision column.");
+        Assert.True(collapseIndex < revisionDropIndex, "The rollback collapse must run while revision is still available.");
+    }
+
+    [Fact]
     public void Order_revision_versions_are_optimistic_concurrency_tokens()
     {
         using var fixture = CreateFixture();
