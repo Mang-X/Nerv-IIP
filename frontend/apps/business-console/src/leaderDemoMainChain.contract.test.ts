@@ -288,7 +288,8 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(receiptFlow).toContain('locationCode: finishedGoodsLocationCode')
     expect(receiptFlow).toContain('lotNo: producedLotNo')
     expect(receiptFlow).toContain('(data) => Number(data.onHandQuantity ?? 0) > 0')
-    expect(availabilityCall).toContain('120_000')
+    expect(scenarioSource).toContain('const costingConvergenceTimeoutMs = 360_000')
+    expect(availabilityCall).toContain('costingConvergenceTimeoutMs')
     expect(receiptFlow).toContain('poll: availability.poll')
     expect(receiptFlow).not.toMatch(/\(\s*\)\s*=>\s*false/)
     expect(receiptFlow).not.toMatch(/pollRows\([\s\S]*?producedLotNo[\s\S]*?,\s*1,?\s*\)/)
@@ -386,7 +387,7 @@ describe('leader demo main-chain public prerequisites', () => {
       'const capitalizedReceipt = await pollRows(',
       'const terminalStatuses =',
     )
-    expect(capitalizedReceiptCall).toContain('120_000')
+    expect(capitalizedReceiptCall).toContain('costingConvergenceTimeoutMs')
     expect(receiptFlow).toContain('Number(movement.quantity ?? 0) === finishedGoodsQuantity')
     expect(receiptFlow).toContain('Number(balance.ledgerVersion ?? 0) > 0')
     expect(receiptFlow).toContain("node: 'inventory-produced-lot-fulfillment-lookup'")
