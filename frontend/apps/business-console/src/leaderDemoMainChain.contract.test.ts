@@ -206,8 +206,16 @@ describe('leader demo main-chain public prerequisites', () => {
 
   it('polls exact finished-goods Inventory availability with a bounded public wait', () => {
     const receiptFlow = sourceBetween("let receiptRequestNo = ''", "let wmsOutboundId = ''")
+    const finishedGoodsReceiptRequest = sourceBetween(
+      'const receipt = await call(',
+      'receiptRequestNo =',
+    )
+    const availabilityCall = sourceBetween(
+      'const availability = await pollData(',
+      "node: 'finished-goods-receipt-inventory-posting'",
+    )
 
-    expect(receiptFlow).not.toContain('unitCost: finishedGoodsUnitCost')
+    expect(finishedGoodsReceiptRequest).not.toMatch(/\bunitCost\s*:/)
     expect(receiptFlow).toContain('const availability = await pollData(')
     expect(receiptFlow).toContain("'/api/business-console/v1/inventory/availability'")
     expect(receiptFlow).toContain('skuCode: finishedSku')
@@ -215,6 +223,7 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(receiptFlow).toContain('locationCode: finishedGoodsLocationCode')
     expect(receiptFlow).toContain('lotNo: producedLotNo')
     expect(receiptFlow).toContain('(data) => Number(data.onHandQuantity ?? 0) > 0')
+    expect(availabilityCall).toContain('120_000')
     expect(receiptFlow).toContain('poll: availability.poll')
     expect(receiptFlow).not.toMatch(/\(\s*\)\s*=>\s*false/)
     expect(receiptFlow).not.toMatch(/pollRows\([\s\S]*?producedLotNo[\s\S]*?,\s*1,?\s*\)/)
@@ -237,6 +246,21 @@ describe('leader demo main-chain public prerequisites', () => {
     )
     expect(failureFlow).toContain('lastData: publicJson(pollFailure.lastData)')
     expect(failureFlow).toContain('poll: pollFailure.poll')
+  })
+
+  it('preserves audit metadata for bounded row polling success and timeout', () => {
+    const rowPollingFlow = sourceBetween('const pollRows = async (', 'const pollData = async (')
+
+    expect(rowPollingFlow).toContain('const startedAt = Date.now()')
+    expect(rowPollingFlow).toContain('let attempts = 0')
+    expect(rowPollingFlow).toContain('let lastRequest: JsonRecord | null = null')
+    expect(rowPollingFlow).toContain('attempts += 1')
+    expect(rowPollingFlow).toContain('lastRequest = response.summary')
+    expect(rowPollingFlow).toContain(
+      'poll: { attempts, elapsedMs: Date.now() - startedAt, timeoutMs }',
+    )
+    expect(rowPollingFlow).toContain('throw new PollTimeoutError(')
+    expect(rowPollingFlow).toContain('{ items: lastRows }')
   })
 
   it('retries a transient 404 within the polling budget and preserves its public evidence', () => {
@@ -293,6 +317,11 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(receiptFlow).toContain('const sourceBalance = balances.find(')
     expect(receiptFlow).toContain('const capitalizedReceipt = await pollRows(')
     expect(receiptFlow).toContain('Number(row.unitCost ?? 0) === finishedGoodsUnitCost')
+    const capitalizedReceiptCall = sourceBetween(
+      'const capitalizedReceipt = await pollRows(',
+      'const terminalStatuses =',
+    )
+    expect(capitalizedReceiptCall).toContain('120_000')
     expect(receiptFlow).toContain('Number(movement.quantity ?? 0) === finishedGoodsQuantity')
     expect(receiptFlow).toContain('Number(balance.ledgerVersion ?? 0) > 0')
     expect(receiptFlow).toContain("node: 'inventory-produced-lot-fulfillment-lookup'")
@@ -303,6 +332,7 @@ describe('leader demo main-chain public prerequisites', () => {
     )
     expect(inventoryLinkEvidence).toContain("automationMode: 'automatic'")
     expect(inventoryLinkEvidence).toContain('responsibilityIssue: null')
+    expect(inventoryLinkEvidence).toContain('capitalizedReceiptPoll: capitalizedReceipt.poll')
     expect(inventoryLinkEvidence).toContain('report labor accumulation')
     expect(inventoryLinkEvidence).toContain('ERP capitalization')
     expect(inventoryLinkEvidence).toContain('MES unit cost')

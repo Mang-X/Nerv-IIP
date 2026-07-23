@@ -273,17 +273,32 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     predicate: (row: JsonRecord) => boolean,
     timeoutMs = 45_000,
   ) => {
-    const deadline = Date.now() + timeoutMs
+    const startedAt = Date.now()
+    const deadline = startedAt + timeoutMs
+    let attempts = 0
     let lastRows: JsonRecord[] = []
+    let lastRequest: JsonRecord | null = null
     do {
+      attempts += 1
       const response = await call('GET', queryPath(path, query))
+      lastRequest = response.summary
       lastRows = rowsOf(response.payload)
       const match = lastRows.find(predicate)
-      if (match) return { match, call: response }
-      await page.waitForTimeout(1_000)
+      if (match) {
+        return {
+          match,
+          call: response,
+          poll: { attempts, elapsedMs: Date.now() - startedAt, timeoutMs },
+        }
+      }
+      const remainingMs = deadline - Date.now()
+      if (remainingMs > 0) await page.waitForTimeout(Math.min(1_000, remainingMs))
     } while (Date.now() < deadline)
-    throw new Error(
-      `Timed out waiting for a run-scoped row from ${path}; last row count=${lastRows.length}.`,
+    throw new PollTimeoutError(
+      lastRequest,
+      { items: lastRows },
+      { attempts, elapsedMs: Date.now() - startedAt, timeoutMs },
+      `Timed out after ${attempts} attempts in ${timeoutMs}ms waiting for a run-scoped row from ${path}; last rows=${safeText(JSON.stringify(lastRows))}.`,
     )
   }
 
@@ -1579,6 +1594,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             lotNo: producedLotNo,
           },
           (data) => Number(data.onHandQuantity ?? 0) > 0,
+          120_000,
         )
         record({
           node: 'finished-goods-receipt-inventory-posting',
@@ -1618,6 +1634,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             textOf(row.producedLotNo) === producedLotNo &&
             Number(row.quantity ?? 0) === finishedGoodsQuantity &&
             Number(row.unitCost ?? 0) === finishedGoodsUnitCost,
+          120_000,
         )
         const terminalStatuses = new Set(['posted', 'postingfailed', 'qualityrestricted'])
         const inventoryLink = await pollData(
@@ -1683,6 +1700,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           request: inventoryLink.call.summary,
           responseOrLog: {
             poll: inventoryLink.poll,
+            capitalizedReceiptPoll: capitalizedReceipt.poll,
             mesReceiptCost: publicJson(mesReceipt),
             movementId: textOf(sourceMovement.movementId),
             movementQuantity: sourceMovement.quantity ?? null,
