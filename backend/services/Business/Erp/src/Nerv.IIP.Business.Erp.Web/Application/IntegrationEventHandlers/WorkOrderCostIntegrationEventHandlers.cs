@@ -67,7 +67,7 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
                 await CostVariancePosting.PostLateAdjustmentAsync(dbContext, cost, cost.TotalAccumulatedCost - priorPendingTotal, item.MovementId, item.PostedAtUtc, cancellationToken);
             dbContext.PendingMaterialCosts.Remove(item);
         }
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await dbContext.SaveEntitiesAsync(cancellationToken);
     }
 }
 
@@ -119,7 +119,7 @@ public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMater
             else if (variance < 0m) lines.Add(new("5101-PRODUCTION-VARIANCE", 0m, -variance, $"Over-capitalized variance {completedCost.WorkOrderId}"));
             completedCost.RecordWipClearance(wipClearance);
             dbContext.JournalVouchers.Add(JournalVoucher.Post(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, $"JV-WOC-{completedCost.WorkOrderId}-{payload.InventoryMovementId}", DateOnly.FromDateTime(payload.PostedAtUtc.UtcDateTime), lines));
-            await dbContext.SaveChangesAsync(cancellationToken);
+            await dbContext.SaveEntitiesAsync(cancellationToken);
             return;
         }
         var cost = await dbContext.WorkOrderCosts.Include(x => x.Details).SingleOrDefaultAsync(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.Details.Any(d => d.SourceDocumentId == payload.SourceDocumentId), cancellationToken);
@@ -133,7 +133,7 @@ public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMater
         cost.RecordMaterial(payload.InventoryMovementId, payload.SourceDocumentId, payload.SkuCode, signedCostQuantity, unitCost.Value, payload.PostedAtUtc);
         if (cost.CapitalizationPublished && signedCostQuantity < 0m)
             await CostVariancePosting.PostLateAdjustmentAsync(dbContext, cost, cost.TotalAccumulatedCost - priorMaterialTotal, payload.InventoryMovementId, payload.PostedAtUtc, cancellationToken);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await dbContext.SaveEntitiesAsync(cancellationToken);
     }
 
     private static async Task EnsureCapitalizationAccountsAsync(ApplicationDbContext dbContext, string organizationId, string environmentId, CancellationToken cancellationToken)
@@ -184,6 +184,6 @@ public sealed class WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(A
         if (cost is null || cost.TotalAccumulatedCost <= 0m) throw new InvalidOperationException($"Work order '{payload.WorkOrderId}' has no actual cost to capitalize.");
         cost.AssignSku(payload.SkuCode);
         cost.Complete(payload.GoodQuantity, Math.Max(payload.ExpectedCostReportCount, cost.ReceivedReportCount), payload.ExpectedMaterialMovementCount, payload.CompletedAtUtc);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await dbContext.SaveEntitiesAsync(cancellationToken);
     }
 }

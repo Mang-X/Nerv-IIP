@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 using Nerv.IIP.Business.Erp.Infrastructure;
@@ -18,6 +19,7 @@ public sealed class WorkOrderCostEventClosureTests
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase($"erp-cost-cap-{Guid.CreateVersion7():N}")
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         var occurredAtUtc = DateTimeOffset.Parse("2026-07-11T01:00:00Z");
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
@@ -57,11 +59,13 @@ public sealed class WorkOrderCostEventClosureTests
             "mes", "completed-001",
             new WorkOrderCompletedPayload(
                 "WO-001", "FG-001", 10m, 10m, 0m, occurredAtUtc.AddMinutes(1), 1, 0));
-        await using (var completionDb = new ApplicationDbContext(options, new NoopMediator()))
+        var completionMediator = new RecordingMediator();
+        await using (var completionDb = new ApplicationDbContext(options, completionMediator))
         {
             await new WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(completionDb)
                 .HandleAsync(completed, CancellationToken.None);
         }
+        Assert.Contains(completionMediator.Published, notification => notification is WorkOrderCostCompletedDomainEvent);
 
         await using (var assertCompletionDb = new ApplicationDbContext(options, new NoopMediator()))
         {
@@ -97,8 +101,12 @@ public sealed class WorkOrderCostEventClosureTests
     [Fact]
     public async Task Real_mes_and_inventory_events_close_actual_work_order_cost()
     {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase($"erp-cost-{Guid.CreateVersion7():N}").Options;
-        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"erp-cost-{Guid.CreateVersion7():N}")
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
+        var mediator = new RecordingMediator();
+        await using var db = new ApplicationDbContext(options, mediator);
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         db.WorkCenterCostRates.Add(WorkCenterCostRate.Define(
             "org-001",
@@ -144,7 +152,7 @@ public sealed class WorkOrderCostEventClosureTests
         Assert.Equal(100m, cost.LaborCost);
         Assert.Equal(60m, cost.MaterialCost);
         Assert.Equal(160m, cost.TotalAccumulatedCost);
-        var domainEvent = Assert.IsType<WorkOrderCostCompletedDomainEvent>(Assert.Single(cost.GetDomainEvents()));
+        var domainEvent = Assert.Single(mediator.Published.OfType<WorkOrderCostCompletedDomainEvent>());
         var integrationEvent = new WorkOrderCostCompletedIntegrationEventConverter().Convert(domainEvent);
         Assert.Equal(20m, integrationEvent.Payload.UnitCost);
         Assert.Equal("WO-001", integrationEvent.Payload.WorkOrderId);
@@ -223,6 +231,30 @@ public sealed class WorkOrderCostEventClosureTests
     {
         public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default) where TNotification : INotification => Task.CompletedTask;
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest => throw new NotSupportedException();
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingMediator : IMediator
+    {
+        public List<object> Published { get; } = [];
+
+        public Task Publish(object notification, CancellationToken cancellationToken = default)
+        {
+            Published.Add(notification);
+            return Task.CompletedTask;
+        }
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+            where TNotification : INotification
+        {
+            Published.Add(notification);
+            return Task.CompletedTask;
+        }
+
         public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest => throw new NotSupportedException();
         public Task<object?> Send(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();

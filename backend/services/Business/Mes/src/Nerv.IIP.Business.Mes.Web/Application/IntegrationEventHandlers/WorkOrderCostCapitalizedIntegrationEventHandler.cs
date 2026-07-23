@@ -38,5 +38,6 @@ public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
         {
             receipt.ApplyCapitalizedUnitCost(integrationEvent.Payload.UnitCost);
         }
+        await dbContext.SaveEntitiesAsync(cancellationToken);
     }
 }
