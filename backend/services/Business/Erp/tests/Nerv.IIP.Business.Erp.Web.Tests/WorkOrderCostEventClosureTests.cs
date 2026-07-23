@@ -19,7 +19,18 @@ public sealed class WorkOrderCostEventClosureTests
         var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase($"erp-cost-{Guid.CreateVersion7():N}").Options;
         await using var db = new ApplicationDbContext(options, new NoopMediator());
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        db.WorkCenterCostRates.Add(WorkCenterCostRate.Define("org-001", "env-dev", "WC-01", 50m));
+        db.WorkCenterCostRates.Add(WorkCenterCostRate.Define(
+            "org-001",
+            "env-dev",
+            "WC-01",
+            50m,
+            "CNY",
+            DateTimeOffset.Parse("2026-01-01T00:00:00Z"),
+            null,
+            1,
+            "system:test",
+            "test baseline rate",
+            DateTimeOffset.Parse("2026-01-01T00:00:00Z")));
         await db.SaveChangesAsync();
 
         var report = new ProductionReportRecordedIntegrationEvent("evt-report", MesIntegrationEventTypes.ProductionReportRecorded, 1, DateTimeOffset.Parse("2026-07-11T01:00:00Z"), MesIntegrationEventSources.BusinessMes, "RPT-001", "WO-001", "org-001", "env-dev", "operator", "report-001",

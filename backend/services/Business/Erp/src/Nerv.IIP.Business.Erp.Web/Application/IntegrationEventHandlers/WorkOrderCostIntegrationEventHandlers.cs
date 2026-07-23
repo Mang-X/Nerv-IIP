@@ -30,10 +30,17 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
         WorkCenterCostRate? rate = null;
         if (hasLaborBasis)
         {
-            rate = await dbContext.WorkCenterCostRates.SingleOrDefaultAsync(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.WorkCenterId == integrationEvent.Payload.WorkCenterId, cancellationToken);
+            rate = await dbContext.WorkCenterCostRates
+                .Where(x => x.OrganizationId == integrationEvent.OrganizationId
+                    && x.EnvironmentId == integrationEvent.EnvironmentId
+                    && x.WorkCenterId == integrationEvent.Payload.WorkCenterId
+                    && x.EffectiveFromUtc <= integrationEvent.Payload.ReportedAtUtc
+                    && (x.EffectiveToUtc == null || integrationEvent.Payload.ReportedAtUtc < x.EffectiveToUtc))
+                .OrderByDescending(x => x.Revision)
+                .FirstOrDefaultAsync(cancellationToken);
             if (rate is null)
             {
-                await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(ConsumerName, integrationEvent, "missing-work-center-cost-rate", $"Work-center cost rate '{integrationEvent.Payload.WorkCenterId}' is not configured."), cancellationToken);
+                await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(ConsumerName, integrationEvent, "missing-work-center-cost-rate", $"Work-center cost rate '{integrationEvent.Payload.WorkCenterId}' has no active revision at '{integrationEvent.Payload.ReportedAtUtc:O}'."), cancellationToken);
                 return;
             }
         }

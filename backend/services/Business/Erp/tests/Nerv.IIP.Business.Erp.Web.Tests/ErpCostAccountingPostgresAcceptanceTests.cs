@@ -1,5 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
 using Nerv.IIP.Business.Erp.Domain;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.GLAccountAggregate;
@@ -12,6 +14,68 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 [Collection("ERP PostgreSQL acceptance")]
 public sealed class ErpCostAccountingPostgresAcceptanceTests
 {
+    [ErpCostPostgresFact]
+    public async Task PostgreSQL_migration_backfills_legacy_rate_and_enforces_revision_indexes()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES"), x => x.MigrationsHistoryTable("__EFMigrationsHistory", ErpFacts.Schema))
+            .Options;
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        await db.Database.OpenConnectionAsync();
+        var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(ErpFacts.Schema);
+        await using (var drop = db.Database.GetDbConnection().CreateCommand())
+        {
+            drop.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
+            await drop.ExecuteNonQueryAsync();
+        }
+
+        var migrator = db.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260720014936_AddDeliveryOrderConcurrencyToken");
+        await using (var seed = new NpgsqlCommand($"""
+            INSERT INTO {quotedSchema}.work_center_cost_rates
+                (id, organization_id, environment_id, work_center_id, hourly_rate)
+            VALUES
+                (@id, 'org-legacy', 'env-legacy', 'WC-LEGACY', 37.5)
+            """, (NpgsqlConnection)db.Database.GetDbConnection()))
+        {
+            seed.Parameters.AddWithValue("id", Guid.CreateVersion7());
+            await seed.ExecuteNonQueryAsync();
+        }
+
+        await migrator.MigrateAsync();
+        db.ChangeTracker.Clear();
+
+        var legacy = await db.WorkCenterCostRates.SingleAsync();
+        Assert.Equal(1, legacy.Revision);
+        Assert.Equal("CNY", legacy.CurrencyCode);
+        Assert.Equal(DateTimeOffset.UnixEpoch, legacy.EffectiveFromUtc);
+        Assert.Null(legacy.EffectiveToUtc);
+        Assert.Equal("system:migration", legacy.ChangedBy);
+        Assert.Equal("legacy cost-rate migration", legacy.Reason);
+        Assert.Equal(new DateTimeOffset(2026, 7, 23, 2, 54, 18, TimeSpan.Zero), legacy.ChangedAtUtc);
+
+        var indexes = new Dictionary<string, string>(StringComparer.Ordinal);
+        await using (var indexCommand = new NpgsqlCommand("""
+            SELECT indexname, indexdef
+            FROM pg_indexes
+            WHERE schemaname = 'erp' AND tablename = 'work_center_cost_rates'
+            """, (NpgsqlConnection)db.Database.GetDbConnection()))
+        await using (var reader = await indexCommand.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync()) indexes.Add(reader.GetString(0), reader.GetString(1));
+        }
+
+        Assert.Contains("ux_work_center_cost_rates_scope_revision", indexes.Keys);
+        Assert.Contains("UNIQUE", indexes["ux_work_center_cost_rates_scope_revision"], StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ix_work_center_cost_rates_effective_lookup", indexes.Keys);
+        Assert.DoesNotContain("IX_work_center_cost_rates_organization_id_environment_id_work_~", indexes.Keys);
+
+        db.WorkCenterCostRates.AddRange(
+            WorkCenterCostRate.Define("org-legacy", "env-legacy", "WC-LEGACY", 40m, "CNY", DateTimeOffset.UnixEpoch, null, 2, "system:test", "first concurrent candidate", DateTimeOffset.UtcNow),
+            WorkCenterCostRate.Define("org-legacy", "env-legacy", "WC-LEGACY", 41m, "CNY", DateTimeOffset.UnixEpoch, null, 2, "system:test", "second concurrent candidate", DateTimeOffset.UtcNow));
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
     [ErpCostPostgresFact]
     public async Task PostgreSQL_migration_enforces_gl_link_and_persists_reconciled_cost()
     {
