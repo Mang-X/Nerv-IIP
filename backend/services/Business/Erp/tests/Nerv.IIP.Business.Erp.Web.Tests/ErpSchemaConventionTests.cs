@@ -23,6 +23,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Erp.Infrastructure.MasterData;
@@ -82,6 +83,7 @@ public sealed class ErpSchemaConventionTests
             typeof(ProcessedIntegrationEvent),
             typeof(BusinessPartnerAvailability),
             typeof(IntegrationEventDeadLetter),
+            typeof(WorkCenterCostRate),
         };
 
         var failures = new List<string>();
