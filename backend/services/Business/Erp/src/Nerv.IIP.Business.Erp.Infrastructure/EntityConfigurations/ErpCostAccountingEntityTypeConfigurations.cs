@@ -94,10 +94,21 @@ public sealed class WorkCenterCostRateEntityTypeConfiguration : IEntityTypeConfi
 {
     public void Configure(EntityTypeBuilder<WorkCenterCostRate> builder)
     {
-        builder.ToTable("work_center_cost_rates", table => table.HasComment("ERP phase-one actual labor hourly rates by work center.")); builder.HasKey(x => x.Id);
+        builder.ToTable("work_center_cost_rates", table => table.HasComment("ERP append-only, effective-dated labor hourly-rate revision history by work center.")); builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Work-center cost-rate id."); GLAccountEntityTypeConfiguration.AddTenant(builder);
         builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").IsRequired().HasMaxLength(100).HasComment("MES work-center public identifier.");
-        builder.Property(x => x.HourlyRate).HasColumnName("hourly_rate").HasPrecision(18, 6).HasComment("Actual labor rate per hour in local currency.");
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkCenterId }).IsUnique();
+        builder.Property(x => x.HourlyRate).HasColumnName("hourly_rate").HasPrecision(18, 6).HasComment("Positive actual labor rate per hour.");
+        builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(3).IsFixedLength().HasComment("Normalized ISO-style three-letter uppercase currency code.");
+        builder.Property(x => x.EffectiveFromUtc).HasColumnName("effective_from_utc").HasComment("Inclusive UTC instant from which this revision may apply.");
+        builder.Property(x => x.EffectiveToUtc).HasColumnName("effective_to_utc").HasComment("Optional exclusive UTC instant after which this revision no longer applies.");
+        builder.Property(x => x.Revision).HasColumnName("revision").HasComment("Monotonically increasing revision within organization, environment, and work center.");
+        builder.Property(x => x.ChangedBy).HasColumnName("changed_by").IsRequired().HasMaxLength(200).HasComment("Canonical authenticated actor that configured this revision.");
+        builder.Property(x => x.Reason).HasColumnName("reason").IsRequired().HasMaxLength(500).HasComment("Non-empty business reason for this immutable revision.");
+        builder.Property(x => x.ChangedAtUtc).HasColumnName("changed_at_utc").HasComment("UTC audit instant at which this revision was configured.");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkCenterId, x.Revision })
+            .IsUnique()
+            .HasDatabaseName("ux_work_center_cost_rates_scope_revision");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkCenterId, x.EffectiveFromUtc, x.EffectiveToUtc, x.Revision })
+            .HasDatabaseName("ix_work_center_cost_rates_effective_lookup");
     }
 }

@@ -23,6 +23,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Erp.Infrastructure.MasterData;
@@ -82,6 +83,7 @@ public sealed class ErpSchemaConventionTests
             typeof(ProcessedIntegrationEvent),
             typeof(BusinessPartnerAvailability),
             typeof(IntegrationEventDeadLetter),
+            typeof(WorkCenterCostRate),
         };
 
         var failures = new List<string>();
@@ -201,6 +203,31 @@ public sealed class ErpSchemaConventionTests
             && add.Table == "delivery_orders"
             && add.Name == "completed_at_utc"
             && add.IsNullable);
+    }
+
+    [Fact]
+    public void Work_center_cost_rate_down_migration_collapses_to_highest_revision_before_dropping_revision()
+    {
+        using var fixture = CreateFixture();
+        var migrations = fixture.DbContext.GetService<IMigrationsAssembly>();
+        var migrationType = migrations.Migrations["20260723025418_GovernWorkCenterCostRates"];
+        var migration = migrations.CreateMigration(migrationType, fixture.DbContext.Database.ProviderName!);
+        var downOperations = migration.DownOperations.ToArray();
+
+        var collapseIndex = Array.FindIndex(downOperations, operation =>
+            operation is SqlOperation sql
+            && sql.Sql.Contains("DELETE FROM erp.work_center_cost_rates AS candidate", StringComparison.Ordinal)
+            && sql.Sql.Contains("candidate.revision < winner.revision", StringComparison.Ordinal)
+            && sql.Sql.Contains("downgrade intentionally discards newer audit history", StringComparison.OrdinalIgnoreCase));
+        var revisionDropIndex = Array.FindIndex(downOperations, operation =>
+            operation is DropColumnOperation drop
+            && drop.Schema == ErpFacts.Schema
+            && drop.Table == "work_center_cost_rates"
+            && drop.Name == "revision");
+
+        Assert.True(collapseIndex >= 0, "The downgrade must explicitly collapse each scope to its highest revision.");
+        Assert.True(revisionDropIndex >= 0, "The downgrade must drop the governed revision column.");
+        Assert.True(collapseIndex < revisionDropIndex, "The rollback collapse must run while revision is still available.");
     }
 
     [Fact]

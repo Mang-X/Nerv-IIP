@@ -5,13 +5,16 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.Repository;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Erp.WorkOrderCostCapitalizedIntegrationEvent", ConsumerName)]
 public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    ITransactionUnitOfWork unitOfWork)
     : IIntegrationEventHandler<WorkOrderCostCapitalizedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-mes.work-order-cost-capitalized";
@@ -37,6 +40,33 @@ public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
         foreach (var receipt in receipts.Where(x => x.Status == FinishedGoodsReceiptRequest.RequestedStatus))
         {
             receipt.ApplyCapitalizedUnitCost(integrationEvent.Payload.UnitCost);
+        }
+        await SaveEntitiesAsync(cancellationToken);
+    }
+
+    private async Task SaveEntitiesAsync(CancellationToken cancellationToken)
+    {
+        if (unitOfWork.CurrentTransaction is not null)
+        {
+            await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
+            return;
+        }
+
+        await using var transaction = await unitOfWork.BeginTransactionAsync(cancellationToken);
+        unitOfWork.CurrentTransaction = transaction;
+        try
+        {
+            await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
+            await unitOfWork.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await unitOfWork.RollbackAsync(cancellationToken);
+            throw;
+        }
+        finally
+        {
+            unitOfWork.CurrentTransaction = null;
         }
     }
 }

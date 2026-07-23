@@ -49,7 +49,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
     {
         var contracts = ErpFinanceEndpointContracts.All.ToArray();
 
-        Assert.Equal(23, contracts.Length);
+        Assert.Equal(25, contracts.Length);
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createErpAccountPayable");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables/payment" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "registerErpAccountPayablePayment");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payment-executions" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.OperationId == "approveErpPaymentExecution");

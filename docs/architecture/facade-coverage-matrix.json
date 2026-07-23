@@ -668,6 +668,32 @@
     {
       "service": "Erp",
       "method": "GET",
+      "route": "/api/business/v1/erp/finance/work-center-cost-rates",
+      "operationId": "listErpWorkCenterCostRates",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpWorkCenterCostRates"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/work-center-cost-rates",
+      "operationId": "configureErpWorkCenterCostRate",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "configureBusinessConsoleErpWorkCenterCostRate"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
       "route": "/api/business/v1/erp/finance/month-end-checklist",
       "operationId": "getErpMonthEndChecklist",
       "classification": "exposed",
