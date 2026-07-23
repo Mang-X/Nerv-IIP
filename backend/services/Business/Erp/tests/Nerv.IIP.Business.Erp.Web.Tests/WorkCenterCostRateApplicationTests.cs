@@ -13,6 +13,8 @@ using Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
+using NetCorePal.Extensions.Primitives;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
@@ -127,6 +129,24 @@ public sealed class WorkCenterCostRateApplicationTests
     }
 
     [Fact]
+    public async Task Configure_rejects_currency_changes_inside_an_existing_cost_rate_scope()
+    {
+        await using var db = CreateDb();
+        var handler = new ConfigureWorkCenterCostRateCommandHandler(
+            db,
+            new PostgreSqlWorkCenterCostRateRevisionLock(db));
+        await handler.Handle(Command("org-a", "env-a", 40m), CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            Command("org-a", "env-a", 45m) with { CurrencyCode = "USD" },
+            CancellationToken.None));
+
+        Assert.Contains("currency", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(await db.WorkCenterCostRates.ToListAsync());
+    }
+
+    [Fact]
     public async Task Advisory_lock_key_is_stable_for_normalized_scope_and_distinct_across_scope_axes()
     {
         await using var db = CreateDb();
@@ -149,6 +169,23 @@ public sealed class WorkCenterCostRateApplicationTests
 
         Assert.IsType<PostgreSqlWorkCenterCostRateRevisionLock>(
             scope.ServiceProvider.GetRequiredService<IWorkCenterCostRateRevisionLock>());
+        Assert.Same(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            scope.ServiceProvider.GetRequiredService<ITransactionUnitOfWork>());
+    }
+
+    [Fact]
+    public void Work_center_cost_rate_endpoint_requires_the_registered_time_provider()
+    {
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder => builder.UseEnvironment("Testing"));
+        using var scope = factory.Services.CreateScope();
+        Assert.Same(TimeProvider.System, scope.ServiceProvider.GetRequiredService<TimeProvider>());
+
+        var parameter = Assert.Single(
+            typeof(ConfigureWorkCenterCostRateEndpoint).GetConstructors().Single().GetParameters(),
+            candidate => candidate.ParameterType == typeof(TimeProvider));
+        Assert.False(parameter.HasDefaultValue);
     }
 
     [Fact]
@@ -205,7 +242,7 @@ public sealed class WorkCenterCostRateApplicationTests
         await db.SaveChangesAsync();
 
         await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
-            db, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(Report("event-active", July1), CancellationToken.None);
+            db, new InMemoryIntegrationEventDeadLetterStore(), db).HandleAsync(Report("event-active", July1), CancellationToken.None);
         await db.SaveChangesAsync();
 
         var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
@@ -223,7 +260,7 @@ public sealed class WorkCenterCostRateApplicationTests
             Rate("org-001", "env-dev", "WC-01", 2, 60m, July1.AddDays(1), null));
         await db.SaveChangesAsync();
 
-        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters)
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db)
             .HandleAsync(Report("event-no-active", July1), CancellationToken.None);
 
         Assert.Empty(await db.ProcessedIntegrationEvents.ToListAsync());
@@ -241,7 +278,7 @@ public sealed class WorkCenterCostRateApplicationTests
         await using var db = CreateDb();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var report = Report("event-replay", July1);
-        var consumer = new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters);
+        var consumer = new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db);
 
         await consumer.HandleAsync(report, CancellationToken.None);
         Assert.Empty(await db.ProcessedIntegrationEvents.ToListAsync());

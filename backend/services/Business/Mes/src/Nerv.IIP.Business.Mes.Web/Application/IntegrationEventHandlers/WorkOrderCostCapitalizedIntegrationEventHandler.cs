@@ -14,7 +14,7 @@ namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    ITransactionUnitOfWork? unitOfWork = null)
+    ITransactionUnitOfWork unitOfWork)
     : IIntegrationEventHandler<WorkOrderCostCapitalizedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-mes.work-order-cost-capitalized";
@@ -46,12 +46,6 @@ public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
 
     private async Task SaveEntitiesAsync(CancellationToken cancellationToken)
     {
-        if (unitOfWork is null)
-        {
-            await dbContext.SaveEntitiesAsync(cancellationToken);
-            return;
-        }
-
         if (unitOfWork.CurrentTransaction is not null)
         {
             await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
@@ -60,7 +54,6 @@ public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
 
         await using var transaction = await unitOfWork.BeginTransactionAsync(cancellationToken);
         unitOfWork.CurrentTransaction = transaction;
-        await using var currentTransaction = unitOfWork.CurrentTransaction;
         try
         {
             await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
@@ -70,6 +63,10 @@ public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
         {
             await unitOfWork.RollbackAsync(cancellationToken);
             throw;
+        }
+        finally
+        {
+            unitOfWork.CurrentTransaction = null;
         }
     }
 }

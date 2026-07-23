@@ -62,7 +62,26 @@ public sealed class ConfigureWorkCenterCostRateCommandHandler(
         var organizationId = request.OrganizationId.Trim();
         var environmentId = request.EnvironmentId.Trim();
         var workCenterId = request.WorkCenterId.Trim();
+        var currencyCode = request.CurrencyCode.Trim().ToUpperInvariant();
         await revisionLock.AcquireAsync(organizationId, environmentId, workCenterId, cancellationToken);
+        var persistedCurrencies = await dbContext.WorkCenterCostRates
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.WorkCenterId == workCenterId)
+            .Select(x => x.CurrencyCode)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        var localCurrencies = dbContext.WorkCenterCostRates.Local
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.WorkCenterId == workCenterId)
+            .Select(x => x.CurrencyCode);
+        if (persistedCurrencies.Concat(localCurrencies)
+            .Any(existing => !string.Equals(existing, currencyCode, StringComparison.Ordinal)))
+        {
+            throw new KnownException(
+                $"Work-center cost-rate scope '{organizationId}/{environmentId}/{workCenterId}' already uses another currency. Currency changes require an explicit governed migration.");
+        }
         var databaseRevision = await dbContext.WorkCenterCostRates
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
@@ -82,7 +101,7 @@ public sealed class ConfigureWorkCenterCostRateCommandHandler(
             environmentId,
             workCenterId,
             request.HourlyRate,
-            request.CurrencyCode,
+            currencyCode,
             request.EffectiveFromUtc,
             request.EffectiveToUtc,
             Math.Max(databaseRevision, localRevision) + 1,

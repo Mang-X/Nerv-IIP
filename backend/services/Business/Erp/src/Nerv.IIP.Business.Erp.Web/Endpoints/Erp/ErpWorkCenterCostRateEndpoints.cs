@@ -25,7 +25,8 @@ public sealed record ListWorkCenterCostRatesRequest(
 
 public sealed class ConfigureWorkCenterCostRateEndpoint(
     ISender sender,
-    IErpIntegrationEventContextAccessor eventContext)
+    IErpIntegrationEventContextAccessor eventContext,
+    TimeProvider timeProvider)
     : ErpEndpoint<ConfigureWorkCenterCostRateRequest, ResponseData<ConfigureWorkCenterCostRateResponse>>
 {
     public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<ConfigureWorkCenterCostRateEndpoint>());
@@ -53,7 +54,7 @@ public sealed class ConfigureWorkCenterCostRateEndpoint(
             req.EffectiveToUtc,
             actor,
             req.Reason,
-            TimeProvider.System.GetUtcNow()), ct);
+            timeProvider.GetUtcNow()), ct);
         await Send.OkAsync(new ConfigureWorkCenterCostRateResponse(id).AsResponseData(), cancellation: ct);
     }
 }

@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using FastEndpoints;
 using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
@@ -74,14 +73,19 @@ public sealed class BusinessConsoleConfigureErpWorkCenterCostRateRequestValidato
         RuleFor(x => x.WorkCenterId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.HourlyRate).GreaterThan(0);
         RuleFor(x => x.CurrencyCode)
-            .Must(value => value is not null && Regex.IsMatch(value, "^[A-Z]{3}$", RegexOptions.CultureInvariant))
-            .WithMessage("CurrencyCode must be a three-letter uppercase ISO currency code.");
+            .Must(BeAsciiCurrencyCode)
+            .WithMessage("CurrencyCode must contain exactly three ASCII letters.");
         RuleFor(x => x.EffectiveFromUtc).NotEmpty().Must(value => value.Offset == TimeSpan.Zero);
         RuleFor(x => x.EffectiveToUtc).Must(value => value is null || value.Value.Offset == TimeSpan.Zero);
         RuleFor(x => x.EffectiveToUtc)
             .Must((request, value) => value is null || value > request.EffectiveFromUtc);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
     }
+
+    private static bool BeAsciiCurrencyCode(string value)
+        => !string.IsNullOrWhiteSpace(value)
+            && value.Trim().Length == 3
+            && value.Trim().All(character => character is (>= 'A' and <= 'Z') or (>= 'a' and <= 'z'));
 }
 
 public sealed class BusinessConsoleListErpWorkCenterCostRatesRequestValidator

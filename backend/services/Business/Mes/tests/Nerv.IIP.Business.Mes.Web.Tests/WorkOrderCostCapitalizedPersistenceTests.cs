@@ -16,6 +16,20 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class WorkOrderCostCapitalizedPersistenceTests
 {
     [Fact]
+    public void Cost_capitalization_handler_requires_a_transaction_unit_of_work()
+    {
+        var parameter = Assert.Single(
+            typeof(WorkOrderCostCapitalizedIntegrationEventHandler)
+                .GetConstructors()
+                .Single()
+                .GetParameters(),
+            candidate => candidate.ParameterType == typeof(ITransactionUnitOfWork));
+
+        Assert.False(parameter.HasDefaultValue);
+        Assert.False(parameter.IsOptional);
+    }
+
+    [Fact]
     public async Task Cap_handler_persists_unit_cost_and_dispatches_inventory_request()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -55,6 +69,8 @@ public sealed class WorkOrderCostCapitalizedPersistenceTests
         Assert.Equal(1, unitOfWork.BeginTransactionCallCount);
         Assert.Equal(1, unitOfWork.CommitCallCount);
         Assert.Equal(0, unitOfWork.RollbackCallCount);
+        Assert.Equal(1, unitOfWork.TransactionDisposeAsyncCallCount);
+        Assert.Null(unitOfWork.CurrentTransaction);
         Assert.Contains(mediator.Published, notification => notification is FinishedGoodsReceiptRequestedDomainEvent);
         await using var verification = new ApplicationDbContext(options, new RecordingMediator());
         Assert.Equal(25m, (await verification.FinishedGoodsReceiptRequests.SingleAsync()).UnitCost);
@@ -88,10 +104,13 @@ public sealed class WorkOrderCostCapitalizedPersistenceTests
 
     private sealed class RecordingUnitOfWork(ITransactionUnitOfWork inner) : ITransactionUnitOfWork
     {
+        private CountingDbContextTransaction? transaction;
+
         public int SaveEntitiesCallCount { get; private set; }
         public int BeginTransactionCallCount { get; private set; }
         public int CommitCallCount { get; private set; }
         public int RollbackCallCount { get; private set; }
+        public int TransactionDisposeAsyncCallCount => transaction?.DisposeAsyncCallCount ?? 0;
 
         public IDbContextTransaction? CurrentTransaction
         {
@@ -108,10 +127,12 @@ public sealed class WorkOrderCostCapitalizedPersistenceTests
             return ((IUnitOfWork)inner).SaveEntitiesAsync(cancellationToken);
         }
 
-        public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+        public async Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
         {
             BeginTransactionCallCount++;
-            return inner.BeginTransactionAsync(cancellationToken);
+            transaction = new CountingDbContextTransaction(
+                await inner.BeginTransactionAsync(cancellationToken));
+            return transaction;
         }
 
         public Task CommitAsync(CancellationToken cancellationToken = default)
@@ -128,5 +149,34 @@ public sealed class WorkOrderCostCapitalizedPersistenceTests
 
         public void Dispose() { }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class CountingDbContextTransaction(IDbContextTransaction inner) : IDbContextTransaction
+    {
+        public int DisposeAsyncCallCount { get; private set; }
+        public Guid TransactionId => inner.TransactionId;
+        public bool SupportsSavepoints => inner.SupportsSavepoints;
+        public void Commit() => inner.Commit();
+        public Task CommitAsync(CancellationToken cancellationToken = default) =>
+            inner.CommitAsync(cancellationToken);
+        public void Rollback() => inner.Rollback();
+        public Task RollbackAsync(CancellationToken cancellationToken = default) =>
+            inner.RollbackAsync(cancellationToken);
+        public System.Data.Common.DbTransaction GetDbTransaction() => inner.GetDbTransaction();
+        public void CreateSavepoint(string name) => inner.CreateSavepoint(name);
+        public Task CreateSavepointAsync(string name, CancellationToken cancellationToken = default) =>
+            inner.CreateSavepointAsync(name, cancellationToken);
+        public void RollbackToSavepoint(string name) => inner.RollbackToSavepoint(name);
+        public Task RollbackToSavepointAsync(string name, CancellationToken cancellationToken = default) =>
+            inner.RollbackToSavepointAsync(name, cancellationToken);
+        public void ReleaseSavepoint(string name) => inner.ReleaseSavepoint(name);
+        public Task ReleaseSavepointAsync(string name, CancellationToken cancellationToken = default) =>
+            inner.ReleaseSavepointAsync(name, cancellationToken);
+        public void Dispose() => inner.Dispose();
+        public async ValueTask DisposeAsync()
+        {
+            DisposeAsyncCallCount++;
+            await inner.DisposeAsync();
+        }
     }
 }

@@ -19,7 +19,7 @@ namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    ITransactionUnitOfWork? unitOfWork = null)
+    ITransactionUnitOfWork unitOfWork)
     : IIntegrationEventHandler<ProductionReportRecordedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.production-report-labor-cost";
@@ -80,7 +80,7 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
 public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    ITransactionUnitOfWork? unitOfWork = null)
+    ITransactionUnitOfWork unitOfWork)
     : IIntegrationEventHandler<StockMovementPostedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.production-material-cost";
@@ -180,7 +180,8 @@ internal static class CostVariancePosting
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Mes.WorkOrderCompletedIntegrationEvent", ConsumerName)]
 public sealed class WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(
     ApplicationDbContext dbContext,
-    ITransactionUnitOfWork? unitOfWork = null)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    ITransactionUnitOfWork unitOfWork)
     : IIntegrationEventHandler<WorkOrderCompletedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.work-order-cost-capitalization";
@@ -189,16 +190,26 @@ public sealed class WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(
     public Task HandleCapAsync(WorkOrderCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleAsync(integrationEvent, cancellationToken);
     private async Task HandleValidAsync(WorkOrderCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
-        if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken)) return;
         var payload = integrationEvent.Payload;
         var cost = await dbContext.WorkOrderCosts.Include(x => x.Details).SingleOrDefaultAsync(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.WorkOrderId == payload.WorkOrderId, cancellationToken);
+        var expectedReportCount = Math.Max(payload.ExpectedCostReportCount, cost?.ReceivedReportCount ?? 0);
+        if (expectedReportCount <= 0)
+        {
+            await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(
+                ConsumerName,
+                integrationEvent,
+                "invalid-expected-report-count",
+                $"Work order '{payload.WorkOrderId}' completed without an expected or received cost report."), cancellationToken);
+            return;
+        }
+        if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken)) return;
         if (cost is null)
         {
             cost = WorkOrderCost.Open(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, payload.WorkOrderId, payload.SkuCode);
             dbContext.WorkOrderCosts.Add(cost);
         }
         cost.AssignSku(payload.SkuCode);
-        cost.Complete(payload.GoodQuantity, Math.Max(payload.ExpectedCostReportCount, cost.ReceivedReportCount), payload.ExpectedMaterialMovementCount, payload.CompletedAtUtc);
+        cost.Complete(payload.GoodQuantity, expectedReportCount, payload.ExpectedMaterialMovementCount, payload.CompletedAtUtc);
         await CostingIntegrationEventUnitOfWork.SaveEntitiesAsync(dbContext, unitOfWork, cancellationToken);
     }
 }
@@ -207,15 +218,9 @@ internal static class CostingIntegrationEventUnitOfWork
 {
     public static async Task SaveEntitiesAsync(
         ApplicationDbContext dbContext,
-        ITransactionUnitOfWork? unitOfWork,
+        ITransactionUnitOfWork unitOfWork,
         CancellationToken cancellationToken)
     {
-        if (unitOfWork is null)
-        {
-            await dbContext.SaveEntitiesAsync(cancellationToken);
-            return;
-        }
-
         if (unitOfWork.CurrentTransaction is not null)
         {
             await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
@@ -224,7 +229,6 @@ internal static class CostingIntegrationEventUnitOfWork
 
         await using var transaction = await unitOfWork.BeginTransactionAsync(cancellationToken);
         unitOfWork.CurrentTransaction = transaction;
-        await using var currentTransaction = unitOfWork.CurrentTransaction;
         try
         {
             await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
@@ -234,6 +238,10 @@ internal static class CostingIntegrationEventUnitOfWork
         {
             await unitOfWork.RollbackAsync(cancellationToken);
             throw;
+        }
+        finally
+        {
+            unitOfWork.CurrentTransaction = null;
         }
     }
 }

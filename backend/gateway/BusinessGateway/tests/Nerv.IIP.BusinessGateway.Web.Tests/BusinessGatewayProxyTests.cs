@@ -2180,6 +2180,20 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public void Erp_work_center_cost_rate_validator_accepts_lowercase_currency_for_domain_normalization()
+    {
+        var request = new BusinessConsoleConfigureErpWorkCenterCostRateRequest(
+            "org-001", "env-dev", "WC-001", 2500m, "cny",
+            DateTimeOffset.Parse("2026-07-23T01:00:00Z", CultureInfo.InvariantCulture),
+            null,
+            "governed rate");
+
+        var result = new BusinessConsoleConfigureErpWorkCenterCostRateRequestValidator().Validate(request);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
     public async Task Erp_work_center_cost_rate_facade_rejects_an_omitted_effective_start_before_authorization()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();

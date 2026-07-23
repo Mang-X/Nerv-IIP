@@ -18,6 +18,58 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 public sealed class WorkOrderCostEventClosureTests
 {
     [Fact]
+    public async Task Completion_with_no_expected_reports_dead_letters_before_inbox_and_can_be_replayed()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"erp-cost-invalid-completion-{Guid.CreateVersion7():N}")
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
+        var occurredAtUtc = DateTimeOffset.Parse("2026-07-23T08:00:00Z");
+        var mediator = new RecordingMediator();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        await using var db = new ApplicationDbContext(options, mediator);
+        var invalid = new WorkOrderCompletedIntegrationEvent(
+            "evt-completed-zero-reports", MesIntegrationEventTypes.WorkOrderCompleted, 1, occurredAtUtc,
+            MesIntegrationEventSources.BusinessMes, "WO-ZERO", "WO-ZERO", "org-001", "env-dev",
+            "mes", "completed-zero-reports",
+            new WorkOrderCompletedPayload(
+                "WO-ZERO", "FG-001", 10m, 10m, 0m, occurredAtUtc, 0, 0));
+        var handler = new WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(db, deadLetters, db);
+
+        await handler.HandleAsync(invalid, CancellationToken.None);
+
+        Assert.Empty(await db.ProcessedIntegrationEvents.ToListAsync());
+        Assert.Empty(await db.WorkOrderCosts.ToListAsync());
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("invalid-expected-report-count", deadLetter.FailureCode);
+
+        await handler.HandleAsync(
+            invalid with { Payload = invalid.Payload with { ExpectedCostReportCount = 1 } },
+            CancellationToken.None);
+
+        Assert.Single(await db.ProcessedIntegrationEvents.ToListAsync());
+        Assert.Single(await db.WorkOrderCosts.ToListAsync());
+        Assert.DoesNotContain(mediator.Published, notification => notification is WorkOrderCostCompletedDomainEvent);
+    }
+
+    [Theory]
+    [InlineData(typeof(ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost))]
+    [InlineData(typeof(StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost))]
+    [InlineData(typeof(WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost))]
+    public void Costing_handlers_require_a_transaction_unit_of_work(Type handlerType)
+    {
+        var parameter = Assert.Single(
+            handlerType.GetConstructors().Single().GetParameters(),
+            candidate => candidate.ParameterType == typeof(ITransactionUnitOfWork));
+
+        Assert.False(parameter.HasDefaultValue);
+        Assert.False(parameter.IsOptional);
+    }
+
+    [Fact]
     public async Task Completion_before_report_waits_then_dispatches_after_cost_arrives()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -43,7 +95,10 @@ public sealed class WorkOrderCostEventClosureTests
             new WorkOrderCompletedPayload("WO-001", "FG-001", 10m, 10m, 0m, occurredAtUtc, 1, 0));
         await using (var completionDb = new ApplicationDbContext(options, completionMediator))
         {
-            await new WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(completionDb)
+            await new WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(
+                    completionDb,
+                    new InMemoryIntegrationEventDeadLetterStore(),
+                    completionDb)
                 .HandleAsync(completed, CancellationToken.None);
         }
         Assert.DoesNotContain(completionMediator.Published, notification => notification is WorkOrderCostCompletedDomainEvent);
@@ -70,6 +125,8 @@ public sealed class WorkOrderCostEventClosureTests
         Assert.Equal(1, reportUnitOfWork.BeginTransactionCallCount);
         Assert.Equal(1, reportUnitOfWork.CommitCallCount);
         Assert.Equal(0, reportUnitOfWork.RollbackCallCount);
+        Assert.Equal(1, reportUnitOfWork.TransactionDisposeAsyncCallCount);
+        Assert.Null(reportUnitOfWork.CurrentTransaction);
         Assert.Contains(reportMediator.Published, notification => notification is WorkOrderCostCompletedDomainEvent);
         await using var verification = new ApplicationDbContext(options, new NoopMediator());
         var cost = await verification.WorkOrderCosts.Include(item => item.Details).SingleAsync();
@@ -104,7 +161,7 @@ public sealed class WorkOrderCostEventClosureTests
                 10m, 0m, 0m, "ea", 5m, occurredAtUtc, false, MaterialMovementCount: 0));
         await using (var reportDb = new ApplicationDbContext(options, new NoopMediator()))
         {
-            await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(reportDb, deadLetters)
+            await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(reportDb, deadLetters, reportDb)
                 .HandleAsync(report, CancellationToken.None);
         }
 
@@ -125,7 +182,10 @@ public sealed class WorkOrderCostEventClosureTests
         var completionMediator = new RecordingMediator();
         await using (var completionDb = new ApplicationDbContext(options, completionMediator))
         {
-            await new WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(completionDb)
+            await new WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(
+                    completionDb,
+                    deadLetters,
+                    completionDb)
                 .HandleAsync(completed, CancellationToken.None);
         }
         Assert.Contains(completionMediator.Published, notification => notification is WorkOrderCostCompletedDomainEvent);
@@ -148,7 +208,7 @@ public sealed class WorkOrderCostEventClosureTests
                 "org-001", 10m, occurredAtUtc.AddMinutes(2), 10m, 100m));
         await using (var receiptDb = new ApplicationDbContext(options, new NoopMediator()))
         {
-            await new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(receiptDb, deadLetters)
+            await new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(receiptDb, deadLetters, receiptDb)
                 .HandleAsync(receiptPosting, CancellationToken.None);
         }
 
@@ -189,11 +249,11 @@ public sealed class WorkOrderCostEventClosureTests
             new ProductionReportRecordedPayload("RPT-001", "WO-001", "OP-001", "WC-01", null, 8m, 2m, 0m, "ea", 5m, DateTimeOffset.Parse("2026-07-11T01:00:00Z"), false, MaterialMovementCount: 1));
         var movement = new StockMovementPostedIntegrationEvent("evt-material", InventoryIntegrationEventTypes.StockMovementPosted, 1, DateTimeOffset.Parse("2026-07-11T02:00:00Z"), InventoryIntegrationEventSources.BusinessInventory, "RPT-001", "RPT-001", "org-001", "env-dev", "inventory", "move-001",
             new StockMovementPostedPayload("MOVE-001", "outbound", InventoryIntegrationEventSources.BusinessMes, "RPT-001", "MIR-001", "mes:production-consumption:001", "RM-001", "kg", "production", "line-side", "LOT-001", null, "unrestricted", "organization", "org-001", -3m, DateTimeOffset.Parse("2026-07-11T02:00:00Z"), 20m, -60m));
-        await new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters).HandleAsync(movement, CancellationToken.None);
+        await new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db).HandleAsync(movement, CancellationToken.None);
         await db.SaveChangesAsync();
         Assert.Single(db.PendingMaterialCosts);
 
-        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters).HandleAsync(report, CancellationToken.None);
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db).HandleAsync(report, CancellationToken.None);
         await db.SaveChangesAsync();
         Assert.Empty(db.PendingMaterialCosts);
 
@@ -203,12 +263,12 @@ public sealed class WorkOrderCostEventClosureTests
             IdempotencyKey = "report-uncosted-001",
             Payload = report.Payload with { ReportNo = "RPT-UNCOSTED", WorkCenterId = string.Empty, TheoreticalRatePerHour = null, GoodQuantity = 1m, ScrapQuantity = 0m, MaterialMovementCount = 0 },
         };
-        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters).HandleAsync(uncostedReport, CancellationToken.None);
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db).HandleAsync(uncostedReport, CancellationToken.None);
         await db.SaveChangesAsync();
 
         var completed = new WorkOrderCompletedIntegrationEvent("evt-completed", MesIntegrationEventTypes.WorkOrderCompleted, 1, DateTimeOffset.Parse("2026-07-11T03:00:00Z"), MesIntegrationEventSources.BusinessMes, "WO-001", "WO-001", "org-001", "env-dev", "mes", "completed-001",
             new WorkOrderCompletedPayload("WO-001", "FG-001", 10m, 8m, 2m, DateTimeOffset.Parse("2026-07-11T03:00:00Z"), 2, 1));
-        await new WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(db).HandleAsync(completed, CancellationToken.None);
+        await new WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(db, deadLetters, db).HandleAsync(completed, CancellationToken.None);
         await db.SaveChangesAsync();
 
         var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
@@ -237,7 +297,7 @@ public sealed class WorkOrderCostEventClosureTests
                 MovementAmount = 80m,
             },
         };
-        await new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters).HandleAsync(receiptPosting, CancellationToken.None);
+        await new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db).HandleAsync(receiptPosting, CancellationToken.None);
         await db.SaveChangesAsync();
 
         Assert.Equal(80m, cost.CapitalizedCost);
@@ -249,7 +309,7 @@ public sealed class WorkOrderCostEventClosureTests
             IdempotencyKey = "move-fg-002",
             Payload = receiptPosting.Payload with { InventoryMovementId = "MOVE-FG-002", IdempotencyKey = "mes:finished-goods-receipt:FGR-002", SourceDocumentId = "FGR-002" },
         };
-        await new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters).HandleAsync(finalReceiptPosting, CancellationToken.None);
+        await new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db).HandleAsync(finalReceiptPosting, CancellationToken.None);
         await db.SaveChangesAsync();
 
         Assert.Equal(160m, cost.CapitalizedCost);
@@ -266,7 +326,7 @@ public sealed class WorkOrderCostEventClosureTests
             IdempotencyKey = "move-reversal-001",
             Payload = movement.Payload with { InventoryMovementId = "MOVE-REV-001", SourceDocumentId = "RPT-REV-001", Quantity = 3m, MovementAmount = 60m, IdempotencyKey = "mes:production-consumption:reversal-001" },
         };
-        await new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters).HandleAsync(materialReversal, CancellationToken.None);
+        await new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db).HandleAsync(materialReversal, CancellationToken.None);
         await db.SaveChangesAsync();
         Assert.Single(db.PendingMaterialCosts);
 
@@ -276,7 +336,7 @@ public sealed class WorkOrderCostEventClosureTests
             IdempotencyKey = "report-reversal-001",
             Payload = report.Payload with { ReportNo = "RPT-REV-001", IsReversal = true, ReversedReportNo = "RPT-001", MaterialMovementCount = 0 },
         };
-        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters).HandleAsync(reportReversal, CancellationToken.None);
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db).HandleAsync(reportReversal, CancellationToken.None);
         await db.SaveChangesAsync();
 
         Assert.Equal(1, cost.ReceivedMaterialMovementCount);
@@ -327,10 +387,13 @@ public sealed class WorkOrderCostEventClosureTests
 
     private sealed class RecordingUnitOfWork(ITransactionUnitOfWork inner) : ITransactionUnitOfWork
     {
+        private CountingDbContextTransaction? transaction;
+
         public int SaveEntitiesCallCount { get; private set; }
         public int BeginTransactionCallCount { get; private set; }
         public int CommitCallCount { get; private set; }
         public int RollbackCallCount { get; private set; }
+        public int TransactionDisposeAsyncCallCount => transaction?.DisposeAsyncCallCount ?? 0;
 
         public IDbContextTransaction? CurrentTransaction
         {
@@ -347,10 +410,12 @@ public sealed class WorkOrderCostEventClosureTests
             return ((IUnitOfWork)inner).SaveEntitiesAsync(cancellationToken);
         }
 
-        public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+        public async Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
         {
             BeginTransactionCallCount++;
-            return inner.BeginTransactionAsync(cancellationToken);
+            transaction = new CountingDbContextTransaction(
+                await inner.BeginTransactionAsync(cancellationToken));
+            return transaction;
         }
 
         public Task CommitAsync(CancellationToken cancellationToken = default)
@@ -367,5 +432,34 @@ public sealed class WorkOrderCostEventClosureTests
 
         public void Dispose() { }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class CountingDbContextTransaction(IDbContextTransaction inner) : IDbContextTransaction
+    {
+        public int DisposeAsyncCallCount { get; private set; }
+        public Guid TransactionId => inner.TransactionId;
+        public bool SupportsSavepoints => inner.SupportsSavepoints;
+        public void Commit() => inner.Commit();
+        public Task CommitAsync(CancellationToken cancellationToken = default) =>
+            inner.CommitAsync(cancellationToken);
+        public void Rollback() => inner.Rollback();
+        public Task RollbackAsync(CancellationToken cancellationToken = default) =>
+            inner.RollbackAsync(cancellationToken);
+        public System.Data.Common.DbTransaction GetDbTransaction() => inner.GetDbTransaction();
+        public void CreateSavepoint(string name) => inner.CreateSavepoint(name);
+        public Task CreateSavepointAsync(string name, CancellationToken cancellationToken = default) =>
+            inner.CreateSavepointAsync(name, cancellationToken);
+        public void RollbackToSavepoint(string name) => inner.RollbackToSavepoint(name);
+        public Task RollbackToSavepointAsync(string name, CancellationToken cancellationToken = default) =>
+            inner.RollbackToSavepointAsync(name, cancellationToken);
+        public void ReleaseSavepoint(string name) => inner.ReleaseSavepoint(name);
+        public Task ReleaseSavepointAsync(string name, CancellationToken cancellationToken = default) =>
+            inner.ReleaseSavepointAsync(name, cancellationToken);
+        public void Dispose() => inner.Dispose();
+        public async ValueTask DisposeAsync()
+        {
+            DisposeAsyncCallCount++;
+            await inner.DisposeAsync();
+        }
     }
 }
