@@ -7,10 +7,14 @@ import OrdersPage from './sales/orders.vue'
 import QuotationsPage from './sales/quotations.vue'
 
 vi.mock('@/composables/useOrderUrgency', () => ({
-  useOrderUrgencies: () => ({ byReference: { value: new Map() } }),
+  useOrderUrgencies: () => ({ byReference: { value: new Map() }, refresh: vi.fn() }),
 }))
 vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
-  default: { template: '<span data-testid="order-urgency">未计算</span>' },
+  default: {
+    props: ['orderReference', 'mode', 'urgency'],
+    template:
+      '<span data-testid="order-urgency" :data-ref="orderReference" :data-mode="mode">未计算</span>',
+  },
 }))
 
 const state = vi.hoisted(() => ({
@@ -150,7 +154,7 @@ describe('ERP sales quotation page', () => {
 })
 
 describe('ERP sales order and delivery pages', () => {
-  it('sales orders keep keyword search and no status select', async () => {
+  it('sales orders keep keyword search and only expose the shared urgency display selector', async () => {
     const wrapper = mount(OrdersPage, { global: { stubs: { ...layoutStub, ...selectStubs } } })
     await flushPromises()
 
@@ -158,7 +162,34 @@ describe('ERP sales order and delivery pages', () => {
     expect((wrapper.get('[aria-label="销售订单关键字"]').element as HTMLInputElement).value).toBe(
       'SO-DEMO-001',
     )
-    expect(wrapper.findAll('select')).toHaveLength(0)
+    // The only select is the shared urgency display-mode control (no status filter).
+    expect(wrapper.findAll('select')).toHaveLength(1)
+    expect(wrapper.findAll('option').map((o) => o.attributes('value'))).toEqual([
+      'level',
+      'businessPriority',
+      'dynamicUrgency',
+      'executionRisk',
+      'criticalRatio',
+      'slack',
+      'expectedDelay',
+    ])
+  })
+
+  it('maps the real sales order number into the shared urgency badge', async () => {
+    state.salesOrders = [
+      {
+        salesOrderNo: 'SO-2026-0007',
+        customerCode: 'CUST-A',
+        status: 'released',
+        totalAmount: 100,
+      },
+    ]
+    const wrapper = mount(OrdersPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const badge = wrapper.get('[data-testid="order-urgency"]')
+    expect(badge.attributes('data-ref')).toBe('SO-2026-0007')
+    expect(badge.attributes('data-mode')).toBe('level')
   })
 
   it('deliveries keep keyword search and no status select', async () => {
