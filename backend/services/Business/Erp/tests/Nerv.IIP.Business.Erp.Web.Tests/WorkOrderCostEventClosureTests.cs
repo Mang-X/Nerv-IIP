@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
+using NetCorePal.Extensions.Repository;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
@@ -46,6 +47,7 @@ public sealed class WorkOrderCostEventClosureTests
         Assert.DoesNotContain(completionMediator.Published, notification => notification is WorkOrderCostCompletedDomainEvent);
 
         var reportMediator = new RecordingMediator();
+        RecordingUnitOfWork? reportUnitOfWork = null;
         var report = new ProductionReportRecordedIntegrationEvent(
             "evt-report-later", MesIntegrationEventTypes.ProductionReportRecorded, 1, occurredAtUtc.AddSeconds(-1),
             MesIntegrationEventSources.BusinessMes, "RPT-001", "WO-001", "org-001", "env-dev",
@@ -55,11 +57,14 @@ public sealed class WorkOrderCostEventClosureTests
                 10m, 0m, 0m, "ea", 5m, occurredAtUtc.AddSeconds(-1), false, MaterialMovementCount: 0));
         await using (var reportDb = new ApplicationDbContext(options, reportMediator))
         {
+            reportUnitOfWork = new RecordingUnitOfWork(reportDb);
             await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
-                    reportDb, new InMemoryIntegrationEventDeadLetterStore())
+                    reportDb, new InMemoryIntegrationEventDeadLetterStore(), reportUnitOfWork)
                 .HandleAsync(report, CancellationToken.None);
         }
 
+        Assert.NotNull(reportUnitOfWork);
+        Assert.Equal(1, reportUnitOfWork.SaveEntitiesCallCount);
         Assert.Contains(reportMediator.Published, notification => notification is WorkOrderCostCompletedDomainEvent);
         await using var verification = new ApplicationDbContext(options, new NoopMediator());
         var cost = await verification.WorkOrderCosts.Include(item => item.Details).SingleAsync();
@@ -313,5 +318,22 @@ public sealed class WorkOrderCostEventClosureTests
         public Task<object?> Send(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingUnitOfWork(IUnitOfWork inner) : IUnitOfWork
+    {
+        public int SaveEntitiesCallCount { get; private set; }
+
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+            inner.SaveChangesAsync(cancellationToken);
+
+        public Task<bool> SaveEntitiesAsync(CancellationToken cancellationToken = default)
+        {
+            SaveEntitiesCallCount++;
+            return inner.SaveEntitiesAsync(cancellationToken);
+        }
+
+        public void Dispose() { }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

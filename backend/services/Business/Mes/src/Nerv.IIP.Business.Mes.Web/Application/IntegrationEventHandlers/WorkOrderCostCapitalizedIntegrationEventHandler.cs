@@ -5,13 +5,15 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.Repository;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Erp.WorkOrderCostCapitalizedIntegrationEvent", ConsumerName)]
 public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    IUnitOfWork? unitOfWork = null)
     : IIntegrationEventHandler<WorkOrderCostCapitalizedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-mes.work-order-cost-capitalized";
@@ -38,6 +40,6 @@ public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
         {
             receipt.ApplyCapitalizedUnitCost(integrationEvent.Payload.UnitCost);
         }
-        await dbContext.SaveEntitiesAsync(cancellationToken);
+        await (unitOfWork ?? dbContext).SaveEntitiesAsync(cancellationToken);
     }
 }
