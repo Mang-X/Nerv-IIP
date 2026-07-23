@@ -5896,7 +5896,7 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             configureRequest: message =>
                 message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor));
 
-        if (response.WorkCenterCostRateId is not { Id: var workCenterCostRateId }
+        if (!Guid.TryParse(response.WorkCenterCostRateId, out var workCenterCostRateId)
             || workCenterCostRateId == Guid.Empty)
         {
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
@@ -6259,9 +6259,7 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
     private sealed record DownstreamPurchaseOrderListResponse(IReadOnlyCollection<DownstreamPurchaseOrderItem> Items, int Total);
 
     private sealed record DownstreamConfigureWorkCenterCostRateResponse(
-        DownstreamWorkCenterCostRateId? WorkCenterCostRateId);
-
-    private sealed record DownstreamWorkCenterCostRateId(Guid Id);
+        string? WorkCenterCostRateId);
 
     private sealed record DownstreamPurchaseOrderItem(
         string PurchaseOrderNo,

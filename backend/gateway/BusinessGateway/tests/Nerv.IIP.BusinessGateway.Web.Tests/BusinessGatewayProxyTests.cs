@@ -2221,7 +2221,7 @@ public sealed class BusinessGatewayProxyTests
                 {
                     data = new
                     {
-                        workCenterCostRateId = new { id = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9" },
+                        workCenterCostRateId = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9",
                     },
                     success = true,
                     message = string.Empty,
@@ -2293,9 +2293,9 @@ public sealed class BusinessGatewayProxyTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Erp_work_center_cost_rate_http_client_accepts_raw_and_enveloped_strong_id(bool enveloped)
+    public async Task Erp_work_center_cost_rate_http_client_accepts_raw_and_enveloped_serialized_strong_id(bool enveloped)
     {
-        const string data = "{\"workCenterCostRateId\":{\"id\":\"018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9\"}}";
+        const string data = "{\"workCenterCostRateId\":\"018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9\"}";
         var responseBody = enveloped
             ? $"{{\"success\":true,\"data\":{data},\"message\":\"\",\"code\":0}}"
             : data;
@@ -2315,10 +2315,13 @@ public sealed class BusinessGatewayProxyTests
     [Theory]
     [InlineData("{}")]
     [InlineData("{\"workCenterCostRateId\":null}")]
+    [InlineData("{\"workCenterCostRateId\":\"\"}")]
+    [InlineData("{\"workCenterCostRateId\":\"00000000-0000-0000-0000-000000000000\"}")]
+    [InlineData("{\"workCenterCostRateId\":\"not-a-guid\"}")]
     [InlineData("{\"workCenterCostRateId\":{}}")]
     [InlineData("{\"workCenterCostRateId\":{\"id\":null}}")]
     [InlineData("{\"workCenterCostRateId\":{\"id\":\"not-a-guid\"}}")]
-    [InlineData("{\"workCenterCostRateId\":\"018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9\"}")]
+    [InlineData("{\"workCenterCostRateId\":{\"id\":\"018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9\"}}")]
     [InlineData("{not-json")]
     public async Task Erp_work_center_cost_rate_http_client_rejects_missing_null_or_malformed_strong_id(string responseBody)
     {
@@ -2347,7 +2350,7 @@ public sealed class BusinessGatewayProxyTests
             code = 400,
             data = new
             {
-                workCenterCostRateId = new { id = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9" },
+                workCenterCostRateId = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9",
             },
         }));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.local") };

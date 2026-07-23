@@ -91,7 +91,10 @@ public sealed class WorkCenterCostRateApplicationTests
         var result = new ConfigureWorkCenterCostRateCommandValidator().Validate(command);
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, error => error.PropertyName == nameof(command.EffectiveFromUtc));
+        Assert.Contains(result.Errors, error =>
+            error.ErrorCode == "NotEmptyValidator" &&
+            error.AttemptedValue is DateTimeOffset attemptedValue &&
+            attemptedValue == default);
     }
 
     [Fact]
