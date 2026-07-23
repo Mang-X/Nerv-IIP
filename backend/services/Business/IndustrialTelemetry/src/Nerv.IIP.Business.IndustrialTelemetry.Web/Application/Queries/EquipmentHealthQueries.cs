@@ -150,15 +150,17 @@ public sealed class GetEquipmentHealthQueryHandler(
             .Select(rule => rule.TagKey)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+        var windowStartUnixTimeMilliseconds = windowStartUtc.ToUnixTimeMilliseconds();
+        var nowUnixTimeMilliseconds = now.ToUnixTimeMilliseconds();
         var samples = await dbContext.TelemetryRawSamples
             .AsNoTracking()
             .Where(sample => sample.OrganizationId == request.OrganizationId)
             .Where(sample => sample.EnvironmentId == request.EnvironmentId)
             .Where(sample => sample.DeviceAssetId == request.DeviceAssetId)
             .Where(sample => tagKeys.Contains(sample.TagKey))
-            .Where(sample => sample.BucketEndUtc >= windowStartUtc)
-            .Where(sample => sample.BucketEndUtc <= now)
-            .OrderBy(sample => sample.BucketEndUtc)
+            .Where(sample => sample.BucketEndUnixTimeMilliseconds > windowStartUnixTimeMilliseconds)
+            .Where(sample => sample.BucketEndUnixTimeMilliseconds <= nowUnixTimeMilliseconds)
+            .OrderBy(sample => sample.BucketEndUnixTimeMilliseconds)
             .ThenBy(sample => sample.RecordedAtUtc)
             .ThenBy(sample => sample.SourceSequence)
             .Select(sample => new RawSampleFact(
@@ -166,12 +168,20 @@ public sealed class GetEquipmentHealthQueryHandler(
                 sample.LastValue,
                 sample.BucketEndUtc))
             .ToArrayAsync(cancellationToken);
+        var samplesByTagKey = samples
+            .GroupBy(sample => sample.TagKey, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.ToImmutableArray(),
+                StringComparer.Ordinal);
 
         return rules
             .Select(rule =>
             {
-                var ruleSamples = samples
-                    .Where(sample => sample.TagKey == rule.TagKey)
+                var matchingSamples = samplesByTagKey.TryGetValue(rule.TagKey, out var tagSamples)
+                    ? tagSamples
+                    : ImmutableArray<RawSampleFact>.Empty;
+                var ruleSamples = matchingSamples
                     .Select(sample => new EquipmentHealthHistorySample(
                         decimal.ToDouble(sample.LastValue),
                         RuleSourceFact(rule, sample.BucketEndUtc)))

@@ -209,6 +209,40 @@ public sealed class EquipmentHealthQueryTests
     }
 
     [Fact]
+    public async Task Handler_excludes_a_raw_bucket_ending_exactly_at_the_history_window_start()
+    {
+        await using var dbContext = CreateDbContext(nameof(Handler_excludes_a_raw_bucket_ending_exactly_at_the_history_window_start));
+        dbContext.AlarmRules.Add(AlarmRule.Configure(
+            "org-a", "env-a", "DEV-A", "BOUNDARY_HIGH", "BOUNDARY-ALARM", "critical",
+            "temperature", ">=", 100m, "celsius", true));
+        dbContext.TelemetryRawSamples.Add(RawSample(
+            "org-a",
+            "env-a",
+            "DEV-A",
+            "temperature",
+            Now.AddHours(-24),
+            110m,
+            "at-window-start"));
+        await dbContext.SaveChangesAsync();
+
+        var response = await new GetEquipmentHealthQueryHandler(
+            dbContext,
+            new FixedTimeProvider(Now)).Handle(
+                new GetEquipmentHealthQuery("org-a", "env-a", "DEV-A"),
+                CancellationToken.None);
+
+        var thresholdEvaluation = Assert.Single(
+            response.RuleEvaluations,
+            evaluation => evaluation.RuleCode == EquipmentHealthScoringPolicy.ThresholdProximityRuleCode);
+        Assert.Equal("accumulating", thresholdEvaluation.Status);
+        Assert.Equal("无当前值", thresholdEvaluation.CurrentValue);
+        Assert.Equal(100, response.HealthScore);
+        Assert.Empty(response.RiskFactors);
+        Assert.Equal("unavailable", response.DataFreshness.Status);
+        Assert.Null(response.DataFreshness.LatestFactAtUtc);
+    }
+
+    [Fact]
     public async Task Handler_keeps_an_old_alarm_active_when_its_clear_fact_is_in_the_future()
     {
         await using var dbContext = CreateDbContext(nameof(Handler_keeps_an_old_alarm_active_when_its_clear_fact_is_in_the_future));
