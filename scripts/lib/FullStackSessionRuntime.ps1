@@ -413,6 +413,7 @@ function Assert-NervLeaderDemoMainChainEvidence {
         'mrp-suggestion-mes-work-order',
         'mes-work-order-schedule-plan',
         'schedule-release-mes-execution',
+        'erp-work-center-cost-rate',
         'mes-task-production-report',
         'production-report-quality',
         'report-finished-goods-receipt',
