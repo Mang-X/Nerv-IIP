@@ -70,7 +70,7 @@ await using var database = await PostgreSqlTestDatabase.CreateAsync(
 2. 通过 `postgres` admin database 创建测试 database，再把唯一连接串交给可选初始化/迁移回调。
 3. 初始化失败或取消后尝试强制清理；CREATE 在 admin 连接打开后失败时也尝试清理，连接尚未打开时不再发起第二次连接。正常 `DisposeAsync` 或显式 `DropAsync` 使用 `DROP DATABASE ... WITH (FORCE)`。
 4. `CreateAsync`、初始化回调和 `DropAsync` 接受 `CancellationToken`；已经取消的创建不会连接数据库。
-5. `DisposeAsync` 是 best-effort 且始终释放 cleanup gate，不用清理异常覆盖测试主体异常；需要清理失败证据的调用方显式使用严格的 `DropAsync`。
+5. `DisposeAsync` 通过单一可等待生命周期任务执行 best-effort 清理，重复或并发 Dispose 保持幂等；并发 `DropAsync` 共享同一个严格清理结果，需要清理失败证据的调用方仍显式使用 `DropAsync`。
 6. 失败诊断保留 operation、host、port、database 和 `usernameConfigured` 状态，但移除原始连接串、用户名和密码，不附带可能泄密的 inner exception；凭据子串不会误改非敏感 database 名。
 7. FileStorage 重启持久化测试和 Scheduling PostgreSQL profile tests 已改用该包，证明两个服务不再复制 database create/drop 代码。
 

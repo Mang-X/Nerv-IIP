@@ -97,7 +97,7 @@ public sealed class PostgreSqlTestDatabaseTests
     }
 
     [Fact]
-    public async Task DisposeAsync_suppresses_cleanup_failure_and_always_disposes_cleanup_gate()
+    public async Task DisposeAsync_suppresses_cleanup_failure_while_DropAsync_remains_strict()
     {
         var database = await CreateWithExecutorAsync((_, commandText, onConnectionOpened, _) =>
         {
@@ -112,7 +112,76 @@ public sealed class PostgreSqlTestDatabaseTests
 
         await database.DisposeAsync();
 
-        await Assert.ThrowsAsync<ObjectDisposedException>(() => database.DropAsync());
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => database.DropAsync());
+        Assert.Contains("operation=drop", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Concurrent_DisposeAsync_and_DropAsync_share_the_same_strict_cleanup_result()
+    {
+        var firstDropEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstDrop = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondDropEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseSecondDrop = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var dropAttempts = 0;
+        var database = await CreateWithExecutorAsync(async (_, commandText, onConnectionOpened, cancellationToken) =>
+        {
+            onConnectionOpened();
+            if (!commandText.StartsWith("DROP DATABASE", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var attempt = Interlocked.Increment(ref dropAttempts);
+            if (attempt == 1)
+            {
+                firstDropEntered.TrySetResult();
+                await releaseFirstDrop.Task.WaitAsync(cancellationToken);
+                throw new TimeoutException("dispose cleanup failed");
+            }
+
+            secondDropEntered.TrySetResult();
+            await releaseSecondDrop.Task.WaitAsync(cancellationToken);
+        });
+
+        var disposeTask = database.DisposeAsync().AsTask();
+        await firstDropEntered.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        var dropTask = database.DropAsync();
+        releaseFirstDrop.TrySetResult();
+
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(1));
+        var nextCompletion = await Task.WhenAny(dropTask, secondDropEntered.Task)
+            .WaitAsync(TimeSpan.FromSeconds(1));
+        if (nextCompletion == secondDropEntered.Task)
+        {
+            releaseSecondDrop.TrySetResult();
+        }
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            dropTask.WaitAsync(TimeSpan.FromSeconds(1)));
+        Assert.Contains("operation=drop", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(1, dropAttempts);
+    }
+
+    [Fact]
+    public async Task Repeated_DisposeAsync_is_idempotent()
+    {
+        var dropAttempts = 0;
+        var database = await CreateWithExecutorAsync((_, commandText, onConnectionOpened, _) =>
+        {
+            onConnectionOpened();
+            if (commandText.StartsWith("DROP DATABASE", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref dropAttempts);
+            }
+
+            return Task.CompletedTask;
+        });
+
+        await database.DisposeAsync();
+        await database.DisposeAsync();
+
+        Assert.Equal(1, dropAttempts);
     }
 
     [Fact]

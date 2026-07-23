@@ -9,7 +9,9 @@ public sealed class PostgreSqlTestDatabase : IAsyncDisposable
     private readonly string _adminConnectionString;
     private readonly Func<string, string, Action, CancellationToken, Task> _executeAdminCommandAsync;
     private readonly string?[] _sensitiveValues;
-    private readonly SemaphoreSlim _cleanupGate = new(1, 1);
+    private readonly object _lifecycleLock = new();
+    private Task? _dropTask;
+    private Task? _disposeTask;
     private bool _dropped;
 
     private PostgreSqlTestDatabase(
@@ -158,45 +160,126 @@ public sealed class PostgreSqlTestDatabase : IAsyncDisposable
 
     public async Task DropAsync(CancellationToken cancellationToken = default)
     {
-        await _cleanupGate.WaitAsync(cancellationToken);
-        try
+        cancellationToken.ThrowIfCancellationRequested();
+        var dropTask = GetOrStartDropTask(cancellationToken);
+        await dropTask.WaitAsync(cancellationToken);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Task disposeTask;
+        TaskCompletionSource? disposeCompletion = null;
+        lock (_lifecycleLock)
+        {
+            if (_disposeTask is null)
+            {
+                disposeCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _disposeTask = disposeCompletion.Task;
+            }
+
+            disposeTask = _disposeTask;
+        }
+
+        if (disposeCompletion is not null)
+        {
+            _ = CompleteDisposeAsync(disposeCompletion);
+        }
+
+        return new ValueTask(disposeTask);
+    }
+
+    private Task GetOrStartDropTask(CancellationToken cancellationToken)
+    {
+        Task dropTask;
+        TaskCompletionSource? dropCompletion = null;
+        lock (_lifecycleLock)
         {
             if (_dropped)
             {
-                return;
+                return Task.CompletedTask;
             }
 
-            try
+            if (_dropTask is null)
             {
-                await ExecuteAdminCommandAsync(
-                    $"DROP DATABASE IF EXISTS \"{DatabaseName}\" WITH (FORCE)",
-                    cancellationToken);
+                dropCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _dropTask = dropCompletion.Task;
+            }
+
+            dropTask = _dropTask;
+        }
+
+        if (dropCompletion is not null)
+        {
+            _ = CompleteDropAsync(dropCompletion, cancellationToken);
+        }
+
+        return dropTask;
+    }
+
+    private async Task CompleteDropAsync(
+        TaskCompletionSource completion,
+        CancellationToken cancellationToken)
+    {
+        Exception? failure = null;
+        OperationCanceledException? cancellation = null;
+        try
+        {
+            await ExecuteAdminCommandAsync(
+                $"DROP DATABASE IF EXISTS \"{DatabaseName}\" WITH (FORCE)",
+                cancellationToken);
+        }
+        catch (OperationCanceledException exception)
+        {
+            cancellation = exception;
+        }
+        catch (Exception exception)
+        {
+            failure = CreateFailure("drop", exception);
+        }
+
+        lock (_lifecycleLock)
+        {
+            if (failure is null && cancellation is null)
+            {
                 _dropped = true;
             }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                throw CreateFailure("drop", exception);
-            }
         }
-        finally
+
+        if (cancellation is not null)
         {
-            _cleanupGate.Release();
+            completion.TrySetCanceled(cancellation.CancellationToken);
+        }
+        else if (failure is not null)
+        {
+            completion.TrySetException(failure);
+        }
+        else
+        {
+            completion.TrySetResult();
+        }
+
+        lock (_lifecycleLock)
+        {
+            if (ReferenceEquals(_dropTask, completion.Task))
+            {
+                _dropTask = null;
+            }
         }
     }
 
-    public async ValueTask DisposeAsync()
+    private async Task CompleteDisposeAsync(TaskCompletionSource completion)
     {
         try
         {
-            await TryDropAfterFailureAsync();
+            await GetOrStartDropTask(CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            // Dispose is best-effort; explicit DropAsync preserves cleanup failure evidence.
         }
         finally
         {
-            _cleanupGate.Dispose();
+            completion.TrySetResult();
         }
     }
 
