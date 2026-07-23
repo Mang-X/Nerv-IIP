@@ -2,7 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
 import { VisAxis, VisCrosshair, VisGroupedBar, VisTooltip, VisXYContainer } from '@unovis/vue'
-import { cn } from '../../../lib/utils'
+import { cn, escapeHtml } from '../../../lib/utils'
 
 /**
  * Pro — categorical (optionally grouped) bar chart on unovis. One or more
@@ -39,15 +39,14 @@ const colors = computed(() => props.series.map((s, i) => s.color ?? palette[i % 
 const x = (_d: Row, i: number) => i
 const yAccessors = computed(() => props.series.map((s) => (d: Row) => Number(d[s.key])))
 const xTickFormat = (i: number) => String(props.data[i]?.[props.xKey] ?? '')
-
 const tooltipTemplate = (d: Row) => {
   const rows = props.series
     .map(
       (s, i) =>
-        `<div class="nv-vis-row"><span class="nv-vis-dot" style="background:${colors.value[i]}"></span><span>${s.label}</span><b>${d[s.key]}${props.valueSuffix}</b></div>`,
+        `<div class="nv-vis-row"><span class="nv-vis-dot" style="background:${escapeHtml(colors.value[i])}"></span><span>${escapeHtml(s.label)}</span><b>${escapeHtml(d[s.key])}${escapeHtml(props.valueSuffix)}</b></div>`,
     )
     .join('')
-  return `<div class="nv-vis-card"><div class="nv-vis-head">${d[props.xKey]}</div>${rows}</div>`
+  return `<div class="nv-vis-card"><div class="nv-vis-head">${escapeHtml(d[props.xKey])}</div>${rows}</div>`
 }
 </script>
 
@@ -101,16 +100,16 @@ const tooltipTemplate = (d: Row) => {
     --vis-axis-font-family: var(--font-sans);
     --vis-crosshair-line-stroke-color: color-mix(in oklch, var(--foreground) 16%, transparent);
     --vis-crosshair-circle-stroke-color: var(--card);
-    --vis-tooltip-background-color: color-mix(in oklch, var(--popover) 86%, transparent);
+    --vis-tooltip-background-color: var(--nv-glass-bg);
     --vis-tooltip-text-color: var(--popover-foreground);
-    --vis-tooltip-border-color: color-mix(in oklch, var(--border) 80%, transparent);
+    --vis-tooltip-border-color: var(--nv-glass-border);
     --vis-tooltip-padding: 0;
     --vis-tooltip-border-radius: 8px;
   }
   .nv-chart :deep([class*='-tooltip']) {
-    backdrop-filter: blur(8px) saturate(1.4);
-    -webkit-backdrop-filter: blur(8px) saturate(1.4);
-    box-shadow: 0 8px 28px -12px color-mix(in oklch, black 50%, transparent);
+    backdrop-filter: var(--nv-glass-filter);
+    -webkit-backdrop-filter: var(--nv-glass-filter);
+    box-shadow: var(--nv-glass-shadow);
   }
   .nv-chart :deep(.nv-vis-card) {
     min-width: 9rem;

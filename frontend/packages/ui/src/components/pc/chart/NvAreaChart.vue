@@ -2,7 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
 import { VisArea, VisAxis, VisCrosshair, VisLine, VisTooltip, VisXYContainer } from '@unovis/vue'
-import { cn } from '../../../lib/utils'
+import { cn, escapeHtml } from '../../../lib/utils'
 
 /**
  * Pro — real area chart built on unovis (the engine shadcn-vue's chart is based
@@ -31,13 +31,6 @@ const props = withDefaults(
 const x = (_d: ChartPoint, i: number) => i
 const y = (d: ChartPoint) => d.value
 const xTickFormat = (i: number) => props.data[i]?.label ?? ''
-// unovis renders the template as raw HTML, so every interpolated value is an
-// HTML sink — point labels and units routinely carry server-sourced text.
-const escapeHtml = (value: unknown) =>
-  String(value).replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string,
-  )
 const tooltipTemplate = (d: ChartPoint) =>
   `<div class="nv-vis-tt"><span>${escapeHtml(d.label)}</span><b>${escapeHtml(d.value)}${escapeHtml(props.valueSuffix)}</b></div>`
 const chartMargin = computed(() =>
@@ -79,16 +72,16 @@ const chartMargin = computed(() =>
     --vis-axis-font-family: var(--font-sans);
     --vis-crosshair-line-stroke-color: color-mix(in oklch, var(--nv-brand) 50%, transparent);
     --vis-crosshair-circle-stroke-color: var(--card);
-    --vis-tooltip-background-color: color-mix(in oklch, var(--popover) 86%, transparent);
+    --vis-tooltip-background-color: var(--nv-glass-bg);
     --vis-tooltip-text-color: var(--popover-foreground);
-    --vis-tooltip-border-color: color-mix(in oklch, var(--border) 80%, transparent);
+    --vis-tooltip-border-color: var(--nv-glass-border);
     --vis-tooltip-padding: 0;
     --vis-tooltip-border-radius: 8px;
   }
   .nv-chart :deep([class*='-tooltip']) {
-    backdrop-filter: blur(8px) saturate(1.4);
-    -webkit-backdrop-filter: blur(8px) saturate(1.4);
-    box-shadow: 0 8px 28px -12px color-mix(in oklch, black 50%, transparent);
+    backdrop-filter: var(--nv-glass-filter);
+    -webkit-backdrop-filter: var(--nv-glass-filter);
+    box-shadow: var(--nv-glass-shadow);
   }
   .nv-chart :deep(.nv-vis-tt) {
     display: flex;

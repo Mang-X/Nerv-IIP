@@ -482,7 +482,7 @@ function showTargetTip(e: MouseEvent) {
       <div
         v-if="tip.data.value"
         :ref="tip.setEl"
-        class="nv-metric-tip pointer-events-none fixed z-50 min-w-32 rounded-lg border border-border bg-card p-2.5 text-xs text-card-foreground shadow-md"
+        class="nv-metric-tip pointer-events-none fixed z-50 min-w-32 rounded-lg p-2.5 text-xs"
         :style="{ left: `${tip.pos.value.left}px`, top: `${tip.pos.value.top}px` }"
       >
         <div
@@ -512,7 +512,15 @@ function showTargetTip(e: MouseEvent) {
 
 <style scoped>
 @layer nv-components {
+  /* Same frosted readout surface the chart crosshair tooltips use (--nv-glass-*),
+     so a metric's micro-viz and a full chart read as one system. */
   .nv-metric-tip {
+    color: var(--popover-foreground);
+    background: var(--nv-glass-bg);
+    border: 1px solid var(--nv-glass-border);
+    box-shadow: var(--nv-glass-shadow);
+    backdrop-filter: var(--nv-glass-filter);
+    -webkit-backdrop-filter: var(--nv-glass-filter);
     transition: opacity var(--nv-duration-fast, 150ms) var(--nv-ease-out-quart, ease-out);
   }
   /* hover any bar → dim the rest so the pointed-at column reads first */
