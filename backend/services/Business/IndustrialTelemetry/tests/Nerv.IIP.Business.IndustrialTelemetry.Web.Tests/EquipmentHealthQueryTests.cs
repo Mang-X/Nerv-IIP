@@ -235,6 +235,41 @@ public sealed class EquipmentHealthQueryTests
         Assert.Equal(Now.AddHours(-25), response.DataFreshness.LatestFactAtUtc);
     }
 
+    [Fact]
+    public async Task Handler_loads_a_recent_clear_for_an_old_alarm_as_recovery_evidence_not_a_recent_raise()
+    {
+        await using var dbContext = CreateDbContext(nameof(Handler_loads_a_recent_clear_for_an_old_alarm_as_recovery_evidence_not_a_recent_raise));
+        var alarm = AlarmEvent.Raise(
+            "org-a", "env-a", "DEV-A", "ALM-RECOVERED", "critical",
+            Now.AddHours(-25), "recovered");
+        alarm.Clear(Now.AddMinutes(-1), "operator");
+        dbContext.AlarmEvents.Add(alarm);
+        await dbContext.SaveChangesAsync();
+
+        var response = await new GetEquipmentHealthQueryHandler(
+            dbContext,
+            new FixedTimeProvider(Now)).Handle(
+                new GetEquipmentHealthQuery("org-a", "env-a", "DEV-A"),
+                CancellationToken.None);
+
+        var alarmEvaluation = Assert.Single(
+            response.RuleEvaluations,
+            evaluation => evaluation.RuleCode == EquipmentHealthScoringPolicy.AlarmFrequencyRuleCode);
+        Assert.Equal("normal", alarmEvaluation.Status);
+        Assert.Equal(0, alarmEvaluation.Penalty);
+        Assert.Contains("24小时发生 0 次报警", alarmEvaluation.Evidence, StringComparison.Ordinal);
+        Assert.Equal("alarm-lifecycle", alarmEvaluation.SourceFactType);
+        Assert.Equal("报警 ALM-RECOVERED", alarmEvaluation.SourceFactLabel);
+        Assert.Equal(Now.AddMinutes(-1), alarmEvaluation.SourceFactOccurredAtUtc);
+        Assert.Equal(100, response.HealthScore);
+        Assert.Empty(response.RiskFactors);
+        Assert.Equal("fresh", response.DataFreshness.Status);
+        Assert.Equal(60, response.DataFreshness.AgeSeconds);
+        Assert.Equal(Now.AddMinutes(-1), response.DataFreshness.LatestFactAtUtc);
+        Assert.Equal("alarm-lifecycle", response.DataFreshness.SourceFactType);
+        Assert.Equal("报警 ALM-RECOVERED", response.DataFreshness.SourceFactLabel);
+    }
+
     [Theory]
     [InlineData(">", 100, 110, "上限")]
     [InlineData(">=", 100, 110, "上限")]

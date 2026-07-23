@@ -253,7 +253,8 @@ public sealed class GetEquipmentHealthQueryHandler(
             .Where(alarm =>
                 alarm.RaisedAtUtc >= windowStartUtc
                 || alarm.ClearedAtUtc == null
-                || alarm.ClearedAtUtc > now)
+                || alarm.ClearedAtUtc > now
+                || (alarm.ClearedAtUtc >= windowStartUtc && alarm.ClearedAtUtc <= now))
             .OrderBy(alarm => alarm.RaisedAtUtc)
             .Select(alarm => new AlarmFact(
                 alarm.AlarmCode,
