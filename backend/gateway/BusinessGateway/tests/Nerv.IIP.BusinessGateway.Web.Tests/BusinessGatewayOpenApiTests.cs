@@ -154,6 +154,64 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/equipment/overview", "get", "getBusinessConsoleEquipmentOverview");
         AssertOperationId(paths, "/api/business-console/v1/equipment/devices/{deviceAssetId}", "get", "getBusinessConsoleEquipmentDevice");
         AssertOperationId(paths, "/api/business-console/v1/equipment/devices/{deviceAssetId}/health", "get", "getBusinessConsoleEquipmentDeviceHealth");
+        AssertRequiredSchemaProperties(
+            document,
+            "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthResponse",
+            "organizationId",
+            "environmentId",
+            "deviceAssetId",
+            "healthScore",
+            "level",
+            "calculatedAtUtc",
+            "dataFreshness",
+            "riskFactors",
+            "ruleEvaluations");
+        AssertRequiredSchemaProperties(
+            document,
+            "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthDataFreshness",
+            "status");
+        AssertRequiredSchemaProperties(
+            document,
+            "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRiskFactor",
+            "ruleCode",
+            "ruleName",
+            "status",
+            "penalty",
+            "currentValue",
+            "threshold",
+            "unit",
+            "evidence");
+        AssertRequiredSchemaProperties(
+            document,
+            "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRuleEvaluation",
+            "ruleCode",
+            "ruleName",
+            "status",
+            "penalty",
+            "currentValue",
+            "threshold",
+            "unit",
+            "evidence");
+        AssertStringEnumSchema(
+            document,
+            "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthLevel",
+            "healthy",
+            "watch",
+            "warning",
+            "critical");
+        AssertStringEnumSchema(
+            document,
+            "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthFreshness",
+            "fresh",
+            "delayed",
+            "stale",
+            "unavailable");
+        AssertStringEnumSchema(
+            document,
+            "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRuleStatus",
+            "normal",
+            "risk",
+            "accumulating");
         AssertOperationId(paths, "/api/business-console/v1/equipment/availability", "get", "getBusinessConsoleEquipmentAvailability");
         AssertOperationId(paths, "/api/business-console/v1/equipment/alarms", "get", "listBusinessConsoleEquipmentAlarms");
         AssertOperationId(paths, "/api/business-console/v1/equipment/alarms/{alarmEventId}/acknowledge", "post", "acknowledgeBusinessConsoleEquipmentAlarm");
@@ -1018,9 +1076,15 @@ public sealed class BusinessGatewayOpenApiTests
 
     private static JsonElement FindSchemaBySuffix(JsonDocument document, string schemaNameSuffix)
     {
-        var schemas = document.RootElement
+        var schemaObject = document.RootElement
             .GetProperty("components")
-            .GetProperty("schemas")
+            .GetProperty("schemas");
+        if (schemaObject.TryGetProperty(schemaNameSuffix, out var exactSchema))
+        {
+            return exactSchema;
+        }
+
+        var schemas = schemaObject
             .EnumerateObject()
             .Where(schema => schema.Name.EndsWith(schemaNameSuffix, StringComparison.Ordinal))
             .ToArray();
@@ -1035,6 +1099,17 @@ public sealed class BusinessGatewayOpenApiTests
         var required = schema.GetProperty("required");
 
         Assert.Contains(required.EnumerateArray(), value => value.GetString() == propertyName);
+    }
+
+    private static void AssertRequiredSchemaProperties(
+        JsonDocument document,
+        string schemaNameSuffix,
+        params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            AssertRequiredSchemaProperty(document, schemaNameSuffix, propertyName);
+        }
     }
 
     private static void AssertOperationIdsAreUnique(JsonDocument document)

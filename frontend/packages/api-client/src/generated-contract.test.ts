@@ -21,6 +21,10 @@ import type {
   BusinessConsoleErpPayableSourceDocumentResponse,
   BusinessConsoleErpReceivableSourceDocumentEnvelope,
   BusinessConsoleErpReceivableSourceDocumentResponse,
+  BusinessConsoleEquipmentHealthFreshness,
+  BusinessConsoleEquipmentHealthLevel,
+  BusinessConsoleEquipmentHealthResponse,
+  BusinessConsoleEquipmentHealthRuleStatus,
   BusinessConsoleForecastInputItem,
   BusinessConsoleForecastInputItemEnvelope,
   BusinessConsoleForecastInputListEnvelope,
@@ -322,6 +326,33 @@ describe('generated API client contract', () => {
     }>()
     expectTypeOf<BusinessConsoleMesFinishedGoodsInventoryLinkEnvelope['data']>().toEqualTypeOf<
       BusinessConsoleMesFinishedGoodsInventoryLinkResponse | null | undefined
+    >()
+  })
+
+  it('exports the required equipment health contract and controlled vocabularies', () => {
+    expectTypeOf<BusinessConsoleEquipmentHealthResponse['organizationId']>().toEqualTypeOf<string>()
+    expectTypeOf<BusinessConsoleEquipmentHealthResponse['environmentId']>().toEqualTypeOf<string>()
+    expectTypeOf<BusinessConsoleEquipmentHealthResponse['deviceAssetId']>().toEqualTypeOf<string>()
+    expectTypeOf<BusinessConsoleEquipmentHealthResponse['healthScore']>().toEqualTypeOf<number>()
+    expectTypeOf<
+      BusinessConsoleEquipmentHealthResponse['level']
+    >().toEqualTypeOf<BusinessConsoleEquipmentHealthLevel>()
+    expectTypeOf<
+      BusinessConsoleEquipmentHealthResponse['calculatedAtUtc']
+    >().toEqualTypeOf<string>()
+    expectTypeOf<
+      BusinessConsoleEquipmentHealthResponse['dataFreshness']['status']
+    >().toEqualTypeOf<BusinessConsoleEquipmentHealthFreshness>()
+    expectTypeOf<BusinessConsoleEquipmentHealthResponse['riskFactors']>().toBeArray()
+    expectTypeOf<BusinessConsoleEquipmentHealthResponse['ruleEvaluations']>().toBeArray()
+    expectTypeOf<BusinessConsoleEquipmentHealthLevel>().toEqualTypeOf<
+      'healthy' | 'watch' | 'warning' | 'critical'
+    >()
+    expectTypeOf<BusinessConsoleEquipmentHealthFreshness>().toEqualTypeOf<
+      'fresh' | 'delayed' | 'stale' | 'unavailable'
+    >()
+    expectTypeOf<BusinessConsoleEquipmentHealthRuleStatus>().toEqualTypeOf<
+      'normal' | 'risk' | 'accumulating'
     >()
   })
 

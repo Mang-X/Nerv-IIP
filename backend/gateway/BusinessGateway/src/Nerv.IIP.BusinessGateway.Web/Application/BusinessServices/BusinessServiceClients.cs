@@ -4640,6 +4640,15 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
 public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessIndustrialTelemetryClient
 {
+    private static readonly HashSet<string> EquipmentHealthRuleCodes = new(StringComparer.Ordinal)
+    {
+        "threshold-proximity",
+        "runtime-hours-24h",
+        "alarm-frequency-24h",
+        "sustained-exceedance",
+        "trend-growth",
+    };
+
     public Task<BusinessConsoleConnectorTagCoverageResponse> GetConnectorTagCoverageAsync(
         string internalBearerToken,
         BusinessConsoleConnectorTagCoverageRequest request,
@@ -5027,17 +5036,187 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             cancellationToken,
             EquipmentRuntimeJson.Options);
 
-    public Task<BusinessConsoleEquipmentHealthResponse> GetEquipmentHealthAsync(
+    public async Task<BusinessConsoleEquipmentHealthResponse> GetEquipmentHealthAsync(
         string internalBearerToken,
         string deviceAssetId,
         BusinessConsoleEquipmentContextRequest request,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleEquipmentHealthResponse>(
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<BusinessConsoleEquipmentHealthResponse>(
             internalBearerToken,
             HttpMethod.Get,
             $"/api/business/v1/iiot/devices/{Uri.EscapeDataString(deviceAssetId)}/health?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
-            cancellationToken);
+            cancellationToken,
+            EquipmentRuntimeJson.Options);
+
+        ValidateEquipmentHealthResponse(response, deviceAssetId, request);
+        return response;
+    }
+
+    private static void ValidateEquipmentHealthResponse(
+        BusinessConsoleEquipmentHealthResponse response,
+        string deviceAssetId,
+        BusinessConsoleEquipmentContextRequest request)
+    {
+        if (!string.Equals(response.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
+            || !string.Equals(response.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal)
+            || !string.Equals(response.DeviceAssetId, deviceAssetId, StringComparison.Ordinal)
+            || response.HealthScore is < 0 or > 100
+            || response.CalculatedAtUtc == default
+            || response.CalculatedAtUtc.Offset != TimeSpan.Zero
+            || response.DataFreshness is null
+            || response.RiskFactors is null
+            || response.RuleEvaluations is null)
+        {
+            throw InvalidEquipmentHealthResponse();
+        }
+
+        if (response.RuleEvaluations.Count != EquipmentHealthRuleCodes.Count
+            || response.RuleEvaluations.Any(evaluation => evaluation is null)
+            || !EquipmentHealthRuleCodes.SetEquals(response.RuleEvaluations.Select(evaluation => evaluation.RuleCode)))
+        {
+            throw InvalidEquipmentHealthResponse();
+        }
+
+        foreach (var evaluation in response.RuleEvaluations)
+        {
+            if (!HasRequiredRuleFields(
+                    evaluation.RuleCode,
+                    evaluation.RuleName,
+                    evaluation.CurrentValue,
+                    evaluation.Threshold,
+                    evaluation.Unit,
+                    evaluation.Evidence)
+                || !HasCoherentPenalty(evaluation.Status, evaluation.Penalty)
+                || !HasCoherentEvidenceSource(
+                    evaluation.SourceFactType,
+                    evaluation.SourceFactLabel,
+                    evaluation.SourceFactOccurredAtUtc))
+            {
+                throw InvalidEquipmentHealthResponse();
+            }
+        }
+
+        if (response.RiskFactors.Any(factor => factor is null))
+        {
+            throw InvalidEquipmentHealthResponse();
+        }
+
+        var riskEvaluations = response.RuleEvaluations
+            .Where(evaluation => evaluation.Status == BusinessConsoleEquipmentHealthRuleStatus.Risk)
+            .ToDictionary(evaluation => evaluation.RuleCode, StringComparer.Ordinal);
+        var riskFactorCodes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var factor in response.RiskFactors)
+        {
+            if (!HasRequiredRuleFields(
+                    factor.RuleCode,
+                    factor.RuleName,
+                    factor.CurrentValue,
+                    factor.Threshold,
+                    factor.Unit,
+                    factor.Evidence)
+                || factor.Status != BusinessConsoleEquipmentHealthRuleStatus.Risk
+                || factor.Penalty <= 0
+                || !HasCoherentEvidenceSource(
+                    factor.SourceFactType,
+                    factor.SourceFactLabel,
+                    factor.SourceFactOccurredAtUtc)
+                || !riskFactorCodes.Add(factor.RuleCode)
+                || !riskEvaluations.TryGetValue(factor.RuleCode, out var evaluation)
+                || !RiskFactorMatchesEvaluation(factor, evaluation))
+            {
+                throw InvalidEquipmentHealthResponse();
+            }
+        }
+
+        if (!riskFactorCodes.SetEquals(riskEvaluations.Keys)
+            || !HasCoherentFreshness(response.DataFreshness, response.CalculatedAtUtc))
+        {
+            throw InvalidEquipmentHealthResponse();
+        }
+    }
+
+    private static bool HasRequiredRuleFields(
+        string ruleCode,
+        string ruleName,
+        string currentValue,
+        string threshold,
+        string unit,
+        string evidence) =>
+        !string.IsNullOrWhiteSpace(ruleCode)
+        && !string.IsNullOrWhiteSpace(ruleName)
+        && !string.IsNullOrWhiteSpace(currentValue)
+        && !string.IsNullOrWhiteSpace(threshold)
+        && !string.IsNullOrWhiteSpace(unit)
+        && !string.IsNullOrWhiteSpace(evidence);
+
+    private static bool HasCoherentPenalty(BusinessConsoleEquipmentHealthRuleStatus status, int penalty) =>
+        status == BusinessConsoleEquipmentHealthRuleStatus.Risk
+            ? penalty > 0
+            : penalty == 0;
+
+    private static bool HasCoherentEvidenceSource(
+        string? sourceFactType,
+        string? sourceFactLabel,
+        DateTimeOffset? sourceFactOccurredAtUtc)
+    {
+        if (sourceFactOccurredAtUtc is null)
+        {
+            return sourceFactType is null && sourceFactLabel is null;
+        }
+
+        return sourceFactOccurredAtUtc.Value != default
+            && sourceFactOccurredAtUtc.Value.Offset == TimeSpan.Zero
+            && !string.IsNullOrWhiteSpace(sourceFactType)
+            && !string.IsNullOrWhiteSpace(sourceFactLabel);
+    }
+
+    private static bool RiskFactorMatchesEvaluation(
+        BusinessConsoleEquipmentHealthRiskFactor factor,
+        BusinessConsoleEquipmentHealthRuleEvaluation evaluation) =>
+        factor.RuleName == evaluation.RuleName
+        && factor.Status == evaluation.Status
+        && factor.Penalty == evaluation.Penalty
+        && factor.CurrentValue == evaluation.CurrentValue
+        && factor.Threshold == evaluation.Threshold
+        && factor.Unit == evaluation.Unit
+        && factor.Evidence == evaluation.Evidence
+        && factor.SourceFactType == evaluation.SourceFactType
+        && factor.SourceFactLabel == evaluation.SourceFactLabel
+        && factor.SourceFactOccurredAtUtc == evaluation.SourceFactOccurredAtUtc;
+
+    private static bool HasCoherentFreshness(
+        BusinessConsoleEquipmentHealthDataFreshness freshness,
+        DateTimeOffset calculatedAtUtc)
+    {
+        if (freshness.Status == BusinessConsoleEquipmentHealthFreshness.Unavailable)
+        {
+            return freshness.AgeSeconds is null
+                && freshness.LatestFactAtUtc is null
+                && freshness.SourceFactType is null
+                && freshness.SourceFactLabel is null;
+        }
+
+        if (freshness.AgeSeconds is null or < 0
+            || freshness.LatestFactAtUtc is null
+            || freshness.LatestFactAtUtc.Value == default
+            || freshness.LatestFactAtUtc.Value.Offset != TimeSpan.Zero
+            || freshness.LatestFactAtUtc > calculatedAtUtc
+            || string.IsNullOrWhiteSpace(freshness.SourceFactType)
+            || string.IsNullOrWhiteSpace(freshness.SourceFactLabel))
+        {
+            return false;
+        }
+
+        return (long)(calculatedAtUtc - freshness.LatestFactAtUtc.Value).TotalSeconds
+            == freshness.AgeSeconds.Value;
+    }
+
+    private static BusinessServiceProxyException InvalidEquipmentHealthResponse() =>
+        BusinessServiceProxyException.FromSafeDownstreamMessage(
+            HttpStatusCode.BadGateway,
+            "downstream-invalid-response");
 
     public async Task<BusinessConsoleEquipmentAlarmListPageResponse> ListActiveAlarmsAsync(
         string internalBearerToken,

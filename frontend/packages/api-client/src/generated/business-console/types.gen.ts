@@ -6230,48 +6230,54 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentHealthR
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthResponse = {
-    organizationId?: string;
-    environmentId?: string;
-    deviceAssetId?: string;
-    healthScore?: number;
-    level?: string;
-    calculatedAtUtc?: string;
-    dataFreshness?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthDataFreshness;
-    riskFactors?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRiskFactor>;
-    ruleEvaluations?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRuleEvaluation>;
+    organizationId: string;
+    environmentId: string;
+    deviceAssetId: string;
+    healthScore: number;
+    level: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthLevel;
+    calculatedAtUtc: string;
+    dataFreshness: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthDataFreshness;
+    riskFactors: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRiskFactor>;
+    ruleEvaluations: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRuleEvaluation>;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthLevel = 'healthy' | 'watch' | 'warning' | 'critical';
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthDataFreshness = {
-    status?: string;
+    status: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthFreshness;
     ageSeconds?: number | null;
     latestFactAtUtc?: string | null;
     sourceFactType?: string | null;
     sourceFactLabel?: string | null;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthFreshness = 'fresh' | 'delayed' | 'stale' | 'unavailable';
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRiskFactor = {
-    ruleCode?: string;
-    ruleName?: string;
-    status?: string;
-    penalty?: number;
-    currentValue?: string;
-    threshold?: string;
-    unit?: string;
-    evidence?: string;
+    ruleCode: string;
+    ruleName: string;
+    status: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRuleStatus;
+    penalty: number;
+    currentValue: string;
+    threshold: string;
+    unit: string;
+    evidence: string;
     sourceFactType?: string | null;
     sourceFactLabel?: string | null;
     sourceFactOccurredAtUtc?: string | null;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRuleStatus = 'normal' | 'risk' | 'accumulating';
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRuleEvaluation = {
-    ruleCode?: string;
-    ruleName?: string;
-    status?: string;
-    penalty?: number;
-    currentValue?: string;
-    threshold?: string;
-    unit?: string;
-    evidence?: string;
+    ruleCode: string;
+    ruleName: string;
+    status: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRuleStatus;
+    penalty: number;
+    currentValue: string;
+    threshold: string;
+    unit: string;
+    evidence: string;
     sourceFactType?: string | null;
     sourceFactLabel?: string | null;
     sourceFactOccurredAtUtc?: string | null;

@@ -47092,26 +47092,41 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthResponse": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "deviceAssetId",
+          "healthScore",
+          "level",
+          "calculatedAtUtc",
+          "dataFreshness",
+          "riskFactors",
+          "ruleEvaluations"
+        ],
         "properties": {
           "organizationId": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "environmentId": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "deviceAssetId": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "healthScore": {
             "type": "integer",
             "format": "int32"
           },
           "level": {
-            "type": "string"
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthLevel"
           },
           "calculatedAtUtc": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "minLength": 1
           },
           "dataFreshness": {
             "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthDataFreshness"
@@ -47130,12 +47145,31 @@
           }
         }
       },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthLevel": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Healthy",
+          "Watch",
+          "Warning",
+          "Critical"
+        ],
+        "enum": [
+          "healthy",
+          "watch",
+          "warning",
+          "critical"
+        ]
+      },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthDataFreshness": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "status"
+        ],
         "properties": {
           "status": {
-            "type": "string"
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthFreshness"
           },
           "ageSeconds": {
             "type": "integer",
@@ -47157,34 +47191,66 @@
           }
         }
       },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthFreshness": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Fresh",
+          "Delayed",
+          "Stale",
+          "Unavailable"
+        ],
+        "enum": [
+          "fresh",
+          "delayed",
+          "stale",
+          "unavailable"
+        ]
+      },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRiskFactor": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "ruleCode",
+          "ruleName",
+          "status",
+          "penalty",
+          "currentValue",
+          "threshold",
+          "unit",
+          "evidence"
+        ],
         "properties": {
           "ruleCode": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "ruleName": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "status": {
-            "type": "string"
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRuleStatus"
           },
           "penalty": {
             "type": "integer",
             "format": "int32"
           },
           "currentValue": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "threshold": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "unit": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "evidence": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "sourceFactType": {
             "type": "string",
@@ -47201,34 +47267,64 @@
           }
         }
       },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRuleStatus": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Normal",
+          "Risk",
+          "Accumulating"
+        ],
+        "enum": [
+          "normal",
+          "risk",
+          "accumulating"
+        ]
+      },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRuleEvaluation": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "ruleCode",
+          "ruleName",
+          "status",
+          "penalty",
+          "currentValue",
+          "threshold",
+          "unit",
+          "evidence"
+        ],
         "properties": {
           "ruleCode": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "ruleName": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "status": {
-            "type": "string"
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRuleStatus"
           },
           "penalty": {
             "type": "integer",
             "format": "int32"
           },
           "currentValue": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "threshold": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "unit": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "evidence": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "sourceFactType": {
             "type": "string",

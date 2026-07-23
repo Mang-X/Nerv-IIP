@@ -1,3 +1,6 @@
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
+
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public sealed record BusinessConsoleTelemetryTagListRequest(
@@ -345,45 +348,68 @@ public sealed record BusinessConsoleTelemetryRuntimeHoursDailyItem(string Busine
 public sealed record BusinessConsoleTelemetryRuntimeHoursResponse(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, int StateSampleCount, decimal TotalRuntimeHours, decimal TotalLoadingHours, bool HasRuntimeSamples, IReadOnlyCollection<BusinessConsoleTelemetryRuntimeHoursDailyItem> Daily);
 
 public sealed record BusinessConsoleEquipmentHealthResponse(
-    string OrganizationId,
-    string EnvironmentId,
-    string DeviceAssetId,
-    int HealthScore,
-    string Level,
-    DateTimeOffset CalculatedAtUtc,
-    BusinessConsoleEquipmentHealthDataFreshness DataFreshness,
-    IReadOnlyCollection<BusinessConsoleEquipmentHealthRiskFactor> RiskFactors,
-    IReadOnlyCollection<BusinessConsoleEquipmentHealthRuleEvaluation> RuleEvaluations);
+    [property: JsonRequired, Required] string OrganizationId,
+    [property: JsonRequired, Required] string EnvironmentId,
+    [property: JsonRequired, Required] string DeviceAssetId,
+    [property: JsonRequired, Required] int HealthScore,
+    [property: JsonRequired, Required] BusinessConsoleEquipmentHealthLevel Level,
+    [property: JsonRequired, Required] DateTimeOffset CalculatedAtUtc,
+    [property: JsonRequired, Required] BusinessConsoleEquipmentHealthDataFreshness DataFreshness,
+    [property: JsonRequired, Required] IReadOnlyCollection<BusinessConsoleEquipmentHealthRiskFactor> RiskFactors,
+    [property: JsonRequired, Required] IReadOnlyCollection<BusinessConsoleEquipmentHealthRuleEvaluation> RuleEvaluations);
+
+public enum BusinessConsoleEquipmentHealthLevel
+{
+    Healthy,
+    Watch,
+    Warning,
+    Critical,
+}
 
 public sealed record BusinessConsoleEquipmentHealthDataFreshness(
-    string Status,
+    [property: JsonRequired, Required] BusinessConsoleEquipmentHealthFreshness Status,
     long? AgeSeconds,
     DateTimeOffset? LatestFactAtUtc,
     string? SourceFactType,
     string? SourceFactLabel);
 
+public enum BusinessConsoleEquipmentHealthFreshness
+{
+    Fresh,
+    Delayed,
+    Stale,
+    Unavailable,
+}
+
 public sealed record BusinessConsoleEquipmentHealthRiskFactor(
-    string RuleCode,
-    string RuleName,
-    string Status,
-    int Penalty,
-    string CurrentValue,
-    string Threshold,
-    string Unit,
-    string Evidence,
+    [property: JsonRequired, Required] string RuleCode,
+    [property: JsonRequired, Required] string RuleName,
+    [property: JsonRequired, Required] BusinessConsoleEquipmentHealthRuleStatus Status,
+    [property: JsonRequired, Required] int Penalty,
+    [property: JsonRequired, Required] string CurrentValue,
+    [property: JsonRequired, Required] string Threshold,
+    [property: JsonRequired, Required] string Unit,
+    [property: JsonRequired, Required] string Evidence,
     string? SourceFactType,
     string? SourceFactLabel,
     DateTimeOffset? SourceFactOccurredAtUtc);
 
 public sealed record BusinessConsoleEquipmentHealthRuleEvaluation(
-    string RuleCode,
-    string RuleName,
-    string Status,
-    int Penalty,
-    string CurrentValue,
-    string Threshold,
-    string Unit,
-    string Evidence,
+    [property: JsonRequired, Required] string RuleCode,
+    [property: JsonRequired, Required] string RuleName,
+    [property: JsonRequired, Required] BusinessConsoleEquipmentHealthRuleStatus Status,
+    [property: JsonRequired, Required] int Penalty,
+    [property: JsonRequired, Required] string CurrentValue,
+    [property: JsonRequired, Required] string Threshold,
+    [property: JsonRequired, Required] string Unit,
+    [property: JsonRequired, Required] string Evidence,
     string? SourceFactType,
     string? SourceFactLabel,
     DateTimeOffset? SourceFactOccurredAtUtc);
+
+public enum BusinessConsoleEquipmentHealthRuleStatus
+{
+    Normal,
+    Risk,
+    Accumulating,
+}

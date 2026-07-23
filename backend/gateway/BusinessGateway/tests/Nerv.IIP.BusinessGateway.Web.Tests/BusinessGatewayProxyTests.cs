@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -3517,8 +3518,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("org-001", data.GetProperty("organizationId").GetString());
         Assert.Equal("env-dev", data.GetProperty("environmentId").GetString());
         Assert.Equal("DEV-HEALTH-01", data.GetProperty("deviceAssetId").GetString());
-        Assert.Equal(72, data.GetProperty("healthScore").GetInt32());
-        Assert.Equal("attention", data.GetProperty("level").GetString());
+        Assert.Equal(85, data.GetProperty("healthScore").GetInt32());
+        Assert.Equal("watch", data.GetProperty("level").GetString());
         Assert.Equal(
             DateTimeOffset.Parse("2026-07-24T01:02:03Z", CultureInfo.InvariantCulture),
             data.GetProperty("calculatedAtUtc").GetDateTimeOffset());
@@ -3527,15 +3528,15 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(121L, freshness.GetProperty("ageSeconds").GetInt64());
         Assert.Equal("telemetry-raw-sample", freshness.GetProperty("sourceFactType").GetString());
         var riskFactor = Assert.Single(data.GetProperty("riskFactors").EnumerateArray());
-        Assert.Equal("bearing-temperature", riskFactor.GetProperty("ruleCode").GetString());
-        Assert.Equal("95.2", riskFactor.GetProperty("currentValue").GetString());
+        Assert.Equal("threshold-proximity", riskFactor.GetProperty("ruleCode").GetString());
+        Assert.Equal("95", riskFactor.GetProperty("currentValue").GetString());
         Assert.Equal(
             DateTimeOffset.Parse("2026-07-24T01:00:02Z", CultureInfo.InvariantCulture),
             riskFactor.GetProperty("sourceFactOccurredAtUtc").GetDateTimeOffset());
         var evaluations = data.GetProperty("ruleEvaluations").EnumerateArray().ToArray();
-        Assert.Equal(2, evaluations.Length);
+        Assert.Equal(5, evaluations.Length);
         Assert.Equal("risk", evaluations[0].GetProperty("status").GetString());
-        Assert.Equal("unavailable", evaluations[1].GetProperty("status").GetString());
+        Assert.Equal("normal", evaluations[1].GetProperty("status").GetString());
         Assert.Equal(JsonValueKind.Null, evaluations[1].GetProperty("sourceFactOccurredAtUtc").ValueKind);
     }
 
@@ -3820,61 +3821,10 @@ public sealed class BusinessGatewayProxyTests
     [Fact]
     public async Task Equipment_health_http_client_forwards_canonical_scope_and_preserves_nullable_evidence()
     {
-        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
-        {
-            success = true,
-            data = new
-            {
-                organizationId = "org/001",
-                environmentId = "env dev",
-                deviceAssetId = "DEV/HEALTH 01",
-                healthScore = 72,
-                level = "attention",
-                calculatedAtUtc = "2026-07-24T01:02:03Z",
-                dataFreshness = new
-                {
-                    status = "unavailable",
-                    ageSeconds = (long?)null,
-                    latestFactAtUtc = (string?)null,
-                    sourceFactType = (string?)null,
-                    sourceFactLabel = (string?)null,
-                },
-                riskFactors = new[]
-                {
-                    new
-                    {
-                        ruleCode = "bearing-temperature",
-                        ruleName = "Bearing temperature",
-                        status = "risk",
-                        penalty = 28,
-                        currentValue = "95.2",
-                        threshold = "90",
-                        unit = "celsius",
-                        evidence = "latest sample exceeds threshold",
-                        sourceFactType = "telemetry-raw-sample",
-                        sourceFactLabel = "Bearing temperature",
-                        sourceFactOccurredAtUtc = "2026-07-24T01:00:02Z",
-                    },
-                },
-                ruleEvaluations = new[]
-                {
-                    new
-                    {
-                        ruleCode = "runtime",
-                        ruleName = "Runtime",
-                        status = "unavailable",
-                        penalty = 0,
-                        currentValue = "n/a",
-                        threshold = "16",
-                        unit = "hours",
-                        evidence = "no runtime fact",
-                        sourceFactType = (string?)null,
-                        sourceFactLabel = (string?)null,
-                        sourceFactOccurredAtUtc = (string?)null,
-                    },
-                },
-            },
-        }));
+        var handler = new RecordingHandler(_ => EquipmentHealthJsonResponse(
+            organizationId: "org/001",
+            environmentId: "env dev",
+            deviceAssetId: "DEV/HEALTH 01"));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://industrial-telemetry.local") };
         var client = new HttpBusinessIndustrialTelemetryClient(httpClient);
 
@@ -3888,11 +3838,84 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-token-001", sent.Headers.Authorization?.Parameter);
         Assert.Equal("/api/business/v1/iiot/devices/DEV%2FHEALTH%2001/health", sent.RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org%2F001&environmentId=env%20dev", sent.RequestUri.Query.TrimStart('?'));
-        Assert.Equal("unavailable", result.DataFreshness.Status);
-        Assert.Null(result.DataFreshness.AgeSeconds);
-        Assert.Null(result.DataFreshness.LatestFactAtUtc);
+        Assert.Equal(BusinessConsoleEquipmentHealthLevel.Watch, result.Level);
+        Assert.Equal(BusinessConsoleEquipmentHealthFreshness.Delayed, result.DataFreshness.Status);
+        Assert.Equal(121, result.DataFreshness.AgeSeconds);
+        Assert.Equal(5, result.RuleEvaluations.Count);
         Assert.Equal("95.2", Assert.Single(result.RiskFactors).CurrentValue);
-        Assert.Null(Assert.Single(result.RuleEvaluations).SourceFactOccurredAtUtc);
+        Assert.NotNull(Assert.Single(result.RiskFactors).SourceFactOccurredAtUtc);
+        Assert.Null(result.RuleEvaluations.ElementAt(1).SourceFactOccurredAtUtc);
+    }
+
+    [Theory]
+    [InlineData("empty-data")]
+    [InlineData("null-freshness")]
+    [InlineData("null-risk-factors")]
+    [InlineData("null-rule-evaluations")]
+    [InlineData("mismatched-organization")]
+    [InlineData("mismatched-environment")]
+    [InlineData("mismatched-device")]
+    [InlineData("negative-score")]
+    [InlineData("score-over-100")]
+    [InlineData("default-calculated-at")]
+    [InlineData("non-utc-calculated-at")]
+    [InlineData("invalid-level")]
+    [InlineData("invalid-freshness")]
+    [InlineData("invalid-rule-status")]
+    [InlineData("four-rule-evaluations")]
+    [InlineData("unexpected-rule-code")]
+    [InlineData("duplicate-rule-code")]
+    [InlineData("blank-evaluation-evidence")]
+    [InlineData("risk-status-with-zero-penalty")]
+    [InlineData("normal-status-with-positive-penalty")]
+    [InlineData("null-risk-factor-item")]
+    [InlineData("risk-factor-normal-status")]
+    [InlineData("risk-factor-zero-penalty")]
+    [InlineData("risk-factor-without-evaluation")]
+    [InlineData("blank-risk-factor-evidence")]
+    [InlineData("negative-freshness-age")]
+    [InlineData("incoherent-freshness-age")]
+    [InlineData("freshness-source-without-latest-fact")]
+    public async Task Equipment_health_http_client_rejects_malformed_downstream_contract(string scenario)
+    {
+        var handler = new RecordingHandler(_ => EquipmentHealthJsonResponse(
+            mutate: data => MutateEquipmentHealthData(data, scenario)));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://industrial-telemetry.local") };
+        var client = new HttpBusinessIndustrialTelemetryClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.GetEquipmentHealthAsync(
+                "internal-token-001",
+                "DEV-HEALTH-01",
+                new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Equipment_health_facade_maps_malformed_downstream_contract_to_bad_gateway()
+    {
+        var handler = new RecordingHandler(_ => EquipmentHealthJsonResponse(
+            mutate: data => data.Clear()));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://industrial-telemetry.local") };
+        var industrialTelemetry = new HttpBusinessIndustrialTelemetryClient(httpClient);
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/equipment/devices/DEV-HEALTH-01/health?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("downstream-invalid-response", document.RootElement.GetProperty("message").GetString());
     }
 
     [Fact]
@@ -6689,6 +6712,223 @@ public sealed class BusinessGatewayProxyTests
                 configureServices?.Invoke(services);
             });
         });
+
+    private static HttpResponseMessage EquipmentHealthJsonResponse(
+        string organizationId = "org-001",
+        string environmentId = "env-dev",
+        string deviceAssetId = "DEV-HEALTH-01",
+        Action<JsonObject>? mutate = null)
+    {
+        var data = JsonSerializer.SerializeToNode(new
+        {
+            organizationId,
+            environmentId,
+            deviceAssetId,
+            healthScore = 85,
+            level = "watch",
+            calculatedAtUtc = "2026-07-24T01:02:03Z",
+            dataFreshness = new
+            {
+                status = "delayed",
+                ageSeconds = 121L,
+                latestFactAtUtc = "2026-07-24T01:00:02Z",
+                sourceFactType = "telemetry-raw-sample",
+                sourceFactLabel = "Bearing temperature",
+            },
+            riskFactors = new[]
+            {
+                new
+                {
+                    ruleCode = "threshold-proximity",
+                    ruleName = "Threshold proximity",
+                    status = "risk",
+                    penalty = 15,
+                    currentValue = "95.2",
+                    threshold = "90",
+                    unit = "celsius",
+                    evidence = "latest sample exceeds threshold",
+                    sourceFactType = (string?)"telemetry-raw-sample",
+                    sourceFactLabel = (string?)"Bearing temperature",
+                    sourceFactOccurredAtUtc = (string?)"2026-07-24T01:00:02Z",
+                },
+            },
+            ruleEvaluations = new[]
+            {
+                new
+                {
+                    ruleCode = "threshold-proximity",
+                    ruleName = "Threshold proximity",
+                    status = "risk",
+                    penalty = 15,
+                    currentValue = "95.2",
+                    threshold = "90",
+                    unit = "celsius",
+                    evidence = "latest sample exceeds threshold",
+                    sourceFactType = (string?)"telemetry-raw-sample",
+                    sourceFactLabel = (string?)"Bearing temperature",
+                    sourceFactOccurredAtUtc = (string?)"2026-07-24T01:00:02Z",
+                },
+                new
+                {
+                    ruleCode = "runtime-hours-24h",
+                    ruleName = "Runtime hours",
+                    status = "normal",
+                    penalty = 0,
+                    currentValue = "8",
+                    threshold = "16",
+                    unit = "hours",
+                    evidence = "runtime remains below threshold",
+                    sourceFactType = (string?)null,
+                    sourceFactLabel = (string?)null,
+                    sourceFactOccurredAtUtc = (string?)null,
+                },
+                new
+                {
+                    ruleCode = "alarm-frequency-24h",
+                    ruleName = "Alarm frequency",
+                    status = "normal",
+                    penalty = 0,
+                    currentValue = "0",
+                    threshold = "3",
+                    unit = "alarms",
+                    evidence = "alarm frequency remains below threshold",
+                    sourceFactType = (string?)"alarm-lifecycle",
+                    sourceFactLabel = (string?)"Latest alarm lifecycle",
+                    sourceFactOccurredAtUtc = (string?)"2026-07-24T00:58:00Z",
+                },
+                new
+                {
+                    ruleCode = "sustained-exceedance",
+                    ruleName = "Sustained exceedance",
+                    status = "accumulating",
+                    penalty = 0,
+                    currentValue = "4 samples",
+                    threshold = "6 samples",
+                    unit = "samples",
+                    evidence = "history is still accumulating",
+                    sourceFactType = (string?)"telemetry-raw-sample",
+                    sourceFactLabel = (string?)"Bearing temperature history",
+                    sourceFactOccurredAtUtc = (string?)"2026-07-24T00:57:00Z",
+                },
+                new
+                {
+                    ruleCode = "trend-growth",
+                    ruleName = "Trend growth",
+                    status = "normal",
+                    penalty = 0,
+                    currentValue = "5%",
+                    threshold = "20%",
+                    unit = "%",
+                    evidence = "trend growth remains below threshold",
+                    sourceFactType = (string?)"telemetry-raw-sample",
+                    sourceFactLabel = (string?)"Bearing temperature trend",
+                    sourceFactOccurredAtUtc = (string?)"2026-07-24T00:56:00Z",
+                },
+            },
+        })!.AsObject();
+        mutate?.Invoke(data);
+        return JsonResponse(HttpStatusCode.OK, new { success = true, data });
+    }
+
+    private static void MutateEquipmentHealthData(JsonObject data, string scenario)
+    {
+        var freshness = data["dataFreshness"]!.AsObject();
+        var riskFactors = data["riskFactors"]!.AsArray();
+        var evaluations = data["ruleEvaluations"]!.AsArray();
+        var riskFactor = riskFactors[0]!.AsObject();
+        var riskEvaluation = evaluations[0]!.AsObject();
+        var normalEvaluation = evaluations[1]!.AsObject();
+
+        switch (scenario)
+        {
+            case "empty-data":
+                data.Clear();
+                break;
+            case "null-freshness":
+                data["dataFreshness"] = null;
+                break;
+            case "null-risk-factors":
+                data["riskFactors"] = null;
+                break;
+            case "null-rule-evaluations":
+                data["ruleEvaluations"] = null;
+                break;
+            case "mismatched-organization":
+                data["organizationId"] = "org-other";
+                break;
+            case "mismatched-environment":
+                data["environmentId"] = "env-other";
+                break;
+            case "mismatched-device":
+                data["deviceAssetId"] = "DEV-OTHER";
+                break;
+            case "negative-score":
+                data["healthScore"] = -1;
+                break;
+            case "score-over-100":
+                data["healthScore"] = 101;
+                break;
+            case "default-calculated-at":
+                data["calculatedAtUtc"] = "0001-01-01T00:00:00Z";
+                break;
+            case "non-utc-calculated-at":
+                data["calculatedAtUtc"] = "2026-07-24T09:02:03+08:00";
+                break;
+            case "invalid-level":
+                data["level"] = "attention";
+                break;
+            case "invalid-freshness":
+                freshness["status"] = "current";
+                break;
+            case "invalid-rule-status":
+                riskEvaluation["status"] = "unavailable";
+                break;
+            case "four-rule-evaluations":
+                evaluations.RemoveAt(evaluations.Count - 1);
+                break;
+            case "unexpected-rule-code":
+                evaluations[4]!["ruleCode"] = "unexpected";
+                break;
+            case "duplicate-rule-code":
+                evaluations[4]!["ruleCode"] = "threshold-proximity";
+                break;
+            case "blank-evaluation-evidence":
+                riskEvaluation["evidence"] = " ";
+                break;
+            case "risk-status-with-zero-penalty":
+                riskEvaluation["penalty"] = 0;
+                break;
+            case "normal-status-with-positive-penalty":
+                normalEvaluation["penalty"] = 1;
+                break;
+            case "null-risk-factor-item":
+                riskFactors[0] = null;
+                break;
+            case "risk-factor-normal-status":
+                riskFactor["status"] = "normal";
+                break;
+            case "risk-factor-zero-penalty":
+                riskFactor["penalty"] = 0;
+                break;
+            case "risk-factor-without-evaluation":
+                riskFactor["ruleCode"] = "trend-growth";
+                break;
+            case "blank-risk-factor-evidence":
+                riskFactor["evidence"] = string.Empty;
+                break;
+            case "negative-freshness-age":
+                freshness["ageSeconds"] = -1;
+                break;
+            case "incoherent-freshness-age":
+                freshness["ageSeconds"] = 120;
+                break;
+            case "freshness-source-without-latest-fact":
+                freshness["latestFactAtUtc"] = null;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(scenario), scenario, "Unknown equipment-health contract mutation.");
+        }
+    }
 
     private static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, object payload) => new(statusCode)
     {
@@ -10506,51 +10746,87 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
             request.OrganizationId,
             request.EnvironmentId,
             deviceAssetId,
-            72,
-            "attention",
+            85,
+            BusinessConsoleEquipmentHealthLevel.Watch,
             DateTimeOffset.Parse("2026-07-24T01:02:03Z", CultureInfo.InvariantCulture),
             new BusinessConsoleEquipmentHealthDataFreshness(
-                "delayed",
+                BusinessConsoleEquipmentHealthFreshness.Delayed,
                 121,
                 DateTimeOffset.Parse("2026-07-24T01:00:02Z", CultureInfo.InvariantCulture),
                 "telemetry-raw-sample",
                 "Bearing temperature"),
             [
                 new BusinessConsoleEquipmentHealthRiskFactor(
-                    "bearing-temperature",
-                    "Bearing temperature",
-                    "risk",
-                    28,
-                    "95.2",
-                    "90",
-                    "celsius",
-                    "latest sample exceeds threshold",
+                    "threshold-proximity",
+                    "Threshold proximity",
+                    BusinessConsoleEquipmentHealthRuleStatus.Risk,
+                    15,
+                    "95",
+                    "80",
+                    "percent",
+                    "latest sample is close to threshold",
                     "telemetry-raw-sample",
                     "Bearing temperature",
                     DateTimeOffset.Parse("2026-07-24T01:00:02Z", CultureInfo.InvariantCulture)),
             ],
             [
                 new BusinessConsoleEquipmentHealthRuleEvaluation(
-                    "bearing-temperature",
-                    "Bearing temperature",
-                    "risk",
-                    28,
-                    "95.2",
-                    "90",
-                    "celsius",
-                    "latest sample exceeds threshold",
+                    "threshold-proximity",
+                    "Threshold proximity",
+                    BusinessConsoleEquipmentHealthRuleStatus.Risk,
+                    15,
+                    "95",
+                    "80",
+                    "percent",
+                    "latest sample is close to threshold",
                     "telemetry-raw-sample",
                     "Bearing temperature",
                     DateTimeOffset.Parse("2026-07-24T01:00:02Z", CultureInfo.InvariantCulture)),
                 new BusinessConsoleEquipmentHealthRuleEvaluation(
-                    "runtime",
-                    "Runtime",
-                    "unavailable",
+                    "runtime-hours-24h",
+                    "Runtime hours",
+                    BusinessConsoleEquipmentHealthRuleStatus.Normal,
                     0,
-                    "n/a",
+                    "8",
                     "16",
                     "hours",
-                    "no runtime fact",
+                    "runtime is within threshold",
+                    null,
+                    null,
+                    null),
+                new BusinessConsoleEquipmentHealthRuleEvaluation(
+                    "alarm-frequency-24h",
+                    "Alarm frequency",
+                    BusinessConsoleEquipmentHealthRuleStatus.Normal,
+                    0,
+                    "0",
+                    "3",
+                    "count",
+                    "alarm frequency is within threshold",
+                    null,
+                    null,
+                    null),
+                new BusinessConsoleEquipmentHealthRuleEvaluation(
+                    "sustained-exceedance",
+                    "Sustained exceedance",
+                    BusinessConsoleEquipmentHealthRuleStatus.Accumulating,
+                    0,
+                    "1",
+                    "3",
+                    "count",
+                    "insufficient samples for a risk",
+                    null,
+                    null,
+                    null),
+                new BusinessConsoleEquipmentHealthRuleEvaluation(
+                    "trend-growth",
+                    "Trend growth",
+                    BusinessConsoleEquipmentHealthRuleStatus.Normal,
+                    0,
+                    "0.2",
+                    "1.5",
+                    "ratio",
+                    "trend growth is within threshold",
                     null,
                     null,
                     null),
