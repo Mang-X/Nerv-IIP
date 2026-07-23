@@ -161,7 +161,7 @@ public sealed class PostgreSqlTestDatabase : IAsyncDisposable
     public async Task DropAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var dropTask = GetOrStartDropTask(cancellationToken);
+        var dropTask = GetOrStartDropTask();
         await dropTask.WaitAsync(cancellationToken);
     }
 
@@ -188,7 +188,7 @@ public sealed class PostgreSqlTestDatabase : IAsyncDisposable
         return new ValueTask(disposeTask);
     }
 
-    private Task GetOrStartDropTask(CancellationToken cancellationToken)
+    private Task GetOrStartDropTask()
     {
         Task dropTask;
         TaskCompletionSource? dropCompletion = null;
@@ -210,15 +210,13 @@ public sealed class PostgreSqlTestDatabase : IAsyncDisposable
 
         if (dropCompletion is not null)
         {
-            _ = CompleteDropAsync(dropCompletion, cancellationToken);
+            _ = CompleteDropAsync(dropCompletion);
         }
 
         return dropTask;
     }
 
-    private async Task CompleteDropAsync(
-        TaskCompletionSource completion,
-        CancellationToken cancellationToken)
+    private async Task CompleteDropAsync(TaskCompletionSource completion)
     {
         Exception? failure = null;
         OperationCanceledException? cancellation = null;
@@ -226,7 +224,7 @@ public sealed class PostgreSqlTestDatabase : IAsyncDisposable
         {
             await ExecuteAdminCommandAsync(
                 $"DROP DATABASE IF EXISTS \"{DatabaseName}\" WITH (FORCE)",
-                cancellationToken);
+                CancellationToken.None);
         }
         catch (OperationCanceledException exception)
         {
@@ -243,6 +241,11 @@ public sealed class PostgreSqlTestDatabase : IAsyncDisposable
             {
                 _dropped = true;
             }
+
+            if (ReferenceEquals(_dropTask, completion.Task))
+            {
+                _dropTask = null;
+            }
         }
 
         if (cancellation is not null)
@@ -258,20 +261,13 @@ public sealed class PostgreSqlTestDatabase : IAsyncDisposable
             completion.TrySetResult();
         }
 
-        lock (_lifecycleLock)
-        {
-            if (ReferenceEquals(_dropTask, completion.Task))
-            {
-                _dropTask = null;
-            }
-        }
     }
 
     private async Task CompleteDisposeAsync(TaskCompletionSource completion)
     {
         try
         {
-            await GetOrStartDropTask(CancellationToken.None);
+            await GetOrStartDropTask();
         }
         catch (Exception)
         {

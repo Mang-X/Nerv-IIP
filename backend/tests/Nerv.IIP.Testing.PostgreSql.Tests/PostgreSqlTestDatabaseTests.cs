@@ -185,6 +185,93 @@ public sealed class PostgreSqlTestDatabaseTests
     }
 
     [Fact]
+    public async Task Cancelled_DropAsync_observer_does_not_cancel_physical_cleanup_joined_by_DisposeAsync()
+    {
+        var dropEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseDrop = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var dropAttempts = 0;
+        var database = await CreateWithExecutorAsync(async (_, commandText, onConnectionOpened, cancellationToken) =>
+        {
+            onConnectionOpened();
+            if (!commandText.StartsWith("DROP DATABASE", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            Interlocked.Increment(ref dropAttempts);
+            dropEntered.TrySetResult();
+            await releaseDrop.Task.WaitAsync(cancellationToken);
+        });
+        using var observerCancellation = new CancellationTokenSource();
+
+        var dropObserver = database.DropAsync(observerCancellation.Token);
+        await dropEntered.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        var disposeTask = database.DisposeAsync().AsTask();
+        await observerCancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => dropObserver);
+        Assert.False(disposeTask.IsCompleted);
+        Assert.Equal(1, dropAttempts);
+
+        releaseDrop.TrySetResult();
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(1, dropAttempts);
+    }
+
+    [Fact]
+    public async Task Precancelled_DropAsync_does_not_start_physical_cleanup()
+    {
+        var dropAttempts = 0;
+        var database = await CreateWithExecutorAsync((_, commandText, onConnectionOpened, _) =>
+        {
+            onConnectionOpened();
+            if (commandText.StartsWith("DROP DATABASE", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref dropAttempts);
+            }
+
+            return Task.CompletedTask;
+        });
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => database.DropAsync(cancellation.Token));
+        Assert.Equal(0, dropAttempts);
+
+        await database.DisposeAsync();
+        Assert.Equal(1, dropAttempts);
+    }
+
+    [Fact]
+    public async Task Failed_DropAsync_can_be_retried_immediately_and_success_is_idempotent()
+    {
+        var dropAttempts = 0;
+        var database = await CreateWithExecutorAsync((_, commandText, onConnectionOpened, _) =>
+        {
+            onConnectionOpened();
+            if (!commandText.StartsWith("DROP DATABASE", StringComparison.Ordinal))
+            {
+                return Task.CompletedTask;
+            }
+
+            if (Interlocked.Increment(ref dropAttempts) == 1)
+            {
+                throw new TimeoutException("first drop failed");
+            }
+
+            return Task.CompletedTask;
+        });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => database.DropAsync());
+        await database.DropAsync();
+        await database.DropAsync();
+
+        Assert.Equal(2, dropAttempts);
+        await database.DisposeAsync();
+        Assert.Equal(2, dropAttempts);
+    }
+
+    [Fact]
     public async Task DropAsync_preserves_cleanup_failure_for_explicit_callers()
     {
         var database = await CreateWithExecutorAsync((_, commandText, onConnectionOpened, _) =>
