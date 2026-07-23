@@ -41,7 +41,7 @@ public sealed class SchedulingEndpointContractTests
             SchedulingPermissionCodes.PlansRelease
         };
 
-        Assert.Equal(12, contracts.Length);
+        Assert.Equal(13, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans/preview" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "previewSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/problems/assemble" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "assembleSchedulingProblem");
@@ -54,6 +54,7 @@ public sealed class SchedulingEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/order-urgencies" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "listOrderUrgencies");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/order-urgencies/{orderReference}" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getOrderUrgency");
         Assert.Contains(contracts, x => x.HttpMethod == "PUT" && x.Route == "/api/business/v1/scheduling/order-urgencies/{orderReference}/business-priority" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "setOrderUrgencyBusinessPriority");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/internal/v1/scheduling/order-urgency-archives/restore" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "restoreOrderUrgencyArchive");
         Assert.All(contracts, x => Assert.Contains(x.PermissionCode, allowedPermissions));
     }
 
@@ -605,6 +606,34 @@ public sealed class SchedulingEndpointContractTests
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("\"splitPolicy\":\"nonSplittable\"", requestJson, StringComparison.Ordinal);
         Assert.Contains("\"status\":\"preview\"", responseBody, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("7")]
+    [InlineData("-1")]
+    [InlineData("P4")]
+    public async Task Priority_http_endpoint_rejects_invalid_levels_with_stable_wire_field(string level)
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        using var response = await client.PutAsJsonAsync(
+            "/api/business/v1/scheduling/order-urgencies/WO-001/business-priority",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "prod",
+                level,
+                reason = "invalid priority contract test",
+            });
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var errors = document.RootElement.GetProperty("errors");
+        Assert.False(errors.TryGetProperty("Level", out _));
+        var message = Assert.Single(errors.GetProperty("level").EnumerateArray()).GetString();
+        Assert.Equal("Level must be P0, P1, P2, or P3.", message);
     }
 
     [Fact]

@@ -94,6 +94,12 @@ public sealed record SetOrderUrgencyBusinessPriorityRequest(
     string Reason,
     DateTimeOffset? ExpiresAtUtc = null);
 
+public sealed record RestoreOrderUrgencyArchiveRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string BatchId,
+    string Reason);
+
 public sealed class PreviewSchedulePlanEndpoint(ISender sender)
     : SchedulingEndpoint<PreviewSchedulePlanRequest, ResponseData<SchedulePlanContract>>
 {
@@ -283,6 +289,27 @@ public sealed class SetOrderUrgencyBusinessPriorityEndpoint(
     }
 }
 
+public sealed class RestoreOrderUrgencyArchiveEndpoint(
+    OrderUrgencyRetentionService service,
+    ISchedulingIntegrationEventContextAccessor contextAccessor)
+    : SchedulingEndpoint<RestoreOrderUrgencyArchiveRequest, ResponseData<OrderUrgencyRestoreResult>>
+{
+    public override void Configure() =>
+        ConfigureSchedulingContract(SchedulingEndpointContracts.Get<RestoreOrderUrgencyArchiveEndpoint>());
+
+    public override async Task HandleAsync(RestoreOrderUrgencyArchiveRequest req, CancellationToken ct)
+    {
+        var response = await service.RestoreAsync(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.BatchId,
+            contextAccessor.GetContext().Actor,
+            req.Reason,
+            ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class ListSchedulePlansRequestValidator : Validator<ListSchedulePlansRequest>
 {
     public ListSchedulePlansRequestValidator()
@@ -382,6 +409,17 @@ public sealed class SetOrderUrgencyBusinessPriorityRequestValidator : Validator<
     }
 }
 
+public sealed class RestoreOrderUrgencyArchiveRequestValidator : Validator<RestoreOrderUrgencyArchiveRequest>
+{
+    public RestoreOrderUrgencyArchiveRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.BatchId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(1000);
+    }
+}
+
 public sealed record SchedulingEndpointContract(
     Type EndpointType,
     string HttpMethod,
@@ -406,6 +444,7 @@ public static class SchedulingEndpointContracts
         new(typeof(ListOrderUrgenciesEndpoint), "GET", "/api/business/v1/scheduling/order-urgencies", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listOrderUrgencies"),
         new(typeof(GetOrderUrgencyEndpoint), "GET", "/api/business/v1/scheduling/order-urgencies/{orderReference}", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getOrderUrgency"),
         new(typeof(SetOrderUrgencyBusinessPriorityEndpoint), "PUT", "/api/business/v1/scheduling/order-urgencies/{orderReference}/business-priority", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "setOrderUrgencyBusinessPriority"),
+        new(typeof(RestoreOrderUrgencyArchiveEndpoint), "POST", "/api/business/internal/v1/scheduling/order-urgency-archives/restore", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "restoreOrderUrgencyArchive"),
     ];
 
     public static SchedulingEndpointContract Get<TEndpoint>()

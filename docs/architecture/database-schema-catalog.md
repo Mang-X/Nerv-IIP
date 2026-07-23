@@ -586,6 +586,9 @@ Source:
 9. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260718020006_AddScheduleReleaseGovernance.cs`
 10. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260718053455_NameScheduleReleaseGovernanceIndexes.cs`
 11. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260722121035_AddOrderUrgencyModelV1.cs`
+12. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260722150201_AddOrderUrgencyRetentionArchive.cs`
+13. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260722154723_HardenOrderUrgencyArchiveLifecycle.cs`
+14. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260722164839_AddOrderUrgencyArchiveMembership.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
@@ -594,7 +597,11 @@ Source:
 | `schedule_operation_overrides` | business | Scheduling API 手动调整或 MES 真实手动派工形成的固定工序分配投影，同时保留 MES 清除后的非活跃 tombstone。 | 保存真实工单/工序、资源/工作中心、UTC 起止窗口、锁定原因、来源事件/操作者和来源时间；`is_active` 默认 true，表示当前是否贡献排程锁，nullable `source_revision` 保存 MES 正版本排序水位，nullable `cleared_reason_code` / `cleared_at_utc` 保存撤销原因与时间；`source_occurred_at_utc` 为 legacy 无版本 MES 事实提供来源时间排序。 | `organization_id + environment_id + operation_id` 唯一索引保证每个业务上下文中的工序只有一个 active 或 tombstone 投影。 | 后续排程装配、预览和生成只把 active 行转换为 locked assignment；MES 正版本按 revision 收敛，legacy 无版本派工回退到来源时间，非活跃 tombstone 保留水位以阻止旧事实复活；不承载 #701 的 released-plan release/revoke 版本治理。 |
 | `order_urgency_business_priorities` | business | 统一紧急度模型当前人工业务优先级输入。 | organization/environment/order scope、跨域 `business_reference`、P0-P3、设置人、原因、设置/过期时间和单调 revision。 | `organization_id + environment_id + order_id` 唯一；business reference 索引支撑 ERP/Planning 入口定位。 | 创建或修改只推进 revision；过期后由计算器停止其升级作用，但原等级、输入与审计仍保留。 |
 | `order_urgency_business_priority_changes` | business | 人工业务优先级的追加式审计历史。 | previous/new level、revision、authenticated actor、原因、变更时间和可选过期时间；首条设置的 previous level 为 null。 | scope + order + revision 唯一，防止同一修订重复。 | 只追加不更新，用于解释优先级变化。 |
-| `order_urgency_snapshots` | business | `order-urgency-v1` 不可变计算结果，保留三类贡献项、原因码、来源时间、计算时间、版本和输入指纹。 | scope、order/business reference、level、model version、input fingerprint、priority revision、15 分钟 calculation bucket、result JSON。 | scope + order + model + fingerprint + priority revision + bucket 唯一保证重算幂等；scope + order + calculated time 支撑 latest-per-order；business reference + calculated time 支撑跨页一致读取。 | 方案生成、优先级变化或后台周期追加；GET 不写入。历史 append-only 保留为审计证据，V1 不在未定义合规保留期前擅自删除。 |
+| `order_urgency_snapshots` | business | `order-urgency-v1` 不可变计算结果，保留三类贡献项、原因码、来源时间、计算时间、版本和输入指纹。 | scope、order/business reference、level、model version、input fingerprint、priority revision、15 分钟 calculation bucket、result JSON。 | scope + order + model + fingerprint + priority revision + bucket 唯一保证重算幂等；scope + order + calculated time 支撑 latest-per-order；business reference + calculated time 支撑跨页一致读取；scope + calculated time 支撑 retention scan。 | 方案生成、优先级变化或后台周期追加；GET 不写入。按 organization/environment 默认在线保留 180 天、总保留 1,095 天；同 order 的 latest 永远在线。只有 exact-version 归档证据完整且存在显式限时授权时才删除旧源行。 |
+| `order_urgency_archive_batches` | audit | 紧急度快照归档、源删除与 archive version 删除的耐久批次证据。 | source-row-generation-derived stable batch id、organization/environment、source snapshot ids、状态、水位、object key、exact version id、SHA-256、大小、删除授权、错误和乐观并发 revision。 | scope + batch 唯一保证重试幂等；scope + status + max calculated time 支撑恢复删除和总保留扫描；revision 阻止并发状态倒退。 | pending/failed 不删除源；exact-version 回读完成后转 archived；授权源删除后转 source-deleted；独立授权且超过总保留后转 archive-deleted。终态不能倒退；恢复生成的新源行使用新批次代次。审计行保留。 |
+| `order_urgency_archive_batch_snapshots` | audit | 归档批次意图的关系型、有序源快照成员，避免按 scope 扫描批次 JSON 或构造无界 `IN` 参数。 | archive batch id、organization/environment、强类型 snapshot id、payload sequence。 | batch + sequence 唯一保证确定性重建顺序；scope + snapshot 唯一且可索引排除已占用的源代次。 | 与 pending 批次意图同事务追加；批次审计保留期间不删除，用于重试、删除前完整性复核和长期追溯。 |
+| `order_urgency_retention_leases` | system | 多实例 retention worker 的 organization/environment 排他租约。 | scope、owner、acquired/expiry UTC 和乐观并发 revision。 | scope 唯一；expiry 索引支持过期租约接管。 | worker 获取、释放或过期接管；租约争用只跳过本轮，不影响源数据。 |
+| `order_urgency_restore_audits` | audit | exact-version 恢复请求的追加式操作审计。 | scope、batch、object version、actor、reason、restored count、restore UTC。 | scope + batch + time 支撑恢复轨迹读取。 | 每次恢复尝试均追加，包括没有新增行的幂等重放；不覆盖历史。 |
 | `schedule_plan_assignments` | business | 排程方案内的工序到资源分配结果。 | `schedule_plan_id` 归属方案；`assignment_id` 是方案内公开分配 ID；`work_order_id`、`operation_id`、`standard_operation_code`、`resource_id`、`work_center_id` 和 `start_utc` / `end_utc` 描述分配事实；`standard_operation_code` 保留 ProductEngineering 标准工序码，供 MES 下发当前 SOP/电子作业指导书。 | `schedule_plan_id + assignment_id` 唯一；`schedule_plan_id` 外键索引用于按方案加载。 | 生命周期随方案保留；不直接表达 MES 工序执行状态。 |
 | `schedule_plan_resource_loads` | business | 排程方案的资源负载窗口和利用率。 | `schedule_plan_id` 归属方案；`resource_id`、`window_start_utc`、`window_end_utc`、`assigned_minutes`、`available_minutes` 和 `utilization` 描述负载；`assigned_minutes` 同样使用资源占用口径，包含加工时间和 setup/changeover 时间。 | `schedule_plan_id` 外键索引用于读取方案负载。 | 由排程算法生成并随方案保留，可供产能/Gantt 查询。 |
 | `schedule_plan_conflicts` | business | 排程方案生成过程中识别的交期、产能、日历、物料、质量或设备冲突。 | `schedule_plan_id` 归属方案；`conflict_id` 是公开冲突 ID；`reason_code`、`severity`、`work_order_id`、`operation_id`、`resource_id` 和 `message` 描述冲突。 | `schedule_plan_id` 外键索引用于按方案加载冲突。 | 生成时追加到方案；用于解释和前端展示，不替代下游执行异常。 |
@@ -751,6 +758,8 @@ Source:
 4. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260521061426_InitialFileStorageSchema.cs`
 5. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260608105829_AddStoredFilesTenantListIndex.cs`
 6. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260705065020_AddFileStorageSecurityHardening.cs`
+7. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/FileStoragePersistenceStartup.cs`
+8. `scripts/install/migrate-file-storage.ps1`
 
 | Table | Kind | Purpose | Key relationships and indexes |
 | --- | --- | --- | --- |
@@ -761,7 +770,7 @@ Source:
 
 Known gaps:
 
-1. 默认运行路径仍可使用 in-memory store 和 `server-proxy` metadata stub；设置 `Persistence:Provider=PostgreSQL` 后可启用 PostgreSQL-backed FileStorage service，客户 release bundle 仍待后续。
+1. AppHost 默认通过独立 `file-storage-db` / `nerv_iip_filestorage` resource 运行 PostgreSQL-backed FileStorage；只有 Development 显式设置 `Persistence:Provider=InMemory` 才允许进程内 metadata。非 Development 缺 provider、选择 InMemory、缺连接串或启用 Web-host AutoMigrate 会 fail fast。`scripts/install/migrate-file-storage.ps1` 已提供受治理的显式 migration 入口；完整客户发布仍需由安装流程补齐备份/恢复和全服务编排。
 2. 设置 `FileStorage:UploadProvider=tus` 后已具备本地 tus `HEAD`/`PATCH` offset 传输、download grant content 读取、size/checksum 强校验、过期未完成上传清理、用途类型策略、配额拒绝、后台扫描状态流转和正式文件软删/物理清理能力。
 3. tus 端点当前按平台内部服务边界实现为 `AllowAnonymous`，生产入口需要由 Gateway/auth 层保护；MinIO/S3 multipart 不进入 MVP，放到后续对象存储部署联调。`object_key` 不得被提升为公开 API、SDK DTO、Gateway facade 或 Console generated client 字段。
 

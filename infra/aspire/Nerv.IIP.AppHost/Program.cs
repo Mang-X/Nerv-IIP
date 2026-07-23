@@ -68,6 +68,7 @@ if (fullStackEphemeral)
 var appHubDatabase = postgres.AddDatabase("apphub-db", "nerv_iip_apphub");
 var iamDatabase = postgres.AddDatabase("iam-db", "nerv_iip_iam");
 var opsDatabase = postgres.AddDatabase("ops-db", "nerv_iip_ops");
+var fileStorageDatabase = postgres.AddDatabase("file-storage-db", "nerv_iip_filestorage");
 var notificationDatabase = postgres.AddDatabase("notification-db", "nerv_iip_notification");
 var businessMasterDataDatabase = postgres.AddDatabase("business-master-data-db", "nerv_iip_business_masterdata");
 var businessProductEngineeringDatabase = postgres.AddDatabase("business-product-engineering-db", "nerv_iip_product_engineering");
@@ -176,14 +177,23 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var fileStorage = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-storage")))
+var fileStorage = WithNervIipTelemetry(builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-storage"))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5104, name: "http")
+    .WithEnvironment("ASPNETCORE_ENVIRONMENT", builder.Environment.EnvironmentName)
+    .WithEnvironment("DOTNET_ENVIRONMENT", builder.Environment.EnvironmentName)
+    .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment(
+        "Persistence__AutoMigrate",
+        string.Equals(builder.Environment.EnvironmentName, "Development", StringComparison.OrdinalIgnoreCase) ? "true" : "false")
     .WithEnvironment("Storage__Provider", "MinIO")
     .WithEnvironment("Storage__MinIO__Endpoint", minio.GetEndpoint("api"))
     .WithEnvironment("Storage__MinIO__AccessKey", minioRootUser)
     .WithEnvironment("Storage__MinIO__SecretKey", minioRootPassword)
+    .WithEnvironment("Storage__MinIO__ComplianceArchiveBucket", "nerv-iip-compliance-archive")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
+    .WithReference(fileStorageDatabase, "FileStorageDb")
     .WithReference(redis)
+    .WaitFor(fileStorageDatabase)
     .WaitFor(redis)
     .WaitFor(minio);
 
@@ -514,15 +524,18 @@ var businessScheduling = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(bu
     .WithEnvironment("Mes__BaseUrl", businessMes.GetEndpoint("http"))
     .WithEnvironment("IndustrialTelemetry__BaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
     .WithEnvironment("Maintenance__BaseUrl", businessMaintenance.GetEndpoint("http"))
+    .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessSchedulingDatabase, "PostgreSQL")
     .WithReference(businessMes)
     .WithReference(businessIndustrialTelemetry)
     .WithReference(businessMaintenance)
+    .WithReference(fileStorage)
     .WaitFor(businessSchedulingDatabase)
     .WaitFor(businessMes)
     .WaitFor(businessIndustrialTelemetry)
     .WaitFor(businessMaintenance);
+businessScheduling = businessScheduling.WaitFor(fileStorage);
 businessScheduling = WithRedisMessagingTransport(businessScheduling);
 if (rabbitmq is not null)
 {
