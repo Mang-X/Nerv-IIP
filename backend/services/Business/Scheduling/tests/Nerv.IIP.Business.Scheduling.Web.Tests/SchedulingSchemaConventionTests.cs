@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleOperationOverrideAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OrderUrgencyAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
+using Nerv.IIP.Business.Scheduling.Infrastructure.Urgency;
 using Nerv.IIP.Testing.EntityFramework;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
@@ -41,6 +42,10 @@ public sealed class SchedulingSchemaConventionTests
             typeof(OrderUrgencyBusinessPriority),
             typeof(OrderUrgencyBusinessPriorityChange),
             typeof(OrderUrgencySnapshot),
+            typeof(OrderUrgencyArchiveBatch),
+            typeof(OrderUrgencyArchiveBatchSnapshot),
+            typeof(OrderUrgencyRetentionLease),
+            typeof(OrderUrgencyRestoreAudit),
         };
 
         var failures = new List<string>();
@@ -72,6 +77,22 @@ public sealed class SchedulingSchemaConventionTests
             index.Properties.Select(x => x.Name).SequenceEqual(
                 [nameof(SchedulePlan.OrganizationId), nameof(SchedulePlan.EnvironmentId), nameof(SchedulePlan.ReleaseRevision)]) &&
             index.GetFilter() == "release_revision IS NOT NULL");
+    }
+
+    [Fact]
+    public void Order_urgency_archive_membership_is_scope_isolated_and_indexed()
+    {
+        using var fixture = CreateFixture();
+        var entity = fixture.DbContext.Model.FindEntityType(typeof(OrderUrgencyArchiveBatchSnapshot))!;
+
+        Assert.Contains(entity.GetIndexes(), index =>
+            index.IsUnique &&
+            index.Properties.Select(x => x.Name).SequenceEqual(
+                [nameof(OrderUrgencyArchiveBatchSnapshot.ArchiveBatchId), nameof(OrderUrgencyArchiveBatchSnapshot.Sequence)]));
+        Assert.Contains(entity.GetIndexes(), index =>
+            index.IsUnique &&
+            index.Properties.Select(x => x.Name).SequenceEqual(
+                [nameof(OrderUrgencyArchiveBatchSnapshot.OrganizationId), nameof(OrderUrgencyArchiveBatchSnapshot.EnvironmentId), nameof(OrderUrgencyArchiveBatchSnapshot.SnapshotId)]));
     }
 
     private static SchemaFixture CreateFixture()
