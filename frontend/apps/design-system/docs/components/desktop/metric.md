@@ -265,30 +265,32 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 
 ## NvMetricRing 环形构成型
 
-比率类主指标 + 构成因子并列：环里是结果，右侧是成因（OEE 的 A / P / Q、齐套率的各档）——主管一眼知道该去查哪个因子。悬浮环出完整构成 tooltip。
+`breakdown` 的环形表达：每段一种语义色，各自对应一条图例，中心放**最该被看到的数**（通常是总数）。悬浮任一段弧或图例行——该段加粗点亮、其余淡出，中心随即切成该段的读数与占比，所以不需要一个 tooltip 盖住卡片自己。
+
+> 只适用于**部分与整体**（工单状态 / 齐套 / 库位）。**相乘型比率不能画成环**：OEE = A × P × Q，A/P/Q 并不是环的三段；那类指标用 `variant="facets"` 或独立成行呈现。
 
 <Demo>
   <div class="grid w-full gap-4 sm:grid-cols-2">
     <NvMetricRing
-      label="OEE · 总装一线"
-      value="82.4%"
-      :percent="82.4"
-      tone="brand"
-      :factors="[
-        { label: '可用率 A', value: '94.1%' },
-        { label: '性能 P', value: '89.6%' },
-        { label: '质量 Q', value: '97.8%' },
+      label="在制工单构成"
+      :value="35"
+      unit="单"
+      center-caption="总计"
+      :segments="[
+        { label: '进行中', value: 24, tone: 'brand' },
+        { label: '待派工', value: 9, tone: 'neutral' },
+        { label: '超期', value: 2, tone: 'danger' },
       ]"
     />
     <NvMetricRing
-      label="齐套率 · 本周排产"
-      value="96.0%"
-      :percent="96"
-      tone="success"
-      :factors="[
-        { label: '已齐套', value: '48 单' },
-        { label: '部分齐套', value: '2 单' },
-        { label: '缺料', value: '0 单' },
+      label="成品库库位"
+      :value="512"
+      unit="位"
+      center-caption="总库位"
+      :segments="[
+        { label: '已占用', value: 340, tone: 'brand' },
+        { label: '可用', value: 160, tone: 'success' },
+        { label: '冻结', value: 12, tone: 'warning' },
       ]"
     />
   </div>
@@ -296,14 +298,14 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 
 ```vue
 <NvMetricRing
-  label="OEE · 总装一线"
-  value="82.4%"
-  :percent="82.4"
-  tone="brand"
-  :factors="[
-    { label: '可用率 A', value: '94.1%' },
-    { label: '性能 P', value: '89.6%' },
-    { label: '质量 Q', value: '97.8%' },
+  label="在制工单构成"
+  :value="35"
+  unit="单"
+  center-caption="总计"
+  :segments="[
+    { label: '进行中', value: 24, tone: 'brand' },
+    { label: '待派工', value: 9, tone: 'neutral' },
+    { label: '超期', value: 2, tone: 'danger' },
   ]"
 />
 ```
@@ -364,13 +366,15 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 
 ## NvMetricRing 属性
 
-| 属性      | 说明       | 类型                                            | 默认    |
-| --------- | ---------- | ----------------------------------------------- | ------- |
-| `label`   | 指标名     | `string`                                        | —       |
-| `value`   | 环心读数   | `string \| number`                              | —       |
-| `percent` | 弧长 0–100 | `number`                                        | —       |
-| `tone`    | 弧色       | `'brand' \| 'success' \| 'warning' \| 'danger'` | `brand` |
-| `factors` | 构成因子行 | `{ label, value }[]`                            | `[]`    |
+| 属性            | 说明                               | 类型                | 默认 |
+| --------------- | ---------------------------------- | ------------------- | ---- |
+| `label`         | 卡标题                             | `string`            | —    |
+| `value`         | 中心读数，默认展示的数（常为总数） | `string \| number`  | —    |
+| `unit`          | 中心读数单位                       | `string`            | —    |
+| `centerCaption` | 中心数下方小字，如 `总计`          | `string`            | —    |
+| `segments`      | 各分段 `{ label, value, tone? }`   | `NvMetricSegment[]` | `[]` |
+
+悬浮分段或图例行时，中心自动切换为该段的数值与 `标签 · 占比%`，无需额外配置。
 
 ## NvMetricStrip 属性
 

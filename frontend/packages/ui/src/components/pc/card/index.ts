@@ -14,7 +14,6 @@ export type {
   NvMetricAction as NvMetricAction,
   NvMetricDelta as NvMetricDelta,
   NvMetricFacet as NvMetricFacet,
-  NvMetricFactor as NvMetricFactor,
   NvMetricSegment as NvMetricSegment,
   NvMetricStatus as NvMetricStatus,
   NvMetricStripCell as NvMetricStripCell,

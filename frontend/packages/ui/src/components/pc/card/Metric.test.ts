@@ -227,24 +227,59 @@ describe('NvMetricCard 变体契约', () => {
 })
 
 describe('NvMetricRing / NvMetricStrip', () => {
-  it('ring 弧长按 percent 派生，构成因子逐行呈现', () => {
+  const ringSegments = [
+    { label: '进行中', value: 24, tone: 'brand' as const },
+    { label: '待派工', value: 9, tone: 'neutral' as const },
+    { label: '超期', value: 2, tone: 'danger' as const },
+  ]
+
+  it('ring 每个分段一条弧，弧长按占比派生并首尾相接', () => {
     const wrapper = mount(NvMetricRing, {
-      props: {
-        label: 'OEE · 总装一线',
-        value: '82.4%',
-        percent: 82.4,
-        factors: [
-          { label: '可用率 A', value: '94.1%' },
-          { label: '性能 P', value: '89.6%' },
-          { label: '质量 Q', value: '97.8%' },
-        ],
-      },
+      props: { label: '在制工单', value: 35, centerCaption: '总计', segments: ringSegments },
     })
     const circ = 2 * Math.PI * 36
-    const arc = wrapper.find('.nv-ring-arc')
-    expect(arc.attributes('stroke-dasharray')).toBe(`${(82.4 / 100) * circ} ${circ}`)
-    expect(wrapper.findAll('dl > div')).toHaveLength(3)
-    expect(wrapper.text()).toContain('可用率 A')
+    const gap = 2.5
+    const arcs = wrapper.findAll('.nv-ring-seg')
+    expect(arcs).toHaveLength(3)
+
+    // 第一段：24/35 的弧长（扣掉分段间隙），且从 0 起画
+    const span0 = (24 / 35) * circ
+    expect(arcs[0].attributes('stroke-dasharray')).toBe(`${span0 - gap} ${circ - (span0 - gap)}`)
+    expect(arcs[0].attributes('stroke-dashoffset')).toBe('0')
+    // 第二段接在第一段之后（偏移 = 前一段的完整占比，不含间隙）
+    expect(arcs[1].attributes('stroke-dashoffset')).toBe(String(-span0))
+  })
+
+  it('ring 图例给出每段计数与占比，中心默认显示总数', () => {
+    const wrapper = mount(NvMetricRing, {
+      props: { label: '在制工单', value: 35, centerCaption: '总计', segments: ringSegments },
+    })
+    const rows = wrapper.findAll('.nv-ring-row')
+    expect(rows).toHaveLength(3)
+    expect(rows[0].text()).toContain('进行中')
+    expect(rows[0].text()).toContain('24')
+    expect(rows[0].text()).toContain('68.6%') // 24/35
+    expect(wrapper.find('.nv-ring-center').text()).toContain('35')
+    expect(wrapper.find('.nv-ring-center').text()).toContain('总计')
+  })
+
+  it('ring 悬浮图例项：其余分段淡出，中心切到该段读数', async () => {
+    const wrapper = mount(NvMetricRing, {
+      props: { label: '在制工单', value: 35, centerCaption: '总计', segments: ringSegments },
+    })
+    const dimmed = () => wrapper.findAll('.nv-ring-dim').length // 弧 + 图例行 一起淡出
+    expect(dimmed()).toBe(0)
+
+    await wrapper.findAll('.nv-ring-row')[2].trigger('mouseenter')
+    // 3 弧 + 3 行 = 6 个可淡出元素，命中的那两个保持高亮
+    expect(dimmed()).toBe(4)
+    const center = wrapper.find('.nv-ring-center').text()
+    expect(center).toContain('2') // 超期 = 2
+    expect(center).toContain('超期 · 5.7%')
+
+    await wrapper.findAll('.nv-ring-row')[2].trigger('mouseleave')
+    expect(dimmed()).toBe(0)
+    expect(wrapper.find('.nv-ring-center').text()).toContain('总计')
   })
 
   it('strip 每格一指标，valueTone 染色，向上 meta 带趋势图标', () => {

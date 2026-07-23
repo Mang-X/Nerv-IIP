@@ -59,12 +59,6 @@ export interface NvMetricAction {
   href?: string
 }
 
-/** One constituent factor row beside the gauge in NvMetricRing. */
-export interface NvMetricFactor {
-  label: string
-  value: string | number
-}
-
 /** One cell of an NvMetricStrip. */
 export interface NvMetricStripCell {
   label: string
