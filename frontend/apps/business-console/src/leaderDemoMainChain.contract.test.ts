@@ -30,6 +30,50 @@ function expectScopedQuery(source: string, endpoint: string): void {
 }
 
 describe('leader demo main-chain public prerequisites', () => {
+  it('retries an idempotent create once after a server error and audits both attempts', () => {
+    const createFlow = sourceBetween(
+      'const create = async (path: string, body: JsonRecord) => {',
+      'let prerequisitesReady = true',
+    )
+    const costRateFlow = sourceBetween('const workCenterCostRatePath =', 'const configuredRateId =')
+
+    expect(createFlow).toContain('const idempotencyKey = textOf(body.idempotencyKey).trim()')
+    expect(createFlow.match(/call\('POST', path, body\)/g)).toHaveLength(2)
+    expect(createFlow).toContain(
+      'if (!(error instanceof PublicCallError) || error.status < 500 || !idempotencyKey)',
+    )
+    expect(createFlow).toContain('await page.waitForTimeout(1_000)')
+    expect(createFlow).toContain('attempt: 1')
+    expect(createFlow).toContain("outcome: 'server-error'")
+    expect(createFlow).toContain('request: error.request')
+    expect(createFlow).toContain('status: error.status')
+    expect(createFlow).toContain('payload: publicJson(error.payload)')
+    expect(createFlow).toContain('attempt: 2')
+    expect(createFlow).toContain("outcome: 'success'")
+    expect(createFlow).toContain('request: replay.summary')
+    expect(createFlow).toContain('response: replay.publicPayload')
+    expect(createFlow).toContain('idempotencyKey')
+    expect(costRateFlow).toContain(
+      "const configuredRate = await call('POST', workCenterCostRatePath",
+    )
+    expect(costRateFlow).not.toContain('create(workCenterCostRatePath')
+  })
+
+  it('surfaces a failed replay after auditing it instead of retrying a third time', () => {
+    const createFlow = sourceBetween(
+      'const create = async (path: string, body: JsonRecord) => {',
+      'let prerequisitesReady = true',
+    )
+
+    expect(createFlow.match(/call\('POST', path, body\)/g)).toHaveLength(2)
+    expect(createFlow).toContain('catch (replayError)')
+    expect(createFlow).toContain('replayError instanceof PublicCallError')
+    expect(createFlow).toContain('request: replayError.request')
+    expect(createFlow).toContain('status: replayError.status')
+    expect(createFlow).toContain('payload: publicJson(replayError.payload)')
+    expect(createFlow).toContain('throw replayError')
+  })
+
   it('establishes raw material through public ERP, approval, WMS, and Inventory facts', () => {
     const supplyFlow = sourceBetween(
       "const approvalTemplateCode = 'erp-purchase-order-release'",

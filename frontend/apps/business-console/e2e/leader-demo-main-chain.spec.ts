@@ -398,9 +398,44 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     sessionCredential = await captureSessionCredential(page)
 
     const create = async (path: string, body: JsonRecord) => {
-      const result = await call('POST', path, body)
-      setup.push({ request: result.summary, response: result.publicPayload })
-      return dataOf(result.payload)
+      const idempotencyKey = textOf(body.idempotencyKey).trim()
+      try {
+        const result = await call('POST', path, body)
+        setup.push({ request: result.summary, response: result.publicPayload })
+        return dataOf(result.payload)
+      } catch (error) {
+        if (!(error instanceof PublicCallError) || error.status < 500 || !idempotencyKey)
+          throw error
+
+        setup.push({
+          retry: { idempotencyKey, attempt: 1, outcome: 'server-error' },
+          request: error.request,
+          response: { status: error.status, payload: publicJson(error.payload) },
+        })
+        await page.waitForTimeout(1_000)
+
+        try {
+          const replay = await call('POST', path, body)
+          setup.push({
+            retry: { idempotencyKey, attempt: 2, outcome: 'success' },
+            request: replay.summary,
+            response: replay.publicPayload,
+          })
+          return dataOf(replay.payload)
+        } catch (replayError) {
+          if (replayError instanceof PublicCallError) {
+            setup.push({
+              retry: { idempotencyKey, attempt: 2, outcome: 'server-error' },
+              request: replayError.request,
+              response: {
+                status: replayError.status,
+                payload: publicJson(replayError.payload),
+              },
+            })
+          }
+          throw replayError
+        }
+      }
     }
 
     let prerequisitesReady = true
