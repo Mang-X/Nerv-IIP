@@ -3848,6 +3848,45 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Theory]
+    [InlineData(
+        "delayed",
+        "2026-07-24T01:00:02.5000000Z",
+        120L,
+        BusinessConsoleEquipmentHealthFreshness.Delayed)]
+    [InlineData(
+        "stale",
+        "2026-07-24T00:52:02.5000000Z",
+        600L,
+        BusinessConsoleEquipmentHealthFreshness.Stale)]
+    public async Task Equipment_health_http_client_accepts_fractional_freshness_boundaries(
+        string status,
+        string latestFactAtUtc,
+        long ageSeconds,
+        BusinessConsoleEquipmentHealthFreshness expectedStatus)
+    {
+        var handler = new RecordingHandler(_ => EquipmentHealthJsonResponse(
+            mutate: data =>
+            {
+                var freshness = data["dataFreshness"]!.AsObject();
+                freshness["status"] = status;
+                freshness["latestFactAtUtc"] = latestFactAtUtc;
+                freshness["ageSeconds"] = ageSeconds;
+            }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://industrial-telemetry.local") };
+        var client = new HttpBusinessIndustrialTelemetryClient(httpClient);
+
+        var result = await client.GetEquipmentHealthAsync(
+            "internal-token-001",
+            "DEV-HEALTH-01",
+            new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal(expectedStatus, result.DataFreshness.Status);
+        Assert.Equal(ageSeconds, result.DataFreshness.AgeSeconds);
+        Assert.Equal(DateTimeOffset.Parse(latestFactAtUtc), result.DataFreshness.LatestFactAtUtc);
+    }
+
+    [Theory]
     [InlineData("empty-data")]
     [InlineData("null-freshness")]
     [InlineData("null-risk-factors")]

@@ -5260,13 +5260,13 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             return false;
         }
 
-        var ageSeconds = (long)(calculatedAtUtc - freshness.LatestFactAtUtc.Value).TotalSeconds;
-        var expectedStatus = ageSeconds switch
-        {
-            <= 120 => BusinessConsoleEquipmentHealthFreshness.Fresh,
-            <= 600 => BusinessConsoleEquipmentHealthFreshness.Delayed,
-            _ => BusinessConsoleEquipmentHealthFreshness.Stale,
-        };
+        var exactAge = calculatedAtUtc - freshness.LatestFactAtUtc.Value;
+        var ageSeconds = (long)exactAge.TotalSeconds;
+        var expectedStatus = exactAge <= TimeSpan.FromMinutes(2)
+            ? BusinessConsoleEquipmentHealthFreshness.Fresh
+            : exactAge <= TimeSpan.FromMinutes(10)
+                ? BusinessConsoleEquipmentHealthFreshness.Delayed
+                : BusinessConsoleEquipmentHealthFreshness.Stale;
         return ageSeconds == freshness.AgeSeconds.Value
             && freshness.Status == expectedStatus;
     }
