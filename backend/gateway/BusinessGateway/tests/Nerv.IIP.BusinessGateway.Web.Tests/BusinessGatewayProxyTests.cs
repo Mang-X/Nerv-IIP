@@ -3493,6 +3493,77 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Equipment_health_facade_forwards_internal_token_and_exact_device_scope_with_complete_evidence()
+    {
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/equipment/devices/DEV-HEALTH-01/health?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", industrialTelemetry.LastInternalToken);
+        Assert.Equal("DEV-HEALTH-01", industrialTelemetry.LastEquipmentHealthDeviceAssetId);
+        Assert.Equal(new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"), industrialTelemetry.LastEquipmentHealthRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("org-001", data.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", data.GetProperty("environmentId").GetString());
+        Assert.Equal("DEV-HEALTH-01", data.GetProperty("deviceAssetId").GetString());
+        Assert.Equal(72, data.GetProperty("healthScore").GetInt32());
+        Assert.Equal("attention", data.GetProperty("level").GetString());
+        Assert.Equal(
+            DateTimeOffset.Parse("2026-07-24T01:02:03Z", CultureInfo.InvariantCulture),
+            data.GetProperty("calculatedAtUtc").GetDateTimeOffset());
+        var freshness = data.GetProperty("dataFreshness");
+        Assert.Equal("delayed", freshness.GetProperty("status").GetString());
+        Assert.Equal(121L, freshness.GetProperty("ageSeconds").GetInt64());
+        Assert.Equal("telemetry-raw-sample", freshness.GetProperty("sourceFactType").GetString());
+        var riskFactor = Assert.Single(data.GetProperty("riskFactors").EnumerateArray());
+        Assert.Equal("bearing-temperature", riskFactor.GetProperty("ruleCode").GetString());
+        Assert.Equal("95.2", riskFactor.GetProperty("currentValue").GetString());
+        Assert.Equal(
+            DateTimeOffset.Parse("2026-07-24T01:00:02Z", CultureInfo.InvariantCulture),
+            riskFactor.GetProperty("sourceFactOccurredAtUtc").GetDateTimeOffset());
+        var evaluations = data.GetProperty("ruleEvaluations").EnumerateArray().ToArray();
+        Assert.Equal(2, evaluations.Length);
+        Assert.Equal("risk", evaluations[0].GetProperty("status").GetString());
+        Assert.Equal("unavailable", evaluations[1].GetProperty("status").GetString());
+        Assert.Equal(JsonValueKind.Null, evaluations[1].GetProperty("sourceFactOccurredAtUtc").ValueKind);
+    }
+
+    [Fact]
+    public async Task Equipment_health_facade_preserves_downstream_proxy_failure()
+    {
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient
+        {
+            EquipmentHealthFailure = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.ServiceUnavailable,
+                "equipment-health-unavailable"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/equipment/devices/DEV-HEALTH-01/health?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("equipment-health-unavailable", document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
     public async Task Telemetry_rule_and_oee_facades_forward_internal_token_and_scope()
     {
         var industrialTelemetry = new RecordingIndustrialTelemetryClient();
@@ -3744,6 +3815,104 @@ public sealed class BusinessGatewayProxyTests
         var item = Assert.Single(result.Items);
         Assert.Null(item.FirstSampleAtUtc);
         Assert.Null(item.LastSampleAtUtc);
+    }
+
+    [Fact]
+    public async Task Equipment_health_http_client_forwards_canonical_scope_and_preserves_nullable_evidence()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = true,
+            data = new
+            {
+                organizationId = "org/001",
+                environmentId = "env dev",
+                deviceAssetId = "DEV/HEALTH 01",
+                healthScore = 72,
+                level = "attention",
+                calculatedAtUtc = "2026-07-24T01:02:03Z",
+                dataFreshness = new
+                {
+                    status = "unavailable",
+                    ageSeconds = (long?)null,
+                    latestFactAtUtc = (string?)null,
+                    sourceFactType = (string?)null,
+                    sourceFactLabel = (string?)null,
+                },
+                riskFactors = new[]
+                {
+                    new
+                    {
+                        ruleCode = "bearing-temperature",
+                        ruleName = "Bearing temperature",
+                        status = "risk",
+                        penalty = 28,
+                        currentValue = "95.2",
+                        threshold = "90",
+                        unit = "celsius",
+                        evidence = "latest sample exceeds threshold",
+                        sourceFactType = "telemetry-raw-sample",
+                        sourceFactLabel = "Bearing temperature",
+                        sourceFactOccurredAtUtc = "2026-07-24T01:00:02Z",
+                    },
+                },
+                ruleEvaluations = new[]
+                {
+                    new
+                    {
+                        ruleCode = "runtime",
+                        ruleName = "Runtime",
+                        status = "unavailable",
+                        penalty = 0,
+                        currentValue = "n/a",
+                        threshold = "16",
+                        unit = "hours",
+                        evidence = "no runtime fact",
+                        sourceFactType = (string?)null,
+                        sourceFactLabel = (string?)null,
+                        sourceFactOccurredAtUtc = (string?)null,
+                    },
+                },
+            },
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://industrial-telemetry.local") };
+        var client = new HttpBusinessIndustrialTelemetryClient(httpClient);
+
+        var result = await client.GetEquipmentHealthAsync(
+            "internal-token-001",
+            "DEV/HEALTH 01",
+            new BusinessConsoleEquipmentContextRequest("org/001", "env dev"),
+            CancellationToken.None);
+
+        var sent = Assert.Single(handler.Requests);
+        Assert.Equal("internal-token-001", sent.Headers.Authorization?.Parameter);
+        Assert.Equal("/api/business/v1/iiot/devices/DEV%2FHEALTH%2001/health", sent.RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org%2F001&environmentId=env%20dev", sent.RequestUri.Query.TrimStart('?'));
+        Assert.Equal("unavailable", result.DataFreshness.Status);
+        Assert.Null(result.DataFreshness.AgeSeconds);
+        Assert.Null(result.DataFreshness.LatestFactAtUtc);
+        Assert.Equal("95.2", Assert.Single(result.RiskFactors).CurrentValue);
+        Assert.Null(Assert.Single(result.RuleEvaluations).SourceFactOccurredAtUtc);
+    }
+
+    [Fact]
+    public async Task Equipment_health_http_client_rejects_missing_response_data()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(
+            HttpStatusCode.OK,
+            "{\"success\":true,\"data\":null}"));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://industrial-telemetry.local") };
+        var client = new HttpBusinessIndustrialTelemetryClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.GetEquipmentHealthAsync(
+                "internal-token-001",
+                "DEV-HEALTH-01",
+                new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
     }
 
     [Fact]
@@ -10101,6 +10270,12 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
 
     public BusinessConsoleEquipmentContextRequest? LastCurrentStateRequest { get; private set; }
 
+    public string? LastEquipmentHealthDeviceAssetId { get; private set; }
+
+    public BusinessConsoleEquipmentContextRequest? LastEquipmentHealthRequest { get; private set; }
+
+    public BusinessServiceProxyException? EquipmentHealthFailure { get; init; }
+
     public BusinessConsoleTelemetryAlarmRuleListRequest? LastAlarmRuleListRequest { get; private set; }
 
     public BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest? LastAlarmRuleUpsertRequest { get; private set; }
@@ -10310,6 +10485,75 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
                     "critical",
                     DateTimeOffset.Parse("2026-06-01T08:20:00Z", CultureInfo.InvariantCulture),
                 "EXT-ALARM-001"),
+            ]));
+    }
+
+    public Task<BusinessConsoleEquipmentHealthResponse> GetEquipmentHealthAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleEquipmentContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastEquipmentHealthDeviceAssetId = deviceAssetId;
+        LastEquipmentHealthRequest = request;
+        if (EquipmentHealthFailure is not null)
+        {
+            throw EquipmentHealthFailure;
+        }
+
+        return Task.FromResult(new BusinessConsoleEquipmentHealthResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            deviceAssetId,
+            72,
+            "attention",
+            DateTimeOffset.Parse("2026-07-24T01:02:03Z", CultureInfo.InvariantCulture),
+            new BusinessConsoleEquipmentHealthDataFreshness(
+                "delayed",
+                121,
+                DateTimeOffset.Parse("2026-07-24T01:00:02Z", CultureInfo.InvariantCulture),
+                "telemetry-raw-sample",
+                "Bearing temperature"),
+            [
+                new BusinessConsoleEquipmentHealthRiskFactor(
+                    "bearing-temperature",
+                    "Bearing temperature",
+                    "risk",
+                    28,
+                    "95.2",
+                    "90",
+                    "celsius",
+                    "latest sample exceeds threshold",
+                    "telemetry-raw-sample",
+                    "Bearing temperature",
+                    DateTimeOffset.Parse("2026-07-24T01:00:02Z", CultureInfo.InvariantCulture)),
+            ],
+            [
+                new BusinessConsoleEquipmentHealthRuleEvaluation(
+                    "bearing-temperature",
+                    "Bearing temperature",
+                    "risk",
+                    28,
+                    "95.2",
+                    "90",
+                    "celsius",
+                    "latest sample exceeds threshold",
+                    "telemetry-raw-sample",
+                    "Bearing temperature",
+                    DateTimeOffset.Parse("2026-07-24T01:00:02Z", CultureInfo.InvariantCulture)),
+                new BusinessConsoleEquipmentHealthRuleEvaluation(
+                    "runtime",
+                    "Runtime",
+                    "unavailable",
+                    0,
+                    "n/a",
+                    "16",
+                    "hours",
+                    "no runtime fact",
+                    null,
+                    null,
+                    null),
             ]));
     }
 

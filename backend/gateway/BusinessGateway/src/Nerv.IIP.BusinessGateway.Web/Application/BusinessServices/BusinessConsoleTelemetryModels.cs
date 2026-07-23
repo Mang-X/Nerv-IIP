@@ -343,3 +343,47 @@ public sealed record BusinessConsoleTelemetryOeeResponse(
 public sealed record BusinessConsoleTelemetryRuntimeHoursRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
 public sealed record BusinessConsoleTelemetryRuntimeHoursDailyItem(string BusinessDate, decimal RuntimeHours, decimal LoadingHours, int StateSampleCount);
 public sealed record BusinessConsoleTelemetryRuntimeHoursResponse(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, int StateSampleCount, decimal TotalRuntimeHours, decimal TotalLoadingHours, bool HasRuntimeSamples, IReadOnlyCollection<BusinessConsoleTelemetryRuntimeHoursDailyItem> Daily);
+
+public sealed record BusinessConsoleEquipmentHealthResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    int HealthScore,
+    string Level,
+    DateTimeOffset CalculatedAtUtc,
+    BusinessConsoleEquipmentHealthDataFreshness DataFreshness,
+    IReadOnlyCollection<BusinessConsoleEquipmentHealthRiskFactor> RiskFactors,
+    IReadOnlyCollection<BusinessConsoleEquipmentHealthRuleEvaluation> RuleEvaluations);
+
+public sealed record BusinessConsoleEquipmentHealthDataFreshness(
+    string Status,
+    long? AgeSeconds,
+    DateTimeOffset? LatestFactAtUtc,
+    string? SourceFactType,
+    string? SourceFactLabel);
+
+public sealed record BusinessConsoleEquipmentHealthRiskFactor(
+    string RuleCode,
+    string RuleName,
+    string Status,
+    int Penalty,
+    string CurrentValue,
+    string Threshold,
+    string Unit,
+    string Evidence,
+    string? SourceFactType,
+    string? SourceFactLabel,
+    DateTimeOffset? SourceFactOccurredAtUtc);
+
+public sealed record BusinessConsoleEquipmentHealthRuleEvaluation(
+    string RuleCode,
+    string RuleName,
+    string Status,
+    int Penalty,
+    string CurrentValue,
+    string Threshold,
+    string Unit,
+    string Evidence,
+    string? SourceFactType,
+    string? SourceFactLabel,
+    DateTimeOffset? SourceFactOccurredAtUtc);

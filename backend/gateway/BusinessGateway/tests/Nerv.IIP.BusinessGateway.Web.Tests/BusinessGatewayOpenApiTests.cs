@@ -153,6 +153,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/scheduling/order-urgencies/{orderReference}/business-priority", "put", "setBusinessConsoleOrderUrgencyBusinessPriority");
         AssertOperationId(paths, "/api/business-console/v1/equipment/overview", "get", "getBusinessConsoleEquipmentOverview");
         AssertOperationId(paths, "/api/business-console/v1/equipment/devices/{deviceAssetId}", "get", "getBusinessConsoleEquipmentDevice");
+        AssertOperationId(paths, "/api/business-console/v1/equipment/devices/{deviceAssetId}/health", "get", "getBusinessConsoleEquipmentDeviceHealth");
         AssertOperationId(paths, "/api/business-console/v1/equipment/availability", "get", "getBusinessConsoleEquipmentAvailability");
         AssertOperationId(paths, "/api/business-console/v1/equipment/alarms", "get", "listBusinessConsoleEquipmentAlarms");
         AssertOperationId(paths, "/api/business-console/v1/equipment/alarms/{alarmEventId}/acknowledge", "post", "acknowledgeBusinessConsoleEquipmentAlarm");

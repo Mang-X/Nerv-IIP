@@ -22199,6 +22199,74 @@
         ]
       }
     },
+    "/api/business-console/v1/equipment/devices/{deviceAssetId}/health": {
+      "get": {
+        "tags": [
+          "Business Console Equipment",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleEquipmentDeviceHealth",
+        "parameters": [
+          {
+            "name": "deviceAssetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentHealthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/equipment/availability": {
       "get": {
         "tags": [
@@ -46999,6 +47067,183 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentContextRequest": {
         "type": "object",
         "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentHealthResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "deviceAssetId": {
+            "type": "string"
+          },
+          "healthScore": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "level": {
+            "type": "string"
+          },
+          "calculatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dataFreshness": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthDataFreshness"
+          },
+          "riskFactors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRiskFactor"
+            }
+          },
+          "ruleEvaluations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRuleEvaluation"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthDataFreshness": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "ageSeconds": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "latestFactAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "sourceFactType": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceFactLabel": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRiskFactor": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ruleCode": {
+            "type": "string"
+          },
+          "ruleName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "penalty": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "currentValue": {
+            "type": "string"
+          },
+          "threshold": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "sourceFactType": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceFactLabel": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceFactOccurredAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRuleEvaluation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ruleCode": {
+            "type": "string"
+          },
+          "ruleName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "penalty": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "currentValue": {
+            "type": "string"
+          },
+          "threshold": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "sourceFactType": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceFactLabel": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceFactOccurredAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentAlarmListPageResponse": {
         "allOf": [

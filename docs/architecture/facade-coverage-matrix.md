@@ -93,7 +93,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | BarcodeLabel | 12 | 9 | 0 | 3 |
 | DemandPlanning | 15 | 15 | 0 | 0 |
 | Erp | 53 | 41 | 11 | 1 |
-| IndustrialTelemetry | 26 | 23 | 1 | 2 |
+| IndustrialTelemetry | 27 | 24 | 1 | 2 |
 | Inventory | 13 | 6 | 2 | 5 |
 | Maintenance | 21 | 16 | 5 | 0 |
 | MasterData | 46 | 38 | 4 | 4 |
@@ -102,10 +102,10 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Quality | 32 | 20 | 12 | 0 |
 | Scheduling | 15 | 13 | 1 | 1 |
 | Wms | 30 | 19 | 6 | 5 |
-| **Total** | **371** | **299** | **49** | **23** |
+| **Total** | **372** | **300** | **49** | **23** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-The `exposed` rows (299) — each with its verified facade `gatewayOperationIds` — are
+The `exposed` rows (300) — each with its verified facade `gatewayOperationIds` — are
 enumerated in the JSON registry. The `deferred` and `internal` rows, the actual
 governance decisions, are listed in full below.
 

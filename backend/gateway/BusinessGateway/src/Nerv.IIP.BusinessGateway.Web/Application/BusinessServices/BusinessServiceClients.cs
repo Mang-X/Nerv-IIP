@@ -1078,6 +1078,12 @@ public interface IBusinessIndustrialTelemetryClient
         BusinessConsoleEquipmentContextRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleEquipmentHealthResponse> GetEquipmentHealthAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleEquipmentContextRequest request,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
+
     Task<BusinessConsoleEquipmentAlarmListPageResponse> ListActiveAlarmsAsync(
         string internalBearerToken,
         BusinessConsoleEquipmentAlarmListRequest request,
@@ -5020,6 +5026,18 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             null,
             cancellationToken,
             EquipmentRuntimeJson.Options);
+
+    public Task<BusinessConsoleEquipmentHealthResponse> GetEquipmentHealthAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleEquipmentContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEquipmentHealthResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/iiot/devices/{Uri.EscapeDataString(deviceAssetId)}/health?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
 
     public async Task<BusinessConsoleEquipmentAlarmListPageResponse> ListActiveAlarmsAsync(
         string internalBearerToken,

@@ -6225,6 +6225,58 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentHealthResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    deviceAssetId?: string;
+    healthScore?: number;
+    level?: string;
+    calculatedAtUtc?: string;
+    dataFreshness?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthDataFreshness;
+    riskFactors?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRiskFactor>;
+    ruleEvaluations?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRuleEvaluation>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthDataFreshness = {
+    status?: string;
+    ageSeconds?: number | null;
+    latestFactAtUtc?: string | null;
+    sourceFactType?: string | null;
+    sourceFactLabel?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRiskFactor = {
+    ruleCode?: string;
+    ruleName?: string;
+    status?: string;
+    penalty?: number;
+    currentValue?: string;
+    threshold?: string;
+    unit?: string;
+    evidence?: string;
+    sourceFactType?: string | null;
+    sourceFactLabel?: string | null;
+    sourceFactOccurredAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthRuleEvaluation = {
+    ruleCode?: string;
+    ruleName?: string;
+    status?: string;
+    penalty?: number;
+    currentValue?: string;
+    threshold?: string;
+    unit?: string;
+    evidence?: string;
+    sourceFactType?: string | null;
+    sourceFactLabel?: string | null;
+    sourceFactOccurredAtUtc?: string | null;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentAlarmListPageResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentAlarmListPageResponse | null;
 };
@@ -17136,6 +17188,44 @@ export type GetBusinessConsoleEquipmentDeviceResponses = {
 };
 
 export type GetBusinessConsoleEquipmentDeviceResponse = GetBusinessConsoleEquipmentDeviceResponses[keyof GetBusinessConsoleEquipmentDeviceResponses];
+
+export type GetBusinessConsoleEquipmentDeviceHealthData = {
+    body?: never;
+    path: {
+        deviceAssetId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/equipment/devices/{deviceAssetId}/health';
+};
+
+export type GetBusinessConsoleEquipmentDeviceHealthErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleEquipmentDeviceHealthError = GetBusinessConsoleEquipmentDeviceHealthErrors[keyof GetBusinessConsoleEquipmentDeviceHealthErrors];
+
+export type GetBusinessConsoleEquipmentDeviceHealthResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentHealthResponse;
+};
+
+export type GetBusinessConsoleEquipmentDeviceHealthResponse = GetBusinessConsoleEquipmentDeviceHealthResponses[keyof GetBusinessConsoleEquipmentDeviceHealthResponses];
 
 export type GetBusinessConsoleEquipmentAvailabilityData = {
     body?: never;
