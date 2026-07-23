@@ -1,10 +1,12 @@
 using FastEndpoints;
+using Minio;
 using Nerv.IIP.Caching;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Web;
 using Nerv.IIP.FileStorage.Web.Application.Files;
 using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
+using Nerv.IIP.FileStorage.Web.Application.Archives;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
@@ -19,6 +21,29 @@ builder.Services.AddSingleton<IFileStorageUploadProvider>(services =>
     string.Equals(services.GetRequiredService<IConfiguration>()["FileStorage:UploadProvider"], "tus", StringComparison.OrdinalIgnoreCase)
         ? new TusUploadProvider()
         : new ServerProxyUploadProvider());
+builder.Services.AddSingleton<IVersionedObjectStore>(services =>
+{
+    var configuration = services.GetRequiredService<IConfiguration>();
+    var endpoint = configuration["Storage:MinIO:Endpoint"];
+    var accessKey = configuration["Storage:MinIO:AccessKey"];
+    var secretKey = configuration["Storage:MinIO:SecretKey"];
+    var bucket = configuration["Storage:MinIO:ComplianceArchiveBucket"];
+    if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) ||
+        string.IsNullOrWhiteSpace(accessKey) ||
+        string.IsNullOrWhiteSpace(secretKey) ||
+        string.IsNullOrWhiteSpace(bucket))
+    {
+        return new UnavailableVersionedObjectStore();
+    }
+
+    var client = new MinioClient()
+        .WithEndpoint(uri.Host, uri.Port)
+        .WithCredentials(accessKey, secretKey)
+        .WithSSL(string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        .Build();
+    return new MinioVersionedObjectStore(client, bucket);
+});
+builder.Services.AddSingleton<VersionedArchiveService>();
 
 if (usePostgreSql)
 {

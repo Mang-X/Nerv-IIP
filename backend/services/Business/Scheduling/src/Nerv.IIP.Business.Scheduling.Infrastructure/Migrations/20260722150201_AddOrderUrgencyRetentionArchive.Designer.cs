@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260722150201_AddOrderUrgencyRetentionArchive")]
+    partial class AddOrderUrgencyRetentionArchive
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1144,7 +1147,7 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("batch_id")
-                        .HasComment("Stable source-row-generation-derived archive batch id.");
+                        .HasComment("Stable content-derived archive batch id.");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -1198,12 +1201,6 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("organization_id")
                         .HasComment("Tenant organization id.");
-
-                    b.Property<long>("Revision")
-                        .IsConcurrencyToken()
-                        .HasColumnType("bigint")
-                        .HasColumnName("revision")
-                        .HasComment("Monotonic optimistic concurrency revision protecting lifecycle transitions.");
 
                     b.Property<string>("Sha256")
                         .HasMaxLength(64)
@@ -1269,58 +1266,6 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.ToTable("order_urgency_archive_batches", "scheduling", t =>
                         {
                             t.HasComment("Durable archive, deletion, and failure evidence for urgency snapshot retention batches.");
-                        });
-                });
-
-            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Infrastructure.Urgency.OrderUrgencyArchiveBatchSnapshot", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasComment("Archive batch membership row id.");
-
-                    b.Property<Guid>("ArchiveBatchId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("archive_batch_id")
-                        .HasComment("Owning durable archive batch audit row id.");
-
-                    b.Property<string>("EnvironmentId")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("environment_id")
-                        .HasComment("Business environment id.");
-
-                    b.Property<string>("OrganizationId")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("organization_id")
-                        .HasComment("Tenant organization id.");
-
-                    b.Property<int>("Sequence")
-                        .HasColumnType("integer")
-                        .HasColumnName("sequence")
-                        .HasComment("Stable zero-based position in the archived payload.");
-
-                    b.Property<Guid>("SnapshotId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("snapshot_id")
-                        .HasComment("Scheduling-owned source snapshot id reserved by this archive intent.");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ArchiveBatchId", "Sequence")
-                        .IsUnique()
-                        .HasDatabaseName("ix_urgency_archive_membership_batch_sequence");
-
-                    b.HasIndex("OrganizationId", "EnvironmentId", "SnapshotId")
-                        .IsUnique()
-                        .HasDatabaseName("ix_urgency_archive_membership_scope_snapshot");
-
-                    b.ToTable("order_urgency_archive_batch_snapshots", "scheduling", t =>
-                        {
-                            t.HasComment("Indexed source snapshot membership for a durable urgency archive batch intent.");
                         });
                 });
 
@@ -1696,15 +1641,6 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .WithMany("UnscheduledOperations")
                         .HasForeignKey("SchedulePlanId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Infrastructure.Urgency.OrderUrgencyArchiveBatchSnapshot", b =>
-                {
-                    b.HasOne("Nerv.IIP.Business.Scheduling.Infrastructure.Urgency.OrderUrgencyArchiveBatch", null)
-                        .WithMany()
-                        .HasForeignKey("ArchiveBatchId")
-                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

@@ -3969,6 +3969,14 @@
     },
     {
       "service": "Scheduling",
+      "method": "POST",
+      "route": "/api/business/internal/v1/scheduling/order-urgency-archives/restore",
+      "operationId": "restoreOrderUrgencyArchive",
+      "classification": "internal",
+      "rationale": "Authenticated operator recovery path for exact-version compliance archives; never exposed as a Business Console action."
+    },
+    {
+      "service": "Scheduling",
       "method": "GET",
       "route": "/api/business/v1/scheduling/plans",
       "operationId": "listSchedulingPlans",

@@ -66,5 +66,7 @@ public sealed class OrderUrgencySnapshotEntityTypeConfiguration : IEntityTypeCon
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OrderId, x.ModelVersion, x.InputFingerprint, x.BusinessPriorityRevision, x.CalculationBucketUtc }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OrderId, x.CalculatedAtUtc });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.BusinessReference, x.CalculatedAtUtc });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.CalculatedAtUtc })
+            .HasDatabaseName("ix_order_urgency_snapshot_retention_scan");
     }
 }
