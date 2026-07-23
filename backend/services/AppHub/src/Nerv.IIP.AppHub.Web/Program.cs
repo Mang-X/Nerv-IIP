@@ -78,7 +78,7 @@ else
     builder.Services.AddIntegrationEvents(typeof(Program));
     builder.Services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
 }
-builder.Services.AddAppHubPersistence(builder.Configuration, usePostgreSql);
+builder.Services.AddAppHubPersistence(builder.Configuration, persistence.PostgreSqlConnectionStringName);
 builder.Services.Configure<AppHubHeartbeatTimeoutScanOptions>(
     builder.Configuration.GetSection(AppHubHeartbeatTimeoutScanOptions.SectionName));
 builder.Services.AddNervIipLocalization();

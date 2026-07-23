@@ -56,6 +56,24 @@ public sealed class PersistenceStartupGovernanceTests
         Assert.True(decision.UsePostgreSql);
     }
 
+    [Fact]
+    public void PostgreSql_selects_the_first_nonblank_connection_alias_in_declared_order()
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["Persistence:Provider"] = "PostgreSQL",
+            ["ConnectionStrings:TestDb"] = "   ",
+            ["ConnectionStrings:PostgreSQL"] = $"Host=localhost;Database=test;Username=nerv;Password={Secret}"
+        });
+
+        var decision = PersistenceStartupGovernance.Resolve(
+            configuration,
+            new TestHostEnvironment("Development"),
+            Requirements);
+
+        Assert.Equal("PostgreSQL", decision.PostgreSqlConnectionStringName);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -104,6 +122,25 @@ public sealed class PersistenceStartupGovernanceTests
 
         Assert.Contains("Persistence:AutoMigrate=true is only allowed for TestService in Development", exception.Message, StringComparison.Ordinal);
         Assert.Contains("Run the TestService migrator outside Development.", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Secret, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Production_inmemory_with_automigrate_reports_the_complete_single_failure_status()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => Resolve(
+            "Production",
+            "InMemory",
+            $"Host=localhost;Database=test;Username=nerv;Password={Secret}",
+            autoMigrate: true));
+
+        Assert.Contains("provider=InMemory", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("connectionConfigured=True", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("autoMigrate=True", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            "Persistence:AutoMigrate=true is only allowed for TestService in Development",
+            exception.Message,
+            StringComparison.Ordinal);
         Assert.DoesNotContain(Secret, exception.Message, StringComparison.Ordinal);
     }
 

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using Npgsql;
 
 namespace Nerv.IIP.Testing.PostgreSql;
@@ -6,6 +7,7 @@ namespace Nerv.IIP.Testing.PostgreSql;
 public sealed class PostgreSqlTestDatabase : IAsyncDisposable
 {
     private readonly string _adminConnectionString;
+    private readonly Func<string, string, Action, CancellationToken, Task> _executeAdminCommandAsync;
     private readonly string?[] _sensitiveValues;
     private readonly SemaphoreSlim _cleanupGate = new(1, 1);
     private bool _dropped;
@@ -17,9 +19,11 @@ public sealed class PostgreSqlTestDatabase : IAsyncDisposable
         string host,
         int port,
         bool usernameConfigured,
+        Func<string, string, Action, CancellationToken, Task> executeAdminCommandAsync,
         string?[] sensitiveValues)
     {
         _adminConnectionString = adminConnectionString;
+        _executeAdminCommandAsync = executeAdminCommandAsync;
         _sensitiveValues = sensitiveValues;
         DatabaseName = databaseName;
         ConnectionString = connectionString;
@@ -43,6 +47,21 @@ public sealed class PostgreSqlTestDatabase : IAsyncDisposable
         string databaseNamePrefix,
         Func<string, CancellationToken, Task>? initializeAsync = null,
         CancellationToken cancellationToken = default)
+    {
+        return await CreateAsync(
+            baseConnectionString,
+            databaseNamePrefix,
+            initializeAsync,
+            ExecuteAdminCommandCoreAsync,
+            cancellationToken);
+    }
+
+    internal static async Task<PostgreSqlTestDatabase> CreateAsync(
+        string baseConnectionString,
+        string databaseNamePrefix,
+        Func<string, CancellationToken, Task>? initializeAsync,
+        Func<string, string, Action, CancellationToken, Task> executeAdminCommandAsync,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (string.IsNullOrWhiteSpace(baseConnectionString))
@@ -87,22 +106,31 @@ public sealed class PostgreSqlTestDatabase : IAsyncDisposable
             baseBuilder.Host ?? "<missing>",
             baseBuilder.Port,
             !string.IsNullOrWhiteSpace(baseBuilder.Username),
+            executeAdminCommandAsync,
             sensitiveValues);
 
+        var createConnectionOpened = false;
         try
         {
             await database.ExecuteAdminCommandAsync(
                 $"CREATE DATABASE \"{databaseName}\"",
-                cancellationToken);
+                cancellationToken,
+                () => createConnectionOpened = true);
         }
         catch (OperationCanceledException)
         {
-            await database.TryDropAfterFailureAsync();
+            if (createConnectionOpened)
+            {
+                await database.TryDropAfterFailureAsync();
+            }
+
             throw;
         }
         catch (Exception exception)
         {
-            var cleanupFailure = await database.TryDropAfterFailureAsync();
+            var cleanupFailure = createConnectionOpened
+                ? await database.TryDropAfterFailureAsync()
+                : null;
             throw database.CreateFailure("create", exception, cleanupFailure);
         }
 
@@ -162,14 +190,37 @@ public sealed class PostgreSqlTestDatabase : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await DropAsync();
-        _cleanupGate.Dispose();
+        try
+        {
+            await TryDropAfterFailureAsync();
+        }
+        finally
+        {
+            _cleanupGate.Dispose();
+        }
     }
 
-    private async Task ExecuteAdminCommandAsync(string commandText, CancellationToken cancellationToken)
+    private async Task ExecuteAdminCommandAsync(
+        string commandText,
+        CancellationToken cancellationToken,
+        Action? onConnectionOpened = null)
     {
-        await using var connection = new NpgsqlConnection(_adminConnectionString);
+        await _executeAdminCommandAsync(
+            _adminConnectionString,
+            commandText,
+            onConnectionOpened ?? (() => { }),
+            cancellationToken);
+    }
+
+    private static async Task ExecuteAdminCommandCoreAsync(
+        string connectionString,
+        string commandText,
+        Action onConnectionOpened,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
+        onConnectionOpened();
         await using var command = new NpgsqlCommand(commandText, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -201,12 +252,21 @@ public sealed class PostgreSqlTestDatabase : IAsyncDisposable
 
     private string Sanitize(string value)
     {
+        return SanitizeDiagnostic(value, _sensitiveValues);
+    }
+
+    internal static string SanitizeDiagnostic(string value, string?[] sensitiveValues)
+    {
         var sanitized = value;
-        foreach (var sensitiveValue in _sensitiveValues)
+        foreach (var sensitiveValue in sensitiveValues)
         {
             if (!string.IsNullOrEmpty(sensitiveValue))
             {
-                sanitized = sanitized.Replace(sensitiveValue, "<redacted>", StringComparison.Ordinal);
+                sanitized = Regex.Replace(
+                    sanitized,
+                    $@"(?<![A-Za-z0-9_]){Regex.Escape(sensitiveValue)}(?![A-Za-z0-9_])",
+                    "<redacted>",
+                    RegexOptions.CultureInvariant);
             }
         }
 

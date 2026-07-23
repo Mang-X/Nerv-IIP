@@ -273,7 +273,7 @@ public sealed class AppHubSchemaConventionTests
                 ["ConnectionStrings:AppHubDb"] = "Host=localhost;Database=nerv_iip_schema_conventions;Username=nerv;Password=nerv",
             })
             .Build();
-        services.AddAppHubPersistence(configuration, usePostgreSql: true);
+        services.AddAppHubPersistence(configuration, postgreSqlConnectionStringName: "AppHubDb");
 
         return new SchemaFixture(services.BuildServiceProvider());
     }

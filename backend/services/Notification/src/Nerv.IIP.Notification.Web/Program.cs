@@ -71,7 +71,7 @@ else
     builder.Services.AddIntegrationEvents(typeof(Program));
     builder.Services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
 }
-builder.Services.AddNotificationPersistence(builder.Configuration, usePostgreSql);
+builder.Services.AddNotificationPersistence(builder.Configuration, persistence.PostgreSqlConnectionStringName);
 builder.Services.Configure<NotificationDeliveryOptions>(
     builder.Configuration.GetSection("Notification:Delivery"));
 builder.Services.Configure<NotificationDeadLetterAlertOptions>(

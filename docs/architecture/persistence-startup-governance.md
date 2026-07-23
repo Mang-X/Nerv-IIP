@@ -25,13 +25,13 @@ var persistence = PersistenceStartupGovernance.Resolve(
     new PersistenceStartupRequirements("AppHub", ["AppHubDb", "PostgreSQL"]));
 ```
 
-返回值只包含 `UsePostgreSql` 和 `AutoMigrate`。服务把前者传入 Infrastructure DI extension，把后者用于调用自己的 migration runner。Infrastructure 不再重复解析 provider 或决定环境策略。
+返回值包含 `UsePostgreSql`、`AutoMigrate` 和治理入口按声明顺序选出的首个非空 PostgreSQL 连接串别名。服务把所选别名传入 Infrastructure DI extension，把 `AutoMigrate` 用于调用自己的 migration runner；Infrastructure 不再重复别名列表、解析 provider 或决定环境策略。
 
 统一规则：
 
 1. `Persistence:Provider` 先 trim，再以不区分大小写方式匹配 `InMemory` 或 `PostgreSQL`；缺失值和未知值均拒绝。
 2. Development 可显式使用 InMemory，但 `Persistence:AutoMigrate` 必须为 false。
-3. PostgreSQL 必须配置至少一个服务登记的连接串别名。
+3. PostgreSQL 必须配置至少一个服务登记的非空连接串别名；前置别名为空白时继续检查后续别名。
 4. 非 Development 只允许 PostgreSQL，且 Web-host `AutoMigrate` 必须为 false。
 5. 错误只报告服务名、环境、规范化 provider 状态、是否存在连接配置、AutoMigrate 状态和修复建议；不输出连接串、用户名或密码。
 
@@ -68,9 +68,12 @@ await using var database = await PostgreSqlTestDatabase.CreateAsync(
 
 1. 每次创建使用规范化前缀和 `Guid.CreateVersion7()` 生成不超过 PostgreSQL 63 字符限制的唯一 database 名，支持 xUnit 并行隔离。
 2. 通过 `postgres` admin database 创建测试 database，再把唯一连接串交给可选初始化/迁移回调。
-3. 初始化失败或取消后尝试强制清理；正常 `DisposeAsync` 或显式 `DropAsync` 使用 `DROP DATABASE ... WITH (FORCE)`。
+3. 初始化失败或取消后尝试强制清理；CREATE 在 admin 连接打开后失败时也尝试清理，连接尚未打开时不再发起第二次连接。正常 `DisposeAsync` 或显式 `DropAsync` 使用 `DROP DATABASE ... WITH (FORCE)`。
 4. `CreateAsync`、初始化回调和 `DropAsync` 接受 `CancellationToken`；已经取消的创建不会连接数据库。
-5. 失败诊断保留 operation、host、port、database 和 `usernameConfigured` 状态，但移除原始连接串、用户名和密码，不附带可能泄密的 inner exception。
-6. FileStorage 重启持久化测试和 Scheduling PostgreSQL profile tests 已改用该包，证明两个服务不再复制 database create/drop 代码。
+5. `DisposeAsync` 是 best-effort 且始终释放 cleanup gate，不用清理异常覆盖测试主体异常；需要清理失败证据的调用方显式使用严格的 `DropAsync`。
+6. 失败诊断保留 operation、host、port、database 和 `usernameConfigured` 状态，但移除原始连接串、用户名和密码，不附带可能泄密的 inner exception；凭据子串不会误改非敏感 database 名。
+7. FileStorage 重启持久化测试和 Scheduling PostgreSQL profile tests 已改用该包，证明两个服务不再复制 database create/drop 代码。
+
+从仓库根目录对 `CREATE DATABASE`、`DROP DATABASE` 和 `pg_terminate_backend` 做未过滤搜索，并排除本包实现及其自身测试后，仍有 20 个手写 PostgreSQL 测试数据库 helper/测试文件：AppHub 1 个、Notification 2 个、业务服务测试树 14 个、跨服务业务验收测试 3 个。它们迁移到 `Nerv.IIP.Testing.PostgreSql` 属于后续范围，本 PR 不扩展迁移面。
 
 真实 PostgreSQL 生命周期测试由 `NERV_IIP_TEST_POSTGRES` opt-in，覆盖两库并行隔离、初始化回调、失败清理和凭据脱敏。未设置变量时，普通 solution 测试保留确定性契约覆盖并明确跳过真实 provider 用例。

@@ -68,7 +68,7 @@ else
     builder.Services.AddIntegrationEvents(typeof(Program));
     builder.Services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
 }
-builder.Services.AddOpsPersistence(builder.Configuration, usePostgreSql);
+builder.Services.AddOpsPersistence(builder.Configuration, persistence.PostgreSqlConnectionStringName);
 builder.Services.Configure<OpsConnectorCredentialOptions>(
     builder.Configuration.GetSection(OpsConnectorCredentialOptions.SectionName));
 builder.Services.Configure<OperationLeaseReaperOptions>(

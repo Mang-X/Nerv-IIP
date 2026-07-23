@@ -11,12 +11,11 @@ internal static class NotificationPersistenceServiceCollectionExtensions
     public static IServiceCollection AddNotificationPersistence(
         this IServiceCollection services,
         IConfiguration configuration,
-        bool usePostgreSql)
+        string? postgreSqlConnectionStringName)
     {
-        if (usePostgreSql)
+        if (postgreSqlConnectionStringName is not null)
         {
-            var connectionString = configuration.GetConnectionString("NotificationDb")
-                ?? configuration.GetConnectionString("PostgreSQL")
+            var connectionString = configuration.GetConnectionString(postgreSqlConnectionStringName)
                 ?? throw new InvalidOperationException("PostgreSQL persistence requires ConnectionStrings:NotificationDb.");
 
             services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(

@@ -13,7 +13,8 @@ public sealed record PersistenceStartupRequirements(
 
 public sealed record PersistenceStartupDecision(
     bool UsePostgreSql,
-    bool AutoMigrate);
+    bool AutoMigrate,
+    string? PostgreSqlConnectionStringName);
 
 public static class PersistenceStartupGovernance
 {
@@ -36,8 +37,9 @@ public static class PersistenceStartupGovernance
             : useInMemory
                 ? "InMemory"
                 : provider ?? "<missing>";
-        var connectionConfigured = requirements.PostgreSqlConnectionStringNames.Any(
+        var postgreSqlConnectionStringName = requirements.PostgreSqlConnectionStringNames.FirstOrDefault(
             name => !string.IsNullOrWhiteSpace(configuration.GetConnectionString(name)));
+        var connectionConfigured = postgreSqlConnectionStringName is not null;
         var autoMigrate = configuration.GetValue<bool>("Persistence:AutoMigrate");
 
         if (autoMigrate && !environment.IsDevelopment())
@@ -64,7 +66,10 @@ public static class PersistenceStartupGovernance
                     $"PostgreSQL requires ConnectionStrings:{requirements.PostgreSqlConnectionStringNames[0]}.");
             }
 
-            return new PersistenceStartupDecision(UsePostgreSql: true, autoMigrate);
+            return new PersistenceStartupDecision(
+                UsePostgreSql: true,
+                autoMigrate,
+                postgreSqlConnectionStringName);
         }
 
         if (useInMemory && environment.IsDevelopment())
@@ -80,7 +85,10 @@ public static class PersistenceStartupGovernance
                     "Persistence:AutoMigrate must be false when Persistence:Provider=InMemory.");
             }
 
-            return new PersistenceStartupDecision(UsePostgreSql: false, AutoMigrate: false);
+            return new PersistenceStartupDecision(
+                UsePostgreSql: false,
+                AutoMigrate: false,
+                PostgreSqlConnectionStringName: null);
         }
 
         var remedy = environment.IsDevelopment()

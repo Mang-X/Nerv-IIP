@@ -12,12 +12,11 @@ public static class AppHubPersistenceServiceCollectionExtensions
     public static IServiceCollection AddAppHubPersistence(
         this IServiceCollection services,
         IConfiguration configuration,
-        bool usePostgreSql)
+        string? postgreSqlConnectionStringName)
     {
-        if (usePostgreSql)
+        if (postgreSqlConnectionStringName is not null)
         {
-            var connectionString = configuration.GetConnectionString("AppHubDb")
-                ?? configuration.GetConnectionString("PostgreSQL")
+            var connectionString = configuration.GetConnectionString(postgreSqlConnectionStringName)
                 ?? throw new InvalidOperationException("PostgreSQL persistence requires ConnectionStrings:AppHubDb.");
 
             services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(

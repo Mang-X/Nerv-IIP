@@ -12,11 +12,11 @@ public static class OpsPersistenceServiceCollectionExtensions
     public static IServiceCollection AddOpsPersistence(
         this IServiceCollection services,
         IConfiguration configuration,
-        bool usePostgreSql)
+        string? postgreSqlConnectionStringName)
     {
-        if (usePostgreSql)
+        if (postgreSqlConnectionStringName is not null)
         {
-            var connectionString = configuration.GetConnectionString("OpsDb")
+            var connectionString = configuration.GetConnectionString(postgreSqlConnectionStringName)
                 ?? throw new InvalidOperationException("Connection string 'OpsDb' is required when Ops uses PostgreSQL persistence.");
 
             services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
