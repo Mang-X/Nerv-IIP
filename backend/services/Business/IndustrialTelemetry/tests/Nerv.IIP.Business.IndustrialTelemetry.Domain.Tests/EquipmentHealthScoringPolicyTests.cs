@@ -22,12 +22,7 @@ public sealed class EquipmentHealthScoringPolicyTests
     {
         var input = NormalInput() with
         {
-            Direction = direction,
-            Threshold = new EquipmentHealthThresholdFact(
-                currentValue,
-                100,
-                "℃",
-                Source("telemetry-summary", "温度最新值")),
+            RuleObservations = [Rule(direction: direction, currentValue: currentValue)],
         };
 
         var result = EquipmentHealthScoringPolicy.Evaluate(input);
@@ -115,7 +110,7 @@ public sealed class EquipmentHealthScoringPolicyTests
             NormalInput() with { Alarms = [activeCritical, newerActiveWarning] });
 
         Assert.Equal(
-            activeCritical.SourceFact,
+            activeCritical.LatestLifecycleFact,
             Evaluation(criticalResult, EquipmentHealthScoringPolicy.AlarmFrequencyRuleCode).SourceFact);
 
         var activeWarning = Alarm(
@@ -130,7 +125,7 @@ public sealed class EquipmentHealthScoringPolicyTests
             NormalInput() with { Alarms = [activeWarning, newerClearedCritical] });
 
         Assert.Equal(
-            activeWarning.SourceFact,
+            activeWarning.LatestLifecycleFact,
             Evaluation(warningResult, EquipmentHealthScoringPolicy.AlarmFrequencyRuleCode).SourceFact);
 
         var oldestRecentRaise = Alarm(
@@ -163,9 +158,9 @@ public sealed class EquipmentHealthScoringPolicyTests
             });
 
         Assert.Equal(
-            newestRecentRaise.SourceFact,
+            newestRecentRaise.RaisedFact,
             Evaluation(repeatedResult, EquipmentHealthScoringPolicy.AlarmFrequencyRuleCode).SourceFact);
-        Assert.Equal(irrelevantOldRaiseWithNewClear.SourceFact, repeatedResult.NewestSourceFact);
+        Assert.Equal(irrelevantOldRaiseWithNewClear.LatestLifecycleFact, repeatedResult.NewestSourceFact);
     }
 
     [Fact]
@@ -184,8 +179,40 @@ public sealed class EquipmentHealthScoringPolicyTests
         Assert.Equal(EquipmentHealthRuleStatus.Normal, evaluation.Status);
         Assert.Equal(0, evaluation.Penalty);
         Assert.Contains("24小时0次", evaluation.Current, StringComparison.Ordinal);
-        Assert.Equal(recentClearOfOldAlarm.SourceFact, evaluation.SourceFact);
-        Assert.Equal(recentClearOfOldAlarm.SourceFact, result.NewestSourceFact);
+        Assert.Equal(recentClearOfOldAlarm.LatestLifecycleFact, evaluation.SourceFact);
+        Assert.Equal(recentClearOfOldAlarm.LatestLifecycleFact, result.NewestSourceFact);
+        Assert.Equal(EquipmentHealthFreshness.Fresh, result.Freshness);
+    }
+
+    [Fact]
+    public void Repeated_alarm_uses_newest_qualifying_raise_while_freshness_uses_later_clear()
+    {
+        var olderRaiseWithLatestClear = Alarm(
+            EquipmentHealthAlarmSeverity.Other,
+            isActive: false,
+            minutesAgo: 1,
+            raisedMinutesAgo: 180);
+        var middleRaise = Alarm(
+            EquipmentHealthAlarmSeverity.Other,
+            isActive: false,
+            minutesAgo: 2,
+            raisedMinutesAgo: 120);
+        var newestQualifyingRaiseWithOlderClear = Alarm(
+            EquipmentHealthAlarmSeverity.Other,
+            isActive: false,
+            minutesAgo: 30,
+            raisedMinutesAgo: 60);
+        var input = EmptyInput() with
+        {
+            Alarms = [olderRaiseWithLatestClear, middleRaise, newestQualifyingRaiseWithOlderClear],
+        };
+
+        var result = EquipmentHealthScoringPolicy.Evaluate(input);
+        var evaluation = Evaluation(result, EquipmentHealthScoringPolicy.AlarmFrequencyRuleCode);
+
+        Assert.Equal(20, evaluation.Penalty);
+        Assert.Equal(newestQualifyingRaiseWithOlderClear.RaisedFact, evaluation.SourceFact);
+        Assert.Equal(olderRaiseWithLatestClear.LatestLifecycleFact, result.NewestSourceFact);
         Assert.Equal(EquipmentHealthFreshness.Fresh, result.Freshness);
     }
 
@@ -236,9 +263,13 @@ public sealed class EquipmentHealthScoringPolicyTests
     {
         var input = NormalInput() with
         {
-            History = History(
-                101, 102, 103, 104, 105,
-                106, 107, 108, 50, 60),
+            RuleObservations =
+            [
+                Rule(
+                    history: History(
+                        101, 102, 103, 104, 105,
+                        106, 107, 108, 50, 60)),
+            ],
         };
 
         var evaluation = Evaluation(
@@ -255,9 +286,13 @@ public sealed class EquipmentHealthScoringPolicyTests
     {
         var input = NormalInput() with
         {
-            History = History(
-                101, 102, 103, 104, 105,
-                106, 107, 50, 60, 70),
+            RuleObservations =
+            [
+                Rule(
+                    history: History(
+                        101, 102, 103, 104, 105,
+                        106, 107, 50, 60, 70)),
+            ],
         };
 
         var evaluation = Evaluation(
@@ -273,7 +308,7 @@ public sealed class EquipmentHealthScoringPolicyTests
     public void Both_historical_rules_accumulate_without_penalty_when_count_or_span_is_insufficient(
         ImmutableArray<EquipmentHealthHistorySample> history)
     {
-        var input = NormalInput() with { History = history };
+        var input = NormalInput() with { RuleObservations = [Rule(history: history)] };
 
         var result = EquipmentHealthScoringPolicy.Evaluate(input);
         var sustained = Evaluation(result, EquipmentHealthScoringPolicy.SustainedExceedanceRuleCode);
@@ -295,14 +330,18 @@ public sealed class EquipmentHealthScoringPolicyTests
     {
         var input = NormalInput() with
         {
-            Direction = direction,
-            History = History(
-                firstThirdValue,
-                firstThirdValue,
-                1_000,
-                -1_000,
-                lastThirdValue,
-                lastThirdValue),
+            RuleObservations =
+            [
+                Rule(
+                    direction: direction,
+                    history: History(
+                        firstThirdValue,
+                        firstThirdValue,
+                        1_000,
+                        -1_000,
+                        lastThirdValue,
+                        lastThirdValue)),
+            ],
         };
 
         var evaluation = Evaluation(
@@ -323,14 +362,18 @@ public sealed class EquipmentHealthScoringPolicyTests
     {
         var input = NormalInput() with
         {
-            Direction = direction,
-            History = History(
-                firstThirdValue,
-                firstThirdValue,
-                0,
-                0,
-                lastThirdValue,
-                lastThirdValue),
+            RuleObservations =
+            [
+                Rule(
+                    direction: direction,
+                    history: History(
+                        firstThirdValue,
+                        firstThirdValue,
+                        0,
+                        0,
+                        lastThirdValue,
+                        lastThirdValue)),
+            ],
         };
 
         var evaluation = Evaluation(
@@ -342,20 +385,70 @@ public sealed class EquipmentHealthScoringPolicyTests
     }
 
     [Fact]
+    public void Multiple_rule_observations_select_one_riskiest_matching_rule_without_cross_tag_history()
+    {
+        var safeTemperature = Rule(
+            ruleCode: "temperature-high",
+            tagKey: "temperature",
+            direction: EquipmentHealthRiskDirection.High,
+            currentValue: 50,
+            history: History(50, 50, 50, 50, 50, 50));
+        var riskyPressure = Rule(
+            ruleCode: "pressure-low",
+            tagKey: "pressure",
+            direction: EquipmentHealthRiskDirection.Low,
+            severity: EquipmentHealthAlarmSeverity.Critical,
+            thresholdValue: 10,
+            unit: "bar",
+            currentValue: 12,
+            history: History(13, 10, 9, 9, 9, 9, 9, 9, 8, 8));
+        var input = EmptyInput() with { RuleObservations = [safeTemperature, riskyPressure] };
+
+        var result = EquipmentHealthScoringPolicy.Evaluate(input);
+
+        foreach (var ruleCode in new[]
+                 {
+                     EquipmentHealthScoringPolicy.ThresholdProximityRuleCode,
+                     EquipmentHealthScoringPolicy.SustainedExceedanceRuleCode,
+                     EquipmentHealthScoringPolicy.TrendGrowthRuleCode,
+                 })
+        {
+            var evaluation = Evaluation(result, ruleCode);
+            Assert.Equal(EquipmentHealthRuleStatus.Risk, evaluation.Status);
+            Assert.Contains("pressure-low", evaluation.Evidence, StringComparison.Ordinal);
+            Assert.Contains("pressure", evaluation.Evidence, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Trend_accumulates_without_penalty_when_no_rule_establishes_direction_and_threshold()
+    {
+        var result = EquipmentHealthScoringPolicy.Evaluate(EmptyInput());
+
+        var evaluation = Evaluation(result, EquipmentHealthScoringPolicy.TrendGrowthRuleCode);
+
+        Assert.Equal(EquipmentHealthRuleStatus.Accumulating, evaluation.Status);
+        Assert.Equal(0, evaluation.Penalty);
+        Assert.DoesNotContain(
+            result.RiskFactors,
+            factor => factor.RuleCode == EquipmentHealthScoringPolicy.TrendGrowthRuleCode);
+    }
+
+    [Fact]
     public void Score_is_clamped_to_zero_when_penalties_exceed_one_hundred()
     {
         var input = NormalInput() with
         {
-            Threshold = new EquipmentHealthThresholdFact(
-                110,
-                100,
-                "℃",
-                Source("telemetry-summary", "温度最新值")),
+            RuleObservations =
+            [
+                Rule(
+                    currentValue: 110,
+                    history: History(100, 100, 101, 102, 125, 125)),
+            ],
             Runtime = new EquipmentHealthRuntimeFact(
                 20,
                 Source("runtime-rollup", "近24小时生产运行")),
             Alarms = [Alarm(EquipmentHealthAlarmSeverity.Critical, isActive: true, minutesAgo: 1)],
-            History = History(100, 100, 101, 102, 125, 125),
         };
 
         var result = EquipmentHealthScoringPolicy.Evaluate(input);
@@ -396,7 +489,7 @@ public sealed class EquipmentHealthScoringPolicyTests
             Runtime = new EquipmentHealthRuntimeFact(
                 20,
                 Source("runtime-rollup", "近24小时生产运行")),
-            History = History(100, 100, 50, 50, 120, 120),
+            RuleObservations = [Rule(history: History(100, 100, 50, 50, 120, 120))],
         };
 
         var result = EquipmentHealthScoringPolicy.Evaluate(input);
@@ -449,7 +542,7 @@ public sealed class EquipmentHealthScoringPolicyTests
             AsOfUtc.AddMinutes(-newestAgeMinutes));
         var input = EmptyInput() with
         {
-            Threshold = new EquipmentHealthThresholdFact(50, 100, "℃", newestSource),
+            RuleObservations = [Rule(currentSource: newestSource, history: [])],
             Runtime = new EquipmentHealthRuntimeFact(
                 1,
                 new EquipmentHealthSourceFact(
@@ -473,6 +566,85 @@ public sealed class EquipmentHealthScoringPolicyTests
         Assert.Null(result.NewestSourceFact);
     }
 
+    [Fact]
+    public void Future_rule_samples_history_and_runtime_are_ignored_for_scoring_and_freshness()
+    {
+        var futureSource = new EquipmentHealthSourceFact(
+            "future-fact",
+            "时钟超前事实",
+            AsOfUtc.AddSeconds(1));
+        var futureHistory = History(100, 100, 101, 102, 125, 125)
+            .Select(
+                (sample, index) => sample with
+                {
+                    SourceFact = sample.SourceFact with
+                    {
+                        OccurredAtUtc = AsOfUtc.AddMinutes(index + 1),
+                    },
+                })
+            .ToImmutableArray();
+        var input = EmptyInput() with
+        {
+            RuleObservations =
+            [
+                Rule(
+                    currentValue: 110,
+                    currentSource: futureSource,
+                    history: futureHistory),
+            ],
+            Runtime = new EquipmentHealthRuntimeFact(24, futureSource),
+        };
+
+        var result = EquipmentHealthScoringPolicy.Evaluate(input);
+
+        Assert.Equal(100, result.Score);
+        Assert.Equal(EquipmentHealthFreshness.Unavailable, result.Freshness);
+        Assert.Null(result.NewestSourceFact);
+        Assert.All(
+            new[]
+            {
+                EquipmentHealthScoringPolicy.ThresholdProximityRuleCode,
+                EquipmentHealthScoringPolicy.RuntimeHoursRuleCode,
+                EquipmentHealthScoringPolicy.SustainedExceedanceRuleCode,
+                EquipmentHealthScoringPolicy.TrendGrowthRuleCode,
+            },
+            ruleCode =>
+            {
+                var evaluation = Evaluation(result, ruleCode);
+                Assert.Equal(EquipmentHealthRuleStatus.Accumulating, evaluation.Status);
+                Assert.Equal(0, evaluation.Penalty);
+            });
+    }
+
+    [Fact]
+    public void Future_alarm_raise_and_lifecycle_facts_are_not_active_recent_or_fresh()
+    {
+        var entirelyFutureActiveAlarm = Alarm(
+            EquipmentHealthAlarmSeverity.Critical,
+            isActive: true,
+            minutesAgo: -1);
+        var futureLifecycleForPastRaise = Alarm(
+            EquipmentHealthAlarmSeverity.Critical,
+            isActive: true,
+            minutesAgo: -1,
+            raisedMinutesAgo: 1);
+        var input = EmptyInput() with
+        {
+            Alarms = [entirelyFutureActiveAlarm, futureLifecycleForPastRaise],
+        };
+
+        var result = EquipmentHealthScoringPolicy.Evaluate(input);
+        var evaluation = Evaluation(result, EquipmentHealthScoringPolicy.AlarmFrequencyRuleCode);
+
+        Assert.Equal(EquipmentHealthRuleStatus.Normal, evaluation.Status);
+        Assert.Equal(0, evaluation.Penalty);
+        Assert.Contains("0个活动", evaluation.Current, StringComparison.Ordinal);
+        Assert.Contains("24小时1次", evaluation.Current, StringComparison.Ordinal);
+        Assert.Equal(futureLifecycleForPastRaise.RaisedFact, evaluation.SourceFact);
+        Assert.Equal(futureLifecycleForPastRaise.RaisedFact, result.NewestSourceFact);
+        Assert.Equal(EquipmentHealthFreshness.Fresh, result.Freshness);
+    }
+
     public static TheoryData<ImmutableArray<EquipmentHealthHistorySample>> InsufficientHistories()
     {
         return new TheoryData<ImmutableArray<EquipmentHealthHistorySample>>
@@ -486,28 +658,46 @@ public sealed class EquipmentHealthScoringPolicyTests
     {
         return new EquipmentHealthScoringInput(
             AsOfUtc,
-            EquipmentHealthRiskDirection.High,
-            new EquipmentHealthThresholdFact(
-                50,
-                100,
-                "℃",
-                Source("telemetry-summary", "温度最新值")),
+            [Rule()],
             new EquipmentHealthRuntimeFact(
                 12,
                 Source("runtime-rollup", "近24小时生产运行")),
-            [],
-            History(50, 50, 50, 50, 50, 50));
+            []);
     }
 
     private static EquipmentHealthScoringInput EmptyInput()
     {
         return new EquipmentHealthScoringInput(
             AsOfUtc,
-            EquipmentHealthRiskDirection.High,
-            null,
-            null,
             [],
+            null,
             []);
+    }
+
+    private static EquipmentHealthRuleObservation Rule(
+        string ruleCode = "temperature-high",
+        string tagKey = "temperature",
+        EquipmentHealthRiskDirection direction = EquipmentHealthRiskDirection.High,
+        EquipmentHealthAlarmSeverity severity = EquipmentHealthAlarmSeverity.Warning,
+        double thresholdValue = 100,
+        string unit = "℃",
+        double? currentValue = 50,
+        EquipmentHealthSourceFact? currentSource = null,
+        ImmutableArray<EquipmentHealthHistorySample>? history = null)
+    {
+        return new EquipmentHealthRuleObservation(
+            ruleCode,
+            tagKey,
+            direction,
+            severity,
+            thresholdValue,
+            unit,
+            currentValue is null
+                ? null
+                : new EquipmentHealthValueSample(
+                    currentValue.Value,
+                    currentSource ?? Source("telemetry-summary", "温度最新值")),
+            history ?? History(50, 50, 50, 50, 50, 50));
     }
 
     private static EquipmentHealthAlarmFact Alarm(
@@ -520,7 +710,10 @@ public sealed class EquipmentHealthScoringPolicyTests
         return new EquipmentHealthAlarmFact(
             severity,
             isActive,
-            AsOfUtc.AddMinutes(-(raisedMinutesAgo ?? minutesAgo)),
+            new EquipmentHealthSourceFact(
+                "alarm-raised",
+                $"{severity}-触发",
+                AsOfUtc.AddMinutes(-(raisedMinutesAgo ?? minutesAgo))),
             new EquipmentHealthSourceFact(
                 isActive ? "alarm-raised" : "alarm-cleared",
                 $"{severity}-{state}",

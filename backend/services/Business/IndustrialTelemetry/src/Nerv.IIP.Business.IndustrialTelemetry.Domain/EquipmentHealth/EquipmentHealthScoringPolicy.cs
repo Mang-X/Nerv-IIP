@@ -44,11 +44,19 @@ public sealed record EquipmentHealthSourceFact(
     string Label,
     DateTimeOffset OccurredAtUtc);
 
-public sealed record EquipmentHealthThresholdFact(
-    double CurrentValue,
+public sealed record EquipmentHealthValueSample(
+    double Value,
+    EquipmentHealthSourceFact SourceFact);
+
+public sealed record EquipmentHealthRuleObservation(
+    string RuleCode,
+    string TagKey,
+    EquipmentHealthRiskDirection Direction,
+    EquipmentHealthAlarmSeverity AlarmSeverity,
     double ThresholdValue,
     string Unit,
-    EquipmentHealthSourceFact SourceFact);
+    EquipmentHealthValueSample? CurrentSample,
+    ImmutableArray<EquipmentHealthHistorySample> History);
 
 public sealed record EquipmentHealthRuntimeFact(
     double ProductiveHours,
@@ -57,8 +65,8 @@ public sealed record EquipmentHealthRuntimeFact(
 public sealed record EquipmentHealthAlarmFact(
     EquipmentHealthAlarmSeverity Severity,
     bool IsActive,
-    DateTimeOffset RaisedAtUtc,
-    EquipmentHealthSourceFact SourceFact);
+    EquipmentHealthSourceFact RaisedFact,
+    EquipmentHealthSourceFact LatestLifecycleFact);
 
 public sealed record EquipmentHealthHistorySample(
     double Value,
@@ -66,11 +74,9 @@ public sealed record EquipmentHealthHistorySample(
 
 public sealed record EquipmentHealthScoringInput(
     DateTimeOffset EvaluatedAtUtc,
-    EquipmentHealthRiskDirection Direction,
-    EquipmentHealthThresholdFact? Threshold,
+    ImmutableArray<EquipmentHealthRuleObservation> RuleObservations,
     EquipmentHealthRuntimeFact? Runtime,
-    ImmutableArray<EquipmentHealthAlarmFact> Alarms,
-    ImmutableArray<EquipmentHealthHistorySample> History);
+    ImmutableArray<EquipmentHealthAlarmFact> Alarms);
 
 public sealed record EquipmentHealthRuleEvaluation(
     string RuleCode,
@@ -169,7 +175,32 @@ public static class EquipmentHealthScoringPolicy
         EquipmentHealthScoringInput input)
     {
         const string label = "阈值接近度";
-        if (input.Threshold is null)
+        var candidates = RuleObservations(input)
+            .Where(observation => observation.CurrentSample is not null)
+            .Select(
+                observation =>
+                {
+                    var safeSideDistance = SafeSideDistance(
+                        observation.CurrentSample!.Value,
+                        observation.ThresholdValue,
+                        observation.Direction);
+                    var proximityBoundary =
+                        DeteriorationRatio * Math.Max(Math.Abs(observation.ThresholdValue), 1);
+                    return new
+                    {
+                        Observation = observation,
+                        SafeSideDistance = safeSideDistance,
+                        ProximityBoundary = proximityBoundary,
+                        IsRisk = safeSideDistance <= proximityBoundary,
+                    };
+                })
+            .OrderByDescending(candidate => candidate.IsRisk)
+            .ThenByDescending(candidate => SeverityRank(candidate.Observation.AlarmSeverity))
+            .ThenBy(candidate => candidate.SafeSideDistance / candidate.ProximityBoundary)
+            .ThenBy(candidate => candidate.Observation.RuleCode, StringComparer.Ordinal)
+            .ThenBy(candidate => candidate.Observation.TagKey, StringComparer.Ordinal)
+            .ToImmutableArray();
+        if (candidates.IsDefaultOrEmpty)
         {
             return Accumulating(
                 ThresholdProximityRuleCode,
@@ -177,38 +208,39 @@ public static class EquipmentHealthScoringPolicy
                 "无当前值",
                 "距离阈值不超过20%",
                 "—",
-                "尚无阈值事实，继续积累。",
+                "尚无带当前样本的规则观察，继续积累。",
                 null);
         }
 
-        var fact = input.Threshold;
-        var safeSideDistance = input.Direction == EquipmentHealthRiskDirection.High
-            ? fact.ThresholdValue - fact.CurrentValue
-            : fact.CurrentValue - fact.ThresholdValue;
-        var proximityBoundary = DeteriorationRatio * Math.Max(Math.Abs(fact.ThresholdValue), 1);
-        var isRisk = safeSideDistance <= proximityBoundary;
-        var directionText = input.Direction == EquipmentHealthRiskDirection.High ? "上限" : "下限";
-        var evidence = isRisk
-            ? $"当前值距{directionText}的安全侧距离 {Format(safeSideDistance)}，不超过边界 {Format(proximityBoundary)}。"
-            : $"当前值距{directionText}的安全侧距离 {Format(safeSideDistance)}，超过边界 {Format(proximityBoundary)}。";
+        var selected = candidates[0];
+        var observation = selected.Observation;
+        var directionText =
+            observation.Direction == EquipmentHealthRiskDirection.High ? "上限" : "下限";
+        var evidencePrefix = ObservationIdentity(observation);
+        var evidence = selected.IsRisk
+            ? $"{evidencePrefix} 当前值距{directionText}的安全侧距离 {Format(selected.SafeSideDistance)}，"
+                + $"不超过边界 {Format(selected.ProximityBoundary)}。"
+            : $"{evidencePrefix} 当前值距{directionText}的安全侧距离 {Format(selected.SafeSideDistance)}，"
+                + $"超过边界 {Format(selected.ProximityBoundary)}。";
 
         return Evaluation(
             ThresholdProximityRuleCode,
             label,
-            isRisk,
+            selected.IsRisk,
             ThresholdProximityPenalty,
-            Format(fact.CurrentValue),
-            Format(fact.ThresholdValue),
-            fact.Unit,
+            Format(observation.CurrentSample!.Value),
+            Format(observation.ThresholdValue),
+            observation.Unit,
             evidence,
-            fact.SourceFact);
+            observation.CurrentSample.SourceFact);
     }
 
     private static EquipmentHealthRuleEvaluation EvaluateRuntimeHours(
         EquipmentHealthScoringInput input)
     {
         const string label = "近24小时生产运行时长";
-        if (input.Runtime is null)
+        if (input.Runtime is null
+            || input.Runtime.SourceFact.OccurredAtUtc > input.EvaluatedAtUtc)
         {
             return Accumulating(
                 RuntimeHoursRuleCode,
@@ -242,12 +274,17 @@ public static class EquipmentHealthScoringPolicy
     {
         const string label = "近24小时报警频次";
         var alarms = input.Alarms.IsDefault ? [] : input.Alarms;
-        var activeAlarms = alarms.Where(alarm => alarm.IsActive).ToImmutableArray();
+        var activeAlarms = alarms
+            .Where(
+                alarm => alarm.IsActive
+                    && alarm.RaisedFact.OccurredAtUtc <= input.EvaluatedAtUtc
+                    && alarm.LatestLifecycleFact.OccurredAtUtc <= input.EvaluatedAtUtc)
+            .ToImmutableArray();
         var windowStartUtc = input.EvaluatedAtUtc.Subtract(AlarmWindow);
         var alarmsInWindow = alarms
             .Where(
-                alarm => alarm.RaisedAtUtc >= windowStartUtc
-                    && alarm.RaisedAtUtc <= input.EvaluatedAtUtc)
+                alarm => alarm.RaisedFact.OccurredAtUtc >= windowStartUtc
+                    && alarm.RaisedFact.OccurredAtUtc <= input.EvaluatedAtUtc)
             .ToImmutableArray();
 
         int penalty;
@@ -262,34 +299,34 @@ public static class EquipmentHealthScoringPolicy
         if (activeCritical is not null)
         {
             penalty = ActiveCriticalAlarmPenalty;
-            sourceFact = activeCritical.SourceFact;
+            sourceFact = activeCritical.LatestLifecycleFact;
             evidence = $"存在活动严重报警；近24小时共 {alarmsInWindow.Length} 次报警。";
         }
         else if (activeWarning is not null)
         {
             penalty = ActiveWarningAlarmPenalty;
-            sourceFact = activeWarning.SourceFact;
+            sourceFact = activeWarning.LatestLifecycleFact;
             evidence = $"存在活动警告报警；近24小时共 {alarmsInWindow.Length} 次报警。";
         }
         else if (activeOther is not null)
         {
             penalty = RepeatedAlarmPenalty;
-            sourceFact = activeOther.SourceFact;
+            sourceFact = activeOther.LatestLifecycleFact;
             evidence = $"存在活动一般报警；近24小时共 {alarmsInWindow.Length} 次报警。";
         }
         else if (alarmsInWindow.Length >= 3)
         {
             penalty = RepeatedAlarmPenalty;
             sourceFact = alarmsInWindow
-                .OrderByDescending(alarm => alarm.RaisedAtUtc)
+                .OrderByDescending(alarm => alarm.RaisedFact.OccurredAtUtc)
                 .First()
-                .SourceFact;
+                .RaisedFact;
             evidence = $"无活动报警，但近24小时发生 {alarmsInWindow.Length} 次报警，达到重复报警门槛。";
         }
         else
         {
             penalty = 0;
-            sourceFact = NewestAlarm(alarms)?.SourceFact;
+            sourceFact = NewestAlarmSourceFact(alarms, input.EvaluatedAtUtc);
             evidence = $"无活动报警，近24小时发生 {alarmsInWindow.Length} 次报警，未达到3次门槛。";
         }
 
@@ -312,89 +349,185 @@ public static class EquipmentHealthScoringPolicy
         EquipmentHealthScoringInput input)
     {
         const string label = "持续超限";
-        var history = OrderedHistory(input.History);
-        var sourceFact = NewestHistorySource(history);
-        if (input.Threshold is null)
+        var observations = RuleObservations(input);
+        if (observations.IsDefaultOrEmpty)
         {
             return Accumulating(
                 SustainedExceedanceRuleCode,
                 label,
-                $"{history.Length}个样本",
+                "无规则观察",
                 "≥6个/≥30分钟/超限≥80%",
                 "样本",
-                "缺少阈值事实，无法判断历史样本是否超限，继续积累。",
-                sourceFact);
+                "缺少建立阈值与风险方向的规则观察，继续积累。",
+                null);
         }
 
-        if (!HasSufficientHistory(history))
+        var candidates = observations
+            .Select(
+                observation =>
+                {
+                    var history = OrderedHistory(observation.History);
+                    var breachCount = history.Count(
+                        sample => IsThresholdBreach(
+                            sample.Value,
+                            observation.ThresholdValue,
+                            observation.Direction));
+                    var breachRatio = history.IsDefaultOrEmpty
+                        ? 0
+                        : (double)breachCount / history.Length;
+                    return new
+                    {
+                        Observation = observation,
+                        History = history,
+                        BreachCount = breachCount,
+                        BreachRatio = breachRatio,
+                        IsSufficient = HasSufficientHistory(history),
+                    };
+                })
+            .ToImmutableArray();
+        var sufficientCandidates = candidates
+            .Where(candidate => candidate.IsSufficient)
+            .OrderByDescending(candidate => candidate.BreachRatio >= HistoricalBreachRatio)
+            .ThenByDescending(candidate => SeverityRank(candidate.Observation.AlarmSeverity))
+            .ThenByDescending(candidate => candidate.BreachRatio)
+            .ThenBy(candidate => candidate.Observation.RuleCode, StringComparer.Ordinal)
+            .ThenBy(candidate => candidate.Observation.TagKey, StringComparer.Ordinal)
+            .ToImmutableArray();
+        if (sufficientCandidates.IsDefaultOrEmpty)
         {
-            return HistoricalAccumulating(SustainedExceedanceRuleCode, label, history, sourceFact);
+            var selectedInsufficient = candidates
+                .OrderByDescending(candidate => candidate.History.Length)
+                .ThenByDescending(candidate => HistorySpan(candidate.History))
+                .ThenBy(candidate => candidate.Observation.RuleCode, StringComparer.Ordinal)
+                .ThenBy(candidate => candidate.Observation.TagKey, StringComparer.Ordinal)
+                .First();
+            return HistoricalAccumulating(
+                SustainedExceedanceRuleCode,
+                label,
+                selectedInsufficient.Observation,
+                selectedInsufficient.History);
         }
 
-        var breachCount = history.Count(
-            sample => IsThresholdBreach(
-                sample.Value,
-                input.Threshold.ThresholdValue,
-                input.Direction));
-        var breachRatio = (double)breachCount / history.Length;
-        var isRisk = breachRatio >= HistoricalBreachRatio;
+        var selected = sufficientCandidates[0];
+        var isRisk = selected.BreachRatio >= HistoricalBreachRatio;
         var evidence =
-            $"{history.Length}个样本覆盖 {Format(HistorySpan(history).TotalMinutes)} 分钟，"
-            + $"{breachCount}个超限，占 {Format(breachRatio * 100)}%。";
+            $"{ObservationIdentity(selected.Observation)} {selected.History.Length}个样本覆盖 "
+            + $"{Format(HistorySpan(selected.History).TotalMinutes)} 分钟，"
+            + $"{selected.BreachCount}个超限，占 {Format(selected.BreachRatio * 100)}%。";
 
         return Evaluation(
             SustainedExceedanceRuleCode,
             label,
             isRisk,
             SustainedExceedancePenalty,
-            $"{Format(breachRatio * 100)}%",
+            $"{Format(selected.BreachRatio * 100)}%",
             "80%",
             "%",
             evidence,
-            sourceFact);
+            NewestHistorySource(selected.History));
     }
 
     private static EquipmentHealthRuleEvaluation EvaluateTrendGrowth(
         EquipmentHealthScoringInput input)
     {
         const string label = "趋势恶化";
-        var history = OrderedHistory(input.History);
-        var sourceFact = NewestHistorySource(history);
-        if (!HasSufficientHistory(history))
+        var observations = RuleObservations(input);
+        if (observations.IsDefaultOrEmpty)
         {
-            return HistoricalAccumulating(TrendGrowthRuleCode, label, history, sourceFact);
+            return Accumulating(
+                TrendGrowthRuleCode,
+                label,
+                "无规则观察",
+                "20%",
+                "%",
+                "缺少建立风险方向与阈值的规则观察，继续积累且不扣分。",
+                null);
         }
 
-        var thirdLength = history.Length / 3;
-        var firstAverage = history.Take(thirdLength).Average(sample => sample.Value);
-        var lastAverage = history.TakeLast(thirdLength).Average(sample => sample.Value);
-        var deterioration = input.Direction == EquipmentHealthRiskDirection.High
-            ? lastAverage - firstAverage
-            : firstAverage - lastAverage;
-        var deteriorationBoundary = DeteriorationRatio * Math.Max(Math.Abs(firstAverage), 1);
-        var isRisk = deterioration >= deteriorationBoundary;
-        var deteriorationPercent = deterioration / Math.Max(Math.Abs(firstAverage), 1) * 100;
+        var candidates = observations
+            .Select(
+                observation =>
+                {
+                    var history = OrderedHistory(observation.History);
+                    if (!HasSufficientHistory(history))
+                    {
+                        return new
+                        {
+                            Observation = observation,
+                            History = history,
+                            FirstAverage = 0d,
+                            LastAverage = 0d,
+                            DeteriorationPercent = 0d,
+                            IsSufficient = false,
+                        };
+                    }
+
+                    var thirdLength = history.Length / 3;
+                    var firstAverage = history.Take(thirdLength).Average(sample => sample.Value);
+                    var lastAverage = history.TakeLast(thirdLength).Average(sample => sample.Value);
+                    var deterioration = observation.Direction == EquipmentHealthRiskDirection.High
+                        ? lastAverage - firstAverage
+                        : firstAverage - lastAverage;
+                    var deteriorationPercent =
+                        deterioration / Math.Max(Math.Abs(firstAverage), 1) * 100;
+                    return new
+                    {
+                        Observation = observation,
+                        History = history,
+                        FirstAverage = firstAverage,
+                        LastAverage = lastAverage,
+                        DeteriorationPercent = deteriorationPercent,
+                        IsSufficient = true,
+                    };
+                })
+            .ToImmutableArray();
+        var sufficientCandidates = candidates
+            .Where(candidate => candidate.IsSufficient)
+            .OrderByDescending(candidate => candidate.DeteriorationPercent >= 20)
+            .ThenByDescending(candidate => SeverityRank(candidate.Observation.AlarmSeverity))
+            .ThenByDescending(candidate => candidate.DeteriorationPercent)
+            .ThenBy(candidate => candidate.Observation.RuleCode, StringComparer.Ordinal)
+            .ThenBy(candidate => candidate.Observation.TagKey, StringComparer.Ordinal)
+            .ToImmutableArray();
+        if (sufficientCandidates.IsDefaultOrEmpty)
+        {
+            var selectedInsufficient = candidates
+                .OrderByDescending(candidate => candidate.History.Length)
+                .ThenByDescending(candidate => HistorySpan(candidate.History))
+                .ThenBy(candidate => candidate.Observation.RuleCode, StringComparer.Ordinal)
+                .ThenBy(candidate => candidate.Observation.TagKey, StringComparer.Ordinal)
+                .First();
+            return HistoricalAccumulating(
+                TrendGrowthRuleCode,
+                label,
+                selectedInsufficient.Observation,
+                selectedInsufficient.History);
+        }
+
+        var selected = sufficientCandidates[0];
+        var isRisk = selected.DeteriorationPercent >= 20;
         var evidence =
-            $"首段均值 {Format(firstAverage)}，末段均值 {Format(lastAverage)}，"
-            + $"报警风险方向恶化 {Format(deteriorationPercent)}%。";
+            $"{ObservationIdentity(selected.Observation)} 首段均值 {Format(selected.FirstAverage)}，"
+            + $"末段均值 {Format(selected.LastAverage)}，"
+            + $"报警风险方向恶化 {Format(selected.DeteriorationPercent)}%。";
 
         return Evaluation(
             TrendGrowthRuleCode,
             label,
             isRisk,
             TrendGrowthPenalty,
-            $"{Format(deteriorationPercent)}%",
+            $"{Format(selected.DeteriorationPercent)}%",
             "20%",
             "%",
             evidence,
-            sourceFact);
+            NewestHistorySource(selected.History));
     }
 
     private static EquipmentHealthRuleEvaluation HistoricalAccumulating(
         string ruleCode,
         string label,
-        ImmutableArray<EquipmentHealthHistorySample> history,
-        EquipmentHealthSourceFact? sourceFact)
+        EquipmentHealthRuleObservation observation,
+        ImmutableArray<EquipmentHealthHistorySample> history)
     {
         var span = HistorySpan(history);
         return Accumulating(
@@ -403,8 +536,9 @@ public static class EquipmentHealthScoringPolicy
             $"{history.Length}个/{Format(span.TotalMinutes)}分钟",
             "≥6个/≥30分钟",
             "样本/分钟",
-            $"历史仅有 {history.Length} 个样本、覆盖 {Format(span.TotalMinutes)} 分钟，继续积累且不扣分。",
-            sourceFact);
+            $"{ObservationIdentity(observation)} 历史仅有 {history.Length} 个样本、覆盖 "
+                + $"{Format(span.TotalMinutes)} 分钟，继续积累且不扣分。",
+            NewestHistorySource(history));
     }
 
     private static EquipmentHealthRuleEvaluation Evaluation(
@@ -489,11 +623,74 @@ public static class EquipmentHealthScoringPolicy
             : value <= threshold;
     }
 
+    private static double SafeSideDistance(
+        double currentValue,
+        double thresholdValue,
+        EquipmentHealthRiskDirection direction)
+    {
+        return direction == EquipmentHealthRiskDirection.High
+            ? thresholdValue - currentValue
+            : currentValue - thresholdValue;
+    }
+
+    private static int SeverityRank(EquipmentHealthAlarmSeverity severity)
+    {
+        return severity switch
+        {
+            EquipmentHealthAlarmSeverity.Critical => 3,
+            EquipmentHealthAlarmSeverity.Warning => 2,
+            _ => 1,
+        };
+    }
+
+    private static string ObservationIdentity(EquipmentHealthRuleObservation observation)
+    {
+        return $"规则 {observation.RuleCode} / 标签 {observation.TagKey}。";
+    }
+
+    private static ImmutableArray<EquipmentHealthRuleObservation> RuleObservations(
+        EquipmentHealthScoringInput input)
+    {
+        if (input.RuleObservations.IsDefault)
+        {
+            return [];
+        }
+
+        return input.RuleObservations
+            .Select(
+                observation => observation with
+                {
+                    CurrentSample = observation.CurrentSample is not null
+                        && observation.CurrentSample.SourceFact.OccurredAtUtc <= input.EvaluatedAtUtc
+                            ? observation.CurrentSample
+                            : null,
+                    History = observation.History.IsDefault
+                        ? []
+                        : observation.History
+                            .Where(
+                                sample =>
+                                    sample.SourceFact.OccurredAtUtc <= input.EvaluatedAtUtc)
+                            .ToImmutableArray(),
+                })
+            .ToImmutableArray();
+    }
+
     private static EquipmentHealthAlarmFact? NewestAlarm(
         IEnumerable<EquipmentHealthAlarmFact> alarms)
     {
         return alarms
-            .OrderByDescending(alarm => alarm.SourceFact.OccurredAtUtc)
+            .OrderByDescending(alarm => alarm.LatestLifecycleFact.OccurredAtUtc)
+            .FirstOrDefault();
+    }
+
+    private static EquipmentHealthSourceFact? NewestAlarmSourceFact(
+        IEnumerable<EquipmentHealthAlarmFact> alarms,
+        DateTimeOffset evaluatedAtUtc)
+    {
+        return alarms
+            .SelectMany(alarm => new[] { alarm.RaisedFact, alarm.LatestLifecycleFact })
+            .Where(sourceFact => sourceFact.OccurredAtUtc <= evaluatedAtUtc)
+            .OrderByDescending(sourceFact => sourceFact.OccurredAtUtc)
             .FirstOrDefault();
     }
 
@@ -501,24 +698,32 @@ public static class EquipmentHealthScoringPolicy
         EquipmentHealthScoringInput input)
     {
         var sourceFacts = Enumerable.Empty<EquipmentHealthSourceFact>();
-        if (input.Threshold is not null)
+        var observations = RuleObservations(input);
+        if (!observations.IsDefaultOrEmpty)
         {
-            sourceFacts = sourceFacts.Append(input.Threshold.SourceFact);
+            sourceFacts = sourceFacts.Concat(
+                observations
+                    .Where(observation => observation.CurrentSample is not null)
+                    .Select(observation => observation.CurrentSample!.SourceFact));
+            sourceFacts = sourceFacts.Concat(
+                observations.SelectMany(
+                    observation => observation.History.IsDefault
+                        ? []
+                        : observation.History.Select(sample => sample.SourceFact)));
         }
 
-        if (input.Runtime is not null)
+        if (input.Runtime is not null
+            && input.Runtime.SourceFact.OccurredAtUtc <= input.EvaluatedAtUtc)
         {
             sourceFacts = sourceFacts.Append(input.Runtime.SourceFact);
         }
 
         if (!input.Alarms.IsDefaultOrEmpty)
         {
-            sourceFacts = sourceFacts.Concat(input.Alarms.Select(alarm => alarm.SourceFact));
-        }
-
-        if (!input.History.IsDefaultOrEmpty)
-        {
-            sourceFacts = sourceFacts.Concat(input.History.Select(sample => sample.SourceFact));
+            sourceFacts = sourceFacts.Concat(
+                input.Alarms.SelectMany(
+                    alarm => new[] { alarm.RaisedFact, alarm.LatestLifecycleFact })
+                    .Where(sourceFact => sourceFact.OccurredAtUtc <= input.EvaluatedAtUtc));
         }
 
         return sourceFacts
