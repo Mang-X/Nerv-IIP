@@ -38,6 +38,9 @@ param(
     [ValidateRange(1, 1440)]
     [int] $HistoricalIntervalMinutes = 15,
 
+    [ValidateRange(250, 5000)]
+    [int] $HistoricalRequestIntervalMilliseconds = 300,
+
     [switch] $ReplayExisting,
 
     [ValidateRange(250, 5000)]
@@ -73,6 +76,9 @@ try {
         -ExpectedWorktreeRoot $repoRoot
     $manifest = $ownedSession.Manifest
     $sessionId = "$($ownedSession.SessionId)"
+    $sessionStartedAtUtc = [DateTimeOffset]::Parse(
+        "$(Get-NervObjectPropertyValue -InputObject $manifest -Name 'createdAtUtc')"
+    )
     if ("$(Get-NervObjectPropertyValue -InputObject $manifest -Name 'state')" -cne 'Running') {
         throw "Leader-demo session '$sessionId' is not Running."
     }
@@ -138,6 +144,27 @@ try {
         $recoveredAtSeconds -lt $durationSeconds)) {
         throw 'Profile transition minutes must be strictly ordered and all occur before DurationMinutes ends.'
     }
+    $scenarioContract = New-NervLeaderDemoTelemetryScenarioContract `
+        -DurationSeconds $durationSeconds `
+        -SampleIntervalSeconds $SampleIntervalSeconds `
+        -DegradingAtSeconds $degradingAtSeconds `
+        -AlarmAtSeconds $alarmAtSeconds `
+        -RecoveredAtSeconds $recoveredAtSeconds `
+        -HistoricalBackfill:$HistoricalBackfill `
+        -HistoricalHours $HistoricalHours `
+        -HistoricalIntervalMinutes $HistoricalIntervalMinutes
+    if ($ReplayExisting) {
+        $baselineEvidence = Get-NervLeaderDemoTelemetryReplayBaseline `
+            -EvidenceRoot $evidenceRoot `
+            -SessionId $sessionId `
+            -RunId $effectiveRunId `
+            -ScenarioStartUtc $effectiveStart
+        Assert-NervLeaderDemoTelemetryReplayContract `
+            -BaselineEvidence $baselineEvidence `
+            -RunId $effectiveRunId `
+            -ScenarioStartUtc $effectiveStart `
+            -ScenarioContract $scenarioContract
+    }
 
     Write-Diagnostic -Level INFO -Message "Starting foreground leader-demo telemetry run '$effectiveRunId' for exact session '$sessionId'."
     $simulationParameters = @{
@@ -145,6 +172,7 @@ try {
         EnvironmentId = 'env-dev'
         DeviceAssetId = 'DEV-CNC-DEMO'
         RunId = $effectiveRunId
+        SessionStartedAtUtc = $sessionStartedAtUtc
         ScenarioStartUtc = $effectiveStart
         DurationSeconds = $durationSeconds
         SampleIntervalSeconds = $SampleIntervalSeconds
@@ -160,6 +188,11 @@ try {
         $simulationParameters['DelayAction'] = { param($Seconds) }
         $simulationParameters['PostRequestPacingAction'] = {
             Start-Sleep -Milliseconds $ReplayRequestIntervalMilliseconds
+        }.GetNewClosure()
+    }
+    elseif ($HistoricalBackfill) {
+        $simulationParameters['HistoricalPostRequestPacingAction'] = {
+            Start-Sleep -Milliseconds $HistoricalRequestIntervalMilliseconds
         }.GetNewClosure()
     }
     $simulation = Invoke-NervLeaderDemoTelemetrySimulator @simulationParameters
@@ -216,20 +249,20 @@ finally {
 }
 
 if ($null -ne $failureMessage) {
-    Write-Error $failureMessage
+    [Console]::Error.WriteLine($failureMessage)
     exit 1
 }
 
 if ($simulation.Result -cne 'completed') {
-    Write-Error "Leader-demo telemetry simulator ended with result '$($simulation.Result)'."
+    [Console]::Error.WriteLine("Leader-demo telemetry simulator ended with result '$($simulation.Result)'.")
     exit 2
 }
 if (-not $simulation.Replay.IdentityStable) {
-    Write-Error 'Leader-demo telemetry replay returned different fact identities.'
+    [Console]::Error.WriteLine('Leader-demo telemetry replay returned different fact identities.')
     exit 3
 }
 if (-not $simulation.Alarm.Found -or $simulation.Alarm.Status -cne 'cleared') {
-    Write-Error 'Leader-demo telemetry alarm lifecycle was not observed as cleared after recovery.'
+    [Console]::Error.WriteLine('Leader-demo telemetry alarm lifecycle was not observed as cleared after recovery.')
     exit 4
 }
 

@@ -17,7 +17,7 @@ function Get-NervLeaderDemoTelemetryProfile {
 function Get-NervLeaderDemoTelemetryValue {
     param(
         [Parameter(Mandatory)] [ValidateSet('vibration', 'temperature')] [string] $TagKey,
-        [Parameter(Mandatory)] [ValidateSet('normal', 'degrading', 'alarm', 'recovered')] [string] $Profile,
+        [Parameter(Mandatory)] [ValidateSet('normal', 'degrading', 'alarm', 'recovered')] [string] $Phase,
         [Parameter(Mandatory)] [int] $Index,
         [Parameter(Mandatory)] [int] $ElapsedSeconds,
         [Parameter(Mandatory)] [int] $DegradingAtSeconds,
@@ -26,7 +26,7 @@ function Get-NervLeaderDemoTelemetryValue {
 
     $wave = [Math]::Sin($Index * 0.7)
     if ($TagKey -ceq 'temperature') {
-        $value = switch ($Profile) {
+        $value = switch ($Phase) {
             'normal' { 42.0 + $wave }
             'degrading' {
                 $duration = [Math]::Max(1, $AlarmAtSeconds - $DegradingAtSeconds)
@@ -38,7 +38,7 @@ function Get-NervLeaderDemoTelemetryValue {
         }
     }
     else {
-        $value = switch ($Profile) {
+        $value = switch ($Phase) {
             'normal' { 2.2 + ($wave * 0.15) }
             'degrading' {
                 $duration = [Math]::Max(1, $AlarmAtSeconds - $DegradingAtSeconds)
@@ -95,14 +95,14 @@ function New-NervLeaderDemoTelemetryTimeline {
             BucketEndUtc = $bucketEnd.ToString('O')
             Vibration = Get-NervLeaderDemoTelemetryValue `
                 -TagKey vibration `
-                -Profile $profile `
+                -Phase $profile `
                 -Index $index `
                 -ElapsedSeconds $elapsedSeconds `
                 -DegradingAtSeconds $DegradingAtSeconds `
                 -AlarmAtSeconds $AlarmAtSeconds
             Temperature = Get-NervLeaderDemoTelemetryValue `
                 -TagKey temperature `
-                -Profile $profile `
+                -Phase $profile `
                 -Index $index `
                 -ElapsedSeconds $elapsedSeconds `
                 -DegradingAtSeconds $DegradingAtSeconds `
@@ -123,9 +123,9 @@ function New-NervLeaderDemoTelemetrySampleBody {
         [string] $SourcePhase
     )
 
-    $profile = if ([string]::IsNullOrWhiteSpace($SourcePhase)) { "$($Point.Profile)" } else { $SourcePhase }
+    $sourcePhase = if ([string]::IsNullOrWhiteSpace($SourcePhase)) { "$($Point.Profile)" } else { $SourcePhase }
     $value = if ($TagKey -ceq 'vibration') { [decimal]$Point.Vibration } else { [decimal]$Point.Temperature }
-    $sourceSequence = "leader-demo:$RunId`:$profile`:$(([int]$Point.Index).ToString('000000'))`:$TagKey"
+    $sourceSequence = "leader-demo:$RunId`:$sourcePhase`:$(([int]$Point.Index).ToString('000000'))`:$TagKey"
     $deviceState = if ($TagKey -ceq 'vibration') { "$($Point.DeviceState)" } else { $null }
     $stateOccurredAtUtc = if ($TagKey -ceq 'vibration') { "$($Point.BucketEndUtc)" } else { $null }
 
@@ -161,6 +161,20 @@ function Get-NervLeaderDemoPropertyValue {
     $property = $InputObject.PSObject.Properties[$Name]
     if ($null -eq $property) { return $null }
     return $property.Value
+}
+
+function Get-NervLeaderDemoHttpStatusCode {
+    param([Parameter(Mandatory)] [object] $ErrorRecord)
+
+    $exception = Get-NervLeaderDemoPropertyValue -InputObject $ErrorRecord -Name 'Exception'
+    if ($null -eq $exception) { $exception = $ErrorRecord }
+    $response = Get-NervLeaderDemoPropertyValue -InputObject $exception -Name 'Response'
+    $statusCode = Get-NervLeaderDemoPropertyValue -InputObject $response -Name 'StatusCode'
+    if ($null -eq $statusCode -and $exception.Data -is [System.Collections.IDictionary]) {
+        $statusCode = $exception.Data['HttpStatusCode']
+    }
+    if ($null -eq $statusCode) { return $null }
+    return [int]$statusCode
 }
 
 function Invoke-NervLeaderDemoTelemetryRequest {
@@ -243,9 +257,14 @@ function Test-NervLeaderDemoHistoricalSampleAcceptance {
         }
     }
     catch {
+        $statusCode = Get-NervLeaderDemoHttpStatusCode -ErrorRecord $_
+        if ($statusCode -notin @(400, 422)) {
+            throw
+        }
         return [pscustomobject]@{
             Accepted = $false
             Reason = "$($_.Exception.Message)"
+            HttpStatusCode = $statusCode
             Response = $null
             SourceSequence = $probeBody.sourceSequence
         }
@@ -258,6 +277,7 @@ function Invoke-NervLeaderDemoHistoricalBackfill {
         [Parameter(Mandatory)] [string] $EnvironmentId,
         [Parameter(Mandatory)] [string] $DeviceAssetId,
         [Parameter(Mandatory)] [string] $RunId,
+        [Parameter(Mandatory)] [DateTimeOffset] $SessionStartedAtUtc,
         [Parameter(Mandatory)] [DateTimeOffset] $ScenarioStartUtc,
         [Parameter(Mandatory)] [ValidateRange(1, 168)] [int] $HistoricalHours,
         [Parameter(Mandatory)] [ValidateRange(1, 1440)] [int] $HistoricalIntervalMinutes,
@@ -265,6 +285,11 @@ function Invoke-NervLeaderDemoHistoricalBackfill {
         [Parameter(Mandatory)] [scriptblock] $HttpAction
     )
 
+    $sessionStart = $SessionStartedAtUtc.ToUniversalTime()
+    $scenarioStart = $ScenarioStartUtc.ToUniversalTime()
+    if ($sessionStart -gt $scenarioStart) {
+        throw 'Leader-demo session start cannot be later than the telemetry scenario start.'
+    }
     $probe = Test-NervLeaderDemoHistoricalSampleAcceptance `
         -OrganizationId $OrganizationId `
         -EnvironmentId $EnvironmentId `
@@ -277,10 +302,11 @@ function Invoke-NervLeaderDemoHistoricalBackfill {
     $mode = if ($probe.Accepted) { 'accepted' } else { 'rejected-fallback' }
     $phase = if ($probe.Accepted) { 'history' } else { 'session-backfill' }
     $windowStart = if ($probe.Accepted) {
-        $ScenarioStartUtc.ToUniversalTime().AddHours(-$HistoricalHours)
+        $scenarioStart.AddHours(-$HistoricalHours)
     }
     else {
-        $ScenarioStartUtc.ToUniversalTime().AddMinutes(-5)
+        $candidate = $scenarioStart.AddMinutes(-5)
+        if ($candidate -lt $sessionStart) { $sessionStart } else { $candidate }
     }
     $stepSeconds = if ($probe.Accepted) {
         $HistoricalIntervalMinutes * 60
@@ -290,7 +316,7 @@ function Invoke-NervLeaderDemoHistoricalBackfill {
     }
     $publishedCount = if ($probe.Accepted) { 1 } else { 0 }
     $index = 1
-    for ($cursor = $windowStart; $cursor -lt $ScenarioStartUtc.ToUniversalTime(); $cursor = $cursor.AddSeconds($stepSeconds)) {
+    for ($cursor = $windowStart; $cursor -lt $scenarioStart; $cursor = $cursor.AddSeconds($stepSeconds)) {
         $wave = [Math]::Sin($index * 0.6)
         $point = New-NervLeaderDemoHistoricalPoint `
             -Index $index `
@@ -323,8 +349,120 @@ function Invoke-NervLeaderDemoHistoricalBackfill {
         Reason = $probe.Reason
         ProbeSourceSequence = $probe.SourceSequence
         WindowStartUtc = $windowStart.ToString('O')
-        WindowEndUtc = $ScenarioStartUtc.ToUniversalTime().ToString('O')
+        WindowEndUtc = $scenarioStart.ToString('O')
         PublishedCount = $publishedCount
+    }
+}
+
+function New-NervLeaderDemoTelemetryScenarioContract {
+    param(
+        [Parameter(Mandatory)] [int] $DurationSeconds,
+        [Parameter(Mandatory)] [int] $SampleIntervalSeconds,
+        [Parameter(Mandatory)] [int] $DegradingAtSeconds,
+        [Parameter(Mandatory)] [int] $AlarmAtSeconds,
+        [Parameter(Mandatory)] [int] $RecoveredAtSeconds,
+        [switch] $HistoricalBackfill,
+        [Parameter(Mandatory)] [int] $HistoricalHours,
+        [Parameter(Mandatory)] [int] $HistoricalIntervalMinutes
+    )
+
+    return [pscustomobject][ordered]@{
+        DurationSeconds = $DurationSeconds
+        SampleIntervalSeconds = $SampleIntervalSeconds
+        DegradingAtSeconds = $DegradingAtSeconds
+        AlarmAtSeconds = $AlarmAtSeconds
+        RecoveredAtSeconds = $RecoveredAtSeconds
+        HistoricalBackfill = [bool]$HistoricalBackfill
+        HistoricalHours = $HistoricalHours
+        HistoricalIntervalMinutes = $HistoricalIntervalMinutes
+    }
+}
+
+function Get-NervLeaderDemoTelemetryReplayBaseline {
+    param(
+        [Parameter(Mandatory)] [string] $EvidenceRoot,
+        [Parameter(Mandatory)] [string] $SessionId,
+        [Parameter(Mandatory)] [string] $RunId,
+        [Parameter(Mandatory)] [DateTimeOffset] $ScenarioStartUtc
+    )
+
+    $directory = Join-Path ([System.IO.Path]::GetFullPath($EvidenceRoot)) $SessionId
+    if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
+        throw "Replay requires completed real-time evidence for session '$SessionId' and run '$RunId'."
+    }
+    $normalizedStart = [DateTimeOffset]::FromUnixTimeMilliseconds(
+        $ScenarioStartUtc.ToUniversalTime().ToUnixTimeMilliseconds()
+    )
+    foreach ($file in @(Get-ChildItem -LiteralPath $directory -Filter 'telemetry-simulator-*.json' -File |
+        Sort-Object LastWriteTimeUtc -Descending)) {
+        try {
+            $evidence = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json -Depth 50
+            $simulation = Get-NervLeaderDemoPropertyValue -InputObject $evidence -Name 'simulation'
+            $candidateStart = [DateTimeOffset]::Parse(
+                "$(Get-NervLeaderDemoPropertyValue -InputObject $simulation -Name 'ScenarioStartUtc')"
+            )
+            if (
+                "$(Get-NervLeaderDemoPropertyValue -InputObject $evidence -Name 'executionMode')" -ceq 'real-time' -and
+                "$(Get-NervLeaderDemoPropertyValue -InputObject $simulation -Name 'Result')" -ceq 'completed' -and
+                "$(Get-NervLeaderDemoPropertyValue -InputObject $simulation -Name 'RunId')" -ceq $RunId -and
+                $candidateStart -eq $normalizedStart
+            ) {
+                return $evidence
+            }
+        }
+        catch {
+            continue
+        }
+    }
+    throw "Replay requires completed real-time evidence for exact session '$SessionId', run '$RunId', and ScenarioStartUtc '$($normalizedStart.ToString('O'))'."
+}
+
+function Assert-NervLeaderDemoTelemetryReplayContract {
+    param(
+        [Parameter(Mandatory)] [object] $BaselineEvidence,
+        [Parameter(Mandatory)] [string] $RunId,
+        [Parameter(Mandatory)] [DateTimeOffset] $ScenarioStartUtc,
+        [Parameter(Mandatory)] [object] $ScenarioContract
+    )
+
+    $simulation = Get-NervLeaderDemoPropertyValue -InputObject $BaselineEvidence -Name 'simulation'
+    if (
+        "$(Get-NervLeaderDemoPropertyValue -InputObject $BaselineEvidence -Name 'executionMode')" -cne 'real-time' -or
+        "$(Get-NervLeaderDemoPropertyValue -InputObject $simulation -Name 'Result')" -cne 'completed'
+    ) {
+        throw 'Replay baseline must be completed real-time evidence.'
+    }
+    if ("$(Get-NervLeaderDemoPropertyValue -InputObject $simulation -Name 'RunId')" -cne $RunId) {
+        throw 'Replay RunId does not match the completed real-time evidence.'
+    }
+    $expectedStart = [DateTimeOffset]::Parse(
+        "$(Get-NervLeaderDemoPropertyValue -InputObject $simulation -Name 'ScenarioStartUtc')"
+    )
+    $actualStart = [DateTimeOffset]::FromUnixTimeMilliseconds(
+        $ScenarioStartUtc.ToUniversalTime().ToUnixTimeMilliseconds()
+    )
+    if ($expectedStart -ne $actualStart) {
+        throw 'Replay ScenarioStartUtc does not match the completed real-time evidence.'
+    }
+    $expectedContract = Get-NervLeaderDemoPropertyValue -InputObject $simulation -Name 'Scenario'
+    if ($null -eq $expectedContract) {
+        throw 'Replay baseline does not contain the complete scenario contract.'
+    }
+    foreach ($field in @(
+        'DurationSeconds',
+        'SampleIntervalSeconds',
+        'DegradingAtSeconds',
+        'AlarmAtSeconds',
+        'RecoveredAtSeconds',
+        'HistoricalBackfill',
+        'HistoricalHours',
+        'HistoricalIntervalMinutes'
+    )) {
+        $expected = Get-NervLeaderDemoPropertyValue -InputObject $expectedContract -Name $field
+        $actual = Get-NervLeaderDemoPropertyValue -InputObject $ScenarioContract -Name $field
+        if ("$expected" -cne "$actual") {
+            throw "Replay scenario field '$field' differs from completed real-time evidence (expected '$expected', actual '$actual')."
+        }
     }
 }
 
@@ -432,6 +570,7 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
         [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $EnvironmentId,
         [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $DeviceAssetId,
         [Parameter(Mandatory)] [ValidatePattern('^[a-zA-Z0-9][a-zA-Z0-9._-]{0,47}$')] [string] $RunId,
+        [Parameter(Mandatory)] [DateTimeOffset] $SessionStartedAtUtc,
         [Parameter(Mandatory)] [DateTimeOffset] $ScenarioStartUtc,
         [Parameter(Mandatory)] [ValidateRange(8, 86400)] [int] $DurationSeconds,
         [Parameter(Mandatory)] [ValidateRange(1, 60)] [int] $SampleIntervalSeconds,
@@ -444,6 +583,7 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
         [Parameter(Mandatory)] [scriptblock] $HttpAction,
         [scriptblock] $DelayAction = { param($Seconds) Start-Sleep -Seconds $Seconds },
         [scriptblock] $PostRequestPacingAction = {},
+        [scriptblock] $HistoricalPostRequestPacingAction = {},
         [scriptblock] $CancellationCheckAction = { return $false }
     )
 
@@ -471,17 +611,29 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
             }
         }
     }.GetNewClosure()
+    $historicalHttpAction = {
+        param($Method, $Path, $Body)
+        try {
+            return & $effectiveHttpAction $Method $Path $Body
+        }
+        finally {
+            if ($Method -ceq 'POST') {
+                & $HistoricalPostRequestPacingAction
+            }
+        }
+    }.GetNewClosure()
     $backfill = if ($HistoricalBackfill) {
         Invoke-NervLeaderDemoHistoricalBackfill `
             -OrganizationId $OrganizationId `
             -EnvironmentId $EnvironmentId `
             -DeviceAssetId $DeviceAssetId `
             -RunId $RunId `
+            -SessionStartedAtUtc $SessionStartedAtUtc `
             -ScenarioStartUtc $ScenarioStartUtc `
             -HistoricalHours $HistoricalHours `
             -HistoricalIntervalMinutes $HistoricalIntervalMinutes `
             -SampleIntervalSeconds $SampleIntervalSeconds `
-            -HttpAction $effectiveHttpAction
+            -HttpAction $historicalHttpAction
     }
     else {
         [pscustomobject][ordered]@{
@@ -560,6 +712,15 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
         DeviceAssetId = $DeviceAssetId
         ScenarioStartUtc = $ScenarioStartUtc.ToUniversalTime().ToString('O')
         ScenarioEndUtc = $ScenarioStartUtc.ToUniversalTime().AddSeconds($DurationSeconds).ToString('O')
+        Scenario = New-NervLeaderDemoTelemetryScenarioContract `
+            -DurationSeconds $DurationSeconds `
+            -SampleIntervalSeconds $SampleIntervalSeconds `
+            -DegradingAtSeconds $DegradingAtSeconds `
+            -AlarmAtSeconds $AlarmAtSeconds `
+            -RecoveredAtSeconds $RecoveredAtSeconds `
+            -HistoricalBackfill:$HistoricalBackfill `
+            -HistoricalHours $HistoricalHours `
+            -HistoricalIntervalMinutes $HistoricalIntervalMinutes
         HistoricalBackfill = $backfill
         Live = [pscustomobject][ordered]@{
             PlannedPointCount = $timeline.Count
