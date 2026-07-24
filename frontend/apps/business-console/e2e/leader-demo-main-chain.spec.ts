@@ -21,6 +21,12 @@ test.setTimeout(18 * 60 * 1000)
 
 type JsonRecord = Record<string, unknown>
 type Conclusion = 'runtime-confirmed' | 'gap' | 'not-verified'
+type RequiredFieldComparison = {
+  name: string
+  actual: unknown
+  expected: unknown
+  kind: 'text' | 'number'
+}
 
 class PublicCallError extends Error {
   constructor(
@@ -122,6 +128,51 @@ function safeText(value: unknown): string {
     .replace(/password/gi, '<redacted-field>')
     .replace(/(?:access|refresh)[_-]?token/gi, '<redacted-field>')
     .slice(0, 1200)
+}
+
+function assertRequiredFieldsMatch(
+  context: string,
+  fields: readonly RequiredFieldComparison[],
+): void {
+  for (const field of fields) {
+    if (field.kind === 'number') {
+      const actualMissing =
+        field.actual === null || field.actual === undefined || field.actual === ''
+      const expectedMissing =
+        field.expected === null || field.expected === undefined || field.expected === ''
+      if (actualMissing || expectedMissing) {
+        throw new Error(
+          `${context}: required numeric field '${field.name}' is missing from ${actualMissing ? 'the by-source response' : 'the list response'}.`,
+        )
+      }
+      const actual = Number(field.actual)
+      const expected = Number(field.expected)
+      if (!Number.isFinite(actual) || !Number.isFinite(expected)) {
+        throw new Error(
+          `${context}: required numeric field '${field.name}' is not finite (expected=${safeText(field.expected)}, actual=${safeText(field.actual)}).`,
+        )
+      }
+      if (actual !== expected) {
+        throw new Error(
+          `${context}: field '${field.name}' differs (expected=${expected}, actual=${actual}).`,
+        )
+      }
+      continue
+    }
+
+    const actual = textOf(field.actual).trim()
+    const expected = textOf(field.expected).trim()
+    if (!actual || !expected) {
+      throw new Error(
+        `${context}: required text field '${field.name}' is missing from ${!actual ? 'the by-source response' : 'the list/expected value'}.`,
+      )
+    }
+    if (actual !== expected) {
+      throw new Error(
+        `${context}: field '${field.name}' differs (expected=${safeText(expected)}, actual=${safeText(actual)}).`,
+      )
+    }
+  }
 }
 
 function publicJson(value: unknown): unknown {
@@ -350,28 +401,35 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     error: unknown,
     mode: EvidenceEntry['automationMode'] = 'automatic',
     issue: string | null = null,
+    failureStage: string | null = null,
   ) => {
     const current = evidence.get(node)!
     const pollFailure = error instanceof PollTimeoutError ? error : null
     const callFailure = error instanceof PublicCallError ? error : null
+    const failureStageDetails = failureStage ? { failureStage } : {}
     record({
       ...current,
       automationMode: mode,
       request: pollFailure?.request ?? callFailure?.request ?? current.request,
       responseOrLog: pollFailure
         ? {
+            ...failureStageDetails,
             error: safeText(pollFailure.message),
             poll: pollFailure.poll,
             lastData: publicJson(pollFailure.lastData),
           }
         : callFailure
           ? {
+              ...failureStageDetails,
               error: safeText(callFailure.message),
               response: publicJson(callFailure.payload),
             }
-          : { error: safeText(error instanceof Error ? error.message : error) },
+          : {
+              ...failureStageDetails,
+              error: safeText(error instanceof Error ? error.message : error),
+            },
       conclusion: 'gap',
-      demoWording: `${node}: the public runtime attempt did not converge; present this as a gap, not a completed automatic hop.`,
+      demoWording: `${node}${failureStage ? ` (${failureStage})` : ''}: the public runtime attempt did not converge; present this as a gap, not a completed automatic hop.`,
       responsibilityIssue: issue,
     })
   }
@@ -1502,6 +1560,16 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         const reportData = asRecord(dataOf(report.payload))
         productionReportId = textOf(reportData.productionReportId)
         productionReportNo = textOf(reportData.reportNo)
+        if (!productionReportId) {
+          throw new Error(
+            `Production-report response for ${workOrderId}/${taskId} did not include a productionReportId.`,
+          )
+        }
+        if (!productionReportNo) {
+          throw new Error(
+            `Production-report response for ${workOrderId}/${taskId} did not include a reportNo.`,
+          )
+        }
         const reportReplay = await call(
           'POST',
           '/api/business-console/v1/mes/production-reports',
@@ -1509,9 +1577,9 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         )
         const reportReplayData = asRecord(dataOf(reportReplay.payload))
         const reportReplayId = textOf(reportReplayData.productionReportId)
-        if (!productionReportId || !productionReportNo || reportReplayId !== productionReportId) {
+        if (reportReplayId !== productionReportId) {
           throw new Error(
-            `Production-report replay returned ${reportReplayId || 'no id'} instead of ${productionReportId || 'no original id'}; report number=${productionReportNo || 'missing'}.`,
+            `Production-report replay returned ${reportReplayId || 'no id'} instead of ${productionReportId}.`,
           )
         }
         record({
@@ -1612,7 +1680,13 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             Number(row.remainingQuantity ?? 0) === finishedGoodsQuantity,
         )
       } catch (error) {
-        markFailure('inventory-produced-lot-fulfillment-lookup', error)
+        markFailure(
+          'inventory-produced-lot-fulfillment-lookup',
+          error,
+          'automatic',
+          null,
+          'mes-produced-lot-facade-lookup',
+        )
       }
     }
 
@@ -1791,7 +1865,13 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           responsibilityIssue: null,
         })
       } catch (error) {
-        markFailure('inventory-produced-lot-fulfillment-lookup', error)
+        markFailure(
+          'inventory-produced-lot-fulfillment-lookup',
+          error,
+          'automatic',
+          null,
+          'inventory-link-and-cost-verification',
+        )
       }
     }
 
@@ -1971,19 +2051,44 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           }),
         )
         const receivableBySourceData = asRecord(dataOf(receivableBySource.payload))
-        if (
-          textOf(receivableBySourceData.sourceDocumentNo) !== deliveryOrderNo ||
-          textOf(receivableBySourceData.receivableNo) !== receivableNo ||
-          textOf(receivableBySourceData.customerCode) !== textOf(receivable.match.customerCode) ||
-          Number(receivableBySourceData.amount ?? 0) !== Number(receivable.match.amount ?? 0) ||
-          Number(receivableBySourceData.openAmount ?? 0) !==
-            Number(receivable.match.openAmount ?? 0) ||
-          textOf(receivableBySourceData.currencyCode) !== textOf(receivable.match.currencyCode)
-        ) {
-          throw new Error(
-            `Receivable by-source did not match ${deliveryOrderNo}/${receivableNo}: ${safeText(JSON.stringify(receivableBySourceData))}.`,
-          )
-        }
+        assertRequiredFieldsMatch(`Receivable by-source ${deliveryOrderNo}/${receivableNo}`, [
+          {
+            name: 'sourceDocumentNo',
+            actual: receivableBySourceData.sourceDocumentNo,
+            expected: deliveryOrderNo,
+            kind: 'text',
+          },
+          {
+            name: 'receivableNo',
+            actual: receivableBySourceData.receivableNo,
+            expected: receivableNo,
+            kind: 'text',
+          },
+          {
+            name: 'customerCode',
+            actual: receivableBySourceData.customerCode,
+            expected: receivable.match.customerCode,
+            kind: 'text',
+          },
+          {
+            name: 'amount',
+            actual: receivableBySourceData.amount,
+            expected: receivable.match.amount,
+            kind: 'number',
+          },
+          {
+            name: 'openAmount',
+            actual: receivableBySourceData.openAmount,
+            expected: receivable.match.openAmount,
+            kind: 'number',
+          },
+          {
+            name: 'currencyCode',
+            actual: receivableBySourceData.currencyCode,
+            expected: receivable.match.currencyCode,
+            kind: 'text',
+          },
+        ])
         record({
           node: 'wms-completed-account-receivable',
           sourceObject: deliveryOrderNo,
