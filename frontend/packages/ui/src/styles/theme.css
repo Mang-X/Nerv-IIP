@@ -140,6 +140,15 @@
       0 0 0 1px color-mix(in oklch, var(--nv-brand) 28%, transparent),
       0 8px 28px -10px color-mix(in oklch, var(--nv-brand) 45%, transparent);
 
+    /* Frosted readout surface shared by every data-viz tooltip — the chart
+       crosshair tooltips and the metric cards' micro-viz readouts. One recipe
+       here instead of a literal copy per component; the fill/border ride
+       --popover/--border so light↔dark flips carry automatically. */
+    --nv-glass-bg: color-mix(in oklch, var(--popover) 86%, transparent);
+    --nv-glass-border: color-mix(in oklch, var(--border) 80%, transparent);
+    --nv-glass-filter: blur(8px) saturate(1.4);
+    --nv-glass-shadow: 0 8px 28px -12px color-mix(in oklch, black 50%, transparent);
+
     /* ── One-cycle aliases (ADR 0020 §5 S1) — old name → --nv-* new name.
        Removed next cycle. Downstream direct `var(--brand)`/… refs ride these,
        and the runtime accent picker sets `--nv-brand` inline (this alias keeps
