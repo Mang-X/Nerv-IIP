@@ -51,7 +51,9 @@ public sealed class QualityReinspectionPostgresProfileTests
 
         var behavior = new CreateReinspectionUniqueConflictBehavior<
             CreateReinspectionCommand,
-            CreateReinspectionResult>(losingDb);
+            CreateReinspectionResult>(
+                losingDb,
+                new QualityPersistenceConflictClassifier(losingDb));
         var attempt = 0;
         var converged = await behavior.Handle(
             command,

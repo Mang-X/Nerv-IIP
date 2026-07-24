@@ -235,6 +235,8 @@ public sealed class QualityInspectionEndpointContractTests
         using var factory = CreateFactory();
         using var scope = factory.Services.CreateScope();
 
+        Assert.IsType<QualityPersistenceConflictClassifier>(
+            scope.ServiceProvider.GetRequiredService<IQualityPersistenceConflictClassifier>());
         var behaviorTypes = scope.ServiceProvider
             .GetServices<IPipelineBehavior<CreateReinspectionCommand, CreateReinspectionResult>>()
             .Select(behavior => behavior.GetType())

@@ -162,6 +162,9 @@ try
             .AddKnownExceptionValidationBehavior()
             .AddOpenBehavior(typeof(CreateReinspectionUniqueConflictBehavior<,>))
             .AddUnitOfWorkBehaviors());
+    builder.Services.AddScoped<
+        IQualityPersistenceConflictClassifier,
+        QualityPersistenceConflictClassifier>();
 
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = QualityFacts.ServiceName)
         .UseMicrosoftServiceDiscovery();
