@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
@@ -28,6 +29,30 @@ public sealed class WorkOrderCapitalizationConcurrencyPostgresTests
             await setup.Database.MigrateAsync(CancellationToken.None);
             var completedAtUtc = DateTimeOffset.Parse("2026-07-23T07:15:28Z");
             setup.WorkOrders.Add(CreateCompletedWorkOrder(completedAtUtc));
+            setup.OperationTasks.Add(OperationTask.Create(
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "OP-10",
+                OperationTaskLifecycleStatus.Completed,
+                10,
+                "WC-10",
+                [],
+                completedAtUtc.AddMinutes(-10),
+                TimeSpan.FromMinutes(10),
+                completedAtUtc.AddMinutes(-10),
+                completedAtUtc));
+            setup.ProductionReports.Add(ProductionReport.Record(
+                "org-001",
+                "env-dev",
+                "PRPT-001",
+                "WO-001",
+                "OP-10",
+                10m,
+                0m,
+                true,
+                completedAtUtc,
+                producedLotNo: "LOT-001"));
             setup.OutputLotGenealogies.Add(OutputLotGenealogy.Create(
                 "org-001", "env-dev", "WO-001", "OP-10", "PRPT-001", "LOT-001", null, 10m, completedAtUtc));
             await setup.SaveChangesAsync(CancellationToken.None);
