@@ -81,6 +81,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-plans/{inspectionPlanId}/activate", "post", "activateBusinessConsoleQualityInspectionPlan");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records", "get", "listBusinessConsoleQualityInspectionRecords");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records", "post", "createBusinessConsoleQualityInspectionRecord");
+        AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records/{inspectionRecordId}/reinspections", "post", "createBusinessConsoleQualityReinspection");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records/{inspectionRecordId}/failures/ncr", "post", "openBusinessConsoleQualityNcrFromInspection");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks", "get", "listBusinessConsoleQualityInspectionTasks");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", "post", "createBusinessConsoleQualityInspectionRecordFromTask");
@@ -591,6 +592,12 @@ public sealed class BusinessGatewayOpenApiTests
             "keyword",
             "skip",
             "take");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/quality/inspection-records/{inspectionRecordId}/reinspections",
+            "post",
+            "organizationId",
+            "environmentId");
         AssertQueryParameters(
             paths,
             "/api/business-console/v1/quality/inspection-records/{inspectionRecordId}/failures/ncr",

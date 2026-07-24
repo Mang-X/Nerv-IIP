@@ -641,6 +641,23 @@ public sealed class BusinessGatewayAuthorizationTests
             environmentId = "env-dev",
             defectReason = "Supplier certificate mismatch",
         },
+        "/api/business-console/v1/quality/inspection-records/inspection-001/reinspections" => new
+        {
+            inspectionRecordId = "inspection-001",
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            resultLines = new[]
+            {
+                new
+                {
+                    characteristicCode = "dimension",
+                    observedValue = "10.0",
+                    unitCode = "mm",
+                    result = "passed",
+                    attachmentFileIds = Array.Empty<string>(),
+                },
+            },
+        },
         "/api/business-console/v1/quality/inspection-plans" => new
         {
             organizationId = "org-001",
@@ -1096,6 +1113,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-plans/019f87d0-3f7f-7ad0-a829-7724ea91c111/activate", BusinessGatewayPermissions.QualityInspectionPlansManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/inspection-records", BusinessGatewayPermissions.QualityInspectionRecordsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records", BusinessGatewayPermissions.QualityInspectionRecordsCreate);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records/inspection-001/reinspections", BusinessGatewayPermissions.QualityInspectionRecordsCreate);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records/inspection-001/failures/ncr", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/ncrs", BusinessGatewayPermissions.QualityNcrRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/reason-codes", BusinessGatewayPermissions.QualityInspectionRecordsRead);

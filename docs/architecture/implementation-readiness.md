@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## Quality 复检历史与 MES hold 自动释放闭环（MAN-516 / #954）
+
+BusinessQuality 现在将首检幂等和复检历史分开建模：原有创建命令继续按来源业务键返回首条记录；新增 predecessor-targeted 复检命令只允许对非合格记录追加不可变 successor，并记录 `attempt_number` 与 `reinspection_of_inspection_record_id`。每个前置记录最多一个直接 successor，命令重放返回同一 successor；多次复检需以上一次未通过结果作为新的 predecessor。计划检验复用原方案和来源/批次/库存维度，已 superseded 的历史方案仍可用于该记录复检，但跨组织、环境、方案或合格终态均 fail closed。`AddQualityReinspectionHistory` migration 增加正数约束、自引用 Restrict 外键、前置唯一索引，并把来源唯一键扩展到 attempt。
+
+Quality 新增 `POST /api/business/v1/quality/inspection-records/{inspectionRecordId}/reinspections`，通过 BusinessGateway 同路径 facade 以 `business.quality.inspection-records.create` 暴露；facade matrix 登记为 `exposed`，OpenAPI 与 generated client 同步刷新。检验结果事件幂等键纳入 inspection record ID，保证同源不同 attempt 的 rejected/passed 事件不会互相吞并。跨服务 acceptance 使用真实 Quality 首检/复检命令、真实事件转换器和真实 MES `business-mes.quality-inspection-result` 消费者，已验证 rejected 建 hold、passed successor 自动释放、释放审计引用第二条检验记录、复检重放不产生第三条记录；该证据是自动化跨服务测试，不冒充浏览器或完整 Aspire 全栈运行。
+
 ## 持久化启动治理与 PostgreSQL 测试基建（#1075）
 
 FileStorage、AppHub、Ops、Notification 已统一通过 `Nerv.IIP.Persistence` 解析显式 provider、Development-only AutoMigrate、PostgreSQL 连接配置和非 Development fail-fast；四个服务的 Development InMemory profile 均写入配置，不再由代码静默回退。统一异常只报告服务、环境、provider、连接是否配置和 AutoMigrate 状态，不输出连接串或凭据。服务自己的 DbContext、schema、migration runner 和发布修复建议仍留在服务边界内。

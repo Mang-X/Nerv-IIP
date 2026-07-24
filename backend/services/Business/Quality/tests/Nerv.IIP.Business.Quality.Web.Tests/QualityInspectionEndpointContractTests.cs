@@ -25,6 +25,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Quality.Web.Application.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionPlans;
+using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionRecords;
@@ -46,7 +47,7 @@ public sealed class QualityInspectionEndpointContractTests
     {
         var contracts = QualityInspectionEndpointContracts.All;
 
-        Assert.Equal(17, contracts.Count);
+        Assert.Equal(18, contracts.Count);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/quality/measuring-devices"
             && x.PermissionCode == BusinessPermissionCodes.QualityMeasuringDevicesManage
@@ -71,6 +72,10 @@ public sealed class QualityInspectionEndpointContractTests
             && x.Route == "/api/business/v1/quality/inspection-records"
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsCreate
             && x.OperationId == "createBusinessQualityInspectionRecord");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/quality/inspection-records/{inspectionRecordId}/reinspections"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsCreate
+            && x.OperationId == "createBusinessQualityReinspection");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/quality/inspection-records/{inspectionRecordId}/failures/ncr"
             && x.PermissionCode == BusinessPermissionCodes.QualityNcrManage
@@ -132,6 +137,7 @@ public sealed class QualityInspectionEndpointContractTests
     [InlineData(typeof(ActivateInspectionPlanEndpoint))]
     [InlineData(typeof(ListInspectionPlansEndpoint))]
     [InlineData(typeof(CreateInspectionRecordEndpoint))]
+    [InlineData(typeof(CreateReinspectionEndpoint))]
     [InlineData(typeof(OpenNcrFromInspectionEndpoint))]
     [InlineData(typeof(ListInspectionRecordsEndpoint))]
     [InlineData(typeof(ListInspectionTasksEndpoint))]
@@ -150,6 +156,73 @@ public sealed class QualityInspectionEndpointContractTests
             .ToArray();
 
         Assert.Contains(typeof(ISender), parameterTypes);
+    }
+
+    [Fact]
+    public async Task Create_reinspection_appends_history_and_replay_returns_the_same_successor()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var records = new InspectionRecordRepository(dbContext);
+        var plans = new InspectionPlanRepository(dbContext);
+        var initialId = await new CreateInspectionRecordCommandHandler(
+                records,
+                plans,
+                new InspectionTaskRepository(dbContext))
+            .Handle(
+                new CreateInspectionRecordCommand(
+                    "org-001",
+                    "env-dev",
+                    null,
+                    "operation",
+                    "mes",
+                    "WO-REINSPECT-COMMAND",
+                    "SKU-FG-1000",
+                    5m,
+                    "LOT-REINSPECT-COMMAND",
+                    null,
+                    [new InspectionResultLineCommandInput(
+                        "appearance",
+                        "scratch",
+                        null,
+                        InspectionLineResults.Failed,
+                        "surface-defect",
+                        1m,
+                        [])],
+                    "Surface defect",
+                    []),
+                CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CreateReinspectionCommandHandler(records, plans);
+        var command = new CreateReinspectionCommand(
+            initialId,
+            "org-001",
+            "env-dev",
+            [new InspectionResultLineCommandInput(
+                "appearance",
+                "ok",
+                null,
+                InspectionLineResults.Passed,
+                null,
+                null,
+                [])],
+            null,
+            []);
+
+        var created = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var replay = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var detail = await new GetInspectionRecordQueryHandler(dbContext).Handle(
+            new GetInspectionRecordQuery(created.InspectionRecordId, "org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal(created, replay);
+        Assert.Equal(2, created.AttemptNumber);
+        Assert.Equal(2, await dbContext.InspectionRecords.CountAsync());
+        Assert.Equal(2, detail.AttemptNumber);
+        Assert.Equal(initialId, detail.ReinspectionOfInspectionRecordId);
     }
 
     [Fact]

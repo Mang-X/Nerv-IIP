@@ -28,6 +28,19 @@ public sealed record CreateInspectionRecordRequest(
 
 public sealed record CreateInspectionRecordResponse(InspectionRecordId InspectionRecordId);
 
+public sealed record CreateReinspectionRequest(
+    InspectionRecordId InspectionRecordId,
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<InspectionResultLineCommandInput>? ResultLines,
+    string? DispositionReason,
+    IReadOnlyCollection<string>? DispositionAttachmentFileIds,
+    MeasuringDeviceId? MeasuringDeviceId = null);
+
+public sealed record CreateReinspectionResponse(
+    InspectionRecordId InspectionRecordId,
+    int AttemptNumber);
+
 public sealed record OpenNcrFromInspectionRequest(
     InspectionRecordId InspectionRecordId,
     string DefectReason,
@@ -81,6 +94,32 @@ public sealed class CreateInspectionRecordEndpoint(ISender sender)
             req.StockRelease,
             req.MeasuringDeviceId), ct);
         await Send.OkAsync(new CreateInspectionRecordResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CreateReinspectionEndpoint(ISender sender)
+    : QualityEndpoint<CreateReinspectionRequest, ResponseData<CreateReinspectionResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureQualityContract(QualityInspectionEndpointContracts.Get<CreateReinspectionEndpoint>());
+    }
+
+    public override async Task HandleAsync(CreateReinspectionRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new CreateReinspectionCommand(
+            req.InspectionRecordId,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ResultLines ?? [],
+            req.DispositionReason,
+            req.DispositionAttachmentFileIds ?? [],
+            req.MeasuringDeviceId), ct);
+        await Send.OkAsync(
+            new CreateReinspectionResponse(
+                result.InspectionRecordId,
+                result.AttemptNumber).AsResponseData(),
+            cancellation: ct);
     }
 }
 

@@ -67,7 +67,13 @@ internal static class InspectionResultIntegrationEvents
             record.OrganizationId,
             record.EnvironmentId,
             context.Actor,
-            EventIds.Idempotency(idempotencyPrefix, record.OrganizationId, record.EnvironmentId, record.SourceService, record.SourceDocumentId),
+            EventIds.Idempotency(
+                idempotencyPrefix,
+                record.OrganizationId,
+                record.EnvironmentId,
+                record.SourceService,
+                record.SourceDocumentId,
+                record.Id.ToString()),
             InspectionIntegrationEventPayloads.ToPayload(record, occurredAtUtc, targetQualityStatus));
     }
 }

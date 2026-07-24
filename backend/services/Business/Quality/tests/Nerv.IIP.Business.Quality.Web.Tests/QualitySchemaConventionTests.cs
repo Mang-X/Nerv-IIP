@@ -81,6 +81,30 @@ public sealed class QualitySchemaConventionTests
     }
 
     [Fact]
+    public void Reinspection_relational_model_governs_attempt_and_predecessor_history()
+    {
+        using var fixture = CreateFixture();
+        var entity = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(InspectionRecord))!;
+        var attempt = entity.FindProperty(nameof(InspectionRecord.AttemptNumber))!;
+        var predecessor = entity.FindProperty(nameof(InspectionRecord.ReinspectionOfInspectionRecordId))!;
+
+        Assert.Equal("attempt_number", attempt.GetColumnName());
+        Assert.Equal("reinspection_of_inspection_record_id", predecessor.GetColumnName());
+        Assert.False(string.IsNullOrWhiteSpace(attempt.GetComment()));
+        Assert.False(string.IsNullOrWhiteSpace(predecessor.GetComment()));
+        Assert.Contains(entity.GetIndexes(), index =>
+            index.IsUnique
+            && index.Properties.Select(property => property.Name).SequenceEqual(
+                [nameof(InspectionRecord.ReinspectionOfInspectionRecordId)],
+                StringComparer.Ordinal));
+        Assert.Contains(entity.GetForeignKeys(), foreignKey =>
+            foreignKey.Properties.Select(property => property.Name).SequenceEqual(
+                [nameof(InspectionRecord.ReinspectionOfInspectionRecordId)],
+                StringComparer.Ordinal)
+            && foreignKey.DeleteBehavior == DeleteBehavior.Restrict);
+    }
+
+    [Fact]
     public void Mes_defect_source_unique_index_is_scoped_to_auto_created_mes_ncrs()
     {
         using var fixture = CreateFixture();
