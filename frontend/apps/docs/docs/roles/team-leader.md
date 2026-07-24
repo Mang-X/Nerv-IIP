@@ -15,6 +15,10 @@
 | 6   | 在 `/mes/downtime` 登记停机，在 `/mes/handovers` 完成班次交接                           | 停机与交接事实留档                               | ✅ 可用                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | 7   | 排程变更后感知失效并取消/调整工单                                                       | 现场执行跟上最新排程                             | ⛔ 缺口：排程失效标记与工单取消补偿预览未交付（[#800](https://github.com/Mang-X/Nerv-IIP/issues/800)、[#797](https://github.com/Mang-X/Nerv-IIP/issues/797)）                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
+### 复检重放与后续 attempt
+
+复检请求以路由中的前置检验记录 ID 作为幂等身份。同一前置记录被重复提交时，服务返回已存在的直接后继，不用新载荷覆盖既有检验事实。若最新一次复检仍未通过并需要继续复检，调用方必须改用该最新未通过 attempt 的记录 ID；继续提交原始首检 ID 只会重放 attempt 2。
+
 ## 从哪里学
 
 - 教程：[需求计划到完工入库](/getting-started/planning-to-finished-goods)

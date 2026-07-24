@@ -160,7 +160,7 @@ try
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
             .AddCommandLockBehavior()
             .AddKnownExceptionValidationBehavior()
-            .AddOpenBehavior(typeof(CreateReinspectionUniqueConflictBehavior<,>))
+            .AddBehavior<CreateReinspectionUniqueConflictBehavior>()
             .AddUnitOfWorkBehaviors());
     builder.Services.AddScoped<
         IQualityPersistenceConflictClassifier,

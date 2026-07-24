@@ -243,8 +243,7 @@ public sealed class QualityInspectionEndpointContractTests
             .ToArray();
         var conflictBehaviorIndex = Array.FindIndex(
             behaviorTypes,
-            type => type.IsGenericType
-                && type.GetGenericTypeDefinition() == typeof(CreateReinspectionUniqueConflictBehavior<,>));
+            type => type == typeof(CreateReinspectionUniqueConflictBehavior));
         var unitOfWorkBehaviorIndex = Array.FindIndex(
             behaviorTypes,
             type => type.FullName?.Contains("UnitOfWorkBehavior", StringComparison.Ordinal) is true);

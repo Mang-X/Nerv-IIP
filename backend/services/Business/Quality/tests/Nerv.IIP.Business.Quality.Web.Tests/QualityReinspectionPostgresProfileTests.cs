@@ -49,11 +49,9 @@ public sealed class QualityReinspectionPostgresProfileTests
         Assert.NotEqual(winner.InspectionRecordId, losingCandidate.InspectionRecordId);
         await winnerDb.SaveChangesAsync();
 
-        var behavior = new CreateReinspectionUniqueConflictBehavior<
-            CreateReinspectionCommand,
-            CreateReinspectionResult>(
-                losingDb,
-                new QualityPersistenceConflictClassifier(losingDb));
+        var behavior = new CreateReinspectionUniqueConflictBehavior(
+            losingDb,
+            new QualityPersistenceConflictClassifier());
         var attempt = 0;
         var converged = await behavior.Handle(
             command,

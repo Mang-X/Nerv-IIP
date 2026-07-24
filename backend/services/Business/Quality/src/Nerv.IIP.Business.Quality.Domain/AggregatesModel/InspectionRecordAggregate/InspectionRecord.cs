@@ -362,16 +362,30 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
 
     private StockReleaseDimension? ToStockReleaseDimension()
     {
-        return string.IsNullOrWhiteSpace(UomCode)
-            ? null
-            : StockReleaseDimension.Create(
-                UomCode,
-                SiteCode!,
-                LocationCode!,
-                SourceQualityStatus!,
-                OwnerType!,
-                OwnerId);
+        if (string.IsNullOrWhiteSpace(UomCode)
+            && string.IsNullOrWhiteSpace(SiteCode)
+            && string.IsNullOrWhiteSpace(LocationCode)
+            && string.IsNullOrWhiteSpace(SourceQualityStatus)
+            && string.IsNullOrWhiteSpace(OwnerType)
+            && string.IsNullOrWhiteSpace(OwnerId))
+        {
+            return null;
+        }
+
+        return StockReleaseDimension.Create(
+            RequiredStockReleaseDimension(UomCode, nameof(UomCode)),
+            RequiredStockReleaseDimension(SiteCode, nameof(SiteCode)),
+            RequiredStockReleaseDimension(LocationCode, nameof(LocationCode)),
+            RequiredStockReleaseDimension(SourceQualityStatus, nameof(SourceQualityStatus)),
+            RequiredStockReleaseDimension(OwnerType, nameof(OwnerType)),
+            OwnerId);
     }
+
+    private static string RequiredStockReleaseDimension(string? value, string propertyName) =>
+        string.IsNullOrWhiteSpace(value)
+            ? throw new InvalidOperationException(
+                $"Inspection stock-release dimensions are incomplete; '{propertyName}' is required.")
+            : value;
 
     private void ApplyMeasuringDeviceUsage(InspectionMeasuringDeviceUsage? usage)
     {

@@ -737,6 +737,38 @@ public sealed class InspectionAggregateTests
     }
 
     [Fact]
+    public void Reinspection_rejects_partially_materialized_stock_release_dimensions()
+    {
+        var initial = InspectionRecord.Create(
+            "org-001",
+            "env-dev",
+            null,
+            "operation",
+            "mes",
+            "WO-REINSPECT-INCOMPLETE-STOCK",
+            "SKU-FG-1000",
+            5m,
+            null,
+            null,
+            [InspectionResultLineInput.Fail("appearance", "scratch", "surface-defect", 1m, [])],
+            "Surface defect",
+            [],
+            StockReleaseDimension.Create("pcs", "SITE-01", "FG-HOLD", "quality", "production", null));
+        typeof(InspectionRecord)
+            .GetProperty(nameof(InspectionRecord.SiteCode))!
+            .SetValue(initial, null);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => InspectionRecord.Reinspect(
+            initial,
+            inspectionPlan: null,
+            [InspectionResultLineInput.Pass("appearance", "ok", null, [])],
+            dispositionReason: null,
+            dispositionAttachmentFileIds: []));
+
+        Assert.Contains("stock-release dimensions are incomplete", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Passed_inspection_is_terminal_and_cannot_be_reinspected()
     {
         var passed = InspectionRecord.Create(

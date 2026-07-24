@@ -60,6 +60,8 @@ public sealed class CreateReinspectionCommandHandler(
                 cancellationToken)
             ?? throw new KnownException(
                 $"Inspection record '{request.ReinspectionOfInspectionRecordId}' was not found.");
+        // Translate the aggregate's terminal-pass invariant into the service's stable known-error contract.
+        // InspectionRecord.Reinspect repeats the guard for non-HTTP callers that bypass this handler.
         if (string.Equals(previous.Result, InspectionRecordResults.Passed, StringComparison.Ordinal))
         {
             throw new KnownException("Passed inspection records are terminal and cannot be reinspected.");
@@ -147,22 +149,16 @@ public sealed class CreateReinspectionCommandHandler(
     }
 }
 
-public sealed class CreateReinspectionUniqueConflictBehavior<TRequest, TResponse>(
+public sealed class CreateReinspectionUniqueConflictBehavior(
     ApplicationDbContext dbContext,
     IQualityPersistenceConflictClassifier conflictClassifier)
-    : IPipelineBehavior<TRequest, TResponse>
-    where TRequest : notnull
+    : IPipelineBehavior<CreateReinspectionCommand, CreateReinspectionResult>
 {
-    public async Task<TResponse> Handle(
-        TRequest request,
-        RequestHandlerDelegate<TResponse> next,
+    public async Task<CreateReinspectionResult> Handle(
+        CreateReinspectionCommand request,
+        RequestHandlerDelegate<CreateReinspectionResult> next,
         CancellationToken cancellationToken)
     {
-        if (request is not CreateReinspectionCommand)
-        {
-            return await next(cancellationToken);
-        }
-
         try
         {
             return await next(cancellationToken);
