@@ -315,7 +315,30 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     outboundOrderId?: string;
     outboundOrderNo?: string;
     status?: string;
+    siteCode?: string;
+    inventoryPostingStatus?: string;
+    failureCode?: string | null;
+    failureMessage?: string | null;
+    lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundOrderLineItem>;
     createdAtUtc?: string;
+    completedAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundOrderLineItem = {
+    lineNo?: string;
+    skuCode?: string;
+    uomCode?: string;
+    requestedQuantity?: number;
+    issuedQuantity?: number;
+    locationCode?: string;
+    lotNo?: string | null;
+    serialNo?: string | null;
+    qualityStatus?: string;
+    ownerType?: string;
+    ownerId?: string | null;
+    inventoryPostingStatus?: string;
+    failureCode?: string | null;
+    failureMessage?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsListRequest = {
@@ -334,6 +357,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     packReviewNo: string;
     passed?: boolean;
     idempotencyKey: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRetryWmsOutboundInventoryPostingRequest = {
+    idempotencyKey?: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateWmsCountExecutionResponse = NetCorePalExtensionsDtoResponseData & {
@@ -5748,6 +5775,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     deliveryOrderNo?: string;
     salesOrderNo?: string;
     customerCode?: string;
+    siteCode?: string;
     status?: string;
     lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpDeliveryOrderLineItem>;
     releasedAtUtc?: string;
@@ -5757,8 +5785,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpDeliveryOrderLineItem = {
     salesOrderLineNo?: string;
+    skuCode?: string;
+    uomCode?: string;
     quantity?: number;
     shippedQuantity?: number;
+    locationCode?: string;
+    lotNo?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReleaseErpDeliveryOrderResponse = NetCorePalExtensionsDtoResponseData & {
@@ -5781,6 +5813,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpDeliveryOrderLine = {
     salesOrderLineNo?: string;
     quantity?: number;
+    locationCode?: string | null;
+    lotNo?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateErpAccountPayableResponse = NetCorePalExtensionsDtoResponseData & {
@@ -7248,6 +7282,38 @@ export type CompleteBusinessConsoleWmsOutboundOrderResponses = {
 };
 
 export type CompleteBusinessConsoleWmsOutboundOrderResponse = CompleteBusinessConsoleWmsOutboundOrderResponses[keyof CompleteBusinessConsoleWmsOutboundOrderResponses];
+
+export type RetryBusinessConsoleWmsOutboundInventoryPostingData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRetryWmsOutboundInventoryPostingRequest;
+    path: {
+        outboundOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry';
+};
+
+export type RetryBusinessConsoleWmsOutboundInventoryPostingErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RetryBusinessConsoleWmsOutboundInventoryPostingResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCompleteWmsMovementResponse;
+};
+
+export type RetryBusinessConsoleWmsOutboundInventoryPostingResponse = RetryBusinessConsoleWmsOutboundInventoryPostingResponses[keyof RetryBusinessConsoleWmsOutboundInventoryPostingResponses];
 
 export type ListBusinessConsoleWmsCountExecutionsData = {
     body?: never;

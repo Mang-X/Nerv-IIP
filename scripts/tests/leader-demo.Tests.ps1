@@ -614,9 +614,35 @@ try {
     Assert-True ($planCreateIndex -lt $productionReportIndex) 'The Quality plan must be active before the MES production report publishes its completion event.'
     Assert-True ([regex]::IsMatch($mainChainScenarioText, 'const\s+reportReplay\s*=\s*await\s+call\(\s*[''"]POST[''"]\s*,\s*[''"]/api/business-console/v1/mes/production-reports[''"]\s*,\s*productionReportRequest')) 'The leader-demo main chain must actively replay the same production-report request and idempotency key.'
     Assert-True ([regex]::IsMatch($mainChainScenarioText, 'reportReplayId\s*!==\s*productionReportId')) 'The replay probe must reject a different production report identity.'
+    Assert-True ([regex]::IsMatch($mainChainScenarioText, 'siteCode\s*:\s*finishedGoodsSiteCode')) 'The sales order must use the same finished-goods site later posted by MES and consumed by WMS.'
+    Assert-True ([regex]::IsMatch($mainChainScenarioText, 'locationCode\s*:\s*finishedGoodsLocationCode')) 'The ERP delivery must preserve the exact finished-goods location in the WMS posting key.'
+    Assert-True ([regex]::IsMatch($mainChainScenarioText, 'lotNo\s*:\s*producedLotNo')) 'The ERP delivery must preserve the exact produced lot in the WMS posting key.'
+    Assert-True ($mainChainScenarioText.Contains("textOf(row.inventoryPostingStatus) === 'posted'")) 'The main chain must wait for public WMS Inventory-posted status before accepting ERP completion.'
+    Assert-True ($mainChainScenarioText.Contains('Number(data.onHandQuantity ?? 0) === 0')) 'The main chain must prove the exact produced-stock balance is decremented to zero.'
+    Assert-True ($mainChainScenarioText.Contains("textOf(outboundLine.ownerType) !== 'production'")) 'The main chain must audit the production/null ownership partition rather than customer ownership.'
     $leaderDemoEntryText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/leader-demo.ps1') -Raw
     Assert-True ($leaderDemoEntryText.Contains('Get-NervLeaderDemoFailureExitCode')) 'The leader-demo entrypoint must extract a structured verification exit code.'
     Assert-True ($leaderDemoEntryText.Contains('exit $exitCode')) 'The leader-demo entrypoint must propagate the structured nonzero code after evidence.'
+    $simulatorEntryPath = Join-Path $repoRoot 'scripts/verify-leader-demo-telemetry-simulator.ps1'
+    Assert-True (Test-Path -LiteralPath $simulatorEntryPath -PathType Leaf) 'The governed leader-demo telemetry simulator entrypoint must exist.'
+    $simulatorEntryText = Get-Content -LiteralPath $simulatorEntryPath -Raw
+    Assert-True ($simulatorEntryText.Contains('scripts/lib/ScriptAutomation.ps1')) 'The simulator entrypoint must use the governed script helper.'
+    Assert-True ($simulatorEntryText.Contains('scripts/lib/FullStackSessionRuntime.ps1')) 'The simulator entrypoint must resolve the exact current leader-demo session.'
+    Assert-True ($simulatorEntryText.Contains('scripts/lib/LeaderDemoTelemetrySimulator.ps1')) 'The simulator entrypoint must use the deterministic simulator core.'
+    Assert-True ([regex]::IsMatch($simulatorEntryText, '\[int\]\s*\$SampleIntervalSeconds\s*=\s*2')) 'The simulator must default to a two-second public sample cadence.'
+    Assert-True ($simulatorEntryText.Contains('[switch] $HistoricalBackfill')) 'The simulator must expose the governed historical backfill probe.'
+    Assert-True ($simulatorEntryText.Contains('[switch] $ReplayExisting')) 'The simulator must expose an explicit no-delay replay mode for an exact run identity.'
+    Assert-True ($simulatorEntryText.Contains('Get-NervLeaderDemoTelemetryReplayBaseline')) 'Replay must load the completed real-time evidence for the exact session and run.'
+    Assert-True ($simulatorEntryText.Contains('Assert-NervLeaderDemoTelemetryReplayContract')) 'Replay must validate the complete scenario contract before publishing facts.'
+    Assert-True (-not [regex]::IsMatch($simulatorEntryText, '(?m)^\s*Write-Error\b')) 'Explicit simulator exit codes must not be preempted by terminating Write-Error calls.'
+    Assert-True ($simulatorEntryText.Contains('[Console]::Error.WriteLine')) 'Simulator failures must write stderr without bypassing the explicit exit code.'
+    Assert-True ($simulatorEntryText.Contains('artifacts/leader-demo')) 'The simulator must write redacted evidence under artifacts/leader-demo.'
+    Assert-True ($simulatorEntryText.Contains('NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD')) 'The simulator must accept the local password only through the controlled environment variable.'
+    $simulatorCoreText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/LeaderDemoTelemetrySimulator.ps1') -Raw
+    Assert-True ($simulatorCoreText.Contains('/api/business-console/v1/telemetry/samples')) 'Simulator writes must use the public telemetry sample facade.'
+    Assert-True ($simulatorCoreText.Contains('/api/business-console/v1/telemetry/devices/')) 'Simulator verification must use the public history facade.'
+    Assert-True ($simulatorCoreText.Contains('/api/business-console/v1/telemetry/alarms')) 'Simulator verification must use the public alarm facade.'
+    Assert-True (-not [regex]::IsMatch($simulatorCoreText, '(?i)\b(sql|npgsql|dbcontext|invoke-sqlcmd)\b')) 'The simulator core must not contain a database write path.'
 
     $secondSessionId = Invoke-NervLeaderDemoCommand `
         -Action reset `

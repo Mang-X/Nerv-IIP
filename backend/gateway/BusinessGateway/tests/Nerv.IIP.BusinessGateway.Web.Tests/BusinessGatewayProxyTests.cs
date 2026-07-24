@@ -2663,9 +2663,56 @@ public sealed class BusinessGatewayProxyTests
         using var deliveryDocument = JsonDocument.Parse(await deliveries.Content.ReadAsStringAsync());
         var delivery = deliveryDocument.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.Equal("completed", delivery.GetProperty("status").GetString());
+        Assert.Equal("finished-goods", delivery.GetProperty("siteCode").GetString());
         Assert.Equal("2026-06-02T00:00:00Z", delivery.GetProperty("shippedAtUtc").GetDateTime().ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture));
         Assert.Equal("2026-06-02T00:00:00Z", delivery.GetProperty("completedAtUtc").GetDateTime().ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture));
-        Assert.Equal(1m, delivery.GetProperty("lines")[0].GetProperty("shippedQuantity").GetDecimal());
+        var deliveryLine = delivery.GetProperty("lines")[0];
+        Assert.Equal(1m, deliveryLine.GetProperty("shippedQuantity").GetDecimal());
+        Assert.Equal("SKU-FG", deliveryLine.GetProperty("skuCode").GetString());
+        Assert.Equal("EA", deliveryLine.GetProperty("uomCode").GetString());
+        Assert.Equal("receiving", deliveryLine.GetProperty("locationCode").GetString());
+        Assert.Equal("LOT-001", deliveryLine.GetProperty("lotNo").GetString());
+    }
+
+    [Fact]
+    public async Task Erp_delivery_release_facade_preserves_inventory_partition_fields()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/sales/delivery-orders",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                deliveryOrderNo = "DO-001",
+                salesOrderNo = "SO-001",
+                lines = new[]
+                {
+                    new
+                    {
+                        salesOrderLineNo = "10",
+                        quantity = 1m,
+                        locationCode = "receiving",
+                        lotNo = "LOT-001",
+                    },
+                },
+                idempotencyKey = "release-do-001",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var line = Assert.Single(erp.LastReleaseDeliveryOrderRequest!.Lines);
+        Assert.Equal("receiving", line.LocationCode);
+        Assert.Equal("LOT-001", line.LotNo);
     }
 
     [Fact]
@@ -9748,6 +9795,8 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
     public BusinessConsoleErpListRequest? LastDeliveryOrderListRequest { get; private set; }
 
+    public BusinessConsoleReleaseErpDeliveryOrderRequest? LastReleaseDeliveryOrderRequest { get; private set; }
+
     public BusinessConsoleErpListRequest? LastPayableListRequest { get; private set; }
 
     public BusinessConsoleErpListRequest? LastReceivableListRequest { get; private set; }
@@ -10031,8 +10080,9 @@ internal sealed class RecordingErpClient : IBusinessErpClient
                     "DO-001",
                     "SO-001",
                     "CUST-001",
+                    "finished-goods",
                     "completed",
-                    [new BusinessConsoleErpDeliveryOrderLineItem("10", 1m, 1m)],
+                    [new BusinessConsoleErpDeliveryOrderLineItem("10", "SKU-FG", "EA", 1m, 1m, "receiving", "LOT-001")],
                     DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture),
                     DateTime.Parse("2026-06-02T00:00:00Z", CultureInfo.InvariantCulture),
                     DateTime.Parse("2026-06-02T00:00:00Z", CultureInfo.InvariantCulture)),
@@ -10175,6 +10225,7 @@ internal sealed class RecordingErpClient : IBusinessErpClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
+        LastReleaseDeliveryOrderRequest = request;
         return Task.FromResult(new BusinessConsoleReleaseErpDeliveryOrderResponse("do-id-001"));
     }
 
