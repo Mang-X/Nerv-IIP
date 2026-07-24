@@ -345,6 +345,24 @@ design-system 站是唯一"宿主自带 unlayered 敌意样式"的环境，其�
 > 直接落在 S4 收口（#896）后的 `pc/` 目标形态，不引入任何 `pro→nv` 债。已并入
 > `nvui-naming.contract.test.ts` 的冻结 canonical 集合。
 
+> **收口后新增（无旧名，完全 Pro-free）。** PR #1093 在 `pc/card/` 新增两个指标家族件，
+> 直接以 `Nv*` canonical 名落地：
+> - `NvMetricRing`（环形构成指标：多色分段环 + 图例联动，表达「部分与整体」）
+> - `NvMetricStrip`（横向多指标条：一卡多口径，分隔线代卡缝）
+>
+> 判定依据（§1.2 尾「新组件归属判定」→ §1.1(2)）：先按交互密度/视距归属——二者是
+> **PC 指针紧凑表面**的件，故落 `pc/`；其次二者与既有 `NvMetricCard` 是**结构不同的独立件**
+> 而非其变体（`NvMetricRing` 是横向 gauge + 图例的构成图，`NvMetricStrip` 是横排多 cell 的
+> 指标条，均无法并入 `NvMetricCard` 的纵向单值骨架，不走"一件多模式"）。定名走 **§1.1(2)
+> PC 层取素名**：`Nv` + 素名（`MetricRing`/`MetricStrip`）——§1.2 的 R1–R5 只用于
+> screen/touch/mobile 候选名，PC 件不适用。与大屏层既有 `NvRingGauge`（纯仪表原语、
+> `--nv-scr-*` 深色）不构成 clash：二者分属不同表面，按 §1.2 尾「跨两个表面拆两件」各自
+> 实现、各自命名。文件名即 `NvMetricRing.vue`/`NvMetricStrip.vue`，内部无
+> `*-pro`/`.ds-*`/`.sb-*`。已并入 `nvui-naming.contract.test.ts` 冻结 canonical 集合。
+> `NvMetricCard` 的各 variant 下半区拆为 `pc/card/parts/` 内部实现件，命名
+> `NvMetric*Part`（`NvMetricTipPart` 等 7 件）：保持品牌层 `Nv` 前缀统一语义，但
+> **不导出、不入 barrel、不入冻结集合**——`*Part` 后缀即「某公开件的私有组成部分」。
+
 ### A1. PC 素名层 — `pc/`（35 目录，116 个组件导出）
 
 | 目录 | 旧名 | 新名 |
