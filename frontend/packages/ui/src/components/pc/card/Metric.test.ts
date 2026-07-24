@@ -252,41 +252,55 @@ describe('NvMetricRing / NvMetricStrip', () => {
     { label: '超期', value: 2, tone: 'danger' as const },
   ]
 
-  it('ring 每个分段一条弧，弧长按占比派生并首尾相接', () => {
+  const CIRC = 2 * Math.PI * 36
+  const MIN_ARC = 3
+  // Read each arc as {len, start, isZero} for invariant checks.
+  function readArcs(wrapper: ReturnType<typeof mount>) {
+    return wrapper.findAll('.nv-ring-seg').map((c) => {
+      const len = Number(c.attributes('stroke-dasharray')!.split(' ')[0])
+      const start = -Number(c.attributes('stroke-dashoffset'))
+      return { len, start }
+    })
+  }
+
+  it('ring 弧长+间隙守恒于周长且首段从 0 起画', () => {
     const wrapper = mount(NvMetricRing, {
       props: { label: '在制工单', value: 35, centerCaption: '总计', segments: ringSegments },
     })
-    const circ = 2 * Math.PI * 36
-    const gap = 2.5
-    const arcs = wrapper.findAll('.nv-ring-seg')
+    const arcs = readArcs(wrapper)
     expect(arcs).toHaveLength(3)
-
-    // 第一段：24/35 的弧长（扣掉分段间隙），且从 0 起画
-    const span0 = (24 / 35) * circ
-    expect(arcs[0].attributes('stroke-dasharray')).toBe(`${span0 - gap} ${circ - (span0 - gap)}`)
-    expect(arcs[0].attributes('stroke-dashoffset')).toBe('0')
-    // 第二段接在第一段之后（偏移 = 前一段的完整占比，不含间隙）
-    expect(arcs[1].attributes('stroke-dashoffset')).toBe(String(-span0))
+    expect(arcs[0].start).toBeCloseTo(0, 6) // first arc starts at the top (offset 0; -0 ≈ 0)
+    // Σ(弧长) + n×gap = 周长（3 段 × 2.5）
+    const drawn = arcs.reduce((s, a) => s + a.len, 0) + 3 * 2.5
+    expect(drawn).toBeCloseTo(CIRC, 5)
   })
 
-  // 回归：固定 gap 会把小占比段扣成 0 长度弧，最该被看见的异常段反而消失。
-  it('ring 极小非零占比仍保留可见弧（不被 gap 吞成 0）', () => {
+  // 回归（评审二轮）：MIN_ARC 只放大 dash、offset 仍按真实 span 前进时，非末位的
+  // tiny 段会被后绘制段覆盖回 ~0。分配必须不重叠、守恒，且与顺序无关。
+  it.each([
+    ['tiny 在首', [1, 499, 500]],
+    ['tiny 在中', [499, 1, 500]],
+    ['tiny 在尾', [499, 500, 1]],
+    ['多个 tiny', [1, 1, 998]],
+  ])('ring 极小非零段在任意位置都不被覆盖：%s', (_name, values) => {
     const wrapper = mount(NvMetricRing, {
       props: {
-        label: '缺陷占比',
+        label: 't',
         value: 1000,
-        segments: [
-          { label: '正常', value: 999, tone: 'success' as const },
-          { label: '缺陷', value: 1, tone: 'danger' as const },
-        ],
+        segments: values.map((v, i) => ({ label: `s${i}`, value: v, tone: 'brand' as const })),
       },
     })
-    // 1/1000 段：span≈0.226，固定扣 2.5 会得 0；MIN_ARC 兜底应 ≥ 3
-    const arcs = wrapper.findAll('.nv-ring-seg')
-    const tinyLen = Number(arcs[1].attributes('stroke-dasharray')!.split(' ')[0])
-    expect(tinyLen).toBeGreaterThanOrEqual(3)
-    // 真·零占比段才不画
-    const zero = mount(NvMetricRing, {
+    const arcs = readArcs(wrapper)
+    // 每个非零段画出的弧 ≥ MIN_ARC
+    for (const a of arcs) expect(a.len).toBeGreaterThanOrEqual(MIN_ARC - 1e-6)
+    // 无覆盖：后一段的起点必须落在前一段画出的弧之后
+    for (let i = 1; i < arcs.length; i++) {
+      expect(arcs[i].start).toBeGreaterThanOrEqual(arcs[i - 1].start + arcs[i - 1].len - 1e-6)
+    }
+  })
+
+  it('ring 真·零占比段不画弧', () => {
+    const wrapper = mount(NvMetricRing, {
       props: {
         label: 't',
         value: 10,
@@ -296,9 +310,7 @@ describe('NvMetricRing / NvMetricStrip', () => {
         ],
       },
     })
-    expect(
-      Number(zero.findAll('.nv-ring-seg')[1].attributes('stroke-dasharray')!.split(' ')[0]),
-    ).toBe(0)
+    expect(readArcs(wrapper)[1].len).toBe(0)
   })
 
   it('ring 图例给出每段计数与占比，中心默认显示总数', () => {

@@ -378,7 +378,7 @@ function showTargetTip(e: MouseEvent) {
         <div class="mt-4 flex h-1.5 gap-0.5">
           <span
             v-for="(seg, i) in segments"
-            :key="seg.label"
+            :key="seg.key ?? i"
             :class="
               cn(
                 'nv-metric-slice block rounded-sm first:rounded-l-full last:rounded-r-full',
@@ -394,7 +394,7 @@ function showTargetTip(e: MouseEvent) {
         <ul class="mt-3 flex flex-wrap gap-x-3.5 gap-y-1.5">
           <li
             v-for="(seg, i) in segments"
-            :key="seg.label"
+            :key="seg.key ?? i"
             :class="
               cn(
                 'nv-metric-slice inline-flex items-center gap-1.5 text-xs text-muted-foreground',
@@ -444,7 +444,7 @@ function showTargetTip(e: MouseEvent) {
         <div class="mt-4 flex flex-wrap gap-1.5">
           <button
             v-for="(f, i) in facets"
-            :key="f.label"
+            :key="f.key ?? i"
             type="button"
             :class="
               cn(

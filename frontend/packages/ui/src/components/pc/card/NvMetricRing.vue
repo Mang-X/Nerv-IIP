@@ -36,15 +36,9 @@ const props = withDefaults(
 
 const R = 36
 const CIRC = 2 * Math.PI * R
-/** Circumference eaten by the gap between adjacent slices. */
+/** Circumference eaten by the gap after each drawn slice. */
 const GAP = 2.5
-/**
- * Floor on a non-zero slice's drawn arc. A fixed `span - GAP` drops any slice
- * smaller than the gap to zero length — so the one anomaly out of a thousand,
- * the slice that most needs to be seen, would vanish. A non-zero slice always
- * keeps at least this much visible arc, borrowed from the following gap rather
- * than from its neighbours' spans (the offset still advances by the true span).
- */
+/** Minimum drawn arc for a non-zero slice, so the 1-in-1000 anomaly still reads. */
 const MIN_ARC = 3
 
 const total = computed(() =>
@@ -54,20 +48,43 @@ const total = computed(() =>
   ),
 )
 
-/** Arc geometry per slice: proportional length, cumulative start offset. */
+/**
+ * Arc geometry — allocated so the drawn lengths + gaps CONSERVE the full
+ * circumference and never overlap, regardless of slice order.
+ *
+ * A naive `span - GAP` (or flooring only the dash length) breaks two ways: a
+ * sub-gap slice drops to zero, and — since the next slice's offset advances by
+ * the true span and paints on top — a floored tiny slice gets overdrawn back to
+ * nothing when it isn't last. Instead: reserve one GAP per non-zero slice, give
+ * every non-zero slice at least MIN_ARC, distribute the remainder by value, and
+ * advance the offset by each slice's OWN drawn length + gap. No overlap, total
+ * always = CIRC.
+ */
 const arcs = computed(() => {
+  const nonZero = props.segments.reduce((n, s) => n + (s.value > 0 ? 1 : 0), 0)
+  const gapTotal = nonZero * GAP
+  const arcBudget = Math.max(0, CIRC - gapTotal)
+  const floorTotal = nonZero * MIN_ARC
+  // headroom to distribute above the per-slice floor (0 if the ring is so
+  // crowded even the floors don't fit — then split the budget purely by value)
+  const extra = Math.max(0, arcBudget - floorTotal)
+  const floorFits = arcBudget >= floorTotal
+
   let offset = 0
   return props.segments.map((seg) => {
-    const span = (seg.value / total.value) * CIRC
-    // zero stays zero; any non-zero share keeps a legible minimum arc
-    const length = seg.value <= 0 ? 0 : Math.max(MIN_ARC, span - GAP)
+    let length = 0
+    if (seg.value > 0) {
+      const frac = seg.value / total.value
+      length = floorFits ? MIN_ARC + extra * frac : arcBudget * frac
+    }
     const arc = {
       seg,
       dasharray: `${length} ${CIRC - length}`,
       dashoffset: -offset,
       stroke: metricToneStroke[seg.tone ?? 'neutral'],
     }
-    offset += span
+    // advance past this slice's OWN drawn arc (+ a gap only if it drew one)
+    offset += length + (seg.value > 0 ? GAP : 0)
     return arc
   })
 })
@@ -105,7 +122,7 @@ const centerCaptionText = computed(() => {
           <circle cx="42" cy="42" :r="R" fill="none" stroke="var(--muted)" stroke-width="8" />
           <circle
             v-for="(arc, i) in arcs"
-            :key="arc.seg.label"
+            :key="arc.seg.key ?? i"
             cx="42"
             cy="42"
             :r="R"
@@ -142,7 +159,7 @@ const centerCaptionText = computed(() => {
       <ul class="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
         <li
           v-for="(seg, i) in segments"
-          :key="seg.label"
+          :key="seg.key ?? i"
           :class="cn('nv-ring-row flex items-center gap-2 text-xs', dimmed(i) && 'nv-ring-dim')"
           @mouseenter="hovered = i"
           @mouseleave="hovered = null"

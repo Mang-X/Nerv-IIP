@@ -50,9 +50,7 @@ const segmentTooltip = (d: { data?: DonutSlice; index?: number } | DonutSlice) =
   if (!slice) return ''
   const i = (d as { index?: number }).index ?? props.data.indexOf(slice)
   const share = Math.round((slice.value / total.value) * 100)
-  return `<div class="nv-vis-card"><div class="nv-vis-row"><span class="nv-vis-dot" style="background:${cssColor(
-    sliceColor(slice, i),
-  )}"></span><span>${escapeHtml(slice.label)}</span><b>${escapeHtml(slice.value)} · ${escapeHtml(share)}%</b></div></div>`
+  return `<div class="nv-vis-card"><div class="nv-vis-row"><span class="nv-vis-dot" style="background:${escapeHtml(cssColor(sliceColor(slice, i)))}"></span><span>${escapeHtml(slice.label)}</span><b>${escapeHtml(slice.value)} · ${escapeHtml(share)}%</b></div></div>`
 }
 const triggers = { [Donut.selectors.segment]: segmentTooltip }
 </script>

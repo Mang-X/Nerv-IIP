@@ -29,15 +29,20 @@ export function escapeHtml(value: unknown): string {
  * would still take effect inside the style string. Accept only a strict CSS
  * `<color>` — hex / a known colour function / a bare keyword / a `var()` ref —
  * and fall back to `currentColor` (harmless, still visible) for anything else.
- * `url(` is rejected outright since `background` would otherwise fetch it.
- * Internal to the package.
+ * `url(` is rejected outright since `background` would otherwise fetch it, and
+ * quotes / angle brackets are forbidden so the result can't break out of the
+ * `style="…"` attribute it lands in. This validates CSS *semantics*; callers
+ * must STILL HTML-encode the result for the attribute context — the chart sinks
+ * wrap it as `escapeHtml(cssColor(x))`. Internal to the package.
  */
 export function cssColor(value: unknown): string {
   const s = String(value).trim()
   if (/url\(/i.test(s)) return 'currentColor'
   if (/^#[0-9a-f]{3,8}$/i.test(s)) return s
   if (/^[a-z]+$/i.test(s)) return s // named colours, currentColor, transparent
-  if (/^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|var)\([^;{}]*\)$/i.test(s))
+  // function forms: no ; { } (CSS-declaration breakers) and no " ' < > (HTML
+  // attribute breakers) inside — a bare `rgb(0)" onmouseover="…` must not pass.
+  if (/^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|var)\([^;{}"'<>]*\)$/i.test(s))
     return s
   return 'currentColor'
 }

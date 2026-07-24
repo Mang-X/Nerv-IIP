@@ -346,30 +346,30 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 
 ## NvMetricCard 属性
 
-| 属性                  | 说明                                           | 类型                                                                                             | 默认      |
-| --------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------- |
-| `variant`             | 下半区结构                                     | `'default' \| 'icon' \| 'sparkline' \| 'target' \| 'breakdown' \| 'bars' \| 'alert' \| 'facets'` | `default` |
-| `label`               | 指标名                                         | `string`                                                                                         | —         |
-| `value`               | 主数值                                         | `string \| number`                                                                               | —         |
-| `unit`                | 数值单位后缀                                   | `string`                                                                                         | —         |
-| `tone`                | `icon` 图标位 / `alert` 卡面强调 tone          | `'brand' \| 'success' \| 'warning' \| 'danger' \| 'neutral'`                                     | `brand`   |
-| `icon`                | `icon` 变体的图标组件                          | `Component`                                                                                      | —         |
-| `trend`               | 右上环比 chip `{ value, direction?, tone? }`   | `NvMetricDelta`                                                                                  | —         |
-| `series`              | `sparkline` / `bars` 数据                      | `number[]`                                                                                       | —         |
-| `seriesLabels`        | 数据点标签（tooltip）                          | `string[]`                                                                                       | —         |
-| `seriesUnit`          | tooltip 数值单位                               | `string`                                                                                         | —         |
-| `currentIndex`        | `bars` 强调柱下标                              | `number`                                                                                         | —         |
-| `barTones`            | `bars` 每柱 tone                               | `NvMetricTone[]`                                                                                 | —         |
-| `progress`            | `target` 进度 0–100                            | `number`                                                                                         | —         |
-| `targetMarker`        | `target` 刻度位 0–100                          | `number`                                                                                         | `100`     |
-| `targetLabel`         | `target` 右上目标文案                          | `string`                                                                                         | —         |
-| `progressTone`        | `target` 进度条 tone                           | `'brand' \| 'success' \| 'warning' \| 'danger'`                                                  | 自动      |
-| `segments`            | `breakdown` 分段 `{ label, value, tone? }[]`   | `NvMetricSegment[]`                                                                              | —         |
-| `status`              | `alert` 状态 pill `{ label, tone }`            | `NvMetricStatus`                                                                                 | —         |
-| `action`              | `alert` 底部动作 `{ label, href? }`            | `NvMetricAction`                                                                                 | —         |
-| `facets`              | `facets` 维度 chip `{ label, value, tone? }[]` | `NvMetricFacet[]`                                                                                | —         |
-| `footStart`/`footEnd` | `sparkline` / `target` / `bars` 结构化脚注     | `string`                                                                                         | —         |
-| `hint`                | **已弃用**：自由描述文本，改用结构化变体       | `string`                                                                                         | —         |
+| 属性                  | 说明                                                 | 类型                                                                                             | 默认      |
+| --------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------- |
+| `variant`             | 下半区结构                                           | `'default' \| 'icon' \| 'sparkline' \| 'target' \| 'breakdown' \| 'bars' \| 'alert' \| 'facets'` | `default` |
+| `label`               | 指标名                                               | `string`                                                                                         | —         |
+| `value`               | 主数值                                               | `string \| number`                                                                               | —         |
+| `unit`                | 数值单位后缀                                         | `string`                                                                                         | —         |
+| `tone`                | `icon` 图标位 / `alert` 卡面强调 tone                | `'brand' \| 'success' \| 'warning' \| 'danger' \| 'neutral'`                                     | `brand`   |
+| `icon`                | `icon` 变体的图标组件                                | `Component`                                                                                      | —         |
+| `trend`               | 右上环比 chip `{ value, direction?, tone? }`         | `NvMetricDelta`                                                                                  | —         |
+| `series`              | `sparkline` / `bars` 数据                            | `number[]`                                                                                       | —         |
+| `seriesLabels`        | 数据点标签（tooltip）                                | `string[]`                                                                                       | —         |
+| `seriesUnit`          | tooltip 数值单位                                     | `string`                                                                                         | —         |
+| `currentIndex`        | `bars` 强调柱下标                                    | `number`                                                                                         | —         |
+| `barTones`            | `bars` 每柱 tone                                     | `NvMetricTone[]`                                                                                 | —         |
+| `progress`            | `target` 进度 0–100                                  | `number`                                                                                         | —         |
+| `targetMarker`        | `target` 刻度位 0–100                                | `number`                                                                                         | `100`     |
+| `targetLabel`         | `target` 右上目标文案                                | `string`                                                                                         | —         |
+| `progressTone`        | `target` 进度条 tone                                 | `'brand' \| 'success' \| 'warning' \| 'danger'`                                                  | 自动      |
+| `segments`            | `breakdown` 分段 `{ label, value, tone?, key? }[]`   | `NvMetricSegment[]`                                                                              | —         |
+| `status`              | `alert` 状态 pill `{ label, tone }`                  | `NvMetricStatus`                                                                                 | —         |
+| `action`              | `alert` 底部动作 `{ label, href? }`                  | `NvMetricAction`                                                                                 | —         |
+| `facets`              | `facets` 维度 chip `{ label, value, tone?, key? }[]` | `NvMetricFacet[]`                                                                                | —         |
+| `footStart`/`footEnd` | `sparkline` / `target` / `bars` 结构化脚注           | `string`                                                                                         | —         |
+| `hint`                | **已弃用**：自由描述文本，改用结构化变体             | `string`                                                                                         | —         |
 
 事件：`@action`（alert 动作按钮，无 `href` 时）、`@facet`（点击维度 chip，回传该 facet）。
 
@@ -380,7 +380,7 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 | `label`         | 卡标题                                                   | `string`            | —    |
 | `value`         | 中心读数，默认展示的数（常为总数，不带单位避免环内截断） | `string \| number`  | —    |
 | `centerCaption` | 中心数下方小字，如 `总工单` / `总库位`                   | `string`            | —    |
-| `segments`      | 各分段 `{ label, value, tone? }`                         | `NvMetricSegment[]` | `[]` |
+| `segments`      | 各分段 `{ label, value, tone?, key? }`                   | `NvMetricSegment[]` | `[]` |
 
 悬浮分段或图例行时，中心自动切换为该段的数值与占比，无需额外配置。
 
@@ -390,4 +390,4 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 | ------- | -------- | --------------------- | ---- |
 | `cells` | 各格指标 | `NvMetricStripCell[]` | `[]` |
 
-`NvMetricStripCell`：`{ label, value, unit?, valueTone?, meta?, metaTone? }`；`metaTone` 取 `'up' \| 'down' \| 'flat' \| 'neutral'`，向上/下附趋势图标与语义色。
+`NvMetricStripCell`：`{ label, value, unit?, valueTone?, meta?, metaTone?, key? }`；`metaTone` 取 `'up' \| 'down' \| 'flat' \| 'neutral'`，向上/下附趋势图标与语义色。

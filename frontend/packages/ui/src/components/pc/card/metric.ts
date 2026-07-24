@@ -37,6 +37,12 @@ export interface NvMetricSegment {
   label: string
   value: number
   tone?: NvMetricTone
+  /**
+   * Stable v-for key. Provide it when two slices can share a `label` (labels
+   * are NOT required to be unique); the component falls back to the array index
+   * when it is absent.
+   */
+  key?: string | number
 }
 
 /** One dimension chip of a `facets` card. */
@@ -45,6 +51,8 @@ export interface NvMetricFacet {
   value: string | number
   /** `danger`/`warning` tint the chip to flag an at-risk dimension. */
   tone?: NvMetricTone
+  /** Stable v-for key; falls back to the array index when absent. */
+  key?: string | number
 }
 
 /** A pill (e.g. 需处理 / 正常) shown top-right of an `alert` card. */
@@ -69,6 +77,8 @@ export interface NvMetricStripCell {
   /** Sub-line under the value: a delta or a short note. */
   meta?: string
   metaTone?: NvMetricDeltaDirection | 'neutral'
+  /** Stable v-for key; falls back to the array index when absent. */
+  key?: string | number
 }
 
 /** tone → tinted-surface classes (background + strong text), mirrors NvStatusBadge. */

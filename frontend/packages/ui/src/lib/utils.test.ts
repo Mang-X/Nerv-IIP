@@ -65,6 +65,17 @@ describe('cssColor — chart tooltip inline-style sink', () => {
     expect(cssColor('red}#x{color:red')).toBe('currentColor')
   })
 
+  it('rejects a quote that would break out of the style attribute', () => {
+    // `rgb(0)" onmouseover="alert(1))` matched the earlier grammar and, once
+    // interpolated into style="background:…", closed the attribute and added an
+    // event handler. The quote must disqualify it (defence-in-depth: sinks also
+    // escapeHtml the result).
+    expect(cssColor('rgb(0)" onmouseover="alert(1))')).toBe('currentColor')
+    expect(cssColor("var(--x)' onload='alert(1)")).toBe('currentColor')
+    // and the belt-and-suspenders sink form is inert as markup
+    expect(escapeHtml(cssColor('rgb(0)" onmouseover="x'))).toBe('currentColor')
+  })
+
   it('refuses url() even inside an otherwise valid var() fallback', () => {
     expect(cssColor('var(--x, url(https://example.invalid/x))')).toBe('currentColor')
     expect(cssColor('url(https://example.invalid/x)')).toBe('currentColor')

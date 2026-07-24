@@ -43,7 +43,7 @@ const tooltipTemplate = (d: Row) => {
   const rows = props.series
     .map(
       (s, i) =>
-        `<div class="nv-vis-row"><span class="nv-vis-dot" style="background:${cssColor(colors.value[i])}"></span><span>${escapeHtml(s.label)}</span><b>${escapeHtml(d[s.key])}${escapeHtml(props.valueSuffix)}</b></div>`,
+        `<div class="nv-vis-row"><span class="nv-vis-dot" style="background:${escapeHtml(cssColor(colors.value[i]))}"></span><span>${escapeHtml(s.label)}</span><b>${escapeHtml(d[s.key])}${escapeHtml(props.valueSuffix)}</b></div>`,
     )
     .join('')
   return `<div class="nv-vis-card"><div class="nv-vis-head">${escapeHtml(d[props.xKey])}</div>${rows}</div>`
