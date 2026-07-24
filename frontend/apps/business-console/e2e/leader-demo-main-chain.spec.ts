@@ -1425,6 +1425,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     }
 
     let productionReportId = ''
+    let productionReportNo = ''
     let operationTaskId = ''
     if (workOrderId && operationTask) {
       try {
@@ -1500,6 +1501,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         )
         const reportData = asRecord(dataOf(report.payload))
         productionReportId = textOf(reportData.productionReportId)
+        productionReportNo = textOf(reportData.reportNo)
         const reportReplay = await call(
           'POST',
           '/api/business-console/v1/mes/production-reports',
@@ -1507,9 +1509,9 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         )
         const reportReplayData = asRecord(dataOf(reportReplay.payload))
         const reportReplayId = textOf(reportReplayData.productionReportId)
-        if (!productionReportId || reportReplayId !== productionReportId) {
+        if (!productionReportId || !productionReportNo || reportReplayId !== productionReportId) {
           throw new Error(
-            `Production-report replay returned ${reportReplayId || 'no id'} instead of ${productionReportId || 'no original id'}.`,
+            `Production-report replay returned ${reportReplayId || 'no id'} instead of ${productionReportId || 'no original id'}; report number=${productionReportNo || 'missing'}.`,
           )
         }
         record({
@@ -1596,6 +1598,24 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
       }
     }
 
+    let producedLotEvidence: Awaited<ReturnType<typeof pollRows>> | null = null
+    if (productionReportId) {
+      try {
+        producedLotEvidence = await pollRows(
+          `/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}/produced-lots`,
+          { organizationId, environmentId },
+          (row) =>
+            textOf(row.producedLotNo) === producedLotNo &&
+            textOf(row.reportNo) === productionReportNo &&
+            textOf(row.operationTaskId) === operationTaskId &&
+            Number(row.quantity ?? 0) === finishedGoodsQuantity &&
+            Number(row.remainingQuantity ?? 0) === finishedGoodsQuantity,
+        )
+      } catch (error) {
+        markFailure('inventory-produced-lot-fulfillment-lookup', error)
+      }
+    }
+
     let receiptRequestNo = ''
     if (productionReportId) {
       try {
@@ -1670,7 +1690,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
       }
     }
 
-    if (receiptRequestNo) {
+    if (receiptRequestNo && producedLotEvidence) {
       try {
         const capitalizedReceipt = await pollRows(
           '/api/business-console/v1/mes/finished-goods-receipt-requests',
@@ -1748,11 +1768,13 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           node: 'inventory-produced-lot-fulfillment-lookup',
           sourceObject: receiptRequestNo,
           downstreamObject: textOf(sourceMovement.movementId),
-          stableKey: `${receiptRequestNo} -> ${workOrderId} -> ${producedLotNo} -> ${textOf(sourceMovement.movementId)}`,
+          stableKey: `${receiptRequestNo} -> ${workOrderId} -> ${productionReportNo} -> ${producedLotNo} -> ${textOf(sourceMovement.movementId)}`,
           automationMode: 'automatic',
           request: inventoryLink.call.summary,
           responseOrLog: {
             poll: inventoryLink.poll,
+            producedLotRequest: producedLotEvidence.call.summary,
+            mesProducedLot: publicJson(producedLotEvidence.match),
             capitalizedReceiptPoll: capitalizedReceipt.poll,
             mesReceiptCost: publicJson(mesReceipt),
             movementId: textOf(sourceMovement.movementId),
@@ -1940,17 +1962,42 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         const receivableNo = textOf(
           receivable.match.receivableNo ?? receivable.match.accountReceivableNo,
         )
+        const receivableBySource = await call(
+          'GET',
+          queryPath('/api/business-console/v1/erp/finance/receivables/by-source', {
+            organizationId,
+            environmentId,
+            sourceDocumentNo: deliveryOrderNo,
+          }),
+        )
+        const receivableBySourceData = asRecord(dataOf(receivableBySource.payload))
+        if (
+          textOf(receivableBySourceData.sourceDocumentNo) !== deliveryOrderNo ||
+          textOf(receivableBySourceData.receivableNo) !== receivableNo ||
+          textOf(receivableBySourceData.customerCode) !== textOf(receivable.match.customerCode) ||
+          Number(receivableBySourceData.amount ?? 0) !== Number(receivable.match.amount ?? 0) ||
+          Number(receivableBySourceData.openAmount ?? 0) !==
+            Number(receivable.match.openAmount ?? 0) ||
+          textOf(receivableBySourceData.currencyCode) !== textOf(receivable.match.currencyCode)
+        ) {
+          throw new Error(
+            `Receivable by-source did not match ${deliveryOrderNo}/${receivableNo}: ${safeText(JSON.stringify(receivableBySourceData))}.`,
+          )
+        }
         record({
           node: 'wms-completed-account-receivable',
           sourceObject: deliveryOrderNo,
           downstreamObject: receivableNo,
           stableKey: `${deliveryOrderNo} -> ${receivableNo}`,
           automationMode: 'automatic',
-          request: receivable.call.summary,
-          responseOrLog: publicJson(receivable.match) as JsonRecord,
+          request: receivableBySource.summary,
+          responseOrLog: {
+            listMatch: publicJson(receivable.match),
+            bySource: publicJson(receivableBySourceData),
+          },
           conclusion: 'runtime-confirmed',
           demoWording:
-            'Only the Inventory-confirmed WMS completion produced a public receivable carrying the same delivery source key.',
+            'Only the Inventory-confirmed WMS completion produced a public receivable, and the dedicated by-source facade returned the same receivable for the exact delivery key.',
           responsibilityIssue: '#1083',
         })
         const voucher = await pollRows(

@@ -270,7 +270,7 @@ describe('leader demo main-chain public prerequisites', () => {
   })
 
   it('polls exact finished-goods Inventory availability with a bounded public wait', () => {
-    const receiptFlow = sourceBetween("let receiptRequestNo = ''", "let wmsOutboundId = ''")
+    const receiptFlow = sourceBetween("let productionReportId = ''", "let wmsOutboundId = ''")
     const finishedGoodsReceiptRequest = sourceBetween(
       'const receipt = await call(',
       'receiptRequestNo =',
@@ -409,6 +409,56 @@ describe('leader demo main-chain public prerequisites', () => {
       "entry.node === 'inventory-produced-lot-fulfillment-lookup'",
     )
     expect(finalAcceptance).not.toContain('#972')
+  })
+
+  it('proves the authoritative MES produced lot through the public work-order facade', () => {
+    const reportFlow = sourceBetween(
+      "let productionReportId = ''",
+      'if (productionReportId && operationTaskId && inspectionPlanId)',
+    )
+    const receiptFlow = sourceBetween(
+      'let producedLotEvidence: Awaited<ReturnType<typeof pollRows>> | null = null',
+      "let wmsOutboundId = ''",
+    )
+
+    expect(reportFlow).toContain("let productionReportNo = ''")
+    expect(reportFlow).toContain('productionReportNo = textOf(reportData.reportNo)')
+    expect(receiptFlow).toContain('producedLotEvidence = await pollRows(')
+    expect(receiptFlow).toContain(
+      '/mes/work-orders/${encodeURIComponent(workOrderId)}/produced-lots`',
+    )
+    expect(receiptFlow).toContain('textOf(row.producedLotNo) === producedLotNo')
+    expect(receiptFlow).toContain('textOf(row.reportNo) === productionReportNo')
+    expect(receiptFlow).toContain('textOf(row.operationTaskId) === operationTaskId')
+    expect(receiptFlow).toContain('Number(row.quantity ?? 0) === finishedGoodsQuantity')
+    expect(receiptFlow).toContain('Number(row.remainingQuantity ?? 0) === finishedGoodsQuantity')
+    expect(
+      receiptFlow.indexOf('/mes/work-orders/${encodeURIComponent(workOrderId)}/produced-lots`'),
+    ).toBeLessThan(
+      receiptFlow.indexOf("'/api/business-console/v1/mes/finished-goods-receipt-requests'"),
+    )
+    const inventoryLinkEvidence = sourceBetween(
+      "node: 'inventory-produced-lot-fulfillment-lookup'",
+      "markFailure('inventory-produced-lot-fulfillment-lookup', error)",
+    )
+    expect(inventoryLinkEvidence).toContain('producedLotRequest: producedLotEvidence.call.summary')
+    expect(inventoryLinkEvidence).toContain('mesProducedLot: publicJson(producedLotEvidence.match)')
+  })
+
+  it('proves the receivable through the exact public by-source facade', () => {
+    const financeFlow = sourceBetween(
+      'const receivable = await pollRows(',
+      'const voucher = await pollRows(',
+    )
+
+    expect(financeFlow).toContain('const receivableBySource = await call(')
+    expect(financeFlow).toContain("'/api/business-console/v1/erp/finance/receivables/by-source'")
+    expect(financeFlow).toContain('sourceDocumentNo: deliveryOrderNo')
+    expect(financeFlow).toContain('textOf(receivableBySourceData.sourceDocumentNo)')
+    expect(financeFlow).toContain('textOf(receivableBySourceData.receivableNo)')
+    expect(financeFlow).toContain('request: receivableBySource.summary')
+    expect(financeFlow).toContain('listMatch: publicJson(receivable.match)')
+    expect(financeFlow).toContain('bySource: publicJson(receivableBySourceData)')
   })
 
   it('completes the run-scoped WMS outbound with the required business context query', () => {
