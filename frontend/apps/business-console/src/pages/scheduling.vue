@@ -10,7 +10,13 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useBusinessScheduling } from '@/composables/useBusinessScheduling'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
+import {
+  DEFAULT_URGENCY_DISPLAY_MODE,
+  orderRowsByUrgency,
+  type UrgencyDisplayMode,
+} from '@/composables/useUrgencyDisplayMode'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
+import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
 import {
   schedulingPlanStatusLabel,
@@ -83,6 +89,19 @@ const route = useRoute()
 const orderUrgencies = useOrderUrgencies(
   computed(() => (planDetail.value?.assignments ?? []).map((assignment) => assignment.orderId)),
 )
+const displayMode = shallowRef<UrgencyDisplayMode>(DEFAULT_URGENCY_DISPLAY_MODE)
+// 明细资源分配默认按统一紧急度排序（呈现层重排，不改动方案结果）。
+const orderedAssignments = computed(() =>
+  orderRowsByUrgency(
+    planDetail.value?.assignments ?? [],
+    (assignment) => assignment.orderId,
+    orderUrgencies.byReference.value,
+  ),
+)
+function refreshUrgency() {
+  void orderUrgencies.refresh()
+  refreshPlans()
+}
 
 const activeView = shallowRef('table')
 const detailOpen = shallowRef(false)
@@ -674,10 +693,13 @@ function reasonLabel(reason?: string | null) {
           </section>
 
           <section class="grid gap-3">
-            <h3 class="text-sm font-semibold text-foreground">资源分配</h3>
-            <div v-if="planDetail.assignments?.length" class="grid gap-2">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h3 class="text-sm font-semibold text-foreground">资源分配</h3>
+              <UrgencyDisplayModeSelect v-model="displayMode" />
+            </div>
+            <div v-if="orderedAssignments.length" class="grid gap-2">
               <div
-                v-for="assignment in planDetail.assignments"
+                v-for="assignment in orderedAssignments"
                 :key="assignment.assignmentId ?? assignmentText(assignment)"
                 class="rounded-md border bg-background p-3"
                 :class="{
@@ -693,11 +715,13 @@ function reasonLabel(reason?: string | null) {
                   </p>
                   <OrderUrgencyBadge
                     :order-reference="assignment.orderId ?? ''"
+                    :mode="displayMode"
                     :urgency="
                       assignment.orderId
                         ? orderUrgencies.byReference.value.get(assignment.orderId)
                         : undefined
                     "
+                    @refresh="refreshUrgency"
                   />
                 </div>
                 <p class="mt-1 text-sm text-muted-foreground">

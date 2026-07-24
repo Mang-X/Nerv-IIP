@@ -13,7 +13,13 @@ import {
 } from '@/composables/useBusinessMasterData'
 import { useBusinessPlanning } from '@/composables/useBusinessPlanning'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
+import {
+  DEFAULT_URGENCY_DISPLAY_MODE,
+  orderRowsByUrgency,
+  type UrgencyDisplayMode,
+} from '@/composables/useUrgencyDisplayMode'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
+import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
@@ -102,6 +108,19 @@ const router = useRouter()
 const orderUrgencies = useOrderUrgencies(
   computed(() => demands.value.map((demand) => demand.sourceReference)),
 )
+const displayMode = shallowRef<UrgencyDisplayMode>(DEFAULT_URGENCY_DISPLAY_MODE)
+// 排序独立于显示模式：需求默认按统一紧急度排序。
+const orderedDemands = computed(() =>
+  orderRowsByUrgency(
+    demands.value,
+    (demand) => demand.sourceReference,
+    orderUrgencies.byReference.value,
+  ),
+)
+function refreshUrgency() {
+  void orderUrgencies.refresh()
+  refreshPlanning()
+}
 
 // 主数据：SKU / 工厂 / 计量单位（Select 显名称、绑定编码，码→名解析复用）。
 const { skus } = useBusinessSkus()
@@ -925,10 +944,13 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       <NvTabsTrigger value="suggestions">计划建议 ({{ suggestions.length }})</NvTabsTrigger>
     </NvTabsList>
 
-    <NvTabsContent value="demands">
+    <NvTabsContent value="demands" class="grid gap-3">
+      <div class="flex flex-wrap items-center justify-end">
+        <UrgencyDisplayModeSelect v-model="displayMode" />
+      </div>
       <NvDataTable
         :columns="demandColumns"
-        :rows="demands"
+        :rows="orderedDemands"
         row-key="demandSourceId"
         :loading="demandsPending"
         :searchable="false"
@@ -979,11 +1001,13 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         <template #cell-urgency="{ row }">
           <OrderUrgencyBadge
             :order-reference="row.sourceReference ?? ''"
+            :mode="displayMode"
             :urgency="
               row.sourceReference
                 ? orderUrgencies.byReference.value.get(row.sourceReference)
                 : undefined
             "
+            @refresh="refreshUrgency"
           />
         </template>
         <template #cell-coverage="{ row }"
