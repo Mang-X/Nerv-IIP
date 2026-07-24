@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Seed;
@@ -9,7 +10,7 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 public sealed class LeaderDemoSeedServiceTests
 {
     [Fact]
-    public async Task Seed_creates_temperature_tag_and_enabled_rule_once_without_final_facts()
+    public async Task Seed_creates_two_second_temperature_and_vibration_tags_with_vibration_rule_once_without_final_facts()
     {
         await using var db = CreateDbContext();
         var seed = new LeaderDemoSeedService(db);
@@ -17,14 +18,37 @@ public sealed class LeaderDemoSeedServiceTests
         await seed.SeedAsync("org-001", "env-dev");
         await seed.SeedAsync("org-001", "env-dev");
 
-        var tag = Assert.Single(await db.TelemetryTags.ToArrayAsync());
-        Assert.Equal("DEV-CNC-DEMO", tag.DeviceAssetId);
-        Assert.Equal(LeaderDemoSeedService.TemperatureTagKey, tag.TagKey);
+        var tags = await db.TelemetryTags.OrderBy(x => x.TagKey).ToArrayAsync();
+        Assert.Collection(
+            tags,
+            temperature =>
+            {
+                Assert.Equal("DEV-CNC-DEMO", temperature.DeviceAssetId);
+                Assert.Equal(LeaderDemoSeedService.TemperatureTagKey, temperature.TagKey);
+                Assert.Equal("decimal", temperature.ValueType);
+                Assert.Equal("degC", temperature.UnitCode);
+                Assert.Equal("sample-2s", temperature.SamplingPolicy);
+                Assert.Equal(2, TelemetrySamplingPolicy.Parse(temperature.SamplingPolicy).BucketSeconds);
+            },
+            vibration =>
+            {
+                Assert.Equal("DEV-CNC-DEMO", vibration.DeviceAssetId);
+                Assert.Equal(LeaderDemoSeedService.VibrationTagKey, vibration.TagKey);
+                Assert.Equal("decimal", vibration.ValueType);
+                Assert.Equal("mm/s", vibration.UnitCode);
+                Assert.Equal("sample-2s", vibration.SamplingPolicy);
+                Assert.Equal(2, TelemetrySamplingPolicy.Parse(vibration.SamplingPolicy).BucketSeconds);
+            });
         var rule = Assert.Single(await db.AlarmRules.ToArrayAsync());
         Assert.Equal("ALARM-DEMO-001", rule.RuleCode);
+        Assert.Equal("VIBRATION-HIGH", rule.AlarmCode);
+        Assert.Equal(LeaderDemoSeedService.VibrationTagKey, rule.TagKey);
+        Assert.Equal(8m, rule.ThresholdValue);
+        Assert.Equal("mm/s", rule.UnitCode);
         Assert.True(rule.IsEnabled);
         Assert.Empty(await db.TelemetryRawSamples.ToArrayAsync());
         Assert.Empty(await db.TelemetrySummaries.ToArrayAsync());
+        Assert.Empty(await db.DeviceStateSnapshots.ToArrayAsync());
         Assert.Empty(await db.AlarmEvents.ToArrayAsync());
     }
 
@@ -40,6 +64,27 @@ public sealed class LeaderDemoSeedServiceTests
 
         Assert.Contains(LeaderDemoSeedService.TemperatureTagKey, exception.Message, StringComparison.Ordinal);
         Assert.Equal("string", (await db.TelemetryTags.SingleAsync()).ValueType);
+    }
+
+    [Fact]
+    public async Task Seed_rejects_an_incompatible_reserved_vibration_tag()
+    {
+        await using var db = CreateDbContext();
+        db.TelemetryTags.Add(TelemetryTag.Create(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-DEMO",
+            LeaderDemoSeedService.VibrationTagKey,
+            "decimal",
+            "g",
+            "sample-10s"));
+        await db.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new LeaderDemoSeedService(db).SeedAsync("org-001", "env-dev"));
+
+        Assert.Contains(LeaderDemoSeedService.VibrationTagKey, exception.Message, StringComparison.Ordinal);
+        Assert.Equal("g", (await db.TelemetryTags.SingleAsync()).UnitCode);
     }
 
     private static ApplicationDbContext CreateDbContext()
