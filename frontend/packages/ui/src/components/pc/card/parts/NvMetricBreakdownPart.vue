@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { cn } from '../../../../lib/utils'
-import { metricToneFill, type NvMetricSegment } from '../metric'
+import { metricItemKey, metricToneFill, type NvMetricSegment } from '../metric'
 import { useMetricTooltip } from '../useMetricTooltip'
 import NvMetricTipPart from './NvMetricTipPart.vue'
 
@@ -25,14 +25,13 @@ const total = computed(() =>
  * re-point the linked highlight at a different business item. The index
  * fallback is only valid under the documented order-stable contract.
  */
-const keyOf = (seg: NvMetricSegment, i: number) => seg.key ?? i
-const hovered = ref<string | number | null>(null)
+const hovered = ref<string | null>(null)
 const dimmed = (seg: NvMetricSegment, i: number) =>
-  hovered.value !== null && hovered.value !== keyOf(seg, i)
+  hovered.value !== null && hovered.value !== metricItemKey(seg, i)
 
 const tip = useMetricTooltip()
 function showTip(e: MouseEvent, seg: NvMetricSegment, i: number) {
-  hovered.value = keyOf(seg, i)
+  hovered.value = metricItemKey(seg, i)
   const pct = ((seg.value / total.value) * 100).toFixed(1)
   tip.move(e, {
     rows: [
@@ -48,13 +47,23 @@ function clear() {
   hovered.value = null
   tip.hide()
 }
+// Live data can filter the hovered slice away without ever firing mouseleave on
+// the unmounted node — a stale key would dim every remaining slice and keep the
+// removed item's tooltip on screen.
+watch(
+  () => props.segments,
+  (segs) => {
+    if (hovered.value !== null && !segs.some((s, i) => metricItemKey(s, i) === hovered.value))
+      clear()
+  },
+)
 </script>
 
 <template>
   <div class="mt-4 flex h-1.5 gap-0.5">
     <span
       v-for="(seg, i) in segments"
-      :key="seg.key ?? i"
+      :key="metricItemKey(seg, i)"
       :class="
         cn(
           'nv-metric-slice block rounded-sm first:rounded-l-full last:rounded-r-full',
@@ -70,7 +79,7 @@ function clear() {
   <ul class="mt-3 flex flex-wrap gap-x-3.5 gap-y-1.5">
     <li
       v-for="(seg, i) in segments"
-      :key="seg.key ?? i"
+      :key="metricItemKey(seg, i)"
       :class="
         cn(
           'nv-metric-slice inline-flex items-center gap-1.5 text-xs text-muted-foreground',

@@ -503,6 +503,79 @@ describe('NvMetricRing / NvMetricStrip', () => {
     expect(lis[0].classes()).toContain('nv-metric-dim')
   })
 
+  // 回归（评审五轮）：显式 key 与 index 回落必须互不相交——[{key:1},{无 key}] 曾
+  // 双双解析为 1：v-for 重复 key，且悬浮第二项时 find 命中第一项，中心读数错绑。
+  it('ring 混合 key 输入：显式 key 与 index 回落不碰撞，悬浮绑定正确', async () => {
+    const wrapper = mount(NvMetricRing, {
+      props: {
+        label: 't',
+        value: 33,
+        segments: [
+          { label: 'a', value: 24, key: 1, tone: 'brand' as const },
+          { label: 'b', value: 9, tone: 'success' as const }, // 无 key，index=1
+        ],
+      },
+    })
+    await wrapper.findAll('.nv-ring-row')[1].trigger('mouseenter')
+    // 必须读到 b(9)，而不是显式 key=1 的 a(24)
+    const centre = wrapper.find('.nv-ring-center').text()
+    expect(centre).toContain('9')
+    expect(centre).not.toContain('24')
+  })
+
+  // 回归（评审五轮）：悬浮项被实时过滤删除时，卸载节点不会触发 mouseleave——
+  // 残留 key 会把剩余分段永久淡化（breakdown 还会留下已删项的 tooltip）。
+  it('ring 悬浮项被过滤删除：hover 清空、其余分段不再淡化、中心回到总数', async () => {
+    const seg = (label: string, value: number, key: string) => ({
+      label,
+      value,
+      key,
+      tone: 'brand' as const,
+    })
+    const wrapper = mount(NvMetricRing, {
+      props: {
+        label: 't',
+        value: 35,
+        centerCaption: '总计',
+        segments: [seg('进行中', 24, 'a'), seg('待派工', 9, 'b'), seg('超期', 2, 'c')],
+      },
+    })
+    await wrapper.findAll('.nv-ring-row')[2].trigger('mouseenter') // key 'c'
+    expect(wrapper.findAll('.nv-ring-dim').length).toBeGreaterThan(0)
+
+    await wrapper.setProps({ segments: [seg('进行中', 24, 'a'), seg('待派工', 9, 'b')] })
+    expect(wrapper.findAll('.nv-ring-dim')).toHaveLength(0)
+    expect(wrapper.find('.nv-ring-center').text()).toContain('总计')
+  })
+
+  it('breakdown 悬浮项被过滤删除：联动淡化清空、tooltip 隐藏', async () => {
+    const seg = (label: string, value: number, key: string) => ({
+      label,
+      value,
+      key,
+      tone: 'brand' as const,
+    })
+    const wrapper = mount(NvMetricCard, {
+      props: {
+        variant: 'breakdown',
+        label: '在制工单',
+        value: 35,
+        segments: [seg('进行中', 24, 'a'), seg('超期', 2, 'c')],
+      },
+    })
+    // 同文件早前用例的 tip 可能仍挂在 body 上（它们 hover 后未 mouseleave），
+    // 用计数增量断言本用例自己的 tip 出现与消失。
+    const tips = () => document.querySelectorAll('.nv-metric-tip').length
+    const before = tips()
+    await wrapper.findAll('li')[1].trigger('mousemove', { clientX: 10, clientY: 10 }) // key 'c'
+    expect(wrapper.findAll('.nv-metric-dim').length).toBeGreaterThan(0)
+    expect(tips()).toBe(before + 1) // teleported tip 在场
+
+    await wrapper.setProps({ segments: [seg('进行中', 24, 'a')] })
+    expect(wrapper.findAll('.nv-metric-dim')).toHaveLength(0)
+    expect(tips()).toBe(before) // 已删项的 tooltip 不残留
+  })
+
   it('ring 图例给出每段计数与占比，中心默认显示总数', () => {
     const wrapper = mount(NvMetricRing, {
       props: { label: '在制工单', value: 35, centerCaption: '总计', segments: ringSegments },

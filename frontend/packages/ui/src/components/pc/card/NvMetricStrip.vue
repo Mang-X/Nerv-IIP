@@ -3,7 +3,7 @@ import type { HTMLAttributes } from 'vue'
 import { MinusIcon, TrendingDownIcon, TrendingUpIcon } from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 import NvCard from './NvCard.vue'
-import { metricToneText, type NvMetricStripCell } from './metric'
+import { metricItemKey, metricToneText, type NvMetricStripCell } from './metric'
 
 /**
  * Pro — one card holding a row of related metrics, separators standing in for
@@ -31,7 +31,7 @@ function metaToneClass(tone?: string) {
   <NvCard :class="cn('flex flex-col overflow-hidden p-0 sm:flex-row', props.class)">
     <div
       v-for="(cell, i) in cells"
-      :key="cell.key ?? i"
+      :key="metricItemKey(cell, i)"
       class="flex flex-1 flex-col gap-1 border-border p-4 [&:not(:first-child)]:border-t sm:px-5 sm:[&:not(:first-child)]:border-l sm:[&:not(:first-child)]:border-t-0"
     >
       <p class="truncate text-sm text-muted-foreground">{{ cell.label }}</p>

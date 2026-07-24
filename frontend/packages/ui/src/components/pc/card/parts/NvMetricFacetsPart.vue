@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { cn } from '../../../../lib/utils'
-import { metricToneTint, type NvMetricFacet } from '../metric'
+import { metricItemKey, metricToneTint, type NvMetricFacet } from '../metric'
 
 /**
  * Internal — the `facets` bottom-zone: clickable dimension chips that break the
@@ -16,7 +16,7 @@ const emit = defineEmits<{ (e: 'facet', facet: NvMetricFacet): void }>()
   <div class="mt-4 flex flex-wrap gap-1.5">
     <button
       v-for="(f, i) in facets"
-      :key="f.key ?? i"
+      :key="metricItemKey(f, i)"
       type="button"
       :class="
         cn(

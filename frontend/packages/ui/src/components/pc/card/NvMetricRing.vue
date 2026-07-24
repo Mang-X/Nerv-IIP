@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { cn } from '../../../lib/utils'
 import NvCard from './NvCard.vue'
-import { metricToneFill, metricToneStroke, type NvMetricSegment } from './metric'
+import { metricItemKey, metricToneFill, metricToneStroke, type NvMetricSegment } from './metric'
 
 /**
  * Pro — the circular form of a composition: one coloured arc per slice, each
@@ -114,12 +114,20 @@ const arcs = computed(() => {
  * `key` provided the hover follows the item; the index fallback is only valid
  * under the documented order-stable contract.
  */
-const keyOf = (seg: NvMetricSegment, i: number) => seg.key ?? i
-const hovered = ref<string | number | null>(null)
+const hovered = ref<string | null>(null)
 const dimmed = (seg: NvMetricSegment, i: number) =>
-  hovered.value !== null && hovered.value !== keyOf(seg, i)
+  hovered.value !== null && hovered.value !== metricItemKey(seg, i)
 const hoveredSeg = computed(
-  () => props.segments.find((seg, i) => keyOf(seg, i) === hovered.value) ?? null,
+  () => props.segments.find((seg, i) => metricItemKey(seg, i) === hovered.value) ?? null,
+)
+// Live data can filter the hovered slice away without ever firing mouseleave on
+// the unmounted node — a stale key would then dim every remaining slice forever.
+watch(
+  () => props.segments,
+  (segs) => {
+    if (hovered.value !== null && !segs.some((s, i) => metricItemKey(s, i) === hovered.value))
+      hovered.value = null
+  },
 )
 
 function share(seg: NvMetricSegment) {
@@ -151,7 +159,7 @@ const centerCaptionText = computed(() =>
           <circle cx="42" cy="42" :r="R" fill="none" stroke="var(--muted)" stroke-width="8" />
           <circle
             v-for="(arc, i) in arcs"
-            :key="arc.seg.key ?? i"
+            :key="metricItemKey(arc.seg, i)"
             cx="42"
             cy="42"
             :r="R"
@@ -161,7 +169,7 @@ const centerCaptionText = computed(() =>
             :stroke-dasharray="arc.dasharray"
             :stroke-dashoffset="arc.dashoffset"
             :class="cn('nv-ring-seg', dimmed(arc.seg, i) && 'nv-ring-dim')"
-            @mouseenter="hovered = keyOf(arc.seg, i)"
+            @mouseenter="hovered = metricItemKey(arc.seg, i)"
             @mouseleave="hovered = null"
           />
         </svg>
@@ -188,11 +196,11 @@ const centerCaptionText = computed(() =>
       <ul class="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
         <li
           v-for="(seg, i) in segments"
-          :key="seg.key ?? i"
+          :key="metricItemKey(seg, i)"
           :class="
             cn('nv-ring-row flex items-center gap-2 text-xs', dimmed(seg, i) && 'nv-ring-dim')
           "
-          @mouseenter="hovered = keyOf(seg, i)"
+          @mouseenter="hovered = metricItemKey(seg, i)"
           @mouseleave="hovered = null"
         >
           <span :class="cn('size-2 flex-none rounded-sm', metricToneFill[seg.tone ?? 'neutral'])" />

@@ -125,6 +125,17 @@ export const metricToneStroke: Record<NvMetricTone, string> = {
   neutral: 'var(--muted-foreground)',
 }
 
+/**
+ * Resolve an item's stable identity for v-for keys AND interaction state.
+ * Explicit keys and index fallbacks live in DISJOINT namespaces (`k:` / `i:`):
+ * a bare `item.key ?? index` lets a mixed collection collide — `[{key: 1}, {}]`
+ * resolves both items to `1`, producing duplicate v-for keys and mis-binding
+ * the hover lookup to the wrong business item. Internal to the package.
+ */
+export function metricItemKey(item: { key?: string | number }, index: number): string {
+  return item.key != null ? `k:${item.key}` : `i:${index}`
+}
+
 /** Resolve a delta's semantic tone from its (optional) override + direction. */
 export function resolveDeltaTone(delta: NvMetricDelta): NvMetricTone {
   if (delta.tone) return delta.tone

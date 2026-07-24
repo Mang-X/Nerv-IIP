@@ -64,7 +64,11 @@ const props = withDefaults(
     targetMarker?: number
     /** `target`: label shown top-right, e.g. `目标 15,000 件`. */
     targetLabel?: string
-    /** `target`/`sparkline`/`bars`: structured footer slots (no free text elsewhere). */
+    /**
+     * Structured footer slots (no free text elsewhere). `sparkline`/`target`/
+     * `bars` consume both; `alert` is asymmetric — it renders only `footStart`
+     * as the footer note (`footEnd` is ignored there).
+     */
     footStart?: string
     footEnd?: string
     /** `target`: fill tone; defaults to success at ≥100%, else brand. */
