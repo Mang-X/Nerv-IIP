@@ -146,14 +146,12 @@ public sealed class ErpSalesFinanceEndpointContractTests
         Assert.Equal("DO-002", item.DeliveryOrderNo);
         Assert.Equal("SO-002", item.SalesOrderNo);
         Assert.Equal("released", item.Status);
-        var siteCode = item.GetType().GetProperty("SiteCode");
         var line = Assert.Single(item.Lines);
-        Assert.NotNull(siteCode);
-        Assert.Equal("SITE-001", siteCode.GetValue(item));
-        Assert.Equal("SKU-FG-002", line.GetType().GetProperty("SkuCode")?.GetValue(line));
-        Assert.Equal("EA", line.GetType().GetProperty("UomCode")?.GetValue(line));
-        Assert.Equal("receiving", line.GetType().GetProperty("LocationCode")?.GetValue(line));
-        Assert.Equal("LOT-FG-002", line.GetType().GetProperty("LotNo")?.GetValue(line));
+        Assert.Equal("SITE-001", item.SiteCode);
+        Assert.Equal("SKU-FG-002", line.SkuCode);
+        Assert.Equal("EA", line.UomCode);
+        Assert.Equal("receiving", line.LocationCode);
+        Assert.Equal("LOT-FG-002", line.LotNo);
         Assert.Equal(1m, line.Quantity);
     }
 

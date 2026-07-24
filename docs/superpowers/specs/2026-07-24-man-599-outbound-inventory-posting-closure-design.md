@@ -40,7 +40,9 @@ complete the delivery and create financial facts before stock changes.
 
 ERP `DeliveryOrder` snapshots `SalesOrder.SiteCode` in a new non-null
 `erp.delivery_orders.site_code` column. The migration backfills existing
-delivery rows from their source sales orders in the same ERP schema. The
+delivery rows from their source sales orders in the same ERP schema and aborts
+with an explicit orphan-row count before the non-null transition when the
+authoritative site cannot be recovered. The
 delivery write facade accepts `locationCode` and `lotNo`; the read facade
 returns header `siteCode` and line SKU, UOM, location, and lot.
 
@@ -53,6 +55,13 @@ posted. A rejected callback marks the order failed. Retry moves the order back
 to pending; old failed attempts remain auditable and do not block a later
 successful current attempt.
 
+Every WMS outbound aggregate mutation advances a persisted optimistic
+concurrency token. Concurrent line-posted callbacks therefore cannot both
+commit stale all-lines-pending decisions: one conflicts, CAP retries that
+event, and the retry reloads the latest requests before deciding completion.
+The command and query paths share one latest-attempt selector ordered by
+`CreatedAtUtc` and the underlying Guid v7 identifier.
+
 The ERP-created WMS outbound uses:
 
 - `SiteCode`: the delivery snapshot copied from the sales order;
@@ -61,8 +70,9 @@ The ERP-created WMS outbound uses:
 - `OwnerType` / `OwnerId`: `production` / `null`, matching the existing
   finished-goods receipt bucket.
 
-A missing ERP site fails closed in the WMS consumer; it never falls back to
-`default`.
+A missing ERP site fails closed in the WMS consumer by writing the event to the
+persistent dead-letter store and returning without a retry exception; it never
+falls back to `default`.
 
 ## Public failure visibility and recovery
 
@@ -99,11 +109,11 @@ voucher.
 
 Unit and contract tests cover the exact key propagation, missing-site
 fail-closed behavior, pending/failed/posted transitions, multi-line last-posted
-completion, retry completion, public failure fields, retry authorization, and
-OpenAPI operation/schema fields.
+completion, concurrent posted-callback conflict and retry completion, public
+failure fields, retry authorization, and OpenAPI operation/schema fields.
 
-`leader-demo-main-chain` releases the delivery with the exact produced lot and
+`leader-demo-main-chain` must release the delivery with the exact produced lot and
 receiving location, waits for WMS posting success, verifies the finished-goods
 balance decreases from 10 to 0, and only then accepts ERP completed,
-receivable, and posted voucher facts. The managed full-stack run supplies the
+receivable, and posted voucher facts. The managed full-stack run must supply the
 required PostgreSQL and cross-process Redis evidence.

@@ -1008,21 +1008,14 @@ public sealed class MarkInventoryMovementRequestPostedCommandHandler(Application
             return;
         }
 
+        outbound.RecordInventoryPostingProgress();
         var postingRequests = await dbContext.InventoryMovementRequests
             .Where(x => x.OrganizationId == outbound.OrganizationId
                 && x.EnvironmentId == outbound.EnvironmentId
                 && x.MovementType == "outbound"
                 && x.SourceDocumentId == outbound.OutboundOrderNo)
             .ToArrayAsync(cancellationToken);
-        var latestRequestsByLine = postingRequests
-            .Where(x => !string.IsNullOrWhiteSpace(x.SourceDocumentLineId))
-            .GroupBy(x => x.SourceDocumentLineId!, StringComparer.Ordinal)
-            .ToDictionary(
-                x => x.Key,
-                x => x.OrderByDescending(item => item.CreatedAtUtc)
-                    .ThenByDescending(item => item.Id.ToString(), StringComparer.Ordinal)
-                    .First(),
-                StringComparer.Ordinal);
+        var latestRequestsByLine = InventoryMovementRequestAttempts.LatestByLine(postingRequests);
         var postedLines = outbound.Lines.Where(x => x.IssuedQuantity > 0).ToArray();
         if (postedLines.Length > 0
             && postedLines.All(line =>

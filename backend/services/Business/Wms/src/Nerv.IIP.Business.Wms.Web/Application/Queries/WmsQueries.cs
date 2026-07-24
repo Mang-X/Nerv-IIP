@@ -278,14 +278,16 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
                 .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
                 .ToArrayAsync(cancellationToken);
         var latestRequests = postingRequests
-            .Where(x => !string.IsNullOrWhiteSpace(x.SourceDocumentLineId))
-            .GroupBy(
-                x => (x.OrganizationId, x.EnvironmentId, x.SourceDocumentId, LineNo: x.SourceDocumentLineId!))
+            .GroupBy(x => (x.OrganizationId, x.EnvironmentId, x.SourceDocumentId))
+            .SelectMany(document => InventoryMovementRequestAttempts.LatestByLine(document)
+                .Select(line => new
+                {
+                    Key = (document.Key.OrganizationId, document.Key.EnvironmentId, document.Key.SourceDocumentId, LineNo: line.Key),
+                    Request = line.Value,
+                }))
             .ToDictionary(
                 x => x.Key,
-                x => x.OrderByDescending(item => item.CreatedAtUtc)
-                    .ThenByDescending(item => item.Id.ToString(), StringComparer.Ordinal)
-                    .First());
+                x => x.Request);
         var items = rows.Select(row =>
         {
             var lineItems = row.Lines.Select(line =>

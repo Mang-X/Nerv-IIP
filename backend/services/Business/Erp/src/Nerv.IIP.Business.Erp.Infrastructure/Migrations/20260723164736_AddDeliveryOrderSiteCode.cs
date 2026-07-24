@@ -29,6 +29,27 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                   AND sales.sales_order_no = delivery.sales_order_no;
                 """);
 
+            migrationBuilder.Sql(
+                """
+                DO $$
+                DECLARE
+                    missing_site_count bigint;
+                BEGIN
+                    SELECT COUNT(*)
+                    INTO missing_site_count
+                    FROM erp.delivery_orders
+                    WHERE site_code IS NULL;
+
+                    IF missing_site_count > 0 THEN
+                        RAISE EXCEPTION
+                            'Cannot require erp.delivery_orders.site_code: % delivery rows have no matching sales order site in the same organization and environment.',
+                            missing_site_count
+                            USING ERRCODE = '23502';
+                    END IF;
+                END
+                $$;
+                """);
+
             migrationBuilder.AlterColumn<string>(
                 name: "site_code",
                 schema: "erp",

@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
@@ -63,7 +64,7 @@ public sealed class WmsStockMovementPostedConsumerTests
         outbound.CreatePickingTask("TASK-OUT-001", "SO-LINE-001", "receiving", "PACK-01", 4m);
         var movementRequest = Assert.Single(outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
 
-        Assert.Equal((OutboundOrderStatus)4, outbound.Status);
+        Assert.Equal(OutboundOrderStatus.InventoryPostingPending, outbound.Status);
         Assert.Null(outbound.CompletedAtUtc);
 
         dbContext.OutboundOrders.Add(outbound);
@@ -81,6 +82,87 @@ public sealed class WmsStockMovementPostedConsumerTests
         Assert.Equal(InventoryMovementRequestStatus.Posted, persistedRequest.Status);
         Assert.Equal(OutboundOrderStatus.Completed, persistedOrder.Status);
         Assert.NotNull(persistedOrder.CompletedAtUtc);
+    }
+
+    [Fact]
+    public async Task Concurrent_outbound_posted_callbacks_conflict_then_retry_completes_the_order()
+    {
+        var databaseName = $"wms-stock-movement-concurrent-posted-{Guid.CreateVersion7():N}";
+        var databaseRoot = new InMemoryDatabaseRoot();
+        InventoryMovementRequest[] requests;
+        await using (var seedContext = CreateContext(databaseName, databaseRoot))
+        {
+            var outbound = OutboundOrder.Create(
+                "org-001",
+                "env-dev",
+                "DO-CONCURRENT-001",
+                "erp-delivery-order",
+                "DO-CONCURRENT-001",
+                "finished-goods",
+                [
+                    new OutboundOrderLineDraft(
+                        "SO-LINE-001",
+                        "SKU-FG-1000",
+                        "kg",
+                        4m,
+                        "receiving",
+                        "LOT-001",
+                        null,
+                        "unrestricted",
+                        "production",
+                        null),
+                    new OutboundOrderLineDraft(
+                        "SO-LINE-002",
+                        "SKU-FG-2000",
+                        "kg",
+                        2m,
+                        "receiving",
+                        "LOT-002",
+                        null,
+                        "unrestricted",
+                        "production",
+                        null),
+                ]);
+            outbound.CreatePickingTask("TASK-OUT-001", "SO-LINE-001", "receiving", "PACK-01", 4m);
+            outbound.CreatePickingTask("TASK-OUT-002", "SO-LINE-002", "receiving", "PACK-01", 2m);
+            requests = outbound.CompletePackReview("PACK-001", true, "idem-out-concurrent")
+                .OrderBy(x => x.SourceDocumentLineId, StringComparer.Ordinal)
+                .ToArray();
+            seedContext.OutboundOrders.Add(outbound);
+            seedContext.InventoryMovementRequests.AddRange(requests);
+            await seedContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using var firstContext = CreateContext(databaseName, databaseRoot);
+        await using var secondContext = CreateContext(databaseName, databaseRoot);
+        var firstRequest = requests[0];
+        var secondRequest = requests[1];
+        await new MarkInventoryMovementRequestPostedCommandHandler(firstContext).Handle(
+            PostedCommand(firstRequest, "inventory-movement-001"),
+            CancellationToken.None);
+        await new MarkInventoryMovementRequestPostedCommandHandler(secondContext).Handle(
+            PostedCommand(secondRequest, "inventory-movement-002"),
+            CancellationToken.None);
+
+        await firstContext.SaveChangesAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(
+            () => secondContext.SaveChangesAsync(CancellationToken.None));
+
+        await using (var retryContext = CreateContext(databaseName, databaseRoot))
+        {
+            await new MarkInventoryMovementRequestPostedCommandHandler(retryContext).Handle(
+                PostedCommand(secondRequest, "inventory-movement-002"),
+                CancellationToken.None);
+            await retryContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using var assertionContext = CreateContext(databaseName, databaseRoot);
+        var persistedOrder = await assertionContext.OutboundOrders.SingleAsync(CancellationToken.None);
+        Assert.Equal(OutboundOrderStatus.Completed, persistedOrder.Status);
+        Assert.NotNull(persistedOrder.CompletedAtUtc);
+        Assert.All(
+            await assertionContext.InventoryMovementRequests.ToArrayAsync(CancellationToken.None),
+            request => Assert.Equal(InventoryMovementRequestStatus.Posted, request.Status));
     }
 
     [Fact]
@@ -256,10 +338,29 @@ public sealed class WmsStockMovementPostedConsumerTests
                 null));
     }
 
+    private static MarkInventoryMovementRequestPostedCommand PostedCommand(
+        InventoryMovementRequest request,
+        string inventoryMovementId)
+    {
+        return new MarkInventoryMovementRequestPostedCommand(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.MovementType,
+            request.SourceDocumentId,
+            request.SourceDocumentLineId,
+            request.IdempotencyKey,
+            inventoryMovementId);
+    }
+
     private static ApplicationDbContext CreateContext(string databaseName)
+        => CreateContext(databaseName, null);
+
+    private static ApplicationDbContext CreateContext(
+        string databaseName,
+        InMemoryDatabaseRoot? databaseRoot)
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase(databaseName)
+            .UseInMemoryDatabase(databaseName, databaseRoot)
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
     }

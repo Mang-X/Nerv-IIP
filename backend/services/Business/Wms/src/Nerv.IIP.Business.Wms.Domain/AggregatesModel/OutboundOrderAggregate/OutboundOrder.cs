@@ -53,6 +53,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         SourceDocumentId = WmsText.Required(sourceDocumentId, nameof(sourceDocumentId));
         SiteCode = WmsText.Required(siteCode, nameof(siteCode));
         Status = OutboundOrderStatus.Open;
+        Version = 1;
         CreatedAtUtc = DateTime.UtcNow;
         foreach (var draft in lineDrafts)
         {
@@ -78,6 +79,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? CompletedAtUtc { get; private set; }
     public DateTime? CancelledAtUtc { get; private set; }
+    public long Version { get; private set; }
     public IReadOnlyCollection<OutboundOrderLine> Lines => lines;
 
     public static OutboundOrder Create(
@@ -110,6 +112,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         var taskFromLocationCode = reservedLocationCode ?? fromLocationCode;
         line.MarkPickLocation(taskFromLocationCode);
         line.MarkInventoryReserved(inventoryReservationId, taskFromLocationCode, reservedLotNo, reservedSerialNo);
+        AdvanceVersion();
         return WarehouseTask.CreatePicking(
             OrganizationId,
             EnvironmentId,
@@ -176,6 +179,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
             throw new InvalidOperationException("Outbound order cannot complete without executed pick quantity.");
         }
 
+        AdvanceVersion();
         singleLine = postingLines.Length == 1;
         var requests = postingLines.Select(line => InventoryMovementRequest.Create(
                 OrganizationId,
@@ -228,6 +232,17 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
 
         Status = OutboundOrderStatus.InventoryPostingFailed;
         CompletedAtUtc = null;
+        AdvanceVersion();
+    }
+
+    public void RecordInventoryPostingProgress()
+    {
+        if (Status != OutboundOrderStatus.InventoryPostingPending)
+        {
+            throw new InvalidOperationException("Only outbound orders with pending Inventory posting can record posting progress.");
+        }
+
+        AdvanceVersion();
     }
 
     public void MarkInventoryPostingCompleted()
@@ -244,6 +259,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
 
         Status = OutboundOrderStatus.Completed;
         CompletedAtUtc = DateTime.UtcNow;
+        AdvanceVersion();
         this.AddDomainEvent(new OutboundOrderCompletedDomainEvent(this));
     }
 
@@ -263,15 +279,22 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
 
         Status = OutboundOrderStatus.Cancelled;
         CancelledAtUtc = DateTime.UtcNow;
+        AdvanceVersion();
         this.AddDomainEvent(new OutboundOrderCancelledDomainEvent(this));
     }
 
     public void MarkInventoryReservationReleased(string inventoryReservationId)
     {
         var reservationId = WmsText.Required(inventoryReservationId, nameof(inventoryReservationId));
-        foreach (var line in lines.Where(x => x.InventoryReservationId == reservationId))
+        var matchingLines = lines.Where(x => x.InventoryReservationId == reservationId).ToArray();
+        foreach (var line in matchingLines)
         {
             line.ClearInventoryReservation();
+        }
+
+        if (matchingLines.Length > 0)
+        {
+            AdvanceVersion();
         }
     }
 
@@ -334,7 +357,13 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
                     line.InventoryReservationId);
             })
             .ToArray();
+        AdvanceVersion();
         return requests;
+    }
+
+    private void AdvanceVersion()
+    {
+        Version = checked(Version + 1);
     }
 
     private OutboundOrderLine FindLine(string lineNo)

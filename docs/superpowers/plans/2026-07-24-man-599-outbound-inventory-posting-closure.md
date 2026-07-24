@@ -161,6 +161,7 @@ and missing current-attempt aggregation.
 - Modify: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/WmsCommands.cs`
 - Modify: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/WmsOutboundOrderRequestedIntegrationEventHandler.cs`
 - Modify: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Queries/WmsQueries.cs`
+- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/Migrations/20260724015043_AddOutboundOrderConcurrencyToken.cs`
 
 - [ ] **Step 1: Add the non-renumbering pending state**
 
@@ -184,6 +185,11 @@ records `CompletedAtUtc`, and adds `OutboundOrderCompletedDomainEvent`.
 In `MarkInventoryMovementRequestPostedCommandHandler`, group all requests for
 the outbound by source line, select the newest request per line, and invoke the
 aggregate method only when all current requests are posted.
+
+Persist and advance an optimistic concurrency token for every outbound
+aggregate mutation. A concurrent posted callback that observed a stale sibling
+request must conflict and be retried so the all-lines-posted decision is
+re-evaluated from current state.
 
 - [ ] **Step 3: Make failure transitions accurate**
 
