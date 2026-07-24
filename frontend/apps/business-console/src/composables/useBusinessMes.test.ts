@@ -402,6 +402,19 @@ describe('business MES composables', () => {
     ])
   })
 
+  it('applies a caller-owned initial page size before creating the work-order query', () => {
+    useMesWorkOrders({ initialTake: 500 })
+
+    expect(listBusinessConsoleMesWorkOrdersQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        skip: 0,
+        take: 500,
+      },
+    })
+  })
+
   it('defaults work orders to an empty array for unsuccessful envelopes', () => {
     coladaState.queryDataById.set('listBusinessConsoleMesWorkOrders', {
       success: false,

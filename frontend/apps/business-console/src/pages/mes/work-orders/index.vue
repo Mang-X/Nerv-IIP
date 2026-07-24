@@ -14,7 +14,13 @@ import {
 } from '@/composables/useBusinessMasterData'
 import { useMesWorkOrders } from '@/composables/useBusinessMes'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
+import {
+  DEFAULT_URGENCY_DISPLAY_MODE,
+  orderRowsByUrgency,
+  type UrgencyDisplayMode,
+} from '@/composables/useUrgencyDisplayMode'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
+import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -87,6 +93,11 @@ const {
 const orderUrgencies = useOrderUrgencies(
   computed(() => workOrders.value.map((order) => order.workOrderId)),
 )
+const displayMode = shallowRef<UrgencyDisplayMode>(DEFAULT_URGENCY_DISPLAY_MODE)
+function refreshUrgency() {
+  void orderUrgencies.refresh()
+  refreshWorkOrders()
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -187,7 +198,9 @@ const canRecordReport = computed(
 )
 
 // --- Sort (page-owned, before pagination) ---
-const sort = ref<NvDataTableSort | null>({ key: 'dueUtc', direction: 'asc' })
+// 默认无列排序：按统一紧急度（等级→CR→预计延迟→due→等待）排序；用户点列头后按列排序。
+// 后端分页，紧急度排序仅对当前页行生效；跨页排序需后端支持（已知契约限制）。
+const sort = ref<NvDataTableSort | null>(null)
 function sortValue(order: Row, key: string): string | number {
   if (key === 'quantity') return order.quantity ?? 0
   if (key === 'dueUtc') return order.dueUtc ? new Date(order.dueUtc).getTime() : 0
@@ -195,7 +208,13 @@ function sortValue(order: Row, key: string): string | number {
   return (order[key as keyof Row] as string | null) ?? ''
 }
 const sortedWorkOrders = computed(() => {
-  if (!sort.value) return visibleWorkOrders.value
+  if (!sort.value) {
+    return orderRowsByUrgency(
+      visibleWorkOrders.value,
+      (order) => order.workOrderId,
+      orderUrgencies.byReference.value,
+    )
+  }
   const { key, direction } = sort.value
   const factor = direction === 'asc' ? 1 : -1
   return [...visibleWorkOrders.value].sort((a, b) => {
@@ -459,6 +478,7 @@ function isNonEmpty(value: string) {
         </NvSelect>
       </template>
       <template #actions>
+        <UrgencyDisplayModeSelect v-model="displayMode" />
         <NvButton type="button" variant="ghost" size="sm" @click="resetFilters">重置</NvButton>
       </template>
     </NvToolbar>
@@ -519,9 +539,11 @@ function isNonEmpty(value: string) {
       <template #cell-urgency="{ row }">
         <OrderUrgencyBadge
           :order-reference="row.workOrderId ?? ''"
+          :mode="displayMode"
           :urgency="
             row.workOrderId ? orderUrgencies.byReference.value.get(row.workOrderId) : undefined
           "
+          @refresh="refreshUrgency"
         />
       </template>
       <template #cell-quantity="{ row }"

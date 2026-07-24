@@ -731,6 +731,125 @@ public sealed class MesPersistenceContractTests
     }
 
     [Fact]
+    public async Task Quality_inspection_domain_divergence_is_dead_lettered_without_escaping_cap_handler()
+    {
+        var services = CreateServices(nameof(Quality_inspection_domain_divergence_is_dead_lettered_without_escaping_cap_handler));
+        var now = DateTimeOffset.Parse("2026-07-24T01:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001", "env-dev", "WO-MAN-429-DIVERGENCE", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        await dbContext.SaveChangesAsync();
+        var validEvent = CreateInspectionResultEvent(
+            "evt-man-429-divergence",
+            QualityIntegrationEventTypes.InspectionRejected,
+            "QI-MAN-429-DIVERGENCE",
+            "WO-MAN-429-DIVERGENCE",
+            now.AddMinutes(1),
+            sourceService: "mes");
+        var invalidEvent = validEvent with
+        {
+            Payload = validEvent.Payload with
+            {
+                Result = string.Empty,
+            },
+        };
+
+        var consumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
+        await consumer.HandleAsync(invalidEvent, CancellationToken.None);
+
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("quality-inspection-result-divergence", deadLetter.FailureCode);
+        Assert.Empty(await dbContext.QualityHoldContexts.ToArrayAsync());
+        Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task Quality_inspection_update_divergence_persists_dead_letter_without_mutating_existing_hold()
+    {
+        var services = CreateServices(nameof(Quality_inspection_update_divergence_persists_dead_letter_without_mutating_existing_hold));
+        var now = DateTimeOffset.Parse("2026-07-24T02:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001", "env-dev", "WO-MAN-429-UPDATE-DIVERGENCE", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        await dbContext.SaveChangesAsync();
+
+        var consumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
+        await consumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-man-429-update-valid",
+            QualityIntegrationEventTypes.InspectionRejected,
+            "QI-MAN-429-UPDATE-VALID",
+            "WO-MAN-429-UPDATE-DIVERGENCE",
+            now.AddMinutes(1),
+            sourceService: "mes"), CancellationToken.None);
+
+        var invalidEventTemplate = CreateInspectionResultEvent(
+            "evt-man-429-update-invalid",
+            QualityIntegrationEventTypes.InspectionPassed,
+            "QI-MAN-429-UPDATE-INVALID",
+            "WO-MAN-429-UPDATE-DIVERGENCE",
+            now.AddMinutes(2),
+            sourceService: "mes");
+        var invalidEvent = invalidEventTemplate with
+        {
+            Payload = invalidEventTemplate.Payload with
+            {
+                Result = string.Empty,
+            },
+        };
+        await consumer.HandleAsync(invalidEvent, CancellationToken.None);
+
+        dbContext.ChangeTracker.Clear();
+        var persisted = await dbContext.QualityHoldContexts.AsNoTracking().SingleAsync();
+        Assert.True(persisted.Active);
+        Assert.Equal("QI-MAN-429-UPDATE-VALID", persisted.InspectionRecordId);
+        Assert.Equal(QualityIntegrationEventTypes.InspectionRejected, persisted.EventType);
+        Assert.Equal(now.AddMinutes(1), persisted.RecordedAtUtc);
+
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("quality-inspection-result-divergence", deadLetter.FailureCode);
+        Assert.Equal(2, await dbContext.ProcessedIntegrationEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Quality_inspection_with_unknown_source_is_dead_lettered_after_inbox_is_persisted()
+    {
+        var services = CreateServices(nameof(Quality_inspection_with_unknown_source_is_dead_lettered_after_inbox_is_persisted));
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var consumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
+
+        await consumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-man-429-unknown-source",
+            QualityIntegrationEventTypes.InspectionRejected,
+            "QI-MAN-429-UNKNOWN-SOURCE",
+            "WO-MAN-429-UNKNOWN-SOURCE",
+            DateTimeOffset.Parse("2026-07-24T03:00:00Z"),
+            sourceService: "mes"), CancellationToken.None);
+
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("unknown-source-document", deadLetter.FailureCode);
+        Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+        Assert.Empty(await dbContext.QualityHoldContexts.ToArrayAsync());
+    }
+
+    [Fact]
     public async Task Conditional_release_clears_only_matching_operation_hold_and_allows_dispatch_without_manual_intervention()
     {
         var services = CreateServices(nameof(Conditional_release_clears_only_matching_operation_hold_and_allows_dispatch_without_manual_intervention));
@@ -2659,35 +2778,16 @@ public sealed class MesPersistenceContractTests
         // 的 "business-mes" 不同（历史跨服务词汇分歧）。默认沿用旧用例的 business-mes，另有用例传 "mes" 验证真机词汇被消费。
         string sourceService = QualityIntegrationEventSources.BusinessMes)
     {
-        var result = eventType == QualityIntegrationEventTypes.InspectionPassed
-            ? "passed"
-            : eventType == QualityIntegrationEventTypes.InspectionConditionalReleased
-                ? "conditional-release"
-                : "rejected";
-        return new InspectionResultIntegrationEvent(
+        return MesInspectionResultEventFactory.Create(
             eventId,
             eventType,
-            QualityIntegrationEventVersions.V1,
+            inspectionRecordId,
+            workOrderId,
             occurredAtUtc,
-            QualityIntegrationEventSources.BusinessQuality,
-            $"corr-{eventId}",
-            $"cause-{eventId}",
-            "org-001",
-            "env-dev",
-            "quality",
-            $"quality:inspection-result:org-001:env-dev:{inspectionRecordId}:{eventType}",
-            new InspectionResultPayload(
-                inspectionRecordId,
-                "PLAN-QH-001",
-                "in-process",
-                sourceService,
-                workOrderId,
-                "FG-FSA",
-                10m,
-                result,
-                dispositionReason ?? (eventType == QualityIntegrationEventTypes.InspectionRejected ? "critical-defect" : null),
-                [],
-                occurredAtUtc));
+            "PLAN-QH-001",
+            "FG-FSA",
+            sourceService,
+            dispositionReason);
     }
 
     private static AssetUnavailableIntegrationEvent CreateUnavailableEvent(

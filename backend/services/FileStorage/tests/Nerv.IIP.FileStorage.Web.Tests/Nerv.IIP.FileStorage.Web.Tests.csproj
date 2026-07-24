@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.FileStorage\Nerv.IIP.Contracts.FileStorage.csproj" />
     <ProjectReference Include="..\..\..\..\common\ServiceAuth\Nerv.IIP.ServiceAuth\Nerv.IIP.ServiceAuth.csproj" />
     <ProjectReference Include="..\..\..\..\common\Testing\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Testing\Nerv.IIP.Testing.PostgreSql\Nerv.IIP.Testing.PostgreSql.csproj" />
   </ItemGroup>
 
 </Project>

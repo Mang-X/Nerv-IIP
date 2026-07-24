@@ -176,13 +176,21 @@ public sealed record DeliveryOrderListItem(
     string DeliveryOrderNo,
     string SalesOrderNo,
     string CustomerCode,
+    string SiteCode,
     string Status,
     IReadOnlyCollection<DeliveryOrderLineListItem> Lines,
     DateTime ReleasedAtUtc,
     DateTime? ShippedAtUtc,
     DateTime? CompletedAtUtc);
 
-public sealed record DeliveryOrderLineListItem(string SalesOrderLineNo, decimal Quantity, decimal ShippedQuantity);
+public sealed record DeliveryOrderLineListItem(
+    string SalesOrderLineNo,
+    string SkuCode,
+    string UomCode,
+    string LocationCode,
+    string? LotNo,
+    decimal Quantity,
+    decimal ShippedQuantity);
 
 public sealed class ListDeliveryOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListDeliveryOrdersQuery, ListDeliveryOrdersResponse>
@@ -221,10 +229,18 @@ public sealed class ListDeliveryOrdersQueryHandler(ApplicationDbContext dbContex
                 x.DeliveryOrderNo,
                 x.SalesOrderNo,
                 x.CustomerCode,
+                x.SiteCode,
                 x.Status,
                 x.Lines
                     .OrderBy(line => line.SalesOrderLineNo)
-                    .Select(line => new DeliveryOrderLineListItem(line.SalesOrderLineNo, line.Quantity, line.ShippedQuantity))
+                    .Select(line => new DeliveryOrderLineListItem(
+                        line.SalesOrderLineNo,
+                        line.SkuCode,
+                        line.UomCode,
+                        line.LocationCode,
+                        line.LotNo,
+                        line.Quantity,
+                        line.ShippedQuantity))
                     .ToArray(),
                 x.ReleasedAtUtc,
                 x.ShippedAtUtc,

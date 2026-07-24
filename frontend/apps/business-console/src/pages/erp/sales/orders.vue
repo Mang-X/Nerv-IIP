@@ -4,7 +4,14 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useErpSalesOrders } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
+import {
+  DEFAULT_URGENCY_DISPLAY_MODE,
+  orderRowsByUrgency,
+  type UrgencyDisplayMode,
+} from '@/composables/useUrgencyDisplayMode'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
+import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
+import FulfillmentTimelineSheet from '@/components/fulfillment/FulfillmentTimelineSheet.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -29,7 +36,7 @@ import {
   NvToolbar,
   toast,
 } from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
+import { PlusIcon, RefreshCwIcon, RouteIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { firstQueryParam, formatAmount, formatError } from '../shared'
@@ -42,6 +49,20 @@ const orders = useErpSalesOrders()
 const orderUrgencies = useOrderUrgencies(
   computed(() => orders.salesOrders.value.map((order) => order.salesOrderNo)),
 )
+const displayMode = shallowRef<UrgencyDisplayMode>(DEFAULT_URGENCY_DISPLAY_MODE)
+// 排序独立于显示模式：默认按统一紧急度排序（等级→CR→预计延迟→due→等待）。
+// 后端分页下仅对当前页行生效；跨页排序需后端支持（已知契约限制，本 PR 不实现）。
+const orderedSalesOrders = computed(() =>
+  orderRowsByUrgency(
+    orders.salesOrders.value,
+    (order) => order.salesOrderNo,
+    orderUrgencies.byReference.value,
+  ),
+)
+function refreshUrgency() {
+  void orderUrgencies.refresh()
+  orders.refreshSalesOrders()
+}
 const route = useRoute()
 const { page, pageSize } = usePagedList(orders.filters, { resetOn: [() => orders.filters.keyword] })
 
@@ -70,6 +91,7 @@ const columns: NvDataTableColumn<BusinessConsoleErpSalesOrderItem>[] = [
     width: 'w-32',
     accessor: (r) => r.totalAmount ?? 0,
   },
+  { key: 'fulfillment', header: '履约', align: 'end', width: 'w-28' },
 ]
 
 const releasedCount = computed(
@@ -83,6 +105,15 @@ const amount = computed(() =>
 const open = shallowRef(false)
 const form = reactive({ quotationNo: '', salesOrderNo: '', siteCode: '' })
 const formError = shallowRef('')
+
+// 履约追踪 Sheet：行内入口按订单打开时间线。
+const timelineOpen = shallowRef(false)
+const timelineOrder = shallowRef<BusinessConsoleErpSalesOrderItem | null>(null)
+
+function openTimeline(row: BusinessConsoleErpSalesOrderItem) {
+  timelineOrder.value = row
+  timelineOpen.value = true
+}
 
 function openDialog() {
   form.quotationNo = ''
@@ -154,6 +185,9 @@ async function submit() {
           aria-label="销售订单关键字"
         />
       </template>
+      <template #actions>
+        <UrgencyDisplayModeSelect v-model="displayMode" />
+      </template>
     </NvToolbar>
 
     <NvDataTable
@@ -162,7 +196,7 @@ async function submit() {
       :page-size="pageSize"
       :total-items="orders.salesOrdersTotal.value"
       :columns="columns"
-      :rows="orders.salesOrders.value"
+      :rows="orderedSalesOrders"
       :row-key="(r: BusinessConsoleErpSalesOrderItem) => r.salesOrderNo ?? '销售订单'"
       :loading="orders.salesOrdersPending.value"
       :searchable="false"
@@ -175,15 +209,31 @@ async function submit() {
       <template #cell-urgency="{ row }">
         <OrderUrgencyBadge
           :order-reference="row.salesOrderNo ?? ''"
+          :mode="displayMode"
           :urgency="
             row.salesOrderNo ? orderUrgencies.byReference.value.get(row.salesOrderNo) : undefined
           "
+          @refresh="refreshUrgency"
         />
       </template>
       <template #cell-totalAmount="{ row }"
         ><span class="tabular-nums">{{ formatAmount(row.totalAmount) }}</span></template
       >
+      <template #cell-fulfillment="{ row }">
+        <NvButton
+          size="sm"
+          variant="ghost"
+          type="button"
+          :disabled="!row.salesOrderNo"
+          @click="openTimeline(row)"
+        >
+          <RouteIcon aria-hidden="true" />
+          履约追踪
+        </NvButton>
+      </template>
     </NvDataTable>
+
+    <FulfillmentTimelineSheet v-model:open="timelineOpen" :order="timelineOrder" />
 
     <NvDialog v-model:open="open">
       <NvDialogContent>

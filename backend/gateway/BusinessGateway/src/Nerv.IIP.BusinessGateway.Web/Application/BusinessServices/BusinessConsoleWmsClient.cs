@@ -56,6 +56,12 @@ public interface IBusinessWmsClient
         BusinessConsoleCompleteWmsOutboundOrderRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleCompleteWmsMovementResponse> RetryOutboundInventoryPostingAsync(
+        string internalBearerToken,
+        string outboundOrderId,
+        BusinessConsoleRetryWmsOutboundInventoryPostingRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleCreateWmsCountExecutionResponse> CreateCountExecutionAsync(
         string internalBearerToken,
         BusinessConsoleCreateWmsCountExecutionRequest request,
@@ -224,6 +230,18 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/wms/outbound-orders/{Uri.EscapeDataString(outboundOrderId)}/complete",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleCompleteWmsMovementResponse> RetryOutboundInventoryPostingAsync(
+        string internalBearerToken,
+        string outboundOrderId,
+        BusinessConsoleRetryWmsOutboundInventoryPostingRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleCompleteWmsMovementResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/wms/outbound-orders/{Uri.EscapeDataString(outboundOrderId)}/inventory-posting/retry",
             request,
             cancellationToken);
 

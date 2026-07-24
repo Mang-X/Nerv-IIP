@@ -81,7 +81,7 @@ declaration against what actually shipped (facade + codegen + barrel for
   add `gateways` + `gatewayOperationIds`, drop `followUp`.
 - **New business service** → add its `.Web` project reference and assembly name to
   the gate project (`Nerv.IIP.FacadeCoverage.Tests`) so its endpoints are covered.
-- The `exposed` rows are summarised by count here; the full 366-row registry with
+- The `exposed` rows are summarised by count here; the full 372-row registry with
   per-endpoint facade operation ids lives in the JSON.
 
 ## Summary
@@ -92,20 +92,20 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Approval | 16 | 11 | 4 | 1 |
 | BarcodeLabel | 12 | 9 | 0 | 3 |
 | DemandPlanning | 15 | 15 | 0 | 0 |
-| Erp | 51 | 39 | 11 | 1 |
-| IndustrialTelemetry | 26 | 23 | 1 | 2 |
+| Erp | 53 | 41 | 11 | 1 |
+| IndustrialTelemetry | 27 | 24 | 1 | 2 |
 | Inventory | 13 | 6 | 2 | 5 |
 | Maintenance | 21 | 16 | 5 | 0 |
 | MasterData | 46 | 38 | 4 | 4 |
 | Mes | 53 | 50 | 3 | 0 |
 | ProductEngineering | 39 | 38 | 0 | 1 |
 | Quality | 32 | 20 | 12 | 0 |
-| Scheduling | 13 | 11 | 1 | 1 |
-| Wms | 30 | 19 | 6 | 5 |
-| **Total** | **367** | **295** | **49** | **23** |
+| Scheduling | 15 | 13 | 1 | 1 |
+| Wms | 30 | 20 | 5 | 5 |
+| **Total** | **372** | **301** | **48** | **23** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-The `exposed` rows (295) — each with its verified facade `gatewayOperationIds` — are
+The `exposed` rows (301) — each with its verified facade `gatewayOperationIds` — are
 enumerated in the JSON registry. The `deferred` and `internal` rows, the actual
 governance decisions, are listed in full below.
 
@@ -165,7 +165,6 @@ current manifest rather than from samples, so the facade must preserve
 | Wms | GET | `/api/business/v1/wms/replenishment-tasks` | BusinessGateway facade pending; follows the remaining WMS deepening and Business Console operations tranche tracked by #707. |
 | Wms | POST | `/api/business/v1/wms/backorder-orders/{backorderOrderId}/close` | BusinessGateway facade pending; follows the remaining WMS deepening and Business Console operations tranche tracked by #707. |
 | Wms | POST | `/api/business/v1/wms/outbound-orders/{outboundOrderId}/cancel` | BusinessGateway facade pending; WMS outbound cancel follows the WMS operations menu phase. |
-| Wms | POST | `/api/business/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry` | BusinessGateway facade pending; WMS outbound posting-retry follows the WMS operations menu phase. |
 
 ### Internal endpoints (never exposed by design)
 

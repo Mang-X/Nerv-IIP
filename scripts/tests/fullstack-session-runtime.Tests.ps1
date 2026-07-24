@@ -832,7 +832,8 @@ try {
     $leaderDemoEvidencePath = Join-Path $leaderDemoEvidenceRoot 'evidence.json'
     $requiredLeaderDemoNodes = @(
         'sales-order-demand-source', 'demand-source-mrp-suggestion', 'mrp-suggestion-mes-work-order',
-        'mes-work-order-schedule-plan', 'schedule-release-mes-execution', 'mes-task-production-report',
+        'mes-work-order-schedule-plan', 'schedule-release-mes-execution', 'erp-work-center-cost-rate',
+        'mes-task-production-report',
         'production-report-quality', 'report-finished-goods-receipt', 'finished-goods-receipt-inventory-posting',
         'inventory-produced-lot-fulfillment-lookup', 'sales-order-delivery-order', 'delivery-order-wms-outbound',
         'wms-completed-erp-delivery-status', 'wms-completed-account-receivable', 'account-receivable-voucher'
@@ -848,7 +849,7 @@ try {
         entries = $leaderDemoEntries
     } | ConvertTo-Json -Depth 10))
     $validatedLeaderDemo = Assert-NervLeaderDemoMainChainEvidence -EvidencePath $leaderDemoEvidencePath
-    Assert-True (@($validatedLeaderDemo.entries).Count -eq 15) 'Leader-demo evidence must validate all fifteen required nodes.'
+    Assert-True (@($validatedLeaderDemo.entries).Count -eq 16) 'Leader-demo evidence must validate all sixteen required nodes.'
     $leaderDemoEntries[0].conclusion = 'code-confirmed-only'
     [IO.File]::WriteAllText($leaderDemoEvidencePath, ([ordered]@{
         runtimeProfileSource = 'session-manifest'; transport = 'redis-cross-process'; persistence = 'postgresql'; salesOrderNo = 'SO-MAN524-TEST'; entries = $leaderDemoEntries
@@ -864,21 +865,21 @@ try {
     try { Assert-NervLeaderDemoMainChainEvidence -EvidencePath $leaderDemoEvidencePath | Out-Null } catch { $notVerifiedFailed = $true }
     Assert-True $notVerifiedFailed 'Leader-demo evidence must reject a present but not-verified node.'
     $leaderDemoEntries[0].conclusion = 'runtime-confirmed'
-    $leaderDemoEntries[9].conclusion = 'gap'
-    $leaderDemoEntries[9].responsibilityIssue = '#972 / MAN-528 (demo:defer)'
+    $leaderDemoEntries[10].conclusion = 'gap'
+    $leaderDemoEntries[10].responsibilityIssue = '#972 / MAN-528 (demo:defer)'
     [IO.File]::WriteAllText($leaderDemoEvidencePath, ([ordered]@{
         runtimeProfileSource = 'session-manifest'; transport = 'redis-cross-process'; persistence = 'postgresql'; salesOrderNo = 'SO-MAN524-TEST'; entries = $leaderDemoEntries
     } | ConvertTo-Json -Depth 10))
     Assert-NervLeaderDemoMainChainEvidence -EvidencePath $leaderDemoEvidencePath | Out-Null
-    $leaderDemoEntries[9].conclusion = 'runtime-confirmed'
-    $leaderDemoEntries[9].responsibilityIssue = $null
+    $leaderDemoEntries[10].conclusion = 'runtime-confirmed'
+    $leaderDemoEntries[10].responsibilityIssue = $null
     $leaderDemoEntries += [ordered]@{ node = 'unexpected-extra'; stableKey = 'SO-MAN524-TEST'; conclusion = 'gap'; demoWording = 'unexpected' }
     [IO.File]::WriteAllText($leaderDemoEvidencePath, ([ordered]@{
         runtimeProfileSource = 'session-manifest'; transport = 'redis-cross-process'; persistence = 'postgresql'; salesOrderNo = 'SO-MAN524-TEST'; entries = $leaderDemoEntries
     } | ConvertTo-Json -Depth 10))
     $extraEntryFailed = $false
     try { Assert-NervLeaderDemoMainChainEvidence -EvidencePath $leaderDemoEvidencePath | Out-Null } catch { $extraEntryFailed = $true }
-    Assert-True $extraEntryFailed 'Leader-demo evidence must reject entries outside the fifteen-node contract.'
+    Assert-True $extraEntryFailed 'Leader-demo evidence must reject entries outside the sixteen-node contract.'
 }
 finally {
     Remove-Item -LiteralPath $leaderDemoEvidenceRoot -Recurse -Force -ErrorAction SilentlyContinue

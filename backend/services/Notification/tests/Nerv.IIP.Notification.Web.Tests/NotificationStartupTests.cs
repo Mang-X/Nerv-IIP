@@ -10,6 +10,27 @@ public sealed class NotificationStartupCollection;
 [Collection("notification-startup")]
 public sealed class NotificationStartupTests
 {
+    [Theory]
+    [InlineData(null)]
+    [InlineData("InMemory")]
+    public void Production_rejects_missing_or_inmemory_persistence(string? provider)
+    {
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("Persistence:Provider", provider);
+                builder.UseSetting(
+                    "ConnectionStrings:NotificationDb",
+                    "Host=localhost;Database=unused;Username=nerv;Password=notification-startup-secret");
+            });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("Notification persistence configuration is invalid", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("notification-startup-secret", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Requests_include_correlation_response_header()
     {

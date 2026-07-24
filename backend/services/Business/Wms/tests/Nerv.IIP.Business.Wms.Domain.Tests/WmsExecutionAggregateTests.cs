@@ -201,9 +201,15 @@ public sealed class WmsExecutionAggregateTests
         var request = Assert.Single(outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
 
         Assert.Contains("idempotency", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(OutboundOrderStatus.Completed, outbound.Status);
+        Assert.Equal(OutboundOrderStatus.InventoryPostingPending, outbound.Status);
         Assert.Equal("outbound", request.MovementType);
         Assert.Equal("idem-out-001", request.IdempotencyKey);
+        Assert.DoesNotContain(outbound.GetDomainEvents(), x => x is OutboundOrderCompletedDomainEvent);
+
+        outbound.MarkInventoryPostingCompleted();
+
+        Assert.Equal(OutboundOrderStatus.Completed, outbound.Status);
+        Assert.NotNull(outbound.CompletedAtUtc);
         Assert.Contains(outbound.GetDomainEvents(), x => x is OutboundOrderCompletedDomainEvent);
     }
 

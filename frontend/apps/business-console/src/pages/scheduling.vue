@@ -5,11 +5,18 @@ import type {
   BusinessConsoleSchedulingPlanSummaryResponse,
   BusinessConsoleSchedulingResourceLoad,
   BusinessConsoleSchedulingUnscheduledOperation,
+  BusinessConsoleSchedulingPlanRevision,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useBusinessScheduling } from '@/composables/useBusinessScheduling'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
+import {
+  DEFAULT_URGENCY_DISPLAY_MODE,
+  orderRowsByUrgency,
+  type UrgencyDisplayMode,
+} from '@/composables/useUrgencyDisplayMode'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
+import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
 import {
   schedulingPlanStatusLabel,
@@ -17,6 +24,13 @@ import {
   schedulingPlanTerminalReleaseReason,
 } from '@/utils/schedulingPlanPresentation'
 import SchedulingPlanGantt from '@/components/scheduling/SchedulingPlanGantt.vue'
+import SchedulingOrderPool from '@/components/scheduling/SchedulingOrderPool.vue'
+import SchedulingDraftBoard from '@/components/scheduling/SchedulingDraftBoard.vue'
+import ScheduleRevisionReview from '@/components/scheduling/ScheduleRevisionReview.vue'
+import { useSchedulingWorkbench } from '@/composables/useSchedulingWorkbench'
+import { useWorkingScheduleDraft } from '@/composables/useWorkingScheduleDraft'
+import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -48,12 +62,13 @@ definePage({
   meta: {
     requiresAuth: true,
     title: '排产工作台',
-    requiredPermissions: ['business.scheduling.plans.read', 'business.scheduling.plans.release'],
+    requiredPermissions: ['business.scheduling.plans.read'],
   },
 })
 
 const {
   detailSelection,
+  filters: schedulingFilters,
   planDetail,
   planDetailError,
   planDetailPending,
@@ -63,10 +78,30 @@ const {
   releasePlan,
   releasePlanPending,
 } = useBusinessScheduling()
+const auth = useAuthStore()
+const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
+const canManage = computed(() => permissionCodes.value.includes(P.schedulingPlansManage))
+const canPublish = computed(() => permissionCodes.value.includes(P.schedulingPlansRelease))
+const workbench = useSchedulingWorkbench()
+const draft = useWorkingScheduleDraft(computed(() => !canManage.value))
+const revisionResult = shallowRef<BusinessConsoleSchedulingPlanRevision>()
 const route = useRoute()
 const orderUrgencies = useOrderUrgencies(
   computed(() => (planDetail.value?.assignments ?? []).map((assignment) => assignment.orderId)),
 )
+const displayMode = shallowRef<UrgencyDisplayMode>(DEFAULT_URGENCY_DISPLAY_MODE)
+// 明细资源分配默认按统一紧急度排序（呈现层重排，不改动方案结果）。
+const orderedAssignments = computed(() =>
+  orderRowsByUrgency(
+    planDetail.value?.assignments ?? [],
+    (assignment) => assignment.orderId,
+    orderUrgencies.byReference.value,
+  ),
+)
+function refreshUrgency() {
+  void orderUrgencies.refresh()
+  refreshPlans()
+}
 
 const activeView = shallowRef('table')
 const detailOpen = shallowRef(false)
@@ -75,6 +110,10 @@ const targetedOrderReference = computed(() => {
   return (Array.isArray(value) ? value[0] : value)?.trim() ?? ''
 })
 const routeLookupVisited = new Set<string>()
+
+watch(workbench.schedulableCandidates, (candidates) => draft.setOrders(candidates), {
+  immediate: true,
+})
 const actionablePlans = computed(() =>
   plans.value.filter(
     (plan): plan is BusinessConsoleSchedulingPlanSummaryResponse & { planId: string } =>
@@ -220,12 +259,81 @@ async function publish(planId: string | undefined) {
   }
 }
 
+async function generateWorkbenchPlan() {
+  if (!canManage.value || draft.includedOrders.value.length === 0) return
+  const horizonStart = new Date()
+  horizonStart.setMinutes(0, 0, 0)
+  const horizonEnd = new Date(horizonStart)
+  horizonEnd.setDate(horizonEnd.getDate() + 7)
+  try {
+    const plan = await workbench.generatePlan({
+      organizationId: schedulingFilters.organizationId,
+      environmentId: schedulingFilters.environmentId,
+      horizonStartUtc: horizonStart.toISOString(),
+      horizonEndUtc: horizonEnd.toISOString(),
+      orders: draft.includedOrders.value.map((order) => ({
+        workOrderId: order.workOrderId,
+        priority: order.priority,
+        isRush: order.isRush,
+      })),
+    })
+    draft.loadPlan(plan)
+    detailSelection.planId = plan.planId ?? ''
+    revisionResult.value = undefined
+    toast.success('首版排程方案已生成')
+  } catch {
+    toast.error('生成失败，请检查工单生产版本与排程基础数据')
+  }
+}
+
+async function repreviewLockedDraft() {
+  const planId = draft.model.value?.meta.planId
+  if (!canManage.value || !planId || draft.includedOrders.value.length === 0) return
+  if (draft.modifiedUnlockedTaskIds.value.length > 0) {
+    toast.error('有未锁定的人工修改；请先锁定全部修改再重预览')
+    return
+  }
+  try {
+    const revision = await workbench.revisePlan(planId, {
+      organizationId: schedulingFilters.organizationId,
+      environmentId: schedulingFilters.environmentId,
+      includedOrderIds: draft.includedOrders.value.map((order) => order.workOrderId),
+      lockedAssignments: draft.lockedAssignments.value,
+    })
+    revisionResult.value = revision
+    if (revision.candidate) {
+      draft.loadPlan(revision.candidate, revision.impact)
+      detailSelection.planId = revision.candidate.planId ?? ''
+    }
+    toast.success('已生成锁定约束下的新版本')
+  } catch {
+    toast.error('重预览失败，请检查锁定资源与时间窗口')
+  }
+}
+
+function onLockedDragAttempt() {
+  toast.error('该工序已锁定；请先解锁再调整资源或时间')
+}
+
+async function publishCandidate() {
+  const planId = draft.model.value?.meta.planId
+  if (!canPublish.value || !planId) return
+  detailSelection.planId = planId
+  try {
+    await releasePlan(planId)
+    toast.success('新版排程已发布')
+  } catch {
+    toast.error('发布失败；失效或终态方案不能发布')
+  }
+}
+
 // 已终止或失效的方案禁止发布，避免重复下达或下达一份过期计划。
 function canRelease(row: BusinessConsoleSchedulingPlanSummaryResponse) {
-  return !schedulingPlanTerminalReleaseReason(row.status) && !row.isInvalidated
+  return canPublish.value && !schedulingPlanTerminalReleaseReason(row.status) && !row.isInvalidated
 }
 
 function releaseDisabledReason(row: BusinessConsoleSchedulingPlanSummaryResponse) {
+  if (!canPublish.value) return '当前账号没有排程发布权限'
   const terminalReason = schedulingPlanTerminalReleaseReason(row.status)
   if (terminalReason) return terminalReason
   if (row.isInvalidated)
@@ -313,9 +421,118 @@ function reasonLabel(reason?: string | null) {
 
     <NvTabs v-model="activeView">
       <NvTabsList>
+        <NvTabsTrigger value="workbench">领导演示工作台</NvTabsTrigger>
         <NvTabsTrigger value="table">表格</NvTabsTrigger>
         <NvTabsTrigger value="gantt">甘特图</NvTabsTrigger>
       </NvTabsList>
+
+      <NvTabsContent value="workbench" class="grid gap-4">
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4"
+        >
+          <div>
+            <p class="font-semibold">批量待排 → 编辑锁定 → 重预览 → 对比发布</p>
+            <p class="text-sm text-muted-foreground">
+              已选择 {{ draft.includedOrders.value.length }} 个工单，锁定
+              {{ draft.lockedAssignments.value.length }} 道工序。
+            </p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <NvButton
+              size="sm"
+              variant="ghost"
+              type="button"
+              :disabled="!draft.canUndo.value"
+              @click="draft.undo"
+              >撤销</NvButton
+            >
+            <NvButton
+              size="sm"
+              variant="ghost"
+              type="button"
+              :disabled="!draft.canRedo.value"
+              @click="draft.redo"
+              >重做</NvButton
+            >
+            <NvButton
+              size="sm"
+              variant="outline"
+              type="button"
+              :disabled="
+                !canManage ||
+                draft.includedOrders.value.length === 0 ||
+                workbench.generatePending.value
+              "
+              @click="generateWorkbenchPlan"
+            >
+              <Spinner v-if="workbench.generatePending.value" aria-hidden="true" />生成首版
+            </NvButton>
+            <NvButton
+              size="sm"
+              variant="outline"
+              type="button"
+              :disabled="!canManage || !draft.model.value || workbench.revisionPending.value"
+              @click="repreviewLockedDraft"
+            >
+              <Spinner v-if="workbench.revisionPending.value" aria-hidden="true" />锁定重预览
+            </NvButton>
+            <NvButton
+              size="sm"
+              type="button"
+              :disabled="!canPublish || !draft.model.value || releasePlanPending"
+              @click="publishCandidate"
+            >
+              <SendIcon aria-hidden="true" />发布新版
+            </NvButton>
+          </div>
+        </div>
+
+        <p
+          v-if="!canManage"
+          class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
+          role="status"
+        >
+          当前账号只有读取权限，可查看历史方案但不能编辑或生成新版本。
+        </p>
+        <div
+          v-if="draft.modifiedUnlockedTaskIds.value.length > 0"
+          class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
+          role="status"
+        >
+          <span>
+            {{ draft.modifiedUnlockedTaskIds.value.length }}
+            道人工修改尚未锁定；重预览前需锁定，避免修改被候选方案覆盖。
+          </span>
+          <NvButton
+            size="sm"
+            variant="outline"
+            type="button"
+            :disabled="!canManage"
+            @click="draft.lockModifiedTasks"
+            >锁定全部修改</NvButton
+          >
+        </div>
+        <SchedulingOrderPool
+          :candidates="workbench.schedulableCandidates.value"
+          :draft-orders="draft.orders.value"
+          :loading="workbench.candidatesPending.value"
+          :read-only="!canManage"
+          @include="draft.setIncluded"
+          @update="draft.updateOrder"
+        />
+        <SchedulingDraftBoard
+          :model="draft.model.value"
+          :pending-operations="draft.pendingOperations.value"
+          :read-only="!canManage"
+          @move="draft.moveTask"
+          @update="draft.updateTask"
+          @lock="draft.setLocked"
+          @locked-attempt="onLockedDragAttempt"
+          @move-to-pending="draft.moveTaskToPending"
+          @restore-pending="draft.restorePendingTask"
+        />
+        <ScheduleRevisionReview :revision="revisionResult" />
+      </NvTabsContent>
 
       <NvTabsContent value="table" class="grid gap-4">
         <NvDataTable
@@ -476,10 +693,13 @@ function reasonLabel(reason?: string | null) {
           </section>
 
           <section class="grid gap-3">
-            <h3 class="text-sm font-semibold text-foreground">资源分配</h3>
-            <div v-if="planDetail.assignments?.length" class="grid gap-2">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h3 class="text-sm font-semibold text-foreground">资源分配</h3>
+              <UrgencyDisplayModeSelect v-model="displayMode" />
+            </div>
+            <div v-if="orderedAssignments.length" class="grid gap-2">
               <div
-                v-for="assignment in planDetail.assignments"
+                v-for="assignment in orderedAssignments"
                 :key="assignment.assignmentId ?? assignmentText(assignment)"
                 class="rounded-md border bg-background p-3"
                 :class="{
@@ -495,11 +715,13 @@ function reasonLabel(reason?: string | null) {
                   </p>
                   <OrderUrgencyBadge
                     :order-reference="assignment.orderId ?? ''"
+                    :mode="displayMode"
                     :urgency="
                       assignment.orderId
                         ? orderUrgencies.byReference.value.get(assignment.orderId)
                         : undefined
                     "
+                    @refresh="refreshUrgency"
                   />
                 </div>
                 <p class="mt-1 text-sm text-muted-foreground">

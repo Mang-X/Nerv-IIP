@@ -426,6 +426,35 @@ public sealed class CompleteBusinessConsoleWmsOutboundOrderEndpoint(
 }
 
 [Tags("Business Console WMS")]
+[HttpPost("/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry")]
+[BusinessGatewayOperationId("retryBusinessConsoleWmsOutboundInventoryPosting")]
+public sealed class RetryBusinessConsoleWmsOutboundInventoryPostingEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleRetryWmsOutboundInventoryPostingRequest, BusinessConsoleCompleteWmsMovementResponse>(
+        auth,
+        BusinessGatewayPermissions.WmsShipmentsManage)
+{
+    protected override string OrganizationId(BusinessConsoleRetryWmsOutboundInventoryPostingRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleRetryWmsOutboundInventoryPostingRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleCompleteWmsMovementResponse> ForwardAsync(
+        BusinessConsoleRetryWmsOutboundInventoryPostingRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var outboundOrderId = Route<string>("outboundOrderId") ?? request.OutboundOrderId;
+        return wms.RetryOutboundInventoryPostingAsync(
+            tokenProvider.BearerToken,
+            outboundOrderId,
+            request with { OutboundOrderId = outboundOrderId },
+            cancellationToken);
+    }
+}
+
+[Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/count-executions")]
 [BusinessGatewayOperationId("createBusinessConsoleWmsCountExecution")]
 public sealed class CreateBusinessConsoleWmsCountExecutionEndpoint(

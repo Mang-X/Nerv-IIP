@@ -9,10 +9,18 @@ using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
 using Nerv.IIP.FileStorage.Web.Application.Archives;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Observability;
+using Nerv.IIP.Persistence;
 using Nerv.IIP.ServiceAuth;
 
 var builder = WebApplication.CreateBuilder(args);
-var persistence = FileStoragePersistenceStartup.Validate(builder.Configuration, builder.Environment);
+var persistence = PersistenceStartupGovernance.Resolve(
+    builder.Configuration,
+    builder.Environment,
+    new PersistenceStartupRequirements("FileStorage", ["FileStorageDb", "PostgreSQL"])
+    {
+        NonDevelopmentMigrationRemedy =
+            "Use scripts/install/migrate-file-storage.ps1 or a migration bundle outside Development."
+    });
 var usePostgreSql = persistence.UsePostgreSql;
 builder.Services.AddFastEndpoints();
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
@@ -59,7 +67,7 @@ else
     builder.Services.AddSingleton<IFileStorageService, InMemoryFileStorageService>();
 }
 
-builder.Services.AddFileStoragePersistence(builder.Configuration, persistence.UsePostgreSql);
+builder.Services.AddFileStoragePersistence(builder.Configuration, persistence.PostgreSqlConnectionStringName);
 builder.Services.AddNervIipCaching(builder.Configuration, "file-storage");
 builder.Services.AddNervIipObservability(builder.Configuration, "file-storage");
 builder.Services.AddNervIipLocalization();

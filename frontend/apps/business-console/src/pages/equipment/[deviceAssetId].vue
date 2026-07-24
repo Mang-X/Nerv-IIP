@@ -11,6 +11,7 @@ import {
   describeTelemetryOeeLimitations,
   formatOeeQuantity,
   formatOeeRate,
+  useBusinessEquipmentHealth,
   useBusinessTelemetryHistory,
   useBusinessTelemetryOee,
   useBusinessTelemetryRuntimeHours,
@@ -25,6 +26,7 @@ import {
 } from '@/composables/useBusinessDeviceControl'
 import { usePagedList } from '@/composables/usePagedList'
 import DeviceControlSheet from '@/components/equipment/DeviceControlSheet.vue'
+import EquipmentHealthCard from '@/components/equipment/EquipmentHealthCard.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -137,6 +139,9 @@ const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canControlDevice = computed(() => permissionCodes.value.includes(P.iiotDeviceControlWrite))
 const controlSheetOpen = ref(false)
 const deviceAssetIdRef = computed(() => filters.deviceAssetId)
+const { health, healthError, healthPending, refreshHealth } =
+  useBusinessEquipmentHealth(deviceAssetIdRef)
+const healthErrorMessage = computed(() => formatError(healthError.value))
 const {
   commands: controlCommands,
   commandsError: controlCommandsError,
@@ -328,6 +333,7 @@ function refreshAll() {
   void refreshPlans()
   void refreshRuntimeHours()
   void refreshRemaining()
+  void refreshHealth()
 }
 // 累计运行小时卡值先判 pending/error，再判是否有真实样本——无样本诚实显「无样本」，不把「没有事实」
 // 表达成确定的 0.0 小时（facade 对无样本设备返回 totalRuntimeHours=0/hasRuntimeSamples=false）。
@@ -690,6 +696,12 @@ function formatError(error: unknown) {
               >
             </div>
           </div>
+
+          <EquipmentHealthCard
+            :health="health"
+            :pending="healthPending"
+            :error="healthErrorMessage"
+          />
 
           <div class="rounded-lg border bg-card">
             <div class="border-b px-4 py-3">

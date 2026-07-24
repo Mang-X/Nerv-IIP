@@ -112,6 +112,7 @@ try
             .AddCommandLockBehavior()
             .AddKnownExceptionValidationBehavior()
             .AddUnitOfWorkBehaviors());
+    builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = ErpFacts.ServiceName)
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();

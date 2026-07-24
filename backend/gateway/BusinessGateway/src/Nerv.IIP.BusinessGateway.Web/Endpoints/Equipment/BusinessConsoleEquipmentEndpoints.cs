@@ -169,6 +169,36 @@ public sealed class GetBusinessConsoleEquipmentDeviceEndpoint(
 }
 
 [Tags("Business Console Equipment")]
+[HttpGet("/api/business-console/v1/equipment/devices/{deviceAssetId}/health")]
+[BusinessGatewayOperationId("getBusinessConsoleEquipmentDeviceHealth")]
+public sealed class GetBusinessConsoleEquipmentDeviceHealthEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient industrialTelemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessEquipmentProxyEndpoint<BusinessConsoleEquipmentContextRequest, BusinessConsoleEquipmentHealthResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotTelemetryRead)
+{
+    protected override string OrganizationId(BusinessConsoleEquipmentContextRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleEquipmentContextRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleEquipmentContextRequest request) => "device-asset";
+
+    protected override string? ResourceId(BusinessConsoleEquipmentContextRequest request) => Route<string>("deviceAssetId");
+
+    protected override Task<BusinessConsoleEquipmentHealthResponse> ForwardAsync(
+        BusinessConsoleEquipmentContextRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+        => industrialTelemetry.GetEquipmentHealthAsync(
+            tokenProvider.BearerToken,
+            Route<string>("deviceAssetId")!,
+            request,
+            cancellationToken);
+}
+
+[Tags("Business Console Equipment")]
 [HttpGet("/api/business-console/v1/equipment/availability")]
 [BusinessGatewayOperationId("getBusinessConsoleEquipmentAvailability")]
 public sealed class GetBusinessConsoleEquipmentAvailabilityEndpoint(

@@ -7,7 +7,7 @@ import type {
   BusinessConsoleTelemetryHistoryItem,
 } from '@nerv-iip/api-client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, nextTick, shallowRef } from 'vue'
+import { computed, nextTick, reactive, shallowRef, type Ref } from 'vue'
 
 import EquipmentAlarmsPage from './alarms.vue'
 import EquipmentDetailPage from './[deviceAssetId].vue'
@@ -56,6 +56,22 @@ const runtimeRemainingState = vi.hoisted(() => ({
 
 // Cumulative runtime-hours read; configurable so a no-samples device can be exercised.
 const runtimeHoursState = vi.hoisted(() => ({ total: 720, hasSamples: true }))
+
+const equipmentHealthState = vi.hoisted(() => ({
+  deviceAssetId: undefined as Ref<string> | undefined,
+  refreshHealth: vi.fn(),
+  health: {
+    organizationId: 'org-001',
+    environmentId: 'env-dev',
+    deviceAssetId: 'DEV-OIL-01',
+    healthScore: 85,
+    level: 'watch' as const,
+    calculatedAtUtc: '2026-07-24T01:02:03Z',
+    dataFreshness: { status: 'fresh' as const },
+    riskFactors: [],
+    ruleEvaluations: [],
+  },
+}))
 
 const reviewFixture = vi.hoisted(() => {
   const historyItems = [
@@ -298,6 +314,15 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
     refreshHistory: vi.fn(),
     visibleHistoryItems: computed(() => reviewFixture.historyItems),
   }),
+  useBusinessEquipmentHealth: (deviceAssetId: Ref<string>) => {
+    equipmentHealthState.deviceAssetId = deviceAssetId
+    return {
+      health: computed(() => equipmentHealthState.health),
+      healthError: shallowRef(),
+      healthPending: shallowRef(false),
+      refreshHealth: equipmentHealthState.refreshHealth,
+    }
+  },
   useBusinessTelemetryOee: () => ({
     availabilityWindows: computed(() => []),
     filters: {
@@ -373,6 +398,7 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     plansPending: shallowRef(false),
     plansTotal: computed(() => 1),
     filters: { organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 200 },
+    refreshPlans: vi.fn(),
   }),
   useMaintenanceReliability: () => ({
     filters: {
@@ -412,6 +438,12 @@ const stubs = {
     props: ['open', 'deviceAssetId'],
     template: '<div data-testid="device-control-sheet" />',
   },
+  EquipmentHealthCard: {
+    name: 'EquipmentHealthCard',
+    props: ['health', 'pending', 'error'],
+    template:
+      '<section data-testid="equipment-health-card">{{ health?.healthScore }} {{ pending }} {{ error }}</section>',
+  },
 }
 
 describe('equipment pages', () => {
@@ -419,8 +451,10 @@ describe('equipment pages', () => {
     if (routeState.route) {
       routeState.route.params.deviceAssetId = 'DEV-OIL-01'
     }
-    equipmentComposableState.deviceFilters.deviceAssetId = 'DEV-OIL-01'
+    equipmentComposableState.deviceFilters = reactive({ deviceAssetId: 'DEV-OIL-01' })
     equipmentComposableState.refreshDevice.mockClear()
+    equipmentHealthState.deviceAssetId = undefined
+    equipmentHealthState.refreshHealth.mockClear()
     // Default: both runtime plans known; plan-2 (280h) is the most urgent, no incomplete flag.
     runtimeRemainingState.map = {
       'plan-2': { status: 'ok', hours: 280 },
@@ -454,7 +488,19 @@ describe('equipment pages', () => {
     await nextTick()
 
     expect(equipmentComposableState.deviceFilters.deviceAssetId).toBe('DEV-PACK-02')
+    expect(equipmentHealthState.deviceAssetId?.value).toBe('DEV-PACK-02')
     expect(equipmentComposableState.refreshDevice).toHaveBeenCalledTimes(1)
+  })
+
+  it('wires equipment health data into the detail card and refreshes it manually', async () => {
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    expect(wrapper.get('[data-testid="equipment-health-card"]').text()).toContain('85')
+
+    const refresh = wrapper.findAll('button').find((button) => button.text().trim() === '刷新')
+    expect(refresh).toBeDefined()
+    await refresh!.trigger('click')
+    expect(equipmentHealthState.refreshHealth).toHaveBeenCalledTimes(1)
   })
 
   it('renders telemetry and maintenance context with source wording on equipment detail', () => {

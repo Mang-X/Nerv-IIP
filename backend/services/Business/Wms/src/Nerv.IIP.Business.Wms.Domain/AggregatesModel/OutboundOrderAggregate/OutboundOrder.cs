@@ -14,6 +14,7 @@ public enum OutboundOrderStatus
     Completed = 1,
     InventoryPostingFailed = 2,
     Cancelled = 3,
+    InventoryPostingPending = 4,
 }
 
 public sealed record OutboundOrderLineDraft(
@@ -52,6 +53,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         SourceDocumentId = WmsText.Required(sourceDocumentId, nameof(sourceDocumentId));
         SiteCode = WmsText.Required(siteCode, nameof(siteCode));
         Status = OutboundOrderStatus.Open;
+        Version = 1;
         CreatedAtUtc = DateTime.UtcNow;
         foreach (var draft in lineDrafts)
         {
@@ -77,6 +79,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? CompletedAtUtc { get; private set; }
     public DateTime? CancelledAtUtc { get; private set; }
+    public long Version { get; private set; }
     public IReadOnlyCollection<OutboundOrderLine> Lines => lines;
 
     public static OutboundOrder Create(
@@ -109,6 +112,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         var taskFromLocationCode = reservedLocationCode ?? fromLocationCode;
         line.MarkPickLocation(taskFromLocationCode);
         line.MarkInventoryReserved(inventoryReservationId, taskFromLocationCode, reservedLotNo, reservedSerialNo);
+        AdvanceVersion();
         return WarehouseTask.CreatePicking(
             OrganizationId,
             EnvironmentId,
@@ -161,8 +165,8 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         EnsureHasLines();
         PackReviewNo = WmsText.Required(packReviewNo, nameof(packReviewNo));
         PackReviewPassed = true;
-        Status = OutboundOrderStatus.Completed;
-        CompletedAtUtc = DateTime.UtcNow;
+        Status = OutboundOrderStatus.InventoryPostingPending;
+        CompletedAtUtc = null;
         var singleLine = lines.Count == 1;
         foreach (var line in lines)
         {
@@ -175,6 +179,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
             throw new InvalidOperationException("Outbound order cannot complete without executed pick quantity.");
         }
 
+        AdvanceVersion();
         singleLine = postingLines.Length == 1;
         var requests = postingLines.Select(line => InventoryMovementRequest.Create(
                 OrganizationId,
@@ -195,7 +200,6 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
                 line.IssuedQuantity,
                 line.InventoryReservationId))
             .ToArray();
-        this.AddDomainEvent(new OutboundOrderCompletedDomainEvent(this));
         return requests;
     }
 
@@ -221,12 +225,42 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
             return;
         }
 
-        if (Status != OutboundOrderStatus.Completed)
+        if (Status != OutboundOrderStatus.InventoryPostingPending)
         {
-            throw new InvalidOperationException("Only completed outbound orders can be marked as Inventory posting failed.");
+            throw new InvalidOperationException("Only outbound orders with pending Inventory posting can be marked as Inventory posting failed.");
         }
 
         Status = OutboundOrderStatus.InventoryPostingFailed;
+        CompletedAtUtc = null;
+        AdvanceVersion();
+    }
+
+    public void RecordInventoryPostingProgress()
+    {
+        if (Status != OutboundOrderStatus.InventoryPostingPending)
+        {
+            throw new InvalidOperationException("Only outbound orders with pending Inventory posting can record posting progress.");
+        }
+
+        AdvanceVersion();
+    }
+
+    public void MarkInventoryPostingCompleted()
+    {
+        if (Status == OutboundOrderStatus.Completed)
+        {
+            return;
+        }
+
+        if (Status != OutboundOrderStatus.InventoryPostingPending)
+        {
+            throw new InvalidOperationException("Only outbound orders with pending Inventory posting can be completed.");
+        }
+
+        Status = OutboundOrderStatus.Completed;
+        CompletedAtUtc = DateTime.UtcNow;
+        AdvanceVersion();
+        this.AddDomainEvent(new OutboundOrderCompletedDomainEvent(this));
     }
 
     public void EnsureCanCancel()
@@ -245,15 +279,22 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
 
         Status = OutboundOrderStatus.Cancelled;
         CancelledAtUtc = DateTime.UtcNow;
+        AdvanceVersion();
         this.AddDomainEvent(new OutboundOrderCancelledDomainEvent(this));
     }
 
     public void MarkInventoryReservationReleased(string inventoryReservationId)
     {
         var reservationId = WmsText.Required(inventoryReservationId, nameof(inventoryReservationId));
-        foreach (var line in lines.Where(x => x.InventoryReservationId == reservationId))
+        var matchingLines = lines.Where(x => x.InventoryReservationId == reservationId).ToArray();
+        foreach (var line in matchingLines)
         {
             line.ClearInventoryReservation();
+        }
+
+        if (matchingLines.Length > 0)
+        {
+            AdvanceVersion();
         }
     }
 
@@ -285,7 +326,8 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
     {
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
         EnsureCanRetryInventoryPosting(inventoryReservationIds.Keys.ToArray());
-        Status = OutboundOrderStatus.Completed;
+        Status = OutboundOrderStatus.InventoryPostingPending;
+        CompletedAtUtc = null;
         var retryLines = lines
             .Where(line => inventoryReservationIds.ContainsKey(line.LineNo))
             .OrderBy(line => line.LineNo, StringComparer.Ordinal)
@@ -315,7 +357,13 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
                     line.InventoryReservationId);
             })
             .ToArray();
+        AdvanceVersion();
         return requests;
+    }
+
+    private void AdvanceVersion()
+    {
+        Version = checked(Version + 1);
     }
 
     private OutboundOrderLine FindLine(string lineNo)

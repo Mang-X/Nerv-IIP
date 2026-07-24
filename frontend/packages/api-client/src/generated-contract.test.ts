@@ -13,6 +13,7 @@ import type {
   BusinessConsoleConnectorTagCoverageResponse,
   BusinessConsoleCreateErpPurchaseRequisitionEnvelope,
   BusinessConsoleCreateErpPurchaseRequisitionResponse,
+  BusinessConsoleConfigureErpWorkCenterCostRateRequest,
   BusinessConsoleCreateOrUpdateForecastInputRequest,
   BusinessConsoleErpCostCandidateSourceDocumentEnvelope,
   BusinessConsoleErpCostCandidateSourceDocumentResponse,
@@ -20,6 +21,10 @@ import type {
   BusinessConsoleErpPayableSourceDocumentResponse,
   BusinessConsoleErpReceivableSourceDocumentEnvelope,
   BusinessConsoleErpReceivableSourceDocumentResponse,
+  BusinessConsoleEquipmentHealthFreshness,
+  BusinessConsoleEquipmentHealthLevel,
+  BusinessConsoleEquipmentHealthResponse,
+  BusinessConsoleEquipmentHealthRuleStatus,
   BusinessConsoleForecastInputItem,
   BusinessConsoleForecastInputItemEnvelope,
   BusinessConsoleForecastInputListEnvelope,
@@ -152,6 +157,14 @@ import {
 } from './iam'
 
 describe('generated API client contract', () => {
+  it('requires the governed ERP work-center cost-rate effective start', () => {
+    expectTypeOf<
+      {} extends Pick<BusinessConsoleConfigureErpWorkCenterCostRateRequest, 'effectiveFromUtc'>
+        ? true
+        : false
+    >().toEqualTypeOf<false>()
+  })
+
   it('exposes WMS receiving shelf-life fields through the stable boundary', () => {
     expectTypeOf<
       Pick<BusinessConsoleWmsInboundLineInput, 'productionDate' | 'expiryDate'>
@@ -313,6 +326,33 @@ describe('generated API client contract', () => {
     }>()
     expectTypeOf<BusinessConsoleMesFinishedGoodsInventoryLinkEnvelope['data']>().toEqualTypeOf<
       BusinessConsoleMesFinishedGoodsInventoryLinkResponse | null | undefined
+    >()
+  })
+
+  it('exports the required equipment health contract and controlled vocabularies', () => {
+    expectTypeOf<BusinessConsoleEquipmentHealthResponse['organizationId']>().toEqualTypeOf<string>()
+    expectTypeOf<BusinessConsoleEquipmentHealthResponse['environmentId']>().toEqualTypeOf<string>()
+    expectTypeOf<BusinessConsoleEquipmentHealthResponse['deviceAssetId']>().toEqualTypeOf<string>()
+    expectTypeOf<BusinessConsoleEquipmentHealthResponse['healthScore']>().toEqualTypeOf<number>()
+    expectTypeOf<
+      BusinessConsoleEquipmentHealthResponse['level']
+    >().toEqualTypeOf<BusinessConsoleEquipmentHealthLevel>()
+    expectTypeOf<
+      BusinessConsoleEquipmentHealthResponse['calculatedAtUtc']
+    >().toEqualTypeOf<string>()
+    expectTypeOf<
+      BusinessConsoleEquipmentHealthResponse['dataFreshness']['status']
+    >().toEqualTypeOf<BusinessConsoleEquipmentHealthFreshness>()
+    expectTypeOf<BusinessConsoleEquipmentHealthResponse['riskFactors']>().toBeArray()
+    expectTypeOf<BusinessConsoleEquipmentHealthResponse['ruleEvaluations']>().toBeArray()
+    expectTypeOf<BusinessConsoleEquipmentHealthLevel>().toEqualTypeOf<
+      'healthy' | 'watch' | 'warning' | 'critical'
+    >()
+    expectTypeOf<BusinessConsoleEquipmentHealthFreshness>().toEqualTypeOf<
+      'fresh' | 'delayed' | 'stale' | 'unavailable'
+    >()
+    expectTypeOf<BusinessConsoleEquipmentHealthRuleStatus>().toEqualTypeOf<
+      'normal' | 'risk' | 'accumulating'
     >()
   })
 

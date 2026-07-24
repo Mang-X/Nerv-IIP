@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -12,6 +13,7 @@ using Microsoft.Extensions.Options;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
+using Nerv.IIP.BusinessGateway.Web.Endpoints.Erp;
 using Nerv.IIP.BusinessGateway.Web.Endpoints.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.FileStorage;
@@ -2114,6 +2116,310 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Erp_work_center_cost_rate_facades_forward_authenticated_actor_scope_and_effective_query()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        var effectiveFromUtc = DateTimeOffset.Parse("2026-07-23T01:00:00Z", CultureInfo.InvariantCulture);
+        var atUtc = DateTimeOffset.Parse("2026-07-23T02:00:00Z", CultureInfo.InvariantCulture);
+
+        var configure = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/work-center-cost-rates",
+            new BusinessConsoleConfigureErpWorkCenterCostRateRequest(
+                "org-001",
+                "env-dev",
+                "WC-001",
+                2500m,
+                "CNY",
+                effectiveFromUtc,
+                null,
+                "leader demo governed rate"));
+        var list = await client.GetAsync(
+            "/api/business-console/v1/erp/finance/work-center-cost-rates"
+            + "?organizationId=org-001&environmentId=env-dev&workCenterId=WC-001"
+            + $"&atUtc={Uri.EscapeDataString(atUtc.ToString("O", CultureInfo.InvariantCulture))}");
+
+        Assert.Equal(HttpStatusCode.OK, configure.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal("user:user-admin", erp.LastConfigureWorkCenterCostRateActor);
+        Assert.NotNull(erp.LastConfigureWorkCenterCostRateRequest);
+        Assert.Equal("org-001", erp.LastConfigureWorkCenterCostRateRequest!.OrganizationId);
+        Assert.Equal("env-dev", erp.LastConfigureWorkCenterCostRateRequest.EnvironmentId);
+        Assert.Equal("WC-001", erp.LastConfigureWorkCenterCostRateRequest.WorkCenterId);
+        Assert.Equal(2500m, erp.LastConfigureWorkCenterCostRateRequest.HourlyRate);
+        Assert.Equal("CNY", erp.LastConfigureWorkCenterCostRateRequest.CurrencyCode);
+        Assert.Equal(effectiveFromUtc, erp.LastConfigureWorkCenterCostRateRequest.EffectiveFromUtc);
+        Assert.Equal("leader demo governed rate", erp.LastConfigureWorkCenterCostRateRequest.Reason);
+        Assert.Equal(new BusinessConsoleListErpWorkCenterCostRatesRequest("org-001", "env-dev", "WC-001", atUtc), erp.LastListWorkCenterCostRatesRequest);
+
+        using var configureDocument = JsonDocument.Parse(await configure.Content.ReadAsStringAsync());
+        Assert.Equal("018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9", configureDocument.RootElement.GetProperty("data").GetProperty("workCenterCostRateId").GetString());
+        using var listDocument = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        Assert.Equal("CNY", listDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("currencyCode").GetString());
+        Assert.Equal("user:user-admin", listDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("changedBy").GetString());
+    }
+
+    [Fact]
+    public void Erp_work_center_cost_rate_validator_rejects_an_omitted_effective_start()
+    {
+        var request = new BusinessConsoleConfigureErpWorkCenterCostRateRequest(
+            "org-001", "env-dev", "WC-001", 2500m, "CNY", default, null, "governed rate");
+
+        var result = new BusinessConsoleConfigureErpWorkCenterCostRateRequestValidator().Validate(request);
+
+        Assert.False(result.IsValid);
+        Assert.NotEmpty(result.Errors);
+    }
+
+    [Fact]
+    public void Erp_work_center_cost_rate_validator_accepts_lowercase_currency_for_domain_normalization()
+    {
+        var request = new BusinessConsoleConfigureErpWorkCenterCostRateRequest(
+            "org-001", "env-dev", "WC-001", 2500m, "cny",
+            DateTimeOffset.Parse("2026-07-23T01:00:00Z", CultureInfo.InvariantCulture),
+            null,
+            "governed rate");
+
+        var result = new BusinessConsoleConfigureErpWorkCenterCostRateRequestValidator().Validate(request);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public async Task Erp_work_center_cost_rate_facade_rejects_an_omitted_effective_start_before_authorization()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/work-center-cost-rates",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                workCenterId = "WC-001",
+                hourlyRate = 2500m,
+                currencyCode = "CNY",
+                reason = "governed rate",
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, auth.CallCount);
+    }
+
+    [Fact]
+    public async Task Erp_work_center_cost_rate_http_client_preserves_wire_shape_and_forwards_actor_header()
+    {
+        var requestCount = 0;
+        string? postedJson = null;
+        var handler = new RecordingHandler(request =>
+        {
+            requestCount++;
+            if (request.Method == HttpMethod.Post)
+            {
+                postedJson = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            }
+
+            return request.Method == HttpMethod.Post
+                ? JsonResponse(HttpStatusCode.OK, new
+                {
+                    data = new
+                    {
+                        workCenterCostRateId = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9",
+                    },
+                    success = true,
+                    message = string.Empty,
+                    code = 0,
+                })
+                : JsonResponse(HttpStatusCode.OK, new
+                {
+                    data = new
+                    {
+                        organizationId = "org-001",
+                        environmentId = "env-dev",
+                        workCenterId = "WC-001",
+                        atUtc = "2026-07-23T02:00:00Z",
+                        currentEffectiveRevision = 1,
+                        items = new[]
+                        {
+                            new
+                            {
+                                workCenterCostRateId = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9",
+                                workCenterId = "WC-001",
+                                hourlyRate = 2500m,
+                                currencyCode = "CNY",
+                                effectiveFromUtc = "2026-07-23T01:00:00Z",
+                                effectiveToUtc = (string?)null,
+                                revision = 1,
+                                changedBy = "user:user-admin",
+                                reason = "leader demo governed rate",
+                                changedAtUtc = "2026-07-23T00:59:00Z",
+                                effectiveStatus = "effective",
+                                isEffectiveAtUtc = true,
+                                isCurrentEffectiveRevision = true,
+                            },
+                        },
+                    },
+                    success = true,
+                    message = string.Empty,
+                    code = 0,
+                });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.local") };
+        var subject = new HttpBusinessErpClient(httpClient);
+        var effectiveFromUtc = DateTimeOffset.Parse("2026-07-23T01:00:00Z", CultureInfo.InvariantCulture);
+        var atUtc = DateTimeOffset.Parse("2026-07-23T02:00:00Z", CultureInfo.InvariantCulture);
+        var request = new BusinessConsoleConfigureErpWorkCenterCostRateRequest(
+            "org-001", "env-dev", "WC-001", 2500m, "CNY", effectiveFromUtc, null, "leader demo governed rate");
+
+        var configured = await subject.ConfigureWorkCenterCostRateAsync(
+            "internal-test-token", request, "user:user-admin", CancellationToken.None);
+        var listed = await subject.ListWorkCenterCostRatesAsync(
+            "internal-test-token",
+            new BusinessConsoleListErpWorkCenterCostRatesRequest("org-001", "env-dev", "WC-001", atUtc),
+            CancellationToken.None);
+
+        Assert.Equal(2, requestCount);
+        Assert.Equal("018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9", configured.WorkCenterCostRateId);
+        Assert.Equal("CNY", listed.Items.Single().CurrencyCode);
+        Assert.Equal(HttpMethod.Post, handler.Requests[0].Method);
+        Assert.Equal("/api/business/v1/erp/finance/work-center-cost-rates", handler.Requests[0].RequestUri!.PathAndQuery);
+        Assert.Equal("user:user-admin", handler.Requests[0].Headers.GetValues("X-Authenticated-Actor").Single());
+        Assert.Equal("Bearer", handler.Requests[0].Headers.Authorization!.Scheme);
+        Assert.Equal("internal-test-token", handler.Requests[0].Headers.Authorization!.Parameter);
+        Assert.NotNull(postedJson);
+        Assert.DoesNotContain("actor", postedJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            "/api/business/v1/erp/finance/work-center-cost-rates?organizationId=org-001&environmentId=env-dev&workCenterId=WC-001&atUtc=2026-07-23T02%3A00%3A00.0000000%2B00%3A00",
+            handler.Requests[1].RequestUri!.PathAndQuery);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Erp_work_center_cost_rate_http_client_accepts_raw_and_enveloped_serialized_strong_id(bool enveloped)
+    {
+        const string data = "{\"workCenterCostRateId\":\"018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9\"}";
+        var responseBody = enveloped
+            ? $"{{\"success\":true,\"data\":{data},\"message\":\"\",\"code\":0}}"
+            : data;
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK, responseBody));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.local") };
+        var client = new HttpBusinessErpClient(httpClient);
+
+        var response = await client.ConfigureWorkCenterCostRateAsync(
+            "internal-token",
+            WorkCenterCostRateRequest(),
+            "user:user-admin",
+            CancellationToken.None);
+
+        Assert.Equal("018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9", response.WorkCenterCostRateId);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"workCenterCostRateId\":null}")]
+    [InlineData("{\"workCenterCostRateId\":\"\"}")]
+    [InlineData("{\"workCenterCostRateId\":\"00000000-0000-0000-0000-000000000000\"}")]
+    [InlineData("{\"workCenterCostRateId\":\"not-a-guid\"}")]
+    [InlineData("{\"workCenterCostRateId\":{}}")]
+    [InlineData("{\"workCenterCostRateId\":{\"id\":null}}")]
+    [InlineData("{\"workCenterCostRateId\":{\"id\":\"not-a-guid\"}}")]
+    [InlineData("{\"workCenterCostRateId\":{\"id\":\"018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9\"}}")]
+    [InlineData("{not-json")]
+    public async Task Erp_work_center_cost_rate_http_client_rejects_missing_null_or_malformed_strong_id(string responseBody)
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK, responseBody));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.local") };
+        var client = new HttpBusinessErpClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.ConfigureWorkCenterCostRateAsync(
+                "internal-token",
+                WorkCenterCostRateRequest(),
+                "user:user-admin",
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Erp_work_center_cost_rate_http_client_preserves_success_false_business_error()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = false,
+            message = "work-center-cost-rate-validation-failed",
+            code = 400,
+            data = new
+            {
+                workCenterCostRateId = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9",
+            },
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.local") };
+        var client = new HttpBusinessErpClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.ConfigureWorkCenterCostRateAsync(
+                "internal-token",
+                WorkCenterCostRateRequest(),
+                "user:user-admin",
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Equal("work-center-cost-rate-validation-failed", exception.Message);
+    }
+
+    [Fact]
+    public async Task Erp_work_center_cost_rate_facade_maps_downstream_invalid_response_to_bad_gateway()
+    {
+        var erp = new RecordingErpClient
+        {
+            ConfigureWorkCenterCostRateFailure = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/work-center-cost-rates",
+            WorkCenterCostRateRequest());
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("downstream-invalid-response", document.RootElement.GetProperty("message").GetString());
+    }
+
+    private static BusinessConsoleConfigureErpWorkCenterCostRateRequest WorkCenterCostRateRequest() =>
+        new(
+            "org-001",
+            "env-dev",
+            "WC-001",
+            2500m,
+            "CNY",
+            DateTimeOffset.Parse("2026-07-23T01:00:00Z", CultureInfo.InvariantCulture),
+            null,
+            "governed rate");
+
+    [Fact]
     public async Task Erp_procurement_purchase_requisition_list_uses_internal_service_token_for_downstream_business_service()
     {
         var erp = new RecordingErpClient();
@@ -2357,9 +2663,56 @@ public sealed class BusinessGatewayProxyTests
         using var deliveryDocument = JsonDocument.Parse(await deliveries.Content.ReadAsStringAsync());
         var delivery = deliveryDocument.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.Equal("completed", delivery.GetProperty("status").GetString());
+        Assert.Equal("finished-goods", delivery.GetProperty("siteCode").GetString());
         Assert.Equal("2026-06-02T00:00:00Z", delivery.GetProperty("shippedAtUtc").GetDateTime().ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture));
         Assert.Equal("2026-06-02T00:00:00Z", delivery.GetProperty("completedAtUtc").GetDateTime().ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture));
-        Assert.Equal(1m, delivery.GetProperty("lines")[0].GetProperty("shippedQuantity").GetDecimal());
+        var deliveryLine = delivery.GetProperty("lines")[0];
+        Assert.Equal(1m, deliveryLine.GetProperty("shippedQuantity").GetDecimal());
+        Assert.Equal("SKU-FG", deliveryLine.GetProperty("skuCode").GetString());
+        Assert.Equal("EA", deliveryLine.GetProperty("uomCode").GetString());
+        Assert.Equal("receiving", deliveryLine.GetProperty("locationCode").GetString());
+        Assert.Equal("LOT-001", deliveryLine.GetProperty("lotNo").GetString());
+    }
+
+    [Fact]
+    public async Task Erp_delivery_release_facade_preserves_inventory_partition_fields()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/sales/delivery-orders",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                deliveryOrderNo = "DO-001",
+                salesOrderNo = "SO-001",
+                lines = new[]
+                {
+                    new
+                    {
+                        salesOrderLineNo = "10",
+                        quantity = 1m,
+                        locationCode = "receiving",
+                        lotNo = "LOT-001",
+                    },
+                },
+                idempotencyKey = "release-do-001",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var line = Assert.Single(erp.LastReleaseDeliveryOrderRequest!.Lines);
+        Assert.Equal("receiving", line.LocationCode);
+        Assert.Equal("LOT-001", line.LotNo);
     }
 
     [Fact]
@@ -3188,6 +3541,77 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Equipment_health_facade_forwards_internal_token_and_exact_device_scope_with_complete_evidence()
+    {
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/equipment/devices/DEV-HEALTH-01/health?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", industrialTelemetry.LastInternalToken);
+        Assert.Equal("DEV-HEALTH-01", industrialTelemetry.LastEquipmentHealthDeviceAssetId);
+        Assert.Equal(new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"), industrialTelemetry.LastEquipmentHealthRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("org-001", data.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", data.GetProperty("environmentId").GetString());
+        Assert.Equal("DEV-HEALTH-01", data.GetProperty("deviceAssetId").GetString());
+        Assert.Equal(85, data.GetProperty("healthScore").GetInt32());
+        Assert.Equal("watch", data.GetProperty("level").GetString());
+        Assert.Equal(
+            DateTimeOffset.Parse("2026-07-24T01:02:03Z", CultureInfo.InvariantCulture),
+            data.GetProperty("calculatedAtUtc").GetDateTimeOffset());
+        var freshness = data.GetProperty("dataFreshness");
+        Assert.Equal("delayed", freshness.GetProperty("status").GetString());
+        Assert.Equal(121L, freshness.GetProperty("ageSeconds").GetInt64());
+        Assert.Equal("telemetry-raw-sample", freshness.GetProperty("sourceFactType").GetString());
+        var riskFactor = Assert.Single(data.GetProperty("riskFactors").EnumerateArray());
+        Assert.Equal("threshold-proximity", riskFactor.GetProperty("ruleCode").GetString());
+        Assert.Equal("95", riskFactor.GetProperty("currentValue").GetString());
+        Assert.Equal(
+            DateTimeOffset.Parse("2026-07-24T01:00:02Z", CultureInfo.InvariantCulture),
+            riskFactor.GetProperty("sourceFactOccurredAtUtc").GetDateTimeOffset());
+        var evaluations = data.GetProperty("ruleEvaluations").EnumerateArray().ToArray();
+        Assert.Equal(5, evaluations.Length);
+        Assert.Equal("risk", evaluations[0].GetProperty("status").GetString());
+        Assert.Equal("normal", evaluations[1].GetProperty("status").GetString());
+        Assert.Equal(JsonValueKind.Null, evaluations[1].GetProperty("sourceFactOccurredAtUtc").ValueKind);
+    }
+
+    [Fact]
+    public async Task Equipment_health_facade_preserves_downstream_proxy_failure()
+    {
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient
+        {
+            EquipmentHealthFailure = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.ServiceUnavailable,
+                "equipment-health-unavailable"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/equipment/devices/DEV-HEALTH-01/health?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("equipment-health-unavailable", document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
     public async Task Telemetry_rule_and_oee_facades_forward_internal_token_and_scope()
     {
         var industrialTelemetry = new RecordingIndustrialTelemetryClient();
@@ -3306,6 +3730,13 @@ public sealed class BusinessGatewayProxyTests
         await client.GetPlanGanttAsync("internal-token-001", planRequest, CancellationToken.None);
         await client.ReleasePlanAsync("internal-token-001", planRequest, CancellationToken.None);
         await client.RevokePlanAsync("internal-token-001", planRequest, CancellationToken.None);
+        await client.CreateWorkbenchPlanAsync("internal-token-001", new(
+            "org-001", "env-dev",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-06-02T08:00:00Z", CultureInfo.InvariantCulture),
+            [new("WO-001", 1, true)]), CancellationToken.None);
+        await client.CreatePlanRevisionAsync("internal-token-001", new(
+            "plan-001", "org-001", "env-dev", ["WO-001"], []), CancellationToken.None);
 
         Assert.All(handler.Requests, request => Assert.Equal("Bearer", request.Headers.Authorization?.Scheme));
         Assert.All(handler.Requests, request => Assert.Equal("internal-token-001", request.Headers.Authorization?.Parameter));
@@ -3326,6 +3757,10 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpMethod.Post, handler.Requests[6].Method);
         Assert.Equal("/api/business/v1/scheduling/plans/plan-001/revoke", handler.Requests[6].RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[6].RequestUri!.Query.TrimStart('?'));
+        Assert.Equal("/api/business/v1/scheduling/workbench/plans", handler.Requests[7].RequestUri!.AbsolutePath);
+        Assert.Contains("\"workOrderId\":\"WO-001\"", handler.RequestBodies[7]);
+        Assert.Equal("/api/business/v1/scheduling/plans/plan-001/revisions", handler.Requests[8].RequestUri!.AbsolutePath);
+        Assert.Contains("\"includedOrderIds\":[\"WO-001\"]", handler.RequestBodies[8]);
     }
 
     [Fact]
@@ -3428,6 +3863,183 @@ public sealed class BusinessGatewayProxyTests
         var item = Assert.Single(result.Items);
         Assert.Null(item.FirstSampleAtUtc);
         Assert.Null(item.LastSampleAtUtc);
+    }
+
+    [Fact]
+    public async Task Equipment_health_http_client_forwards_canonical_scope_and_preserves_nullable_evidence()
+    {
+        var handler = new RecordingHandler(_ => EquipmentHealthJsonResponse(
+            organizationId: "org/001",
+            environmentId: "env dev",
+            deviceAssetId: "DEV/HEALTH 01"));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://industrial-telemetry.local") };
+        var client = new HttpBusinessIndustrialTelemetryClient(httpClient);
+
+        var result = await client.GetEquipmentHealthAsync(
+            "internal-token-001",
+            "DEV/HEALTH 01",
+            new BusinessConsoleEquipmentContextRequest("org/001", "env dev"),
+            CancellationToken.None);
+
+        var sent = Assert.Single(handler.Requests);
+        Assert.Equal("internal-token-001", sent.Headers.Authorization?.Parameter);
+        Assert.Equal("/api/business/v1/iiot/devices/DEV%2FHEALTH%2001/health", sent.RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org%2F001&environmentId=env%20dev", sent.RequestUri.Query.TrimStart('?'));
+        Assert.Equal(BusinessConsoleEquipmentHealthLevel.Watch, result.Level);
+        Assert.Equal(BusinessConsoleEquipmentHealthFreshness.Delayed, result.DataFreshness.Status);
+        Assert.Equal(121, result.DataFreshness.AgeSeconds);
+        Assert.Equal(5, result.RuleEvaluations.Count);
+        Assert.Equal("95.2", Assert.Single(result.RiskFactors).CurrentValue);
+        Assert.NotNull(Assert.Single(result.RiskFactors).SourceFactOccurredAtUtc);
+        Assert.Null(result.RuleEvaluations.ElementAt(1).SourceFactOccurredAtUtc);
+    }
+
+    [Theory]
+    [InlineData(
+        "delayed",
+        "2026-07-24T01:00:02.5000000Z",
+        120L,
+        BusinessConsoleEquipmentHealthFreshness.Delayed)]
+    [InlineData(
+        "stale",
+        "2026-07-24T00:52:02.5000000Z",
+        600L,
+        BusinessConsoleEquipmentHealthFreshness.Stale)]
+    public async Task Equipment_health_http_client_accepts_fractional_freshness_boundaries(
+        string status,
+        string latestFactAtUtc,
+        long ageSeconds,
+        BusinessConsoleEquipmentHealthFreshness expectedStatus)
+    {
+        var handler = new RecordingHandler(_ => EquipmentHealthJsonResponse(
+            mutate: data =>
+            {
+                var freshness = data["dataFreshness"]!.AsObject();
+                freshness["status"] = status;
+                freshness["latestFactAtUtc"] = latestFactAtUtc;
+                freshness["ageSeconds"] = ageSeconds;
+            }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://industrial-telemetry.local") };
+        var client = new HttpBusinessIndustrialTelemetryClient(httpClient);
+
+        var result = await client.GetEquipmentHealthAsync(
+            "internal-token-001",
+            "DEV-HEALTH-01",
+            new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal(expectedStatus, result.DataFreshness.Status);
+        Assert.Equal(ageSeconds, result.DataFreshness.AgeSeconds);
+        Assert.Equal(DateTimeOffset.Parse(latestFactAtUtc), result.DataFreshness.LatestFactAtUtc);
+    }
+
+    [Theory]
+    [InlineData("empty-data")]
+    [InlineData("null-freshness")]
+    [InlineData("null-risk-factors")]
+    [InlineData("null-rule-evaluations")]
+    [InlineData("mismatched-organization")]
+    [InlineData("mismatched-environment")]
+    [InlineData("mismatched-device")]
+    [InlineData("negative-score")]
+    [InlineData("score-over-100")]
+    [InlineData("score-does-not-match-risk-penalties")]
+    [InlineData("level-does-not-match-score")]
+    [InlineData("default-calculated-at")]
+    [InlineData("non-utc-calculated-at")]
+    [InlineData("invalid-level")]
+    [InlineData("invalid-freshness")]
+    [InlineData("invalid-rule-status")]
+    [InlineData("numeric-level")]
+    [InlineData("numeric-freshness")]
+    [InlineData("numeric-rule-status")]
+    [InlineData("numeric-risk-factor-status")]
+    [InlineData("defined-numeric-level")]
+    [InlineData("defined-numeric-freshness")]
+    [InlineData("defined-numeric-rule-status")]
+    [InlineData("defined-numeric-risk-factor-status")]
+    [InlineData("four-rule-evaluations")]
+    [InlineData("unexpected-rule-code")]
+    [InlineData("duplicate-rule-code")]
+    [InlineData("blank-evaluation-evidence")]
+    [InlineData("risk-status-with-zero-penalty")]
+    [InlineData("normal-status-with-positive-penalty")]
+    [InlineData("null-risk-factor-item")]
+    [InlineData("risk-factor-normal-status")]
+    [InlineData("risk-factor-zero-penalty")]
+    [InlineData("risk-factor-without-evaluation")]
+    [InlineData("blank-risk-factor-evidence")]
+    [InlineData("negative-freshness-age")]
+    [InlineData("incoherent-freshness-age")]
+    [InlineData("fresh-status-with-delayed-age")]
+    [InlineData("delayed-status-with-stale-age")]
+    [InlineData("unavailable-status-with-rule-source-facts")]
+    [InlineData("freshness-source-without-latest-fact")]
+    [InlineData("invalid-threshold-proximity-penalty")]
+    [InlineData("invalid-runtime-hours-penalty")]
+    [InlineData("invalid-alarm-frequency-penalty")]
+    [InlineData("invalid-sustained-exceedance-penalty")]
+    [InlineData("invalid-trend-growth-penalty")]
+    public async Task Equipment_health_http_client_rejects_malformed_downstream_contract(string scenario)
+    {
+        var handler = new RecordingHandler(_ => EquipmentHealthJsonResponse(
+            mutate: data => MutateEquipmentHealthData(data, scenario)));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://industrial-telemetry.local") };
+        var client = new HttpBusinessIndustrialTelemetryClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.GetEquipmentHealthAsync(
+                "internal-token-001",
+                "DEV-HEALTH-01",
+                new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Equipment_health_facade_maps_malformed_downstream_contract_to_bad_gateway()
+    {
+        var handler = new RecordingHandler(_ => EquipmentHealthJsonResponse(
+            mutate: data => data.Clear()));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://industrial-telemetry.local") };
+        var industrialTelemetry = new HttpBusinessIndustrialTelemetryClient(httpClient);
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/equipment/devices/DEV-HEALTH-01/health?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("downstream-invalid-response", document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task Equipment_health_http_client_rejects_missing_response_data()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(
+            HttpStatusCode.OK,
+            "{\"success\":true,\"data\":null}"));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://industrial-telemetry.local") };
+        var client = new HttpBusinessIndustrialTelemetryClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.GetEquipmentHealthAsync(
+                "internal-token-001",
+                "DEV-HEALTH-01",
+                new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
     }
 
     [Fact]
@@ -6205,6 +6817,309 @@ public sealed class BusinessGatewayProxyTests
             });
         });
 
+    private static HttpResponseMessage EquipmentHealthJsonResponse(
+        string organizationId = "org-001",
+        string environmentId = "env-dev",
+        string deviceAssetId = "DEV-HEALTH-01",
+        Action<JsonObject>? mutate = null)
+    {
+        var data = JsonSerializer.SerializeToNode(new
+        {
+            organizationId,
+            environmentId,
+            deviceAssetId,
+            healthScore = 85,
+            level = "watch",
+            calculatedAtUtc = "2026-07-24T01:02:03Z",
+            dataFreshness = new
+            {
+                status = "delayed",
+                ageSeconds = 121L,
+                latestFactAtUtc = "2026-07-24T01:00:02Z",
+                sourceFactType = "telemetry-raw-sample",
+                sourceFactLabel = "Bearing temperature",
+            },
+            riskFactors = new[]
+            {
+                new
+                {
+                    ruleCode = "threshold-proximity",
+                    ruleName = "Threshold proximity",
+                    status = "risk",
+                    penalty = 15,
+                    currentValue = "95.2",
+                    threshold = "90",
+                    unit = "celsius",
+                    evidence = "latest sample exceeds threshold",
+                    sourceFactType = (string?)"telemetry-raw-sample",
+                    sourceFactLabel = (string?)"Bearing temperature",
+                    sourceFactOccurredAtUtc = (string?)"2026-07-24T01:00:02Z",
+                },
+            },
+            ruleEvaluations = new[]
+            {
+                new
+                {
+                    ruleCode = "threshold-proximity",
+                    ruleName = "Threshold proximity",
+                    status = "risk",
+                    penalty = 15,
+                    currentValue = "95.2",
+                    threshold = "90",
+                    unit = "celsius",
+                    evidence = "latest sample exceeds threshold",
+                    sourceFactType = (string?)"telemetry-raw-sample",
+                    sourceFactLabel = (string?)"Bearing temperature",
+                    sourceFactOccurredAtUtc = (string?)"2026-07-24T01:00:02Z",
+                },
+                new
+                {
+                    ruleCode = "runtime-hours-24h",
+                    ruleName = "Runtime hours",
+                    status = "normal",
+                    penalty = 0,
+                    currentValue = "8",
+                    threshold = "16",
+                    unit = "hours",
+                    evidence = "runtime remains below threshold",
+                    sourceFactType = (string?)null,
+                    sourceFactLabel = (string?)null,
+                    sourceFactOccurredAtUtc = (string?)null,
+                },
+                new
+                {
+                    ruleCode = "alarm-frequency-24h",
+                    ruleName = "Alarm frequency",
+                    status = "normal",
+                    penalty = 0,
+                    currentValue = "0",
+                    threshold = "3",
+                    unit = "alarms",
+                    evidence = "alarm frequency remains below threshold",
+                    sourceFactType = (string?)"alarm-lifecycle",
+                    sourceFactLabel = (string?)"Latest alarm lifecycle",
+                    sourceFactOccurredAtUtc = (string?)"2026-07-24T00:58:00Z",
+                },
+                new
+                {
+                    ruleCode = "sustained-exceedance",
+                    ruleName = "Sustained exceedance",
+                    status = "accumulating",
+                    penalty = 0,
+                    currentValue = "4 samples",
+                    threshold = "6 samples",
+                    unit = "samples",
+                    evidence = "history is still accumulating",
+                    sourceFactType = (string?)"telemetry-raw-sample",
+                    sourceFactLabel = (string?)"Bearing temperature history",
+                    sourceFactOccurredAtUtc = (string?)"2026-07-24T00:57:00Z",
+                },
+                new
+                {
+                    ruleCode = "trend-growth",
+                    ruleName = "Trend growth",
+                    status = "normal",
+                    penalty = 0,
+                    currentValue = "5%",
+                    threshold = "20%",
+                    unit = "%",
+                    evidence = "trend growth remains below threshold",
+                    sourceFactType = (string?)"telemetry-raw-sample",
+                    sourceFactLabel = (string?)"Bearing temperature trend",
+                    sourceFactOccurredAtUtc = (string?)"2026-07-24T00:56:00Z",
+                },
+            },
+        })!.AsObject();
+        mutate?.Invoke(data);
+        return JsonResponse(HttpStatusCode.OK, new { success = true, data });
+    }
+
+    private static void MutateEquipmentHealthData(JsonObject data, string scenario)
+    {
+        var freshness = data["dataFreshness"]!.AsObject();
+        var riskFactors = data["riskFactors"]!.AsArray();
+        var evaluations = data["ruleEvaluations"]!.AsArray();
+        var riskFactor = riskFactors[0]!.AsObject();
+        var riskEvaluation = evaluations[0]!.AsObject();
+        var normalEvaluation = evaluations[1]!.AsObject();
+
+        switch (scenario)
+        {
+            case "empty-data":
+                data.Clear();
+                break;
+            case "null-freshness":
+                data["dataFreshness"] = null;
+                break;
+            case "null-risk-factors":
+                data["riskFactors"] = null;
+                break;
+            case "null-rule-evaluations":
+                data["ruleEvaluations"] = null;
+                break;
+            case "mismatched-organization":
+                data["organizationId"] = "org-other";
+                break;
+            case "mismatched-environment":
+                data["environmentId"] = "env-other";
+                break;
+            case "mismatched-device":
+                data["deviceAssetId"] = "DEV-OTHER";
+                break;
+            case "negative-score":
+                data["healthScore"] = -1;
+                break;
+            case "score-over-100":
+                data["healthScore"] = 101;
+                break;
+            case "score-does-not-match-risk-penalties":
+                data["healthScore"] = 84;
+                break;
+            case "level-does-not-match-score":
+                data["level"] = "warning";
+                break;
+            case "default-calculated-at":
+                data["calculatedAtUtc"] = "0001-01-01T00:00:00Z";
+                break;
+            case "non-utc-calculated-at":
+                data["calculatedAtUtc"] = "2026-07-24T09:02:03+08:00";
+                break;
+            case "invalid-level":
+                data["level"] = "attention";
+                break;
+            case "invalid-freshness":
+                freshness["status"] = "current";
+                break;
+            case "invalid-rule-status":
+                riskEvaluation["status"] = "unavailable";
+                break;
+            case "numeric-level":
+                data["level"] = 99;
+                break;
+            case "numeric-freshness":
+                freshness["status"] = 99;
+                break;
+            case "numeric-rule-status":
+                normalEvaluation["status"] = 99;
+                break;
+            case "numeric-risk-factor-status":
+                riskFactor["status"] = 99;
+                break;
+            case "defined-numeric-level":
+                data["level"] = 0;
+                break;
+            case "defined-numeric-freshness":
+                freshness["status"] = 3;
+                freshness["ageSeconds"] = null;
+                freshness["latestFactAtUtc"] = null;
+                freshness["sourceFactType"] = null;
+                freshness["sourceFactLabel"] = null;
+                break;
+            case "defined-numeric-rule-status":
+                riskEvaluation["status"] = 1;
+                break;
+            case "defined-numeric-risk-factor-status":
+                riskFactor["status"] = 1;
+                break;
+            case "four-rule-evaluations":
+                evaluations.RemoveAt(evaluations.Count - 1);
+                break;
+            case "unexpected-rule-code":
+                evaluations[4]!["ruleCode"] = "unexpected";
+                break;
+            case "duplicate-rule-code":
+                evaluations[4]!["ruleCode"] = "threshold-proximity";
+                break;
+            case "blank-evaluation-evidence":
+                riskEvaluation["evidence"] = " ";
+                break;
+            case "risk-status-with-zero-penalty":
+                riskEvaluation["penalty"] = 0;
+                break;
+            case "normal-status-with-positive-penalty":
+                normalEvaluation["penalty"] = 1;
+                break;
+            case "null-risk-factor-item":
+                riskFactors[0] = null;
+                break;
+            case "risk-factor-normal-status":
+                riskFactor["status"] = "normal";
+                break;
+            case "risk-factor-zero-penalty":
+                riskFactor["penalty"] = 0;
+                break;
+            case "risk-factor-without-evaluation":
+                riskFactor["ruleCode"] = "trend-growth";
+                break;
+            case "blank-risk-factor-evidence":
+                riskFactor["evidence"] = string.Empty;
+                break;
+            case "negative-freshness-age":
+                freshness["ageSeconds"] = -1;
+                break;
+            case "incoherent-freshness-age":
+                freshness["ageSeconds"] = 120;
+                break;
+            case "fresh-status-with-delayed-age":
+                freshness["status"] = "fresh";
+                break;
+            case "delayed-status-with-stale-age":
+                freshness["status"] = "delayed";
+                freshness["ageSeconds"] = 601;
+                freshness["latestFactAtUtc"] = "2026-07-24T00:52:02Z";
+                break;
+            case "unavailable-status-with-rule-source-facts":
+                freshness["status"] = "unavailable";
+                freshness["ageSeconds"] = null;
+                freshness["latestFactAtUtc"] = null;
+                freshness["sourceFactType"] = null;
+                freshness["sourceFactLabel"] = null;
+                break;
+            case "freshness-source-without-latest-fact":
+                freshness["latestFactAtUtc"] = null;
+                break;
+            case "invalid-threshold-proximity-penalty":
+                riskEvaluation["penalty"] = 14;
+                riskFactor["penalty"] = 14;
+                data["healthScore"] = 86;
+                break;
+            case "invalid-runtime-hours-penalty":
+                AddRiskEvaluation(data, evaluations[1]!.AsObject(), 11);
+                break;
+            case "invalid-alarm-frequency-penalty":
+                AddRiskEvaluation(data, evaluations[2]!.AsObject(), 21);
+                break;
+            case "invalid-sustained-exceedance-penalty":
+                AddRiskEvaluation(data, evaluations[3]!.AsObject(), 21);
+                break;
+            case "invalid-trend-growth-penalty":
+                AddRiskEvaluation(data, evaluations[4]!.AsObject(), 14);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(scenario), scenario, "Unknown equipment-health contract mutation.");
+        }
+    }
+
+    private static void AddRiskEvaluation(JsonObject data, JsonObject evaluation, int penalty)
+    {
+        evaluation["status"] = "risk";
+        evaluation["penalty"] = penalty;
+        data["riskFactors"]!.AsArray().Add(evaluation.DeepClone());
+
+        var riskPenalty = data["riskFactors"]!
+            .AsArray()
+            .Sum(factor => factor!["penalty"]!.GetValue<int>());
+        var score = Math.Clamp(100 - riskPenalty, 0, 100);
+        data["healthScore"] = score;
+        data["level"] = score switch
+        {
+            >= 90 => "healthy",
+            >= 70 => "watch",
+            >= 40 => "warning",
+            _ => "critical",
+        };
+    }
+
     private static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, object payload) => new(statusCode)
     {
         Content = JsonContent.Create(payload),
@@ -6620,6 +7535,22 @@ public sealed class BusinessGatewayProxyTests
                     DateTimeOffset.Parse("2026-06-01T11:00:00Z", CultureInfo.InvariantCulture),
                     "explicit",
                     null),
+                success = true,
+                message = string.Empty,
+                code = 0,
+            };
+        }
+
+        if (path.EndsWith("/revisions", StringComparison.Ordinal))
+        {
+            var plan = CreateSchedulePlan();
+            return new
+            {
+                data = new SchedulePlanRevisionContract(
+                    plan,
+                    new SchedulePlanImpactContract(false, null, null, null, null, [], [], []),
+                    new SchedulePlanComparisonContract(
+                        "plan-001", plan.PlanId, plan.Metrics, plan.Metrics, 0, 0, 0)),
                 success = true,
                 message = string.Empty,
                 code = 0,
@@ -8864,6 +9795,8 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
     public BusinessConsoleErpListRequest? LastDeliveryOrderListRequest { get; private set; }
 
+    public BusinessConsoleReleaseErpDeliveryOrderRequest? LastReleaseDeliveryOrderRequest { get; private set; }
+
     public BusinessConsoleErpListRequest? LastPayableListRequest { get; private set; }
 
     public BusinessConsoleErpListRequest? LastReceivableListRequest { get; private set; }
@@ -8879,6 +9812,62 @@ internal sealed class RecordingErpClient : IBusinessErpClient
     public BusinessConsoleExecuteErpPaymentExecutionRequest? LastExecutePaymentExecutionRequest { get; private set; }
 
     public BusinessConsoleMatchErpCashReceiptRequest? LastMatchCashReceiptRequest { get; private set; }
+
+    public BusinessConsoleConfigureErpWorkCenterCostRateRequest? LastConfigureWorkCenterCostRateRequest { get; private set; }
+
+    public BusinessConsoleListErpWorkCenterCostRatesRequest? LastListWorkCenterCostRatesRequest { get; private set; }
+
+    public string? LastConfigureWorkCenterCostRateActor { get; private set; }
+
+    public BusinessServiceProxyException? ConfigureWorkCenterCostRateFailure { get; init; }
+
+    public Task<BusinessConsoleConfigureErpWorkCenterCostRateResponse> ConfigureWorkCenterCostRateAsync(
+        string internalBearerToken,
+        BusinessConsoleConfigureErpWorkCenterCostRateRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        if (ConfigureWorkCenterCostRateFailure is not null)
+        {
+            throw ConfigureWorkCenterCostRateFailure;
+        }
+
+        LastInternalToken = internalBearerToken;
+        LastConfigureWorkCenterCostRateRequest = request;
+        LastConfigureWorkCenterCostRateActor = actor;
+        return Task.FromResult(new BusinessConsoleConfigureErpWorkCenterCostRateResponse("018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9"));
+    }
+
+    public Task<BusinessConsoleErpWorkCenterCostRateListResponse> ListWorkCenterCostRatesAsync(
+        string internalBearerToken,
+        BusinessConsoleListErpWorkCenterCostRatesRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastListWorkCenterCostRatesRequest = request;
+        return Task.FromResult(new BusinessConsoleErpWorkCenterCostRateListResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkCenterId,
+            request.AtUtc ?? DateTimeOffset.Parse("2026-07-23T02:00:00Z", CultureInfo.InvariantCulture),
+            1,
+            [
+                new BusinessConsoleErpWorkCenterCostRateItem(
+                    "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9",
+                    request.WorkCenterId,
+                    2500m,
+                    "CNY",
+                    DateTimeOffset.Parse("2026-07-23T01:00:00Z", CultureInfo.InvariantCulture),
+                    null,
+                    1,
+                    "user:user-admin",
+                    "leader demo governed rate",
+                    DateTimeOffset.Parse("2026-07-23T00:59:00Z", CultureInfo.InvariantCulture),
+                    "effective",
+                    true,
+                    true),
+            ]));
+    }
 
     public Task<BusinessConsoleCreateErpPurchaseRequisitionResponse> CreatePurchaseRequisitionFromSuggestionAsync(
         string internalBearerToken,
@@ -9091,8 +10080,9 @@ internal sealed class RecordingErpClient : IBusinessErpClient
                     "DO-001",
                     "SO-001",
                     "CUST-001",
+                    "finished-goods",
                     "completed",
-                    [new BusinessConsoleErpDeliveryOrderLineItem("10", 1m, 1m)],
+                    [new BusinessConsoleErpDeliveryOrderLineItem("10", "SKU-FG", "EA", 1m, 1m, "receiving", "LOT-001")],
                     DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture),
                     DateTime.Parse("2026-06-02T00:00:00Z", CultureInfo.InvariantCulture),
                     DateTime.Parse("2026-06-02T00:00:00Z", CultureInfo.InvariantCulture)),
@@ -9235,6 +10225,7 @@ internal sealed class RecordingErpClient : IBusinessErpClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
+        LastReleaseDeliveryOrderRequest = request;
         return Task.FromResult(new BusinessConsoleReleaseErpDeliveryOrderResponse("do-id-001"));
     }
 
@@ -9713,6 +10704,12 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
 
     public BusinessConsoleEquipmentContextRequest? LastCurrentStateRequest { get; private set; }
 
+    public string? LastEquipmentHealthDeviceAssetId { get; private set; }
+
+    public BusinessConsoleEquipmentContextRequest? LastEquipmentHealthRequest { get; private set; }
+
+    public BusinessServiceProxyException? EquipmentHealthFailure { get; init; }
+
     public BusinessConsoleTelemetryAlarmRuleListRequest? LastAlarmRuleListRequest { get; private set; }
 
     public BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest? LastAlarmRuleUpsertRequest { get; private set; }
@@ -9922,6 +10919,111 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
                     "critical",
                     DateTimeOffset.Parse("2026-06-01T08:20:00Z", CultureInfo.InvariantCulture),
                 "EXT-ALARM-001"),
+            ]));
+    }
+
+    public Task<BusinessConsoleEquipmentHealthResponse> GetEquipmentHealthAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleEquipmentContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastEquipmentHealthDeviceAssetId = deviceAssetId;
+        LastEquipmentHealthRequest = request;
+        if (EquipmentHealthFailure is not null)
+        {
+            throw EquipmentHealthFailure;
+        }
+
+        return Task.FromResult(new BusinessConsoleEquipmentHealthResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            deviceAssetId,
+            85,
+            BusinessConsoleEquipmentHealthLevel.Watch,
+            DateTimeOffset.Parse("2026-07-24T01:02:03Z", CultureInfo.InvariantCulture),
+            new BusinessConsoleEquipmentHealthDataFreshness(
+                BusinessConsoleEquipmentHealthFreshness.Delayed,
+                121,
+                DateTimeOffset.Parse("2026-07-24T01:00:02Z", CultureInfo.InvariantCulture),
+                "telemetry-raw-sample",
+                "Bearing temperature"),
+            [
+                new BusinessConsoleEquipmentHealthRiskFactor(
+                    "threshold-proximity",
+                    "Threshold proximity",
+                    BusinessConsoleEquipmentHealthRuleStatus.Risk,
+                    15,
+                    "95",
+                    "80",
+                    "percent",
+                    "latest sample is close to threshold",
+                    "telemetry-raw-sample",
+                    "Bearing temperature",
+                    DateTimeOffset.Parse("2026-07-24T01:00:02Z", CultureInfo.InvariantCulture)),
+            ],
+            [
+                new BusinessConsoleEquipmentHealthRuleEvaluation(
+                    "threshold-proximity",
+                    "Threshold proximity",
+                    BusinessConsoleEquipmentHealthRuleStatus.Risk,
+                    15,
+                    "95",
+                    "80",
+                    "percent",
+                    "latest sample is close to threshold",
+                    "telemetry-raw-sample",
+                    "Bearing temperature",
+                    DateTimeOffset.Parse("2026-07-24T01:00:02Z", CultureInfo.InvariantCulture)),
+                new BusinessConsoleEquipmentHealthRuleEvaluation(
+                    "runtime-hours-24h",
+                    "Runtime hours",
+                    BusinessConsoleEquipmentHealthRuleStatus.Normal,
+                    0,
+                    "8",
+                    "16",
+                    "hours",
+                    "runtime is within threshold",
+                    null,
+                    null,
+                    null),
+                new BusinessConsoleEquipmentHealthRuleEvaluation(
+                    "alarm-frequency-24h",
+                    "Alarm frequency",
+                    BusinessConsoleEquipmentHealthRuleStatus.Normal,
+                    0,
+                    "0",
+                    "3",
+                    "count",
+                    "alarm frequency is within threshold",
+                    null,
+                    null,
+                    null),
+                new BusinessConsoleEquipmentHealthRuleEvaluation(
+                    "sustained-exceedance",
+                    "Sustained exceedance",
+                    BusinessConsoleEquipmentHealthRuleStatus.Accumulating,
+                    0,
+                    "1",
+                    "3",
+                    "count",
+                    "insufficient samples for a risk",
+                    null,
+                    null,
+                    null),
+                new BusinessConsoleEquipmentHealthRuleEvaluation(
+                    "trend-growth",
+                    "Trend growth",
+                    BusinessConsoleEquipmentHealthRuleStatus.Normal,
+                    0,
+                    "0.2",
+                    "1.5",
+                    "ratio",
+                    "trend growth is within threshold",
+                    null,
+                    null,
+                    null),
             ]));
     }
 

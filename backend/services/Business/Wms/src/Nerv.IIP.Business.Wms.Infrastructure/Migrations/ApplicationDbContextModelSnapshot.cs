@@ -715,6 +715,12 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("status")
                         .HasComment("Outbound execution status.");
 
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("version")
+                        .HasComment("Optimistic concurrency token advanced for every outbound aggregate mutation.");
+
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "OutboundOrderNo")

@@ -94,11 +94,13 @@ public sealed class ErpBusinessGapClosureTests
         Assert.Equal(WmsIntegrationEventTypes.OutboundOrderRequested, integrationEvent.EventType);
         Assert.Equal(WmsIntegrationEventSources.BusinessErp, integrationEvent.SourceService);
         Assert.Equal("DO-001", integrationEvent.Payload.DeliveryOrderNo);
+        Assert.Equal("SITE-001", integrationEvent.Payload.SiteCode);
         var line = Assert.Single(integrationEvent.Payload.Lines);
         Assert.Equal("LINE-001", line.SourceLineNo);
         Assert.Equal("SKU-FG-1000", line.SkuCode);
         Assert.Equal("ea", line.UomCode);
         Assert.Equal("FG-SHIP", line.LocationCode);
+        Assert.Equal("LOT-FG-001", line.LotNo);
         Assert.Equal(2m, line.Quantity);
     }
 

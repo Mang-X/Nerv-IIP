@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.ServiceAuth;
-using Npgsql;
+using Nerv.IIP.Testing.PostgreSql;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
@@ -16,8 +16,9 @@ public sealed class FileStorageRestartPersistenceTests
     [FileStorageRealPostgresFact]
     public async Task Metadata_usage_and_download_grant_survive_web_host_restart()
     {
-        await using var database = await TemporaryFileStorageDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
+            "nerv_filestorage_restart");
         string fileId;
         string uploadSessionId;
         string grantId;
@@ -113,41 +114,6 @@ public sealed class FileStorageRestartPersistenceTests
         return client;
     }
 
-    private sealed class TemporaryFileStorageDatabase(
-        string adminConnectionString,
-        string databaseName,
-        string connectionString) : IAsyncDisposable
-    {
-        public string ConnectionString { get; } = connectionString;
-
-        public static async Task<TemporaryFileStorageDatabase> CreateAsync(string baseConnectionString)
-        {
-            var databaseName = $"nerv_filestorage_restart_{Guid.CreateVersion7():N}";
-            var adminConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = "postgres"
-            }.ConnectionString;
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", connection);
-            await command.ExecuteNonQueryAsync();
-            var testConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = databaseName
-            }.ConnectionString;
-            return new TemporaryFileStorageDatabase(adminConnectionString, databaseName, testConnectionString);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand(
-                $"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)",
-                connection);
-            await command.ExecuteNonQueryAsync();
-        }
-    }
 }
 
 internal sealed class FileStorageRealPostgresFactAttribute : FactAttribute

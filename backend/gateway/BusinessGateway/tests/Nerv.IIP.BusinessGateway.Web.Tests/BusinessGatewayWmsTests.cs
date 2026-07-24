@@ -28,6 +28,7 @@ public sealed class BusinessGatewayWmsTests
                 "/api/business/v1/wms/outbound-orders" => new { outboundOrderId = "outbound-order-http" },
                 "/api/business/v1/wms/outbound-orders/outbound-order-001/picking-tasks" => new { warehouseTaskId = "warehouse-task-http" },
                 "/api/business/v1/wms/outbound-orders/outbound-order-001/complete" => new { inventoryMovementId = "movement-out-http" },
+                "/api/business/v1/wms/outbound-orders/outbound-order-001/inventory-posting/retry" => new { requestId = "request-out-retry-http" },
                 "/api/business/v1/wms/count-executions" => new { countExecutionId = "count-execution-http" },
                 "/api/business/v1/wms/count-executions/count-execution-001/complete" => new { inventoryMovementId = "movement-count-http" },
                 "/api/business/v1/wms/wcs-tasks/warehouse-task-001/dispatch" => new { wcsTaskId = "wcs-task-http" },
@@ -53,6 +54,7 @@ public sealed class BusinessGatewayWmsTests
         await client.CreateOutboundOrderAsync("internal-token-001", ValidOutboundRequest(), CancellationToken.None);
         await client.CreatePickingTaskAsync("internal-token-001", "outbound-order-001", ValidPickingRequest(), CancellationToken.None);
         await client.CompleteOutboundOrderAsync("internal-token-001", "outbound-order-001", ValidCompleteOutboundRequest(), CancellationToken.None);
+        await client.RetryOutboundInventoryPostingAsync("internal-token-001", "outbound-order-001", ValidRetryOutboundRequest(), CancellationToken.None);
         await client.CreateCountExecutionAsync("internal-token-001", ValidCreateCountRequest(), CancellationToken.None);
         await client.CompleteCountExecutionAsync("internal-token-001", "count-execution-001", ValidCompleteCountRequest(), CancellationToken.None);
         await client.DispatchWcsTaskAsync("internal-token-001", "warehouse-task-001", ValidDispatchWcsRequest(), CancellationToken.None);
@@ -67,6 +69,7 @@ public sealed class BusinessGatewayWmsTests
             "POST /api/business/v1/wms/outbound-orders",
             "POST /api/business/v1/wms/outbound-orders/outbound-order-001/picking-tasks",
             "POST /api/business/v1/wms/outbound-orders/outbound-order-001/complete",
+            "POST /api/business/v1/wms/outbound-orders/outbound-order-001/inventory-posting/retry",
             "POST /api/business/v1/wms/count-executions",
             "POST /api/business/v1/wms/count-executions/count-execution-001/complete",
             "POST /api/business/v1/wms/wcs-tasks/warehouse-task-001/dispatch",
@@ -101,7 +104,45 @@ public sealed class BusinessGatewayWmsTests
                 {
                     "/api/business/v1/wms/inbound-orders" => new { items = Array.Empty<object>(), total = 23 },
                     "/api/business/v1/wms/putaway-tasks" => new { items = Array.Empty<object>(), total = 19 },
-                    "/api/business/v1/wms/outbound-orders" => new { items = Array.Empty<object>(), total = 17 },
+                    "/api/business/v1/wms/outbound-orders" => new
+                    {
+                        items = new[]
+                        {
+                            new
+                            {
+                                outboundOrderId = "outbound-order-failed-001",
+                                outboundOrderNo = "DO-FAILED-001",
+                                status = "InventoryPostingFailed",
+                                siteCode = "finished-goods",
+                                inventoryPostingStatus = "failed",
+                                failureCode = "NEGATIVE_ON_HAND",
+                                failureMessage = "Stock movement would make on-hand quantity negative.",
+                                lines = new[]
+                                {
+                                    new
+                                    {
+                                        lineNo = "SO-LINE-001",
+                                        skuCode = "SKU-FG-1000",
+                                        uomCode = "kg",
+                                        requestedQuantity = 4,
+                                        issuedQuantity = 4,
+                                        locationCode = "receiving",
+                                        lotNo = "LOT-001",
+                                        serialNo = (string?)null,
+                                        qualityStatus = "unrestricted",
+                                        ownerType = "production",
+                                        ownerId = (string?)null,
+                                        inventoryPostingStatus = "failed",
+                                        failureCode = "NEGATIVE_ON_HAND",
+                                        failureMessage = "Stock movement would make on-hand quantity negative.",
+                                    },
+                                },
+                                createdAtUtc = "2026-06-01T09:00:00Z",
+                                completedAtUtc = (string?)null,
+                            },
+                        },
+                        total = 17,
+                    },
                     "/api/business/v1/wms/picking-tasks" => new { items = Array.Empty<object>(), total = 13 },
                     "/api/business/v1/wms/count-executions" => new { items = Array.Empty<object>(), total = 11 },
                     "/api/business/v1/wms/wcs-tasks" => new { items = Array.Empty<object>(), total = 9 },
@@ -160,6 +201,11 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(23, inbound.Total);
         Assert.Equal(19, putaway.Total);
         Assert.Equal(17, outbound.Total);
+        var failedOutbound = Assert.Single(outbound.Items);
+        Assert.Equal("finished-goods", failedOutbound.SiteCode);
+        Assert.Equal("failed", failedOutbound.InventoryPostingStatus);
+        Assert.Equal("NEGATIVE_ON_HAND", failedOutbound.FailureCode);
+        Assert.Equal("receiving", Assert.Single(failedOutbound.Lines).LocationCode);
         Assert.Equal(13, picking.Total);
         Assert.Equal(11, count.Total);
         Assert.Equal(9, wcs.Total);
@@ -343,16 +389,23 @@ public sealed class BusinessGatewayWmsTests
             passed = true,
             idempotencyKey = "complete-out-001",
         });
+        var retryOutbound = await client.PostAsJsonAsync("/api/business-console/v1/wms/outbound-orders/outbound-order-001/inventory-posting/retry?organizationId=org-001&environmentId=env-dev", new
+        {
+            idempotencyKey = "retry-out-001",
+        });
 
         Assert.Equal(HttpStatusCode.OK, outbound.StatusCode);
         Assert.Equal(HttpStatusCode.OK, picking.StatusCode);
         Assert.Equal(HttpStatusCode.OK, completeOutbound.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, retryOutbound.StatusCode);
         Assert.All(auth.Requirements, requirement => Assert.Equal(BusinessGatewayPermissions.WmsShipmentsManage, requirement.PermissionCode));
-        Assert.Equal(["create-outbound", "create-picking", "complete-outbound"], wms.Calls);
+        Assert.Equal(["create-outbound", "create-picking", "complete-outbound", "retry-outbound"], wms.Calls);
         Assert.Equal("internal-test-token", wms.LastInternalToken);
         Assert.Equal("OUT-NEW", wms.LastCreateOutboundRequest!.OutboundOrderNo);
         Assert.Equal("outbound-order-001", wms.LastCreatePickingRequest!.OutboundOrderId);
         Assert.Equal("outbound-order-001", wms.LastCompleteOutboundRequest!.OutboundOrderId);
+        Assert.Equal("outbound-order-001", wms.LastRetryOutboundRequest!.OutboundOrderId);
+        Assert.Equal("retry-out-001", wms.LastRetryOutboundRequest.IdempotencyKey);
     }
 
     [Fact]
@@ -721,6 +774,9 @@ public sealed class BusinessGatewayWmsTests
     private static BusinessConsoleCompleteWmsOutboundOrderRequest ValidCompleteOutboundRequest() =>
         new("outbound-order-001", "org-001", "env-dev", "PACK-001", true, "complete-out-001");
 
+    private static BusinessConsoleRetryWmsOutboundInventoryPostingRequest ValidRetryOutboundRequest() =>
+        new("outbound-order-001", "org-001", "env-dev", "retry-out-001");
+
     private static BusinessConsoleCreateWmsCountExecutionRequest ValidCreateCountRequest() =>
         new("org-001", "env-dev", "COUNT-001", "SKU-001", "EA", "S1", "BIN-01", 1);
 
@@ -790,6 +846,8 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
     public BusinessConsoleCreateWmsPickingTaskRequest? LastCreatePickingRequest { get; private set; }
 
     public BusinessConsoleCompleteWmsOutboundOrderRequest? LastCompleteOutboundRequest { get; private set; }
+
+    public BusinessConsoleRetryWmsOutboundInventoryPostingRequest? LastRetryOutboundRequest { get; private set; }
 
     public BusinessConsoleCreateWmsCountExecutionRequest? LastCreateCountRequest { get; private set; }
 
@@ -869,6 +927,18 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
         LastCompleteOutboundRequest = request;
         Calls.Add("complete-outbound");
         return Task.FromResult(new BusinessConsoleCompleteWmsMovementResponse("request-out-001", "movement-out-001"));
+    }
+
+    public Task<BusinessConsoleCompleteWmsMovementResponse> RetryOutboundInventoryPostingAsync(
+        string internalBearerToken,
+        string outboundOrderId,
+        BusinessConsoleRetryWmsOutboundInventoryPostingRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastRetryOutboundRequest = request;
+        Calls.Add("retry-outbound");
+        return Task.FromResult(new BusinessConsoleCompleteWmsMovementResponse("request-out-retry-001", null));
     }
 
     public Task<BusinessConsoleCreateWmsCountExecutionResponse> CreateCountExecutionAsync(
@@ -965,7 +1035,29 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
                 "outbound-order-001",
                 "OUT-001",
                 "Created",
-                DateTime.Parse("2026-06-01T09:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal)),
+                "finished-goods",
+                "failed",
+                "NEGATIVE_ON_HAND",
+                "Stock movement would make on-hand quantity negative.",
+                [
+                    new BusinessConsoleWmsOutboundOrderLineItem(
+                        "SO-LINE-001",
+                        "SKU-FG-1000",
+                        "kg",
+                        4m,
+                        4m,
+                        "receiving",
+                        "LOT-001",
+                        null,
+                        "unrestricted",
+                        "production",
+                        null,
+                        "failed",
+                        "NEGATIVE_ON_HAND",
+                        "Stock movement would make on-hand quantity negative."),
+                ],
+                DateTime.Parse("2026-06-01T09:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal),
+                null),
         ],
         31));
     }

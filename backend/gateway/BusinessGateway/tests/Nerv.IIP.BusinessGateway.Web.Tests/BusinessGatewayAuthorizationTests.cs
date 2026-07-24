@@ -292,6 +292,23 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
+    public async Task Equipment_health_facade_returns_forbidden_scoped_to_the_route_device_when_iam_denies()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/equipment/devices/DEV-CNC-01/health?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Equal(BusinessGatewayPermissions.IiotTelemetryRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("device-asset", auth.LastRequirement.ResourceType);
+        Assert.Equal("DEV-CNC-01", auth.LastRequirement.ResourceId);
+    }
+
+    [Fact]
     public async Task Business_console_endpoint_rejects_context_mismatch_before_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -572,6 +589,29 @@ public sealed class BusinessGatewayAuthorizationTests
         {
             problem = SchedulingProblemBody(),
         },
+        "/api/business-console/v1/scheduling/workbench/plans" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            horizonStartUtc = "2026-06-01T00:00:00Z",
+            horizonEndUtc = "2026-06-02T00:00:00Z",
+            orders = new[]
+            {
+                new
+                {
+                    workOrderId = "WO-001",
+                    priority = 100,
+                    isRush = false,
+                },
+            },
+        },
+        "/api/business-console/v1/scheduling/plans/plan-001/revisions" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            includedOrderIds = new[] { "WO-001" },
+            lockedAssignments = Array.Empty<object>(),
+        },
         "/api/business-console/v1/scheduling/order-urgencies/WO-001/business-priority" => new
         {
             organizationId = "org-001",
@@ -829,6 +869,16 @@ public sealed class BusinessGatewayAuthorizationTests
             environmentId = "env-dev",
             purchaseRequisitionNos = new[] { "PR-001", "PR-002" },
             purchaseOrderNo = "PO-REQ-001",
+        },
+        "/api/business-console/v1/erp/finance/work-center-cost-rates" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workCenterId = "WC-001",
+            hourlyRate = 2500,
+            currencyCode = "CNY",
+            effectiveFromUtc = "2026-07-23T01:00:00Z",
+            reason = "governed rate",
         },
         "/api/business-console/v1/wms/inbound-orders" => new
         {
@@ -1110,6 +1160,8 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/demands/demand-001/cancel", BusinessGatewayPermissions.PlanningDemandsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans/preview", BusinessGatewayPermissions.SchedulingPlansManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans", BusinessGatewayPermissions.SchedulingPlansManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/workbench/plans", BusinessGatewayPermissions.SchedulingPlansManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans/plan-001/revisions", BusinessGatewayPermissions.SchedulingPlansManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/plans", BusinessGatewayPermissions.SchedulingPlansRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/plans/plan-001", BusinessGatewayPermissions.SchedulingPlansRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/plans/plan-001/gantt", BusinessGatewayPermissions.SchedulingPlansRead);
@@ -1119,6 +1171,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Put, "/api/business-console/v1/scheduling/order-urgencies/WO-001/business-priority", BusinessGatewayPermissions.SchedulingPlansManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/overview?deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/devices/DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/devices/DEV-OIL-01/health", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/availability?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/alarms", BusinessGatewayPermissions.IiotAlarmsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/equipment/alarms/alarm-001/acknowledge", BusinessGatewayPermissions.IiotAlarmsWrite);
@@ -1172,6 +1225,8 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/payables", BusinessGatewayPermissions.ErpFinanceManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/receivables", BusinessGatewayPermissions.ErpFinanceManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/cost-candidates", BusinessGatewayPermissions.ErpFinanceManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/work-center-cost-rates", BusinessGatewayPermissions.ErpFinanceManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/finance/work-center-cost-rates?workCenterId=WC-001", BusinessGatewayPermissions.ErpFinanceRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/vouchers", BusinessGatewayPermissions.ErpFinanceManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/finance/vouchers", BusinessGatewayPermissions.ErpFinanceRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/finance/summary", BusinessGatewayPermissions.ErpFinanceRead);
@@ -1208,6 +1263,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/picking-tasks", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/picking-tasks", BusinessGatewayPermissions.WmsShipmentsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/complete", BusinessGatewayPermissions.WmsShipmentsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/inventory-posting/retry", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/count-executions", BusinessGatewayPermissions.WmsReceiptsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions/count-execution-001/complete", BusinessGatewayPermissions.WmsReceiptsManage);

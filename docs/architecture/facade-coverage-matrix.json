@@ -668,6 +668,32 @@
     {
       "service": "Erp",
       "method": "GET",
+      "route": "/api/business/v1/erp/finance/work-center-cost-rates",
+      "operationId": "listErpWorkCenterCostRates",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpWorkCenterCostRates"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/work-center-cost-rates",
+      "operationId": "configureErpWorkCenterCostRate",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "configureBusinessConsoleErpWorkCenterCostRate"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
       "route": "/api/business/v1/erp/finance/month-end-checklist",
       "operationId": "getErpMonthEndChecklist",
       "classification": "exposed",
@@ -1350,6 +1376,20 @@
       "gatewayOperationIds": [
         "getBusinessConsoleEquipmentOverview",
         "getBusinessConsoleEquipmentDevice"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/devices/{deviceAssetId}/health",
+      "operationId": "getBusinessIiotEquipmentHealth",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Exposed via GET /api/business-console/v1/equipment/devices/{deviceAssetId}/health.",
+      "gatewayOperationIds": [
+        "getBusinessConsoleEquipmentDeviceHealth"
       ]
     },
     {
@@ -4017,6 +4057,32 @@
     {
       "service": "Scheduling",
       "method": "POST",
+      "route": "/api/business/v1/scheduling/workbench/plans",
+      "operationId": "createSchedulingWorkbenchPlan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleSchedulingWorkbenchPlan"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
+      "route": "/api/business/v1/scheduling/plans/{planId}/revisions",
+      "operationId": "createSchedulingPlanRevision",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleSchedulingPlanRevision"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
       "route": "/api/business/v1/scheduling/plans/preview",
       "operationId": "previewSchedulingPlan",
       "classification": "exposed",
@@ -4262,8 +4328,13 @@
       "method": "POST",
       "route": "/api/business/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry",
       "operationId": "retryWmsOutboundInventoryPosting",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; WMS outbound posting-retry follows the WMS operations menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "retryBusinessConsoleWmsOutboundInventoryPosting"
+      ]
     },
     {
       "service": "Wms",

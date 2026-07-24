@@ -1,6 +1,72 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import type {
+  BusinessConsoleOrderUrgency,
+  BusinessConsoleOrderUrgencyDetail,
+} from '@nerv-iip/api-client'
+import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { UrgencyDisplayMode } from '@/composables/useUrgencyDisplayMode'
 import OrderUrgencyBadge from './OrderUrgencyBadge.vue'
+
+const state = vi.hoisted(() => ({
+  permissionCodes: ['business.scheduling.plans.manage'] as string[],
+  detail: undefined as BusinessConsoleOrderUrgencyDetail | undefined,
+  // Detail returned by refresh() after a successful write — proves the Sheet
+  // re-reads the authoritative detail instead of showing stale data.
+  refreshedDetail: undefined as BusinessConsoleOrderUrgencyDetail | undefined,
+  setBusinessPriority: vi.fn(),
+  refreshDetail: vi.fn(),
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: state.permissionCodes } }),
+}))
+
+vi.mock('@/composables/useOrderUrgencyDetail', async () => {
+  const { shallowRef } = await vi.importActual<typeof import('vue')>('vue')
+  return {
+    useOrderUrgencyDetail: () => {
+      const detail = shallowRef(state.detail)
+      state.refreshDetail = vi.fn(async () => {
+        if (state.refreshedDetail) detail.value = state.refreshedDetail
+      })
+      return { detail, pending: shallowRef(false), refresh: state.refreshDetail }
+    },
+    useSetOrderUrgencyBusinessPriority: () => ({
+      error: shallowRef(undefined),
+      pending: shallowRef(false),
+      setBusinessPriority: state.setBusinessPriority,
+    }),
+  }
+})
+
+const urgency: BusinessConsoleOrderUrgency = {
+  orderId: 'WO-001',
+  businessReference: 'SO-001',
+  level: 'urgent',
+  modelVersion: 'order-urgency-v1',
+  calculatedAtUtc: '2026-07-22T08:00:00Z',
+  businessPriority: {
+    level: 'p1',
+    source: 'manual',
+    reason: '重点客户',
+    revision: 2,
+    setAtUtc: '2026-07-22T07:00:00Z',
+    reasonCodes: ['business.priority.p1'],
+  },
+  timeCriticality: {
+    level: 'highrisk',
+    criticalRatio: 0.8,
+    slackHours: -2,
+    expectedDelayHours: 5,
+    reasonCodes: ['time.cr.belowOne'],
+  },
+  executionRisk: {
+    level: 'attention',
+    isSourceStale: true,
+    reasonCodes: ['material.shortage'],
+    facts: [],
+  },
+}
 
 const routerLinkStub = {
   RouterLink: {
@@ -9,72 +75,261 @@ const routerLinkStub = {
   },
 }
 
-describe('OrderUrgencyBadge', () => {
-  it('shows the unified level and all three explainable contributions', async () => {
-    const wrapper = mount(OrderUrgencyBadge, {
-      props: {
-        orderReference: 'SO-001',
-        urgency: {
-          orderId: 'WO-001',
-          businessReference: 'SO-001',
-          level: 'urgent',
-          modelVersion: 'order-urgency-v1',
-          calculatedAtUtc: '2026-07-22T08:00:00Z',
-          inputFingerprint: 'fingerprint',
-          businessPriority: {
-            level: 'p1',
-            source: 'manual',
-            reason: '重点客户',
-            revision: 2,
-            setAtUtc: '2026-07-22T07:00:00Z',
-            reasonCodes: ['business.priority.p1'],
-          },
-          timeCriticality: {
-            level: 'urgent',
-            criticalRatio: 0.8,
-            slackHours: -2,
-            expectedDelayHours: 2,
-            estimatedCompletionUtc: '2026-07-23T08:00:00Z',
-            remainingCycleHours: 24,
-            reasonCodes: ['time.cr.belowOne'],
-          },
-          executionRisk: {
-            level: 'highrisk',
-            isSourceMissing: false,
-            isSourceStale: true,
-            reasonCodes: ['material.shortage', 'urgency.source.stale'],
-            facts: [],
-          },
-        },
-      },
-      global: { stubs: routerLinkStub },
-    })
+const stubs = {
+  ...routerLinkStub,
+  NvTooltipProvider: { template: '<div><slot /></div>' },
+  NvTooltip: { template: '<div><slot /></div>' },
+  NvTooltipTrigger: { template: '<div><slot /></div>' },
+  NvTooltipContent: { template: '<div><slot /></div>' },
+  NvSheet: { template: '<div><slot /></div>' },
+  NvSheetContent: { template: '<aside><slot /></aside>' },
+  NvSheetHeader: { template: '<div><slot /></div>' },
+  NvSheetTitle: { template: '<h2><slot /></h2>' },
+  NvSheetDescription: { template: '<p><slot /></p>' },
+  NvButton: {
+    props: ['disabled', 'type'],
+    emits: ['click'],
+    template: '<button :disabled="disabled" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
+  NvStatusBadge: {
+    props: ['label', 'tone', 'value'],
+    template: '<span>{{ label ?? value }}</span>',
+  },
+  NvField: { template: '<div><slot /></div>' },
+  NvFieldGroup: { template: '<div><slot /></div>' },
+  NvFieldLabel: { template: '<label><slot /></label>' },
+  NvFieldError: { props: ['errors'], template: '<p class="field-error">{{ errors?.[0] }}</p>' },
+  NvInput: {
+    // inheritAttrs:false so the datetime-local `type` is not applied — jsdom would
+    // otherwise coerce an unparseable value to empty and hide the validation path.
+    props: ['modelValue'],
+    inheritAttrs: false,
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="$attrs.id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+  NvSelect: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+  },
+  NvSelectTrigger: { template: '<span><slot /></span>' },
+  // `NvSelectValue` is reka's `SelectValue` re-exported under an Nv alias; the
+  // component's own name stays `SelectValue`, which is the key test-utils matches
+  // when stubbing (an `NvSelectValue` key misses and the real reka value throws
+  // "must be used within SelectRoot").
+  SelectValue: { template: '<span />' },
+  NvSelectContent: { template: '<span><slot /></span>' },
+  NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+}
 
-    expect(wrapper.text()).toContain('紧急 · CR 0.8')
-    await wrapper.get('button').trigger('click')
-    expect(document.body.textContent).toContain('业务优先级')
-    expect(document.body.textContent).toContain('CR / Slack')
-    expect(document.body.textContent).toContain('执行风险')
-    expect(document.body.textContent).toContain('order-urgency-v1')
-    expect(document.body.textContent).toContain('进入排产调整')
+function mountBadge(props: {
+  orderReference: string
+  urgency?: BusinessConsoleOrderUrgency
+  mode?: UrgencyDisplayMode
+}) {
+  return mount(OrderUrgencyBadge, { props, global: { stubs } })
+}
+
+beforeEach(() => {
+  state.permissionCodes = ['business.scheduling.plans.manage']
+  state.detail = undefined
+  state.refreshedDetail = undefined
+  state.setBusinessPriority = vi.fn().mockResolvedValue({ success: true })
+})
+
+describe('OrderUrgencyBadge display modes', () => {
+  const cases: Array<[UrgencyDisplayMode, string]> = [
+    ['level', '紧急'],
+    ['businessPriority', 'P1'],
+    ['dynamicUrgency', '高风险'],
+    ['executionRisk', '关注'],
+    ['criticalRatio', 'CR 0.8'],
+    ['slack', 'Slack -2h'],
+    ['expectedDelay', '延误 5h'],
+  ]
+
+  it.each(cases)('renders the %s mode on the trigger badge', (mode, label) => {
+    const wrapper = mountBadge({ orderReference: 'SO-001', urgency, mode })
+    expect(wrapper.get('[aria-label="查看 SO-001 紧急度解释"]').text()).toBe(label)
   })
 
-  it('uses the issue vocabulary and routes to the scheduling order id without a page reload', async () => {
-    const wrapper = mount(OrderUrgencyBadge, {
-      props: {
-        orderReference: 'SO-001',
-        urgency: {
-          orderId: 'WO-001',
-          businessReference: 'SO-001',
-          level: 'critical',
-        },
-      },
-      global: { stubs: routerLinkStub },
-    })
+  it('defaults to the unified level when no mode is provided', () => {
+    const wrapper = mountBadge({ orderReference: 'SO-001', urgency })
+    expect(wrapper.get('[aria-label="查看 SO-001 紧急度解释"]').text()).toBe('紧急')
+  })
 
-    expect(wrapper.text()).toContain('特急')
-    await wrapper.get('button').trigger('click')
-    const link = document.body.querySelector('[data-router-link]')
-    expect(link?.getAttribute('data-to')).toContain('WO-001')
+  it('routes to the scheduling order id without a page reload', () => {
+    const wrapper = mountBadge({
+      orderReference: 'SO-001',
+      urgency: { orderId: 'WO-001', businessReference: 'SO-001', level: 'critical' },
+    })
+    const link = wrapper.get('[data-router-link]')
+    expect(link.attributes('data-to')).toContain('WO-001')
+  })
+})
+
+describe('OrderUrgencyBadge priority editing', () => {
+  it('submits a governed priority payload with the required reason and optional expiry', async () => {
+    const wrapper = mountBadge({ orderReference: 'SO-001', urgency, mode: 'level' })
+
+    await wrapper.get('#urgency-priority-reason').setValue('重点客户插单')
+    await wrapper.get('#urgency-priority-expiry').setValue('2026-08-01T00:00')
+    await wrapper.get('[data-testid="priority-editor"]').trigger('submit')
+    await flushPromises()
+
+    expect(state.setBusinessPriority).toHaveBeenCalledTimes(1)
+    const payload = state.setBusinessPriority.mock.calls[0]![0]
+    expect(payload).toMatchObject({
+      orderReference: 'WO-001',
+      level: 'p1',
+      reason: '重点客户插单',
+    })
+    expect(payload.expiresAtUtc).toBe(new Date('2026-08-01T00:00').toISOString())
+    // The Sheet's own detail is refreshed AND the parent list refresh is signalled.
+    expect(state.refreshDetail).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('refresh')).toHaveLength(1)
+  })
+
+  it('refreshes the detail and audit history so the just-saved revision is visible', async () => {
+    state.detail = {
+      current: urgency,
+      history: [],
+      businessPriorityChanges: [
+        {
+          revision: 2,
+          previousLevel: 'p2',
+          newLevel: 'p1',
+          changedBy: 'planner@nerv',
+          reason: '重点客户',
+          changedAtUtc: '2026-07-22T07:00:00Z',
+          expiresAtUtc: null,
+        },
+      ],
+    }
+    // After the write, refresh() returns the authoritative P0 revision + new row.
+    state.refreshedDetail = {
+      current: { ...urgency, businessPriority: { level: 'p0', revision: 3, source: 'manual' } },
+      history: [],
+      businessPriorityChanges: [
+        {
+          revision: 3,
+          previousLevel: 'p1',
+          newLevel: 'p0',
+          changedBy: 'dispatcher@nerv',
+          reason: '客户升级为特急',
+          changedAtUtc: '2026-07-23T07:00:00Z',
+          expiresAtUtc: null,
+        },
+        {
+          revision: 2,
+          previousLevel: 'p2',
+          newLevel: 'p1',
+          changedBy: 'planner@nerv',
+          reason: '重点客户',
+          changedAtUtc: '2026-07-22T07:00:00Z',
+          expiresAtUtc: null,
+        },
+      ],
+    }
+    const wrapper = mountBadge({ orderReference: 'SO-001', urgency, mode: 'level' })
+
+    // Before the write the Sheet shows the current P1 revision only.
+    expect(wrapper.findAll('[data-testid="priority-audit-row"]')).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('P1 → P0')
+
+    await wrapper.get('#urgency-priority-reason').setValue('客户升级为特急')
+    await wrapper.get('[data-testid="priority-editor"]').trigger('submit')
+    await flushPromises()
+
+    expect(state.refreshDetail).toHaveBeenCalledTimes(1)
+    // The new revision and its audit row are now visible without a page reload.
+    const rows = wrapper.findAll('[data-testid="priority-audit-row"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.text()).toContain('P1 → P0')
+    expect(rows[0]!.text()).toContain('dispatcher@nerv')
+    expect(wrapper.text()).toContain('dispatcher@nerv')
+  })
+
+  it('rejects an unparseable expiry instead of silently dropping it', async () => {
+    const wrapper = mountBadge({ orderReference: 'SO-001', urgency, mode: 'level' })
+
+    await wrapper.get('#urgency-priority-reason').setValue('临时插单')
+    await wrapper.get('#urgency-priority-expiry').setValue('not-a-date')
+    await wrapper.get('[data-testid="priority-editor"]').trigger('submit')
+    await flushPromises()
+
+    expect(state.setBusinessPriority).not.toHaveBeenCalled()
+    expect(wrapper.get('.field-error').text()).toContain('有效期格式无效')
+  })
+
+  it('blocks the write and shows an error when the reason is missing', async () => {
+    const wrapper = mountBadge({ orderReference: 'SO-001', urgency, mode: 'level' })
+
+    await wrapper.get('[data-testid="priority-editor"]').trigger('submit')
+    await flushPromises()
+
+    expect(state.setBusinessPriority).not.toHaveBeenCalled()
+    expect(wrapper.get('.field-error').text()).toContain('请填写调整原因')
+    expect(wrapper.emitted('refresh')).toBeUndefined()
+  })
+
+  it('hides the write action from host-domain read-only users', () => {
+    state.permissionCodes = ['business.erp.sales.read']
+    const wrapper = mountBadge({ orderReference: 'SO-001', urgency, mode: 'level' })
+
+    expect(wrapper.find('[data-testid="priority-editor"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('仅排产管理权限可调整人工优先级')
+    // Read-only users still inspect the urgency explanation.
+    expect(wrapper.text()).toContain('CR / Slack')
+    expect(wrapper.text()).toContain('执行风险')
+  })
+})
+
+describe('OrderUrgencyBadge audit history', () => {
+  it('renders every append-only priority change with actor, timestamps, levels, reason and expiry', () => {
+    state.detail = {
+      current: urgency,
+      history: [],
+      businessPriorityChanges: [
+        {
+          revision: 2,
+          previousLevel: 'p2',
+          newLevel: 'p1',
+          changedBy: 'planner@nerv',
+          reason: '重点客户',
+          changedAtUtc: '2026-07-22T07:00:00Z',
+          expiresAtUtc: '2026-08-01T00:00:00Z',
+        },
+        {
+          revision: 1,
+          previousLevel: null,
+          newLevel: 'p2',
+          changedBy: 'system',
+          reason: '初始设置',
+          changedAtUtc: '2026-07-20T07:00:00Z',
+          expiresAtUtc: null,
+        },
+      ],
+    }
+    const wrapper = mountBadge({ orderReference: 'SO-001', urgency, mode: 'level' })
+
+    const rows = wrapper.findAll('[data-testid="priority-audit-row"]')
+    expect(rows).toHaveLength(2)
+    // Newest revision first (append-only, sorted by revision desc).
+    expect(rows[0]!.text()).toContain('planner@nerv')
+    expect(rows[0]!.text()).toContain('P2 → P1')
+    expect(rows[0]!.text()).toContain('重点客户')
+    expect(rows[1]!.text()).toContain('system')
+    expect(rows[1]!.text()).toContain('— → P2')
+    expect(rows[1]!.text()).toContain('长期有效')
+    // The current setter is surfaced from the latest change.
+    expect(wrapper.text()).toContain('planner@nerv')
+  })
+
+  it('shows an empty state when there is no manual priority history', () => {
+    const wrapper = mountBadge({ orderReference: 'SO-001', urgency, mode: 'level' })
+    expect(wrapper.text()).toContain('暂无人工优先级调整记录')
   })
 })

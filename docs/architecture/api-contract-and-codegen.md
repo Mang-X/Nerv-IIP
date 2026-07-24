@@ -133,6 +133,8 @@ Business Console operationId 使用 lower camelCase，并带 `BusinessConsole` �
 | `listBusinessConsoleErpQuotations` | `GET /api/business-console/v1/erp/sales/quotations` | 报价列表，支持服务端状态、关键字和分页过滤。 |
 | `listBusinessConsoleErpDeliveryOrders` | `GET /api/business-console/v1/erp/sales/delivery-orders` | 发货单列表，支持服务端关键字和分页过滤；`status` 当前仅接受 `released`。 |
 | `listBusinessConsoleErpJournalVouchers` | `GET /api/business-console/v1/erp/finance/vouchers` | 会计凭证列表，支持服务端关键字和分页过滤；`status` 当前仅接受 `posted`。 |
+| `configureBusinessConsoleErpWorkCenterCostRate` | `POST /api/business-console/v1/erp/finance/work-center-cost-rates` | 配置工作中心成本率，包含组织/环境隔离、有效期窗口、币种和 revision 审计。 |
+| `listBusinessConsoleErpWorkCenterCostRates` | `GET /api/business-console/v1/erp/finance/work-center-cost-rates` | 查询工作中心成本率 revision 列表，支持时间点有效性过滤。 |
 | `approveBusinessConsoleErpPaymentExecution` | `POST /api/business-console/v1/erp/finance/payment-executions` | 批准/登记 AP 付款执行单及分配，暂不核销 AP 或生成付款凭证。 |
 | `executeBusinessConsoleErpPaymentExecution` | `POST /api/business-console/v1/erp/finance/payment-executions/{paymentExecutionNo}/execute` | 执行已批准 AP 付款，按分配行部分或全额核销应付，生成付款凭证并同步账龄读面。 |
 | `registerBusinessConsoleErpCashReceipt` | `POST /api/business-console/v1/erp/finance/cash-receipts` | 登记现金收款及 AR 分配，暂不核销 AR 或生成收款凭证。 |
@@ -165,6 +167,7 @@ Business Console operationId 使用 lower camelCase，并带 `BusinessConsole` �
 | `getBusinessConsoleMesBarcodeNumberingReadiness` | `GET /api/business-console/v1/mes/foundation-readiness/barcode-numbering` | 条码、标签和编码规则就绪检查。 |
 | `getBusinessConsoleEquipmentOverview` | `GET /api/business-console/v1/equipment/overview` | 设备运行看板聚合当前状态、报警数和未来窗口可用性。 |
 | `getBusinessConsoleEquipmentDevice` | `GET /api/business-console/v1/equipment/devices/{deviceAssetId}` | 设备运行详情，聚合 current-state 和设备可用性窗口。 |
+| `getBusinessConsoleEquipmentDeviceHealth` | `GET /api/business-console/v1/equipment/devices/{deviceAssetId}/health` | 返回按请求计算的 0-100 设备健康评分、评估等级、规则评价、风险因子和数据新鲜度。 |
 | `getBusinessConsoleEquipmentAvailability` | `GET /api/business-console/v1/equipment/availability` | 查询 IndustrialTelemetry 与 Maintenance 合并后的设备可用性窗口。 |
 | `listBusinessConsoleEquipmentAlarms` | `GET /api/business-console/v1/equipment/alarms` | 查询当前工业报警列表，返回 ack/shelve/escalation 生命周期字段。 |
 | `acknowledgeBusinessConsoleEquipmentAlarm` | `POST /api/business-console/v1/equipment/alarms/{alarmEventId}/acknowledge` | 确认报警，要求 `business.iiot.alarms.write`。 |
@@ -233,6 +236,8 @@ Business Console operationId 使用 lower camelCase，并带 `BusinessConsole` �
 | `listBusinessConsoleOrderUrgencies` | `GET /api/business-console/v1/scheduling/order-urgencies` | 查询订单紧急度计算列表，支持服务端过滤和分页。 |
 | `getBusinessConsoleOrderUrgency` | `GET /api/business-console/v1/scheduling/order-urgencies/{orderReference}` | 查询指定订单的详细紧急度计算，包含原因码、业务优先级、时间紧迫度、执行风险三类贡献项、模型版本和计算时间。 |
 | `setBusinessConsoleOrderUrgencyBusinessPriority` | `PUT /api/business-console/v1/scheduling/order-urgencies/{orderReference}/business-priority` | 设置或更新订单业务优先级，并记录变更原因。 |
+| `createBusinessConsoleSchedulingWorkbenchPlan` | `POST /api/business-console/v1/scheduling/workbench/plans` | 从最多 500 个 MES 权威工单与 ProductEngineering 生产版本路线生成并持久化首版排程方案。 |
+| `createBusinessConsoleSchedulingPlanRevision` | `POST /api/business-console/v1/scheduling/plans/{planId}/revisions` | 以持久化 base problem、included orders 和显式锁定 assignment 生成修订版，并返回最新失效影响与权威方案对比。 |
 
 Connector configured-tag coverage 的两跳契约固定如下：IndustrialTelemetry `POST /api/business/v1/iiot/connector-tag-manifests` / `reportBusinessIiotConnectorTagManifest` 是 Connector Host callback，facade classification 为 `internal`；IndustrialTelemetry `GET /api/business/v1/iiot/connectors/{collectionConnectorId}/tag-coverage` / `getBusinessIiotConnectorTagCoverage` 由 BusinessGateway `GET /api/business-console/v1/telemetry/connectors/{connectorId}/tag-coverage` / `getBusinessConsoleTelemetryConnectorTagCoverage` 暴露，classification 为 `exposed`，权限为 `business.iiot.telemetry.read`。Business Console 只消费 generated query options 和 `business-console.ts` 稳定导出；coverage 的 `manifestStatus=current|unavailable`、activation status 与 nullable sample timestamps 保持原义，Gateway 不推断 quality/freshness，也不以旧 sample 反造 manifest。
 

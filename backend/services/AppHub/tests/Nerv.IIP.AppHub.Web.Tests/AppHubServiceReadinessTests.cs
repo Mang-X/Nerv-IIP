@@ -9,6 +9,26 @@ public sealed class ReadinessCollection;
 [Collection("readiness")]
 public sealed class AppHubServiceReadinessTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
+    [Theory]
+    [InlineData(null)]
+    [InlineData("InMemory")]
+    public void Production_rejects_missing_or_inmemory_persistence(string? provider)
+    {
+        using var guardedFactory = factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("Persistence:Provider", provider);
+            builder.UseSetting(
+                "ConnectionStrings:AppHubDb",
+                "Host=localhost;Database=unused;Username=nerv;Password=apphub-readiness-secret");
+        });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => guardedFactory.CreateClient());
+
+        Assert.Contains("AppHub persistence configuration is invalid", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("apphub-readiness-secret", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Postgres_automigrate_is_rejected_outside_development()
     {

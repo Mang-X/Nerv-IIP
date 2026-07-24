@@ -147,6 +147,7 @@ public sealed class OutboundOrderEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
         builder.Property(x => x.CancelledAtUtc).HasColumnName("cancelled_at_utc").HasComment("UTC cancellation time.");
+        builder.Property(x => x.Version).HasColumnName("version").IsRequired().IsConcurrencyToken().HasComment("Optimistic concurrency token advanced for every outbound aggregate mutation.");
         builder.HasMany(x => x.Lines).WithOne().HasForeignKey("OutboundOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OutboundOrderNo }).IsUnique();

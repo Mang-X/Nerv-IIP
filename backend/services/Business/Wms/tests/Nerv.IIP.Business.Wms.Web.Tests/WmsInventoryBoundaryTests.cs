@@ -707,7 +707,7 @@ public sealed class WmsInventoryBoundaryTests
             new RetryOutboundInventoryPostingCommand(outbound.Id, "idem-out-retry-001"),
             CancellationToken.None);
 
-        Assert.Equal("Completed", outbound.Status.ToString());
+        Assert.Equal("InventoryPostingPending", outbound.Status.ToString());
         Assert.Equal("res-002", outbound.Lines.Single().InventoryReservationId);
         Assert.Collection(
             dbContext.InventoryMovementRequests.Local.OrderBy(x => x.CreatedAtUtc),

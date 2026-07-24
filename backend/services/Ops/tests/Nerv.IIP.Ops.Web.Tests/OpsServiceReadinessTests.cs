@@ -13,6 +13,26 @@ public sealed class ReadinessCollection;
 [Collection("readiness")]
 public sealed class OpsServiceReadinessTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
+    [Theory]
+    [InlineData(null)]
+    [InlineData("InMemory")]
+    public void Production_rejects_missing_or_inmemory_persistence(string? provider)
+    {
+        using var guardedFactory = factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("Persistence:Provider", provider);
+            builder.UseSetting(
+                "ConnectionStrings:OpsDb",
+                "Host=localhost;Database=unused;Username=nerv;Password=ops-readiness-secret");
+        });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => guardedFactory.CreateClient());
+
+        Assert.Contains("Ops persistence configuration is invalid", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("ops-readiness-secret", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Ops_service_exposes_only_health_in_first_iteration()
     {
