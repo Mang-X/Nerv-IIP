@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { cn } from '../../../../lib/utils'
 import { metricToneFill, type NvMetricSegment } from '../metric'
 import { useMetricTooltip } from '../useMetricTooltip'
-import MetricTip from './MetricTip.vue'
+import NvMetricTipPart from './NvMetricTipPart.vue'
 
 /**
  * Internal — the `breakdown` bottom-zone: a segmented bar + counted legend that
@@ -19,12 +19,20 @@ const total = computed(() =>
   ),
 )
 
-const hovered = ref<number | null>(null)
-const dimmed = (i: number) => hovered.value !== null && hovered.value !== i
+/**
+ * Interaction identity is the slice's resolved KEY, not its array index — if
+ * the segments reorder/filter mid-hover (live data), an index would silently
+ * re-point the linked highlight at a different business item. The index
+ * fallback is only valid under the documented order-stable contract.
+ */
+const keyOf = (seg: NvMetricSegment, i: number) => seg.key ?? i
+const hovered = ref<string | number | null>(null)
+const dimmed = (seg: NvMetricSegment, i: number) =>
+  hovered.value !== null && hovered.value !== keyOf(seg, i)
 
 const tip = useMetricTooltip()
 function showTip(e: MouseEvent, seg: NvMetricSegment, i: number) {
-  hovered.value = i
+  hovered.value = keyOf(seg, i)
   const pct = ((seg.value / total.value) * 100).toFixed(1)
   tip.move(e, {
     rows: [
@@ -51,7 +59,7 @@ function clear() {
         cn(
           'nv-metric-slice block rounded-sm first:rounded-l-full last:rounded-r-full',
           metricToneFill[seg.tone ?? 'neutral'],
-          dimmed(i) && 'nv-metric-dim',
+          dimmed(seg, i) && 'nv-metric-dim',
         )
       "
       :style="{ flex: seg.value }"
@@ -66,7 +74,7 @@ function clear() {
       :class="
         cn(
           'nv-metric-slice inline-flex items-center gap-1.5 text-xs text-muted-foreground',
-          dimmed(i) && 'nv-metric-dim',
+          dimmed(seg, i) && 'nv-metric-dim',
         )
       "
       @mousemove="(e) => showTip(e, seg, i)"
@@ -77,7 +85,7 @@ function clear() {
       <b class="font-semibold text-foreground tabular-nums">{{ seg.value }}</b>
     </li>
   </ul>
-  <MetricTip :tip="tip" />
+  <NvMetricTipPart :tip="tip" />
 </template>
 
 <style scoped>

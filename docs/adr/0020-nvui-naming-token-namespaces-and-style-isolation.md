@@ -359,6 +359,9 @@ design-system 站是唯一"宿主自带 unlayered 敌意样式"的环境，其�
 > `--nv-scr-*` 深色）不构成 clash：二者分属不同表面，按 §1.2 尾「跨两个表面拆两件」各自
 > 实现、各自命名。文件名即 `NvMetricRing.vue`/`NvMetricStrip.vue`，内部无
 > `*-pro`/`.ds-*`/`.sb-*`。已并入 `nvui-naming.contract.test.ts` 冻结 canonical 集合。
+> `NvMetricCard` 的各 variant 下半区拆为 `pc/card/parts/` 内部实现件，命名
+> `NvMetric*Part`（`NvMetricTipPart` 等 7 件）：保持品牌层 `Nv` 前缀统一语义，但
+> **不导出、不入 barrel、不入冻结集合**——`*Part` 后缀即「某公开件的私有组成部分」。
 
 ### A1. PC 素名层 — `pc/`（35 目录，116 个组件导出）
 

@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { cn } from '../../../../lib/utils'
 import { metricToneFill, type NvMetricTone } from '../metric'
 import { useMetricTooltip } from '../useMetricTooltip'
-import MetricTip from './MetricTip.vue'
+import NvMetricTipPart from './NvMetricTipPart.vue'
 
 /**
  * Internal — the `bars` bottom-zone: a compact per-period bar strip with the
@@ -88,7 +88,7 @@ function showTip(e: MouseEvent, i: number) {
     <span>{{ footStart }}</span
     ><span>{{ footEnd }}</span>
   </div>
-  <MetricTip :tip="tip" />
+  <NvMetricTipPart :tip="tip" />
 </template>
 
 <style scoped>

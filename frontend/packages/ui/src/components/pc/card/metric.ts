@@ -38,9 +38,12 @@ export interface NvMetricSegment {
   value: number
   tone?: NvMetricTone
   /**
-   * Stable v-for key. Provide it when two slices can share a `label` (labels
-   * are NOT required to be unique); the component falls back to the array index
-   * when it is absent.
+   * Stable identity for this slice. REQUIRED whenever the collection can
+   * reorder / insert / filter between renders — it drives both the v-for key
+   * and the interaction identity (hover highlight, ring centre readout), so
+   * without it a mid-hover reorder re-points the highlight at a different
+   * business item. The array-index fallback is only valid for order-stable
+   * collections; labels are NOT required to be unique.
    */
   key?: string | number
 }
@@ -51,7 +54,7 @@ export interface NvMetricFacet {
   value: string | number
   /** `danger`/`warning` tint the chip to flag an at-risk dimension. */
   tone?: NvMetricTone
-  /** Stable v-for key; falls back to the array index when absent. */
+  /** Stable identity; REQUIRED for reorderable collections (see NvMetricSegment.key). */
   key?: string | number
 }
 
@@ -77,7 +80,7 @@ export interface NvMetricStripCell {
   /** Sub-line under the value: a delta or a short note. */
   meta?: string
   metaTone?: NvMetricDeltaDirection | 'neutral'
-  /** Stable v-for key; falls back to the array index when absent. */
+  /** Stable identity; REQUIRED for reorderable collections (see NvMetricSegment.key). */
   key?: string | number
 }
 

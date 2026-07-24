@@ -77,9 +77,12 @@ const arcs = computed(() => {
   // fail closed: no positive data → draw only the muted track
   if (denom <= 0 || nonZero === 0) return props.segments.map(track)
 
-  // adaptive gap: reserve the per-slice floors first, split what's left as gaps,
-  // capped at GAP — so crowded rings shrink the gap instead of eating the floor
-  const gap = Math.min(GAP, Math.max(0, (CIRC - nonZero * MIN_ARC) / nonZero))
+  // adaptive gap: reserve the per-slice floors first, then let gaps take at most
+  // HALF of what's left (capped at GAP) — the other half stays a value-weighted
+  // budget. Giving gaps the whole leftover made every slice exactly MIN_ARC at
+  // 42–75 slices, so [1000,1,…] rendered identical to equal weights.
+  const leftover = Math.max(0, CIRC - nonZero * MIN_ARC)
+  const gap = Math.min(GAP, leftover / (2 * nonZero))
   const arcBudget = Math.max(0, CIRC - nonZero * gap)
   const floorTotal = nonZero * MIN_ARC
   const floorFits = arcBudget >= floorTotal
@@ -104,8 +107,20 @@ const arcs = computed(() => {
   })
 })
 
-const hovered = ref<number | null>(null)
-const dimmed = (i: number) => hovered.value !== null && hovered.value !== i
+/**
+ * Interaction identity is the slice's resolved KEY, not its array index — if
+ * the segments reorder/filter mid-hover (live data), an index would silently
+ * re-point the highlight and centre readout at a different business item. With
+ * `key` provided the hover follows the item; the index fallback is only valid
+ * under the documented order-stable contract.
+ */
+const keyOf = (seg: NvMetricSegment, i: number) => seg.key ?? i
+const hovered = ref<string | number | null>(null)
+const dimmed = (seg: NvMetricSegment, i: number) =>
+  hovered.value !== null && hovered.value !== keyOf(seg, i)
+const hoveredSeg = computed(
+  () => props.segments.find((seg, i) => keyOf(seg, i) === hovered.value) ?? null,
+)
 
 function share(seg: NvMetricSegment) {
   const denom = positiveTotal.value
@@ -113,19 +128,17 @@ function share(seg: NvMetricSegment) {
 }
 
 /** The centre follows the pointer: hovering a slice reads that slice instead. */
-const centerValue = computed(() => {
-  const seg = hovered.value === null ? null : props.segments[hovered.value]
-  return seg ? String(seg.value) : String(props.value)
-})
+const centerValue = computed(() =>
+  hoveredSeg.value ? String(hoveredSeg.value.value) : String(props.value),
+)
 /**
  * On hover the caption stays short — just the share. Which slice it is, is
  * already said twice over by the lit arc and the undimmed legend row, and the
  * ring's inner clearance is far too small to hold a label as well.
  */
-const centerCaptionText = computed(() => {
-  const seg = hovered.value === null ? null : props.segments[hovered.value]
-  return seg ? `${share(seg)}%` : props.centerCaption
-})
+const centerCaptionText = computed(() =>
+  hoveredSeg.value ? `${share(hoveredSeg.value)}%` : props.centerCaption,
+)
 </script>
 
 <template>
@@ -147,8 +160,8 @@ const centerCaptionText = computed(() => {
             stroke-width="8"
             :stroke-dasharray="arc.dasharray"
             :stroke-dashoffset="arc.dashoffset"
-            :class="cn('nv-ring-seg', dimmed(i) && 'nv-ring-dim')"
-            @mouseenter="hovered = i"
+            :class="cn('nv-ring-seg', dimmed(arc.seg, i) && 'nv-ring-dim')"
+            @mouseenter="hovered = keyOf(arc.seg, i)"
             @mouseleave="hovered = null"
           />
         </svg>
@@ -176,8 +189,10 @@ const centerCaptionText = computed(() => {
         <li
           v-for="(seg, i) in segments"
           :key="seg.key ?? i"
-          :class="cn('nv-ring-row flex items-center gap-2 text-xs', dimmed(i) && 'nv-ring-dim')"
-          @mouseenter="hovered = i"
+          :class="
+            cn('nv-ring-row flex items-center gap-2 text-xs', dimmed(seg, i) && 'nv-ring-dim')
+          "
+          @mouseenter="hovered = keyOf(seg, i)"
           @mouseleave="hovered = null"
         >
           <span :class="cn('size-2 flex-none rounded-sm', metricToneFill[seg.tone ?? 'neutral'])" />

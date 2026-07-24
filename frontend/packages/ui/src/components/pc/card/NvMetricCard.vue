@@ -17,12 +17,12 @@ import {
   type NvMetricVariant,
   resolveDeltaTone,
 } from './metric'
-import MetricAlert from './parts/MetricAlert.vue'
-import MetricBars from './parts/MetricBars.vue'
-import MetricBreakdown from './parts/MetricBreakdown.vue'
-import MetricFacets from './parts/MetricFacets.vue'
-import MetricSparkline from './parts/MetricSparkline.vue'
-import MetricTarget from './parts/MetricTarget.vue'
+import NvMetricAlertPart from './parts/NvMetricAlertPart.vue'
+import NvMetricBarsPart from './parts/NvMetricBarsPart.vue'
+import NvMetricBreakdownPart from './parts/NvMetricBreakdownPart.vue'
+import NvMetricFacetsPart from './parts/NvMetricFacetsPart.vue'
+import NvMetricSparklinePart from './parts/NvMetricSparklinePart.vue'
+import NvMetricTargetPart from './parts/NvMetricTargetPart.vue'
 
 /**
  * Pro — the workhorse KPI card. A `variant` decides the structured bottom-zone
@@ -214,7 +214,7 @@ const defaultChartData = computed(() =>
         </span>
       </div>
 
-      <MetricSparkline
+      <NvMetricSparklinePart
         v-if="variant === 'sparkline'"
         :label="label"
         :series="series"
@@ -223,7 +223,7 @@ const defaultChartData = computed(() =>
         :foot-start="footStart"
         :foot-end="footEnd"
       />
-      <MetricTarget
+      <NvMetricTargetPart
         v-else-if="variant === 'target'"
         :label="label"
         :value="value"
@@ -235,8 +235,8 @@ const defaultChartData = computed(() =>
         :foot-start="footStart"
         :foot-end="footEnd"
       />
-      <MetricBreakdown v-else-if="variant === 'breakdown'" :segments="segments" />
-      <MetricBars
+      <NvMetricBreakdownPart v-else-if="variant === 'breakdown'" :segments="segments" />
+      <NvMetricBarsPart
         v-else-if="variant === 'bars'"
         :label="label"
         :series="series"
@@ -247,12 +247,12 @@ const defaultChartData = computed(() =>
         :foot-start="footStart"
         :foot-end="footEnd"
       />
-      <MetricFacets
+      <NvMetricFacetsPart
         v-else-if="variant === 'facets'"
         :facets="facets"
         @facet="(f) => emit('facet', f)"
       />
-      <MetricAlert
+      <NvMetricAlertPart
         v-else-if="variant === 'alert'"
         :foot-start="footStart"
         :action="action"

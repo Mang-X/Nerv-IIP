@@ -425,6 +425,84 @@ describe('NvMetricRing / NvMetricStrip', () => {
     expect(a91.reduce((s, a) => s + a.len, 0)).toBeLessThanOrEqual(CIRC + 1e-6)
   })
 
+  // 回归（评审四轮）：自适应 gap 曾在 42–75 段吃掉全部按值预算，[1000,1,…] 画得和
+  // 等权完全一样。余量必须对半保留给按值分配，容量边界内权重差异始终可见。
+  it.each([[42], [75]])('ring %i 段非等值：权重差异保留、守恒、保底不破', (n) => {
+    const segments = Array.from({ length: n }, (_, i) => ({
+      label: `s${i}`,
+      value: i === 0 ? 1000 : 1,
+      tone: 'brand' as const,
+    }))
+    const wrapper = mount(NvMetricRing, { props: { label: 't', value: 1000 + n - 1, segments } })
+    const arcs = readArcs(wrapper)
+    // 大权重段必须明显长于小权重段（extra > 0，权重信息未丢失）
+    expect(arcs[0].len).toBeGreaterThan(arcs[1].len)
+    expect(arcs[0].len).toBeGreaterThan(MIN_ARC + 0.3)
+    // 保底与守恒不被破坏
+    for (const a of arcs) expect(a.len).toBeGreaterThanOrEqual(MIN_ARC - 1e-6)
+    expect(arcs.reduce((s, a) => s + a.len, 0)).toBeLessThanOrEqual(CIRC + 1e-6)
+  })
+
+  // 回归（评审四轮）：交互身份按 key 而非数组下标存取——悬浮期间数据重排，
+  // 高亮与中心读数必须跟随同一业务项，不得跳到新的第 0 项。
+  it('ring 悬浮期间重排：中心读数与高亮跟随 key 同一业务项', async () => {
+    const seg = (label: string, value: number, key: string) => ({
+      label,
+      value,
+      key,
+      tone: 'brand' as const,
+    })
+    const wrapper = mount(NvMetricRing, {
+      props: {
+        label: 't',
+        value: 35,
+        centerCaption: '总计',
+        segments: [seg('进行中', 24, 'a'), seg('待派工', 9, 'b'), seg('超期', 2, 'c')],
+      },
+    })
+    await wrapper.findAll('.nv-ring-row')[2].trigger('mouseenter') // key 'c' 超期=2
+    expect(wrapper.find('.nv-ring-center').text()).toContain('2')
+
+    // 悬浮中重排：超期挪到第 0 位
+    await wrapper.setProps({
+      segments: [seg('超期', 2, 'c'), seg('待派工', 9, 'b'), seg('进行中', 24, 'a')],
+    })
+    // 中心仍读「超期」项，而不是新第 2 位的「进行中」
+    expect(wrapper.find('.nv-ring-center').text()).toContain('2')
+    expect(wrapper.find('.nv-ring-center').text()).not.toContain('24')
+    // 未淡出的图例行就是「超期」（现在在第 0 位）
+    const rows = wrapper.findAll('.nv-ring-row')
+    expect(rows[0].classes()).not.toContain('nv-ring-dim')
+    expect(rows[2].classes()).toContain('nv-ring-dim')
+  })
+
+  it('breakdown 悬浮期间重排：联动高亮跟随 key 同一业务项', async () => {
+    const seg = (label: string, value: number, key: string) => ({
+      label,
+      value,
+      key,
+      tone: 'brand' as const,
+    })
+    const wrapper = mount(NvMetricCard, {
+      props: {
+        variant: 'breakdown',
+        label: '在制工单',
+        value: 35,
+        segments: [seg('进行中', 24, 'a'), seg('待派工', 9, 'b'), seg('超期', 2, 'c')],
+      },
+    })
+    const legendLis = () => wrapper.findAll('li')
+    await legendLis()[0].trigger('mousemove', { clientX: 10, clientY: 10 }) // key 'a' 进行中
+    await wrapper.setProps({
+      segments: [seg('超期', 2, 'c'), seg('待派工', 9, 'b'), seg('进行中', 24, 'a')],
+    })
+    // 「进行中」现在在第 2 位——它必须仍是未淡出的那一项
+    const lis = legendLis()
+    expect(lis[2].text()).toContain('进行中')
+    expect(lis[2].classes()).not.toContain('nv-metric-dim')
+    expect(lis[0].classes()).toContain('nv-metric-dim')
+  })
+
   it('ring 图例给出每段计数与占比，中心默认显示总数', () => {
     const wrapper = mount(NvMetricRing, {
       props: { label: '在制工单', value: 35, centerCaption: '总计', segments: ringSegments },

@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { cn } from '../../../../lib/utils'
 import { metricToneFill, type NvMetricTone } from '../metric'
 import { useMetricTooltip } from '../useMetricTooltip'
-import MetricTip from './MetricTip.vue'
+import NvMetricTipPart from './NvMetricTipPart.vue'
 
 /**
  * Internal — the `target` bottom-zone: a progress bar with a goal tick and a
@@ -64,5 +64,5 @@ function showTip(e: MouseEvent) {
     <span>{{ footStart }}</span
     ><span>{{ footEnd }}</span>
   </div>
-  <MetricTip :tip="tip" />
+  <NvMetricTipPart :tip="tip" />
 </template>
