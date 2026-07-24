@@ -36,45 +36,61 @@ const props = withDefaults(
 
 const R = 36
 const CIRC = 2 * Math.PI * R
-/** Circumference eaten by the gap after each drawn slice. */
+/** Gap after each drawn slice (shrinks adaptively when slices are many). */
 const GAP = 2.5
 /** Minimum drawn arc for a non-zero slice, so the 1-in-1000 anomaly still reads. */
 const MIN_ARC = 3
 
-const total = computed(() =>
-  Math.max(
-    1,
-    props.segments.reduce((sum, s) => sum + s.value, 0),
-  ),
-)
+/** Only finite, positive values contribute to the geometry; the rest are 0. */
+function safeValue(v: number) {
+  return Number.isFinite(v) && v > 0 ? v : 0
+}
+/** Denominator = the actual sum of positive values (never a forced `max(1,…)`). */
+const positiveTotal = computed(() => props.segments.reduce((s, seg) => s + safeValue(seg.value), 0))
 
 /**
- * Arc geometry — allocated so the drawn lengths + gaps CONSERVE the full
- * circumference and never overlap, regardless of slice order.
+ * Arc geometry — drawn lengths + gaps CONSERVE the full circumference and never
+ * overlap, regardless of slice order, and the share denominator is the true sum
+ * of positive values (fractional / negative / non-finite inputs don't distort
+ * it). A naive `span - GAP` breaks two ways — a sub-gap slice drops to zero, and
+ * a floored tiny slice gets overdrawn when it isn't last (offset advanced by the
+ * true span). Instead: sanitise inputs, fail closed on zero total, shrink the
+ * gap so the per-slice MIN_ARC floor keeps fitting as the count rises, give each
+ * non-zero slice its floor + a value-weighted share of the remainder, and
+ * advance the offset by each slice's OWN drawn arc + gap.
  *
- * A naive `span - GAP` (or flooring only the dash length) breaks two ways: a
- * sub-gap slice drops to zero, and — since the next slice's offset advances by
- * the true span and paints on top — a floored tiny slice gets overdrawn back to
- * nothing when it isn't last. Instead: reserve one GAP per non-zero slice, give
- * every non-zero slice at least MIN_ARC, distribute the remainder by value, and
- * advance the offset by each slice's OWN drawn length + gap. No overlap, total
- * always = CIRC.
+ * Capacity: MIN_ARC is guaranteed while `n × MIN_ARC ≤ circumference` (~75
+ * slices); beyond that every non-zero slice still draws a proportional, non-zero
+ * arc (never vanishes) but below MIN_ARC — aggregate a tiny tail category for a
+ * readable ring at that density.
  */
 const arcs = computed(() => {
-  const nonZero = props.segments.reduce((n, s) => n + (s.value > 0 ? 1 : 0), 0)
-  const gapTotal = nonZero * GAP
-  const arcBudget = Math.max(0, CIRC - gapTotal)
+  const values = props.segments.map((seg) => safeValue(seg.value))
+  const denom = values.reduce((a, b) => a + b, 0)
+  const nonZero = values.reduce((n, v) => n + (v > 0 ? 1 : 0), 0)
+  const track = (seg: NvMetricSegment) => ({
+    seg,
+    dasharray: `0 ${CIRC}`,
+    dashoffset: 0,
+    stroke: metricToneStroke[seg.tone ?? 'neutral'],
+  })
+  // fail closed: no positive data → draw only the muted track
+  if (denom <= 0 || nonZero === 0) return props.segments.map(track)
+
+  // adaptive gap: reserve the per-slice floors first, split what's left as gaps,
+  // capped at GAP — so crowded rings shrink the gap instead of eating the floor
+  const gap = Math.min(GAP, Math.max(0, (CIRC - nonZero * MIN_ARC) / nonZero))
+  const arcBudget = Math.max(0, CIRC - nonZero * gap)
   const floorTotal = nonZero * MIN_ARC
-  // headroom to distribute above the per-slice floor (0 if the ring is so
-  // crowded even the floors don't fit — then split the budget purely by value)
-  const extra = Math.max(0, arcBudget - floorTotal)
   const floorFits = arcBudget >= floorTotal
+  const extra = Math.max(0, arcBudget - floorTotal)
 
   let offset = 0
-  return props.segments.map((seg) => {
+  return props.segments.map((seg, i) => {
+    const v = values[i]
     let length = 0
-    if (seg.value > 0) {
-      const frac = seg.value / total.value
+    if (v > 0) {
+      const frac = v / denom
       length = floorFits ? MIN_ARC + extra * frac : arcBudget * frac
     }
     const arc = {
@@ -83,8 +99,7 @@ const arcs = computed(() => {
       dashoffset: -offset,
       stroke: metricToneStroke[seg.tone ?? 'neutral'],
     }
-    // advance past this slice's OWN drawn arc (+ a gap only if it drew one)
-    offset += length + (seg.value > 0 ? GAP : 0)
+    offset += length + (v > 0 ? gap : 0)
     return arc
   })
 })
@@ -93,7 +108,8 @@ const hovered = ref<number | null>(null)
 const dimmed = (i: number) => hovered.value !== null && hovered.value !== i
 
 function share(seg: NvMetricSegment) {
-  return ((seg.value / total.value) * 100).toFixed(1)
+  const denom = positiveTotal.value
+  return denom > 0 ? ((safeValue(seg.value) / denom) * 100).toFixed(1) : '0.0'
 }
 
 /** The centre follows the pointer: hovering a slice reads that slice instead. */

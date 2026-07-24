@@ -237,6 +237,32 @@ describe('NvMetricCard 变体契约', () => {
     expect(wrapper.emitted('facet')?.[0]?.[0]).toMatchObject({ label: '待处置', value: 3 })
   })
 
+  // 评审三轮：facet 是可点击按钮，须键盘可达且带完整状态类（含 tone 项）。
+  it('facets 是原生按钮、键盘可激活、每个都带状态类（含 tone 项）', async () => {
+    const wrapper = mount(NvMetricCard, {
+      props: {
+        variant: 'facets',
+        label: '开放 NCR',
+        value: 7,
+        facets: [
+          { label: '待处置', value: 3, tone: 'danger' },
+          { label: '处置中', value: 2 },
+        ],
+      },
+    })
+    const chips = wrapper.findAll('button')
+    // 原生 button + type=button → 天然键盘可聚焦/可激活；每个都带状态类（hover/
+    // focus-visible/active 由 .nv-metric-facet 承载），tone 项不例外
+    for (const c of chips) {
+      expect(c.attributes('type')).toBe('button')
+      expect(c.classes()).toContain('nv-metric-facet')
+    }
+    // 键盘激活（Enter/Space 落到原生 button 的 click）→ 抛出 facet
+    await chips[1].trigger('keydown.enter')
+    await chips[1].trigger('click')
+    expect(wrapper.emitted('facet')?.at(-1)?.[0]).toMatchObject({ label: '处置中' })
+  })
+
   it('保留已弃用的 hint（默认变体），77 个存量页面不破', () => {
     const wrapper = mount(NvMetricCard, {
       props: { label: '在制工单', value: 38, hint: '较昨日 +5' },
@@ -311,6 +337,92 @@ describe('NvMetricRing / NvMetricStrip', () => {
       },
     })
     expect(readArcs(wrapper)[1].len).toBe(0)
+  })
+
+  // 回归（评审三轮）：分母不能强行 max(1,…)，否则小数总和只填半圈、占比算错。
+  it('ring 小数总和以真实正值和为分母（守恒 + 占比正确）', () => {
+    const wrapper = mount(NvMetricRing, {
+      props: {
+        label: 't',
+        value: 1,
+        segments: [
+          { label: 'a', value: 0.2, tone: 'brand' as const },
+          { label: 'b', value: 0.3, tone: 'success' as const },
+        ],
+      },
+    })
+    const arcs = readArcs(wrapper)
+    expect(arcs.reduce((s, a) => s + a.len, 0) + 2 * 2.5).toBeCloseTo(CIRC, 4) // 填满整圈
+    expect(wrapper.findAll('.nv-ring-row')[0].text()).toContain('40.0%') // 0.2/0.5
+    expect(wrapper.findAll('.nv-ring-row')[1].text()).toContain('60.0%')
+  })
+
+  // 回归（评审三轮）：负值/非有限值必须排除，不能让某段弧长爆炸。
+  it('ring 负值与非有限值不参与几何（不爆炸、不计入分母）', () => {
+    const neg = mount(NvMetricRing, {
+      props: {
+        label: 't',
+        value: 1,
+        segments: [
+          { label: 'a', value: 10, tone: 'brand' as const },
+          { label: 'b', value: -9, tone: 'danger' as const },
+        ],
+      },
+    })
+    const a = readArcs(neg)
+    expect(a[0].len).toBeLessThanOrEqual(CIRC) // 不爆炸
+    expect(a[1].len).toBe(0) // 负段不画
+    expect(neg.findAll('.nv-ring-row')[0].text()).toContain('100.0%') // 10/10
+
+    const nan = mount(NvMetricRing, {
+      props: {
+        label: 't',
+        value: 1,
+        segments: [
+          { label: 'a', value: Number.NaN, tone: 'brand' as const },
+          { label: 'b', value: 5, tone: 'success' as const },
+        ],
+      },
+    })
+    expect(readArcs(nan)[0].len).toBe(0)
+    expect(nan.findAll('.nv-ring-row')[1].text()).toContain('100.0%')
+  })
+
+  it('ring 零总量 fail closed（只画底环）', () => {
+    const wrapper = mount(NvMetricRing, {
+      props: {
+        label: 't',
+        value: 0,
+        segments: [
+          { label: 'a', value: 0, tone: 'brand' as const },
+          { label: 'b', value: 0, tone: 'danger' as const },
+        ],
+      },
+    })
+    for (const a of readArcs(wrapper)) expect(a.len).toBe(0)
+  })
+
+  // 回归（评审三轮）：分段过多时 gap 自适应缩小，守住 MIN_ARC；再多则降级但非零，不消失。
+  it('ring 分段过多：自适应 gap 守住可见弧、周长守恒、永不归零', () => {
+    const mk = (n: number) =>
+      mount(NvMetricRing, {
+        props: {
+          label: 't',
+          value: n,
+          segments: Array.from({ length: n }, (_, i) => ({
+            label: `s${i}`,
+            value: 1,
+            tone: 'brand' as const,
+          })),
+        },
+      })
+    // 42 段：仍守住 MIN_ARC（自适应 gap）
+    const a42 = readArcs(mk(42))
+    for (const a of a42) expect(a.len).toBeGreaterThanOrEqual(3 - 1e-6)
+    // 91 段：低于 MIN_ARC 但每段仍非零（不再全部消失），且守恒
+    const a91 = readArcs(mk(91))
+    for (const a of a91) expect(a.len).toBeGreaterThan(0)
+    expect(a91.reduce((s, a) => s + a.len, 0)).toBeLessThanOrEqual(CIRC + 1e-6)
   })
 
   it('ring 图例给出每段计数与占比，中心默认显示总数', () => {

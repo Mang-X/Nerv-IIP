@@ -448,10 +448,10 @@ function showTargetTip(e: MouseEvent) {
             type="button"
             :class="
               cn(
-                'inline-flex items-baseline gap-1.5 rounded-md px-2 py-1 text-xs transition-colors',
+                'nv-metric-facet inline-flex items-baseline gap-1.5 rounded-md px-2 py-1 text-xs',
                 f.tone && f.tone !== 'neutral'
                   ? metricToneTint[f.tone]
-                  : 'bg-muted text-muted-foreground hover:bg-muted/70',
+                  : 'bg-muted text-muted-foreground',
               )
             "
             @click="emit('facet', f)"
@@ -598,6 +598,27 @@ function showTargetTip(e: MouseEvent) {
     outline-offset: 2px;
     border-radius: 4px;
   }
+  /* facet chips are buttons — every one needs the full default/hover/
+     focus-visible/active set (pc/product.md keyboard-reachability gate), toned
+     ones included. Hover/active use an inset box-shadow OVERLAY (not
+     background-color): the base fill is a Tailwind `bg-*` utility, whose layer
+     outranks nv-components, so a background rule here would be ignored — a
+     box-shadow tint (no utility touches it) wins and follows the radius.
+     `currentColor` carries the chip's own tone, so the overlay reads correctly
+     on neutral and on danger/warning alike. */
+  .nv-metric-facet {
+    transition: box-shadow var(--nv-duration-fast, 150ms) var(--nv-ease-out-quart, ease-out);
+  }
+  .nv-metric-facet:hover {
+    box-shadow: inset 0 0 0 100px color-mix(in oklch, currentColor 10%, transparent);
+  }
+  .nv-metric-facet:active {
+    box-shadow: inset 0 0 0 100px color-mix(in oklch, currentColor 18%, transparent);
+  }
+  .nv-metric-facet:focus-visible {
+    outline: 2px solid var(--nv-brand);
+    outline-offset: 2px;
+  }
   /* segment ↔ legend linked highlight: pointing at either dims the other slices */
   .nv-metric-slice {
     transition: opacity var(--nv-duration-fast, 150ms) var(--nv-ease-out-quart, ease-out);
@@ -608,7 +629,8 @@ function showTargetTip(e: MouseEvent) {
   @media (prefers-reduced-motion: reduce) {
     .nv-metric-tip,
     .nv-metric-bars > span,
-    .nv-metric-slice {
+    .nv-metric-slice,
+    .nv-metric-facet {
       transition: none;
     }
   }
