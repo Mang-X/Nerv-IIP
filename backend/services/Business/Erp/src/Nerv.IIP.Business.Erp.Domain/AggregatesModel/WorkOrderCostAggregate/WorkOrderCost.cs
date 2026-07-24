@@ -111,19 +111,83 @@ public partial record WorkCenterCostRateId : IGuidStronglyTypedId;
 public sealed class WorkCenterCostRate : Entity<WorkCenterCostRateId>, IAggregateRoot
 {
     private WorkCenterCostRate() { }
-    private WorkCenterCostRate(string organizationId, string environmentId, string workCenterId, decimal hourlyRate)
+    private WorkCenterCostRate(
+        string organizationId,
+        string environmentId,
+        string workCenterId,
+        decimal hourlyRate,
+        string currencyCode,
+        DateTimeOffset effectiveFromUtc,
+        DateTimeOffset? effectiveToUtc,
+        int revision,
+        string changedBy,
+        string reason,
+        DateTimeOffset changedAtUtc)
     {
         OrganizationId = ErpText.Required(organizationId, nameof(organizationId));
         EnvironmentId = ErpText.Required(environmentId, nameof(environmentId));
         WorkCenterId = ErpText.Required(workCenterId, nameof(workCenterId));
         HourlyRate = ErpText.Positive(hourlyRate, nameof(hourlyRate));
+        CurrencyCode = NormalizeCurrencyCode(currencyCode);
+        EffectiveFromUtc = RequireUtc(effectiveFromUtc, nameof(effectiveFromUtc));
+        EffectiveToUtc = effectiveToUtc is null ? null : RequireUtc(effectiveToUtc.Value, nameof(effectiveToUtc));
+        if (EffectiveToUtc <= EffectiveFromUtc) throw new ArgumentOutOfRangeException(nameof(effectiveToUtc), "Effective end must be later than effective start.");
+        if (revision <= 0) throw new ArgumentOutOfRangeException(nameof(revision), revision, "Revision must be positive.");
+        Revision = revision;
+        ChangedBy = RequireCanonicalActor(changedBy);
+        Reason = ErpText.Required(reason, nameof(reason));
+        ChangedAtUtc = RequireUtc(changedAtUtc, nameof(changedAtUtc));
     }
+
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
     public string WorkCenterId { get; private set; } = string.Empty;
     public decimal HourlyRate { get; private set; }
-    public static WorkCenterCostRate Define(string organizationId, string environmentId, string workCenterId, decimal hourlyRate)
-        => new(organizationId, environmentId, workCenterId, hourlyRate);
+    public string CurrencyCode { get; private set; } = string.Empty;
+    public DateTimeOffset EffectiveFromUtc { get; private set; }
+    public DateTimeOffset? EffectiveToUtc { get; private set; }
+    public int Revision { get; private set; }
+    public string ChangedBy { get; private set; } = string.Empty;
+    public string Reason { get; private set; } = string.Empty;
+    public DateTimeOffset ChangedAtUtc { get; private set; }
+
+    public static WorkCenterCostRate Define(
+        string organizationId,
+        string environmentId,
+        string workCenterId,
+        decimal hourlyRate,
+        string currencyCode,
+        DateTimeOffset effectiveFromUtc,
+        DateTimeOffset? effectiveToUtc,
+        int revision,
+        string changedBy,
+        string reason,
+        DateTimeOffset changedAtUtc)
+        => new(organizationId, environmentId, workCenterId, hourlyRate, currencyCode, effectiveFromUtc, effectiveToUtc, revision, changedBy, reason, changedAtUtc);
+
+    private static string NormalizeCurrencyCode(string value)
+    {
+        var normalized = ErpText.Required(value, nameof(value)).ToUpperInvariant();
+        return normalized.Length == 3 && normalized.All(character => character is >= 'A' and <= 'Z')
+            ? normalized
+            : throw new ArgumentException("Currency code must contain exactly three ASCII letters.", nameof(value));
+    }
+
+    private static string RequireCanonicalActor(string value)
+    {
+        var actor = ErpText.Required(value, nameof(value));
+        if (!string.Equals(actor, value, StringComparison.Ordinal) || actor.Any(char.IsWhiteSpace))
+            throw new ArgumentException("Actor must be a canonical authenticated actor.", nameof(value));
+        var separator = actor.IndexOf(':', StringComparison.Ordinal);
+        return separator > 0 && separator < actor.Length - 1
+            ? actor
+            : throw new ArgumentException("Actor must be a canonical authenticated actor.", nameof(value));
+    }
+
+    private static DateTimeOffset RequireUtc(DateTimeOffset value, string parameterName)
+        => value.Offset == TimeSpan.Zero
+            ? value
+            : throw new ArgumentException("Timestamp must use UTC offset zero.", parameterName);
 }
 
 public partial record PendingMaterialCostId : IGuidStronglyTypedId;

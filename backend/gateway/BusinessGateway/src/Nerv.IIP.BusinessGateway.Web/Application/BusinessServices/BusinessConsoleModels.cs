@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using FastEndpoints;
 using Nerv.IIP.Contracts.Coding;
+using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
@@ -2239,6 +2240,25 @@ public sealed record BusinessConsoleSchedulingPlanRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId);
 
+public sealed record BusinessConsoleSchedulingWorkbenchOrderSelection(
+    string WorkOrderId,
+    int Priority,
+    bool IsRush);
+
+public sealed record BusinessConsoleCreateSchedulingWorkbenchPlanRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset HorizonStartUtc,
+    DateTimeOffset HorizonEndUtc,
+    IReadOnlyCollection<BusinessConsoleSchedulingWorkbenchOrderSelection> Orders);
+
+public sealed record BusinessConsoleCreateSchedulePlanRevisionRequest(
+    [property: RouteParam] string PlanId,
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<string> IncludedOrderIds,
+    IReadOnlyCollection<SchedulingLockedAssignmentContract> LockedAssignments);
+
 public sealed record BusinessConsoleOrderUrgencyListRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -2385,6 +2405,47 @@ public sealed record BusinessConsoleErpListRequest(
     string? Keyword = null,
     int Skip = 0,
     int Take = 100);
+
+public sealed record BusinessConsoleConfigureErpWorkCenterCostRateRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkCenterId,
+    decimal HourlyRate,
+    string CurrencyCode,
+    DateTimeOffset EffectiveFromUtc,
+    DateTimeOffset? EffectiveToUtc,
+    string Reason);
+
+public sealed record BusinessConsoleConfigureErpWorkCenterCostRateResponse(string WorkCenterCostRateId);
+
+public sealed record BusinessConsoleListErpWorkCenterCostRatesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkCenterId,
+    DateTimeOffset? AtUtc = null);
+
+public sealed record BusinessConsoleErpWorkCenterCostRateListResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkCenterId,
+    DateTimeOffset AtUtc,
+    int? CurrentEffectiveRevision,
+    IReadOnlyCollection<BusinessConsoleErpWorkCenterCostRateItem> Items);
+
+public sealed record BusinessConsoleErpWorkCenterCostRateItem(
+    string WorkCenterCostRateId,
+    string WorkCenterId,
+    decimal HourlyRate,
+    string CurrencyCode,
+    DateTimeOffset EffectiveFromUtc,
+    DateTimeOffset? EffectiveToUtc,
+    int Revision,
+    string ChangedBy,
+    string Reason,
+    DateTimeOffset ChangedAtUtc,
+    string EffectiveStatus,
+    bool IsEffectiveAtUtc,
+    bool IsCurrentEffectiveRevision);
 
 public sealed record BusinessConsoleErpSourceDocumentRequest(
     string OrganizationId,

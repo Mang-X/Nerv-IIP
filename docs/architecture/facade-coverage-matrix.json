@@ -668,6 +668,32 @@
     {
       "service": "Erp",
       "method": "GET",
+      "route": "/api/business/v1/erp/finance/work-center-cost-rates",
+      "operationId": "listErpWorkCenterCostRates",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpWorkCenterCostRates"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/work-center-cost-rates",
+      "operationId": "configureErpWorkCenterCostRate",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "configureBusinessConsoleErpWorkCenterCostRate"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
       "route": "/api/business/v1/erp/finance/month-end-checklist",
       "operationId": "getErpMonthEndChecklist",
       "classification": "exposed",
@@ -4012,6 +4038,32 @@
       ],
       "gatewayOperationIds": [
         "createBusinessConsoleSchedulingPlan"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
+      "route": "/api/business/v1/scheduling/workbench/plans",
+      "operationId": "createSchedulingWorkbenchPlan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleSchedulingWorkbenchPlan"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
+      "route": "/api/business/v1/scheduling/plans/{planId}/revisions",
+      "operationId": "createSchedulingPlanRevision",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleSchedulingPlanRevision"
       ]
     },
     {

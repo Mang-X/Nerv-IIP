@@ -1340,6 +1340,58 @@ export type NervIipContractsSchedulingSchedulingLockedAssignmentContract = {
     lockReasonCode?: string;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulingWorkbenchPlanRequest = {
+    organizationId: string;
+    environmentId: string;
+    horizonStartUtc?: string;
+    horizonEndUtc?: string;
+    orders: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingWorkbenchOrderSelection>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingWorkbenchOrderSelection = {
+    workOrderId?: string;
+    priority?: number;
+    isRush?: boolean;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfSchedulePlanRevisionContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulePlanRevisionContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulePlanRevisionContract = {
+    candidate?: NervIipContractsSchedulingSchedulePlanContract;
+    impact?: NervIipContractsSchedulingSchedulePlanImpactContract;
+    comparison?: NervIipContractsSchedulingSchedulePlanComparisonContract;
+};
+
+export type NervIipContractsSchedulingSchedulePlanImpactContract = {
+    isInvalidated?: boolean;
+    reasonCode?: string | null;
+    sourceEventType?: string | null;
+    sourceEventId?: string | null;
+    occurredAtUtc?: string | null;
+    affectedResourceIds?: Array<string>;
+    affectedWorkOrderIds?: Array<string>;
+    affectedOperationIds?: Array<string>;
+};
+
+export type NervIipContractsSchedulingSchedulePlanComparisonContract = {
+    basePlanId?: string;
+    candidatePlanId?: string;
+    baseMetrics?: NervIipContractsSchedulingSchedulePlanMetricsContract;
+    candidateMetrics?: NervIipContractsSchedulingSchedulePlanMetricsContract;
+    movedOperationCount?: number;
+    lockedOperationCount?: number;
+    unscheduledOperationCount?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulePlanRevisionRequest = {
+    organizationId: string;
+    environmentId: string;
+    includedOrderIds: Array<string>;
+    lockedAssignments?: Array<NervIipContractsSchedulingSchedulingLockedAssignmentContract>;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleSchedulePlanSummaryResponse = NetCorePalExtensionsDtoResponseData & {
     data?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse> | null;
 };
@@ -6067,6 +6119,58 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     createdAtUtc?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConfigureErpWorkCenterCostRateResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterCostRateResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterCostRateResponse = {
+    workCenterCostRateId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterCostRateRequest = {
+    organizationId: string;
+    environmentId: string;
+    workCenterId: string;
+    hourlyRate?: number;
+    currencyCode?: string;
+    effectiveFromUtc: string;
+    effectiveToUtc?: string | null;
+    reason: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkCenterCostRateListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterCostRateListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterCostRateListResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    workCenterId?: string;
+    atUtc?: string;
+    currentEffectiveRevision?: number | null;
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterCostRateItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterCostRateItem = {
+    workCenterCostRateId?: string;
+    workCenterId?: string;
+    hourlyRate?: number;
+    currencyCode?: string;
+    effectiveFromUtc?: string;
+    effectiveToUtc?: string | null;
+    revision?: number;
+    changedBy?: string;
+    reason?: string;
+    changedAtUtc?: string;
+    effectiveStatus?: string;
+    isEffectiveAtUtc?: boolean;
+    isCurrentEffectiveRevision?: boolean;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListErpWorkCenterCostRatesRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentOverviewResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentOverviewResponse | null;
 };
@@ -8315,6 +8419,74 @@ export type CreateBusinessConsoleSchedulingPlanResponses = {
 };
 
 export type CreateBusinessConsoleSchedulingPlanResponse = CreateBusinessConsoleSchedulingPlanResponses[keyof CreateBusinessConsoleSchedulingPlanResponses];
+
+export type CreateBusinessConsoleSchedulingWorkbenchPlanData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulingWorkbenchPlanRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/scheduling/workbench/plans';
+};
+
+export type CreateBusinessConsoleSchedulingWorkbenchPlanErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleSchedulingWorkbenchPlanError = CreateBusinessConsoleSchedulingWorkbenchPlanErrors[keyof CreateBusinessConsoleSchedulingWorkbenchPlanErrors];
+
+export type CreateBusinessConsoleSchedulingWorkbenchPlanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract;
+};
+
+export type CreateBusinessConsoleSchedulingWorkbenchPlanResponse = CreateBusinessConsoleSchedulingWorkbenchPlanResponses[keyof CreateBusinessConsoleSchedulingWorkbenchPlanResponses];
+
+export type CreateBusinessConsoleSchedulingPlanRevisionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulePlanRevisionRequest;
+    path: {
+        planId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/scheduling/plans/{planId}/revisions';
+};
+
+export type CreateBusinessConsoleSchedulingPlanRevisionErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleSchedulingPlanRevisionError = CreateBusinessConsoleSchedulingPlanRevisionErrors[keyof CreateBusinessConsoleSchedulingPlanRevisionErrors];
+
+export type CreateBusinessConsoleSchedulingPlanRevisionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulePlanRevisionContract;
+};
+
+export type CreateBusinessConsoleSchedulingPlanRevisionResponse = CreateBusinessConsoleSchedulingPlanRevisionResponses[keyof CreateBusinessConsoleSchedulingPlanRevisionResponses];
 
 export type GetBusinessConsoleSchedulingPlanData = {
     body?: never;
@@ -16818,6 +16990,77 @@ export type GetBusinessConsoleErpCostCandidateBySourceDocumentResponses = {
 };
 
 export type GetBusinessConsoleErpCostCandidateBySourceDocumentResponse = GetBusinessConsoleErpCostCandidateBySourceDocumentResponses[keyof GetBusinessConsoleErpCostCandidateBySourceDocumentResponses];
+
+export type ListBusinessConsoleErpWorkCenterCostRatesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        workCenterId: string;
+        atUtc?: string | null;
+    };
+    url: '/api/business-console/v1/erp/finance/work-center-cost-rates';
+};
+
+export type ListBusinessConsoleErpWorkCenterCostRatesErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleErpWorkCenterCostRatesError = ListBusinessConsoleErpWorkCenterCostRatesErrors[keyof ListBusinessConsoleErpWorkCenterCostRatesErrors];
+
+export type ListBusinessConsoleErpWorkCenterCostRatesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkCenterCostRateListResponse;
+};
+
+export type ListBusinessConsoleErpWorkCenterCostRatesResponse = ListBusinessConsoleErpWorkCenterCostRatesResponses[keyof ListBusinessConsoleErpWorkCenterCostRatesResponses];
+
+export type ConfigureBusinessConsoleErpWorkCenterCostRateData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterCostRateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/erp/finance/work-center-cost-rates';
+};
+
+export type ConfigureBusinessConsoleErpWorkCenterCostRateErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ConfigureBusinessConsoleErpWorkCenterCostRateError = ConfigureBusinessConsoleErpWorkCenterCostRateErrors[keyof ConfigureBusinessConsoleErpWorkCenterCostRateErrors];
+
+export type ConfigureBusinessConsoleErpWorkCenterCostRateResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConfigureErpWorkCenterCostRateResponse;
+};
+
+export type ConfigureBusinessConsoleErpWorkCenterCostRateResponse = ConfigureBusinessConsoleErpWorkCenterCostRateResponses[keyof ConfigureBusinessConsoleErpWorkCenterCostRateResponses];
 
 export type GetBusinessConsoleEquipmentOverviewData = {
     body?: never;

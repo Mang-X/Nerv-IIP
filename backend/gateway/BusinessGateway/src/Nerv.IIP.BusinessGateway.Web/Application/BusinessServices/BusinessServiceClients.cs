@@ -679,6 +679,18 @@ public interface IBusinessPlanningClient
 
 public interface IBusinessSchedulingClient
 {
+    Task<SchedulePlanContract> CreateWorkbenchPlanAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSchedulingWorkbenchPlanRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromException<SchedulePlanContract>(new NotSupportedException());
+
+    Task<SchedulePlanRevisionContract> CreatePlanRevisionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSchedulePlanRevisionRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromException<SchedulePlanRevisionContract>(new NotSupportedException());
+
     Task<SchedulePlanContract> PreviewPlanAsync(
         string internalBearerToken,
         SchedulingProblemContract problem,
@@ -817,6 +829,17 @@ public interface IBusinessErpClient
     Task<BusinessConsoleErpCostCandidateListResponse> ListCostCandidatesAsync(
         string internalBearerToken,
         BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleConfigureErpWorkCenterCostRateResponse> ConfigureWorkCenterCostRateAsync(
+        string internalBearerToken,
+        BusinessConsoleConfigureErpWorkCenterCostRateRequest request,
+        string actor,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleErpWorkCenterCostRateListResponse> ListWorkCenterCostRatesAsync(
+        string internalBearerToken,
+        BusinessConsoleListErpWorkCenterCostRatesRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleErpJournalVoucherListResponse> ListJournalVouchersAsync(
@@ -4426,6 +4449,30 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
 public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessSchedulingClient
 {
+    public Task<SchedulePlanContract> CreateWorkbenchPlanAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSchedulingWorkbenchPlanRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<SchedulePlanContract>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/scheduling/workbench/plans",
+            request,
+            cancellationToken,
+            SchedulingJson.Options);
+
+    public Task<SchedulePlanRevisionContract> CreatePlanRevisionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSchedulePlanRevisionRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<SchedulePlanRevisionContract>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/revisions",
+            request,
+            cancellationToken,
+            SchedulingJson.Options);
+
     public Task<SchedulePlanContract> PreviewPlanAsync(
         string internalBearerToken,
         SchedulingProblemContract problem,
@@ -5834,6 +5881,48 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public async Task<BusinessConsoleConfigureErpWorkCenterCostRateResponse> ConfigureWorkCenterCostRateAsync(
+        string internalBearerToken,
+        BusinessConsoleConfigureErpWorkCenterCostRateRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamConfigureWorkCenterCostRateResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/erp/finance/work-center-cost-rates",
+            request,
+            cancellationToken,
+            configureRequest: message =>
+                message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor));
+
+        if (!Guid.TryParse(response.WorkCenterCostRateId, out var workCenterCostRateId)
+            || workCenterCostRateId == Guid.Empty)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return new BusinessConsoleConfigureErpWorkCenterCostRateResponse(
+            workCenterCostRateId.ToString());
+    }
+
+    public Task<BusinessConsoleErpWorkCenterCostRateListResponse> ListWorkCenterCostRatesAsync(
+        string internalBearerToken,
+        BusinessConsoleListErpWorkCenterCostRatesRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpWorkCenterCostRateListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/finance/work-center-cost-rates?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("workCenterId", request.WorkCenterId),
+                ("atUtc", request.AtUtc)),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleErpJournalVoucherListResponse> ListJournalVouchersAsync(
         string internalBearerToken,
         BusinessConsoleErpListRequest request,
@@ -6168,6 +6257,9 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             ("take", request.Take));
 
     private sealed record DownstreamPurchaseOrderListResponse(IReadOnlyCollection<DownstreamPurchaseOrderItem> Items, int Total);
+
+    private sealed record DownstreamConfigureWorkCenterCostRateResponse(
+        string? WorkCenterCostRateId);
 
     private sealed record DownstreamPurchaseOrderItem(
         string PurchaseOrderNo,

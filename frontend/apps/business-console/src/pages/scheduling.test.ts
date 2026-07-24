@@ -11,10 +11,37 @@ vi.mock('vue-router', async (importOriginal) => ({
 }))
 
 vi.mock('@/composables/useOrderUrgency', () => ({
-  useOrderUrgencies: () => ({ byReference: { value: new Map() } }),
+  useOrderUrgencies: () => ({ byReference: { value: new Map() }, refresh: vi.fn() }),
 }))
 vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
-  default: { template: '<span data-testid="order-urgency">未计算</span>' },
+  default: {
+    props: ['orderReference', 'mode', 'urgency'],
+    template:
+      '<span data-testid="order-urgency" :data-ref="orderReference" :data-mode="mode">未计算</span>',
+  },
+}))
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    principal: {
+      permissionCodes: [
+        'business.scheduling.plans.read',
+        'business.scheduling.plans.manage',
+        'business.scheduling.plans.release',
+      ],
+    },
+  }),
+}))
+vi.mock('@/composables/useSchedulingWorkbench', () => ({
+  useSchedulingWorkbench: () => ({
+    candidatesPending: shallowRef(false),
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
+    generatePending: shallowRef(false),
+    generatePlan: vi.fn(),
+    refreshCandidates: vi.fn(),
+    revisionPending: shallowRef(false),
+    revisePlan: vi.fn(),
+    schedulableCandidates: computed(() => []),
+  }),
 }))
 
 const stub = vi.hoisted(() => ({
@@ -172,6 +199,7 @@ const detail = computed(() => {
 vi.mock('@/composables/useBusinessScheduling', () => ({
   useBusinessScheduling: () => ({
     detailSelection,
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
     page: shallowRef(1),
     pageSize: shallowRef('100'),
     planDetail: detail,
@@ -272,6 +300,25 @@ describe('APS scheduling workbench page', () => {
     expect(wrapper.text()).toContain('2 项未排')
   })
 
+  it('exposes the complete leader-demo workbench loop from one route', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const workbenchTab = wrapper
+      .findAll('[role="tab"]')
+      .find((tab) => tab.text().includes('领导演示工作台'))!
+    await workbenchTab.trigger('focus')
+    await workbenchTab.trigger('mousedown')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('批量待排 → 编辑锁定 → 重预览 → 对比发布')
+    expect(wrapper.text()).toContain('待排工单池')
+    expect(wrapper.text()).toContain('排程草案工作区')
+    expect(wrapper.text()).toContain('工序待排池')
+    expect(wrapper.text()).toContain('锁定重预览')
+    expect(wrapper.text()).toContain('发布新版')
+  })
+
   it('uses a single-page table while the facade does not return a total count', async () => {
     const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
     await flushPromises()
@@ -342,6 +389,26 @@ describe('APS scheduling workbench page', () => {
 
     expect(stub.releasePlan).toHaveBeenCalledWith('plan-001')
     expect(stub.toastSuccess).toHaveBeenCalled()
+  })
+
+  it('maps the assignment order id into the shared urgency badge inside plan detail', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('明细'))!
+      .trigger('click')
+    await flushPromises()
+
+    expect(detailSelection.planId).toBe('plan-001')
+    const refs = wrapper
+      .findAll('[data-testid="order-urgency"]')
+      .map((badge) => badge.attributes('data-ref'))
+    // Assignment.orderId is the real reference fed to the shared badge.
+    expect(refs).toContain('WO-20260701-001')
+    expect(refs).toContain('WO-20260701-002')
+    expect(wrapper.get('[data-testid="order-urgency"]').attributes('data-mode')).toBe('level')
   })
 
   it('consumes the order reference route and opens the matching assignment in plan detail', async () => {

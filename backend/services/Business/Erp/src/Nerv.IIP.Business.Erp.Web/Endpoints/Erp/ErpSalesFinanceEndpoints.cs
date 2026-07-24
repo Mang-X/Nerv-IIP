@@ -547,6 +547,8 @@ public static class ErpFinanceEndpointContracts
 {
     public static readonly IReadOnlyCollection<ErpEndpointContract> All =
     [
+        new(typeof(ConfigureWorkCenterCostRateEndpoint), "POST", "/api/business/v1/erp/finance/work-center-cost-rates", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "configureErpWorkCenterCostRate"),
+        new(typeof(ListWorkCenterCostRatesEndpoint), "GET", "/api/business/v1/erp/finance/work-center-cost-rates", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpWorkCenterCostRates"),
         new(typeof(CreateAccountPayableEndpoint), "POST", "/api/business/v1/erp/finance/payables", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpAccountPayable"),
         new(typeof(CreateAccountReceivableEndpoint), "POST", "/api/business/v1/erp/finance/receivables", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpAccountReceivable"),
         new(typeof(CreateCostCandidateEndpoint), "POST", "/api/business/v1/erp/finance/cost-candidates", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpCostCandidate"),

@@ -141,6 +141,8 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/planning/suggestions/{suggestionId}/accept", "post", "acceptBusinessConsolePlanningSuggestion");
         AssertOperationId(paths, "/api/business-console/v1/scheduling/plans/preview", "post", "previewBusinessConsoleSchedulingPlan");
         AssertOperationId(paths, "/api/business-console/v1/scheduling/plans", "post", "createBusinessConsoleSchedulingPlan");
+        AssertOperationId(paths, "/api/business-console/v1/scheduling/workbench/plans", "post", "createBusinessConsoleSchedulingWorkbenchPlan");
+        AssertOperationId(paths, "/api/business-console/v1/scheduling/plans/{planId}/revisions", "post", "createBusinessConsoleSchedulingPlanRevision");
         AssertOperationId(paths, "/api/business-console/v1/scheduling/plans", "get", "listBusinessConsoleSchedulingPlans");
         AssertOperationId(paths, "/api/business-console/v1/scheduling/plans/{planId}", "get", "getBusinessConsoleSchedulingPlan");
         AssertOperationId(paths, "/api/business-console/v1/scheduling/plans/{planId}/gantt", "get", "getBusinessConsoleSchedulingPlanGantt");
@@ -226,6 +228,14 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/receivables", "get", "listBusinessConsoleErpReceivables");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/cost-candidates", "post", "createBusinessConsoleErpCostCandidate");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/cost-candidates", "get", "listBusinessConsoleErpCostCandidates");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-cost-rates", "post", "configureBusinessConsoleErpWorkCenterCostRate");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-cost-rates", "get", "listBusinessConsoleErpWorkCenterCostRates");
+        AssertRequiredBodyProperty(
+            document,
+            paths,
+            "/api/business-console/v1/erp/finance/work-center-cost-rates",
+            "post",
+            "effectiveFromUtc");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/vouchers", "post", "postBusinessConsoleErpJournalVoucher");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/payment-executions", "post", "approveBusinessConsoleErpPaymentExecution");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/payment-executions/{paymentExecutionNo}/execute", "post", "executeBusinessConsoleErpPaymentExecution");
@@ -610,6 +620,21 @@ public sealed class BusinessGatewayOpenApiTests
         var schema = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty(schemaName);
         Assert.Contains(propertyName, schema.GetProperty("required").EnumerateArray().Select(x => x.GetString()));
         Assert.Equal(maxLength, schema.GetProperty("properties").GetProperty(propertyName).GetProperty("maxLength").GetInt32());
+    }
+
+    private static void AssertRequiredBodyProperty(
+        JsonDocument document,
+        JsonElement paths,
+        string path,
+        string method,
+        string propertyName)
+    {
+        var operation = paths.GetProperty(path).GetProperty(method);
+        var schemaRef = operation.GetProperty("requestBody").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!;
+        var schemaName = schemaRef.Split('/')[^1];
+        var schema = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty(schemaName);
+        Assert.Contains(propertyName, schema.GetProperty("required").EnumerateArray().Select(x => x.GetString()));
     }
 
     [Fact]

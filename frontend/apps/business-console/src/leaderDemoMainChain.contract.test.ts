@@ -30,6 +30,61 @@ function expectScopedQuery(source: string, endpoint: string): void {
 }
 
 describe('leader demo main-chain public prerequisites', () => {
+  it('retries an idempotent create once after a server error and audits both attempts', () => {
+    const createFlow = sourceBetween(
+      'const create = async (path: string, body: JsonRecord) => {',
+      'let prerequisitesReady = true',
+    )
+    const costRateFlow = sourceBetween('const workCenterCostRatePath =', 'const configuredRateId =')
+
+    expect(createFlow).toContain('const idempotencyKey = textOf(body.idempotencyKey).trim()')
+    expect(createFlow.match(/call\('POST', path, body\)/g)).toHaveLength(2)
+    expect(createFlow).toContain(
+      'if (!(error instanceof PublicCallError) || error.status < 500 || !idempotencyKey)',
+    )
+    expect(createFlow).toContain('await page.waitForTimeout(1_000)')
+    expect(createFlow).toContain('attempt: 1')
+    expect(createFlow).toContain("outcome: 'server-error'")
+    expect(createFlow).toContain('request: error.request')
+    expect(createFlow).toContain('status: error.status')
+    expect(createFlow).toContain('payload: publicJson(error.payload)')
+    expect(createFlow).toContain('attempt: 2')
+    expect(createFlow).toContain("outcome: 'success'")
+    expect(createFlow).toContain('request: replay.summary')
+    expect(createFlow).toContain('response: replay.publicPayload')
+    expect(createFlow).toContain('idempotencyKey')
+    expect(costRateFlow).toContain(
+      "const configuredRate = await call('POST', workCenterCostRatePath",
+    )
+    expect(costRateFlow).not.toContain('create(workCenterCostRatePath')
+  })
+
+  it('audits replay HTTP and non-HTTP failures before identity-preserving rethrow', () => {
+    const createFlow = sourceBetween(
+      'const create = async (path: string, body: JsonRecord) => {',
+      'let prerequisitesReady = true',
+    )
+
+    expect(createFlow.match(/call\('POST', path, body\)/g)).toHaveLength(2)
+    expect(createFlow).toContain('catch (replayError)')
+    expect(createFlow).toContain('replayError instanceof PublicCallError')
+    expect(createFlow).toContain(
+      "outcome: replayError.status >= 500 ? 'server-error' : 'client-error'",
+    )
+    expect(createFlow).toContain('request: replayError.request')
+    expect(createFlow).toContain('status: replayError.status')
+    expect(createFlow).toContain('payload: publicJson(replayError.payload)')
+    expect(createFlow).toContain("retry: { idempotencyKey, attempt: 2, outcome: 'non-http-error' }")
+    expect(createFlow).toContain('request: null')
+    expect(createFlow).toContain(
+      'errorType: replayError instanceof Error ? replayError.name : typeof replayError',
+    )
+    expect(createFlow).toContain(
+      'error: safeText(replayError instanceof Error ? replayError.message : replayError)',
+    )
+    expect(createFlow).toContain('throw replayError')
+  })
+
   it('establishes raw material through public ERP, approval, WMS, and Inventory facts', () => {
     const supplyFlow = sourceBetween(
       "const approvalTemplateCode = 'erp-purchase-order-release'",
@@ -122,6 +177,16 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(acceptedWorkOrderFlow).toContain('idempotencyKey: `release-wo-${suffix}`')
   })
 
+  it('keeps the five-minute costing basis free of setup-time inflation', () => {
+    const standardOperation = sourceBetween(
+      "await create('/api/business-console/v1/engineering/standard-operations'",
+      "await create('/api/business-console/v1/engineering/engineering-boms/release'",
+    )
+
+    expect(standardOperation).toContain('standardSetupMinutes: 0')
+    expect(standardOperation).toContain('standardRunMinutes: operationDurationMinutes')
+  })
+
   it('maps the run-scoped work center to a real device asset with fresh availability before scheduling', () => {
     const equipmentFlow = sourceBetween("let deviceAssetId = ''", "let productionReportId = ''")
     const registerIndex = equipmentFlow.indexOf(
@@ -168,12 +233,54 @@ describe('leader demo main-chain public prerequisites', () => {
     )
     expectScopedQuery(productionFlow, '/mes/operation-tasks/${encodeURIComponent(taskId)}/start`')
     expect(productionFlow).toContain('idempotencyKey: `start-task-${suffix}`')
+    expect(productionFlow).toContain("queryPath('/api/business-console/v1/mes/work-orders'")
+    expect(productionFlow).toContain('Number(costBasisWorkOrder.quantity ?? 0)')
+    expect(productionFlow).toContain('durationTicks / ticksPerHour')
+    expect(productionFlow).toContain('theoreticalRatePerHour !== expectedTheoreticalRatePerHour')
+    expect(productionFlow).toContain('expectedLaborCost !== finishedGoodsCapitalizedCost')
+  })
+
+  it('configures and audits the run-scoped ERP work-center cost rate before production reporting', () => {
+    const costFlow = sourceBetween('const workCenterCostRatePath =', "let productionReportId = ''")
+    const configureIndex = scenarioSource.indexOf('const workCenterCostRatePath =')
+    const workCenterIndex = scenarioSource.indexOf(
+      "await create('/api/business-console/v1/master-data/work-centers'",
+    )
+    const productionReportIndex = scenarioSource.indexOf(
+      "'/api/business-console/v1/mes/production-reports'",
+    )
+
+    expect(configureIndex).toBeGreaterThan(workCenterIndex)
+    expect(productionReportIndex).toBeGreaterThan(configureIndex)
+    expect(costFlow).toContain("'/api/business-console/v1/erp/finance/work-center-cost-rates'")
+    expect(costFlow).toContain('hourlyRate: workCenterHourlyRate')
+    expect(costFlow).toContain("currencyCode: 'CNY'")
+    expect(costFlow).toContain('effectiveFromUtc: rateEffectiveFromUtc.toISOString()')
+    expect(costFlow).toContain('effectiveToUtc: rateEffectiveToUtc.toISOString()')
+    expect(costFlow).toContain('reason: workCenterCostRateReason')
+    expect(costFlow).toContain('const rateAuditCall = await call(')
+    expect(costFlow).toContain("'GET',")
+    expect(costFlow).toContain('workCenterId: workCenterCode')
+    expect(costFlow).toContain('atUtc: rateAuditAtUtc.toISOString()')
+    expect(costFlow).toContain('rateAudit.currentEffectiveRevision === 1')
+    expect(costFlow).toContain('textOf(currentRate.changedBy) === expectedRateActor')
+    expect(costFlow).toContain('currentRate.isEffectiveAtUtc === true')
+    expect(costFlow).toContain('currentRate.isCurrentEffectiveRevision === true')
+    expect(costFlow).toContain("node: 'erp-work-center-cost-rate'")
   })
 
   it('polls exact finished-goods Inventory availability with a bounded public wait', () => {
     const receiptFlow = sourceBetween("let receiptRequestNo = ''", "let wmsOutboundId = ''")
+    const finishedGoodsReceiptRequest = sourceBetween(
+      'const receipt = await call(',
+      'receiptRequestNo =',
+    )
+    const availabilityCall = sourceBetween(
+      'const availability = await pollData(',
+      "node: 'finished-goods-receipt-inventory-posting'",
+    )
 
-    expect(receiptFlow).toContain('unitCost: finishedGoodsUnitCost')
+    expect(finishedGoodsReceiptRequest).not.toMatch(/\bunitCost\s*:/)
     expect(receiptFlow).toContain('const availability = await pollData(')
     expect(receiptFlow).toContain("'/api/business-console/v1/inventory/availability'")
     expect(receiptFlow).toContain('skuCode: finishedSku')
@@ -181,6 +288,8 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(receiptFlow).toContain('locationCode: finishedGoodsLocationCode')
     expect(receiptFlow).toContain('lotNo: producedLotNo')
     expect(receiptFlow).toContain('(data) => Number(data.onHandQuantity ?? 0) > 0')
+    expect(scenarioSource).toContain('const costingConvergenceTimeoutMs = 360_000')
+    expect(availabilityCall).toContain('costingConvergenceTimeoutMs')
     expect(receiptFlow).toContain('poll: availability.poll')
     expect(receiptFlow).not.toMatch(/\(\s*\)\s*=>\s*false/)
     expect(receiptFlow).not.toMatch(/pollRows\([\s\S]*?producedLotNo[\s\S]*?,\s*1,?\s*\)/)
@@ -203,6 +312,21 @@ describe('leader demo main-chain public prerequisites', () => {
     )
     expect(failureFlow).toContain('lastData: publicJson(pollFailure.lastData)')
     expect(failureFlow).toContain('poll: pollFailure.poll')
+  })
+
+  it('preserves audit metadata for bounded row polling success and timeout', () => {
+    const rowPollingFlow = sourceBetween('const pollRows = async (', 'const pollData = async (')
+
+    expect(rowPollingFlow).toContain('const startedAt = Date.now()')
+    expect(rowPollingFlow).toContain('let attempts = 0')
+    expect(rowPollingFlow).toContain('let lastRequest: JsonRecord | null = null')
+    expect(rowPollingFlow).toContain('attempts += 1')
+    expect(rowPollingFlow).toContain('lastRequest = response.summary')
+    expect(rowPollingFlow).toContain(
+      'poll: { attempts, elapsedMs: Date.now() - startedAt, timeoutMs }',
+    )
+    expect(rowPollingFlow).toContain('throw new PollTimeoutError(')
+    expect(rowPollingFlow).toContain('{ items: lastRows }')
   })
 
   it('retries a transient 404 within the polling budget and preserves its public evidence', () => {
@@ -257,6 +381,14 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(receiptFlow).toContain('textOf(link.sourceDocumentLineId) === workOrderId')
     expect(receiptFlow).toContain('const sourceMovement = movements.find(')
     expect(receiptFlow).toContain('const sourceBalance = balances.find(')
+    expect(receiptFlow).toContain('const capitalizedReceipt = await pollRows(')
+    expect(receiptFlow).toContain('Number(row.unitCost ?? 0) === finishedGoodsUnitCost')
+    const capitalizedReceiptCall = sourceBetween(
+      'const capitalizedReceipt = await pollRows(',
+      'const terminalStatuses =',
+    )
+    expect(capitalizedReceiptCall).toContain('costingConvergenceTimeoutMs')
+    expect(receiptFlow).toContain('Number(movement.quantity ?? 0) === finishedGoodsQuantity')
     expect(receiptFlow).toContain('Number(balance.ledgerVersion ?? 0) > 0')
     expect(receiptFlow).toContain("node: 'inventory-produced-lot-fulfillment-lookup'")
     expect(receiptFlow).toContain('poll: inventoryLink.poll')
@@ -266,6 +398,11 @@ describe('leader demo main-chain public prerequisites', () => {
     )
     expect(inventoryLinkEvidence).toContain("automationMode: 'automatic'")
     expect(inventoryLinkEvidence).toContain('responsibilityIssue: null')
+    expect(inventoryLinkEvidence).toContain('capitalizedReceiptPoll: capitalizedReceipt.poll')
+    expect(inventoryLinkEvidence).toContain('report labor accumulation')
+    expect(inventoryLinkEvidence).toContain('ERP capitalization')
+    expect(inventoryLinkEvidence).toContain('MES unit cost')
+    expect(inventoryLinkEvidence).toContain('Inventory posting')
     expect(receiptFlow).not.toContain("responsibilityIssue: '#972 / MAN-528 (demo:defer)'")
     expect(finalAcceptance).toContain("entry.conclusion !== 'runtime-confirmed'")
     expect(finalAcceptance).not.toContain(

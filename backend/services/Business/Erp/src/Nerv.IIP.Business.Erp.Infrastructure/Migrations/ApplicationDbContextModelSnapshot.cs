@@ -3108,6 +3108,36 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Work-center cost-rate id.");
 
+                    b.Property<DateTimeOffset>("ChangedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("changed_at_utc")
+                        .HasComment("UTC audit instant at which this revision was configured.");
+
+                    b.Property<string>("ChangedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("changed_by")
+                        .HasComment("Canonical authenticated actor that configured this revision.");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("currency_code")
+                        .IsFixedLength()
+                        .HasComment("Normalized ISO-style three-letter uppercase currency code.");
+
+                    b.Property<DateTimeOffset>("EffectiveFromUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_from_utc")
+                        .HasComment("Inclusive UTC instant from which this revision may apply.");
+
+                    b.Property<DateTimeOffset?>("EffectiveToUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_to_utc")
+                        .HasComment("Optional exclusive UTC instant after which this revision no longer applies.");
+
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -3119,7 +3149,7 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("hourly_rate")
-                        .HasComment("Actual labor rate per hour in local currency.");
+                        .HasComment("Positive actual labor rate per hour.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
@@ -3127,6 +3157,18 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization boundary.");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason")
+                        .HasComment("Non-empty business reason for this immutable revision.");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer")
+                        .HasColumnName("revision")
+                        .HasComment("Monotonically increasing revision within organization, environment, and work center.");
 
                     b.Property<string>("WorkCenterId")
                         .IsRequired()
@@ -3137,12 +3179,16 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkCenterId")
-                        .IsUnique();
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkCenterId", "Revision")
+                        .IsUnique()
+                        .HasDatabaseName("ux_work_center_cost_rates_scope_revision");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkCenterId", "EffectiveFromUtc", "EffectiveToUtc", "Revision")
+                        .HasDatabaseName("ix_work_center_cost_rates_effective_lookup");
 
                     b.ToTable("work_center_cost_rates", "erp", t =>
                         {
-                            t.HasComment("ERP phase-one actual labor hourly rates by work center.");
+                            t.HasComment("ERP append-only, effective-dated labor hourly-rate revision history by work center.");
                         });
                 });
 

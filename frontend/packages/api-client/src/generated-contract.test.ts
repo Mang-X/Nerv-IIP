@@ -13,6 +13,7 @@ import type {
   BusinessConsoleConnectorTagCoverageResponse,
   BusinessConsoleCreateErpPurchaseRequisitionEnvelope,
   BusinessConsoleCreateErpPurchaseRequisitionResponse,
+  BusinessConsoleConfigureErpWorkCenterCostRateRequest,
   BusinessConsoleCreateOrUpdateForecastInputRequest,
   BusinessConsoleErpCostCandidateSourceDocumentEnvelope,
   BusinessConsoleErpCostCandidateSourceDocumentResponse,
@@ -152,6 +153,14 @@ import {
 } from './iam'
 
 describe('generated API client contract', () => {
+  it('requires the governed ERP work-center cost-rate effective start', () => {
+    expectTypeOf<
+      {} extends Pick<BusinessConsoleConfigureErpWorkCenterCostRateRequest, 'effectiveFromUtc'>
+        ? true
+        : false
+    >().toEqualTypeOf<false>()
+  })
+
   it('exposes WMS receiving shelf-life fields through the stable boundary', () => {
     expectTypeOf<
       Pick<BusinessConsoleWmsInboundLineInput, 'productionDate' | 'expiryDate'>
