@@ -579,7 +579,7 @@ public sealed class CompleteOutboundOrderCommandHandler(
     {
         var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.OutboundOrderId, cancellationToken)
             ?? throw new KnownException($"Outbound order was not found: {request.OutboundOrderId}");
-        if (outbound.Status == OutboundOrderStatus.Completed)
+        if (outbound.Status is OutboundOrderStatus.Completed or OutboundOrderStatus.InventoryPostingPending)
         {
             var existingRequest = await dbContext.InventoryMovementRequests
                 .Where(x => x.OrganizationId == outbound.OrganizationId
@@ -990,6 +990,40 @@ public sealed class MarkInventoryMovementRequestPostedCommandHandler(Application
         }
 
         movementRequest.MarkPosted(request.InventoryMovementId);
+        if (!string.Equals(request.MovementType, "outbound", StringComparison.Ordinal)
+            || movementRequest.SourceDocumentLineId is null)
+        {
+            return;
+        }
+
+        var outbound = await dbContext.OutboundOrders
+            .Include(x => x.Lines)
+            .SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.OutboundOrderNo == request.SourceDocumentId,
+                cancellationToken);
+        if (outbound is null || outbound.Status != OutboundOrderStatus.InventoryPostingPending)
+        {
+            return;
+        }
+
+        outbound.RecordInventoryPostingProgress();
+        var postingRequests = await dbContext.InventoryMovementRequests
+            .Where(x => x.OrganizationId == outbound.OrganizationId
+                && x.EnvironmentId == outbound.EnvironmentId
+                && x.MovementType == "outbound"
+                && x.SourceDocumentId == outbound.OutboundOrderNo)
+            .ToArrayAsync(cancellationToken);
+        var latestRequestsByLine = InventoryMovementRequestAttempts.LatestByLine(postingRequests);
+        var postedLines = outbound.Lines.Where(x => x.IssuedQuantity > 0).ToArray();
+        if (postedLines.Length > 0
+            && postedLines.All(line =>
+                latestRequestsByLine.TryGetValue(line.LineNo, out var latestRequest)
+                && latestRequest.Status == InventoryMovementRequestStatus.Posted))
+        {
+            outbound.MarkInventoryPostingCompleted();
+        }
     }
 }
 

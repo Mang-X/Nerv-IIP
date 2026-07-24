@@ -37,7 +37,9 @@ public sealed class WmsOutboundOrderRequestedConsumerTests
         Assert.Equal(4m, line.RequestedQuantity);
         Assert.Equal("LOC-A-01", line.PickLocationCode);
         Assert.Equal("LOT-001", line.LotNo);
-        Assert.Equal("customer-001", line.OwnerId);
+        Assert.Equal("unrestricted", line.QualityStatus);
+        Assert.Equal("production", line.OwnerType);
+        Assert.Null(line.OwnerId);
     }
 
     [Fact]
@@ -75,9 +77,32 @@ public sealed class WmsOutboundOrderRequestedConsumerTests
         Assert.False(await assertionContext.OutboundOrders.AnyAsync(CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Outbound_order_requested_consumer_dead_letters_missing_site_without_retry_exception()
+    {
+        var databaseName = $"wms-outbound-order-missing-site-{Guid.CreateVersion7():N}";
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new WmsOutboundOrderRequestedIntegrationEventHandler(
+            new CommandExecutingSender(databaseName),
+            deadLetters);
+
+        var exception = await Record.ExceptionAsync(
+            () => handler.HandleAsync(CreateRequestedEvent(siteCode: null), CancellationToken.None));
+
+        Assert.Null(exception);
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            WmsOutboundOrderRequestedIntegrationEventHandler.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("missing-payload-field", deadLetter.FailureCode);
+        await using var assertionContext = CreateContext(databaseName);
+        Assert.False(await assertionContext.OutboundOrders.AnyAsync(CancellationToken.None));
+    }
+
     private static WmsOutboundOrderRequestedIntegrationEvent CreateRequestedEvent(
         string sourceService = WmsIntegrationEventSources.BusinessErp,
-        int lineCount = 1)
+        int lineCount = 1,
+        string? siteCode = "SITE-01")
     {
         var lines = new List<WmsOutboundOrderRequestedLine>
         {
@@ -116,7 +141,7 @@ public sealed class WmsOutboundOrderRequestedConsumerTests
                 "DO-001",
                 "SO-001",
                 "customer-001",
-                "SITE-01",
+                siteCode!,
                 lines));
     }
 

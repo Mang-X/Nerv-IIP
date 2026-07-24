@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.BackorderOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
@@ -178,7 +179,33 @@ public sealed record ListOutboundOrdersQuery(
 
 public sealed record ListOutboundOrdersResponse(IReadOnlyCollection<OutboundOrderListItem> Items, int Total);
 
-public sealed record OutboundOrderListItem(OutboundOrderId OutboundOrderId, string OutboundOrderNo, string Status, DateTime CreatedAtUtc);
+public sealed record OutboundOrderListItem(
+    OutboundOrderId OutboundOrderId,
+    string OutboundOrderNo,
+    string Status,
+    string SiteCode,
+    string InventoryPostingStatus,
+    string? FailureCode,
+    string? FailureMessage,
+    IReadOnlyCollection<OutboundOrderLineListItem> Lines,
+    DateTime CreatedAtUtc,
+    DateTime? CompletedAtUtc);
+
+public sealed record OutboundOrderLineListItem(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal RequestedQuantity,
+    decimal IssuedQuantity,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId,
+    string InventoryPostingStatus,
+    string? FailureCode,
+    string? FailureMessage);
 
 public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListOutboundOrdersQuery, ListOutboundOrdersResponse>
@@ -207,14 +234,130 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
         }
 
         var total = await query.CountAsync(cancellationToken);
-        var items = await query
+        var rows = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenByDescending(x => x.OutboundOrderNo)
             .Skip(skip)
             .Take(take)
-            .Select(x => new OutboundOrderListItem(x.Id, x.OutboundOrderNo, x.Status.ToString(), x.CreatedAtUtc))
+            .Select(x => new
+            {
+                x.Id,
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.OutboundOrderNo,
+                Status = x.Status.ToString(),
+                x.SiteCode,
+                x.CreatedAtUtc,
+                x.CompletedAtUtc,
+                Lines = x.Lines
+                    .OrderBy(line => line.LineNo)
+                    .Select(line => new
+                    {
+                        line.LineNo,
+                        line.SkuCode,
+                        line.UomCode,
+                        line.RequestedQuantity,
+                        line.IssuedQuantity,
+                        LocationCode = line.PickLocationCode,
+                        line.LotNo,
+                        line.SerialNo,
+                        line.QualityStatus,
+                        line.OwnerType,
+                        line.OwnerId,
+                    })
+                    .ToArray(),
+            })
             .ToArrayAsync(cancellationToken);
+        var orderNos = rows.Select(x => x.OutboundOrderNo).Distinct(StringComparer.Ordinal).ToArray();
+        var postingRequests = orderNos.Length == 0
+            ? []
+            : await dbContext.InventoryMovementRequests
+                .AsNoTracking()
+                .Where(x => x.MovementType == "outbound" && orderNos.Contains(x.SourceDocumentId))
+                .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
+                .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+                .ToArrayAsync(cancellationToken);
+        var latestRequests = postingRequests
+            .GroupBy(x => (x.OrganizationId, x.EnvironmentId, x.SourceDocumentId))
+            .SelectMany(document => InventoryMovementRequestAttempts.LatestByLine(document)
+                .Select(line => new
+                {
+                    Key = (document.Key.OrganizationId, document.Key.EnvironmentId, document.Key.SourceDocumentId, LineNo: line.Key),
+                    Request = line.Value,
+                }))
+            .ToDictionary(
+                x => x.Key,
+                x => x.Request);
+        var items = rows.Select(row =>
+        {
+            var lineItems = row.Lines.Select(line =>
+            {
+                latestRequests.TryGetValue(
+                    (row.OrganizationId, row.EnvironmentId, row.OutboundOrderNo, line.LineNo),
+                    out var latestRequest);
+                return new OutboundOrderLineListItem(
+                    line.LineNo,
+                    line.SkuCode,
+                    line.UomCode,
+                    line.RequestedQuantity,
+                    line.IssuedQuantity,
+                    line.LocationCode,
+                    line.LotNo,
+                    line.SerialNo,
+                    line.QualityStatus,
+                    line.OwnerType,
+                    line.OwnerId,
+                    PostingStatus(latestRequest),
+                    latestRequest?.FailureCode,
+                    latestRequest?.FailureMessage);
+            }).ToArray();
+            var failedLine = lineItems.FirstOrDefault(line => line.InventoryPostingStatus == "failed");
+            return new OutboundOrderListItem(
+                row.Id,
+                row.OutboundOrderNo,
+                row.Status,
+                row.SiteCode,
+                AggregatePostingStatus(lineItems, row.Status),
+                failedLine?.FailureCode,
+                failedLine?.FailureMessage,
+                lineItems,
+                row.CreatedAtUtc,
+                row.CompletedAtUtc);
+        }).ToArray();
         return new ListOutboundOrdersResponse(items, total);
+    }
+
+    private static string PostingStatus(InventoryMovementRequest? request) =>
+        request?.Status switch
+        {
+            InventoryMovementRequestStatus.Pending => "pending",
+            InventoryMovementRequestStatus.Posted => "posted",
+            InventoryMovementRequestStatus.Failed => "failed",
+            _ => "not-started",
+        };
+
+    private static string AggregatePostingStatus(
+        IReadOnlyCollection<OutboundOrderLineListItem> lines,
+        string orderStatus)
+    {
+        if (lines.Any(line => line.InventoryPostingStatus == "failed"))
+        {
+            return "failed";
+        }
+
+        if (lines.Any(line => line.InventoryPostingStatus == "pending"))
+        {
+            return "pending";
+        }
+
+        if (lines.Count > 0 && lines.All(line => line.InventoryPostingStatus == "posted"))
+        {
+            return "posted";
+        }
+
+        return string.Equals(orderStatus, OutboundOrderStatus.Completed.ToString(), StringComparison.Ordinal)
+            ? "posted"
+            : "not-started";
     }
 }
 

@@ -13,6 +13,8 @@ public sealed class WmsOutboundOrderRequestedIntegrationEventHandler(
     : IIntegrationEventHandler<WmsOutboundOrderRequestedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-wms.outbound-order-requested";
+    private const string ErpFinishedGoodsQualityStatus = "unrestricted";
+    private const string ErpFinishedGoodsOwnerType = "production";
 
     private readonly IntegrationEventConsumerGuard<WmsOutboundOrderRequestedIntegrationEvent> consumerGuard = new(
         new IntegrationEventEnvelopeValidator(),
@@ -41,7 +43,19 @@ public sealed class WmsOutboundOrderRequestedIntegrationEventHandler(
         }
 
         var payload = integrationEvent.Payload;
-        var siteCode = string.IsNullOrWhiteSpace(payload.SiteCode) ? "default" : payload.SiteCode.Trim();
+        if (string.IsNullOrWhiteSpace(payload.SiteCode))
+        {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    "missing-payload-field",
+                    "ERP outbound order request must contain the authoritative fulfillment site code."),
+                cancellationToken);
+            return;
+        }
+
+        var siteCode = payload.SiteCode.Trim();
         await sender.Send(
             new CreateOutboundOrderCommand(
                 integrationEvent.OrganizationId,
@@ -58,9 +72,11 @@ public sealed class WmsOutboundOrderRequestedIntegrationEventHandler(
                     x.LocationCode,
                     x.LotNo,
                     null,
-                    "qualified",
-                    "company",
-                    payload.CustomerCode)).ToArray()),
+                    // ERP delivery currently ships the same released finished-goods bucket created by MES receipt.
+                    // A future quality allocation policy must carry that dimension explicitly instead of falling back.
+                    ErpFinishedGoodsQualityStatus,
+                    ErpFinishedGoodsOwnerType,
+                    null)).ToArray()),
             cancellationToken);
     }
 }
