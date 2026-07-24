@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import type { Component, HTMLAttributes } from 'vue'
-import { computed, ref } from 'vue'
-import { ChevronRightIcon, MinusIcon, TrendingDownIcon, TrendingUpIcon } from '@lucide/vue'
+import { computed } from 'vue'
+import { MinusIcon, TrendingDownIcon, TrendingUpIcon } from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 import NvAreaChart from '../chart/NvAreaChart.vue'
 import NvCard from './NvCard.vue'
 import {
-  metricToneFill,
   metricToneText,
   metricToneTint,
   type NvMetricAction,
@@ -18,15 +17,21 @@ import {
   type NvMetricVariant,
   resolveDeltaTone,
 } from './metric'
-import { useMetricTooltip } from './useMetricTooltip'
+import MetricAlert from './parts/MetricAlert.vue'
+import MetricBars from './parts/MetricBars.vue'
+import MetricBreakdown from './parts/MetricBreakdown.vue'
+import MetricFacets from './parts/MetricFacets.vue'
+import MetricSparkline from './parts/MetricSparkline.vue'
+import MetricTarget from './parts/MetricTarget.vue'
 
 /**
  * Pro — the workhorse KPI card. A `variant` decides the structured bottom-zone
  * (icon / sparkline / target progress / status breakdown / mini bars / alert /
  * dimension facets) so the space below the headline carries actionable data —
- * a trend, a gap-to-target, a state split — never filler prose. Tone classes
- * mirror NvStatusBadge; numbers render tabular-nums; inline vizzes get a
- * cursor-following tooltip (the sparkline reuses NvAreaChart's native crosshair).
+ * a trend, a gap-to-target, a state split — never filler prose. This shell owns
+ * the shared header (label / value / delta chip / status) and the container
+ * degrade; each bottom-zone is a co-located internal part under `./parts/`, so
+ * changing one variant's geometry or interaction can't ripple into the others.
  */
 const props = withDefaults(
   defineProps<{
@@ -91,8 +96,6 @@ const emit = defineEmits<{
   (e: 'facet', facet: NvMetricFacet): void
 }>()
 
-const tip = useMetricTooltip()
-
 // --- delta chip -------------------------------------------------------------
 const deltaTone = computed<NvMetricTone>(() =>
   props.trend ? resolveDeltaTone(props.trend) : 'neutral',
@@ -104,78 +107,7 @@ const deltaIcon = computed(() => {
   return MinusIcon
 })
 
-// --- sparkline (reuses NvAreaChart engine) ----------------------------------
-const chartData = computed(() =>
-  (props.series ?? []).map((v, i) => ({ label: props.seriesLabels?.[i] ?? String(i), value: v })),
-)
-/**
- * Text equivalent of the trend — the sparkline exposes its points only through
- * unovis' mouse crosshair, so without this a keyboard / screen-reader user gets
- * nothing from the card's actionable bottom-zone. Mirrors `barsAriaLabel`.
- */
-const sparklineAriaLabel = computed(() => {
-  const unit = props.seriesUnit ?? ''
-  const points = (props.series ?? []).map(
-    (v, i) => `${props.seriesLabels?.[i] ?? i + 1}: ${v}${unit}`,
-  )
-  return `${props.label} 趋势，${points.length} 期：${points.join('；')}`
-})
-
-// --- mini bars --------------------------------------------------------------
-const barMax = computed(() => Math.max(1, ...(props.series ?? [])))
-function barHeight(v: number) {
-  return `${Math.max(6, Math.round((v / barMax.value) * 100))}%`
-}
-function barTone(i: number): NvMetricTone {
-  if (props.barTones?.[i]) return props.barTones[i]
-  return i === props.currentIndex ? 'brand' : 'neutral'
-}
-// Literal class strings on both sides — Tailwind only emits classes it can see
-// verbatim in source, so a tone+opacity pair must never be built by concatenation
-// (`bg-${tone}/70` silently produces an unstyled, invisible bar).
-const BAR_EMPHASIS: Record<NvMetricTone, string> = {
-  brand: 'bg-brand',
-  success: 'bg-success',
-  warning: 'bg-warning',
-  danger: 'bg-destructive',
-  neutral: 'bg-brand/30',
-}
-const BAR_QUIET: Record<NvMetricTone, string> = {
-  brand: 'bg-brand/70',
-  success: 'bg-success/70',
-  warning: 'bg-warning/70',
-  danger: 'bg-destructive/70',
-  neutral: 'bg-brand/30',
-}
-function barClass(i: number) {
-  // non-current bars sit at a lighter weight so the emphasised bar reads first
-  return (i === props.currentIndex ? BAR_EMPHASIS : BAR_QUIET)[barTone(i)]
-}
-/** Text equivalent of the bar series — the viz itself is pointer-only. */
-const barsAriaLabel = computed(() => {
-  const unit = props.seriesUnit ?? ''
-  const points = (props.series ?? []).map(
-    (v, i) => `${props.seriesLabels?.[i] ?? i + 1}: ${v}${unit}`,
-  )
-  return `${props.label}，${points.length} 期：${points.join('；')}`
-})
-
-// --- target progress --------------------------------------------------------
-const progressPct = computed(() => Math.max(0, Math.min(100, props.progress ?? 0)))
-const progressFill = computed(
-  () => metricToneFill[props.progressTone ?? (progressPct.value >= 100 ? 'success' : 'brand')],
-)
-const markerPct = computed(() => Math.max(0, Math.min(100, props.targetMarker ?? 100)))
-
-// --- breakdown --------------------------------------------------------------
-const segTotal = computed(() =>
-  Math.max(
-    1,
-    (props.segments ?? []).reduce((s, seg) => s + seg.value, 0),
-  ),
-)
-
-// --- alert shell ------------------------------------------------------------
+// --- alert shell + default-variant legacy sparkline -------------------------
 const alertShell = computed(() => {
   if (props.variant !== 'alert') return ''
   if (props.tone === 'danger') return 'border-destructive/30 bg-destructive/[0.04]'
@@ -187,46 +119,9 @@ const valueToneClass = computed(() =>
     ? metricToneText[props.tone]
     : '',
 )
-
-// --- viz tooltip builders ---------------------------------------------------
-function showPointTip(e: MouseEvent, i: number) {
-  const raw = props.series?.[i]
-  if (raw == null) return
-  tip.move(e, {
-    title: props.seriesLabels?.[i],
-    rows: [{ label: props.label, value: `${raw}${props.seriesUnit ?? ''}` }],
-  })
-}
-/** Hovered slice — drives the segment ↔ legend linked highlight. */
-const hoveredSeg = ref<number | null>(null)
-function showSegmentTip(e: MouseEvent, seg: NvMetricSegment, i: number) {
-  hoveredSeg.value = i
-  const pct = ((seg.value / segTotal.value) * 100).toFixed(1)
-  tip.move(e, {
-    rows: [
-      {
-        label: seg.label,
-        value: `${seg.value} · ${pct}%`,
-        swatchClass: metricToneFill[seg.tone ?? 'neutral'],
-      },
-    ],
-  })
-}
-function clearSegment() {
-  hoveredSeg.value = null
-  tip.hide()
-}
-/** Dim every slice but the pointed-at one (either bar or legend row). */
-function segDimmed(i: number) {
-  return hoveredSeg.value !== null && hoveredSeg.value !== i
-}
-function showTargetTip(e: MouseEvent) {
-  const rows = [{ label: props.label, value: `${props.value}${props.unit ?? ''}` }]
-  if (props.targetLabel)
-    rows.push({ label: '目标', value: props.targetLabel.replace(/^目标\s*/, '') })
-  rows.push({ label: '达成', value: `${progressPct.value.toFixed(1)}%` })
-  tip.move(e, { rows })
-}
+const defaultChartData = computed(() =>
+  (props.series ?? []).map((v, i) => ({ label: props.seriesLabels?.[i] ?? String(i), value: v })),
+)
 </script>
 
 <template>
@@ -269,7 +164,7 @@ function showTargetTip(e: MouseEvent) {
       </span>
     </div>
 
-    <!-- all other variants: vertical, shared header -->
+    <!-- all other variants: vertical, shared header + a bottom-zone part -->
     <template v-else>
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0 flex-1">
@@ -319,221 +214,63 @@ function showTargetTip(e: MouseEvent) {
         </span>
       </div>
 
-      <!-- sparkline -->
-      <template v-if="variant === 'sparkline'">
-        <!-- role/aria give keyboard + SR users the trend the crosshair only
-             surfaces on hover, matching the bars variant's text equivalent -->
-        <div v-if="chartData.length > 1" role="img" :aria-label="sparklineAriaLabel" class="mt-4">
-          <NvAreaChart
-            minimal
-            crosshair
-            :data="chartData"
-            :height="46"
-            :value-suffix="seriesUnit ?? ''"
-          />
-        </div>
-        <div
-          v-if="footStart || footEnd"
-          class="mt-2 flex justify-between text-xs text-muted-foreground tabular-nums"
-        >
-          <span>{{ footStart }}</span
-          ><span>{{ footEnd }}</span>
-        </div>
-      </template>
-
-      <!-- target progress -->
-      <template v-else-if="variant === 'target'">
-        <div
-          class="nv-metric-bar relative mt-4 h-1.5 rounded-full bg-muted"
-          role="progressbar"
-          :aria-valuenow="progressPct"
-          aria-valuemin="0"
-          aria-valuemax="100"
-          :aria-label="label"
-          :aria-valuetext="`${value}${unit ?? ''}${targetLabel ? ` / ${targetLabel}` : ''}，达成 ${progressPct.toFixed(1)}%`"
-          @mousemove="showTargetTip"
-          @mouseleave="tip.hide"
-        >
-          <div
-            :class="cn('h-full rounded-full', progressFill)"
-            :style="{ width: `${progressPct}%` }"
-          />
-          <span
-            class="absolute -top-1 bottom-[-4px] w-0.5 rounded-full bg-foreground/55"
-            :style="{ left: `calc(${markerPct}% - 1px)` }"
-            aria-hidden="true"
-          />
-        </div>
-        <div
-          v-if="footStart || footEnd"
-          class="mt-2.5 flex justify-between text-xs text-muted-foreground tabular-nums"
-        >
-          <span>{{ footStart }}</span
-          ><span>{{ footEnd }}</span>
-        </div>
-      </template>
-
-      <!-- breakdown -->
-      <template v-else-if="variant === 'breakdown'">
-        <div class="mt-4 flex h-1.5 gap-0.5">
-          <span
-            v-for="(seg, i) in segments"
-            :key="seg.key ?? i"
-            :class="
-              cn(
-                'nv-metric-slice block rounded-sm first:rounded-l-full last:rounded-r-full',
-                metricToneFill[seg.tone ?? 'neutral'],
-                segDimmed(i) && 'nv-metric-dim',
-              )
-            "
-            :style="{ flex: seg.value }"
-            @mousemove="(e) => showSegmentTip(e, seg, i)"
-            @mouseleave="clearSegment"
-          />
-        </div>
-        <ul class="mt-3 flex flex-wrap gap-x-3.5 gap-y-1.5">
-          <li
-            v-for="(seg, i) in segments"
-            :key="seg.key ?? i"
-            :class="
-              cn(
-                'nv-metric-slice inline-flex items-center gap-1.5 text-xs text-muted-foreground',
-                segDimmed(i) && 'nv-metric-dim',
-              )
-            "
-            @mousemove="(e) => showSegmentTip(e, seg, i)"
-            @mouseleave="clearSegment"
-          >
-            <span
-              :class="cn('size-2 flex-none rounded-sm', metricToneFill[seg.tone ?? 'neutral'])"
-            />
-            {{ seg.label }}
-            <b class="font-semibold text-foreground tabular-nums">{{ seg.value }}</b>
-          </li>
-        </ul>
-      </template>
-
-      <!-- mini bars -->
-      <template v-else-if="variant === 'bars'">
-        <div
-          class="nv-metric-bars mt-4 flex h-[46px] items-end gap-1"
-          role="img"
-          :aria-label="barsAriaLabel"
-        >
-          <span
-            v-for="(v, i) in series"
-            :key="i"
-            :class="cn('min-h-1 flex-1 rounded-t-sm', barClass(i))"
-            :style="{ height: barHeight(v) }"
-            aria-hidden="true"
-            @mousemove="(e) => showPointTip(e, i)"
-            @mouseleave="tip.hide"
-          />
-        </div>
-        <div
-          v-if="footStart || footEnd"
-          class="mt-1.5 flex justify-between text-[11px] text-muted-foreground tabular-nums"
-        >
-          <span>{{ footStart }}</span
-          ><span>{{ footEnd }}</span>
-        </div>
-      </template>
-
-      <!-- facets -->
-      <template v-else-if="variant === 'facets'">
-        <div class="mt-4 flex flex-wrap gap-1.5">
-          <button
-            v-for="(f, i) in facets"
-            :key="f.key ?? i"
-            type="button"
-            :class="
-              cn(
-                'nv-metric-facet inline-flex items-baseline gap-1.5 rounded-md px-2 py-1 text-xs',
-                f.tone && f.tone !== 'neutral'
-                  ? metricToneTint[f.tone]
-                  : 'bg-muted text-muted-foreground',
-              )
-            "
-            @click="emit('facet', f)"
-          >
-            {{ f.label }}
-            <b
-              class="font-semibold tabular-nums"
-              :class="f.tone && f.tone !== 'neutral' ? '' : 'text-foreground'"
-              >{{ f.value }}</b
-            >
-          </button>
-        </div>
-      </template>
-
-      <!-- alert -->
-      <template v-else-if="variant === 'alert'">
-        <div
-          v-if="footStart || action"
-          class="mt-3 flex items-center justify-between gap-3 border-t border-border/60 pt-2.5 text-xs text-muted-foreground"
-        >
-          <span class="line-clamp-2 min-w-0">{{ footStart }}</span>
-          <a
-            v-if="action?.href"
-            :href="action.href"
-            class="nv-metric-action inline-flex shrink-0 items-center gap-0.5 font-semibold text-brand-strong"
-          >
-            {{ action.label }}<ChevronRightIcon class="size-3.5" aria-hidden="true" />
-          </a>
-          <button
-            v-else-if="action"
-            type="button"
-            class="nv-metric-action inline-flex shrink-0 items-center gap-0.5 font-semibold text-brand-strong"
-            @click="emit('action')"
-          >
-            {{ action.label }}<ChevronRightIcon class="size-3.5" aria-hidden="true" />
-          </button>
-        </div>
-      </template>
+      <MetricSparkline
+        v-if="variant === 'sparkline'"
+        :label="label"
+        :series="series"
+        :series-labels="seriesLabels"
+        :series-unit="seriesUnit"
+        :foot-start="footStart"
+        :foot-end="footEnd"
+      />
+      <MetricTarget
+        v-else-if="variant === 'target'"
+        :label="label"
+        :value="value"
+        :unit="unit"
+        :target-label="targetLabel"
+        :progress="progress"
+        :target-marker="targetMarker"
+        :progress-tone="progressTone"
+        :foot-start="footStart"
+        :foot-end="footEnd"
+      />
+      <MetricBreakdown v-else-if="variant === 'breakdown'" :segments="segments" />
+      <MetricBars
+        v-else-if="variant === 'bars'"
+        :label="label"
+        :series="series"
+        :series-labels="seriesLabels"
+        :series-unit="seriesUnit"
+        :current-index="currentIndex"
+        :bar-tones="barTones"
+        :foot-start="footStart"
+        :foot-end="footEnd"
+      />
+      <MetricFacets
+        v-else-if="variant === 'facets'"
+        :facets="facets"
+        @facet="(f) => emit('facet', f)"
+      />
+      <MetricAlert
+        v-else-if="variant === 'alert'"
+        :foot-start="footStart"
+        :action="action"
+        @action="emit('action')"
+      />
 
       <!-- default (back-compat: optional sparkline + deprecated hint) -->
       <template v-else>
         <NvAreaChart
-          v-if="chartData.length > 1"
+          v-if="defaultChartData.length > 1"
           minimal
-          :data="chartData"
+          :data="defaultChartData"
           :height="46"
           class="mt-4"
         />
         <p v-if="hint" class="mt-3 text-xs text-muted-foreground">{{ hint }}</p>
       </template>
     </template>
-
-    <!-- shared cursor-following tooltip for the hand-drawn vizzes -->
-    <Teleport to="body">
-      <div
-        v-if="tip.data.value"
-        :ref="tip.setEl"
-        class="nv-metric-tip pointer-events-none fixed z-50 min-w-32 rounded-lg p-2.5 text-xs"
-        :style="{ left: `${tip.pos.value.left}px`, top: `${tip.pos.value.top}px` }"
-      >
-        <div
-          v-if="tip.data.value.title"
-          class="mb-1 text-[11px] text-muted-foreground tabular-nums"
-        >
-          {{ tip.data.value.title }}
-        </div>
-        <div
-          v-for="(row, i) in tip.data.value.rows"
-          :key="i"
-          class="flex items-baseline justify-between gap-4 tabular-nums"
-        >
-          <span class="inline-flex items-center text-muted-foreground">
-            <span
-              v-if="row.swatchClass"
-              :class="cn('mr-1.5 size-2 flex-none rounded-sm', row.swatchClass)"
-            />
-            {{ row.label }}
-          </span>
-          <b class="font-semibold text-foreground">{{ row.value }}</b>
-        </div>
-      </div>
-    </Teleport>
   </NvCard>
 </template>
 
@@ -565,73 +302,6 @@ function showTargetTip(e: MouseEvent) {
   @container (max-width: 152px) {
     .nv-metric-iconbox {
       display: none;
-    }
-  }
-
-  /* Same frosted readout surface the chart crosshair tooltips use (--nv-glass-*),
-     so a metric's micro-viz and a full chart read as one system. */
-  .nv-metric-tip {
-    color: var(--popover-foreground);
-    background: var(--nv-glass-bg);
-    border: 1px solid var(--nv-glass-border);
-    box-shadow: var(--nv-glass-shadow);
-    backdrop-filter: var(--nv-glass-filter);
-    -webkit-backdrop-filter: var(--nv-glass-filter);
-    transition: opacity var(--nv-duration-fast, 150ms) var(--nv-ease-out-quart, ease-out);
-  }
-  /* hover any bar → dim the rest so the pointed-at column reads first */
-  .nv-metric-bars > span {
-    transition: opacity var(--nv-duration-fast, 150ms) var(--nv-ease-out-quart, ease-out);
-  }
-  .nv-metric-bars:hover > span {
-    opacity: 0.4;
-  }
-  .nv-metric-bars > span:hover {
-    opacity: 1;
-  }
-  .nv-metric-action:hover {
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
-  .nv-metric-action:focus-visible {
-    outline: 2px solid var(--nv-brand);
-    outline-offset: 2px;
-    border-radius: 4px;
-  }
-  /* facet chips are buttons — every one needs the full default/hover/
-     focus-visible/active set (pc/product.md keyboard-reachability gate), toned
-     ones included. Hover/active use an inset box-shadow OVERLAY (not
-     background-color): the base fill is a Tailwind `bg-*` utility, whose layer
-     outranks nv-components, so a background rule here would be ignored — a
-     box-shadow tint (no utility touches it) wins and follows the radius.
-     `currentColor` carries the chip's own tone, so the overlay reads correctly
-     on neutral and on danger/warning alike. */
-  .nv-metric-facet {
-    transition: box-shadow var(--nv-duration-fast, 150ms) var(--nv-ease-out-quart, ease-out);
-  }
-  .nv-metric-facet:hover {
-    box-shadow: inset 0 0 0 100px color-mix(in oklch, currentColor 10%, transparent);
-  }
-  .nv-metric-facet:active {
-    box-shadow: inset 0 0 0 100px color-mix(in oklch, currentColor 18%, transparent);
-  }
-  .nv-metric-facet:focus-visible {
-    outline: 2px solid var(--nv-brand);
-    outline-offset: 2px;
-  }
-  /* segment ↔ legend linked highlight: pointing at either dims the other slices */
-  .nv-metric-slice {
-    transition: opacity var(--nv-duration-fast, 150ms) var(--nv-ease-out-quart, ease-out);
-  }
-  .nv-metric-dim {
-    opacity: 0.4;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .nv-metric-tip,
-    .nv-metric-bars > span,
-    .nv-metric-slice,
-    .nv-metric-facet {
-      transition: none;
     }
   }
 }

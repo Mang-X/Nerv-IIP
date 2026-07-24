@@ -55,3 +55,6 @@ export function useMetricTooltip() {
 
   return { el, data, pos, move, hide, setEl }
 }
+
+/** The shape returned by {@link useMetricTooltip} — for the shared tip panel prop. */
+export type UseMetricTooltip = ReturnType<typeof useMetricTooltip>
