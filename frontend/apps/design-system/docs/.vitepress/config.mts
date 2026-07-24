@@ -130,6 +130,7 @@ export default defineConfig({
             { text: 'Button 按钮', link: '/components/desktop/button' },
             { text: 'Badge 徽标', link: '/components/desktop/badge' },
             { text: 'Card 卡片', link: '/components/desktop/card' },
+            { text: 'MetricCard 指标卡', link: '/components/desktop/metric' },
           ],
         },
         {
