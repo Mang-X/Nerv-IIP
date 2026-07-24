@@ -1,12 +1,15 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Domain.DomainEvents;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
+using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
@@ -19,6 +22,123 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 
 public sealed class MesQualityDefectNcrAcceptanceTests
 {
+    [Fact]
+    public async Task Quality_reinspection_write_path_publishes_passed_attempt_and_releases_mes_hold()
+    {
+        await using var mesDb = CreateMesContext();
+        await using var qualityDb = CreateQualityContext();
+        const string workOrderId = "WO-REINSPECTION-ACCEPT-001";
+        mesDb.WorkOrders.Add(WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            workOrderId,
+            "SKU-FG-1000",
+            "PV-001",
+            5m,
+            10,
+            DateTimeOffset.Parse("2026-07-24T12:00:00Z")));
+        await mesDb.SaveChangesAsync();
+
+        var records = new InspectionRecordRepository(qualityDb);
+        var plans = new InspectionPlanRepository(qualityDb);
+        var initialId = await new CreateInspectionRecordCommandHandler(
+                records,
+                plans,
+                new InspectionTaskRepository(qualityDb))
+            .Handle(
+                new CreateInspectionRecordCommand(
+                    "org-001",
+                    "env-dev",
+                    null,
+                    "operation",
+                    "mes",
+                    workOrderId,
+                    "SKU-FG-1000",
+                    5m,
+                    "LOT-001",
+                    null,
+                    [new InspectionResultLineCommandInput(
+                        "appearance",
+                        "scratch",
+                        null,
+                        InspectionLineResults.Failed,
+                        "surface-defect",
+                        1m,
+                        [])],
+                    "Surface defect",
+                    []),
+                CancellationToken.None);
+        var rejectedRecord = qualityDb.InspectionRecords.Local.Single(x => x.Id == initialId);
+        var rejectedDomainEvent = rejectedRecord.GetDomainEvents()
+            .OfType<InspectionRejectedDomainEvent>()
+            .Single();
+        var integrationContext = new FixedQualityIntegrationEventContextAccessor();
+        var rejectedEvent = new InspectionRejectedIntegrationEventConverter(integrationContext)
+            .Convert(rejectedDomainEvent);
+        await qualityDb.SaveChangesAsync();
+
+        var mesHandler = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore());
+        await mesHandler.HandleAsync(rejectedEvent, CancellationToken.None);
+        var applied = await mesDb.QualityHoldContexts.SingleAsync(x => x.SourceDocumentId == workOrderId);
+        Assert.True(applied.Active);
+        Assert.Equal(initialId.ToString(), applied.HeldInspectionRecordId);
+
+        var reinspectionCommand = new CreateReinspectionCommand(
+            initialId,
+            "org-001",
+            "env-dev",
+            [new InspectionResultLineCommandInput(
+                "appearance",
+                "ok",
+                null,
+                InspectionLineResults.Passed,
+                null,
+                null,
+                [])],
+            null,
+            []);
+        var reinspectionHandler = new CreateReinspectionCommandHandler(records, plans);
+        var reinspection = await reinspectionHandler.Handle(reinspectionCommand, CancellationToken.None);
+        var passedRecord = qualityDb.InspectionRecords.Local.Single(x => x.Id == reinspection.InspectionRecordId);
+        var passedDomainEvent = passedRecord.GetDomainEvents()
+            .OfType<InspectionPassedDomainEvent>()
+            .Single();
+        var passedEvent = new InspectionPassedIntegrationEventConverter(integrationContext)
+            .Convert(passedDomainEvent);
+        await qualityDb.SaveChangesAsync();
+
+        await mesHandler.HandleAsync(passedEvent, CancellationToken.None);
+        var released = await mesDb.QualityHoldContexts.SingleAsync(x => x.SourceDocumentId == workOrderId);
+        var domainEventCountBeforeReplay = passedRecord.GetDomainEvents().Count;
+        var replay = await reinspectionHandler.Handle(reinspectionCommand, CancellationToken.None);
+        var transitions = await mesDb.QualityHoldTransitions
+            .Where(x => x.SourceDocumentId == workOrderId)
+            .OrderBy(x => x.OccurredAtUtc)
+            .ThenBy(x => x.Id)
+            .ToListAsync();
+
+        Assert.False(released.Active);
+        Assert.Equal(reinspection.InspectionRecordId.ToString(), released.ReleaseInspectionRecordId);
+        Assert.Equal(2, reinspection.AttemptNumber);
+        Assert.Equal(initialId, passedRecord.ReinspectionOfInspectionRecordId);
+        Assert.Equal(reinspection, replay);
+        Assert.Equal(2, await qualityDb.InspectionRecords.CountAsync());
+        Assert.Equal(domainEventCountBeforeReplay, passedRecord.GetDomainEvents().Count);
+        Assert.NotEqual(rejectedEvent.IdempotencyKey, passedEvent.IdempotencyKey);
+        Assert.Collection(
+            transitions,
+            transition => Assert.Equal("hold-applied", transition.EventKind),
+            transition =>
+            {
+                Assert.Equal("inspection-released", transition.EventKind);
+                Assert.Equal(
+                    reinspection.InspectionRecordId.ToString(),
+                    transition.SourceInspectionRecordId);
+            });
+    }
+
     [Fact]
     public async Task Mes_defect_event_opens_quality_ncr_and_quality_disposition_updates_mes_by_payload_source_document()
     {

@@ -26,7 +26,9 @@ public sealed record InspectionRecordResponse(
     IReadOnlyCollection<InspectionResultLineResponse> ResultLines,
     DateTime CreatedAtUtc,
     // 详情读补充：回链的 NCR id（记录 → NCR 双向互查）；列表投影不需要，保持 null。
-    string? NonconformanceReportId = null);
+    string? NonconformanceReportId = null,
+    int AttemptNumber = 1,
+    InspectionRecordId? ReinspectionOfInspectionRecordId = null);
 
 public sealed record InspectionResultLineResponse(
     string CharacteristicCode,
@@ -131,7 +133,10 @@ public sealed class ListInspectionRecordsQueryHandler(ApplicationDbContext dbCon
                     line.DefectReason,
                     line.DefectQuantity,
                     line.AttachmentFileIds)).ToArray(),
-                x.CreatedAtUtc))
+                x.CreatedAtUtc,
+                null,
+                x.AttemptNumber,
+                x.ReinspectionOfInspectionRecordId))
             .ToListAsync(cancellationToken);
 
         return new ListInspectionRecordsResponse(items, total);

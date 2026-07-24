@@ -3733,6 +3733,19 @@
     {
       "service": "Quality",
       "method": "POST",
+      "route": "/api/business/v1/quality/inspection-records/{inspectionRecordId}/reinspections",
+      "operationId": "createBusinessQualityReinspection",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleQualityReinspection"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
       "route": "/api/business/v1/quality/inspection-records/{inspectionRecordId}/failures/ncr",
       "operationId": "openBusinessQualityNcrFromInspection",
       "classification": "exposed",

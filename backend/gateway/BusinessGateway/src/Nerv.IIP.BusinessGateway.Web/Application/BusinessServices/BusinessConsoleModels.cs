@@ -997,7 +997,9 @@ public sealed record BusinessConsoleQualityItem(
     decimal? DefectQuantity,
     string? DefectReason,
     string? BatchNo,
-    string? SerialNo);
+    string? SerialNo,
+    int? AttemptNumber = null,
+    string? ReinspectionOfInspectionRecordId = null);
 
 public sealed record BusinessConsoleQualityListResponse(
     IReadOnlyCollection<BusinessConsoleQualityItem> Items,
@@ -1204,6 +1206,19 @@ public sealed record BusinessConsoleInspectionStockRelease(
 
 public sealed record BusinessConsoleCreateInspectionRecordResponse(string InspectionRecordId);
 
+public sealed record BusinessConsoleCreateReinspectionRequest(
+    [property: RouteParam] string InspectionRecordId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    IReadOnlyCollection<BusinessConsoleInspectionCharacteristicResult>? ResultLines,
+    string? DispositionReason,
+    IReadOnlyCollection<string>? DispositionAttachmentFileIds,
+    string? MeasuringDeviceId = null);
+
+public sealed record BusinessConsoleCreateReinspectionResponse(
+    string InspectionRecordId,
+    int AttemptNumber);
+
 public sealed record BusinessConsoleQualityInspectionTaskListRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1312,7 +1327,9 @@ public sealed record BusinessConsoleInspectionRecordDetailResponse(
     string? DispositionReason,
     string? NonconformanceReportId,
     IReadOnlyCollection<BusinessConsoleInspectionRecordResultLine> ResultLines,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    int AttemptNumber = 1,
+    string? ReinspectionOfInspectionRecordId = null);
 
 public sealed record BusinessConsoleInspectionPlanCharacteristicItem(
     string CharacteristicCode,

@@ -73,6 +73,8 @@ public sealed class GetInspectionRecordQueryHandler(ApplicationDbContext dbConte
                 line.DefectQuantity,
                 line.AttachmentFileIds)).ToArray(),
             record.CreatedAtUtc,
-            record.NonconformanceReportId);
+            record.NonconformanceReportId,
+            record.AttemptNumber,
+            record.ReinspectionOfInspectionRecordId);
     }
 }

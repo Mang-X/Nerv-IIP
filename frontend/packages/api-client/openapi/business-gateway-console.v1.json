@@ -4647,6 +4647,87 @@
         ]
       }
     },
+    "/api/business-console/v1/quality/inspection-records/{inspectionRecordId}/reinspections": {
+      "post": {
+        "tags": [
+          "Business Console Quality",
+          "Api"
+        ],
+        "operationId": "createBusinessConsoleQualityReinspection",
+        "parameters": [
+          {
+            "name": "inspectionRecordId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleCreateReinspectionRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateReinspectionRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateReinspectionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/quality/inspection-records/{inspectionRecordId}/failures/ncr": {
       "post": {
         "tags": [
@@ -30250,6 +30331,15 @@
           "serialNo": {
             "type": "string",
             "nullable": true
+          },
+          "attemptNumber": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "reinspectionOfInspectionRecordId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -30414,6 +30504,72 @@
             "nullable": true
           },
           "ownerId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateReinspectionResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateReinspectionResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateReinspectionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "inspectionRecordId": {
+            "type": "string"
+          },
+          "attemptNumber": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateReinspectionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "resultLines"
+        ],
+        "properties": {
+          "resultLines": {
+            "type": "array",
+            "minLength": 1,
+            "nullable": false,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionCharacteristicResult"
+            }
+          },
+          "dispositionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "dispositionAttachmentFileIds": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "measuringDeviceId": {
             "type": "string",
             "nullable": true
           }
@@ -30882,6 +31038,14 @@
           "createdAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "attemptNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "reinspectionOfInspectionRecordId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

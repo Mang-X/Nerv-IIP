@@ -281,6 +281,12 @@ public interface IBusinessQualityClient
         BusinessConsoleCreateInspectionRecordRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleCreateReinspectionResponse> CreateReinspectionAsync(
+        string internalBearerToken,
+        string inspectionRecordId,
+        BusinessConsoleCreateReinspectionRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleQualityInspectionTaskListResponse> ListInspectionTasksAsync(
         string internalBearerToken,
         BusinessConsoleQualityInspectionTaskListRequest request,
@@ -2715,6 +2721,24 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             ToDownstreamRequest(request),
             cancellationToken);
 
+    public Task<BusinessConsoleCreateReinspectionResponse> CreateReinspectionAsync(
+        string internalBearerToken,
+        string inspectionRecordId,
+        BusinessConsoleCreateReinspectionRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleCreateReinspectionResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/quality/inspection-records/{Uri.EscapeDataString(inspectionRecordId)}/reinspections",
+            new DownstreamCreateReinspectionRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.ResultLines?.Select(ToDownstreamLine).ToArray(),
+                request.DispositionReason,
+                request.DispositionAttachmentFileIds,
+                request.MeasuringDeviceId),
+            cancellationToken);
+
     public async Task<BusinessConsoleQualityInspectionTaskListResponse> ListInspectionTasksAsync(
         string internalBearerToken,
         BusinessConsoleQualityInspectionTaskListRequest request,
@@ -2929,7 +2953,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 line.Result,
                 line.DefectReason,
                 line.DefectQuantity)).ToArray(),
-            record.CreatedAtUtc);
+            record.CreatedAtUtc,
+            record.AttemptNumber,
+            record.ReinspectionOfInspectionRecordId);
     }
 
     public Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(
@@ -3123,7 +3149,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             null,
             item.DispositionReason,
             item.BatchNo,
-            item.SerialNo);
+            item.SerialNo,
+            item.AttemptNumber,
+            item.ReinspectionOfInspectionRecordId);
 
     private static string QualityReasonPath(string reasonCode) =>
         $"/api/business/v1/quality/reason-codes/{Uri.EscapeDataString(reasonCode)}";
@@ -3246,6 +3274,14 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         IReadOnlyCollection<string>? DispositionAttachmentFileIds,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BusinessConsoleInspectionStockRelease? StockRelease);
 
+    private sealed record DownstreamCreateReinspectionRequest(
+        string OrganizationId,
+        string EnvironmentId,
+        IReadOnlyCollection<DownstreamInspectionResultLine>? ResultLines,
+        string? DispositionReason,
+        IReadOnlyCollection<string>? DispositionAttachmentFileIds,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? MeasuringDeviceId);
+
     private sealed record DownstreamInspectionResultLine(
         string CharacteristicCode,
         string ObservedValue,
@@ -3287,7 +3323,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string Result,
         string? BatchNo,
         string? SerialNo,
-        string? DispositionReason);
+        string? DispositionReason,
+        int AttemptNumber = 1,
+        string? ReinspectionOfInspectionRecordId = null);
 
     private sealed record DownstreamInspectionRecordDetail(
         string InspectionRecordId,
@@ -3303,7 +3341,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string? DispositionReason,
         string? NonconformanceReportId,
         IReadOnlyCollection<DownstreamInspectionRecordDetailLine>? ResultLines,
-        DateTime CreatedAtUtc);
+        DateTime CreatedAtUtc,
+        int AttemptNumber = 1,
+        string? ReinspectionOfInspectionRecordId = null);
 
     private sealed record DownstreamInspectionRecordDetailLine(
         string CharacteristicCode,

@@ -524,6 +524,17 @@ describe('generated API client contract', () => {
     }
   })
 
+  it('exports Quality reinspection through stable api-client entry points (#954)', () => {
+    const expectedFunctions = [
+      'createBusinessConsoleQualityReinspectionMutationOptions',
+      'createBusinessConsoleQualityReinspection',
+    ] as const
+
+    for (const functionName of expectedFunctions) {
+      expect(businessConsoleClient[functionName], functionName).toBeTypeOf('function')
+    }
+  })
+
   it('exports gateway facade backfill (#833-#838) Business Console operations through stable api-client entry points', () => {
     const expectedFunctions = [
       'holdBusinessConsoleMesWorkOrderMutationOptions',
