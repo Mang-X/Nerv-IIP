@@ -2,7 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
 import { VisAxis, VisCrosshair, VisLine, VisTooltip, VisXYContainer } from '@unovis/vue'
-import { cn, escapeHtml } from '../../../lib/utils'
+import { cn, cssColor, escapeHtml } from '../../../lib/utils'
 
 /**
  * Pro — multi-series line chart on unovis (e.g. plan vs. actual). Each series
@@ -43,7 +43,7 @@ const tooltipTemplate = (d: Row) => {
   const rows = props.series
     .map(
       (s, i) =>
-        `<div class="nv-vis-row"><span class="nv-vis-dot" style="background:${escapeHtml(colors.value[i])}"></span><span>${escapeHtml(s.label)}</span><b>${escapeHtml(d[s.key])}${escapeHtml(props.valueSuffix)}</b></div>`,
+        `<div class="nv-vis-row"><span class="nv-vis-dot" style="background:${cssColor(colors.value[i])}"></span><span>${escapeHtml(s.label)}</span><b>${escapeHtml(d[s.key])}${escapeHtml(props.valueSuffix)}</b></div>`,
     )
     .join('')
   return `<div class="nv-vis-card"><div class="nv-vis-head">${escapeHtml(d[props.xKey])}</div>${rows}</div>`

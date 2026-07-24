@@ -20,3 +20,24 @@ export function escapeHtml(value: unknown): string {
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string,
   )
 }
+
+/**
+ * Sanitise a value for interpolation into a CSS declaration — e.g. the chart
+ * tooltips' inline `style="background:${…}"` swatch. escapeHtml alone stops the
+ * value breaking out of the *attribute*, but not a `;`-separated extra
+ * declaration: a hostile `red;position:fixed;inset:0;background:url(…)` colour
+ * would still take effect inside the style string. Accept only a strict CSS
+ * `<color>` — hex / a known colour function / a bare keyword / a `var()` ref —
+ * and fall back to `currentColor` (harmless, still visible) for anything else.
+ * `url(` is rejected outright since `background` would otherwise fetch it.
+ * Internal to the package.
+ */
+export function cssColor(value: unknown): string {
+  const s = String(value).trim()
+  if (/url\(/i.test(s)) return 'currentColor'
+  if (/^#[0-9a-f]{3,8}$/i.test(s)) return s
+  if (/^[a-z]+$/i.test(s)) return s // named colours, currentColor, transparent
+  if (/^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|var)\([^;{}]*\)$/i.test(s))
+    return s
+  return 'currentColor'
+}

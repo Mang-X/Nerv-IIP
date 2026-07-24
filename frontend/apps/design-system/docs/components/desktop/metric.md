@@ -274,8 +274,7 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
     <NvMetricRing
       label="在制工单构成"
       :value="35"
-      unit="单"
-      center-caption="总计"
+      center-caption="总工单"
       :segments="[
         { label: '进行中', value: 24, tone: 'brand' },
         { label: '待派工', value: 9, tone: 'neutral' },
@@ -285,7 +284,6 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
     <NvMetricRing
       label="成品库库位"
       :value="512"
-      unit="位"
       center-caption="总库位"
       :segments="[
         { label: '已占用', value: 340, tone: 'brand' },
@@ -293,15 +291,26 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
         { label: '冻结', value: 12, tone: 'warning' },
       ]"
     />
+    <NvMetricRing
+      label="批次合格情况"
+      :value="1000"
+      center-caption="总批次"
+      :segments="[
+        { label: '合格', value: 997, tone: 'success' },
+        { label: '让步接收', value: 2, tone: 'warning' },
+        { label: '判废', value: 1, tone: 'danger' },
+      ]"
+    />
   </div>
 </Demo>
+
+> 极小但非零的占比（如 1/1000 的判废）也保留可见弧——最该被看见的异常段不会被分段间隙吞掉。
 
 ```vue
 <NvMetricRing
   label="在制工单构成"
   :value="35"
-  unit="单"
-  center-caption="总计"
+  center-caption="总工单"
   :segments="[
     { label: '进行中', value: 24, tone: 'brand' },
     { label: '待派工', value: 9, tone: 'neutral' },
@@ -366,13 +375,12 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 
 ## NvMetricRing 属性
 
-| 属性            | 说明                               | 类型                | 默认 |
-| --------------- | ---------------------------------- | ------------------- | ---- |
-| `label`         | 卡标题                             | `string`            | —    |
-| `value`         | 中心读数，默认展示的数（常为总数） | `string \| number`  | —    |
-| `unit`          | 中心读数单位                       | `string`            | —    |
-| `centerCaption` | 中心数下方小字，如 `总计`          | `string`            | —    |
-| `segments`      | 各分段 `{ label, value, tone? }`   | `NvMetricSegment[]` | `[]` |
+| 属性            | 说明                                                     | 类型                | 默认 |
+| --------------- | -------------------------------------------------------- | ------------------- | ---- |
+| `label`         | 卡标题                                                   | `string`            | —    |
+| `value`         | 中心读数，默认展示的数（常为总数，不带单位避免环内截断） | `string \| number`  | —    |
+| `centerCaption` | 中心数下方小字，如 `总工单` / `总库位`                   | `string`            | —    |
+| `segments`      | 各分段 `{ label, value, tone? }`                         | `NvMetricSegment[]` | `[]` |
 
 悬浮分段或图例行时，中心自动切换为该段的数值与占比，无需额外配置。
 

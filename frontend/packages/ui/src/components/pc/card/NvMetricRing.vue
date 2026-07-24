@@ -19,10 +19,13 @@ import { metricToneFill, metricToneStroke, type NvMetricSegment } from './metric
 const props = withDefaults(
   defineProps<{
     label: string
-    /** Centre readout — the figure that matters most, usually the total. */
+    /**
+     * Centre readout — the figure that matters most, usually the total. Kept
+     * unit-free: the ring's inner clearance is only ~58px, so a 4–5 digit total
+     * plus a unit would truncate. Units live in the caption and the legend rows.
+     */
     value: string | number
-    unit?: string
-    /** Small caption under the centre figure, e.g. `总计` / `在制`. */
+    /** Small caption under the centre figure, e.g. `总计 · 单` / `总库位`. */
     centerCaption?: string
     /** Slices of the whole; each gets an arc, a legend row and a share. */
     segments?: NvMetricSegment[]
@@ -35,6 +38,14 @@ const R = 36
 const CIRC = 2 * Math.PI * R
 /** Circumference eaten by the gap between adjacent slices. */
 const GAP = 2.5
+/**
+ * Floor on a non-zero slice's drawn arc. A fixed `span - GAP` drops any slice
+ * smaller than the gap to zero length — so the one anomaly out of a thousand,
+ * the slice that most needs to be seen, would vanish. A non-zero slice always
+ * keeps at least this much visible arc, borrowed from the following gap rather
+ * than from its neighbours' spans (the offset still advances by the true span).
+ */
+const MIN_ARC = 3
 
 const total = computed(() =>
   Math.max(
@@ -48,7 +59,8 @@ const arcs = computed(() => {
   let offset = 0
   return props.segments.map((seg) => {
     const span = (seg.value / total.value) * CIRC
-    const length = Math.max(0, span - GAP)
+    // zero stays zero; any non-zero share keeps a legible minimum arc
+    const length = seg.value <= 0 ? 0 : Math.max(MIN_ARC, span - GAP)
     const arc = {
       seg,
       dasharray: `${length} ${CIRC - length}`,
@@ -70,7 +82,7 @@ function share(seg: NvMetricSegment) {
 /** The centre follows the pointer: hovering a slice reads that slice instead. */
 const centerValue = computed(() => {
   const seg = hovered.value === null ? null : props.segments[hovered.value]
-  return seg ? String(seg.value) : `${props.value}${props.unit ?? ''}`
+  return seg ? String(seg.value) : String(props.value)
 })
 /**
  * On hover the caption stays short — just the share. Which slice it is, is
@@ -93,7 +105,7 @@ const centerCaptionText = computed(() => {
           <circle cx="42" cy="42" :r="R" fill="none" stroke="var(--muted)" stroke-width="8" />
           <circle
             v-for="(arc, i) in arcs"
-            :key="i"
+            :key="arc.seg.label"
             cx="42"
             cy="42"
             :r="R"
@@ -130,7 +142,7 @@ const centerCaptionText = computed(() => {
       <ul class="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
         <li
           v-for="(seg, i) in segments"
-          :key="i"
+          :key="seg.label"
           :class="cn('nv-ring-row flex items-center gap-2 text-xs', dimmed(i) && 'nv-ring-dim')"
           @mouseenter="hovered = i"
           @mouseleave="hovered = null"

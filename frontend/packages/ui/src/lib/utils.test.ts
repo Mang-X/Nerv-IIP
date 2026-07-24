@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { escapeHtml } from './utils'
+import { cssColor, escapeHtml } from './utils'
 
 // The chart tooltips hand unovis a template *string* rendered as raw HTML, so
 // point labels / categories / units / colours are HTML sinks fed by server data.
@@ -38,5 +38,35 @@ describe('escapeHtml — chart tooltip HTML sink', () => {
     expect(escapeHtml(12480)).toBe('12480')
     expect(escapeHtml(null)).toBe('null')
     expect(escapeHtml(undefined)).toBe('undefined')
+  })
+})
+
+describe('cssColor — chart tooltip inline-style sink', () => {
+  it('passes through the colour forms the charts actually use', () => {
+    for (const ok of [
+      'var(--chart-1)',
+      '#3b82f6',
+      '#abc',
+      'oklch(0.6 0.12 160)',
+      'rgb(59, 130, 246)',
+      'rgba(0,0,0,.4)',
+      'currentColor',
+      'transparent',
+      'color-mix(in oklch, var(--nv-brand) 40%, transparent)',
+    ]) {
+      expect(cssColor(ok)).toBe(ok)
+    }
+  })
+
+  it('drops a semicolon-injected extra declaration to currentColor', () => {
+    // escapeHtml would keep this verbatim inside style="background:…" and the
+    // ;-separated declarations would take effect — cssColor must neutralise it.
+    expect(cssColor('red;position:fixed;inset:0')).toBe('currentColor')
+    expect(cssColor('red}#x{color:red')).toBe('currentColor')
+  })
+
+  it('refuses url() even inside an otherwise valid var() fallback', () => {
+    expect(cssColor('var(--x, url(https://example.invalid/x))')).toBe('currentColor')
+    expect(cssColor('url(https://example.invalid/x)')).toBe('currentColor')
   })
 })

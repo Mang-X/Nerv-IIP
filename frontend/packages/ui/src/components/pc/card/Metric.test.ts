@@ -169,6 +169,25 @@ describe('NvMetricCard 变体契约', () => {
     expect(dimmed()).toHaveLength(0)
   })
 
+  it('sparkline 也给读屏用户暴露趋势文本（role=img + aria-label）', () => {
+    // Stub only the unovis chart (not NvCard, whose slot carries the card body).
+    const wrapper = mount(NvMetricCard, {
+      global: { stubs: { NvAreaChart: true } },
+      props: {
+        variant: 'sparkline',
+        label: '今日报工',
+        value: '1,284',
+        series: [1052, 1118, 1284],
+        seriesLabels: ['07-21', '07-22', '07-23'],
+        seriesUnit: ' 件',
+      },
+    })
+    const viz = wrapper.find('[role="img"]')
+    expect(viz.exists()).toBe(true)
+    expect(viz.attributes('aria-label')).toContain('趋势')
+    expect(viz.attributes('aria-label')).toContain('07-23: 1284 件')
+  })
+
   it('bars / target 给键盘与读屏用户留下文本等价物（微图本身只响应指针）', () => {
     const bars = mount(NvMetricCard, {
       props: {
@@ -248,6 +267,38 @@ describe('NvMetricRing / NvMetricStrip', () => {
     expect(arcs[0].attributes('stroke-dashoffset')).toBe('0')
     // 第二段接在第一段之后（偏移 = 前一段的完整占比，不含间隙）
     expect(arcs[1].attributes('stroke-dashoffset')).toBe(String(-span0))
+  })
+
+  // 回归：固定 gap 会把小占比段扣成 0 长度弧，最该被看见的异常段反而消失。
+  it('ring 极小非零占比仍保留可见弧（不被 gap 吞成 0）', () => {
+    const wrapper = mount(NvMetricRing, {
+      props: {
+        label: '缺陷占比',
+        value: 1000,
+        segments: [
+          { label: '正常', value: 999, tone: 'success' as const },
+          { label: '缺陷', value: 1, tone: 'danger' as const },
+        ],
+      },
+    })
+    // 1/1000 段：span≈0.226，固定扣 2.5 会得 0；MIN_ARC 兜底应 ≥ 3
+    const arcs = wrapper.findAll('.nv-ring-seg')
+    const tinyLen = Number(arcs[1].attributes('stroke-dasharray')!.split(' ')[0])
+    expect(tinyLen).toBeGreaterThanOrEqual(3)
+    // 真·零占比段才不画
+    const zero = mount(NvMetricRing, {
+      props: {
+        label: 't',
+        value: 10,
+        segments: [
+          { label: 'a', value: 10, tone: 'brand' as const },
+          { label: 'b', value: 0, tone: 'danger' as const },
+        ],
+      },
+    })
+    expect(
+      Number(zero.findAll('.nv-ring-seg')[1].attributes('stroke-dasharray')!.split(' ')[0]),
+    ).toBe(0)
   })
 
   it('ring 图例给出每段计数与占比，中心默认显示总数', () => {

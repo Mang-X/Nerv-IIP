@@ -108,6 +108,18 @@ const deltaIcon = computed(() => {
 const chartData = computed(() =>
   (props.series ?? []).map((v, i) => ({ label: props.seriesLabels?.[i] ?? String(i), value: v })),
 )
+/**
+ * Text equivalent of the trend — the sparkline exposes its points only through
+ * unovis' mouse crosshair, so without this a keyboard / screen-reader user gets
+ * nothing from the card's actionable bottom-zone. Mirrors `barsAriaLabel`.
+ */
+const sparklineAriaLabel = computed(() => {
+  const unit = props.seriesUnit ?? ''
+  const points = (props.series ?? []).map(
+    (v, i) => `${props.seriesLabels?.[i] ?? i + 1}: ${v}${unit}`,
+  )
+  return `${props.label} 趋势，${points.length} 期：${points.join('；')}`
+})
 
 // --- mini bars --------------------------------------------------------------
 const barMax = computed(() => Math.max(1, ...(props.series ?? [])))
@@ -309,15 +321,17 @@ function showTargetTip(e: MouseEvent) {
 
       <!-- sparkline -->
       <template v-if="variant === 'sparkline'">
-        <NvAreaChart
-          v-if="chartData.length > 1"
-          minimal
-          crosshair
-          :data="chartData"
-          :height="46"
-          :value-suffix="seriesUnit ?? ''"
-          class="mt-4"
-        />
+        <!-- role/aria give keyboard + SR users the trend the crosshair only
+             surfaces on hover, matching the bars variant's text equivalent -->
+        <div v-if="chartData.length > 1" role="img" :aria-label="sparklineAriaLabel" class="mt-4">
+          <NvAreaChart
+            minimal
+            crosshair
+            :data="chartData"
+            :height="46"
+            :value-suffix="seriesUnit ?? ''"
+          />
+        </div>
         <div
           v-if="footStart || footEnd"
           class="mt-2 flex justify-between text-xs text-muted-foreground tabular-nums"
@@ -364,7 +378,7 @@ function showTargetTip(e: MouseEvent) {
         <div class="mt-4 flex h-1.5 gap-0.5">
           <span
             v-for="(seg, i) in segments"
-            :key="i"
+            :key="seg.label"
             :class="
               cn(
                 'nv-metric-slice block rounded-sm first:rounded-l-full last:rounded-r-full',
@@ -380,7 +394,7 @@ function showTargetTip(e: MouseEvent) {
         <ul class="mt-3 flex flex-wrap gap-x-3.5 gap-y-1.5">
           <li
             v-for="(seg, i) in segments"
-            :key="i"
+            :key="seg.label"
             :class="
               cn(
                 'nv-metric-slice inline-flex items-center gap-1.5 text-xs text-muted-foreground',
@@ -430,7 +444,7 @@ function showTargetTip(e: MouseEvent) {
         <div class="mt-4 flex flex-wrap gap-1.5">
           <button
             v-for="(f, i) in facets"
-            :key="i"
+            :key="f.label"
             type="button"
             :class="
               cn(
