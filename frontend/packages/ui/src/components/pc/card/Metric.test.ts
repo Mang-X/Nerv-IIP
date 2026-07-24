@@ -666,14 +666,19 @@ describe('NvMetricRing / NvMetricStrip', () => {
     expect(tips()).toBe(before)
   })
 
-  it('ring 含分隔符 key：join 碰撞场景下过滤清理仍触发', async () => {
+  it('ring 含分隔符 key：join 碰撞场景下过滤清理仍触发（NUL 分隔）', async () => {
+    // Ring 当年的错误实现是 NUL join（源码里甚至是 raw 0x00）——空格构造的
+    // 碰撞在 NUL join 下并不相等，防不住该回归。此处用运行时构造的 NUL key
+    // 精确复现旧碰撞（绝不把 raw NUL 写进源码），breakdown 用例保留空格版。
+    const NUL = String.fromCharCode(0)
     const seg = (key: string, label: string, value: number) => ({
       label,
       value,
       key,
       tone: 'brand' as const,
     })
-    const segs = reactive([seg('x k:s:y', 'AB', 8), seg('z', 'C', 2)])
+    // 旧 NUL join 下前后投影串均为 'k:s:x' + NUL + 'k:s:y' + NUL + 'k:s:z'
+    const segs = reactive([seg(`x${NUL}k:s:y`, 'AB', 8), seg('z', 'C', 2)])
     const wrapper = mount(NvMetricRing, {
       props: { label: 't', value: 10, centerCaption: '总计', segments: segs },
     })
