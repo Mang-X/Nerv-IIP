@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
+using NetCorePal.Extensions.Repository;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 
@@ -495,10 +496,27 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandValidator : Abstract
     }
 }
 
-public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService = null)
+public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(
+    ApplicationDbContext dbContext,
+    IMesWorkOrderCapitalizationScopeCoordinator scopeCoordinator,
+    MesCodingService? codingService = null)
     : ICommandHandler<CreateFinishedGoodsReceiptRequestCommand, FinishedGoodsReceiptRequestCommandResult>
 {
     private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
+    // Provider-light direct-construction tests preserve the existing outer-UoW save boundary.
+    // Runtime DI selects the coordinator constructor and persists before the advisory lock is released.
+    private readonly bool _persistWithinScope = true;
+
+    public CreateFinishedGoodsReceiptRequestCommandHandler(
+        ApplicationDbContext dbContext,
+        MesCodingService? codingService = null)
+        : this(
+            dbContext,
+            new PostgreSqlMesWorkOrderCapitalizationScopeCoordinator(dbContext, dbContext),
+            codingService)
+    {
+        _persistWithinScope = false;
+    }
 
     public async Task<FinishedGoodsReceiptRequestCommandResult> Handle(CreateFinishedGoodsReceiptRequestCommand request, CancellationToken cancellationToken)
     {
@@ -519,92 +537,103 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
             return new FinishedGoodsReceiptRequestCommandResult(existing.Id, existing.RequestNo);
         }
 
-        if (string.IsNullOrWhiteSpace(request.ProducedLotNo))
-        {
-            throw new KnownException("完工入库申请必须引用 MES 已生成的产出批次。");
-        }
-
-        var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
-            x => x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderIdValue == request.WorkOrderId,
-            cancellationToken)
-            ?? throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
-        if (!string.Equals(workOrder.SkuId, request.SkuId, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new KnownException($"完工入库 SKU 与工单不一致，WorkOrderId = {request.WorkOrderId}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(workOrder.UomCode) &&
-            !string.Equals(workOrder.UomCode, request.UomCode, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new KnownException($"完工入库 UoM 与工单不一致，WorkOrderId = {request.WorkOrderId}");
-        }
-
-        // 引用的产出批次必须存在于 OutputLotGenealogies（报工时生成、冲销时删除）。用 AnyAsync 判存在（provider 中立，
-        // 避免依赖空集 Sum 在 InMemory/Postgres 上的差异，见 ef-test-provider-translation-gap）。
-        var outputLotExists = await dbContext.OutputLotGenealogies.AnyAsync(
-            x => x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderId == request.WorkOrderId &&
-                x.ProducedLotNo == request.ProducedLotNo,
-            cancellationToken);
-        if (!outputLotExists)
-        {
-            throw new KnownException($"完工入库引用的产出批次不存在，ProducedLotNo = {request.ProducedLotNo}");
-        }
-
-        // MES receipt creation is a low-concurrency operator workflow; strict cross-command serialization would need a separate DB lock/constraint design.
-        var activeReceiptQuantity = await ActiveReceiptRequestsForWorkOrder(
-                dbContext.FinishedGoodsReceiptRequests,
-                request.OrganizationId,
-                request.EnvironmentId,
-                request.WorkOrderId)
-            .SumAsync(x => x.Quantity, cancellationToken);
-        if (activeReceiptQuantity + request.Quantity > workOrder.CompletedQuantity + FinishedGoodsReceiptRequest.QuantityTolerance)
-        {
-            throw new KnownException($"累计完工入库申请数量超过工单完工数量，WorkOrderId = {request.WorkOrderId}");
-        }
-
-        // 批次追溯完整性：单个产出批次的累计有效入库申请不得超过该批次产量（工单总量之外的更细粒度约束，
-        // 防止把整张工单的完工量都登记到同一批次而破坏批次追溯）。批次存在性已由上方 AnyAsync 确认，故此 Sum 必 >0。
-        // 注：与上方工单总量校验一致，此处沿用无锁「读取—校验—插入」（低并发人工流程取舍）；工单+批次两个累计不变量的
-        // 并发串行化（事务级工单锁 / SERIALIZABLE+retry + PostgreSQL 并发测试）作为横切 follow-up 见 issue #953。
-        var batchProducedQuantity = await dbContext.OutputLotGenealogies
-            .Where(x => x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderId == request.WorkOrderId &&
-                x.ProducedLotNo == request.ProducedLotNo)
-            .SumAsync(x => x.Quantity, cancellationToken);
-        var activeBatchReceiptQuantity = await ActiveReceiptRequestsForWorkOrder(
-                dbContext.FinishedGoodsReceiptRequests,
-                request.OrganizationId,
-                request.EnvironmentId,
-                request.WorkOrderId)
-            .Where(x => x.ProducedLotNo == request.ProducedLotNo)
-            .SumAsync(x => x.Quantity, cancellationToken);
-        if (activeBatchReceiptQuantity + request.Quantity > batchProducedQuantity + FinishedGoodsReceiptRequest.QuantityTolerance)
-        {
-            throw new KnownException($"完工入库申请超过该产出批次可入库数量，ProducedLotNo = {request.ProducedLotNo}");
-        }
-
-        var receiptRequest = FinishedGoodsReceiptRequest.Create(
+        return await scopeCoordinator.ExecuteAsync(
             request.OrganizationId,
             request.EnvironmentId,
-            allocation.Code,
             request.WorkOrderId,
-            request.SkuId,
-            request.Quantity,
-            request.UomCode,
-            request.RequestedAtUtc,
-            request.ProducedLotNo,
-            request.SerialNo,
-            request.UnitCost,
-            request.ProductionDate,
-            request.ExpiryDate);
-        dbContext.FinishedGoodsReceiptRequests.Add(receiptRequest);
-        await Task.CompletedTask;
-        return new FinishedGoodsReceiptRequestCommandResult(receiptRequest.Id, receiptRequest.RequestNo);
+            async token =>
+            {
+                if (string.IsNullOrWhiteSpace(request.ProducedLotNo))
+                {
+                    throw new KnownException("完工入库申请必须引用 MES 已生成的产出批次。");
+                }
+
+                var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
+                    x => x.OrganizationId == request.OrganizationId &&
+                        x.EnvironmentId == request.EnvironmentId &&
+                        x.WorkOrderIdValue == request.WorkOrderId,
+                    token)
+                    ?? throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
+                if (!string.Equals(workOrder.SkuId, request.SkuId, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new KnownException($"完工入库 SKU 与工单不一致，WorkOrderId = {request.WorkOrderId}");
+                }
+
+                if (!string.IsNullOrWhiteSpace(workOrder.UomCode) &&
+                    !string.Equals(workOrder.UomCode, request.UomCode, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new KnownException($"完工入库 UoM 与工单不一致，WorkOrderId = {request.WorkOrderId}");
+                }
+
+                // 引用的产出批次必须存在于 OutputLotGenealogies（报工时生成、冲销时删除）。用 AnyAsync 判存在（provider 中立，
+                // 避免依赖空集 Sum 在 InMemory/Postgres 上的差异，见 ef-test-provider-translation-gap）。
+                var outputLotExists = await dbContext.OutputLotGenealogies.AnyAsync(
+                    x => x.OrganizationId == request.OrganizationId &&
+                        x.EnvironmentId == request.EnvironmentId &&
+                        x.WorkOrderId == request.WorkOrderId &&
+                        x.ProducedLotNo == request.ProducedLotNo,
+                    token);
+                if (!outputLotExists)
+                {
+                    throw new KnownException($"完工入库引用的产出批次不存在，ProducedLotNo = {request.ProducedLotNo}");
+                }
+
+                // The work-order capitalization scope lock serializes this read-check-write path with both
+                // capitalization projection and concurrent receipt creation for the same work order.
+                var activeReceiptQuantity = await ActiveReceiptRequestsForWorkOrder(
+                        dbContext.FinishedGoodsReceiptRequests,
+                        request.OrganizationId,
+                        request.EnvironmentId,
+                        request.WorkOrderId)
+                    .SumAsync(x => x.Quantity, token);
+                if (activeReceiptQuantity + request.Quantity > workOrder.CompletedQuantity + FinishedGoodsReceiptRequest.QuantityTolerance)
+                {
+                    throw new KnownException($"累计完工入库申请数量超过工单完工数量，WorkOrderId = {request.WorkOrderId}");
+                }
+
+                // 批次追溯完整性：单个产出批次的累计有效入库申请不得超过该批次产量（工单总量之外的更细粒度约束，
+                // 防止把整张工单的完工量都登记到同一批次而破坏批次追溯）。批次存在性已由上方 AnyAsync 确认，故此 Sum 必 >0。
+                // The same transaction-scoped work-order lock also covers this finer-grained batch limit.
+                var batchProducedQuantity = await dbContext.OutputLotGenealogies
+                    .Where(x => x.OrganizationId == request.OrganizationId &&
+                        x.EnvironmentId == request.EnvironmentId &&
+                        x.WorkOrderId == request.WorkOrderId &&
+                        x.ProducedLotNo == request.ProducedLotNo)
+                    .SumAsync(x => x.Quantity, token);
+                var activeBatchReceiptQuantity = await ActiveReceiptRequestsForWorkOrder(
+                        dbContext.FinishedGoodsReceiptRequests,
+                        request.OrganizationId,
+                        request.EnvironmentId,
+                        request.WorkOrderId)
+                    .Where(x => x.ProducedLotNo == request.ProducedLotNo)
+                    .SumAsync(x => x.Quantity, token);
+                if (activeBatchReceiptQuantity + request.Quantity > batchProducedQuantity + FinishedGoodsReceiptRequest.QuantityTolerance)
+                {
+                    throw new KnownException($"完工入库申请超过该产出批次可入库数量，ProducedLotNo = {request.ProducedLotNo}");
+                }
+
+                var receiptRequest = FinishedGoodsReceiptRequest.Create(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    allocation.Code,
+                    request.WorkOrderId,
+                    request.SkuId,
+                    request.Quantity,
+                    request.UomCode,
+                    request.RequestedAtUtc,
+                    request.ProducedLotNo,
+                    request.SerialNo,
+                    request.UnitCost ?? workOrder.CapitalizedUnitCost,
+                    request.ProductionDate,
+                    request.ExpiryDate);
+                dbContext.FinishedGoodsReceiptRequests.Add(receiptRequest);
+                if (_persistWithinScope)
+                {
+                    await ((IUnitOfWork)dbContext).SaveEntitiesAsync(token);
+                }
+                return new FinishedGoodsReceiptRequestCommandResult(receiptRequest.Id, receiptRequest.RequestNo);
+            },
+            cancellationToken);
     }
 
     public static IQueryable<FinishedGoodsReceiptRequest> ActiveReceiptRequestsForWorkOrder(
