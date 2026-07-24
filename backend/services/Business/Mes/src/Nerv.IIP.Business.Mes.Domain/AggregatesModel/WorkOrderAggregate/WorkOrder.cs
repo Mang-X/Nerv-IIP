@@ -97,6 +97,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public decimal ScrapQuantity { get; private set; }
     public int CostReportCount { get; private set; }
     public int MaterialMovementCount { get; private set; }
+    public decimal? CapitalizedUnitCost { get; private set; }
     public decimal OverReceiptTolerancePercent { get; private set; }
     public DateTimeOffset? ClosedAtUtc { get; private set; }
     public string? HoldReason { get; private set; }
@@ -320,6 +321,17 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         if (materialMovementCount < 0) throw new ArgumentOutOfRangeException(nameof(materialMovementCount));
         CostReportCount++;
         MaterialMovementCount += materialMovementCount;
+    }
+
+    public void ApplyCapitalizedUnitCost(decimal unitCost)
+    {
+        var normalizedUnitCost = DomainGuard.Positive(unitCost, nameof(unitCost));
+        if (CapitalizedUnitCost.HasValue && CapitalizedUnitCost.Value != normalizedUnitCost)
+        {
+            throw new InvalidOperationException("Work order already has a different capitalized unit cost.");
+        }
+
+        CapitalizedUnitCost = normalizedUnitCost;
     }
 
     public void ReverseProductionProgress(decimal goodQuantity, decimal scrapQuantity, DateTimeOffset reversedAtUtc)
