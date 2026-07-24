@@ -40,6 +40,9 @@ param(
 
     [switch] $ReplayExisting,
 
+    [ValidateRange(250, 5000)]
+    [int] $ReplayRequestIntervalMilliseconds = 300,
+
     [ValidatePattern('^[a-zA-Z0-9][a-zA-Z0-9._-]{0,47}$')]
     [string] $RunId,
 
@@ -153,7 +156,12 @@ try {
         HttpAction = $httpAction
     }
     if ($HistoricalBackfill) { $simulationParameters['HistoricalBackfill'] = $true }
-    if ($ReplayExisting) { $simulationParameters['DelayAction'] = { param($Seconds) } }
+    if ($ReplayExisting) {
+        $simulationParameters['DelayAction'] = { param($Seconds) }
+        $simulationParameters['PostRequestPacingAction'] = {
+            Start-Sleep -Milliseconds $ReplayRequestIntervalMilliseconds
+        }.GetNewClosure()
+    }
     $simulation = Invoke-NervLeaderDemoTelemetrySimulator @simulationParameters
     $simulation | Add-Member `
         -NotePropertyName ExecutionMode `

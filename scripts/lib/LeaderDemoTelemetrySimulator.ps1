@@ -441,6 +441,7 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
         [ValidateRange(1, 1440)] [int] $HistoricalIntervalMinutes = 15,
         [Parameter(Mandatory)] [scriptblock] $HttpAction,
         [scriptblock] $DelayAction = { param($Seconds) Start-Sleep -Seconds $Seconds },
+        [scriptblock] $PostRequestPacingAction = {},
         [scriptblock] $CancellationCheckAction = { return $false }
     )
 
@@ -454,6 +455,17 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
             -AlarmAtSeconds $AlarmAtSeconds `
             -RecoveredAtSeconds $RecoveredAtSeconds
     )
+    $effectiveHttpAction = {
+        param($Method, $Path, $Body)
+        try {
+            return & $HttpAction $Method $Path $Body
+        }
+        finally {
+            if ($Method -ceq 'POST') {
+                & $PostRequestPacingAction
+            }
+        }
+    }.GetNewClosure()
     $backfill = if ($HistoricalBackfill) {
         Invoke-NervLeaderDemoHistoricalBackfill `
             -OrganizationId $OrganizationId `
@@ -464,7 +476,7 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
             -HistoricalHours $HistoricalHours `
             -HistoricalIntervalMinutes $HistoricalIntervalMinutes `
             -SampleIntervalSeconds $SampleIntervalSeconds `
-            -HttpAction $HttpAction
+            -HttpAction $effectiveHttpAction
     }
     else {
         [pscustomobject][ordered]@{
@@ -499,10 +511,10 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
                 -Method POST `
                 -Path '/api/business-console/v1/telemetry/samples' `
                 -Body $body `
-                -HttpAction $HttpAction
+                -HttpAction $effectiveHttpAction
             $publishedRequestCount++
             if ($null -eq $replay -and $tagKey -ceq 'vibration') {
-                $replay = Test-NervLeaderDemoTelemetryReplay -Body $body -FirstResponse $response -HttpAction $HttpAction
+                $replay = Test-NervLeaderDemoTelemetryReplay -Body $body -FirstResponse $response -HttpAction $effectiveHttpAction
             }
         }
         $publishedPointCount++
@@ -518,7 +530,7 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
             -DeviceAssetId $DeviceAssetId `
             -FromUtc $(if ($HistoricalBackfill) { [DateTimeOffset]::Parse($backfill.WindowStartUtc) } else { $ScenarioStartUtc }) `
             -ToUtc $ScenarioStartUtc.ToUniversalTime().AddSeconds($DurationSeconds + $SampleIntervalSeconds) `
-            -HttpAction $HttpAction
+            -HttpAction $effectiveHttpAction
     }
     else {
         [pscustomobject][ordered]@{ ItemCount = 0; FirstOccurredAtUtc = $null; LastOccurredAtUtc = $null }
@@ -528,7 +540,7 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
             -OrganizationId $OrganizationId `
             -EnvironmentId $EnvironmentId `
             -DeviceAssetId $DeviceAssetId `
-            -HttpAction $HttpAction
+            -HttpAction $effectiveHttpAction
     }
     else {
         [pscustomobject][ordered]@{ Found = $false; Status = $null; RaisedAtUtc = $null; ClearedAtUtc = $null }

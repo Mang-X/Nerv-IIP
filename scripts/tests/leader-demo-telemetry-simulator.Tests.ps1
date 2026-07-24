@@ -102,6 +102,7 @@ Assert-True ($null -eq $temperatureBody.deviceState) 'Only the vibration request
 Assert-Equal 2 ([int]([DateTimeOffset]::Parse($vibrationBody.bucketEndUtc) - [DateTimeOffset]::Parse($vibrationBody.bucketStartUtc)).TotalSeconds) 'Every live bucket must be exactly two seconds.'
 
 $script:acceptedRequests = [System.Collections.Generic.List[object]]::new()
+$script:acceptedPostPacingCount = 0
 $acceptedHttpAction = {
     param($Method, $Path, $Body)
     $script:acceptedRequests.Add([pscustomobject]@{ Method = $Method; Path = $Path; Body = $Body })
@@ -158,7 +159,8 @@ $acceptedEvidence = Invoke-NervLeaderDemoTelemetrySimulator `
     -HistoricalHours 24 `
     -HistoricalIntervalMinutes 360 `
     -HttpAction $acceptedHttpAction `
-    -DelayAction { param($Seconds) }
+    -DelayAction { param($Seconds) } `
+    -PostRequestPacingAction { $script:acceptedPostPacingCount++ }
 
 Assert-Equal 'accepted' $acceptedEvidence.HistoricalBackfill.Mode 'An accepted late sample must keep the full historical backfill mode.'
 Assert-True ($acceptedEvidence.HistoricalBackfill.PublishedCount -ge 8) 'The accepted 24-hour shape must publish both governed tags oldest-to-newest.'
@@ -168,6 +170,9 @@ Assert-Equal 'cleared' $acceptedEvidence.Alarm.Status 'The alarm verification mu
 Assert-True (
     @($script:acceptedRequests | Where-Object Method -eq 'POST' | Where-Object Path -ne '/api/business-console/v1/telemetry/samples').Count -eq 0
 ) 'All simulator fact writes must use only the public telemetry sample facade.'
+Assert-Equal (
+    @($script:acceptedRequests | Where-Object Method -eq 'POST').Count
+) $script:acceptedPostPacingCount 'The replay pacing hook must run exactly once after every public POST.'
 Assert-True (
     @($script:acceptedRequests | Where-Object Path -like '*/telemetry/devices/DEV-CNC-DEMO/history*').Count -eq 1
 ) 'The simulator must verify history through the public device history facade.'

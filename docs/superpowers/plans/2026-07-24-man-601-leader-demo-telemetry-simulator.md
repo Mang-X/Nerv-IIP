@@ -242,7 +242,7 @@ pwsh scripts/verify-leader-demo-telemetry-simulator.ps1 `
   -HistoricalBackfill
 ```
 
-Document default phase timing, stable `RunId`/`ScenarioStartUtc` replay semantics, evidence location, public-path guarantee, historical fallback declaration, and foreground stop behavior.
+Document default phase timing, stable `RunId`/`ScenarioStartUtc` replay semantics, rate-limit-aware replay pacing, evidence location, public-path guarantee, historical fallback declaration, and foreground stop behavior.
 
 - [ ] **Step 5: Run fast script gates and verify GREEN**
 
@@ -329,7 +329,7 @@ Expected evidence:
 
 - [ ] **Step 4: Prove replay idempotence**
 
-Rerun with the exact same `RunId` and `ScenarioStartUtc`, then query the same public history window.
+Rerun with the exact same `RunId` and `ScenarioStartUtc` using the default 300 ms per-POST replay pacing, then query the same public history window.
 
 Expected: identical returned identities and unchanged distinct run-scoped fact count.
 
