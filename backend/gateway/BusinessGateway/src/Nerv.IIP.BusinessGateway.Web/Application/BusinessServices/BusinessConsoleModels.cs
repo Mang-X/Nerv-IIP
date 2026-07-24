@@ -997,7 +997,9 @@ public sealed record BusinessConsoleQualityItem(
     decimal? DefectQuantity,
     string? DefectReason,
     string? BatchNo,
-    string? SerialNo);
+    string? SerialNo,
+    int? AttemptNumber = null,
+    string? ReinspectionOfInspectionRecordId = null);
 
 public sealed record BusinessConsoleQualityListResponse(
     IReadOnlyCollection<BusinessConsoleQualityItem> Items,

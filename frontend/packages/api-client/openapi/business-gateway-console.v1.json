@@ -30331,6 +30331,15 @@
           "serialNo": {
             "type": "string",
             "nullable": true
+          },
+          "attemptNumber": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "reinspectionOfInspectionRecordId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

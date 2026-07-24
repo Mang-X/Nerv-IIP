@@ -68,6 +68,22 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql(
+                """
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1
+                        FROM quality.inspection_records
+                        WHERE attempt_number > 1
+                           OR reinspection_of_inspection_record_id IS NOT NULL
+                    ) THEN
+                        RAISE EXCEPTION
+                            'Cannot downgrade AddQualityReinspectionHistory while reinspection history exists. Preserve the data and roll forward with a corrective migration.';
+                    END IF;
+                END $$;
+                """);
+
             migrationBuilder.DropForeignKey(
                 name: "FK_inspection_records_inspection_records_reinspection_of_inspe~",
                 schema: "quality",

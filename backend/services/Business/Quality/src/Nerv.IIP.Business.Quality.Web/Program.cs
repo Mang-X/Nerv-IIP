@@ -13,6 +13,7 @@ using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Quality.Web.Application.Approvals;
 using Nerv.IIP.Business.Quality.Web.Application.Commands;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
+using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Quality.Web.Application.Seed;
@@ -159,6 +160,7 @@ try
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
             .AddCommandLockBehavior()
             .AddKnownExceptionValidationBehavior()
+            .AddOpenBehavior(typeof(CreateReinspectionUniqueConflictBehavior<,>))
             .AddUnitOfWorkBehaviors());
 
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = QualityFacts.ServiceName)

@@ -5770,6 +5770,48 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Quality_http_client_preserves_reinspection_lineage_in_record_list()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                total = 1,
+                items = new[]
+                {
+                    new
+                    {
+                        inspectionRecordId = "inspection-002",
+                        sourceType = "operation",
+                        sourceDocumentId = "WO-001",
+                        skuCode = "SKU-001",
+                        result = "passed",
+                        batchNo = "LOT-001",
+                        serialNo = (string?)null,
+                        dispositionReason = (string?)null,
+                        attemptNumber = 2,
+                        reinspectionOfInspectionRecordId = "inspection-001",
+                    },
+                },
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var response = await client.ListInspectionRecordsAsync(
+            "internal-token-001",
+            new BusinessConsoleQualityListRequest("org-001", "env-dev"),
+            CancellationToken.None);
+
+        var item = Assert.Single(response.Items);
+        Assert.Equal(2, item.AttemptNumber);
+        Assert.Equal("inspection-001", item.ReinspectionOfInspectionRecordId);
+    }
+
+    [Fact]
     public async Task Quality_http_client_maps_inspection_record_to_real_downstream_request_shape()
     {
         string? requestBody = null;

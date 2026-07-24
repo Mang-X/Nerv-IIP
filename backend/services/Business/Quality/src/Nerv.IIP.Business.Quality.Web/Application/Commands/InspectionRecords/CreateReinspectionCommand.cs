@@ -60,6 +60,11 @@ public sealed class CreateReinspectionCommandHandler(
                 cancellationToken)
             ?? throw new KnownException(
                 $"Inspection record '{request.ReinspectionOfInspectionRecordId}' was not found.");
+        if (string.Equals(previous.Result, InspectionRecordResults.Passed, StringComparison.Ordinal))
+        {
+            throw new KnownException("Passed inspection records are terminal and cannot be reinspected.");
+        }
+
         var existing = await inspectionRecordRepository.FindByReinspectionOfAsync(
             previous.Id,
             cancellationToken);
@@ -139,5 +144,91 @@ public sealed class CreateReinspectionCommandHandler(
         }
 
         return usage;
+    }
+}
+
+public sealed class CreateReinspectionUniqueConflictBehavior<TRequest, TResponse>(
+    ApplicationDbContext dbContext)
+    : IPipelineBehavior<TRequest, TResponse>
+    where TRequest : notnull
+{
+    public async Task<TResponse> Handle(
+        TRequest request,
+        RequestHandlerDelegate<TResponse> next,
+        CancellationToken cancellationToken)
+    {
+        if (request is not CreateReinspectionCommand)
+        {
+            return await next(cancellationToken);
+        }
+
+        try
+        {
+            return await next(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (IsReinspectionUniqueConflict(exception, dbContext))
+        {
+            dbContext.ChangeTracker.Clear();
+            return await next(cancellationToken);
+        }
+    }
+
+    private static bool IsReinspectionUniqueConflict(
+        DbUpdateException exception,
+        ApplicationDbContext context)
+    {
+        if (!exception.Entries.Any(entry => entry.Entity is InspectionRecord))
+        {
+            return false;
+        }
+
+        return EnumerateExceptions(exception).Any(inner =>
+            IsPostgreSqlUniqueConflict(inner)
+            || IsSqliteUniqueConflict(context, inner));
+    }
+
+    private static IEnumerable<Exception> EnumerateExceptions(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            yield return current;
+        }
+    }
+
+    private static bool IsPostgreSqlUniqueConflict(Exception exception)
+    {
+        return string.Equals(
+                exception.GetType().FullName,
+                "Npgsql.PostgresException",
+                StringComparison.Ordinal)
+            && exception.GetType().GetProperty("SqlState")?.GetValue(exception) as string == "23505";
+    }
+
+    private static bool IsSqliteUniqueConflict(
+        ApplicationDbContext context,
+        Exception exception)
+    {
+        var providerName = context.Database.ProviderName ?? string.Empty;
+        var typeName = exception.GetType().FullName ?? string.Empty;
+        if (!providerName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase)
+            && !typeName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var errorCode = GetIntProperty(exception, "SqliteErrorCode");
+        var extendedErrorCode = GetIntProperty(exception, "SqliteExtendedErrorCode");
+        return errorCode == 19 || extendedErrorCode is 1555 or 2067;
+    }
+
+    private static int? GetIntProperty(Exception exception, string propertyName)
+    {
+        var value = exception.GetType().GetProperty(propertyName)?.GetValue(exception);
+        return value switch
+        {
+            int intValue => intValue,
+            uint uintValue => unchecked((int)uintValue),
+            _ => null,
+        };
     }
 }

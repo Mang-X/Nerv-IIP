@@ -166,33 +166,32 @@ public sealed class QualityInspectionEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var records = new InspectionRecordRepository(dbContext);
         var plans = new InspectionPlanRepository(dbContext);
-        var initialId = await new CreateInspectionRecordCommandHandler(
-                records,
-                plans,
-                new InspectionTaskRepository(dbContext))
-            .Handle(
-                new CreateInspectionRecordCommand(
-                    "org-001",
-                    "env-dev",
-                    null,
-                    "operation",
-                    "mes",
-                    "WO-REINSPECT-COMMAND",
-                    "SKU-FG-1000",
-                    5m,
-                    "LOT-REINSPECT-COMMAND",
-                    null,
-                    [new InspectionResultLineCommandInput(
-                        "appearance",
-                        "scratch",
-                        null,
-                        InspectionLineResults.Failed,
-                        "surface-defect",
-                        1m,
-                        [])],
-                    "Surface defect",
-                    []),
-                CancellationToken.None);
+        var initialCommand = new CreateInspectionRecordCommand(
+            "org-001",
+            "env-dev",
+            null,
+            "operation",
+            "mes",
+            "WO-REINSPECT-COMMAND",
+            "SKU-FG-1000",
+            5m,
+            "LOT-REINSPECT-COMMAND",
+            null,
+            [new InspectionResultLineCommandInput(
+                "appearance",
+                "scratch",
+                null,
+                InspectionLineResults.Failed,
+                "surface-defect",
+                1m,
+                [])],
+            "Surface defect",
+            []);
+        var initialHandler = new CreateInspectionRecordCommandHandler(
+            records,
+            plans,
+            new InspectionTaskRepository(dbContext));
+        var initialId = await initialHandler.Handle(initialCommand, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new CreateReinspectionCommandHandler(records, plans);
         var command = new CreateReinspectionCommand(
@@ -214,15 +213,45 @@ public sealed class QualityInspectionEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var replay = await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        var initialReplay = await initialHandler.Handle(initialCommand, CancellationToken.None);
         var detail = await new GetInspectionRecordQueryHandler(dbContext).Handle(
             new GetInspectionRecordQuery(created.InspectionRecordId, "org-001", "env-dev"),
             CancellationToken.None);
 
         Assert.Equal(created, replay);
+        Assert.Equal(initialId, initialReplay);
         Assert.Equal(2, created.AttemptNumber);
         Assert.Equal(2, await dbContext.InspectionRecords.CountAsync());
         Assert.Equal(2, detail.AttemptNumber);
         Assert.Equal(initialId, detail.ReinspectionOfInspectionRecordId);
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            command with { ReinspectionOfInspectionRecordId = created.InspectionRecordId },
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public void Reinspection_unique_conflict_behavior_wraps_unit_of_work_save()
+    {
+        using var factory = CreateFactory();
+        using var scope = factory.Services.CreateScope();
+
+        var behaviorTypes = scope.ServiceProvider
+            .GetServices<IPipelineBehavior<CreateReinspectionCommand, CreateReinspectionResult>>()
+            .Select(behavior => behavior.GetType())
+            .ToArray();
+        var conflictBehaviorIndex = Array.FindIndex(
+            behaviorTypes,
+            type => type.IsGenericType
+                && type.GetGenericTypeDefinition() == typeof(CreateReinspectionUniqueConflictBehavior<,>));
+        var unitOfWorkBehaviorIndex = Array.FindIndex(
+            behaviorTypes,
+            type => type.FullName?.Contains("UnitOfWorkBehavior", StringComparison.Ordinal) is true);
+
+        Assert.True(conflictBehaviorIndex >= 0, "Reinspection unique-conflict behavior must be registered.");
+        Assert.True(unitOfWorkBehaviorIndex >= 0, "Unit-of-work behavior must be registered.");
+        Assert.True(
+            conflictBehaviorIndex < unitOfWorkBehaviorIndex,
+            "Reinspection unique-conflict behavior must wrap the unit-of-work save.");
     }
 
     [Fact]

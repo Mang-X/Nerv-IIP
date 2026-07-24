@@ -111,7 +111,13 @@ public sealed class MesQualityDefectNcrAcceptanceTests
 
         await mesHandler.HandleAsync(passedEvent, CancellationToken.None);
         var released = await mesDb.QualityHoldContexts.SingleAsync(x => x.SourceDocumentId == workOrderId);
+        var domainEventCountBeforeReplay = passedRecord.GetDomainEvents().Count;
         var replay = await reinspectionHandler.Handle(reinspectionCommand, CancellationToken.None);
+        var transitions = await mesDb.QualityHoldTransitions
+            .Where(x => x.SourceDocumentId == workOrderId)
+            .OrderBy(x => x.OccurredAtUtc)
+            .ThenBy(x => x.Id)
+            .ToListAsync();
 
         Assert.False(released.Active);
         Assert.Equal(reinspection.InspectionRecordId.ToString(), released.ReleaseInspectionRecordId);
@@ -119,11 +125,18 @@ public sealed class MesQualityDefectNcrAcceptanceTests
         Assert.Equal(initialId, passedRecord.ReinspectionOfInspectionRecordId);
         Assert.Equal(reinspection, replay);
         Assert.Equal(2, await qualityDb.InspectionRecords.CountAsync());
+        Assert.Equal(domainEventCountBeforeReplay, passedRecord.GetDomainEvents().Count);
         Assert.NotEqual(rejectedEvent.IdempotencyKey, passedEvent.IdempotencyKey);
-        Assert.Contains(
-            await mesDb.QualityHoldTransitions.Where(x => x.SourceDocumentId == workOrderId).ToListAsync(),
-            transition => transition.EventKind == "inspection-released"
-                && transition.SourceInspectionRecordId == reinspection.InspectionRecordId.ToString());
+        Assert.Collection(
+            transitions,
+            transition => Assert.Equal("hold-applied", transition.EventKind),
+            transition =>
+            {
+                Assert.Equal("inspection-released", transition.EventKind);
+                Assert.Equal(
+                    reinspection.InspectionRecordId.ToString(),
+                    transition.SourceInspectionRecordId);
+            });
     }
 
     [Fact]

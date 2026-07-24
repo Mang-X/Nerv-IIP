@@ -3149,7 +3149,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             null,
             item.DispositionReason,
             item.BatchNo,
-            item.SerialNo);
+            item.SerialNo,
+            item.AttemptNumber,
+            item.ReinspectionOfInspectionRecordId);
 
     private static string QualityReasonPath(string reasonCode) =>
         $"/api/business/v1/quality/reason-codes/{Uri.EscapeDataString(reasonCode)}";
@@ -3321,7 +3323,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string Result,
         string? BatchNo,
         string? SerialNo,
-        string? DispositionReason);
+        string? DispositionReason,
+        int AttemptNumber = 1,
+        string? ReinspectionOfInspectionRecordId = null);
 
     private sealed record DownstreamInspectionRecordDetail(
         string InspectionRecordId,

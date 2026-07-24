@@ -98,7 +98,8 @@ public sealed class InspectionRecordRepository(ApplicationDbContext context)
                 && x.SourceType == normalizedSourceType
                 && x.SourceService == normalizedSourceService
                 && x.SkuCode == normalizedSkuCode
-                && x.SourceDocumentId == normalizedSourceDocumentId,
+                && x.SourceDocumentId == normalizedSourceDocumentId
+                && x.AttemptNumber == 1,
             cancellationToken);
     }
 
