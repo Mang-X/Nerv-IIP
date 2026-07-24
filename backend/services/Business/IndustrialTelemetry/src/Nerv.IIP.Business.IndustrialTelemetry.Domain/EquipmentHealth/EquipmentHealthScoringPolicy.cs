@@ -56,7 +56,8 @@ public sealed record EquipmentHealthRuleObservation(
     double ThresholdValue,
     string Unit,
     EquipmentHealthValueSample? CurrentSample,
-    ImmutableArray<EquipmentHealthHistorySample> History);
+    ImmutableArray<EquipmentHealthHistorySample> History,
+    bool IsThresholdInclusive = true);
 
 public sealed record EquipmentHealthRuntimeFact(
     double ProductiveHours,
@@ -126,6 +127,7 @@ public static class EquipmentHealthScoringPolicy
 
     private static readonly TimeSpan MinimumHistoricalSpan = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan AlarmWindow = TimeSpan.FromHours(24);
+    private static readonly TimeSpan RealtimeFactWindow = TimeSpan.FromMinutes(10);
 
     public static EquipmentHealthScoringResult Evaluate(EquipmentHealthScoringInput input)
     {
@@ -368,10 +370,7 @@ public static class EquipmentHealthScoringPolicy
                 {
                     var history = OrderedHistory(observation.History);
                     var breachCount = history.Count(
-                        sample => IsThresholdBreach(
-                            sample.Value,
-                            observation.ThresholdValue,
-                            observation.Direction));
+                        sample => IsThresholdBreach(sample.Value, observation));
                     var breachRatio = history.IsDefaultOrEmpty
                         ? 0
                         : (double)breachCount / history.Length;
@@ -651,12 +650,18 @@ public static class EquipmentHealthScoringPolicy
 
     private static bool IsThresholdBreach(
         double value,
-        double threshold,
-        EquipmentHealthRiskDirection direction)
+        EquipmentHealthRuleObservation observation)
     {
-        return direction == EquipmentHealthRiskDirection.High
-            ? value >= threshold
-            : value <= threshold;
+        if (observation.Direction == EquipmentHealthRiskDirection.High)
+        {
+            return observation.IsThresholdInclusive
+                ? value >= observation.ThresholdValue
+                : value > observation.ThresholdValue;
+        }
+
+        return observation.IsThresholdInclusive
+            ? value <= observation.ThresholdValue
+            : value < observation.ThresholdValue;
     }
 
     private static double SafeSideDistance(
@@ -698,6 +703,8 @@ public static class EquipmentHealthScoringPolicy
                 {
                     CurrentSample = observation.CurrentSample is not null
                         && observation.CurrentSample.SourceFact.OccurredAtUtc <= input.EvaluatedAtUtc
+                        && input.EvaluatedAtUtc - observation.CurrentSample.SourceFact.OccurredAtUtc
+                            <= RealtimeFactWindow
                             ? observation.CurrentSample
                             : null,
                     History = observation.History.IsDefault
@@ -734,18 +741,27 @@ public static class EquipmentHealthScoringPolicy
         EquipmentHealthScoringInput input)
     {
         var sourceFacts = Enumerable.Empty<EquipmentHealthSourceFact>();
-        var observations = RuleObservations(input);
+        var observations = input.RuleObservations.IsDefault
+            ? []
+            : input.RuleObservations;
         if (!observations.IsDefaultOrEmpty)
         {
             sourceFacts = sourceFacts.Concat(
                 observations
-                    .Where(observation => observation.CurrentSample is not null)
+                    .Where(
+                        observation => observation.CurrentSample is not null
+                            && observation.CurrentSample.SourceFact.OccurredAtUtc
+                                <= input.EvaluatedAtUtc)
                     .Select(observation => observation.CurrentSample!.SourceFact));
             sourceFacts = sourceFacts.Concat(
                 observations.SelectMany(
                     observation => observation.History.IsDefault
                         ? []
-                        : observation.History.Select(sample => sample.SourceFact)));
+                        : observation.History
+                            .Where(
+                                sample =>
+                                    sample.SourceFact.OccurredAtUtc <= input.EvaluatedAtUtc)
+                            .Select(sample => sample.SourceFact)));
         }
 
         if (input.Runtime is not null
@@ -779,7 +795,7 @@ public static class EquipmentHealthScoringPolicy
         var age = evaluatedAtUtc - newestSourceFact.OccurredAtUtc;
         return age <= TimeSpan.FromMinutes(2)
             ? EquipmentHealthFreshness.Fresh
-            : age <= TimeSpan.FromMinutes(10)
+            : age <= RealtimeFactWindow
                 ? EquipmentHealthFreshness.Delayed
                 : EquipmentHealthFreshness.Stale;
     }

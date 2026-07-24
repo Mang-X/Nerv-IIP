@@ -339,6 +339,70 @@ public sealed class EquipmentHealthQueryTests
     }
 
     [Theory]
+    [InlineData(">", "normal")]
+    [InlineData(">=", "risk")]
+    [InlineData("<", "normal")]
+    [InlineData("<=", "risk")]
+    public async Task Handler_preserves_strict_comparison_at_the_sustained_exceedance_boundary(
+        string comparisonOperator,
+        string expectedStatus)
+    {
+        await using var dbContext = CreateDbContext(
+            $"{nameof(Handler_preserves_strict_comparison_at_the_sustained_exceedance_boundary)}-{comparisonOperator}");
+        dbContext.AlarmRules.Add(AlarmRule.Configure(
+            "org-a", "env-a", "DEV-A", "BOUNDARY", "BOUNDARY-ALARM", "warning",
+            "value", comparisonOperator, 100m, "unit", true));
+        AddHistory(dbContext, "org-a", "env-a", "DEV-A", "value", 100m, 100m, 100m, 100m, 100m, 100m);
+        await dbContext.SaveChangesAsync();
+
+        var response = await new GetEquipmentHealthQueryHandler(
+            dbContext,
+            new FixedTimeProvider(Now)).Handle(
+                new GetEquipmentHealthQuery("org-a", "env-a", "DEV-A"),
+                CancellationToken.None);
+
+        var sustainedEvaluation = Assert.Single(
+            response.RuleEvaluations,
+            evaluation => evaluation.RuleCode == EquipmentHealthScoringPolicy.SustainedExceedanceRuleCode);
+        Assert.Equal(expectedStatus, sustainedEvaluation.Status);
+    }
+
+    [Fact]
+    public async Task Handler_does_not_score_a_sample_older_than_the_realtime_freshness_window()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Handler_does_not_score_a_sample_older_than_the_realtime_freshness_window));
+        dbContext.AlarmRules.Add(AlarmRule.Configure(
+            "org-a", "env-a", "DEV-A", "STALE-HIGH", "STALE-ALARM", "critical",
+            "temperature", ">=", 100m, "celsius", true));
+        dbContext.TelemetryRawSamples.Add(RawSample(
+            "org-a",
+            "env-a",
+            "DEV-A",
+            "temperature",
+            Now.AddMinutes(-10).AddMilliseconds(-1),
+            110m,
+            "stale-current"));
+        await dbContext.SaveChangesAsync();
+
+        var response = await new GetEquipmentHealthQueryHandler(
+            dbContext,
+            new FixedTimeProvider(Now)).Handle(
+                new GetEquipmentHealthQuery("org-a", "env-a", "DEV-A"),
+                CancellationToken.None);
+
+        var thresholdEvaluation = Assert.Single(
+            response.RuleEvaluations,
+            evaluation => evaluation.RuleCode == EquipmentHealthScoringPolicy.ThresholdProximityRuleCode);
+        Assert.Equal("accumulating", thresholdEvaluation.Status);
+        Assert.Equal("无当前值", thresholdEvaluation.CurrentValue);
+        Assert.Equal(100, response.HealthScore);
+        Assert.Empty(response.RiskFactors);
+        Assert.Equal("stale", response.DataFreshness.Status);
+        Assert.Equal(Now.AddMinutes(-10).AddMilliseconds(-1), response.DataFreshness.LatestFactAtUtc);
+    }
+
+    [Theory]
     [InlineData("warning", false, 45, 55, "warning")]
     [InlineData("critical", false, 65, 35, "critical")]
     [InlineData("critical", true, 0, 100, "healthy")]

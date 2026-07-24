@@ -200,7 +200,8 @@ public sealed class GetEquipmentHealthQueryHandler(
                     decimal.ToDouble(rule.ThresholdValue),
                     rule.UnitCode,
                     currentSample,
-                    ruleSamples);
+                    ruleSamples,
+                    rule.ComparisonOperator is ">=" or "<=");
             })
             .ToImmutableArray();
     }
