@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Seed;
@@ -26,7 +27,8 @@ public sealed class LeaderDemoSeedServiceTests
                 Assert.Equal(LeaderDemoSeedService.TemperatureTagKey, temperature.TagKey);
                 Assert.Equal("decimal", temperature.ValueType);
                 Assert.Equal("degC", temperature.UnitCode);
-                Assert.Equal("bucket-2s", temperature.SamplingPolicy);
+                Assert.Equal("sample-2s", temperature.SamplingPolicy);
+                Assert.Equal(2, TelemetrySamplingPolicy.Parse(temperature.SamplingPolicy).BucketSeconds);
             },
             vibration =>
             {
@@ -34,7 +36,8 @@ public sealed class LeaderDemoSeedServiceTests
                 Assert.Equal(LeaderDemoSeedService.VibrationTagKey, vibration.TagKey);
                 Assert.Equal("decimal", vibration.ValueType);
                 Assert.Equal("mm/s", vibration.UnitCode);
-                Assert.Equal("bucket-2s", vibration.SamplingPolicy);
+                Assert.Equal("sample-2s", vibration.SamplingPolicy);
+                Assert.Equal(2, TelemetrySamplingPolicy.Parse(vibration.SamplingPolicy).BucketSeconds);
             });
         var rule = Assert.Single(await db.AlarmRules.ToArrayAsync());
         Assert.Equal("ALARM-DEMO-001", rule.RuleCode);
@@ -74,7 +77,7 @@ public sealed class LeaderDemoSeedServiceTests
             LeaderDemoSeedService.VibrationTagKey,
             "decimal",
             "g",
-            "bucket-10s"));
+            "sample-10s"));
         await db.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>

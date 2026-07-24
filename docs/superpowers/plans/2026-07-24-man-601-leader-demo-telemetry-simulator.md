@@ -38,13 +38,13 @@ Assert.Collection(
     vibration =>
     {
         Assert.Equal(LeaderDemoSeedService.TemperatureTagKey, vibration.TagKey);
-        Assert.Equal("bucket-2s", vibration.SamplingPolicy);
+        Assert.Equal("sample-2s", vibration.SamplingPolicy);
     },
     temperature =>
     {
         Assert.Equal(LeaderDemoSeedService.VibrationTagKey, temperature.TagKey);
         Assert.Equal("mm/s", temperature.UnitCode);
-        Assert.Equal("bucket-2s", temperature.SamplingPolicy);
+        Assert.Equal("sample-2s", temperature.SamplingPolicy);
     });
 Assert.Equal(LeaderDemoSeedService.VibrationTagKey, rule.TagKey);
 Assert.Equal(8m, rule.ThresholdValue);
@@ -74,8 +74,8 @@ public const string VibrationTagKey = "vibration";
 Use one private `EnsureTagAsync` helper to enforce:
 
 ```csharp
-TemperatureTagKey, "decimal", "degC", "bucket-2s"
-VibrationTagKey, "decimal", "mm/s", "bucket-2s"
+TemperatureTagKey, "decimal", "degC", "sample-2s"
+VibrationTagKey, "decimal", "mm/s", "sample-2s"
 ```
 
 Configure `ALARM-DEMO-001` as an enabled `VIBRATION-HIGH` critical rule on `vibration`, `>= 8m`, `mm/s`, with `0.3m` deadband and 4-second on/off/minimum-duration windows. Preserve collision failure and do not create any runtime facts.

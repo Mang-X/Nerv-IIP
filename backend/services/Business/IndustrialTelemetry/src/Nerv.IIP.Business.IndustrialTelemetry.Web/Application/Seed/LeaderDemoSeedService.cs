@@ -59,11 +59,11 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
                 tagKey,
                 "decimal",
                 unitCode,
-                "bucket-2s"));
+                "sample-2s"));
             return;
         }
 
-        if (tag.ValueType != "decimal" || tag.UnitCode != unitCode || tag.SamplingPolicy != "bucket-2s")
+        if (tag.ValueType != "decimal" || tag.UnitCode != unitCode || tag.SamplingPolicy != "sample-2s")
         {
             throw Collision(tagKey);
         }
