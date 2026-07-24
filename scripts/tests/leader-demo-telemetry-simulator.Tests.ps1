@@ -37,6 +37,22 @@ function Assert-Equal {
 }
 
 $scenarioStart = [DateTimeOffset]::Parse('2026-07-24T00:00:00Z')
+$subMillisecondTimeline = @(
+    New-NervLeaderDemoTelemetryTimeline `
+        -RunId 'precision-001' `
+        -ScenarioStartUtc ([DateTimeOffset]::Parse('2026-07-24T00:00:00.1234567Z')) `
+        -DurationSeconds 8 `
+        -SampleIntervalSeconds 2 `
+        -DegradingAtSeconds 2 `
+        -AlarmAtSeconds 4 `
+        -RecoveredAtSeconds 6
+)
+Assert-Equal (
+    [DateTimeOffset]::Parse('2026-07-24T00:00:00.123Z')
+) (
+    [DateTimeOffset]::Parse($subMillisecondTimeline[0].BucketStartUtc)
+) 'Scenario timestamps must be truncated to Unix milliseconds for database-stable replay.'
+
 $timeline = @(
     New-NervLeaderDemoTelemetryTimeline `
         -RunId 'rehearsal-001' `

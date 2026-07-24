@@ -70,7 +70,9 @@ function New-NervLeaderDemoTelemetryTimeline {
         throw 'Scenario transitions must be strictly ordered and occur before the duration ends.'
     }
 
-    $normalizedStart = $ScenarioStartUtc.ToUniversalTime()
+    $normalizedStart = [DateTimeOffset]::FromUnixTimeMilliseconds(
+        $ScenarioStartUtc.ToUniversalTime().ToUnixTimeMilliseconds()
+    )
     for ($index = 0; ($index * $SampleIntervalSeconds) -lt $DurationSeconds; $index++) {
         $elapsedSeconds = $index * $SampleIntervalSeconds
         $bucketStart = $normalizedStart.AddSeconds($elapsedSeconds)
@@ -445,6 +447,9 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
         [scriptblock] $CancellationCheckAction = { return $false }
     )
 
+    $ScenarioStartUtc = [DateTimeOffset]::FromUnixTimeMilliseconds(
+        $ScenarioStartUtc.ToUniversalTime().ToUnixTimeMilliseconds()
+    )
     $timeline = @(
         New-NervLeaderDemoTelemetryTimeline `
             -RunId $RunId `
