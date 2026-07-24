@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils'
+import { nextTick, reactive } from 'vue'
 import { beforeAll, describe, expect, it } from 'vitest'
 import NvMetricCard from './NvMetricCard.vue'
 import NvMetricRing from './NvMetricRing.vue'
@@ -574,6 +575,67 @@ describe('NvMetricRing / NvMetricStrip', () => {
     await wrapper.setProps({ segments: [seg('进行中', 24, 'a')] })
     expect(wrapper.findAll('.nv-metric-dim')).toHaveLength(0)
     expect(tips()).toBe(before) // 已删项的 tooltip 不残留
+  })
+
+  // 回归（评审六轮）：`k:${key}` 会把 key:1 与 key:'1' 压成同一编码——Vue 视二者为
+  // 不同 primitive key，编码也必须区分类型（k:n:1 / k:s:1）。
+  it('ring string/number 同值 key 不碰撞，悬浮绑定各自项', async () => {
+    const wrapper = mount(NvMetricRing, {
+      props: {
+        label: 't',
+        value: 33,
+        segments: [
+          { label: 'a', value: 24, key: 1, tone: 'brand' as const },
+          { label: 'b', value: 9, key: '1', tone: 'success' as const },
+        ],
+      },
+    })
+    await wrapper.findAll('.nv-ring-row')[1].trigger('mouseenter')
+    const centre = wrapper.find('.nv-ring-center').text()
+    expect(centre).toContain('9')
+    expect(centre).not.toContain('24')
+  })
+
+  // 回归（评审六轮）：watch 数组引用对原地 splice 无效（探针实测 0 次触发）——
+  // 清理必须挂在 resolved-key 投影上，父级原地删除悬浮项同样要清空。
+  it('ring 原地 splice 删除悬浮项：淡化清空、中心回到总数', async () => {
+    const segs = reactive([
+      { label: '进行中', value: 24, key: 'a', tone: 'brand' as const },
+      { label: '待派工', value: 9, key: 'b', tone: 'brand' as const },
+      { label: '超期', value: 2, key: 'c', tone: 'brand' as const },
+    ])
+    const wrapper = mount(NvMetricRing, {
+      props: { label: 't', value: 35, centerCaption: '总计', segments: segs },
+    })
+    await wrapper.findAll('.nv-ring-row')[2].trigger('mouseenter') // key 'c'
+    expect(wrapper.findAll('.nv-ring-dim').length).toBeGreaterThan(0)
+
+    segs.splice(2, 1) // 原地删除，数组引用不变
+    await nextTick()
+    await nextTick()
+    expect(wrapper.findAll('.nv-ring-dim')).toHaveLength(0)
+    expect(wrapper.find('.nv-ring-center').text()).toContain('总计')
+  })
+
+  it('breakdown 原地 splice 删除悬浮项：淡化清空、tooltip 不残留', async () => {
+    const segs = reactive([
+      { label: '进行中', value: 24, key: 'a', tone: 'brand' as const },
+      { label: '超期', value: 2, key: 'c', tone: 'brand' as const },
+    ])
+    const wrapper = mount(NvMetricCard, {
+      props: { variant: 'breakdown', label: 't', value: 26, segments: segs },
+    })
+    const tips = () => document.querySelectorAll('.nv-metric-tip').length
+    const before = tips()
+    await wrapper.findAll('li')[1].trigger('mousemove', { clientX: 10, clientY: 10 }) // key 'c'
+    expect(wrapper.findAll('.nv-metric-dim').length).toBeGreaterThan(0)
+    expect(tips()).toBe(before + 1)
+
+    segs.splice(1, 1)
+    await nextTick()
+    await nextTick()
+    expect(wrapper.findAll('.nv-metric-dim')).toHaveLength(0)
+    expect(tips()).toBe(before)
   })
 
   it('ring 图例给出每段计数与占比，中心默认显示总数', () => {

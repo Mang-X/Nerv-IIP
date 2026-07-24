@@ -127,13 +127,16 @@ export const metricToneStroke: Record<NvMetricTone, string> = {
 
 /**
  * Resolve an item's stable identity for v-for keys AND interaction state.
- * Explicit keys and index fallbacks live in DISJOINT namespaces (`k:` / `i:`):
- * a bare `item.key ?? index` lets a mixed collection collide — `[{key: 1}, {}]`
- * resolves both items to `1`, producing duplicate v-for keys and mis-binding
- * the hover lookup to the wrong business item. Internal to the package.
+ * Explicit keys and index fallbacks live in DISJOINT namespaces, and the
+ * explicit namespace also encodes the key's TYPE: a bare `item.key ?? index`
+ * lets `[{key: 1}, {}]` collide on `1`, and a stringified `k:${key}` still
+ * collapses `key: 1` and `key: "1"` into the same encoding — Vue treats those
+ * primitives as distinct keys, so the encoding must too (`k:n:1` vs `k:s:1`).
+ * Internal to the package.
  */
 export function metricItemKey(item: { key?: string | number }, index: number): string {
-  return item.key != null ? `k:${item.key}` : `i:${index}`
+  if (item.key == null) return `i:${index}`
+  return typeof item.key === 'number' ? `k:n:${item.key}` : `k:s:${item.key}`
 }
 
 /** Resolve a delta's semantic tone from its (optional) override + direction. */

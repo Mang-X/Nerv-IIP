@@ -49,11 +49,16 @@ function clear() {
 }
 // Live data can filter the hovered slice away without ever firing mouseleave on
 // the unmounted node — a stale key would dim every remaining slice and keep the
-// removed item's tooltip on screen.
+// removed item's tooltip on screen. Watch the resolved-key PROJECTION, not the
+// array reference: an in-place splice/sort mutates the same reactive array, so
+// a `() => props.segments` getter never fires (probe-verified: 0 hits).
 watch(
-  () => props.segments,
-  (segs) => {
-    if (hovered.value !== null && !segs.some((s, i) => metricItemKey(s, i) === hovered.value))
+  () => props.segments.map(metricItemKey).join(' '),
+  () => {
+    if (
+      hovered.value !== null &&
+      !props.segments.some((s, i) => metricItemKey(s, i) === hovered.value)
+    )
       clear()
   },
 )
