@@ -1,6 +1,8 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventHandlers;
@@ -32,6 +34,135 @@ public sealed class WmsStockMovementPostedConsumerTests
         Assert.Equal(InventoryMovementRequestStatus.Posted, persistedRequest.Status);
         Assert.Equal("inventory-movement-001", persistedRequest.InventoryMovementId);
         Assert.NotNull(persistedRequest.PostedAtUtc);
+    }
+
+    [Fact]
+    public async Task Stock_movement_posted_consumer_completes_outbound_only_after_inventory_posts()
+    {
+        var databaseName = $"wms-stock-movement-outbound-posted-{Guid.NewGuid():N}";
+        await using var dbContext = CreateContext(databaseName);
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "DO-001",
+            "erp-delivery-order",
+            "DO-001",
+            "finished-goods",
+            [
+                new OutboundOrderLineDraft(
+                    "SO-LINE-001",
+                    "SKU-FG-1000",
+                    "kg",
+                    4m,
+                    "receiving",
+                    "LOT-001",
+                    null,
+                    "unrestricted",
+                    "production",
+                    null),
+            ]);
+        outbound.CreatePickingTask("TASK-OUT-001", "SO-LINE-001", "receiving", "PACK-01", 4m);
+        var movementRequest = Assert.Single(outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
+
+        Assert.Equal(OutboundOrderStatus.InventoryPostingPending, outbound.Status);
+        Assert.Null(outbound.CompletedAtUtc);
+
+        dbContext.OutboundOrders.Add(outbound);
+        dbContext.InventoryMovementRequests.Add(movementRequest);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new StockMovementPostedIntegrationEventHandlerForMarkWmsRequestPosted(
+            new CommandExecutingSender(databaseName),
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(CreateOutboundPostedEvent(), CancellationToken.None);
+
+        await using var assertionContext = CreateContext(databaseName);
+        var persistedOrder = await assertionContext.OutboundOrders.SingleAsync(CancellationToken.None);
+        var persistedRequest = await assertionContext.InventoryMovementRequests.SingleAsync(CancellationToken.None);
+        Assert.Equal(InventoryMovementRequestStatus.Posted, persistedRequest.Status);
+        Assert.Equal(OutboundOrderStatus.Completed, persistedOrder.Status);
+        Assert.NotNull(persistedOrder.CompletedAtUtc);
+    }
+
+    [Fact]
+    public async Task Concurrent_outbound_posted_callbacks_conflict_then_retry_completes_the_order()
+    {
+        var databaseName = $"wms-stock-movement-concurrent-posted-{Guid.CreateVersion7():N}";
+        var databaseRoot = new InMemoryDatabaseRoot();
+        InventoryMovementRequest[] requests;
+        await using (var seedContext = CreateContext(databaseName, databaseRoot))
+        {
+            var outbound = OutboundOrder.Create(
+                "org-001",
+                "env-dev",
+                "DO-CONCURRENT-001",
+                "erp-delivery-order",
+                "DO-CONCURRENT-001",
+                "finished-goods",
+                [
+                    new OutboundOrderLineDraft(
+                        "SO-LINE-001",
+                        "SKU-FG-1000",
+                        "kg",
+                        4m,
+                        "receiving",
+                        "LOT-001",
+                        null,
+                        "unrestricted",
+                        "production",
+                        null),
+                    new OutboundOrderLineDraft(
+                        "SO-LINE-002",
+                        "SKU-FG-2000",
+                        "kg",
+                        2m,
+                        "receiving",
+                        "LOT-002",
+                        null,
+                        "unrestricted",
+                        "production",
+                        null),
+                ]);
+            outbound.CreatePickingTask("TASK-OUT-001", "SO-LINE-001", "receiving", "PACK-01", 4m);
+            outbound.CreatePickingTask("TASK-OUT-002", "SO-LINE-002", "receiving", "PACK-01", 2m);
+            requests = outbound.CompletePackReview("PACK-001", true, "idem-out-concurrent")
+                .OrderBy(x => x.SourceDocumentLineId, StringComparer.Ordinal)
+                .ToArray();
+            seedContext.OutboundOrders.Add(outbound);
+            seedContext.InventoryMovementRequests.AddRange(requests);
+            await seedContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using var firstContext = CreateContext(databaseName, databaseRoot);
+        await using var secondContext = CreateContext(databaseName, databaseRoot);
+        var firstRequest = requests[0];
+        var secondRequest = requests[1];
+        await new MarkInventoryMovementRequestPostedCommandHandler(firstContext).Handle(
+            PostedCommand(firstRequest, "inventory-movement-001"),
+            CancellationToken.None);
+        await new MarkInventoryMovementRequestPostedCommandHandler(secondContext).Handle(
+            PostedCommand(secondRequest, "inventory-movement-002"),
+            CancellationToken.None);
+
+        await firstContext.SaveChangesAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(
+            () => secondContext.SaveChangesAsync(CancellationToken.None));
+
+        await using (var retryContext = CreateContext(databaseName, databaseRoot))
+        {
+            await new MarkInventoryMovementRequestPostedCommandHandler(retryContext).Handle(
+                PostedCommand(secondRequest, "inventory-movement-002"),
+                CancellationToken.None);
+            await retryContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using var assertionContext = CreateContext(databaseName, databaseRoot);
+        var persistedOrder = await assertionContext.OutboundOrders.SingleAsync(CancellationToken.None);
+        Assert.Equal(OutboundOrderStatus.Completed, persistedOrder.Status);
+        Assert.NotNull(persistedOrder.CompletedAtUtc);
+        Assert.All(
+            await assertionContext.InventoryMovementRequests.ToArrayAsync(CancellationToken.None),
+            request => Assert.Equal(InventoryMovementRequestStatus.Posted, request.Status));
     }
 
     [Fact]
@@ -171,10 +302,65 @@ public sealed class WmsStockMovementPostedConsumerTests
                 DateTimeOffset.UtcNow));
     }
 
+    private static StockMovementPostedIntegrationEvent CreateOutboundPostedEvent()
+    {
+        return new StockMovementPostedIntegrationEvent(
+            "evt-outbound-posted-001",
+            InventoryIntegrationEventTypes.StockMovementPosted,
+            InventoryIntegrationEventVersions.V1,
+            DateTimeOffset.UtcNow,
+            InventoryIntegrationEventSources.BusinessInventory,
+            "corr-outbound-001",
+            "cause-outbound-001",
+            "org-001",
+            "env-dev",
+            "system:business-inventory",
+            "inventory:stock-movement-posted:org-001:env-dev:wms:DO-001:idem-out-001",
+            new StockMovementPostedPayload(
+                "inventory-movement-outbound-001",
+                "outbound",
+                "wms",
+                "DO-001",
+                "SO-LINE-001",
+                "idem-out-001",
+                "SKU-FG-1000",
+                "kg",
+                "finished-goods",
+                "receiving",
+                "LOT-001",
+                null,
+                "unrestricted",
+                "production",
+                null,
+                -4m,
+                DateTimeOffset.UtcNow,
+                null,
+                null));
+    }
+
+    private static MarkInventoryMovementRequestPostedCommand PostedCommand(
+        InventoryMovementRequest request,
+        string inventoryMovementId)
+    {
+        return new MarkInventoryMovementRequestPostedCommand(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.MovementType,
+            request.SourceDocumentId,
+            request.SourceDocumentLineId,
+            request.IdempotencyKey,
+            inventoryMovementId);
+    }
+
     private static ApplicationDbContext CreateContext(string databaseName)
+        => CreateContext(databaseName, null);
+
+    private static ApplicationDbContext CreateContext(
+        string databaseName,
+        InMemoryDatabaseRoot? databaseRoot)
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase(databaseName)
+            .UseInMemoryDatabase(databaseName, databaseRoot)
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
     }

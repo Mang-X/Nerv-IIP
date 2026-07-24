@@ -4314,8 +4314,13 @@
       "method": "POST",
       "route": "/api/business/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry",
       "operationId": "retryWmsOutboundInventoryPosting",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; WMS outbound posting-retry follows the WMS operations menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "retryBusinessConsoleWmsOutboundInventoryPosting"
+      ]
     },
     {
       "service": "Wms",

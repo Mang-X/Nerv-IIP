@@ -130,10 +130,10 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await CreateReleasedSalesOrderAsync(dbContext, "SO-001", "QUO-001", "CUST-001", "SKU-FG-001");
         await CreateReleasedSalesOrderAsync(dbContext, "SO-002", "QUO-002", "CUST-002", "SKU-FG-002");
         await new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(
-            new ReleaseDeliveryOrderCommand("org-001", "env-dev", "DO-001", "SO-001", [new DeliveryOrderCommandLine("LINE-001", 1m)]),
+            new ReleaseDeliveryOrderCommand("org-001", "env-dev", "DO-001", "SO-001", [new DeliveryOrderCommandLine("LINE-001", 1m, "receiving", "LOT-FG-001")]),
             CancellationToken.None);
         await new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(
-            new ReleaseDeliveryOrderCommand("org-001", "env-dev", "DO-002", "SO-002", [new DeliveryOrderCommandLine("LINE-001", 1m)]),
+            new ReleaseDeliveryOrderCommand("org-001", "env-dev", "DO-002", "SO-002", [new DeliveryOrderCommandLine("LINE-001", 1m, "receiving", "LOT-FG-002")]),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -146,7 +146,13 @@ public sealed class ErpSalesFinanceEndpointContractTests
         Assert.Equal("DO-002", item.DeliveryOrderNo);
         Assert.Equal("SO-002", item.SalesOrderNo);
         Assert.Equal("released", item.Status);
-        Assert.Equal(1m, Assert.Single(item.Lines).Quantity);
+        var line = Assert.Single(item.Lines);
+        Assert.Equal("SITE-001", item.SiteCode);
+        Assert.Equal("SKU-FG-002", line.SkuCode);
+        Assert.Equal("EA", line.UomCode);
+        Assert.Equal("receiving", line.LocationCode);
+        Assert.Equal("LOT-FG-002", line.LotNo);
+        Assert.Equal(1m, line.Quantity);
     }
 
     [Fact]
