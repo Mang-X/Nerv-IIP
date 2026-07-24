@@ -33,10 +33,17 @@ public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
     {
         if (!string.Equals(integrationEvent.SourceService, ErpIntegrationEventSources.BusinessErp, StringComparison.OrdinalIgnoreCase)) return;
         if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken)) return;
+        var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
+            x => x.OrganizationId == integrationEvent.OrganizationId &&
+                x.EnvironmentId == integrationEvent.EnvironmentId &&
+                x.WorkOrderIdValue == integrationEvent.Payload.WorkOrderId,
+            cancellationToken)
+            ?? throw new InvalidOperationException(
+                $"No MES work order exists for capitalized cost '{integrationEvent.Payload.WorkOrderId}'.");
+        workOrder.ApplyCapitalizedUnitCost(integrationEvent.Payload.UnitCost);
         var receipts = await dbContext.FinishedGoodsReceiptRequests
             .Where(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.WorkOrderId == integrationEvent.Payload.WorkOrderId)
             .ToListAsync(cancellationToken);
-        if (receipts.Count == 0) throw new InvalidOperationException($"No MES finished-goods receipt exists for work order '{integrationEvent.Payload.WorkOrderId}'.");
         foreach (var receipt in receipts.Where(x => x.Status == FinishedGoodsReceiptRequest.RequestedStatus))
         {
             receipt.ApplyCapitalizedUnitCost(integrationEvent.Payload.UnitCost);

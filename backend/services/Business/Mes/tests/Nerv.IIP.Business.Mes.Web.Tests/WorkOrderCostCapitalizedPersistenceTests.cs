@@ -3,8 +3,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Messaging.CAP;
@@ -30,7 +33,7 @@ public sealed class WorkOrderCostCapitalizedPersistenceTests
     }
 
     [Fact]
-    public async Task Cap_handler_persists_unit_cost_and_dispatches_inventory_request()
+    public async Task Receipt_first_then_capitalization_persists_unit_cost_and_dispatches_inventory_request()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase($"mes-cost-cap-{Guid.CreateVersion7():N}", new InMemoryDatabaseRoot())
@@ -40,6 +43,7 @@ public sealed class WorkOrderCostCapitalizedPersistenceTests
 
         await using (var seed = new ApplicationDbContext(options, new RecordingMediator()))
         {
+            seed.WorkOrders.Add(CreateCompletedWorkOrder(completedAtUtc));
             seed.FinishedGoodsReceiptRequests.Add(FinishedGoodsReceiptRequest.Create(
                 "org-001", "env-dev", "FGR-001", "WO-001", "FG-001", 10m, "ea",
                 completedAtUtc, "LOT-001"));
@@ -74,8 +78,120 @@ public sealed class WorkOrderCostCapitalizedPersistenceTests
         Assert.Contains(mediator.Published, notification => notification is FinishedGoodsReceiptRequestedDomainEvent);
         await using var verification = new ApplicationDbContext(options, new RecordingMediator());
         Assert.Equal(25m, (await verification.FinishedGoodsReceiptRequests.SingleAsync()).UnitCost);
+        Assert.Equal(25m, (await verification.WorkOrders.SingleAsync()).CapitalizedUnitCost);
         Assert.Contains(await verification.ProcessedIntegrationEvents.ToListAsync(),
             item => item.ConsumerName == WorkOrderCostCapitalizedIntegrationEventHandler.ConsumerName);
+    }
+
+    [Fact]
+    public async Task Capitalization_first_commits_inbox_and_later_receipt_dispatches_without_redelivery()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"mes-cost-cap-first-{Guid.CreateVersion7():N}", new InMemoryDatabaseRoot())
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
+        var completedAtUtc = DateTimeOffset.Parse("2026-07-23T07:15:28Z");
+
+        await using (var seed = new ApplicationDbContext(options, new RecordingMediator()))
+        {
+            seed.WorkOrders.Add(CreateCompletedWorkOrder(completedAtUtc));
+            seed.OutputLotGenealogies.Add(OutputLotGenealogy.Create(
+                "org-001", "env-dev", "WO-001", "OP-10", "PRPT-001", "LOT-001", null, 10m, completedAtUtc));
+            await seed.SaveChangesAsync();
+        }
+
+        var integrationEvent = CreateCapitalizationEvent(completedAtUtc);
+        RecordingUnitOfWork? unitOfWork = null;
+        await using (var handling = new ApplicationDbContext(options, new RecordingMediator()))
+        {
+            unitOfWork = new RecordingUnitOfWork(handling);
+            var handler = new WorkOrderCostCapitalizedIntegrationEventHandler(
+                handling,
+                new InMemoryIntegrationEventDeadLetterStore(),
+                unitOfWork);
+
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        }
+
+        Assert.NotNull(unitOfWork);
+        Assert.Equal(1, unitOfWork.SaveEntitiesCallCount);
+        Assert.Equal(1, unitOfWork.CommitCallCount);
+
+        await using (var earlyVerification = new ApplicationDbContext(options, new RecordingMediator()))
+        {
+            Assert.Equal(25m, (await earlyVerification.WorkOrders.SingleAsync()).CapitalizedUnitCost);
+            Assert.Single(await earlyVerification.ProcessedIntegrationEvents
+                .Where(item => item.ConsumerName == WorkOrderCostCapitalizedIntegrationEventHandler.ConsumerName)
+                .ToListAsync());
+            Assert.Empty(await earlyVerification.FinishedGoodsReceiptRequests.ToListAsync());
+        }
+
+        var receiptMediator = new RecordingMediator();
+        await using (var creation = new ApplicationDbContext(options, receiptMediator))
+        {
+            await new CreateFinishedGoodsReceiptRequestCommandHandler(creation).Handle(
+                new CreateFinishedGoodsReceiptRequestCommand(
+                    "org-001",
+                    "env-dev",
+                    "WO-001",
+                    "FG-001",
+                    10m,
+                    "ea",
+                    completedAtUtc.AddMinutes(1),
+                    UnitCost: null,
+                    IdempotencyKey: "receipt-after-capitalization",
+                    ProducedLotNo: "LOT-001"),
+                CancellationToken.None);
+            await ((IUnitOfWork)creation).SaveEntitiesAsync(CancellationToken.None);
+        }
+
+        Assert.Contains(receiptMediator.Published, notification => notification is FinishedGoodsReceiptRequestedDomainEvent);
+        await using var finalVerification = new ApplicationDbContext(options, new RecordingMediator());
+        Assert.Equal(25m, (await finalVerification.FinishedGoodsReceiptRequests.SingleAsync()).UnitCost);
+    }
+
+    private static WorkOrder CreateCompletedWorkOrder(DateTimeOffset completedAtUtc)
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "FG-001",
+            "PV-001",
+            10m,
+            10,
+            completedAtUtc.AddHours(1),
+            "ea");
+        workOrder.MarkReleased();
+        workOrder.Start(completedAtUtc.AddMinutes(-10));
+        workOrder.RecordProductionProgress(10m, 0m, completedAtUtc);
+        return workOrder;
+    }
+
+    private static WorkOrderCostCapitalizedIntegrationEvent CreateCapitalizationEvent(DateTimeOffset completedAtUtc)
+    {
+        return new WorkOrderCostCapitalizedIntegrationEvent(
+            "evt-cost",
+            ErpIntegrationEventTypes.WorkOrderCostCapitalized,
+            ErpIntegrationEventVersions.V1,
+            completedAtUtc,
+            ErpIntegrationEventSources.BusinessErp,
+            "WO-001",
+            "WO-001",
+            "org-001",
+            "env-dev",
+            "system:erp",
+            "cost-001",
+            new WorkOrderCostCapitalizedPayload(
+                "WO-001",
+                "FG-001",
+                10m,
+                0m,
+                250m,
+                250m,
+                25m,
+                completedAtUtc));
     }
 
     private sealed class RecordingMediator : IMediator

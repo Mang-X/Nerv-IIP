@@ -599,7 +599,7 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
             request.RequestedAtUtc,
             request.ProducedLotNo,
             request.SerialNo,
-            request.UnitCost,
+            request.UnitCost ?? workOrder.CapitalizedUnitCost,
             request.ProductionDate,
             request.ExpiryDate);
         dbContext.FinishedGoodsReceiptRequests.Add(receiptRequest);
