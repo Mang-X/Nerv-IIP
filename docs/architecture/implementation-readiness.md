@@ -8,6 +8,12 @@ FileStorage、AppHub、Ops、Notification 已统一通过 `Nerv.IIP.Persistence`
 
 Npgsql-backed 临时 database 生命周期进入独立 `Nerv.IIP.Testing.PostgreSql`，没有扩大通用 `Nerv.IIP.Testing` 的依赖面。设施使用唯一 version-7 GUID database 名，支持并行创建、初始化/迁移回调、取消、初始化失败清理、强制 drop 和脱敏诊断；FileStorage restart persistence 与 BusinessScheduling PostgreSQL profile tests 已迁移为首批两个消费者。完整 18 个启动面的 provider/连接串/环境盘点及后续未迁移范围见 `docs/architecture/persistence-startup-governance.md`。
 
+## MES Quality hold CAP 持久化边界（MAN-429 / #777）
+
+MES `business-mes.quality-inspection-result` 消费者在记录 inbox 并新建、更新或释放 `QualityHoldContext` 后显式调用 `ApplicationDbContext.SaveChangesAsync`，不再依赖 CAP 消费管道隐式提交；该 DbContext 的既有 inbox 唯一冲突恢复继续保证并发重投幂等。更新聚合时先完成领域校验再赋值，持久 dead-letter 路径的回归测试验证无效后续事件不会污染既有 hold；`ArgumentException` / `InvalidOperationException` 业务分歧被收敛为 `quality-inspection-result-divergence`，找不到 MES 来源文档则收敛为 `unknown-source-document`，均不再逃逸为 CAP 毒消息。真实 PostgreSQL + CAP InMemory transport 测试通过独立 scope 验证 rejected、passed、再次 rejected、conditional-release 四次有效投递的 hold 状态、生命周期转换与 inbox 均已落库。
+
+本修复没有新增或修改 HTTP endpoint、schema、migration、公开契约或 facade。对当前 58 个 `[IntegrationEventConsumer]` 文件的跨服务保守扫描仍发现其他“注入 `ApplicationDbContext` 但文件内无可见保存/命令/UoW 边界”的候选；MES 同类治理继续由 MAN-421 / #754 独立跟踪，本项不扩修其他消费者。
+
 ## 领导演示排产工作台闭环（MAN-580 / #1049）
 
 BusinessScheduling 已新增批量工作台生成与 base-plan 修订两条受管内部端点。批量生成只接受 1–500 个 distinct MES 工单 ID，由服务端读取 organization/environment 范围内的权威 SKU、数量、交期、工序最早开始与生产版本，并通过 ProductEngineering active production-version routing snapshot 解析已发布路线；缺工单、终态工单、缺生产版本或 SKU/版本不一致均 fail closed。修订从已持久化 normalized problem snapshot 过滤 included orders，校验显式锁定工序、可选资源、时间窗口和 scope，再复用既有 override overlay、设备/物料适配器与有限产能调度器持久化新 Generated 方案。响应按最新失效来源事件聚合受影响资源/工单/工序，并返回 base/candidate 权威 KPI、移动、锁定和未排计数；不新增 schema、调度引擎或合并评分。
@@ -27,6 +33,12 @@ BusinessScheduling 以 organization + environment 为硬隔离边界执行 `orde
 ## 并行全栈验证基线
 
 真实浏览器全栈验证已提供一次性 session 入口：`.\nerv.ps1 fullstack run -Scenario smoke`。MAN-524 销售到交付主链证据使用 `.\nerv.ps1 fullstack run -Scenario leader-demo-main-chain`：managed session 在 AppHost 启动前显式注入 Redis messaging 与 PostgreSQL persistence profile，并把实际选择写入 manifest；场景只以 BusinessGateway 公开 HTTP 作为业务断言面，再由 manifest 向浏览器证据进程盖章真实 PostgreSQL 与跨进程 Redis Streams 画像。逐跳脱敏账本写入 `artifacts/fullstack/<sessionId>/leader-demo-main-chain-evidence.json`，该运行产物不提交仓库；只有逐跳 runtime-confirmed 和已登记的 #972 查询 gap 可以通过，任何 `not-verified` 或未纳入验收基线的 gap 都使场景非零退出。session 使用随机公开端口、独立 Aspire/DCP 代理、专属基础设施卷、进程身份与容器所有权标签；默认最多三个活动 session，不设置最低可用内存门槛。自动化成功或失败均精确回收运行资源并保留 `artifacts/fullstack/<sessionId>/`。持久开发仍使用 `.\nerv.ps1 dev`；交互 `.\nerv.ps1 fullstack start` 只用于诊断，完成后必须 `.\nerv.ps1 fullstack stop`。`scripts/verify-parallel-fullstack-isolation.ps1 -Sessions 2` 已在 Windows Docker Desktop 上验证两套浏览器链路、动态端口、PostgreSQL 写隔离、专属卷、单 session 停止边界和故障注入 cleanup。
+
+## ERP 出库过账与财务状态闭环（MAN-599 / #1083）
+
+ERP `DeliveryOrder` 现在持久化销售订单的权威 `site_code`，发货释放通过既有 Redis 集成事件把该 site 与行级 location、lot、SKU、UOM 传给 WMS；WMS 不再把缺失 site 回退为 `default`，而是将旧版在途事件的空 site 写入持久 dead letter 后停止消费。ERP 来源出库统一使用成品入库一致的 `quality=unrestricted`、`ownerType=production`、`ownerId=null` 分账键。出库复核只进入 `InventoryPostingPending`，每行最新一轮 movement request 全部收到 Inventory `Posted` 后才进入 `Completed` 并发出 `OutboundOrderCompleted`；任一过账拒绝进入 `InventoryPostingFailed`、保留公开 failure code/message 并允许受权重试，不再提前完成 ERP 发货、AR 或凭证。ERP 发货读面的 `released` 只表示尚未收到 WMS 完成事实，posting pending/failed 的执行状态与诊断以 WMS 公开读面为权威来源，不在 ERP 复制跨域状态。
+
+BusinessGateway 已公开 WMS 出库行的精确分账键、当前过账状态和失败事实，并以 `business.wms.shipments.manage` 暴露 `POST /api/business-console/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry`；该 endpoint 在 facade matrix 中登记为 `exposed`，OpenAPI、generated client 与 stable barrel 已同步。`leader-demo-main-chain` 已收紧为先确认同一 site/location/lot/quality/owner 分账键过账成功且 Inventory on-hand 归零，再接受 WMS completed、ERP completed、AR 和凭证。2026-07-24 的 managed session `nerv-0f07-404534` 已在 PostgreSQL + Redis profile 通过：`DO-MAN524-20260724020413` 保持 `finished-goods / receiving / LOT-MAN524-20260724020413 / unrestricted / production / null` 分账键，Inventory on-hand 归零后才依次公开 WMS completed、ERP completed、`AR-20260724-000001` 和 posted voucher `JV-AR-AR-20260724-000001`；场景汇总为 16 个 `runtime-confirmed`、0 个 gap。
 
 ## FileStorage AppHost PostgreSQL 持久化接入（MAN-533 / #991）
 

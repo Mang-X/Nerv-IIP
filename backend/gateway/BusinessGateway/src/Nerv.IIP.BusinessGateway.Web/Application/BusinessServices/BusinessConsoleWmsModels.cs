@@ -95,6 +95,12 @@ public sealed record BusinessConsoleCompleteWmsOutboundOrderRequest(
     bool Passed,
     string IdempotencyKey);
 
+public sealed record BusinessConsoleRetryWmsOutboundInventoryPostingRequest(
+    [property: RouteParam] string OutboundOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string IdempotencyKey);
+
 public sealed record BusinessConsoleCreateWmsCountExecutionRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -186,7 +192,29 @@ public sealed record BusinessConsoleWmsOutboundOrderItem(
     string OutboundOrderId,
     string OutboundOrderNo,
     string Status,
-    DateTime CreatedAtUtc);
+    string SiteCode,
+    string InventoryPostingStatus,
+    string? FailureCode,
+    string? FailureMessage,
+    IReadOnlyCollection<BusinessConsoleWmsOutboundOrderLineItem> Lines,
+    DateTime CreatedAtUtc,
+    DateTime? CompletedAtUtc);
+
+public sealed record BusinessConsoleWmsOutboundOrderLineItem(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal RequestedQuantity,
+    decimal IssuedQuantity,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId,
+    string InventoryPostingStatus,
+    string? FailureCode,
+    string? FailureMessage);
 
 public sealed record BusinessConsoleWmsWarehouseTaskListRequest(
     string OrganizationId,

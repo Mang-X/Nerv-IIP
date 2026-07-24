@@ -70,64 +70,105 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
         }
 
         var sourceDocumentId = payload.SourceDocumentId.Trim();
-        var source = await ResolveMesSourceAsync(
-            integrationEvent.OrganizationId,
-            integrationEvent.EnvironmentId,
-            sourceDocumentId,
-            cancellationToken);
-        if (source is null)
+        MesInspectionSource? source;
+        try
         {
-            return;
-        }
-
-        var existing = await dbContext.QualityHoldContexts.SingleOrDefaultAsync(
-            x => x.OrganizationId == integrationEvent.OrganizationId &&
-                x.EnvironmentId == integrationEvent.EnvironmentId &&
-                x.SourceService == sourceService &&
-                x.SourceDocumentId == sourceDocumentId,
-            cancellationToken);
-        if (existing is null)
-        {
-            var hold = QualityHoldContext.Capture(
+            source = await ResolveMesSourceAsync(
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
-                source.WorkOrderId,
-                source.OperationTaskId,
-                sourceService,
                 sourceDocumentId,
-                payload.InspectionRecordId,
-                payload.InspectionPlanId,
-                payload.Result,
-                integrationEvent.EventType,
-                payload.DispositionReason,
-                payload.RecordedAtUtc,
-                integrationEvent.Actor);
-            dbContext.QualityHoldContexts.Add(hold);
-            if (hold.Active)
-            {
-                AddTransition(integrationEvent, sourceService, "hold-applied", payload.InspectionRecordId);
-            }
-            return;
+                cancellationToken);
         }
-
-        var wasActive = existing.Active;
-        if (!existing.ApplyInspectionResult(
-            payload.InspectionRecordId,
-            payload.InspectionPlanId,
-            payload.Result,
-            integrationEvent.EventType,
-            payload.DispositionReason,
-            payload.RecordedAtUtc,
-            integrationEvent.Actor))
+        catch (InvalidOperationException exception)
         {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    "quality-inspection-result-divergence",
+                    exception.Message),
+                cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
-        AddTransition(
-            integrationEvent,
-            sourceService,
-            wasActive ? "inspection-released" : "hold-applied",
-            wasActive ? existing.HeldInspectionRecordId! : payload.InspectionRecordId);
+        if (source is null)
+        {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    "unknown-source-document",
+                    $"MES source document '{sourceDocumentId}' was not found in the event scope."),
+                cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        try
+        {
+            var existing = await dbContext.QualityHoldContexts.SingleOrDefaultAsync(
+                x => x.OrganizationId == integrationEvent.OrganizationId &&
+                    x.EnvironmentId == integrationEvent.EnvironmentId &&
+                    x.SourceService == sourceService &&
+                    x.SourceDocumentId == sourceDocumentId,
+                cancellationToken);
+            if (existing is null)
+            {
+                var hold = QualityHoldContext.Capture(
+                    integrationEvent.OrganizationId,
+                    integrationEvent.EnvironmentId,
+                    source.WorkOrderId,
+                    source.OperationTaskId,
+                    sourceService,
+                    sourceDocumentId,
+                    payload.InspectionRecordId,
+                    payload.InspectionPlanId,
+                    payload.Result,
+                    integrationEvent.EventType,
+                    payload.DispositionReason,
+                    payload.RecordedAtUtc,
+                    integrationEvent.Actor);
+                // Concurrent first deliveries may race on ux_quality_hold_contexts_scope_source.
+                // The loser is retried by CAP and then converges through the inbox row committed by the winner.
+                dbContext.QualityHoldContexts.Add(hold);
+                if (hold.Active)
+                {
+                    AddTransition(integrationEvent, sourceService, "hold-applied", payload.InspectionRecordId);
+                }
+            }
+            else
+            {
+                var wasActive = existing.Active;
+                if (existing.ApplyInspectionResult(
+                    payload.InspectionRecordId,
+                    payload.InspectionPlanId,
+                    payload.Result,
+                    integrationEvent.EventType,
+                    payload.DispositionReason,
+                    payload.RecordedAtUtc,
+                    integrationEvent.Actor))
+                {
+                    AddTransition(
+                        integrationEvent,
+                        sourceService,
+                        wasActive ? "inspection-released" : "hold-applied",
+                        wasActive ? existing.HeldInspectionRecordId! : payload.InspectionRecordId);
+                }
+            }
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    "quality-inspection-result-divergence",
+                    exception.Message),
+                cancellationToken);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private void AddTransition(InspectionResultIntegrationEvent integrationEvent, string sourceService, string eventKind, string holdCycleId)
