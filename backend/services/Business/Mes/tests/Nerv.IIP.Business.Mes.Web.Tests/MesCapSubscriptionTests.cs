@@ -354,35 +354,15 @@ public sealed class MesCapSubscriptionTests
         string inspectionRecordId,
         DateTimeOffset occurredAtUtc)
     {
-        var result = eventType == QualityIntegrationEventTypes.InspectionPassed
-            ? "passed"
-            : eventType == QualityIntegrationEventTypes.InspectionConditionalReleased
-                ? "conditional-release"
-                : "rejected";
-        return new InspectionResultIntegrationEvent(
+        return MesInspectionResultEventFactory.Create(
             eventId,
             eventType,
-            QualityIntegrationEventVersions.V1,
+            inspectionRecordId,
+            "WO-MAN-429",
             occurredAtUtc,
-            QualityIntegrationEventSources.BusinessQuality,
-            $"corr-{eventId}",
-            $"cause-{eventId}",
-            "org-001",
-            "env-dev",
-            "quality",
-            $"quality:inspection-result:org-001:env-dev:{inspectionRecordId}:{eventType}",
-            new InspectionResultPayload(
-                inspectionRecordId,
-                "PLAN-MAN-429",
-                "in-process",
-                "mes",
-                "WO-MAN-429",
-                "FG-MAN-429",
-                10m,
-                result,
-                eventType == QualityIntegrationEventTypes.InspectionRejected ? "critical-defect" : null,
-                [],
-                occurredAtUtc));
+            "PLAN-MAN-429",
+            "FG-MAN-429",
+            "mes");
     }
 
     private static AssetUnavailableIntegrationEvent CreateUnavailableEvent(DateTimeOffset fromUtc)

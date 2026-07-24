@@ -10,7 +10,7 @@ Npgsql-backed 临时 database 生命周期进入独立 `Nerv.IIP.Testing.Postgre
 
 ## MES Quality hold CAP 持久化边界（MAN-429 / #777）
 
-MES `business-mes.quality-inspection-result` 消费者在记录 inbox 并新建、更新或释放 `QualityHoldContext` 后显式调用 `ApplicationDbContext.SaveChangesAsync`，不再依赖 CAP 消费管道隐式提交；该 DbContext 的既有 inbox 唯一冲突恢复继续保证并发重投幂等。`ArgumentException` / `InvalidOperationException` 业务分歧被收敛为 `quality-inspection-result-divergence` dead letter，不再逃逸为 CAP 毒消息。真实 PostgreSQL + CAP InMemory transport 测试通过独立 scope 验证 rejected、passed、再次 rejected、conditional-release 四次投递的 hold 状态、生命周期转换与 inbox 均已落库。
+MES `business-mes.quality-inspection-result` 消费者在记录 inbox 并新建、更新或释放 `QualityHoldContext` 后显式调用 `ApplicationDbContext.SaveChangesAsync`，不再依赖 CAP 消费管道隐式提交；该 DbContext 的既有 inbox 唯一冲突恢复继续保证并发重投幂等。更新聚合时先完成领域校验再赋值，持久 dead-letter 路径的回归测试验证无效后续事件不会污染既有 hold；`ArgumentException` / `InvalidOperationException` 业务分歧被收敛为 `quality-inspection-result-divergence`，找不到 MES 来源文档则收敛为 `unknown-source-document`，均不再逃逸为 CAP 毒消息。真实 PostgreSQL + CAP InMemory transport 测试通过独立 scope 验证 rejected、passed、再次 rejected、conditional-release 四次有效投递的 hold 状态、生命周期转换与 inbox 均已落库。
 
 本修复没有新增或修改 HTTP endpoint、schema、migration、公开契约或 facade。对当前 58 个 `[IntegrationEventConsumer]` 文件的跨服务保守扫描仍发现其他“注入 `ApplicationDbContext` 但文件内无可见保存/命令/UoW 边界”的候选；MES 同类治理继续由 MAN-421 / #754 独立跟踪，本项不扩修其他消费者。
 

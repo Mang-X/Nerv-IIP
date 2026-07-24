@@ -70,13 +70,37 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
         }
 
         var sourceDocumentId = payload.SourceDocumentId.Trim();
-        var source = await ResolveMesSourceAsync(
-            integrationEvent.OrganizationId,
-            integrationEvent.EnvironmentId,
-            sourceDocumentId,
-            cancellationToken);
+        MesInspectionSource? source;
+        try
+        {
+            source = await ResolveMesSourceAsync(
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId,
+                sourceDocumentId,
+                cancellationToken);
+        }
+        catch (InvalidOperationException exception)
+        {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    "quality-inspection-result-divergence",
+                    exception.Message),
+                cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
         if (source is null)
         {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    "unknown-source-document",
+                    $"MES source document '{sourceDocumentId}' was not found in the event scope."),
+                cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
@@ -105,6 +129,8 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
                     payload.DispositionReason,
                     payload.RecordedAtUtc,
                     integrationEvent.Actor);
+                // Concurrent first deliveries may race on ux_quality_hold_contexts_scope_source.
+                // The loser is retried by CAP and then converges through the inbox row committed by the winner.
                 dbContext.QualityHoldContexts.Add(hold);
                 if (hold.Active)
                 {

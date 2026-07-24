@@ -112,22 +112,37 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
         }
 
         var wasActive = Active;
-        InspectionRecordId = DomainGuard.Required(inspectionRecordId, nameof(inspectionRecordId));
-        InspectionPlanId = string.IsNullOrWhiteSpace(inspectionPlanId) ? null : inspectionPlanId.Trim();
-        Result = DomainGuard.Required(result, nameof(result));
-        EventType = DomainGuard.Required(eventType, nameof(eventType));
-        DispositionReason = string.IsNullOrWhiteSpace(dispositionReason) ? null : dispositionReason.Trim();
+        var validatedInspectionRecordId = DomainGuard.Required(inspectionRecordId, nameof(inspectionRecordId));
+        var validatedInspectionPlanId = string.IsNullOrWhiteSpace(inspectionPlanId) ? null : inspectionPlanId.Trim();
+        var validatedResult = DomainGuard.Required(result, nameof(result));
+        var validatedEventType = DomainGuard.Required(eventType, nameof(eventType));
+        var validatedDispositionReason = string.IsNullOrWhiteSpace(dispositionReason) ? null : dispositionReason.Trim();
+        var willBeActive = IsBlockingResult(validatedResult, validatedEventType);
+        var validatedActor = wasActive || willBeActive
+            ? DomainGuard.Required(actor, nameof(actor))
+            : actor;
+
+        InspectionRecordId = validatedInspectionRecordId;
+        InspectionPlanId = validatedInspectionPlanId;
+        Result = validatedResult;
+        EventType = validatedEventType;
+        DispositionReason = validatedDispositionReason;
         RecordedAtUtc = recordedAtUtc;
-        Active = IsBlockingResult(result, eventType);
+        Active = willBeActive;
         if (Active)
         {
-            RecordHoldAudit(inspectionRecordId, InspectionPlanId, DispositionReason, recordedAtUtc, actor);
+            RecordHoldAudit(validatedInspectionRecordId, validatedInspectionPlanId, validatedDispositionReason, recordedAtUtc, validatedActor);
             return !wasActive;
         }
 
         if (wasActive)
         {
-            RecordReleaseAudit(inspectionRecordId, DispositionReason ?? "Quality inspection released the hold.", recordedAtUtc, actor, eventType);
+            RecordReleaseAudit(
+                validatedInspectionRecordId,
+                validatedDispositionReason ?? "Quality inspection released the hold.",
+                recordedAtUtc,
+                validatedActor,
+                validatedEventType);
             return true;
         }
 
