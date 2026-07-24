@@ -366,7 +366,7 @@ git diff --check
 
 Expected: every command exits 0.
 
-- [ ] **Step 2: Review issue scope and diff**
+- [x] **Step 2: Review issue scope and diff**
 
 Run:
 
@@ -378,11 +378,11 @@ git diff origin/main...HEAD
 
 Expected: only MAN-601 simulator, demo seed contract, tests, plan, and required architecture docs changed; no generated artifact or secret is tracked.
 
-- [ ] **Step 3: Commit and push**
+- [x] **Step 3: Commit and push**
 
 Commit with a scoped message, push `codex/issue-1086-telemetry-simulator`, and do not merge.
 
-- [ ] **Step 4: Create one ready PR**
+- [x] **Step 4: Create one ready PR**
 
 Use `gh pr create` with:
 
