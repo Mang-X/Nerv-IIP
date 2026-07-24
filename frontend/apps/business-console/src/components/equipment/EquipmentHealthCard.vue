@@ -74,6 +74,9 @@ const level = computed(() => (props.health ? levelPresentation[props.health.leve
 const freshness = computed(() =>
   props.health ? freshnessPresentation[props.health.dataFreshness.status] : undefined,
 )
+// 数据完全缺失（freshness=unavailable）时，评分是"无罚分"的数学结果而非健康结论；
+// 头部不得凭空断言「100 · 健康」，改为显式的暂无数据占位（规则明细仍逐条展示积累态）。
+const scoreUnavailable = computed(() => props.health?.dataFreshness.status === 'unavailable')
 const triggeredCount = computed(() => props.health?.riskFactors.length ?? 0)
 
 function formatDateTime(value?: string | null) {
@@ -114,18 +117,29 @@ function statusFor(status: BusinessConsoleEquipmentHealthRuleStatus) {
       <div class="grid gap-4 p-4 sm:grid-cols-[minmax(0,160px)_minmax(0,1fr)]">
         <div class="rounded-lg bg-muted/40 p-4">
           <p class="text-xs text-muted-foreground">健康评分</p>
-          <p class="mt-1 text-4xl font-semibold tabular-nums text-foreground">
-            {{ health.healthScore }}
-          </p>
-          <div class="mt-3 flex flex-wrap gap-2">
-            <NvBadge v-if="level" class="rounded-sm" :variant="level.variant">{{
-              level.label
-            }}</NvBadge>
-            <NvBadge v-if="freshness" class="rounded-sm" :variant="freshness.variant">{{
-              freshness.label
-            }}</NvBadge>
-          </div>
-          <p class="mt-3 text-xs text-muted-foreground">命中 {{ triggeredCount }} 项风险</p>
+          <template v-if="scoreUnavailable">
+            <p class="mt-1 text-2xl font-semibold text-muted-foreground">暂无数据</p>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <NvBadge class="rounded-sm" variant="warning">历史数据积累中</NvBadge>
+            </div>
+            <p class="mt-3 text-xs text-muted-foreground">
+              评分依赖的遥测 / 报警 / 运行事实尚未积累，暂不给出健康结论。
+            </p>
+          </template>
+          <template v-else>
+            <p class="mt-1 text-4xl font-semibold tabular-nums text-foreground">
+              {{ health.healthScore }}
+            </p>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <NvBadge v-if="level" class="rounded-sm" :variant="level.variant">{{
+                level.label
+              }}</NvBadge>
+              <NvBadge v-if="freshness" class="rounded-sm" :variant="freshness.variant">{{
+                freshness.label
+              }}</NvBadge>
+            </div>
+            <p class="mt-3 text-xs text-muted-foreground">命中 {{ triggeredCount }} 项风险</p>
+          </template>
         </div>
 
         <dl class="grid content-start gap-2 text-sm">

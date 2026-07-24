@@ -202,6 +202,26 @@ describe('EquipmentHealthCard', () => {
     expect(wrapper.text()).not.toContain(status)
   })
 
+  it('never asserts a healthy score for a device with no accumulated facts (freshness unavailable)', () => {
+    const wrapper = mount(EquipmentHealthCard, {
+      props: {
+        health: healthFixture({
+          healthScore: 100,
+          level: 'healthy',
+          riskFactors: [],
+          dataFreshness: { status: 'unavailable' },
+        }),
+        pending: false,
+      },
+    })
+    // 头部不得渲染凭空的评分数字与健康结论。
+    expect(wrapper.find('.text-4xl').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('命中 0 项风险')
+    expect(wrapper.text()).toContain('暂无数据')
+    expect(wrapper.text()).toContain('历史数据积累中')
+    expect(wrapper.text()).toContain('暂不给出健康结论')
+  })
+
   it('keeps previous health visible during refresh and reports failures without discarding it', async () => {
     const wrapper = mount(EquipmentHealthCard, {
       props: { health: healthFixture(), pending: true },
