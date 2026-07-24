@@ -14,13 +14,26 @@ namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    ITransactionUnitOfWork unitOfWork)
+    ITransactionUnitOfWork unitOfWork,
+    IMesWorkOrderCapitalizationScopeCoordinator scopeCoordinator)
     : IIntegrationEventHandler<WorkOrderCostCapitalizedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-mes.work-order-cost-capitalized";
     private readonly IntegrationEventConsumerGuard<WorkOrderCostCapitalizedIntegrationEvent> consumerGuard = new(
         new IntegrationEventEnvelopeValidator(), deadLetterStore,
         new IntegrationEventConsumerOptions(ConsumerName, ErpIntegrationEventTypes.WorkOrderCostCapitalized, ErpIntegrationEventVersions.V1));
+
+    public WorkOrderCostCapitalizedIntegrationEventHandler(
+        ApplicationDbContext dbContext,
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        ITransactionUnitOfWork unitOfWork)
+        : this(
+            dbContext,
+            deadLetterStore,
+            unitOfWork,
+            new PostgreSqlMesWorkOrderCapitalizationScopeCoordinator(dbContext, unitOfWork))
+    {
+    }
 
     public Task HandleAsync(WorkOrderCostCapitalizedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         => consumerGuard.HandleAsync(integrationEvent, HandleValidAsync, cancellationToken);
@@ -32,6 +45,18 @@ public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
     private async Task HandleValidAsync(WorkOrderCostCapitalizedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         if (!string.Equals(integrationEvent.SourceService, ErpIntegrationEventSources.BusinessErp, StringComparison.OrdinalIgnoreCase)) return;
+        await scopeCoordinator.ExecuteAsync(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            integrationEvent.Payload.WorkOrderId,
+            token => ApplyCapitalizationAsync(integrationEvent, token),
+            cancellationToken);
+    }
+
+    private async Task ApplyCapitalizationAsync(
+        WorkOrderCostCapitalizedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
         if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken)) return;
         var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
             x => x.OrganizationId == integrationEvent.OrganizationId &&
@@ -48,32 +73,6 @@ public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
         {
             receipt.ApplyCapitalizedUnitCost(integrationEvent.Payload.UnitCost);
         }
-        await SaveEntitiesAsync(cancellationToken);
-    }
-
-    private async Task SaveEntitiesAsync(CancellationToken cancellationToken)
-    {
-        if (unitOfWork.CurrentTransaction is not null)
-        {
-            await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
-            return;
-        }
-
-        await using var transaction = await unitOfWork.BeginTransactionAsync(cancellationToken);
-        unitOfWork.CurrentTransaction = transaction;
-        try
-        {
-            await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
-            await unitOfWork.CommitAsync(cancellationToken);
-        }
-        catch
-        {
-            await unitOfWork.RollbackAsync(cancellationToken);
-            throw;
-        }
-        finally
-        {
-            unitOfWork.CurrentTransaction = null;
-        }
+        await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
     }
 }

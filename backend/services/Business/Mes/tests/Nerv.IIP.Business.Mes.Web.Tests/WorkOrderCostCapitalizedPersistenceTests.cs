@@ -21,15 +21,22 @@ public sealed class WorkOrderCostCapitalizedPersistenceTests
     [Fact]
     public void Cost_capitalization_handler_requires_a_transaction_unit_of_work()
     {
-        var parameter = Assert.Single(
+        var runtimeConstructor = Assert.Single(
             typeof(WorkOrderCostCapitalizedIntegrationEventHandler)
-                .GetConstructors()
-                .Single()
-                .GetParameters(),
+                .GetConstructors(),
+            constructor => constructor.GetParameters()
+                .Any(candidate => candidate.ParameterType == typeof(IMesWorkOrderCapitalizationScopeCoordinator)));
+        var parameter = Assert.Single(
+            runtimeConstructor.GetParameters(),
             candidate => candidate.ParameterType == typeof(ITransactionUnitOfWork));
+        var scopeCoordinator = Assert.Single(
+            runtimeConstructor.GetParameters(),
+            candidate => candidate.ParameterType == typeof(IMesWorkOrderCapitalizationScopeCoordinator));
 
         Assert.False(parameter.HasDefaultValue);
         Assert.False(parameter.IsOptional);
+        Assert.False(scopeCoordinator.HasDefaultValue);
+        Assert.False(scopeCoordinator.IsOptional);
     }
 
     [Fact]
@@ -70,10 +77,10 @@ public sealed class WorkOrderCostCapitalizedPersistenceTests
 
         Assert.NotNull(unitOfWork);
         Assert.Equal(1, unitOfWork.SaveEntitiesCallCount);
-        Assert.Equal(1, unitOfWork.BeginTransactionCallCount);
-        Assert.Equal(1, unitOfWork.CommitCallCount);
+        Assert.Equal(0, unitOfWork.BeginTransactionCallCount);
+        Assert.Equal(0, unitOfWork.CommitCallCount);
         Assert.Equal(0, unitOfWork.RollbackCallCount);
-        Assert.Equal(1, unitOfWork.TransactionDisposeAsyncCallCount);
+        Assert.Equal(0, unitOfWork.TransactionDisposeAsyncCallCount);
         Assert.Null(unitOfWork.CurrentTransaction);
         Assert.Contains(mediator.Published, notification => notification is FinishedGoodsReceiptRequestedDomainEvent);
         await using var verification = new ApplicationDbContext(options, new RecordingMediator());
@@ -116,7 +123,7 @@ public sealed class WorkOrderCostCapitalizedPersistenceTests
 
         Assert.NotNull(unitOfWork);
         Assert.Equal(1, unitOfWork.SaveEntitiesCallCount);
-        Assert.Equal(1, unitOfWork.CommitCallCount);
+        Assert.Equal(0, unitOfWork.CommitCallCount);
 
         await using (var earlyVerification = new ApplicationDbContext(options, new RecordingMediator()))
         {
