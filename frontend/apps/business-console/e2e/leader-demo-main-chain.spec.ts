@@ -378,10 +378,12 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
 
   try {
     await page.goto('/login')
+    const loginName = page.getByLabel('登录名')
+    await expect(loginName).toBeVisible({ timeout: 120_000 })
     const loginResponse = page.waitForResponse(
       (response) => new URL(response.url()).pathname === '/api/console/v1/auth/login',
     )
-    await page.getByLabel('登录名').fill('admin')
+    await loginName.fill('admin')
     await page.getByLabel('密码').fill(adminPassword!)
     await page.getByRole('button', { name: '登录' }).click()
     const login = await loginResponse
@@ -1056,7 +1058,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           environmentId,
           salesOrderNo,
           quotationNo,
-          siteCode,
+          siteCode: finishedGoodsSiteCode,
           idempotencyKey: `sales-order-${suffix}`,
         })
         setup.push({ request: salesOrder.summary, response: salesOrder.publicPayload })
@@ -1779,7 +1781,14 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           environmentId,
           deliveryOrderNo,
           salesOrderNo,
-          lines: [{ salesOrderLineNo: '1', quantity: finishedGoodsQuantity }],
+          lines: [
+            {
+              salesOrderLineNo: '1',
+              quantity: finishedGoodsQuantity,
+              locationCode: finishedGoodsLocationCode,
+              lotNo: producedLotNo,
+            },
+          ],
           idempotencyKey: `delivery-${suffix}`,
         })
         record({
@@ -1801,6 +1810,27 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           (row) => row.outboundOrderNo === deliveryOrderNo,
         )
         wmsOutboundId = textOf(outbound.match.outboundOrderId)
+        const outboundLines = Array.isArray(outbound.match.lines)
+          ? outbound.match.lines.map(asRecord)
+          : []
+        const outboundLine = outboundLines.find(
+          (line) => textOf(line.lineNo) === '1' && textOf(line.skuCode) === finishedSku,
+        )
+        if (
+          !wmsOutboundId ||
+          textOf(outbound.match.siteCode) !== finishedGoodsSiteCode ||
+          !outboundLine ||
+          textOf(outboundLine.uomCode) !== uomCode ||
+          textOf(outboundLine.locationCode) !== finishedGoodsLocationCode ||
+          textOf(outboundLine.lotNo) !== producedLotNo ||
+          textOf(outboundLine.qualityStatus) !== 'unrestricted' ||
+          textOf(outboundLine.ownerType) !== 'production' ||
+          textOf(outboundLine.ownerId) !== ''
+        ) {
+          throw new Error(
+            `WMS outbound ${deliveryOrderNo} did not preserve the produced-stock partition key: ${safeText(JSON.stringify(outbound.match))}.`,
+          )
+        }
         record({
           node: 'delivery-order-wms-outbound',
           sourceObject: deliveryOrderNo,
@@ -1811,7 +1841,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           responseOrLog: publicJson(outbound.match) as JsonRecord,
           conclusion: 'runtime-confirmed',
           demoWording:
-            'ERP delivery release crossed Redis into WMS and created the matching outbound order.',
+            'ERP delivery release crossed Redis into WMS and preserved the exact produced-stock site, location, lot, quality, owner type, and null owner id.',
           responsibilityIssue: '#965',
         })
       } catch (error) {
@@ -1837,6 +1867,46 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             idempotencyKey: `complete-outbound-${suffix}`,
           },
         )
+        const postedOutbound = await pollRows(
+          '/api/business-console/v1/wms/outbound-orders',
+          { organizationId, environmentId, keyword: deliveryOrderNo, take: 100 },
+          (row) => {
+            const lines = Array.isArray(row.lines) ? row.lines.map(asRecord) : []
+            const line = lines.find(
+              (item) => textOf(item.lineNo) === '1' && textOf(item.skuCode) === finishedSku,
+            )
+            return (
+              textOf(row.outboundOrderNo) === deliveryOrderNo &&
+              textOf(row.status).toLowerCase() === 'completed' &&
+              textOf(row.inventoryPostingStatus) === 'posted' &&
+              textOf(row.siteCode) === finishedGoodsSiteCode &&
+              line !== undefined &&
+              Number(line.issuedQuantity ?? 0) === finishedGoodsQuantity &&
+              textOf(line.locationCode) === finishedGoodsLocationCode &&
+              textOf(line.lotNo) === producedLotNo &&
+              textOf(line.qualityStatus) === 'unrestricted' &&
+              textOf(line.ownerType) === 'production' &&
+              textOf(line.ownerId) === '' &&
+              textOf(line.inventoryPostingStatus) === 'posted' &&
+              textOf(line.failureCode) === ''
+            )
+          },
+          120_000,
+        )
+        const depletedAvailability = await pollData(
+          '/api/business-console/v1/inventory/availability',
+          {
+            organizationId,
+            environmentId,
+            skuCode: finishedSku,
+            uomCode,
+            siteCode: finishedGoodsSiteCode,
+            locationCode: finishedGoodsLocationCode,
+            lotNo: producedLotNo,
+          },
+          (data) => Number(data.onHandQuantity ?? 0) === 0,
+          120_000,
+        )
         const delivery = await pollRows(
           '/api/business-console/v1/erp/sales/delivery-orders',
           { organizationId, environmentId, keyword: deliveryOrderNo, take: 100 },
@@ -1850,11 +1920,16 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           stableKey: `${wmsOutboundId} -> ${deliveryOrderNo}`,
           automationMode: 'automatic',
           request: completed.summary,
-          responseOrLog: publicJson(delivery.match) as JsonRecord,
+          responseOrLog: {
+            completionResponse: completed.publicPayload,
+            inventoryPosting: publicJson(postedOutbound.match),
+            inventoryBalance: publicJson(depletedAvailability.data),
+            delivery: publicJson(delivery.match),
+          },
           conclusion: 'runtime-confirmed',
           demoWording:
-            'Completing the WMS outbound order crossed Redis back into ERP and completed the matching delivery.',
-          responsibilityIssue: '#971 (closed)',
+            'Inventory posted the exact produced-stock partition to zero before WMS emitted completion and ERP completed the matching delivery.',
+          responsibilityIssue: '#1083',
         })
         const receivable = await pollRows(
           '/api/business-console/v1/erp/finance/receivables',
@@ -1875,8 +1950,8 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           responseOrLog: publicJson(receivable.match) as JsonRecord,
           conclusion: 'runtime-confirmed',
           demoWording:
-            'The completed delivery produced a public receivable carrying the same delivery source key.',
-          responsibilityIssue: '#971 (closed)',
+            'Only the Inventory-confirmed WMS completion produced a public receivable carrying the same delivery source key.',
+          responsibilityIssue: '#1083',
         })
         const voucher = await pollRows(
           '/api/business-console/v1/erp/finance/vouchers',
@@ -1894,8 +1969,8 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           responseOrLog: publicJson(voucher.match) as JsonRecord,
           conclusion: 'runtime-confirmed',
           demoWording:
-            'The receivable generated a public finance voucher tied to the same receivable number.',
-          responsibilityIssue: '#971 (closed)',
+            'The Inventory-confirmed receivable generated a public finance voucher tied to the same receivable number.',
+          responsibilityIssue: '#1083',
         })
       } catch (error) {
         const pending = [

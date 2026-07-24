@@ -2735,7 +2735,9 @@ public sealed record BusinessConsoleReleaseErpDeliveryOrderRequest(
 
 public sealed record BusinessConsoleErpDeliveryOrderLine(
     string SalesOrderLineNo,
-    decimal Quantity);
+    decimal Quantity,
+    string? LocationCode = null,
+    string? LotNo = null);
 
 public sealed record BusinessConsoleReleaseErpDeliveryOrderResponse(string DeliveryOrderId);
 
@@ -2747,6 +2749,7 @@ public sealed record BusinessConsoleErpDeliveryOrderItem(
     string DeliveryOrderNo,
     string SalesOrderNo,
     string CustomerCode,
+    string SiteCode,
     string Status,
     IReadOnlyCollection<BusinessConsoleErpDeliveryOrderLineItem> Lines,
     DateTime ReleasedAtUtc,
@@ -2755,8 +2758,12 @@ public sealed record BusinessConsoleErpDeliveryOrderItem(
 
 public sealed record BusinessConsoleErpDeliveryOrderLineItem(
     string SalesOrderLineNo,
+    string SkuCode,
+    string UomCode,
     decimal Quantity,
-    decimal ShippedQuantity);
+    decimal ShippedQuantity,
+    string LocationCode,
+    string? LotNo);
 
 public sealed record BusinessConsoleCreateErpAccountPayableRequest(
     string OrganizationId,

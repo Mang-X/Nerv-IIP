@@ -614,6 +614,12 @@ try {
     Assert-True ($planCreateIndex -lt $productionReportIndex) 'The Quality plan must be active before the MES production report publishes its completion event.'
     Assert-True ([regex]::IsMatch($mainChainScenarioText, 'const\s+reportReplay\s*=\s*await\s+call\(\s*[''"]POST[''"]\s*,\s*[''"]/api/business-console/v1/mes/production-reports[''"]\s*,\s*productionReportRequest')) 'The leader-demo main chain must actively replay the same production-report request and idempotency key.'
     Assert-True ([regex]::IsMatch($mainChainScenarioText, 'reportReplayId\s*!==\s*productionReportId')) 'The replay probe must reject a different production report identity.'
+    Assert-True ([regex]::IsMatch($mainChainScenarioText, 'siteCode\s*:\s*finishedGoodsSiteCode')) 'The sales order must use the same finished-goods site later posted by MES and consumed by WMS.'
+    Assert-True ([regex]::IsMatch($mainChainScenarioText, 'locationCode\s*:\s*finishedGoodsLocationCode')) 'The ERP delivery must preserve the exact finished-goods location in the WMS posting key.'
+    Assert-True ([regex]::IsMatch($mainChainScenarioText, 'lotNo\s*:\s*producedLotNo')) 'The ERP delivery must preserve the exact produced lot in the WMS posting key.'
+    Assert-True ($mainChainScenarioText.Contains("textOf(row.inventoryPostingStatus) === 'posted'")) 'The main chain must wait for public WMS Inventory-posted status before accepting ERP completion.'
+    Assert-True ($mainChainScenarioText.Contains('Number(data.onHandQuantity ?? 0) === 0')) 'The main chain must prove the exact produced-stock balance is decremented to zero.'
+    Assert-True ($mainChainScenarioText.Contains("textOf(outboundLine.ownerType) !== 'production'")) 'The main chain must audit the production/null ownership partition rather than customer ownership.'
     $leaderDemoEntryText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/leader-demo.ps1') -Raw
     Assert-True ($leaderDemoEntryText.Contains('Get-NervLeaderDemoFailureExitCode')) 'The leader-demo entrypoint must extract a structured verification exit code.'
     Assert-True ($leaderDemoEntryText.Contains('exit $exitCode')) 'The leader-demo entrypoint must propagate the structured nonzero code after evidence.'

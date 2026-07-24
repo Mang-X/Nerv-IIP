@@ -101,8 +101,8 @@ declaration against what actually shipped (facade + codegen + barrel for
 | ProductEngineering | 39 | 38 | 0 | 1 |
 | Quality | 32 | 20 | 12 | 0 |
 | Scheduling | 15 | 13 | 1 | 1 |
-| Wms | 30 | 19 | 6 | 5 |
-| **Total** | **371** | **299** | **49** | **23** |
+| Wms | 30 | 20 | 5 | 5 |
+| **Total** | **371** | **300** | **48** | **23** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
 The `exposed` rows (299) — each with its verified facade `gatewayOperationIds` — are
@@ -165,7 +165,6 @@ current manifest rather than from samples, so the facade must preserve
 | Wms | GET | `/api/business/v1/wms/replenishment-tasks` | BusinessGateway facade pending; follows the remaining WMS deepening and Business Console operations tranche tracked by #707. |
 | Wms | POST | `/api/business/v1/wms/backorder-orders/{backorderOrderId}/close` | BusinessGateway facade pending; follows the remaining WMS deepening and Business Console operations tranche tracked by #707. |
 | Wms | POST | `/api/business/v1/wms/outbound-orders/{outboundOrderId}/cancel` | BusinessGateway facade pending; WMS outbound cancel follows the WMS operations menu phase. |
-| Wms | POST | `/api/business/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry` | BusinessGateway facade pending; WMS outbound posting-retry follows the WMS operations menu phase. |
 
 ### Internal endpoints (never exposed by design)
 
