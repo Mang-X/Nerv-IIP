@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import {
   createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions,
+  getBusinessConsoleEquipmentDeviceHealthQueryOptions,
   getBusinessConsoleTelemetryConnectorTagCoverageQueryOptions,
   listBusinessConsoleTelemetryAlarmRulesQueryOptions,
   listBusinessConsoleTelemetryConnectorCollectionHealthQueryOptions,
@@ -17,11 +18,13 @@ import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   describeTelemetryOeeLimitations,
   describeTelemetryOeeDegradation,
+  EQUIPMENT_HEALTH_POLL_INTERVAL_MS,
   formatOeeQuantity,
   formatOeeRate,
   useBusinessTelemetryAlarmRules,
   useBusinessTelemetryConnectors,
   useBusinessTelemetryConnectorCoverage,
+  useBusinessEquipmentHealth,
   useBusinessTelemetryHistory,
   useBusinessTelemetryOee,
   useBusinessTelemetryTags,
@@ -57,6 +60,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions: vi.fn(() => ({
     key: [{ _id: 'createOrUpdateBusinessConsoleTelemetryAlarmRule' }],
     mutation: vi.fn(),
+  })),
+  getBusinessConsoleEquipmentDeviceHealthQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleEquipmentDeviceHealth' }],
+    query: vi.fn(),
   })),
   getBusinessConsoleTelemetryConnectorTagCoverageQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleTelemetryConnectorTagCoverage' }],
@@ -205,6 +212,66 @@ describe('business telemetry composables', () => {
       },
       lastSampleAtUtc: '2026-07-13T01:09:59.000Z',
     })
+  })
+
+  it('gates equipment health by business context and device, polls every five seconds, and unwraps the response', async () => {
+    coladaState.queryDataById.set('getBusinessConsoleEquipmentDeviceHealth', {
+      success: true,
+      data: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        deviceAssetId: 'DEV-CNC-01',
+        healthScore: 85,
+        level: 'watch',
+        calculatedAtUtc: '2026-07-24T01:02:03Z',
+        dataFreshness: { status: 'delayed', ageSeconds: 121 },
+        riskFactors: [],
+        ruleEvaluations: [],
+      },
+    })
+
+    const deviceAssetId = shallowRef('  DEV-CNC-01  ')
+    const result = useBusinessEquipmentHealth(deviceAssetId)
+
+    expect(getBusinessConsoleEquipmentDeviceHealthQueryOptions).toHaveBeenCalledWith({
+      path: { deviceAssetId: 'DEV-CNC-01' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+    })
+    expect(
+      coladaState.queryOptionsById.get('getBusinessConsoleEquipmentDeviceHealth'),
+    ).toMatchObject({
+      enabled: true,
+    })
+    expect(
+      coladaState.queryOptionsById.get('getBusinessConsoleEquipmentDeviceHealth')?.autoRefetch?.(),
+    ).toBe(EQUIPMENT_HEALTH_POLL_INTERVAL_MS)
+    expect(EQUIPMENT_HEALTH_POLL_INTERVAL_MS).toBe(5_000)
+    expect(result.health.value?.healthScore).toBe(85)
+    expect(result.healthPending.value).toBe(false)
+    expect(result.healthError.value).toBeUndefined()
+
+    await result.refreshHealth()
+    expect(
+      coladaState.refetchById.get('getBusinessConsoleEquipmentDeviceHealth'),
+    ).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not enable or refetch equipment health without both context and device scope', async () => {
+    const emptyDevice = useBusinessEquipmentHealth(shallowRef('   '))
+
+    expect(
+      coladaState.queryOptionsById.get('getBusinessConsoleEquipmentDeviceHealth')?.enabled,
+    ).toBe(false)
+    await emptyDevice.refreshHealth()
+    expect(
+      coladaState.refetchById.get('getBusinessConsoleEquipmentDeviceHealth'),
+    ).not.toHaveBeenCalled()
+
+    useBusinessContextStore().patchContext({ organizationId: '', environmentId: '' })
+    useBusinessEquipmentHealth(shallowRef('DEV-CNC-01'))
+    expect(
+      coladaState.queryOptionsById.get('getBusinessConsoleEquipmentDeviceHealth')?.enabled,
+    ).toBe(false)
   })
 
   it('loads connector coverage by canonical connector identity and unwraps its envelope', async () => {

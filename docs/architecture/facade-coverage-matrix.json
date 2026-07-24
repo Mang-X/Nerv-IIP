@@ -1381,6 +1381,20 @@
     {
       "service": "IndustrialTelemetry",
       "method": "GET",
+      "route": "/api/business/v1/iiot/devices/{deviceAssetId}/health",
+      "operationId": "getBusinessIiotEquipmentHealth",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Exposed via GET /api/business-console/v1/equipment/devices/{deviceAssetId}/health.",
+      "gatewayOperationIds": [
+        "getBusinessConsoleEquipmentDeviceHealth"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
       "route": "/api/business/v1/iiot/devices/{deviceAssetId}/runtime-availability",
       "operationId": "getBusinessIiotDeviceRuntimeAvailability",
       "classification": "exposed",

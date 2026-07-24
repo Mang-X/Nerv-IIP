@@ -1078,6 +1078,12 @@ public interface IBusinessIndustrialTelemetryClient
         BusinessConsoleEquipmentContextRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleEquipmentHealthResponse> GetEquipmentHealthAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleEquipmentContextRequest request,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
+
     Task<BusinessConsoleEquipmentAlarmListPageResponse> ListActiveAlarmsAsync(
         string internalBearerToken,
         BusinessConsoleEquipmentAlarmListRequest request,
@@ -4634,6 +4640,22 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
 public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessIndustrialTelemetryClient
 {
+    private static readonly HashSet<string> EquipmentHealthRuleCodes = new(StringComparer.Ordinal)
+    {
+        "threshold-proximity",
+        "runtime-hours-24h",
+        "alarm-frequency-24h",
+        "sustained-exceedance",
+        "trend-growth",
+    };
+    private static readonly JsonSerializerOptions EquipmentHealthJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters =
+        {
+            new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false),
+        },
+    };
+
     public Task<BusinessConsoleConnectorTagCoverageResponse> GetConnectorTagCoverageAsync(
         string internalBearerToken,
         BusinessConsoleConnectorTagCoverageRequest request,
@@ -5020,6 +5042,239 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             null,
             cancellationToken,
             EquipmentRuntimeJson.Options);
+
+    public async Task<BusinessConsoleEquipmentHealthResponse> GetEquipmentHealthAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleEquipmentContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<BusinessConsoleEquipmentHealthResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/iiot/devices/{Uri.EscapeDataString(deviceAssetId)}/health?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken,
+            EquipmentHealthJsonOptions);
+
+        ValidateEquipmentHealthResponse(response, deviceAssetId, request);
+        return response;
+    }
+
+    private static void ValidateEquipmentHealthResponse(
+        BusinessConsoleEquipmentHealthResponse response,
+        string deviceAssetId,
+        BusinessConsoleEquipmentContextRequest request)
+    {
+        if (!string.Equals(response.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
+            || !string.Equals(response.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal)
+            || !string.Equals(response.DeviceAssetId, deviceAssetId, StringComparison.Ordinal)
+            || response.HealthScore is < 0 or > 100
+            || !Enum.IsDefined(response.Level)
+            || response.CalculatedAtUtc == default
+            || response.CalculatedAtUtc.Offset != TimeSpan.Zero
+            || response.DataFreshness is null
+            || response.RiskFactors is null
+            || response.RuleEvaluations is null)
+        {
+            throw InvalidEquipmentHealthResponse();
+        }
+
+        if (response.RuleEvaluations.Count != EquipmentHealthRuleCodes.Count
+            || response.RuleEvaluations.Any(evaluation => evaluation is null)
+            || !EquipmentHealthRuleCodes.SetEquals(response.RuleEvaluations.Select(evaluation => evaluation.RuleCode)))
+        {
+            throw InvalidEquipmentHealthResponse();
+        }
+
+        foreach (var evaluation in response.RuleEvaluations)
+        {
+            if (!HasRequiredRuleFields(
+                    evaluation.RuleCode,
+                    evaluation.RuleName,
+                    evaluation.CurrentValue,
+                    evaluation.Threshold,
+                    evaluation.Unit,
+                    evaluation.Evidence)
+                || !Enum.IsDefined(evaluation.Status)
+                || !HasCanonicalPenalty(evaluation.RuleCode, evaluation.Status, evaluation.Penalty)
+                || !HasCoherentEvidenceSource(
+                    evaluation.SourceFactType,
+                    evaluation.SourceFactLabel,
+                    evaluation.SourceFactOccurredAtUtc))
+            {
+                throw InvalidEquipmentHealthResponse();
+            }
+        }
+
+        if (response.RiskFactors.Any(factor => factor is null))
+        {
+            throw InvalidEquipmentHealthResponse();
+        }
+
+        var riskEvaluations = response.RuleEvaluations
+            .Where(evaluation => evaluation.Status == BusinessConsoleEquipmentHealthRuleStatus.Risk)
+            .ToDictionary(evaluation => evaluation.RuleCode, StringComparer.Ordinal);
+        var riskFactorCodes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var factor in response.RiskFactors)
+        {
+            if (!HasRequiredRuleFields(
+                    factor.RuleCode,
+                    factor.RuleName,
+                    factor.CurrentValue,
+                    factor.Threshold,
+                    factor.Unit,
+                    factor.Evidence)
+                || !Enum.IsDefined(factor.Status)
+                || factor.Status != BusinessConsoleEquipmentHealthRuleStatus.Risk
+                || factor.Penalty <= 0
+                || !HasCoherentEvidenceSource(
+                    factor.SourceFactType,
+                    factor.SourceFactLabel,
+                    factor.SourceFactOccurredAtUtc)
+                || !riskFactorCodes.Add(factor.RuleCode)
+                || !riskEvaluations.TryGetValue(factor.RuleCode, out var evaluation)
+                || !RiskFactorMatchesEvaluation(factor, evaluation))
+            {
+                throw InvalidEquipmentHealthResponse();
+            }
+        }
+
+        var expectedScore = Math.Clamp(
+            100 - riskEvaluations.Values.Sum(evaluation => evaluation.Penalty),
+            0,
+            100);
+        if (!riskFactorCodes.SetEquals(riskEvaluations.Keys)
+            || response.HealthScore != expectedScore
+            || response.Level != ClassifyEquipmentHealth(expectedScore)
+            || !HasCoherentFreshness(
+                response.DataFreshness,
+                response.CalculatedAtUtc,
+                response.RuleEvaluations))
+        {
+            throw InvalidEquipmentHealthResponse();
+        }
+    }
+
+    private static bool HasRequiredRuleFields(
+        string ruleCode,
+        string ruleName,
+        string currentValue,
+        string threshold,
+        string unit,
+        string evidence) =>
+        !string.IsNullOrWhiteSpace(ruleCode)
+        && !string.IsNullOrWhiteSpace(ruleName)
+        && !string.IsNullOrWhiteSpace(currentValue)
+        && !string.IsNullOrWhiteSpace(threshold)
+        && !string.IsNullOrWhiteSpace(unit)
+        && !string.IsNullOrWhiteSpace(evidence);
+
+    private static bool HasCanonicalPenalty(
+        string ruleCode,
+        BusinessConsoleEquipmentHealthRuleStatus status,
+        int penalty)
+    {
+        if (status != BusinessConsoleEquipmentHealthRuleStatus.Risk)
+        {
+            return penalty == 0;
+        }
+
+        return ruleCode switch
+        {
+            "threshold-proximity" => penalty == 15,
+            "runtime-hours-24h" => penalty == 10,
+            "alarm-frequency-24h" => penalty is 20 or 45 or 65,
+            "sustained-exceedance" => penalty == 20,
+            "trend-growth" => penalty == 15,
+            _ => false,
+        };
+    }
+
+    private static BusinessConsoleEquipmentHealthLevel ClassifyEquipmentHealth(int score) =>
+        score switch
+        {
+            >= 90 => BusinessConsoleEquipmentHealthLevel.Healthy,
+            >= 70 => BusinessConsoleEquipmentHealthLevel.Watch,
+            >= 40 => BusinessConsoleEquipmentHealthLevel.Warning,
+            _ => BusinessConsoleEquipmentHealthLevel.Critical,
+        };
+
+    private static bool HasCoherentEvidenceSource(
+        string? sourceFactType,
+        string? sourceFactLabel,
+        DateTimeOffset? sourceFactOccurredAtUtc)
+    {
+        if (sourceFactOccurredAtUtc is null)
+        {
+            return sourceFactType is null && sourceFactLabel is null;
+        }
+
+        return sourceFactOccurredAtUtc.Value != default
+            && sourceFactOccurredAtUtc.Value.Offset == TimeSpan.Zero
+            && !string.IsNullOrWhiteSpace(sourceFactType)
+            && !string.IsNullOrWhiteSpace(sourceFactLabel);
+    }
+
+    private static bool RiskFactorMatchesEvaluation(
+        BusinessConsoleEquipmentHealthRiskFactor factor,
+        BusinessConsoleEquipmentHealthRuleEvaluation evaluation) =>
+        factor.RuleName == evaluation.RuleName
+        && factor.Status == evaluation.Status
+        && factor.Penalty == evaluation.Penalty
+        && factor.CurrentValue == evaluation.CurrentValue
+        && factor.Threshold == evaluation.Threshold
+        && factor.Unit == evaluation.Unit
+        && factor.Evidence == evaluation.Evidence
+        && factor.SourceFactType == evaluation.SourceFactType
+        && factor.SourceFactLabel == evaluation.SourceFactLabel
+        && factor.SourceFactOccurredAtUtc == evaluation.SourceFactOccurredAtUtc;
+
+    private static bool HasCoherentFreshness(
+        BusinessConsoleEquipmentHealthDataFreshness freshness,
+        DateTimeOffset calculatedAtUtc,
+        IReadOnlyCollection<BusinessConsoleEquipmentHealthRuleEvaluation> evaluations)
+    {
+        if (!Enum.IsDefined(freshness.Status))
+        {
+            return false;
+        }
+
+        if (freshness.Status == BusinessConsoleEquipmentHealthFreshness.Unavailable)
+        {
+            return freshness.AgeSeconds is null
+                && freshness.LatestFactAtUtc is null
+                && freshness.SourceFactType is null
+                && freshness.SourceFactLabel is null
+                && evaluations.All(evaluation => evaluation.SourceFactOccurredAtUtc is null);
+        }
+
+        if (freshness.AgeSeconds is null or < 0
+            || freshness.LatestFactAtUtc is null
+            || freshness.LatestFactAtUtc.Value == default
+            || freshness.LatestFactAtUtc.Value.Offset != TimeSpan.Zero
+            || freshness.LatestFactAtUtc > calculatedAtUtc
+            || string.IsNullOrWhiteSpace(freshness.SourceFactType)
+            || string.IsNullOrWhiteSpace(freshness.SourceFactLabel))
+        {
+            return false;
+        }
+
+        var exactAge = calculatedAtUtc - freshness.LatestFactAtUtc.Value;
+        var ageSeconds = (long)exactAge.TotalSeconds;
+        var expectedStatus = exactAge <= TimeSpan.FromMinutes(2)
+            ? BusinessConsoleEquipmentHealthFreshness.Fresh
+            : exactAge <= TimeSpan.FromMinutes(10)
+                ? BusinessConsoleEquipmentHealthFreshness.Delayed
+                : BusinessConsoleEquipmentHealthFreshness.Stale;
+        return ageSeconds == freshness.AgeSeconds.Value
+            && freshness.Status == expectedStatus;
+    }
+
+    private static BusinessServiceProxyException InvalidEquipmentHealthResponse() =>
+        BusinessServiceProxyException.FromSafeDownstreamMessage(
+            HttpStatusCode.BadGateway,
+            "downstream-invalid-response");
 
     public async Task<BusinessConsoleEquipmentAlarmListPageResponse> ListActiveAlarmsAsync(
         string internalBearerToken,
