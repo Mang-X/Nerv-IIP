@@ -638,6 +638,55 @@ describe('NvMetricRing / NvMetricStrip', () => {
     expect(tips()).toBe(before)
   })
 
+  // 回归（评审七轮）：投影绝不能 join 序列化——含分隔符的 key 可构造出
+  // 前后完全相同的串（'x k:s:y' vs ['x','y']），成员已变而 watcher 不触发。
+  // 数组投影无序列化，此场景必须照常清理。
+  it('breakdown 含分隔符 key：join 碰撞场景下过滤清理仍触发', async () => {
+    const seg = (key: string, label: string, value: number) => ({
+      label,
+      value,
+      key,
+      tone: 'brand' as const,
+    })
+    // 旧 join(' ') 下前后投影串均为 'k:s:x k:s:y k:s:z'
+    const segs = reactive([seg('x k:s:y', 'AB', 8), seg('z', 'C', 2)])
+    const wrapper = mount(NvMetricCard, {
+      props: { variant: 'breakdown', label: 't', value: 10, segments: segs },
+    })
+    const tips = () => document.querySelectorAll('.nv-metric-tip').length
+    const before = tips()
+    await wrapper.findAll('li')[0].trigger('mousemove', { clientX: 10, clientY: 10 }) // key 'x k:s:y'
+    expect(wrapper.findAll('.nv-metric-dim').length).toBeGreaterThan(0)
+    expect(tips()).toBe(before + 1)
+
+    segs.splice(0, 1, seg('x', 'A', 5), seg('y', 'B', 3)) // 原地替换，join 串不变
+    await nextTick()
+    await nextTick()
+    expect(wrapper.findAll('.nv-metric-dim')).toHaveLength(0)
+    expect(tips()).toBe(before)
+  })
+
+  it('ring 含分隔符 key：join 碰撞场景下过滤清理仍触发', async () => {
+    const seg = (key: string, label: string, value: number) => ({
+      label,
+      value,
+      key,
+      tone: 'brand' as const,
+    })
+    const segs = reactive([seg('x k:s:y', 'AB', 8), seg('z', 'C', 2)])
+    const wrapper = mount(NvMetricRing, {
+      props: { label: 't', value: 10, centerCaption: '总计', segments: segs },
+    })
+    await wrapper.findAll('.nv-ring-row')[0].trigger('mouseenter')
+    expect(wrapper.findAll('.nv-ring-dim').length).toBeGreaterThan(0)
+
+    segs.splice(0, 1, seg('x', 'A', 5), seg('y', 'B', 3))
+    await nextTick()
+    await nextTick()
+    expect(wrapper.findAll('.nv-ring-dim')).toHaveLength(0)
+    expect(wrapper.find('.nv-ring-center').text()).toContain('总计')
+  })
+
   it('ring 图例给出每段计数与占比，中心默认显示总数', () => {
     const wrapper = mount(NvMetricRing, {
       props: { label: '在制工单', value: 35, centerCaption: '总计', segments: ringSegments },
