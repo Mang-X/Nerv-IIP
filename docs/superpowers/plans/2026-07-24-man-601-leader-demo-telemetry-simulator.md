@@ -27,7 +27,7 @@
 - Modify: `backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/LeaderDemoSeedServiceTests.cs`
 - Modify: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Seed/LeaderDemoSeedService.cs`
 
-- [ ] **Step 1: Write the failing seed contract**
+- [x] **Step 1: Write the failing seed contract**
 
 Change the happy-path test to require:
 
@@ -52,7 +52,7 @@ Assert.Equal(8m, rule.ThresholdValue);
 
 Keep assertions that two calls are idempotent and `TelemetryRawSamples`, `TelemetrySummaries`, `DeviceStateSnapshots`, and `AlarmEvents` remain empty. Add a collision test for an incompatible reserved vibration tag.
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run:
 
@@ -62,7 +62,7 @@ dotnet test backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Busines
 
 Expected: FAIL because `VibrationTagKey` and the two-second vibration seed do not exist and the rule still targets temperature.
 
-- [ ] **Step 3: Implement the minimal seed change**
+- [x] **Step 3: Implement the minimal seed change**
 
 Define:
 
@@ -80,7 +80,7 @@ VibrationTagKey, "decimal", "mm/s", "sample-2s"
 
 Configure `ALARM-DEMO-001` as an enabled `VIBRATION-HIGH` critical rule on `vibration`, `>= 8m`, `mm/s`, with `0.3m` deadband and 4-second on/off/minimum-duration windows. Preserve collision failure and do not create any runtime facts.
 
-- [ ] **Step 4: Run the focused test and verify GREEN**
+- [x] **Step 4: Run the focused test and verify GREEN**
 
 Run the Step 2 command.
 
@@ -92,7 +92,7 @@ Expected: PASS with zero failures.
 - Create: `scripts/tests/leader-demo-telemetry-simulator.Tests.ps1`
 - Create: `scripts/lib/LeaderDemoTelemetrySimulator.ps1`
 
-- [ ] **Step 1: Write failing profile and payload tests**
+- [x] **Step 1: Write failing profile and payload tests**
 
 The test must dot-source the simulator library and assert:
 
@@ -115,7 +115,7 @@ Assert-True (($timeline | Where-Object Profile -eq 'recovered')[0].Vibration -lt
 
 Assert that identical inputs produce byte-equivalent sample bodies and stable sequences, every body uses `sourceSystem=leader-demo-simulator`, `sourceConnector=business-gateway`, only vibration bodies carry device state, and each bucket is exactly two seconds.
 
-- [ ] **Step 2: Run the fast test and verify RED**
+- [x] **Step 2: Run the fast test and verify RED**
 
 Run:
 
@@ -125,7 +125,7 @@ pwsh scripts/tests/leader-demo-telemetry-simulator.Tests.ps1
 
 Expected: FAIL because the simulator library and functions do not exist.
 
-- [ ] **Step 3: Implement deterministic generation**
+- [x] **Step 3: Implement deterministic generation**
 
 Add focused functions:
 
@@ -144,13 +144,13 @@ leader-demo:<runId>:<phase>:<zero-padded-index>:<tag>
 
 Map states as `running` for normal/degrading, `unavailable` for alarm, and `available` for recovered.
 
-- [ ] **Step 4: Run the fast test and verify GREEN**
+- [x] **Step 4: Run the fast test and verify GREEN**
 
 Run the Step 2 command.
 
 Expected: deterministic profile and payload tests pass.
 
-- [ ] **Step 5: Write failing orchestration tests**
+- [x] **Step 5: Write failing orchestration tests**
 
 Inject `HttpAction` and `DelayAction` and assert:
 
@@ -162,13 +162,13 @@ Inject `HttpAction` and `DelayAction` and assert:
 - alarm verification calls `GET /api/business-console/v1/telemetry/alarms`;
 - injected cancellation ends before the next delay and returns a stopped evidence result.
 
-- [ ] **Step 6: Run orchestration tests and verify RED**
+- [x] **Step 6: Run orchestration tests and verify RED**
 
 Run the Step 2 command.
 
 Expected: FAIL because orchestration and verification functions are missing.
 
-- [ ] **Step 7: Implement minimal orchestration**
+- [x] **Step 7: Implement minimal orchestration**
 
 Add:
 
@@ -184,7 +184,7 @@ Get-NervLeaderDemoTelemetryAlarmEvidence
 
 Require bounded positive durations, a strictly ordered `normal -> degrading -> alarm -> recovered` timeline, and exact organization/environment/device scope. Treat HTTP/non-contract failures as fail-closed; only the historical capability probe may select the explicit fallback. Never invoke database, Docker, or service-internal endpoints.
 
-- [ ] **Step 8: Run orchestration tests and verify GREEN**
+- [x] **Step 8: Run orchestration tests and verify GREEN**
 
 Run the Step 2 command.
 
@@ -197,7 +197,7 @@ Expected: all simulator fast tests pass with no live services.
 - Modify: `scripts/tests/leader-demo.Tests.ps1`
 - Modify: `docs/architecture/script-automation-governance.md`
 
-- [ ] **Step 1: Write the failing entrypoint contract**
+- [x] **Step 1: Write the failing entrypoint contract**
 
 Extend `leader-demo.Tests.ps1` to require that the new script:
 
@@ -209,7 +209,7 @@ Extend `leader-demo.Tests.ps1` to require that the new script:
 
 and exposes bounded `DurationMinutes`, default `SampleIntervalSeconds=2`, opt-in historical backfill, and an `artifacts/leader-demo` evidence path. Assert the core contains only BusinessGateway telemetry sample/history/alarm paths and no SQL/provider command.
 
-- [ ] **Step 2: Run the script contract and verify RED**
+- [x] **Step 2: Run the script contract and verify RED**
 
 Run:
 
@@ -219,7 +219,7 @@ pwsh scripts/tests/leader-demo.Tests.ps1
 
 Expected: FAIL because the governed entrypoint does not exist.
 
-- [ ] **Step 3: Implement the governed CLI**
+- [x] **Step 3: Implement the governed CLI**
 
 Add a `verify` governance header documenting:
 
@@ -231,7 +231,7 @@ Add a `verify` governance header documenting:
 
 Resolve the exact owned session with `Resolve-NervLeaderDemoOwnedSession`, read `NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD`, log in through the manifest Gateway URL, call only the manifest BusinessGateway URL, and pass the bearer token only in request headers. Never print or persist the password/token.
 
-- [ ] **Step 4: Document the command**
+- [x] **Step 4: Document the command**
 
 Register:
 
@@ -244,7 +244,7 @@ pwsh scripts/verify-leader-demo-telemetry-simulator.ps1 `
 
 Document default phase timing, stable `RunId`/`ScenarioStartUtc` replay semantics, rate-limit-aware replay pacing, evidence location, public-path guarantee, historical fallback declaration, and foreground stop behavior.
 
-- [ ] **Step 5: Run fast script gates and verify GREEN**
+- [x] **Step 5: Run fast script gates and verify GREEN**
 
 Run:
 
@@ -261,7 +261,7 @@ Expected: all three exit 0.
 **Files:**
 - Modify only files already listed.
 
-- [ ] **Step 1: Run IndustrialTelemetry tests**
+- [x] **Step 1: Run IndustrialTelemetry tests**
 
 Run:
 
@@ -271,7 +271,7 @@ dotnet test backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Busines
 
 Expected: all tests pass, zero warnings/errors.
 
-- [ ] **Step 2: Run whitespace/static checks**
+- [x] **Step 2: Run whitespace/static checks**
 
 Run:
 
@@ -287,7 +287,7 @@ Expected: both exit 0.
 **Files:**
 - Modify: `docs/architecture/implementation-readiness.md`
 
-- [ ] **Step 1: Start/reset the isolated demo**
+- [x] **Step 1: Start/reset the isolated demo**
 
 Run with the environment-only local password:
 
@@ -297,13 +297,13 @@ Run with the environment-only local password:
 
 Expected: one exact current Redis + PostgreSQL leader-demo session and successful seed/health evidence.
 
-- [ ] **Step 2: Run the historical capability probe**
+- [x] **Step 2: Run the historical capability probe**
 
 Run a short deterministic profile with `-HistoricalBackfill` and fixed `RunId`/`ScenarioStartUtc`.
 
 Expected: evidence states either `accepted` or `rejected-fallback`; history query proves the selected samples are visible. Record the factual result in GitHub #1086 and Linear MAN-601.
 
-- [ ] **Step 3: Run the required 10-minute scenario**
+- [x] **Step 3: Run the required 10-minute scenario**
 
 Run:
 
@@ -327,13 +327,13 @@ Expected evidence:
 - replay probe returns identical fact identities;
 - evidence contains no secrets.
 
-- [ ] **Step 4: Prove replay idempotence**
+- [x] **Step 4: Prove replay idempotence**
 
 Rerun with the exact same `RunId` and `ScenarioStartUtc` using the default 300 ms per-POST replay pacing, then query the same public history window.
 
 Expected: identical returned identities and unchanged distinct run-scoped fact count.
 
-- [ ] **Step 5: Stop and prove cleanup**
+- [x] **Step 5: Stop and prove cleanup**
 
 Run:
 
@@ -343,7 +343,7 @@ Run:
 
 Expected: authoritative session state is `Stopped`, cleanup has no remaining owned containers/networks/volumes, and no simulator background process exists.
 
-- [ ] **Step 6: Record readiness evidence**
+- [x] **Step 6: Record readiness evidence**
 
 Add a MAN-601 section to `implementation-readiness.md` containing the exact commit, session/run IDs, accepted/rejected historical result, 10-minute counts and phase results, replay result, evidence path, and cleanup result. Do not commit generated evidence.
 
@@ -352,7 +352,7 @@ Add a MAN-601 section to `implementation-readiness.md` containing the exact comm
 **Files:**
 - All listed files.
 
-- [ ] **Step 1: Run final fresh verification**
+- [x] **Step 1: Run final fresh verification**
 
 Run:
 
