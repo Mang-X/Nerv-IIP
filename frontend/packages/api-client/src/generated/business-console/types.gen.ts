@@ -1659,6 +1659,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     defectReason?: string | null;
     batchNo?: string | null;
     serialNo?: string | null;
+    attemptNumber?: number | null;
+    reinspectionOfInspectionRecordId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListRequest = {
