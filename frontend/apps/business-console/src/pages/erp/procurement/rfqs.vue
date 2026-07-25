@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpRequestForQuotationItem } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpRequestsForQuotation } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -19,9 +19,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   Spinner,
   NvStatusBadge,
   NvToolbar,
@@ -73,6 +72,15 @@ const requestedQuantity = computed(() =>
     .flatMap((r) => r.lines ?? [])
     .reduce((sum, line) => sum + (line.quantity ?? 0), 0),
 )
+const rfqCells = computed<NvMetricStripCell[]>(() => [
+  { key: 'open', label: '询价中', value: openCount.value, unit: '单', meta: '等待供应商回价' },
+  {
+    key: 'quantity',
+    label: '询价数量',
+    value: formatQuantity(requestedQuantity.value),
+    meta: `本页 ${rfqs.items.value.length} 张询价单合计`,
+  },
+])
 
 const open = shallowRef(false)
 const form = reactive({
@@ -155,14 +163,7 @@ async function submit() {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard description="询价中" :value="openCount" hint="等待供应商报价" />
-      <NvSectionCard
-        description="本页询价数量"
-        :value="formatQuantity(requestedQuantity)"
-        hint="按当前页明细汇总"
-      />
-    </NvSectionCards>
+    <NvMetricStrip :cells="rfqCells" />
 
     <NvToolbar :show-search="false">
       <template #filters>

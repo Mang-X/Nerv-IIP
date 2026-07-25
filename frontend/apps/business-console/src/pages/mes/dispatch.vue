@@ -7,7 +7,7 @@ import {
   isScheduleInvalidated,
   resolveScheduleStatus,
 } from '@/composables/useScheduleInvalidation'
-import { pagedBreakdownSegments } from '@/composables/mes/mesMetricSegments'
+import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'

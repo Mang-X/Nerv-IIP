@@ -89,11 +89,11 @@ vi.mock('@nerv-iip/ui', () => {
       props: ['title', 'description'],
       template: '<header><h1>{{ title }}</h1><p>{{ description }}</p></header>',
     },
-    NvSectionCard: {
-      props: ['description', 'value', 'hint'],
-      template: '<section>{{ description }} {{ value }} {{ hint }}</section>',
+    NvMetricCard: {
+      props: ['label', 'value', 'unit', 'tone', 'status', 'footStart'],
+      template:
+        '<section>{{ label }} {{ value }}{{ unit }} {{ status?.label }} {{ footStart }}</section>',
     },
-    NvSectionCards: passthrough('section'),
     NvSelect: {
       props: ['modelValue'],
       emits: ['update:modelValue'],

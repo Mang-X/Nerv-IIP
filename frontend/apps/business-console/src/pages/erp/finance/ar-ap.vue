@@ -3,7 +3,7 @@ import type {
   BusinessConsoleErpPayableItem,
   BusinessConsoleErpReceivableItem,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpPayables, useErpReceivables } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -22,9 +22,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -110,6 +109,22 @@ const receivableAmount = computed(() =>
 const payableAmount = computed(() =>
   payables.items.value.reduce((sum, r) => sum + (r.openAmount ?? 0), 0),
 )
+// 应收/应付是一对读数，通栏放一行才看得出资金缺口方向；金额只能对已取回的行加总，
+// 口径写进副行而不是让它冒充全量余额。
+const settlementCells = computed<NvMetricStripCell[]>(() => [
+  {
+    key: 'receivable',
+    label: '应收未结',
+    value: formatAmount(receivableAmount.value),
+    meta: `本页 ${receivables.items.value.length} 笔应收合计`,
+  },
+  {
+    key: 'payable',
+    label: '应付未结',
+    value: formatAmount(payableAmount.value),
+    meta: `本页 ${payables.items.value.length} 笔应付合计`,
+  },
+])
 
 const receivableOpen = shallowRef(false)
 const payableOpen = shallowRef(false)
@@ -209,18 +224,7 @@ async function submitPayable() {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard
-        description="应收未结"
-        :value="formatAmount(receivableAmount)"
-        hint="当前筛选页未收金额"
-      />
-      <NvSectionCard
-        description="应付未结"
-        :value="formatAmount(payableAmount)"
-        hint="当前筛选页未付金额"
-      />
-    </NvSectionCards>
+    <NvMetricStrip :cells="settlementCells" />
 
     <NvToolbar :show-search="false">
       <template #filters>
