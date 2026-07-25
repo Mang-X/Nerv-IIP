@@ -403,9 +403,23 @@ function hasRequiredDefectContext(line: {
   if (!isNonEmpty(line.defectReason)) return false
   return line.result !== 'conditional-release' || (toOptionalNumber(line.defectQuantity) ?? 0) > 0
 }
+// 检验类别是英文码（receiving/operation/final…），摘要列直接拼会漏出 operation 这类工程语言。
+const CATEGORY_LABELS: Record<string, string> = {
+  receiving: '来料检',
+  operation: '工序检',
+  'in-process': '工序检',
+  final: '终检',
+  outgoing: '出货检',
+  rework: '返工检',
+}
+function categoryLabel(value?: string | null) {
+  const code = (value ?? '').trim()
+  if (!code) return ''
+  return CATEGORY_LABELS[code.toLowerCase()] ?? code
+}
 function qualityItemSummary(item: BusinessConsoleQualityItem) {
   const values = [
-    item.category,
+    categoryLabel(item.category),
     item.skuCode,
     item.partnerId,
     item.workCenterId,

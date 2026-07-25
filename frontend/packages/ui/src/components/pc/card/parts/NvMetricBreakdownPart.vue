@@ -20,6 +20,13 @@ const total = computed(() =>
 )
 
 /**
+ * No positive slice = nothing to draw, and a row of zero-width spans collapses
+ * the bar into a bare gap. Keep the muted track visible in that case so an empty
+ * period still reads as "0 of nothing" rather than a rendering hole.
+ */
+const isEmpty = computed(() => !props.segments.some((seg) => seg.value > 0))
+
+/**
  * Interaction identity is the slice's resolved KEY, not its array index — if
  * the segments reorder/filter mid-hover (live data), an index would silently
  * re-point the linked highlight at a different business item. The index
@@ -67,7 +74,7 @@ watch(
 </script>
 
 <template>
-  <div class="mt-4 flex h-1.5 gap-0.5">
+  <div :class="cn('mt-4 flex h-1.5 gap-0.5', isEmpty && 'rounded-full bg-muted')">
     <span
       v-for="(seg, i) in segments"
       :key="metricItemKey(seg, i)"

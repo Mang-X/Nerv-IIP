@@ -86,7 +86,7 @@ const voucherCells = computed<NvMetricStripCell[]>(() => [
     key: 'debit',
     label: '借方合计',
     value: formatAmount(debitAmount.value),
-    meta: `本页 ${vouchers.items.value.length} 张凭证合计`,
+    meta: `当前列表 ${vouchers.items.value.length} 张凭证合计`,
   },
   {
     key: 'credit',

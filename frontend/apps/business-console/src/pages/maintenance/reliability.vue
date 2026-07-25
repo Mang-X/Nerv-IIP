@@ -129,12 +129,16 @@ watch(deviceSuggestions, (suggestions) => {
   filters.deviceAssetId = suggestions[0].value
 })
 
+// 无运行样本时后端仍会给出一个窗口兜底值（如 720 小时＝整窗口无故障的名义值）。
+// 那不是实测 MTBF，读数与副行「当前窗口无运行样本」直接打架，所以两处口径统一：
+// 没有运行样本就走无样本态，不显示任何小时数（MTTR 已是这个做法）。
+const mtbfHasSamples = computed(() => reliability.value?.mtbfRuntimeHasSamples === true)
 const reliabilityCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'mtbf',
     label: 'MTBF',
-    value: metricLabel(reliability.value?.mtbfHours, ' 小时'),
-    meta: reliability.value?.mtbfRuntimeHasSamples ? '按运行样本计算' : '当前窗口无运行样本',
+    value: mtbfHasSamples.value ? metricLabel(reliability.value?.mtbfHours, ' 小时') : '无样本',
+    meta: mtbfHasSamples.value ? '按运行样本计算' : '当前窗口无运行样本',
   },
   {
     key: 'mttr',

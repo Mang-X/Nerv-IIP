@@ -116,13 +116,13 @@ const settlementCells = computed<NvMetricStripCell[]>(() => [
     key: 'receivable',
     label: '应收未结',
     value: formatAmount(receivableAmount.value),
-    meta: `本页 ${receivables.items.value.length} 笔应收合计`,
+    meta: `当前列表 ${receivables.items.value.length} 笔应收合计`,
   },
   {
     key: 'payable',
     label: '应付未结',
     value: formatAmount(payableAmount.value),
-    meta: `本页 ${payables.items.value.length} 笔应付合计`,
+    meta: `当前列表 ${payables.items.value.length} 笔应付合计`,
   },
 ])
 

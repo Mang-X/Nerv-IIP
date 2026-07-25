@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleTelemetryHistoryItem } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { DateRange, NvDataTableColumn } from '@nerv-iip/ui'
 import TelemetryEventTimeline from '@/components/equipment/TelemetryEventTimeline.vue'
 import TelemetryTrendPanel from '@/components/equipment/TelemetryTrendPanel.vue'
 import {
@@ -13,6 +13,7 @@ import { friendlyErrorMessage } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
+  NvDateRangePicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -20,7 +21,7 @@ import {
   NvPageHeader,
 } from '@nerv-iip/ui'
 import { GaugeIcon, RefreshCwIcon, Settings2Icon } from '@lucide/vue'
-import { computed, nextTick, shallowRef, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 definePage({
@@ -33,16 +34,17 @@ definePage({
 
 const route = useRoute()
 const router = useRouter()
+// 默认近 7 天：一台设备的趋势要看出班次/昼夜规律，8 小时窗口太窄，一进页面就像"没数据"。
+const DEFAULT_WINDOW_DAYS = 7
 const { filters, historyError, historyPending, refreshHistory, visibleHistoryItems } =
   useBusinessTelemetryHistory({
     deviceAssetId: routeQuery('deviceAssetId'),
     tagKey: routeQuery('tagKey'),
-    windowEndUtc: routeQuery('windowEndUtc') || undefined,
-    windowStartUtc: routeQuery('windowStartUtc') || undefined,
+    windowEndUtc: routeQuery('windowEndUtc') || defaultWindowEnd(),
+    windowStartUtc: routeQuery('windowStartUtc') || defaultWindowStart(),
   })
 const defaultWindowStartUtc = filters.windowStartUtc
 const defaultWindowEndUtc = filters.windowEndUtc
-const windowInputError = shallowRef('')
 
 const errorMessage = computed(() =>
   historyError.value
@@ -51,50 +53,22 @@ const errorMessage = computed(() =>
 )
 const hasDeviceScope = computed(() => filters.deviceAssetId.trim().length > 0)
 const projection = computed(() => projectTelemetryHistory(visibleHistoryItems.value))
-const windowStartLocal = shallowRef(toLocalDateTime(filters.windowStartUtc))
-const windowEndLocal = shallowRef(toLocalDateTime(filters.windowEndUtc))
-
-function updateWindowStart(value: string | number) {
-  updateWindow(
-    String(value),
-    windowStartLocal,
-    () => filters.windowStartUtc,
-    (parsed) => {
-      filters.windowStartUtc = parsed
-    },
-  )
-}
-
-function updateWindowEnd(value: string | number) {
-  updateWindow(
-    String(value),
-    windowEndLocal,
-    () => filters.windowEndUtc,
-    (parsed) => {
-      filters.windowEndUtc = parsed
-    },
-  )
-}
-
-function updateWindow(
-  value: string,
-  localValue: { value: string },
-  currentUtc: () => string,
-  commit: (parsed: string) => void,
-) {
-  const parsed = toIsoDateTime(value)
-  if (!parsed) {
-    windowInputError.value = '时间范围不能为空或无效，请选择有效的本地日期时间。'
-    localValue.value = value
-    void nextTick(() => {
-      localValue.value = toLocalDateTime(currentUtc())
-    })
-    return
-  }
-  windowInputError.value = ''
-  localValue.value = value
-  commit(parsed)
-}
+/**
+ * 时间范围用与可靠性指标同一套 NvUI 日期区间控件（原生 datetime-local 在各浏览器
+ * 长相不一，也无法给"近 7 天"这种整段选择）。控件说本地日历日，查询要 ISO 瞬时：
+ * 开始取当日 00:00，结束取次日 00:00，把尾日整天包进窗口。
+ */
+const windowRange = computed<DateRange>({
+  get: () => ({
+    // 存的是次日 00:00（尾日整天的排他上界）；回显要退回用户选的那一天本身。
+    end: toDateInput(filters.windowEndUtc, -1),
+    start: toDateInput(filters.windowStartUtc),
+  }),
+  set: (range) => {
+    if (range.start) filters.windowStartUtc = fromDateInput(range.start, 0)
+    if (range.end) filters.windowEndUtc = fromDateInput(range.end, 1)
+  },
+})
 
 watch(
   () =>
@@ -113,14 +87,6 @@ watch(
     if (filters.windowEndUtc !== nextWindowEndUtc) filters.windowEndUtc = nextWindowEndUtc
   },
   { immediate: true },
-)
-
-watch(
-  () => [filters.windowStartUtc, filters.windowEndUtc] as const,
-  ([windowStartUtc, windowEndUtc]) => {
-    windowStartLocal.value = toLocalDateTime(windowStartUtc)
-    windowEndLocal.value = toLocalDateTime(windowEndUtc)
-  },
 )
 
 watch(
@@ -173,16 +139,29 @@ function itemTypeLabel(value?: string | null) {
 function rowKey(row: BusinessConsoleTelemetryHistoryItem) {
   return `${row.deviceAssetId}-${row.tagKey ?? 'state'}-${row.occurredAtUtc}-${row.value}`
 }
-function toLocalDateTime(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset())
-  return date.toISOString().slice(0, 16)
+function defaultWindowEnd() {
+  const end = new Date()
+  return new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1).toISOString()
 }
-function toIsoDateTime(value: string) {
-  if (!value) return undefined
+function defaultWindowStart() {
+  const start = new Date()
+  return new Date(
+    start.getFullYear(),
+    start.getMonth(),
+    start.getDate() - (DEFAULT_WINDOW_DAYS - 1),
+  ).toISOString()
+}
+function toDateInput(value: string, dayOffset = 0) {
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
+  if (Number.isNaN(date.getTime())) return null
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  local.setUTCDate(local.getUTCDate() + dayOffset)
+  return local.toISOString().slice(0, 10)
+}
+function fromDateInput(value: string, dayOffset: number) {
+  const [y, m, d] = value.split('-').map(Number)
+  if (!y || !m || !d) return new Date().toISOString()
+  return new Date(y, m - 1, d + dayOffset).toISOString()
 }
 </script>
 
@@ -228,7 +207,7 @@ function toIsoDateTime(value: string) {
     </NvPageHeader>
 
     <NvFieldGroup
-      class="grid gap-3 rounded-lg border bg-card p-4 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_minmax(200px,1fr)_220px_220px]"
+      class="grid gap-3 rounded-lg border bg-card p-4 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_minmax(200px,1fr)_minmax(240px,1fr)]"
     >
       <NvField>
         <NvFieldLabel for="history-device">设备</NvFieldLabel>
@@ -249,29 +228,15 @@ function toIsoDateTime(value: string) {
         />
       </NvField>
       <NvField>
-        <NvFieldLabel for="history-start">开始时间</NvFieldLabel>
-        <NvInput
-          id="history-start"
-          :model-value="windowStartLocal"
-          type="datetime-local"
-          aria-label="开始时间"
-          @update:model-value="updateWindowStart"
-        />
-      </NvField>
-      <NvField>
-        <NvFieldLabel for="history-end">结束时间</NvFieldLabel>
-        <NvInput
-          id="history-end"
-          :model-value="windowEndLocal"
-          type="datetime-local"
-          aria-label="结束时间"
-          @update:model-value="updateWindowEnd"
+        <NvFieldLabel for="history-window">时间范围</NvFieldLabel>
+        <NvDateRangePicker
+          id="history-window"
+          v-model="windowRange"
+          placeholder="选择时间范围"
+          class="w-full"
         />
       </NvField>
     </NvFieldGroup>
-    <p v-if="windowInputError" class="text-sm text-destructive" role="alert">
-      {{ windowInputError }}
-    </p>
 
     <div
       v-if="!hasDeviceScope"

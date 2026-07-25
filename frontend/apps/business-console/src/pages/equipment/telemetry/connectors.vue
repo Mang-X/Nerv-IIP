@@ -123,7 +123,7 @@ function toggle(key: string) {
       v-else-if="!connectors.length"
       class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
     >
-      暂无采集连接器。请确认数据采集服务已启用、现场采集连接已配置并开始上报后再查看本页。
+      暂无现场采集连接。完成现场采集配置并开始上报后，设备数据会出现在这里。
     </div>
 
     <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

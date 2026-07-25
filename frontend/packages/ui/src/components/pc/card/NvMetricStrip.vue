@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
+import { computed } from 'vue'
 import { MinusIcon, TrendingDownIcon, TrendingUpIcon } from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 import NvCard from './NvCard.vue'
@@ -19,6 +20,14 @@ const props = withDefaults(
   { cells: () => [] },
 )
 
+/**
+ * Cells share one row, so a cell without a sub-line ends 4–7px short of its
+ * neighbours and the strip's bottom edge reads as ragged. When ANY cell carries
+ * a meta line, hold the line's height open in the others — the reserve costs
+ * nothing when no cell has one, and stays out of the accessibility tree.
+ */
+const reservesMeta = computed(() => props.cells.some((cell) => Boolean(cell.meta)))
+
 const metaIcon = { up: TrendingUpIcon, down: TrendingDownIcon, flat: MinusIcon } as const
 function metaToneClass(tone?: string) {
   if (tone === 'up') return metricToneText.success
@@ -32,7 +41,7 @@ function metaToneClass(tone?: string) {
     <div
       v-for="(cell, i) in cells"
       :key="metricItemKey(cell, i)"
-      class="flex flex-1 flex-col gap-1 border-border p-4 [&:not(:first-child)]:border-t sm:px-5 sm:[&:not(:first-child)]:border-l sm:[&:not(:first-child)]:border-t-0"
+      class="flex flex-1 flex-col gap-1 border-border p-4 [&:not(:first-child)]:border-t sm:p-5 sm:[&:not(:first-child)]:border-l sm:[&:not(:first-child)]:border-t-0"
     >
       <p class="truncate text-sm text-muted-foreground">{{ cell.label }}</p>
       <p
@@ -61,6 +70,7 @@ function metaToneClass(tone?: string) {
           aria-hidden="true"
         />{{ cell.meta }}
       </span>
+      <span v-else-if="reservesMeta" class="text-xs" aria-hidden="true">&nbsp;</span>
     </div>
   </NvCard>
 </template>

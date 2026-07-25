@@ -293,7 +293,7 @@ describe('WMS operate actions', () => {
     const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('库存上下文')
+    expect(wrapper.text()).toContain('库存明细')
     expect(wrapper.text()).toContain('LOT-001')
     expect(wrapper.text()).toContain('SN-001')
     expect(wrapper.text()).toContain('冻结/其他')

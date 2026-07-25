@@ -249,8 +249,20 @@ function workOrderNo(row: WorkOrderRow) {
   // 人读单号：取 GUID 末段大写，GUID 自身仅作内部点击目标。
   return id ? `WO-${id.slice(-8).toUpperCase()}` : '维护工单'
 }
+// 建单只开放高/中/低三档，但报警自动开单等来源会带 critical/urgent 等更高档位，
+// 只查建单选项会把它们原样漏成英文码，所以显示走一张覆盖全部来源的映射表。
+const PRIORITY_LABELS: Record<string, string> = {
+  critical: '紧急',
+  urgent: '紧急',
+  high: '高',
+  medium: '中',
+  normal: '中',
+  low: '低',
+}
 function priorityLabel(value?: string | null) {
-  return priorityOptions.find((o) => o.value === (value ?? '').toLowerCase())?.label ?? value ?? '—'
+  const code = (value ?? '').trim().toLowerCase()
+  if (!code) return '—'
+  return PRIORITY_LABELS[code] ?? '—'
 }
 function technicianLabel(userId?: string | null) {
   if (!userId) return '未指派'
@@ -264,7 +276,8 @@ function warrantyStatusLabel(value?: string | null) {
     case 'out-of-warranty':
       return '出保'
     default:
-      return '未知'
+      // 设备没登记保修信息不是一种"状态"，用占位符弱化，别喊「未知」制造疑问。
+      return '—'
   }
 }
 function rowKey(row: WorkOrderRow) {
@@ -481,16 +494,23 @@ watch(
     </NvPageHeader>
 
     <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+      <!-- 高优先待执行只出现在右侧告警卡（它带「看可用窗口」的行动出口）；
+           这里再列一格同名同值的读数纯属重复，故只留总量与待执行两格。 -->
       <NvMetricStrip
         :cells="[
-          { key: 'total', label: '维护工单', value: workOrdersTotal, unit: '张' },
-          { key: 'pending', label: '待派工执行', value: pendingCount, unit: '张' },
           {
-            key: 'high',
-            label: '高优先待执行',
-            value: highPriorityPending,
+            key: 'total',
+            label: '维护工单',
+            value: workOrdersTotal,
             unit: '张',
-            valueTone: highPriorityPending > 0 ? 'warning' : undefined,
+            meta: '当前业务范围内全部维护工单',
+          },
+          {
+            key: 'pending',
+            label: '待派工执行',
+            value: pendingCount,
+            unit: '张',
+            meta: '尚未完工，需要排人排窗口',
           },
         ]"
       />

@@ -78,7 +78,7 @@ const rfqCells = computed<NvMetricStripCell[]>(() => [
     key: 'quantity',
     label: '询价数量',
     value: formatQuantity(requestedQuantity.value),
-    meta: `本页 ${rfqs.items.value.length} 张询价单合计`,
+    meta: `当前列表 ${rfqs.items.value.length} 张询价单合计`,
   },
 ])
 

@@ -32,7 +32,7 @@ const props = withDefaults(
     sourceDocumentId: '',
     sourceLabel: '来源单据',
     sourceWorkflow: '',
-    title: '库存上下文',
+    title: '库存明细',
     uomCode: '',
   },
 )
@@ -108,7 +108,7 @@ function formatQuantity(value?: number | null) {
           <span v-if="skuValue">{{ skuValue }}</span>
           <span v-if="siteValue"> · {{ siteValue }}</span>
           <span v-if="locationValue"> · {{ locationValue }}</span>
-          <span v-if="!skuValue && !siteValue && !locationValue">等待库存范围</span>
+          <span v-if="!skuValue && !siteValue && !locationValue">暂无库存明细</span>
         </p>
       </div>
       <div class="flex flex-wrap gap-2">
@@ -137,7 +137,7 @@ function formatQuantity(value?: number | null) {
           v-if="!hasInventoryScope"
           class="inline-flex h-8 items-center rounded-md border px-2 text-sm text-muted-foreground"
         >
-          库存链接暂不可用
+          选定物料后可查库存
         </span>
       </div>
     </div>

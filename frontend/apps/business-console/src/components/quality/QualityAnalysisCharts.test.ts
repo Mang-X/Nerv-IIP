@@ -207,7 +207,7 @@ describe('QualityParetoPanel', () => {
       global: { stubs },
     })
 
-    expect(wrapper.text()).toContain('当前返回窗口缺陷 Pareto')
+    expect(wrapper.text()).toContain('当前分析时间范围缺陷 Pareto')
     expect(wrapper.text()).toContain('不是全量历史趋势')
     expect(wrapper.find('[data-testid="bar-chart"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="pareto-table"]').exists()).toBe(true)
@@ -219,7 +219,7 @@ describe('QualityParetoPanel', () => {
       global: { stubs },
     })
 
-    expect(wrapper.text()).toContain('当前返回窗口没有 NCR')
+    expect(wrapper.text()).toContain('当前分析时间范围内没有 NCR')
     expect(wrapper.find('[data-testid="bar-chart"]').exists()).toBe(false)
   })
 
@@ -230,7 +230,7 @@ describe('QualityParetoPanel', () => {
     })
 
     expect(wrapper.text()).toContain('网络异常，请检查连接后重试。')
-    expect(wrapper.text()).not.toContain('当前返回窗口没有 NCR')
+    expect(wrapper.text()).not.toContain('当前分析时间范围内没有 NCR')
     expect(wrapper.find('[data-testid="pareto-table"]').exists()).toBe(false)
   })
 
@@ -240,6 +240,6 @@ describe('QualityParetoPanel', () => {
       global: { stubs },
     })
 
-    expect(wrapper.text()).toContain('正在加载当前返回窗口缺陷数据')
+    expect(wrapper.text()).toContain('正在加载当前分析时间范围的缺陷数据')
   })
 })

@@ -266,7 +266,8 @@ const canSubmitReverse = computed(() => {
   if (!reverseForm.reasonCode) return false
   if (requiresRemark.value && !reverseForm.remark.trim()) return false
   if (finalReasonLength.value > REASON_MAX_LENGTH) return false
-  if (reverseProductionReportDetailPending.value || reverseProductionReportDetailError.value) return false
+  if (reverseProductionReportDetailPending.value || reverseProductionReportDetailError.value)
+    return false
   if (!reverseProductionReportDetailMatchesTarget.value) return false
   return true
 })
@@ -637,8 +638,7 @@ async function dismissCandidate(candidateId?: string) {
             </p>
             <p
               v-else-if="
-                reverseProductionReportDetailPending ||
-                !reverseProductionReportDetailMatchesTarget
+                reverseProductionReportDetailPending || !reverseProductionReportDetailMatchesTarget
               "
               class="text-xs text-muted-foreground"
             >
@@ -743,7 +743,7 @@ async function dismissCandidate(candidateId?: string) {
         <div>
           <h2 id="telemetry-candidate-title" class="text-lg font-semibold">遥测报工待确认</h2>
           <p class="text-sm text-muted-foreground">
-            来自设备计数的真实草稿与挂起记录，共 {{ candidateQueue.total.value }} 条。
+            设备自动生成的待确认报工，共 {{ candidateQueue.total.value }} 条。
           </p>
         </div>
         <div class="flex gap-2">

@@ -72,8 +72,8 @@ const columns: NvDataTableColumn<Device>[] = [
     cellClass: 'font-medium',
     accessor: (r) => r.deviceAssetId ?? '无编号',
   },
-  { key: 'currentState', header: '状态', width: 'w-24' },
-  { key: 'isSourceFresh', header: '数据新鲜', width: 'w-24' },
+  { key: 'currentState', header: '状态', width: 'w-32' },
+  { key: 'isSourceFresh', header: '实时数据', width: 'w-32' },
   { key: 'activeAlarmCount', header: '报警', align: 'end', width: 'w-20' },
   { key: 'activeBlockCount', header: '阻塞', align: 'end', width: 'w-20' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
@@ -94,7 +94,8 @@ function statusLabel(status?: string | null) {
     running: '运行中',
     stopped: '停止',
   }
-  return status ? (labels[status.toLowerCase()] ?? status) : '未知'
+  // 设备没上报状态不是"未知状态"，而是这台设备当前没有实时数据可读——照实说。
+  return status ? (labels[status.toLowerCase()] ?? status) : '暂无实时数据'
 }
 function recordDowntime(deviceAssetId?: string | null) {
   void router.push({ path: '/mes/downtime', query: { deviceAssetId: deviceAssetId ?? undefined } })
@@ -203,9 +204,10 @@ function formatError(error: unknown) {
             >{{ statusLabel(row.currentState) }}</NvBadge
           >
         </template>
+        <!-- 「过期」是采集口径，现场关心的是"这行数还能不能信"：不新鲜＝没有实时数据。 -->
         <template #cell-isSourceFresh="{ row }">
           <NvBadge class="rounded-sm" :variant="row.isSourceFresh ? 'success' : 'warning'">{{
-            row.isSourceFresh ? '正常' : '过期'
+            row.isSourceFresh ? '实时' : '暂无实时数据'
           }}</NvBadge>
         </template>
         <template #cell-activeAlarmCount="{ row }"

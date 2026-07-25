@@ -319,7 +319,7 @@ watch(
       :loading="ncrsPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="未返回不合格报告。检验不合格或质量阻塞会在这里生成 NCR。"
+      empty-message="当前范围内没有不合格品报告。检验判不合格或质量冻结时会在这里生成。"
     >
       <template #cell-code="{ row }">
         <span class="font-medium">{{ row.code ?? '无' }}</span>

@@ -284,8 +284,8 @@ function formatError(error: unknown) {
     />
 
     <WmsInventoryContextPanel
-      title="出库库存上下文"
-      gap-message="本页暂不显示物料、批次与序列号及预留冻结明细，请从对应拣货任务进入库存页查看。"
+      title="库存明细"
+      gap-message="逐行的批次、序列号与预留冻结明细请从对应拣货任务进入库存页查看。"
     />
 
     <NvToolbar :show-search="false">

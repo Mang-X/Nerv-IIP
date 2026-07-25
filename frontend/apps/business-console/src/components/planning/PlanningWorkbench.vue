@@ -247,10 +247,14 @@ const coveredSkuCodes = computed(() => {
   }
   return covered
 })
-/** 需求覆盖率＝已生成建议的物料 ÷ 需求物料（去重），目标 100%。 */
+/**
+ * 需求覆盖率＝已生成建议的物料 ÷ 需求物料（去重），目标 100%。
+ * 需求池为空时分母为 0，覆盖率无从谈起——返回 null 走无样本态，
+ * 不能把"没有需求"画成 100% 满绿（那等于宣称计划已全覆盖）。
+ */
 const demandCoverageRate = computed(() => {
   const total = demandSkuCodes.value.size
-  if (total === 0) return 100
+  if (total === 0) return null
   return Math.round((coveredSkuCodes.value.size / total) * 100)
 })
 // 已发布 + 未发布 = 全部主计划行，是真正的构成关系。
@@ -277,8 +281,10 @@ const mrpRunLabels = computed(() => runsByHorizon.value.map((run) => formatDate(
 const latestRunKpiValue = computed(() =>
   latestRun.value ? planningStatus(latestRun.value.status).label : '未运行',
 )
+// 卡片两条脚注分工：左＝这次运行覆盖的计划范围，右＝它读了哪些输入。
+// 没有运行过时只留左边一句「尚未运行 MRP」，右边留空——两边渲染同一句是重复噪音。
 const latestRunKpiHint = computed(() =>
-  latestRun.value ? `输入 ${inputSourcesLabel(latestRun.value.inputSources)}` : '尚未运行 MRP',
+  latestRun.value ? `输入 ${inputSourcesLabel(latestRun.value.inputSources)}` : '',
 )
 
 // MRP 运行覆盖率 = 建议数 / 需求数（除零保护）。
@@ -925,6 +931,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
 
   <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
     <NvMetricCard
+      v-if="demandCoverageRate !== null"
       variant="target"
       label="需求覆盖率"
       :value="demandCoverageRate"
@@ -936,6 +943,15 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       "
       :foot-start="`${coveredSkuCodes.size} 个物料已生成建议`"
       :foot-end="`需求物料 ${demandSkuCodes.size} 个`"
+    />
+    <NvMetricCard
+      v-else
+      variant="alert"
+      label="需求覆盖率"
+      value="—"
+      tone="neutral"
+      :status="{ label: '暂无样本', tone: 'neutral' }"
+      foot-start="需求池还没有物料，先录入需求或运行 MRP 后再看覆盖率。"
     />
     <NvMetricCard
       variant="breakdown"

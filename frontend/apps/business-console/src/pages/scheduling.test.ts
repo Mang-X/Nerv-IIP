@@ -287,10 +287,22 @@ beforeEach(() => {
   stub.toastSuccess.mockClear()
 })
 
+/**
+ * 页面默认停在「排程总览」（挑工单 → 生成 → 发布的主线入口），方案表格是查阅面。
+ * 断言表格的用例得先切到那个 Tab —— 和用户真实操作一致。
+ */
+async function openPlanTable(wrapper: ReturnType<typeof mount>) {
+  const tableTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('表格'))!
+  await tableTab.trigger('focus')
+  await tableTab.trigger('mousedown')
+  await flushPromises()
+}
+
 describe('APS scheduling workbench page', () => {
   it('renders the official scheduling entry with plan summary columns from facade data', async () => {
     const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
     await flushPromises()
+    await openPlanTable(wrapper)
 
     expect(wrapper.text()).toContain('排产工作台')
     expect(wrapper.text()).toContain('plan-001')
@@ -322,6 +334,7 @@ describe('APS scheduling workbench page', () => {
   it('uses a single-page table while the facade does not return a total count', async () => {
     const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
     await flushPromises()
+    await openPlanTable(wrapper)
 
     const table = wrapper.findComponent({ name: 'NvDataTable' })
     expect(table.props('pagination')).toBe(false)
@@ -368,6 +381,7 @@ describe('APS scheduling workbench page', () => {
   it('opens plan detail and releases the selected plan through the composable', async () => {
     const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
     await flushPromises()
+    await openPlanTable(wrapper)
 
     await wrapper
       .findAll('button')
@@ -394,6 +408,7 @@ describe('APS scheduling workbench page', () => {
   it('maps the assignment order id into the shared urgency badge inside plan detail', async () => {
     const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
     await flushPromises()
+    await openPlanTable(wrapper)
 
     await wrapper
       .findAll('button')
@@ -424,6 +439,7 @@ describe('APS scheduling workbench page', () => {
   it('marks invalidated plans with their reason and blocks release', async () => {
     const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
     await flushPromises()
+    await openPlanTable(wrapper)
 
     // 失效方案:标记 + 失效原因列展示中文原因
     expect(wrapper.text()).toContain('已失效')
@@ -441,6 +457,7 @@ describe('APS scheduling workbench page', () => {
   it('localizes terminal plan statuses and explains why they cannot be released', async () => {
     const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
     await flushPromises()
+    await openPlanTable(wrapper)
 
     const rows = wrapper.findAll('tbody tr')
     const supersededRow = rows.find((row) => row.text().includes('plan-superseded'))!
@@ -519,6 +536,7 @@ describe('APS scheduling workbench page', () => {
     detailError.value = new Error('network')
     const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
     await flushPromises()
+    await openPlanTable(wrapper)
 
     await wrapper
       .findAll('button')
@@ -533,6 +551,7 @@ describe('APS scheduling workbench page', () => {
   it('shows explicit detail feedback when the facade returns no detail payload', async () => {
     const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
     await flushPromises()
+    await openPlanTable(wrapper)
 
     await wrapper
       .findAll('button')
