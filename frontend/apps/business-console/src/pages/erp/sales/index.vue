@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpOpportunityItem } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpOpportunities } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -19,9 +19,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   Spinner,
   NvStatusBadge,
   NvToolbar,
@@ -64,6 +63,12 @@ const activeCount = computed(
 const customerCount = computed(
   () => new Set(opportunities.items.value.map((o) => o.customerCode).filter(Boolean)).size,
 )
+// 机会页的两个数字是同一句话的两半（还在谈几单 / 覆盖几个客户），通栏一条即可，
+// 不必占满两张大卡把表格挤到首屏之外。
+const opportunityCells = computed<NvMetricStripCell[]>(() => [
+  { key: 'active', label: '跟进中机会', value: activeCount.value, unit: '个' },
+  { key: 'customers', label: '涉及客户', value: customerCount.value, unit: '家' },
+])
 
 const open = shallowRef(false)
 const form = reactive({ customerCode: '', topic: '' })
@@ -120,10 +125,7 @@ async function submit() {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard description="跟进中机会" :value="activeCount" hint="可转报价的客户机会" />
-      <NvSectionCard description="涉及客户" :value="customerCount" hint="本页机会覆盖客户数" />
-    </NvSectionCards>
+    <NvMetricStrip :cells="opportunityCells" />
 
     <NvToolbar :show-search="false">
       <template #filters>

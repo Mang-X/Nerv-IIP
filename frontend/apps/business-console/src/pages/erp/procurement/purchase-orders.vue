@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpPurchaseOrderItem } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpPurchaseOrders } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -19,9 +19,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -94,6 +93,20 @@ const columns: NvDataTableColumn<(typeof rows.value)[number]>[] = [
 
 const openQuantity = computed(() => rows.value.reduce((sum, row) => sum + row.openQuantity, 0))
 const orderAmount = computed(() => rows.value.reduce((sum, row) => sum + row.amount, 0))
+const orderCells = computed<NvMetricStripCell[]>(() => [
+  {
+    key: 'open-quantity',
+    label: '未到数量',
+    value: formatQuantity(openQuantity.value),
+    meta: '已下达但供应商尚未交付',
+  },
+  {
+    key: 'amount',
+    label: '订单金额',
+    value: formatAmount(orderAmount.value),
+    meta: `本页 ${rows.value.length} 行采购明细合计`,
+  },
+])
 
 const open = shallowRef(false)
 const form = reactive({
@@ -184,18 +197,7 @@ async function submit() {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard
-        description="未到数量"
-        :value="formatQuantity(openQuantity)"
-        hint="本页未收货数量"
-      />
-      <NvSectionCard
-        description="订单金额"
-        :value="formatAmount(orderAmount)"
-        hint="本页采购金额合计"
-      />
-    </NvSectionCards>
+    <NvMetricStrip :cells="orderCells" />
 
     <NvToolbar :show-search="false">
       <template #filters>

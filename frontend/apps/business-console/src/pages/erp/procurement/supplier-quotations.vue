@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpRequestForQuotationItem } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpSupplierQuotations } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -19,9 +19,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   Spinner,
   NvStatusBadge,
   NvToolbar,
@@ -68,6 +67,21 @@ const lineQuantity = computed(() =>
     .flatMap((r) => r.lines ?? [])
     .reduce((sum, line) => sum + (line.quantity ?? 0), 0),
 )
+const quoteCells = computed<NvMetricStripCell[]>(() => [
+  {
+    key: 'quoteable',
+    label: '可回价 RFQ',
+    value: quoteableCount.value,
+    unit: '单',
+    meta: '报价从询价单发起',
+  },
+  {
+    key: 'quantity',
+    label: '询价数量',
+    value: formatQuantity(lineQuantity.value),
+    meta: `本页 ${quotes.items.value.length} 张询价单合计`,
+  },
+])
 
 const open = shallowRef(false)
 const form = reactive({
@@ -163,18 +177,7 @@ async function submit() {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard
-        description="可回价 RFQ"
-        :value="quoteableCount"
-        hint="当前后端以 RFQ 为报价入口"
-      />
-      <NvSectionCard
-        description="询价数量"
-        :value="formatQuantity(lineQuantity)"
-        hint="本页 RFQ 明细数量"
-      />
-    </NvSectionCards>
+    <NvMetricStrip :cells="quoteCells" />
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -215,8 +218,7 @@ async function submit() {
         <NvDialogHeader>
           <NvDialogTitle>录入供应商报价</NvDialogTitle>
           <NvDialogDescription
-            >记录真实供应商回价。当前后端尚未提供供应商报价列表读面，提交后回到 RFQ
-            来源继续跟进。</NvDialogDescription
+            >记录供应商真实回价。报价列表尚未开放，提交后请回到对应询价单继续跟进。</NvDialogDescription
           >
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submit">
