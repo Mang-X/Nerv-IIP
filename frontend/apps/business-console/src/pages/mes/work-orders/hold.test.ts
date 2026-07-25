@@ -28,7 +28,11 @@ vi.mock('@/composables/mes/useMesReferenceLabels', async (orig) => ({
 }))
 
 vi.mock('@/composables/mes/useMesDisplayNames', () => ({
-  useMesDisplayNames: () => ({ resolveSku: (v?: string | null) => v ?? '无' }),
+  useMesDisplayNames: () => ({
+    resolveSku: (v?: string | null) => v ?? '无',
+    resolveSkuLabel: (v?: string | null) => v ?? '未指定物料',
+    resolveWorkCenter: (v?: string | null) => v ?? undefined,
+  }),
 }))
 
 const detailState = vi.hoisted(() => ({
