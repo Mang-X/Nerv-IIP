@@ -1,5 +1,8 @@
 import { computed } from 'vue'
-import { useBusinessSkus, useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
+import {
+  useBusinessSkus,
+  useBusinessMasterDataResources,
+} from '@/composables/useBusinessMasterData'
 
 /**
  * MES 列表显示名前端解析（兜底 facade 当前为 null 的 *Name，见 #461）。
@@ -25,10 +28,22 @@ export function useMesDisplayNames() {
     if (!code) return undefined
     return skuByCode.value.get(code) ?? code
   }
+  /**
+   * 物料展示串：优先主数据显示名，其次 facade 返回的人读编码。
+   * 若拿到的是系统 GUID（部分 facade 仍回内部标识），一律不上屏——
+   * 界面不暴露工程标识，读者也无法用它去任何地方查物料。
+   */
+  function resolveSkuLabel(value?: string | null): string {
+    if (!value || SYSTEM_ID_PATTERN.test(value)) return '未指定物料'
+    return skuByCode.value.get(value) ?? value
+  }
   function resolveWorkCenter(code?: string | null): string | undefined {
     if (!code) return undefined
     return workCenterByCode.value.get(code) ?? code
   }
 
-  return { resolveSku, resolveWorkCenter }
+  return { resolveSku, resolveSkuLabel, resolveWorkCenter }
 }
+
+/** 系统内部标识（GUID）形态，用于判断某个值是否可以上屏。 */
+const SYSTEM_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
