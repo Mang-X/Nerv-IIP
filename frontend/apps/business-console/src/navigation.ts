@@ -536,12 +536,15 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           to: { path: '/mes/capacity' },
           requiredPermissions: [P.mesCapacityRead],
         },
-        {
-          title: '规则排程（过渡）',
-          icon: CalendarCogIcon,
-          to: { path: '/mes/schedules' },
-          requiredPermissions: [P.mesSchedulesRead, P.mesSchedulesManage],
-        },
+        // 规则排程（过渡）暂不进菜单：正式排产入口是「排产工作台」(/scheduling)，
+        // 菜单里同时挂两个排程入口会让现场分不清哪个是权威。页面仍可通过
+        // /mes/schedules 直达用于诊断。恢复时把下面这段还原即可。
+        // {
+        //   title: '规则排程（过渡）',
+        //   icon: CalendarCogIcon,
+        //   to: { path: '/mes/schedules' },
+        //   requiredPermissions: [P.mesSchedulesRead, P.mesSchedulesManage],
+        // },
         {
           title: '班次交接',
           icon: ArrowRightLeftIcon,

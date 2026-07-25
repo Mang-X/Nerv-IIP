@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import { pagedBreakdownSegments } from '@/composables/mes/mesMetricSegments'
 import { mesHandoverStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesShiftHandovers } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
@@ -7,9 +8,8 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
   NvDataTable,
+  NvMetricCard,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -41,6 +41,21 @@ const statusFilter = computed({
 })
 const openIssueTotal = computed(() =>
   handovers.value.reduce((s, r) => s + (r.openIssueCount ?? 0), 0),
+)
+const acceptedCount = computed(
+  () => handovers.value.filter((r) => (r.handoverStatus ?? '').toLowerCase() === 'accepted').length,
+)
+// 交接的决策点是「还有几张没接班」——构成卡按接班状态拆分，未结事项另作提示。
+const handoverSegments = computed(() =>
+  pagedBreakdownSegments(handoversTotal.value, [
+    {
+      key: 'open',
+      label: '待接班',
+      value: handovers.value.length - acceptedCount.value,
+      tone: 'warning',
+    },
+    { key: 'accepted', label: '已接班', value: acceptedCount.value, tone: 'success' },
+  ]),
 )
 const errorMessage = computed(() => formatError(handoversError.value))
 
@@ -90,11 +105,32 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="3">
-      <NvSectionCard description="交接单" :value="handoversTotal" hint="后端筛选总数" />
-      <NvSectionCard description="本页未结事项" :value="openIssueTotal" hint="当前页统计" />
-      <NvSectionCard description="本页当前班次" :value="handovers.length" hint="当前页统计" />
-    </NvSectionCards>
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <NvMetricCard
+        variant="breakdown"
+        label="交接单"
+        :value="handoversTotal"
+        unit="张"
+        :segments="handoverSegments"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="未结事项"
+        :value="openIssueTotal"
+        unit="项"
+        :tone="openIssueTotal > 0 ? 'warning' : 'neutral'"
+        :status="
+          openIssueTotal > 0
+            ? { label: '需接班人跟进', tone: 'warning' }
+            : { label: '无遗留', tone: 'success' }
+        "
+        :foot-start="
+          openIssueTotal > 0
+            ? '接班前逐项确认，未闭环的问题会带进下一班。'
+            : '上一班的问题已全部闭环。'
+        "
+      />
+    </div>
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -129,7 +165,7 @@ function formatError(error: unknown) {
       :loading="handoversPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无班次交接。班次结束时创建交接单，记录未完成事项。"
+      empty-message="暂无班次交接。先在班次结束时创建交接单登记未完成事项，再由接班人在这里确认接收。"
     >
       <template #cell-handoverStatus="{ row }"
         ><NvStatusBadge :value="row.handoverStatus"

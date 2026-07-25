@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useMesOverview } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -7,9 +7,8 @@ import {
   NvCard,
   NvCardContent,
   NvDataTable,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   cn,
 } from '@nerv-iip/ui'
 import {
@@ -44,6 +43,20 @@ const blockerCount = computed(() =>
 const pendingWorkCount = computed(() =>
   pendingWork.value.reduce((total, item) => total + (item.count ?? 0), 0),
 )
+
+// 指挥卡已经承担「先看什么、去哪里」；这一条只压缩成一行现场总量，不再重复副标题。
+const overviewCells = computed<NvMetricStripCell[]>(() => [
+  { key: 'work-orders', label: '在制工单', value: workOrderCount.value, unit: '张' },
+  { key: 'operation-tasks', label: '工序任务', value: operationTaskCount.value, unit: '个' },
+  {
+    key: 'blockers',
+    label: '阻塞项',
+    value: blockerCount.value,
+    unit: '项',
+    valueTone: blockerCount.value > 0 ? 'danger' : undefined,
+  },
+  { key: 'pending', label: '待办', value: pendingWorkCount.value, unit: '项' },
+])
 
 const commandCards = computed(() => [
   {
@@ -179,12 +192,7 @@ function formatError(error: unknown) {
       </RouterLink>
     </div>
 
-    <NvSectionCards :columns="4">
-      <NvSectionCard description="工单" :value="workOrderCount" hint="当前可见工单数" />
-      <NvSectionCard description="工序任务" :value="operationTaskCount" hint="当前可见任务数" />
-      <NvSectionCard description="阻塞项" :value="blockerCount" hint="需处理的问题数量" />
-      <NvSectionCard description="待办" :value="pendingWorkCount" hint="按角色汇总" />
-    </NvSectionCards>
+    <NvMetricStrip :cells="overviewCells" />
 
     <div class="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
       <div class="grid gap-2">
@@ -244,12 +252,7 @@ function formatError(error: unknown) {
               <PackageCheckIcon class="size-4 text-primary" aria-hidden="true" />
               <h2 class="text-sm font-semibold text-foreground">下一步建议</h2>
             </div>
-            <div class="grid gap-2 text-sm text-muted-foreground">
-              <p>1. 有阻塞时先进入生产准备检查，明确是物料、质量还是设备问题。</p>
-              <p>2. 没有阻塞时进入工单与派工，选择工单后再做报工、齐套或异常处理。</p>
-              <p>3. 班中执行以工序执行为主，不要求一线人员跨模块手工拼接编号。</p>
-            </div>
-            <div class="flex flex-wrap gap-2 pt-1">
+            <div class="flex flex-wrap gap-2">
               <NvButton size="sm" type="button" as-child>
                 <RouterLink :to="{ path: '/mes/work-orders' }"
                   ><FactoryIcon aria-hidden="true" />工单与派工</RouterLink

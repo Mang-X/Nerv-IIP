@@ -552,20 +552,25 @@ function isNonEmpty(value: string) {
       <template #cell-dueUtc="{ row }">{{ formatDateTime(row.dueUtc) }}</template>
       <template #cell-operationCount="{ row }">
         <div class="grid gap-1">
-          <span
+          <!-- 一行四段斜杠拼接读不出主次：第一行给「第几道 · 在哪做」，第二行给单号与状态。 -->
+          <div
             v-for="task in row.operationTasks ?? []"
             :key="task.operationTaskId ?? `${row.workOrderId}-${task.operationSequence}`"
-            class="text-xs text-muted-foreground"
+            class="grid gap-0.5"
           >
-            {{ task.operationSequence ?? '无' }} /
-            {{
-              task.workCenterName ??
-              resolveWorkCenter(task.workCenterCode ?? task.workCenterId) ??
-              '无'
-            }}
-            / {{ task.operationTaskNo ?? task.operationTaskId ?? '无任务' }} /
-            {{ formatStatus(task.status) }}
-          </span>
+            <span class="text-xs font-medium text-foreground">
+              第 {{ task.operationSequence ?? '—' }} 道 ·
+              {{
+                task.workCenterName ??
+                resolveWorkCenter(task.workCenterCode ?? task.workCenterId) ??
+                '未指定工作中心'
+              }}
+            </span>
+            <span class="text-xs text-muted-foreground">
+              {{ task.operationTaskNo ?? task.operationTaskId ?? '未生成任务' }} ·
+              {{ formatStatus(task.status) }}
+            </span>
+          </div>
           <span v-if="!row.operationTasks?.length" class="text-xs text-muted-foreground"
             >暂无工序任务</span
           >

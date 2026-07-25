@@ -7,6 +7,7 @@ import {
   isScheduleInvalidated,
   resolveScheduleStatus,
 } from '@/composables/useScheduleInvalidation'
+import { pagedBreakdownSegments } from '@/composables/mes/mesMetricSegments'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
@@ -24,10 +25,9 @@ import {
   NvField,
   NvFieldLabel,
   NvInput,
+  NvMetricCard,
   NvPageHeader,
   NvRowActions,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -72,6 +72,13 @@ const blockedCount = computed(
 )
 const dispatchableCount = computed(
   () => dispatchTasks.value.filter((x) => !x.blockingReasons?.length).length,
+)
+// 派工的决策点是「能派多少、卡住多少」——一张构成卡替代三张各说一半的卡。
+const dispatchSegments = computed(() =>
+  pagedBreakdownSegments(dispatchTasksTotal.value, [
+    { key: 'blocked', label: '有阻塞', value: blockedCount.value, tone: 'danger' },
+    { key: 'dispatchable', label: '可派工', value: dispatchableCount.value, tone: 'success' },
+  ]),
 )
 const errorMessage = computed(() => formatError(dispatchTasksError.value))
 
@@ -195,11 +202,14 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="3">
-      <NvSectionCard description="派工任务" :value="dispatchTasksTotal" hint="后端筛选总数" />
-      <NvSectionCard description="本页可派工" :value="dispatchableCount" hint="当前页统计" />
-      <NvSectionCard description="本页有阻塞" :value="blockedCount" hint="当前页统计" />
-    </NvSectionCards>
+    <NvMetricCard
+      class="sm:max-w-md"
+      variant="breakdown"
+      label="待派工序"
+      :value="dispatchTasksTotal"
+      unit="个"
+      :segments="dispatchSegments"
+    />
 
     <NvToolbar :show-search="false">
       <template #filters>
