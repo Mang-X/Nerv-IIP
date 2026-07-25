@@ -41,7 +41,7 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
         if (routing is null)
         {
             routing = Routing.CreateDraft(organizationId, environmentId, RoutingCode, Revision, SkuCode)
-                .AddOperation(10, "WC-CNC-DEMO", "OP-CNC-DEMO", "Demo CNC operation", 5, 25, 0, "standard", true, true, false);
+                .AddOperation(10, "WC-CNC-DEMO", "OP-CNC-DEMO", "活塞杆 CNC 精车", 5, 25, 0, "standard", true, true, false);
             routing.Release(EffectiveDate);
             dbContext.Routings.Add(routing);
         }

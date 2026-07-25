@@ -45,7 +45,7 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
             AlarmExternalId,
             "critical",
             openedBy: "leader-demo-seed",
-            diagnosticDescription: "High spindle temperature rehearsal prerequisite.",
+            diagnosticDescription: "主轴温度偏高，需现场点检确认冷却与润滑状态。",
             failureModeCode: "spindle-temperature-high",
             failureCauseCode: "leader-demo-prerequisite",
             estimatedLaborMinutes: 30,
