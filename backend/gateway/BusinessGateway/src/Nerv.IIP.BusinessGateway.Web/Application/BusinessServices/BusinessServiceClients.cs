@@ -2915,7 +2915,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             response.DefectReason,
             response.BatchNo,
             response.SerialNo,
-            response.SourceInspectionRecordId);
+            response.SourceInspectionRecordId,
+            response.DispositionType,
+            response.DispositionApprovalChainId);
     }
 
     public async Task<BusinessConsoleInspectionRecordDetailResponse> GetInspectionRecordAsync(
@@ -3369,7 +3371,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string? BatchNo,
         string? SerialNo,
         string Status,
-        string? SourceInspectionRecordId = null);
+        string? SourceInspectionRecordId = null,
+        string? DispositionType = null,
+        string? DispositionApprovalChainId = null);
 
     private sealed record DownstreamSubmitNcrDispositionRequest(
         string NcrId,

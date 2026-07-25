@@ -714,7 +714,8 @@ function Get-NervLeaderDemoQualityBranchNodes {
         'quality-rejection-mes-work-order-hold',
         'reinspection-in-spec-pass',
         'reinspection-mes-hold-auto-release',
-        'quality-hold-timeline-complete'
+        'quality-hold-timeline-complete',
+        'ncr-disposition-approved-rework'
     )
 }
 
@@ -731,6 +732,9 @@ function Get-NervLeaderDemoEquipmentBranchNodes {
 }
 
 function Assert-NervLeaderDemoQualityBranchEvidence {
+    # The NCR disposition hop is a claimed branch node since #1102 wired the Approval base URL into
+    # business-quality, so the quality branch declines no public capability: any blockedPublicPaths
+    # entry now fails the gate rather than being tolerated as a known gap.
     param([Parameter(Mandatory)] [string] $EvidencePath)
 
     return Assert-NervLeaderDemoBranchEvidence `
@@ -738,7 +742,7 @@ function Assert-NervLeaderDemoQualityBranchEvidence {
         -ScenarioLabel 'Leader-demo quality-branch' `
         -RequiredNodes (Get-NervLeaderDemoQualityBranchNodes) `
         -RequiredIdentityPrefixes ([ordered]@{ workOrderNo = 'WO-'; ncrCode = 'NCR-' }) `
-        -ExpectedBlockedCapabilities @('ncr-disposition')
+        -ExpectedBlockedCapabilities @()
 }
 
 function Assert-NervLeaderDemoEquipmentBranchEvidence {
