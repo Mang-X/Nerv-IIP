@@ -259,10 +259,12 @@ describe('inventory workflow pages', () => {
     expect(link?.attributes('data-to')).toContain('/barcode/scans')
     expect(link?.attributes('data-to')).toContain('inventory.count')
     expect(link?.attributes('data-to')).toContain('LOT-001')
-    expect(wrapper.get('[data-cell="productionDate"]').text()).toBe('2026-04-20')
-    expect(wrapper.get('[data-cell="expiryDate"]').text()).toBe('2026-07-18')
-    expect(wrapper.get('[data-cell="shelfLife"]').text()).toBe('89 天')
-    expect(wrapper.get('[data-cell="expirySource"]').text()).toBe('系统推导')
+    // 生产日期 / 保质期 / 效期来源已收进效期单元格的第二行（主要列收敛）。
+    const expiryCell = wrapper.get('[data-cell="expiryDate"]').text()
+    expect(expiryCell).toContain('2026-07-18')
+    expect(expiryCell).toContain('2026-04-20')
+    expect(expiryCell).toContain('89 天')
+    expect(expiryCell).toContain('系统推导')
     expect(wrapper.text()).toContain('已过期，常规移动需授权放行。')
     expect(wrapper.text()).toContain('同一盘点定位存在多个生产日期或效期，请先缩小到唯一库存台账。')
     expect(wrapper.text()).toContain('该库存行暂不能发起移动，请稍后重试或联系管理员。')
@@ -279,8 +281,9 @@ describe('inventory workflow pages', () => {
       .findAll('button')
       .find((button) => button.text().includes('效期预警'))!
       .trigger('click')
-    expect(wrapper.get('[data-cell="productionDate"]').text()).toBe('2026-06-15')
-    expect(wrapper.get('[data-cell="expiryDate"]').text()).toBe('2026-07-25')
+    const nearExpiryCell = wrapper.get('[data-cell="expiryDate"]').text()
+    expect(nearExpiryCell).toContain('2026-07-25')
+    expect(nearExpiryCell).toContain('2026-06-15')
     expect(wrapper.get('[data-pagination-total]').text()).toContain('51')
     expect(wrapper.get('[data-pagination-total]').attributes('data-show-edges')).toBe('false')
     expect(wrapper.get('[data-pagination-total]').attributes('data-sibling-count')).toBe('0')
@@ -351,10 +354,12 @@ describe('inventory workflow pages', () => {
     expect(wrapper.text()).toContain('LOT-001')
     expect(wrapper.text()).toContain('SN-001')
     expect(wrapper.get('[data-cell="reservedQuantity"]').text()).toBe('2')
-    expect(wrapper.get('[data-cell="productionDate"]').text()).toBe('2026-04-20')
-    expect(wrapper.get('[data-cell="expiryDate"]').text()).toBe('2026-07-18')
-    expect(wrapper.get('[data-cell="shelfLife"]').text()).toBe('89 天')
-    expect(wrapper.get('[data-cell="expirySource"]').text()).toBe('系统推导')
+    // 生产日期 / 保质期 / 效期来源已收进效期单元格的第二行（主要列收敛）。
+    const expiryCell = wrapper.get('[data-cell="expiryDate"]').text()
+    expect(expiryCell).toContain('2026-07-18')
+    expect(expiryCell).toContain('2026-04-20')
+    expect(expiryCell).toContain('89 天')
+    expect(expiryCell).toContain('系统推导')
     expect(inventoryState.availabilityFilters?.qualityStatus).toBeUndefined()
 
     const links = wrapper
@@ -376,8 +381,9 @@ describe('inventory workflow pages', () => {
       .findAll('button')
       .find((button) => button.text().includes('效期预警'))!
       .trigger('click')
-    expect(wrapper.get('[data-cell="productionDate"]').text()).toBe('2026-06-15')
-    expect(wrapper.get('[data-cell="expiryDate"]').text()).toBe('2026-07-25')
+    const nearExpiryCell = wrapper.get('[data-cell="expiryDate"]').text()
+    expect(nearExpiryCell).toContain('2026-07-25')
+    expect(nearExpiryCell).toContain('2026-06-15')
     expect(wrapper.get('[data-pagination-total]').text()).toContain('51')
     const nearExpiryLinks = wrapper
       .findAll('[data-router-link]')

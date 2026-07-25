@@ -22,6 +22,17 @@ const props = defineProps<{
   class?: HTMLAttributes['class']
 }>()
 
+/**
+ * The footer is a tinted, bordered band — rendering it with nothing inside reads
+ * as a broken grey bar under the number. A truthiness check isn't enough: a hint
+ * bound to a not-yet-loaded code (`' '`, `'\n'`) is truthy but paints nothing, so
+ * the guard tests the TRIMMED text. `$slots.default` still forces it on, because
+ * a slot's emptiness can't be known from here.
+ */
+const hasFooterContent = computed(
+  () => Boolean(props.footnote?.trim()) || Boolean(props.hint?.trim()),
+)
+
 const direction = computed<TrendDirection>(() => props.trend?.direction ?? 'flat')
 const trendIcon = computed(() =>
   direction.value === 'up'
@@ -54,12 +65,14 @@ const trendClass = computed(() =>
       </CardAction>
     </CardHeader>
     <CardFooter
-      v-if="footnote || hint || $slots.default"
+      v-if="hasFooterContent || $slots.default"
       class="flex-col items-start gap-1 text-sm"
     >
       <slot>
-        <div v-if="footnote" class="line-clamp-1 font-medium text-foreground">{{ footnote }}</div>
-        <div v-if="hint" class="text-muted-foreground">{{ hint }}</div>
+        <div v-if="footnote?.trim()" class="line-clamp-1 font-medium text-foreground">
+          {{ footnote }}
+        </div>
+        <div v-if="hint?.trim()" class="text-muted-foreground">{{ hint }}</div>
       </slot>
     </CardFooter>
   </Card>
