@@ -1833,6 +1833,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     batchNo?: string | null;
     serialNo?: string | null;
     sourceInspectionRecordId?: string | null;
+    dispositionType?: string | null;
+    dispositionApprovalChainId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrDetailRequest = {

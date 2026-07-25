@@ -1279,7 +1279,9 @@ public sealed record BusinessConsoleQualityNcrDetailRequest(
 
 /// <summary>
 /// NCR 详情（含权威的来源检验记录回链 <see cref="SourceInspectionRecordId"/>——记录 ↔ NCR 双向互查
-/// 由服务端业务关系驱动，而非客户端 query 参数）。
+/// 由服务端业务关系驱动，而非客户端 query 参数）。<see cref="DispositionType"/> 与
+/// <see cref="DispositionApprovalChainId"/> 让读面能说明「这条 NCR 被判成了什么、依据哪条中央审批链」，
+/// 而不是只给一个 disposition-in-progress 状态字。
 /// </summary>
 public sealed record BusinessConsoleQualityNcrDetailResponse(
     string Id,
@@ -1292,7 +1294,9 @@ public sealed record BusinessConsoleQualityNcrDetailResponse(
     string? DefectReason,
     string? BatchNo,
     string? SerialNo,
-    string? SourceInspectionRecordId);
+    string? SourceInspectionRecordId,
+    string? DispositionType = null,
+    string? DispositionApprovalChainId = null);
 
 /// <summary>
 /// 按 id 取单条检验记录详情（PDA NCR 详情「来源检验记录」→ 打开记录的互链）。代理真实详情端点，

@@ -30955,6 +30955,14 @@
           "sourceInspectionRecordId": {
             "type": "string",
             "nullable": true
+          },
+          "dispositionType": {
+            "type": "string",
+            "nullable": true
+          },
+          "dispositionApprovalChainId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

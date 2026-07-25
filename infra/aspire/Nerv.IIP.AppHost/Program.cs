@@ -511,10 +511,18 @@ businessDemandPlanning = businessDemandPlanning
     .WithReference(businessErp)
     .WaitFor(businessErp);
 
+// Quality resolves ERP purchase-receipt facts and — for every disposition that requires central
+// approval (rework / scrap / return-to-supplier / conditional-release) — the Approval chain status
+// over HTTP. Both base URLs must be the session's dynamic endpoints; without them Quality falls
+// back to fixed development ports and every approved disposition fails in an ephemeral-port
+// session. The internal bearer is already injected where business-quality is registered.
 businessQuality = businessQuality
     .WithEnvironment("Erp__BaseUrl", businessErp.GetEndpoint("http"))
+    .WithEnvironment("Approval__BaseUrl", businessApproval.GetEndpoint("http"))
     .WithReference(businessErp)
-    .WaitFor(businessErp);
+    .WithReference(businessApproval)
+    .WaitFor(businessErp)
+    .WaitFor(businessApproval);
 
 var businessScheduling = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Scheduling_Web>("business-scheduling")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5120, name: "http")

@@ -989,26 +989,38 @@ try {
 
     $qualityNodes = @(Get-NervLeaderDemoQualityBranchNodes)
     $equipmentNodes = @(Get-NervLeaderDemoEquipmentBranchNodes)
-    Assert-True ($qualityNodes.Count -eq 6) 'The quality branch must declare exactly six evidence nodes.'
+    Assert-True ($qualityNodes.Count -eq 7) 'The quality branch must declare exactly seven evidence nodes.'
     Assert-True ($equipmentNodes.Count -eq 7) 'The equipment branch must declare exactly seven evidence nodes.'
+    Assert-True ($qualityNodes -ccontains 'ncr-disposition-approved-rework') 'The quality branch must claim the NCR disposition hop as a required node.'
 
     $qualityEvidencePath = Join-Path $branchEvidenceRoot 'quality.json'
     $qualityIdentities = [ordered]@{ workOrderNo = 'WO-20260725-000001'; ncrCode = 'NCR-org001-envdev-0123456789abcdef0123456789abcdef' }
     $qualityEntries = New-NervBranchEvidenceEntries -Nodes $qualityNodes -StableKey 'WO-20260725-000001'
-    $qualityBlocked = @(New-NervBlockedCapabilityProbe -Capability 'ncr-disposition')
-    Write-NervBranchEvidenceFixture -Path $qualityEvidencePath -Entries $qualityEntries -Identities $qualityIdentities -BlockedPublicPaths $qualityBlocked
+    Write-NervBranchEvidenceFixture -Path $qualityEvidencePath -Entries $qualityEntries -Identities $qualityIdentities
     $validatedQuality = Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath
     Assert-True (@($validatedQuality.entries).Count -eq $qualityNodes.Count) 'Quality-branch evidence must validate every required node.'
+    Assert-True (@($validatedQuality.entries | Where-Object { "$($_.node)" -ceq 'ncr-disposition-approved-rework' }).Count -eq 1) 'Quality-branch evidence must carry the NCR disposition node.'
+
+    # The pre-#1102 six-node shape must now be red: a run that silently drops the disposition hop
+    # is exactly the regression this gate exists to catch.
+    $qualityLegacyNodes = @($qualityNodes | Where-Object { $_ -cne 'ncr-disposition-approved-rework' })
+    Write-NervBranchEvidenceFixture `
+        -Path $qualityEvidencePath `
+        -Entries (New-NervBranchEvidenceEntries -Nodes $qualityLegacyNodes -StableKey 'WO-20260725-000001') `
+        -Identities $qualityIdentities
+    $qualityLegacyShapeFailed = $false
+    try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityLegacyShapeFailed = $true }
+    Assert-True $qualityLegacyShapeFailed 'The legacy six-node quality-branch evidence shape must fail now that the disposition hop is a claimed node.'
 
     $qualityEntries[0].conclusion = 'gap'
     $qualityEntries[0].responsibilityIssue = '#1099'
-    Write-NervBranchEvidenceFixture -Path $qualityEvidencePath -Entries $qualityEntries -Identities $qualityIdentities -BlockedPublicPaths $qualityBlocked
+    Write-NervBranchEvidenceFixture -Path $qualityEvidencePath -Entries $qualityEntries -Identities $qualityIdentities
     $qualityGapFailed = $false
     try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityGapFailed = $true }
     Assert-True $qualityGapFailed 'Quality-branch evidence must fail closed on any gap node; the branches have no accepted gap baseline.'
 
     $qualityEntries[0].conclusion = 'not-verified'
-    Write-NervBranchEvidenceFixture -Path $qualityEvidencePath -Entries $qualityEntries -Identities $qualityIdentities -BlockedPublicPaths $qualityBlocked
+    Write-NervBranchEvidenceFixture -Path $qualityEvidencePath -Entries $qualityEntries -Identities $qualityIdentities
     $qualityNotVerifiedFailed = $false
     try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityNotVerifiedFailed = $true }
     Assert-True $qualityNotVerifiedFailed 'Quality-branch evidence must reject a present but not-verified node.'
@@ -1018,8 +1030,7 @@ try {
     Write-NervBranchEvidenceFixture `
         -Path $qualityEvidencePath `
         -Entries $qualityEntries `
-        -Identities ([ordered]@{ workOrderNo = '0f8fad5b-d9cb-469f-a165-70867728950e'; ncrCode = $qualityIdentities.ncrCode }) `
-        -BlockedPublicPaths $qualityBlocked
+        -Identities ([ordered]@{ workOrderNo = '0f8fad5b-d9cb-469f-a165-70867728950e'; ncrCode = $qualityIdentities.ncrCode })
     $qualityGuidFailed = $false
     try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityGuidFailed = $true }
     Assert-True $qualityGuidFailed 'Quality-branch evidence must reject a bare GUID standing in for the work-order number.'
@@ -1027,8 +1038,7 @@ try {
     Write-NervBranchEvidenceFixture `
         -Path $qualityEvidencePath `
         -Entries $qualityEntries `
-        -Identities ([ordered]@{ workOrderNo = $qualityIdentities.workOrderNo; ncrCode = '' }) `
-        -BlockedPublicPaths $qualityBlocked
+        -Identities ([ordered]@{ workOrderNo = $qualityIdentities.workOrderNo; ncrCode = '' })
     $qualityMissingNcrFailed = $false
     try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityMissingNcrFailed = $true }
     Assert-True $qualityMissingNcrFailed 'Quality-branch evidence must require a readable NCR document number.'
@@ -1036,8 +1046,7 @@ try {
     Write-NervBranchEvidenceFixture `
         -Path $qualityEvidencePath `
         -Entries @($qualityEntries | Select-Object -Skip 1) `
-        -Identities $qualityIdentities `
-        -BlockedPublicPaths $qualityBlocked
+        -Identities $qualityIdentities
     $qualityMissingNodeFailed = $false
     try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityMissingNodeFailed = $true }
     Assert-True $qualityMissingNodeFailed 'Quality-branch evidence must reject a missing node.'
@@ -1049,8 +1058,7 @@ try {
     Write-NervBranchEvidenceFixture `
         -Path $qualityEvidencePath `
         -Entries $qualityRenamedEntries `
-        -Identities $qualityIdentities `
-        -BlockedPublicPaths $qualityBlocked
+        -Identities $qualityIdentities
     $qualityUnknownNodeFailed = $false
     try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityUnknownNodeFailed = $true }
     Assert-True $qualityUnknownNodeFailed 'Quality-branch evidence must reject a node name outside the contract even when the entry count still matches.'
@@ -1059,7 +1067,6 @@ try {
         -Path $qualityEvidencePath `
         -Entries $qualityEntries `
         -Identities $qualityIdentities `
-        -BlockedPublicPaths $qualityBlocked `
         -Transport 'in-memory'
     $qualityTransportFailed = $false
     try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityTransportFailed = $true }
@@ -1069,47 +1076,67 @@ try {
         -Path $qualityEvidencePath `
         -Entries $qualityEntries `
         -Identities $qualityIdentities `
-        -BlockedPublicPaths $qualityBlocked `
         -OmitPersistence
     $qualityMissingPersistenceFailed = $false
     try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityMissingPersistenceFailed = $true }
     Assert-True $qualityMissingPersistenceFailed 'Quality-branch evidence must reject a missing persistence declaration.'
 
+    # #1102 wired Approval into business-quality, so the branch declines nothing: a re-appearing
+    # ncr-disposition probe means the harness quietly stopped claiming the hop and must turn red.
     Write-NervBranchEvidenceFixture `
         -Path $qualityEvidencePath `
         -Entries $qualityEntries `
         -Identities $qualityIdentities `
-        -BlockedPublicPaths @()
-    $qualityMissingProbeFailed = $false
-    try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityMissingProbeFailed = $true }
-    Assert-True $qualityMissingProbeFailed 'Quality-branch evidence must still publish a live probe for every declined hop.'
+        -BlockedPublicPaths @(New-NervBlockedCapabilityProbe -Capability 'ncr-disposition')
+    $qualityUnexpectedBlockedFailed = $false
+    try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityUnexpectedBlockedFailed = $true }
+    Assert-True $qualityUnexpectedBlockedFailed 'The quality branch may no longer declare ncr-disposition as a blocked capability; the hop is a claimed node.'
 
     Write-NervBranchEvidenceFixture `
         -Path $qualityEvidencePath `
         -Entries $qualityEntries `
         -Identities $qualityIdentities `
-        -BlockedPublicPaths @($qualityBlocked[0], (New-NervBlockedCapabilityProbe -Capability 'ncr-close'))
-    $qualityExtraBlockedFailed = $false
-    try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityExtraBlockedFailed = $true }
-    Assert-True $qualityExtraBlockedFailed 'Quality-branch evidence must reject a blocked capability outside the pinned whitelist.'
+        -BlockedPublicPaths @(New-NervBlockedCapabilityProbe -Capability 'ncr-close')
+    $qualityOtherBlockedFailed = $false
+    try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityOtherBlockedFailed = $true }
+    Assert-True $qualityOtherBlockedFailed 'Quality-branch evidence must reject any blocked capability now that the whitelist is empty.'
 
+    # The probe-shape guards still protect whichever branch declines a hop next, so they are
+    # exercised directly against the shared gate with an explicit whitelist.
+    $probeShapePath = Join-Path $branchEvidenceRoot 'probe-shape.json'
     Write-NervBranchEvidenceFixture `
-        -Path $qualityEvidencePath `
+        -Path $probeShapePath `
         -Entries $qualityEntries `
         -Identities $qualityIdentities `
         -BlockedPublicPaths @(New-NervBlockedCapabilityProbe -Capability 'ncr-disposition' -OmitRequest)
-    $qualityProbeWithoutRequestFailed = $false
-    try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityProbeWithoutRequestFailed = $true }
-    Assert-True $qualityProbeWithoutRequestFailed 'A blocked capability without the public request it probed must fail; prose is not an observation.'
+    $probeWithoutRequestFailed = $false
+    try {
+        Assert-NervLeaderDemoBranchEvidence `
+            -EvidencePath $probeShapePath `
+            -ScenarioLabel 'Probe-shape' `
+            -RequiredNodes $qualityNodes `
+            -RequiredIdentityPrefixes ([ordered]@{ workOrderNo = 'WO-'; ncrCode = 'NCR-' }) `
+            -ExpectedBlockedCapabilities @('ncr-disposition') | Out-Null
+    }
+    catch { $probeWithoutRequestFailed = $true }
+    Assert-True $probeWithoutRequestFailed 'A blocked capability without the public request it probed must fail; prose is not an observation.'
 
     Write-NervBranchEvidenceFixture `
-        -Path $qualityEvidencePath `
+        -Path $probeShapePath `
         -Entries $qualityEntries `
         -Identities $qualityIdentities `
         -BlockedPublicPaths @(New-NervBlockedCapabilityProbe -Capability 'ncr-disposition' -ObservedStatus 200)
-    $qualityProbeSucceededFailed = $false
-    try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityProbeSucceededFailed = $true }
-    Assert-True $qualityProbeSucceededFailed 'A blocked capability whose probe succeeded must fail the gate so the harness claims the hop instead.'
+    $probeSucceededFailed = $false
+    try {
+        Assert-NervLeaderDemoBranchEvidence `
+            -EvidencePath $probeShapePath `
+            -ScenarioLabel 'Probe-shape' `
+            -RequiredNodes $qualityNodes `
+            -RequiredIdentityPrefixes ([ordered]@{ workOrderNo = 'WO-'; ncrCode = 'NCR-' }) `
+            -ExpectedBlockedCapabilities @('ncr-disposition') | Out-Null
+    }
+    catch { $probeSucceededFailed = $true }
+    Assert-True $probeSucceededFailed 'A blocked capability whose probe succeeded must fail the gate so the harness claims the hop instead.'
 
     $equipmentEvidencePath = Join-Path $branchEvidenceRoot 'equipment.json'
     $equipmentIdentities = [ordered]@{ deviceCode = 'DEV-EQ-20260725120000'; alarmRuleCode = 'AR-EQ-20260725120000' }
