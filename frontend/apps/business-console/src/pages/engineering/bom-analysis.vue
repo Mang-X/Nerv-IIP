@@ -16,9 +16,8 @@ import {
   NvField,
   NvFieldLabel,
   NvInput,
+  NvMetricCard,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -125,6 +124,28 @@ const warningCount = computed(
 const errorCount = computed(
   () => diagnostics.value.filter((d) => (d.severity ?? '').toLowerCase() === 'error').length,
 )
+// 展开结果的可信度由诊断决定：有循环引用等阻断错误时整棵树都不能照单全收，
+// 所以命中行数与诊断结论放同一张告警卡，而不是三张互不相干的计数卡。
+const analysisTone = computed<'danger' | 'warning' | 'neutral'>(() => {
+  if (errorCount.value > 0) return 'danger'
+  if (warningCount.value > 0) return 'warning'
+  return 'neutral'
+})
+const diagnosticStatus = computed(() => {
+  if (errorCount.value > 0)
+    return { label: `${errorCount.value} 项阻断错误`, tone: 'danger' as const }
+  if (warningCount.value > 0)
+    return { label: `${warningCount.value} 项警告`, tone: 'warning' as const }
+  return { label: '无诊断问题', tone: 'success' as const }
+})
+const diagnosticNote = computed(() => {
+  if (errorCount.value > 0) {
+    return `存在循环引用等阻断问题，展开结果不完整，请先修正 BOM 结构${warningCount.value > 0 ? `；另有 ${warningCount.value} 项警告` : ''}。`
+  }
+  if (warningCount.value > 0) return '存在缺失下级版本等警告，部分分支可能展不开。'
+  return '本次分析命中的行数。'
+})
+
 const errorMessage = computed(() => formatError(error.value))
 
 const treeColumns: NvDataTableColumn<TreeRow>[] = [
@@ -409,11 +430,16 @@ function formatError(value: unknown) {
   <BusinessLayout>
     <NvPageHeader title="BOM 分析" description="多级 BOM 树、滚算爆炸、反查与版本对比" />
 
-    <NvSectionCards :columns="3">
-      <NvSectionCard description="结果行" :value="resultCount" hint="来自后端 BOM facade" />
-      <NvSectionCard description="警告" :value="warningCount" hint="缺失下级版本等诊断" />
-      <NvSectionCard description="错误" :value="errorCount" hint="循环引用等阻断诊断" />
-    </NvSectionCards>
+    <NvMetricCard
+      class="sm:max-w-lg"
+      variant="alert"
+      label="分析结果行"
+      :value="resultCount"
+      unit="行"
+      :tone="analysisTone"
+      :status="diagnosticStatus"
+      :foot-start="diagnosticNote"
+    />
 
     <form class="grid gap-4 rounded-md border bg-background p-4" @submit.prevent="submit">
       <div class="flex flex-wrap items-center gap-2" role="group" aria-label="分析视图">

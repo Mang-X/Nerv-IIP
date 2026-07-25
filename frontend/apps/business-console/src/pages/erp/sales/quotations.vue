@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpQuotationItem } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpQuotations } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -20,10 +20,9 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
   NvRowActions,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -79,6 +78,21 @@ const pendingApproval = computed(
 const amount = computed(() =>
   quotations.items.value.reduce((sum, q) => sum + (q.totalAmount ?? 0), 0),
 )
+const quotationCells = computed<NvMetricStripCell[]>(() => [
+  {
+    key: 'pending',
+    label: '待审报价',
+    value: pendingApproval.value,
+    unit: '单',
+    meta: '草稿报价，审批后可转销售订单',
+  },
+  {
+    key: 'amount',
+    label: '报价金额',
+    value: formatAmount(amount.value),
+    meta: `本页 ${quotations.items.value.length} 张报价合计`,
+  },
+])
 
 const open = shallowRef(false)
 const form = reactive({
@@ -175,14 +189,7 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard
-        description="待审报价"
-        :value="pendingApproval"
-        hint="Draft 状态，可审批后转订单"
-      />
-      <NvSectionCard description="本页报价金额" :value="formatAmount(amount)" hint="按当前页汇总" />
-    </NvSectionCards>
+    <NvMetricStrip :cells="quotationCells" />
 
     <NvToolbar :show-search="false">
       <template #filters>

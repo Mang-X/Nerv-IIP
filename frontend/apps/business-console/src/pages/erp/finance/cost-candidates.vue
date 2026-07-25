@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpCostCandidateItem } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpCostCandidates } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -19,9 +19,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -74,6 +73,21 @@ const amount = computed(() => costs.items.value.reduce((sum, c) => sum + (c.amou
 const pendingCount = computed(
   () => costs.items.value.filter((c) => (c.status ?? '').toLowerCase() === 'pending').length,
 )
+const costCells = computed<NvMetricStripCell[]>(() => [
+  {
+    key: 'pending',
+    label: '待入账候选',
+    value: pendingCount.value,
+    unit: '条',
+    meta: '等待生成凭证或结转成本',
+  },
+  {
+    key: 'amount',
+    label: '候选金额',
+    value: formatAmount(amount.value),
+    meta: `本页 ${costs.items.value.length} 条候选合计`,
+  },
+])
 
 const open = shallowRef(false)
 const form = reactive({ sourceType: 'production', sourceDocumentNo: '', amount: '0' })
@@ -130,10 +144,7 @@ async function submit() {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard description="待入账候选" :value="pendingCount" hint="等待凭证或成本结转" />
-      <NvSectionCard description="本页候选金额" :value="formatAmount(amount)" hint="按当前页汇总" />
-    </NvSectionCards>
+    <NvMetricStrip :cells="costCells" />
 
     <NvToolbar :show-search="false">
       <template #filters
