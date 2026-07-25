@@ -9,11 +9,14 @@ const routeState = vi.hoisted(() => ({
 }))
 
 const wmsState = vi.hoisted(() => ({
-  filters: undefined as { keyword?: string, locationCode?: string, status?: string } | undefined,
+  filters: undefined as { keyword?: string; locationCode?: string; status?: string } | undefined,
 }))
 
 vi.mock('vue-router', () => ({
-  RouterLink: { props: ['to'], template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>' },
+  RouterLink: {
+    props: ['to'],
+    template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
+  },
   useRoute: () => routeState,
 }))
 
@@ -92,9 +95,13 @@ const uiStubs = {
   NvInput: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    template:
+      '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
-  PageHeader: { props: ['title', 'count'], template: '<header><h1>{{ title }}</h1>{{ count }}<slot name="actions" /></header>' },
+  PageHeader: {
+    props: ['title', 'count'],
+    template: '<header><h1>{{ title }}</h1>{{ count }}<slot name="actions" /></header>',
+  },
   NvStatusBadge: { props: ['value'], template: '<span>{{ value }}</span>' },
   Toolbar: { template: '<div><slot name="filters" /></div>' },
 }
@@ -115,10 +122,12 @@ describe('WMS picking route context', () => {
 
     mount(PickingPage, { global: { stubs: uiStubs } })
 
-    expect(wmsState.filters).toEqual(expect.objectContaining({
-      keyword: 'SKU-001',
-      locationCode: 'A-01',
-    }))
+    expect(wmsState.filters).toEqual(
+      expect.objectContaining({
+        keyword: 'SKU-001',
+        locationCode: 'A-01',
+      }),
+    )
   })
 
   it('renders picking row inventory links without unsupported scan workflow links', () => {
@@ -128,11 +137,23 @@ describe('WMS picking route context', () => {
     expect(wrapper.text()).toContain('SKU-001')
     expect(wrapper.text()).toContain('A-01')
     expect(wrapper.text()).toContain('OB-001')
-    expect(wrapper.text()).toContain('后端缺口')
+    expect(wrapper.text()).toContain('请到库存可用量或批次与预留页查看')
+    expect(wrapper.text()).not.toContain('后端缺口')
 
-    const links = wrapper.findAll('[data-router-link]').map((link) => link.attributes('data-to') ?? '')
-    expect(links.some((to) => to.includes('/inventory/availability') && to.includes('SKU-001') && to.includes('A-01'))).toBe(true)
-    expect(links.some((to) => to.includes('/inventory/lots') && to.includes('SKU-001') && to.includes('A-01'))).toBe(true)
+    const links = wrapper
+      .findAll('[data-router-link]')
+      .map((link) => link.attributes('data-to') ?? '')
+    expect(
+      links.some(
+        (to) =>
+          to.includes('/inventory/availability') && to.includes('SKU-001') && to.includes('A-01'),
+      ),
+    ).toBe(true)
+    expect(
+      links.some(
+        (to) => to.includes('/inventory/lots') && to.includes('SKU-001') && to.includes('A-01'),
+      ),
+    ).toBe(true)
     expect(links.some((to) => to.includes('/barcode/scans'))).toBe(false)
   })
 })

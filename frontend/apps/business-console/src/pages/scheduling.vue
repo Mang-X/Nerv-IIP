@@ -421,7 +421,7 @@ function reasonLabel(reason?: string | null) {
 
     <NvTabs v-model="activeView">
       <NvTabsList>
-        <NvTabsTrigger value="workbench">领导演示工作台</NvTabsTrigger>
+        <NvTabsTrigger value="workbench">排程总览</NvTabsTrigger>
         <NvTabsTrigger value="table">表格</NvTabsTrigger>
         <NvTabsTrigger value="gantt">甘特图</NvTabsTrigger>
       </NvTabsList>
@@ -543,8 +543,18 @@ function reasonLabel(reason?: string | null) {
           :loading="plansPending"
           :searchable="false"
           :column-settings="false"
-          empty-message="暂无 APS 排程方案。请先通过排程服务生成方案。"
+          empty-message="还没有排程方案"
         >
+          <template #empty>
+            <p class="text-sm font-medium text-foreground">还没有排程方案</p>
+            <p class="max-w-md text-sm text-muted-foreground">
+              先在排程总览里挑出要排的工单，生成首版方案后即可在这里查看、对比并发布。
+            </p>
+            <NvButton size="sm" type="button" class="mt-1" @click="activeView = 'workbench'">
+              去排程总览生成方案
+            </NvButton>
+          </template>
+          >
           <template #cell-status="{ row }">
             <div class="flex flex-wrap items-center gap-1.5">
               <NvStatusBadge

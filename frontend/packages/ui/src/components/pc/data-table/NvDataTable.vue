@@ -357,6 +357,20 @@ const currentPageSize = computed(() =>
 const resolvedTotal = computed(() =>
   props.manual ? (props.totalItems ?? processed.value.length) : processed.value.length,
 )
+/**
+ * A pager under a list that already shows everything is pure furniture — it
+ * offers a page to jump to that is the page you are on, and a size to pick that
+ * changes nothing. Hide it only when even the SMALLEST offered page size would
+ * still fit the whole result: below that threshold every control is inert, above
+ * it shrinking the page size is a real (if unusual) choice the user keeps.
+ */
+const smallestPageSize = computed(() =>
+  props.pageSizeOptions.length > 0 ? Math.min(...props.pageSizeOptions) : currentPageSize.value,
+)
+const showPagination = computed(
+  () =>
+    props.pagination && !props.loading && resolvedTotal.value > Math.max(1, smallestPageSize.value),
+)
 const pagedRows = computed(() => {
   // Manual mode (parent already paged) or pagination off → render the given rows verbatim.
   if (props.manual || !props.pagination) return processed.value
@@ -792,7 +806,7 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
     </div>
 
     <!-- ░░ Footer / pagination ░░ -->
-    <template v-if="pagination && !loading && resolvedTotal > 0">
+    <template v-if="showPagination">
       <Separator />
       <NvPagination
         class="px-3 py-3 sm:px-4"

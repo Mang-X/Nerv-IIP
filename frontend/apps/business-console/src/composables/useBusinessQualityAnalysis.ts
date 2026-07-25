@@ -330,10 +330,10 @@ function toNumber(value: number | null | undefined) {
 
 function buildSampleNotice(sampledNcrCount: number, totalNcrCount: number) {
   if (totalNcrCount > sampledNcrCount) {
-    return `当前后端返回窗口覆盖 ${sampledNcrCount} / ${totalNcrCount} 条 NCR；这是当前窗口分析，不是全量趋势。`
+    return `本次分析覆盖 ${sampledNcrCount} / ${totalNcrCount} 条不合格品记录，是当前窗口口径、不是全量趋势。`
   }
 
-  return `当前后端返回窗口覆盖 ${sampledNcrCount} / ${totalNcrCount} 条 NCR。`
+  return `本次分析覆盖 ${sampledNcrCount} / ${totalNcrCount} 条不合格品记录。`
 }
 
 function defaultSpcFilters(initial: Partial<QualitySpcFilters> = {}): QualitySpcFilters {

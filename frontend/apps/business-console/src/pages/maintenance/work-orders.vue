@@ -24,11 +24,11 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricCard,
+  NvMetricStrip,
   NvPageHeader,
   NvRowActions,
   NvSearchSelect,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -47,7 +47,7 @@ import {
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { storeToRefs } from 'pinia'
 import { computed, reactive, shallowRef, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -73,6 +73,7 @@ const {
 } = useMaintenanceWorkOrders()
 const { page, pageSize } = usePagedList(filters)
 const route = useRoute()
+const router = useRouter()
 
 // 技师目录（人员选择器数据源，读自 /master-data/workers）。
 const { workers, workersPending } = useBusinessWorkers()
@@ -479,14 +480,40 @@ watch(
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard description="待执行工单" :value="pendingCount" hint="本页未完成，待派工执行" />
-      <NvSectionCard
-        description="待执行 · 高优先"
-        :value="highPriorityPending"
-        hint="本页高优先级，需优先排程"
+    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+      <NvMetricStrip
+        :cells="[
+          { key: 'total', label: '维护工单', value: workOrdersTotal, unit: '张' },
+          { key: 'pending', label: '待派工执行', value: pendingCount, unit: '张' },
+          {
+            key: 'high',
+            label: '高优先待执行',
+            value: highPriorityPending,
+            unit: '张',
+            valueTone: highPriorityPending > 0 ? 'warning' : undefined,
+          },
+        ]"
       />
-    </NvSectionCards>
+      <NvMetricCard
+        variant="alert"
+        label="高优先待执行"
+        :value="highPriorityPending"
+        unit="张"
+        :tone="highPriorityPending > 0 ? 'warning' : 'neutral'"
+        :status="
+          highPriorityPending > 0
+            ? { label: '需优先排程', tone: 'warning' }
+            : { label: '无积压', tone: 'success' }
+        "
+        :foot-start="
+          highPriorityPending > 0
+            ? '高优先工单会占用设备可用窗口，先排这些再排常规保养。'
+            : '当前没有高优先级的待执行维护工单。'
+        "
+        :action="highPriorityPending > 0 ? { label: '看可用窗口' } : undefined"
+        @action="router.push({ path: '/maintenance/availability' })"
+      />
+    </div>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
       {{ listErrorMessage }}

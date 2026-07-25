@@ -28,7 +28,9 @@ describe('FulfillmentTimelineNode — four-state state machine', () => {
       source: 'ERP · 发货单读面',
     })
     expect(wrapper.text()).toContain('DO-1')
-    expect(wrapper.text()).toContain('released')
+    // 各来源回的英文状态码走全站状态字典映射，原文不上屏。
+    expect(wrapper.text()).toContain('已下达')
+    expect(wrapper.text()).not.toContain('released')
     expect(wrapper.text()).toContain('salesOrderNo = SO-1')
     expect(wrapper.find('a').exists()).toBe(true)
   })

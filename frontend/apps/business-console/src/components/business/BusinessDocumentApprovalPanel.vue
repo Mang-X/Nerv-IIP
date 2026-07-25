@@ -19,6 +19,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
+  resolveStatus,
   Spinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
@@ -198,10 +199,29 @@ function stepTitle(step: BusinessConsoleApprovalStepItem) {
   return step.stepName ?? `第 ${step.stepNo} 步`
 }
 
+/** 审批人类型码值 → 中文；UI 不直出 role/user/department 之类的原文。 */
+const APPROVER_TYPE_LABELS: Record<string, string> = {
+  role: '角色',
+  user: '人员',
+  department: '部门',
+  team: '班组',
+  position: '岗位',
+}
 function actorLabel(step: BusinessConsoleApprovalStepItem) {
-  const actorType = step.approverType || '处理人'
+  const type = (step.approverType ?? '').trim().toLowerCase()
+  const actorType = type ? (APPROVER_TYPE_LABELS[type] ?? step.approverType) : '处理人'
   const actorRef = step.approverRef || '未分配'
   return `${actorType} · ${actorRef}`
+}
+
+/**
+ * 下拉里给的是「哪一单、走到哪一步了」，不是链路技术编号——
+ * chainId 只作 title 兜底，供需要核对时悬停查看。
+ */
+function chainOptionLabel(chain: BusinessConsoleApprovalChainItem) {
+  const statusLabel = resolveStatus(chain.status).label
+  const document = chain.documentId?.trim() || chain.documentType?.trim()
+  return document ? `${document} · ${statusLabel}` : statusLabel
 }
 
 function decisionKey(
@@ -257,8 +277,9 @@ function templateLabel(template: BusinessConsoleApprovalTemplateItem) {
               v-for="chain in approval.chains.value"
               :key="chain.chainId"
               :value="chain.chainId ?? ''"
+              :title="chain.chainId ?? undefined"
             >
-              {{ chain.chainId }} · {{ chain.status }}
+              {{ chainOptionLabel(chain) }}
             </NvSelectItem>
           </NvSelectContent>
         </NvSelect>

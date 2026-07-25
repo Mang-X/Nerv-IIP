@@ -274,7 +274,7 @@ function formatDateTime(value: string) {
           tone="warning"
         />
         <span class="text-sm text-muted-foreground"
-          >异常分配未绘制，请在方案明细核查后端返回值。</span
+          >部分分配无法绘制，请在方案明细中核对这些工序。</span
         >
       </div>
 

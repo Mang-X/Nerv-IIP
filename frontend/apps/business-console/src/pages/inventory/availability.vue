@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import InventoryExpiryStatusBadge from '@/components/inventory/InventoryExpiryStatusBadge.vue'
 import InventoryExpirySummaryCards from '@/components/inventory/InventoryExpirySummaryCards.vue'
 import { useInventoryAvailability } from '@/composables/useBusinessInventory'
@@ -19,11 +19,10 @@ import {
   NvDropdownMenuItem,
   NvDropdownMenuSeparator,
   NvInput,
+  NvMetricRing,
   NvPageHeader,
   NvPagination,
   NvRowActions,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -97,6 +96,12 @@ const reservedQuantity = computed(() => availability.value?.reservedQuantity ?? 
 const frozenQuantity = computed(() =>
   Math.max(onHandQuantity.value - availableQuantity.value - reservedQuantity.value, 0),
 )
+// 可用 + 预留 + 冻结 = 现存量，是真正的构成关系，所以用环形卡。
+const stockSegments = computed<NvMetricSegment[]>(() => [
+  { key: 'available', label: '可用', value: availableQuantity.value, tone: 'success' },
+  { key: 'reserved', label: '预留', value: reservedQuantity.value, tone: 'warning' },
+  { key: 'frozen', label: '冻结/其他', value: frozenQuantity.value, tone: 'danger' },
+])
 
 const qualityStatusOptions = [
   { label: '全部状态', value: 'all' },
@@ -134,11 +139,14 @@ const tableEmptyMessage = computed(() => {
   if (nearExpiryOnly.value && expiryAlertsError.value) return '效期预警加载失败，请稍后重试。'
   if (nearExpiryOnly.value) return '当前范围没有已过期或未来30天内到期的批次。'
   if (availabilityError.value) return '库存可用量加载失败，请稍后重试。'
-  return '未返回可用量明细。确认 SKU、单位和工厂等查询条件后再试。'
+  return '没有查到库存明细。换个物料、工厂或库位再查一次。'
 })
+/**
+ * 主要列只留下仓管真正据以决策的字段；单位、生产日期、保质期、效期来源
+ * 收进对应单元格的第二行，避免十五列表格逼出横向滚动。
+ */
 const columns: NvDataTableColumn<DisplayLine>[] = [
-  { key: 'skuCode', header: 'SKU', accessor: (r) => (r.skuCode ?? filters.skuCode) || '—' },
-  { key: 'uomCode', header: '单位', accessor: (r) => (r.uomCode ?? filters.uomCode) || '—' },
+  { key: 'skuCode', header: '物料', accessor: (r) => (r.skuCode ?? filters.skuCode) || '—' },
   {
     key: 'locationCode',
     header: '库位',
@@ -147,25 +155,10 @@ const columns: NvDataTableColumn<DisplayLine>[] = [
   },
   { key: 'lot', header: '批次/序列号' },
   {
-    key: 'productionDate',
-    header: '生产日期',
-    accessor: (r) => formatInventoryExpiryDate(r.productionDate),
-  },
-  {
     key: 'expiryDate',
     header: '效期',
     headerTitle: 'FEFO：预留与拣货建议优先选择更早到期的批次。',
     accessor: (r) => formatInventoryExpiryDate(r.expiryDate),
-  },
-  {
-    key: 'shelfLife',
-    header: '保质期',
-    accessor: (r) => formatInventoryShelfLife(r.shelfLifeDays),
-  },
-  {
-    key: 'expirySource',
-    header: '效期来源',
-    accessor: (r) => formatInventoryExpirySource(r.expiryDateSource),
   },
   { key: 'expiryStatus', header: '效期状态' },
   { key: 'qualityStatus', header: '质量状态', width: 'w-28' },
@@ -214,10 +207,10 @@ function operationBlockReason(line: DisplayLine) {
   const reasons = [
     line.movementAllowed === true
       ? undefined
-      : (line.movementBlockReason ?? '后端未提供移动禁用原因，请稍后重试或联系管理员。'),
+      : (line.movementBlockReason ?? '该库存行暂不能发起移动，请稍后重试或联系管理员。'),
     line.countAllowed === true
       ? undefined
-      : (line.countBlockReason ?? '后端未提供盘点禁用原因，请稍后重试或联系管理员。'),
+      : (line.countBlockReason ?? '该库存行暂不能创建盘点，请稍后重试或联系管理员。'),
   ]
   return [...new Set(reasons.filter(Boolean))].join('；')
 }
@@ -268,28 +261,14 @@ async function refreshCurrentView() {
     </NvPageHeader>
 
     <InventoryExpirySummaryCards v-if="nearExpiryOnly" :summary="expirySummary" />
-    <NvSectionCards v-else :columns="4">
-      <NvSectionCard
-        description="现存量"
-        :value="formatQuantity(onHandQuantity)"
-        :hint="filters.uomCode"
-      />
-      <NvSectionCard
-        description="可用量"
-        :value="formatQuantity(availableQuantity)"
-        :hint="filters.uomCode"
-      />
-      <NvSectionCard
-        description="预留量"
-        :value="formatQuantity(reservedQuantity)"
-        hint="已被占用"
-      />
-      <NvSectionCard
-        description="冻结/其他"
-        :value="formatQuantity(frozenQuantity)"
-        hint="按返回数量推导"
-      />
-    </NvSectionCards>
+    <NvMetricRing
+      v-else
+      class="lg:max-w-md"
+      label="现存量构成"
+      :value="formatQuantity(onHandQuantity)"
+      :center-caption="filters.uomCode ? `现存量 · ${filters.uomCode}` : '现存量'"
+      :segments="stockSegments"
+    />
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -359,10 +338,28 @@ async function refreshCurrentView() {
       :pagination="false"
       :empty-message="tableEmptyMessage"
     >
+      <template #cell-skuCode="{ row }">
+        <div class="flex flex-col gap-0.5">
+          <span>{{ (row.skuCode ?? filters.skuCode) || '—' }}</span>
+          <span class="text-xs text-muted-foreground"
+            >单位 {{ (row.uomCode ?? filters.uomCode) || '—' }}</span
+          >
+        </div>
+      </template>
       <template #cell-lot="{ row }">
         <div class="flex flex-col gap-0.5">
           <span>{{ row.lotNo ?? '无批次' }}</span>
           <span class="text-xs text-muted-foreground">{{ row.serialNo ?? '无序列号' }}</span>
+        </div>
+      </template>
+      <template #cell-expiryDate="{ row }">
+        <div class="flex flex-col gap-0.5">
+          <span>{{ formatInventoryExpiryDate(row.expiryDate) }}</span>
+          <span class="text-xs text-muted-foreground">
+            生产 {{ formatInventoryExpiryDate(row.productionDate) }} ·
+            {{ formatInventoryShelfLife(row.shelfLifeDays) }} ·
+            {{ formatInventoryExpirySource(row.expiryDateSource) }}
+          </span>
         </div>
       </template>
       <template #cell-qualityStatus="{ row }"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricFacet, NvMetricSegment } from '@nerv-iip/ui'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import QualityParetoPanel from '@/components/quality/QualityParetoPanel.vue'
 import QualitySpcCharts from '@/components/quality/QualitySpcCharts.vue'
@@ -17,9 +17,9 @@ import {
   NvButton,
   NvDataTable,
   NvInput,
+  NvMetricCard,
+  NvMetricRing,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvToolbar,
 } from '@nerv-iip/ui'
 import {
@@ -32,7 +32,7 @@ import {
   ShieldAlertIcon,
 } from '@lucide/vue'
 import { computed } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -42,6 +42,7 @@ definePage({
   },
 })
 
+const router = useRouter()
 const { filters, ncrs, ncrsError, ncrsPending, ncrsTotal, refreshNcrs } = useQualityNcrs()
 const spc = useQualitySpcAnalysis()
 
@@ -49,12 +50,65 @@ const summary = computed(() => buildQualityAnalysisSummary(ncrs.value, ncrsTotal
 const listErrorMessage = computed(() => formatError(ncrsError.value))
 const spcErrorMessage = computed(() => formatError(spc.spcError.value))
 const trendGapText =
-  '后台尚未提供按时间、工位、设备和班次的全量聚合趋势；本页只展示 NCR 返回窗口内已返回字段的真实派生摘要。'
-const spcScopeHint = computed(() =>
-  spc.spcReady.value
-    ? `${spc.filters.skuCode} / ${spc.filters.characteristicCode} / ${spc.filters.workCenterId}`
-    : '填写 SKU、特性和工作中心后查询',
+  '本页按当前不合格品记录窗口分析；按时间、工位、设备和班次的全量趋势请到质量报表跟进。'
+
+/**
+ * 不合格品的构成关系：各处置状态之和 = 当前窗口记录数，所以用环形卡。
+ * 后端可能返回窗口内的其它状态，差额补一段中性「其它状态」，
+ * 否则环形的百分比会按一个用户看不见的分母绘制。
+ */
+const ncrStatusSegments = computed<NvMetricSegment[]>(() => {
+  const { openNcrCount, dispositionedNcrCount, closedNcrCount, sampledNcrCount } = summary.value
+  const segments: NvMetricSegment[] = [
+    { key: 'open', label: '尚未处置', value: openNcrCount, tone: 'danger' },
+    {
+      key: 'dispositioned',
+      label: '已给出处置结论',
+      value: dispositionedNcrCount,
+      tone: 'warning',
+    },
+    { key: 'closed', label: '已关闭', value: closedNcrCount, tone: 'success' },
+  ]
+  const rest = sampledNcrCount - openNcrCount - dispositionedNcrCount - closedNcrCount
+  return rest > 0
+    ? [...segments, { key: 'other', label: '其它状态', value: rest, tone: 'neutral' }]
+    : segments
+})
+/** 缺陷原因 Top 6 作为迷你柱，回答「主要坏在哪一项」。 */
+const defectBars = computed(() => {
+  const top = summary.value.defectPareto.slice(0, 6)
+  return {
+    series: top.map((bucket) => bucket.defectQuantity),
+    labels: top.map((bucket) => bucket.label),
+    leader: top[0],
+  }
+})
+const spcScopeFacets = computed<NvMetricFacet[]>(() => [
+  { key: 'sku', label: '物料', value: spc.filters.skuCode.trim() || '未填' },
+  { key: 'characteristic', label: '特性', value: spc.filters.characteristicCode.trim() || '未填' },
+  { key: 'workCenter', label: '工作中心', value: spc.filters.workCenterId.trim() || '未填' },
+])
+const spcSubgroupCount = computed(() => spc.spcChart.value?.subgroups?.length ?? 0)
+const spcXbarSeries = computed(() =>
+  (spc.spcChart.value?.subgroups ?? [])
+    .map((subgroup) => subgroup.xbar)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value)),
 )
+const spcXbarLabels = computed(() =>
+  (spc.spcChart.value?.subgroups ?? [])
+    .filter((subgroup) => typeof subgroup.xbar === 'number' && Number.isFinite(subgroup.xbar))
+    .map((subgroup) => `子组 ${subgroup.index ?? 0}`),
+)
+const spcCapabilityFacets = computed<NvMetricFacet[]>(() => [
+  { key: 'cp', label: 'Cp', value: formatMetric(spc.capability.value?.cp) },
+  {
+    key: 'cpk',
+    label: 'Cpk',
+    value: formatMetric(spc.capability.value?.cpk),
+    tone: isBelowCapabilityFloor(spc.capability.value?.cpk) ? 'danger' : undefined,
+  },
+  { key: 'samples', label: '实测值', value: spc.capability.value?.sampleCount ?? 0 },
+])
 const spcControlLimitHint = computed(() => {
   if (spc.spcWarmup.value) {
     return '实测值不足一个完整子组'
@@ -85,6 +139,10 @@ function formatError(error: unknown) {
 }
 function formatMetric(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '-'
+}
+/** 制造业通行的过程能力底线：Cpk < 1.33 需要关注。 */
+function isBelowCapabilityFloor(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) && value < 1.33
 }
 function spcViolationKey(row: QualitySpcViolation) {
   return spcViolationTargetId(row, spc.spcViolations.value.indexOf(row))
@@ -126,24 +184,40 @@ function spcViolationKey(row: QualitySpcViolation) {
       NCR 数据加载失败：{{ listErrorMessage }}
     </p>
 
-    <NvSectionCards v-else :columns="4">
-      <NvSectionCard
-        description="当前窗口 NCR"
+    <div v-else class="grid gap-4 lg:grid-cols-3">
+      <NvMetricRing
+        label="不合格品处置构成"
         :value="summary.sampledNcrCount"
-        :hint="summary.sampleNotice"
+        center-caption="条 · 当前窗口"
+        :segments="ncrStatusSegments"
       />
-      <NvSectionCard description="待处理 NCR" :value="summary.openNcrCount" hint="状态为 open" />
-      <NvSectionCard
-        description="已提交处置"
-        :value="summary.dispositionedNcrCount"
-        hint="状态为 dispositioned"
-      />
-      <NvSectionCard
-        description="缺陷数量"
+      <NvMetricCard
+        variant="bars"
+        label="缺陷数量"
         :value="formatQualityQuantity(summary.totalDefectQuantity)"
-        hint="按当前窗口汇总"
+        unit="件"
+        :series="defectBars.series"
+        :series-labels="defectBars.labels"
+        series-unit="件"
+        foot-start="缺陷原因前六位"
+        :foot-end="defectBars.leader ? `最多：${defectBars.leader.label}` : ''"
       />
-    </NvSectionCards>
+      <NvMetricCard
+        variant="alert"
+        label="尚未处置"
+        :value="summary.openNcrCount"
+        unit="条"
+        :tone="summary.openNcrCount > 0 ? 'danger' : 'neutral'"
+        :status="
+          summary.openNcrCount > 0
+            ? { label: '待处置', tone: 'danger' }
+            : { label: '已清零', tone: 'success' }
+        "
+        :foot-start="summary.sampleNotice"
+        :action="summary.openNcrCount > 0 ? { label: '去处置' } : undefined"
+        @action="router.push({ path: '/quality/ncrs' })"
+      />
+    </div>
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -190,24 +264,44 @@ function spcViolationKey(row: QualitySpcViolation) {
         </template>
       </NvToolbar>
 
-      <NvSectionCards :columns="4">
-        <NvSectionCard description="SPC 范围" :value="spcScopeHint" hint="SKU / 特性 / 工作中心" />
-        <NvSectionCard
-          description="Xbar UCL"
+      <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <NvMetricCard
+          variant="facets"
+          label="分析范围"
+          :value="spcSubgroupCount"
+          unit="个子组"
+          :facets="spcScopeFacets"
+        />
+        <NvMetricCard
+          variant="sparkline"
+          label="控制上限 UCL"
           :value="formatMetric(spc.spcChart.value?.controlLimits?.xbarUpperControlLimit)"
-          :hint="spcControlLimitHint"
+          :series="spcXbarSeries"
+          :series-labels="spcXbarLabels"
+          :foot-start="spcControlLimitHint"
+          :foot-end="`中心线 ${formatMetric(spc.spcChart.value?.controlLimits?.centerLine)}`"
         />
-        <NvSectionCard
-          description="Cp / Cpk"
-          :value="`${formatMetric(spc.capability.value?.cp)} / ${formatMetric(spc.capability.value?.cpk)}`"
-          :hint="`${spc.capability.value?.sampleCount ?? 0} 个实测值`"
+        <NvMetricCard
+          variant="facets"
+          label="过程能力"
+          :value="formatMetric(spc.capability.value?.cpk)"
+          unit="Cpk"
+          :facets="spcCapabilityFacets"
         />
-        <NvSectionCard
-          description="判异"
+        <NvMetricCard
+          variant="alert"
+          label="判异点"
           :value="spc.spcViolations.value.length"
-          hint="质量 SPC 预警，不计入设备报警"
+          unit="处"
+          :tone="spc.spcViolations.value.length > 0 ? 'danger' : 'neutral'"
+          :status="
+            spc.spcViolations.value.length > 0
+              ? { label: '过程失控', tone: 'danger' }
+              : { label: '受控', tone: 'success' }
+          "
+          foot-start="判异属于质量过程预警，不计入设备报警。"
         />
-      </NvSectionCards>
+      </div>
 
       <QualitySpcCharts
         :chart="spc.spcChart.value"

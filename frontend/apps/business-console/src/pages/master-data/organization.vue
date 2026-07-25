@@ -26,10 +26,9 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
   ScrollArea,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -541,10 +540,19 @@ function openMembers(row: BusinessConsoleResourceItem) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard description="部门数" :value="departments.total.value" hint="组织 / 职能分组" />
-      <NvSectionCard description="班组数" :value="teams.total.value" hint="挂靠部门与班次" />
-    </NvSectionCards>
+    <!-- 部门与班组是层级归属关系，不是同一总量的构成，用并列 Strip 而非环形卡。 -->
+    <NvMetricStrip
+      :cells="[
+        { key: 'department', label: '部门', value: departments.total.value, unit: '个' },
+        {
+          key: 'team',
+          label: '班组',
+          value: teams.total.value,
+          unit: '个',
+          meta: '挂靠部门与班次',
+        },
+      ]"
+    />
 
     <div class="grid gap-4 md:grid-cols-[320px_minmax(0,1fr)]">
       <!-- 左：部门树 -->

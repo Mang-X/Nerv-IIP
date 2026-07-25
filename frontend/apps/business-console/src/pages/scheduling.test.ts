@@ -306,7 +306,7 @@ describe('APS scheduling workbench page', () => {
 
     const workbenchTab = wrapper
       .findAll('[role="tab"]')
-      .find((tab) => tab.text().includes('领导演示工作台'))!
+      .find((tab) => tab.text().includes('排程总览'))!
     await workbenchTab.trigger('focus')
     await workbenchTab.trigger('mousedown')
     await flushPromises()

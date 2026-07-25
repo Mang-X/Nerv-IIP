@@ -24,10 +24,10 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricCard,
+  NvMetricStrip,
   NvPageHeader,
   NvRowActions,
-  NvSectionCard,
-  NvSectionCards,
   Spinner,
   NvStatusBadge,
   NvToolbar,
@@ -258,14 +258,38 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard description="待盘点" :value="pendingCount" hint="本页未完成，待实盘录入" />
-      <NvSectionCard
-        description="有差异"
-        :value="varianceCount"
-        hint="本页账实不符，需复盘或调整"
+    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+      <NvMetricStrip
+        :cells="[
+          { key: 'total', label: '盘点单', value: countExecutionsTotal, unit: '张' },
+          { key: 'pending', label: '待实盘录入', value: pendingCount, unit: '张' },
+          {
+            key: 'variance',
+            label: '账实不符',
+            value: varianceCount,
+            unit: '张',
+            valueTone: varianceCount > 0 ? 'danger' : undefined,
+          },
+        ]"
       />
-    </NvSectionCards>
+      <NvMetricCard
+        variant="alert"
+        label="账实不符"
+        :value="varianceCount"
+        unit="张"
+        :tone="varianceCount > 0 ? 'danger' : 'neutral'"
+        :status="
+          varianceCount > 0
+            ? { label: '待复盘', tone: 'danger' }
+            : { label: '账实一致', tone: 'success' }
+        "
+        :foot-start="
+          varianceCount > 0
+            ? '差异单需复盘确认后再做库存调整，否则账面数量会一直不准。'
+            : '本页盘点单账面与实盘一致。'
+        "
+      />
+    </div>
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -318,7 +342,7 @@ function formatError(error: unknown) {
           source-workflow="inventory.count"
           source-label="扫码记录"
           :source-document-id="row.countNo ?? row.countExecutionId"
-          gap-message="后端缺口：盘点执行列表未返回冻结、预留和批次/序列号明细；可带盘点范围到 Inventory 查看账面上下文。"
+          gap-message="本页暂不显示冻结、预留与批次序列号明细，请到库存批次与预留页按盘点范围查看账面数据。"
         />
       </template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>

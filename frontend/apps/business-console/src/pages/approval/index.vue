@@ -29,10 +29,10 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricCard,
+  NvMetricStrip,
   NvPageHeader,
   NvRowActions,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -190,6 +190,7 @@ const activeDelegations = computed(
       .length,
 )
 const pendingTasks = computed(() => approval.tasks.value.length)
+const activeTab = shallowRef('tasks')
 const runningChains = computed(
   () =>
     approval.chains.value.filter((item) =>
@@ -198,6 +199,21 @@ const runningChains = computed(
 )
 
 applyRouteApprovalFilters()
+
+/** 审批人类型码值 → 中文；UI 不直出 role/user/department 之类的原文。 */
+const APPROVER_TYPE_LABELS: Record<string, string> = {
+  role: '角色',
+  user: '人员',
+  department: '部门',
+  team: '班组',
+  position: '岗位',
+}
+function approverLabel(approverType?: string | null, approverRef?: string | null) {
+  const type = (approverType ?? '').trim().toLowerCase()
+  const label = type ? (APPROVER_TYPE_LABELS[type] ?? approverType) : '处理人'
+  const ref = (approverRef ?? '').trim()
+  return ref ? `${label} ${ref}` : `${label}待指定`
+}
 
 function documentLabel(row: { documentType?: string | null; documentId?: string | null }) {
   const id = row.documentId ?? ''
@@ -431,19 +447,39 @@ function toIsoFromLocalInput(value: string) {
     </div>
 
     <template v-else>
-      <NvSectionCards :columns="3">
-        <NvSectionCard
-          description="待处理任务"
+      <div class="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+        <NvMetricCard
+          variant="alert"
+          label="待我处理"
           :value="pendingTasks"
-          hint="当前账号可处理的审批步骤"
+          unit="项"
+          :tone="pendingTasks > 0 ? 'warning' : 'neutral'"
+          :status="
+            pendingTasks > 0
+              ? { label: '等待决策', tone: 'warning' }
+              : { label: '已清空', tone: 'success' }
+          "
+          :foot-start="
+            pendingTasks > 0
+              ? '单据在你这一步停着，下游的执行也会一起等。'
+              : '当前没有等你决策的审批。'
+          "
+          :action="pendingTasks > 0 ? { label: '去处理' } : undefined"
+          @action="activeTab = 'tasks'"
         />
-        <NvSectionCard description="进行中流程" :value="runningChains" hint="本页可见流程实例" />
-        <NvSectionCard
-          description="有效委托"
-          :value="activeDelegations"
-          hint="当前范围仍在生效的委托"
+        <NvMetricStrip
+          :cells="[
+            { key: 'running', label: '进行中审批', value: runningChains, unit: '单' },
+            {
+              key: 'delegation',
+              label: '生效中的委托',
+              value: activeDelegations,
+              unit: '条',
+              meta: '代批期间由被委托人决策',
+            },
+          ]"
         />
-      </NvSectionCards>
+      </div>
 
       <div
         v-if="!canManageApprovals"
@@ -453,10 +489,12 @@ function toIsoFromLocalInput(value: string) {
         没有审批处理权限；仅展示模板、流程、决策和委托记录。
       </div>
 
-      <NvTabs default-value="tasks">
+      <NvTabs v-model="activeTab">
         <NvTabsList>
           <NvTabsTrigger value="tasks">我的任务 ({{ approval.tasksTotal.value }})</NvTabsTrigger>
-          <NvTabsTrigger value="chains">流程实例 ({{ approval.chainsTotal.value }})</NvTabsTrigger>
+          <NvTabsTrigger value="chains"
+            >审批中的单据 ({{ approval.chainsTotal.value }})</NvTabsTrigger
+          >
           <NvTabsTrigger value="decisions"
             >决策记录 ({{ approval.decisionsTotal.value }})</NvTabsTrigger
           >
@@ -559,7 +597,7 @@ function toIsoFromLocalInput(value: string) {
                   <NvStatusBadge :value="step.status" />
                 </div>
                 <p class="mt-1 text-sm text-muted-foreground">
-                  {{ step.approverType }} · {{ step.approverRef }} · 到期
+                  {{ approverLabel(step.approverType, step.approverRef) }} · 到期
                   {{ formatDateTime(step.dueAtUtc) }}
                 </p>
               </li>
