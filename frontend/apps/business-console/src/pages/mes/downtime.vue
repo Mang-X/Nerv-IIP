@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesDowntimeEvents } from '@/composables/useBusinessMes'
+import { pagedBreakdownSegments } from '@/composables/mes/mesMetricSegments'
 import { mesDowntimeStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -8,9 +9,8 @@ import {
   NvButton,
   NvDataTable,
   NvInput,
+  NvMetricCard,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -43,6 +43,18 @@ const statusFilter = shallowRef('all')
 
 const openCount = computed(
   () => downtimeEvents.value.filter((x) => x.status?.toLowerCase() === 'open').length,
+)
+// 停机的决策点是「还有多少台没恢复」——一张构成卡把总量与恢复进度放在一起。
+const downtimeSegments = computed(() =>
+  pagedBreakdownSegments(downtimeEventsTotal.value, [
+    { key: 'open', label: '未恢复', value: openCount.value, tone: 'danger' },
+    {
+      key: 'recovered',
+      label: '已恢复',
+      value: downtimeEvents.value.length - openCount.value,
+      tone: 'success',
+    },
+  ]),
 )
 const errorMessage = computed(() => formatError(downtimeEventsError.value))
 watch(statusFilter, (value) => {
@@ -108,15 +120,14 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="3">
-      <NvSectionCard description="停机事件" :value="downtimeEventsTotal" hint="后端筛选总数" />
-      <NvSectionCard description="本页未恢复" :value="openCount" hint="当前页统计" />
-      <NvSectionCard
-        description="本页已恢复"
-        :value="downtimeEvents.length - openCount"
-        hint="当前页统计"
-      />
-    </NvSectionCards>
+    <NvMetricCard
+      class="sm:max-w-md"
+      variant="breakdown"
+      label="停机事件"
+      :value="downtimeEventsTotal"
+      unit="起"
+      :segments="downtimeSegments"
+    />
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -151,7 +162,7 @@ function formatError(error: unknown) {
       :loading="downtimeEventsPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无停机事件。从工序执行记录异常会在这里汇总。"
+      empty-message="暂无停机事件。先在工序执行登记设备异常，再回到这里跟进恢复与影响范围。"
     >
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
       <template #cell-startedAtUtc="{ row }">{{ formatDateTime(row.startedAtUtc) }}</template>

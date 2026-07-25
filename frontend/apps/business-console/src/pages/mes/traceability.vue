@@ -1,14 +1,13 @@
 <script setup lang="ts">
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useMesTraceability } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
   NvDataTable,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -69,6 +68,11 @@ const scanRecordQuery = computed(() => ({
   scannedValue: batchModel.value || undefined,
 }))
 
+const traceCells = computed<NvMetricStripCell[]>(() => [
+  { key: 'nodes', label: '追溯节点', value: nodes.value.length, unit: '个' },
+  { key: 'edges', label: '上下游关联', value: traceability.value?.edges?.length ?? 0, unit: '条' },
+])
+
 type NodeRow = (typeof nodes)['value'][number]
 const columns: NvDataTableColumn<NodeRow>[] = [
   { key: 'nodeId', header: '节点', cellClass: 'font-medium' },
@@ -106,14 +110,7 @@ function firstQuery(value: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard description="节点" :value="nodes.length" hint="执行证据对象" />
-      <NvSectionCard
-        description="关系"
-        :value="traceability?.edges?.length ?? 0"
-        hint="上下游关联"
-      />
-    </NvSectionCards>
+    <NvMetricStrip :cells="traceCells" />
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -151,7 +148,7 @@ function firstQuery(value: unknown) {
       :loading="traceabilityPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无追溯数据。输入工单、批次/序列号或物料批后查询执行证据链。"
+      empty-message="暂无追溯数据。先选择查询类型并填入工单、批次/序列号或物料批，再查询它经过的工序、用料与检验记录。"
     />
   </BusinessLayout>
 </template>
