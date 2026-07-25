@@ -10,6 +10,9 @@ const principal = {
   organizationId: 'org-001',
   environmentId: 'env-dev',
   permissionVersion: 1,
+  // 只授予被 e2e 覆盖、且页面 meta 声明了 requiredPermissions 的能力码；
+  // 未声明的页面本来就放行，这里只做加法，不会收紧任何已有用例。
+  permissionCodes: ['business.erp.sales.read', 'business.erp.finance.read'],
 }
 
 const session = {
@@ -49,10 +52,36 @@ test('business console smoke pages render', async ({ page }) => {
   await expectHeading(page, '/mes/capacity', '产能影响')
 })
 
+// 回归：`pages/erp/sales.vue` 与 `pages/erp/sales/` 同名并存，曾让 sales.vue 变成父路由，
+// 子页没有出口 → /erp/sales/orders 等三个 URL 全部渲染「销售机会」。finance 同型。
+test('经营管理：销售/财务子页各自渲染，侧栏只高亮当前项', async ({ page }) => {
+  const sections: Array<[path: string, heading: string, navItem: string]> = [
+    ['/erp/sales', '销售机会', '销售机会'],
+    ['/erp/sales/quotations', '销售报价', '销售报价'],
+    ['/erp/sales/orders', '销售订单', '销售订单'],
+    ['/erp/sales/deliveries', '销售发货', '销售发货'],
+    ['/erp/finance', '财务摘要', '财务摘要'],
+    ['/erp/finance/ar-ap', 'AR/AP', 'AR/AP'],
+    ['/erp/finance/vouchers', '会计凭证', '会计凭证'],
+    ['/erp/finance/cost-candidates', '成本候选', '成本候选'],
+  ]
+
+  for (const [path, heading, navItem] of sections) {
+    await expectHeading(page, path, heading)
+
+    // 侧栏双高亮回归：只有目标项 active，节区首页项不得同时点亮。
+    const active = page.locator('[data-sidebar="menu-button"][data-active="true"]')
+    await expect(active).toHaveCount(1, { timeout: 15_000 })
+    await expect(active).toHaveText(navItem)
+  }
+})
+
 test('生产计划：就绪计划行尾「转工单」可点并打开下达工单弹窗', async ({ page }) => {
   // 计划数据来自共享 mock（PLAN-READY 可转 / PLAN-BLOCKED 受阻）。
   await page.goto('/mes/plans', { waitUntil: 'domcontentloaded' })
-  await expect(page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '生产计划' })).toBeVisible({ timeout: 15_000 })
+  await expect(
+    page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '生产计划' }),
+  ).toBeVisible({ timeout: 15_000 })
   // 确认计划数据已渲染。
   await expect(page.getByText('PLAN-READY')).toBeVisible({ timeout: 15_000 })
 
@@ -71,7 +100,9 @@ test('生产计划：就绪计划行尾「转工单」可点并打开下达工�
 test('工单与派工：工单队列渲染、创建急单弹窗可开', async ({ page }) => {
   // 工单数据来自共享 mock（WO-001）。
   await page.goto('/mes/work-orders', { waitUntil: 'domcontentloaded' })
-  await expect(page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '工单与派工' })).toBeVisible({ timeout: 15_000 })
+  await expect(
+    page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '工单与派工' }),
+  ).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText('WO-001')).toBeVisible({ timeout: 15_000 })
 
   // 创建急单 → 弹窗打开（抓"点不了"）。
@@ -83,18 +114,25 @@ test('工单与派工：工单队列渲染、创建急单弹窗可开', async ({
 test('领料与齐套：领料申请渲染收料进度与「查看出库」闭环链接', async ({ page }) => {
   // 领料申请数据来自共享 mock（MIR-001，已收 4 / 应领 10，关联 WMS-OUT-001）。
   await page.goto('/mes/materials', { waitUntil: 'domcontentloaded' })
-  await expect(page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '领料与齐套' })).toBeVisible({ timeout: 15_000 })
+  await expect(
+    page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '领料与齐套' }),
+  ).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText('MIR-001')).toBeVisible({ timeout: 15_000 })
   // 收料进度可读（已收 4）。
   await expect(page.getByText(/已收\s*4/)).toBeVisible()
   // 领料闭环：出库单「查看出库」可点、跳 WMS（不显 GUID）。
-  await expect(page.getByRole('link', { name: '查看出库' })).toHaveAttribute('href', /\/wms\/outbound/)
+  await expect(page.getByRole('link', { name: '查看出库' })).toHaveAttribute(
+    'href',
+    /\/wms\/outbound/,
+  )
 })
 
 test('工序执行：队列渲染、可报工行直显「报工」按钮且能进报工弹窗', async ({ page }) => {
   // 工序任务数据来自共享 mock（op-1：Ready + WO-001 → 可报工）。
   await page.goto('/mes/operation-tasks', { waitUntil: 'domcontentloaded' })
-  await expect(page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '工序执行' })).toBeVisible({ timeout: 15_000 })
+  await expect(
+    page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '工序执行' }),
+  ).toBeVisible({ timeout: 15_000 })
 
   // 可报工行：行尾直显「报工」按钮（不必翻下拉）。
   const reportBtn = page.getByRole('button', { name: '报工' }).first()
@@ -108,43 +146,59 @@ test('工序执行：队列渲染、可报工行直显「报工」按钮且能�
 test('报工记录：报工历史渲染产量、查看工单就地速览不跳页', async ({ page }) => {
   // 报工记录数据来自共享 mock（report-1：WO-001，良品 5）。
   await page.goto('/mes/production-reports', { waitUntil: 'domcontentloaded' })
-  await expect(page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '报工记录' })).toBeVisible({ timeout: 15_000 })
+  await expect(
+    page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '报工记录' }),
+  ).toBeVisible({ timeout: 15_000 })
   // 产量可读（良品 5）。
   await expect(page.getByText(/良品\s*5/)).toBeVisible({ timeout: 15_000 })
   // 点工单号（WO-001）→ 就地弹出「工单速览」，URL 不变（不跳页、不打断操作）。
   await page.getByRole('button', { name: 'WO-001' }).first().click()
-  await expect(page.getByRole('dialog').filter({ hasText: '工单速览' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('dialog').filter({ hasText: '工单速览' })).toBeVisible({
+    timeout: 15_000,
+  })
   await expect(page).toHaveURL(/\/mes\/production-reports/)
 })
 
 test('完工入库：直接开为只读、回链工单；带工单上下文进来自动开登记弹窗', async ({ page }) => {
   // 直接打开：登记需从工单详情带上下文，按钮禁用并提示「从工单详情发起」。
   await page.goto('/mes/receipts', { waitUntil: 'domcontentloaded' })
-  await expect(page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '完工入库' })).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByRole('button', { name: 'WO-001' }).first()).toBeVisible({ timeout: 15_000 })
+  await expect(
+    page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '完工入库' }),
+  ).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('button', { name: 'WO-001' }).first()).toBeVisible({
+    timeout: 15_000,
+  })
   await expect(page.getByRole('button', { name: '从工单详情发起' })).toBeDisabled()
 
   // 带工单上下文进来（模拟工单完工跳转）→ 登记弹窗自动打开（抓跨页带参+可登记）。
-  await page.goto('/mes/receipts?workOrderId=WO-001&skuId=sku-1&quantity=5', { waitUntil: 'domcontentloaded' })
+  await page.goto('/mes/receipts?workOrderId=WO-001&skuId=sku-1&quantity=5', {
+    waitUntil: 'domcontentloaded',
+  })
   await expect(page.getByRole('dialog')).toBeVisible({ timeout: 15_000 })
 })
 
 test('在制跟踪：在制进度渲染、查看工单就地速览不跳页', async ({ page }) => {
   // 在制数据来自共享 mock（WO-001：已产 5 / 计划 10）。
   await page.goto('/mes/wip', { waitUntil: 'domcontentloaded' })
-  await expect(page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '在制跟踪' })).toBeVisible({ timeout: 15_000 })
+  await expect(
+    page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '在制跟踪' }),
+  ).toBeVisible({ timeout: 15_000 })
   // 在制进度可读（已产 5）。
   await expect(page.getByText(/已产\s*5/)).toBeVisible({ timeout: 15_000 })
   // 点工单号（WO-001）→ 就地弹出「工单速览」，URL 不变（不跳页、不打断操作）。
   await page.getByRole('button', { name: 'WO-001' }).first().click()
-  await expect(page.getByRole('dialog').filter({ hasText: '工单速览' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('dialog').filter({ hasText: '工单速览' })).toBeVisible({
+    timeout: 15_000,
+  })
   await expect(page).toHaveURL(/\/mes\/wip/)
 })
 
 async function expectHeading(page: Page, path: string, heading: string) {
   await page.goto(path, { waitUntil: 'domcontentloaded' })
   // 慢的 dev 环境 + 连续多页导航，放宽到 15s。
-  await expect(page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: heading })).toBeVisible({ timeout: 15_000 })
+  await expect(
+    page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: heading }),
+  ).toBeVisible({ timeout: 15_000 })
 }
 
 async function seedStoredSession(page: Page) {
@@ -313,8 +367,24 @@ async function routeBusinessConsoleApi(route: Route) {
       route,
       envelope({
         items: [
-          { productionPlanId: 'PLAN-READY', sourceSystem: 'sales', skuId: 'sku-1', plannedQuantity: 10, uomCode: 'EA', readinessStatus: 'Ready', plannedStartUtc: '2026-06-01T08:00:00.000Z', blockingReasons: [] },
-          { productionPlanId: 'PLAN-BLOCKED', sourceSystem: 'forecast', skuId: 'sku-2', plannedQuantity: 5, readinessStatus: 'Blocked', blockingReasons: ['material_shortage'] },
+          {
+            productionPlanId: 'PLAN-READY',
+            sourceSystem: 'sales',
+            skuId: 'sku-1',
+            plannedQuantity: 10,
+            uomCode: 'EA',
+            readinessStatus: 'Ready',
+            plannedStartUtc: '2026-06-01T08:00:00.000Z',
+            blockingReasons: [],
+          },
+          {
+            productionPlanId: 'PLAN-BLOCKED',
+            sourceSystem: 'forecast',
+            skuId: 'sku-2',
+            plannedQuantity: 5,
+            readinessStatus: 'Blocked',
+            blockingReasons: ['material_shortage'],
+          },
         ],
         total: 2,
       }),
@@ -380,7 +450,16 @@ async function routeBusinessConsoleApi(route: Route) {
       route,
       envelope({
         items: [
-          { requestId: 'MIR-001', workOrderId: 'WO-001', materialId: 'mat-1', requestedQuantity: 10, receivedQuantity: 4, status: 'PartiallyReceived', wmsRequestId: 'WMS-OUT-001', requestedAtUtc: '2026-06-01T08:00:00.000Z' },
+          {
+            requestId: 'MIR-001',
+            workOrderId: 'WO-001',
+            materialId: 'mat-1',
+            requestedQuantity: 10,
+            receivedQuantity: 4,
+            status: 'PartiallyReceived',
+            wmsRequestId: 'WMS-OUT-001',
+            requestedAtUtc: '2026-06-01T08:00:00.000Z',
+          },
         ],
         total: 1,
       }),
