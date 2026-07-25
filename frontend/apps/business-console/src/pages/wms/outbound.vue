@@ -21,9 +21,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -264,10 +263,25 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard description="出库单" :value="outboundOrdersTotal" hint="后端返回总数" />
-      <NvSectionCard description="本页未完成" :value="openCount" hint="待拣货/复核/发运" />
-    </NvSectionCards>
+    <NvMetricStrip
+      :cells="[
+        { key: 'total', label: '出库单', value: outboundOrdersTotal, unit: '张' },
+        {
+          key: 'open',
+          label: '待拣货复核发运',
+          value: openCount,
+          unit: '张',
+          valueTone: openCount > 0 ? 'warning' : undefined,
+        },
+        {
+          key: 'completed',
+          label: '已完成',
+          value: outboundOrders.length - openCount,
+          unit: '张',
+          valueTone: 'success',
+        },
+      ]"
+    />
 
     <WmsInventoryContextPanel
       title="出库库存上下文"

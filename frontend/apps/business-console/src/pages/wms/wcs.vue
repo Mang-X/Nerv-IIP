@@ -21,10 +21,10 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricCard,
+  NvMetricStrip,
   NvPageHeader,
   NvRowActions,
-  NvSectionCard,
-  NvSectionCards,
   NvStatusBadge,
   NvToolbar,
   toast,
@@ -235,10 +235,43 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard description="WCS 任务" :value="wcsTasksTotal" hint="后端返回总数" />
-      <NvSectionCard description="本页失败任务" :value="failedCount" hint="需人工跟进重试" />
-    </NvSectionCards>
+    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+      <NvMetricStrip
+        :cells="[
+          { key: 'total', label: '设备任务', value: wcsTasksTotal, unit: '条' },
+          {
+            key: 'running',
+            label: '执行中',
+            value: wcsTasks.length - failedCount,
+            unit: '条',
+          },
+          {
+            key: 'failed',
+            label: '执行失败',
+            value: failedCount,
+            unit: '条',
+            valueTone: failedCount > 0 ? 'danger' : undefined,
+          },
+        ]"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="执行失败"
+        :value="failedCount"
+        unit="条"
+        :tone="failedCount > 0 ? 'danger' : 'neutral'"
+        :status="
+          failedCount > 0
+            ? { label: '需人工跟进', tone: 'danger' }
+            : { label: '运行正常', tone: 'success' }
+        "
+        :foot-start="
+          failedCount > 0
+            ? '失败任务不会自动重试，需要在设备侧确认后重新下发。'
+            : '本页设备任务都在正常执行。'
+        "
+      />
+    </div>
 
     <NvToolbar :show-search="false">
       <template #filters>

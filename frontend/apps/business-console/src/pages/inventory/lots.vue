@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleInventoryAvailabilityLineResponse } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricSegment, NvMetricStripCell } from '@nerv-iip/ui'
 import InventoryExpiryStatusBadge from '@/components/inventory/InventoryExpiryStatusBadge.vue'
 import InventoryExpirySummaryCards from '@/components/inventory/InventoryExpirySummaryCards.vue'
 import { useInventoryAvailability } from '@/composables/useBusinessInventory'
@@ -18,10 +18,10 @@ import {
   NvButton,
   NvDataTable,
   NvInput,
+  NvMetricRing,
+  NvMetricStrip,
   NvPageHeader,
   NvPagination,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -133,7 +133,7 @@ const tableEmptyMessage = computed(() => {
   if (nearExpiryOnly.value && expiryAlertsError.value) return '效期预警加载失败，请稍后重试。'
   if (nearExpiryOnly.value) return '当前范围没有已过期或未来30天内到期的批次。'
   if (availabilityError.value) return '库存批次加载失败，请稍后重试。'
-  return '输入 SKU、单位和工厂后查询批次、序列号和预留信息。'
+  return '先填物料、单位和工厂，再查这批货的批次、序列号和预留占用。'
 })
 const onHandQuantity = computed(() => availability.value?.onHandQuantity ?? 0)
 const reservedQuantity = computed(
@@ -151,39 +151,43 @@ const lotCount = computed(
 const serialCount = computed(
   () => new Set(availabilityLines.value.map((line) => line.serialNo).filter(Boolean)).size,
 )
+// 可用 + 预留 + 冻结 = 现存量，是真正的构成关系，所以用环形卡。
+const stockSegments = computed<NvMetricSegment[]>(() => [
+  { key: 'available', label: '可用', value: availableQuantity.value, tone: 'success' },
+  { key: 'reserved', label: '预留', value: reservedQuantity.value, tone: 'warning' },
+  { key: 'frozen', label: '冻结/其他', value: blockedQuantity.value, tone: 'danger' },
+])
+// 批次与序列号是「有多少个可追溯单位」，与数量不同量纲，单独一条 Strip。
+const traceCells = computed<NvMetricStripCell[]>(() => [
+  { key: 'lots', label: '批次数', value: lotCount.value, unit: '个' },
+  { key: 'serials', label: '序列号数', value: serialCount.value, unit: '个' },
+  {
+    key: 'lines',
+    label: '库存行',
+    value: availabilityLines.value.length,
+    unit: '行',
+    meta: filters.uomCode ? `计量单位 ${filters.uomCode}` : undefined,
+  },
+])
 
 type Line = BusinessConsoleInventoryAvailabilityLineResponse
 type DisplayLine = InventoryExpiryDisplayLine
+/**
+ * 主要列只留下仓管据以决策的字段；单位、序列号、生产日期、保质期、效期来源、
+ * 货主收进对应单元格的第二行，避免十七列表格逼出横向滚动。
+ */
 const columns: NvDataTableColumn<DisplayLine>[] = [
-  { key: 'skuCode', header: 'SKU', accessor: (r) => (r.skuCode ?? filters.skuCode) || '—' },
-  { key: 'uomCode', header: '单位', accessor: (r) => (r.uomCode ?? filters.uomCode) || '—' },
   { key: 'lotNo', header: '批次', cellClass: 'font-medium', accessor: (r) => r.lotNo ?? '无批次' },
-  { key: 'serialNo', header: '序列号', accessor: (r) => r.serialNo ?? '无序列号' },
-  {
-    key: 'productionDate',
-    header: '生产日期',
-    accessor: (r) => formatInventoryExpiryDate(r.productionDate),
-  },
+  { key: 'skuCode', header: '物料', accessor: (r) => (r.skuCode ?? filters.skuCode) || '—' },
   {
     key: 'expiryDate',
     header: '效期',
     headerTitle: 'FEFO：预留与拣货建议优先选择更早到期的批次。',
     accessor: (r) => formatInventoryExpiryDate(r.expiryDate),
   },
-  {
-    key: 'shelfLife',
-    header: '保质期',
-    accessor: (r) => formatInventoryShelfLife(r.shelfLifeDays),
-  },
-  {
-    key: 'expirySource',
-    header: '效期来源',
-    accessor: (r) => formatInventoryExpirySource(r.expiryDateSource),
-  },
   { key: 'expiryStatus', header: '效期状态' },
   { key: 'locationCode', header: '库位', width: 'w-28', accessor: (r) => r.locationCode ?? '无' },
   { key: 'qualityStatus', header: '质量状态', width: 'w-28' },
-  { key: 'owner', header: '货主', accessor: (r) => r.ownerId ?? r.ownerType ?? '无' },
   { key: 'onHandQuantity', header: '现存量', align: 'end', width: 'w-24' },
   { key: 'reservedQuantity', header: '预留量', align: 'end', width: 'w-24' },
   { key: 'availableQuantity', header: '可用量', align: 'end', width: 'w-24' },
@@ -233,7 +237,7 @@ function lineBlockedQuantity(line: DisplayLine) {
 
 function movementBlockReason(line: DisplayLine) {
   if (line.movementAllowed === true) return ''
-  return line.movementBlockReason ?? '后端未提供移动禁用原因，请稍后重试或联系管理员。'
+  return line.movementBlockReason ?? '该库存行暂不能发起移动，请稍后重试或联系管理员。'
 }
 
 function sumQuantity(lines: Line[], key: 'reservedQuantity') {
@@ -295,20 +299,15 @@ async function refreshCurrentView() {
     </NvPageHeader>
 
     <InventoryExpirySummaryCards v-if="nearExpiryOnly" :summary="expirySummary" />
-    <NvSectionCards v-else :columns="4">
-      <NvSectionCard description="批次数" :value="lotCount" hint="来自可用量明细" />
-      <NvSectionCard description="序列号数" :value="serialCount" hint="来自可用量明细" />
-      <NvSectionCard
-        description="预留量"
-        :value="formatQuantity(reservedQuantity)"
-        :hint="filters.uomCode"
+    <div v-else class="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+      <NvMetricRing
+        label="现存量构成"
+        :value="formatQuantity(onHandQuantity)"
+        :center-caption="filters.uomCode ? `现存量 · ${filters.uomCode}` : '现存量'"
+        :segments="stockSegments"
       />
-      <NvSectionCard
-        description="冻结/其他"
-        :value="formatQuantity(blockedQuantity)"
-        hint="按现存量减可用量和预留量推导"
-      />
-    </NvSectionCards>
+      <NvMetricStrip :cells="traceCells" />
+    </div>
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -367,6 +366,38 @@ async function refreshCurrentView() {
       :pagination="false"
       :empty-message="tableEmptyMessage"
     >
+      <template #cell-lotNo="{ row }">
+        <div class="flex flex-col gap-0.5">
+          <span>{{ row.lotNo ?? '无批次' }}</span>
+          <span class="text-xs text-muted-foreground">{{ row.serialNo ?? '无序列号' }}</span>
+        </div>
+      </template>
+      <template #cell-skuCode="{ row }">
+        <div class="flex flex-col gap-0.5">
+          <span>{{ (row.skuCode ?? filters.skuCode) || '—' }}</span>
+          <span class="text-xs text-muted-foreground"
+            >单位 {{ (row.uomCode ?? filters.uomCode) || '—' }}</span
+          >
+        </div>
+      </template>
+      <template #cell-expiryDate="{ row }">
+        <div class="flex flex-col gap-0.5">
+          <span>{{ formatInventoryExpiryDate(row.expiryDate) }}</span>
+          <span class="text-xs text-muted-foreground">
+            生产 {{ formatInventoryExpiryDate(row.productionDate) }} ·
+            {{ formatInventoryShelfLife(row.shelfLifeDays) }} ·
+            {{ formatInventoryExpirySource(row.expiryDateSource) }}
+          </span>
+        </div>
+      </template>
+      <template #cell-locationCode="{ row }">
+        <div class="flex flex-col gap-0.5">
+          <span>{{ row.locationCode ?? '无' }}</span>
+          <span class="text-xs text-muted-foreground"
+            >货主 {{ row.ownerId ?? row.ownerType ?? '无' }}</span
+          >
+        </div>
+      </template>
       <template #cell-qualityStatus="{ row }">
         <NvStatusBadge :value="row.qualityStatus" />
       </template>

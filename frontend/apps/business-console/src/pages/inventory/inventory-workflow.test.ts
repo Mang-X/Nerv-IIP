@@ -265,7 +265,7 @@ describe('inventory workflow pages', () => {
     expect(wrapper.get('[data-cell="expirySource"]').text()).toBe('系统推导')
     expect(wrapper.text()).toContain('已过期，常规移动需授权放行。')
     expect(wrapper.text()).toContain('同一盘点定位存在多个生产日期或效期，请先缩小到唯一库存台账。')
-    expect(wrapper.text()).toContain('后端未提供移动禁用原因，请稍后重试或联系管理员。')
+    expect(wrapper.text()).toContain('该库存行暂不能发起移动，请稍后重试或联系管理员。')
     expect(
       wrapper
         .findAll('button')
@@ -340,7 +340,7 @@ describe('inventory workflow pages', () => {
     row.countBlockReason = undefined
     await nextTick()
     expect(wrapper.get('[data-operation-block-reason]').text()).toBe(
-      '后端未提供盘点禁用原因，请稍后重试或联系管理员。',
+      '该库存行暂不能创建盘点，请稍后重试或联系管理员。',
     )
   })
 
@@ -369,7 +369,7 @@ describe('inventory workflow pages', () => {
     const disabledWms = wrapper.findAll('button').find((button) => button.text().trim() === 'WMS')
     expect(disabledWms?.attributes()).toHaveProperty('disabled')
     expect(wrapper.get('[data-operation-block-reason]').text()).toBe(
-      '后端未提供移动禁用原因，请稍后重试或联系管理员。',
+      '该库存行暂不能发起移动，请稍后重试或联系管理员。',
     )
 
     await wrapper
