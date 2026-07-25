@@ -17,7 +17,7 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
             plan = InspectionPlan.Create(
                 organizationId, environmentId, PlanCode, "operation", "SKU-DEMO-001", null, "WC-CNC-DEMO", null, null);
             plan.AddCharacteristic(
-                "diameter", "Demo diameter", "caliper", "major", true, "each",
+                "diameter", "活塞杆外径", "caliper", "major", true, "each",
                 InspectionCharacteristicTypes.Variable, 50m, 49.5m, 50.5m, "mm", null);
             plan.Activate();
             dbContext.InspectionPlans.Add(plan);

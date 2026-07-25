@@ -16,9 +16,9 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
         var site = await dbContext.Sites.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == "SITE-001", cancellationToken);
         if (site is null)
         {
-            dbContext.Sites.Add(Site.Create(organizationId, environmentId, "SITE-001", "Leader Demo Site", "Asia/Shanghai"));
+            dbContext.Sites.Add(Site.Create(organizationId, environmentId, "SITE-001", "一号工厂", "Asia/Shanghai"));
         }
-        else if (site.Name != "Leader Demo Site" || site.Timezone != "Asia/Shanghai" || site.Disabled)
+        else if (site.Name != "一号工厂" || site.Timezone != "Asia/Shanghai" || site.Disabled)
         {
             throw Collision("SITE-001");
         }
@@ -26,9 +26,9 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
         var line = await dbContext.ProductionLines.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == "LINE-DEMO-01", cancellationToken);
         if (line is null)
         {
-            dbContext.ProductionLines.Add(ProductionLine.Create(organizationId, environmentId, "LINE-DEMO-01", "Leader Demo Line", "SITE-001"));
+            dbContext.ProductionLines.Add(ProductionLine.Create(organizationId, environmentId, "LINE-DEMO-01", "减振器装配一线", "SITE-001"));
         }
-        else if (line.Name != "Leader Demo Line" || line.SiteCode != "SITE-001" || line.WorkshopCode is not null || line.Disabled)
+        else if (line.Name != "减振器装配一线" || line.SiteCode != "SITE-001" || line.WorkshopCode is not null || line.Disabled)
         {
             throw Collision("LINE-DEMO-01");
         }
@@ -37,24 +37,24 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
         if (workCenter is null)
         {
             dbContext.WorkCenters.Add(WorkCenter.CreateResource(
-                organizationId, environmentId, "WC-CNC-DEMO", "Leader Demo CNC Work Center", 480, "work-center",
+                organizationId, environmentId, "WC-CNC-DEMO", "CNC 精加工中心", 480, "work-center",
                 "SITE-001", "LINE-DEMO-01", "STANDARD", "minute", true));
         }
-        else if (workCenter.Name != "Leader Demo CNC Work Center" || workCenter.CapacityMinutesPerDay != 480 ||
+        else if (workCenter.Name != "CNC 精加工中心" || workCenter.CapacityMinutesPerDay != 480 ||
                  workCenter.PlantCode != "SITE-001" || workCenter.LineCode != "LINE-DEMO-01" || workCenter.Disabled)
         {
             throw Collision("WC-CNC-DEMO");
         }
 
-        await SeedSkuAsync(organizationId, environmentId, "SKU-DEMO-001", "Leader Demo Finished Product", "finished-goods", cancellationToken);
-        await SeedSkuAsync(organizationId, environmentId, "SKU-DEMO-RM-001", "Leader Demo Raw Material", "raw-material", cancellationToken);
+        await SeedSkuAsync(organizationId, environmentId, "SKU-DEMO-001", "汽车减振器总成", "finished-goods", cancellationToken);
+        await SeedSkuAsync(organizationId, environmentId, "SKU-DEMO-RM-001", "活塞杆棒料", "raw-material", cancellationToken);
 
         var customer = await dbContext.BusinessPartners.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == "CUST-DEMO-001", cancellationToken);
         if (customer is null)
         {
-            dbContext.BusinessPartners.Add(BusinessPartner.Create(organizationId, environmentId, "CUST-DEMO-001", "customer", "Leader Demo Customer"));
+            dbContext.BusinessPartners.Add(BusinessPartner.Create(organizationId, environmentId, "CUST-DEMO-001", "customer", "华东汽车零部件采购中心"));
         }
-        else if (customer.Name != "Leader Demo Customer" || customer.PartnerType != "customer" || customer.Disabled)
+        else if (customer.Name != "华东汽车零部件采购中心" || customer.PartnerType != "customer" || customer.Disabled)
         {
             throw Collision("CUST-DEMO-001");
         }
@@ -63,10 +63,10 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
         if (device is null)
         {
             dbContext.DeviceAssets.Add(DeviceAsset.RegisterCapability(
-                organizationId, environmentId, "DEV-CNC-DEMO", "Leader Demo CNC", "LINE-DEMO-01", "WC-CNC-DEMO",
+                organizationId, environmentId, "DEV-CNC-DEMO", "立式加工中心 VMC-850", "LINE-DEMO-01", "WC-CNC-DEMO",
                 "cnc", "", "", null, null, "", "high", true, true, new Dictionary<string, string>()));
         }
-        else if (device.Model != "Leader Demo CNC" || device.LineCode != "LINE-DEMO-01" || device.WorkCenterCode != "WC-CNC-DEMO" ||
+        else if (device.Model != "立式加工中心 VMC-850" || device.LineCode != "LINE-DEMO-01" || device.WorkCenterCode != "WC-CNC-DEMO" ||
                  !device.Maintainable || !device.TelemetryEnabled || device.Disabled)
         {
             throw Collision("DEV-CNC-DEMO");
