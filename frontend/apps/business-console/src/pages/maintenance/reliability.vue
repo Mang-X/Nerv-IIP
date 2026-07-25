@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import type { BusinessConsoleMaintenanceReliabilitySummaryItem } from '@nerv-iip/api-client'
-import type { LineSeries, NvDataTableColumn } from '@nerv-iip/ui'
+import type {
+  DateRange,
+  LineSeries,
+  NvDataTableColumn,
+  NvMetricSegment,
+  NvMetricStripCell,
+} from '@nerv-iip/ui'
 import {
   useMaintenanceInspections,
   useMaintenanceMeasurementTrend,
@@ -17,13 +23,14 @@ import {
   NvButton,
   NvCombobox,
   NvDataTable,
+  NvDateRangePicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
-  NvInput,
   NvLineChart,
+  NvMetricCard,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
   NvSectionCards,
 } from '@nerv-iip/ui'
 import { ActivityIcon, RefreshCwIcon } from '@lucide/vue'
@@ -98,18 +105,52 @@ const summaryErrorMessage = computed(() => formatError(summary.summaryError.valu
 const hasDeviceScope = computed(() => filters.deviceAssetId.trim().length > 0)
 const hasCharacteristic = computed(() => trend.filters.characteristicCode.trim().length > 0)
 
-const windowStartLocal = computed({
-  get: () => toLocalDateTime(filters.windowStartUtc),
-  set: (value: string) => {
-    filters.windowStartUtc = toIsoDateTime(value)
+// 日期控件用本地 YYYY-MM-DD，查询窗口用 ISO 瞬时：开始取当日 00:00，结束取次日 00:00（含尾日整天）。
+const windowRange = computed<DateRange>({
+  get: () => ({
+    end: toDateInput(filters.windowEndUtc),
+    start: toDateInput(filters.windowStartUtc),
+  }),
+  set: (range) => {
+    if (range.start) filters.windowStartUtc = fromDateInput(range.start, 0)
+    if (range.end) filters.windowEndUtc = fromDateInput(range.end, 1)
   },
 })
-const windowEndLocal = computed({
-  get: () => toLocalDateTime(filters.windowEndUtc),
-  set: (value: string) => {
-    filters.windowEndUtc = toIsoDateTime(value)
-  },
+
+// 路由没带设备时，落到设备台账的第一台，页面直接出数而不是停在空态；用户一旦自行改过就不再接管。
+let deviceAutoSelected = initialDeviceAssetId.trim().length > 0
+watch(deviceSuggestions, (suggestions) => {
+  if (deviceAutoSelected || !suggestions.length) return
+  if (filters.deviceAssetId.trim().length > 0) {
+    deviceAutoSelected = true
+    return
+  }
+  deviceAutoSelected = true
+  filters.deviceAssetId = suggestions[0].value
 })
+
+const reliabilityCells = computed<NvMetricStripCell[]>(() => [
+  {
+    key: 'mtbf',
+    label: 'MTBF',
+    value: metricLabel(reliability.value?.mtbfHours, ' 小时'),
+    meta: reliability.value?.mtbfRuntimeHasSamples ? '按运行样本计算' : '当前窗口无运行样本',
+  },
+  {
+    key: 'mttr',
+    label: 'MTTR',
+    value: metricLabel(reliability.value?.mttrMinutes, ' 分钟'),
+    meta: '已完成维修的平均耗时',
+  },
+])
+// 故障与完成维修是同一批维护事件的两个互斥去向，相加等于窗口内维护事件总数。
+const maintenanceEventSegments = computed<NvMetricSegment[]>(() => [
+  { key: 'failure', label: '故障', value: reliability.value?.failureCount ?? 0, tone: 'danger' },
+  { key: 'repair', label: '完成维修', value: reliability.value?.repairCount ?? 0, tone: 'success' },
+])
+const maintenanceEventTotal = computed(
+  () => (reliability.value?.failureCount ?? 0) + (reliability.value?.repairCount ?? 0),
+)
 
 // 趋势图数据：测量值时序；上下限齐备时叠加为参考线（缺失则不画，避免 0 误导）。
 const trendChartData = computed(() =>
@@ -215,15 +256,16 @@ function shortDateTime(value?: string | null) {
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
 }
-function toLocalDateTime(value: string) {
+function toDateInput(value: string) {
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset())
-  return date.toISOString().slice(0, 16)
+  if (Number.isNaN(date.getTime())) return null
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 10)
 }
-function toIsoDateTime(value: string) {
-  const date = value ? new Date(value) : new Date()
-  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString()
+function fromDateInput(value: string, dayOffset: number) {
+  const [y, m, d] = value.split('-').map(Number)
+  if (!y || !m || !d) return new Date().toISOString()
+  return new Date(y, m - 1, d + dayOffset).toISOString()
 }
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
@@ -268,7 +310,7 @@ function refreshAll() {
     </NvPageHeader>
 
     <NvFieldGroup
-      class="grid gap-3 rounded-lg border bg-card p-4 md:grid-cols-[minmax(220px,1fr)_220px_220px]"
+      class="grid gap-3 rounded-lg border bg-card p-4 md:grid-cols-[minmax(220px,1fr)_auto]"
     >
       <NvField>
         <NvFieldLabel for="rel-device">设备</NvFieldLabel>
@@ -280,12 +322,8 @@ function refreshAll() {
         />
       </NvField>
       <NvField>
-        <NvFieldLabel for="rel-start">窗口开始</NvFieldLabel>
-        <NvInput id="rel-start" v-model="windowStartLocal" type="datetime-local" />
-      </NvField>
-      <NvField>
-        <NvFieldLabel for="rel-end">窗口结束</NvFieldLabel>
-        <NvInput id="rel-end" v-model="windowEndLocal" type="datetime-local" />
+        <NvFieldLabel for="rel-window">统计窗口</NvFieldLabel>
+        <NvDateRangePicker id="rel-window" v-model="windowRange" placeholder="选择统计窗口" />
       </NvField>
     </NvFieldGroup>
 
@@ -299,26 +337,14 @@ function refreshAll() {
     </div>
 
     <template v-else>
-      <NvSectionCards :columns="4">
-        <NvSectionCard
-          description="MTBF"
-          :value="metricLabel(reliability?.mtbfHours, ' 小时')"
-          :hint="reliability?.mtbfRuntimeHasSamples ? '按运行样本计算' : '当前窗口无运行样本'"
-        />
-        <NvSectionCard
-          description="MTTR"
-          :value="metricLabel(reliability?.mttrMinutes, ' 分钟')"
-          hint="维修完成样本均值"
-        />
-        <NvSectionCard
-          description="故障次数"
-          :value="reliability?.failureCount ?? 0"
-          hint="窗口内维护故障"
-        />
-        <NvSectionCard
-          description="修复次数"
-          :value="reliability?.repairCount ?? 0"
-          hint="窗口内完成维修"
+      <NvSectionCards :columns="2">
+        <NvMetricStrip :cells="reliabilityCells" />
+        <NvMetricCard
+          variant="breakdown"
+          label="窗口内维护事件"
+          :value="maintenanceEventTotal"
+          unit=" 次"
+          :segments="maintenanceEventSegments"
         />
       </NvSectionCards>
 

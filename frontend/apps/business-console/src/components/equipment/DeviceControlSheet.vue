@@ -257,7 +257,7 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
       <NvSheetHeader class="border-b">
         <NvSheetTitle>设备控制 · {{ deviceAssetId }}</NvSheetTitle>
         <NvSheetDescription>
-          命令通过设备绑定的连接器通道下发，需 Ops 审批门禁·全程审计。
+          命令通过设备绑定的连接器通道下发，需运维审批·全程审计。
         </NvSheetDescription>
       </NvSheetHeader>
 
@@ -456,7 +456,7 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
         >
           <ShieldAlertIcon class="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
           <p class="text-foreground">
-            该命令需经 <span class="font-semibold">Ops 审批门禁</span>，通过后才会下发到设备，<span
+            该命令需经 <span class="font-semibold">运维审批</span>，通过后才会下发到设备，<span
               class="font-semibold"
               >全程审计</span
             >。
@@ -533,7 +533,7 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
           >
             <span class="text-muted-foreground">设备回执码</span>
             <span class="text-xs text-muted-foreground"
-              >命令失败，但暂未获取到设备回执明细（Ops 回执尚未回传）。</span
+              >命令失败，设备回执尚未返回，请稍后查看命令台账。</span
             >
           </div>
         </div>
