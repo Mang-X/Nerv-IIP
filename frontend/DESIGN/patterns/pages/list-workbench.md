@@ -47,7 +47,7 @@ Business Console 列表页的规范原型——**所有** stage-B 列表/工作�
 
 - [ ] 用 `BusinessLayout` + `NvPageHeader` + `NvToolbar` + `NvDataTable`
       （`NvSectionCards` 仅当有真语义 KPI）。
-- [ ] 无遗留 per-app 区块（`BusinessPageHeader`/`BusinessContextBar`/`BusinessMetricCell`/
+- [ ] 无遗留 per-app 区块（`BusinessPageHeader`/`BusinessContextBar`/
       `BusinessTablePagination`/`BusinessRowActions`/`BusinessStatusBadge`/
       `BusinessEmptyState`/`BusinessFormStatus`）。
 - [ ] 页内无裸 `<Table>`/`<TableHeader>` 拼装——表格走 `NvDataTable`。

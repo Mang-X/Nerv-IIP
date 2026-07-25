@@ -255,7 +255,7 @@ function firstQuery(value: unknown) {
           :uom-code="row.uomCode"
           :site-code="row.siteCode"
           :location-code="row.fromLocationCode"
-          gap-message="后端缺口：上架任务列表暂未返回逐行可用量、批次/序列号、冻结与预留明细；可带当前任务上下文到 Inventory 查看。"
+          gap-message="本页暂不显示逐行可用量与批次、序列号、冻结预留明细，请到库存可用量或批次与预留页查看。"
         />
       </template>
     </NvDataTable>

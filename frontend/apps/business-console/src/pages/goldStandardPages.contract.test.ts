@@ -82,7 +82,6 @@ const REQUIRED_BLOCKS = ['NvPageHeader', 'NvDataTable']
 const LEGACY_BLOCKS = [
   'BusinessPageHeader',
   'BusinessContextBar',
-  'BusinessMetricCell',
   'BusinessTablePagination',
   'BusinessRowActions',
   'BusinessStatusBadge',

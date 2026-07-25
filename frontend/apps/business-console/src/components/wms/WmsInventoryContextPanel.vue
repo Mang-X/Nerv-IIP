@@ -20,7 +20,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   compact: false,
   context: undefined,
-  gapMessage: '后端缺口：当前 WMS 列表未返回逐行可用量、批次/序列号、冻结和预留明细；可带当前业务上下文到 Inventory 查看。',
+  gapMessage: '本页暂不显示逐行可用量与批次、序列号、冻结预留明细，请到库存可用量或批次与预留页查看。',
   locationCode: '',
   lotNo: '',
   serialNo: '',

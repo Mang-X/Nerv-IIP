@@ -318,7 +318,7 @@ function formatError(error: unknown) {
           source-workflow="inventory.count"
           source-label="扫码记录"
           :source-document-id="row.countNo ?? row.countExecutionId"
-          gap-message="后端缺口：盘点执行列表未返回冻结、预留和批次/序列号明细；可带盘点范围到 Inventory 查看账面上下文。"
+          gap-message="本页暂不显示冻结、预留与批次序列号明细，请到库存批次与预留页按盘点范围查看账面数据。"
         />
       </template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>

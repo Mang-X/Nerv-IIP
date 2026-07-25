@@ -313,7 +313,7 @@ function formatError(error: unknown) {
 
     <WmsInventoryContextPanel
       :context="inventoryContext"
-      gap-message="后端缺口：收货入库只有在物料、单位、工厂等库存范围足够时才返回 Inventory 可用量上下文；未返回时不在 WMS 页面伪造库存余额。"
+      gap-message="本页暂不显示该收货行的库存可用量，请到库存可用量页按物料与工厂查看。"
     />
 
     <NvToolbar :show-search="false">

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import InventoryExpiryStatusBadge from '@/components/inventory/InventoryExpiryStatusBadge.vue'
 import InventoryExpirySummaryCards from '@/components/inventory/InventoryExpirySummaryCards.vue'
 import { useInventoryAvailability } from '@/composables/useBusinessInventory'
@@ -19,11 +19,10 @@ import {
   NvDropdownMenuItem,
   NvDropdownMenuSeparator,
   NvInput,
+  NvMetricRing,
   NvPageHeader,
   NvPagination,
   NvRowActions,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -97,6 +96,12 @@ const reservedQuantity = computed(() => availability.value?.reservedQuantity ?? 
 const frozenQuantity = computed(() =>
   Math.max(onHandQuantity.value - availableQuantity.value - reservedQuantity.value, 0),
 )
+// 可用 + 预留 + 冻结 = 现存量，是真正的构成关系，所以用环形卡。
+const stockSegments = computed<NvMetricSegment[]>(() => [
+  { key: 'available', label: '可用', value: availableQuantity.value, tone: 'success' },
+  { key: 'reserved', label: '预留', value: reservedQuantity.value, tone: 'warning' },
+  { key: 'frozen', label: '冻结/其他', value: frozenQuantity.value, tone: 'danger' },
+])
 
 const qualityStatusOptions = [
   { label: '全部状态', value: 'all' },
@@ -268,28 +273,14 @@ async function refreshCurrentView() {
     </NvPageHeader>
 
     <InventoryExpirySummaryCards v-if="nearExpiryOnly" :summary="expirySummary" />
-    <NvSectionCards v-else :columns="4">
-      <NvSectionCard
-        description="现存量"
-        :value="formatQuantity(onHandQuantity)"
-        :hint="filters.uomCode"
-      />
-      <NvSectionCard
-        description="可用量"
-        :value="formatQuantity(availableQuantity)"
-        :hint="filters.uomCode"
-      />
-      <NvSectionCard
-        description="预留量"
-        :value="formatQuantity(reservedQuantity)"
-        hint="已被占用"
-      />
-      <NvSectionCard
-        description="冻结/其他"
-        :value="formatQuantity(frozenQuantity)"
-        hint="按返回数量推导"
-      />
-    </NvSectionCards>
+    <NvMetricRing
+      v-else
+      class="lg:max-w-md"
+      label="现存量构成"
+      :value="formatQuantity(onHandQuantity)"
+      :center-caption="filters.uomCode ? `现存量 · ${filters.uomCode}` : '现存量'"
+      :segments="stockSegments"
+    />
 
     <NvToolbar :show-search="false">
       <template #filters>

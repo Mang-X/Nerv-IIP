@@ -128,7 +128,8 @@ describe('WMS picking route context', () => {
     expect(wrapper.text()).toContain('SKU-001')
     expect(wrapper.text()).toContain('A-01')
     expect(wrapper.text()).toContain('OB-001')
-    expect(wrapper.text()).toContain('后端缺口')
+    expect(wrapper.text()).toContain('请到库存可用量或批次与预留页查看')
+    expect(wrapper.text()).not.toContain('后端缺口')
 
     const links = wrapper.findAll('[data-router-link]').map((link) => link.attributes('data-to') ?? '')
     expect(links.some((to) => to.includes('/inventory/availability') && to.includes('SKU-001') && to.includes('A-01'))).toBe(true)

@@ -209,10 +209,6 @@ const businessStubs = {
   BusinessLayout: {
     template: '<main><slot /></main>',
   },
-  BusinessMetricCell: {
-    props: ['label', 'value', 'detail'],
-    template: '<div>{{ label }} {{ value }} {{ detail }}</div>',
-  },
   BusinessPageHeader: {
     props: ['domain', 'title', 'kicker', 'summary'],
     template: '<header><h1>{{ title }}</h1><p>{{ summary }}</p><slot name="actions" /></header>',

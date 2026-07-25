@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricFacet } from '@nerv-iip/ui'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
 import {
   useQualityInspectionTasks,
@@ -13,9 +13,8 @@ import {
   NvField,
   NvFieldLabel,
   NvInput,
+  NvMetricCard,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
 } from '@nerv-iip/ui'
 import { AlertCircleIcon, ArrowRightIcon, ClipboardCheckIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
@@ -56,8 +55,22 @@ const today = new Date()
 const overdueCount = computed(
   () => tasks.value.filter((task) => isInspectionTaskOverdue(task, today)).length,
 )
-const completedToday = computed(() => '—')
-const completedTodayHint = '当前数据暂不提供完成时间，今日完成数暂不展示'
+/** 待检堆在哪个环节，是班组长决定先派谁去检的依据。 */
+const sourceFacets = computed<NvMetricFacet[]>(() =>
+  sourceTabs
+    .filter((tab) => tab.value !== 'all')
+    .map((tab) => ({
+      key: tab.value,
+      label: tab.label,
+      value: tasks.value.filter((task) => task.sourceType === tab.value).length,
+    })),
+)
+/** 按时率＝已加载待检任务里未超期的占比，目标 100%。 */
+const onTimeRate = computed(() => {
+  const loaded = tasks.value.length
+  if (loaded === 0) return 100
+  return Math.round(((loaded - overdueCount.value) / loaded) * 100)
+})
 const locatorMessage = computed(() => {
   if (filters.sourceDocumentNo) return `正在定位收货单 ${filters.sourceDocumentNo} 的待检任务`
   if (filters.inspectionTaskId) return `正在定位待检任务 ${filters.inspectionTaskId}`
@@ -201,15 +214,43 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="3">
-      <NvSectionCard description="待检总量" :value="total" hint="来自当前业务范围的待检任务总数" />
-      <NvSectionCard
-        description="超期任务"
-        :value="overdueCount"
-        hint="当前返回页中已超过检验时限的任务"
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <NvMetricCard
+        variant="facets"
+        label="待检任务"
+        :value="total"
+        unit="个"
+        :facets="sourceFacets"
       />
-      <NvSectionCard description="今日完成" :value="completedToday" :hint="completedTodayHint" />
-    </NvSectionCards>
+      <NvMetricCard
+        variant="alert"
+        label="已超期"
+        :value="overdueCount"
+        unit="个"
+        :tone="overdueCount > 0 ? 'danger' : 'neutral'"
+        :status="
+          overdueCount > 0
+            ? { label: '需优先处理', tone: 'danger' }
+            : { label: '无超期', tone: 'success' }
+        "
+        :foot-start="
+          overdueCount > 0
+            ? '超期任务已在下方列表置顶，先检完再看其余任务。'
+            : '当前待检任务都还在检验时限内。'
+        "
+      />
+      <NvMetricCard
+        variant="target"
+        label="时限内完成率"
+        :value="onTimeRate"
+        unit="%"
+        :progress="onTimeRate"
+        target-label="目标 100%"
+        :progress-tone="onTimeRate >= 100 ? 'success' : onTimeRate >= 90 ? 'warning' : 'danger'"
+        :foot-start="`${overdueCount} 个已超期`"
+        :foot-end="`共 ${tasks.length} 个在检`"
+      />
+    </div>
 
     <div class="grid gap-4 rounded-xl border bg-card p-4 shadow-sm">
       <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
