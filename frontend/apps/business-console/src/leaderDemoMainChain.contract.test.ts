@@ -270,6 +270,10 @@ describe('leader demo main-chain public prerequisites', () => {
   })
 
   it('polls exact finished-goods Inventory availability with a bounded public wait', () => {
+    const producedLotFlow = sourceBetween(
+      'let producedLotEvidence: Awaited<ReturnType<typeof pollRows>> | null = null',
+      "let receiptRequestNo = ''",
+    )
     const receiptFlow = sourceBetween("let receiptRequestNo = ''", "let wmsOutboundId = ''")
     const finishedGoodsReceiptRequest = sourceBetween(
       'const receipt = await call(',
@@ -292,7 +296,8 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(availabilityCall).toContain('costingConvergenceTimeoutMs')
     expect(receiptFlow).toContain('poll: availability.poll')
     expect(receiptFlow).not.toMatch(/\(\s*\)\s*=>\s*false/)
-    expect(receiptFlow).not.toMatch(/pollRows\([\s\S]*?producedLotNo[\s\S]*?,\s*1,?\s*\)/)
+    expect(producedLotFlow).not.toMatch(/\(\s*\)\s*=>\s*false/)
+    expect(producedLotFlow).not.toMatch(/pollRows\([\s\S]*?producedLotNo[\s\S]*?,\s*1,?\s*\)/)
   })
 
   it('keeps the last public request, correlation, and response when bounded polling times out', () => {
@@ -394,7 +399,7 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(receiptFlow).toContain('poll: inventoryLink.poll')
     const inventoryLinkEvidence = sourceBetween(
       "node: 'inventory-produced-lot-fulfillment-lookup'",
-      "markFailure('inventory-produced-lot-fulfillment-lookup', error)",
+      "'inventory-link-and-cost-verification',",
     )
     expect(inventoryLinkEvidence).toContain("automationMode: 'automatic'")
     expect(inventoryLinkEvidence).toContain('responsibilityIssue: null')
@@ -409,6 +414,77 @@ describe('leader demo main-chain public prerequisites', () => {
       "entry.node === 'inventory-produced-lot-fulfillment-lookup'",
     )
     expect(finalAcceptance).not.toContain('#972')
+  })
+
+  it('proves the authoritative MES produced lot through the public work-order facade', () => {
+    const reportFlow = sourceBetween(
+      "let productionReportId = ''",
+      'if (productionReportId && operationTaskId && inspectionPlanId)',
+    )
+    const receiptFlow = sourceBetween(
+      'let producedLotEvidence: Awaited<ReturnType<typeof pollRows>> | null = null',
+      "let wmsOutboundId = ''",
+    )
+
+    expect(reportFlow).toContain("let productionReportNo = ''")
+    expect(reportFlow).toContain('productionReportNo = textOf(reportData.reportNo)')
+    expect(reportFlow).toContain('if (!productionReportId)')
+    expect(reportFlow).toContain('did not include a productionReportId')
+    expect(reportFlow).toContain('if (!productionReportNo)')
+    expect(reportFlow).toContain('did not include a reportNo')
+    expect(reportFlow).toContain('if (reportReplayId !== productionReportId)')
+    expect(receiptFlow).toContain('producedLotEvidence = await pollRows(')
+    expect(receiptFlow).toContain(
+      '/mes/work-orders/${encodeURIComponent(workOrderId)}/produced-lots`',
+    )
+    expect(receiptFlow).toContain('textOf(row.producedLotNo) === producedLotNo')
+    expect(receiptFlow).toContain('textOf(row.reportNo) === productionReportNo')
+    expect(receiptFlow).toContain('textOf(row.operationTaskId) === operationTaskId')
+    expect(receiptFlow).toContain('Number(row.quantity ?? 0) === finishedGoodsQuantity')
+    expect(receiptFlow).toContain('Number(row.remainingQuantity ?? 0) === finishedGoodsQuantity')
+    expect(
+      receiptFlow.indexOf('/mes/work-orders/${encodeURIComponent(workOrderId)}/produced-lots`'),
+    ).toBeLessThan(
+      receiptFlow.indexOf("'/api/business-console/v1/mes/finished-goods-receipt-requests'"),
+    )
+    const inventoryLinkEvidence = sourceBetween(
+      "node: 'inventory-produced-lot-fulfillment-lookup'",
+      "'inventory-link-and-cost-verification',",
+    )
+    expect(inventoryLinkEvidence).toContain('producedLotRequest: producedLotEvidence.call.summary')
+    expect(inventoryLinkEvidence).toContain('mesProducedLot: publicJson(producedLotEvidence.match)')
+    expect(receiptFlow).toContain("'mes-produced-lot-facade-lookup',")
+    expect(receiptFlow).toContain("'inventory-link-and-cost-verification',")
+  })
+
+  it('proves the receivable through the exact public by-source facade', () => {
+    const financeFlow = sourceBetween(
+      'const receivable = await pollRows(',
+      'const voucher = await pollRows(',
+    )
+
+    expect(financeFlow).toContain('const receivableBySource = await call(')
+    expect(financeFlow).toContain("'/api/business-console/v1/erp/finance/receivables/by-source'")
+    expect(financeFlow).toContain('sourceDocumentNo: deliveryOrderNo')
+    expect(scenarioSource).toContain('type RequiredFieldComparison =')
+    expect(scenarioSource).toContain('function assertRequiredFieldsMatch(')
+    expect(financeFlow).toContain('assertRequiredFieldsMatch(')
+    for (const field of [
+      'sourceDocumentNo',
+      'receivableNo',
+      'customerCode',
+      'amount',
+      'openAmount',
+      'currencyCode',
+    ]) {
+      expect(financeFlow).toContain(`name: '${field}'`)
+    }
+    expect(financeFlow).toContain("kind: 'number'")
+    expect(financeFlow).not.toContain('Number(receivableBySourceData.amount ?? 0)')
+    expect(financeFlow).not.toContain('Number(receivableBySourceData.openAmount ?? 0)')
+    expect(financeFlow).toContain('request: receivableBySource.summary')
+    expect(financeFlow).toContain('listMatch: publicJson(receivable.match)')
+    expect(financeFlow).toContain('bySource: publicJson(receivableBySourceData)')
   })
 
   it('completes the run-scoped WMS outbound with the required business context query', () => {
