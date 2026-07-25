@@ -492,7 +492,9 @@ function toIsoFromLocalInput(value: string) {
       <NvTabs v-model="activeTab">
         <NvTabsList>
           <NvTabsTrigger value="tasks">我的任务 ({{ approval.tasksTotal.value }})</NvTabsTrigger>
-          <NvTabsTrigger value="chains">审批中的单据 ({{ approval.chainsTotal.value }})</NvTabsTrigger>
+          <NvTabsTrigger value="chains"
+            >审批中的单据 ({{ approval.chainsTotal.value }})</NvTabsTrigger
+          >
           <NvTabsTrigger value="decisions"
             >决策记录 ({{ approval.decisionsTotal.value }})</NvTabsTrigger
           >

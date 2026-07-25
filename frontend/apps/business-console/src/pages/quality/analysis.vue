@@ -61,7 +61,12 @@ const ncrStatusSegments = computed<NvMetricSegment[]>(() => {
   const { openNcrCount, dispositionedNcrCount, closedNcrCount, sampledNcrCount } = summary.value
   const segments: NvMetricSegment[] = [
     { key: 'open', label: '尚未处置', value: openNcrCount, tone: 'danger' },
-    { key: 'dispositioned', label: '已给出处置结论', value: dispositionedNcrCount, tone: 'warning' },
+    {
+      key: 'dispositioned',
+      label: '已给出处置结论',
+      value: dispositionedNcrCount,
+      tone: 'warning',
+    },
     { key: 'closed', label: '已关闭', value: closedNcrCount, tone: 'success' },
   ]
   const rest = sampledNcrCount - openNcrCount - dispositionedNcrCount - closedNcrCount

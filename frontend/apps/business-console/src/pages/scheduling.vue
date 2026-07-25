@@ -554,7 +554,7 @@ function reasonLabel(reason?: string | null) {
               去排程总览生成方案
             </NvButton>
           </template>
-        >
+          >
           <template #cell-status="{ row }">
             <div class="flex flex-wrap items-center gap-1.5">
               <NvStatusBadge
