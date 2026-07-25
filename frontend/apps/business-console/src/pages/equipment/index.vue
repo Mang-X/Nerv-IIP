@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import {
   describeEquipmentReason,
   equipmentStatusTone,
@@ -13,9 +13,10 @@ import {
   NvDataTable,
   NvDropdownMenuItem,
   NvInput,
+  NvMetricCard,
+  NvMetricRing,
   NvPageHeader,
   NvRowActions,
-  NvSectionCard,
   NvSectionCards,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -52,6 +53,16 @@ const faultCount = computed(
 const alarmCount = computed(() =>
   devices.value.reduce((total, d) => total + (d.activeAlarmCount ?? 0), 0),
 )
+// 设备状态构成：三段互斥且相加等于在册设备数，满足 NvMetricRing 的「部分之和 = 整体」前提。
+// 报警数 / 阻塞窗口数与设备台数不同量纲，另用独立的告警卡表达，不混入同一个环。
+const otherStateCount = computed(() =>
+  Math.max(0, devices.value.length - runningCount.value - faultCount.value),
+)
+const stateSegments = computed<NvMetricSegment[]>(() => [
+  { key: 'running', label: '运行就绪', value: runningCount.value, tone: 'success' },
+  { key: 'fault', label: '异常停机', value: faultCount.value, tone: 'danger' },
+  { key: 'other', label: '其他状态', value: otherStateCount.value, tone: 'neutral' },
+])
 
 type Device = (typeof devices)['value'][number]
 const columns: NvDataTableColumn<Device>[] = [
@@ -129,11 +140,29 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="4">
-      <NvSectionCard description="运行就绪" :value="runningCount" hint="运行 / 就绪 / 空闲" />
-      <NvSectionCard description="异常停机" :value="faultCount" hint="故障 / 停止 / 离线 / 停机" />
-      <NvSectionCard description="未解除报警" :value="alarmCount" hint="设备当前报警" />
-      <NvSectionCard description="阻塞中" :value="activeBlocks.length" hint="影响排程或执行" />
+    <NvSectionCards :columns="3">
+      <NvMetricRing
+        label="设备状态构成"
+        :value="devices.length"
+        center-caption="台设备"
+        :segments="stateSegments"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="未解除报警"
+        :value="alarmCount"
+        :tone="alarmCount > 0 ? 'danger' : 'neutral'"
+        :status="alarmCount > 0 ? { label: '需处理', tone: 'danger' } : undefined"
+        :action="{ label: '查看报警', href: '/equipment/alarms' }"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="阻塞中"
+        :value="activeBlocks.length"
+        :tone="activeBlocks.length > 0 ? 'warning' : 'neutral'"
+        :status="activeBlocks.length > 0 ? { label: '影响排程', tone: 'warning' } : undefined"
+        foot-start="阻塞窗口会占用排程与执行时段"
+      />
     </NvSectionCards>
 
     <NvToolbar :show-search="false">
@@ -157,7 +186,7 @@ function formatError(error: unknown) {
         :loading="overviewPending"
         :searchable="false"
         :column-settings="false"
-        empty-message="暂无设备运行事实。请先在基础数据登记设备资产，或调整上方设备范围后再试。"
+        empty-message="暂无设备运行记录。请先在基础数据登记设备资产，或调整上方设备范围后再试。"
       >
         <template #cell-deviceAssetId="{ row }">
           <RouterLink

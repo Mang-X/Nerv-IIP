@@ -214,12 +214,27 @@ describe('EquipmentHealthCard', () => {
         pending: false,
       },
     })
-    // 头部不得渲染凭空的评分数字与健康结论。
-    expect(wrapper.find('.text-4xl').exists()).toBe(false)
+    // 头部不得渲染凭空的评分数字与健康结论：既不出现评分达成条（target 变体），
+    // 也不出现「命中 0 项风险 / 未命中风险规则」这类等价于「健康」的结论文案。
+    expect(wrapper.find('[data-variant="target"]').exists()).toBe(false)
+    expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('命中 0 项风险')
+    expect(wrapper.text()).not.toContain('未命中风险规则')
     expect(wrapper.text()).toContain('暂无数据')
     expect(wrapper.text()).toContain('历史数据积累中')
     expect(wrapper.text()).toContain('暂不给出健康结论')
+  })
+
+  it('renders the score as a gap-to-100 target card once evidence is available', () => {
+    const wrapper = mount(EquipmentHealthCard, {
+      props: { health: healthFixture({ healthScore: 68, level: 'warning' }), pending: false },
+    })
+
+    const bar = wrapper.find('[role="progressbar"]')
+    expect(bar.exists()).toBe(true)
+    expect(bar.attributes('aria-valuenow')).toBe('68')
+    expect(wrapper.find('[data-variant="target"]').text()).toContain('满分 100')
+    expect(wrapper.text()).toContain('命中 1 项风险')
   })
 
   it('keeps previous health visible during refresh and reports failures without discarding it', async () => {

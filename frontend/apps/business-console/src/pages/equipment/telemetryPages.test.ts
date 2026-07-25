@@ -65,6 +65,45 @@ vi.mock('@nerv-iip/ui', () => ({
     template: '<div>{{ description }} {{ value }} {{ hint }}</div>',
   },
   NvSectionCards: { template: '<section><slot /></section>' },
+  // 指标卡族桩件：保持「标签 空格 值」的可读文本形状，断言可以直接匹配一整段读数。
+  NvDateRangePicker: {
+    props: ['modelValue', 'placeholder'],
+    emits: ['update:modelValue'],
+    template: '<button type="button" data-testid="date-range">{{ placeholder }}</button>',
+  },
+  NvMetricCard: {
+    props: ['label', 'value', 'unit', 'footStart', 'footEnd', 'facets', 'segments', 'status'],
+    template: `
+      <div data-testid="metric-card">
+        {{ label }} {{ value }}{{ unit }}
+        <span v-for="facet in facets ?? []" :key="facet.key">{{ facet.label }} {{ facet.value }}</span>
+        <span v-for="segment in segments ?? []" :key="segment.key">{{ segment.label }} {{ segment.value }}</span>
+        <span v-if="status">{{ status.label }}</span>
+        <span v-if="footStart">{{ footStart }}</span>
+      </div>
+    `,
+  },
+  NvMetricRing: {
+    props: ['label', 'value', 'centerCaption', 'segments'],
+    template: `
+      <div data-testid="metric-ring">
+        {{ label }} {{ value }} {{ centerCaption }}
+        <span v-for="segment in segments ?? []" :key="segment.key">{{ segment.label }} {{ segment.value }}</span>
+      </div>
+    `,
+  },
+  NvMetricStrip: {
+    props: ['cells'],
+    template: `
+      <div data-testid="metric-strip">
+        <span v-for="cell in cells ?? []" :key="cell.key">{{ cell.label }} {{ cell.value }}{{ cell.unit }} {{ cell.meta }}</span>
+      </div>
+    `,
+  },
+  NvTooltip: { template: '<div><slot /></div>' },
+  NvTooltipContent: { template: '<div><slot /></div>' },
+  NvTooltipProvider: { template: '<div><slot /></div>' },
+  NvTooltipTrigger: { template: '<div><slot /></div>' },
   NvTimeline: {
     props: ['items'],
     template:
