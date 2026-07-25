@@ -134,6 +134,7 @@ pnpm -C frontend build
 3. 开发模式启用 `handleHotUpdate(router)`，避免路由文件变化时必须手动刷新。
 4. `typed-router.d.ts` 由官方插件生成并纳入 TypeScript 检查；控制台应用的 tsconfig 必须包含它。
 5. 当页面目录内出现私有 `.vue` 组件目录时，优先通过 `routesFolder.exclude` 排除 `components`、`dialogs`、`drawers`、`fragments`，不重写全局 `filePatterns`。
+6. **禁止 `x.vue` 与同名 `x/` 目录并存**：文件路由会把 `x.vue` 变成 `x/` 下所有页面的**父路由**，父组件没有 `<RouterView/>` 出口时，`/x/child` 命中后仍然渲染父组件，子页在真实应用中完全不可达（曾踩坑：`pages/erp/sales.vue` 吞掉 `sales/orders|quotations|deliveries`，`pages/erp/finance.vue` 吞掉 `finance/ar-ap|vouchers`）。节区首页一律写成 `x/index.vue`；确需布局父路由时，父组件必须显式渲染 `<RouterView/>`。business-console 由 `src/router/route-nesting.contract.test.ts` 兜底。
 
 ### 页面命名建议
 
