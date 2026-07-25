@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpFinanceSummary } from '@/composables/useBusinessErp'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { NvButton, NvDataTable, NvPageHeader, NvSectionCard, NvSectionCards } from '@nerv-iip/ui'
+import { NvButton, NvDataTable, NvMetricStrip, NvPageHeader } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { formatAmount, formatError } from '../shared'
@@ -24,6 +24,23 @@ const rows = computed(() => [
   { item: '已过账凭证', amount: summary.value?.postedVoucherCount ?? 0, scope: '凭证数量' },
 ])
 
+const summaryCells = computed<NvMetricStripCell[]>(() => [
+  {
+    key: 'receivable',
+    label: '应收未结',
+    value: formatAmount(summary.value?.openReceivableAmount),
+  },
+  { key: 'payable', label: '应付未结', value: formatAmount(summary.value?.openPayableAmount) },
+  { key: 'cost', label: '待入账成本', value: formatAmount(summary.value?.costCandidateAmount) },
+  {
+    key: 'vouchers',
+    label: '已过账凭证',
+    value: summary.value?.postedVoucherCount ?? 0,
+    unit: '张',
+    meta: '已记账、可用于对账的凭证',
+  },
+])
+
 const columns: NvDataTableColumn<(typeof rows.value)[number]>[] = [
   { key: 'item', header: '指标', cellClass: 'font-medium' },
   { key: 'scope', header: '范围' },
@@ -36,7 +53,7 @@ const columns: NvDataTableColumn<(typeof rows.value)[number]>[] = [
     <NvPageHeader
       title="财务摘要"
       :breadcrumbs="[{ label: '经营管理' }, { label: '财务' }]"
-      count="当前最小财务读面"
+      count="应收应付概览"
     >
       <template #actions>
         <NvButton
@@ -56,29 +73,9 @@ const columns: NvDataTableColumn<(typeof rows.value)[number]>[] = [
       {{ formatError(summaryError) }}
     </p>
 
-    <NvSectionCards :columns="4">
-      <NvSectionCard
-        description="应收未结"
-        :value="formatAmount(summary?.openReceivableAmount)"
-        hint="客户待收款项"
-      />
-      <NvSectionCard
-        description="应付未结"
-        :value="formatAmount(summary?.openPayableAmount)"
-        hint="供应商待付款项"
-      />
-      <NvSectionCard
-        description="待入账成本"
-        :value="formatAmount(summary?.costCandidateAmount)"
-        hint="待结转成本候选"
-      />
-      <NvSectionCard
-        description="已过账凭证"
-        :value="summary?.postedVoucherCount ?? 0"
-        hint="最小子分类账凭证数"
-      />
-    </NvSectionCards>
+    <NvMetricStrip :cells="summaryCells" />
 
+    <!-- 固定四行的摘要表，翻页器只会是一条永远停在第 1 页的空控件。 -->
     <NvDataTable
       :columns="columns"
       :rows="rows"
@@ -86,6 +83,7 @@ const columns: NvDataTableColumn<(typeof rows.value)[number]>[] = [
       :loading="summaryPending"
       :searchable="false"
       :column-settings="false"
+      :pagination="false"
       empty-message="暂无财务摘要。"
     >
       <template #cell-amount="{ row }">

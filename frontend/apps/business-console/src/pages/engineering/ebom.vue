@@ -3,8 +3,9 @@ import type {
   BusinessConsoleEngineeringBomItem,
   BusinessConsoleReleaseEngineeringBomRequest,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
+import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { useBusinessSkus, useBusinessUoms } from '@/composables/useBusinessMasterData'
 import { useEngineeringEboms } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -24,9 +25,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricCard,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -142,6 +142,18 @@ const publishedCount = computed(
 const draftCount = computed(
   () => eboms.value.filter((b) => (b.status ?? '').toLowerCase() === 'draft').length,
 )
+// 已发布/草稿是同一批版本的两种状态，用一张构成卡表达；已归档等其余状态单列，
+// 未取回的行由 pagedBreakdownSegments 补齐，分段之和恒等于版本总数。
+const ebomSegments = computed(() => {
+  const others = eboms.value.length - publishedCount.value - draftCount.value
+  const segments: NvMetricSegment[] = [
+    { key: 'published', label: '已发布', value: publishedCount.value, tone: 'success' },
+    { key: 'draft', label: '草稿', value: draftCount.value, tone: 'warning' },
+  ]
+  if (others > 0)
+    segments.push({ key: 'others', label: '已归档等', value: others, tone: 'neutral' })
+  return pagedBreakdownSegments(ebomsTotal.value, segments)
+})
 
 const listErrorMessage = computed(() => formatError(ebomsError.value))
 
@@ -483,18 +495,14 @@ function uomLabel(code?: string | null) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard
-        description="已发布 EBOM"
-        :value="publishedCount"
-        hint="可供 MBOM 引用的设计 BOM 版本"
-      />
-      <NvSectionCard
-        description="草稿 EBOM"
-        :value="draftCount"
-        hint="尚未发布、不可被引用的版本"
-      />
-    </NvSectionCards>
+    <NvMetricCard
+      class="sm:max-w-md"
+      variant="breakdown"
+      label="设计 BOM 版本"
+      :value="ebomsTotal"
+      unit="个"
+      :segments="ebomSegments"
+    />
 
     <NvToolbar v-model:search="parentSearch" search-placeholder="按父项物料编码筛选">
       <template #filters>

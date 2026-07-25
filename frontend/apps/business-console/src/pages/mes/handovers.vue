@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import { pagedBreakdownSegments } from '@/composables/mes/mesMetricSegments'
+import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { mesHandoverStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesShiftHandovers } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'

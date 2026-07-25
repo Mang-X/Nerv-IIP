@@ -3,8 +3,9 @@ import type {
   BusinessConsoleCreateEngineeringItemRevisionRequest,
   BusinessConsoleEngineeringItemRevisionItem,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
+import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { useEngineeringItems } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -23,9 +24,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricCard,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -110,6 +110,17 @@ const publishedCount = computed(
 const draftCount = computed(
   () => items.value.filter((i) => (i.status ?? '').toLowerCase() === 'draft').length,
 )
+// 一张构成卡表达「物料修订里有多少已发布、多少还是草稿」；未取回的行补齐，分母守恒。
+const itemSegments = computed(() => {
+  const others = items.value.length - publishedCount.value - draftCount.value
+  const segments: NvMetricSegment[] = [
+    { key: 'published', label: '已发布', value: publishedCount.value, tone: 'success' },
+    { key: 'draft', label: '草稿', value: draftCount.value, tone: 'warning' },
+  ]
+  if (others > 0)
+    segments.push({ key: 'others', label: '已归档等', value: others, tone: 'neutral' })
+  return pagedBreakdownSegments(itemsTotal.value, segments)
+})
 
 // 已知物料编码（用于「在已有物料上派生新修订」下拉）。去重保留首个。
 const knownItemCodes = computed(() => {
@@ -335,14 +346,14 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard
-        description="已发布修订"
-        :value="publishedCount"
-        hint="可供设计 BOM 引用的物料修订"
-      />
-      <NvSectionCard description="草稿修订" :value="draftCount" hint="尚未发布、可继续完善的修订" />
-    </NvSectionCards>
+    <NvMetricCard
+      class="sm:max-w-md"
+      variant="breakdown"
+      label="物料修订"
+      :value="itemsTotal"
+      unit="个"
+      :segments="itemSegments"
+    />
 
     <NvToolbar v-model:search="itemSearch" search-placeholder="按物料编码筛选">
       <template #filters>

@@ -4,8 +4,9 @@ import type {
   BusinessConsoleRoutingItem,
   BusinessConsoleStandardOperationItem,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
+import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import {
   useBusinessMasterDataResources,
   useBusinessSkus,
@@ -28,9 +29,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricCard,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -194,6 +194,17 @@ const publishedCount = computed(
 const draftCount = computed(
   () => routings.value.filter((r) => (r.status ?? '').toLowerCase() === 'draft').length,
 )
+// 一张构成卡表达「工艺路线里有多少已发布、多少还是草稿」；未取回的行补齐，分母守恒。
+const routingSegments = computed(() => {
+  const others = routings.value.length - publishedCount.value - draftCount.value
+  const segments: NvMetricSegment[] = [
+    { key: 'published', label: '已发布', value: publishedCount.value, tone: 'success' },
+    { key: 'draft', label: '草稿', value: draftCount.value, tone: 'warning' },
+  ]
+  if (others > 0)
+    segments.push({ key: 'others', label: '已归档等', value: others, tone: 'neutral' })
+  return pagedBreakdownSegments(routingsTotal.value, segments)
+})
 
 const listErrorMessage = computed(() => formatError(routingsError.value))
 
@@ -590,18 +601,14 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard
-        description="已发布工艺路线"
-        :value="publishedCount"
-        hint="可被生产版本绑定的路线版本"
-      />
-      <NvSectionCard
-        description="草稿工艺路线"
-        :value="draftCount"
-        hint="尚未发布、不可被绑定的版本"
-      />
-    </NvSectionCards>
+    <NvMetricCard
+      class="sm:max-w-md"
+      variant="breakdown"
+      label="工艺路线版本"
+      :value="routingsTotal"
+      unit="个"
+      :segments="routingSegments"
+    />
 
     <NvToolbar v-model:search="skuSearch" search-placeholder="按产出物料编码筛选">
       <template #filters>
