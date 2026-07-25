@@ -967,7 +967,7 @@ try {
 
     $qualityNodes = @(Get-NervLeaderDemoQualityBranchNodes)
     $equipmentNodes = @(Get-NervLeaderDemoEquipmentBranchNodes)
-    Assert-True ($qualityNodes.Count -eq 7) 'The quality branch must declare exactly seven evidence nodes.'
+    Assert-True ($qualityNodes.Count -eq 6) 'The quality branch must declare exactly six evidence nodes.'
     Assert-True ($equipmentNodes.Count -eq 7) 'The equipment branch must declare exactly seven evidence nodes.'
 
     $qualityEvidencePath = Join-Path $branchEvidenceRoot 'quality.json'

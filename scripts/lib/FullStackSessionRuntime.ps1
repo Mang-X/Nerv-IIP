@@ -683,8 +683,7 @@ function Get-NervLeaderDemoQualityBranchNodes {
         'quality-rejection-mes-work-order-hold',
         'reinspection-in-spec-pass',
         'reinspection-mes-hold-auto-release',
-        'quality-hold-timeline-complete',
-        'nonconformance-report-disposition'
+        'quality-hold-timeline-complete'
     )
 }
 

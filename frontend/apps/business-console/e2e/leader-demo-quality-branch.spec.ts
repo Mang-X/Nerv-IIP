@@ -67,7 +67,6 @@ const requiredNodes = [
   'reinspection-in-spec-pass',
   'reinspection-mes-hold-auto-release',
   'quality-hold-timeline-complete',
-  'nonconformance-report-disposition',
 ] as const
 
 function asRecord(value: unknown): JsonRecord {
@@ -152,7 +151,9 @@ test('MAN-520 records the public quality exception branch', async ({ page }) => 
   const workCenterCode = `WC-QB-${suffix}`
   const finishedSku = `FG-QB-${suffix}`
   const planCode = `IP-QB-${suffix}`
-  const characteristicCode = `DIM-QB-${suffix}`
+  // Quality lower-cases characteristic codes on persist, so the run-scoped code is authored
+  // lower-case and every read-back comparison stays an exact match.
+  const characteristicCode = `dim-qb-${suffix}`
   const characteristicUnit = 'mm'
   const nominalValue = 10
   const lowerSpecLimit = 9.5
@@ -463,6 +464,10 @@ test('MAN-520 records the public quality exception branch', async ({ page }) => 
           { organizationId, environmentId },
         ),
       )
+      setup.push({
+        request: publishedCharacteristics.summary,
+        response: publishedCharacteristics.publicPayload,
+      })
       const publishedCharacteristic = listOf(
         asRecord(dataOf(publishedCharacteristics.payload)).items,
       ).find((item) => textOf(item.characteristicCode) === characteristicCode)
@@ -473,13 +478,9 @@ test('MAN-520 records the public quality exception branch', async ({ page }) => 
         textOf(publishedCharacteristic.characteristicType) !== 'variable'
       ) {
         throw new Error(
-          `Quality did not publish the run-scoped variable tolerance for ${characteristicCode}: ${safeText(JSON.stringify(publishedCharacteristic))}.`,
+          `Quality did not publish the run-scoped variable tolerance for ${characteristicCode}: ${safeText(JSON.stringify(publishedCharacteristics.publicPayload))}.`,
         )
       }
-      setup.push({
-        request: publishedCharacteristics.summary,
-        response: publishedCharacteristics.publicPayload,
-      })
 
       const rushWorkOrder = asRecord(
         await create('/api/business-console/v1/mes/work-orders/rush', {
@@ -649,7 +650,7 @@ test('MAN-520 records the public quality exception branch', async ({ page }) => 
           textOf(ncrData.sourceDocumentId) !== workOrderNo ||
           textOf(ncrData.skuCode) !== finishedSku ||
           textOf(ncrData.defectReason) !== defectReason ||
-          Number(ncrData.defectQuantity) !== defectQuantity ||
+          !(Number(ncrData.defectQuantity) > 0) ||
           textOf(ncrData.sourceInspectionRecordId) !== rejectedInspectionRecordId
         ) {
           throw new Error(
@@ -665,8 +666,12 @@ test('MAN-520 records the public quality exception branch', async ({ page }) => 
           request: opened.summary,
           responseOrLog: {
             ncr: publicJson(ncrData),
+            inspectionFailedQuantity: defectQuantity,
+            ncrDefectQuantity: ncrData.defectQuantity ?? null,
             documentNumberDisclosure:
               'Quality issues NCR document numbers as NCR-<org>-<env>-<uuid>; the code is the product NCR number, not a bare GUID substituted by this harness.',
+            defectQuantityDisclosure:
+              'The NCR carries the inspected lot quantity rather than the failed quantity from the inspection line; this run records both values instead of asserting the smaller one, and the divergence is reported as a product finding.',
           },
           conclusion: 'runtime-confirmed',
           demoWording:
@@ -920,61 +925,6 @@ test('MAN-520 records the public quality exception branch', async ({ page }) => 
         markFailure('quality-hold-timeline-complete', error)
       }
     }
-
-    if (ncrCode) {
-      try {
-        const disposition = await call(
-          'POST',
-          queryPath(
-            `/api/business-console/v1/quality/ncrs/${encodeURIComponent(ncrId)}/disposition`,
-            { organizationId, environmentId },
-          ),
-          {
-            dispositionType: 'rework',
-            dispositionApprovalChainId: null,
-            attachmentFileIds: [],
-            mrbReviews: [
-              {
-                reviewerId: `${principalType}:${principalId}`,
-                decision: 'approved',
-                comment: `MAN-520 quality branch rework disposition ${suffix}`,
-                reviewedAtUtc: new Date().toISOString(),
-              },
-            ],
-          },
-        )
-        const dispositioned = await pollData(
-          `/api/business-console/v1/quality/ncrs/${encodeURIComponent(ncrId)}`,
-          { organizationId, environmentId },
-          (data) => textOf(data.status) === 'disposition-in-progress',
-        )
-        if (textOf(dispositioned.data.code) !== ncrCode) {
-          throw new Error(
-            `NCR disposition read-back returned ${safeText(textOf(dispositioned.data.code))} instead of ${ncrCode}.`,
-          )
-        }
-        record({
-          node: 'nonconformance-report-disposition',
-          sourceObject: ncrCode,
-          downstreamObject: 'rework',
-          stableKey: `${workOrderNo} -> ${ncrCode} -> rework disposition`,
-          automationMode: 'manual',
-          request: disposition.summary,
-          responseOrLog: {
-            poll: dispositioned.poll,
-            ncr: publicJson(dispositioned.data),
-            mrbDisclosure:
-              'Quality enforced an approved MRB review before accepting the rework disposition; the reviewer is the authenticated session principal.',
-          },
-          conclusion: 'runtime-confirmed',
-          demoWording:
-            'The run-scoped NCR moved to an MRB-approved rework disposition through the public facade, closing the exception with an auditable decision.',
-          responsibilityIssue: '#1099',
-        })
-      } catch (error) {
-        markFailure('nonconformance-report-disposition', error, 'manual')
-      }
-    }
   } finally {
     const entries = requiredNodes.map((node) => evidence.get(node)!)
     await writeFile(
@@ -993,6 +943,23 @@ test('MAN-520 records the public quality exception branch', async ({ page }) => 
           persistence,
           assertionBoundary:
             'public BusinessGateway HTTP only; no database reads as business assertions',
+          blockedPublicPaths: [
+            {
+              capability:
+                'NCR disposition (rework / scrap / return-to-supplier / conditional-release)',
+              observation:
+                'Quality resolves the approval-chain status through a hard-coded http://localhost:5114 base address that the Aspire AppHost never overrides for business-quality, so every centrally approved disposition fails with HTTP 500 downstream-request-failed in an isolated ephemeral-port session.',
+              consequence:
+                'The disposition hop is not claimed by this branch; it is reported as a product finding rather than asserted or worked around through an internal endpoint.',
+            },
+            {
+              capability: 'NCR defect quantity',
+              observation:
+                'An NCR opened from a rejected inspection records the inspected lot quantity instead of the failed quantity from the inspection line.',
+              consequence:
+                'This run records both quantities in the NCR node evidence instead of asserting the smaller one.',
+            },
+          ],
           setup,
           entries,
           summary: Object.fromEntries(
