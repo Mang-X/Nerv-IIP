@@ -17,7 +17,7 @@ param(
     [ValidateSet('run', 'start', 'url', 'status', 'logs', 'stop', 'list', 'gc', 'help')]
     [string] $Action = 'help',
     [Parameter(Position = 1)] [string] $Target,
-    [ValidateSet('smoke', 'man-440', 'man-528', 'leader-demo-main-chain')] [string] $Scenario = 'smoke',
+    [ValidateSet('smoke', 'man-440', 'man-528', 'leader-demo-main-chain', 'leader-demo-quality-branch', 'leader-demo-equipment-branch')] [string] $Scenario = 'smoke',
     [string] $SessionId,
     [switch] $NoBuild,
     [int] $Tail = 120,
@@ -39,6 +39,8 @@ Usage:
   .\nerv.ps1 fullstack run -Scenario man-440
   .\nerv.ps1 fullstack run -Scenario man-528
   .\nerv.ps1 fullstack run -Scenario leader-demo-main-chain [-NoBuild]
+  .\nerv.ps1 fullstack run -Scenario leader-demo-quality-branch [-NoBuild]
+  .\nerv.ps1 fullstack run -Scenario leader-demo-equipment-branch [-NoBuild]
   .\nerv.ps1 fullstack start [-SessionId nerv-abcd-123456] [-NoBuild]
   .\nerv.ps1 fullstack url <gateway|business-gateway|console|business-console|screen> [-SessionId ...]
   .\nerv.ps1 fullstack status [-SessionId ...]
@@ -625,6 +627,16 @@ try {
                             }
                             'leader-demo-main-chain' {
                                 Invoke-NervLeaderDemoMainChainScenario `
+                                    -Manifest $InputManifest `
+                                    -SessionAdminPassword $sessionAdminPassword | Out-Null
+                            }
+                            'leader-demo-quality-branch' {
+                                Invoke-NervLeaderDemoQualityBranchScenario `
+                                    -Manifest $InputManifest `
+                                    -SessionAdminPassword $sessionAdminPassword | Out-Null
+                            }
+                            'leader-demo-equipment-branch' {
+                                Invoke-NervLeaderDemoEquipmentBranchScenario `
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword | Out-Null
                             }

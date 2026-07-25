@@ -604,6 +604,304 @@ function Invoke-NervLeaderDemoMainChainScenario {
     return [pscustomobject]@{ ExitCode = 0; ChildEnvironment = $childEnvironment; CheckedResources = $resourceNames }
 }
 
+function Assert-NervLeaderDemoBranchEvidence {
+    <#
+        Shared fail-closed gate for the leader-demo exception branches. Every branch must publish the
+        exact node list once each, all runtime-confirmed, over the managed Redis/PostgreSQL profile,
+        and must name its run-scoped business documents with human-readable identifiers.
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $EvidencePath,
+        [Parameter(Mandatory)] [string] $ScenarioLabel,
+        [Parameter(Mandatory)] [string[]] $RequiredNodes,
+        [Parameter(Mandatory)] [System.Collections.IDictionary] $RequiredIdentityPrefixes
+    )
+
+    if (-not (Test-Path -LiteralPath $EvidencePath -PathType Leaf)) {
+        throw "$ScenarioLabel evidence was not created at '$EvidencePath'."
+    }
+    $evidence = Get-Content -LiteralPath $EvidencePath -Raw | ConvertFrom-Json -Depth 100
+    if ("$($evidence.runtimeProfileSource)" -cne 'session-manifest') {
+        throw "$ScenarioLabel evidence runtime profile must come from the managed session manifest."
+    }
+    if ("$($evidence.transport)" -cne 'redis-cross-process') {
+        throw "$ScenarioLabel evidence must declare redis-cross-process transport."
+    }
+    if ("$($evidence.persistence)" -cne 'postgresql') {
+        throw "$ScenarioLabel evidence must declare PostgreSQL persistence."
+    }
+    foreach ($identity in $RequiredIdentityPrefixes.GetEnumerator()) {
+        $property = $evidence.PSObject.Properties["$($identity.Key)"]
+        $value = if ($null -eq $property) { '' } else { "$($property.Value)" }
+        if ([string]::IsNullOrWhiteSpace($value) -or -not $value.StartsWith("$($identity.Value)", [StringComparison]::Ordinal)) {
+            throw "$ScenarioLabel evidence must identify a run-scoped '$($identity.Key)' starting with '$($identity.Value)'; found '$value'."
+        }
+        if ($value -match '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') {
+            throw "$ScenarioLabel evidence used a bare GUID as the '$($identity.Key)' business number."
+        }
+    }
+
+    $entries = @($evidence.entries)
+    if ($entries.Count -ne $RequiredNodes.Count) {
+        throw "$ScenarioLabel evidence must contain exactly $($RequiredNodes.Count) entries; found $($entries.Count)."
+    }
+    foreach ($node in $RequiredNodes) {
+        $nodeEntries = @($entries | Where-Object { "$($_.node)" -ceq $node })
+        if ($nodeEntries.Count -ne 1) {
+            throw "$ScenarioLabel evidence must contain exactly one '$node' entry; found $($nodeEntries.Count)."
+        }
+    }
+    foreach ($entry in $entries) {
+        if (@('runtime-confirmed', 'gap', 'not-verified') -cnotcontains "$($entry.conclusion)") {
+            throw "$ScenarioLabel evidence node '$($entry.node)' has invalid conclusion '$($entry.conclusion)'."
+        }
+        if ([string]::IsNullOrWhiteSpace("$($entry.stableKey)") -or [string]::IsNullOrWhiteSpace("$($entry.demoWording)")) {
+            throw "$ScenarioLabel evidence node '$($entry.node)' is missing its stable key or demo wording."
+        }
+    }
+    $notVerifiedEntries = @($entries | Where-Object { "$($_.conclusion)" -ceq 'not-verified' })
+    if ($notVerifiedEntries.Count -gt 0) {
+        throw "$ScenarioLabel evidence cannot pass with not-verified nodes: $($notVerifiedEntries.node -join ', ')."
+    }
+    $gapEntries = @($entries | Where-Object { "$($_.conclusion)" -ceq 'gap' })
+    if ($gapEntries.Count -gt 0) {
+        throw "$ScenarioLabel evidence cannot pass with gap nodes: $($gapEntries.node -join ', ')."
+    }
+    $raw = Get-Content -LiteralPath $EvidencePath -Raw
+    foreach ($forbiddenPattern in @('(?i)authorization', '(?i)bearer\s+', '(?i)password', '(?i)access[_-]?token', '(?i)refresh[_-]?token')) {
+        if ($raw -match $forbiddenPattern) {
+            throw "$ScenarioLabel evidence contains forbidden secret-shaped text matching '$forbiddenPattern'."
+        }
+    }
+    return $evidence
+}
+
+function Get-NervLeaderDemoQualityBranchNodes {
+    return @(
+        'quality-plan-out-of-spec-rejection',
+        'inspection-rejection-nonconformance-report',
+        'quality-rejection-mes-work-order-hold',
+        'reinspection-in-spec-pass',
+        'reinspection-mes-hold-auto-release',
+        'quality-hold-timeline-complete',
+        'nonconformance-report-disposition'
+    )
+}
+
+function Get-NervLeaderDemoEquipmentBranchNodes {
+    return @(
+        'device-telemetry-running-baseline',
+        'telemetry-threshold-alarm-raised',
+        'alarm-acknowledged-and-shelved',
+        'alarm-maintenance-work-order',
+        'alarm-device-unavailable-block',
+        'telemetry-return-to-normal-recovery',
+        'equipment-reliability-readface-shift'
+    )
+}
+
+function Assert-NervLeaderDemoQualityBranchEvidence {
+    param([Parameter(Mandatory)] [string] $EvidencePath)
+
+    return Assert-NervLeaderDemoBranchEvidence `
+        -EvidencePath $EvidencePath `
+        -ScenarioLabel 'Leader-demo quality-branch' `
+        -RequiredNodes (Get-NervLeaderDemoQualityBranchNodes) `
+        -RequiredIdentityPrefixes ([ordered]@{ workOrderNo = 'WO-'; ncrCode = 'NCR-' })
+}
+
+function Assert-NervLeaderDemoEquipmentBranchEvidence {
+    param([Parameter(Mandatory)] [string] $EvidencePath)
+
+    return Assert-NervLeaderDemoBranchEvidence `
+        -EvidencePath $EvidencePath `
+        -ScenarioLabel 'Leader-demo equipment-branch' `
+        -RequiredNodes (Get-NervLeaderDemoEquipmentBranchNodes) `
+        -RequiredIdentityPrefixes ([ordered]@{ deviceCode = 'DEV-EQ-'; alarmRuleCode = 'AR-EQ-' })
+}
+
+function Invoke-NervLeaderDemoBranchBrowserCheck {
+    param(
+        [Parameter(Mandatory)] [hashtable] $Environment,
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $SpecFile,
+        [Parameter(Mandatory)] [string] $ArtifactSlug,
+        [Parameter(Mandatory)] [string] $EvidenceEnvironmentVariable,
+        [Parameter(Mandatory)] [scriptblock] $EvidenceAssertion
+    )
+
+    [void] [System.IO.Directory]::CreateDirectory("$($Manifest.artifactPath)")
+    $reportPath = Join-Path "$($Manifest.artifactPath)" "playwright-$ArtifactSlug.json"
+    $evidencePath = Join-Path "$($Manifest.artifactPath)" "$ArtifactSlug-evidence.json"
+    Remove-Item -LiteralPath $reportPath, $evidencePath -Force -ErrorAction SilentlyContinue
+    $browserEnvironment = @{}
+    foreach ($entry in $Environment.GetEnumerator()) { $browserEnvironment[$entry.Key] = "$($entry.Value)" }
+    $browserEnvironment.PLAYWRIGHT_JSON_OUTPUT_FILE = $reportPath
+    $browserEnvironment[$EvidenceEnvironmentVariable] = $evidencePath
+    Invoke-WithScopedEnvironment -Variables $browserEnvironment -ScriptBlock {
+        Invoke-Pnpm `
+            -Arguments @(
+                '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
+                $SpecFile, '--project=desktop', '--reporter=json',
+                '--output', (Join-Path "$($Manifest.artifactPath)" 'test-results')
+            ) `
+            -WorkingDirectory "$($Manifest.worktreeRoot)" `
+            -TimeoutSeconds 900 `
+            -Name "fullstack-$($Manifest.sessionId)-$ArtifactSlug" | Out-Null
+    }
+    Assert-NervPlaywrightJsonReport -ReportPath $reportPath | Out-Null
+    return & $EvidenceAssertion $evidencePath
+}
+
+function Invoke-NervLeaderDemoQualityBranchBrowserCheck {
+    param(
+        [Parameter(Mandatory)] [hashtable] $Environment,
+        [Parameter(Mandatory)] [object] $Manifest
+    )
+
+    return Invoke-NervLeaderDemoBranchBrowserCheck `
+        -Environment $Environment `
+        -Manifest $Manifest `
+        -SpecFile 'e2e/leader-demo-quality-branch.spec.ts' `
+        -ArtifactSlug 'leader-demo-quality-branch' `
+        -EvidenceEnvironmentVariable 'NERV_IIP_QUALITY_BRANCH_EVIDENCE_PATH' `
+        -EvidenceAssertion { param($Path) Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $Path }
+}
+
+function Invoke-NervLeaderDemoEquipmentBranchBrowserCheck {
+    param(
+        [Parameter(Mandatory)] [hashtable] $Environment,
+        [Parameter(Mandatory)] [object] $Manifest
+    )
+
+    return Invoke-NervLeaderDemoBranchBrowserCheck `
+        -Environment $Environment `
+        -Manifest $Manifest `
+        -SpecFile 'e2e/leader-demo-equipment-branch.spec.ts' `
+        -ArtifactSlug 'leader-demo-equipment-branch' `
+        -EvidenceEnvironmentVariable 'NERV_IIP_EQUIPMENT_BRANCH_EVIDENCE_PATH' `
+        -EvidenceAssertion { param($Path) Assert-NervLeaderDemoEquipmentBranchEvidence -EvidencePath $Path }
+}
+
+function Invoke-NervLeaderDemoBranchScenario {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [Parameter(Mandatory)] [string] $ScenarioLabel,
+        [Parameter(Mandatory)] [string[]] $ResourceNames,
+        [Parameter(Mandatory)] [System.Collections.IDictionary] $ScenarioEnvironment,
+        [Parameter(Mandatory)] [scriptblock] $DefaultBrowserAction,
+        [scriptblock] $WaitAction,
+        [scriptblock] $AspireSnapshotAction,
+        [scriptblock] $BrowserAction
+    )
+
+    if ($null -eq $WaitAction) {
+        $WaitAction = {
+            param($Name, $InputManifest)
+            Wait-NervAspireResource `
+                -AppHostProject "$($InputManifest.appHostProject)" `
+                -ResourceName $Name `
+                -WorkingDirectory "$($InputManifest.worktreeRoot)"
+        }
+    }
+    if ($null -eq $AspireSnapshotAction) {
+        $AspireSnapshotAction = {
+            param($InputManifest)
+            Get-NervAspireDescribeObject -AppHostProject "$($InputManifest.appHostProject)" -WorkingDirectory "$($InputManifest.worktreeRoot)"
+        }
+    }
+    if ($null -eq $BrowserAction) { $BrowserAction = $DefaultBrowserAction }
+
+    if ("$($Manifest.runtime.messagingProvider)" -cne 'Redis') {
+        throw "$ScenarioLabel requires a Redis session profile; manifest recorded '$($Manifest.runtime.messagingProvider)'."
+    }
+    if ("$($Manifest.runtime.persistenceProvider)" -cne 'PostgreSQL') {
+        throw "$ScenarioLabel requires a PostgreSQL session profile; manifest recorded '$($Manifest.runtime.persistenceProvider)'."
+    }
+
+    foreach ($resourceName in $ResourceNames) { & $WaitAction $resourceName $Manifest | Out-Null }
+
+    $snapshot = & $AspireSnapshotAction $Manifest
+    $finishedProjects = @($snapshot.resources | Where-Object {
+        "$($_.resourceType)" -like 'Project*' -and "$($_.state)" -eq 'Finished' -and
+        $ResourceNames -ccontains "$($_.displayName)"
+    })
+    if ($finishedProjects.Count -gt 0) {
+        throw "Aspire project resources finished unexpectedly: $($finishedProjects.displayName -join ', ')."
+    }
+
+    $childEnvironment = @{
+        NERV_IIP_PLAYWRIGHT_BASE_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-console'
+        NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $SessionAdminPassword
+    }
+    foreach ($entry in $ScenarioEnvironment.GetEnumerator()) { $childEnvironment[$entry.Key] = "$($entry.Value)" }
+    & $BrowserAction $childEnvironment $Manifest | Out-Null
+    return [pscustomobject]@{ ExitCode = 0; ChildEnvironment = $childEnvironment; CheckedResources = $ResourceNames }
+}
+
+function Invoke-NervLeaderDemoQualityBranchScenario {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [scriptblock] $WaitAction,
+        [scriptblock] $AspireSnapshotAction,
+        [scriptblock] $BrowserAction
+    )
+
+    return Invoke-NervLeaderDemoBranchScenario `
+        -Manifest $Manifest `
+        -SessionAdminPassword $SessionAdminPassword `
+        -ScenarioLabel 'Leader-demo quality-branch' `
+        -ResourceNames @(
+            'postgres', 'redis', 'iam', 'gateway', 'business-gateway', 'business-console',
+            'business-master-data', 'business-quality', 'business-mes'
+        ) `
+        -ScenarioEnvironment ([ordered]@{
+            NERV_IIP_QUALITY_BRANCH_RUNTIME_PROFILE_SOURCE = 'session-manifest'
+            NERV_IIP_QUALITY_BRANCH_TRANSPORT = 'redis-cross-process'
+            NERV_IIP_QUALITY_BRANCH_PERSISTENCE = 'postgresql'
+        }) `
+        -DefaultBrowserAction {
+            param($Environment, $InputManifest)
+            Invoke-NervLeaderDemoQualityBranchBrowserCheck -Environment $Environment -Manifest $InputManifest | Out-Null
+        } `
+        -WaitAction $WaitAction `
+        -AspireSnapshotAction $AspireSnapshotAction `
+        -BrowserAction $BrowserAction
+}
+
+function Invoke-NervLeaderDemoEquipmentBranchScenario {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [scriptblock] $WaitAction,
+        [scriptblock] $AspireSnapshotAction,
+        [scriptblock] $BrowserAction
+    )
+
+    return Invoke-NervLeaderDemoBranchScenario `
+        -Manifest $Manifest `
+        -SessionAdminPassword $SessionAdminPassword `
+        -ScenarioLabel 'Leader-demo equipment-branch' `
+        -ResourceNames @(
+            'postgres', 'redis', 'iam', 'gateway', 'business-gateway', 'business-console',
+            'business-master-data', 'business-industrial-telemetry', 'business-maintenance'
+        ) `
+        -ScenarioEnvironment ([ordered]@{
+            NERV_IIP_EQUIPMENT_BRANCH_RUNTIME_PROFILE_SOURCE = 'session-manifest'
+            NERV_IIP_EQUIPMENT_BRANCH_TRANSPORT = 'redis-cross-process'
+            NERV_IIP_EQUIPMENT_BRANCH_PERSISTENCE = 'postgresql'
+        }) `
+        -DefaultBrowserAction {
+            param($Environment, $InputManifest)
+            Invoke-NervLeaderDemoEquipmentBranchBrowserCheck -Environment $Environment -Manifest $InputManifest | Out-Null
+        } `
+        -WaitAction $WaitAction `
+        -AspireSnapshotAction $AspireSnapshotAction `
+        -BrowserAction $BrowserAction
+}
+
 function Invoke-NervFullStackGuardian {
     param(
         [Parameter(Mandatory)] [string] $SessionId,
