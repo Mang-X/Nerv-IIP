@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FulfillmentNode } from '@/composables/useFulfillmentTimeline'
-import { NvButton } from '@nerv-iip/ui'
+import { NvButton, resolveStatus } from '@nerv-iip/ui'
 import { AlertTriangleIcon, LockIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -20,6 +20,11 @@ const failureText = computed(() => {
       return '该来源加载失败，请重试。'
   }
 })
+
+// 各来源单据回的是英文状态码，走全站状态字典映射成中文，不把原文直出成 chip。
+const detailStatusLabel = computed(() =>
+  props.node.detailStatus ? resolveStatus(props.node.detailStatus).label : '',
+)
 </script>
 
 <template>
@@ -32,7 +37,7 @@ const failureText = computed(() => {
     <!-- 已确认 -->
     <template v-if="node.status === 'established'">
       <div class="nv-ft-node-meta">
-        <span v-if="node.detailStatus" class="nv-ft-chip">{{ node.detailStatus }}</span>
+        <span v-if="detailStatusLabel" class="nv-ft-chip">{{ detailStatusLabel }}</span>
         <span v-if="node.updatedAt" class="nv-ft-time"
           >更新于 {{ formatDateTime(node.updatedAt) }}</span
         >

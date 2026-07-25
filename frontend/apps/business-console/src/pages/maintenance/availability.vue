@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { EquipmentRuntimeAvailabilityWindow } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import { useMaintenanceAvailabilityWindows } from '@/composables/useBusinessMaintenance'
 import { describeEquipmentReason } from '@/composables/useBusinessEquipment'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -12,9 +12,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricCard,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon, WrenchIcon } from '@lucide/vue'
 import { computed } from 'vue'
@@ -54,6 +53,16 @@ const inspectionCount = computed(
       (window) => (window.reasonCode ?? '').trim().toLowerCase() === 'equipment.inspectionrequired',
     ).length,
 )
+// 不可用 + 可用 = 查询范围内的全部窗口，是真正的构成关系。
+const windowSegments = computed<NvMetricSegment[]>(() => [
+  { key: 'unavailable', label: '不可用', value: unavailableCount.value, tone: 'danger' },
+  {
+    key: 'available',
+    label: '可用',
+    value: availabilityWindows.value.length - unavailableCount.value,
+    tone: 'success',
+  },
+])
 const errorMessage = computed(() => formatError(availabilityError.value))
 
 const windowStartLocal = computed({
@@ -187,15 +196,32 @@ function formatError(error: unknown) {
     </div>
 
     <template v-else>
-      <NvSectionCards :columns="3">
-        <NvSectionCard
-          description="窗口数量"
+      <div class="grid gap-4 lg:grid-cols-2">
+        <NvMetricCard
+          variant="breakdown"
+          label="可用性窗口"
           :value="availabilityWindows.length"
-          hint="当前查询范围"
+          unit="段"
+          :segments="windowSegments"
         />
-        <NvSectionCard description="不可用窗口" :value="unavailableCount" hint="影响排程或执行" />
-        <NvSectionCard description="点检相关" :value="inspectionCount" hint="点检未通过或待处理" />
-      </NvSectionCards>
+        <NvMetricCard
+          variant="alert"
+          label="点检阻塞"
+          :value="inspectionCount"
+          unit="段"
+          :tone="inspectionCount > 0 ? 'warning' : 'neutral'"
+          :status="
+            inspectionCount > 0
+              ? { label: '待点检放行', tone: 'warning' }
+              : { label: '无阻塞', tone: 'success' }
+          "
+          :foot-start="
+            inspectionCount > 0
+              ? '点检未通过前设备不能投入排程，先完成点检再释放窗口。'
+              : '当前没有因点检被卡住的可用窗口。'
+          "
+        />
+      </div>
 
       <NvDataTable
         :columns="columns"

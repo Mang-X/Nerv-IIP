@@ -26,9 +26,9 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricCard,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -260,23 +260,46 @@ async function submitSkill() {
       / 过期会高亮提醒。
     </p>
 
-    <NvSectionCards :columns="3">
-      <NvSectionCard
-        description="在岗工人"
-        :value="matrix.rows.value.length"
-        hint="已登记任一技能的工人"
+    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+      <!-- 工人与技能项是两种不同量纲的计数，不构成同一总量，用并列 Strip。 -->
+      <NvMetricStrip
+        :cells="[
+          {
+            key: 'workers',
+            label: '在岗工人',
+            value: matrix.rows.value.length,
+            unit: '人',
+            meta: '已登记任一技能',
+          },
+          {
+            key: 'skills',
+            label: '技能项',
+            value: matrix.skillCodes.value.length,
+            unit: '项',
+            meta: '矩阵覆盖的技能种类',
+          },
+        ]"
       />
-      <NvSectionCard
-        description="技能项"
-        :value="matrix.skillCodes.value.length"
-        hint="矩阵覆盖的技能种类"
+      <NvMetricCard
+        variant="alert"
+        label="资格临期与过期"
+        :value="expiryStats.soon + expiryStats.past"
+        unit="项"
+        :tone="expiryStats.past > 0 ? 'danger' : expiryStats.soon > 0 ? 'warning' : 'neutral'"
+        :status="
+          expiryStats.past > 0
+            ? { label: `${expiryStats.past} 项已过期`, tone: 'danger' }
+            : expiryStats.soon > 0
+              ? { label: `${expiryStats.soon} 项临期`, tone: 'warning' }
+              : { label: '资格齐备', tone: 'success' }
+        "
+        :foot-start="
+          expiryStats.past + expiryStats.soon > 0
+            ? '过期资格会挡住派工，临期（30 天内到期）需提前安排复评。'
+            : '所有技能资格都在有效期内。'
+        "
       />
-      <NvSectionCard
-        description="临期 / 已过期"
-        :value="`${expiryStats.soon} / ${expiryStats.past}`"
-        hint="临期（30 天内到期）需及时复评"
-      />
-    </NvSectionCards>
+    </div>
 
     <NvToolbar v-model:search="keyword" search-placeholder="搜索工人姓名 / 工号 / 部门">
       <template #filters>

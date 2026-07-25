@@ -28,10 +28,9 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
   ScrollArea,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -801,20 +800,22 @@ function childLabelOf(type: string): string | undefined {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="4">
-      <NvSectionCard description="工厂数" :value="sites.total.value" hint="生产基地" />
-      <NvSectionCard
-        description="车间数"
-        :value="workshops.workshopsTotal.value"
-        hint="组织 / 区域分组"
-      />
-      <NvSectionCard description="产线数" :value="lines.total.value" hint="按车间 / 工厂归属" />
-      <NvSectionCard
-        description="工作中心数"
-        :value="workCenters.total.value"
-        hint="排产与报工的产能单元"
-      />
-    </NvSectionCards>
+    <!-- 工厂▸车间▸产线▸工作中心是逐级包含的层级计数，不是同一总量的构成，
+         所以用一条并列的 Strip，不用环形卡。 -->
+    <NvMetricStrip
+      :cells="[
+        { key: 'site', label: '工厂', value: sites.total.value, unit: '个' },
+        { key: 'workshop', label: '车间', value: workshops.workshopsTotal.value, unit: '个' },
+        { key: 'line', label: '产线', value: lines.total.value, unit: '条' },
+        {
+          key: 'workCenter',
+          label: '工作中心',
+          value: workCenters.total.value,
+          unit: '个',
+          meta: '排产与报工的产能单元',
+        },
+      ]"
+    />
 
     <div class="grid gap-4 md:grid-cols-[320px_minmax(0,1fr)]">
       <!-- 左：层级树 -->

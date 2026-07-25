@@ -6,7 +6,7 @@ import type {
   BusinessConsoleMrpRunItem,
   BusinessConsolePlanningSuggestionItem,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/ui'
 import {
   useBusinessSkus,
   useBusinessMasterDataResources,
@@ -36,9 +36,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricCard,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -248,16 +247,33 @@ const coveredSkuCodes = computed(() => {
   }
   return covered
 })
-const demandSkuKpi = computed(() => `${coveredSkuCodes.value.size} / ${demandSkuCodes.value.size}`)
+/** 需求覆盖率＝已生成建议的物料 ÷ 需求物料（去重），目标 100%。 */
+const demandCoverageRate = computed(() => {
+  const total = demandSkuCodes.value.size
+  if (total === 0) return 100
+  return Math.round((coveredSkuCodes.value.size / total) * 100)
+})
+// 已发布 + 未发布 = 全部主计划行，是真正的构成关系。
+const mpsSegments = computed<NvMetricSegment[]>(() => [
+  { key: 'released', label: '已发布', value: releasedMpsCount.value, tone: 'success' },
+  {
+    key: 'draft',
+    label: '待评审发布',
+    value: mpsBuckets.value.length - releasedMpsCount.value,
+    tone: 'warning',
+  },
+])
 
 // 卡3：最近一次 MRP（状态 + 建议数）。运行按计划范围排序取最后一条。
-const latestRun = computed(() => {
-  const runs = mrpRuns.value
-  if (runs.length === 0) return null
-  return [...runs].sort((a, b) => (a.horizonStart ?? '').localeCompare(b.horizonStart ?? ''))[
-    runs.length - 1
-  ]
-})
+const runsByHorizon = computed(() =>
+  [...mrpRuns.value].sort((a, b) => (a.horizonStart ?? '').localeCompare(b.horizonStart ?? '')),
+)
+const latestRun = computed(() => runsByHorizon.value[runsByHorizon.value.length - 1] ?? null)
+// 历次 MRP 产出的建议条数——真实时序，作为最近一次运行卡的迷你趋势。
+const mrpSuggestionSeries = computed(() =>
+  runsByHorizon.value.map((run) => run.suggestionCount ?? 0),
+)
+const mrpRunLabels = computed(() => runsByHorizon.value.map((run) => formatDate(run.horizonStart)))
 const latestRunKpiValue = computed(() =>
   latestRun.value ? planningStatus(latestRun.value.status).label : '未运行',
 )
@@ -331,7 +347,7 @@ const demandColumns: NvDataTableColumn<BusinessConsoleDemandSourceItem>[] = [
   { key: 'coverage', header: '覆盖', width: 'w-28' },
 ]
 const mpsColumns: NvDataTableColumn<BusinessConsoleMpsBucketItem>[] = [
-  { key: 'bucketDate', header: '计划桶', cellClass: 'font-medium', width: 'w-32' },
+  { key: 'bucketDate', header: '计划周期', cellClass: 'font-medium', width: 'w-32' },
   { key: 'skuCode', header: 'SKU' },
   { key: 'siteCode', header: '工厂', width: 'w-40' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
@@ -387,12 +403,12 @@ async function submitMrpRun() {
 async function reviewMps(row: BusinessConsoleMpsBucketItem) {
   if (!row.mpsId) return
   await reviewMpsBucket(row.mpsId)
-  notifySuccess('MPS bucket 已完成评审。')
+  notifySuccess('主计划行已完成评审。')
 }
 async function releaseMps(row: BusinessConsoleMpsBucketItem) {
   if (!row.mpsId) return
   await releaseMpsBucket(row.mpsId)
-  notifySuccess('MPS bucket 已发布，可作为 MRP 输入。')
+  notifySuccess('主计划行已发布，可作为 MRP 输入。')
 }
 async function acceptPlanningSuggestion(row: BusinessConsolePlanningSuggestionItem) {
   if (!row.suggestionId || !row.suggestionType) return
@@ -725,9 +741,9 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         </NvDialogTrigger>
         <NvDialogContent class="sm:max-w-2xl">
           <NvDialogHeader>
-            <NvDialogTitle>新建 MPS bucket</NvDialogTitle>
+            <NvDialogTitle>新建主计划行</NvDialogTitle>
             <NvDialogDescription
-              >维护主生产计划 bucket，评审并发布后进入 MRP 输入。</NvDialogDescription
+              >维护主生产计划的一个计划周期，评审并发布后进入 MRP 输入。</NvDialogDescription
             >
           </NvDialogHeader>
           <form class="grid gap-4" @submit.prevent="submitMpsBucket">
@@ -782,7 +798,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
                 />
               </NvField>
               <NvField>
-                <NvFieldLabel>计划桶日期</NvFieldLabel>
+                <NvFieldLabel>计划周期日期</NvFieldLabel>
                 <NvDatePicker
                   v-model="mpsForm.bucketDate"
                   placeholder="选择计划日期"
@@ -907,32 +923,51 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
     </template>
   </NvPageHeader>
 
-  <NvSectionCards :columns="4">
-    <NvSectionCard
-      description="MPS 已发布"
-      :value="releasedMpsCount"
-      footnote="bucket 可进入 MRP"
-      :hint="`总计 ${mpsBuckets.length} 个主计划 bucket`"
+  <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <NvMetricCard
+      variant="target"
+      label="需求覆盖率"
+      :value="demandCoverageRate"
+      unit="%"
+      :progress="demandCoverageRate"
+      target-label="目标 100%"
+      :progress-tone="
+        demandCoverageRate >= 100 ? 'success' : demandCoverageRate >= 80 ? 'warning' : 'danger'
+      "
+      :foot-start="`${coveredSkuCodes.size} 个物料已生成建议`"
+      :foot-end="`需求物料 ${demandSkuCodes.size} 个`"
     />
-    <NvSectionCard
-      description="待评审建议"
-      :value="openSuggestionCount"
-      footnote="条计划建议待接受"
-      :hint="reviewKpiHint"
+    <NvMetricCard
+      variant="breakdown"
+      label="主计划行"
+      :value="mpsBuckets.length"
+      unit="行"
+      :segments="mpsSegments"
     />
-    <NvSectionCard
-      description="需求覆盖 (SKU)"
-      :value="demandSkuKpi"
-      footnote="已生成建议 / 需求 SKU 数"
-      hint="按 SKU 去重统计"
-    />
-    <NvSectionCard
-      description="最近一次 MRP"
+    <NvMetricCard
+      variant="sparkline"
+      label="最近一次 MRP"
       :value="latestRunKpiValue"
-      :footnote="latestRun ? runHorizonLabel(latestRun) : '—'"
-      :hint="latestRunKpiHint"
+      :series="mrpSuggestionSeries"
+      :series-labels="mrpRunLabels"
+      series-unit="条建议"
+      :foot-start="latestRun ? runHorizonLabel(latestRun) : '尚未运行 MRP'"
+      :foot-end="latestRunKpiHint"
     />
-  </NvSectionCards>
+    <NvMetricCard
+      variant="alert"
+      label="待评审建议"
+      :value="openSuggestionCount"
+      unit="条"
+      :tone="openSuggestionCount > 0 ? 'warning' : 'neutral'"
+      :status="
+        openSuggestionCount > 0
+          ? { label: '待接受', tone: 'warning' }
+          : { label: '已清空', tone: 'success' }
+      "
+      :foot-start="reviewKpiHint"
+    />
+  </div>
 
   <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
@@ -1026,7 +1061,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         :loading="mpsBucketsPending"
         :searchable="false"
         :column-settings="false"
-        empty-message="当前范围没有 MPS bucket。"
+        empty-message="当前范围还没有主计划行。先按计划周期新建一行，评审发布后即可作为 MRP 输入。"
       >
         <template #cell-bucketDate="{ row }">{{ formatDate(row.bucketDate) }}</template>
         <template #cell-skuCode="{ row }">
