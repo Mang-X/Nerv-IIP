@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStatus, NvMetricTone } from '@nerv-iip/ui'
 import QualityHoldPanel from '@/components/mes/QualityHoldPanel.vue'
 import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   resolveScheduleStatus,
   scheduleInvalidationHint,
@@ -23,9 +24,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricCard,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -88,6 +88,7 @@ watch(
   { immediate: true },
 )
 
+const { resolveSkuLabel } = useMesDisplayNames()
 const auth = useAuthStore()
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 // 人工强制释放质量保留需 business.mes.quality.write（网关 MesQualityWrite），无权则只读时间线。
@@ -121,6 +122,39 @@ const blockingReasonDisplays = computed(() => blockingReasons.value.map(describe
 const errorMessage = computed(
   () => formatError(detailError.value) || formatError(materialReadinessError.value),
 )
+
+// 工单头部四卡：状态与用料给「能不能开工」的结论，工序进度给「做到哪了」。
+const skuLabel = computed(() => resolveSkuLabel(detail.value?.skuId))
+const completedTaskCount = computed(
+  () =>
+    operationTasks.value.filter((task) =>
+      ['completed', 'closed'].includes((task.status ?? '').toLowerCase()),
+    ).length,
+)
+const taskProgress = computed(() =>
+  operationTasks.value.length
+    ? Math.round((completedTaskCount.value / operationTasks.value.length) * 100)
+    : 0,
+)
+const workOrderTone = computed<NvMetricTone>(() => {
+  if (blockingReasons.value.length) return 'danger'
+  const status = (detail.value?.status ?? '').toLowerCase()
+  if (status === 'completed' || status === 'closed') return 'success'
+  if (status === 'hold' || status === 'cancelled') return 'warning'
+  return 'neutral'
+})
+const workOrderStatusPill = computed<NvMetricStatus>(() =>
+  blockingReasons.value.length
+    ? { label: `${blockingReasons.value.length} 项阻塞`, tone: 'danger' }
+    : { label: '无阻塞', tone: 'success' },
+)
+const materialShortageCount = computed(
+  () => materialRows.value.filter((row) => (row.shortageQuantity ?? 0) > 0).length,
+)
+const materialTone = computed<NvMetricTone>(() => {
+  if (materialShortageCount.value > 0) return 'danger'
+  return materialRows.value.length ? 'success' : 'neutral'
+})
 
 type TaskRow = (typeof operationTasks)['value'][number]
 const taskColumns: NvDataTableColumn<TaskRow>[] = [
@@ -424,24 +458,41 @@ function formatError(error: unknown) {
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <NvSectionCards :columns="4">
-      <NvSectionCard
-        description="工单状态"
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <NvMetricCard
+        variant="alert"
+        label="工单状态"
         :value="formatStatus(detail?.status)"
-        :hint="detail?.skuId ?? '无物料'"
+        :tone="workOrderTone"
+        :status="workOrderStatusPill"
+        :foot-start="`生产物料：${skuLabel}`"
       />
-      <NvSectionCard
-        description="计划数量"
-        :value="formatQuantity(detail?.quantity)"
-        hint="工单计划量"
+      <NvMetricCard label="计划数量" :value="formatQuantity(detail?.quantity)" />
+      <NvMetricCard
+        variant="target"
+        label="工序完成"
+        :value="completedTaskCount"
+        unit="道"
+        :progress="taskProgress"
+        :target-label="`共 ${operationTasks.length} 道`"
       />
-      <NvSectionCard description="工序数" :value="operationTasks.length" hint="执行任务" />
-      <NvSectionCard
-        description="用料状态"
+      <NvMetricCard
+        variant="alert"
+        label="用料齐套"
         :value="formatStatus(materialReadiness?.readinessStatus)"
-        hint="齐套检查"
+        :tone="materialTone"
+        :status="
+          materialShortageCount > 0
+            ? { label: `${materialShortageCount} 项缺料`, tone: 'danger' }
+            : { label: '已齐套', tone: 'success' }
+        "
+        :foot-start="
+          materialShortageCount > 0
+            ? '缺料项需先由仓库补发，否则无法开工。'
+            : '用料已备齐，可按工序顺序开工。'
+        "
       />
-    </NvSectionCards>
+    </div>
 
     <div v-if="blockingReasons.length" class="rounded-lg border bg-background p-4">
       <h2 class="text-sm font-semibold text-foreground">开工阻塞</h2>
@@ -505,7 +556,7 @@ function formatError(error: unknown) {
         :rows="operationTasks"
         row-key="operationTaskId"
         :loading="detailPending"
-        empty-message="暂无工序任务。"
+        empty-message="暂无工序任务。先确认工艺路线已发布并完成排程，再回到这里派工与报工。"
         :searchable="false"
         :column-settings="false"
       >
@@ -540,7 +591,7 @@ function formatError(error: unknown) {
         :rows="materialRows"
         :row-key="(r) => `${r.materialId}-${r.materialLotId}`"
         :loading="materialReadinessPending"
-        empty-message="暂无用料行。"
+        empty-message="暂无用料行。先确认物料清单已发布，再回到这里查看齐套与领料进度。"
         :searchable="false"
         :column-settings="false"
       >

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesCapacityImpacts } from '@/composables/useBusinessMes'
+import { pagedBreakdownSegments } from '@/composables/mes/mesMetricSegments'
 import { mesCapacityStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -8,9 +9,8 @@ import {
   NvButton,
   NvDataTable,
   NvInput,
+  NvMetricCard,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -43,6 +43,18 @@ const statusFilter = shallowRef('all')
 
 const openCount = computed(
   () => capacityImpacts.value.filter((item) => item.status?.toLowerCase() === 'open').length,
+)
+// 产能影响的决策点是「还有多少没恢复」——一张构成卡把总量与恢复进度放在一起。
+const impactSegments = computed(() =>
+  pagedBreakdownSegments(capacityImpactsTotal.value, [
+    { key: 'open', label: '未恢复', value: openCount.value, tone: 'danger' },
+    {
+      key: 'recovered',
+      label: '已恢复',
+      value: capacityImpacts.value.length - openCount.value,
+      tone: 'success',
+    },
+  ]),
 )
 const errorMessage = computed(() => formatError(capacityImpactsError.value))
 watch(statusFilter, (value) => {
@@ -104,15 +116,14 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="3">
-      <NvSectionCard description="影响记录" :value="capacityImpactsTotal" hint="后端筛选总数" />
-      <NvSectionCard description="本页未恢复" :value="openCount" hint="当前页统计" />
-      <NvSectionCard
-        description="本页已恢复"
-        :value="capacityImpacts.length - openCount"
-        hint="当前页统计"
-      />
-    </NvSectionCards>
+    <NvMetricCard
+      class="sm:max-w-md"
+      variant="breakdown"
+      label="影响记录"
+      :value="capacityImpactsTotal"
+      unit="条"
+      :segments="impactSegments"
+    />
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -147,7 +158,7 @@ function formatError(error: unknown) {
       :loading="capacityImpactsPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无产能影响。设备停机或维护冲突发生时会在这里汇总。"
+      empty-message="暂无产能影响。先在设备与停机登记异常或维护占用，再回到这里跟踪对产线产能的影响。"
     >
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
       <template #cell-effectiveFromUtc="{ row }">{{

@@ -6,6 +6,7 @@ import type {
 import type { NvDataTableColumn, NvDataTableSort, StatusTone } from '@nerv-iip/ui'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesProductionPlans } from '@/composables/useBusinessMes'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -53,6 +54,7 @@ const {
 } = useMesProductionPlans()
 const route = useRoute()
 const { resources: workCenterResources } = useBusinessMasterDataResources('work-center')
+const { resolveSkuLabel } = useMesDisplayNames()
 
 const keyword = ref('')
 const sourceFilter = ref(normalizeSourceQuery(route.query.source))
@@ -354,8 +356,10 @@ function formatError(error: unknown) {
         </div>
       </template>
       <template #cell-skuId="{ row }">
-        <span v-if="row.skuId">{{ row.skuId }}</span>
-        <span v-else class="text-muted-foreground">—</span>
+        <span v-if="row.skuId && resolveSkuLabel(row.skuId) !== '未指定物料'">{{
+          resolveSkuLabel(row.skuId)
+        }}</span>
+        <span v-else class="text-muted-foreground">未指定物料</span>
       </template>
       <template #cell-plannedQuantity="{ row }">
         <span class="tabular-nums">{{ formatQuantity(row.plannedQuantity) }}</span>

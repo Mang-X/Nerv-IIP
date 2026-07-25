@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import { pagedBreakdownSegments } from '@/composables/mes/mesMetricSegments'
 import { mesQualityStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesRelatedQualityItems } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
@@ -7,9 +8,8 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
   NvDataTable,
+  NvMetricCard,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -20,7 +20,7 @@ import {
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -31,6 +31,7 @@ definePage({
 })
 
 const route = useRoute()
+const router = useRouter()
 const {
   filters,
   qualityItems,
@@ -54,6 +55,18 @@ const openCount = computed(
   () => qualityItems.value.filter((r) => (r.status ?? '').toLowerCase() !== 'closed').length,
 )
 const ncrCount = computed(() => qualityItems.value.filter((r) => r.ncrId).length)
+// 质量项的决策点是「还有多少没关闭」——构成卡按处理状态拆分；已开 NCR 单独标注。
+const qualitySegments = computed(() =>
+  pagedBreakdownSegments(qualityItemsTotal.value, [
+    { key: 'open', label: '未关闭', value: openCount.value, tone: 'danger' },
+    {
+      key: 'closed',
+      label: '已关闭',
+      value: qualityItems.value.length - openCount.value,
+      tone: 'success',
+    },
+  ]),
+)
 
 type QualityRow = (typeof qualityItems)['value'][number]
 const columns: NvDataTableColumn<QualityRow>[] = [
@@ -108,11 +121,32 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="3">
-      <NvSectionCard description="质量项" :value="qualityItemsTotal" hint="后端筛选总数" />
-      <NvSectionCard description="本页未关闭" :value="openCount" hint="当前页待处理" />
-      <NvSectionCard description="本页关联 NCR" :value="ncrCount" hint="当前页已开 NCR" />
-    </NvSectionCards>
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <NvMetricCard
+        variant="breakdown"
+        label="质量项"
+        :value="qualityItemsTotal"
+        unit="条"
+        :segments="qualitySegments"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="已开不合格品单"
+        :value="ncrCount"
+        unit="张"
+        :tone="ncrCount > 0 ? 'danger' : 'neutral'"
+        :status="
+          ncrCount > 0 ? { label: '待处置', tone: 'danger' } : { label: '无', tone: 'success' }
+        "
+        :foot-start="
+          ncrCount > 0
+            ? '不合格品单需给出返工、让步或报废结论后才能关闭对应质量项。'
+            : '当前质量项都未升级为不合格品单。'
+        "
+        :action="ncrCount > 0 ? { label: '去质量处置' } : undefined"
+        @action="router.push({ path: '/quality/ncrs' })"
+      />
+    </div>
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -147,7 +181,7 @@ function formatError(error: unknown) {
       :loading="qualityItemsPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无质量或不良记录。工单/工序产生检验、不良或质量阻塞后会出现在这里。"
+      empty-message="暂无质量或不良记录。先在工序执行登记检验结果或不良，再回到这里跟进处置与关闭。"
     >
       <template #cell-sourceDocumentId="{ row }">
         <RouterLink

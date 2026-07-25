@@ -9,9 +9,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricCard,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvStatusBadge,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
@@ -68,6 +67,24 @@ function statusMeta(status?: string): {
   return { label: status ?? '未知', tone: 'neutral' }
 }
 const overall = computed(() => statusMeta(readiness.value?.status))
+const issueTotal = computed(() => blockingIssues.value.length + warningIssues.value.length)
+const issueSegments = computed(() => [
+  { key: 'blocking', label: '阻塞', value: blockingIssues.value.length, tone: 'danger' as const },
+  { key: 'warning', label: '警告', value: warningIssues.value.length, tone: 'warning' as const },
+])
+// 就绪卡的落点是「现在能不能开工、下一步做什么」，不是复述状态码。
+const readinessGuidance = computed(() => {
+  if (!readiness.value) return '填写上方范围后点「重新检查」，按工厂、产线或工作中心核对开工条件。'
+  if (blockingIssues.value.length) return '先逐条清掉阻塞项，再回到工单与派工下达生产。'
+  if (warningIssues.value.length) return '警告不阻断开工，建议开工前确认一遍再放行。'
+  return '各检查区域均已就绪，可以进入工单与派工下达生产。'
+})
+const readinessStatusPill = computed(() => {
+  if (!readiness.value) return { label: '尚未检查', tone: 'neutral' as const }
+  if (blockingIssues.value.length) return { label: '不能开工', tone: 'danger' as const }
+  if (warningIssues.value.length) return { label: '可开工，有提醒', tone: 'warning' as const }
+  return { label: '可以开工', tone: 'success' as const }
+})
 
 function issueText(issue: { code?: string; message?: string }) {
   return issue.message ?? issue.code ?? '未命名问题'
@@ -141,23 +158,26 @@ const columns: NvDataTableColumn<ReadinessArea>[] = [
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <NvSectionCards :columns="3">
-      <NvSectionCard
-        description="总就绪状态"
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <NvMetricCard
+        variant="alert"
+        label="开工就绪"
         :value="overall.label"
-        hint="综合各区域的开工就绪结果"
+        :tone="overall.tone"
+        :status="readinessStatusPill"
+        :foot-start="readinessGuidance"
+        :action="{ label: '重新检查' }"
+        @action="refreshReadiness"
       />
-      <NvSectionCard
-        description="阻塞问题"
-        :value="blockingIssues.length"
-        hint="必须先处理才能开工"
+      <NvMetricCard
+        v-if="issueTotal > 0"
+        variant="breakdown"
+        label="待处理问题"
+        :value="issueTotal"
+        unit="项"
+        :segments="issueSegments"
       />
-      <NvSectionCard
-        description="警告问题"
-        :value="warningIssues.length"
-        hint="建议处理，不强制阻断"
-      />
-    </NvSectionCards>
+    </div>
 
     <!-- IA：就绪检查的核心是「什么挡着我开工」——阻塞项前置成醒目清单。 -->
     <div

@@ -3,7 +3,7 @@ import type {
   BusinessConsoleRunScheduleRequest,
   BusinessConsoleScheduledOperation,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useMesSchedules } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
@@ -19,9 +19,8 @@ import {
   NvField,
   NvFieldGroup,
   NvFieldLabel,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -73,6 +72,29 @@ const canRunSchedule = computed(
     isNonEmpty(runForm.environmentId) &&
     isNonEmpty(runForm.trigger),
 )
+
+const scheduleCells = computed<NvMetricStripCell[]>(() => [
+  {
+    key: 'version',
+    label: '规则版本',
+    value: lastSchedule.value?.scheduleVersion ?? '尚未运行',
+    meta: lastSchedule.value?.trigger
+      ? `${triggerLabel(lastSchedule.value.trigger)}触发`
+      : undefined,
+  },
+  {
+    key: 'assignments',
+    label: '工序分配',
+    value: assignments.value.length,
+    unit: '条',
+  },
+  {
+    key: 'affected',
+    label: '影响工单',
+    value: affectedWorkOrderIds.value.length,
+    unit: '张',
+  },
+])
 
 const page = ref(1)
 const pageSize = ref('10')
@@ -157,27 +179,11 @@ function isNonEmpty(value: string) {
     </NvPageHeader>
 
     <p class="max-w-3xl text-sm leading-6 text-muted-foreground">
-      此页保留 MES 执行域内的规则排程过渡和诊断结果，用于查看或手动触发工序分配。正式 APS /
+      此页是车间现场的规则排程过渡入口，用于查看或手动触发一次工序分配。正式 APS /
       甘特、方案发布和冲突治理请进入排产工作台。
     </p>
 
-    <NvSectionCards :columns="3">
-      <NvSectionCard
-        description="规则版本"
-        :value="lastSchedule?.scheduleVersion ?? '无'"
-        :hint="lastSchedule?.trigger ? triggerLabel(lastSchedule.trigger) : '尚未运行'"
-      />
-      <NvSectionCard
-        description="规则分配"
-        :value="assignments.length"
-        hint="执行域返回的工序分配行"
-      />
-      <NvSectionCard
-        description="影响工单"
-        :value="affectedWorkOrderIds.length"
-        hint="本次受影响工单号"
-      />
-    </NvSectionCards>
+    <NvMetricStrip :cells="scheduleCells" />
 
     <div class="flex items-center justify-between">
       <span class="text-sm font-semibold text-foreground">规则排程结果</span>
@@ -222,8 +228,7 @@ function isNonEmpty(value: string) {
         <NvDialogHeader>
           <NvDialogTitle>运行规则排程</NvDialogTitle>
           <NvDialogDescription
-            >规则排程只重新计算 MES
-            执行域工序分配；正式排产方案、甘特和发布动作请在排产工作台处理。</NvDialogDescription
+            >规则排程只重新计算车间的工序分配；正式排产方案、甘特和发布动作请在排产工作台处理。</NvDialogDescription
           >
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitScheduleRun">
