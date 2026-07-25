@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricFacet, NvMetricSegment } from '@nerv-iip/ui'
 import { useBusinessEquipmentAlarms } from '@/composables/useBusinessEquipment'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
@@ -28,11 +28,12 @@ import {
   NvFieldError,
   NvFieldLabel,
   NvInput,
+  NvMetricCard,
+  NvMetricRing,
   NvPageHeader,
   NvRadioGroup,
   NvRadioGroupItem,
   NvRowActions,
-  NvSectionCard,
   NvSectionCards,
   NvTooltip,
   NvTooltipContent,
@@ -86,6 +87,30 @@ const warningCount = computed(
 )
 const shelvedCount = computed(() => alarms.value.filter((a) => isShelved(a)).length)
 const escalatedCount = computed(() => alarms.value.filter((a) => Boolean(a.escalatedAtUtc)).length)
+// 级别构成：严重 / 预警 / 其他 互斥且相加等于未解除报警总数（Ring 的构成前提）。
+const otherSeverityCount = computed(() =>
+  Math.max(0, alarms.value.length - criticalCount.value - warningCount.value),
+)
+const severitySegments = computed<NvMetricSegment[]>(() => [
+  { key: 'critical', label: '严重', value: criticalCount.value, tone: 'danger' },
+  { key: 'warning', label: '预警', value: warningCount.value, tone: 'warning' },
+  { key: 'other', label: '其他级别', value: otherSeverityCount.value, tone: 'neutral' },
+])
+// 升级与搁置是彼此正交的处置视图（同一条报警可同时被升级和搁置），不构成一个整体，用 facets 表达。
+const dispositionFacets = computed<NvMetricFacet[]>(() => [
+  {
+    key: 'escalated',
+    label: '已升级',
+    value: escalatedCount.value,
+    tone: escalatedCount.value > 0 ? 'danger' : 'neutral',
+  },
+  {
+    key: 'shelved',
+    label: '已搁置',
+    value: shelvedCount.value,
+    tone: shelvedCount.value > 0 ? 'warning' : 'neutral',
+  },
+])
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManageAlarms = computed(() => permissionCodes.value.includes(P.iiotAlarmsWrite))
 const currentActor = computed(
@@ -562,14 +587,19 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="4">
-      <NvSectionCard description="报警数量" :value="alarms.length" hint="当前未解除" />
-      <NvSectionCard description="严重报警" :value="criticalCount" hint="需立即处理" />
-      <NvSectionCard description="预警报警" :value="warningCount" hint="需要跟踪" />
-      <NvSectionCard
-        description="升级 / 搁置"
-        :value="`${escalatedCount} / ${shelvedCount}`"
-        hint="当前处置状态"
+    <NvSectionCards :columns="2">
+      <NvMetricRing
+        label="未解除报警级别构成"
+        :value="alarms.length"
+        center-caption="条未解除"
+        :segments="severitySegments"
+      />
+      <NvMetricCard
+        variant="facets"
+        label="处置进展"
+        :value="alarms.length"
+        unit=" 条"
+        :facets="dispositionFacets"
       />
     </NvSectionCards>
 

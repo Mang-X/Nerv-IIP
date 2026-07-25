@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { LineSeries } from '@nerv-iip/ui'
+import type { LineSeries, NvMetricStripCell } from '@nerv-iip/ui'
 import type { TelemetryHistoryProjection } from './telemetryHistoryPresentation'
 import { formatTelemetryDateTime } from './telemetryHistoryPresentation'
-import { NvLineChart, NvSectionCard } from '@nerv-iip/ui'
+import { NvLineChart, NvMetricStrip } from '@nerv-iip/ui'
 import { computed } from 'vue'
 
 const props = defineProps<{
@@ -49,6 +49,20 @@ function metricValue(value: number | undefined) {
     ? '无样本'
     : value.toLocaleString(undefined, { maximumFractionDigits: 6 })
 }
+
+// 五个统计量是同一序列的并列读数，收成一条 Strip；下方折线图已承担趋势表达，不再重复画 sparkline。
+const statisticCells = computed<NvMetricStripCell[]>(() => {
+  const stats = props.projection.statistics
+  if (!stats) return []
+  const labels = basisLabels.value
+  return [
+    { key: 'latest', label: labels.latest, value: metricValue(stats.latest) },
+    { key: 'minimum', label: labels.minimum, value: metricValue(stats.minimum) },
+    { key: 'maximum', label: labels.maximum, value: metricValue(stats.maximum) },
+    { key: 'count', label: labels.count, value: stats.count },
+    { key: 'last', label: labels.last, value: formatTelemetryDateTime(stats.lastSampleAtUtc) },
+  ]
+})
 </script>
 
 <template>
@@ -74,25 +88,7 @@ function metricValue(value: number | undefined) {
       当前采集标签没有可绘制的数值样本。状态和报警请在事件上下文中查看，原始值保留在明细表中。
     </div>
     <template v-else>
-      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <NvSectionCard
-          :description="basisLabels.latest"
-          :value="metricValue(projection.statistics.latest)"
-        />
-        <NvSectionCard
-          :description="basisLabels.minimum"
-          :value="metricValue(projection.statistics.minimum)"
-        />
-        <NvSectionCard
-          :description="basisLabels.maximum"
-          :value="metricValue(projection.statistics.maximum)"
-        />
-        <NvSectionCard :description="basisLabels.count" :value="projection.statistics.count" />
-        <NvSectionCard
-          :description="basisLabels.last"
-          :value="formatTelemetryDateTime(projection.statistics.lastSampleAtUtc)"
-        />
-      </div>
+      <NvMetricStrip :cells="statisticCells" />
 
       <p
         v-if="projection.nonNumericMeasurementCount"

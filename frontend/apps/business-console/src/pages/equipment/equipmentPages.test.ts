@@ -22,6 +22,12 @@ const equipmentComposableState = vi.hoisted(() => ({
   refreshDevice: vi.fn(),
 }))
 
+// 看板列表读面；按用例改写以驱动状态构成环的分段。
+const overviewState = vi.hoisted(() => ({
+  activeBlocks: [] as Array<Record<string, unknown>>,
+  devices: [] as Array<Record<string, unknown>>,
+}))
+
 const authState = vi.hoisted(() => ({
   permissionCodes: [
     'business.iiot.alarms.read',
@@ -224,7 +230,8 @@ vi.mock('@/composables/useBusinessEquipment', () => ({
     label: code || '未知',
     nextStep: '查看设备详情并处理来源业务单据',
   }),
-  equipmentStatusTone: () => 'success',
+  equipmentStatusTone: (state?: string | null) =>
+    state === 'faulted' || state === 'down' ? 'danger' : state === 'idle' ? 'neutral' : 'success',
   useBusinessEquipmentAlarms: () => ({
     acknowledgeAlarm: vi.fn(),
     alarms: computed(() => []),
@@ -250,8 +257,8 @@ vi.mock('@/composables/useBusinessEquipment', () => ({
     refreshDevice: equipmentComposableState.refreshDevice,
   }),
   useBusinessEquipmentOverview: () => ({
-    activeBlocks: computed(() => []),
-    devices: computed(() => []),
+    activeBlocks: computed(() => overviewState.activeBlocks),
+    devices: computed(() => overviewState.devices),
     filters: {
       deviceAssetIds: 'DEV-OIL-01,DEV-PACK-01',
     },
@@ -462,6 +469,8 @@ describe('equipment pages', () => {
     }
     runtimeHoursState.total = 720
     runtimeHoursState.hasSamples = true
+    overviewState.devices = []
+    overviewState.activeBlocks = []
     authState.permissionCodes = [
       'business.iiot.alarms.read',
       'business.iiot.alarms.write',
@@ -479,6 +488,41 @@ describe('equipment pages', () => {
       expect(wrapper.html()).not.toContain('organizationId')
       expect(wrapper.html()).not.toContain('environmentId')
     }
+  })
+
+  it('draws the device-state ring as a true partition of the fleet and keeps alarms off it', () => {
+    overviewState.devices = [
+      { deviceAssetId: 'DEV-A', currentState: 'running' },
+      { deviceAssetId: 'DEV-B', currentState: 'running' },
+      { deviceAssetId: 'DEV-C', currentState: 'faulted' },
+      { deviceAssetId: 'DEV-D', currentState: 'idle', activeAlarmCount: 3 },
+    ]
+
+    const ring = mount(EquipmentIndexPage, { global: { stubs } }).find('.nv-ring-card')
+    expect(ring.exists()).toBe(true)
+
+    // 图例三段（2 运行 / 1 停机 / 1 其他）之和 = 环心的 4 台设备。
+    const legend = ring.findAll('li').map((row) => row.text())
+    expect(legend).toHaveLength(3)
+    expect(legend[0]).toContain('运行就绪')
+    expect(legend[0]).toContain('2')
+    expect(legend[1]).toContain('异常停机')
+    expect(legend[2]).toContain('其他状态')
+    // 报警数与设备台数不同量纲，绝不能混进这个环。
+    expect(ring.text()).not.toContain('报警')
+  })
+
+  it('surfaces unresolved alarms as an actionable alert card, not a plain count', () => {
+    overviewState.devices = [{ deviceAssetId: 'DEV-D', currentState: 'idle', activeAlarmCount: 3 }]
+
+    const wrapper = mount(EquipmentIndexPage, { global: { stubs } })
+    const alertCards = wrapper.findAll('[data-variant="alert"]')
+    const alarmCard = alertCards.find((card) => card.text().includes('未解除报警'))
+
+    expect(alarmCard).toBeDefined()
+    expect(alarmCard!.text()).toContain('3')
+    expect(alarmCard!.text()).toContain('需处理')
+    expect(alarmCard!.text()).toContain('查看报警')
   })
 
   it('updates the device filter and refreshes when route device id changes', async () => {
@@ -518,6 +562,26 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('BEARING-6205')
     expect(wrapper.text()).toContain('MTBF')
     expect(wrapper.text()).toContain('正式页面')
+  })
+
+  it('renders each OEE factor as a gap-to-target bar and OEE itself as multiplied facets', () => {
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    // 各率是「离 100% 还差多少」→ target 进度条。
+    const availability = wrapper
+      .findAll('[data-variant="target"]')
+      .find((card) => card.text().includes('可用率'))
+    expect(availability).toBeDefined()
+    expect(availability!.find('[role="progressbar"]').exists()).toBe(true)
+
+    // OEE = A×P×Q 是相乘率，不是构成：必须是 facets，绝不能画成环。
+    const oeeCard = wrapper
+      .findAll('[data-variant="facets"]')
+      .find((card) => card.text().includes('OEE'))
+    expect(oeeCard).toBeDefined()
+    expect(oeeCard!.text()).toContain('性能率')
+    expect(oeeCard!.text()).toContain('质量率')
+    expect(wrapper.find('.nv-ring-card').exists()).toBe(false)
   })
 
   it('renders cumulative runtime hours and hours-until-next-maintenance on equipment detail', () => {
