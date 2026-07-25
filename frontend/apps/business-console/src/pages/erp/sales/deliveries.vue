@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpDeliveryOrderItem } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpDeliveryOrders } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
   NvDataTable,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvStatusBadge,
   NvToolbar,
   NvInput,
@@ -53,6 +52,10 @@ const releasedCount = computed(
 const customerCount = computed(
   () => new Set(deliveries.items.value.map((d) => d.customerCode).filter(Boolean)).size,
 )
+const deliveryCells = computed<NvMetricStripCell[]>(() => [
+  { key: 'released', label: '已释放发货', value: releasedCount.value, unit: '单' },
+  { key: 'customers', label: '涉及客户', value: customerCount.value, unit: '家' },
+])
 
 function isReleasable(row: BusinessConsoleErpDeliveryOrderItem) {
   return !!row.deliveryOrderNo && (row.status ?? '').toLowerCase() !== 'released'
@@ -90,10 +93,7 @@ async function release(row: BusinessConsoleErpDeliveryOrderItem) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard description="已释放发货" :value="releasedCount" hint="已进入仓储出库流程" />
-      <NvSectionCard description="涉及客户" :value="customerCount" hint="本页发货覆盖客户数" />
-    </NvSectionCards>
+    <NvMetricStrip :cells="deliveryCells" />
 
     <NvToolbar :show-search="false">
       <template #filters>

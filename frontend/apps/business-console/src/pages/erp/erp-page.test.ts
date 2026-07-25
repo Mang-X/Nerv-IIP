@@ -4,7 +4,12 @@ import { describe, expect, it, vi } from 'vitest'
 
 import ErpPage from './index.vue'
 
-const filters = reactive<{ status?: string, keyword?: string, skip: number, take: number }>({ status: undefined, keyword: undefined, skip: 0, take: 10 })
+const filters = reactive<{ status?: string; keyword?: string; skip: number; take: number }>({
+  status: undefined,
+  keyword: undefined,
+  skip: 0,
+  take: 10,
+})
 
 vi.mock('@/composables/usePagedList', () => ({
   usePagedList: () => ({ page: shallowRef(1), pageSize: shallowRef('10') }),
@@ -18,7 +23,17 @@ vi.mock('@/composables/useBusinessErp', () => ({
   useErpPurchaseRequisitions: () => ({
     filters,
     items: computed(() => [
-      { purchaseRequisitionId: 'pr-id-001', requisitionNo: 'PR-001', requiredDate: '2026-07-03', quantity: 8, siteCode: 'SITE-01', skuCode: 'SKU-RM-001', status: 'Open', suggestionId: 'suggestion-001', uomCode: 'kg' },
+      {
+        purchaseRequisitionId: 'pr-id-001',
+        requisitionNo: 'PR-001',
+        requiredDate: '2026-07-03',
+        quantity: 8,
+        siteCode: 'SITE-01',
+        skuCode: 'SKU-RM-001',
+        status: 'Open',
+        suggestionId: 'suggestion-001',
+        uomCode: 'kg',
+      },
     ]),
     total: computed(() => 1),
     error: shallowRef(undefined),
@@ -53,9 +68,10 @@ describe('ERP purchase requisition page', () => {
     const wrapper = mount(ErpPage, { global: { stubs: { ...layoutStub } } })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('待处理申请')
-    expect(wrapper.text()).toContain('已转单申请')
-    expect(wrapper.text()).toContain('本页申请数量')
+    // 三卡合并为一张构成卡：主数值取筛选总数，分段是流转状态。
+    expect(wrapper.text()).toContain('采购申请')
+    expect(wrapper.text()).toContain('待处理')
+    expect(wrapper.text()).toContain('已转单')
     expect(wrapper.text()).toContain('全部申请')
   })
 })

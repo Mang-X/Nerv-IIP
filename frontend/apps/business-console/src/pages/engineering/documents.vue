@@ -3,7 +3,7 @@ import type {
   BusinessConsoleEngineeringDocumentItem,
   BusinessConsoleRegisterEngineeringDocumentRequest,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useEngineeringDocuments } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -22,9 +22,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSheet,
   NvSheetContent,
   NvSheetDescription,
@@ -88,6 +87,16 @@ const docTypeCount = computed(
   () => new Set(documents.value.map((d) => d.documentType).filter(Boolean)).size,
 )
 const linkedCount = computed(() => documents.value.filter((d) => d.itemCode).length)
+const documentCells = computed<NvMetricStripCell[]>(() => [
+  { key: 'types', label: '文档类型', value: docTypeCount.value, unit: '类' },
+  {
+    key: 'linked',
+    label: '已关联物料',
+    value: linkedCount.value,
+    unit: '个',
+    meta: '未关联物料的文档无法在物料页看到',
+  },
+])
 
 const listErrorMessage = computed(() => formatError(documentsError.value))
 
@@ -326,14 +335,7 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard
-        description="文档类型数"
-        :value="docTypeCount"
-        hint="当前范围内不同的文档类型"
-      />
-      <NvSectionCard description="已关联物料" :value="linkedCount" hint="挂接到工程物料的文档" />
-    </NvSectionCards>
+    <NvMetricStrip :cells="documentCells" />
 
     <NvToolbar v-model:search="itemSearch" search-placeholder="按关联物料编码筛选">
       <template #filters>

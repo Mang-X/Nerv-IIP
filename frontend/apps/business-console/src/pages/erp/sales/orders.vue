@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpSalesOrderItem } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpSalesOrders } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
@@ -28,9 +28,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   Spinner,
   NvStatusBadge,
   NvToolbar,
@@ -101,6 +100,16 @@ const releasedCount = computed(
 const amount = computed(() =>
   orders.salesOrders.value.reduce((sum, order) => sum + (order.totalAmount ?? 0), 0),
 )
+// 金额只能按已取回的这一页加总，所以把口径写进副行而不是冒充全量。
+const orderCells = computed<NvMetricStripCell[]>(() => [
+  { key: 'released', label: '已释放订单', value: releasedCount.value, unit: '张' },
+  {
+    key: 'amount',
+    label: '订单金额',
+    value: formatAmount(amount.value),
+    meta: `本页 ${orders.salesOrders.value.length} 张订单合计`,
+  },
+])
 
 const open = shallowRef(false)
 const form = reactive({ quotationNo: '', salesOrderNo: '', siteCode: '' })
@@ -171,10 +180,7 @@ async function submit() {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard description="已释放订单" :value="releasedCount" hint="可进入发货履约" />
-      <NvSectionCard description="本页订单金额" :value="formatAmount(amount)" hint="按当前页汇总" />
-    </NvSectionCards>
+    <NvMetricStrip :cells="orderCells" />
 
     <NvToolbar :show-search="false">
       <template #filters>

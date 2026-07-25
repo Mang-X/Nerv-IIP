@@ -5,7 +5,7 @@ import type {
   BusinessConsoleEngineeringChangeItem,
   BusinessConsoleReleaseEngineeringChangeRequest,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell, StatusTone } from '@nerv-iip/ui'
 import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useEngineeringChanges } from '@/composables/useProductEngineering'
@@ -25,9 +25,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -116,6 +115,23 @@ const releasedCount = computed(() => changes.value.length)
 const affectedTotal = computed(() =>
   changes.value.reduce((sum, c) => sum + (c.affectedVersions?.length ?? 0), 0),
 )
+
+const ecoCells = computed<NvMetricStripCell[]>(() => [
+  {
+    key: 'released',
+    label: '已发布变更',
+    value: releasedCount.value,
+    unit: '个',
+    meta: '当前筛选范围内已生效',
+  },
+  {
+    key: 'affected',
+    label: '受影响版本',
+    value: affectedTotal.value,
+    unit: '个',
+    meta: '这些变更累计触及的 BOM / 路线版本',
+  },
+])
 
 const listErrorMessage = computed(() => formatError(changesError.value))
 
@@ -521,18 +537,7 @@ function riskTone(severity?: string | null): StatusTone {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard
-        description="已发布变更"
-        :value="releasedCount"
-        hint="当前范围内已生效的工程变更"
-      />
-      <NvSectionCard
-        description="受影响版本合计"
-        :value="affectedTotal"
-        hint="所有变更累计影响的版本数"
-      />
-    </NvSectionCards>
+    <NvMetricStrip :cells="ecoCells" />
 
     <NvToolbar>
       <template #filters>

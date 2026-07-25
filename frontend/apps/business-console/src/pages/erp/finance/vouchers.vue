@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpJournalVoucherItem } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpJournalVouchers } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -19,9 +19,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   Spinner,
   NvStatusBadge,
   NvToolbar,
@@ -80,6 +79,25 @@ const debitAmount = computed(() =>
 const creditAmount = computed(() =>
   vouchers.items.value.reduce((sum, v) => sum + (v.totalCreditAmount ?? 0), 0),
 )
+// 借贷是同一句话的两半：并排一条才能一眼看出是否平衡；不平衡时把差额标红提示。
+const balanced = computed(() => debitAmount.value === creditAmount.value)
+const voucherCells = computed<NvMetricStripCell[]>(() => [
+  {
+    key: 'debit',
+    label: '借方合计',
+    value: formatAmount(debitAmount.value),
+    meta: `本页 ${vouchers.items.value.length} 张凭证合计`,
+  },
+  {
+    key: 'credit',
+    label: '贷方合计',
+    value: formatAmount(creditAmount.value),
+    valueTone: balanced.value ? undefined : 'danger',
+    meta: balanced.value
+      ? '与借方平衡'
+      : `与借方相差 ${formatAmount(Math.abs(debitAmount.value - creditAmount.value))}`,
+  },
+])
 
 const open = shallowRef(false)
 const form = reactive({
@@ -161,18 +179,7 @@ async function submit() {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard
-        description="借方合计"
-        :value="formatAmount(debitAmount)"
-        hint="本页凭证借方金额"
-      />
-      <NvSectionCard
-        description="贷方合计"
-        :value="formatAmount(creditAmount)"
-        hint="本页凭证贷方金额"
-      />
-    </NvSectionCards>
+    <NvMetricStrip :cells="voucherCells" />
 
     <NvToolbar :show-search="false">
       <template #filters
