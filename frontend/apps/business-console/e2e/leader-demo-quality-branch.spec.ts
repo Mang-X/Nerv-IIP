@@ -170,6 +170,9 @@ test('MAN-520 records the public quality exception branch', async ({ page }) => 
 
   const evidence = new Map<string, EvidenceEntry>()
   const setup: JsonRecord[] = []
+  // Populated only by live probes against the public facade; the PowerShell gate pins the exact
+  // set of capabilities allowed to appear here.
+  const blockedPublicPaths: JsonRecord[] = []
   let sessionCredential = ''
   let workOrderNo = ''
   let inspectionPlanId = ''
@@ -925,6 +928,110 @@ test('MAN-520 records the public quality exception branch', async ({ page }) => 
         markFailure('quality-hold-timeline-complete', error)
       }
     }
+
+    // Live blocker probe. The disposition hop is not claimed as a node because Quality cannot
+    // reach Approval in an ephemeral-port session, but "blocked" must be an observation this run
+    // actually made, not prose that keeps asserting itself after the product is fixed: the probe
+    // builds a genuinely approved chain, calls the public disposition facade, and fails the run
+    // loudly if the call ever succeeds — at which point this branch must claim the hop instead.
+    if (ncrCode) {
+      const approvalTemplateCode = `NCRDISP-QB-${suffix}`
+      const approvalDocumentType = 'nonconformance-report-disposition'
+      await create('/api/business-console/v1/approval/templates', {
+        organizationId,
+        environmentId,
+        templateCode: approvalTemplateCode,
+        documentType: approvalDocumentType,
+        version: 1,
+        isActive: true,
+        steps: [
+          {
+            stepNo: 1,
+            stepName: 'MAN-520 quality disposition approval',
+            approverType: principalType,
+            approverRef: principalId,
+            dueInHours: 24,
+            completionPolicy: 'all',
+          },
+        ],
+      })
+      const startedChain = asRecord(
+        await create('/api/business-console/v1/approval/chains', {
+          organizationId,
+          environmentId,
+          templateCode: approvalTemplateCode,
+          sourceService: 'business-quality',
+          documentType: approvalDocumentType,
+          documentId: ncrCode,
+          documentLineId: null,
+          startedBy: `${principalType}:${principalId}`,
+        }),
+      )
+      const approvalChainId = textOf(startedChain.chainId).trim()
+      if (!approvalChainId) {
+        throw new Error(`Approval did not start a disposition chain for NCR ${ncrCode}.`)
+      }
+      await create(
+        `/api/business-console/v1/approval/chains/${encodeURIComponent(approvalChainId)}/steps/1/resolve`,
+        {
+          organizationId,
+          environmentId,
+          actorType: principalType,
+          actorRef: principalId,
+          decision: 'approve',
+          comment: `MAN-520 quality branch NCR disposition approval ${suffix}`,
+        },
+      )
+      const approvedChain = await pollData(
+        `/api/business-console/v1/approval/chains/${encodeURIComponent(approvalChainId)}`,
+        { organizationId, environmentId },
+        (data) => textOf(data.status).trim().toLowerCase() === 'approved',
+      )
+      if (textOf(approvedChain.data.documentId) !== ncrCode) {
+        throw new Error(
+          `Approval chain ${approvalChainId} is not bound to NCR ${ncrCode}: ${safeText(JSON.stringify(approvedChain.data))}.`,
+        )
+      }
+      const dispositionPath = queryPath(
+        `/api/business-console/v1/quality/ncrs/${encodeURIComponent(ncrId)}/disposition`,
+        { organizationId, environmentId },
+      )
+      const dispositionBody = {
+        dispositionType: 'rework',
+        dispositionApprovalChainId: approvalChainId,
+        attachmentFileIds: [],
+        mrbReviews: [
+          {
+            reviewerId: `${principalType}:${principalId}`,
+            decision: 'approved',
+            comment: `MAN-520 quality branch rework disposition ${suffix}`,
+            reviewedAtUtc: new Date().toISOString(),
+          },
+        ],
+      }
+      let dispositionProbe: JsonRecord | null = null
+      try {
+        const accepted = await call('POST', dispositionPath, dispositionBody)
+        throw new Error(
+          `The NCR disposition facade is no longer blocked (HTTP ${accepted.summary.status} for ${ncrCode}); claim the disposition hop as a branch node and remove it from blockedPublicPaths.`,
+        )
+      } catch (error) {
+        if (!(error instanceof PublicCallError)) throw error
+        dispositionProbe = {
+          capability: 'ncr-disposition',
+          request: error.request,
+          observedStatus: error.status,
+          observedResponse: publicJson(error.payload) as JsonRecord,
+          observedAtUtc: new Date().toISOString(),
+          approvalChainStatus: textOf(approvedChain.data.status),
+          observation:
+            'Quality resolves the approval-chain status through a hard-coded http://localhost:5114 base address that the Aspire AppHost never injects for business-quality, so a genuinely approved chain still fails the disposition call in an ephemeral-port session.',
+          consequence:
+            'The disposition hop is not claimed by this branch; it is reported as a product finding rather than asserted or reached through an internal endpoint.',
+        }
+      }
+      blockedPublicPaths.push(dispositionProbe!)
+    }
   } finally {
     const entries = requiredNodes.map((node) => evidence.get(node)!)
     await writeFile(
@@ -943,23 +1050,7 @@ test('MAN-520 records the public quality exception branch', async ({ page }) => 
           persistence,
           assertionBoundary:
             'public BusinessGateway HTTP only; no database reads as business assertions',
-          blockedPublicPaths: [
-            {
-              capability:
-                'NCR disposition (rework / scrap / return-to-supplier / conditional-release)',
-              observation:
-                'Quality resolves the approval-chain status through a hard-coded http://localhost:5114 base address that the Aspire AppHost never overrides for business-quality, so every centrally approved disposition fails with HTTP 500 downstream-request-failed in an isolated ephemeral-port session.',
-              consequence:
-                'The disposition hop is not claimed by this branch; it is reported as a product finding rather than asserted or worked around through an internal endpoint.',
-            },
-            {
-              capability: 'NCR defect quantity',
-              observation:
-                'An NCR opened from a rejected inspection records the inspected lot quantity instead of the failed quantity from the inspection line.',
-              consequence:
-                'This run records both quantities in the NCR node evidence instead of asserting the smaller one.',
-            },
-          ],
+          blockedPublicPaths,
           setup,
           entries,
           summary: Object.fromEntries(

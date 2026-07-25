@@ -937,6 +937,25 @@ $branchEvidenceRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstac
 try {
     [IO.Directory]::CreateDirectory($branchEvidenceRoot) | Out-Null
 
+    function New-NervBlockedCapabilityProbe {
+        param(
+            [Parameter(Mandatory)] [string] $Capability,
+            [int] $ObservedStatus = 500,
+            [string] $RequestPath = '/api/business-console/v1/quality/ncrs/probe/disposition',
+            [switch] $OmitRequest
+        )
+
+        $probe = [ordered]@{
+            capability = $Capability
+            observedStatus = $ObservedStatus
+            observedAtUtc = '2026-07-25T06:44:00.000Z'
+        }
+        if (-not $OmitRequest) {
+            $probe['request'] = [ordered]@{ method = 'POST'; path = $RequestPath; status = $ObservedStatus }
+        }
+        return $probe
+    }
+
     function Write-NervBranchEvidenceFixture {
         param(
             [Parameter(Mandatory)] [string] $Path,
@@ -944,15 +963,18 @@ try {
             [Parameter(Mandatory)] [System.Collections.IDictionary] $Identities,
             [string] $RuntimeProfileSource = 'session-manifest',
             [string] $Transport = 'redis-cross-process',
-            [string] $Persistence = 'postgresql'
+            [string] $Persistence = 'postgresql',
+            [AllowEmptyCollection()] [object[]] $BlockedPublicPaths = @(),
+            [switch] $OmitPersistence
         )
 
         $document = [ordered]@{
             runtimeProfileSource = $RuntimeProfileSource
             transport = $Transport
-            persistence = $Persistence
         }
+        if (-not $OmitPersistence) { $document['persistence'] = $Persistence }
         foreach ($identity in $Identities.GetEnumerator()) { $document[$identity.Key] = $identity.Value }
+        $document['blockedPublicPaths'] = @($BlockedPublicPaths)
         $document['entries'] = $Entries
         [IO.File]::WriteAllText($Path, ($document | ConvertTo-Json -Depth 10))
     }
@@ -973,19 +995,20 @@ try {
     $qualityEvidencePath = Join-Path $branchEvidenceRoot 'quality.json'
     $qualityIdentities = [ordered]@{ workOrderNo = 'WO-20260725-000001'; ncrCode = 'NCR-org001-envdev-0123456789abcdef0123456789abcdef' }
     $qualityEntries = New-NervBranchEvidenceEntries -Nodes $qualityNodes -StableKey 'WO-20260725-000001'
-    Write-NervBranchEvidenceFixture -Path $qualityEvidencePath -Entries $qualityEntries -Identities $qualityIdentities
+    $qualityBlocked = @(New-NervBlockedCapabilityProbe -Capability 'ncr-disposition')
+    Write-NervBranchEvidenceFixture -Path $qualityEvidencePath -Entries $qualityEntries -Identities $qualityIdentities -BlockedPublicPaths $qualityBlocked
     $validatedQuality = Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath
     Assert-True (@($validatedQuality.entries).Count -eq $qualityNodes.Count) 'Quality-branch evidence must validate every required node.'
 
     $qualityEntries[0].conclusion = 'gap'
     $qualityEntries[0].responsibilityIssue = '#1099'
-    Write-NervBranchEvidenceFixture -Path $qualityEvidencePath -Entries $qualityEntries -Identities $qualityIdentities
+    Write-NervBranchEvidenceFixture -Path $qualityEvidencePath -Entries $qualityEntries -Identities $qualityIdentities -BlockedPublicPaths $qualityBlocked
     $qualityGapFailed = $false
     try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityGapFailed = $true }
     Assert-True $qualityGapFailed 'Quality-branch evidence must fail closed on any gap node; the branches have no accepted gap baseline.'
 
     $qualityEntries[0].conclusion = 'not-verified'
-    Write-NervBranchEvidenceFixture -Path $qualityEvidencePath -Entries $qualityEntries -Identities $qualityIdentities
+    Write-NervBranchEvidenceFixture -Path $qualityEvidencePath -Entries $qualityEntries -Identities $qualityIdentities -BlockedPublicPaths $qualityBlocked
     $qualityNotVerifiedFailed = $false
     try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityNotVerifiedFailed = $true }
     Assert-True $qualityNotVerifiedFailed 'Quality-branch evidence must reject a present but not-verified node.'
@@ -995,7 +1018,8 @@ try {
     Write-NervBranchEvidenceFixture `
         -Path $qualityEvidencePath `
         -Entries $qualityEntries `
-        -Identities ([ordered]@{ workOrderNo = '0f8fad5b-d9cb-469f-a165-70867728950e'; ncrCode = $qualityIdentities.ncrCode })
+        -Identities ([ordered]@{ workOrderNo = '0f8fad5b-d9cb-469f-a165-70867728950e'; ncrCode = $qualityIdentities.ncrCode }) `
+        -BlockedPublicPaths $qualityBlocked
     $qualityGuidFailed = $false
     try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityGuidFailed = $true }
     Assert-True $qualityGuidFailed 'Quality-branch evidence must reject a bare GUID standing in for the work-order number.'
@@ -1003,7 +1027,8 @@ try {
     Write-NervBranchEvidenceFixture `
         -Path $qualityEvidencePath `
         -Entries $qualityEntries `
-        -Identities ([ordered]@{ workOrderNo = $qualityIdentities.workOrderNo; ncrCode = '' })
+        -Identities ([ordered]@{ workOrderNo = $qualityIdentities.workOrderNo; ncrCode = '' }) `
+        -BlockedPublicPaths $qualityBlocked
     $qualityMissingNcrFailed = $false
     try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityMissingNcrFailed = $true }
     Assert-True $qualityMissingNcrFailed 'Quality-branch evidence must require a readable NCR document number.'
@@ -1011,19 +1036,80 @@ try {
     Write-NervBranchEvidenceFixture `
         -Path $qualityEvidencePath `
         -Entries @($qualityEntries | Select-Object -Skip 1) `
-        -Identities $qualityIdentities
+        -Identities $qualityIdentities `
+        -BlockedPublicPaths $qualityBlocked
     $qualityMissingNodeFailed = $false
     try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityMissingNodeFailed = $true }
     Assert-True $qualityMissingNodeFailed 'Quality-branch evidence must reject a missing node.'
+
+    # Equal-length substitution so the failure is attributed to the per-node contract guard rather
+    # than to the entry-count guard, which an added or removed row would trip first.
+    $qualityRenamedEntries = @($qualityEntries | ForEach-Object { [ordered]@{ node = $_.node; stableKey = $_.stableKey; conclusion = $_.conclusion; demoWording = $_.demoWording; responsibilityIssue = $_.responsibilityIssue } })
+    $qualityRenamedEntries[2].node = 'quality-rejection-mes-work-order-freeze'
+    Write-NervBranchEvidenceFixture `
+        -Path $qualityEvidencePath `
+        -Entries $qualityRenamedEntries `
+        -Identities $qualityIdentities `
+        -BlockedPublicPaths $qualityBlocked
+    $qualityUnknownNodeFailed = $false
+    try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityUnknownNodeFailed = $true }
+    Assert-True $qualityUnknownNodeFailed 'Quality-branch evidence must reject a node name outside the contract even when the entry count still matches.'
 
     Write-NervBranchEvidenceFixture `
         -Path $qualityEvidencePath `
         -Entries $qualityEntries `
         -Identities $qualityIdentities `
+        -BlockedPublicPaths $qualityBlocked `
         -Transport 'in-memory'
     $qualityTransportFailed = $false
     try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityTransportFailed = $true }
     Assert-True $qualityTransportFailed 'Quality-branch evidence must reject a non-Redis transport claim.'
+
+    Write-NervBranchEvidenceFixture `
+        -Path $qualityEvidencePath `
+        -Entries $qualityEntries `
+        -Identities $qualityIdentities `
+        -BlockedPublicPaths $qualityBlocked `
+        -OmitPersistence
+    $qualityMissingPersistenceFailed = $false
+    try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityMissingPersistenceFailed = $true }
+    Assert-True $qualityMissingPersistenceFailed 'Quality-branch evidence must reject a missing persistence declaration.'
+
+    Write-NervBranchEvidenceFixture `
+        -Path $qualityEvidencePath `
+        -Entries $qualityEntries `
+        -Identities $qualityIdentities `
+        -BlockedPublicPaths @()
+    $qualityMissingProbeFailed = $false
+    try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityMissingProbeFailed = $true }
+    Assert-True $qualityMissingProbeFailed 'Quality-branch evidence must still publish a live probe for every declined hop.'
+
+    Write-NervBranchEvidenceFixture `
+        -Path $qualityEvidencePath `
+        -Entries $qualityEntries `
+        -Identities $qualityIdentities `
+        -BlockedPublicPaths @($qualityBlocked[0], (New-NervBlockedCapabilityProbe -Capability 'ncr-close'))
+    $qualityExtraBlockedFailed = $false
+    try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityExtraBlockedFailed = $true }
+    Assert-True $qualityExtraBlockedFailed 'Quality-branch evidence must reject a blocked capability outside the pinned whitelist.'
+
+    Write-NervBranchEvidenceFixture `
+        -Path $qualityEvidencePath `
+        -Entries $qualityEntries `
+        -Identities $qualityIdentities `
+        -BlockedPublicPaths @(New-NervBlockedCapabilityProbe -Capability 'ncr-disposition' -OmitRequest)
+    $qualityProbeWithoutRequestFailed = $false
+    try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityProbeWithoutRequestFailed = $true }
+    Assert-True $qualityProbeWithoutRequestFailed 'A blocked capability without the public request it probed must fail; prose is not an observation.'
+
+    Write-NervBranchEvidenceFixture `
+        -Path $qualityEvidencePath `
+        -Entries $qualityEntries `
+        -Identities $qualityIdentities `
+        -BlockedPublicPaths @(New-NervBlockedCapabilityProbe -Capability 'ncr-disposition' -ObservedStatus 200)
+    $qualityProbeSucceededFailed = $false
+    try { Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath | Out-Null } catch { $qualityProbeSucceededFailed = $true }
+    Assert-True $qualityProbeSucceededFailed 'A blocked capability whose probe succeeded must fail the gate so the harness claims the hop instead.'
 
     $equipmentEvidencePath = Join-Path $branchEvidenceRoot 'equipment.json'
     $equipmentIdentities = [ordered]@{ deviceCode = 'DEV-EQ-20260725120000'; alarmRuleCode = 'AR-EQ-20260725120000' }
@@ -1048,6 +1134,15 @@ try {
     $equipmentAlarmIdFailed = $false
     try { Assert-NervLeaderDemoEquipmentBranchEvidence -EvidencePath $equipmentEvidencePath | Out-Null } catch { $equipmentAlarmIdFailed = $true }
     Assert-True $equipmentAlarmIdFailed 'Equipment-branch evidence must reject an alarm id that is not run-scoped.'
+
+    Write-NervBranchEvidenceFixture `
+        -Path $equipmentEvidencePath `
+        -Entries $equipmentEntries `
+        -Identities $equipmentIdentities `
+        -BlockedPublicPaths @(New-NervBlockedCapabilityProbe -Capability 'maintenance-work-order-completion')
+    $equipmentUnexpectedBlockedFailed = $false
+    try { Assert-NervLeaderDemoEquipmentBranchEvidence -EvidencePath $equipmentEvidencePath | Out-Null } catch { $equipmentUnexpectedBlockedFailed = $true }
+    Assert-True $equipmentUnexpectedBlockedFailed 'The equipment branch pins an empty blocked-capability whitelist until both branches share one probed gap schema.'
 
     $equipmentEntries += [ordered]@{ node = 'unexpected-extra'; stableKey = 'AR-EQ-20260725120000'; conclusion = 'runtime-confirmed'; demoWording = 'unexpected' }
     Write-NervBranchEvidenceFixture -Path $equipmentEvidencePath -Entries $equipmentEntries -Identities $equipmentIdentities
@@ -1088,7 +1183,7 @@ $qualityBranchScenario = Invoke-NervLeaderDemoQualityBranchScenario `
     -AspireSnapshotAction { param($Manifest) $healthySnapshot } `
     -BrowserAction { param($Environment, $Manifest) $script:qualityBranchEnvironment = $Environment }
 Assert-True ($qualityBranchScenario.ExitCode -eq 0) 'Healthy injected quality-branch scenario must pass.'
-foreach ($name in @('postgres', 'redis', 'business-gateway', 'business-master-data', 'business-quality', 'business-mes')) {
+foreach ($name in @('postgres', 'redis', 'business-gateway', 'business-master-data', 'business-quality', 'business-mes', 'business-approval')) {
     Assert-True ($script:qualityBranchWaits -ccontains $name) "Quality-branch scenario did not wait for '$name'."
 }
 Assert-True ($script:qualityBranchEnvironment.NERV_IIP_FULLSTACK_ADMIN_PASSWORD -ceq 'process-only-password') 'Quality-branch browser password must remain process-only.'
@@ -1158,6 +1253,13 @@ $nervEntrypointScenarioNames = @(
 foreach ($scenarioName in @('leader-demo-quality-branch', 'leader-demo-equipment-branch')) {
     Assert-True ($branchScenarioNames -ccontains $scenarioName) "fullstack-session.ps1 must accept -Scenario '$scenarioName'."
     Assert-True ($nervEntrypointScenarioNames -ccontains $scenarioName) "nerv.ps1 must accept -Scenario '$scenarioName'."
+}
+# A failing branch run must leave the log that explains it; the diagnostic sweep therefore has to
+# cover every service the branch scenarios wait on.
+$runtimeLibraryText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
+$collectResourceBlock = [regex]::Match($runtimeLibraryText, "(?s)\`$resourceNames = @\(\s*'iam'.*?\)").Value
+foreach ($collected in @('iam', 'business-industrial-telemetry', 'business-maintenance', 'business-approval', 'business-quality', 'business-mes')) {
+    Assert-True ($collectResourceBlock -match "'$collected'") "Diagnostic collection must include '$collected'."
 }
 $fullstackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Raw
 foreach ($dispatchFunction in @('Invoke-NervLeaderDemoQualityBranchScenario', 'Invoke-NervLeaderDemoEquipmentBranchScenario')) {

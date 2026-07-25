@@ -614,7 +614,8 @@ function Assert-NervLeaderDemoBranchEvidence {
         [Parameter(Mandatory)] [string] $EvidencePath,
         [Parameter(Mandatory)] [string] $ScenarioLabel,
         [Parameter(Mandatory)] [string[]] $RequiredNodes,
-        [Parameter(Mandatory)] [System.Collections.IDictionary] $RequiredIdentityPrefixes
+        [Parameter(Mandatory)] [System.Collections.IDictionary] $RequiredIdentityPrefixes,
+        [AllowEmptyCollection()] [string[]] $ExpectedBlockedCapabilities = @()
     )
 
     if (-not (Test-Path -LiteralPath $EvidencePath -PathType Leaf)) {
@@ -636,8 +637,38 @@ function Assert-NervLeaderDemoBranchEvidence {
         if ([string]::IsNullOrWhiteSpace($value) -or -not $value.StartsWith("$($identity.Value)", [StringComparison]::Ordinal)) {
             throw "$ScenarioLabel evidence must identify a run-scoped '$($identity.Key)' starting with '$($identity.Value)'; found '$value'."
         }
+        # Rejects a naked GUID standing in for a document number. It deliberately does not reject a
+        # prefixed code whose tail is a de-hyphenated GUID (Quality really issues NCR numbers in
+        # that shape): that is the product's numbering style, not a harness substitution, and is
+        # tracked separately.
         if ($value -match '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') {
             throw "$ScenarioLabel evidence used a bare GUID as the '$($identity.Key)' business number."
+        }
+    }
+
+    # A branch may decline to claim a hop only by publishing a live probe of it. The capability set
+    # is pinned so a fixed product turns the run red instead of letting stale prose keep claiming
+    # the hop is blocked, and every entry must carry the public request it actually observed.
+    $blockedProperty = $evidence.PSObject.Properties['blockedPublicPaths']
+    $blockedEntries = if ($null -eq $blockedProperty -or $null -eq $blockedProperty.Value) { @() } else { @($blockedProperty.Value) }
+    [string[]] $observedBlockedCapabilities = @(@($blockedEntries | ForEach-Object { "$($_.capability)" }) | Sort-Object -Unique)
+    [string[]] $expectedBlockedCapabilities = @(@($ExpectedBlockedCapabilities) | Sort-Object -Unique)
+    if (($expectedBlockedCapabilities -join '|') -cne ($observedBlockedCapabilities -join '|')) {
+        throw "$ScenarioLabel evidence must declare exactly these blocked capabilities: [$($expectedBlockedCapabilities -join ', ')]; found [$($observedBlockedCapabilities -join ', ')]."
+    }
+    if (@($blockedEntries).Length -ne $observedBlockedCapabilities.Length) {
+        throw "$ScenarioLabel evidence must contain exactly one probe per blocked capability; found $(@($blockedEntries).Length)."
+    }
+    foreach ($blocked in $blockedEntries) {
+        $request = $blocked.PSObject.Properties['request']
+        $requestPath = if ($null -eq $request -or $null -eq $request.Value) { '' } else { "$($request.Value.path)" }
+        $observedStatus = 0
+        [void] [int]::TryParse("$($blocked.observedStatus)", [ref] $observedStatus)
+        if ([string]::IsNullOrWhiteSpace($requestPath) -or $observedStatus -lt 400) {
+            throw "$ScenarioLabel evidence blocked capability '$($blocked.capability)' must record the public request it probed and a failing HTTP status; found path '$requestPath' status '$($blocked.observedStatus)'."
+        }
+        if ([string]::IsNullOrWhiteSpace("$($blocked.observedAtUtc)")) {
+            throw "$ScenarioLabel evidence blocked capability '$($blocked.capability)' must record when the probe ran."
         }
     }
 
@@ -706,17 +737,22 @@ function Assert-NervLeaderDemoQualityBranchEvidence {
         -EvidencePath $EvidencePath `
         -ScenarioLabel 'Leader-demo quality-branch' `
         -RequiredNodes (Get-NervLeaderDemoQualityBranchNodes) `
-        -RequiredIdentityPrefixes ([ordered]@{ workOrderNo = 'WO-'; ncrCode = 'NCR-' })
+        -RequiredIdentityPrefixes ([ordered]@{ workOrderNo = 'WO-'; ncrCode = 'NCR-' }) `
+        -ExpectedBlockedCapabilities @('ncr-disposition')
 }
 
 function Assert-NervLeaderDemoEquipmentBranchEvidence {
+    # The equipment branch records its maintenance-completion gap inside the reliability node
+    # (mttrFacadeGap) rather than as a probed blockedPublicPaths entry; aligning both branches on a
+    # single probed gap schema is a tracked follow-up, so no blocked capability may appear here yet.
     param([Parameter(Mandatory)] [string] $EvidencePath)
 
     return Assert-NervLeaderDemoBranchEvidence `
         -EvidencePath $EvidencePath `
         -ScenarioLabel 'Leader-demo equipment-branch' `
         -RequiredNodes (Get-NervLeaderDemoEquipmentBranchNodes) `
-        -RequiredIdentityPrefixes ([ordered]@{ deviceCode = 'DEV-EQ-'; alarmRuleCode = 'AR-EQ-' })
+        -RequiredIdentityPrefixes ([ordered]@{ deviceCode = 'DEV-EQ-'; alarmRuleCode = 'AR-EQ-' }) `
+        -ExpectedBlockedCapabilities @()
 }
 
 function Invoke-NervLeaderDemoBranchBrowserCheck {
@@ -854,7 +890,7 @@ function Invoke-NervLeaderDemoQualityBranchScenario {
         -ScenarioLabel 'Leader-demo quality-branch' `
         -ResourceNames @(
             'postgres', 'redis', 'iam', 'gateway', 'business-gateway', 'business-console',
-            'business-master-data', 'business-quality', 'business-mes'
+            'business-master-data', 'business-quality', 'business-mes', 'business-approval'
         ) `
         -ScenarioEnvironment ([ordered]@{
             NERV_IIP_QUALITY_BRANCH_RUNTIME_PROFILE_SOURCE = 'session-manifest'
@@ -1006,11 +1042,15 @@ function Collect-NervFullStackDiagnostics {
     $logDirectory = Join-Path $artifactPath 'aspire-logs'
     [System.IO.Directory]::CreateDirectory($logDirectory) | Out-Null
     $collectionErrors = [System.Collections.Generic.List[string]]::new()
+    # Every service any managed scenario can fail inside must be collectable, otherwise a failing
+    # run leaves exactly the log that would explain it missing (equipment-branch failures live in
+    # business-industrial-telemetry / business-maintenance, auth failures live in iam).
     $resourceNames = @(
-        'gateway', 'business-gateway', 'console', 'business-console', 'screen',
+        'iam', 'gateway', 'business-gateway', 'console', 'business-console', 'screen',
         'business-master-data', 'business-product-engineering', 'business-inventory',
         'business-quality', 'business-mes', 'business-demand-planning', 'business-wms',
         'business-erp', 'business-scheduling',
+        'business-industrial-telemetry', 'business-maintenance', 'business-approval',
         'postgres', 'redis', 'minio'
     )
     foreach ($resourceName in $resourceNames) {
