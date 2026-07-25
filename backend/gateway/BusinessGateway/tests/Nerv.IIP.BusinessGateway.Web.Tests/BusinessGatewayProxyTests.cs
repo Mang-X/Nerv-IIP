@@ -5770,6 +5770,48 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Quality_http_client_preserves_reinspection_lineage_in_record_list()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                total = 1,
+                items = new[]
+                {
+                    new
+                    {
+                        inspectionRecordId = "inspection-002",
+                        sourceType = "operation",
+                        sourceDocumentId = "WO-001",
+                        skuCode = "SKU-001",
+                        result = "passed",
+                        batchNo = "LOT-001",
+                        serialNo = (string?)null,
+                        dispositionReason = (string?)null,
+                        attemptNumber = 2,
+                        reinspectionOfInspectionRecordId = "inspection-001",
+                    },
+                },
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var response = await client.ListInspectionRecordsAsync(
+            "internal-token-001",
+            new BusinessConsoleQualityListRequest("org-001", "env-dev"),
+            CancellationToken.None);
+
+        var item = Assert.Single(response.Items);
+        Assert.Equal(2, item.AttemptNumber);
+        Assert.Equal("inspection-001", item.ReinspectionOfInspectionRecordId);
+    }
+
+    [Fact]
     public async Task Quality_http_client_maps_inspection_record_to_real_downstream_request_shape()
     {
         string? requestBody = null;
@@ -5838,6 +5880,69 @@ public sealed class BusinessGatewayProxyTests
         Assert.False(line.TryGetProperty("measuredValue", out _));
         Assert.False(line.TryGetProperty("dispositionReason", out _));
         Assert.False(line.TryGetProperty("defectCode", out _));
+    }
+
+    [Fact]
+    public async Task Quality_http_client_posts_reinspection_to_the_targeted_predecessor()
+    {
+        string? requestBody = null;
+        var handler = new RecordingHandler(request =>
+        {
+            requestBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    inspectionRecordId = "inspection-002",
+                    attemptNumber = 2,
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var response = await client.CreateReinspectionAsync(
+            "internal-token-001",
+            "inspection-001",
+            new BusinessConsoleCreateReinspectionRequest(
+                "inspection-001",
+                "org-001",
+                "env-dev",
+                [
+                    new BusinessConsoleInspectionCharacteristicResult(
+                        "dimension",
+                        "10.0",
+                        "mm",
+                        "passed",
+                        null,
+                        null,
+                        []),
+                ],
+                null,
+                [],
+                "device-001"),
+            CancellationToken.None);
+
+        Assert.Equal("inspection-002", response.InspectionRecordId);
+        Assert.Equal(2, response.AttemptNumber);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal(
+            "/api/business/v1/quality/inspection-records/inspection-001/reinspections",
+            request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+
+        Assert.NotNull(requestBody);
+        using var document = JsonDocument.Parse(requestBody);
+        var root = document.RootElement;
+        Assert.Equal("org-001", root.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", root.GetProperty("environmentId").GetString());
+        Assert.Equal("device-001", root.GetProperty("measuringDeviceId").GetString());
+        Assert.False(root.TryGetProperty("inspectionRecordId", out _));
+        Assert.Equal("passed", root.GetProperty("resultLines")[0].GetProperty("result").GetString());
     }
 
     [Fact]
@@ -8592,6 +8697,13 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         BusinessConsoleCreateInspectionRecordRequest request,
         CancellationToken cancellationToken) =>
         Task.FromResult(new BusinessConsoleCreateInspectionRecordResponse("inspection-001"));
+
+    public Task<BusinessConsoleCreateReinspectionResponse> CreateReinspectionAsync(
+        string internalBearerToken,
+        string inspectionRecordId,
+        BusinessConsoleCreateReinspectionRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new BusinessConsoleCreateReinspectionResponse("inspection-002", 2));
 
     public Task<BusinessConsoleQualityListResponse> ListInspectionRecordsAsync(
         string internalBearerToken,

@@ -25,7 +25,9 @@ public sealed class QualityInspectionIntegrationEventTests
         Assert.Equal("org-001", integrationEvent.OrganizationId);
         Assert.Equal("env-dev", integrationEvent.EnvironmentId);
         Assert.Equal("passed", integrationEvent.Payload.Result);
-        Assert.Equal("quality:inspection-passed:org-001:env-dev:purchase-receipt:RCV-001", integrationEvent.IdempotencyKey);
+        Assert.Equal(
+            $"quality:inspection-passed:org-001:env-dev:purchase-receipt:RCV-001:{record.Id}",
+            integrationEvent.IdempotencyKey);
         Assert.Contains("\"eventType\":\"quality.InspectionPassed\"", json, StringComparison.Ordinal);
         Assert.DoesNotContain("stockMovement", json, StringComparison.OrdinalIgnoreCase);
     }
@@ -104,7 +106,9 @@ public sealed class QualityInspectionIntegrationEventTests
         Assert.NotNull(integrationEvent.Payload.StockRelease);
         Assert.Equal("quality", integrationEvent.Payload.StockRelease.SourceQualityStatus);
         Assert.Equal(QualityStockReleaseTargetStatuses.Restricted, integrationEvent.Payload.StockRelease.TargetQualityStatus);
-        Assert.Equal("quality:inspection-conditional-release:org-001:env-dev:purchase-receipt:RCV-002", integrationEvent.IdempotencyKey);
+        Assert.Equal(
+            $"quality:inspection-conditional-release:org-001:env-dev:purchase-receipt:RCV-002:{record.Id}",
+            integrationEvent.IdempotencyKey);
     }
 
     [Fact]
@@ -118,7 +122,25 @@ public sealed class QualityInspectionIntegrationEventTests
 
         Assert.NotEqual(first.EventId, second.EventId);
         Assert.Equal(first.IdempotencyKey, second.IdempotencyKey);
-        Assert.Equal("quality:inspection-rejected:org-001:env-dev:purchase-receipt:RCV-001", first.IdempotencyKey);
+        Assert.Equal(
+            $"quality:inspection-rejected:org-001:env-dev:purchase-receipt:RCV-001:{record.Id}",
+            first.IdempotencyKey);
+    }
+
+    [Fact]
+    public void Inspection_result_event_idempotency_distinguishes_attempt_records_for_the_same_source()
+    {
+        var firstRecord = NewRejectedRecord();
+        var secondRecord = NewRejectedRecord();
+        var converter = new InspectionRejectedIntegrationEventConverter(new StubQualityIntegrationEventContextAccessor());
+
+        var first = converter.Convert(new InspectionRejectedDomainEvent(firstRecord));
+        var second = converter.Convert(new InspectionRejectedDomainEvent(secondRecord));
+
+        Assert.NotEqual(firstRecord.Id, secondRecord.Id);
+        Assert.NotEqual(first.IdempotencyKey, second.IdempotencyKey);
+        Assert.Contains(firstRecord.Id.ToString(), first.IdempotencyKey, StringComparison.Ordinal);
+        Assert.Contains(secondRecord.Id.ToString(), second.IdempotencyKey, StringComparison.Ordinal);
     }
 
     private static InspectionRecord NewPassedRecord()

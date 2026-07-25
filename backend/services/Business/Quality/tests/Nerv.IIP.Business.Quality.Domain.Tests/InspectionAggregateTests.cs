@@ -692,6 +692,145 @@ public sealed class InspectionAggregateTests
     }
 
     [Fact]
+    public void Reinspection_appends_a_passed_attempt_with_inherited_source_and_stock_facts()
+    {
+        var initial = InspectionRecord.Create(
+            "org-001",
+            "env-dev",
+            null,
+            "operation",
+            "mes",
+            "WO-REINSPECT-001",
+            "SKU-FG-1000",
+            5m,
+            "LOT-REINSPECT-001",
+            null,
+            [InspectionResultLineInput.Fail("appearance", "scratch", "surface-defect", 1m, [])],
+            "Surface defect",
+            [],
+            StockReleaseDimension.Create("pcs", "SITE-01", "FG-HOLD", "quality", "production", null));
+
+        var reinspection = InspectionRecord.Reinspect(
+            initial,
+            inspectionPlan: null,
+            [InspectionResultLineInput.Pass("appearance", "ok", null, [])],
+            dispositionReason: null,
+            dispositionAttachmentFileIds: []);
+
+        Assert.Equal(1, initial.AttemptNumber);
+        Assert.Null(initial.ReinspectionOfInspectionRecordId);
+        Assert.Equal(2, reinspection.AttemptNumber);
+        Assert.Equal(initial.Id, reinspection.ReinspectionOfInspectionRecordId);
+        Assert.Equal(initial.OrganizationId, reinspection.OrganizationId);
+        Assert.Equal(initial.EnvironmentId, reinspection.EnvironmentId);
+        Assert.Equal(initial.SourceType, reinspection.SourceType);
+        Assert.Equal(initial.SourceService, reinspection.SourceService);
+        Assert.Equal(initial.SourceDocumentId, reinspection.SourceDocumentId);
+        Assert.Equal(initial.SkuCode, reinspection.SkuCode);
+        Assert.Equal(initial.InspectedQuantity, reinspection.InspectedQuantity);
+        Assert.Equal(initial.BatchNo, reinspection.BatchNo);
+        Assert.Equal(initial.UomCode, reinspection.UomCode);
+        Assert.Equal(initial.SiteCode, reinspection.SiteCode);
+        Assert.Equal(initial.LocationCode, reinspection.LocationCode);
+        Assert.Equal(InspectionRecordResults.Passed, reinspection.Result);
+        Assert.IsType<InspectionPassedDomainEvent>(Assert.Single(reinspection.GetDomainEvents()));
+    }
+
+    [Fact]
+    public void Reinspection_rejects_partially_materialized_stock_release_dimensions()
+    {
+        var initial = InspectionRecord.Create(
+            "org-001",
+            "env-dev",
+            null,
+            "operation",
+            "mes",
+            "WO-REINSPECT-INCOMPLETE-STOCK",
+            "SKU-FG-1000",
+            5m,
+            null,
+            null,
+            [InspectionResultLineInput.Fail("appearance", "scratch", "surface-defect", 1m, [])],
+            "Surface defect",
+            [],
+            StockReleaseDimension.Create("pcs", "SITE-01", "FG-HOLD", "quality", "production", null));
+        typeof(InspectionRecord)
+            .GetProperty(nameof(InspectionRecord.SiteCode))!
+            .SetValue(initial, null);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => InspectionRecord.Reinspect(
+            initial,
+            inspectionPlan: null,
+            [InspectionResultLineInput.Pass("appearance", "ok", null, [])],
+            dispositionReason: null,
+            dispositionAttachmentFileIds: []));
+
+        Assert.Contains("stock-release dimensions are incomplete", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Passed_inspection_is_terminal_and_cannot_be_reinspected()
+    {
+        var passed = InspectionRecord.Create(
+            "org-001",
+            "env-dev",
+            null,
+            "operation",
+            "mes",
+            "WO-REINSPECT-PASSED",
+            "SKU-FG-1000",
+            5m,
+            null,
+            null,
+            [InspectionResultLineInput.Pass("appearance", "ok", null, [])],
+            null,
+            []);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => InspectionRecord.Reinspect(
+            passed,
+            inspectionPlan: null,
+            [InspectionResultLineInput.Pass("appearance", "ok", null, [])],
+            dispositionReason: null,
+            dispositionAttachmentFileIds: []));
+
+        Assert.Contains("passed", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Planned_reinspection_reuses_the_original_plan_after_it_is_superseded()
+    {
+        var plan = NewPlan();
+        plan.AddCharacteristic("appearance", "Appearance", "visual", "critical", true, "zero-defect");
+        plan.Activate();
+        var initial = InspectionRecord.CreateFromPlan(
+            plan,
+            "receiving",
+            "purchase-receipt",
+            "RCV-REINSPECT-PLAN",
+            "SKU-RM-1000",
+            10m,
+            null,
+            null,
+            null,
+            [InspectionResultLineInput.Fail("appearance", "scratch", "surface-defect", 1m, [])],
+            "Surface defect",
+            []);
+        _ = plan.Supersede("IQP-RECEIVING-002");
+
+        var reinspection = InspectionRecord.Reinspect(
+            initial,
+            plan,
+            [InspectionResultLineInput.Pass("appearance", "ok", null, [])],
+            dispositionReason: null,
+            dispositionAttachmentFileIds: []);
+
+        Assert.Equal("superseded", plan.Status);
+        Assert.Equal(plan.Id, reinspection.InspectionPlanId);
+        Assert.Equal(2, reinspection.AttemptNumber);
+        Assert.Equal(InspectionRecordResults.Passed, reinspection.Result);
+    }
+
+    [Fact]
     public void Failed_inspection_can_open_ncr_linked_to_inspection_record()
     {
         var record = InspectionRecord.Create(

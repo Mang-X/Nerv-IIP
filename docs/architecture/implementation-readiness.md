@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## Quality 复检历史与 MES hold 自动释放闭环（MAN-516 / #954）
+
+BusinessQuality 现在将首检幂等和复检历史分开建模：原有创建命令继续按来源业务键返回首条记录；新增 predecessor-targeted 复检命令只允许对非合格记录追加不可变 successor，并记录 `attempt_number` 与 `reinspection_of_inspection_record_id`。每个前置记录最多一个直接 successor，命令重放返回同一 successor；多次复检需以上一次未通过结果作为新的 predecessor。计划检验复用原方案和来源/批次/库存维度，已 superseded 的历史方案仍可用于该记录复检，但跨组织、环境、方案或合格终态均 fail closed。`AddQualityReinspectionHistory` migration 增加正数约束、自引用 Restrict 外键、前置唯一索引，并把来源唯一键扩展到 attempt。
+
+Quality 新增 `POST /api/business/v1/quality/inspection-records/{inspectionRecordId}/reinspections`，通过 BusinessGateway 同路径 facade 以 `business.quality.inspection-records.create` 暴露；facade matrix 登记为 `exposed`，OpenAPI 与 generated client 同步刷新。检验结果事件幂等键纳入 inspection record ID，保证同源不同 attempt 的 rejected/passed 事件不会互相吞并。跨服务 acceptance 使用真实 Quality 首检/复检命令、真实事件转换器和真实 MES `business-mes.quality-inspection-result` 消费者，已验证 rejected 建 hold、passed successor 自动释放、释放审计引用第二条检验记录、复检重放不产生第三条记录；该证据是自动化跨服务测试，不冒充浏览器或完整 Aspire 全栈运行。
+
 ## 持久化启动治理与 PostgreSQL 测试基建（#1075）
 
 FileStorage、AppHub、Ops、Notification 已统一通过 `Nerv.IIP.Persistence` 解析显式 provider、Development-only AutoMigrate、PostgreSQL 连接配置和非 Development fail-fast；四个服务的 Development InMemory profile 均写入配置，不再由代码静默回退。统一异常只报告服务、环境、provider、连接是否配置和 AutoMigrate 状态，不输出连接串或凭据。服务自己的 DbContext、schema、migration runner 和发布修复建议仍留在服务边界内。
@@ -39,6 +45,12 @@ BusinessScheduling 以 organization + environment 为硬隔离边界执行 `orde
 ERP `DeliveryOrder` 现在持久化销售订单的权威 `site_code`，发货释放通过既有 Redis 集成事件把该 site 与行级 location、lot、SKU、UOM 传给 WMS；WMS 不再把缺失 site 回退为 `default`，而是将旧版在途事件的空 site 写入持久 dead letter 后停止消费。ERP 来源出库统一使用成品入库一致的 `quality=unrestricted`、`ownerType=production`、`ownerId=null` 分账键。出库复核只进入 `InventoryPostingPending`，每行最新一轮 movement request 全部收到 Inventory `Posted` 后才进入 `Completed` 并发出 `OutboundOrderCompleted`；任一过账拒绝进入 `InventoryPostingFailed`、保留公开 failure code/message 并允许受权重试，不再提前完成 ERP 发货、AR 或凭证。ERP 发货读面的 `released` 只表示尚未收到 WMS 完成事实，posting pending/failed 的执行状态与诊断以 WMS 公开读面为权威来源，不在 ERP 复制跨域状态。
 
 BusinessGateway 已公开 WMS 出库行的精确分账键、当前过账状态和失败事实，并以 `business.wms.shipments.manage` 暴露 `POST /api/business-console/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry`；该 endpoint 在 facade matrix 中登记为 `exposed`，OpenAPI、generated client 与 stable barrel 已同步。`leader-demo-main-chain` 已收紧为先确认同一 site/location/lot/quality/owner 分账键过账成功且 Inventory on-hand 归零，再接受 WMS completed、ERP completed、AR 和凭证。2026-07-24 的 managed session `nerv-0f07-404534` 已在 PostgreSQL + Redis profile 通过：`DO-MAN524-20260724020413` 保持 `finished-goods / receiving / LOT-MAN524-20260724020413 / unrestricted / production / null` 分账键，Inventory on-hand 归零后才依次公开 WMS completed、ERP completed、`AR-20260724-000001` 和 posted voucher `JV-AR-AR-20260724-000001`；场景汇总为 16 个 `runtime-confirmed`、0 个 gap。
+
+## MES 资本化事件乱序收敛（MAN-600 / #1084）
+
+MES `business-mes.work-order-cost-capitalized` 消费者不再把“资本化事件先于完工入库申请”这一正常时序抛给 CAP 持久重试。ERP 资本化先到时，消费者在同一 UnitOfWork 中把权威 `unitCost` 投影到精确 organization/environment/work-order 的 `work_orders.capitalized_unit_cost` 并提交 inbox；后续完工入库申请未携带成本时直接采用该投影并立即发出 Inventory movement request。完工入库先到时仍保持无成本不发 Inventory 请求，待资本化事件到达后由消费者同时写入工单投影、回填所有仍处于 `Requested` 的入库申请并发出请求。消费者与完工入库创建命令按同一 `{organization}:{environment}:{workOrderId}` 取得 PostgreSQL transaction-scoped advisory lock，读取工单成本、创建或回填入库申请、分发领域事件及提交 inbox 均在锁内事务完成，避免两条路径交错后留下永久无成本申请。相同资本化事实重放成功 no-op，试图以不同单价改写已资本化工单则 fail closed。
+
+确定性回归测试覆盖两种事件顺序，并验证先到事件首次处理即持久化 inbox、同一事件第二次投递不再触发保存或依赖 CAP 长退避；另有真实 PostgreSQL 并发测试在命令已读取无成本但尚未提交时启动资本化消费者，证明消费者等待同 scope 事务并在命令提交后立即回填，而非依赖 CAP 重投。本修复新增一列 nullable MES schema 与对应 migration，没有新增或修改 HTTP endpoint、公开契约、facade declaration、OpenAPI 或 generated client；既有客户端 `unitCost` 旁路仍由 #1081 独立治理。本项也没有修改 #965 的 `leader-demo-main-chain` 证据脚本，待 #1084 合并后由 #965 基于最新 main 做最终真实栈复验。
 
 ## FileStorage AppHost PostgreSQL 持久化接入（MAN-533 / #991）
 

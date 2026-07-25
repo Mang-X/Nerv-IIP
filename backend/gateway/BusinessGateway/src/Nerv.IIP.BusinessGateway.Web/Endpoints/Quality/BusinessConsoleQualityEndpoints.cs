@@ -196,6 +196,18 @@ public sealed class BusinessConsoleQualityInspectionRecordDetailRequestValidator
     }
 }
 
+public sealed class BusinessConsoleCreateReinspectionRequestValidator
+    : Validator<BusinessConsoleCreateReinspectionRequest>
+{
+    public BusinessConsoleCreateReinspectionRequestValidator()
+    {
+        RuleFor(x => x.InspectionRecordId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ResultLines).NotEmpty();
+    }
+}
+
 public sealed class BusinessConsoleCreateInspectionRecordFromTaskRequestValidator
     : Validator<BusinessConsoleCreateInspectionRecordFromTaskRequest>
 {
@@ -359,6 +371,40 @@ public sealed class CreateBusinessConsoleQualityInspectionRecordEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         quality.CreateInspectionRecordAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Quality")]
+[HttpPost("/api/business-console/v1/quality/inspection-records/{inspectionRecordId}/reinspections")]
+[BusinessGatewayOperationId("createBusinessConsoleQualityReinspection")]
+public sealed class CreateBusinessConsoleQualityReinspectionEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateReinspectionRequest, BusinessConsoleCreateReinspectionResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionRecordsCreate)
+{
+    protected override string OrganizationId(BusinessConsoleCreateReinspectionRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateReinspectionRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleCreateReinspectionRequest request) => "inspection-record";
+
+    protected override string? ResourceId(BusinessConsoleCreateReinspectionRequest request) =>
+        Route<string>("inspectionRecordId") ?? request.InspectionRecordId;
+
+    protected override Task<BusinessConsoleCreateReinspectionResponse> ForwardAsync(
+        BusinessConsoleCreateReinspectionRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var inspectionRecordId = Route<string>("inspectionRecordId") ?? request.InspectionRecordId;
+        return quality.CreateReinspectionAsync(
+            tokenProvider.BearerToken,
+            inspectionRecordId,
+            request with { InspectionRecordId = inspectionRecordId },
+            cancellationToken);
+    }
 }
 
 [Tags("Business Console Quality")]

@@ -118,6 +118,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
     public string SourceService { get; private set; } = string.Empty;
     public string SourceDocumentId { get; private set; } = string.Empty;
     public string SkuCode { get; private set; } = string.Empty;
+    public int AttemptNumber { get; private set; } = 1;
+    public InspectionRecordId? ReinspectionOfInspectionRecordId { get; private set; }
     public decimal InspectedQuantity { get; private set; }
     public string? BatchNo { get; private set; }
     public string? SerialNo { get; private set; }
@@ -227,6 +229,82 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             measuringDeviceUsage: measuringDeviceUsage);
     }
 
+    public static InspectionRecord Reinspect(
+        InspectionRecord previousInspection,
+        InspectionPlan? inspectionPlan,
+        IReadOnlyCollection<InspectionResultLineInput> resultLines,
+        string? dispositionReason,
+        IReadOnlyCollection<string> dispositionAttachmentFileIds,
+        IReadOnlyCollection<InspectionUomConversion>? uomConversions = null,
+        InspectionMeasuringDeviceUsage? measuringDeviceUsage = null)
+    {
+        ArgumentNullException.ThrowIfNull(previousInspection);
+        if (previousInspection.Result == InspectionRecordResults.Passed)
+        {
+            throw new InvalidOperationException("A passed inspection is terminal and cannot be reinspected.");
+        }
+
+        IReadOnlyCollection<InspectionResultLineInput> evaluatedLines;
+        if (previousInspection.InspectionPlanId is null)
+        {
+            if (inspectionPlan is not null)
+            {
+                throw new InvalidOperationException("An ad-hoc inspection cannot be reinspected with a plan.");
+            }
+
+            evaluatedLines = resultLines;
+        }
+        else
+        {
+            if (inspectionPlan is null || inspectionPlan.Id != previousInspection.InspectionPlanId)
+            {
+                throw new InvalidOperationException("Reinspection requires the exact inspection plan used by the previous attempt.");
+            }
+
+            if (inspectionPlan.Status is not ("active" or "superseded"))
+            {
+                throw new InvalidOperationException("Reinspection requires an active or superseded inspection plan.");
+            }
+
+            if (inspectionPlan.OrganizationId != previousInspection.OrganizationId
+                || inspectionPlan.EnvironmentId != previousInspection.EnvironmentId
+                || !string.Equals(inspectionPlan.Category, previousInspection.SourceType, StringComparison.Ordinal)
+                || !string.IsNullOrWhiteSpace(inspectionPlan.SkuCode)
+                    && !string.Equals(inspectionPlan.SkuCode, previousInspection.SkuCode, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Reinspection plan does not match the previous inspection scope.");
+            }
+
+            evaluatedLines = CalculatePlannedLines(
+                inspectionPlan,
+                resultLines,
+                previousInspection.InspectedQuantity,
+                uomConversions ?? []);
+        }
+
+        var record = new InspectionRecord(
+            previousInspection.OrganizationId,
+            previousInspection.EnvironmentId,
+            previousInspection.InspectionPlanId,
+            previousInspection.SourceType,
+            previousInspection.SourceService,
+            previousInspection.SourceDocumentId,
+            previousInspection.SkuCode,
+            previousInspection.InspectedQuantity,
+            previousInspection.BatchNo,
+            previousInspection.SerialNo,
+            previousInspection.ToStockReleaseDimension(),
+            evaluatedLines,
+            dispositionReason,
+            dispositionAttachmentFileIds,
+            measuringDeviceUsage: measuringDeviceUsage)
+        {
+            AttemptNumber = checked(previousInspection.AttemptNumber + 1),
+            ReinspectionOfInspectionRecordId = previousInspection.Id,
+        };
+        return record;
+    }
+
     public void LinkNonconformanceReport(string ncrId)
     {
         if (Result == InspectionRecordResults.Passed)
@@ -281,6 +359,33 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         OwnerType = stockRelease.OwnerType;
         OwnerId = stockRelease.OwnerId;
     }
+
+    private StockReleaseDimension? ToStockReleaseDimension()
+    {
+        if (string.IsNullOrWhiteSpace(UomCode)
+            && string.IsNullOrWhiteSpace(SiteCode)
+            && string.IsNullOrWhiteSpace(LocationCode)
+            && string.IsNullOrWhiteSpace(SourceQualityStatus)
+            && string.IsNullOrWhiteSpace(OwnerType)
+            && string.IsNullOrWhiteSpace(OwnerId))
+        {
+            return null;
+        }
+
+        return StockReleaseDimension.Create(
+            RequiredStockReleaseDimension(UomCode, nameof(UomCode)),
+            RequiredStockReleaseDimension(SiteCode, nameof(SiteCode)),
+            RequiredStockReleaseDimension(LocationCode, nameof(LocationCode)),
+            RequiredStockReleaseDimension(SourceQualityStatus, nameof(SourceQualityStatus)),
+            RequiredStockReleaseDimension(OwnerType, nameof(OwnerType)),
+            OwnerId);
+    }
+
+    private static string RequiredStockReleaseDimension(string? value, string propertyName) =>
+        string.IsNullOrWhiteSpace(value)
+            ? throw new InvalidOperationException(
+                $"Inspection stock-release dimensions are incomplete; '{propertyName}' is required.")
+            : value;
 
     private void ApplyMeasuringDeviceUsage(InspectionMeasuringDeviceUsage? usage)
     {

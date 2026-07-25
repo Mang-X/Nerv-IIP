@@ -7,7 +7,12 @@ public sealed class InspectionRecordEntityTypeConfiguration : IEntityTypeConfigu
     public void Configure(EntityTypeBuilder<InspectionRecord> builder)
     {
         builder.ToTable("inspection_records", tableBuilder =>
-            tableBuilder.HasComment("Quality inspection execution records and final result facts."));
+        {
+            tableBuilder.HasComment("Quality inspection execution records and final result facts.");
+            tableBuilder.HasCheckConstraint(
+                "ck_inspection_records_attempt_positive",
+                "attempt_number > 0");
+        });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Inspection record aggregate id.");
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id that owns the record.");
@@ -17,6 +22,8 @@ public sealed class InspectionRecordEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.SourceService).HasColumnName("source_service").IsRequired().HasMaxLength(100).HasComment("Source service or document family that requested the inspection.");
         builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(150).HasComment("Source document or operation public id.");
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("SKU code inspected as a Quality reference.");
+        builder.Property(x => x.AttemptNumber).HasColumnName("attempt_number").IsRequired().HasDefaultValue(1).HasComment("One-based inspection attempt number within the same source and SKU history.");
+        builder.Property(x => x.ReinspectionOfInspectionRecordId).HasColumnName("reinspection_of_inspection_record_id").HasComment("Previous inspection record id targeted by this reinspection attempt; null for the initial attempt.");
         builder.Property(x => x.InspectedQuantity).HasColumnName("inspected_quantity").IsRequired().HasPrecision(18, 6).HasComment("Quantity inspected.");
         builder.Property(x => x.BatchNo).HasColumnName("batch_no").HasMaxLength(100).HasComment("Optional batch number reference.");
         builder.Property(x => x.SerialNo).HasColumnName("serial_no").HasMaxLength(100).HasComment("Optional serial number reference.");
@@ -37,7 +44,22 @@ public sealed class InspectionRecordEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the inspection was recorded.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the inspection record was last changed.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceService, x.SourceDocumentId });
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceService, x.SourceDocumentId, x.SkuCode }).IsUnique();
+        builder.HasIndex(x => new
+            {
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.SourceType,
+                x.SourceService,
+                x.SourceDocumentId,
+                x.SkuCode,
+                x.AttemptNumber,
+            })
+            .IsUnique()
+            .HasDatabaseName("ux_inspection_records_source_attempt");
+        builder.HasIndex(x => x.ReinspectionOfInspectionRecordId)
+            .IsUnique()
+            .HasFilter("\"reinspection_of_inspection_record_id\" IS NOT NULL")
+            .HasDatabaseName("ux_inspection_records_reinspection_predecessor");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.Result });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Result });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.MeasuringDeviceId });
@@ -45,6 +67,10 @@ public sealed class InspectionRecordEntityTypeConfiguration : IEntityTypeConfigu
             .WithOne()
             .HasForeignKey(x => x.InspectionRecordId)
             .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<InspectionRecord>()
+            .WithMany()
+            .HasForeignKey(x => x.ReinspectionOfInspectionRecordId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
 

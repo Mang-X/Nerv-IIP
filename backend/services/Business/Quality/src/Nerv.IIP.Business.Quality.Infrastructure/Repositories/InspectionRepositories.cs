@@ -64,6 +64,16 @@ public interface IInspectionRecordRepository : IRepository<InspectionRecord, Ins
         string skuCode,
         string sourceDocumentId,
         CancellationToken cancellationToken = default);
+
+    Task<InspectionRecord?> GetScopedAsync(
+        InspectionRecordId inspectionRecordId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken = default);
+
+    Task<InspectionRecord?> FindByReinspectionOfAsync(
+        InspectionRecordId inspectionRecordId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class InspectionRecordRepository(ApplicationDbContext context)
@@ -88,7 +98,30 @@ public sealed class InspectionRecordRepository(ApplicationDbContext context)
                 && x.SourceType == normalizedSourceType
                 && x.SourceService == normalizedSourceService
                 && x.SkuCode == normalizedSkuCode
-                && x.SourceDocumentId == normalizedSourceDocumentId,
+                && x.SourceDocumentId == normalizedSourceDocumentId
+                && x.AttemptNumber == 1,
+            cancellationToken);
+    }
+
+    public Task<InspectionRecord?> GetScopedAsync(
+        InspectionRecordId inspectionRecordId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        return DbContext.InspectionRecords.SingleOrDefaultAsync(
+            x => x.Id == inspectionRecordId
+                && x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId,
+            cancellationToken);
+    }
+
+    public Task<InspectionRecord?> FindByReinspectionOfAsync(
+        InspectionRecordId inspectionRecordId,
+        CancellationToken cancellationToken = default)
+    {
+        return DbContext.InspectionRecords.SingleOrDefaultAsync(
+            x => x.ReinspectionOfInspectionRecordId == inspectionRecordId,
             cancellationToken);
     }
 }

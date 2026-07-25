@@ -1988,6 +1988,12 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("cancel_reason")
                         .HasComment("Reason code or text for cancelling the work order.");
 
+                    b.Property<decimal?>("CapitalizedUnitCost")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("capitalized_unit_cost")
+                        .HasComment("ERP-authoritative capitalized unit cost retained so receipt creation can converge regardless of event order.");
+
                     b.Property<DateTimeOffset?>("ClosedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("closed_at_utc")

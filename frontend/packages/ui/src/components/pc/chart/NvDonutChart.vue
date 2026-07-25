@@ -3,7 +3,7 @@ import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
 import { Donut } from '@unovis/ts'
 import { VisDonut, VisSingleContainer, VisTooltip } from '@unovis/vue'
-import { cn } from '../../../lib/utils'
+import { cn, cssColor, escapeHtml } from '../../../lib/utils'
 
 /**
  * Pro — donut composition chart on unovis (e.g. work-order status mix), with a
@@ -44,17 +44,13 @@ const legend = computed(() =>
     share: Math.round((d.value / total.value) * 100),
   })),
 )
-
 // unovis binds each segment to a d3 arc datum: `{ data: DonutSlice, index, ... }`.
 const segmentTooltip = (d: { data?: DonutSlice; index?: number } | DonutSlice) => {
   const slice = (d as { data?: DonutSlice }).data ?? (d as DonutSlice)
   if (!slice) return ''
   const i = (d as { index?: number }).index ?? props.data.indexOf(slice)
   const share = Math.round((slice.value / total.value) * 100)
-  return `<div class="nv-vis-card"><div class="nv-vis-row"><span class="nv-vis-dot" style="background:${sliceColor(
-    slice,
-    i,
-  )}"></span><span>${slice.label}</span><b>${slice.value} · ${share}%</b></div></div>`
+  return `<div class="nv-vis-card"><div class="nv-vis-row"><span class="nv-vis-dot" style="background:${escapeHtml(cssColor(sliceColor(slice, i)))}"></span><span>${escapeHtml(slice.label)}</span><b>${escapeHtml(slice.value)} · ${escapeHtml(share)}%</b></div></div>`
 }
 const triggers = { [Donut.selectors.segment]: segmentTooltip }
 </script>
@@ -98,16 +94,16 @@ const triggers = { [Donut.selectors.segment]: segmentTooltip }
     /* Transparent background ring + gap strokes → works on any surface / theme
      (unovis' own dark-theme isn't wired to our .dark class). */
     --vis-donut-background-color: transparent;
-    --vis-tooltip-background-color: color-mix(in oklch, var(--popover) 86%, transparent);
+    --vis-tooltip-background-color: var(--nv-glass-bg);
     --vis-tooltip-text-color: var(--popover-foreground);
-    --vis-tooltip-border-color: color-mix(in oklch, var(--border) 80%, transparent);
+    --vis-tooltip-border-color: var(--nv-glass-border);
     --vis-tooltip-padding: 0;
     --vis-tooltip-border-radius: 8px;
   }
   .nv-donut :deep([class*='-tooltip']) {
-    backdrop-filter: blur(8px) saturate(1.4);
-    -webkit-backdrop-filter: blur(8px) saturate(1.4);
-    box-shadow: 0 8px 28px -12px color-mix(in oklch, black 50%, transparent);
+    backdrop-filter: var(--nv-glass-filter);
+    -webkit-backdrop-filter: var(--nv-glass-filter);
+    box-shadow: var(--nv-glass-shadow);
   }
   .nv-donut :deep(.nv-vis-card) {
     min-width: 8rem;

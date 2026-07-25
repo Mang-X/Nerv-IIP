@@ -1659,6 +1659,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     defectReason?: string | null;
     batchNo?: string | null;
     serialNo?: string | null;
+    attemptNumber?: number | null;
+    reinspectionOfInspectionRecordId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListRequest = {
@@ -1708,6 +1710,22 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleI
     sourceQualityStatus?: string;
     ownerType?: string | null;
     ownerId?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateReinspectionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateReinspectionResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateReinspectionResponse = {
+    inspectionRecordId?: string;
+    attemptNumber?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateReinspectionRequest = {
+    resultLines: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionCharacteristicResult>;
+    dispositionReason?: string | null;
+    dispositionAttachmentFileIds?: Array<string> | null;
+    measuringDeviceId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleOpenNcrFromInspectionResponse = NetCorePalExtensionsDtoResponseData & {
@@ -1840,6 +1858,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleI
     nonconformanceReportId?: string | null;
     resultLines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionRecordResultLine>;
     createdAtUtc?: string;
+    attemptNumber?: number;
+    reinspectionOfInspectionRecordId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionRecordResultLine = {
@@ -9072,6 +9092,44 @@ export type CreateBusinessConsoleQualityInspectionRecordResponses = {
 };
 
 export type CreateBusinessConsoleQualityInspectionRecordResponse = CreateBusinessConsoleQualityInspectionRecordResponses[keyof CreateBusinessConsoleQualityInspectionRecordResponses];
+
+export type CreateBusinessConsoleQualityReinspectionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateReinspectionRequest;
+    path: {
+        inspectionRecordId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/quality/inspection-records/{inspectionRecordId}/reinspections';
+};
+
+export type CreateBusinessConsoleQualityReinspectionErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleQualityReinspectionError = CreateBusinessConsoleQualityReinspectionErrors[keyof CreateBusinessConsoleQualityReinspectionErrors];
+
+export type CreateBusinessConsoleQualityReinspectionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateReinspectionResponse;
+};
+
+export type CreateBusinessConsoleQualityReinspectionResponse = CreateBusinessConsoleQualityReinspectionResponses[keyof CreateBusinessConsoleQualityReinspectionResponses];
 
 export type OpenBusinessConsoleQualityNcrFromInspectionData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOpenNcrFromInspectionRequest;

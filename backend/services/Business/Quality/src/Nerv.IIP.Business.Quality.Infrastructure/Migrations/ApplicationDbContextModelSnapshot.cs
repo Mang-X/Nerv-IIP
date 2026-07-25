@@ -447,6 +447,13 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Inspection record aggregate id.");
 
+                    b.Property<int>("AttemptNumber")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("attempt_number")
+                        .HasComment("One-based inspection attempt number within the same source and SKU history.");
+
                     b.Property<string>("BatchNo")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -541,6 +548,11 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("owner_type")
                         .HasComment("Optional stock owner type for Inventory quality-status transfer.");
 
+                    b.Property<Guid?>("ReinspectionOfInspectionRecordId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reinspection_of_inspection_record_id")
+                        .HasComment("Previous inspection record id targeted by this reinspection attempt; null for the initial attempt.");
+
                     b.Property<string>("Result")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -607,6 +619,11 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ReinspectionOfInspectionRecordId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_inspection_records_reinspection_predecessor")
+                        .HasFilter("\"reinspection_of_inspection_record_id\" IS NOT NULL");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "MeasuringDeviceId");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "Result");
@@ -615,13 +632,15 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "Result");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceService", "SourceDocumentId", "SkuCode")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceService", "SourceDocumentId", "SkuCode", "AttemptNumber")
                         .IsUnique()
-                        .HasDatabaseName("IX_inspection_records_organization_id_environment_id_source_t~1");
+                        .HasDatabaseName("ux_inspection_records_source_attempt");
 
                     b.ToTable("inspection_records", "quality", t =>
                         {
                             t.HasComment("Quality inspection execution records and final result facts.");
+
+                            t.HasCheckConstraint("ck_inspection_records_attempt_positive", "attempt_number > 0");
                         });
                 });
 
@@ -1830,6 +1849,14 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         });
 
                     b.Navigation("SamplingPlan");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate.InspectionRecord", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate.InspectionRecord", null)
+                        .WithMany()
+                        .HasForeignKey("ReinspectionOfInspectionRecordId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate.InspectionResultLine", b =>
