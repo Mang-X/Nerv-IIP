@@ -103,7 +103,9 @@ function refreshUrgency() {
   refreshPlans()
 }
 
-const activeView = shallowRef('table')
+// 进页面先落在排程总览：那是"挑工单 → 生成 → 锁定 → 发布"的主线入口。
+// 表格是历史方案的查阅面，新环境下往往是空表，不该是第一眼看到的东西。
+const activeView = shallowRef('workbench')
 const detailOpen = shallowRef(false)
 const targetedOrderReference = computed(() => {
   const value = route.query.orderReference
@@ -554,7 +556,6 @@ function reasonLabel(reason?: string | null) {
               去排程总览生成方案
             </NvButton>
           </template>
-          >
           <template #cell-status="{ row }">
             <div class="flex flex-wrap items-center gap-1.5">
               <NvStatusBadge

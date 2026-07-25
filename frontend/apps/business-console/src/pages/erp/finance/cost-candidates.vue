@@ -85,7 +85,7 @@ const costCells = computed<NvMetricStripCell[]>(() => [
     key: 'amount',
     label: '候选金额',
     value: formatAmount(amount.value),
-    meta: `本页 ${costs.items.value.length} 条候选合计`,
+    meta: `当前列表 ${costs.items.value.length} 条候选合计`,
   },
 ])
 

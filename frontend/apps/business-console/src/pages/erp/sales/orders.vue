@@ -102,12 +102,18 @@ const amount = computed(() =>
 )
 // 金额只能按已取回的这一页加总，所以把口径写进副行而不是冒充全量。
 const orderCells = computed<NvMetricStripCell[]>(() => [
-  { key: 'released', label: '已释放订单', value: releasedCount.value, unit: '张' },
+  {
+    key: 'released',
+    label: '已释放订单',
+    value: releasedCount.value,
+    unit: '张',
+    meta: '已下达到履约环节',
+  },
   {
     key: 'amount',
     label: '订单金额',
     value: formatAmount(amount.value),
-    meta: `本页 ${orders.salesOrders.value.length} 张订单合计`,
+    meta: `当前列表 ${orders.salesOrders.value.length} 张订单合计`,
   },
 ])
 

@@ -133,7 +133,7 @@ describe('WMS picking route context', () => {
   it('renders picking row inventory links without unsupported scan workflow links', () => {
     const wrapper = mount(PickingPage, { global: { stubs: uiStubs } })
 
-    expect(wrapper.text()).toContain('库存上下文')
+    expect(wrapper.text()).toContain('库存明细')
     expect(wrapper.text()).toContain('SKU-001')
     expect(wrapper.text()).toContain('A-01')
     expect(wrapper.text()).toContain('OB-001')

@@ -79,7 +79,7 @@ const quoteCells = computed<NvMetricStripCell[]>(() => [
     key: 'quantity',
     label: '询价数量',
     value: formatQuantity(lineQuantity.value),
-    meta: `本页 ${quotes.items.value.length} 张询价单合计`,
+    meta: `当前列表 ${quotes.items.value.length} 张询价单合计`,
   },
 ])
 

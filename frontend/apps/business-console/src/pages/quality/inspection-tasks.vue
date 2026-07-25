@@ -65,10 +65,14 @@ const sourceFacets = computed<NvMetricFacet[]>(() =>
       value: tasks.value.filter((task) => task.sourceType === tab.value).length,
     })),
 )
-/** 按时率＝已加载待检任务里未超期的占比，目标 100%。 */
+/**
+ * 按时率＝当前待检任务里未超期的占比，目标 100%。
+ * 没有待检任务时分母为 0，不存在"按时率"这回事——返回 null 走无样本态，
+ * 绝不把空集合画成 100% 满绿（那会让人误以为刚刚检完一批）。
+ */
 const onTimeRate = computed(() => {
   const loaded = tasks.value.length
-  if (loaded === 0) return 100
+  if (loaded === 0) return null
   return Math.round(((loaded - overdueCount.value) / loaded) * 100)
 })
 const locatorMessage = computed(() => {
@@ -83,8 +87,8 @@ const emptyMessage = computed(() =>
 )
 const scopeHint = computed(() =>
   locatorMessage.value
-    ? `共定位到 ${total.value} 个待检任务；已检查当前业务范围内的全部待检分页。`
-    : `共 ${total.value} 个待检任务；当前批次最多加载 200 条，来源筛选作用于当前批次。`,
+    ? `共定位到 ${total.value} 个待检任务。`
+    : `共 ${total.value} 个待检任务，来源筛选作用于当前列表。`,
 )
 
 watch(
@@ -240,6 +244,7 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
         "
       />
       <NvMetricCard
+        v-if="onTimeRate !== null"
         variant="target"
         label="时限内完成率"
         :value="onTimeRate"
@@ -250,14 +255,20 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
         :foot-start="`${overdueCount} 个已超期`"
         :foot-end="`共 ${tasks.length} 个在检`"
       />
+      <NvMetricCard
+        v-else
+        variant="alert"
+        label="时限内完成率"
+        value="—"
+        tone="neutral"
+        :status="{ label: '暂无样本', tone: 'neutral' }"
+        foot-start="当前没有待检任务，暂不计算时限内完成率。"
+      />
     </div>
 
     <div class="grid gap-4 rounded-xl border bg-card p-4 shadow-sm">
       <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h2 class="text-base font-semibold">先处理最紧急的任务</h2>
-          <p class="mt-1 text-sm text-muted-foreground">超期任务会置顶，并显示文字与时间提示。</p>
-        </div>
+        <h2 class="text-base font-semibold">先处理最紧急的任务</h2>
         <div class="flex flex-wrap gap-2" role="tablist" aria-label="来源类型">
           <NvButton
             v-for="tab in sourceTabs"
@@ -347,7 +358,7 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
     </NvDataTable>
 
     <p class="text-xs text-muted-foreground">
-      任务来源、SKU、计划和时限均来自 Quality 待检任务；开始检验后会带入既有检验记录流程。
+      开始检验后会带入来源单据、SKU、检验计划与时限，直接进入检验记录填写。
       <RouterLink class="underline underline-offset-2" to="/quality/inspections"
         >查看检验记录</RouterLink
       >

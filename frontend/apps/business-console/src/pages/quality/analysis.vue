@@ -83,10 +83,16 @@ const defectBars = computed(() => {
     leader: top[0],
   }
 })
+// 上方三个输入框带的是示例占位（SKU-001 / DIAMETER / WC-01），灰字看着像"已填"，
+// 于是这张卡说「未填」就显得自相矛盾。改说「待选择」，把"还没给条件"讲成一句人话。
 const spcScopeFacets = computed<NvMetricFacet[]>(() => [
-  { key: 'sku', label: '物料', value: spc.filters.skuCode.trim() || '未填' },
-  { key: 'characteristic', label: '特性', value: spc.filters.characteristicCode.trim() || '未填' },
-  { key: 'workCenter', label: '工作中心', value: spc.filters.workCenterId.trim() || '未填' },
+  { key: 'sku', label: '物料', value: spc.filters.skuCode.trim() || '待选择' },
+  {
+    key: 'characteristic',
+    label: '特性',
+    value: spc.filters.characteristicCode.trim() || '待选择',
+  },
+  { key: 'workCenter', label: '工作中心', value: spc.filters.workCenterId.trim() || '待选择' },
 ])
 const spcSubgroupCount = computed(() => spc.spcChart.value?.subgroups?.length ?? 0)
 const spcXbarSeries = computed(() =>
@@ -188,7 +194,7 @@ function spcViolationKey(row: QualitySpcViolation) {
       <NvMetricRing
         label="不合格品处置构成"
         :value="summary.sampledNcrCount"
-        center-caption="条 · 当前窗口"
+        center-caption="条"
         :segments="ncrStatusSegments"
       />
       <NvMetricCard
@@ -268,8 +274,8 @@ function spcViolationKey(row: QualitySpcViolation) {
         <NvMetricCard
           variant="facets"
           label="分析范围"
-          :value="spcSubgroupCount"
-          unit="个子组"
+          :value="spc.spcReady.value ? spcSubgroupCount : '—'"
+          :unit="spc.spcReady.value ? '个子组' : undefined"
           :facets="spcScopeFacets"
         />
         <NvMetricCard
@@ -343,7 +349,7 @@ function spcViolationKey(row: QualitySpcViolation) {
           :loading="ncrsPending"
           :searchable="false"
           :column-settings="false"
-          empty-message="当前返回窗口没有物料维度。"
+          empty-message="当前分析时间范围内没有物料维度。"
         >
           <template #cell-defectQuantity="{ row }">{{
             formatQualityQuantity(row.defectQuantity)
@@ -357,7 +363,7 @@ function spcViolationKey(row: QualitySpcViolation) {
           :loading="ncrsPending"
           :searchable="false"
           :column-settings="false"
-          empty-message="当前返回窗口没有来源维度。"
+          empty-message="当前分析时间范围内没有来源维度。"
         >
           <template #cell-defectQuantity="{ row }">{{
             formatQualityQuantity(row.defectQuantity)
@@ -370,7 +376,7 @@ function spcViolationKey(row: QualitySpcViolation) {
       <div class="flex flex-wrap gap-2">
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/mes/quality"
-            ><ClipboardCheckIcon aria-hidden="true" />MES 质量上下文</RouterLink
+            ><ClipboardCheckIcon aria-hidden="true" />生产质量记录</RouterLink
           >
         </NvButton>
         <NvButton size="sm" type="button" variant="outline" as-child>

@@ -104,7 +104,7 @@ const orderCells = computed<NvMetricStripCell[]>(() => [
     key: 'amount',
     label: '订单金额',
     value: formatAmount(orderAmount.value),
-    meta: `本页 ${rows.value.length} 行采购明细合计`,
+    meta: `当前列表 ${rows.value.length} 行采购明细合计`,
   },
 ])
 

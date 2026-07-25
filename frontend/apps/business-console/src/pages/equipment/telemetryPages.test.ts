@@ -66,10 +66,20 @@ vi.mock('@nerv-iip/ui', () => ({
   },
   NvSectionCards: { template: '<section><slot /></section>' },
   // 指标卡族桩件：保持「标签 空格 值」的可读文本形状，断言可以直接匹配一整段读数。
+  // 日期区间桩件：把当前区间挂到 data-* 上便于断言，点击时提交一段固定区间，
+  // 用来验证页面把"本地日历日"翻译成查询用的 ISO 瞬时。
   NvDateRangePicker: {
     props: ['modelValue', 'placeholder'],
     emits: ['update:modelValue'],
-    template: '<button type="button" data-testid="date-range">{{ placeholder }}</button>',
+    template: `
+      <button
+        type="button"
+        data-testid="date-range"
+        :data-start="modelValue?.start ?? ''"
+        :data-end="modelValue?.end ?? ''"
+        @click="$emit('update:modelValue', { start: '2026-07-05', end: '2026-07-06' })"
+      >{{ placeholder }}</button>
+    `,
   },
   NvMetricCard: {
     props: ['label', 'value', 'unit', 'footStart', 'footEnd', 'facets', 'segments', 'status'],
@@ -394,10 +404,11 @@ describe('equipment telemetry pages', () => {
     expect(wrapper.get('[data-testid="timeline"]').text()).toContain('状态记录')
   })
 
-  it('uses local datetime inputs and preserves the complete query scope', async () => {
+  it('uses the shared date range control and preserves the complete query scope', async () => {
     const wrapper = mount(TelemetryHistoryPage, { global: { stubs } })
 
-    expect(wrapper.findAll('input[type="datetime-local"]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-testid="date-range"]')).toHaveLength(1)
+    expect(wrapper.findAll('input[type="datetime-local"]')).toHaveLength(0)
     await wrapper.findAll('input')[1]!.setValue('spindle-temperature')
     expect(telemetryPageMocks.replaceRoute).toHaveBeenCalledWith({
       query: expect.objectContaining({
@@ -424,13 +435,20 @@ describe('equipment telemetry pages', () => {
     expect(inputs[1]?.element.value).toBe('pressure')
   })
 
-  it('keeps the previous valid window when a local datetime input is cleared', async () => {
+  it('commits a picked local day range as an inclusive UTC window', async () => {
     const wrapper = mount(TelemetryHistoryPage, { global: { stubs } })
-    const startInput = wrapper.get<HTMLInputElement>('input[aria-label="开始时间"]')
-    await startInput.setValue('')
+    await wrapper.get('[data-testid="date-range"]').trigger('click')
+    await nextTick()
 
-    expect(wrapper.text()).toContain('时间范围不能为空或无效')
-    expect(startInput.element.value).toBe('2026-07-02T08:00')
+    const query = telemetryPageMocks.replaceRoute.mock.calls.at(-1)?.[0]?.query as Record<
+      string,
+      string
+    >
+    // 开始＝所选首日 00:00；结束＝所选末日的次日 00:00，把末日整天包进窗口。
+    expect(toLocalDay(query.windowStartUtc)).toBe('2026-07-05')
+    expect(toLocalDay(query.windowEndUtc)).toBe('2026-07-07')
+    // 回显退回用户实际选中的末日，而不是那个排他上界。
+    expect(wrapper.get('[data-testid="date-range"]').attributes('data-end')).toBe('2026-07-06')
   })
 
   it('keeps existing trend content mounted while a refresh is pending', () => {
@@ -506,3 +524,11 @@ describe('equipment telemetry pages', () => {
     expect(wrapper.text()).toContain('请填写设备、规则、报警、采集标签、阈值和单位。')
   })
 })
+
+/** 把 ISO 瞬时读回本地日历日（YYYY-MM-DD），断言不依赖运行机器的时区。 */
+function toLocalDay(value: string) {
+  const date = new Date(value)
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}

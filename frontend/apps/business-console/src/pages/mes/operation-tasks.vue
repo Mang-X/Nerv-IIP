@@ -271,8 +271,18 @@ const selectedSopTitle = computed(() => {
   if (!task) return ''
   return `${task.operationTaskNo ?? task.operationTaskId ?? '工序任务'} · ${task.operationCode ?? '未绑定工序'}`
 })
+// 质量状态既可能是总体判定（Ready / Warning / Blocked），也可能是具体阻塞原因码。
+// 判定值不在原因码表里，落到兜底分支就会把 Ready 原样显到界面上，所以先过一层中文判定表。
+const QUALITY_VERDICT_LABELS: Record<string, string> = {
+  ready: '可执行',
+  warning: '有提示',
+  blocked: '已阻塞',
+}
 function readiness(value?: string | null) {
-  return describeMesReadinessReason(value ?? '未检')
+  const raw = (value ?? '未检').trim()
+  const verdict = QUALITY_VERDICT_LABELS[raw.toLowerCase()]
+  if (verdict) return { code: raw, label: verdict, nextStep: '' }
+  return describeMesReadinessReason(raw)
 }
 function readinessNeedsAction(value?: string | null) {
   return [

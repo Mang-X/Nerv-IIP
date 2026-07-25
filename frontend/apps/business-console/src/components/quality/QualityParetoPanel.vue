@@ -31,9 +31,9 @@ const columns: NvDataTableColumn<QualityAnalysisBucket>[] = [
 <template>
   <section aria-labelledby="quality-pareto-title" class="grid gap-3">
     <div>
-      <h2 id="quality-pareto-title" class="text-base font-semibold">当前返回窗口缺陷 Pareto</h2>
+      <h2 id="quality-pareto-title" class="text-base font-semibold">当前分析时间范围缺陷 Pareto</h2>
       <p class="text-sm text-muted-foreground">
-        按缺陷数量降序展示；数据仅覆盖当前后端返回窗口，不是全量历史趋势。
+        按缺陷数量降序展示；数据仅覆盖当前分析时间范围，不是全量历史趋势。
       </p>
     </div>
 
@@ -50,13 +50,13 @@ const columns: NvDataTableColumn<QualityAnalysisBucket>[] = [
       role="status"
     >
       <LoaderCircleIcon class="size-4 animate-spin" aria-hidden="true" />
-      正在加载当前返回窗口缺陷数据
+      正在加载当前分析时间范围的缺陷数据
     </div>
     <div
       v-else-if="rows.length === 0"
       class="flex min-h-40 items-center justify-center rounded-xl border bg-card p-6 text-sm text-muted-foreground"
     >
-      当前返回窗口没有 NCR，暂无可汇总的缺陷原因。
+      当前分析时间范围内没有 NCR，暂无可汇总的缺陷原因。
     </div>
     <div v-else class="rounded-xl border bg-card p-4 shadow-sm">
       <NvBarChart
@@ -76,7 +76,7 @@ const columns: NvDataTableColumn<QualityAnalysisBucket>[] = [
       :loading="pending"
       :searchable="false"
       :column-settings="false"
-      empty-message="当前返回窗口没有 NCR，暂无可汇总的缺陷原因。"
+      empty-message="当前分析时间范围内没有 NCR，暂无可汇总的缺陷原因。"
     >
       <template #cell-defectQuantity="{ row }">{{
         formatQualityQuantity(row.defectQuantity)
