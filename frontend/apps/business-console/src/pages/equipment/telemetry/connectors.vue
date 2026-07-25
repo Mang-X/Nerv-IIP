@@ -7,7 +7,8 @@ import {
 import ConnectorHealthCard from '@/components/equipment/ConnectorHealthCard.vue'
 import { notifyError } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { NvButton, NvPageHeader, NvSectionCard, NvSectionCards } from '@nerv-iip/ui'
+import type { NvMetricSegment } from '@nerv-iip/ui'
+import { NvButton, NvMetricRing, NvPageHeader } from '@nerv-iip/ui'
 import { HashIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -54,6 +55,18 @@ const faultCount = computed(
   () => connectors.value.filter((c) => isConnectorFault(c.status, c.staleReason)).length,
 )
 
+// 采集状态构成：四段互斥且相加等于当前已加载的连接器数（Ring 的构成前提）。分母用本页已加载的
+// 连接器数而非 connectorsTotal —— 后者可能包含尚未加载的分页外记录，混用会让各段占比失真。
+const otherCount = computed(() =>
+  Math.max(0, connectors.value.length - onlineCount.value - offlineCount.value - faultCount.value),
+)
+const connectorSegments = computed<NvMetricSegment[]>(() => [
+  { key: 'online', label: '在线', value: onlineCount.value, tone: 'success' },
+  { key: 'offline', label: '断线', value: offlineCount.value, tone: 'danger' },
+  { key: 'fault', label: '异常停止', value: faultCount.value, tone: 'warning' },
+  { key: 'other', label: '待采集', value: otherCount.value, tone: 'neutral' },
+])
+
 const expanded = reactive(new Set<string>())
 function rowKey(connectorId?: string | null, connectorName?: string | null) {
   return connectorId ?? connectorName ?? '未知连接器'
@@ -91,12 +104,13 @@ function toggle(key: string) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="4">
-      <NvSectionCard description="采集连接器" :value="connectorsTotal" hint="已上报采集健康" />
-      <NvSectionCard description="在线" :value="onlineCount" hint="心跳正常在采集" />
-      <NvSectionCard description="断线" :value="offlineCount" hint="心跳超时停报" />
-      <NvSectionCard description="异常停止" :value="faultCount" hint="连接器自报终态停止" />
-    </NvSectionCards>
+    <NvMetricRing
+      label="采集状态构成"
+      :value="connectors.length"
+      center-caption="个连接器"
+      :segments="connectorSegments"
+      class="max-w-md"
+    />
 
     <div
       v-if="connectorsPending && !connectors.length"

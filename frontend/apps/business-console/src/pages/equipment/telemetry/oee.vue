@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { EquipmentRuntimeAvailabilityWindow } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { DateRange, NvDataTableColumn, NvMetricFacet, NvMetricStripCell } from '@nerv-iip/ui'
 import { describeEquipmentReason } from '@/composables/useBusinessEquipment'
 import {
   describeTelemetryOeeDegradation,
@@ -14,13 +14,19 @@ import {
   NvBadge,
   NvButton,
   NvDataTable,
+  NvDateRangePicker,
   NvInput,
+  NvMetricCard,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
   NvSectionCards,
   NvToolbar,
+  NvTooltip,
+  NvTooltipContent,
+  NvTooltipProvider,
+  NvTooltipTrigger,
 } from '@nerv-iip/ui'
-import { LineChartIcon, RefreshCwIcon, Settings2Icon } from '@lucide/vue'
+import { InfoIcon, LineChartIcon, RefreshCwIcon, Settings2Icon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
@@ -33,6 +39,14 @@ definePage({
 })
 
 const route = useRoute()
+// 默认查询窗口 = 最近 7 天（演示与日常巡检的常用口径）；路由带了显式窗口时以路由为准。
+const DEFAULT_WINDOW_DAYS = 7
+const defaultWindow = (() => {
+  const end = new Date()
+  const start = new Date(end)
+  start.setDate(start.getDate() - DEFAULT_WINDOW_DAYS)
+  return { endUtc: end.toISOString(), startUtc: start.toISOString() }
+})()
 const {
   availabilityWindows,
   filters,
@@ -42,12 +56,14 @@ const {
   refreshOee,
   runtimeAvailabilityError,
 } = useBusinessTelemetryOee({
+  // 设备只从路由/上下文带入，不预填演示设备号：没有设备时页面给出选择引导而不是伪造范围。
   deviceAssetId: routeQuery('deviceAssetId'),
-  windowEndUtc: routeQuery('windowEndUtc') || undefined,
-  windowStartUtc: routeQuery('windowStartUtc') || undefined,
+  windowEndUtc: routeQuery('windowEndUtc') || defaultWindow.endUtc,
+  windowStartUtc: routeQuery('windowStartUtc') || defaultWindow.startUtc,
 })
 
 const errorMessage = computed(() => formatError(oeeError.value || runtimeAvailabilityError.value))
+// 口径说明收进页头的问号 tooltip；它解释指标怎么算，不是每次都要读的正文。
 const limitation = describeTelemetryOeeLimitations()
 const oeeDegradedReasons = computed(() =>
   (oee.value?.degradedReasons ?? []).map(describeTelemetryOeeDegradation),
@@ -57,6 +73,65 @@ const blockedWindowCount = computed(
     availabilityWindows.value.filter((w) => w.availabilityStatus?.toLowerCase() === 'unavailable')
       .length,
 )
+const hasDeviceScope = computed(() => filters.deviceAssetId.trim().length > 0)
+
+// 无数据时不喊「无数据」大字：值位收敛成一个安静的破折号，缺口原因交给脚注。
+function rateValue(rate?: number | null) {
+  return rate === null || rate === undefined ? '—' : formatOeeRate(rate)
+}
+function rateProgress(rate?: number | null) {
+  return rate === null || rate === undefined ? 0 : Math.max(0, Math.min(100, rate * 100))
+}
+function rateFoot(rate?: number | null) {
+  return rate === null || rate === undefined ? '当前窗口暂无可计算样本' : undefined
+}
+
+const oeeFacets = computed<NvMetricFacet[]>(() => [
+  { key: 'availability', label: '可用率', value: rateValue(oee.value?.availabilityRate) },
+  { key: 'performance', label: '性能率', value: rateValue(oee.value?.performanceRate) },
+  { key: 'quality', label: '质量率', value: rateValue(oee.value?.qualityRate) },
+])
+
+// 计算依据里真正独有的业务事实（不与上方各率重复）留成一行摘要，重复的系数面板删除。
+const basisCells = computed<NvMetricStripCell[]>(() => [
+  { key: 'state', label: '状态采样', value: oee.value?.stateSampleCount ?? 0, unit: ' 条' },
+  { key: 'production', label: 'MES 报工', value: oee.value?.productionFactCount ?? 0, unit: ' 条' },
+  {
+    key: 'expected',
+    label: '理论产出',
+    value: formatOeeQuantity(oee.value?.expectedOutputQuantity, oee.value?.outputUomCode),
+  },
+  {
+    key: 'blocked',
+    label: '不可用窗口',
+    value: blockedWindowCount.value,
+    unit: ' 段',
+    valueTone: blockedWindowCount.value > 0 ? 'danger' : undefined,
+  },
+])
+
+// 日期控件用本地 YYYY-MM-DD，查询窗口用 ISO 瞬时：开始取当日 00:00，结束取次日 00:00（含尾日整天）。
+const windowRange = computed<DateRange>({
+  get: () => ({
+    end: toDateInput(filters.windowEndUtc),
+    start: toDateInput(filters.windowStartUtc),
+  }),
+  set: (range) => {
+    if (range.start) filters.windowStartUtc = fromDateInput(range.start, 0)
+    if (range.end) filters.windowEndUtc = fromDateInput(range.end, 1)
+  },
+})
+function toDateInput(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 10)
+}
+function fromDateInput(value: string, dayOffset: number) {
+  const [y, m, d] = value.split('-').map(Number)
+  if (!y || !m || !d) return new Date().toISOString()
+  return new Date(y, m - 1, d + dayOffset).toISOString()
+}
 
 const columns: NvDataTableColumn<EquipmentRuntimeAvailabilityWindow>[] = [
   { key: 'availabilityStatus', header: '状态', width: 'w-24' },
@@ -103,9 +178,6 @@ function severityVariant(value?: string | null) {
   if (severity === 'warning') return 'warning'
   return 'neutral'
 }
-function factorVariant(value?: number | null) {
-  return value === null || value === undefined ? 'warning' : 'success'
-}
 function formatDateTime(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
@@ -124,6 +196,19 @@ function formatError(error: unknown) {
       :count="filters.deviceAssetId || '选择设备'"
     >
       <template #actions>
+        <NvTooltipProvider>
+          <NvTooltip>
+            <NvTooltipTrigger as-child>
+              <NvButton size="sm" type="button" variant="ghost" aria-label="查看 OEE 计算口径">
+                <InfoIcon aria-hidden="true" />
+                计算口径
+              </NvButton>
+            </NvTooltipTrigger>
+            <NvTooltipContent class="max-w-sm">
+              <span class="whitespace-pre-line">{{ limitation }}</span>
+            </NvTooltipContent>
+          </NvTooltip>
+        </NvTooltipProvider>
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink
             :to="{
@@ -165,95 +250,74 @@ function formatError(error: unknown) {
           placeholder="设备编号"
           aria-label="设备编号"
         />
-        <NvInput
-          v-model="filters.windowStartUtc"
-          class="h-9 w-64"
-          placeholder="开始时间 ISO"
-          aria-label="开始时间"
-        />
-        <NvInput
-          v-model="filters.windowEndUtc"
-          class="h-9 w-64"
-          placeholder="结束时间 ISO"
-          aria-label="结束时间"
-        />
+        <NvDateRangePicker v-model="windowRange" placeholder="选择统计窗口" />
       </template>
     </NvToolbar>
 
-    <p class="rounded-lg border bg-muted/30 p-3 text-sm leading-6 text-muted-foreground">
-      {{ limitation }}
-    </p>
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <NvSectionCards :columns="4">
-      <NvSectionCard
-        description="可用率"
-        :value="formatOeeRate(oee?.availabilityRate)"
-        hint="按运行状态持续时间计算"
-      />
-      <NvSectionCard
-        description="加载率"
-        :value="formatOeeRate(oee?.loadingRate)"
-        hint="排除计划停机窗口"
-      />
-      <NvSectionCard
-        description="性能率"
-        :value="formatOeeRate(oee?.performanceRate)"
-        hint="实际产出 ÷ 理论产出"
-      />
-      <NvSectionCard
-        description="质量率"
-        :value="formatOeeRate(oee?.qualityRate)"
-        hint="良品 ÷ 总产出"
-      />
-      <NvSectionCard description="OEE" :value="formatOeeRate(oee?.oeeRate)" hint="三项因子的乘积" />
-      <NvSectionCard
-        description="状态样本"
-        :value="oee?.stateSampleCount ?? 0"
-        hint="当前窗口内状态事实"
-      />
-    </NvSectionCards>
+    <div
+      v-if="!hasDeviceScope"
+      class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
+    >
+      请先在上方填入设备编号，或从设备运行看板选择一台设备，再查看它的 OEE 与可用性。
+    </div>
 
-    <div class="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-      <div class="rounded-lg border bg-card p-4">
-        <h2 class="text-sm font-semibold text-foreground">计算依据</h2>
-        <div class="mt-4 grid gap-3 text-sm">
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-muted-foreground">性能系数</span>
-            <NvBadge class="rounded-sm" :variant="factorVariant(oee?.performanceRate)">{{
-              formatOeeRate(oee?.performanceRate)
-            }}</NvBadge>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-muted-foreground">质量系数</span>
-            <NvBadge class="rounded-sm" :variant="factorVariant(oee?.qualityRate)">{{
-              formatOeeRate(oee?.qualityRate)
-            }}</NvBadge>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-muted-foreground">MES 报工</span>
-            <span class="font-medium text-foreground">{{ oee?.productionFactCount ?? 0 }} 条</span>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-muted-foreground">理论产出</span>
-            <span class="font-medium text-foreground">{{
-              formatOeeQuantity(oee?.expectedOutputQuantity, oee?.outputUomCode)
-            }}</span>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-muted-foreground">不可用窗口</span>
-            <span class="font-medium text-foreground">{{ blockedWindowCount }}</span>
-          </div>
-        </div>
-        <div
-          v-if="oee?.isDegraded"
-          class="mt-4 rounded-md bg-muted p-3 text-xs text-muted-foreground"
-        >
-          <p class="font-medium text-foreground">当前 OEE 数据不完整</p>
-          <ul class="mt-1 list-disc pl-4">
-            <li v-for="reason in oeeDegradedReasons" :key="reason">{{ reason }}</li>
-          </ul>
-        </div>
+    <template v-else>
+      <NvSectionCards :columns="3">
+        <NvMetricCard
+          variant="target"
+          label="可用率"
+          :value="rateValue(oee?.availabilityRate)"
+          :progress="rateProgress(oee?.availabilityRate)"
+          target-label="目标 100%"
+          :foot-start="rateFoot(oee?.availabilityRate) ?? '按设备运行状态时长计算'"
+        />
+        <NvMetricCard
+          variant="target"
+          label="加载率"
+          :value="rateValue(oee?.loadingRate)"
+          :progress="rateProgress(oee?.loadingRate)"
+          target-label="目标 100%"
+          :foot-start="rateFoot(oee?.loadingRate) ?? '已排除计划停机窗口'"
+        />
+        <NvMetricCard
+          variant="target"
+          label="性能率"
+          :value="rateValue(oee?.performanceRate)"
+          :progress="rateProgress(oee?.performanceRate)"
+          target-label="目标 100%"
+          :foot-start="rateFoot(oee?.performanceRate) ?? '实际产出 ÷ 理论产出'"
+        />
+        <NvMetricCard
+          variant="target"
+          label="质量率"
+          :value="rateValue(oee?.qualityRate)"
+          :progress="rateProgress(oee?.qualityRate)"
+          target-label="目标 100%"
+          :foot-start="rateFoot(oee?.qualityRate) ?? '良品 ÷ 总产出'"
+        />
+        <!-- OEE 是三项因子相乘的结果，不是各因子之和：用 facets 并列三个因子，禁止画成环。 -->
+        <NvMetricCard
+          variant="facets"
+          label="OEE"
+          :value="rateValue(oee?.oeeRate)"
+          :facets="oeeFacets"
+          class="sm:col-span-2 lg:col-span-2"
+        />
+      </NvSectionCards>
+
+      <NvMetricStrip :cells="basisCells" />
+
+      <div
+        v-if="oee?.isDegraded"
+        class="rounded-lg border border-warning/40 bg-warning/[0.06] p-4 text-sm"
+        role="status"
+      >
+        <p class="font-medium text-foreground">部分指标暂缺可计算的数据</p>
+        <ul class="mt-1 list-disc pl-4 text-muted-foreground">
+          <li v-for="reason in oeeDegradedReasons" :key="reason">{{ reason }}</li>
+        </ul>
       </div>
 
       <NvDataTable
@@ -263,7 +327,7 @@ function formatError(error: unknown) {
         :loading="oeePending"
         :searchable="false"
         :column-settings="false"
-        empty-message="请输入设备编号和时间范围后查询设备可用性窗口。"
+        empty-message="所选时间范围内没有设备可用性窗口记录；可换个时间范围再看。"
       >
         <template #cell-availabilityStatus="{ row }">
           <NvBadge class="rounded-sm" :variant="availabilityVariant(row.availabilityStatus)">{{
@@ -288,6 +352,6 @@ function formatError(error: unknown) {
         <template #cell-startUtc="{ row }">{{ formatDateTime(row.startUtc) }}</template>
         <template #cell-endUtc="{ row }">{{ formatDateTime(row.endUtc) }}</template>
       </NvDataTable>
-    </div>
+    </template>
   </BusinessLayout>
 </template>

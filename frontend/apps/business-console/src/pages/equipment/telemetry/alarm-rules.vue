@@ -314,8 +314,7 @@ function formatError(error: unknown) {
         <NvDialogHeader>
           <NvDialogTitle>维护报警规则</NvDialogTitle>
           <NvDialogDescription
-            >规则保存后由 IndustrialTelemetry
-            按真实采样事实评估，不在前端模拟报警。</NvDialogDescription
+            >规则保存后按设备实际采样值自动判定，不做界面模拟。</NvDialogDescription
           >
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitRule">
