@@ -454,7 +454,7 @@ function Start-NervFullStackSession {
                 $null
             }
             else {
-                Get-NervAspireDescribeObject -AppHostProject $appHostProject -WorkingDirectory $repoRoot
+                Get-NervAspireDescribeObjectWithEndpoints -AppHostProject $appHostProject -WorkingDirectory $repoRoot
             }
             $manifest = Update-NervFullStackManifest -SessionId $newSessionId -AllowedStates @('Creating') -UpdateAction {
                 param($latest)

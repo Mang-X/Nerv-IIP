@@ -237,6 +237,45 @@ function Wait-NervAspireResource {
         -AllowPartialOutput | Out-Null
 }
 
+function Get-NervAspireDescribeObjectWithEndpoints {
+    param(
+        [Parameter(Mandatory)] [string] $AppHostProject,
+        [Parameter(Mandatory)] [string] $WorkingDirectory,
+        [string[]] $ResourceNames = @('gateway', 'business-gateway', 'console', 'business-console', 'screen'),
+        [string] $EndpointName = 'http',
+        [int] $TimeoutSeconds = 120,
+        [int] $PollSeconds = 3
+    )
+
+    # Aspire reports a resource healthy before its endpoint URL is guaranteed to be present in
+    # `aspire describe` output, so a single snapshot can miss a just-started resource. Poll until
+    # every required endpoint is published or the bounded deadline expires.
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $lastErrorMessage = ''
+    while ($true) {
+        $describe = Get-NervAspireDescribeObject -AppHostProject $AppHostProject -WorkingDirectory $WorkingDirectory
+        $resolved = $true
+        foreach ($resourceName in $ResourceNames) {
+            try {
+                Get-NervAspireResourceEndpoint `
+                    -DescribeObject $describe `
+                    -ResourceName $resourceName `
+                    -EndpointName $EndpointName | Out-Null
+            }
+            catch {
+                $resolved = $false
+                $lastErrorMessage = "$($_.Exception.Message)"
+                break
+            }
+        }
+        if ($resolved) { return $describe }
+        if ((Get-Date) -ge $deadline) {
+            throw "Aspire endpoints were not published within $TimeoutSeconds seconds. Last failure: $lastErrorMessage"
+        }
+        Start-Sleep -Seconds $PollSeconds
+    }
+}
+
 function Save-NervFullStackEndpoints {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
