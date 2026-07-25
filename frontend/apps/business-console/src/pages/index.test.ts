@@ -65,16 +65,47 @@ describe('business workbench page', () => {
       success: true,
       data: {
         kpis: [
-          { key: 'releasedWorkOrders', label: 'Released work orders', value: 7, source: 'BusinessMES', status: 'available' },
-          { key: 'openNcrs', label: 'Open NCRs', value: 2, source: 'BusinessQuality', status: 'available' },
-          { key: 'sensitiveFinance', label: 'Sensitive receivables amount', value: 980000, source: 'BusinessERP', status: 'forbidden' },
+          {
+            key: 'releasedWorkOrders',
+            label: 'Released work orders',
+            value: 7,
+            source: 'BusinessMES',
+            status: 'available',
+          },
+          {
+            key: 'openNcrs',
+            label: 'Open NCRs',
+            value: 2,
+            source: 'BusinessQuality',
+            status: 'available',
+          },
+          {
+            key: 'sensitiveFinance',
+            label: 'Sensitive receivables amount',
+            value: 980000,
+            source: 'BusinessERP',
+            status: 'forbidden',
+          },
         ],
         todos: {
           status: 'available',
           total: 2,
           items: [
-            { source: 'BusinessApproval', itemId: 'approval-1', itemType: 'purchase-order', status: 'pending', referenceId: 'PO-260701-0001', dueAtUtc: '2026-07-01T08:00:00Z' },
-            { source: 'Notification', itemId: 'task-1', itemType: 'inventory-count', status: 'open', referenceId: 'COUNT-260701-0002' },
+            {
+              source: 'BusinessApproval',
+              itemId: 'approval-1',
+              itemType: 'purchase-order',
+              status: 'pending',
+              referenceId: 'PO-260701-0001',
+              dueAtUtc: '2026-07-01T08:00:00Z',
+            },
+            {
+              source: 'Notification',
+              itemId: 'task-1',
+              itemType: 'inventory-count',
+              status: 'open',
+              referenceId: 'COUNT-260701-0002',
+            },
           ],
         },
         messages: {
@@ -82,7 +113,15 @@ describe('business workbench page', () => {
           total: 2,
           unread: 1,
           items: [
-            { messageId: 'message-1', status: 'unread', severity: 'warning', resourceType: 'work-order', resourceId: 'WO-260701-0001', createdAtUtc: '2026-07-01T09:00:00Z', title: 'Sensitive customer escalation' },
+            {
+              messageId: 'message-1',
+              status: 'unread',
+              severity: 'warning',
+              resourceType: 'work-order',
+              resourceId: 'WO-260701-0001',
+              createdAtUtc: '2026-07-01T09:00:00Z',
+              title: 'Sensitive customer escalation',
+            },
           ],
         },
         alerts: {
@@ -90,7 +129,13 @@ describe('business workbench page', () => {
           total: 1,
           critical: 1,
           items: [
-            { alarmEventId: 'alarm-1', deviceAssetId: 'DEV-1001', alarmCode: 'TEMP_HIGH', severity: 'critical', raisedAtUtc: '2026-07-01T09:10:00Z' },
+            {
+              alarmEventId: 'alarm-1',
+              deviceAssetId: 'DEV-1001',
+              alarmCode: 'TEMP_HIGH',
+              severity: 'critical',
+              raisedAtUtc: '2026-07-01T09:10:00Z',
+            },
           ],
         },
         sourceStatuses: [
@@ -99,7 +144,12 @@ describe('business workbench page', () => {
           { source: 'BusinessApproval', status: 'available' },
           { source: 'Notification', status: 'available' },
           { source: 'IndustrialTelemetry', status: 'available' },
-          { source: 'BusinessInventory', status: 'unsupported', permissionCode: 'business.inventory.ledger.read', reason: 'global-inventory-workbench-summary-not-connected' },
+          {
+            source: 'BusinessInventory',
+            status: 'unsupported',
+            permissionCode: 'business.inventory.ledger.read',
+            reason: 'global-inventory-workbench-summary-not-connected',
+          },
         ],
       },
     }
@@ -141,8 +191,6 @@ describe('business workbench page', () => {
     expect(text).toContain('消息 2')
     expect(text).toContain('设备预警 1')
     expect(text).toContain('DEV-1001')
-    expect(text).toContain('库存管理')
-    expect(text).toContain('未接入')
     expect(text).not.toContain('设备停机影响')
     expect(text).not.toContain('Sensitive customer escalation')
     expect(text).not.toContain('Sensitive receivables amount')
@@ -161,7 +209,32 @@ describe('business workbench page', () => {
     expect(wrapper.text()).not.toContain('工单与派工')
   })
 
-  it('keeps raw source identifiers for unmapped source status entries', async () => {
+  it('centers the business-facing empty states instead of ops-style placeholders', async () => {
+    coladaState.queryData = {
+      success: true,
+      data: {
+        kpis: [],
+        todos: { status: 'available', total: 0, items: [] },
+        messages: { status: 'available', total: 0, unread: 0, items: [] },
+        alerts: { status: 'available', total: 0, critical: 0, items: [] },
+        sourceStatuses: [],
+      },
+    }
+
+    const wrapper = mountWorkbench(['business.iiot.alarms.read'])
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('待办已清空')
+    expect(text).toContain('暂无未读消息')
+    expect(text).toContain('设备当前运行正常')
+    expect(text).not.toContain('审批和通知任务按当前用户过滤')
+    expect(text).not.toContain('只展示消息状态，不展开消息标题')
+    expect(text).not.toContain('来自设备运行事实的当前报警')
+    expect(text).not.toContain('仅展示当前角色可进入的页面')
+  })
+
+  it('hides the ops-only source status panel on the workbench first screen', async () => {
     coladaState.queryData = {
       success: true,
       data: {
@@ -179,7 +252,8 @@ describe('business workbench page', () => {
     const wrapper = mountWorkbench(['business.erp.procurement.read'])
     await flushPromises()
 
-    expect(wrapper.find('[data-source="BusinessERP"]').exists()).toBe(true)
-    expect(wrapper.find('[data-source="BusinessScheduling"]').exists()).toBe(true)
+    expect(wrapper.find('[data-source="BusinessERP"]').exists()).toBe(false)
+    expect(wrapper.find('[data-source="BusinessScheduling"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('来源状态')
   })
 })

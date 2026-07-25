@@ -5,7 +5,8 @@ import { BUSINESS_DOMAINS, DOMAIN_SIDE_NAV, permittedBy } from '@/navigation'
 import { BUSINESS_DOMAIN_PERMISSIONS } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useBusinessWorkbenchSummary } from '@/composables/useBusinessWorkbench'
-import { NvBadge } from '@nerv-iip/ui'
+import { NvBadge, NvMetricStrip } from '@nerv-iip/ui'
+import type { NvMetricStripCell } from '@nerv-iip/ui'
 import type { SideNav } from '@nerv-iip/app-shell'
 import type {
   BusinessConsoleWorkbenchAlertItem,
@@ -31,6 +32,13 @@ interface ShortcutGroup {
   }>
 }
 
+/**
+ * 「来源状态」是运维视角（已接入 / 未接入 / 无权限 / 暂不可用），业务角色进入工作台
+ * 第一屏不需要看到，默认隐藏。改为 `true` 即可恢复该卡片，作为实施与运维排障视图使用；
+ * 后续若要长期保留，应迁到运维/实施专属页面而不是业务工作台首屏。
+ */
+const SHOW_SOURCE_STATUS_PANEL = false
+
 const auth = useAuthStore()
 const {
   alertItems,
@@ -45,6 +53,15 @@ const {
 
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const sourceStatusList = computed(() => sourceStatuses.value.map(describeSourceStatus))
+const kpiCells = computed<NvMetricStripCell[]>(() =>
+  availableKpis.value.map((kpi) => ({
+    key: `${normalize(kpi.source)}-${normalize(kpi.key)}`,
+    label: kpiLabel(kpi),
+    meta: kpiSource(kpi),
+    metaTone: 'neutral',
+    value: kpi.value ?? 0,
+  })),
+)
 const visibleShortcutGroups = computed<ShortcutGroup[]>(() => {
   const domainTitles = new Map(BUSINESS_DOMAINS.map((domain) => [domain.id, domain.title]))
 
@@ -211,8 +228,7 @@ function formatDateTime(value: string) {
           <p class="text-xs font-bold uppercase text-primary">业务控制台</p>
           <h1 class="text-xl font-semibold text-foreground">业务工作台</h1>
           <p class="mt-1 max-w-3xl text-sm text-muted-foreground">
-            面向计划、车间、质量、库存和设备角色的 PC
-            入口；按当前权限汇总待办、消息、预警和可进入页面。
+            今天需要你处理的待办、消息与设备预警都在这里。
           </p>
         </div>
         <NvBadge variant="neutral">PC 工作台</NvBadge>
@@ -222,38 +238,27 @@ function formatDateTime(value: string) {
         <p class="text-sm text-muted-foreground">正在刷新工作台摘要。</p>
       </section>
 
-      <section class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div
-          v-for="kpi in availableKpis"
-          :key="`${kpi.source}-${kpi.key}`"
-          class="rounded-lg border bg-background p-4"
-        >
-          <p class="text-sm text-muted-foreground">{{ kpiSource(kpi) }}</p>
-          <p class="mt-2 text-2xl font-semibold text-foreground">{{ kpi.value ?? 0 }}</p>
-          <p class="mt-1 text-sm font-medium text-foreground">{{ kpiLabel(kpi) }}</p>
-        </div>
-        <div
-          v-if="!summaryPending && availableKpis.length === 0"
-          class="rounded-lg border bg-background p-4 md:col-span-2 xl:col-span-4"
-        >
-          <p class="text-sm font-medium text-foreground">暂无可显示指标</p>
-          <p class="mt-1 text-sm text-muted-foreground">
-            当前角色没有可汇总的跨域指标，或来源暂不可用。
-          </p>
-        </div>
+      <NvMetricStrip v-if="kpiCells.length > 0" :cells="kpiCells" />
+      <section v-else-if="!summaryPending" class="rounded-lg border bg-background p-4">
+        <p class="text-sm font-medium text-foreground">暂无可显示指标</p>
+        <p class="mt-1 text-sm text-muted-foreground">
+          当前角色没有可汇总的跨域指标，或来源暂不可用。
+        </p>
       </section>
 
-      <div class="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
+      <div
+        class="grid gap-4"
+        :class="
+          SHOW_SOURCE_STATUS_PANEL ? 'xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]' : ''
+        "
+      >
         <section class="grid gap-4 lg:grid-cols-3">
-          <article class="rounded-lg border bg-background">
-            <div class="border-b px-4 py-3">
-              <div class="flex items-center justify-between gap-3">
-                <h2 class="text-sm font-semibold text-foreground">待办</h2>
-                <NvBadge variant="neutral">待办 {{ summary?.todos?.total ?? 0 }}</NvBadge>
-              </div>
-              <p class="mt-1 text-sm text-muted-foreground">审批和通知任务按当前用户过滤。</p>
+          <article class="flex flex-col rounded-lg border bg-background">
+            <div class="flex items-center justify-between gap-3 border-b px-4 py-3">
+              <h2 class="text-sm font-semibold text-foreground">待办</h2>
+              <NvBadge variant="neutral">待办 {{ summary?.todos?.total ?? 0 }}</NvBadge>
             </div>
-            <div class="divide-y">
+            <div class="flex flex-1 flex-col divide-y">
               <div
                 v-for="item in todoItems"
                 :key="`${item.source}-${item.itemId}`"
@@ -264,44 +269,47 @@ function formatDateTime(value: string) {
               </div>
               <div
                 v-if="!summaryPending && todoItems.length === 0"
-                class="px-4 py-6 text-sm text-muted-foreground"
+                class="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-10 text-center"
               >
-                暂无待处理事项
+                <p class="text-sm font-medium text-foreground">待办已清空</p>
+                <p class="text-sm text-muted-foreground">
+                  新的审批与任务到达后会自动出现在这里，也可以直接进入审批中心处理在途单据。
+                </p>
+                <RouterLink class="text-sm font-medium text-primary hover:underline" to="/approval">
+                  去审批中心
+                </RouterLink>
               </div>
             </div>
           </article>
 
-          <article class="rounded-lg border bg-background">
-            <div class="border-b px-4 py-3">
-              <div class="flex items-center justify-between gap-3">
-                <h2 class="text-sm font-semibold text-foreground">消息</h2>
-                <NvBadge variant="neutral">消息 {{ summary?.messages?.total ?? 0 }}</NvBadge>
-              </div>
-              <p class="mt-1 text-sm text-muted-foreground">只展示消息状态，不展开消息标题。</p>
+          <article class="flex flex-col rounded-lg border bg-background">
+            <div class="flex items-center justify-between gap-3 border-b px-4 py-3">
+              <h2 class="text-sm font-semibold text-foreground">消息</h2>
+              <NvBadge variant="neutral">消息 {{ summary?.messages?.total ?? 0 }}</NvBadge>
             </div>
-            <div class="divide-y">
+            <div class="flex flex-1 flex-col divide-y">
               <div v-for="item in messageItems" :key="item.messageId" class="px-4 py-3">
                 <p class="text-sm font-medium text-foreground">{{ messageLabel(item) }}</p>
                 <p class="mt-0.5 text-sm text-muted-foreground">{{ messageMeta(item) }}</p>
               </div>
               <div
                 v-if="!summaryPending && messageItems.length === 0"
-                class="px-4 py-6 text-sm text-muted-foreground"
+                class="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-10 text-center"
               >
-                暂无未读消息
+                <p class="text-sm font-medium text-foreground">暂无未读消息</p>
+                <p class="text-sm text-muted-foreground">
+                  与你相关的通知会第一时间出现在这里，不用来回切换各个业务页面确认。
+                </p>
               </div>
             </div>
           </article>
 
-          <article class="rounded-lg border bg-background">
-            <div class="border-b px-4 py-3">
-              <div class="flex items-center justify-between gap-3">
-                <h2 class="text-sm font-semibold text-foreground">设备预警</h2>
-                <NvBadge variant="neutral">设备预警 {{ summary?.alerts?.total ?? 0 }}</NvBadge>
-              </div>
-              <p class="mt-1 text-sm text-muted-foreground">来自设备运行事实的当前报警。</p>
+          <article class="flex flex-col rounded-lg border bg-background">
+            <div class="flex items-center justify-between gap-3 border-b px-4 py-3">
+              <h2 class="text-sm font-semibold text-foreground">设备预警</h2>
+              <NvBadge variant="neutral">设备预警 {{ summary?.alerts?.total ?? 0 }}</NvBadge>
             </div>
-            <div class="divide-y">
+            <div class="flex flex-1 flex-col divide-y">
               <RouterLink
                 v-for="item in alertItems"
                 :key="item.alarmEventId"
@@ -317,15 +325,24 @@ function formatDateTime(value: string) {
               </RouterLink>
               <div
                 v-if="!summaryPending && alertItems.length === 0"
-                class="px-4 py-6 text-sm text-muted-foreground"
+                class="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-10 text-center"
               >
-                暂无当前预警
+                <p class="text-sm font-medium text-foreground">设备当前运行正常</p>
+                <p class="text-sm text-muted-foreground">
+                  一旦有设备报出异常就会立刻出现在这里，也可以先查看历史报警确认处理情况。
+                </p>
+                <RouterLink
+                  class="text-sm font-medium text-primary hover:underline"
+                  to="/equipment/alarms"
+                >
+                  查看设备报警
+                </RouterLink>
               </div>
             </div>
           </article>
         </section>
 
-        <section class="rounded-lg border bg-background">
+        <section v-if="SHOW_SOURCE_STATUS_PANEL" class="rounded-lg border bg-background">
           <div class="border-b px-4 py-3">
             <h2 class="text-sm font-semibold text-foreground">来源状态</h2>
             <p class="mt-1 text-sm text-muted-foreground">区分已接入、无权限、未接入和暂不可用。</p>
@@ -353,15 +370,14 @@ function formatDateTime(value: string) {
       <section class="rounded-lg border bg-background">
         <div class="border-b px-4 py-3">
           <h2 class="text-sm font-semibold text-foreground">快捷入口</h2>
-          <p class="mt-1 text-sm text-muted-foreground">仅展示当前角色可进入的页面。</p>
         </div>
-        <div class="grid gap-3 p-3 lg:grid-cols-3">
+        <div class="grid items-start gap-3 p-3 lg:grid-cols-3">
           <div
             v-for="group in visibleShortcutGroups"
             :key="group.title"
-            class="grid gap-2 rounded-md border p-3"
+            class="flex flex-col gap-1 rounded-md border p-3"
           >
-            <h3 class="text-sm font-semibold text-foreground">{{ group.title }}</h3>
+            <h3 class="px-3 pb-1 text-sm font-semibold text-foreground">{{ group.title }}</h3>
             <RouterLink
               v-for="item in group.items"
               :key="item.path"
