@@ -29,7 +29,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { formatDateTime, formatError } from './shared'
+import { formatDateTime, formatError } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: '销售机会', requiredPermissions: ['business.erp.sales.read'] },

@@ -5,7 +5,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { NvButton, NvDataTable, NvPageHeader, NvSectionCard, NvSectionCards } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
-import { formatAmount, formatError } from './shared'
+import { formatAmount, formatError } from '../shared'
 
 definePage({
   meta: {
