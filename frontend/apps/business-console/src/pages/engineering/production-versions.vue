@@ -3,7 +3,7 @@ import type {
   BusinessConsoleCreateProductionVersionRequest,
   BusinessConsoleProductionVersionItem,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessSkus } from '@/composables/useBusinessMasterData'
 import {
@@ -42,9 +42,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -173,6 +172,23 @@ const defaultCount = computed(
     productionVersions.value.filter((v) => v.isDefault && v.status?.toLowerCase() === 'active')
       .length,
 )
+
+const versionCells = computed<NvMetricStripCell[]>(() => [
+  {
+    key: 'active',
+    label: '有效生产版本',
+    value: activeCount.value,
+    unit: '个',
+    meta: '在有效期内、可投产',
+  },
+  {
+    key: 'default',
+    label: '默认版本',
+    value: defaultCount.value,
+    unit: '个',
+    meta: '一料多版时优先采用',
+  },
+])
 
 const listErrorMessage = computed(() => formatError(productionVersionsError.value))
 
@@ -564,14 +580,7 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard
-        description="有效生产版本"
-        :value="activeCount"
-        hint="在有效期内、可投产的版本"
-      />
-      <NvSectionCard description="默认版本" :value="defaultCount" hint="一料多版时默认采用的版本" />
-    </NvSectionCards>
+    <NvMetricStrip :cells="versionCells" />
 
     <NvCard>
       <NvCardHeader>

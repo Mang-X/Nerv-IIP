@@ -3,9 +3,10 @@ import type {
   BusinessConsoleErpPurchaseRequisitionItem,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import { useErpPurchaseRequisitions } from '@/composables/useBusinessErp'
 import { useBusinessPartners } from '@/composables/useBusinessMasterData'
+import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -20,9 +21,8 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvInput,
+  NvMetricCard,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -72,9 +72,26 @@ const openCount = computed(() => requisitions.items.value.filter((r) => r.status
 const convertedCount = computed(
   () => requisitions.items.value.filter((r) => r.status === 'Converted').length,
 )
-const requestedQuantity = computed(() =>
-  requisitions.items.value.reduce((sum, r) => sum + (r.quantity ?? 0), 0),
+const cancelledCount = computed(
+  () => requisitions.items.value.filter((r) => r.status === 'Cancelled').length,
 )
+// 采购申请的决策点是「还有多少没转出去」——总量与流转进度放在一张构成卡里，
+// 分段只能按已取回的行统计，差额由 pagedBreakdownSegments 补齐，保证分母守恒。
+const requisitionSegments = computed(() => {
+  const segments: NvMetricSegment[] = [
+    { key: 'open', label: '待处理', value: openCount.value, tone: 'warning' },
+    { key: 'converted', label: '已转单', value: convertedCount.value, tone: 'success' },
+  ]
+  if (cancelledCount.value > 0) {
+    segments.push({
+      key: 'cancelled',
+      label: '已取消',
+      value: cancelledCount.value,
+      tone: 'neutral',
+    })
+  }
+  return pagedBreakdownSegments(requisitions.total.value, segments)
+})
 const rfqDialogOpen = shallowRef(false)
 const rfqRow = shallowRef<BusinessConsoleErpPurchaseRequisitionItem | null>(null)
 const rfqSupplierSelection = reactive<Record<string, boolean>>({})
@@ -250,15 +267,14 @@ async function submitRfq() {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="3">
-      <NvSectionCard description="待处理申请" :value="openCount" hint="可进入 RFQ 或采购订单流程" />
-      <NvSectionCard description="已转单申请" :value="convertedCount" hint="已进入后续采购执行" />
-      <NvSectionCard
-        description="本页申请数量"
-        :value="formatQuantity(requestedQuantity)"
-        hint="按当前筛选页汇总"
-      />
-    </NvSectionCards>
+    <NvMetricCard
+      class="sm:max-w-md"
+      variant="breakdown"
+      label="采购申请"
+      :value="requisitions.total.value"
+      unit="张"
+      :segments="requisitionSegments"
+    />
 
     <NvToolbar :show-search="false">
       <template #filters>

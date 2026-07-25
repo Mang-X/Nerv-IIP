@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpPurchaseReceipts } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -18,9 +18,8 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
   Spinner,
   NvStatusBadge,
   NvToolbar,
@@ -73,6 +72,15 @@ const columns: NvDataTableColumn<(typeof rows.value)[number]>[] = [
 
 const receivableLines = computed(() => rows.value.filter((row) => row.openQuantity > 0).length)
 const openQuantity = computed(() => rows.value.reduce((sum, row) => sum + row.openQuantity, 0))
+const receiptCells = computed<NvMetricStripCell[]>(() => [
+  { key: 'lines', label: '可收货行', value: receivableLines.value, unit: '行' },
+  {
+    key: 'open-quantity',
+    label: '待收数量',
+    value: formatQuantity(openQuantity.value),
+    meta: '已下达采购但尚未入库的数量',
+  },
+])
 
 const open = shallowRef(false)
 const form = reactive({
@@ -142,14 +150,7 @@ async function submit() {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvSectionCard description="可收货行" :value="receivableLines" hint="本页仍有待收数量" />
-      <NvSectionCard
-        description="待收数量"
-        :value="formatQuantity(openQuantity)"
-        hint="本页未完成收货数量"
-      />
-    </NvSectionCards>
+    <NvMetricStrip :cells="receiptCells" />
 
     <NvToolbar :show-search="false">
       <template #filters>

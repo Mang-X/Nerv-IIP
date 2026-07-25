@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type {
+  NvDataTableColumn,
+  NvMetricFacet,
+  NvMetricSegment,
+  NvMetricStripCell,
+} from '@nerv-iip/ui'
 import {
   describeEquipmentReason,
   equipmentStatusTone,
@@ -42,8 +47,9 @@ import {
   NvBadge,
   NvButton,
   NvDataTable,
+  NvMetricCard,
+  NvMetricStrip,
   NvPageHeader,
-  NvSectionCard,
   NvSectionCards,
 } from '@nerv-iip/ui'
 import {
@@ -53,6 +59,7 @@ import {
   GaugeIcon,
   LineChartIcon,
   PackageSearchIcon,
+  RadioIcon,
   RefreshCwIcon,
   Settings2Icon,
   SlidersHorizontalIcon,
@@ -369,6 +376,59 @@ const currentDeviceInspections = computed(() =>
     )
     .slice(0, 5),
 )
+// --- 指标卡投影 -------------------------------------------------------------
+// 无数据时不喊「无数据」大字：值位收敛成一个安静的破折号，缺口原因交给脚注。
+function rateValue(rate?: number | null) {
+  return rate === null || rate === undefined ? '—' : formatOeeRate(rate)
+}
+function rateProgress(rate?: number | null) {
+  return rate === null || rate === undefined ? 0 : Math.max(0, Math.min(100, rate * 100))
+}
+function rateFoot(rate?: number | null, explanation?: string) {
+  return rate === null || rate === undefined ? '当前窗口暂无可计算样本' : explanation
+}
+const oeeFacets = computed<NvMetricFacet[]>(() => [
+  { key: 'availability', label: '可用率', value: rateValue(oee.value?.availabilityRate) },
+  { key: 'performance', label: '性能率', value: rateValue(oee.value?.performanceRate) },
+  { key: 'quality', label: '质量率', value: rateValue(oee.value?.qualityRate) },
+])
+// 距下次保养的达成度 = 已累计 ÷（已累计 + 还需）；任一侧未知就不画进度，只留读数。
+const runtimeUntilNextProgress = computed(() => {
+  const remaining = mostUrgentOkRuntimeCandidate.value?.hours
+  const done = totalRuntimeHours.value
+  if (remaining === undefined || remaining === null) return undefined
+  if (!hasRuntimeHoursSamples.value || done === undefined || done === null) return undefined
+  const span = done + remaining
+  return span > 0 ? Math.max(0, Math.min(100, (done / span) * 100)) : undefined
+})
+const reliabilityCells = computed<NvMetricStripCell[]>(() => [
+  {
+    key: 'mtbf',
+    label: 'MTBF',
+    value: metricLabel(reliability.value?.mtbfHours, ' 小时'),
+    meta: reliability.value?.mtbfRuntimeHasSamples ? '按维修记录样本计算' : '当前窗口无运行样本',
+  },
+  {
+    key: 'mttr',
+    label: 'MTTR',
+    value: metricLabel(reliability.value?.mttrMinutes, ' 分钟'),
+    meta: '已完成维修的平均耗时',
+  },
+])
+// 故障与完成维修是同一批维护事件的两个互斥去向，相加等于窗口内维护事件总数。
+const maintenanceEventSegments = computed<NvMetricSegment[]>(() => [
+  {
+    key: 'failure',
+    label: '维护故障',
+    value: reliability.value?.failureCount ?? 0,
+    tone: 'danger',
+  },
+  { key: 'repair', label: '完成维修', value: reliability.value?.repairCount ?? 0, tone: 'success' },
+])
+const maintenanceEventTotal = computed(
+  () => (reliability.value?.failureCount ?? 0) + (reliability.value?.repairCount ?? 0),
+)
+
 const telemetryPending = computed(() => historyPending.value || oeePending.value)
 const maintenancePending = computed(
   () =>
@@ -655,18 +715,41 @@ function formatError(error: unknown) {
 
     <template v-else>
       <NvSectionCards :columns="4">
-        <NvSectionCard
-          description="当前状态"
+        <NvMetricCard
+          variant="alert"
+          label="当前状态"
           :value="statusLabel(currentState?.currentState)"
-          hint="设备运行事实"
+          :tone="
+            equipmentStatusTone(currentState?.currentState) === 'danger' ? 'danger' : 'neutral'
+          "
+          :status="
+            equipmentStatusTone(currentState?.currentState) === 'danger'
+              ? { label: '需关注', tone: 'danger' }
+              : undefined
+          "
+          :foot-start="`状态时间 ${formatDateTime(currentState?.stateOccurredAtUtc)}`"
         />
-        <NvSectionCard
-          description="数据状态"
-          :value="currentState?.isSourceFresh ? '正常' : '过期'"
-          :hint="formatDateTime(currentState?.stateOccurredAtUtc)"
+        <NvMetricCard
+          variant="icon"
+          label="数据状态"
+          :value="currentState?.isSourceFresh ? '采集正常' : '采集过期'"
+          :tone="currentState?.isSourceFresh ? 'success' : 'warning'"
+          :icon="RadioIcon"
         />
-        <NvSectionCard description="未解除报警" :value="activeAlarms.length" hint="当前设备报警" />
-        <NvSectionCard description="占用窗口" :value="blockCount" hint="影响排程或执行" />
+        <NvMetricCard
+          variant="alert"
+          label="未解除报警"
+          :value="activeAlarms.length"
+          :tone="activeAlarms.length > 0 ? 'danger' : 'neutral'"
+          :status="activeAlarms.length > 0 ? { label: '需处理', tone: 'danger' } : undefined"
+        />
+        <NvMetricCard
+          variant="alert"
+          label="占用窗口"
+          :value="blockCount"
+          :tone="blockCount > 0 ? 'warning' : 'neutral'"
+          :status="blockCount > 0 ? { label: '影响排程', tone: 'warning' } : undefined"
+        />
       </NvSectionCards>
 
       <div class="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
@@ -826,56 +909,81 @@ function formatError(error: unknown) {
           {{ telemetryErrorMessage }}
         </p>
 
-        <NvSectionCards :columns="4">
-          <NvSectionCard
-            description="可用率"
-            :value="formatOeeRate(oee?.availabilityRate)"
-            hint="IndustrialTelemetry OEE facade"
+        <NvSectionCards :columns="3">
+          <NvMetricCard
+            variant="target"
+            label="可用率"
+            :value="rateValue(oee?.availabilityRate)"
+            :progress="rateProgress(oee?.availabilityRate)"
+            target-label="目标 100%"
+            :foot-start="rateFoot(oee?.availabilityRate, '按设备运行状态时长计算')"
           />
-          <NvSectionCard
-            description="加载率"
-            :value="formatOeeRate(oee?.loadingRate)"
-            hint="排除计划停机窗口"
+          <NvMetricCard
+            variant="target"
+            label="加载率"
+            :value="rateValue(oee?.loadingRate)"
+            :progress="rateProgress(oee?.loadingRate)"
+            target-label="目标 100%"
+            :foot-start="rateFoot(oee?.loadingRate, '已排除计划停机窗口')"
           />
-          <NvSectionCard
-            description="性能率"
-            :value="formatOeeRate(oee?.performanceRate)"
-            hint="实际产出 ÷ 理论产出"
+          <NvMetricCard
+            variant="target"
+            label="性能率"
+            :value="rateValue(oee?.performanceRate)"
+            :progress="rateProgress(oee?.performanceRate)"
+            target-label="目标 100%"
+            :foot-start="rateFoot(oee?.performanceRate, '实际产出 ÷ 理论产出')"
           />
-          <NvSectionCard
-            description="质量率"
-            :value="formatOeeRate(oee?.qualityRate)"
-            hint="良品 ÷ 总产出"
+          <NvMetricCard
+            variant="target"
+            label="质量率"
+            :value="rateValue(oee?.qualityRate)"
+            :progress="rateProgress(oee?.qualityRate)"
+            target-label="目标 100%"
+            :foot-start="rateFoot(oee?.qualityRate, '良品 ÷ 总产出')"
           />
-          <NvSectionCard
-            description="OEE"
-            :value="formatOeeRate(oee?.oeeRate)"
-            hint="三项因子的乘积"
+          <!-- OEE 是三项因子相乘的结果，不是各因子之和：用 facets 并列三个因子，禁止画成环。 -->
+          <NvMetricCard
+            variant="facets"
+            label="OEE"
+            :value="rateValue(oee?.oeeRate)"
+            :facets="oeeFacets"
           />
-          <NvSectionCard
-            description="历史事件"
+          <NvMetricCard
+            variant="sparkline"
+            label="历史事件"
             :value="historyCount"
-            hint="设备历史趋势 facade 返回数量"
+            foot-start="当前时间窗内的历史事件数"
           />
         </NvSectionCards>
 
         <NvSectionCards :columns="2">
-          <NvSectionCard
-            description="累计运行小时"
+          <NvMetricCard
+            label="累计运行小时"
             :value="cumulativeRuntimeCardValue"
-            :hint="runtimeHoursCardHint"
+            :foot-start="runtimeHoursCardHint"
+            variant="sparkline"
           />
-          <NvSectionCard
+          <NvMetricCard
             v-if="currentDeviceRuntimePlan"
-            :description="runtimeUntilNextCardDescription"
+            variant="target"
+            :label="runtimeUntilNextCardDescription"
             :value="runtimeUntilNextCardValue"
-            :hint="runtimeUntilNextCardHint"
+            :progress="runtimeUntilNextProgress"
+            :target-label="
+              runtimeUntilNextProgress === undefined
+                ? undefined
+                : `阈值 ${mostUrgentOkRuntimeCandidate?.plan.nextDueRuntimeHours ?? '—'} 小时`
+            "
+            :foot-start="runtimeUntilNextCardHint"
           />
-          <NvSectionCard
+          <NvMetricCard
             v-else
-            description="距下次保养（运行小时）"
+            variant="alert"
+            tone="neutral"
+            label="距下次保养（运行小时）"
             value="未设运行小时计划"
-            hint="该设备没有运行小时型保养计划；到期以日历周期为准"
+            foot-start="该设备没有运行小时型保养计划；到期以日历周期为准。"
           />
         </NvSectionCards>
 
@@ -884,7 +992,7 @@ function formatError(error: unknown) {
             <div class="border-b px-4 py-3">
               <h3 class="text-sm font-semibold text-foreground">历史趋势摘录</h3>
               <p class="mt-1 text-xs text-muted-foreground">
-                来源：设备历史趋势 facade；详情页只展示最近事件，完整曲线进入正式页面。
+                仅展示最近事件，完整曲线请进入设备历史趋势页。
               </p>
             </div>
             <div class="grid gap-3 p-4">
@@ -913,16 +1021,16 @@ function formatError(error: unknown) {
                 v-if="!telemetryPending && !historyPreview.length"
                 class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
               >
-                当前窗口没有历史趋势事件；这表示当前 facade 未返回样本，不等于设备未接入。
+                所选时间范围内没有历史采样；不代表设备未接入，可换个时间范围再看。
               </div>
             </div>
           </div>
 
           <div class="rounded-lg border bg-card">
             <div class="border-b px-4 py-3">
-              <h3 class="text-sm font-semibold text-foreground">OEE / runtime availability 口径</h3>
+              <h3 class="text-sm font-semibold text-foreground">OEE 与可用性口径</h3>
               <p class="mt-1 text-xs text-muted-foreground">
-                来源：IndustrialTelemetry OEE 与 runtime availability facade；详情页不重新计算 OEE。
+                OEE 与可用性口径与设备综合效率页一致，此处不另行计算。
               </p>
             </div>
             <div class="grid gap-3 p-4 text-sm">
@@ -974,8 +1082,7 @@ function formatError(error: unknown) {
           <div>
             <h2 class="text-base font-semibold text-foreground">维护与可靠性上下文</h2>
             <p class="mt-1 text-sm text-muted-foreground">
-              来源：Maintenance 工单、保养计划、点检、备件、可用窗口和可靠性
-              facade。列表读面按返回设备字段收敛当前设备；缺少设备字段时不伪造完成能力。
+              汇总本设备的维修工单、保养计划、点检、备件与可用窗口；若记录未标注设备，将不在此处显示。
             </p>
           </div>
           <div class="flex flex-wrap gap-2">
@@ -1019,30 +1126,14 @@ function formatError(error: unknown) {
           {{ maintenanceErrorMessage }}
         </p>
 
-        <NvSectionCards :columns="4">
-          <NvSectionCard
-            description="MTBF"
-            :value="metricLabel(reliability?.mtbfHours, ' 小时')"
-            :hint="
-              reliability?.mtbfRuntimeHasSamples
-                ? 'Maintenance reliability facade'
-                : '当前窗口无运行样本'
-            "
-          />
-          <NvSectionCard
-            description="MTTR"
-            :value="metricLabel(reliability?.mttrMinutes, ' 分钟')"
-            hint="Maintenance 完成维修样本均值"
-          />
-          <NvSectionCard
-            description="维护故障"
-            :value="reliability?.failureCount ?? 0"
-            hint="窗口内故障计数"
-          />
-          <NvSectionCard
-            description="完成维修"
-            :value="reliability?.repairCount ?? 0"
-            hint="窗口内修复计数"
+        <NvSectionCards :columns="2">
+          <NvMetricStrip :cells="reliabilityCells" />
+          <NvMetricCard
+            variant="breakdown"
+            label="窗口内维护事件"
+            :value="maintenanceEventTotal"
+            unit=" 次"
+            :segments="maintenanceEventSegments"
           />
         </NvSectionCards>
 
@@ -1158,9 +1249,9 @@ function formatError(error: unknown) {
 
           <div class="rounded-lg border bg-card">
             <div class="border-b px-4 py-3">
-              <h3 class="text-sm font-semibold text-foreground">Maintenance 可用窗口</h3>
+              <h3 class="text-sm font-semibold text-foreground">维护占用窗口</h3>
               <p class="mt-1 text-xs text-muted-foreground">
-                来源：Maintenance availability-windows facade，和上方设备运行可用性窗口分开展示。
+                来自维护计划的占用窗口，与上方设备运行可用性分开统计。
               </p>
             </div>
             <div class="grid gap-3 p-4">

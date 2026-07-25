@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesCapacityImpacts } from '@/composables/useBusinessMes'
-import { pagedBreakdownSegments } from '@/composables/mes/mesMetricSegments'
+import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { mesCapacityStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'

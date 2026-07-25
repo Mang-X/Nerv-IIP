@@ -6,7 +6,7 @@ import type {
   BusinessConsoleEquipmentHealthRuleStatus,
   BusinessConsoleEquipmentHealthFreshness,
 } from '@nerv-iip/api-client'
-import { NvBadge } from '@nerv-iip/ui'
+import { NvBadge, NvMetricCard } from '@nerv-iip/ui'
 import { computed } from 'vue'
 
 const props = defineProps<{
@@ -78,6 +78,16 @@ const freshness = computed(() =>
 // 头部不得凭空断言「100 · 健康」，改为显式的暂无数据占位（规则明细仍逐条展示积累态）。
 const scoreUnavailable = computed(() => props.health?.dataFreshness.status === 'unavailable')
 const triggeredCount = computed(() => props.health?.riskFactors.length ?? 0)
+// 评分是 0–100 的达成度，用 target 变体把「离满分还差多少」画出来；配色跟随健康等级。
+const scoreProgressTone = computed<'success' | 'warning' | 'danger'>(() => {
+  const level = props.health?.level
+  if (level === 'critical') return 'danger'
+  if (level === 'watch' || level === 'warning') return 'warning'
+  return 'success'
+})
+const scoreFootStart = computed(() =>
+  triggeredCount.value > 0 ? `命中 ${triggeredCount.value} 项风险` : '未命中风险规则',
+)
 
 function formatDateTime(value?: string | null) {
   if (!value) return '暂无'
@@ -114,23 +124,29 @@ function statusFor(status: BusinessConsoleEquipmentHealthRuleStatus) {
     <div v-else-if="!health" class="p-6 text-sm text-muted-foreground">暂无设备健康数据。</div>
 
     <template v-else>
-      <div class="grid gap-4 p-4 sm:grid-cols-[minmax(0,160px)_minmax(0,1fr)]">
-        <div class="rounded-lg bg-muted/40 p-4">
-          <p class="text-xs text-muted-foreground">健康评分</p>
-          <template v-if="scoreUnavailable">
-            <p class="mt-1 text-2xl font-semibold text-muted-foreground">暂无数据</p>
-            <div class="mt-3 flex flex-wrap gap-2">
-              <NvBadge class="rounded-sm" variant="warning">历史数据积累中</NvBadge>
-            </div>
-            <p class="mt-3 text-xs text-muted-foreground">
-              评分依赖的遥测 / 报警 / 运行事实尚未积累，暂不给出健康结论。
-            </p>
-          </template>
+      <div class="grid gap-4 p-4 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)]">
+        <div class="grid content-start gap-3">
+          <!-- 数据完全缺失时走 alert 变体：只说明「为什么没有结论」，绝不渲染评分与达成条。 -->
+          <NvMetricCard
+            v-if="scoreUnavailable"
+            variant="alert"
+            tone="neutral"
+            label="健康评分"
+            value="暂无数据"
+            :status="{ label: '历史数据积累中', tone: 'warning' }"
+            foot-start="评分依赖的遥测 / 报警 / 运行记录尚未积累，暂不给出健康结论。"
+          />
           <template v-else>
-            <p class="mt-1 text-4xl font-semibold tabular-nums text-foreground">
-              {{ health.healthScore }}
-            </p>
-            <div class="mt-3 flex flex-wrap gap-2">
+            <NvMetricCard
+              variant="target"
+              label="健康评分"
+              :value="health.healthScore"
+              :progress="health.healthScore"
+              target-label="满分 100"
+              :progress-tone="scoreProgressTone"
+              :foot-start="scoreFootStart"
+            />
+            <div class="flex flex-wrap gap-2">
               <NvBadge v-if="level" class="rounded-sm" :variant="level.variant">{{
                 level.label
               }}</NvBadge>
@@ -138,7 +154,6 @@ function statusFor(status: BusinessConsoleEquipmentHealthRuleStatus) {
                 freshness.label
               }}</NvBadge>
             </div>
-            <p class="mt-3 text-xs text-muted-foreground">命中 {{ triggeredCount }} 项风险</p>
           </template>
         </div>
 
@@ -150,7 +165,7 @@ function statusFor(status: BusinessConsoleEquipmentHealthRuleStatus) {
           <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-2">
             <dt class="text-muted-foreground">最新依据</dt>
             <dd class="text-foreground">
-              {{ health.dataFreshness.sourceFactLabel || '暂无可追溯依据' }}
+              {{ health.dataFreshness.sourceFactLabel || '暂无可追溯记录' }}
             </dd>
           </div>
           <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-2">
@@ -195,7 +210,7 @@ function statusFor(status: BusinessConsoleEquipmentHealthRuleStatus) {
             v-if="evaluation.sourceFactLabel || evaluation.sourceFactOccurredAtUtc"
             class="text-xs text-muted-foreground"
           >
-            {{ evaluation.sourceFactLabel || '来源事实' }} ·
+            {{ evaluation.sourceFactLabel || '来源记录' }} ·
             {{ formatDateTime(evaluation.sourceFactOccurredAtUtc) }}
           </p>
         </article>

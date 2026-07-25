@@ -6,7 +6,8 @@ import {
   formatSampleRate,
   isConnectorFault,
 } from '@/composables/useBusinessTelemetry'
-import { NvBadge } from '@nerv-iip/ui'
+import type { NvMetricStripCell } from '@nerv-iip/ui'
+import { NvBadge, NvMetricStrip } from '@nerv-iip/ui'
 import { ActivityIcon, ChevronDownIcon, TriangleAlertIcon, TimerIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -78,6 +79,27 @@ function formatDurationSince(value?: string | null) {
   return `${Math.floor(hours / 24)} 天 ${hours % 24} 小时`
 }
 
+const metricCells = computed<NvMetricStripCell[]>(() => [
+  {
+    key: 'rate',
+    label: '采样速率',
+    value: formatSampleRate(props.sampleRate),
+    meta: `累计接收 ${formatCount(props.connector.receivedCount)}`,
+  },
+  {
+    key: 'dropped',
+    label: '丢样数',
+    value: formatCount(props.connector.droppedCount),
+    valueTone: (props.connector.droppedCount ?? 0) > 0 ? 'danger' : undefined,
+  },
+  {
+    key: 'errors',
+    label: '错误数',
+    value: formatCount(props.connector.errorCount),
+    valueTone: (props.connector.errorCount ?? 0) > 0 ? 'danger' : undefined,
+  },
+])
+
 const offlineDuration = computed(() => {
   if (fieldConnectionLost.value) {
     const disconnectedSinceUtc = props.connector.connection?.disconnectedSinceUtc
@@ -121,35 +143,7 @@ const offlineDuration = computed(() => {
       </div>
     </button>
 
-    <div class="grid grid-cols-3 gap-2 border-t px-4 py-3 text-center">
-      <div>
-        <p class="text-xs text-muted-foreground">采样速率</p>
-        <p class="text-sm font-semibold tabular-nums text-foreground">
-          {{ formatSampleRate(sampleRate) }}
-        </p>
-        <p class="text-[11px] text-muted-foreground">
-          累计接收 {{ formatCount(connector.receivedCount) }}
-        </p>
-      </div>
-      <div>
-        <p class="text-xs text-muted-foreground">丢样数</p>
-        <p
-          class="text-sm font-semibold tabular-nums"
-          :class="(connector.droppedCount ?? 0) > 0 ? 'text-destructive' : 'text-foreground'"
-        >
-          {{ formatCount(connector.droppedCount) }}
-        </p>
-      </div>
-      <div>
-        <p class="text-xs text-muted-foreground">错误数</p>
-        <p
-          class="text-sm font-semibold tabular-nums"
-          :class="(connector.errorCount ?? 0) > 0 ? 'text-destructive' : 'text-foreground'"
-        >
-          {{ formatCount(connector.errorCount) }}
-        </p>
-      </div>
-    </div>
+    <NvMetricStrip :cells="metricCells" class="rounded-none border-x-0 border-b-0 bg-transparent" />
 
     <div class="flex flex-wrap gap-x-4 gap-y-1 border-t px-4 py-3 text-xs text-muted-foreground">
       <span class="inline-flex items-center gap-1">
