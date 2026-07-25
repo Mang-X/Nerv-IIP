@@ -1150,8 +1150,14 @@ $branchScenarioNames = @(
         Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] } |
         Select-Object -First 1 -ExpandProperty ValidValues
 )
+$nervEntrypointScenarioNames = @(
+    (Get-Command (Join-Path $repoRoot 'nerv.ps1')).Parameters['Scenario'].Attributes |
+        Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] } |
+        Select-Object -First 1 -ExpandProperty ValidValues
+)
 foreach ($scenarioName in @('leader-demo-quality-branch', 'leader-demo-equipment-branch')) {
     Assert-True ($branchScenarioNames -ccontains $scenarioName) "fullstack-session.ps1 must accept -Scenario '$scenarioName'."
+    Assert-True ($nervEntrypointScenarioNames -ccontains $scenarioName) "nerv.ps1 must accept -Scenario '$scenarioName'."
 }
 $fullstackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Raw
 foreach ($dispatchFunction in @('Invoke-NervLeaderDemoQualityBranchScenario', 'Invoke-NervLeaderDemoEquipmentBranchScenario')) {

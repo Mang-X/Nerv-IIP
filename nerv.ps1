@@ -37,7 +37,7 @@ param(
 
     [switch] $All,
 
-    [ValidateSet('smoke', 'man-440', 'man-528', 'leader-demo-main-chain')]
+    [ValidateSet('smoke', 'man-440', 'man-528', 'leader-demo-main-chain', 'leader-demo-quality-branch', 'leader-demo-equipment-branch')]
     [string] $Scenario,
 
     [string] $SessionId,
@@ -75,6 +75,8 @@ Usage:
   .\nerv.ps1 demo health-check
   .\nerv.ps1 demo stop
   .\nerv.ps1 fullstack run -Scenario leader-demo-main-chain
+  .\nerv.ps1 fullstack run -Scenario leader-demo-quality-branch
+  .\nerv.ps1 fullstack run -Scenario leader-demo-equipment-branch
   .\nerv.ps1 publish-compose [-EnvironmentName Production] [-OutputPath artifacts/aspire-output/compose]
   .\nerv.ps1 prepare-compose [-EnvironmentName Production]
   .\nerv.ps1 deploy-compose [-EnvironmentName Production]
