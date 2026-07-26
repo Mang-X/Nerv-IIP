@@ -378,7 +378,7 @@ function pick(d: DeviceCell) {
     color: var(--nv-scr-text);
     cursor: pointer;
     border-radius: var(--nv-scr-radius);
-    background: linear-gradient(180deg, var(--nv-scr-panel-a), var(--nv-scr-panel-b));
+    background: var(--nv-scr-panel-a);
     border: 1px solid var(--nv-scr-line);
     border-top-color: rgba(255, 255, 255, 0.09);
     transition:
@@ -430,9 +430,7 @@ function pick(d: DeviceCell) {
   .dsw-chip.offline {
     opacity: 0.72;
     border-style: dashed;
-    background-image:
-      repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.028) 0 8px, transparent 8px 16px),
-      linear-gradient(180deg, var(--nv-scr-panel-a), var(--nv-scr-panel-b));
+    background: var(--nv-scr-panel-a);
   }
 
   /* —— 平铺（虚拟滚动） —— */

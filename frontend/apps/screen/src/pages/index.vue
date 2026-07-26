@@ -162,7 +162,7 @@ const scopeCounts = computed(() => {
 
       <footer class="hall-foot">
         <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
-        <span>演示数据流 · 后端接入待 #570</span>
+        <span>当前数据窗口滚动更新</span>
       </footer>
     </div>
   </NvScreenScaler>
@@ -179,16 +179,7 @@ const scopeCounts = computed(() => {
     flex-direction: column;
     gap: 22px;
     color: var(--nv-scr-text);
-    /* 门厅底：顶部一层极淡的蓝色环境光 + 96px 对齐网格（耳语级），保持近黑 */
-    background:
-      radial-gradient(1100px 460px at 50% -6%, rgba(74, 166, 238, 0.06), transparent 70%),
-      linear-gradient(rgba(255, 255, 255, 0.013) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.013) 1px, transparent 1px), var(--nv-scr-bg);
-    background-size:
-      auto,
-      96px 96px,
-      96px 96px,
-      auto;
+    background: var(--nv-scr-bg);
   }
 
   .hall-top {
@@ -254,7 +245,7 @@ const scopeCounts = computed(() => {
     height: 74px;
     border: 1px solid var(--nv-scr-line);
     border-radius: 8px;
-    background: linear-gradient(180deg, var(--nv-scr-panel-a), var(--nv-scr-panel-b));
+    background: var(--nv-scr-panel-a);
     opacity: 0.5;
   }
 

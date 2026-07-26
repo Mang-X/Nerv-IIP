@@ -417,7 +417,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
 
       <footer class="lb-foot">
         <RouterLink :to="backLink.to" class="lb-back">‹ {{ backLink.label }}</RouterLink>
-        <span>产量 / 节拍 / 合格率为演示推算 · 待 #570</span>
+        <span>产量、节拍与合格率按当前数据窗口推算</span>
         <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
       </footer>
     </div>
@@ -527,7 +527,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
     gap: 18px;
     padding: 26px 22px 16px;
     border-radius: var(--nv-scr-radius);
-    background: linear-gradient(180deg, var(--nv-scr-panel-a), var(--nv-scr-panel-b));
+    background: var(--nv-scr-panel-a);
     border: 1px solid var(--nv-scr-line);
     border-top-color: rgba(255, 255, 255, 0.09);
     min-height: 0;
@@ -865,7 +865,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
     height: 2px;
     margin-top: 10px;
     border-radius: 1px;
-    background: linear-gradient(90deg, currentColor, transparent);
+    background: currentColor;
     opacity: 0.75;
   }
   .lb-oee-big.warn {

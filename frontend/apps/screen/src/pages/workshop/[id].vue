@@ -460,7 +460,7 @@ const devSummary = computed(() => {
 
       <footer class="wb-foot">
         <RouterLink :to="backLink.to" class="wb-back">‹ {{ backLink.label }}</RouterLink>
-        <span>产量 / 达成 / 齐套为演示推算 · 待 #570；在岗 / 人效为数据缺口，仅展示花名册口径</span>
+        <span>产量、达成与齐套按当前窗口推算；在岗与人效按花名册口径展示</span>
         <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
       </footer>
     </div>
@@ -570,7 +570,7 @@ const devSummary = computed(() => {
     height: 2px;
     margin-top: 9px;
     border-radius: 1px;
-    background: linear-gradient(90deg, currentColor, transparent);
+    background: currentColor;
     opacity: 0.75;
   }
   .wb-cells {
@@ -652,7 +652,7 @@ const devSummary = computed(() => {
     flex: none;
     border-radius: 2px;
     transform: skewX(-16deg);
-    background: linear-gradient(180deg, var(--nv-scr-cyan), rgba(74, 166, 238, 0.25));
+    background: var(--nv-scr-cyan);
     box-shadow: 0 0 11px rgba(74, 166, 238, 0.55);
   }
   .sec-t {
@@ -667,12 +667,7 @@ const devSummary = computed(() => {
     flex: 1;
     height: 1px;
     margin: 0 6px;
-    background: linear-gradient(
-      90deg,
-      rgba(135, 208, 255, 0.28),
-      rgba(255, 255, 255, 0.05) 45%,
-      transparent
-    );
+    background: rgba(135, 208, 255, 0.2);
   }
   .sec-meta {
     font-size: 12.5px;
@@ -903,14 +898,14 @@ const devSummary = computed(() => {
     display: block;
     height: 100%;
     border-radius: 2px;
-    background: linear-gradient(90deg, var(--nv-scr-cyan), rgba(74, 166, 238, 0.3));
+    background: var(--nv-scr-cyan);
     transition: width 0.6s var(--nv-scr-ease-emphasized);
   }
   .wb-oee-track i.alarm {
-    background: linear-gradient(90deg, var(--nv-scr-red), rgba(239, 90, 99, 0.3));
+    background: var(--nv-scr-red);
   }
   .wb-oee-track i.attention {
-    background: linear-gradient(90deg, var(--nv-scr-amber), rgba(240, 173, 78, 0.3));
+    background: var(--nv-scr-amber);
   }
   .wb-oee-v {
     flex: none;

@@ -197,10 +197,8 @@ const date = computed(() => WEEKDAYS[now.value.getDay()])
     flex-direction: column;
     position: relative;
     isolation: isolate;
-    /* 舱底：顶缘细灯带 + 底部收暗；氛围主体交给点阵场与光路 */
-    background:
-      linear-gradient(180deg, rgba(96, 180, 255, 0.045), transparent 30px),
-      linear-gradient(180deg, transparent 84%, rgba(0, 0, 0, 0.3)), var(--nv-scr-bg);
+    /* 舱底层级由描边、间距与光路提供，底色保持纯色。 */
+    background: var(--nv-scr-bg);
   }
   /* 点阵粒子场：1px 光点阵，顶部密亮、向下渐隐（mask 控密度） */
   .screen-layout__dots {
@@ -208,8 +206,7 @@ const date = computed(() => WEEKDAYS[now.value.getDay()])
     inset: 0;
     pointer-events: none;
     z-index: 0;
-    background-image: radial-gradient(circle, rgba(150, 195, 255, 0.13) 1px, transparent 1.5px);
-    background-size: 26px 26px;
+    background: transparent;
     -webkit-mask-image: radial-gradient(
       1300px 760px at 50% 0%,
       rgba(0, 0, 0, 0.85),
