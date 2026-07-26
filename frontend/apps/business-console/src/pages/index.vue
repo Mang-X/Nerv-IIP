@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import {
   ActivityIcon,
   BellRingIcon,
+  CheckCheckIcon,
   FactoryIcon,
   ListChecksIcon,
   RefreshCwIcon,
@@ -16,6 +17,7 @@ import {
   NvMetricCard,
   NvPageHeader,
   NvSectionCards,
+  Skeleton,
 } from '@nerv-iip/ui'
 import type { DonutSlice, NvMetricTone } from '@nerv-iip/ui'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -46,8 +48,12 @@ definePage({
  *
  * ① 英雄区（左 2×2 指标 + 右「今日待处理构成」环图）——只放 facade 真实返回的跨域读数，
  *    某个来源 status 不是 available 就整张不出现，宁缺毋假，不用 0 冒充"已接入且为零"。
- * ② 行动区——待办 / 消息 / 设备预警三张行动卡，带最近 3 条真实条目与出口。
+ * ② 行动区——待办 / 消息 / 设备预警三张行动卡，带最近 4 条真实条目与出口。
  * ③ 业务域磁贴——收纳到域一级，页面级导航交给进入该域后的左侧导航。
+ *
+ * 三段的**加载态一律在卡内出骨架**，版式与成图一致：曾踩坑（真机回归）——加载期间英雄区
+ * 左格的两个分支都不成立、零节点，环图卡被 grid 自动布局顶进 1fr 列，整行塌成一条空灰壳，
+ * 页顶还裸露一行"正在刷新"和一个假的 0。任何一格都不许在某个状态下消失。
  *
  * 「来源状态」（已接入 / 未接入 / 无权限 / 暂不可用）是实施与运维视角，业务角色的第一屏
  * 不承载；需要排障视图时应另建运维页面，而不是塞回工作台。
@@ -153,7 +159,7 @@ const workloadSlices = computed<DonutSlice[]>(() =>
 const todoFocusItems = computed<WorkbenchFocusItem[]>(() =>
   todoItems.value.map((item) => ({
     key: `${normalize(item.source)}-${normalize(item.itemId)}`,
-    primary: normalize(item.referenceId) || todoLabel(item),
+    primary: readableCode(item.referenceId) || todoLabel(item),
     secondary: todoMeta(item),
   })),
 )
@@ -161,7 +167,7 @@ const todoFocusItems = computed<WorkbenchFocusItem[]>(() =>
 const messageFocusItems = computed<WorkbenchFocusItem[]>(() =>
   messageItems.value.map((item) => ({
     key: normalize(item.messageId),
-    primary: normalize(item.resourceId) || messageLabel(item),
+    primary: readableCode(item.resourceId) || messageLabel(item),
     secondary: messageMeta(item),
   })),
 )
@@ -239,15 +245,47 @@ function sourceLabel(source: string | null | undefined) {
   return labels[key] ?? '业务来源'
 }
 
-function statusLabel(status: string | null | undefined) {
+/**
+ * 条目状态（待办 / 消息自己的生命周期）。这里刻意不复用「来源接入状态」那套词表——
+ * 曾踩坑：两者共用一张表时 `unread` / `pending` 全部落进兜底，真机上每条消息都写着
+ * "待确认"。认不出的状态返回空串，由调用处丢弃，绝不编一个词糊上去。
+ */
+function itemStatusLabel(status: string | null | undefined) {
   const labels: Record<string, string> = {
-    available: '已接入',
-    forbidden: '无权限',
-    unavailable: '暂不可用',
-    unsupported: '未接入',
+    acknowledged: '已确认',
+    approved: '已通过',
+    completed: '已完成',
+    open: '待处理',
+    pending: '待处理',
+    read: '已读',
+    rejected: '已驳回',
+    unread: '未读',
   }
 
-  return labels[normalize(status).toLowerCase()] ?? '待确认'
+  return labels[normalize(status).toLowerCase()] ?? ''
+}
+
+/**
+ * 只有**人读**编码才配上条目主行。facade 的 referenceId / resourceId 可能是内部
+ * GUID（真机实测：审批链消息的 resourceId 就是 GUID），那种值一律不进 UI。
+ */
+const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function readableCode(value: string | null | undefined) {
+  const code = normalize(value)
+  return code && !GUID_PATTERN.test(code) ? code : ''
+}
+
+function resourceLabel(resourceType: string | null | undefined) {
+  const labels: Record<string, string> = {
+    'approval-chain': '审批流转',
+    'inventory-count': '盘点任务',
+    'purchase-order': '采购单据',
+    'quality-ncr': '质量异常',
+    'work-order': '生产工单',
+  }
+
+  return labels[normalize(resourceType).toLowerCase()] ?? ''
 }
 
 function todoLabel(item: BusinessConsoleWorkbenchTodoItem) {
@@ -262,7 +300,7 @@ function todoLabel(item: BusinessConsoleWorkbenchTodoItem) {
 }
 
 function todoMeta(item: BusinessConsoleWorkbenchTodoItem) {
-  const parts = [statusLabel(item.status)]
+  const parts = [itemStatusLabel(item.status)]
   if (item.dueAtUtc) {
     parts.push(`到期 ${formatDateTime(item.dueAtUtc)}`)
   }
@@ -270,11 +308,11 @@ function todoMeta(item: BusinessConsoleWorkbenchTodoItem) {
 }
 
 function messageLabel(item: BusinessConsoleWorkbenchMessageItem) {
-  return `${severityLabel(item.severity)}消息`
+  return resourceLabel(item.resourceType) || `${severityLabel(item.severity)}消息`
 }
 
 function messageMeta(item: BusinessConsoleWorkbenchMessageItem) {
-  const parts = [severityLabel(item.severity), statusLabel(item.status)]
+  const parts = [severityLabel(item.severity), itemStatusLabel(item.status)]
   if (item.createdAtUtc) {
     parts.push(formatDateTime(item.createdAtUtc))
   }
@@ -326,7 +364,7 @@ function formatDateTime(value: string) {
     <NvPageHeader
       title="业务工作台"
       :breadcrumbs="[{ label: '数字化工作台' }]"
-      :count="`${pendingTotal} 项待处理`"
+      :count="summaryPending ? undefined : `${pendingTotal} 项待处理`"
     >
       <template #actions>
         <NvButton
@@ -342,66 +380,123 @@ function formatDateTime(value: string) {
       </template>
     </NvPageHeader>
 
-    <p v-if="summaryPending" class="text-sm text-muted-foreground" role="status">
-      正在刷新工作台摘要。
-    </p>
-    <p v-else-if="summaryError" class="text-sm text-destructive" role="alert">
-      工作台摘要暂不可用，请稍后刷新。
-    </p>
+    <NvCard
+      v-if="summaryError && !summaryPending"
+      class="flex items-center justify-between gap-4 border-destructive/30 bg-destructive/[0.04] px-5 py-4"
+      role="alert"
+    >
+      <div>
+        <p class="text-sm font-medium text-destructive-strong">工作台摘要暂不可用</p>
+        <p class="mt-1 text-sm text-muted-foreground">
+          跨域汇总接口没有返回结果，下面展示的是最近一次成功获取的内容。
+        </p>
+      </div>
+      <NvButton size="sm" type="button" variant="outline" @click="refreshWorkbenchSummary">
+        <RefreshCwIcon aria-hidden="true" />
+        重试
+      </NvButton>
+    </NvCard>
 
-    <!-- ① 英雄区：左侧跨域指标 2×2，右侧今日待处理构成 -->
-    <section class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,24rem)]">
+    <!--
+      ① 英雄区：左侧跨域指标 2×2，右侧今日待处理构成。
+      左格**恒有节点**（骨架 / 指标 / 空态三选一）——曾踩坑：加载态两个分支都不成立时
+      左格零节点，环图卡被 grid 自动布局顶进 1fr 宽列，第 2 列空着，整行塌成一条空灰壳。
+    -->
+    <section
+      class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,24rem)]"
+      aria-label="跨域指标"
+    >
       <!-- auto-rows-fr：指标块与右侧环图卡等高，英雄区不出现半截留白 -->
-      <NvSectionCards v-if="heroMetrics.length > 0" class="h-full auto-rows-fr" :columns="2">
-        <NvMetricCard
-          v-for="metric in heroMetrics"
-          :key="metric.key"
-          class="flex flex-col justify-center bg-gradient-to-t from-primary/5 to-card"
-          variant="icon"
-          :label="metric.label"
-          :value="metric.value"
-          :unit="metric.unit"
-          :icon="metric.icon"
-          :tone="metric.tone"
-        />
+      <NvSectionCards class="h-full auto-rows-fr" :columns="2">
+        <template v-if="summaryPending">
+          <NvCard
+            v-for="slot in 4"
+            :key="`hero-skeleton-${slot}`"
+            class="flex items-center gap-3.5 bg-gradient-to-t from-primary/5 to-card p-5"
+            aria-hidden="true"
+          >
+            <Skeleton class="size-11 flex-none rounded-[10px]" />
+            <div class="flex min-w-0 flex-1 flex-col gap-2">
+              <Skeleton class="h-3.5 w-24 rounded" />
+              <Skeleton class="h-6 w-16 rounded" />
+            </div>
+          </NvCard>
+        </template>
+
+        <template v-else-if="heroMetrics.length > 0">
+          <NvMetricCard
+            v-for="metric in heroMetrics"
+            :key="metric.key"
+            class="flex flex-col justify-center bg-gradient-to-t from-primary/5 to-card"
+            variant="icon"
+            :label="metric.label"
+            :value="metric.value"
+            :unit="metric.unit"
+            :icon="metric.icon"
+            :tone="metric.tone"
+          />
+        </template>
+
+        <NvCard
+          v-else
+          class="col-span-full grid place-items-center bg-gradient-to-t from-primary/5 to-card p-6 text-center"
+        >
+          <div>
+            <p class="text-sm font-medium text-foreground">暂无可显示指标</p>
+            <p class="mt-1 text-sm text-muted-foreground">
+              当前角色没有可汇总的跨域指标，或来源暂不可用。
+            </p>
+          </div>
+        </NvCard>
       </NvSectionCards>
-      <NvCard
-        v-else-if="!summaryPending"
-        class="grid place-items-center bg-gradient-to-t from-primary/5 to-card p-6 text-center"
-      >
-        <div>
-          <p class="text-sm font-medium text-foreground">暂无可显示指标</p>
-          <p class="mt-1 text-sm text-muted-foreground">
-            当前角色没有可汇总的跨域指标，或来源暂不可用。
-          </p>
-        </div>
-      </NvCard>
 
       <NvCard class="flex flex-col overflow-hidden bg-gradient-to-t from-primary/5 to-card p-0">
         <div class="border-b px-5 py-3">
           <h2 class="text-sm font-semibold text-foreground">今日待处理构成</h2>
         </div>
         <div class="flex flex-1 items-center px-5 py-4">
+          <!-- 加载态：环 + 图例的骨架，保持与成图一致的版式，不出空灰壳 -->
+          <div v-if="summaryPending" class="flex w-full items-center gap-6" aria-hidden="true">
+            <Skeleton class="size-[144px] flex-none rounded-full" />
+            <div class="flex min-w-0 flex-1 flex-col gap-3">
+              <Skeleton
+                v-for="row in 3"
+                :key="`donut-skeleton-${row}`"
+                class="h-4 w-full rounded"
+              />
+            </div>
+          </div>
+
           <NvDonutChart
-            v-if="workloadSlices.length > 0"
+            v-else-if="workloadSlices.length > 0"
             class="w-full"
             :data="workloadSlices"
             :height="144"
             :central-label="String(pendingTotal)"
             central-sub-label="项待处理"
           />
-          <div v-else-if="!summaryPending" class="w-full text-center">
-            <p class="text-sm font-medium text-foreground">今天没有待处理事项</p>
-            <p class="mt-1 text-sm leading-6 text-muted-foreground">
-              待办、消息与设备预警都已清空，新的事项到达后会自动汇总到这里。
-            </p>
+
+          <div v-else class="grid w-full justify-items-center gap-3 text-center">
+            <span class="grid size-12 place-items-center rounded-full bg-success/10">
+              <CheckCheckIcon class="size-6 text-success-strong" aria-hidden="true" />
+            </span>
+            <div>
+              <p class="text-sm font-medium text-foreground">今天没有待处理事项</p>
+              <p class="mt-1 text-sm leading-6 text-muted-foreground">
+                待办、消息与设备预警都已清空，新的事项到达后会自动汇总到这里。
+              </p>
+            </div>
           </div>
         </div>
       </NvCard>
     </section>
 
-    <!-- ② 行动区：三条处理路径，各带最近条目与出口 -->
-    <section class="grid gap-4 lg:grid-cols-3">
+    <!--
+      ② 行动区：三条处理路径，各带最近条目与出口。
+      flex-1 让这一段吸收 1080 首屏的剩余高度——条目列表在上、空态居中、出口贴底，
+      长高有内容托底，首屏吃满而不是靠拉伸磁贴凑版面。
+    -->
+    <section class="grid flex-1 gap-4 lg:grid-cols-3">
       <WorkbenchFocusCard
         title="待办"
         description="先清掉到期的审批与任务，别让单据停在你这一环。"

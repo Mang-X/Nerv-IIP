@@ -155,15 +155,24 @@ describe('business workbench page', () => {
     }
   })
 
-  it('does not show negative empty states while the summary is loading', async () => {
+  it('holds the dashboard shape with in-card skeletons while the summary is loading', async () => {
     coladaState.isLoading = true
     coladaState.queryData = undefined
 
     const wrapper = mountWorkbench(['business.mes.work-orders.read'])
     await flushPromises()
 
+    // 加载态是卡内骨架，不是页面顶部一行裸文字
+    expect(wrapper.findAll('[data-slot="skeleton"]').length).toBeGreaterThan(0)
+    // 英雄区左格恒有节点：4 张骨架指标卡占位，环图卡不会被自动布局顶进 1fr 列
+    const heroSection = wrapper.get('section[aria-label="跨域指标"]')
+    expect(heroSection.element.children).toHaveLength(2)
+    // 三张行动卡形状恒定，读数位也是骨架，不先亮 0 再跳变
+    expect(wrapper.findAll('[data-focus]')).toHaveLength(3)
+
     const text = wrapper.text()
-    expect(text).toContain('正在刷新工作台摘要')
+    expect(text).not.toContain('正在刷新工作台摘要')
+    expect(text).not.toContain('项待处理')
     expect(text).not.toContain('暂无可显示指标')
     expect(text).not.toContain('当前角色没有可汇总的跨域指标')
     expect(text).not.toContain('待办已清空')
@@ -203,6 +212,62 @@ describe('business workbench page', () => {
     expect(text).not.toContain('Sensitive receivables amount')
     expect(text).not.toContain('business.inventory.ledger.read')
     expect(text).not.toContain('global-inventory-workbench-summary-not-connected')
+  })
+
+  // 真机回归：demo 网关的审批链消息 resourceId 就是内部 GUID，status 是 `unread`。
+  it('keeps internal GUIDs and raw item statuses out of the action cards', async () => {
+    coladaState.queryData = {
+      success: true,
+      data: {
+        kpis: [],
+        todos: {
+          status: 'available',
+          total: 1,
+          items: [
+            {
+              source: 'BusinessApproval',
+              itemId: 'approval-9',
+              itemType: 'purchase-order',
+              status: 'pending',
+              referenceId: '019f9c8b-88f8-71fd-98d2-686490f945b7',
+            },
+          ],
+        },
+        messages: {
+          status: 'available',
+          total: 1,
+          unread: 1,
+          items: [
+            {
+              messageId: '019f9c8b-d1b2-78e6-9f16-3d209e243a87',
+              status: 'unread',
+              severity: 'info',
+              resourceType: 'approval-chain',
+              resourceId: '019f9c8b-88f8-71fd-98d2-686490f945b7',
+              createdAtUtc: '2026-07-26T03:50:36Z',
+            },
+          ],
+        },
+        alerts: { status: 'available', total: 0, critical: 0, items: [] },
+        sourceStatuses: [],
+      },
+    }
+
+    const wrapper = mountWorkbench([
+      'business.approvals.read',
+      'business.notification.messages.read',
+    ])
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).not.toContain('019f9c8b')
+    // GUID 不可读 → 回落到业务口径，而不是把内部 id 摆到主行
+    expect(text).toContain('审批流转')
+    expect(text).toContain('审批 · 采购单据')
+    // 条目状态用条目自己的词表：unread → 未读、pending → 待处理，不是来源状态的兜底
+    expect(text).toContain('未读')
+    expect(text).toContain('待处理')
+    expect(text).not.toContain('待确认')
   })
 
   it('collapses shortcuts into permitted business-domain tiles', async () => {

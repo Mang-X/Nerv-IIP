@@ -2,17 +2,19 @@
 import type { Component } from 'vue'
 import { computed } from 'vue'
 import { ArrowRightIcon } from '@lucide/vue'
-import { NvCard, cn } from '@nerv-iip/ui'
+import { NvCard, Skeleton, cn } from '@nerv-iip/ui'
 import { RouterLink } from 'vue-router'
 
 /**
  * 工作台「行动卡」——待办 / 消息 / 设备预警共用的一张卡。
  *
- * 结构固定为四段：图标 + 主张（这张卡要你做什么）→ 数量读数 → 最近 3 条真实条目
+ * 结构固定为四段：图标 + 主张（这张卡要你做什么）→ 数量读数 → 最近 4 条真实条目
  * → 去处理的出口。列表只作为「值不值得点进去」的证据，不做成迷你表格；条目主行
  * 一律用 facade 返回的人读编码（PO-… / WO-… / 设备号），副行才是状态与时间。
  *
- * 空态不是"没有数据"，而是"这一路已经清空 + 仍然给出出口"，所以空态同样保留 CTA。
+ * 三态都有设计过的形态，**卡片外形恒定**：加载中在卡内出骨架（读数位也是骨架，
+ * 不先亮一个 0 再跳变）、有数据出条目、清空出空态；空态同样保留 CTA，因为"这一路
+ * 已经清空"仍然需要出口。
  */
 export interface WorkbenchFocusItem {
   key: string
@@ -63,13 +65,14 @@ const toneText: Record<WorkbenchFocusTone, string> = {
   neutral: 'text-muted-foreground',
 }
 
-const visibleItems = computed(() => props.items.slice(0, 3))
+/** 条目上限 4 条：够撑起 1080 首屏的行动区高度，又不至于把卡片做成迷你表格。 */
+const visibleItems = computed(() => (props.pending ? [] : props.items.slice(0, 4)))
 const showEmptyState = computed(() => !props.pending && visibleItems.value.length === 0)
 </script>
 
 <template>
   <NvCard
-    class="flex flex-col overflow-hidden bg-gradient-to-t from-primary/5 to-card p-0"
+    class="flex min-h-[19rem] flex-col overflow-hidden bg-gradient-to-t from-primary/5 to-card p-0"
     :data-focus="title"
   >
     <div class="flex items-start gap-3 px-5 pt-5">
@@ -85,7 +88,8 @@ const showEmptyState = computed(() => !props.pending && visibleItems.value.lengt
         </div>
         <p class="mt-1 text-sm leading-6 text-muted-foreground">{{ description }}</p>
       </div>
-      <p class="shrink-0 text-2xl font-semibold leading-none tabular-nums tracking-tight">
+      <Skeleton v-if="pending" class="h-7 w-12 shrink-0 rounded-md" />
+      <p v-else class="shrink-0 text-3xl font-semibold leading-none tabular-nums tracking-tight">
         {{ count
         }}<span v-if="unit" class="ml-0.5 text-sm font-medium text-muted-foreground">{{
           unit
@@ -94,7 +98,15 @@ const showEmptyState = computed(() => !props.pending && visibleItems.value.lengt
     </div>
 
     <div class="mt-4 flex flex-1 flex-col">
-      <ul v-if="visibleItems.length > 0" class="flex flex-col divide-y border-t">
+      <!-- 加载态：条目位出骨架，卡片外形与有数据时一致，不做高度跳变 -->
+      <ul v-if="pending" class="flex flex-col divide-y border-t" aria-hidden="true">
+        <li v-for="row in 3" :key="row" class="flex items-center justify-between gap-3 px-5 py-3">
+          <Skeleton class="h-4 w-32 rounded" />
+          <Skeleton class="h-3 w-20 rounded" />
+        </li>
+      </ul>
+
+      <ul v-else-if="visibleItems.length > 0" class="flex flex-col divide-y border-t">
         <li
           v-for="item in visibleItems"
           :key="item.key"

@@ -26,7 +26,12 @@ defineProps<{
 </script>
 
 <template>
-  <NvCard class="overflow-hidden bg-gradient-to-t from-primary/5 to-card p-0">
+  <!--
+    磁贴区与行动区共同吸收首屏剩余高度（各自 flex-1），而不是把空白全压给其中一段：
+    全给磁贴会让每格变成一个图标的空盒子，全给行动区则会在没有出口的卡片下方留一大片
+    白。两段一起长，磁贴仍保持一眼扫完的紧凑比例。
+  -->
+  <NvCard class="flex flex-1 flex-col overflow-hidden bg-gradient-to-t from-primary/5 to-card p-0">
     <div class="flex items-center justify-between gap-3 border-b px-5 py-3">
       <h2 class="text-sm font-semibold text-foreground">业务域入口</h2>
       <span class="text-xs tabular-nums text-muted-foreground">{{ tiles.length }} 个域</span>
@@ -34,12 +39,12 @@ defineProps<{
 
     <div
       v-if="tiles.length > 0"
-      class="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6"
+      class="grid flex-1 auto-rows-fr grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6"
     >
       <RouterLink
         v-for="tile in tiles"
         :key="tile.id"
-        class="group flex h-16 items-center gap-3 rounded-lg border bg-card px-3 transition-colors hover:border-primary/40 hover:bg-accent"
+        class="group flex min-h-16 items-center gap-3 rounded-lg border bg-card px-3 transition-colors hover:border-primary/40 hover:bg-accent"
         :to="tile.to"
       >
         <span
