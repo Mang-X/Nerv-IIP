@@ -246,5 +246,7 @@ Assert-PostRejected -CaseName 'false success' -Payload '{"success":false,"data":
 Assert-PostRejected -CaseName 'redirect response' -HttpStatus 307 -Payload '{"success":true,"data":"changed"}'
 Assert-PostRejected -CaseName 'business-error JSON credentials' -Payload '{"success":false,"data":"changed","password":"quoted-password","token":"quoted-token","authorization":"Bearer quoted-bearer"}' -SensitiveValues @('quoted-password', 'quoted-token', 'quoted-bearer')
 Assert-PostRejected -CaseName 'malformed JSON credentials' -Payload '{"success":false,"password":"quoted-password","token":"quoted-token","authorization":"Bearer quoted-bearer"' -SensitiveValues @('quoted-password', 'quoted-token', 'quoted-bearer')
+Assert-PostRejected -CaseName 'escaped-quote JSON credential' -Payload '{"success":false,"data":"changed","password":"escaped-prefix\"leaked-suffix"}' -SensitiveValues @('escaped-prefix', 'leaked-suffix')
+Assert-PostRejected -CaseName 'unterminated escaped-quote JSON credential' -Payload '{"success":false,"data":"changed","password":"escaped-prefix\"leaked-suffix' -SensitiveValues @('escaped-prefix', 'leaked-suffix')
 
 Write-Host 'ERP sales-order DemandPlanning cross-process verify script contract tests passed.'
