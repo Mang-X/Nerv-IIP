@@ -80,6 +80,7 @@ try
     builder.Services.AddScoped<ErpCodingService>();
     builder.Services.AddScoped<SalesOrderDemandDemoSeedService>();
     builder.Services.AddScoped<LeaderDemoScaleSeedService>();
+    builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
@@ -163,6 +164,31 @@ try
             environmentId,
             builder.Configuration.GetValue("LeaderDemo:Scale:OrderCount", 0),
             DateTimeOffset.UtcNow);
+
+        // 《工厂世界观设定集》L1 背景历史（ERP 侧）。校验器 fail-closed：账不平就让启动失败。
+        if (builder.Configuration.GetValue("LeaderDemo:History:Enabled", false))
+        {
+            var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
+                organizationId,
+                environmentId,
+                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+            app.Logger.LogInformation(
+                "World-history ERP seed completed: {SalesOrders} sales orders, {PurchaseOrders} purchase orders; " +
+                "validator checked {Orders} orders / {Deliveries} deliveries / {Receivables} receivables / " +
+                "{CashReceipts} cash receipts / {Vouchers} vouchers.",
+                report.SalesOrdersWritten,
+                report.PurchaseOrdersWritten,
+                report.Validation.OrdersChecked,
+                report.Validation.DeliveriesChecked,
+                report.Validation.ReceivablesChecked,
+                report.Validation.CashReceiptsChecked,
+                report.Validation.VouchersChecked);
+            foreach (var line in report.Validation.Sample)
+            {
+                app.Logger.LogInformation("World-history sample: {Chain}", line);
+            }
+        }
     }
 
     await app.WaitForShutdownAsync();
