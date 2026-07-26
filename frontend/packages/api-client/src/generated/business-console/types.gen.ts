@@ -4595,7 +4595,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     teamCode?: string;
     teamName?: string;
     isLeader?: boolean;
-    workCenterCode?: string | null;
+    workshopCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerSkillItem = {
@@ -4715,7 +4715,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     name: string;
     departmentCode: string;
     shiftCode: string;
-    workCenterCode?: string | null;
+    workshopCode?: string | null;
     idempotencyKey?: string | null;
 };
 
@@ -14520,6 +14520,7 @@ export type ListBusinessConsoleWorkersData = {
         userId?: string | null;
         departmentCode?: string | null;
         teamCode?: string | null;
+        workshopCode?: string | null;
         workCenterCode?: string | null;
         skillCode?: string | null;
         employmentStatus?: string | null;

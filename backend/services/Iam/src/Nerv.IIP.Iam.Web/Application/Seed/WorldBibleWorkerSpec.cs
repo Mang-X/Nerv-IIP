@@ -4,9 +4,19 @@ namespace Nerv.IIP.Iam.Web.Application.Seed;
 /// 《工厂世界观设定集》§5 的 IAM 侧固定形状：58 名在册员工（工号 <c>EMP-001..EMP-058</c>、
 /// 中文姓名池确定性生成、部门按设定集人数分布）。
 ///
-/// IAM 是全平台唯一的「人」权威来源；MasterData 侧的 <c>TeamMember.UserId</c> /
-/// <c>PersonnelSkill.UserId</c> 引用这里的 <c>user-emp-0xx</c>，两侧按同一字面量与同一
-/// 生成算法重复声明，各自有黄金向量测试防止漂移。
+/// <para>
+/// <b>权威源（2026-07-26 修订）</b>：员工档案（工号 / 姓名 / 部门 / 岗位 / 在岗状态）的业务权威是
+/// MasterData 的 <c>Worker</c> 聚合，不是 IAM——人员档案属于业务主数据，IAM 只负责登录身份，
+/// 且车间存在「有工号无账号」的工人。本文件早期注释曾声明「IAM 是全平台唯一的人权威来源」，该声明已撤销。
+/// </para>
+/// <para>
+/// 这里的 58 条 IAM 用户仍然保留：它们提供可登录账号，<c>users</c> 表上的
+/// <c>DisplayName</c> / <c>EmployeeNo</c> / <c>DepartmentName</c> 三列降级为**账号展示冗余**，
+/// 只用于 IAM 自身的用户列表，不作为业务读面的来源。业务侧一律读 MasterData 员工目录。
+/// </para>
+/// <para>
+/// 两侧按同一份 <c>user-emp-0xx</c> 字面量与同一生成算法重复声明，各自有黄金向量测试防止漂移。
+/// </para>
 /// </summary>
 public static class WorldBibleWorkerSpec
 {

@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
+using Nerv.IIP.Business.MasterData.Web.Application.Queries;
 using Nerv.IIP.Business.MasterData.Web.Application.Seed;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
@@ -137,6 +138,10 @@ public sealed class MasterDataWorldBibleSeedServiceTests
         Assert.Equal(17, await db.BusinessPartners.CountAsync());
         Assert.Equal(6, await db.Departments.CountAsync());
         Assert.Equal(6, await db.Teams.CountAsync());
+        // 员工档案落 MasterData（「人」的业务权威），58 人一人一条，工号 EMP-001..058。
+        Assert.Equal(58, await db.Workers.CountAsync());
+        // 班组是车间级的：6 个班组必须各自挂到所属车间，否则派工按工作中心收敛会查空。
+        Assert.Empty(await db.Teams.Where(x => x.WorkshopCode == null).ToArrayAsync());
         Assert.Equal(10, await db.Skills.CountAsync());
         Assert.Equal(2, await db.Shifts.CountAsync());
         Assert.Single(await db.Sites.ToArrayAsync());
@@ -158,6 +163,35 @@ public sealed class MasterDataWorldBibleSeedServiceTests
         Assert.Equal(WorldBibleSpec.MachiningWorkshopCode, device.WorkshopCode);
         Assert.Equal(WorldBibleSpec.SiteCode, device.SiteCode);
         Assert.True(device.TelemetryEnabled);
+    }
+
+    [Fact]
+    public async Task Dispatch_candidates_resolve_from_a_work_center_to_that_workshop_crew()
+    {
+        await using var db = CreateDbContext();
+        await new WorldBibleSeedService(db).SeedAsync("org-001", "env-dev");
+
+        // WC-ROD-01 属机加车间 → 该车间两个班组（早班 / 中班）的在册成员即候选人。
+        var response = await new ListWorkerDirectoryQueryHandler(db).Handle(
+            new ListWorkerDirectoryQuery("org-001", "env-dev", WorkCenterCode: "WC-ROD-01", PageSize: 200),
+            CancellationToken.None);
+
+        var machiningTeamCodes = WorldBibleSpec.Teams
+            .Where(x => x.WorkshopCode == WorldBibleSpec.MachiningWorkshopCode)
+            .Select(x => x.Code)
+            .ToArray();
+        var expected = WorldBibleSpec.Employees
+            .Where(x => x.TeamCode is not null && machiningTeamCodes.Contains(x.TeamCode))
+            .Select(x => x.UserId)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        // 既不是空（回归 #1127 与 #1124 的对撞），也不是把全厂 58 人一股脑列出来。
+        Assert.NotEmpty(expected);
+        Assert.Equal(expected, response.Items.Select(x => x.UserId).Order(StringComparer.Ordinal));
+        Assert.True(response.TotalCount < 58);
+        Assert.All(response.Items, item => Assert.StartsWith("EMP-", item.EmployeeNo, StringComparison.Ordinal));
+        Assert.All(response.Items, item => Assert.NotEmpty(item.Teams));
     }
 
     [Fact]

@@ -217,6 +217,7 @@ public sealed record BusinessConsoleWorkerDirectoryRequest(
     string? UserId = null,
     string? DepartmentCode = null,
     string? TeamCode = null,
+    string? WorkshopCode = null,
     string? WorkCenterCode = null,
     string? SkillCode = null,
     string? EmploymentStatus = null,
@@ -234,7 +235,7 @@ public sealed record BusinessConsoleWorkerTeamItem(
     string TeamCode,
     string TeamName,
     bool IsLeader,
-    string? WorkCenterCode);
+    string? WorkshopCode);
 
 public sealed record BusinessConsoleWorkerSkillItem(
     string SkillCode,
@@ -468,7 +469,7 @@ public sealed record BusinessConsoleCreateTeamRequest(
     string Name,
     string DepartmentCode,
     string ShiftCode,
-    string? WorkCenterCode = null,
+    string? WorkshopCode = null,
     string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateDepartmentRequest(

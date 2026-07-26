@@ -531,7 +531,7 @@ public sealed record CreateTeamCommand(
     string Name,
     string DepartmentCode,
     string ShiftCode,
-    string? WorkCenterCode = null,
+    string? WorkshopCode = null,
     string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateTeamCommandHandler(ITeamRepository repository, MasterDataCodingService? codingService = null)
@@ -546,7 +546,7 @@ public sealed class CreateTeamCommandHandler(ITeamRepository repository, MasterD
             request.EnvironmentId,
             request.Code,
             request.IdempotencyKey,
-            MasterDataCodingService.Fingerprint(request.Name, request.DepartmentCode, request.ShiftCode, request.WorkCenterCode),
+            MasterDataCodingService.Fingerprint(request.Name, request.DepartmentCode, request.ShiftCode, request.WorkshopCode),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -566,7 +566,7 @@ public sealed class CreateTeamCommandHandler(ITeamRepository repository, MasterD
             request.Name,
             request.DepartmentCode,
             request.ShiftCode,
-            request.WorkCenterCode);
+            request.WorkshopCode);
         await repository.AddAsync(team, cancellationToken);
         return new MasterDataResourceResult("team", team.Code, team.Name);
     }

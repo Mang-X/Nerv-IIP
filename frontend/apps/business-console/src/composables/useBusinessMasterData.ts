@@ -661,7 +661,9 @@ export interface WorkerDirectoryFilters extends BusinessContextFilters {
   departmentCode?: string
   /** 按班组过滤候选人。 */
   teamCode?: string
-  /** 按工作中心过滤候选人——取该工作中心所辖班组的成员。 */
+  /** 按车间过滤候选人——班组是车间级的。 */
+  workshopCode?: string
+  /** 按工作中心过滤候选人——经该工作中心所属车间解析到班组成员。 */
   workCenterCode?: string
   /** 按技能过滤候选人，只保留当前有效的技能记录。 */
   skillCode?: string
@@ -718,6 +720,7 @@ export function useBusinessWorkers(initial: Partial<WorkerDirectoryFilters> = {}
           ...optionalQuery('userId', filters.userId),
           ...optionalQuery('departmentCode', filters.departmentCode),
           ...optionalQuery('teamCode', filters.teamCode),
+          ...optionalQuery('workshopCode', filters.workshopCode),
           ...optionalQuery('workCenterCode', filters.workCenterCode),
           ...optionalQuery('skillCode', filters.skillCode),
           ...optionalQuery('employmentStatus', filters.employmentStatus),
