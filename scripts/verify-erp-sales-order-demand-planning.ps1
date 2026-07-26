@@ -128,12 +128,16 @@ WHERE so.organization_id = 'org-001'
 "@
 
     do {
+        $remainingMilliseconds = [int][Math]::Floor(($deadline - (Get-Date)).TotalMilliseconds)
+        if ($remainingMilliseconds -le 0) { break }
+        if ($remainingMilliseconds -lt 1000) { break }
+        $remainingTimeoutSeconds = [int][Math]::Floor($remainingMilliseconds / 1000.0)
         try {
             $sourceResult = Invoke-NativeCommandOutput -Command 'docker' -Arguments @(
                 'compose', '-f', $ComposeFile, 'exec', '-T', 'postgres',
                 'psql', '-h', '127.0.0.1', '-U', 'nerv', '-d', $DatabaseName,
                 '-X', '-tA', '-F', '|', '-v', 'ON_ERROR_STOP=1', '-c', $sourceSql
-            ) -WorkingDirectory $root -Name 'man517-erp-source-readiness'
+            ) -WorkingDirectory $root -TimeoutSeconds $remainingTimeoutSeconds -Name 'man517-erp-source-readiness'
             $sourceOutput = "$($sourceResult.Stdout)"
             $boundedSourceOutput = if ($sourceOutput.Length -gt 8192) { $sourceOutput.Substring(0, 8192) } else { $sourceOutput }
             $sourceRows = @($boundedSourceOutput -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
@@ -148,8 +152,10 @@ WHERE so.organization_id = 'org-001'
             $exceptionMessage = "$($_.Exception.Message)"
             $lastRequestException = if ($exceptionMessage.Length -gt 8192) { $exceptionMessage.Substring(0, 8192) } else { $exceptionMessage }
         }
-        Start-Sleep -Milliseconds 500
-    } while ((Get-Date) -lt $deadline)
+        $remainingMilliseconds = [int][Math]::Floor(($deadline - (Get-Date)).TotalMilliseconds)
+        if ($remainingMilliseconds -le 0) { break }
+        Start-Sleep -Milliseconds ([Math]::Min(500, $remainingMilliseconds))
+    } while ($true)
 
     $lastObservation = [ordered]@{
         sourceStage = 'erp-source-readiness'
@@ -168,7 +174,7 @@ function Invoke-JsonPost {
     $responseEnvelope = $null
     $parseError = $null
     try {
-        $httpResponse = Invoke-WebRequest -Method Post -Uri $Uri -Headers $Headers -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 12) -SkipHttpErrorCheck
+        $httpResponse = Invoke-WebRequest -Method Post -Uri $Uri -Headers $Headers -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 12) -SkipHttpErrorCheck -MaximumRedirection 0
         $httpStatus = [int]$httpResponse.StatusCode
         $fullResponseBody = "$($httpResponse.Content)"
         $responseBody = if ($fullResponseBody.Length -gt 8192) { $fullResponseBody.Substring(0, 8192) } else { $fullResponseBody }
@@ -181,15 +187,18 @@ function Invoke-JsonPost {
 
     $hasSuccess = $null -ne $responseEnvelope -and $null -ne $responseEnvelope.PSObject.Properties['success']
     $hasData = $null -ne $responseEnvelope -and $null -ne $responseEnvelope.PSObject.Properties['data']
-    $responseData = if ($hasData) { "$($responseEnvelope.data)" } else { $null }
+    $hasBooleanSuccess = $hasSuccess -and $responseEnvelope.success -is [bool]
+    $hasStringData = $hasData -and $responseEnvelope.data -is [string]
     if ($httpStatus -lt 200 -or $httpStatus -ge 300 -or
-        $null -eq $responseEnvelope -or -not $hasSuccess -or $responseEnvelope.success -ne $true -or
-        -not $hasData -or [string]::IsNullOrWhiteSpace($responseData) -or
-        $responseData -cne $ExpectedData) {
+        $null -eq $responseEnvelope -or -not $hasBooleanSuccess -or $responseEnvelope.success -ne $true -or
+        -not $hasStringData -or [string]::IsNullOrWhiteSpace($responseEnvelope.data) -or
+        -not [string]::Equals($responseEnvelope.data, $ExpectedData, [StringComparison]::Ordinal)) {
+        $safeResponseBody = Protect-Man517DiagnosticText -Text $responseBody
+        $safeParseError = Protect-Man517DiagnosticText -Text $parseError
         $failure = [ordered]@{
             sourceStage = 'erp-state-changing-post'
             expectedData = $ExpectedData
-            postResponse = [ordered]@{ uri = $Uri; httpStatus = $httpStatus; body = $responseBody; parseError = $parseError }
+            postResponse = [ordered]@{ uri = $Uri; httpStatus = $httpStatus; body = $safeResponseBody; parseError = $safeParseError }
         } | ConvertTo-Json -Depth 8 -Compress
         throw "ERP state-changing POST was rejected. Last response: $(Protect-Man517DiagnosticText -Text $failure)"
     }
@@ -259,6 +268,12 @@ function Protect-Man517DiagnosticText {
     $safe = Protect-ScriptAutomationText $Text
     if (-not [string]::IsNullOrWhiteSpace($internalToken)) {
         $safe = $safe.Replace($internalToken, '[REDACTED_TOKEN]', [StringComparison]::Ordinal)
+    }
+    foreach ($jsonPattern in @(
+        '(?i)("(?:password|pwd|token|secret|client_secret|authorization)"\s*:\s*")[^"]*(")',
+        "(?i)('(?:password|pwd|token|secret|client_secret|authorization)'\\s*:\\s*')[^']*(')"
+    )) {
+        $safe = [regex]::Replace($safe, $jsonPattern, '$1<redacted>$2')
     }
     return $safe
 }

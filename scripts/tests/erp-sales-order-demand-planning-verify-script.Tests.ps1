@@ -122,4 +122,129 @@ foreach ($sensitiveValue in @('pwd-value', 'token-value', 'secret-value', 'clien
     Assert-Contract (-not $safeDiagnostic.Contains($sensitiveValue)) "Shared diagnostic redaction leaked $sensitiveValue."
 }
 
+$tokens = $null
+$parseErrors = $null
+$verifyAst = [System.Management.Automation.Language.Parser]::ParseFile($verifyScript, [ref]$tokens, [ref]$parseErrors)
+Assert-Contract ($parseErrors.Count -eq 0) 'Verify script must remain parseable for behavioral contract tests.'
+$functionAsts = @($verifyAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))
+$sourceReadinessAst = @($functionAsts | Where-Object Name -eq 'Wait-ErpSalesOrderSource')
+$invokeJsonPostAst = @($functionAsts | Where-Object Name -eq 'Invoke-JsonPost')
+$diagnosticRedactorAst = @($functionAsts | Where-Object Name -eq 'Protect-Man517DiagnosticText')
+Assert-Contract ($sourceReadinessAst.Count -eq 1) 'Source readiness helper must have one inspectable function definition.'
+Assert-Contract ($invokeJsonPostAst.Count -eq 1) 'POST validator must have one inspectable function definition.'
+Assert-Contract ($diagnosticRedactorAst.Count -eq 1) 'POST validator must use the production MAN-517 diagnostic redactor.'
+
+$commandAsts = @($verifyAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
+$releasedV1Wait = @($commandAsts | Where-Object {
+    $_.CommandElements.Count -gt 0 -and
+    $_.CommandElements[0].Extent.Text -eq 'Wait-Demand' -and
+    $_.Extent.Text.Contains("-Version 1 -Quantity 2 -Status 'active'")
+})
+$sourceReadinessCall = @($commandAsts | Where-Object {
+    $_.CommandElements.Count -gt 0 -and $_.CommandElements[0].Extent.Text -eq 'Wait-ErpSalesOrderSource'
+})
+$firstMutationPost = @($commandAsts | Where-Object {
+    $_.CommandElements.Count -gt 0 -and
+    $_.CommandElements[0].Extent.Text -eq 'Invoke-JsonPost' -and
+    $_.Extent.Text.Contains('/sales-orders/SO-DEMO-001/lines/10')
+} | Sort-Object { $_.Extent.StartOffset } | Select-Object -First 1)
+Assert-Contract ($releasedV1Wait.Count -eq 1 -and $sourceReadinessCall.Count -eq 1 -and $firstMutationPost.Count -eq 1) 'Acceptance ordering must have one released-v1 wait, one source probe, and one first mutation POST.'
+Assert-Contract (
+    $releasedV1Wait[0].Extent.StartOffset -lt $sourceReadinessCall[0].Extent.StartOffset -and
+    $sourceReadinessCall[0].Extent.StartOffset -lt $firstMutationPost[0].Extent.StartOffset
+) 'Released-v1 convergence must precede source readiness, which must precede the first mutation POST.'
+
+$postLoopNodes = @($invokeJsonPostAst[0].Body.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.ForStatementAst] -or
+    $node -is [System.Management.Automation.Language.ForEachStatementAst] -or
+    $node -is [System.Management.Automation.Language.WhileStatementAst] -or
+    $node -is [System.Management.Automation.Language.DoWhileStatementAst] -or
+    $node -is [System.Management.Automation.Language.DoUntilStatementAst]
+}, $true))
+$postRequestAsts = @($invokeJsonPostAst[0].Body.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.CommandAst] -and
+    $node.CommandElements.Count -gt 0 -and
+    $node.CommandElements[0].Extent.Text -eq 'Invoke-WebRequest'
+}, $true))
+Assert-Contract ($postLoopNodes.Count -eq 0) 'State-changing POST validation must not contain a retry loop.'
+Assert-Contract ($postRequestAsts.Count -eq 1) 'State-changing POST validation must issue exactly one HTTP request.'
+
+$sourceReadinessText = $sourceReadinessAst[0].Extent.Text
+Assert-Contract ($sourceReadinessText.Contains('-TimeoutSeconds $remainingTimeoutSeconds')) 'Source readiness must bound every PostgreSQL probe by its remaining deadline.'
+Assert-Contract ($sourceReadinessText.Contains('if ($remainingMilliseconds -le 0) { break }')) 'Source readiness must not sleep after its deadline expires.'
+
+$internalToken = 'test-internal-token'
+. ([scriptblock]::Create($diagnosticRedactorAst[0].Extent.Text))
+. ([scriptblock]::Create($invokeJsonPostAst[0].Extent.Text))
+$script:postRequestCount = 0
+$script:postMaximumRedirection = $null
+$script:postHttpStatus = 200
+$script:postResponseContent = '{"success":true,"data":"changed"}'
+
+function Invoke-WebRequest {
+    param(
+        [string]$Method,
+        [string]$Uri,
+        [hashtable]$Headers,
+        [string]$ContentType,
+        [string]$Body,
+        [Nullable[int]]$MaximumRedirection,
+        [switch]$SkipHttpErrorCheck
+    )
+
+    $script:postRequestCount++
+    $script:postMaximumRedirection = $MaximumRedirection
+    return [pscustomobject]@{ StatusCode = $script:postHttpStatus; Content = $script:postResponseContent }
+}
+
+function Assert-PostRejected {
+    param(
+        [string]$Payload,
+        [string]$CaseName,
+        [int]$HttpStatus = 200,
+        [string[]]$SensitiveValues = @()
+    )
+
+    $script:postRequestCount = 0
+    $script:postMaximumRedirection = $null
+    $script:postHttpStatus = $HttpStatus
+    $script:postResponseContent = $Payload
+    $threw = $false
+    $failureMessage = $null
+    try {
+        Invoke-JsonPost -Uri 'http://127.0.0.1/post' -Headers @{} -ExpectedData 'changed' -Body @{ value = 'test' } | Out-Null
+    }
+    catch {
+        $threw = $true
+        $failureMessage = $_.Exception.Message
+    }
+
+    Assert-Contract $threw "POST validator must reject $CaseName immediately."
+    Assert-Contract ($script:postRequestCount -eq 1) "POST validator must issue exactly one request for $CaseName."
+    Assert-Contract ($script:postMaximumRedirection -eq 0) "POST validator must disable redirects for $CaseName."
+    foreach ($sensitiveValue in $SensitiveValues) {
+        Assert-Contract (-not $failureMessage.Contains($sensitiveValue)) "POST validator leaked JSON credential value for $CaseName."
+    }
+}
+
+$script:postRequestCount = 0
+$script:postMaximumRedirection = $null
+$response = Invoke-JsonPost -Uri 'http://127.0.0.1/post' -Headers @{} -ExpectedData 'changed' -Body @{ value = 'test' }
+Assert-Contract ($response.success -is [bool] -and $response.success -eq $true -and $response.data -is [string] -and $response.data -ceq 'changed') 'POST validator must return the valid boolean/string envelope.'
+Assert-Contract ($script:postRequestCount -eq 1) 'POST validator must issue exactly one request for a valid envelope.'
+Assert-Contract ($script:postMaximumRedirection -eq 0) 'POST validator must disable redirects for a valid envelope.'
+
+Assert-PostRejected -CaseName 'numeric success' -Payload '{"success":1,"data":"changed"}'
+Assert-PostRejected -CaseName 'string success' -Payload '{"success":"true","data":"changed"}'
+Assert-PostRejected -CaseName 'array success' -Payload '{"success":[true],"data":"changed"}'
+Assert-PostRejected -CaseName 'array data' -Payload '{"success":true,"data":["changed"]}'
+Assert-PostRejected -CaseName 'null success' -Payload '{"success":null,"data":"changed"}'
+Assert-PostRejected -CaseName 'missing success' -Payload '{"data":"changed"}'
+Assert-PostRejected -CaseName 'false success' -Payload '{"success":false,"data":"changed"}'
+Assert-PostRejected -CaseName 'redirect response' -HttpStatus 307 -Payload '{"success":true,"data":"changed"}'
+Assert-PostRejected -CaseName 'business-error JSON credentials' -Payload '{"success":false,"data":"changed","password":"quoted-password","token":"quoted-token","authorization":"Bearer quoted-bearer"}' -SensitiveValues @('quoted-password', 'quoted-token', 'quoted-bearer')
+Assert-PostRejected -CaseName 'malformed JSON credentials' -Payload '{"success":false,"password":"quoted-password","token":"quoted-token","authorization":"Bearer quoted-bearer"' -SensitiveValues @('quoted-password', 'quoted-token', 'quoted-bearer')
+
 Write-Host 'ERP sales-order DemandPlanning cross-process verify script contract tests passed.'
