@@ -3093,20 +3093,97 @@ public sealed class BusinessGatewayProxyTests
     public async Task Mes_dispatch_facade_forwards_the_authorized_principal_as_actor()
     {
         var mes = new RecordingMesClient();
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
-        {
-            services.RemoveAll<IBusinessMesClient>();
-            services.AddSingleton<IBusinessMesClient>(mes);
-        });
+        await using var factory = CreateDispatchAssignFactory(mes, out _);
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.PostAsJsonAsync(
             "/api/business-console/v1/mes/dispatch-tasks/OP-001/assign?organizationId=org-001&environmentId=env-dev",
-            new { assignedUserId = "operator-1", deviceAssetId = "DEV-1", shiftId = "SHIFT-1", idempotencyKey = "dispatch-1" });
+            new { assignedUserId = "user-op-001", deviceAssetId = "DEV-1", shiftId = "SHIFT-1", idempotencyKey = "dispatch-1" });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("user:user-admin", mes.LastAssignDispatchActor);
+    }
+
+    [Fact]
+    public async Task Mes_dispatch_facade_snapshots_the_worker_name_resolved_from_master_data()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateDispatchAssignFactory(mes, out var masterData);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/dispatch-tasks/OP-001/assign?organizationId=org-001&environmentId=env-dev",
+            new { assignedUserId = "user-op-001", assignedUserName = "冒充的名字", idempotencyKey = "dispatch-2" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("user-op-001", masterData.LastListWorkersRequest?.UserId);
+        // 名字快照由网关从主数据解析，不采信请求体里的值。
+        Assert.Equal("陈志强", mes.LastAssignDispatchRequest?.AssignedUserName);
+    }
+
+    [Fact]
+    public async Task Mes_dispatch_facade_rejects_an_unknown_worker()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateDispatchAssignFactory(mes, out _);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/dispatch-tasks/OP-001/assign?organizationId=org-001&environmentId=env-dev",
+            new { assignedUserId = "user-not-registered", idempotencyKey = "dispatch-3" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(mes.LastAssignDispatchRequest);
+    }
+
+    [Fact]
+    public async Task Mes_dispatch_facade_rejects_a_worker_who_is_not_on_duty()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateDispatchAssignFactory(mes, out var masterData);
+        masterData.WorkerDirectory =
+        [
+            new(
+                "user-op-005",
+                "EMP-1005",
+                "何俊",
+                "DEPT-PROD",
+                "生产部",
+                "焊接操作工",
+                "on-leave",
+                null,
+                true,
+                [],
+                [],
+                "2026-01-01T00:00:00.0000000Z"),
+        ];
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/dispatch-tasks/OP-001/assign?organizationId=org-001&environmentId=env-dev",
+            new { assignedUserId = "user-op-005", idempotencyKey = "dispatch-4" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(mes.LastAssignDispatchRequest);
+    }
+
+    private static WebApplicationFactory<Program> CreateDispatchAssignFactory(
+        RecordingMesClient mes,
+        out RecordingMasterDataClient masterData)
+    {
+        var recordingMasterData = new RecordingMasterDataClient();
+        masterData = recordingMasterData;
+        return CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(recordingMasterData);
+        });
     }
 
     [Fact]
