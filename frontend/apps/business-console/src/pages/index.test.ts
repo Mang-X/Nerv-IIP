@@ -166,10 +166,10 @@ describe('business workbench page', () => {
     expect(text).toContain('正在刷新工作台摘要')
     expect(text).not.toContain('暂无可显示指标')
     expect(text).not.toContain('当前角色没有可汇总的跨域指标')
-    expect(text).not.toContain('暂无待处理事项')
+    expect(text).not.toContain('待办已清空')
     expect(text).not.toContain('暂无未读消息')
-    expect(text).not.toContain('暂无当前预警')
-    expect(text).not.toContain('正在等待来源状态')
+    expect(text).not.toContain('设备当前运行正常')
+    expect(text).not.toContain('今天没有待处理事项')
   })
 
   it('renders the facade summary instead of local static workbench items', async () => {
@@ -184,13 +184,20 @@ describe('business workbench page', () => {
     await flushPromises()
 
     const text = wrapper.text()
+    // 英雄区：facade KPI + 待办 / 设备预警的权威总量
     expect(text).toContain('已下达工单')
     expect(text).toContain('7')
     expect(text).toContain('未关闭质量异常')
-    expect(text).toContain('待办 2')
-    expect(text).toContain('消息 2')
-    expect(text).toContain('设备预警 1')
+    expect(text).toContain('待办事项')
+    expect(text).toContain('未解除设备预警')
+    // 页头汇总 = 待办 2 + 未读 1 + 预警 1
+    expect(text).toContain('4 项待处理')
+    // 行动卡条目展示 facade 返回的人读编码，而不是内部 id
+    expect(text).toContain('PO-260701-0001')
+    expect(text).toContain('WO-260701-0001')
     expect(text).toContain('DEV-1001')
+    expect(text).not.toContain('approval-1')
+    expect(text).not.toContain('message-1')
     expect(text).not.toContain('设备停机影响')
     expect(text).not.toContain('Sensitive customer escalation')
     expect(text).not.toContain('Sensitive receivables amount')
@@ -198,15 +205,22 @@ describe('business workbench page', () => {
     expect(text).not.toContain('global-inventory-workbench-summary-not-connected')
   })
 
-  it('shows only route-ready shortcuts allowed by the principal permissions', async () => {
+  it('collapses shortcuts into permitted business-domain tiles', async () => {
     const wrapper = mountWorkbench(['business.inventory.ledger.read'])
     await flushPromises()
 
     const links = wrapper.findAll('a').map((link) => link.attributes('href'))
+    // 磁贴落点 = 该域中当前角色第一个有权限的页面
     expect(links).toContain('/inventory/availability')
     expect(links).not.toContain('/mes/work-orders')
     expect(links).not.toContain('/quality/ncrs')
-    expect(wrapper.text()).not.toContain('工单与派工')
+
+    const text = wrapper.text()
+    expect(text).toContain('业务域入口')
+    expect(text).toContain('库存管理')
+    // 域内页面收纳在域后面，首屏不再平铺成文字链接海
+    expect(text).not.toContain('库存移动')
+    expect(text).not.toContain('工单与派工')
   })
 
   it('centers the business-facing empty states instead of ops-style placeholders', async () => {
@@ -228,6 +242,7 @@ describe('business workbench page', () => {
     expect(text).toContain('待办已清空')
     expect(text).toContain('暂无未读消息')
     expect(text).toContain('设备当前运行正常')
+    expect(text).toContain('今天没有待处理事项')
     expect(text).not.toContain('审批和通知任务按当前用户过滤')
     expect(text).not.toContain('只展示消息状态，不展开消息标题')
     expect(text).not.toContain('来自设备运行事实的当前报警')

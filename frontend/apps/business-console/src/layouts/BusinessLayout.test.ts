@@ -20,8 +20,14 @@ vi.mock('vue-router', async (importOriginal) => {
   }
 })
 
-interface Domain { id: string, title: string }
-interface SideGroup { label?: string, items: { title: string }[] }
+interface Domain {
+  id: string
+  title: string
+}
+interface SideGroup {
+  label?: string
+  items: { title: string }[]
+}
 
 const AppShellTStub = defineComponent({
   name: 'AppShellT',
@@ -59,7 +65,18 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(shell.props('title')).toBe('Nerv-IIP 业务控制台')
     const domains = shell.props('topDomains') as Domain[]
     expect(domains.map((d) => d.id)).toEqual([
-      'workbench', 'master-data', 'engineering', 'planning', 'mes', 'quality', 'inventory', 'wms', 'erp', 'barcode', 'equipment', 'approval',
+      'workbench',
+      'master-data',
+      'engineering',
+      'planning',
+      'mes',
+      'quality',
+      'inventory',
+      'wms',
+      'erp',
+      'barcode',
+      'equipment',
+      'approval',
     ])
     // Current domain resolved from the route, with its domain-local side nav.
     expect(shell.props('currentDomainId')).toBe('inventory')
@@ -87,7 +104,10 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(domains.map((d) => d.id)).toEqual(['workbench', 'inventory'])
 
     const sideNav = shell.props('sideNav') as SideGroup[]
-    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['库存可用量', '批次与预留'])
+    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual([
+      '库存可用量',
+      '批次与预留',
+    ])
   })
 
   it('drops side navigation groups after permission trimming removes every item', () => {
@@ -121,7 +141,14 @@ describe('BusinessLayout (T-shaped)', () => {
 
     expect(shell.props('currentDomainId')).toBe('wms')
     const sideNav = shell.props('sideNav') as SideGroup[]
-    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['收货入库', '上架任务', '出库发货', '拣货任务', 'WCS 任务', '盘点执行'])
+    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual([
+      '收货入库',
+      '上架任务',
+      '出库发货',
+      '拣货任务',
+      'WCS 任务',
+      '盘点执行',
+    ])
   })
 
   it('resolves barcode routes to the 条码标签 domain', () => {
@@ -131,7 +158,12 @@ describe('BusinessLayout (T-shaped)', () => {
 
     expect(shell.props('currentDomainId')).toBe('barcode')
     const sideNav = shell.props('sideNav') as SideGroup[]
-    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['条码规则', '标签模板', '打印批次', '扫码记录'])
+    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual([
+      '条码规则',
+      '标签模板',
+      '打印批次',
+      '扫码记录',
+    ])
   })
 
   it('keeps MES foundation diagnostics in a separate side group under 制造执行', () => {
@@ -204,10 +236,24 @@ describe('BusinessLayout (T-shaped)', () => {
     })
 
     const text = wrapper.text()
-    expect(wrapper.findAll('section').length).toBeGreaterThanOrEqual(3)
-    expect(wrapper.findAll('a').length).toBeGreaterThanOrEqual(8)
+    // 驾驶舱三段式：英雄指标区 + 三条行动路径 + 业务域磁贴。链接数量不再是判据——
+    // 快捷入口已经从"每页一条文字链接"收纳成域级磁贴，堆链接反而是要避免的形态。
+    expect(text).toContain('今日待处理构成')
+    expect(wrapper.findAll('[data-focus]').length).toBe(3)
+    expect(text).toContain('业务域入口')
+    expect(wrapper.findAll('a').length).toBeGreaterThanOrEqual(3)
 
-    const forbiddenTerms = ['demo', 'mock', 'seed', 'sourceSystem', 'operationId', '组织', '环境', '接口', '契约']
+    const forbiddenTerms = [
+      'demo',
+      'mock',
+      'seed',
+      'sourceSystem',
+      'operationId',
+      '组织',
+      '环境',
+      '接口',
+      '契约',
+    ]
     for (const term of forbiddenTerms) {
       expect(text).not.toContain(term)
     }
