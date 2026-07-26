@@ -596,6 +596,8 @@ Source:
 14. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260722164839_AddOrderUrgencyArchiveMembership.cs`
 15. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260726163627_AddSchedulingEngineProviderTrace.cs`
 
+MAN-422 的 `AddSchedulingEngineProviderTrace` 不改变 plan/problem 的主键、scope、release governance 或现有幂等键。它把 post-override base snapshot 与 exact effective engine input 分开保存：前者继续解释请求与修订 provenance，后者是 provider/constraint 处理后实际交给 engine 的回放输入。新方案的 execution trace 与 effective input 同步写入；历史方案只回填可知的默认 identity，constraint trace、engine input 和 replay 均明确为 `legacy-unavailable`。该 schema 不保存 solver 或 Connector Host 状态，当前默认 engine identity 为 `finite-capacity / aps-lite-v1`。
+
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
 | `schedule_problems` | business | APS lite 排程问题双快照：原有 post-override base snapshot 保持 problem 幂等/修订语义，新增 exact effective engine input 支撑回放。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + problem_id` 是排程问题幂等范围；`problem_fingerprint` / `problem_json` 继续保存 base input；nullable `engine_input_fingerprint` / `engine_input_json` 保存实际送入引擎的 effective input；两个 JSON 均为 Scheduling 生成、版本化兼容的 `jsonb`；`horizon_start_utc` / `horizon_end_utc` 记录排程窗口。 | `organization_id + environment_id + problem_id` 唯一索引用于同一业务上下文内重放、幂等诊断和从 plan 追溯输入；engine input 不改变既有幂等键。 | 新方案同时捕获 base 与 effective 双快照；历史行不伪造 engine input，两个新增列保持 null；不由下游服务直接修改。 |

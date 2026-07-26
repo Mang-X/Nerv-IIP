@@ -92,7 +92,9 @@ BusinessMasterData 的治理和字段口径见 `docs/adr/0013-business-master-da
 | Maintenance | `backend/services/Business/Maintenance` | `maintenance` | 维修工单、保养计划、点检记录、故障、停机原因、备件需求 | 设备资产主数据、库存余额、生产工单状态 | MasterData、Telemetry、Inventory、MES |
 | BusinessGateway | `backend/gateway/BusinessGateway` | 无持久化默认值 | 业务页面聚合查询、业务前端 OpenAPI、上下文透传 | 领域规则、持久事实 | 业务服务 OpenAPI/Contracts、IAM |
 
-Scheduling / APS lite 已落地独立 BusinessScheduling 服务、PostgreSQL `scheduling` schema、公开 Scheduling contracts、有限产能 deterministic heuristic、计划 preview/create/list/detail/gantt/release API、BusinessGateway facade、IAM seed 权限、AppHost 注册和 `scripts/verify-business-scheduling-aps-lite.ps1` 验证入口；本地端口固定为 `5120`。MES 内部 `RuleScheduler` 仅作为 MES 规则排程过渡能力，不是长期 APS 权威。上表的“主要依赖”表示 `SchedulingProblem` 的输入事实来源、adapter 和事件投影边界，不表示 Scheduling 启动期或单次排程请求需要同步 fan-out 到全部上游服务。
+Scheduling / APS lite 已落地独立 BusinessScheduling 服务、PostgreSQL `scheduling` schema、公开 Scheduling contracts、有限产能 deterministic heuristic、计划 preview/create/list/detail/gantt/release API、BusinessGateway facade、IAM seed 权限、AppHost 注册和 `scripts/verify-business-scheduling-aps-lite.ps1` 验证入口；本地端口固定为 `5120`。MAN-422 进一步把 rule provider、constraint provider 与 scheduling engine 的实现边界冻结在 BusinessScheduling 内，默认 engine 为 `finite-capacity / aps-lite-v1`。每次新方案持久化 engine/rule/constraint provenance 与 exact effective engine input，支持不重新查询当前 provider 的确定性 replay；历史方案缺少 exact input 时显式标为 `legacy-unavailable`。当前没有 solver、优化器或 Connector Host 依赖。
+
+MES 对 APS 的 canonical implementation boundary 是公共 `Nerv.IIP.Contracts.Scheduling`：只消费 released/revoked plan events，把已发布分配落到 MES 工序执行事实并在撤销时收回仍可安全撤销的分配；MES Web 不引用 BusinessScheduling Web/Domain/Infrastructure 或 provider/engine/solver implementation assembly。MES 内部 `RuleScheduler` 仍是 documented deprecated exception，而不是长期 APS 权威：现有 exposed endpoint/UI、急单、计划转工单、Planning suggestion 与 Maintenance availability caller 仍存在，禁止新增依赖；迁移 API/UI/caller/table 和删除实现必须另立 follow-up。上表的“主要依赖”表示 `SchedulingProblem` 的输入事实来源、adapter 和事件投影边界，不表示 Scheduling 启动期或单次排程请求需要同步 fan-out 到全部上游服务。
 
 ## 业务控制台边界
 
@@ -163,10 +165,11 @@ ERP SalesOrder / Forecast
   -> DemandPlanning.MRP run
   -> PlannedPurchaseSuggestion -> ERP.PurchaseRequisition
   -> PlannedWorkOrderSuggestion -> ProductEngineering.ResolveProductionVersion -> MES.WorkOrder
-  -> Scheduling.SchedulePlan -> MES.Dispatch
+  -> Scheduling.SchedulePlanReleased -> MES.Dispatch
+  -> Scheduling.SchedulePlanRevoked -> MES.WithdrawPendingDispatch
 ```
 
-DemandPlanning 生成计划建议，不直接创建正式采购订单、正式工单、库存移动或排程方案。ERP/MES 接受建议后创建正式业务单据；Scheduling/APS lite 消费已接受的计划工单、MES 工单、资源和约束，输出排程方案和冲突解释。
+DemandPlanning 生成计划建议，不直接创建正式采购订单、正式工单、库存移动或排程方案。ERP/MES 接受建议后创建正式业务单据；Scheduling/APS lite 消费已接受的计划工单、MES 工单、资源和约束，输出排程方案和冲突解释。MES 的 canonical APS 链只消费 released/revoked plan events，不调用或引用 Scheduling 的 provider/engine implementation。
 
 ### 采购到库存到应付
 
@@ -258,7 +261,7 @@ WCS 不是首批业务服务。WMS 预留 adapter、任务号、回执和失败�
 | BusinessMasterData | `masterData.SkuChanged`、`masterData.SkuDisabled`、`masterData.UnitOfMeasureChanged`、`masterData.BusinessPartnerChanged`、`masterData.ResourceChanged`、`masterData.WorkCalendarChanged`、`masterData.DeviceAssetChanged`、`masterData.ReferenceDataCodeChanged` | ProductEngineering、DemandPlanning、Inventory、Quality、ERP、WMS、MES、IndustrialTelemetry、Maintenance、BarcodeLabel | 主数据公共事实变化；下游缓存或引用快照必须消费这些事件或通过 resolve API 校验。 |
 | ProductEngineering | `productEngineering.BomReleased`、`productEngineering.RoutingReleased`、`productEngineering.ProductionVersionCreated`、`productEngineering.EngineeringChangeReleased` | DemandPlanning、MES、ERP | 工程版本、生产版本绑定和变更发布。 |
 | DemandPlanning | `demandPlanning.MrpRunCompleted`、`demandPlanning.PlannedPurchaseSuggested`、`demandPlanning.PlannedWorkOrderSuggested` | ERP、MES、Notification | 计划建议生成。 |
-| Scheduling | `scheduling.SchedulePlanGenerated`、`scheduling.ScheduleConflictDetected`、`scheduling.SchedulePlanReleased` | MES、DemandPlanning、Notification | 排程方案、冲突和发布事实；P0 先冻结事件名称和 payload 边界，随 Scheduling schema/API 落地补契约测试。 |
+| Scheduling | `scheduling.SchedulePlanGenerated`、`scheduling.ScheduleConflictDetected`、`scheduling.SchedulePlanReleased`、`scheduling.SchedulePlanRevoked` | MES、DemandPlanning、Notification | 排程方案、冲突、发布和撤销事实；MES 只通过公共 Scheduling contracts 消费 released/revoked 事件，不依赖 Scheduling 实现程序集。 |
 | ERP | `erp.PurchaseReceiptRecorded`、`erp.DeliveryOrderReleased`、`erp.AccountPayableCreated`、`erp.AccountReceivableCreated` | WMS、Quality、Inventory、Notification | 采购、销售、财务事实。 |
 | WMS | `wms.InboundOrderCompleted`、`wms.OutboundOrderCompleted`、`wms.CountExecutionCompleted`、`wms.WcsTaskFailed` | Inventory、ERP、MES、Notification | 仓储作业完成或自动化失败。 |
 | Inventory | `inventory.StockMovementPosted`、`inventory.StockCountVarianceConfirmed`、`inventory.StockAvailabilityChanged` | ERP、MES、Planning、WMS、Notification | 库存事实变化。 |

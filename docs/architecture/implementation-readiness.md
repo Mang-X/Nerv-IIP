@@ -2,6 +2,16 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## Scheduling provider/engine trace 与 MES implementation boundary（MAN-422）
+
+BusinessScheduling 已按 ADR 0022 分离 `ISchedulingRuleProvider`、`ISchedulingConstraintProvider` 与 `ISchedulingEngine`，统一由 `SchedulingPlanGenerator` 组合；默认实现保持 `finite-capacity / aps-lite-v1` 确定性有限产能启发式。默认 rule provider 为 `built-in / adr-0014-default / v1`，constraint provider 汇总 operation override、equipment runtime availability 与 material readiness 的稳定来源摘要。provider、constraint 与 engine implementation 全部属于 BusinessScheduling；当前没有 solver、优化器或 Connector Host 依赖。
+
+新方案同时保存两类输入事实：`schedule_problems.problem_json / problem_fingerprint` 是既有 post-override base snapshot，继续承担 problem 幂等/修订 provenance；`engine_input_json / engine_input_fingerprint` 是 provider/constraint 处理后真正交给 engine 的 normalized effective input。`schedule_plans` 记录 `engine_id`、唯一 engine version `algorithm_version`、rule provider/profile、constraint source summary、trace schema 与 replay status。`SchedulePlanReplayService` 按持久化 engine identity 使用 exact effective input 重算并比较 canonical plan digest，不重新查询当前 provider。迁移为 `20260726163627_AddSchedulingEngineProviderTrace`；历史行无法恢复 exact input/constraint trace，明确标为 `legacy-unavailable`，不伪造 replay 成功。
+
+既有 `SchedulePlan` response schema 通过 nullable `provenance` 增加 engine/rule/constraint/input/replay evidence，没有新增 HTTP route；现有 exposed Scheduling facade 保持，facade matrix JSON 不增加或修改行。公共契约、OpenAPI snapshot 与 generated client 的机械刷新由 MAN-422 Task 6 负责。
+
+MES canonical APS 链只引用 `Nerv.IIP.Contracts.Scheduling` 并消费 released/revoked plan events；程序集 metadata/reflection 门禁禁止 MES Web 引用 BusinessScheduling Web/Domain/Infrastructure 或 provider/engine/solver implementation。MES-local `RuleScheduler` 仍是 documented deprecated exception：现有 exposed run endpoint/UI 以及 rush、MES plan conversion/workbench、Planning suggestion 和 Maintenance availability callers 尚未迁移，禁止新增依赖；迁移/删除 API、UI、caller 与 table 必须另立 follow-up，本次没有用 `Obsolete` warning 假装完成。
+
 ## Quality 复检历史与 MES hold 自动释放闭环（MAN-516 / #954）
 
 BusinessQuality 现在将首检幂等和复检历史分开建模：原有创建命令继续按来源业务键返回首条记录；新增 predecessor-targeted 复检命令只允许对非合格记录追加不可变 successor，并记录 `attempt_number` 与 `reinspection_of_inspection_record_id`。每个前置记录最多一个直接 successor，命令重放返回同一 successor；多次复检需以上一次未通过结果作为新的 predecessor。计划检验复用原方案和来源/批次/库存维度，已 superseded 的历史方案仍可用于该记录复检，但跨组织、环境、方案或合格终态均 fail closed。`AddQualityReinspectionHistory` migration 增加正数约束、自引用 Restrict 外键、前置唯一索引，并把来源唯一键扩展到 attempt。

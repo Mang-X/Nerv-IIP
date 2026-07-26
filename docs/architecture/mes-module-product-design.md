@@ -20,6 +20,13 @@ MES（ISA-95 Level-3）分**四大运营域**：生产运营、质量运营、�
 - MES 模块的 IA 应**按生产运营活动流编排**，不按"管理动作"凑组。
 - 质量、设备、库存的对象**不当 MES 主对象**；MES 内只保留它们的**只读窗口 / 跳链**，主维护在各自模块。
 
+### 1.1 APS implementation boundary（MAN-422）
+
+- BusinessScheduling 是排程问题、方案、provider/constraint/engine 与 replay evidence 的唯一实现边界；默认排产为 `finite-capacity / aps-lite-v1`。MES 不实现或选择 solver，也不依赖 Connector Host。
+- MES 的 canonical APS 链只通过 `Nerv.IIP.Contracts.Scheduling` 消费 `SchedulePlanReleased` / `SchedulePlanRevoked` 事件：released 方案驱动工序分配，revoked 方案撤销仍可安全收回的待执行分配。MES Web 不得引用 BusinessScheduling Web/Domain/Infrastructure，也不得引用 provider、engine 或 solver implementation。
+- MES-local `RuleScheduler` 当前仍是 documented deprecated exception。`/mes/schedules` UI 与 `POST /api/business/v1/mes/schedules/run`（及既有 exposed BusinessGateway facade）仍存在；急单、MES plan-to-work-order/workbench conversion、Planning suggestion consumer 和 Maintenance availability handlers 仍调用它。本阶段只冻结“禁止新增依赖”，不声称已迁移或删除；API/UI/caller/table 的替换与清理必须另立 follow-up。
+- 不给 legacy 类型添加 `Obsolete`：仓库使用 warnings-as-errors，警告会把仍存在的调用误变成构建失败，却不能代替真实迁移。评审以程序集边界测试和“无新增 caller”约束为准。
+
 ---
 
 ## 2. 目标 IA / 导航重构
@@ -62,7 +69,7 @@ MES（ISA-95 Level-3）分**四大运营域**：生产运营、质量运营、�
 | 移出 | 质量与不良 / 设备与停机 | 他域跳链 + MES 详情内联只读 | 他域主对象不占 MES 菜单 |
 | 解散 | 「异常与协同」分组 | 五实体各归其位 | 杂物抽屉反模式 |
 
-> **唯一需产品确认**：生产计划 /plans 与 规则排程 /schedules 的边界——是「计划数据 vs 排程规则配置」（→ 一页双 Tab）还是两套并行引擎（→ 同组两页）？
+> **边界已冻结**：`/mes/plans` 是 MES 生产计划/转工单视图；`/mes/schedules` 是仍待迁移的 MES-local `RuleScheduler` 遗留页面，不是与 BusinessScheduling 并行的第二套权威 APS。正式排程工作台消费 BusinessScheduling `SchedulePlan`；遗留页面迁移/删除由独立 follow-up 处理。
 
 ---
 

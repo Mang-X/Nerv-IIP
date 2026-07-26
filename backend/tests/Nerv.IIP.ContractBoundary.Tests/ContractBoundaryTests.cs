@@ -58,6 +58,27 @@ public sealed class ContractBoundaryTests
         Assert.Empty(localDtoTypeNames);
     }
 
+    [Fact]
+    public void Mes_web_uses_only_the_public_scheduling_contract()
+    {
+        var mesWebAssembly = typeof(
+            Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers
+                .SchedulePlanReleasedIntegrationEventHandlerForDispatch).Assembly;
+        var referencedAssemblyNames = mesWebAssembly
+            .GetReferencedAssemblies()
+            .Select(x => x.Name)
+            .OfType<string>()
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("Nerv.IIP.Contracts.Scheduling", referencedAssemblyNames);
+        Assert.DoesNotContain("Nerv.IIP.Business.Scheduling.Web", referencedAssemblyNames);
+        Assert.DoesNotContain("Nerv.IIP.Business.Scheduling.Domain", referencedAssemblyNames);
+        Assert.DoesNotContain("Nerv.IIP.Business.Scheduling.Infrastructure", referencedAssemblyNames);
+        Assert.DoesNotContain(
+            referencedAssemblyNames,
+            name => name.StartsWith("Nerv.IIP.Business.Scheduling.", StringComparison.Ordinal));
+    }
+
     private static HashSet<string> CollectReferencedAssemblyNames(Assembly rootAssembly)
     {
         var visited = new HashSet<string>(StringComparer.Ordinal);
