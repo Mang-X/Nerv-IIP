@@ -4,6 +4,7 @@ import type {
   QualityReasonItem,
 } from '@/composables/usePromotedCatalogs'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useQualityReasonCodes } from '@/composables/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -260,19 +261,24 @@ async function confirmArchive() {
                 请填写带 * 的必填项（已标红）。
               </p>
 
+              <!-- 编辑态：原因编码是不可改的自然键，带出只读展示，不占输入位。 -->
+              <CarriedContextSummary
+                v-if="editingCode"
+                label="正在编辑的质量原因"
+                :items="[{ label: '原因编码', value: editingCode }]"
+              />
+
               <FormSectionTitle>基本信息</FormSectionTitle>
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                <NvField :data-invalid="showErrors && !codeValid">
+                <NvField v-if="!editingCode" :data-invalid="showErrors && !codeValid">
                   <NvFieldLabel for="reason-code"
                     >原因编码 <span class="text-destructive">*</span></NvFieldLabel
                   >
                   <NvInput
-                    v-if="!editingCode"
                     id="reason-code"
                     v-model="form.reasonCode"
                     placeholder="例如：DEF-SCRATCH"
                   />
-                  <NvInput v-else :model-value="editingCode" readonly disabled />
                 </NvField>
                 <NvField :data-invalid="showErrors && !nameValid">
                   <NvFieldLabel for="reason-name"

@@ -201,8 +201,8 @@ async function submitCreate() {
 function openComplete(row: CountRow) {
   completeTarget.value = row
   // 缺省值：已录实盘 → 沿用；否则用账面数量打底，仓管只需改差异行。
-  const seed = row.countedQuantity ?? row.expectedQuantity
-  completeForm.countedQuantity = seed != null ? String(seed) : ''
+  const defaultQuantity = row.countedQuantity ?? row.expectedQuantity
+  completeForm.countedQuantity = defaultQuantity != null ? String(defaultQuantity) : ''
   completeError.value = ''
   completeOpen.value = true
 }

@@ -540,7 +540,8 @@ describe('business MES composables', () => {
         operationTaskId: 'op-1',
       }),
     })
-    expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(8)
+    // 急单 4 键 + 报工 5 键（报工弹窗现在也从工序执行页打开，工序任务列表须一起失效）。
+    expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(9)
   })
 
   it('reads overview, foundation readiness, operation tasks, and WIP rows', () => {

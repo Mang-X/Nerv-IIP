@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProductionReportDialog from './ProductionReportDialog.vue'
 
 const spies = vi.hoisted(() => ({
-  recordProductionReport: vi.fn(async () => ({ data: { reportNo: 'PRPT-2026-0001' } })),
+  recordProductionReport: vi.fn(async (_body: Record<string, unknown>) => ({
+    data: { reportNo: 'PRPT-2026-0001' },
+  })),
   notifySuccess: vi.fn(),
   notifyError: vi.fn(),
 }))
@@ -106,7 +108,7 @@ describe('ProductionReportDialog — 带出式录入', () => {
     await wrapper.vm.$nextTick()
 
     expect(spies.recordProductionReport).toHaveBeenCalledTimes(1)
-    const body = spies.recordProductionReport.mock.calls[0][0] as Record<string, unknown>
+    const body = spies.recordProductionReport.mock.calls[0]![0]
     expect(body.workOrderId).toBe('WO-2026-0007')
     expect(body.operationTaskId).toBe('WO-2026-0007-OP-20')
     expect(body.goodQuantity).toBe(180)
