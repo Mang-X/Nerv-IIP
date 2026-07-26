@@ -71,10 +71,7 @@ const showEmptyState = computed(() => !props.pending && visibleItems.value.lengt
 </script>
 
 <template>
-  <NvCard
-    class="flex min-h-[19rem] flex-col overflow-hidden bg-gradient-to-t from-primary/5 to-card p-0"
-    :data-focus="title"
-  >
+  <NvCard class="flex min-h-[19rem] flex-col overflow-hidden p-0" :data-focus="title">
     <div class="flex items-start gap-3 px-5 pt-5">
       <span :class="cn('grid size-10 flex-none place-items-center rounded-[10px]', toneTint[tone])">
         <component :is="icon" class="size-5" aria-hidden="true" />

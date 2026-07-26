@@ -13,13 +13,13 @@ import {
 import {
   NvButton,
   NvCard,
-  NvDonutChart,
   NvMetricCard,
+  NvMetricRing,
   NvPageHeader,
   NvSectionCards,
   Skeleton,
 } from '@nerv-iip/ui'
-import type { DonutSlice, NvMetricTone } from '@nerv-iip/ui'
+import type { NvMetricSegment, NvMetricTone } from '@nerv-iip/ui'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import WorkbenchDomainTiles from '@/components/workbench/WorkbenchDomainTiles.vue'
 import type { WorkbenchDomainTile } from '@/components/workbench/WorkbenchDomainTiles.vue'
@@ -146,14 +146,26 @@ const heroMetrics = computed<HeroMetric[]>(() => {
 
 /**
  * 今日待处理构成：三路各自的**权威总量**（不是抽样条目），所以份额是真的。
+ * 只收当前可用的来源——某一路不可用时它连图例行都不出现，而不是记成 0；
  * 三路都为零时整块换成"已清空"读数，不画一个空环。
  */
-const workloadSlices = computed<DonutSlice[]>(() =>
+const workloadSegments = computed<NvMetricSegment[]>(() =>
   [
-    { label: '待办', value: todoTotal.value, color: 'var(--nv-warning)' },
-    { label: '未读消息', value: messageUnread.value, color: 'var(--nv-brand)' },
-    { label: '设备预警', value: alertTotal.value, color: 'var(--destructive)' },
-  ].filter((slice) => slice.value > 0),
+    { key: 'todos', label: '待办', value: todoTotal.value, tone: 'warning' as const },
+    { key: 'messages', label: '未读消息', value: messageUnread.value, tone: 'brand' as const },
+    { key: 'alerts', label: '设备预警', value: alertTotal.value, tone: 'danger' as const },
+  ].filter((segment) => availableWorkloadKeys.value.has(segment.key)),
+)
+
+const availableWorkloadKeys = computed(
+  () =>
+    new Set(
+      [
+        todosAvailable.value ? 'todos' : '',
+        messagesAvailable.value ? 'messages' : '',
+        alertsAvailable.value ? 'alerts' : '',
+      ].filter(Boolean),
+    ),
 )
 
 const todoFocusItems = computed<WorkbenchFocusItem[]>(() =>
@@ -406,13 +418,13 @@ function formatDateTime(value: string) {
       class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,24rem)]"
       aria-label="跨域指标"
     >
-      <!-- auto-rows-fr：指标块与右侧环图卡等高，英雄区不出现半截留白 -->
+      <!-- auto-rows-fr：指标块与右侧构成卡等高，英雄区不出现半截留白 -->
       <NvSectionCards class="h-full auto-rows-fr" :columns="2">
         <template v-if="summaryPending">
           <NvCard
             v-for="slot in 4"
             :key="`hero-skeleton-${slot}`"
-            class="flex items-center gap-3.5 bg-gradient-to-t from-primary/5 to-card p-5"
+            class="flex items-center gap-3.5 p-5"
             aria-hidden="true"
           >
             <Skeleton class="size-11 flex-none rounded-[10px]" />
@@ -427,7 +439,7 @@ function formatDateTime(value: string) {
           <NvMetricCard
             v-for="metric in heroMetrics"
             :key="metric.key"
-            class="flex flex-col justify-center bg-gradient-to-t from-primary/5 to-card"
+            class="flex flex-col justify-center"
             variant="icon"
             :label="metric.label"
             :value="metric.value"
@@ -437,10 +449,7 @@ function formatDateTime(value: string) {
           />
         </template>
 
-        <NvCard
-          v-else
-          class="col-span-full grid place-items-center bg-gradient-to-t from-primary/5 to-card p-6 text-center"
-        >
+        <NvCard v-else class="col-span-full grid place-items-center p-6 text-center">
           <div>
             <p class="text-sm font-medium text-foreground">暂无可显示指标</p>
             <p class="mt-1 text-sm text-muted-foreground">
@@ -450,33 +459,35 @@ function formatDateTime(value: string) {
         </NvCard>
       </NvSectionCards>
 
-      <NvCard class="flex flex-col overflow-hidden bg-gradient-to-t from-primary/5 to-card p-0">
-        <div class="border-b px-5 py-3">
-          <h2 class="text-sm font-semibold text-foreground">今日待处理构成</h2>
-        </div>
-        <div class="flex flex-1 items-center px-5 py-4">
-          <!-- 加载态：环 + 图例的骨架，保持与成图一致的版式，不出空灰壳 -->
-          <div v-if="summaryPending" class="flex w-full items-center gap-6" aria-hidden="true">
-            <Skeleton class="size-[144px] flex-none rounded-full" />
-            <div class="flex min-w-0 flex-1 flex-col gap-3">
-              <Skeleton
-                v-for="row in 3"
-                :key="`donut-skeleton-${row}`"
-                class="h-4 w-full rounded"
-              />
-            </div>
+      <!--
+        构成卡直接用库件 NvMetricRing（组件库里"部分之和"的标准承载，equipment 看板同款），
+        不再自绘卡壳 + 图表：库件自带环 / 图例 / 份额和居中读数。加载与全清空两态没有对应
+        库件形态，才落到自绘容器，且同样只用平面 bg-card。
+      -->
+      <NvCard v-if="summaryPending" class="flex flex-col justify-center p-5" aria-hidden="true">
+        <Skeleton class="h-3.5 w-24 rounded" />
+        <div class="mt-3 flex items-center gap-[18px]">
+          <Skeleton class="size-[84px] flex-none rounded-full" />
+          <div class="flex min-w-0 flex-1 flex-col gap-2.5">
+            <Skeleton v-for="row in 3" :key="`ring-skeleton-${row}`" class="h-3.5 w-full rounded" />
           </div>
+        </div>
+      </NvCard>
 
-          <NvDonutChart
-            v-else-if="workloadSlices.length > 0"
-            class="w-full"
-            :data="workloadSlices"
-            :height="144"
-            :central-label="String(pendingTotal)"
-            central-sub-label="项待处理"
-          />
+      <NvMetricRing
+        v-else-if="pendingTotal > 0"
+        class="flex flex-col justify-center"
+        label="今日待处理构成"
+        :value="pendingTotal"
+        center-caption="项待处理"
+        :segments="workloadSegments"
+      />
 
-          <div v-else class="grid w-full justify-items-center gap-3 text-center">
+      <!-- 空态沿用 NvMetricRing 的标签排布（同样的 label 行），三态之间标题位不跳。 -->
+      <NvCard v-else class="flex flex-col p-5">
+        <p class="truncate text-sm text-muted-foreground">今日待处理构成</p>
+        <div class="grid flex-1 place-items-center py-2 text-center">
+          <div class="grid justify-items-center gap-3">
             <span class="grid size-12 place-items-center rounded-full bg-success/10">
               <CheckCheckIcon class="size-6 text-success-strong" aria-hidden="true" />
             </span>

@@ -214,6 +214,24 @@ describe('business workbench page', () => {
     expect(text).not.toContain('global-inventory-workbench-summary-not-connected')
   })
 
+  // Owner 裁决（覆盖 MAN-153 的 dashboard-01 渐变条款）：工作台各卡一律纯色平面。
+  it('builds the hero from library metric components and keeps every surface flat', async () => {
+    const wrapper = mountWorkbench([
+      'business.mes.work-orders.read',
+      'business.quality.ncr.read',
+      'business.approvals.read',
+      'business.notification.messages.read',
+      'business.iiot.alarms.read',
+    ])
+    await flushPromises()
+
+    // 英雄区四张 KPI 卡是库件 NvMetricCard，构成卡是库件 NvMetricRing——不自绘卡片
+    expect(wrapper.findAll('.nv-metric')).toHaveLength(4)
+    expect(wrapper.findAll('.nv-ring-card')).toHaveLength(1)
+    // 任何渐变填充都不许回潮
+    expect(wrapper.html()).not.toContain('bg-gradient')
+  })
+
   // 真机回归：demo 网关的审批链消息 resourceId 就是内部 GUID，status 是 `unread`。
   it('keeps internal GUIDs and raw item statuses out of the action cards', async () => {
     coladaState.queryData = {

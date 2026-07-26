@@ -31,7 +31,7 @@ defineProps<{
     全给磁贴会让每格变成一个图标的空盒子，全给行动区则会在没有出口的卡片下方留一大片
     白。两段一起长，磁贴仍保持一眼扫完的紧凑比例。
   -->
-  <NvCard class="flex flex-1 flex-col overflow-hidden bg-gradient-to-t from-primary/5 to-card p-0">
+  <NvCard class="flex flex-1 flex-col overflow-hidden p-0">
     <div class="flex items-center justify-between gap-3 border-b px-5 py-3">
       <h2 class="text-sm font-semibold text-foreground">业务域入口</h2>
       <span class="text-xs tabular-nums text-muted-foreground">{{ tiles.length }} 个域</span>
