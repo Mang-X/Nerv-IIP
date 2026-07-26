@@ -204,7 +204,8 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
                 Conflicts: [],
                 UnscheduledOperations: [],
                 ChangeSummary: [],
-                GanttItems: [])));
+                GanttItems: [])),
+            SchedulingPersistenceTestData.CurrentAvailableTrace);
     }
 
     private static ScheduleProblemSnapshot CreateProblemSnapshot(string problemId, string calendarId, string resourceId)
@@ -225,16 +226,19 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
             [],
             [],
             []);
+        var problemJson = JsonSerializer.Serialize(problem, SchedulingJson.Options);
         return new ScheduleProblemSnapshot(
             problemId,
             1,
             "org-001",
             "env-dev",
             $"fingerprint-{problemId}",
-            JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            problemJson,
             horizonStart,
             horizonEnd,
-            FixedNow);
+            FixedNow,
+            SchedulingPersistenceTestData.UnchangedEffectiveInputFingerprint(problemJson),
+            problemJson);
     }
 
     private static WorkCalendarChangedIntegrationEvent CreateWorkCalendarChangedEvent()

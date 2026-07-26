@@ -157,6 +157,7 @@ public sealed class SchedulingListPlansPostgresProfileTests
                 Conflicts: [],
                 UnscheduledOperations: [],
                 ChangeSummary: [],
-                GanttItems: [])));
+                GanttItems: [])),
+            SchedulingPersistenceTestData.CurrentAvailableTrace);
     }
 }

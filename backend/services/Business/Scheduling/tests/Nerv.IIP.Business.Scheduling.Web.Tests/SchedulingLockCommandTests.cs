@@ -24,11 +24,15 @@ public sealed class SchedulingLockCommandTests
         var assignment = plan.Assignments.First();
         db.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(
             problem.OrganizationId, problem.EnvironmentId,
-            SchedulePlanContractMapper.ToDomainSnapshot(plan)));
+            SchedulePlanContractMapper.ToDomainSnapshot(plan),
+            SchedulingPersistenceTestData.CurrentAvailableTrace));
+        var problemJson = System.Text.Json.JsonSerializer.Serialize(problem, SchedulingJson.Options);
         db.ScheduleProblems.Add(new ScheduleProblemSnapshot(
             problem.ProblemId, 1, problem.OrganizationId, problem.EnvironmentId,
-            "fingerprint", System.Text.Json.JsonSerializer.Serialize(problem, SchedulingJson.Options),
-            problem.HorizonStartUtc, problem.HorizonEndUtc, problem.HorizonStartUtc));
+            "fingerprint", problemJson,
+            problem.HorizonStartUtc, problem.HorizonEndUtc, problem.HorizonStartUtc,
+            SchedulingPersistenceTestData.UnchangedEffectiveInputFingerprint(problemJson),
+            problemJson));
         var futureSourceTime = problem.HorizonStartUtc.AddDays(1);
         db.ScheduleOperationOverrides.Add(ScheduleOperationOverride.Create(
             problem.OrganizationId, problem.EnvironmentId, assignment.OrderId,
@@ -67,7 +71,8 @@ public sealed class SchedulingLockCommandTests
             baseProblem, "plan-base", baseProblem.HorizonStartUtc.AddMinutes(-1));
         db.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(
             baseProblem.OrganizationId, baseProblem.EnvironmentId,
-            SchedulePlanContractMapper.ToDomainSnapshot(baseContract)));
+            SchedulePlanContractMapper.ToDomainSnapshot(baseContract),
+            SchedulingPersistenceTestData.CurrentAvailableTrace));
         await db.SaveChangesAsync();
         var baseAssignments = baseContract.Assignments.Take(2).ToArray();
         var explicitAssignment = baseAssignments[0] with
@@ -112,11 +117,14 @@ public sealed class SchedulingLockCommandTests
             baseProblem, "plan-legacy", baseProblem.HorizonStartUtc.AddMinutes(-1));
         db.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(
             baseProblem.OrganizationId, baseProblem.EnvironmentId,
-            SchedulePlanContractMapper.ToDomainSnapshot(planContract)));
+            SchedulePlanContractMapper.ToDomainSnapshot(planContract),
+            SchedulingPersistenceTestData.CurrentAvailableTrace));
         db.ScheduleProblems.Add(new ScheduleProblemSnapshot(
             baseProblem.ProblemId, 1, baseProblem.OrganizationId, baseProblem.EnvironmentId,
             "legacy", "{}", baseProblem.HorizonStartUtc, baseProblem.HorizonEndUtc,
-            baseProblem.HorizonStartUtc));
+            baseProblem.HorizonStartUtc,
+            SchedulingPersistenceTestData.UnchangedEffectiveInputFingerprint("{}"),
+            "{}"));
         await db.SaveChangesAsync();
         var assignment = planContract.Assignments.First();
         var handler = new UpsertScheduleOperationOverrideCommandHandler(

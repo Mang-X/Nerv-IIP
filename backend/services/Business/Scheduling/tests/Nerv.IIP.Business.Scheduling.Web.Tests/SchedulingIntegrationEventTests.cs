@@ -327,7 +327,8 @@ public sealed class SchedulingIntegrationEventTests
                 ],
                 UnscheduledOperations: [],
                 ChangeSummary: [],
-                GanttItems: [])));
+                GanttItems: [])),
+            SchedulingPersistenceTestData.CurrentAvailableTrace);
     }
 
     private static void AssertSchedulingEnvelope(

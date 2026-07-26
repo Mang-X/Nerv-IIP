@@ -141,7 +141,8 @@ public sealed class ListSchedulePlansQueryHandlerTests
                 Conflicts: [],
                 UnscheduledOperations: [],
                 ChangeSummary: [],
-                GanttItems: [])));
+                GanttItems: [])),
+            SchedulingPersistenceTestData.CurrentAvailableTrace);
     }
 
     private sealed class NoopMediator : IMediator

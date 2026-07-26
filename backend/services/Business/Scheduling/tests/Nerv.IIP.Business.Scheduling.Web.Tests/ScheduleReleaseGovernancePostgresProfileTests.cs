@@ -145,7 +145,8 @@ public sealed class ScheduleReleaseGovernancePostgresProfileTests
                 [],
                 [],
                 [],
-                [])));
+                [])),
+            SchedulingPersistenceTestData.CurrentAvailableTrace);
     }
 
     private static async Task SeedHistoricalReleasedRowsAsync(string connectionString)

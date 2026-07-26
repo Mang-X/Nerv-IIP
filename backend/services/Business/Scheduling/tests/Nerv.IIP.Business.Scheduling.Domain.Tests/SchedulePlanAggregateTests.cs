@@ -6,6 +6,63 @@ namespace Nerv.IIP.Business.Scheduling.Domain.Tests;
 public sealed class SchedulePlanAggregateTests
 {
     [Fact]
+    public void New_problem_snapshot_rejects_missing_exact_engine_input()
+    {
+        Assert.Throws<ArgumentException>(() => new ScheduleProblemSnapshot(
+            problemId: "problem-001",
+            contractVersion: 1,
+            organizationId: "org-001",
+            environmentId: "env-dev",
+            problemFingerprint: "base-fingerprint",
+            problemJson: """{"problemId":"base"}""",
+            horizonStartUtc: new DateTimeOffset(2026, 7, 27, 0, 0, 0, TimeSpan.Zero),
+            horizonEndUtc: new DateTimeOffset(2026, 7, 28, 0, 0, 0, TimeSpan.Zero),
+            capturedAtUtc: new DateTimeOffset(2026, 7, 26, 23, 0, 0, TimeSpan.Zero),
+            engineInputFingerprint: null!,
+            engineInputJson: null!));
+    }
+
+    [Fact]
+    public void New_problem_snapshot_constructor_requires_explicit_engine_input_arguments()
+    {
+        var constructor = Assert.Single(typeof(ScheduleProblemSnapshot).GetConstructors());
+        var engineInputParameters = constructor.GetParameters()
+            .Where(parameter => parameter.Name is "engineInputFingerprint" or "engineInputJson")
+            .ToArray();
+
+        Assert.Equal(2, engineInputParameters.Length);
+        Assert.All(engineInputParameters, parameter => Assert.False(parameter.HasDefaultValue));
+    }
+
+    [Fact]
+    public void Generated_plan_factory_requires_explicit_execution_trace()
+    {
+        var factories = typeof(SchedulePlan).GetMethods(
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(method => method.Name == nameof(SchedulePlan.FromGeneratedPlan))
+            .ToArray();
+
+        var factory = Assert.Single(factories);
+        Assert.Equal(
+            typeof(SchedulePlanExecutionTraceSnapshot),
+            factory.GetParameters().Last().ParameterType);
+    }
+
+    [Fact]
+    public void Generated_plan_replacement_requires_explicit_matching_trace()
+    {
+        var replacements = typeof(SchedulePlan).GetMethods(
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+            .Where(method => method.Name == nameof(SchedulePlan.ReplaceGeneratedPlan))
+            .ToArray();
+
+        var replacement = Assert.Single(replacements);
+        Assert.Equal(
+            typeof(SchedulePlanExecutionTraceSnapshot),
+            replacement.GetParameters().Last().ParameterType);
+    }
+
+    [Fact]
     public void Release_RequiresExplicitReleaseRevision()
     {
         var releaseRevision = typeof(SchedulePlan)
@@ -136,7 +193,9 @@ public sealed class SchedulePlanAggregateTests
         plan.Release(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero), 1);
 
         Assert.Throws<InvalidOperationException>(() => plan.AddAssignment(CreateAssignment("assign-002", "op-002")));
-        Assert.Throws<InvalidOperationException>(() => plan.ReplaceGeneratedPlan(CreateContract("plan-001", "fingerprint-002")));
+        Assert.Throws<InvalidOperationException>(() => plan.ReplaceGeneratedPlan(
+            CreateContract("plan-001", "fingerprint-002"),
+            CreateTrace()));
     }
 
     [Fact]
@@ -215,7 +274,7 @@ public sealed class SchedulePlanAggregateTests
             Status = SchedulePlanInputStatus.Released,
         };
 
-        Assert.Throws<InvalidOperationException>(() => plan.ReplaceGeneratedPlan(replacement));
+        Assert.Throws<InvalidOperationException>(() => plan.ReplaceGeneratedPlan(replacement, CreateTrace()));
     }
 
     [Fact]
@@ -224,7 +283,7 @@ public sealed class SchedulePlanAggregateTests
         var plan = CreatePlan();
         var replacement = CreateContract("plan-other", "fingerprint-002");
 
-        Assert.Throws<InvalidOperationException>(() => plan.ReplaceGeneratedPlan(replacement));
+        Assert.Throws<InvalidOperationException>(() => plan.ReplaceGeneratedPlan(replacement, CreateTrace()));
         Assert.Equal("plan-001", plan.PlanId);
     }
 

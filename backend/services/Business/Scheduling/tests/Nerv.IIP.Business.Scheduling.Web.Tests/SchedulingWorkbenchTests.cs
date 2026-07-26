@@ -190,17 +190,21 @@ public sealed class SchedulingWorkbenchTests
         db.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(
             problem.OrganizationId,
             problem.EnvironmentId,
-            SchedulePlanContractMapper.ToDomainSnapshot(basePlan)));
+            SchedulePlanContractMapper.ToDomainSnapshot(basePlan),
+            SchedulingPersistenceTestData.CurrentAvailableTrace));
+        var problemJson = JsonSerializer.Serialize(problem, SchedulingJson.Options);
         db.ScheduleProblems.Add(new ScheduleProblemSnapshot(
             problem.ProblemId,
             problem.ContractVersion,
             problem.OrganizationId,
             problem.EnvironmentId,
             "fingerprint",
-            JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            problemJson,
             problem.HorizonStartUtc,
             problem.HorizonEndUtc,
-            problem.HorizonStartUtc));
+            problem.HorizonStartUtc,
+            SchedulingPersistenceTestData.UnchangedEffectiveInputFingerprint(problemJson),
+            problemJson));
         var affectedResourceId = basePlan.Assignments.First().ResourceId;
         var affected = basePlan.Assignments
             .Where(assignment => assignment.ResourceId == affectedResourceId)
@@ -276,17 +280,21 @@ public sealed class SchedulingWorkbenchTests
         db.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(
             problem.OrganizationId,
             problem.EnvironmentId,
-            SchedulePlanContractMapper.ToDomainSnapshot(basePlan)));
+            SchedulePlanContractMapper.ToDomainSnapshot(basePlan),
+            SchedulingPersistenceTestData.CurrentAvailableTrace));
+        var problemJson = JsonSerializer.Serialize(problem, SchedulingJson.Options);
         db.ScheduleProblems.Add(new ScheduleProblemSnapshot(
             problem.ProblemId,
             problem.ContractVersion,
             problem.OrganizationId,
             problem.EnvironmentId,
             "fingerprint",
-            JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            problemJson,
             problem.HorizonStartUtc,
             problem.HorizonEndUtc,
-            problem.HorizonStartUtc));
+            problem.HorizonStartUtc,
+            SchedulingPersistenceTestData.UnchangedEffectiveInputFingerprint(problemJson),
+            problemJson));
         await db.SaveChangesAsync();
         var handler = new CreateSchedulePlanRevisionCommandHandler(
             db,

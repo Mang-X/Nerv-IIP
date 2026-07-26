@@ -224,8 +224,8 @@ public sealed class ScheduleProblemSnapshot : Entity<ScheduleProblemSnapshotId>
         DateTimeOffset horizonStartUtc,
         DateTimeOffset horizonEndUtc,
         DateTimeOffset capturedAtUtc,
-        string? engineInputFingerprint = null,
-        string? engineInputJson = null)
+        string engineInputFingerprint,
+        string engineInputJson)
     {
         ProblemId = Required(problemId, nameof(problemId));
         ContractVersion = contractVersion;
@@ -233,14 +233,8 @@ public sealed class ScheduleProblemSnapshot : Entity<ScheduleProblemSnapshotId>
         EnvironmentId = Required(environmentId, nameof(environmentId));
         ProblemFingerprint = Required(problemFingerprint, nameof(problemFingerprint));
         ProblemJson = Required(problemJson, nameof(problemJson));
-        EngineInputFingerprint = Optional(engineInputFingerprint);
-        EngineInputJson = Optional(engineInputJson);
-        if ((EngineInputFingerprint is null) != (EngineInputJson is null))
-        {
-            throw new ArgumentException(
-                "Engine input fingerprint and JSON must either both be provided or both be unavailable.");
-        }
-
+        EngineInputFingerprint = Required(engineInputFingerprint, nameof(engineInputFingerprint));
+        EngineInputJson = Required(engineInputJson, nameof(engineInputJson));
         HorizonStartUtc = horizonStartUtc;
         HorizonEndUtc = horizonEndUtc;
         CapturedAtUtc = capturedAtUtc;
@@ -257,11 +251,6 @@ public sealed class ScheduleProblemSnapshot : Entity<ScheduleProblemSnapshotId>
     public DateTimeOffset HorizonStartUtc { get; private set; }
     public DateTimeOffset HorizonEndUtc { get; private set; }
     public DateTimeOffset CapturedAtUtc { get; private set; }
-
-    private static string? Optional(string? value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    }
 
     private static string Required(string value, string? parameterName = null)
     {
@@ -375,19 +364,6 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
     public static SchedulePlan FromGeneratedPlan(
         string organizationId,
         string environmentId,
-        GeneratedSchedulePlanSnapshot plan)
-    {
-        ArgumentNullException.ThrowIfNull(plan);
-        return new SchedulePlan(
-            organizationId,
-            environmentId,
-            plan,
-            SchedulePlanExecutionTraceSnapshot.LegacyUnavailable);
-    }
-
-    public static SchedulePlan FromGeneratedPlan(
-        string organizationId,
-        string environmentId,
         GeneratedSchedulePlanSnapshot plan,
         SchedulePlanExecutionTraceSnapshot trace)
     {
@@ -459,20 +435,6 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         SupersededByPlanId = supersededByPlanId;
         RevocationReason = reason;
         this.AddDomainEvent(new SchedulePlanRevokedDomainEvent(this));
-    }
-
-    public void ReplaceGeneratedPlan(GeneratedSchedulePlanSnapshot plan)
-    {
-        ReplaceGeneratedPlan(
-            plan,
-            new SchedulePlanExecutionTraceSnapshot(
-                EngineId,
-                RuleProviderId,
-                RuleProfileId,
-                RuleProfileVersion,
-                ConstraintSourcesJson,
-                TraceSchemaVersion,
-                ReplayStatus));
     }
 
     public void ReplaceGeneratedPlan(

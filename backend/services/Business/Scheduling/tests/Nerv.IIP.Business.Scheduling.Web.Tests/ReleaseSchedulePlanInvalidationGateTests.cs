@@ -177,7 +177,8 @@ public sealed class ReleaseSchedulePlanInvalidationGateTests
                 Conflicts: [],
                 UnscheduledOperations: [],
                 ChangeSummary: [],
-                GanttItems: [])));
+                GanttItems: [])),
+            SchedulingPersistenceTestData.CurrentAvailableTrace);
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

@@ -879,7 +879,8 @@ public sealed class SchedulingEndpointContractTests
             ],
             UnscheduledOperations: unscheduledOperations,
             ChangeSummary: [],
-            GanttItems: [])));
+            GanttItems: [])),
+            SchedulingPersistenceTestData.CurrentAvailableTrace);
     }
 
     private static HttpRequestMessage JsonRequest<T>(HttpMethod method, string requestUri, T body)
