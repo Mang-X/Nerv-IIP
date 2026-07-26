@@ -1055,7 +1055,8 @@ public sealed record AssignDispatchTaskCommand(
     string? DeviceAssetId,
     string? ShiftId,
     DateTimeOffset AssignedAtUtc,
-    string Actor = "system:mes") : ICommand<MesAcceptedResponse>, IOperationTaskConcurrencyRetryCommand;
+    string Actor = "system:mes",
+    string? AssignedUserName = null) : ICommand<MesAcceptedResponse>, IOperationTaskConcurrencyRetryCommand;
 
 public sealed class AssignDispatchTaskCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<AssignDispatchTaskCommand, MesAcceptedResponse>
@@ -1099,8 +1100,9 @@ public sealed class AssignDispatchTaskCommandHandler(ApplicationDbContext dbCont
         }
 
         MesDomainRuleGuard.Enforce(() =>
-            task.Assign(request.AssignedUserId, request.DeviceAssetId, request.ShiftId, request.AssignedAtUtc, request.Actor));
+            task.Assign(request.AssignedUserId, request.DeviceAssetId, request.ShiftId, request.AssignedAtUtc, request.Actor, request.AssignedUserName));
         dbContext.Entry(task).Property(x => x.AssignedUserId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.AssignedUserName).IsModified = true;
         dbContext.Entry(task).Property(x => x.DeviceAssetId).IsModified = true;
         dbContext.Entry(task).Property(x => x.ShiftId).IsModified = true;
         dbContext.Entry(task).Property(x => x.AssignedAtUtc).IsModified = true;

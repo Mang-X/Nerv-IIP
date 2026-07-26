@@ -136,6 +136,7 @@ function rowSubtitle(task: Task) {
   const parts = [statusLabel(task.status)]
   if (task.workCenterId) parts.push(`工作中心 ${task.workCenterId}`)
   if (task.operationCode) parts.push(`工序 ${task.operationCode}`)
+  if (task.assignedUserName) parts.push(`受派 ${task.assignedUserName}`)
   return parts.join(' · ')
 }
 
@@ -338,6 +339,9 @@ function formatDate(value?: string | null) {
     >
       <div v-if="selected" class="space-y-3 pb-2">
         <p class="text-sm text-muted-foreground">当前状态：{{ statusLabel(selected.status) }}</p>
+        <p v-if="selected.assignedUserName" class="text-sm text-muted-foreground">
+          受派工人：{{ selected.assignedUserName }}
+        </p>
 
         <section class="space-y-2 rounded-lg border border-border px-3 py-3">
           <div class="flex items-center justify-between gap-3">

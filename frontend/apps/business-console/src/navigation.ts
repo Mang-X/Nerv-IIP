@@ -47,6 +47,7 @@ import {
   TrendingUpIcon,
   UserCheckIcon,
   UsersRoundIcon,
+  IdCardIcon,
   WalletIcon,
   WarehouseIcon,
   WrenchIcon,
@@ -200,6 +201,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
     {
       label: '组织与排班',
       items: [
+        {
+          title: '员工',
+          icon: IdCardIcon,
+          to: { path: '/master-data/workers' },
+          requiredPermissions: [P.masterDataResourcesRead],
+        },
         {
           title: '组织与班组',
           icon: UsersRoundIcon,

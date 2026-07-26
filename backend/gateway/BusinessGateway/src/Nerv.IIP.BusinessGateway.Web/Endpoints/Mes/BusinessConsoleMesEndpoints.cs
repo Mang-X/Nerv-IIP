@@ -769,6 +769,7 @@ public sealed class ListBusinessConsoleMesDispatchTasksEndpoint(
 public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessMasterDataClient masterData,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesAssignDispatchTaskRequest, BusinessConsoleAcceptedResponse>(
         auth,
@@ -778,16 +779,55 @@ public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMesAssignDispatchTaskRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
         BusinessConsoleMesAssignDispatchTaskRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.AssignDispatchTaskAsync(
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        // The assignee must be a registered, on-duty worker; resolving here keeps the name snapshot
+        // trustworthy and stops arbitrary identifiers from reaching the dispatch record.
+        string? assignedUserName = null;
+        if (!string.IsNullOrWhiteSpace(request.AssignedUserId))
+        {
+            var directory = await masterData.ListWorkersAsync(
+                tokenProvider.BearerToken,
+                new BusinessConsoleWorkerDirectoryRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    UserId: request.AssignedUserId,
+                    PageIndex: 1,
+                    PageSize: 1),
+                cancellationToken);
+            var worker = directory.Items.FirstOrDefault();
+            if (worker is null)
+            {
+                throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, $"未找到员工，工人标识 = {request.AssignedUserId}");
+            }
+
+            if (!worker.Active || !string.Equals(worker.EmploymentStatus, "active", StringComparison.Ordinal))
+            {
+                throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, $"员工 {worker.DisplayName} 当前不在岗，无法派工。");
+            }
+
+            assignedUserName = worker.DisplayName;
+        }
+
+        return await mes.AssignDispatchTaskAsync(
             tokenProvider.BearerToken,
             request.OperationTaskId,
-            request,
+            new BusinessConsoleMesAssignDispatchTaskForwardRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.AssignedUserId,
+                assignedUserName,
+                request.DeviceAssetId,
+                request.ShiftId,
+                request.IdempotencyKey),
             RequireAuthorizedPrincipalActorReference(),
             cancellationToken);
+    }
 }
 
 [Tags("Business Console MES")]

@@ -315,6 +315,7 @@ public sealed record AssignDispatchTaskRequest(
     string EnvironmentId,
     [property: RouteParam] string OperationTaskId,
     string? AssignedUserId,
+    string? AssignedUserName,
     string? DeviceAssetId,
     string? ShiftId,
     DateTimeOffset? AssignedAtUtc);
@@ -927,7 +928,8 @@ public sealed class AssignDispatchTaskEndpoint(ISender sender, TimeProvider time
             req.DeviceAssetId,
             req.ShiftId,
             req.AssignedAtUtc ?? timeProvider.GetUtcNow(),
-            MesAuthenticatedActor.Resolve(HttpContext)), ct);
+            MesAuthenticatedActor.Resolve(HttpContext),
+            req.AssignedUserName), ct);
         await Send.OkAsync(response, ct);
     }
 }

@@ -61,7 +61,10 @@ const {
   refreshDispatchTasks,
 } = useMesDispatchTasks()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
-const { workers } = useBusinessWorkers()
+// 派工候选只取在岗员工；默认按所选工序的工作中心收敛（工作中心 → 所辖班组 → 班组成员）。
+const { workers, workersPending, filters: workerFilters } = useBusinessWorkers({
+  employmentStatus: 'active',
+})
 const { resolveWorkCenter } = useMesDisplayNames()
 const statusFilter = shallowRef('all')
 watch(statusFilter, (value) => {
@@ -85,16 +88,21 @@ const errorMessage = computed(() => formatError(dispatchTasksError.value))
 
 type DispatchRow = (typeof dispatchTasks)['value'][number]
 
-// 操作员选项：value=userId（与 assignedUserId 同源），label=姓名 · 工号。
+// 操作员选项：value=userId（与 assignedUserId 同源），label=姓名 · 工号（技能）。
+// 有技能登记的排在前面——同一工作中心内优先派给有对应技能的人。
 const workerOptions = computed(() =>
   workers.value
     .filter((w) => w.userId)
-    .map((w) => ({
-      value: w.userId as string,
-      label: w.employeeNo
+    .slice()
+    .sort((a, b) => (b.skills?.length ?? 0) - (a.skills?.length ?? 0))
+    .map((w) => {
+      const skills = (w.skills ?? []).map((s) => s.skillName).filter(Boolean)
+      const suffix = skills.length > 0 ? `（${skills.join('、')}）` : ''
+      const base = w.employeeNo
         ? `${w.displayName ?? w.userId} · ${w.employeeNo}`
-        : (w.displayName ?? (w.userId as string)),
-    })),
+        : (w.displayName ?? (w.userId as string))
+      return { value: w.userId as string, label: `${base}${suffix}` }
+    }),
 )
 
 const columns: NvDataTableColumn<DispatchRow>[] = [
@@ -119,6 +127,12 @@ const columns: NvDataTableColumn<DispatchRow>[] = [
     accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定',
   },
   { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
+  {
+    key: 'assignedUserName',
+    header: '受派工人',
+    width: 'w-32',
+    accessor: (r) => r.assignedUserName ?? (r.assignedUserId ? '未知工人' : '未派工'),
+  },
   { key: 'plannedStartUtc', header: '计划开始', width: 'w-44' },
   { key: 'blockingReasons', header: '阻塞处理' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
@@ -155,12 +169,39 @@ function canDispatch(row: DispatchRow) {
     !isScheduleInvalidated(row.status)
   )
 }
+// 候选范围：默认「本工作中心班组」，找不到人时可显式切到「全部在岗员工」——不做静默兜底。
+const candidateScope = shallowRef<'work-center' | 'all'>('work-center')
+const targetWorkCenterCode = computed(
+  () => assignTarget.value?.workCenterCode ?? assignTarget.value?.workCenterId ?? undefined,
+)
+watch([candidateScope, targetWorkCenterCode, assignOpen], () => {
+  workerFilters.workCenterCode =
+    assignOpen.value && candidateScope.value === 'work-center'
+      ? targetWorkCenterCode.value
+      : undefined
+})
+
+// 候选是服务端按工作中心收敛后才回来的，所以「只有一个人就直接选中」必须等列表落地再判，
+// 不能在 openAssign 里读上一轮的候选（会把上一个工作中心的人预选进来）。
+watch(workerOptions, (options) => {
+  if (!assignOpen.value) return
+  if (options.length === 1) {
+    assignedUserId.value = options[0]!.value
+    return
+  }
+
+  // 切换候选范围后原选中项可能已不在候选内，清掉避免提交一个不在范围里的人。
+  if (assignedUserId.value && !options.some((option) => option.value === assignedUserId.value)) {
+    assignedUserId.value = ''
+  }
+})
+
 function openAssign(row: DispatchRow) {
   if (!canDispatch(row)) return
   assignTarget.value = row
-  // 只有一个可选操作员时直接选中，别让班组长多点一次。
-  assignedUserId.value = workerOptions.value.length === 1 ? workerOptions.value[0]!.value : ''
+  assignedUserId.value = ''
   assignShowErrors.value = false
+  candidateScope.value = 'work-center'
   assignOpen.value = true
 }
 async function confirmAssign() {
@@ -331,10 +372,20 @@ function formatError(error: unknown) {
           <CarriedContextSummary label="派工对象" :items="assignContextItems" />
 
           <NvField>
+            <NvFieldLabel for="assign-scope">候选范围</NvFieldLabel>
+            <NvSelect v-model="candidateScope">
+              <NvSelectTrigger id="assign-scope"><NvSelectValue /></NvSelectTrigger>
+              <NvSelectContent>
+                <NvSelectItem value="work-center">本工作中心班组</NvSelectItem>
+                <NvSelectItem value="all">全部在岗员工</NvSelectItem>
+              </NvSelectContent>
+            </NvSelect>
+          </NvField>
+          <NvField>
             <NvFieldLabel for="assign-operator"
               >操作员 <span class="text-destructive">*</span></NvFieldLabel
             >
-            <NvSelect v-model="assignedUserId">
+            <NvSelect v-model="assignedUserId" :disabled="workerOptions.length === 0">
               <NvSelectTrigger
                 id="assign-operator"
                 :data-invalid="assignShowErrors && !assignedUserId ? '' : undefined"
@@ -346,6 +397,16 @@ function formatError(error: unknown) {
                 }}</NvSelectItem>
               </NvSelectContent>
             </NvSelect>
+            <p
+              v-if="!workersPending && workerOptions.length === 0"
+              class="text-sm text-muted-foreground"
+            >
+              {{
+                candidateScope === 'work-center'
+                  ? '该工作中心暂无在岗班组成员，可切换到「全部在岗员工」。'
+                  : '暂无在岗员工，请先在「基础数据 · 员工」维护。'
+              }}
+            </p>
           </NvField>
           <!-- 点提交才标红；未选操作员不发请求。 -->
           <p

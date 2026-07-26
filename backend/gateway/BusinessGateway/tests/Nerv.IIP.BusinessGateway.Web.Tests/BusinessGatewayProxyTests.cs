@@ -8259,6 +8259,52 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         return CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/workshops", "workshop", request.Code, request.Name);
     }
 
+    public BusinessConsoleCreateWorkerRequest? LastCreateWorkerRequest { get; private set; }
+
+    public BusinessConsoleWorkerDirectoryRequest? LastListWorkersRequest { get; private set; }
+
+    public IReadOnlyList<BusinessConsoleWorkerDirectoryItem> WorkerDirectory { get; set; } =
+    [
+        new(
+            "user-op-001",
+            "EMP-1001",
+            "陈志强",
+            "DEPT-PROD",
+            "生产部",
+            "装配班组长",
+            "active",
+            null,
+            true,
+            [],
+            [],
+            "2026-01-01T00:00:00.0000000Z"),
+    ];
+
+    public Task<BusinessConsoleResourceItem> CreateWorkerAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateWorkerRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastCreateWorkerRequest = request;
+        return CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/workers", "worker", request.Code, request.Name);
+    }
+
+    public Task<BusinessConsoleWorkerDirectoryResponse> ListWorkersAsync(
+        string internalBearerToken,
+        BusinessConsoleWorkerDirectoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastListWorkersRequest = request;
+        var items = string.IsNullOrWhiteSpace(request.UserId)
+            ? WorkerDirectory
+            : WorkerDirectory.Where(x => x.UserId == request.UserId).ToArray();
+        return Task.FromResult(new BusinessConsoleWorkerDirectoryResponse(
+            request.PageIndex,
+            request.PageSize,
+            items.Count,
+            items));
+    }
+
     public Task<BusinessConsoleResourceItem> CreateSiteAsync(
         string internalBearerToken,
         BusinessConsoleCreateSiteRequest request,
@@ -11877,14 +11923,17 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         CancellationToken cancellationToken) =>
         throw new NotSupportedException();
 
+    public BusinessConsoleMesAssignDispatchTaskForwardRequest? LastAssignDispatchRequest { get; private set; }
+
     public Task<BusinessConsoleAcceptedResponse> AssignDispatchTaskAsync(
         string internalBearerToken,
         string operationTaskId,
-        BusinessConsoleMesAssignDispatchTaskRequest request,
+        BusinessConsoleMesAssignDispatchTaskForwardRequest request,
         string actor,
         CancellationToken cancellationToken)
     {
         LastAssignDispatchActor = actor;
+        LastAssignDispatchRequest = request;
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
 
