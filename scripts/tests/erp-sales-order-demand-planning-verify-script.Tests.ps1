@@ -133,6 +133,9 @@ $diagnosticRedactorAst = @($functionAsts | Where-Object Name -eq 'Protect-Man517
 Assert-Contract ($sourceReadinessAst.Count -eq 1) 'Source readiness helper must have one inspectable function definition.'
 Assert-Contract ($invokeJsonPostAst.Count -eq 1) 'POST validator must have one inspectable function definition.'
 Assert-Contract ($diagnosticRedactorAst.Count -eq 1) 'POST validator must use the production MAN-517 diagnostic redactor.'
+Assert-Contract ($content.Contains('sourceReadiness = $sourceReadiness')) 'Success evidence must retain committed ERP source-readiness evidence.'
+Assert-Contract ($content.Contains('stateChangingPostInvocationCount = $stateChangingPostInvocationCount')) 'Success evidence must retain the state-changing POST invocation count.'
+Assert-Contract ($content.Contains('if ($stateChangingPostInvocationCount -ne 3)')) 'This acceptance scenario must fail instead of writing success evidence when mutation invocation count is not three.'
 
 $commandAsts = @($verifyAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
 $releasedV1Wait = @($commandAsts | Where-Object {
@@ -170,6 +173,9 @@ $postRequestAsts = @($invokeJsonPostAst[0].Body.FindAll({
 }, $true))
 Assert-Contract ($postLoopNodes.Count -eq 0) 'State-changing POST validation must not contain a retry loop.'
 Assert-Contract ($postRequestAsts.Count -eq 1) 'State-changing POST validation must issue exactly one HTTP request.'
+$postCounterIndex = $invokeJsonPostAst[0].Extent.Text.IndexOf('$script:stateChangingPostInvocationCount++', [StringComparison]::Ordinal)
+$postRequestIndex = $invokeJsonPostAst[0].Extent.Text.IndexOf('Invoke-WebRequest', [StringComparison]::Ordinal)
+Assert-Contract ($postCounterIndex -ge 0 -and $postCounterIndex -lt $postRequestIndex) 'The state-changing POST count must advance once immediately before the helper''s sole HTTP request.'
 
 $sourceReadinessText = $sourceReadinessAst[0].Extent.Text
 Assert-Contract ($sourceReadinessText.Contains('-TimeoutSeconds $remainingTimeoutSeconds')) 'Source readiness must bound every PostgreSQL probe by its remaining deadline.'
@@ -178,6 +184,7 @@ Assert-Contract ($sourceReadinessText.Contains('if ($remainingMilliseconds -le 0
 $internalToken = 'test-internal-token'
 . ([scriptblock]::Create($diagnosticRedactorAst[0].Extent.Text))
 . ([scriptblock]::Create($invokeJsonPostAst[0].Extent.Text))
+$script:stateChangingPostInvocationCount = 0
 $script:postRequestCount = 0
 $script:postMaximumRedirection = $null
 $script:postHttpStatus = 200
@@ -235,6 +242,7 @@ $response = Invoke-JsonPost -Uri 'http://127.0.0.1/post' -Headers @{} -ExpectedD
 Assert-Contract ($response.success -is [bool] -and $response.success -eq $true -and $response.data -is [string] -and $response.data -ceq 'changed') 'POST validator must return the valid boolean/string envelope.'
 Assert-Contract ($script:postRequestCount -eq 1) 'POST validator must issue exactly one request for a valid envelope.'
 Assert-Contract ($script:postMaximumRedirection -eq 0) 'POST validator must disable redirects for a valid envelope.'
+Assert-Contract ($script:stateChangingPostInvocationCount -eq 1) 'POST validator must record one state-changing invocation for its one HTTP request.'
 
 Assert-PostRejected -CaseName 'numeric success' -Payload '{"success":1,"data":"changed"}'
 Assert-PostRejected -CaseName 'string success' -Payload '{"success":"true","data":"changed"}'
@@ -250,5 +258,28 @@ Assert-PostRejected -CaseName 'escaped-quote JSON credential' -Payload '{"succes
 Assert-PostRejected -CaseName 'unterminated escaped-quote JSON credential' -Payload '{"success":false,"data":"changed","password":"escaped-prefix\"leaked-suffix' -SensitiveValues @('escaped-prefix', 'leaked-suffix')
 Assert-PostRejected -CaseName 'single-quoted escaped credential' -Payload "{'success':false,'data':'changed','password':'single-prefix\'leaked-suffix'}" -SensitiveValues @('single-prefix', 'leaked-suffix')
 Assert-PostRejected -CaseName 'unterminated single-quoted escaped credential' -Payload "{'success':false,'data':'changed','password':'single-prefix\'leaked-suffix" -SensitiveValues @('single-prefix', 'leaked-suffix')
+
+$root = $repoRoot
+. ([scriptblock]::Create($sourceReadinessAst[0].Extent.Text))
+$script:sourceProbeCount = 0
+function Invoke-NativeCommandOutput {
+    param(
+        [string]$Command,
+        [string[]]$Arguments,
+        [string]$WorkingDirectory,
+        [int]$TimeoutSeconds,
+        [string]$Name
+    )
+
+    $script:sourceProbeCount++
+    return [pscustomobject]@{ Stdout = 'SO-DEMO-001|1|released|10|2' }
+}
+
+$sourceReadiness = Wait-ErpSalesOrderSource -ComposeFile 'test-compose.yml' -DatabaseName 'test_database'
+Assert-Contract ($script:sourceProbeCount -eq 1) 'Committed source readiness must stop after the first exact matching row.'
+Assert-Contract ($sourceReadiness.stage -eq 'erp-source-readiness') 'Committed source readiness evidence must identify its stage.'
+Assert-Contract ($sourceReadiness.attemptCount -eq 1) 'Committed source readiness evidence must retain its attempt count.'
+Assert-Contract ($sourceReadiness.matchingRowCount -eq 1 -and $sourceReadiness.matchingRow -eq 'SO-DEMO-001|1|released|10|2') 'Committed source readiness evidence must retain the exact matching row and row count.'
+Assert-Contract ($null -ne $sourceReadiness.observedAtUtc) 'Committed source readiness evidence must retain its observation time.'
 
 Write-Host 'ERP sales-order DemandPlanning cross-process verify script contract tests passed.'

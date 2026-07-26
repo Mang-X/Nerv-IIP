@@ -112,6 +112,7 @@ function Wait-Healthy {
 function Wait-ErpSalesOrderSource {
     param([string]$ComposeFile, [string]$DatabaseName)
     $deadline = (Get-Date).AddSeconds(90)
+    $attemptCount = 0
     $lastSourceObservation = $null
     $lastRequestException = $null
     $sourceSql = @"
@@ -133,6 +134,7 @@ WHERE so.organization_id = 'org-001'
         if ($remainingMilliseconds -lt 1000) { break }
         $remainingTimeoutSeconds = [int][Math]::Floor($remainingMilliseconds / 1000.0)
         try {
+            $attemptCount++
             $sourceResult = Invoke-NativeCommandOutput -Command 'docker' -Arguments @(
                 'compose', '-f', $ComposeFile, 'exec', '-T', 'postgres',
                 'psql', '-h', '127.0.0.1', '-U', 'nerv', '-d', $DatabaseName,
@@ -146,7 +148,15 @@ WHERE so.organization_id = 'org-001'
                 rows = @($sourceRows | Select-Object -First 10)
             }
             $lastRequestException = $null
-            if ($sourceRows.Count -eq 1) { return }
+            if ($sourceRows.Count -eq 1) {
+                return [pscustomobject][ordered]@{
+                    stage = 'erp-source-readiness'
+                    attemptCount = $attemptCount
+                    observedAtUtc = [DateTimeOffset]::UtcNow
+                    matchingRowCount = $sourceRows.Count
+                    matchingRow = $sourceRows[0]
+                }
+            }
         }
         catch {
             $exceptionMessage = "$($_.Exception.Message)"
@@ -168,6 +178,7 @@ WHERE so.organization_id = 'org-001'
 
 function Invoke-JsonPost {
     param([string]$Uri, [hashtable]$Body, [hashtable]$Headers, [string]$ExpectedData)
+    $script:stateChangingPostInvocationCount++
     $httpResponse = $null
     $httpStatus = $null
     $responseBody = $null
@@ -421,6 +432,7 @@ $demandPlanningProcess = $null
 $databaseCreated = $false
 $acceptanceFailure = $null
 $cleanupFailures = [System.Collections.Generic.List[string]]::new()
+$script:stateChangingPostInvocationCount = 0
 
 $masterDataProject = Join-Path $root 'backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Nerv.IIP.Business.MasterData.Web.csproj'
 $erpProject = Join-Path $root 'backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj'
@@ -485,7 +497,7 @@ try {
         'X-Authenticated-Actor' = 'user:planner-demo'
     }
     $released = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 1 -Quantity 2 -Status 'active'
-    Wait-ErpSalesOrderSource -ComposeFile $composeFile -DatabaseName $databaseName
+    $sourceReadiness = Wait-ErpSalesOrderSource -ComposeFile $composeFile -DatabaseName $databaseName
 
     Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -ExpectedData 'changed' -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; lineNo = '10'; orderedQuantity = 4; unitPrice = 100; requiredDate = '2026-08-15'; reason = 'MAN-517 change v2'
@@ -552,6 +564,10 @@ try {
     Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 4 -Quantity 0 -Status 'cancelled' | Out-Null
     $cancelled = Assert-DemandStable -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 4 -Quantity 0 -Status 'cancelled'
 
+    if ($stateChangingPostInvocationCount -ne 3) {
+        throw "MAN-517 expected exactly three state-changing POST helper invocations, observed $stateChangingPostInvocationCount."
+    }
+
     $evidencePath = Join-Path $root 'artifacts/acceptance/man517/sales-order-demand-planning-evidence.json'
     [System.IO.Directory]::CreateDirectory((Split-Path -Parent $evidencePath)) | Out-Null
     @{
@@ -560,6 +576,8 @@ try {
         database = $databaseName
         capVersion = $capVersion
         processes = @{ masterData = $masterDataProcess.ProcessId; erp = $erpProcess.ProcessId; demandPlanning = $demandPlanningProcess.ProcessId }
+        sourceReadiness = $sourceReadiness
+        stateChangingPostInvocationCount = $stateChangingPostInvocationCount
         checkpoints = @{ released = $released; duplicateReplay = $duplicateReplay; changedV2 = $changedV2; changedV3 = $changedV3; outOfOrder = $outOfOrder; cancelled = $cancelled }
     } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $evidencePath -Encoding utf8
     Write-Host "MAN-517 separate-process PostgreSQL + Redis acceptance passed. Evidence: $evidencePath"
