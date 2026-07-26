@@ -12,7 +12,34 @@ const principal = {
   permissionVersion: 1,
   // 只授予被 e2e 覆盖、且页面 meta 声明了 requiredPermissions 的能力码；
   // 未声明的页面本来就放行，这里只做加法，不会收紧任何已有用例。
-  permissionCodes: ['business.erp.sales.read', 'business.erp.finance.read'],
+  // 路由守卫（src/router/guards/auth.ts）逐页比对 meta.requiredPermissions，
+  // 缺一个码整页跳 /forbidden，故本 spec 访问到的页面须逐条列全。
+  permissionCodes: [
+    'business.erp.sales.read', // /erp/sales(/*)
+    'business.erp.finance.read', // /erp/finance(/*)
+    'business.masterdata.products.read', // /master-data/skus
+    'business.masterdata.resources.read', // /master-data/partners
+    'business.inventory.ledger.read', // /inventory/availability
+    'business.quality.ncr.read', // /quality/ncrs
+    'business.mes.overview.read', // /mes
+    'business.mes.foundation.read', // /mes/foundation
+    'business.mes.plans.read', // /mes/plans
+    'business.mes.work-orders.read', // /mes/work-orders(/:id)
+    'business.mes.materials.read', // /mes/materials
+    'business.mes.dispatch.read', // /mes/dispatch
+    'business.mes.operations.read', // /mes/operation-tasks, /mes/wip
+    'business.mes.reporting.read', // /mes/production-reports
+    'business.mes.quality.read', // /mes/quality
+    'business.mes.receipts.read', // /mes/receipts
+    // 完工入库用例断言的是 manage 用户才渲染的登记入口（receipts.vue 里 canManageReceipts
+    // 控制「从工单详情发起」按钮与带 query 自动开弹窗），故额外给操作级 manage 码。
+    'business.mes.receipts.manage',
+    'business.mes.schedules.read', // /mes/schedules
+    'business.mes.downtime.read', // /mes/downtime
+    'business.mes.handovers.read', // /mes/handovers
+    'business.mes.traceability.read', // /mes/traceability
+    'business.mes.capacity.read', // /mes/capacity
+  ],
 }
 
 const session = {
