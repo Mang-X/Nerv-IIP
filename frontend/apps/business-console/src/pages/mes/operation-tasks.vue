@@ -5,6 +5,8 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import { openDownloadGrantBlob } from '@nerv-iip/business-core'
+import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
+import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
@@ -74,6 +76,9 @@ const { resources: workCenterResources } = useBusinessMasterDataResources('work-
 const { resources: shiftResources } = useBusinessMasterDataResources('shift')
 
 const quickViewWorkOrderId = ref<string | null>(null)
+// 报工在本页行内直接打开，上下文随行带出，不再跳到工单页只带两个 ID。
+const reportOpen = ref(false)
+const reportContext = ref<ProductionReportContext | null>(null)
 const selectedSopTask = ref<Row | null>(null)
 const openingSopFileId = ref<string | null>(null)
 const sopFileError = ref('')
@@ -243,6 +248,19 @@ function openRoute(path: string, task: Row) {
 }
 function canOpenReport(task: Row) {
   return Boolean(task.workOrderId && task.operationTaskId)
+}
+function openReport(task: Row) {
+  if (!canOpenReport(task)) return
+  reportContext.value = {
+    workOrderId: task.workOrderId!,
+    workOrderNo: task.workOrderNo,
+    operationTaskId: task.operationTaskId!,
+    operationTaskNo: task.operationTaskNo,
+    operationSequence: task.operationSequence,
+    workCenterLabel:
+      task.workCenterName ?? resolveWorkCenter(task.workCenterCode ?? task.workCenterId),
+  }
+  reportOpen.value = true
 }
 // 可开工 / 执行中的工序才是一线现在能动手报工的；据此把行尾报工入口直接显出来，不必再翻下拉。
 function isReportableStatus(status?: string | null) {
@@ -464,12 +482,7 @@ function formatError(error: unknown) {
       </template>
       <template #cell-actions="{ row }">
         <div class="flex items-center justify-end gap-1">
-          <NvButton
-            v-if="showReportButton(row)"
-            size="sm"
-            type="button"
-            @click="openRoute('/mes/work-orders', row)"
-          >
+          <NvButton v-if="showReportButton(row)" size="sm" type="button" @click="openReport(row)">
             <ClipboardCheckIcon aria-hidden="true" />
             报工
           </NvButton>
@@ -482,7 +495,7 @@ function formatError(error: unknown) {
             <NvDropdownMenuItem
               v-if="!showReportButton(row)"
               :disabled="!canOpenReport(row)"
-              @click="openRoute('/mes/work-orders', row)"
+              @click="openReport(row)"
             >
               <ClipboardCheckIcon aria-hidden="true" />
               {{ canOpenReport(row) ? '报工' : '暂不可报工（缺工单）' }}
@@ -571,6 +584,12 @@ function formatError(error: unknown) {
       </ul>
       <p v-else class="text-sm text-muted-foreground">当前工序没有已发布且已生效的SOP。</p>
     </section>
+
+    <ProductionReportDialog
+      v-model:open="reportOpen"
+      :context="reportContext"
+      @reported="refreshOperationTasks"
+    />
 
     <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
   </BusinessLayout>

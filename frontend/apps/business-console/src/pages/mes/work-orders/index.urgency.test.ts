@@ -37,6 +37,12 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 
 const workOrders = vi.hoisted(() => ({ items: [] as Array<Record<string, unknown>> }))
 vi.mock('@/composables/useBusinessMes', () => ({
+  makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
+  useMesProductionReporting: () => ({
+    recordProductionReport: vi.fn(),
+    recordProductionReportError: ref(undefined),
+    recordProductionReportPending: ref(false),
+  }),
   useMesWorkOrders: () => ({
     createRushWorkOrder: vi.fn(),
     createRushWorkOrderError: ref(undefined),

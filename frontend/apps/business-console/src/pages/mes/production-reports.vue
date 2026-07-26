@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesProductionReportRow } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
+import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import {
   useMesProductionReports,
@@ -40,7 +42,6 @@ import {
 import { ClipboardPenIcon, RefreshCwIcon, Undo2Icon } from '@lucide/vue'
 import { storeToRefs } from 'pinia'
 import { computed, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -50,7 +51,6 @@ definePage({
   },
 })
 
-const router = useRouter()
 const {
   filters,
   productionReports,
@@ -346,14 +346,19 @@ async function submitReverse() {
   }
 }
 
-// 重新报工:取该报工的工单 / 工序作为上下文,预填工单页报工弹窗。冲销行的工单/工序沿用原报工,
-// 故在冲销记录行上「重新报工」即为原工单 / 原工序重新录一单。
+// 重新报工:取该报工的工单 / 工序作为上下文,就地打开同一个报工弹窗(不跳页,上下文不丢)。
+// 冲销行的工单/工序沿用原报工,故在冲销记录行上「重新报工」即为原工单 / 原工序重新录一单。
+const reportOpen = ref(false)
+const reportContext = ref<ProductionReportContext | null>(null)
 function reReport(row: ReportRow) {
   if (!row.workOrderId || !row.operationTaskId) return
-  void router.push({
-    path: '/mes/work-orders',
-    query: { workOrderId: row.workOrderId, operationTaskId: row.operationTaskId },
-  })
+  reportContext.value = {
+    workOrderId: row.workOrderId,
+    workOrderNo: row.workOrderNo,
+    operationTaskId: row.operationTaskId,
+    operationTaskNo: row.operationTaskNo,
+  }
+  reportOpen.value = true
 }
 
 const columns: NvDataTableColumn<ReportRow>[] = [
@@ -822,6 +827,12 @@ async function dismissCandidate(candidateId?: string) {
         当前没有遥测报工候选。
       </p>
     </section>
+
+    <ProductionReportDialog
+      v-model:open="reportOpen"
+      :context="reportContext"
+      @reported="refreshProductionReports"
+    />
 
     <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
   </BusinessLayout>
