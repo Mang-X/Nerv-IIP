@@ -308,7 +308,7 @@ public sealed class WorldBibleSeedService(ApplicationDbContext dbContext)
             }
         }
 
-        // 技能等级/班组归属必须先于成员写入落库，否则同一 SaveChanges 内无法自校验。
+        // 技能目录与班组先落库，再写 58 人的成员/技能绑定：两段分批，避免单次 SaveChanges 过大。
         await dbContext.SaveChangesAsync(cancellationToken);
 
         for (var ordinal = 0; ordinal < WorldBibleSpec.Employees.Count; ordinal++)
