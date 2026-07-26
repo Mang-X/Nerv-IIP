@@ -80,6 +80,26 @@ public sealed class SchedulingSchemaConventionTests
     }
 
     [Fact]
+    public void Scheduling_engine_trace_and_dual_input_columns_are_explicit()
+    {
+        using var fixture = CreateFixture();
+        var plan = fixture.DbContext.Model.FindEntityType(typeof(SchedulePlan))!;
+        var problem = fixture.DbContext.Model.FindEntityType(typeof(ScheduleProblemSnapshot))!;
+
+        AssertProperty(plan, nameof(SchedulePlan.AlgorithmVersion), "algorithm_version", "character varying(64)", false, 64);
+        Assert.DoesNotContain(plan.GetProperties(), property => property.GetColumnName() == "engine_version");
+        AssertProperty(plan, nameof(SchedulePlan.EngineId), "engine_id", "character varying(64)", false, 64);
+        AssertProperty(plan, nameof(SchedulePlan.RuleProviderId), "rule_provider_id", "character varying(96)", false, 96);
+        AssertProperty(plan, nameof(SchedulePlan.RuleProfileId), "rule_profile_id", "character varying(96)", false, 96);
+        AssertProperty(plan, nameof(SchedulePlan.RuleProfileVersion), "rule_profile_version", "character varying(64)", false, 64);
+        AssertProperty(plan, nameof(SchedulePlan.ConstraintSourcesJson), "constraint_sources_json", "jsonb", false, null);
+        AssertProperty(plan, nameof(SchedulePlan.TraceSchemaVersion), "trace_schema_version", "integer", false, null);
+        AssertProperty(plan, nameof(SchedulePlan.ReplayStatus), "replay_status", "character varying(32)", false, 32);
+        AssertProperty(problem, nameof(ScheduleProblemSnapshot.EngineInputJson), "engine_input_json", "jsonb", true, null);
+        AssertProperty(problem, nameof(ScheduleProblemSnapshot.EngineInputFingerprint), "engine_input_fingerprint", "character varying(128)", true, 128);
+    }
+
+    [Fact]
     public void Order_urgency_archive_membership_is_scope_isolated_and_indexed()
     {
         using var fixture = CreateFixture();
@@ -102,6 +122,23 @@ public sealed class SchedulingSchemaConventionTests
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddSchedulingPostgreSqlPersistence("Host=localhost;Database=nerv_iip_schema_conventions;Username=nerv;Password=nerv");
         return new SchemaFixture(services.BuildServiceProvider());
+    }
+
+    private static void AssertProperty(
+        Microsoft.EntityFrameworkCore.Metadata.IEntityType entity,
+        string propertyName,
+        string columnName,
+        string columnType,
+        bool nullable,
+        int? maxLength)
+    {
+        var property = entity.FindProperty(propertyName)
+            ?? throw new Xunit.Sdk.XunitException($"{entity.DisplayName()}.{propertyName} metadata was not found.");
+
+        Assert.Equal(columnName, property.GetColumnName());
+        Assert.Equal(columnType, property.GetColumnType());
+        Assert.Equal(nullable, property.IsNullable);
+        Assert.Equal(maxLength, property.GetMaxLength());
     }
 
     private sealed class SchemaFixture : IDisposable

@@ -48,6 +48,41 @@ public sealed class SchedulingPersistenceTests
     }
 
     [Fact]
+    public async Task Base_problem_and_effective_engine_input_snapshots_round_trip_independently()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(
+                problemId: "problem-dual-input",
+                contractVersion: 1,
+                organizationId: "org-001",
+                environmentId: "env-dev",
+                problemFingerprint: "base-fingerprint",
+                problemJson: """{"problemId":"base"}""",
+                horizonStartUtc: new DateTimeOffset(2026, 7, 27, 0, 0, 0, TimeSpan.Zero),
+                horizonEndUtc: new DateTimeOffset(2026, 7, 28, 0, 0, 0, TimeSpan.Zero),
+                capturedAtUtc: new DateTimeOffset(2026, 7, 26, 23, 0, 0, TimeSpan.Zero),
+                engineInputFingerprint: "effective-fingerprint",
+                engineInputJson: """{"problemId":"effective"}"""));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var persisted = await dbContext.ScheduleProblems.AsNoTracking()
+                .SingleAsync(x => x.ProblemId == "problem-dual-input");
+
+            Assert.Equal("base-fingerprint", persisted.ProblemFingerprint);
+            Assert.Equal("""{"problemId":"base"}""", persisted.ProblemJson);
+            Assert.Equal("effective-fingerprint", persisted.EngineInputFingerprint);
+            Assert.Equal("""{"problemId":"effective"}""", persisted.EngineInputJson);
+        }
+    }
+
+    [Fact]
     public async Task Repository_detail_loading_path_replaces_persisted_child_facts()
     {
         var cancellationToken = CancellationToken.None;
@@ -70,7 +105,13 @@ public sealed class SchedulingPersistenceTests
             var plan = await repository.GetByPlanIdWithDetailsAsync("plan-001", "org-001", "env-dev", cancellationToken);
             Assert.NotNull(plan);
 
-            plan.ReplaceGeneratedPlan(SchedulePlanContractMapper.ToDomainSnapshot(CreateReplacementContract()));
+            plan.ReplaceGeneratedPlan(
+                SchedulePlanContractMapper.ToDomainSnapshot(CreateReplacementContract()),
+                CreateTrace(
+                    engineId: "replacement-engine",
+                    ruleProviderId: "replacement-rules",
+                    ruleProfileId: "replacement-profile",
+                    ruleProfileVersion: "v2"));
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
@@ -99,6 +140,11 @@ public sealed class SchedulingPersistenceTests
             Assert.Single(persisted.UnscheduledOperations);
             Assert.Contains(persisted.UnscheduledOperations, x => x.WorkOrderId == "wo-new" && x.OperationId == "op-unscheduled-new");
             Assert.DoesNotContain(persisted.UnscheduledOperations, x => x.WorkOrderId == "wo-unscheduled-old");
+            Assert.Equal("replacement-engine", persisted.EngineId);
+            Assert.Equal("aps-lite-v1", persisted.AlgorithmVersion);
+            Assert.Equal("replacement-rules", persisted.RuleProviderId);
+            Assert.Equal("replacement-profile", persisted.RuleProfileId);
+            Assert.Equal("v2", persisted.RuleProfileVersion);
         }
     }
 
@@ -113,14 +159,34 @@ public sealed class SchedulingPersistenceTests
 
     private static SchedulePlan CreatePlan()
     {
-        return SchedulePlan.FromGeneratedPlan("org-001", "env-dev", SchedulePlanContractMapper.ToDomainSnapshot(CreateContract(
-            assignmentId: "assign-old",
-            operationId: "op-old",
-            resourceId: "res-old",
-            conflictId: "conflict-old",
-            unscheduledWorkOrderId: "wo-unscheduled-old",
-            unscheduledOperationId: "op-unscheduled-old",
-            assignedMinutes: 60)));
+        return SchedulePlan.FromGeneratedPlan(
+            "org-001",
+            "env-dev",
+            SchedulePlanContractMapper.ToDomainSnapshot(CreateContract(
+                assignmentId: "assign-old",
+                operationId: "op-old",
+                resourceId: "res-old",
+                conflictId: "conflict-old",
+                unscheduledWorkOrderId: "wo-unscheduled-old",
+                unscheduledOperationId: "op-unscheduled-old",
+                assignedMinutes: 60)),
+            CreateTrace("finite-capacity", "built-in", "adr-0014-default", "v1"));
+    }
+
+    private static SchedulePlanExecutionTraceSnapshot CreateTrace(
+        string engineId,
+        string ruleProviderId,
+        string ruleProfileId,
+        string ruleProfileVersion)
+    {
+        return new SchedulePlanExecutionTraceSnapshot(
+            EngineId: engineId,
+            RuleProviderId: ruleProviderId,
+            RuleProfileId: ruleProfileId,
+            RuleProfileVersion: ruleProfileVersion,
+            ConstraintSourcesJson: """{"schemaVersion":1,"sources":[]}""",
+            TraceSchemaVersion: 1,
+            ReplayStatus: SchedulingReplayStatuses.Available);
     }
 
     private static SchedulePlanContract CreateReplacementContract()

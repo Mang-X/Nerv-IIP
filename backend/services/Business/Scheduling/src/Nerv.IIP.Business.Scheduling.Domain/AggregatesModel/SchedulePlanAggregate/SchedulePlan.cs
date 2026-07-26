@@ -127,6 +127,36 @@ public sealed record GeneratedUnscheduledOperationSnapshot(
     ScheduleConflictReasonCode ReasonCode,
     string Message);
 
+public static class SchedulingReplayStatuses
+{
+    public const string Available = "available";
+    public const string LegacyUnavailable = "legacy-unavailable";
+}
+
+public static class SchedulingExecutionTraceSchema
+{
+    public const int CurrentVersion = 1;
+}
+
+public sealed record SchedulePlanExecutionTraceSnapshot(
+    string EngineId,
+    string RuleProviderId,
+    string RuleProfileId,
+    string RuleProfileVersion,
+    string ConstraintSourcesJson,
+    int TraceSchemaVersion,
+    string ReplayStatus)
+{
+    public static SchedulePlanExecutionTraceSnapshot LegacyUnavailable { get; } = new(
+        EngineId: "finite-capacity",
+        RuleProviderId: "built-in",
+        RuleProfileId: "adr-0014-default",
+        RuleProfileVersion: "v1",
+        ConstraintSourcesJson: """{"schemaVersion":1,"status":"legacy-unavailable","sources":[]}""",
+        TraceSchemaVersion: SchedulingExecutionTraceSchema.CurrentVersion,
+        ReplayStatus: SchedulingReplayStatuses.LegacyUnavailable);
+}
+
 public sealed record SchedulePlanInvalidatedSnapshot(
     string PlanId,
     string ProblemId,
@@ -193,7 +223,9 @@ public sealed class ScheduleProblemSnapshot : Entity<ScheduleProblemSnapshotId>
         string problemJson,
         DateTimeOffset horizonStartUtc,
         DateTimeOffset horizonEndUtc,
-        DateTimeOffset capturedAtUtc)
+        DateTimeOffset capturedAtUtc,
+        string? engineInputFingerprint = null,
+        string? engineInputJson = null)
     {
         ProblemId = Required(problemId, nameof(problemId));
         ContractVersion = contractVersion;
@@ -201,6 +233,14 @@ public sealed class ScheduleProblemSnapshot : Entity<ScheduleProblemSnapshotId>
         EnvironmentId = Required(environmentId, nameof(environmentId));
         ProblemFingerprint = Required(problemFingerprint, nameof(problemFingerprint));
         ProblemJson = Required(problemJson, nameof(problemJson));
+        EngineInputFingerprint = Optional(engineInputFingerprint);
+        EngineInputJson = Optional(engineInputJson);
+        if ((EngineInputFingerprint is null) != (EngineInputJson is null))
+        {
+            throw new ArgumentException(
+                "Engine input fingerprint and JSON must either both be provided or both be unavailable.");
+        }
+
         HorizonStartUtc = horizonStartUtc;
         HorizonEndUtc = horizonEndUtc;
         CapturedAtUtc = capturedAtUtc;
@@ -212,6 +252,8 @@ public sealed class ScheduleProblemSnapshot : Entity<ScheduleProblemSnapshotId>
     public string EnvironmentId { get; private set; } = string.Empty;
     public string ProblemFingerprint { get; private set; } = string.Empty;
     public string ProblemJson { get; private set; } = string.Empty;
+    public string? EngineInputFingerprint { get; private set; }
+    public string? EngineInputJson { get; private set; }
     public DateTimeOffset HorizonStartUtc { get; private set; }
     public DateTimeOffset HorizonEndUtc { get; private set; }
     public DateTimeOffset CapturedAtUtc { get; private set; }
@@ -246,7 +288,8 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
     private SchedulePlan(
         string organizationId,
         string environmentId,
-        GeneratedSchedulePlanSnapshot plan)
+        GeneratedSchedulePlanSnapshot plan,
+        SchedulePlanExecutionTraceSnapshot trace)
     {
         if (plan.Status == SchedulePlanInputStatus.Released)
         {
@@ -259,6 +302,7 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         ProblemId = Required(plan.ProblemId, nameof(plan.ProblemId));
         ProblemFingerprint = Required(plan.ProblemFingerprint, nameof(plan.ProblemFingerprint));
         AlgorithmVersion = Required(plan.AlgorithmVersion, nameof(plan.AlgorithmVersion));
+        ApplyExecutionTrace(trace);
         ContractVersion = plan.ContractVersion;
         GeneratedAtUtc = plan.GeneratedAtUtc;
         Status = SchedulePlanLifecycleStatus.Generated;
@@ -298,6 +342,13 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
     public string ProblemId { get; private set; } = string.Empty;
     public string ProblemFingerprint { get; private set; } = string.Empty;
     public string AlgorithmVersion { get; private set; } = string.Empty;
+    public string EngineId { get; private set; } = string.Empty;
+    public string RuleProviderId { get; private set; } = string.Empty;
+    public string RuleProfileId { get; private set; } = string.Empty;
+    public string RuleProfileVersion { get; private set; } = string.Empty;
+    public string ConstraintSourcesJson { get; private set; } = string.Empty;
+    public int TraceSchemaVersion { get; private set; }
+    public string ReplayStatus { get; private set; } = string.Empty;
     public int ContractVersion { get; private set; }
     public SchedulePlanLifecycleStatus Status { get; private set; }
     public DateTimeOffset GeneratedAtUtc { get; private set; }
@@ -327,7 +378,22 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         GeneratedSchedulePlanSnapshot plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        return new SchedulePlan(organizationId, environmentId, plan);
+        return new SchedulePlan(
+            organizationId,
+            environmentId,
+            plan,
+            SchedulePlanExecutionTraceSnapshot.LegacyUnavailable);
+    }
+
+    public static SchedulePlan FromGeneratedPlan(
+        string organizationId,
+        string environmentId,
+        GeneratedSchedulePlanSnapshot plan,
+        SchedulePlanExecutionTraceSnapshot trace)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(trace);
+        return new SchedulePlan(organizationId, environmentId, plan, trace);
     }
 
     public void Release(DateTimeOffset releasedAtUtc, long releaseRevision)
@@ -397,8 +463,25 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
 
     public void ReplaceGeneratedPlan(GeneratedSchedulePlanSnapshot plan)
     {
+        ReplaceGeneratedPlan(
+            plan,
+            new SchedulePlanExecutionTraceSnapshot(
+                EngineId,
+                RuleProviderId,
+                RuleProfileId,
+                RuleProfileVersion,
+                ConstraintSourcesJson,
+                TraceSchemaVersion,
+                ReplayStatus));
+    }
+
+    public void ReplaceGeneratedPlan(
+        GeneratedSchedulePlanSnapshot plan,
+        SchedulePlanExecutionTraceSnapshot trace)
+    {
         EnsureMutable();
         ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(trace);
 
         if (plan.Status == SchedulePlanInputStatus.Released)
         {
@@ -414,6 +497,7 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         ProblemId = Required(plan.ProblemId, nameof(plan.ProblemId));
         ProblemFingerprint = Required(plan.ProblemFingerprint, nameof(plan.ProblemFingerprint));
         AlgorithmVersion = Required(plan.AlgorithmVersion, nameof(plan.AlgorithmVersion));
+        ApplyExecutionTrace(trace);
         ContractVersion = plan.ContractVersion;
         GeneratedAtUtc = plan.GeneratedAtUtc;
         ApplyMetrics(plan.Metrics);
@@ -445,6 +529,24 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         }
 
         this.AddDomainEvent(new SchedulePlanGeneratedDomainEvent(this));
+    }
+
+    private void ApplyExecutionTrace(SchedulePlanExecutionTraceSnapshot trace)
+    {
+        EngineId = Required(trace.EngineId, nameof(trace.EngineId));
+        RuleProviderId = Required(trace.RuleProviderId, nameof(trace.RuleProviderId));
+        RuleProfileId = Required(trace.RuleProfileId, nameof(trace.RuleProfileId));
+        RuleProfileVersion = Required(trace.RuleProfileVersion, nameof(trace.RuleProfileVersion));
+        ConstraintSourcesJson = Required(trace.ConstraintSourcesJson, nameof(trace.ConstraintSourcesJson));
+        if (trace.TraceSchemaVersion <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(trace.TraceSchemaVersion),
+                "Trace schema version must be positive.");
+        }
+
+        TraceSchemaVersion = trace.TraceSchemaVersion;
+        ReplayStatus = Required(trace.ReplayStatus, nameof(trace.ReplayStatus));
     }
 
     private void ApplyMetrics(GeneratedSchedulePlanMetricsSnapshot metrics)

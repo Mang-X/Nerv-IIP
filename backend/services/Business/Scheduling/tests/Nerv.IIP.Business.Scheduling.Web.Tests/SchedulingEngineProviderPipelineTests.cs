@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
@@ -114,6 +115,19 @@ public sealed class SchedulingEngineProviderPipelineTests
             calls);
         Assert.Equal(SchedulePlanStatusContract.Generated, created.Status);
         Assert.Equal(SchedulePlanStatusContract.Preview, previewed.Status);
+        var persistedProblem = dbContext.ScheduleProblems.Local.Single();
+        Assert.NotNull(persistedProblem.EngineInputJson);
+        Assert.NotNull(persistedProblem.EngineInputFingerprint);
+        var persistedPlan = dbContext.SchedulePlans.Local.Single();
+        Assert.Equal("counting-engine", persistedPlan.EngineId);
+        Assert.Equal("test-v1", persistedPlan.AlgorithmVersion);
+        Assert.Equal("counting-rule-provider", persistedPlan.RuleProviderId);
+        Assert.Equal("counting-profile", persistedPlan.RuleProfileId);
+        Assert.Equal("test-v1", persistedPlan.RuleProfileVersion);
+        Assert.Equal(
+            """{"schemaVersion":1,"sources":[{"sourceId":"constraint-a","sourceVersion":"v1","outcome":"applied","factCount":1,"factsFingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","reasonCodes":["reason-a","reason-b"]},{"sourceId":"constraint-z","sourceVersion":"v2","outcome":"noData","factCount":0,"factsFingerprint":"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz","reasonCodes":[]}]}""",
+            persistedPlan.ConstraintSourcesJson);
+        Assert.Equal(SchedulingReplayStatuses.Available, persistedPlan.ReplayStatus);
     }
 
     [Fact]
@@ -711,7 +725,25 @@ public sealed class SchedulingEngineProviderPipelineTests
         {
             CallCount++;
             calls.Add($"constraint:{problem.ProblemId}");
-            return Task.FromResult(new SchedulingConstraintProviderResult(problem, problem, []));
+            return Task.FromResult(new SchedulingConstraintProviderResult(
+                problem,
+                problem,
+                [
+                    new SchedulingProviderSummary(
+                        "constraint-z",
+                        "v2",
+                        SchedulingProviderOutcome.NoData,
+                        0,
+                        new string('z', 64),
+                        []),
+                    new SchedulingProviderSummary(
+                        "constraint-a",
+                        "v1",
+                        SchedulingProviderOutcome.Applied,
+                        1,
+                        new string('a', 64),
+                        ["reason-b", "reason-a"]),
+                ]));
         }
     }
 

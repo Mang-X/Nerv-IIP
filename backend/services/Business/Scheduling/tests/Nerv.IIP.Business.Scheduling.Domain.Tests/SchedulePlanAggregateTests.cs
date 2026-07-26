@@ -25,10 +25,42 @@ public sealed class SchedulePlanAggregateTests
         Assert.Equal("problem-001", plan.ProblemId);
         Assert.Equal("fingerprint-001", plan.ProblemFingerprint);
         Assert.Equal("aps-lite-v1", plan.AlgorithmVersion);
+        Assert.Equal("finite-capacity", plan.EngineId);
+        Assert.Equal("built-in", plan.RuleProviderId);
+        Assert.Equal("adr-0014-default", plan.RuleProfileId);
+        Assert.Equal("v1", plan.RuleProfileVersion);
+        Assert.Equal(1, plan.TraceSchemaVersion);
+        Assert.Equal(SchedulingReplayStatuses.Available, plan.ReplayStatus);
         Assert.Equal(1, plan.ContractVersion);
         Assert.Equal(SchedulePlanLifecycleStatus.Generated, plan.Status);
         Assert.Contains(plan.GetDomainEvents(), x => x is SchedulePlanGeneratedDomainEvent);
         Assert.Contains(plan.GetDomainEvents(), x => x is ScheduleConflictDetectedDomainEvent);
+    }
+
+    [Theory]
+    [InlineData("", "built-in", "adr-0014-default", "v1")]
+    [InlineData("finite-capacity", "", "adr-0014-default", "v1")]
+    [InlineData("finite-capacity", "built-in", "", "v1")]
+    [InlineData("finite-capacity", "built-in", "adr-0014-default", "")]
+    public void Generated_plan_requires_stable_engine_and_rule_trace_identifiers(
+        string engineId,
+        string ruleProviderId,
+        string ruleProfileId,
+        string ruleProfileVersion)
+    {
+        var trace = CreateTrace() with
+        {
+            EngineId = engineId,
+            RuleProviderId = ruleProviderId,
+            RuleProfileId = ruleProfileId,
+            RuleProfileVersion = ruleProfileVersion,
+        };
+
+        Assert.Throws<ArgumentException>(() => SchedulePlan.FromGeneratedPlan(
+            "org-001",
+            "env-dev",
+            CreateContract("plan-001", "fingerprint-001"),
+            trace));
     }
 
     [Fact]
@@ -145,8 +177,16 @@ public sealed class SchedulePlanAggregateTests
                     Message: "material unavailable")
             ]
         };
+        var replacementTrace = new SchedulePlanExecutionTraceSnapshot(
+            EngineId: "solver-adapter",
+            RuleProviderId: "plant-rules",
+            RuleProfileId: "weekday-profile",
+            RuleProfileVersion: "v7",
+            ConstraintSourcesJson: """{"schemaVersion":1,"sources":[]}""",
+            TraceSchemaVersion: 1,
+            ReplayStatus: SchedulingReplayStatuses.Available);
 
-        plan.ReplaceGeneratedPlan(replacement);
+        plan.ReplaceGeneratedPlan(replacement, replacementTrace);
 
         Assert.DoesNotContain(plan.Assignments, x => x.AssignmentId == "assign-001");
         Assert.Contains(plan.Assignments, x => x.AssignmentId == "assign-002" && x.OperationId == "op-002");
@@ -156,6 +196,12 @@ public sealed class SchedulePlanAggregateTests
         Assert.Contains(plan.Conflicts, x => x.ConflictPublicId == "conflict-002" && x.ReasonCode == ScheduleConflictReasonCode.Material);
         Assert.DoesNotContain(plan.UnscheduledOperations, x => x.WorkOrderId == "wo-002");
         Assert.Contains(plan.UnscheduledOperations, x => x.WorkOrderId == "wo-003" && x.OperationId == "op-030");
+        Assert.Equal("solver-adapter", plan.EngineId);
+        Assert.Equal("aps-lite-v1", plan.AlgorithmVersion);
+        Assert.Equal("plant-rules", plan.RuleProviderId);
+        Assert.Equal("weekday-profile", plan.RuleProfileId);
+        Assert.Equal("v7", plan.RuleProfileVersion);
+        Assert.Equal("""{"schemaVersion":1,"sources":[]}""", plan.ConstraintSourcesJson);
         Assert.Contains(plan.GetDomainEvents(), x => x is SchedulePlanGeneratedDomainEvent);
         Assert.Contains(plan.GetDomainEvents(), x => x is ScheduleConflictDetectedDomainEvent);
     }
@@ -187,7 +233,20 @@ public sealed class SchedulePlanAggregateTests
         return SchedulePlan.FromGeneratedPlan(
             organizationId: "org-001",
             environmentId: "env-dev",
-            plan: CreateContract("plan-001", "fingerprint-001"));
+            plan: CreateContract("plan-001", "fingerprint-001"),
+            trace: CreateTrace());
+    }
+
+    private static SchedulePlanExecutionTraceSnapshot CreateTrace()
+    {
+        return new SchedulePlanExecutionTraceSnapshot(
+            EngineId: "finite-capacity",
+            RuleProviderId: "built-in",
+            RuleProfileId: "adr-0014-default",
+            RuleProfileVersion: "v1",
+            ConstraintSourcesJson: """{"schemaVersion":1,"sources":[]}""",
+            TraceSchemaVersion: 1,
+            ReplayStatus: SchedulingReplayStatuses.Available);
     }
 
     private static GeneratedSchedulePlanSnapshot CreateContract(string planId, string fingerprint)
