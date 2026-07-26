@@ -92,6 +92,7 @@ try
     builder.Services.AddProductEngineeringPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<LeaderDemoScaleSeedService>();
+    builder.Services.AddScoped<WorldBibleSeedService>();
     builder.Services.AddScoped<ProductEngineeringCodingService>();
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddSingleton<IProductEngineeringBusinessDateProvider, ConfigurationProductEngineeringBusinessDateProvider>();
@@ -168,6 +169,10 @@ try
             organizationId,
             environmentId,
             builder.Configuration.GetValue("LeaderDemo:Scale:OrderCount", 0));
+        if (builder.Configuration.GetValue("LeaderDemo:World:Enabled", false))
+        {
+            await scope.ServiceProvider.GetRequiredService<WorldBibleSeedService>().SeedAsync(organizationId, environmentId);
+        }
     }
 
     app.UseNervIipRequestLocalization();

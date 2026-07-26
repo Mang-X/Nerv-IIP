@@ -8,4 +8,7 @@ public sealed record UserResponse(
     DateTimeOffset? AccountExpiresAtUtc,
     bool PasswordChangeRequired,
     DateTimeOffset? PasswordExpiresAtUtc,
-    DateTimeOffset? LockoutUntilUtc);
+    DateTimeOffset? LockoutUntilUtc,
+    string? DisplayName = null,
+    string? EmployeeNo = null,
+    string? DepartmentName = null);

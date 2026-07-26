@@ -84,10 +84,10 @@ public sealed class ListWorkerDirectoryEndpoint(IMediator mediator)
         var status = user.Enabled ? "active" : "disabled";
         return new WorkerDirectoryUserResponse(
             user.UserId,
-            // TODO: Replace this fallback once IAM stores worker profile display names and employee numbers.
-            user.LoginName,
-            null,
-            null,
+            // 工人档案缺失时回落到登录名，绝不编造姓名。
+            string.IsNullOrWhiteSpace(user.DisplayName) ? user.LoginName : user.DisplayName,
+            user.EmployeeNo,
+            user.DepartmentName,
             status,
             user.Email);
     }
