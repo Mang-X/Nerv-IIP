@@ -49,7 +49,10 @@ public sealed record BusinessConsoleResourceItem(
     string? ParentDeviceId = null,
     DateOnly? RetiredOn = null,
     decimal? CreditLimit = null,
-    string? CreditCurrencyCode = null);
+    string? CreditCurrencyCode = null,
+    string? JobTitle = null,
+    string? EmploymentStatus = null,
+    string? Phone = null);
 
 public sealed record BusinessConsoleResourceListResponse(
     IReadOnlyCollection<BusinessConsoleResourceItem> Resources,
@@ -211,6 +214,12 @@ public sealed record BusinessConsoleWorkerDirectoryRequest(
     string OrganizationId,
     string EnvironmentId,
     string? Keyword = null,
+    string? UserId = null,
+    string? DepartmentCode = null,
+    string? TeamCode = null,
+    string? WorkCenterCode = null,
+    string? SkillCode = null,
+    string? EmploymentStatus = null,
     int PageIndex = 1,
     int PageSize = 20,
     bool IncludeDisabled = false);
@@ -221,13 +230,42 @@ public sealed record BusinessConsoleWorkerDirectoryResponse(
     int TotalCount,
     IReadOnlyList<BusinessConsoleWorkerDirectoryItem> Items);
 
+public sealed record BusinessConsoleWorkerTeamItem(
+    string TeamCode,
+    string TeamName,
+    bool IsLeader,
+    string? WorkCenterCode);
+
+public sealed record BusinessConsoleWorkerSkillItem(
+    string SkillCode,
+    string SkillName,
+    string Level);
+
 public sealed record BusinessConsoleWorkerDirectoryItem(
     string UserId,
+    string EmployeeNo,
     string DisplayName,
-    string? EmployeeNo,
-    string? Department,
-    string Status,
-    string? Email);
+    string? DepartmentCode,
+    string? DepartmentName,
+    string? JobTitle,
+    string EmploymentStatus,
+    string? Phone,
+    bool Active,
+    IReadOnlyCollection<BusinessConsoleWorkerTeamItem> Teams,
+    IReadOnlyCollection<BusinessConsoleWorkerSkillItem> Skills,
+    string SnapshotVersion);
+
+public sealed record BusinessConsoleCreateWorkerRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Code,
+    string Name,
+    string? UserId,
+    string? DepartmentCode,
+    string? JobTitle,
+    string? EmploymentStatus,
+    string? Phone,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateSkuRequest(
     string OrganizationId,
@@ -430,6 +468,7 @@ public sealed record BusinessConsoleCreateTeamRequest(
     string Name,
     string DepartmentCode,
     string ShiftCode,
+    string? WorkCenterCode = null,
     string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateDepartmentRequest(
@@ -593,7 +632,10 @@ public sealed record BusinessConsoleUpdateMasterDataResourceRequest(
     DateOnly? EffectiveFrom = null,
     decimal? CreditLimit = null,
     string? CreditCurrencyCode = null,
-    bool ClearCreditLimit = false);
+    bool ClearCreditLimit = false,
+    string? JobTitle = null,
+    string? EmploymentStatus = null,
+    string? Phone = null);
 
 public sealed record BusinessConsoleSetMasterDataResourceEnabledRequest(
     string OrganizationId,
@@ -685,7 +727,10 @@ public sealed record BusinessConsoleMasterDataResourceDetail(
     string? SkillCode = null,
     string? SkillLevel = null,
     decimal? CreditLimit = null,
-    string? CreditCurrencyCode = null);
+    string? CreditCurrencyCode = null,
+    string? JobTitle = null,
+    string? EmploymentStatus = null,
+    string? Phone = null);
 
 public sealed record BusinessConsolePersonnelSkillMatrixRequest(
     string OrganizationId,
@@ -3852,6 +3897,7 @@ public sealed record BusinessConsoleMesDispatchTaskRow(
     string? DeviceAssetId,
     string? ShiftId,
     string? AssignedUserId,
+    string? AssignedUserName,
     DateTimeOffset? PlannedStartUtc,
     IReadOnlyCollection<string> BlockingReasons,
     string? WorkOrderNo = null,
@@ -3863,6 +3909,19 @@ public sealed record BusinessConsoleMesDispatchTaskRow(
     string? OperationCode = null,
     DateTimeOffset? ScheduledAtUtc = null,
     string? ScheduleInvalidationReasonCode = null);
+
+/// <summary>
+/// Payload forwarded to the MES service. The assignee display name is resolved by the gateway from
+/// MasterData rather than trusted from the caller, so the dispatch record keeps a verified snapshot.
+/// </summary>
+public sealed record BusinessConsoleMesAssignDispatchTaskForwardRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? AssignedUserId,
+    string? AssignedUserName,
+    string? DeviceAssetId,
+    string? ShiftId,
+    string IdempotencyKey);
 
 public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     [property: RouteParam] string OperationTaskId,
@@ -3886,6 +3945,7 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     string? DeviceAssetId,
     string? ShiftId,
     string? AssignedUserId,
+    string? AssignedUserName,
     DateTimeOffset? PlannedStartUtc,
     DateTimeOffset? StartedAtUtc,
     string QualityStatus,

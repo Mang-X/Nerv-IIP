@@ -4,6 +4,8 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
 
@@ -44,6 +46,38 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
                  workCenter.PlantCode != "SITE-001" || workCenter.LineCode != "LINE-DEMO-01" || workCenter.Disabled)
         {
             throw Collision("WC-CNC-DEMO");
+        }
+
+        // The CNC work center needs a staffing team so MES dispatch can offer work-center scoped
+        // candidates; without the team binding the dispatch picker has nothing to narrow down to.
+        var cncTeam = await dbContext.Teams.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == "TEAM-CNC-DEMO", cancellationToken);
+        if (cncTeam is null)
+        {
+            dbContext.Teams.Add(Team.Create(organizationId, environmentId, "TEAM-CNC-DEMO", "CNC 精加工班组", "DEPT-PROD", "DAY", "WC-CNC-DEMO"));
+        }
+        else if (cncTeam.WorkCenterCode is null)
+        {
+            cncTeam.Update(cncTeam.Name, cncTeam.DepartmentCode, cncTeam.ShiftCode, "WC-CNC-DEMO");
+        }
+
+        foreach (var (userId, isLeader) in new[] { ("user-op-003", true), ("user-op-001", false) })
+        {
+            if (!await dbContext.TeamMembers.AnyAsync(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.TeamCode == "TEAM-CNC-DEMO" &&
+                    x.UserId == userId,
+                    cancellationToken))
+            {
+                dbContext.TeamMembers.Add(TeamMember.Assign(
+                    organizationId,
+                    environmentId,
+                    "TEAM-CNC-DEMO",
+                    userId,
+                    isLeader,
+                    new DateOnly(2026, 1, 1),
+                    null));
+            }
         }
 
         await SeedSkuAsync(organizationId, environmentId, "SKU-DEMO-001", "汽车减振器总成", "finished-goods", cancellationToken);

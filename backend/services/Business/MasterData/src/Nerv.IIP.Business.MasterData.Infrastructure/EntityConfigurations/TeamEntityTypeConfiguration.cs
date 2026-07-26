@@ -16,6 +16,7 @@ public sealed class TeamEntityTypeConfiguration : IEntityTypeConfiguration<Team>
         builder.Property(x => x.Name).HasColumnName("name").IsRequired().HasMaxLength(200).HasComment("Team display name.");
         builder.Property(x => x.DepartmentCode).HasColumnName("department_code").IsRequired().HasMaxLength(100).HasComment("Department code that owns the team.");
         builder.Property(x => x.ShiftCode).HasColumnName("shift_code").IsRequired().HasMaxLength(100).HasComment("Shift code normally staffed by the team.");
+        builder.Property(x => x.WorkCenterCode).HasColumnName("work_center_code").HasMaxLength(100).HasComment("Optional work center code the team staffs; drives MES dispatch candidate filtering.");
         builder.Property(x => x.Disabled).HasColumnName("disabled").IsRequired().HasComment("Disabled flag that hides the team from active use.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the team was created.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the team was last updated.");

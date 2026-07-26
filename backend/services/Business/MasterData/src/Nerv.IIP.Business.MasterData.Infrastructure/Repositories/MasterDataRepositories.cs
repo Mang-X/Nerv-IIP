@@ -17,6 +17,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkerAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using NetCorePal.Extensions.Repository;
 using NetCorePal.Extensions.Repository.EntityFrameworkCore;
@@ -189,6 +190,40 @@ public sealed class TeamMemberRepository(ApplicationDbContext context)
             x.TeamCode == teamCode &&
             x.UserId == userId &&
             !x.Disabled,
+            cancellationToken);
+    }
+}
+
+public interface IWorkerRepository : IRepository<Worker, WorkerId>
+{
+    Task<bool> ExistsAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default);
+
+    Task<bool> UserIdTakenAsync(string organizationId, string environmentId, string userId, CancellationToken cancellationToken = default);
+
+    Task<Worker?> FindByUserIdAsync(string organizationId, string environmentId, string userId, CancellationToken cancellationToken = default);
+}
+
+public sealed class WorkerRepository(ApplicationDbContext context)
+    : RepositoryBase<Worker, WorkerId, ApplicationDbContext>(context), IWorkerRepository
+{
+    public async Task<bool> ExistsAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.Workers.AnyAsync(
+            x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == code,
+            cancellationToken);
+    }
+
+    public async Task<bool> UserIdTakenAsync(string organizationId, string environmentId, string userId, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.Workers.AnyAsync(
+            x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.UserId == userId,
+            cancellationToken);
+    }
+
+    public async Task<Worker?> FindByUserIdAsync(string organizationId, string environmentId, string userId, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.Workers.FirstOrDefaultAsync(
+            x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.UserId == userId,
             cancellationToken);
     }
 }

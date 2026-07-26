@@ -279,4 +279,27 @@ describe('business master data composables', () => {
     })
     expect(workers.value).toEqual([])
   })
+
+  // 派工候选靠工作中心收敛：filters 必须原样进入查询，否则弹窗会把全厂人都列出来。
+  it('passes work-center, team, skill and duty filters to the worker directory query', () => {
+    useBusinessWorkers({
+      employmentStatus: 'active',
+      workCenterCode: 'WC-CNC',
+      teamCode: 'TEAM-CNC',
+      skillCode: 'cnc-operation',
+    })
+
+    expect(listBusinessConsoleWorkersQueryOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        teamCode: 'TEAM-CNC',
+        workCenterCode: 'WC-CNC',
+        skillCode: 'cnc-operation',
+        employmentStatus: 'active',
+        pageIndex: 1,
+        pageSize: 100,
+      },
+    })
+  })
 })

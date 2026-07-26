@@ -58,12 +58,15 @@ const departments = useMasterDataResource<BusinessConsoleCreateDepartmentRequest
 const teams = useMasterDataResource<BusinessConsoleCreateTeamRequest>('team')
 // 班组挂靠班次：新建班组要选班次，取班次列表填下拉（只读引用，不在本页维护班次）。
 const shifts = useMasterDataResource('shift')
+// 班组绑定的工作中心决定 MES 派工时该工作中心能选到哪些人，属于班组自身属性。
+const workCenters = useMasterDataResource('work-center')
 const deptActions = useMasterDataResourceActions('department')
 const teamActions = useMasterDataResourceActions('team')
 
 departments.filters.take = TREE_TAKE
 teams.filters.take = TREE_TAKE
 shifts.filters.take = TREE_TAKE
+workCenters.filters.take = TREE_TAKE
 
 function isNonEmpty(value: string) {
   return value.trim().length > 0
@@ -72,6 +75,7 @@ function refreshAll() {
   void departments.refresh()
   void teams.refresh()
   void shifts.refresh()
+  void workCenters.refresh()
 }
 
 // ================= 部门多层树（按 parentDepartmentCode 前端拼） =================
@@ -426,7 +430,13 @@ const teamEditingCode = shallowRef<string | null>(null)
 const teamEditLoading = shallowRef(false)
 // departmentLocked：从选中部门「在此部门下新建班组」时带入且只读。
 const teamDepartmentLocked = ref(false)
-const teamForm = reactive({ code: '', name: '', departmentCode: '', shiftCode: '' })
+const teamForm = reactive({
+  code: '',
+  name: '',
+  departmentCode: '',
+  shiftCode: '',
+  workCenterCode: '',
+})
 const canCreateTeam = computed(() =>
   [teamForm.name, teamForm.departmentCode, teamForm.shiftCode].every(isNonEmpty),
 )
@@ -440,7 +450,13 @@ watch(teamOpen, (open) => {
   if (open) teamShowErrors.value = false
 })
 function resetTeamForm() {
-  Object.assign(teamForm, { code: '', name: '', departmentCode: '', shiftCode: '' })
+  Object.assign(teamForm, {
+    code: '',
+    name: '',
+    departmentCode: '',
+    shiftCode: '',
+    workCenterCode: '',
+  })
   teamDepartmentLocked.value = false
 }
 function openCreateTeam(departmentCode?: string) {
@@ -474,11 +490,13 @@ async function openEditTeam(row: BusinessConsoleResourceItem) {
   teamForm.name = row.displayName ?? ''
   teamForm.departmentCode = row.departmentCode ?? ''
   teamForm.shiftCode = row.shiftCode ?? ''
+  teamForm.workCenterCode = row.workCenterCode ?? ''
   try {
     const d = await teamActions.fetchDetail(row.code)
     teamForm.name = d?.name ?? row.displayName ?? ''
     teamForm.departmentCode = (d?.departmentCode as string | undefined) ?? row.departmentCode ?? ''
     teamForm.shiftCode = (d?.shiftCode as string | undefined) ?? row.shiftCode ?? ''
+    teamForm.workCenterCode = (d?.workCenterCode as string | undefined) ?? row.workCenterCode ?? ''
   } finally {
     teamEditLoading.value = false
   }
@@ -495,6 +513,7 @@ async function submitTeam() {
         name: teamForm.name.trim(),
         departmentCode: teamForm.departmentCode.trim(),
         shiftCode: teamForm.shiftCode.trim(),
+        workCenterCode: teamForm.workCenterCode.trim() || null,
       })
       notifySuccess(`班组「${teamForm.name.trim()}」已更新。`)
       resetTeamForm()
@@ -517,6 +536,7 @@ async function submitTeam() {
       name: teamForm.name.trim(),
       departmentCode: teamForm.departmentCode.trim(),
       shiftCode: teamForm.shiftCode.trim(),
+      workCenterCode: teamForm.workCenterCode.trim() || null,
     })
     notifySuccess(`班组「${teamForm.name.trim()}」已创建。`)
     resetTeamForm()
@@ -985,6 +1005,24 @@ function openMembers(row: BusinessConsoleResourceItem) {
                   </NvSelectItem>
                 </NvSelectContent>
               </NvSelect>
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="team-work-center">承担工作中心</NvFieldLabel>
+              <NvSelect v-model="teamForm.workCenterCode">
+                <NvSelectTrigger id="team-work-center"
+                  ><NvSelectValue placeholder="请选择工作中心"
+                /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem
+                    v-for="w in workCenters.items.value"
+                    :key="w.code"
+                    :value="w.code ?? NONE_PARENT"
+                  >
+                    {{ w.displayName ?? w.code }}
+                  </NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+              <NvFieldDescription>绑定后，该工作中心的派工可直接从本班组选人。</NvFieldDescription>
             </NvField>
           </NvFieldGroup>
           <NvDialogFooter>

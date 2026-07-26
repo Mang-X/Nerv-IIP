@@ -14,6 +14,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkerAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
@@ -126,6 +127,9 @@ public sealed record UpdateMasterDataResourceCommand(
     int? BreakMinutes = null,
     decimal? CreditLimit = null,
     string? CreditCurrencyCode = null,
+    string? JobTitle = null,
+    string? EmploymentStatus = null,
+    string? Phone = null,
     bool ClearCreditLimit = false) : ICommand<MasterDataResourceDetail>;
 
 public sealed record SetMasterDataResourceEnabledCommand(
@@ -299,8 +303,18 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                 team.Update(
                     request.Name ?? team.Name,
                     request.DepartmentCode ?? team.DepartmentCode,
-                    request.ShiftCode ?? team.ShiftCode);
+                    request.ShiftCode ?? team.ShiftCode,
+                    request.WorkCenterCode ?? team.WorkCenterCode);
                 return Detail(team);
+            case "worker":
+                var worker = await FindWorkerAsync(request, cancellationToken);
+                worker.Update(
+                    request.Name ?? worker.Name,
+                    request.DepartmentCode ?? worker.DepartmentCode,
+                    request.JobTitle ?? worker.JobTitle,
+                    request.EmploymentStatus ?? worker.EmploymentStatus,
+                    request.Phone ?? worker.Phone);
+                return Detail(worker);
             case "shift":
                 var shift = await FindShiftAsync(request, cancellationToken);
                 shift.Update(
@@ -434,6 +448,10 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
 
     private async Task<Team> FindTeamAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
         await dbContext.Teams.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        ?? throw NotFound(request.ResourceType, request.Code);
+
+    private async Task<Worker> FindWorkerAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
+        await dbContext.Workers.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
         ?? throw NotFound(request.ResourceType, request.Code);
 
     private async Task<Shift> FindShiftAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
@@ -588,7 +606,10 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
         new("department", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, ParentDepartmentCode: x.ParentDepartmentCode, Status: x.Disabled ? "disabled" : "active");
 
     internal static MasterDataResourceDetail Detail(Team x) =>
-        new("team", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, DepartmentCode: x.DepartmentCode, ShiftCode: x.ShiftCode, Status: x.Disabled ? "disabled" : "active");
+        new("team", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, DepartmentCode: x.DepartmentCode, ShiftCode: x.ShiftCode, WorkCenterCode: x.WorkCenterCode, Status: x.Disabled ? "disabled" : "active");
+
+    internal static MasterDataResourceDetail Detail(Worker x) =>
+        new("worker", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, DepartmentCode: x.DepartmentCode, UserId: x.UserId, JobTitle: x.JobTitle, EmploymentStatus: x.EmploymentStatus, Phone: x.Phone, Status: x.Disabled ? "disabled" : "active");
 
     internal static MasterDataResourceDetail Detail(Shift x) =>
         new("shift", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, StartsAt: x.StartsAt, EndsAt: x.EndsAt, PaidMinutes: x.PaidMinutes, Status: x.Disabled ? "disabled" : "active", BreakMinutes: x.BreakMinutes);
@@ -736,6 +757,13 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
                 if (request.Enabled) department.Enable(reason); else department.Disable(reason);
                 AddAudit(request, type, department.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(department);
+            case "worker":
+                var worker = await FindAsync(dbContext.Workers, request, cancellationToken);
+                if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(worker);
+                if (worker.Disabled == !request.Enabled) { AddAudit(request, type, worker.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(worker); }
+                if (request.Enabled) worker.Enable(reason); else worker.Disable(reason);
+                AddAudit(request, type, worker.Id.ToString(), resourceIdentity, reason);
+                return UpdateMasterDataResourceCommandHandler.Detail(worker);
             case "team":
                 var team = await FindAsync(dbContext.Teams, request, cancellationToken);
                 if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(team);

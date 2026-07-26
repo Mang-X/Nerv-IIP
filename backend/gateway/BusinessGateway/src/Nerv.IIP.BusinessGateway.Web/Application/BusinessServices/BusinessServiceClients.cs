@@ -120,6 +120,16 @@ public interface IBusinessMasterDataClient
         BusinessConsoleCreateWorkshopRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleResourceItem> CreateWorkerAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateWorkerRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleWorkerDirectoryResponse> ListWorkersAsync(
+        string internalBearerToken,
+        BusinessConsoleWorkerDirectoryRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleResourceItem> CreateSiteAsync(
         string internalBearerToken,
         BusinessConsoleCreateSiteRequest request,
@@ -208,14 +218,6 @@ public interface IBusinessMasterDataClient
     Task<BusinessConsoleCodeRulePreviewResponse> PreviewCodeRuleAsync(
         string internalBearerToken,
         BusinessConsolePreviewCodeRuleRequest request,
-        CancellationToken cancellationToken);
-}
-
-public interface IBusinessIamDirectoryClient
-{
-    Task<BusinessConsoleWorkerDirectoryResponse> ListWorkersAsync(
-        string internalBearerToken,
-        BusinessConsoleWorkerDirectoryRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -1453,7 +1455,7 @@ public interface IBusinessMesClient
     Task<BusinessConsoleAcceptedResponse> AssignDispatchTaskAsync(
         string internalBearerToken,
         string operationTaskId,
-        BusinessConsoleMesAssignDispatchTaskRequest request,
+        BusinessConsoleMesAssignDispatchTaskForwardRequest request,
         string actor,
         CancellationToken cancellationToken);
 
@@ -2281,6 +2283,35 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         CancellationToken cancellationToken) =>
         CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/workshops", request, cancellationToken);
 
+    public Task<BusinessConsoleResourceItem> CreateWorkerAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateWorkerRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/workers", request, cancellationToken);
+
+    public Task<BusinessConsoleWorkerDirectoryResponse> ListWorkersAsync(
+        string internalBearerToken,
+        BusinessConsoleWorkerDirectoryRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleWorkerDirectoryResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/master-data/workers?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("keyword", request.Keyword),
+                ("userId", request.UserId),
+                ("departmentCode", request.DepartmentCode),
+                ("teamCode", request.TeamCode),
+                ("workCenterCode", request.WorkCenterCode),
+                ("skillCode", request.SkillCode),
+                ("employmentStatus", request.EmploymentStatus),
+                ("includeDisabled", request.IncludeDisabled),
+                ("pageIndex", request.PageIndex),
+                ("pageSize", request.PageSize)),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleResourceItem> CreateSiteAsync(
         string internalBearerToken,
         BusinessConsoleCreateSiteRequest request,
@@ -2464,25 +2495,6 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
 
     private static string ContextQuery(string organizationId, string environmentId) =>
         Query(("organizationId", organizationId), ("environmentId", environmentId));
-}
-
-public sealed class HttpBusinessIamDirectoryClient(HttpClient httpClient)
-    : BusinessServiceHttpClient(httpClient), IBusinessIamDirectoryClient
-{
-    public Task<BusinessConsoleWorkerDirectoryResponse> ListWorkersAsync(
-        string internalBearerToken,
-        BusinessConsoleWorkerDirectoryRequest request,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleWorkerDirectoryResponse>(
-            internalBearerToken,
-            HttpMethod.Get,
-            "/internal/iam/v1/workers?" + Query(
-                ("filterSearch", request.Keyword),
-                ("pageIndex", request.PageIndex),
-                ("pageSize", request.PageSize),
-                ("filterEnabled", request.IncludeDisabled ? null : true)),
-            null,
-            cancellationToken);
 }
 
 public sealed class BusinessGatewayInventoryForwardedPermissionOptions
@@ -6999,7 +7011,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
     public Task<BusinessConsoleAcceptedResponse> AssignDispatchTaskAsync(
         string internalBearerToken,
         string operationTaskId,
-        BusinessConsoleMesAssignDispatchTaskRequest request,
+        BusinessConsoleMesAssignDispatchTaskForwardRequest request,
         string actor,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleAcceptedResponse>(

@@ -282,6 +282,9 @@ public sealed record UpdateMasterDataResourceRequest(
     int? BreakMinutes = null,
     decimal? CreditLimit = null,
     string? CreditCurrencyCode = null,
+    string? JobTitle = null,
+    string? EmploymentStatus = null,
+    string? Phone = null,
     bool ClearCreditLimit = false);
 
 public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
@@ -401,6 +404,9 @@ public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
                 req.BreakMinutes,
                 req.CreditLimit,
                 req.CreditCurrencyCode,
+                req.JobTitle,
+                req.EmploymentStatus,
+                req.Phone,
                 req.ClearCreditLimit),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
@@ -689,6 +695,7 @@ public sealed record CreateTeamRequest(
     string Name,
     string DepartmentCode,
     string ShiftCode,
+    string? WorkCenterCode = null,
     string? IdempotencyKey = null);
 
 public sealed record AssignPersonnelSkillRequest(
@@ -789,6 +796,7 @@ public sealed class CreateTeamEndpoint(ISender sender)
             req.Name,
             req.DepartmentCode,
             req.ShiftCode,
+            req.WorkCenterCode,
             req.IdempotencyKey), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
@@ -1081,6 +1089,86 @@ public sealed class RemoveTeamMemberEndpoint(ISender sender)
             req.UserId,
             req.Reason), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed record CreateWorkerRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Code,
+    string Name,
+    string? UserId,
+    string? DepartmentCode,
+    string? JobTitle,
+    string? EmploymentStatus,
+    string? Phone,
+    string? IdempotencyKey = null);
+
+public sealed record ListWorkerDirectoryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    string? UserId = null,
+    string? DepartmentCode = null,
+    string? TeamCode = null,
+    string? WorkCenterCode = null,
+    string? SkillCode = null,
+    string? EmploymentStatus = null,
+    bool IncludeDisabled = false,
+    int PageIndex = 1,
+    int PageSize = 50);
+
+public sealed class CreateWorkerEndpoint(ISender sender)
+    : MasterDataEndpoint<CreateWorkerRequest, ResponseData<MasterDataResourceResponse>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<CreateWorkerEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(CreateWorkerRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new CreateWorkerCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Code,
+            req.Name,
+            req.UserId,
+            req.DepartmentCode,
+            req.JobTitle,
+            req.EmploymentStatus,
+            req.Phone,
+            req.IdempotencyKey), ct);
+        await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListWorkerDirectoryEndpoint(ISender sender)
+    : MasterDataEndpoint<ListWorkerDirectoryRequest, ResponseData<ListWorkerDirectoryResponse>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<ListWorkerDirectoryEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(ListWorkerDirectoryRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListWorkerDirectoryQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Keyword,
+            req.UserId,
+            req.DepartmentCode,
+            req.TeamCode,
+            req.WorkCenterCode,
+            req.SkillCode,
+            req.EmploymentStatus,
+            req.IncludeDisabled,
+            req.PageIndex,
+            req.PageSize), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -1648,6 +1736,8 @@ public static class MasterDataEndpointContracts
         new(typeof(CreateTeamEndpoint), "POST", "/api/business/v1/master-data/teams", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataTeam"),
         new(typeof(CreateWorkshopEndpoint), "POST", "/api/business/v1/master-data/workshops", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataWorkshop"),
         new(typeof(AddTeamMemberEndpoint), "POST", "/api/business/v1/master-data/teams/{teamCode}/members", BusinessPermissionCodes.MasterDataResourcesManage, "addBusinessMasterDataTeamMember"),
+        new(typeof(CreateWorkerEndpoint), "POST", "/api/business/v1/master-data/workers", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataWorker"),
+        new(typeof(ListWorkerDirectoryEndpoint), "GET", "/api/business/v1/master-data/workers", BusinessPermissionCodes.MasterDataResourcesRead, "listBusinessMasterDataWorkers"),
         new(typeof(ListTeamMembersEndpoint), "GET", "/api/business/v1/master-data/teams/{teamCode}/members", BusinessPermissionCodes.MasterDataResourcesRead, "listBusinessMasterDataTeamMembers"),
         new(typeof(RemoveTeamMemberEndpoint), "DELETE", "/api/business/v1/master-data/teams/{teamCode}/members/{userId}", BusinessPermissionCodes.MasterDataResourcesManage, "removeBusinessMasterDataTeamMember"),
         new(typeof(AssignPersonnelSkillEndpoint), "POST", "/api/business/v1/master-data/personnel-skills", BusinessPermissionCodes.MasterDataResourcesManage, "assignBusinessMasterDataPersonnelSkill"),

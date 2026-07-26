@@ -9,6 +9,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkerAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
@@ -63,6 +64,20 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
         new("welding", "焊接", "特种作业", true, 36, "储油缸筒焊接，需持特种作业操作证"),
         new("equipment-maintenance", "设备维护", "设备管理", false, null, "设备点检保养与一般故障处理"),
         new("forklift", "叉车驾驶", "物流仓储", true, 48, "厂内叉车驾驶与物料转运，需持证上岗")
+    ];
+
+    private static readonly WorkerSeed[] Workers =
+    [
+        new("EMP-1001", "陈志强", "user-op-001", "DEPT-PROD", "装配班组长", Worker.StatusActive),
+        new("EMP-1002", "李海涛", "user-op-002", "DEPT-PROD", "装配操作工", Worker.StatusActive),
+        new("EMP-1003", "王建军", "user-op-003", "DEPT-PROD", "CNC 操作工", Worker.StatusActive),
+        new("EMP-1004", "赵鹏", "user-op-004", "DEPT-PROD", "装配操作工", Worker.StatusActive),
+        new("EMP-1005", "何俊", "user-op-005", "DEPT-PROD", "焊接操作工", Worker.StatusOnLeave),
+        new("EMP-1006", "孙敏", "user-qc-001", "DEPT-QA", "质量检验员", Worker.StatusActive),
+        new("EMP-1007", "马丽", "user-qc-002", "DEPT-QA", "质量检验员", Worker.StatusActive),
+        new("EMP-1008", "周立新", "user-eq-001", "DEPT-EQ", "维修技师", Worker.StatusActive),
+        new("EMP-1009", "吴国斌", "user-wh-001", "DEPT-WH", "库管员", Worker.StatusActive),
+        new("EMP-1010", "郑晓芸", "user-plan-001", "DEPT-PLAN", "计划员", Worker.StatusActive)
     ];
 
     private static readonly TeamSeed[] Teams =
@@ -302,6 +317,27 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
             }
         }
 
+        foreach (var item in Workers)
+        {
+            if (!await dbContext.Workers.AnyAsync(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.UserId == item.UserId,
+                    cancellationToken))
+            {
+                dbContext.Workers.Add(Worker.Create(
+                    organizationId,
+                    environmentId,
+                    item.Code,
+                    item.Name,
+                    item.UserId,
+                    item.DepartmentCode,
+                    item.JobTitle,
+                    item.EmploymentStatus,
+                    null));
+            }
+        }
+
         foreach (var item in Teams)
         {
             if (!await dbContext.Teams.AnyAsync(x =>
@@ -408,6 +444,8 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
     private sealed record ProductCategorySeed(string Code, string Name, string? ParentCode, string Description);
 
     private sealed record SkillSeed(string Code, string Name, string GroupName, bool RequiresCertification, int? ValidityMonths, string Description);
+
+    private sealed record WorkerSeed(string Code, string Name, string UserId, string DepartmentCode, string JobTitle, string EmploymentStatus);
 
     private sealed record TeamSeed(string Code, string Name, string DepartmentCode, string ShiftCode);
 

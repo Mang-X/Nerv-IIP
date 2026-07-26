@@ -13,6 +13,7 @@ import {
   createBusinessConsoleTeamMutationOptions,
   createBusinessConsoleWorkCalendarMutationOptions,
   createBusinessConsoleWorkCenterMutationOptions,
+  createBusinessConsoleWorkerMutationOptions,
   createBusinessConsoleWorkshopMutationOptions,
   disableBusinessConsoleMasterDataResourceMutationOptions,
   enableBusinessConsoleMasterDataResourceMutationOptions,
@@ -31,6 +32,7 @@ import {
   type BusinessConsoleCreateSkuRequest,
   type BusinessConsoleCreateUnitOfMeasureRequest,
   type BusinessConsoleCreateUomConversionRequest,
+  type BusinessConsoleCreateWorkerRequest,
   type BusinessConsoleCreateWorkshopRequest,
   type BusinessConsoleMasterDataResourceDetail,
   type BusinessConsolePersonnelSkillMatrixEnvelope,
@@ -654,6 +656,18 @@ export function useMasterDataResourceActions(resourceType: string) {
 
 export interface WorkerDirectoryFilters extends BusinessContextFilters {
   keyword?: string
+  /** 精确匹配单个工人标识，用于回填已选人员。 */
+  userId?: string
+  departmentCode?: string
+  /** 按班组过滤候选人。 */
+  teamCode?: string
+  /** 按工作中心过滤候选人——取该工作中心所辖班组的成员。 */
+  workCenterCode?: string
+  /** 按技能过滤候选人，只保留当前有效的技能记录。 */
+  skillCode?: string
+  /** 在岗状态：active / on-leave / resigned。 */
+  employmentStatus?: string
+  includeDisabled?: boolean
   pageIndex: number
   pageSize: number
 }
@@ -675,10 +689,12 @@ function workerTotal(envelope: BusinessConsoleWorkerDirectoryEnvelope | undefine
 }
 
 /**
- * 工人目录（人员选择器数据源）。读自 `/master-data/workers`（注意分页用 pageIndex/pageSize，
- * 非 skip/take），支持服务端 keyword 检索。仅暴露姓名 / 工号 / 部门给 UI，userId 内部使用。
+ * 员工目录（人员选择器与员工维护页的共同数据源）。读自 MasterData 员工主数据
+ * `/master-data/workers`（注意分页用 pageIndex/pageSize，非 skip/take）。除关键词外还支持
+ * 部门 / 班组 / 工作中心 / 技能 / 在岗状态过滤——派工候选就是靠 workCenterCode 收敛的。
+ * UI 只呈现姓名 / 工号 / 部门 / 班组 / 技能，userId 仅作为绑定值。
  */
-export function useBusinessWorkers() {
+export function useBusinessWorkers(initial: Partial<WorkerDirectoryFilters> = {}) {
   const filters = bindBusinessContext(
     reactive<WorkerDirectoryFilters>({
       organizationId: '',
@@ -688,6 +704,7 @@ export function useBusinessWorkers() {
       // 默认 PageIndex=1，与 useBusinessScheduling 等一致）。发 0 会被后端拒为 400，人员选择器静默空。
       pageIndex: 1,
       pageSize: DEFAULT_TAKE,
+      ...initial,
     }),
   )
 
@@ -698,6 +715,13 @@ export function useBusinessWorkers() {
           organizationId: filters.organizationId,
           environmentId: filters.environmentId,
           ...optionalQuery('keyword', filters.keyword),
+          ...optionalQuery('userId', filters.userId),
+          ...optionalQuery('departmentCode', filters.departmentCode),
+          ...optionalQuery('teamCode', filters.teamCode),
+          ...optionalQuery('workCenterCode', filters.workCenterCode),
+          ...optionalQuery('skillCode', filters.skillCode),
+          ...optionalQuery('employmentStatus', filters.employmentStatus),
+          ...optionalQuery('includeDisabled', filters.includeDisabled),
           pageIndex: filters.pageIndex,
           pageSize: filters.pageSize,
         },
@@ -715,6 +739,52 @@ export function useBusinessWorkers() {
     workersError: workersQuery.error,
     workersPending: workersQuery.isLoading,
     workersTotal: computed(() => workerTotal(workersQuery.data.value)),
+  }
+}
+
+/**
+ * 员工维护页的读写面：目录列表 + 新建 + 编辑/停用/启用（后两者走通用资源端点
+ * `master-data/resources/worker/{code}`，code 即工号）。
+ */
+export function useWorkerRegistry(initial: Partial<WorkerDirectoryFilters> = {}) {
+  const directory = useBusinessWorkers({ includeDisabled: true, pageSize: 50, ...initial })
+  const actions = useMasterDataResourceActions('worker')
+  const queryCache = useQueryCache()
+
+  function invalidate() {
+    void queryCache
+      .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleWorkers') })
+      .catch(ignoreBackgroundError)
+  }
+
+  const createMutation = useMutation({
+    ...createBusinessConsoleWorkerMutationOptions(),
+    onSuccess: invalidate,
+  } as unknown as UseMutationOptions)
+
+  async function runAndRefresh<T>(action: Promise<T>) {
+    const result = await action
+    invalidate()
+    return result
+  }
+
+  return {
+    ...directory,
+    ...actions,
+    create: (body: BusinessConsoleCreateWorkerRequest) =>
+      runAndRefresh(
+        (
+          createMutation.mutateAsync as unknown as (vars: {
+            body: BusinessConsoleCreateWorkerRequest
+          }) => Promise<unknown>
+        )({ body }),
+      ),
+    createPending: createMutation.isLoading,
+    createError: createMutation.error,
+    update: (code: string, patch: Partial<BusinessConsoleUpdateMasterDataResourceRequest>) =>
+      runAndRefresh(actions.update(code, patch)),
+    disable: (code: string) => runAndRefresh(actions.disable(code)),
+    enable: (code: string) => runAndRefresh(actions.enable(code)),
   }
 }
 
