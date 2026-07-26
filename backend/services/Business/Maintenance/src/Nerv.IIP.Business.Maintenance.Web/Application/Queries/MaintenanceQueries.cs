@@ -315,25 +315,28 @@ public sealed class ListMaintenanceSparePartsQueryHandler(ApplicationDbContext d
     {
         var skip = ListMaintenanceWorkOrdersQueryHandler.NormalizeSkip(request.Skip);
         var take = ListMaintenanceWorkOrdersQueryHandler.NormalizeTake(request.Take);
+        // 排序必须发生在投影为 record 之前：OrderBy(投影后记录.属性) 无法被 EF 翻译（真机 Postgres 500，
+        // InMemory/SQLite 单测假绿），强类型 Id 也不参与排序（用底层键值排序）。
         var query =
             from sparePart in dbContext.SparePartLines
             join workOrder in dbContext.MaintenanceWorkOrders
                 on EF.Property<MaintenanceWorkOrderId>(sparePart, "MaintenanceWorkOrderId") equals workOrder.Id
             where request.OrganizationId == null || workOrder.OrganizationId == request.OrganizationId
             where request.EnvironmentId == null || workOrder.EnvironmentId == request.EnvironmentId
-            select new MaintenanceSparePartListItem(
-                sparePart.Id,
-                workOrder.Id,
-                workOrder.DeviceAssetId,
-                sparePart.SkuCode,
-                sparePart.Quantity,
-                sparePart.UomCode);
+            select new { sparePart, workOrder };
         var total = await query.CountAsync(cancellationToken);
         var items = await query
-            .OrderBy(x => x.SkuCode)
-            .ThenBy(x => x.SparePartLineId)
+            .OrderBy(x => x.sparePart.SkuCode)
+            .ThenBy(x => x.sparePart.Id)
             .Skip(skip)
             .Take(take)
+            .Select(x => new MaintenanceSparePartListItem(
+                x.sparePart.Id,
+                x.workOrder.Id,
+                x.workOrder.DeviceAssetId,
+                x.sparePart.SkuCode,
+                x.sparePart.Quantity,
+                x.sparePart.UomCode))
             .ToArrayAsync(cancellationToken);
         return new PagedMaintenanceListResponse<MaintenanceSparePartListItem>(items, skip, take, total);
     }
