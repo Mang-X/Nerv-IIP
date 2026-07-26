@@ -1853,7 +1853,8 @@ public sealed class MesEndpointContractTests
         string? keyword,
         string? workCenterId,
         string? shiftId,
-        string? deviceAssetId)
+        string? deviceAssetId,
+        string? assignedUserId = null)
     {
         var method = typeof(GetMesWorkOrderDetailQueryHandler).GetMethod(
             "QueryOperationTaskEntities",
@@ -1870,6 +1871,7 @@ public sealed class MesEndpointContractTests
                 workCenterId,
                 shiftId,
                 deviceAssetId,
+                assignedUserId,
             ]));
     }
 }
