@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
@@ -14,6 +15,7 @@ using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.DemandPlanning;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
@@ -21,6 +23,7 @@ using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Messaging.CAP;
+using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 using Npgsql;
 using DomainWorkCenterUnavailability = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability;
 
@@ -182,6 +185,107 @@ public sealed class MesCapSaveBoundaryPostgresTests
     }
 
     [MesRealPostgresFact]
+    public async Task Work_order_capitalization_conflict_is_terminal_and_replay_is_idempotent()
+    {
+        await using var database = await TemporaryDatabase.CreateAsync(ReadConnectionString());
+        var options = CreateOptions(database.ConnectionString);
+        await MigrateAsync(options);
+        await using (var seed = CreateContext(options))
+        {
+            var workOrder = CreateCapitalizationWorkOrder("WO-MAN421-COST-CONFLICT");
+            workOrder.ApplyCapitalizedUnitCost(24m);
+            seed.WorkOrders.Add(workOrder);
+            await seed.SaveChangesAsync();
+        }
+
+        var integrationEvent = CreateCapitalizationEvent(
+            "evt-man421-work-order-cost-conflict",
+            "capitalization-work-order-conflict-man421",
+            "WO-MAN421-COST-CONFLICT",
+            25m);
+        await using (var handlerContext = CreateContext(options))
+        {
+            await CreateCapitalizationHandler(handlerContext)
+                .HandleCapAsync(integrationEvent, CancellationToken.None);
+        }
+
+        await AssertCapitalizationDivergenceFactsAsync(
+            options,
+            integrationEvent,
+            expectedWorkOrderCost: 24m,
+            expectedReceiptCost: null,
+            expectedReceiptCount: 0);
+
+        await using (var replayContext = CreateContext(options))
+        {
+            await CreateCapitalizationHandler(replayContext)
+                .HandleCapAsync(integrationEvent, CancellationToken.None);
+        }
+
+        await AssertCapitalizationDivergenceFactsAsync(
+            options,
+            integrationEvent,
+            expectedWorkOrderCost: 24m,
+            expectedReceiptCost: null,
+            expectedReceiptCount: 0);
+    }
+
+    [MesRealPostgresFact]
+    public async Task Later_receipt_capitalization_conflict_discards_prior_work_order_mutation_and_replay_is_idempotent()
+    {
+        await using var database = await TemporaryDatabase.CreateAsync(ReadConnectionString());
+        var options = CreateOptions(database.ConnectionString);
+        await MigrateAsync(options);
+        await using (var seed = CreateContext(options))
+        {
+            seed.WorkOrders.Add(CreateCapitalizationWorkOrder("WO-MAN421-RECEIPT-COST-CONFLICT"));
+            seed.FinishedGoodsReceiptRequests.Add(FinishedGoodsReceiptRequest.Create(
+                "org-001",
+                "env-dev",
+                "FGR-MAN421-COST-CONFLICT",
+                "WO-MAN421-RECEIPT-COST-CONFLICT",
+                "SKU-MAN421-CAP",
+                5m,
+                "PCS",
+                OccurredAtUtc.AddMinutes(-1),
+                producedLotNo: "LOT-MAN421-COST-CONFLICT",
+                unitCost: 24m));
+            await seed.SaveChangesAsync();
+        }
+
+        var integrationEvent = CreateCapitalizationEvent(
+            "evt-man421-receipt-cost-conflict",
+            "capitalization-receipt-conflict-man421",
+            "WO-MAN421-RECEIPT-COST-CONFLICT",
+            25m);
+        await using (var handlerContext = CreateContext(options))
+        {
+            await CreateCapitalizationHandler(handlerContext)
+                .HandleCapAsync(integrationEvent, CancellationToken.None);
+        }
+
+        await AssertCapitalizationDivergenceFactsAsync(
+            options,
+            integrationEvent,
+            expectedWorkOrderCost: null,
+            expectedReceiptCost: 24m,
+            expectedReceiptCount: 1);
+
+        await using (var replayContext = CreateContext(options))
+        {
+            await CreateCapitalizationHandler(replayContext)
+                .HandleCapAsync(integrationEvent, CancellationToken.None);
+        }
+
+        await AssertCapitalizationDivergenceFactsAsync(
+            options,
+            integrationEvent,
+            expectedWorkOrderCost: null,
+            expectedReceiptCost: 24m,
+            expectedReceiptCount: 1);
+    }
+
+    [MesRealPostgresFact]
     public async Task Post_inbox_early_returns_persist_business_inbox_without_creating_unrelated_facts()
     {
         await using var database = await TemporaryDatabase.CreateAsync(ReadConnectionString());
@@ -234,19 +338,33 @@ public sealed class MesCapSaveBoundaryPostgresTests
             await handler.HandleCapAsync(failedEvent, CancellationToken.None);
         }
 
-        await using var assertion = CreateContext(options);
-        var inbox = await assertion.ProcessedIntegrationEvents.AsNoTracking().ToArrayAsync();
-        Assert.Contains(inbox, x =>
-            x.ConsumerName == PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder.ConsumerName &&
-            x.EventId == planningEvent.EventId);
-        Assert.Contains(inbox, x =>
-            x.ConsumerName == StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted.ConsumerName &&
-            x.EventId == postedEvent.EventId);
-        Assert.Contains(inbox, x =>
-            x.ConsumerName == StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed.ConsumerName &&
-            x.EventId == failedEvent.EventId);
-        Assert.Single(await assertion.WorkOrders.AsNoTracking().ToArrayAsync());
-        Assert.Empty(await assertion.FinishedGoodsReceiptRequests.AsNoTracking().ToArrayAsync());
+        await AssertPostInboxEarlyReturnFactsAsync(options, planningEvent, postedEvent, failedEvent);
+
+        await using (var context = CreateContext(options))
+        {
+            await new PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder(
+                    context,
+                    new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(context))
+                .HandleCapAsync(planningEvent, CancellationToken.None);
+        }
+
+        await using (var context = CreateContext(options))
+        {
+            await new StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted(
+                    context,
+                    new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(context))
+                .HandleCapAsync(postedEvent, CancellationToken.None);
+        }
+
+        await using (var context = CreateContext(options))
+        {
+            await new StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed(
+                    context,
+                    new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(context))
+                .HandleCapAsync(failedEvent, CancellationToken.None);
+        }
+
+        await AssertPostInboxEarlyReturnFactsAsync(options, planningEvent, postedEvent, failedEvent);
     }
 
     [MesRealPostgresFact]
@@ -269,19 +387,14 @@ public sealed class MesCapSaveBoundaryPostgresTests
             await CreateNcrHandler(handlerContext).HandleCapAsync(integrationEvent, CancellationToken.None);
         }
 
-        await using var assertion = CreateContext(options);
-        var defect = await assertion.DefectRecords.AsNoTracking().SingleAsync();
-        Assert.Equal(DefectRecord.OpenStatus, defect.Status);
-        Assert.Null(defect.NcrId);
-        Assert.Null(defect.NcrCode);
-        Assert.Null(defect.DispositionType);
-        Assert.Single(await assertion.ProcessedIntegrationEvents.AsNoTracking().Where(x =>
-            x.ConsumerName == NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect.ConsumerName &&
-            x.EventId == integrationEvent.EventId).ToArrayAsync());
-        var deadLetter = Assert.Single(await assertion.Set<IntegrationEventDeadLetter>().AsNoTracking().Where(x =>
-            x.ConsumerName == NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect.ConsumerName &&
-            x.EventId == integrationEvent.EventId).ToArrayAsync());
-        Assert.Equal("quality-ncr-disposition-divergence", deadLetter.FailureCode);
+        await AssertNcrDivergenceFactsAsync(options, integrationEvent);
+
+        await using (var replayContext = CreateContext(options))
+        {
+            await CreateNcrHandler(replayContext).HandleCapAsync(integrationEvent, CancellationToken.None);
+        }
+
+        await AssertNcrDivergenceFactsAsync(options, integrationEvent);
     }
 
     [MesRealPostgresFact]
@@ -413,6 +526,14 @@ public sealed class MesCapSaveBoundaryPostgresTests
         ApplicationDbContext dbContext) =>
         new(dbContext, new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext));
 
+    private static WorkOrderCostCapitalizedIntegrationEventHandler CreateCapitalizationHandler(
+        ApplicationDbContext dbContext) =>
+        new(
+            dbContext,
+            new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext),
+            dbContext,
+            new PostgreSqlMesWorkOrderCapitalizationScopeCoordinator(dbContext, dbContext));
+
     private static TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport CreateTelemetryHandler(
         ApplicationDbContext dbContext) =>
         new(
@@ -473,6 +594,72 @@ public sealed class MesCapSaveBoundaryPostgresTests
         Assert.Equal("PV-MAN421", (await assertion.WorkOrders.AsNoTracking().SingleAsync()).ProductionVersionId);
         Assert.Single(await assertion.ProcessedIntegrationEvents.AsNoTracking().Where(x =>
             x.ConsumerName == ProductionVersionCreatedIntegrationEventHandlerForBindMesWorkOrders.ConsumerName).ToArrayAsync());
+    }
+
+    private static async Task AssertCapitalizationDivergenceFactsAsync(
+        DbContextOptions<ApplicationDbContext> options,
+        WorkOrderCostCapitalizedIntegrationEvent integrationEvent,
+        decimal? expectedWorkOrderCost,
+        decimal? expectedReceiptCost,
+        int expectedReceiptCount)
+    {
+        await using var assertion = CreateContext(options);
+        Assert.Equal(expectedWorkOrderCost, (await assertion.WorkOrders.AsNoTracking().SingleAsync()).CapitalizedUnitCost);
+        var receipts = await assertion.FinishedGoodsReceiptRequests.AsNoTracking().ToArrayAsync();
+        Assert.Equal(expectedReceiptCount, receipts.Length);
+        if (expectedReceiptCount == 1)
+        {
+            Assert.Equal(expectedReceiptCost, Assert.Single(receipts).UnitCost);
+        }
+
+        Assert.Single(await assertion.ProcessedIntegrationEvents.AsNoTracking().Where(x =>
+            x.ConsumerName == WorkOrderCostCapitalizedIntegrationEventHandler.ConsumerName &&
+            x.EventId == integrationEvent.EventId).ToArrayAsync());
+        var deadLetter = Assert.Single(await assertion.Set<IntegrationEventDeadLetter>().AsNoTracking().Where(x =>
+            x.ConsumerName == WorkOrderCostCapitalizedIntegrationEventHandler.ConsumerName &&
+            x.EventId == integrationEvent.EventId).ToArrayAsync());
+        Assert.Equal("work-order-capitalization-divergence", deadLetter.FailureCode);
+        Assert.Empty(await assertion.Set<PublishedMessage>().AsNoTracking().ToArrayAsync());
+    }
+
+    private static async Task AssertPostInboxEarlyReturnFactsAsync(
+        DbContextOptions<ApplicationDbContext> options,
+        PlanningSuggestionAcceptedIntegrationEvent planningEvent,
+        StockMovementPostedIntegrationEvent postedEvent,
+        StockMovementPostingFailedIntegrationEvent failedEvent)
+    {
+        await using var assertion = CreateContext(options);
+        var inbox = await assertion.ProcessedIntegrationEvents.AsNoTracking().ToArrayAsync();
+        Assert.Single(inbox, x =>
+            x.ConsumerName == PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder.ConsumerName &&
+            x.EventId == planningEvent.EventId);
+        Assert.Single(inbox, x =>
+            x.ConsumerName == StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted.ConsumerName &&
+            x.EventId == postedEvent.EventId);
+        Assert.Single(inbox, x =>
+            x.ConsumerName == StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed.ConsumerName &&
+            x.EventId == failedEvent.EventId);
+        Assert.Single(await assertion.WorkOrders.AsNoTracking().ToArrayAsync());
+        Assert.Empty(await assertion.FinishedGoodsReceiptRequests.AsNoTracking().ToArrayAsync());
+    }
+
+    private static async Task AssertNcrDivergenceFactsAsync(
+        DbContextOptions<ApplicationDbContext> options,
+        NcrDispositionDecidedIntegrationEvent integrationEvent)
+    {
+        await using var assertion = CreateContext(options);
+        var defect = await assertion.DefectRecords.AsNoTracking().SingleAsync();
+        Assert.Equal(DefectRecord.OpenStatus, defect.Status);
+        Assert.Null(defect.NcrId);
+        Assert.Null(defect.NcrCode);
+        Assert.Null(defect.DispositionType);
+        Assert.Single(await assertion.ProcessedIntegrationEvents.AsNoTracking().Where(x =>
+            x.ConsumerName == NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect.ConsumerName &&
+            x.EventId == integrationEvent.EventId).ToArrayAsync());
+        var deadLetter = Assert.Single(await assertion.Set<IntegrationEventDeadLetter>().AsNoTracking().Where(x =>
+            x.ConsumerName == NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect.ConsumerName &&
+            x.EventId == integrationEvent.EventId).ToArrayAsync());
+        Assert.Equal("quality-ncr-disposition-divergence", deadLetter.FailureCode);
     }
 
     private static async Task AssertTelemetryDivergenceFactsAsync(
@@ -564,6 +751,18 @@ public sealed class MesCapSaveBoundaryPostgresTests
             "WC-MAN421-TELEMETRY"));
         await seed.SaveChangesAsync();
     }
+
+    private static WorkOrder CreateCapitalizationWorkOrder(string workOrderId) =>
+        WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            workOrderId,
+            "SKU-MAN421-CAP",
+            "PV-MAN421-CAP",
+            5m,
+            10,
+            OccurredAtUtc.AddDays(1),
+            "PCS");
 
     private static AssetRestoredIntegrationEvent CreateAssetRestoredEvent(string eventId, string idempotencyKey) =>
         new(
@@ -667,6 +866,33 @@ public sealed class MesCapSaveBoundaryPostgresTests
                 "ROUTING-MAN421:1",
                 new DateOnly(2026, 7, 26),
                 null));
+
+    private static WorkOrderCostCapitalizedIntegrationEvent CreateCapitalizationEvent(
+        string eventId,
+        string idempotencyKey,
+        string workOrderId,
+        decimal unitCost) =>
+        new(
+            eventId,
+            ErpIntegrationEventTypes.WorkOrderCostCapitalized,
+            ErpIntegrationEventVersions.V1,
+            OccurredAtUtc,
+            ErpIntegrationEventSources.BusinessErp,
+            "corr-man421-capitalization",
+            "cause-man421-capitalization",
+            "org-001",
+            "env-dev",
+            "system:erp",
+            idempotencyKey,
+            new WorkOrderCostCapitalizedPayload(
+                workOrderId,
+                "SKU-MAN421-CAP",
+                5m,
+                0m,
+                120m,
+                5m * unitCost,
+                unitCost,
+                OccurredAtUtc));
 
     private static TelemetryProductionCountDeltaIntegrationEvent CreateTelemetryPostedEvent() =>
         new(

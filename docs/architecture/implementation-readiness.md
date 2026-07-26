@@ -18,13 +18,19 @@ unknown-key 的 post-inbox terminal save。NCR 的领域分歧会在丢弃部分
 tracked mutation 后进入持久 DLQ；Telemetry posted 报工在
 `KnownException` / `ArgumentException` / `InvalidOperationException` 时先清除
 命令已跟踪的半成品，再重建 inbox 并写入终止性 DLQ，避免重试 poison
-或由 persistent dead-letter store 顺带提交部分业务状态。其余 consumer
-已有显式 save、MediatR UnitOfWork 或 PostgreSQL scope coordinator 边界。
+或由 persistent dead-letter store 顺带提交部分业务状态。资本化消费的工单
+或 Requested 收货成本分歧同样只捕获聚合
+`ArgumentException` / `InvalidOperationException`，清除前序 tracked
+成本/领域事件后在同一 work-order coordinator 事务内重建 inbox 并持久化
+`work-order-capitalization-divergence`；工单缺失、基础设施失败和取消仍会
+回滚并逃逸。其余 consumer 已有显式 save、MediatR UnitOfWork 或
+PostgreSQL scope coordinator 边界。
 
 PostgreSQL 18 独立 DbContext 证据覆盖 AssetRestored close/reschedule/replay、
 SchedulePlanReleased assignment provenance/replay、所有已证明缺口、NCR
-并发 inbox unique-conflict 收敛和 Telemetry 超量报工终止性分歧；必选
-focused gate 为 9/9 passed。完整 MES Web 项目门禁为 376/377 passed，唯一
+并发 inbox unique-conflict 收敛、Telemetry 超量报工终止性分歧，以及工单
+既有成本/后续收货成本分歧的无部分成本或 outbox 收敛；必选 focused gate
+为 11/11 passed。完整 MES Web 项目门禁为 378/379 passed，唯一
 失败是 stacked-base 既有
 `SkuDisabledConsumerTests.PostgreSQL_disable_commit_serializes_before_new_work_order_creation`：
 该 fixture 未提供 routing snapshot，handler 在进入其断言所期待的 SKU
