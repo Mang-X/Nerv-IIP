@@ -444,6 +444,9 @@ var businessBarcodeLabel = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
+    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
+    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessBarcodeLabelDatabase, "PostgreSQL")
     .WaitFor(businessBarcodeLabelDatabase);
