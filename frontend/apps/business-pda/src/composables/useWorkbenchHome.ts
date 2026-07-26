@@ -120,6 +120,8 @@ export function useMyDispatchTasks() {
 
   const openTasks = computed<BusinessConsoleMesDispatchTaskRow[]>(() =>
     listItems<BusinessConsoleMesDispatchTaskRow>(tasksQuery.data.value)
+      // 服务端 assignedUserId 过滤为主；行级再校验一次（旧网关忽略未知参数时不误显他人任务）。
+      .filter((task) => task.assignedUserId === identity.principalId.value)
       .filter((task) => OPEN_DISPATCH_STATUSES.has(statusOf(task)))
       .sort((a, b) => {
         // 进行中/暂停靠前，其后按排产时间升序。
