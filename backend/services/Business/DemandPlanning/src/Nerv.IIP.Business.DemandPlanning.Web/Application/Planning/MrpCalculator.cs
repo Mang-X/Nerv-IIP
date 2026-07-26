@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+
 namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
 
 public sealed record MrpCalculationInput(
@@ -260,7 +263,7 @@ public static class MrpCalculator
                 var requirementPegging = demandPegging
                     .Concat(supply.InitialSafetyDeficit > 0m
                         ? [new DemandPegging(
-                            $"safety-stock:{key.SkuCode}:{key.SiteCode}",
+                            BuildSafetyStockReference(key),
                             first.SkuCode,
                             null,
                             "safety-stock",
@@ -296,17 +299,7 @@ public static class MrpCalculator
                     : isMakeItem ? "net-requirement" : "component-net-requirement";
                 var peggingVersion = isMakeItem ? version : null;
                 var peggingLinks = requirementPegging
-                    .Select(x => new CalculatedPeggingLink(
-                        x.SourceType == "safety-stock" ? "safety-stock" : "demand",
-                        x.DemandSourceReference,
-                        x.ParentSkuCode,
-                        x.ComponentSkuCode,
-                        x.Quantity,
-                        peggingVersion?.ProductionVersionReference,
-                        peggingVersion?.ManufacturingBomReference,
-                        peggingVersion?.RoutingReference,
-                        x.SourceType,
-                        x.SourceType == "safety-stock" ? 0m : x.Quantity))
+                    .Select(x => BuildRequirementPeggingLink(x, peggingVersion))
                     .Concat(supply.UsedReceipts.Select(x => new CalculatedPeggingLink(
                         "scheduled-receipt",
                         $"{x.SourceSystem}:{x.SourceDocumentType}:{x.SourceDocumentId}",
@@ -440,17 +433,7 @@ public static class MrpCalculator
             "scheduled-receipt",
             receiptException.Quantity);
         var peggingLinks = demandPegging
-            .Select(x => new CalculatedPeggingLink(
-                "demand",
-                x.DemandSourceReference,
-                x.ParentSkuCode,
-                x.ComponentSkuCode,
-                x.Quantity,
-                peggingVersion?.ProductionVersionReference,
-                peggingVersion?.ManufacturingBomReference,
-                peggingVersion?.RoutingReference,
-                x.SourceType,
-                x.Quantity))
+            .Select(x => BuildRequirementPeggingLink(x, peggingVersion))
             .Append(receiptLink)
             .ToArray();
 
@@ -479,6 +462,24 @@ public static class MrpCalculator
                 requirement.UomConversions,
                 []),
             peggingLinks);
+    }
+
+    private static CalculatedPeggingLink BuildRequirementPeggingLink(
+        DemandPegging pegging,
+        ProductionVersionSnapshot? peggingVersion)
+    {
+        var isSafetyStock = pegging.SourceType == "safety-stock";
+        return new CalculatedPeggingLink(
+            isSafetyStock ? "safety-stock" : "demand",
+            pegging.DemandSourceReference,
+            pegging.ParentSkuCode,
+            pegging.ComponentSkuCode,
+            pegging.Quantity,
+            peggingVersion?.ProductionVersionReference,
+            peggingVersion?.ManufacturingBomReference,
+            peggingVersion?.RoutingReference,
+            pegging.SourceType,
+            isSafetyStock ? 0m : pegging.Quantity);
     }
 
     private static CalculatedPlanningSuggestion BuildCancelExceptionSuggestion(ItemKey key, ScheduledReceiptState receipt)
@@ -887,6 +888,13 @@ public static class MrpCalculator
             "MPS" or "MASTER-PRODUCTION-SCHEDULE" => "mps",
             _ => "demand",
         };
+    }
+
+    private static string BuildSafetyStockReference(ItemKey key)
+    {
+        var normalizedKey = $"{key.SkuCode}\u001f{key.UomCode}\u001f{key.SiteCode}";
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedKey));
+        return $"safety-stock:{Convert.ToHexString(digest).ToLowerInvariant()}";
     }
 
     private static string BuildFormula(

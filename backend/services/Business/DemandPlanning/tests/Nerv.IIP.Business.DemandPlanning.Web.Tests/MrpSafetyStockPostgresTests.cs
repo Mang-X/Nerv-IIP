@@ -13,14 +13,7 @@ public sealed class MrpSafetyStockPostgresTests
     [DemandPlanningRealPostgresFact]
     public async Task Run_mrp_persists_safety_stock_replenishment_and_pegging()
     {
-        await using var database = await PostgreSqlTestDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
-            "nerv_demand_planning_safety",
-            async (connectionString, cancellationToken) =>
-            {
-                await using var migrationContext = CreateContext(connectionString);
-                await migrationContext.Database.MigrateAsync(cancellationToken);
-            });
+        await using var database = await CreateDatabaseAsync();
         await using var context = CreateContext(database.ConnectionString);
         var handler = new RunMrpCommandHandler(context, new FixedSnapshotProvider());
 
@@ -56,6 +49,50 @@ public sealed class MrpSafetyStockPostgresTests
         Assert.Equal(0m, safetyPegging.GrossDemandQuantity);
     }
 
+    [DemandPlanningRealPostgresFact]
+    public async Task Run_mrp_persists_bounded_stable_safety_reference_for_maximum_identifiers()
+    {
+        var skuCode = new string('S', 64);
+        var siteCode = new string('T', 64);
+        await using var database = await CreateDatabaseAsync();
+        await using var context = CreateContext(database.ConnectionString);
+        var handler = new RunMrpCommandHandler(context, new FixedSnapshotProvider(skuCode, siteCode));
+
+        await handler.Handle(
+            new RunMrpCommand(
+                "org-safety",
+                "env-test",
+                new DateOnly(2026, 6, 1),
+                new DateOnly(2026, 6, 30)),
+            CancellationToken.None);
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var suggestion = await context.PlanningSuggestions
+            .AsNoTracking()
+            .Include(x => x.PeggingLinks)
+            .SingleAsync();
+        var safetyPegging = Assert.Single(suggestion.PeggingLinks, x => x.SourceType == "safety-stock");
+        Assert.Equal(
+            "safety-stock:b3dd7569784af7a2f7f80e08edd192c0c6c85f3ab3fdeb1ec12a848dad29be43",
+            safetyPegging.DemandSourceReference);
+        Assert.StartsWith("safety-stock:", safetyPegging.DemandSourceReference, StringComparison.Ordinal);
+        Assert.NotEmpty(safetyPegging.DemandSourceReference);
+        Assert.True(safetyPegging.DemandSourceReference.Length <= 128);
+    }
+
+    private static Task<PostgreSqlTestDatabase> CreateDatabaseAsync()
+    {
+        return PostgreSqlTestDatabase.CreateAsync(
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
+            "nerv_demand_planning_safety",
+            async (connectionString, cancellationToken) =>
+            {
+                await using var migrationContext = CreateContext(connectionString);
+                await migrationContext.Database.MigrateAsync(cancellationToken);
+            });
+    }
+
     private static ApplicationDbContext CreateContext(string connectionString)
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -68,6 +105,17 @@ public sealed class MrpSafetyStockPostgresTests
 
     private sealed class FixedSnapshotProvider : IPlanningInputSnapshotProvider
     {
+        private readonly string skuCode;
+        private readonly string siteCode;
+
+        public FixedSnapshotProvider(
+            string skuCode = "SKU-FG-1000",
+            string siteCode = "SITE-01")
+        {
+            this.skuCode = skuCode;
+            this.siteCode = siteCode;
+        }
+
         public Task<PlanningInputSnapshotResult> GetSnapshotAsync(
             string organizationId,
             string environmentId,
@@ -81,25 +129,25 @@ public sealed class MrpSafetyStockPostgresTests
                 [
                     new DemandSnapshot(
                         "SO-SAFETY-001",
-                        "SKU-FG-1000",
+                        skuCode,
                         "PCS",
-                        "SITE-01",
+                        siteCode,
                         10m,
                         new DateOnly(2026, 6, 10),
                         "sales-order"),
                 ],
                 [
                     new InventoryAvailabilitySnapshot(
-                        "SKU-FG-1000",
+                        skuCode,
                         "PCS",
-                        "SITE-01",
+                        siteCode,
                         8m,
                         8m,
                         0m),
                 ],
                 [
                     new ProductionVersionSnapshot(
-                        "SKU-FG-1000",
+                        skuCode,
                         "PV-SAFETY-001",
                         "BOM-SAFETY-001",
                         "ROUTING-SAFETY-001"),
@@ -108,9 +156,9 @@ public sealed class MrpSafetyStockPostgresTests
                 [],
                 [
                     new PlanningParameterSnapshot(
-                        "SKU-FG-1000",
+                        skuCode,
                         "PCS",
-                        "SITE-01",
+                        siteCode,
                         0,
                         12m,
                         null,

@@ -6,7 +6,7 @@
 
 DemandPlanning MRP 现在把首次适用 bucket 的安全库存缺口 `max(0, safetyStock - projectedAvailable)` 作为同一净需求路径的补货需求，公式显式记录 `gross - available - scheduled receipts + safety-stock deficit = net`；缺口在单次运行内每个 SKU/UOM/site 只补一次，后续 bucket 只规划新增需求。无需求但低于安全库存的物料同样沿既有 make/buy、提前期、批量、UOM、BOM 与 pegging 路径生成建议；计划收货先同时覆盖需求和安全库存缺口，部分收货只消费一次，完整覆盖不会产生额外新建或取消建议，晚到收货仍保留 `reschedule-in` 诊断。
 
-`RunMrpCommandHandler` 到 `demand_planning.planning_suggestions`/`pegging_links` 的持久化行为已由 session 自建并清理的 Docker PostgreSQL 18.4 实例验证。本次没有新增或修改业务 HTTP endpoint、公开契约、数据库 schema 或 migration；facade coverage、OpenAPI 与 generated client 无需刷新。
+`RunMrpCommandHandler` 到 `demand_planning.planning_suggestions`/`demand_planning.mrp_pegging_links` 的持久化行为已由 session 自建并清理的 Docker PostgreSQL 18.4 实例验证。安全库存 pegging reference 使用 `safety-stock:` 可读前缀与规范化 SKU/UOM/site key 的稳定 SHA-256 摘要，最长合法业务标识仍保持在既有 128 字符持久化边界内；计划收货异常建议与普通补货建议复用同一 safety pegging 映射。本次没有新增或修改业务 HTTP endpoint、公开契约、数据库 schema 或 migration；facade coverage、OpenAPI 与 generated client 无需刷新。
 
 ## Quality 复检历史与 MES hold 自动释放闭环（MAN-516 / #954）
 

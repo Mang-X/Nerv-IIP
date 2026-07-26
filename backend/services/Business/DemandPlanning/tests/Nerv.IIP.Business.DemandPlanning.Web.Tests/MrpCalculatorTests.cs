@@ -499,7 +499,10 @@ public sealed class MrpCalculatorTests
         var safetyReceipt = Assert.Single(suggestions, x => x.SuggestionType == "reschedule-in");
         Assert.Equal(3m, safetyReceipt.Quantity);
         Assert.Equal("scheduled-receipt-late", safetyReceipt.ReasonCode);
-        Assert.Contains(safetyReceipt.PeggingLinks, x => x.SourceType == "safety-stock" && x.Quantity == 3m);
+        var safetyPegging = Assert.Single(safetyReceipt.PeggingLinks, x => x.SourceType == "safety-stock");
+        Assert.Equal("safety-stock", safetyPegging.PeggingType);
+        Assert.Equal(3m, safetyPegging.Quantity);
+        Assert.Equal(0m, safetyPegging.GrossDemandQuantity);
         Assert.DoesNotContain(suggestions, x => x.SuggestionType is "planned-purchase" or "planned-work-order");
         var receipt = Assert.Single(exception.PeggingLinks);
         Assert.Equal(3m, receipt.Quantity);

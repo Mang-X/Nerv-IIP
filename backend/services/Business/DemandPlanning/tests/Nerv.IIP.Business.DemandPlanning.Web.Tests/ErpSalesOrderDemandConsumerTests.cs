@@ -593,17 +593,6 @@ internal sealed class ChangedV2FallbackRetryProbeSubscriber(
     }
 }
 
-internal sealed class DemandPlanningRealPostgresFactAttribute : FactAttribute
-{
-    public DemandPlanningRealPostgresFactAttribute()
-    {
-        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
-        {
-            Skip = "Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP sales-order demand bridge proof.";
-        }
-    }
-}
-
 internal sealed class DemandPlanningRealPostgresRedisFactAttribute : FactAttribute
 {
     public DemandPlanningRealPostgresRedisFactAttribute()
