@@ -272,8 +272,8 @@ function Protect-Man517DiagnosticText {
     foreach ($jsonPattern in @(
         '(?i)("(?:password|pwd|token|secret|client_secret|authorization)"\s*:\s*")(?:(?:\\.)|[^"\\])*(")',
         '(?i)("(?:password|pwd|token|secret|client_secret|authorization)"\s*:\s*")(?:(?:\\.)|[^"\\])*()',
-        "(?i)('(?:password|pwd|token|secret|client_secret|authorization)'\\s*:\\s*')(?:(?:\\\\.)|[^'\\\\])*(')",
-        "(?i)('(?:password|pwd|token|secret|client_secret|authorization)'\\s*:\\s*')(?:(?:\\\\.)|[^'\\\\])*()"
+        "(?i)('(?:password|pwd|token|secret|client_secret|authorization)'\s*:\s*')(?:(?:\\.)|[^'\\])*(')",
+        "(?i)('(?:password|pwd|token|secret|client_secret|authorization)'\s*:\s*')(?:(?:\\.)|[^'\\])*()"
     )) {
         $safe = [regex]::Replace($safe, $jsonPattern, '$1<redacted>$2')
     }
