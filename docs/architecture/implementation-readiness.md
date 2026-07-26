@@ -371,6 +371,28 @@ Notification 对 `alarm-raised` 的收件人默认回退 `role:maintenance`，�
 bath-temperature（>34 degC，critical）、`DEV-AUX-04` air-pressure（<6.0 bar，warning），周期约
 45 分钟错峰（劣化→越限→恢复），保证任意时刻约 2 台处于 raised；健康页要显示 Fresh 需上报间隔 ≤2 分钟。
 
+#### 与设定集 §7 的形状对照与耗时实测（2026-07-26，Windows 10.0.26200、.NET 10、Docker PostgreSQL）
+
+| 指标 | 设定集目标 | 实测（asOfDate=2026-07-26，scale=1.0） |
+| --- | --- | --- |
+| 报警事件 | 约 400 起 | **399**（开放尾部 5 起 raised） |
+| 维修工单 | 约 120 张 | **118**（2 张开放尾部 Open） |
+| 点检/保养计划 · 记录 | 按频次 | 92 条计划 · **1460** 条记录 |
+| 遥测三层 | 29 周聚合 + 近 7 天原始 | 日级 **16192** / 小时级 **8928** / raw(15min) **35712** / summaries(5min) **17088** |
+| 设备状态史 / OEE 产量事实 | OEE 可算 | **12554** / **10044** |
+| 完工停机分钟合计 | 与报警一致 | 11224 min（校验器断言两侧相等） |
+
+| 服务 | 全量首次 seed（含校验器） | 幂等重跑 |
+| --- | --- | --- |
+| IndustrialTelemetry | **27.1 s** | 2.4 s |
+| Maintenance | **1.4 s** | 0.12 s |
+| 三期小计 | **约 28.5 s** | 约 2.5 s |
+
+叠加一期 39 秒、二期 43 秒，L1 全链全量生成约 **110 秒**，仍在 5 分钟预算内，leader-demo profile
+默认全量开启。耗时证据由 `NERV_IIP_TEST_POSTGRES` 门控的 `WorldHistoryDeviceSeedPostgresTests`（IIoT）、
+`WorldHistoryMaintenanceSeedPostgresTests`（Maintenance）产出（默认 skip、不进 CI 门禁）；
+形状、确定性、幂等与 catch-up 证据由两侧常规门禁测试产出。
+
 #### 隔离与遗留
 
 1. 号段 `WH-*` 规则、`{RuleCode}:{week}{slot}` 报警、`MWO-2026-*`、`PM-WH-*`、`RPT-WH-*`、
