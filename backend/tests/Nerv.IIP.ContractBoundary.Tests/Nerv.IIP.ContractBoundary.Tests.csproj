@@ -15,7 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\services\AppHub\src\Nerv.IIP.AppHub.Domain\Nerv.IIP.AppHub.Domain.csproj" />
-    <ProjectReference Include="..\..\services\Business\MES\src\Nerv.IIP.Business.Mes.Web\Nerv.IIP.Business.Mes.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\Mes\src\Nerv.IIP.Business.Mes.Web\Nerv.IIP.Business.Mes.Web.csproj" />
     <ProjectReference Include="..\..\services\Business\Scheduling\src\Nerv.IIP.Business.Scheduling.Domain\Nerv.IIP.Business.Scheduling.Domain.csproj" />
     <ProjectReference Include="..\..\services\Business\Wms\src\Nerv.IIP.Business.Wms.Web\Nerv.IIP.Business.Wms.Web.csproj" />
     <ProjectReference Include="..\..\services\Ops\src\Nerv.IIP.Ops.Domain\Nerv.IIP.Ops.Domain.csproj" />
