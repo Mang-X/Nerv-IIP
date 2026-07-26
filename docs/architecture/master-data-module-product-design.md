@@ -34,7 +34,7 @@
 - **生命周期完整**：主数据价值在「能改、能停用、能追溯版本」，不止新增。
 - **诚实暴露后端边界**：后端没有的能力/字段，前端**不伪造、不猜**，用禁用入口 + 说明占位。
 
-**进（In Scope）**：物料与产品（Sku）；工厂/产线/工作中心/设备（Site/ProductionLine/WorkCenter/DeviceAsset）；客户/供应商/承运商（BusinessPartner）；字典与受控值（ReferenceDataCode）；计量单位与换算（UnitOfMeasure/UomConversion）；组织与排班（Department/Team/Shift/WorkCalendar/PersonnelSkill）。
+**进（In Scope）**：物料与产品（Sku）；工厂/产线/工作中心/设备（Site/ProductionLine/WorkCenter/DeviceAsset）；客户/供应商/承运商（BusinessPartner）；字典与受控值（ReferenceDataCode）；计量单位与换算（UnitOfMeasure/UomConversion）；组织与排班（Department/Team/Shift/WorkCalendar/PersonnelSkill）；员工主数据（Worker——工号/姓名/部门/岗位/在岗状态，是班组成员、人员技能与 MES 派工共同的人员事实源）。
 
 **不进（Non-Goals）**：BOM/工艺路线/工序版本（属产品工程，`/master-data/process` 归 engineering，不动）；库存余额/库位实物（inventory/wms）；价格/合同/账期（ERP）；用户/权限（平台管理）；主数据审批工作流、数据质量评分、跨组织主数据治理（远期）。
 
@@ -97,6 +97,7 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 ├── 工厂结构      /master-data/facilities     [Site/Workshop/Line/WorkCenter] 左树+右详情+就地建子级
 └── 设备台账      /master-data/devices        [DeviceAsset]    平表(检索维度多,工厂结构树第5层下钻出口)
 【组织与排班】
+├── 员工          /master-data/workers        [Worker 平表(工号/姓名/部门/班组/技能/在岗状态)]
 ├── 组织与班组    /master-data/organization   [Department 树 + Team 列表-详情(成员主从)]
 ├── 排班与日历    /master-data/scheduling     [Shift 设置表 + WorkCalendar 月历]
 └── 人员技能      /master-data/skills         [PersonnelSkill 矩阵(工人×技能)]
@@ -115,6 +116,7 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 | 业务伙伴 | 列表 + 角色叠加 | 基本保留(删过时"按编码推断"文案) | 角色筛选/列、多选角色新建 |
 | **工厂结构** | **左树+右详情** | **大改(Tab→树)** | 选中父级「+新建子级」预填归属、面包屑、树搜索、设备下钻出口 |
 | 设备台账 | 平表 + 详情/编辑 | 已深化 | 厂区/车间/产线/工位归属，购置/保修/供应商/退役台账，父设备与关键部件清单；维修工单读面展示保修状态 |
+| **员工** | 平表 + 新建/编辑弹窗 | **新页** | 工号由编码引擎分配（EMP-）；姓名/部门/岗位/在岗状态可维护，班组与技能只读展示（分别在「组织与班组」「人员技能」维护）；停用后不再进入派工与班组候选 |
 | **组织与班组** | 部门树 + 班组列表-详情 | **中改** | 部门树(按 parentCode 拼)、班组挂部门、成员主从 |
 | **排班与日历** | 班次设置表 + 日历月历 | **新页(从组织拆)** | 月历可视化(标工作日/节假日)；**依赖后端日历明细** |
 | **人员技能** | 矩阵 | **新页(从组织拆)** | 工人×技能格子(等级/有效期)；**依赖后端聚合数据** |

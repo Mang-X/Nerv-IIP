@@ -388,11 +388,7 @@ async function restore(row: BusinessConsoleWorkerDirectoryItem) {
         <span v-else class="text-muted-foreground">未登记</span>
       </template>
       <template #cell-employmentStatus="{ row }">
-        <NvStatusBadge
-          v-if="row.active === false"
-          label="已停用"
-          tone="neutral"
-        />
+        <NvStatusBadge v-if="row.active === false" label="已停用" tone="neutral" />
         <NvStatusBadge
           v-else
           :label="statusLabel(row.employmentStatus)"

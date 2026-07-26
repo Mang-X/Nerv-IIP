@@ -62,7 +62,11 @@ const {
 } = useMesDispatchTasks()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 // 派工候选只取在岗员工；默认按所选工序的工作中心收敛（工作中心 → 所辖班组 → 班组成员）。
-const { workers, workersPending, filters: workerFilters } = useBusinessWorkers({
+const {
+  workers,
+  workersPending,
+  filters: workerFilters,
+} = useBusinessWorkers({
   employmentStatus: 'active',
 })
 const { resolveWorkCenter } = useMesDisplayNames()

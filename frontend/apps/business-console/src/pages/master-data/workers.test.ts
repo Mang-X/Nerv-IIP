@@ -25,7 +25,12 @@ const stub = vi.hoisted(() => ({
       phone: null,
       active: true,
       teams: [
-        { teamCode: 'TEAM-CNC', teamName: 'CNC 精加工班组', isLeader: true, workCenterCode: 'WC-CNC' },
+        {
+          teamCode: 'TEAM-CNC',
+          teamName: 'CNC 精加工班组',
+          isLeader: true,
+          workCenterCode: 'WC-CNC',
+        },
       ],
       skills: [{ skillCode: 'cnc-operation', skillName: 'CNC 操作', level: 'senior' }],
       snapshotVersion: '1',
@@ -158,7 +163,10 @@ describe('master-data workers page', () => {
     })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新增员工'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新增员工'))!
+      .trigger('click')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
     await flushPromises()
@@ -174,7 +182,10 @@ describe('master-data workers page', () => {
     })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新增员工'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新增员工'))!
+      .trigger('click')
     await flushPromises()
     await wrapper.find('#worker-name').setValue('周立新')
     const departmentSelect = wrapper.findAll('select').find((s) => s.html().includes('DEPT-PROD'))!
@@ -199,7 +210,10 @@ describe('master-data workers page', () => {
     })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text() === '编辑')!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '编辑')!
+      .trigger('click')
     await flushPromises()
     await wrapper.find('#worker-title').setValue('装配主管')
     await wrapper.find('form').trigger('submit')

@@ -86,7 +86,9 @@ const workerName = (userId: string | undefined): string => {
 const workerMeta = (userId: string | undefined): string => {
   const worker = workerDir.workers.value.find((w) => w.userId === userId)
   if (!worker) return ''
-  const parts = [worker.employeeNo, worker.departmentName].filter((v) => Boolean(v && String(v).trim()))
+  const parts = [worker.employeeNo, worker.departmentName].filter((v) =>
+    Boolean(v && String(v).trim()),
+  )
   return parts.join(' · ')
 }
 // skillCode → 技能中文名（技能目录 skillName；查不到回退编码本身，不暴露裸编码占位）。
