@@ -247,7 +247,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(
                 var partner = await FindBusinessPartnerAsync(request, cancellationToken);
                 await deviceAssetReferenceValidator.EnsureSupplierRoleRemovalAllowedAsync(
                     partner,
-                    ProposedPartnerRoles(partner, request),
+                    partner.ResolveRolesForUpdate(request.PartnerType, request.PartnerRoles),
                     cancellationToken);
                 var taxId = string.IsNullOrWhiteSpace(request.TaxId) ? null : request.TaxId.Trim();
                 if (taxId is not null &&
@@ -433,32 +433,6 @@ public sealed class UpdateMasterDataResourceCommandHandler(
             default:
                 throw new KnownException($"Unsupported master data resource type '{request.ResourceType}'.");
         }
-    }
-
-    private static IReadOnlyCollection<string> ProposedPartnerRoles(
-        BusinessPartner partner,
-        UpdateMasterDataResourceCommand request)
-    {
-        if (request.PartnerRoles is not null)
-        {
-            return request.PartnerRoles;
-        }
-
-        if (request.PartnerType is null)
-        {
-            return partner.PartnerRoles;
-        }
-
-        return
-        [
-            request.PartnerType,
-            .. partner.PartnerRoles
-                .Skip(1)
-                .Where(role => !string.Equals(
-                    role,
-                    request.PartnerType,
-                    StringComparison.OrdinalIgnoreCase)),
-        ];
     }
 
     private async Task<Sku> FindSkuAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>

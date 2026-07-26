@@ -161,6 +161,18 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
         Touch();
     }
 
+    public string[] ResolveRolesForUpdate(
+        string? partnerType,
+        IReadOnlyCollection<string>? partnerRoles)
+    {
+        if (partnerRoles is not null)
+        {
+            return NormalizeRoles(partnerRoles.FirstOrDefault() ?? PartnerType, partnerRoles);
+        }
+
+        return partnerType is null ? [.. PartnerRoles] : ReplacePrimaryRole(partnerType);
+    }
+
     public void ChangePrimaryRole(
         string name,
         string partnerType,

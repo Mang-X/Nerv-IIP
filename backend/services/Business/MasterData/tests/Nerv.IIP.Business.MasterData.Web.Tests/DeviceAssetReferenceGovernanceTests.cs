@@ -237,6 +237,24 @@ public sealed class DeviceAssetReferenceGovernanceTests
     }
 
     [Fact]
+    public async Task ReferencedSupplierUpdate_WithEmptyRoleCollection_FallsBackToCurrentSupplierRole()
+    {
+        var partner = await UpdateReferencedSupplierRolesAsync([]);
+
+        Assert.Equal(["supplier"], partner.PartnerRoles);
+        Assert.Equal("Updated supplier", partner.Name);
+    }
+
+    [Fact]
+    public async Task ReferencedSupplierUpdate_WithPaddedSupplierRole_TrimsAndSucceeds()
+    {
+        var partner = await UpdateReferencedSupplierRolesAsync([" supplier "]);
+
+        Assert.Equal(["supplier"], partner.PartnerRoles);
+        Assert.Equal("Updated supplier", partner.Name);
+    }
+
+    [Fact]
     public async Task ParentDisable_WithBracedUppercaseStoredPublicGuid_ThrowsKnownException()
     {
         await using var provider = CreateProvider();
@@ -300,6 +318,49 @@ public sealed class DeviceAssetReferenceGovernanceTests
             "test:review",
             operationId,
             Reason: "review regression");
+
+    private static async Task<BusinessPartner> UpdateReferencedSupplierRolesAsync(
+        IReadOnlyCollection<string> requestedRoles)
+    {
+        await using var provider = CreateProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var partner = BusinessPartner.Create(
+            OrganizationId,
+            EnvironmentId,
+            $"SUP-NORMALIZE-{Guid.CreateVersion7():N}",
+            "supplier",
+            "Referenced supplier");
+        var device = NewDevice($"DEV-NORMALIZE-{Guid.CreateVersion7():N}")
+            .WithLedger(
+                null,
+                null,
+                string.Empty,
+                null,
+                partner.Code,
+                string.Empty,
+                string.Empty,
+                "LINE-1",
+                string.Empty,
+                string.Empty,
+                null);
+        dbContext.BusinessPartners.Add(partner);
+        dbContext.DeviceAssets.Add(device);
+        await dbContext.SaveChangesAsync();
+
+        await UpdateHandler(dbContext).Handle(
+            new UpdateMasterDataResourceCommand(
+                OrganizationId,
+                EnvironmentId,
+                "business-partner",
+                partner.Code,
+                Name: "Updated supplier",
+                PartnerRoles: requestedRoles),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        return partner;
+    }
 
     private static DeviceAsset NewDevice(string code) =>
         DeviceAsset.Register(
