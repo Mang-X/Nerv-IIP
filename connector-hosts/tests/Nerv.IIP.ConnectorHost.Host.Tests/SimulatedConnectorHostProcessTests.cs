@@ -21,8 +21,6 @@ public sealed class SimulatedConnectorHostProcessTests
         Assert.True(File.Exists(executable), $"Built Host executable not found at '{executable}'.");
 
         using var process = StartHost(executable, platform.BaseAddress);
-        var standardOutput = process.StandardOutput.ReadToEndAsync();
-        var standardError = process.StandardError.ReadToEndAsync();
         var usedForcedCleanup = false;
         try
         {
@@ -64,14 +62,12 @@ public sealed class SimulatedConnectorHostProcessTests
             usedForcedCleanup = await StopExactProcessAsync(process);
         }
 
-        var output = await standardOutput;
-        var error = await standardError;
         Assert.False(
             usedForcedCleanup,
-            $"Host did not stop after SIGTERM and required exact-child kill.{Environment.NewLine}{output}{Environment.NewLine}{error}");
+            "Host did not stop after SIGTERM and required exact-child kill.");
         Assert.True(
             process.HasExited,
-            $"Host process did not exit within the cleanup deadline.{Environment.NewLine}{output}{Environment.NewLine}{error}");
+            "Host process did not exit within the cleanup deadline.");
     }
 
     private static Process StartHost(string executable, Uri platformBaseAddress)
@@ -79,9 +75,7 @@ public sealed class SimulatedConnectorHostProcessTests
         var start = new ProcessStartInfo(executable)
         {
             WorkingDirectory = AppContext.BaseDirectory,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
+            UseShellExecute = false
         };
         start.Environment["DOTNET_ENVIRONMENT"] = "Development";
         start.Environment["Platform__AppHubBaseUrl"] = platformBaseAddress.ToString();
@@ -98,6 +92,8 @@ public sealed class SimulatedConnectorHostProcessTests
         start.Environment["ConnectorHost__ConnectionDetectionBudgetSeconds"] = "4";
         start.Environment["ConnectorHost__BackendDeadlineSeconds"] = "8";
         start.Environment["InternalService__BearerToken"] = "process-test-internal-token";
+        start.Environment["Logging__LogLevel__Default"] = "Warning";
+        start.Environment["Logging__LogLevel__Microsoft.Hosting.Lifetime"] = "Warning";
         start.Environment["Simulated__Enabled"] = "true";
         start.Environment["Simulated__Phases__Normal"] = "00:00:01";
         start.Environment["Simulated__Phases__Degrading"] = "00:00:01";
