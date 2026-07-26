@@ -85,6 +85,7 @@ try
     builder.Services.AddIndustrialTelemetryPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<WorldBibleSeedService>();
+    builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
@@ -146,6 +147,11 @@ try
         throw new InvalidOperationException("LeaderDemo:Seed:Enabled=true is only allowed for BusinessIndustrialTelemetry in Development.");
     }
 
+    if (WorldHistoryConfiguration.IsEnabled(builder.Configuration) && !app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException("LeaderDemo:History:Enabled=true is only allowed for BusinessIndustrialTelemetry in Development.");
+    }
+
     if (leaderDemoSeedEnabled)
     {
         using var scope = app.Services.CreateScope();
@@ -155,6 +161,41 @@ try
         if (builder.Configuration.GetValue("LeaderDemo:World:Enabled", false))
         {
             await scope.ServiceProvider.GetRequiredService<WorldBibleSeedService>().SeedAsync(organizationId, environmentId);
+        }
+
+        // 《工厂世界观设定集》L1 设备域历史（三期）。校验器 fail-closed：对不上账就让启动失败。
+        if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
+        {
+            var historyStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
+                organizationId,
+                environmentId,
+                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+            historyStopwatch.Stop();
+            app.Logger.LogInformation(
+                "World-history device seed completed in {ElapsedSeconds:F1}s: {Rules} alarm rules, {Alarms} alarm events, " +
+                "{Daily} daily rollups, {Hourly} hourly rollups, {Raw} raw samples, {Summaries} summaries, " +
+                "{States} device states, {OeeFacts} OEE facts; validator checked {AlarmsChecked} alarms / " +
+                "{DailyChecked} daily rollups / {FaultedChecked} faulted states / {OeeChecked} OEE facts ({OpenAlarms} open-tail alarms).",
+                historyStopwatch.Elapsed.TotalSeconds,
+                report.AlarmRulesWritten,
+                report.AlarmEventsWritten,
+                report.DailyRollupsWritten,
+                report.HourlyRollupsWritten,
+                report.RawSamplesWritten,
+                report.SummariesWritten,
+                report.DeviceStateSnapshotsWritten,
+                report.OeeFactsWritten,
+                report.Validation.AlarmsChecked,
+                report.Validation.DailyRollupsChecked,
+                report.Validation.FaultedStatesChecked,
+                report.Validation.OeeFactsChecked,
+                report.Validation.OpenAlarms);
+            foreach (var line in report.Validation.Sample)
+            {
+                app.Logger.LogInformation("World-history device sample: {Chain}", line);
+            }
         }
     }
 
