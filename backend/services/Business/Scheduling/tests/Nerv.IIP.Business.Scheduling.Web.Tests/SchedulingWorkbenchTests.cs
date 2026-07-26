@@ -8,6 +8,7 @@ using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
+using Nerv.IIP.Business.Scheduling.Web.Application.Urgency;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Business.Scheduling.Web.Endpoints.Scheduling;
 using NetCorePal.Extensions.Primitives;
@@ -180,6 +181,38 @@ public sealed class SchedulingWorkbenchTests
     }
 
     [Fact]
+    public async Task Workbench_create_returns_available_provenance_from_the_actual_create_command_chain()
+    {
+        await using var db = CreateDbContext();
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var sourceOrder = new SchedulingProblemSourceOrder(
+            problem.Orders.First().OrderId,
+            problem.Orders.First().SkuCode,
+            problem.Orders.First().Quantity,
+            problem.Orders.First().DueUtc,
+            problem.Orders.First().Priority,
+            problem.Orders.First().IsRush,
+            problem.Orders.First().Operations.Min(x => x.EarliestStartUtc),
+            "routing-v1");
+        var handler = new CreateSchedulingWorkbenchPlanCommandHandler(
+            new FixedWorkbenchSourceProvider([sourceOrder]),
+            new FixedProblemProducer(problem),
+            CreateActualCreateSender(db, problem.HorizonStartUtc));
+
+        var result = await handler.Handle(
+            new CreateSchedulingWorkbenchPlanCommand(
+                problem.OrganizationId,
+                problem.EnvironmentId,
+                problem.HorizonStartUtc,
+                problem.HorizonEndUtc,
+                [new SchedulingWorkbenchOrderSelection(sourceOrder.OrderId, 10, false)]),
+            CancellationToken.None);
+
+        AssertAvailableProvenance(result);
+        Assert.Contains(db.SchedulePlans.Local, x => x.PlanId == result.PlanId);
+    }
+
+    [Fact]
     public async Task Revision_preserves_explicit_lock_and_returns_latest_invalidation_impact_and_comparison()
     {
         await using var db = CreateDbContext();
@@ -236,7 +269,7 @@ public sealed class SchedulingWorkbenchTests
             movedStart,
             original.EndUtc.AddMinutes(1),
             "ui");
-        var sender = new SchedulingCreateSender(problem.HorizonStartUtc);
+        var sender = CreateActualCreateSender(db, problem.HorizonStartUtc);
         var handler = new CreateSchedulePlanRevisionCommandHandler(db, sender);
 
         var result = await handler.Handle(new CreateSchedulePlanRevisionCommand(
@@ -253,6 +286,7 @@ public sealed class SchedulingWorkbenchTests
         Assert.True(result.Impact.IsInvalidated);
         Assert.Equal(2, result.Impact.AffectedOperationIds.Count);
         Assert.Equal("event-latest", result.Impact.SourceEventId);
+        AssertAvailableProvenance(result.Candidate);
     }
 
     [Fact]
@@ -352,6 +386,106 @@ public sealed class SchedulingWorkbenchTests
             .UseInMemoryDatabase($"scheduling-workbench-{Guid.NewGuid():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static ISender CreateActualCreateSender(
+        ApplicationDbContext db,
+        DateTimeOffset generatedAtUtc)
+    {
+        var timeProvider = new FixedTimeProvider(generatedAtUtc);
+        var generator = new SchedulingPlanGenerator(
+            new DefaultSchedulingRuleProvider(),
+            new DefaultSchedulingConstraintProvider(
+                new SchedulingOperationOverrideOverlay(db),
+                new NoopSchedulingEquipmentAvailabilityProvider(),
+                new NoopSchedulingMaterialReadinessProvider()),
+            new FiniteCapacityScheduler());
+        return new ActualCreateSender(new CreateSchedulePlanCommandHandler(
+            db,
+            generator,
+            timeProvider,
+            new OrderUrgencyService(db, timeProvider)));
+    }
+
+    private static void AssertAvailableProvenance(SchedulePlanContract plan)
+    {
+        var provenance = Assert.IsType<SchedulePlanProvenanceContract>(plan.Provenance);
+        Assert.Equal("finite-capacity", provenance.EngineId);
+        Assert.Equal(FiniteCapacityScheduler.AlgorithmVersion, plan.AlgorithmVersion);
+        Assert.Equal(plan.ProblemFingerprint, provenance.EngineInputFingerprint);
+        Assert.Equal(SchedulingExecutionTraceSchema.CurrentVersion, provenance.TraceSchemaVersion);
+        Assert.Equal(SchedulingReplayStatuses.Available, provenance.ReplayStatus);
+    }
+
+    private sealed class ActualCreateSender(CreateSchedulePlanCommandHandler handler) : ISender
+    {
+        public async Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default)
+        {
+            if (request is CreateSchedulePlanCommand command)
+            {
+                var result = await handler.Handle(command, cancellationToken);
+                return (TResponse)(object)result;
+            }
+
+            throw new NotSupportedException();
+        }
+
+        public Task Send<TRequest>(
+            TRequest request,
+            CancellationToken cancellationToken = default)
+            where TRequest : IRequest => throw new NotSupportedException();
+
+        public Task<object?> Send(
+            object request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class FixedWorkbenchSourceProvider(
+        IReadOnlyCollection<SchedulingProblemSourceOrder> orders)
+        : ISchedulingWorkbenchSourceProvider
+    {
+        public Task<IReadOnlyCollection<SchedulingProblemSourceOrder>> ResolveOrdersAsync(
+            string organizationId,
+            string environmentId,
+            DateTimeOffset earliestStartFallbackUtc,
+            IReadOnlyCollection<SchedulingWorkbenchOrderSelection> selections,
+            CancellationToken cancellationToken) => Task.FromResult(orders);
+    }
+
+    private sealed class FixedProblemProducer(SchedulingProblemContract problem)
+        : ISchedulingProblemProducer
+    {
+        public Task<SchedulingProblemContract> AssembleAsync(
+            AssembleSchedulingProblemRequest request,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(problem with
+            {
+                ProblemId = request.ProblemId,
+                OrganizationId = request.OrganizationId,
+                EnvironmentId = request.EnvironmentId,
+                HorizonStartUtc = request.HorizonStartUtc,
+                HorizonEndUtc = request.HorizonEndUtc,
+            });
+        }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 
     private sealed class SchedulingCreateSender(DateTimeOffset generatedAtUtc) : ISender

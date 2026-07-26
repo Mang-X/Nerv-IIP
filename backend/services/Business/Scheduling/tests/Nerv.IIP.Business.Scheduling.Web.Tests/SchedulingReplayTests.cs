@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -164,6 +166,58 @@ public sealed class SchedulingReplayTests
         Assert.NotEqual(result.ExpectedDigest, result.ActualDigest);
     }
 
+    [Theory]
+    [InlineData("null-orders")]
+    [InlineData("invalid-horizon")]
+    [InlineData("problem-id")]
+    [InlineData("organization-id")]
+    [InlineData("environment-id")]
+    [InlineData("fingerprint")]
+    public async Task Replay_rejects_semantically_invalid_or_scope_inconsistent_exact_input_without_calling_engine(
+        string invalidCase)
+    {
+        await using var db = CreateDbContext();
+        var problem = SchedulingProblemNormalizer.Normalize(
+            ShockAbsorberSchedulingFixture.CreateProblem());
+        var engine = new RecordingEngine();
+        var snapshot = AddReplayFixture(
+            db,
+            problem,
+            new FiniteCapacityScheduler(),
+            SchedulingPersistenceTestData.CurrentAvailableTrace);
+        var invalidInput = invalidCase switch
+        {
+            "null-orders" => problem with { Orders = null! },
+            "invalid-horizon" => problem with { HorizonEndUtc = problem.HorizonStartUtc },
+            "problem-id" => problem with { ProblemId = "problem-other" },
+            "organization-id" => problem with { OrganizationId = "org-other" },
+            "environment-id" => problem with { EnvironmentId = "env-other" },
+            _ => problem,
+        };
+        var inputJson = JsonSerializer.Serialize(invalidInput, SchedulingJson.Options);
+        var inputFingerprint = invalidCase == "fingerprint"
+            ? new string('0', 64)
+            : Fingerprint(inputJson);
+        db.Entry(snapshot).Property(x => x.EngineInputJson).CurrentValue = inputJson;
+        db.Entry(snapshot).Property(x => x.EngineInputFingerprint).CurrentValue = inputFingerprint;
+        await db.SaveChangesAsync();
+        var service = new SchedulePlanReplayService(db, [engine]);
+        SchedulePlanReplayVerificationResult? result = null;
+
+        var exception = await Record.ExceptionAsync(async () =>
+        {
+            result = await service.VerifyAsync(
+                "plan-replay-001",
+                problem.OrganizationId,
+                problem.EnvironmentId,
+                CancellationToken.None);
+        });
+
+        Assert.Null(exception);
+        Assert.Equal(SchedulePlanReplayVerificationStatus.InvalidEffectiveInput, result?.Status);
+        Assert.False(engine.WasCalled);
+    }
+
     private static ScheduleProblemSnapshot AddReplayFixture(
         ApplicationDbContext db,
         SchedulingProblemContract problem,
@@ -208,6 +262,12 @@ public sealed class SchedulingReplayTests
             .UseInMemoryDatabase($"scheduling-replay-{Guid.NewGuid():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static string Fingerprint(string json)
+    {
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)))
+            .ToLowerInvariant();
     }
 
     private sealed class RecordingEngine : ISchedulingEngine

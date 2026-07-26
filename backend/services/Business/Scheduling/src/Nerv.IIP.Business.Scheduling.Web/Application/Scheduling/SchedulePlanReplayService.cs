@@ -122,16 +122,45 @@ public sealed class SchedulePlanReplayService
         SchedulingProblemContract effectiveProblem;
         try
         {
-            effectiveProblem = JsonSerializer.Deserialize<SchedulingProblemContract>(
-                problem.EngineInputJson,
-                SchedulingJson.Options)
+            var deserialized = JsonSerializer.Deserialize<SchedulingProblemContract>(
+                    problem.EngineInputJson,
+                    SchedulingJson.Options)
                 ?? throw new JsonException("The exact effective input deserialized to null.");
+            effectiveProblem = SchedulingProblemNormalizer.Normalize(deserialized);
         }
         catch (JsonException exception)
         {
-            return Unavailable(
-                SchedulePlanReplayVerificationStatus.InvalidEffectiveInput,
-                $"The exact effective scheduling engine input is invalid: {exception.Message}");
+            return InvalidEffectiveInput(exception.Message);
+        }
+        catch (ArgumentException exception)
+        {
+            return InvalidEffectiveInput(exception.Message);
+        }
+
+        if (!string.Equals(effectiveProblem.ProblemId, plan.ProblemId, StringComparison.Ordinal) ||
+            !string.Equals(effectiveProblem.ProblemId, problem.ProblemId, StringComparison.Ordinal) ||
+            !string.Equals(effectiveProblem.OrganizationId, plan.OrganizationId, StringComparison.Ordinal) ||
+            !string.Equals(effectiveProblem.OrganizationId, problem.OrganizationId, StringComparison.Ordinal) ||
+            !string.Equals(effectiveProblem.EnvironmentId, plan.EnvironmentId, StringComparison.Ordinal) ||
+            !string.Equals(effectiveProblem.EnvironmentId, problem.EnvironmentId, StringComparison.Ordinal))
+        {
+            return InvalidEffectiveInput(
+                "The exact effective scheduling engine input scope does not match the persisted plan and problem snapshot.");
+        }
+
+        var normalizedInputJson = JsonSerializer.Serialize(
+            effectiveProblem,
+            SchedulingJson.Options);
+        var normalizedInputFingerprint = Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes(normalizedInputJson)))
+            .ToLowerInvariant();
+        if (!string.Equals(
+                normalizedInputFingerprint,
+                problem.EngineInputFingerprint,
+                StringComparison.Ordinal))
+        {
+            return InvalidEffectiveInput(
+                "The exact effective scheduling engine input fingerprint does not match the persisted fingerprint.");
         }
 
         var persisted = SchedulePlanContractMapper.ToContract(
@@ -161,6 +190,14 @@ public sealed class SchedulePlanReplayService
         string detail)
     {
         return new SchedulePlanReplayVerificationResult(status, null, null, detail);
+    }
+
+    private static SchedulePlanReplayVerificationResult InvalidEffectiveInput(
+        string detail)
+    {
+        return Unavailable(
+            SchedulePlanReplayVerificationStatus.InvalidEffectiveInput,
+            $"The exact effective scheduling engine input is invalid: {detail}");
     }
 
     private static string CalculateCanonicalDigest(SchedulePlanContract plan)
