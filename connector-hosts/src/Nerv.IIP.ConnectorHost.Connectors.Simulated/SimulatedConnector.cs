@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Nerv.IIP.ConnectorHost.Application;
 using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 using Nerv.IIP.Contracts.Ops;
@@ -158,8 +160,7 @@ public sealed class SimulatedConnector :
                 }
 
                 var sample = _evaluator.Evaluate(tag, nowUtc, cycle, controlledValue);
-                string? deviceState = null;
-                DateTimeOffset? stateOccurredAtUtc = null;
+                RecordIndustrialTelemetrySampleRequest request;
                 if (string.Equals(
                     tag.TagKey,
                     stateObservationTagKey,
@@ -168,46 +169,36 @@ public sealed class SimulatedConnector :
                     lock (runtime.Gate)
                     {
                         var state = runtime.DeviceStates[device.DeviceAssetId];
-                        var observation = state.PendingObservation;
-                        if (observation is not null
-                            && (observation.SourceSequence is null
-                                || string.Equals(
-                                    observation.SourceSequence,
-                                    sample.SourceSequence,
-                                    StringComparison.Ordinal)))
+                        var pending = state.PendingObservations.First;
+                        if (pending is not null
+                            && pending.Value.SourceSequence is null)
                         {
-                            observation = observation with
+                            var observation = pending.Value with
                             {
-                                SourceSequence = sample.SourceSequence,
-                                OccurredAtUtc = observation.OccurredAtUtc ?? nowUtc
+                                OccurredAtUtc = pending.Value.OccurredAtUtc ?? nowUtc
                             };
-                            runtime.DeviceStates[device.DeviceAssetId] =
-                                state with { PendingObservation = observation };
-                            deviceState = observation.State;
-                            stateOccurredAtUtc = observation.OccurredAtUtc;
+                            request = CreateRequest(
+                                tag,
+                                sample,
+                                nowUtc,
+                                observation.State,
+                                observation.OccurredAtUtc);
+                            pending.Value = observation with
+                            {
+                                SourceSequence = request.SourceSequence
+                            };
+                        }
+                        else
+                        {
+                            request = CreateRequest(tag, sample, nowUtc);
                         }
                     }
                 }
+                else
+                {
+                    request = CreateRequest(tag, sample, nowUtc);
+                }
 
-                var request = new RecordIndustrialTelemetrySampleRequest(
-                    _runtimeContext.OrganizationId,
-                    _runtimeContext.EnvironmentId,
-                    tag.DeviceAssetId,
-                    tag.TagKey,
-                    nowUtc,
-                    nowUtc.AddMilliseconds(_options.SampleIntervalMilliseconds),
-                    1,
-                    sample.Value,
-                    sample.Value,
-                    sample.Value,
-                    sample.SourceSequence,
-                    tag.SourceSystem,
-                    $"{_runtimeContext.ConnectorHostId}/{tag.ConnectorId}",
-                    deviceState,
-                    stateOccurredAtUtc,
-                    sample.Value,
-                    sample.Value,
-                    tag.ConnectorId);
                 var evicted = runtime.Outbox.Enqueue(request, nowUtc);
                 if (evicted is not null)
                 {
@@ -227,6 +218,74 @@ public sealed class SimulatedConnector :
             runtime.ManifestTracker.MarkAllEnabledActive();
             runtime.ManifestActivated = true;
         }
+    }
+
+    private RecordIndustrialTelemetrySampleRequest CreateRequest(
+        SimulatedTagProfile tag,
+        SimulatedScenarioSample sample,
+        DateTimeOffset bucketStartUtc,
+        string? deviceState = null,
+        DateTimeOffset? stateOccurredAtUtc = null)
+    {
+        var request = new RecordIndustrialTelemetrySampleRequest(
+            _runtimeContext.OrganizationId,
+            _runtimeContext.EnvironmentId,
+            tag.DeviceAssetId,
+            tag.TagKey,
+            bucketStartUtc,
+            bucketStartUtc.AddMilliseconds(_options.SampleIntervalMilliseconds),
+            1,
+            sample.Value,
+            sample.Value,
+            sample.Value,
+            sample.SourceSequence,
+            tag.SourceSystem,
+            $"{_runtimeContext.ConnectorHostId}/{tag.ConnectorId}",
+            deviceState,
+            stateOccurredAtUtc,
+            sample.Value,
+            sample.Value,
+            tag.ConnectorId);
+        return request with
+        {
+            SourceSequence = ContentAddressedSourceSequence(
+                sample.SourceSequence,
+                request)
+        };
+    }
+
+    private static string ContentAddressedSourceSequence(
+        string cycleSourceSequence,
+        RecordIndustrialTelemetrySampleRequest request)
+    {
+        var canonical = string.Join(
+            '\u001f',
+            [
+                cycleSourceSequence,
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.DeviceAssetId,
+                request.TagKey,
+                request.BucketStartUtc.ToString("O", CultureInfo.InvariantCulture),
+                request.BucketEndUtc.ToString("O", CultureInfo.InvariantCulture),
+                request.SampleCount.ToString(CultureInfo.InvariantCulture),
+                request.MinValue.ToString(CultureInfo.InvariantCulture),
+                request.MaxValue.ToString(CultureInfo.InvariantCulture),
+                request.AverageValue.ToString(CultureInfo.InvariantCulture),
+                request.SourceSystem ?? string.Empty,
+                request.SourceConnector ?? string.Empty,
+                request.DeviceState ?? string.Empty,
+                request.StateOccurredAtUtc?.ToString("O", CultureInfo.InvariantCulture)
+                    ?? string.Empty,
+                request.FirstValue?.ToString(CultureInfo.InvariantCulture)
+                    ?? string.Empty,
+                request.LastValue?.ToString(CultureInfo.InvariantCulture)
+                    ?? string.Empty,
+                request.CollectionConnectorId ?? string.Empty
+            ]);
+        var digest = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+        return $"{cycleSourceSequence}:{digest}";
     }
 
     private async Task DeliverDueAsync(
@@ -281,14 +340,13 @@ public sealed class SimulatedConnector :
         RecordIndustrialTelemetrySampleRequest request)
     {
         var state = runtime.DeviceStates[request.DeviceAssetId];
-        if (state.PendingObservation is not null
+        if (state.PendingObservations.First is { } pending
             && string.Equals(
-                state.PendingObservation.SourceSequence,
+                pending.Value.SourceSequence,
                 request.SourceSequence,
                 StringComparison.Ordinal))
         {
-            runtime.DeviceStates[request.DeviceAssetId] =
-                state with { PendingObservation = null };
+            state.PendingObservations.RemoveFirst();
         }
     }
 
@@ -297,21 +355,16 @@ public sealed class SimulatedConnector :
         RecordIndustrialTelemetrySampleRequest request)
     {
         var state = runtime.DeviceStates[request.DeviceAssetId];
-        if (state.PendingObservation is not null
+        if (state.PendingObservations.First is { } pending
             && string.Equals(
-                state.PendingObservation.SourceSequence,
+                pending.Value.SourceSequence,
                 request.SourceSequence,
                 StringComparison.Ordinal))
         {
-            runtime.DeviceStates[request.DeviceAssetId] =
-                state with
-                {
-                    PendingObservation = state.PendingObservation with
-                    {
-                        SourceSequence = null,
-                        OccurredAtUtc = null
-                    }
-                };
+            pending.Value = pending.Value with
+            {
+                SourceSequence = null
+            };
         }
     }
 

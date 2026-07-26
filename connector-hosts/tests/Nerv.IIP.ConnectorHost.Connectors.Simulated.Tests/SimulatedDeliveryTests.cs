@@ -1,6 +1,7 @@
 using Nerv.IIP.ConnectorHost.Application;
 using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 using Nerv.IIP.ConnectorHost.TestUtilities;
+using Nerv.IIP.Contracts.Ops;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.Simulated.Tests;
 
@@ -66,7 +67,11 @@ public sealed class SimulatedDeliveryTests
         clock.Advance(TimeSpan.FromMilliseconds(1));
         await connector.RunCollectionCycleAsync(CancellationToken.None);
 
-        var attempts = samples.Attempts.Where(attempt => attempt.Request.SourceSequence == sourceSequence).ToArray();
+        var attempts = samples.Attempts
+            .Where(attempt => HasSourcePrefix(
+                attempt.Request.SourceSequence,
+                sourceSequence))
+            .ToArray();
         Assert.Equal(
             [
                 DateTimeOffset.Parse("2026-07-26T00:00:00Z"),
@@ -134,7 +139,9 @@ public sealed class SimulatedDeliveryTests
                 DateTimeOffset.Parse("2026-07-26T00:00:00.300Z")
             ],
             samples.Attempts
-                .Where(attempt => attempt.Request.SourceSequence == sourceSequence)
+                .Where(attempt => HasSourcePrefix(
+                    attempt.Request.SourceSequence,
+                    sourceSequence))
                 .Select(attempt => attempt.AtUtc));
         var health = (await connector.DiscoverAsync(CancellationToken.None))
             .Single(target => target.InstanceKey == "CONN-OPCUA-01")
@@ -145,11 +152,11 @@ public sealed class SimulatedDeliveryTests
     }
 
     [Fact]
-    public async Task State_observation_stays_on_the_retried_request_until_success_then_is_not_repeated()
+    public async Task State_transition_stays_on_the_retried_request_until_success_then_is_not_repeated()
     {
         var clock = At(DateTimeOffset.Parse("2026-07-26T00:00:00Z"));
         const string stateSourceSequence =
-            "simulated:CONN-OPCUA-01:DEV-CNC-01:spindle-speed:0";
+            "simulated:CONN-OPCUA-01:DEV-CNC-01:spindle-speed:1";
         var samples = new RecordingSamplesClient(
             clock,
             stateSourceSequence,
@@ -157,18 +164,25 @@ public sealed class SimulatedDeliveryTests
         var connector = CreateConnector(SimulatedTestConfiguration.Bind(), samples, clock);
 
         await connector.RunCollectionCycleAsync(CancellationToken.None);
+        await connector.ExecuteAsync(
+            CreateStartStopTask("op-retried-state-transition", "stop"),
+            CancellationToken.None);
+        clock.Advance(TimeSpan.FromMilliseconds(2000));
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
         clock.Advance(TimeSpan.FromMilliseconds(100));
         await connector.RunCollectionCycleAsync(CancellationToken.None);
         clock.Advance(TimeSpan.FromMilliseconds(1900));
         await connector.RunCollectionCycleAsync(CancellationToken.None);
 
         var stateAttempts = samples.Attempts
-            .Where(attempt => attempt.Request.SourceSequence == stateSourceSequence)
+            .Where(attempt => HasSourcePrefix(
+                attempt.Request.SourceSequence,
+                stateSourceSequence))
             .ToArray();
         Assert.Equal(2, stateAttempts.Length);
         Assert.All(stateAttempts, attempt =>
         {
-            Assert.Equal("running", attempt.Request.DeviceState);
+            Assert.Equal("stopped", attempt.Request.DeviceState);
             Assert.Equal(
                 DateTimeOffset.Parse("2026-07-26T00:00:00Z"),
                 attempt.Request.StateOccurredAtUtc);
@@ -176,7 +190,9 @@ public sealed class SimulatedDeliveryTests
         Assert.DoesNotContain(
             samples.Attempts,
             attempt => attempt.Request.DeviceAssetId == "DEV-CNC-01"
-                && attempt.Request.SourceSequence.EndsWith(":1", StringComparison.Ordinal)
+                && HasSourcePrefix(
+                    attempt.Request.SourceSequence,
+                    "simulated:CONN-OPCUA-01:DEV-CNC-01:spindle-speed:2")
                 && attempt.Request.DeviceState is not null);
     }
 
@@ -230,7 +246,9 @@ public sealed class SimulatedDeliveryTests
 
         Assert.Single(
             samples.Attempts,
-            attempt => attempt.Request.SourceSequence == sourceSequence);
+            attempt => HasSourcePrefix(
+                attempt.Request.SourceSequence,
+                sourceSequence));
     }
 
     private static SimulatedConnector CreateConnector(
@@ -259,6 +277,38 @@ public sealed class SimulatedDeliveryTests
         clock.Advance(timestamp - clock.GetUtcNow());
         return clock;
     }
+
+    private static OperationTaskDispatchItem CreateStartStopTask(
+        string operationTaskId,
+        string value) =>
+        new(
+            operationTaskId,
+            $"attempt-{operationTaskId}",
+            "org-001",
+            "env-dev",
+            "connector-host-001",
+            "CONN-OPCUA-01",
+            "device.control.command",
+            $"correlation-{operationTaskId}",
+            new Dictionary<string, string>
+            {
+                ["commandType"] = "start-stop",
+                ["deviceAssetId"] = "DEV-CNC-01",
+                ["value"] = value
+            },
+            $"lease-{operationTaskId}",
+            DateTimeOffset.Parse("2026-07-26T00:00:00Z"),
+            DateTimeOffset.Parse("2026-07-26T00:05:00Z"),
+            1,
+            300,
+            3);
+
+    private static bool HasSourcePrefix(
+        string sourceSequence,
+        string cycleSourceSequence) =>
+        sourceSequence.StartsWith(
+            $"{cycleSourceSequence}:",
+            StringComparison.Ordinal);
 
     private sealed class RecordingSamplesClient : IIndustrialTelemetrySamplesClient
     {
@@ -291,7 +341,8 @@ public sealed class SimulatedDeliveryTests
             cancellationToken.ThrowIfCancellationRequested();
             Attempts.Add((_timeProvider.GetUtcNow(), request));
             if (_failEveryAttempt
-                || string.Equals(request.SourceSequence, _failingSourceSequence, StringComparison.Ordinal)
+                || _failingSourceSequence is not null
+                && HasSourcePrefix(request.SourceSequence, _failingSourceSequence)
                 && _remainingFailures-- > 0)
             {
                 if (_throwNonCallerCancellation)

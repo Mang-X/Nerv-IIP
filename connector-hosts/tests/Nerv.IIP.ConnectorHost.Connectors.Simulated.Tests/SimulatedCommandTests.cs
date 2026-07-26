@@ -150,6 +150,149 @@ public sealed class SimulatedCommandTests
         Assert.Equal("stopped", transition.DeviceState);
     }
 
+    [Fact]
+    public async Task Same_cycle_restart_after_write_tag_does_not_reuse_the_controlled_payload_source_sequence()
+    {
+        var controlled = CreateFixture(
+            timestamp: DateTimeOffset.Parse("2026-07-26T00:00:00.100Z"));
+        var result = await controlled.Connector.ExecuteAsync(
+            CreateTask(
+                "op-write-before-restart",
+                "CONN-OPCUA-01",
+                new Dictionary<string, string>
+                {
+                    ["commandType"] = "write-tag",
+                    ["deviceAssetId"] = "DEV-CNC-01",
+                    ["tagKey"] = "spindle-speed",
+                    ["value"] = "2500"
+                }),
+            CancellationToken.None);
+        await controlled.Connector.RunCollectionCycleAsync(CancellationToken.None);
+        var controlledRequest = controlled.Samples.Requests.Single(request =>
+            request.DeviceAssetId == "DEV-CNC-01"
+            && request.TagKey == "spindle-speed");
+
+        var restarted = CreateFixture(
+            timestamp: DateTimeOffset.Parse("2026-07-26T00:00:01.900Z"));
+        await restarted.Connector.RunCollectionCycleAsync(CancellationToken.None);
+        var restartedRequest = restarted.Samples.Requests.Single(request =>
+            request.DeviceAssetId == "DEV-CNC-01"
+            && request.TagKey == "spindle-speed");
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(2500m, controlledRequest.AverageValue);
+        Assert.NotEqual(controlledRequest.AverageValue, restartedRequest.AverageValue);
+        Assert.NotEqual(controlledRequest.SourceSequence, restartedRequest.SourceSequence);
+    }
+
+    [Fact]
+    public async Task Same_cycle_restart_after_start_stop_does_not_reuse_the_state_payload_source_sequence()
+    {
+        var controlled = CreateFixture(
+            timestamp: DateTimeOffset.Parse("2026-07-26T00:00:00.100Z"));
+        var result = await controlled.Connector.ExecuteAsync(
+            StartTask("op-stop-before-restart", "DEV-CNC-01", "stop"),
+            CancellationToken.None);
+        await controlled.Connector.RunCollectionCycleAsync(CancellationToken.None);
+        var stoppedRequest = controlled.Samples.Requests.Single(request =>
+            request.DeviceAssetId == "DEV-CNC-01"
+            && request.DeviceState == "stopped");
+
+        var restarted = CreateFixture(
+            timestamp: DateTimeOffset.Parse("2026-07-26T00:00:01.900Z"));
+        await restarted.Connector.RunCollectionCycleAsync(CancellationToken.None);
+        var runningRequest = restarted.Samples.Requests.Single(request =>
+            request.DeviceAssetId == "DEV-CNC-01"
+            && request.DeviceState == "running");
+
+        Assert.True(result.Succeeded);
+        Assert.NotEqual(stoppedRequest, runningRequest);
+        Assert.NotEqual(stoppedRequest.SourceSequence, runningRequest.SourceSequence);
+    }
+
+    [Fact]
+    public async Task Stop_then_start_before_collection_emits_both_transitions_in_fifo_order()
+    {
+        var fixture = CreateFixture();
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+        fixture.Samples.Requests.Clear();
+
+        var stop = await fixture.Connector.ExecuteAsync(
+            StartTask("op-fifo-stop", "DEV-CNC-01", "stop"),
+            CancellationToken.None);
+        var start = await fixture.Connector.ExecuteAsync(
+            StartTask("op-fifo-start", "DEV-CNC-01", "start"),
+            CancellationToken.None);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        Assert.True(stop.Succeeded);
+        Assert.True(start.Succeeded);
+        var transitions = fixture.Samples.Requests
+            .Where(request => request.DeviceAssetId == "DEV-CNC-01"
+                && request.DeviceState is not null)
+            .ToArray();
+        Assert.Equal(["stopped", "running"], transitions.Select(request => request.DeviceState));
+        Assert.Equal(2, transitions.Select(request => request.SourceSequence).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task Full_state_transition_queue_rejects_without_applying_or_acknowledging_the_command()
+    {
+        var fixture = CreateFixture(maxPendingStateTransitionsPerDevice: 2);
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+        fixture.Samples.Requests.Clear();
+
+        var stop = await fixture.Connector.ExecuteAsync(
+            StartTask("op-capacity-stop", "DEV-CNC-01", "stop"),
+            CancellationToken.None);
+        var start = await fixture.Connector.ExecuteAsync(
+            StartTask("op-capacity-start", "DEV-CNC-01", "start"),
+            CancellationToken.None);
+        var rejected = await fixture.Connector.ExecuteAsync(
+            StartTask("op-capacity-rejected-stop", "DEV-CNC-01", "stop"),
+            CancellationToken.None);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        Assert.True(stop.Succeeded);
+        Assert.True(start.Succeeded);
+        Assert.False(rejected.Succeeded);
+        Assert.Equal("BadResourceUnavailable", rejected.Output["deviceReceiptCode"]);
+        Assert.Equal(
+            ["stopped", "running"],
+            fixture.Samples.Requests
+                .Where(request => request.DeviceAssetId == "DEV-CNC-01"
+                    && request.DeviceState is not null)
+                .Select(request => request.DeviceState));
+    }
+
+    [Fact]
+    public async Task Retrying_initial_observation_does_not_consume_transition_queue_capacity()
+    {
+        var fixture = CreateFixture(
+            maxPendingStateTransitionsPerDevice: 1,
+            failDeliveries: true);
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        var stop = await fixture.Connector.ExecuteAsync(
+            StartTask("op-capacity-after-initial-stop", "DEV-CNC-01", "stop"),
+            CancellationToken.None);
+        var rejectedStart = await fixture.Connector.ExecuteAsync(
+            StartTask("op-capacity-after-initial-start", "DEV-CNC-01", "start"),
+            CancellationToken.None);
+
+        Assert.True(stop.Succeeded);
+        Assert.False(rejectedStart.Succeeded);
+        Assert.Equal(
+            "BadResourceUnavailable",
+            rejectedStart.Output["deviceReceiptCode"]);
+    }
+
     [Theory]
     [MemberData(nameof(TerminalFailures))]
     public async Task Terminal_validation_paths_return_auditable_device_receipts(
@@ -274,10 +417,16 @@ public sealed class SimulatedCommandTests
         Assert.False(string.IsNullOrWhiteSpace(result.Output["deviceReceiptMessage"]));
     }
 
-    private static CommandFixture CreateFixture(int? receiptCapacity = null)
+    private static CommandFixture CreateFixture(
+        int? receiptCapacity = null,
+        DateTimeOffset? timestamp = null,
+        int? maxPendingStateTransitionsPerDevice = null,
+        bool failDeliveries = false)
     {
         var clock = new ControllableTimeProvider();
-        clock.Advance(DateTimeOffset.Parse("2026-07-26T00:00:00Z") - clock.GetUtcNow());
+        clock.Advance(
+            (timestamp ?? DateTimeOffset.Parse("2026-07-26T00:00:00Z"))
+            - clock.GetUtcNow());
         var options = SimulatedTestConfiguration.Bind(mutate: values =>
         {
             if (receiptCapacity.HasValue)
@@ -285,8 +434,15 @@ public sealed class SimulatedCommandTests
                 values["Simulated:CommandReceiptCacheCapacity"] =
                     receiptCapacity.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
             }
+
+            if (maxPendingStateTransitionsPerDevice.HasValue)
+            {
+                values["Simulated:MaxPendingStateTransitionsPerDevice"] =
+                    maxPendingStateTransitionsPerDevice.Value.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture);
+            }
         });
-        var samples = new RecordingSamplesClient();
+        var samples = new RecordingSamplesClient(failDeliveries);
         var connector = new SimulatedConnector(
             options,
             new ConnectorHostRuntimeContext(
@@ -343,6 +499,13 @@ public sealed class SimulatedCommandTests
 
     private sealed class RecordingSamplesClient : IIndustrialTelemetrySamplesClient
     {
+        private readonly bool _failDeliveries;
+
+        public RecordingSamplesClient(bool failDeliveries)
+        {
+            _failDeliveries = failDeliveries;
+        }
+
         public List<RecordIndustrialTelemetrySampleRequest> Requests { get; } = [];
 
         public Task RecordSampleAsync(
@@ -351,6 +514,11 @@ public sealed class SimulatedCommandTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Requests.Add(request);
+            if (_failDeliveries)
+            {
+                throw new HttpRequestException("Simulated delivery failure.");
+            }
+
             return Task.CompletedTask;
         }
     }

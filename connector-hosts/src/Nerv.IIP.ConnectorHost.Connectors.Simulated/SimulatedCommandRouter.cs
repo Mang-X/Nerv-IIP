@@ -272,18 +272,54 @@ internal sealed class SimulatedCommandRouter
                 $"Simulated start-stop value '{value ?? "<missing>"}' is not supported.");
         }
 
+        var queueAtCapacity = false;
         lock (runtime.Gate)
         {
             var current = runtime.DeviceStates[device.DeviceAssetId];
             if (!string.Equals(current.State, state, StringComparison.Ordinal))
             {
-                runtime.DeviceStates[device.DeviceAssetId] = new SimulatedDeviceRuntimeState(
+                var transition = new SimulatedPendingDeviceStateObservation(
                     state,
-                    new SimulatedPendingDeviceStateObservation(
-                        state,
-                        null,
-                        ResolveCycleTimestamp(_timeProvider.GetUtcNow())));
+                    null,
+                    ResolveCycleTimestamp(_timeProvider.GetUtcNow()),
+                    false);
+                if (current.PendingObservations.First is
+                    {
+                        Value.IsInitial: true,
+                        Value.SourceSequence: null
+                    } initial)
+                {
+                    initial.Value = transition;
+                    current.State = state;
+                }
+                else if (current.PendingTransitionCount
+                    >= current.PendingTransitionCapacity)
+                {
+                    queueAtCapacity = true;
+                }
+                else
+                {
+                    current.PendingObservations.AddLast(transition);
+                    current.State = state;
+                }
             }
+        }
+
+        if (queueAtCapacity)
+        {
+            const string message =
+                "Simulated pending device-state transition capacity was reached.";
+            SimulatedCommandReceiptFactory.AddReceipt(
+                output,
+                0,
+                "device-state",
+                value!,
+                "BadResourceUnavailable",
+                message);
+            return SimulatedCommandReceiptFactory.Failure(
+                output,
+                "BadResourceUnavailable",
+                message);
         }
 
         SimulatedCommandReceiptFactory.AddReceipt(

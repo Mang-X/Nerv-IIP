@@ -378,8 +378,10 @@ normal baseline；健康页要显示 Fresh 需上报间隔 ≤2 分钟。
 确定性、边界与运行证据均已固化：受控 `TimeProvider` 的 1,000 周期测试跨 250 个完整 phase period，
 对两次 96,000-sample stream digest、三连接器 44,000/28,000/24,000 独立 counters、有界
 outbox/receipt cache 和 cancellation 做断言；同 cycle 的完整 request（含 bucket/state occurrence）在
-sub-cycle 重启后保持一致，1,000 周期只上报 46 条初始设备状态，后续只在实际 transition 时成功感知地
-上报一次。真实 build Host 进程对 loopback 平台证明三个 canonical
+sub-cycle 重启后保持一致；命令改变 value/state 时完整 request 内容地址也随之改变，进程重启丢失命令态
+不会复用同一 source sequence。1,000 周期只上报 46 条初始设备状态，后续实际 transition 进入每设备
+256 项有界 FIFO、按队首成功投递后再推进；队满命令以 `BadResourceUnavailable` 拒绝且不改变状态。
+真实 build Host 进程对 loopback 平台证明三个 canonical
 registration、每实例至少两次 heartbeat、CollectionHealth、44/28/24 replace manifest、三源 telemetry
 和 correlated `Good` control result，并在 Unix-like 的 SIGTERM 后五秒内退出且未走 force-kill；
 Windows 运行 `.exe` AppHost 解析/存在性契约，SIGTERM 真实进程证据显式跳过而不会意外调用 `/bin/kill`。

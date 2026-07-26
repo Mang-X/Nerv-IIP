@@ -60,6 +60,7 @@ public sealed class SimulatedConnectorTests
     [InlineData("Simulated:MaxDeliveryAttempts")]
     [InlineData("Simulated:RetryBaseMilliseconds")]
     [InlineData("Simulated:MaxPendingSamples")]
+    [InlineData("Simulated:MaxPendingStateTransitionsPerDevice")]
     [InlineData("Simulated:CommandReceiptCacheCapacity")]
     public void Configuration_rejects_non_positive_capacity_or_timing(string key)
     {

@@ -20,6 +20,7 @@ public sealed class SimulatedConnectorOptions
         int maxDeliveryAttempts,
         int retryBaseMilliseconds,
         int maxPendingSamples,
+        int maxPendingStateTransitionsPerDevice,
         int commandReceiptCacheCapacity,
         SimulatedPhaseDurations phases,
         IReadOnlyList<SimulatedConnectorProfile> connectors)
@@ -31,6 +32,7 @@ public sealed class SimulatedConnectorOptions
         MaxDeliveryAttempts = maxDeliveryAttempts;
         RetryBaseMilliseconds = retryBaseMilliseconds;
         MaxPendingSamples = maxPendingSamples;
+        MaxPendingStateTransitionsPerDevice = maxPendingStateTransitionsPerDevice;
         CommandReceiptCacheCapacity = commandReceiptCacheCapacity;
         Phases = phases;
         Connectors = connectors;
@@ -43,6 +45,7 @@ public sealed class SimulatedConnectorOptions
     public int MaxDeliveryAttempts { get; }
     public int RetryBaseMilliseconds { get; }
     public int MaxPendingSamples { get; }
+    public int MaxPendingStateTransitionsPerDevice { get; }
     public int CommandReceiptCacheCapacity { get; }
     public SimulatedPhaseDurations Phases { get; }
     public IReadOnlyList<SimulatedConnectorProfile> Connectors { get; }
@@ -76,6 +79,7 @@ public sealed class SimulatedConnectorOptions
                 "RetryBaseMilliseconds",
                 MaximumRetryBaseMilliseconds),
             RequiredPositiveInt(section, "MaxPendingSamples"),
+            RequiredPositiveInt(section, "MaxPendingStateTransitionsPerDevice"),
             RequiredPositiveInt(section, "CommandReceiptCacheCapacity"),
             phases,
             connectors);

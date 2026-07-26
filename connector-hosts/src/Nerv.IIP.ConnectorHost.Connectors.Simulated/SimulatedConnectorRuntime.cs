@@ -36,12 +36,9 @@ internal sealed class SimulatedConnectorRuntime
             manifestSignal is null ? static _ => { } : manifestSignal.Signal);
         DeviceStates = profile.Devices.ToDictionary(
             device => device.DeviceAssetId,
-            _ => new SimulatedDeviceRuntimeState(
+            _ => SimulatedDeviceRuntimeState.Create(
                 "running",
-                new SimulatedPendingDeviceStateObservation(
-                    "running",
-                    null,
-                    null)),
+                options.MaxPendingStateTransitionsPerDevice),
             StringComparer.Ordinal);
         ConnectionTracker.MarkAlive();
     }
@@ -62,11 +59,35 @@ internal sealed class SimulatedConnectorRuntime
     public DateTimeOffset? LastSampleAtUtc { get; set; }
 }
 
-internal sealed record SimulatedDeviceRuntimeState(
-    string State,
-    SimulatedPendingDeviceStateObservation? PendingObservation);
+internal sealed class SimulatedDeviceRuntimeState
+{
+    private SimulatedDeviceRuntimeState(
+        string state,
+        int pendingTransitionCapacity)
+    {
+        State = state;
+        PendingTransitionCapacity = pendingTransitionCapacity;
+        PendingObservations.AddLast(new SimulatedPendingDeviceStateObservation(
+            state,
+            null,
+            null,
+            true));
+    }
+
+    public string State { get; set; }
+    public int PendingTransitionCapacity { get; }
+    public LinkedList<SimulatedPendingDeviceStateObservation> PendingObservations { get; } = [];
+    public int PendingTransitionCount =>
+        PendingObservations.Count(observation => !observation.IsInitial);
+
+    public static SimulatedDeviceRuntimeState Create(
+        string state,
+        int pendingTransitionCapacity) =>
+        new(state, pendingTransitionCapacity);
+}
 
 internal sealed record SimulatedPendingDeviceStateObservation(
     string State,
     string? SourceSequence,
-    DateTimeOffset? OccurredAtUtc);
+    DateTimeOffset? OccurredAtUtc,
+    bool IsInitial);

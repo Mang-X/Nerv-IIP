@@ -193,6 +193,7 @@ internal static class SimulatedTestConfiguration
             ["Simulated:MaxDeliveryAttempts"] = "3",
             ["Simulated:RetryBaseMilliseconds"] = "100",
             ["Simulated:MaxPendingSamples"] = "128",
+            ["Simulated:MaxPendingStateTransitionsPerDevice"] = "16",
             ["Simulated:CommandReceiptCacheCapacity"] = "16",
             ["Simulated:Phases:Normal"] = "00:15:00",
             ["Simulated:Phases:Degrading"] = "00:10:00",

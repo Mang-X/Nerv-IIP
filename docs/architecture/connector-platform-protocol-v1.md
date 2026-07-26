@@ -359,7 +359,11 @@ IndustrialTelemetry 分别接收 44 / 28 / 24 项 replace-style manifest。Host 
 
 确定性来自 `Seed + connectorId + deviceAssetId + tagKey + cycle` 的稳定 hash 和 `TimeProvider`，不使用共享
 `Random` 或枚举顺序；同一 cycle 的 phase、bucket 起止和 state occurrence 都对齐
-`EpochUtc + cycle * SampleInterval`，因此在 cycle 内任意时刻重启都会重放完全相同的 request。
+`EpochUtc + cycle * SampleInterval`。Connector 交付的 source sequence 保留该 cycle identity 前缀，并追加
+完整有效 request（含 value、bucket、source context 和可选 state）的 SHA-256 内容地址；因此在 cycle 内
+任意时刻重启时，相同 request 重放相同 identity，而未恢复的 write/state 命令态会产生不同 identity，
+不会用同一个 source sequence 提交冲突 payload。最终 identity 保持在 IndustrialTelemetry 的 150 字符
+上限内。
 默认 45 分钟 profile 为 normal 15 分钟、degrading/alarm/recovered 各 10 分钟；
 `DEV-CNC-03/vibration`、`DEV-CTG-02/bath-temperature`、`DEV-AUX-04/air-pressure` 使用 phase offset
 错峰，且只有这三个 tag 通过 `AlarmScenarioEnabled=true` 显式参与滚动报警；offset 只作用于被 override 的
@@ -374,10 +378,15 @@ request/source sequence 做指数退避；非 caller 触发的 `OperationCancele
 `device.control.command` 的 `write-tag`、`parameter-set` 和 `start-stop`。`OperationTaskId` 是进程内幂等键，
 成功与终态失败都缓存为不可变回执；输出始终携带 connector、protocol、command、task、correlation 和
 `deviceReceiptCode` / `deviceReceiptMessage`，终态码为 `Good`、`BadNotFound`、`BadNotSupported` 或
-`BadOutOfRange`。这只是现有 Ops claim/result 语义的适配器实现，不扩张协议 V1。
+`BadOutOfRange`；状态 FIFO 已满时使用 `BadResourceUnavailable` 明确拒绝。这只是现有 Ops claim/result
+语义的适配器实现，不扩张协议 V1。
 设备状态不是每个 tag 的周期属性：启动时每台设备最多上报一次初始状态，之后只在实际 start/stop
-transition 时由该设备的一个确定性 tag 携带；观测与 outbox request 绑定，只有投递成功才清除，
-retry 保持原 payload，终态丢弃/容量驱逐后才允许后续 cycle 重新发出。
+transition 时由该设备的一个确定性 tag 携带。每台设备使用
+`MaxPendingStateTransitionsPerDevice`（Development/leader-demo profile 为 256）的有界 FIFO；
+每个采集 cycle 最多绑定队首一个 transition，观测与 outbox request 绑定，只有投递成功才出队，
+retry 保持原 payload/source sequence，终态丢弃/容量驱逐后才允许同一队首在后续 cycle 重新发出。
+队列已满时新 transition 不改变设备状态，命令以 `BadResourceUnavailable` 终态拒绝，绝不覆盖既有
+transition 后仍返回 `Good`。
 
 真实进程验收启动当前平台的 build AppHost 产物（Unix-like 为 `Nerv.IIP.ConnectorHost.Host`，Windows
 解析为 `Nerv.IIP.ConnectorHost.Host.exe`，不使用 `dotnet run`），对 loopback
