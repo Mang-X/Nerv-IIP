@@ -4,6 +4,7 @@ namespace Nerv.IIP.ConnectorHost.Connectors.Simulated;
 
 public sealed class SimulatedSampleOutbox
 {
+    private static readonly TimeSpan MaximumRetryDelay = TimeSpan.FromDays(1);
     private readonly object _gate = new();
     private readonly int _capacity;
     private readonly int _maxDeliveryAttempts;
@@ -48,7 +49,7 @@ public sealed class SimulatedSampleOutbox
         }
     }
 
-    public bool Enqueue(
+    public RecordIndustrialTelemetrySampleRequest? Enqueue(
         RecordIndustrialTelemetrySampleRequest request,
         DateTimeOffset nowUtc)
     {
@@ -57,16 +58,16 @@ public sealed class SimulatedSampleOutbox
         {
             if (_bySourceSequence.ContainsKey(request.SourceSequence))
             {
-                return false;
+                return null;
             }
 
-            var evicted = false;
+            RecordIndustrialTelemetrySampleRequest? evicted = null;
             if (_pending.Count == _capacity)
             {
                 var oldest = _pending.First!;
                 _pending.RemoveFirst();
                 _bySourceSequence.Remove(oldest.Value.Request.SourceSequence);
-                evicted = true;
+                evicted = oldest.Value.Request;
             }
 
             var node = _pending.AddLast(new PendingSample(request, 0, nowUtc));
@@ -115,12 +116,16 @@ public sealed class SimulatedSampleOutbox
                 return true;
             }
 
-            var exponent = Math.Min(attemptCount - 1, 30);
-            var delayTicks = checked(_retryBase.Ticks * (1L << exponent));
+            var exponent = Math.Min(attemptCount - 1, 62);
+            var multiplier = 1L << exponent;
+            var delayTicks = _retryBase.Ticks > MaximumRetryDelay.Ticks / multiplier
+                ? MaximumRetryDelay.Ticks
+                : _retryBase.Ticks * multiplier;
+            var maximumAddTicks = DateTimeOffset.MaxValue.Ticks - nowUtc.Ticks;
             node.Value = node.Value with
             {
                 AttemptCount = attemptCount,
-                NextAttemptAtUtc = nowUtc.AddTicks(delayTicks)
+                NextAttemptAtUtc = nowUtc.AddTicks(Math.Min(delayTicks, maximumAddTicks))
             };
             return false;
         }

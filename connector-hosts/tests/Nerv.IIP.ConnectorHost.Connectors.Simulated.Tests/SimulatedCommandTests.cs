@@ -27,13 +27,16 @@ public sealed class SimulatedCommandTests
 
         Assert.True(result.Succeeded);
         AssertReceiptContext(result, task, "CONN-OPCUA-01", "opcua", "start-stop", "Good");
-        Assert.Equal(
-            "stopped",
-            fixture.Samples.Requests.Single(request =>
-                request.DeviceAssetId == "DEV-CNC-01"
-                && request.TagKey == "vibration").DeviceState);
+        var stateObservations = fixture.Samples.Requests
+            .Where(request => request.DeviceState is not null)
+            .ToArray();
+        Assert.Equal(46, stateObservations.Length);
+        Assert.Single(
+            stateObservations,
+            request => request.DeviceAssetId == "DEV-CNC-01"
+                && request.DeviceState == "stopped");
         Assert.All(
-            fixture.Samples.Requests.Where(request => request.DeviceAssetId != "DEV-CNC-01"),
+            stateObservations.Where(request => request.DeviceAssetId != "DEV-CNC-01"),
             request => Assert.Equal("running", request.DeviceState));
     }
 
@@ -121,7 +124,30 @@ public sealed class SimulatedCommandTests
             DateTimeOffset.Parse("2026-07-26T00:00:00Z"),
             fixture.Samples.Requests.Single(request =>
                 request.DeviceAssetId == "DEV-CNC-01"
-                && request.TagKey == "vibration").StateOccurredAtUtc);
+                && request.DeviceState == "stopped").StateOccurredAtUtc);
+    }
+
+    [Fact]
+    public async Task Start_stop_emits_state_only_for_an_actual_transition_on_the_addressed_device()
+    {
+        var fixture = CreateFixture();
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+        fixture.Samples.Requests.Clear();
+
+        await fixture.Connector.ExecuteAsync(
+            StartTask("op-start-no-change", "DEV-CNC-01", "start"),
+            CancellationToken.None);
+        await fixture.Connector.ExecuteAsync(
+            StartTask("op-stop-transition", "DEV-CNC-01", "stop"),
+            CancellationToken.None);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        var transition = Assert.Single(
+            fixture.Samples.Requests,
+            request => request.DeviceState is not null);
+        Assert.Equal("DEV-CNC-01", transition.DeviceAssetId);
+        Assert.Equal("stopped", transition.DeviceState);
     }
 
     [Theory]

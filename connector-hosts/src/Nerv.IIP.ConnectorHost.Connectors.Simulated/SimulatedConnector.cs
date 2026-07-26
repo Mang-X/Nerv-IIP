@@ -48,6 +48,7 @@ public sealed class SimulatedConnector :
         _commandRouter = new SimulatedCommandRouter(
             runtimeContext,
             runtimesById,
+            options,
             timeProvider,
             reportSignal,
             options.CommandReceiptCacheCapacity);
@@ -77,10 +78,11 @@ public sealed class SimulatedConnector :
         cancellationToken.ThrowIfCancellationRequested();
         var nowUtc = _timeProvider.GetUtcNow();
         var cycle = ResolveCycle(nowUtc);
+        var cycleAtUtc = ResolveCycleTimestamp(cycle);
         foreach (var runtime in _runtimes)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            GenerateCycle(runtime, nowUtc, cycle);
+            GenerateCycle(runtime, cycleAtUtc, cycle);
             await DeliverDueAsync(runtime, nowUtc, cancellationToken);
         }
     }
@@ -119,6 +121,12 @@ public sealed class SimulatedConnector :
             _options.SampleIntervalMilliseconds).Ticks;
     }
 
+    private DateTimeOffset ResolveCycleTimestamp(long cycle) =>
+        _options.EpochUtc.AddTicks(
+            checked(
+                cycle
+                * TimeSpan.FromMilliseconds(_options.SampleIntervalMilliseconds).Ticks));
+
     private void GenerateCycle(
         SimulatedConnectorRuntime runtime,
         DateTimeOffset nowUtc,
@@ -126,6 +134,9 @@ public sealed class SimulatedConnector :
     {
         foreach (var device in runtime.Profile.Devices)
         {
+            var stateObservationTagKey = device.Tags
+                .Select(tag => tag.TagKey)
+                .Min(StringComparer.Ordinal);
             foreach (var tag in device.Tags)
             {
                 var identity = (device.DeviceAssetId, tag.TagKey);
@@ -141,16 +152,43 @@ public sealed class SimulatedConnector :
                 }
 
                 decimal? controlledValue;
-                string deviceState;
-                DateTimeOffset stateOccurredAtUtc;
                 lock (runtime.Gate)
                 {
                     runtime.ControlledValues.TryGetValue(identity, out controlledValue);
-                    deviceState = runtime.DeviceStates[device.DeviceAssetId].State;
-                    stateOccurredAtUtc = runtime.DeviceStates[device.DeviceAssetId].OccurredAtUtc;
                 }
 
                 var sample = _evaluator.Evaluate(tag, nowUtc, cycle, controlledValue);
+                string? deviceState = null;
+                DateTimeOffset? stateOccurredAtUtc = null;
+                if (string.Equals(
+                    tag.TagKey,
+                    stateObservationTagKey,
+                    StringComparison.Ordinal))
+                {
+                    lock (runtime.Gate)
+                    {
+                        var state = runtime.DeviceStates[device.DeviceAssetId];
+                        var observation = state.PendingObservation;
+                        if (observation is not null
+                            && (observation.SourceSequence is null
+                                || string.Equals(
+                                    observation.SourceSequence,
+                                    sample.SourceSequence,
+                                    StringComparison.Ordinal)))
+                        {
+                            observation = observation with
+                            {
+                                SourceSequence = sample.SourceSequence,
+                                OccurredAtUtc = observation.OccurredAtUtc ?? nowUtc
+                            };
+                            runtime.DeviceStates[device.DeviceAssetId] =
+                                state with { PendingObservation = observation };
+                            deviceState = observation.State;
+                            stateOccurredAtUtc = observation.OccurredAtUtc;
+                        }
+                    }
+                }
+
                 var request = new RecordIndustrialTelemetrySampleRequest(
                     _runtimeContext.OrganizationId,
                     _runtimeContext.EnvironmentId,
@@ -170,10 +208,12 @@ public sealed class SimulatedConnector :
                     sample.Value,
                     sample.Value,
                     tag.ConnectorId);
-                if (runtime.Outbox.Enqueue(request, nowUtc))
+                var evicted = runtime.Outbox.Enqueue(request, nowUtc);
+                if (evicted is not null)
                 {
                     lock (runtime.Gate)
                     {
+                        ReleaseStateObservation(runtime, evicted);
                         runtime.DroppedCount++;
                     }
 
@@ -201,7 +241,7 @@ public sealed class SimulatedConnector :
             {
                 await _samplesClient.RecordSampleAsync(request, cancellationToken);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
@@ -215,6 +255,7 @@ public sealed class SimulatedConnector :
                     runtime.ErrorCount++;
                     if (terminal)
                     {
+                        ReleaseStateObservation(runtime, request);
                         runtime.DroppedCount++;
                     }
                 }
@@ -226,11 +267,51 @@ public sealed class SimulatedConnector :
             runtime.Outbox.MarkDelivered(request.SourceSequence);
             lock (runtime.Gate)
             {
+                CompleteStateObservation(runtime, request);
                 runtime.ReceivedCount++;
                 runtime.LastSampleAtUtc = _timeProvider.GetUtcNow();
             }
 
             SignalReport(runtime.Profile.ConnectorId);
+        }
+    }
+
+    private static void CompleteStateObservation(
+        SimulatedConnectorRuntime runtime,
+        RecordIndustrialTelemetrySampleRequest request)
+    {
+        var state = runtime.DeviceStates[request.DeviceAssetId];
+        if (state.PendingObservation is not null
+            && string.Equals(
+                state.PendingObservation.SourceSequence,
+                request.SourceSequence,
+                StringComparison.Ordinal))
+        {
+            runtime.DeviceStates[request.DeviceAssetId] =
+                state with { PendingObservation = null };
+        }
+    }
+
+    private static void ReleaseStateObservation(
+        SimulatedConnectorRuntime runtime,
+        RecordIndustrialTelemetrySampleRequest request)
+    {
+        var state = runtime.DeviceStates[request.DeviceAssetId];
+        if (state.PendingObservation is not null
+            && string.Equals(
+                state.PendingObservation.SourceSequence,
+                request.SourceSequence,
+                StringComparison.Ordinal))
+        {
+            runtime.DeviceStates[request.DeviceAssetId] =
+                state with
+                {
+                    PendingObservation = state.PendingObservation with
+                    {
+                        SourceSequence = null,
+                        OccurredAtUtc = null
+                    }
+                };
         }
     }
 

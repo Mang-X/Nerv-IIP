@@ -5,6 +5,8 @@ namespace Nerv.IIP.ConnectorHost.Connectors.Simulated;
 
 public sealed class SimulatedConnectorOptions
 {
+    private const int MaximumDeliveryAttempts = 64;
+    private const int MaximumRetryBaseMilliseconds = 86_400_000;
     private static readonly string[] CanonicalConnectorIds =
         ["CONN-OPCUA-01", "CONN-MQTT-01", "CONN-MODBUS-01"];
     private static readonly string[] SensitiveFieldFragments =
@@ -65,8 +67,14 @@ public sealed class SimulatedConnectorOptions
             RequiredInt(section, "Seed", allowZero: true),
             RequiredDateTimeOffset(section, "EpochUtc"),
             RequiredPositiveInt(section, "SampleIntervalMilliseconds"),
-            RequiredPositiveInt(section, "MaxDeliveryAttempts"),
-            RequiredPositiveInt(section, "RetryBaseMilliseconds"),
+            RequiredBoundedPositiveInt(
+                section,
+                "MaxDeliveryAttempts",
+                MaximumDeliveryAttempts),
+            RequiredBoundedPositiveInt(
+                section,
+                "RetryBaseMilliseconds",
+                MaximumRetryBaseMilliseconds),
             RequiredPositiveInt(section, "MaxPendingSamples"),
             RequiredPositiveInt(section, "CommandReceiptCacheCapacity"),
             phases,
@@ -158,7 +166,8 @@ public sealed class SimulatedConnectorOptions
             writableMinimum,
             writableMaximum,
             Required(section, "ProtocolAddressTemplate"),
-            TimeSpan.Zero);
+            TimeSpan.Zero,
+            section.GetValue("AlarmScenarioEnabled", false));
     }
 
     private static void ApplyOverrides(
@@ -198,7 +207,10 @@ public sealed class SimulatedConnectorOptions
                     AlarmValue = OptionalDecimal(tagOverride, "AlarmValue") ?? current.AlarmValue,
                     WritableMinimum = OptionalDecimal(tagOverride, "WritableMinimum") ?? current.WritableMinimum,
                     WritableMaximum = OptionalDecimal(tagOverride, "WritableMaximum") ?? current.WritableMaximum,
-                    PhaseOffset = phaseOffset
+                    PhaseOffset = phaseOffset,
+                    AlarmScenarioEnabled = tagOverride.GetValue(
+                        "AlarmScenarioEnabled",
+                        current.AlarmScenarioEnabled)
                 };
                 ValidateRanges(
                     $"{deviceAssetId}/{tagKey}",
@@ -210,8 +222,7 @@ public sealed class SimulatedConnectorOptions
                 tags[tagIndex] = updated;
             }
 
-            tags = tags.Select(tag => tag with { PhaseOffset = phaseOffset }).ToArray();
-            devices[deviceIndex] = device with { PhaseOffset = phaseOffset, Tags = tags };
+            devices[deviceIndex] = device with { Tags = tags };
         }
     }
 
@@ -293,6 +304,21 @@ public sealed class SimulatedConnectorOptions
 
     private static int RequiredPositiveInt(IConfiguration configuration, string key) =>
         RequiredInt(configuration, key, allowZero: false);
+
+    private static int RequiredBoundedPositiveInt(
+        IConfiguration configuration,
+        string key,
+        int maximum)
+    {
+        var value = RequiredPositiveInt(configuration, key);
+        if (value > maximum)
+        {
+            throw new InvalidOperationException(
+                $"Simulated configuration value '{key}' must not exceed {maximum}.");
+        }
+
+        return value;
+    }
 
     private static int RequiredInt(IConfiguration configuration, string key, bool allowZero)
     {
@@ -397,4 +423,5 @@ public sealed record SimulatedTagProfile(
     decimal WritableMinimum,
     decimal WritableMaximum,
     string ProtocolAddress,
-    TimeSpan PhaseOffset);
+    TimeSpan PhaseOffset,
+    bool AlarmScenarioEnabled);

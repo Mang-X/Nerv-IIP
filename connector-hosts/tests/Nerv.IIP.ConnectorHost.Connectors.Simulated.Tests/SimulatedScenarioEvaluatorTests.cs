@@ -7,7 +7,12 @@ public sealed class SimulatedScenarioEvaluatorTests
     [Fact]
     public void Controlled_clock_enters_each_phase_at_the_exact_configured_boundary()
     {
-        var options = SimulatedTestConfiguration.Bind();
+        var options = SimulatedTestConfiguration.Bind(mutate: values =>
+        {
+            values["Simulated:Connectors:0:Overrides:0:DeviceAssetId"] = "DEV-CNC-01";
+            values["Simulated:Connectors:0:Overrides:0:Tags:0:TagKey"] = "vibration";
+            values["Simulated:Connectors:0:Overrides:0:Tags:0:AlarmScenarioEnabled"] = "true";
+        });
         var evaluator = new SimulatedScenarioEvaluator(options);
         var tag = options.Connectors
             .Single(connector => connector.ConnectorId == "CONN-OPCUA-01")
@@ -57,6 +62,62 @@ public sealed class SimulatedScenarioEvaluatorTests
         }
     }
 
+    [Fact]
+    public void Checked_in_profile_limits_world_threshold_breaches_to_the_three_rolling_alarm_targets()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(
+                AppContext.BaseDirectory,
+                "SimulatedHostDevelopmentProfile.json"))
+            .Build();
+        var options = SimulatedConnectorOptions.Bind(configuration.GetSection("Simulated"));
+        var evaluator = new SimulatedScenarioEvaluator(options);
+        var intendedTargets = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "DEV-CNC-03/vibration",
+            "DEV-CTG-02/bath-temperature",
+            "DEV-AUX-04/air-pressure"
+        };
+        var breachedTargets = new HashSet<string>(StringComparer.Ordinal);
+        var nonNormalTargets = new HashSet<string>(StringComparer.Ordinal);
+        var maximumSimultaneousBreaches = 0;
+
+        for (var elapsed = TimeSpan.Zero;
+             elapsed < options.Phases.Period;
+             elapsed += TimeSpan.FromMilliseconds(options.SampleIntervalMilliseconds))
+        {
+            var observedAtUtc = options.EpochUtc + elapsed;
+            var cycle = elapsed.Ticks
+                / TimeSpan.FromMilliseconds(options.SampleIntervalMilliseconds).Ticks;
+            var simultaneousBreaches = 0;
+            foreach (var tag in options.Connectors
+                         .SelectMany(connector => connector.Devices)
+                         .SelectMany(device => device.Tags))
+            {
+                var sample = evaluator.Evaluate(tag, observedAtUtc, cycle);
+                var identity = $"{tag.DeviceAssetId}/{tag.TagKey}";
+                if (sample.Phase != "normal")
+                {
+                    nonNormalTargets.Add(identity);
+                }
+
+                if (BreachesWorldThreshold(tag, sample.Value))
+                {
+                    simultaneousBreaches++;
+                    breachedTargets.Add(identity);
+                }
+            }
+
+            maximumSimultaneousBreaches = Math.Max(
+                maximumSimultaneousBreaches,
+                simultaneousBreaches);
+        }
+
+        Assert.Equal(intendedTargets, nonNormalTargets);
+        Assert.Equal(intendedTargets, breachedTargets);
+        Assert.Equal(2, maximumSimultaneousBreaches);
+    }
+
     private static IReadOnlyDictionary<string, (decimal Value, string SourceSequence)> EvaluateAll(
         SimulatedConnectorOptions options,
         long cycle)
@@ -74,6 +135,36 @@ public sealed class SimulatedScenarioEvaluatorTests
                 },
                 StringComparer.Ordinal);
     }
+
+    private static bool BreachesWorldThreshold(SimulatedTagProfile tag, decimal value)
+    {
+        var threshold = (DevicePrefix(tag.DeviceAssetId), tag.TagKey) switch
+        {
+            ("DEV-CNC-", "spindle-temperature") => (">", 78m),
+            ("DEV-CNC-", "vibration") => (">", 6.5m),
+            ("DEV-CNC-", "spindle-speed") => (">", 3600m),
+            ("DEV-GRD-", "vibration") => (">", 5.5m),
+            ("DEV-GRD-", "wheel-speed") => (">", 1900m),
+            ("DEV-WLD-", "weld-current") => (">", 280m),
+            ("DEV-WLD-", "temperature") => (">", 85m),
+            ("DEV-ASM-", "press-force") => (">", 17.5m),
+            ("DEV-TST-", "damping-force") => (">", 1450m),
+            ("DEV-CTG-", "bath-temperature") => (">", 34m),
+            ("DEV-CTG-", "bath-ph") => ("<", 5.6m),
+            ("DEV-AUX-", "air-pressure") => ("<", 6.0m),
+            ("DEV-AUX-", "temperature") => (">", 92m),
+            _ => (string.Empty, 0m)
+        };
+        return threshold.Item1 switch
+        {
+            ">" => value > threshold.Item2,
+            "<" => value < threshold.Item2,
+            _ => false
+        };
+    }
+
+    private static string DevicePrefix(string deviceAssetId) =>
+        deviceAssetId[..^2];
 }
 
 internal static class SimulatedTestConfiguration

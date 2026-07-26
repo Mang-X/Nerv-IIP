@@ -11,13 +11,21 @@ public sealed class SimulatedConnectorHostProcessTests
     private static readonly string[] CanonicalConnectorIds =
         ["CONN-OPCUA-01", "CONN-MQTT-01", "CONN-MODBUS-01"];
 
-    [Fact(Timeout = 30_000)]
+    [Fact]
+    public void Built_host_executable_resolves_for_the_current_platform()
+    {
+        var executable = ResolveHostExecutablePath();
+
+        Assert.True(
+            File.Exists(executable),
+            $"Built Host executable not found at '{executable}'.");
+    }
+
+    [UnixHostProcessFact(Timeout = 30_000)]
     public async Task Built_host_process_reports_three_simulated_connectors_and_executes_control()
     {
         await using var platform = await LoopbackPlatform.StartAsync();
-        var executable = Path.Combine(
-            AppContext.BaseDirectory,
-            "Nerv.IIP.ConnectorHost.Host");
+        var executable = ResolveHostExecutablePath();
         Assert.True(File.Exists(executable), $"Built Host executable not found at '{executable}'.");
 
         using var process = StartHost(executable, platform.BaseAddress);
@@ -69,6 +77,13 @@ public sealed class SimulatedConnectorHostProcessTests
             process.HasExited,
             "Host process did not exit within the cleanup deadline.");
     }
+
+    private static string ResolveHostExecutablePath() =>
+        Path.Combine(
+            AppContext.BaseDirectory,
+            OperatingSystem.IsWindows()
+                ? "Nerv.IIP.ConnectorHost.Host.exe"
+                : "Nerv.IIP.ConnectorHost.Host");
 
     private static Process StartHost(string executable, Uri platformBaseAddress)
     {
@@ -384,5 +399,17 @@ public sealed class SimulatedConnectorHostProcessTests
 
         private static string Format(ConcurrentDictionary<string, int> values) =>
             string.Join(",", values.OrderBy(pair => pair.Key).Select(pair => $"{pair.Key}:{pair.Value}"));
+    }
+}
+
+internal sealed class UnixHostProcessFactAttribute : FactAttribute
+{
+    public UnixHostProcessFactAttribute()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Skip = "Exact-child graceful shutdown evidence uses Unix SIGTERM; "
+                + "Windows runs the platform-specific executable resolution contract only.";
+        }
     }
 }

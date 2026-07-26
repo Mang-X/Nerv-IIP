@@ -40,6 +40,11 @@ public sealed class SimulatedLongRunningTests
                 ["modbus"] = 24 * CycleCount
             },
             firstSamples.Counts);
+        Assert.Equal(46, firstSamples.StateObservationCount);
+        Assert.Equal(
+            46,
+            firstSamples.StateObservations.Count(observation =>
+                observation.State == "running"));
         Assert.All(first.PendingSampleCounts, pair => Assert.Equal(0, pair.Value));
 
         var targets = await first.DiscoverAsync(CancellationToken.None);
@@ -148,6 +153,8 @@ public sealed class SimulatedLongRunningTests
         private readonly IncrementalHash _hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 
         public Dictionary<string, int> Counts { get; } = new(StringComparer.Ordinal);
+        public List<(string DeviceAssetId, string State)> StateObservations { get; } = [];
+        public int StateObservationCount => StateObservations.Count;
 
         public Task RecordSampleAsync(
             RecordIndustrialTelemetrySampleRequest request,
@@ -156,6 +163,11 @@ public sealed class SimulatedLongRunningTests
             cancellationToken.ThrowIfCancellationRequested();
             var sourceSystem = Assert.IsType<string>(request.SourceSystem);
             Counts[sourceSystem] = Counts.GetValueOrDefault(sourceSystem) + 1;
+            if (request.DeviceState is not null)
+            {
+                StateObservations.Add((request.DeviceAssetId, request.DeviceState));
+            }
+
             var canonical = string.Join(
                 '\u001f',
                 request.DeviceAssetId,

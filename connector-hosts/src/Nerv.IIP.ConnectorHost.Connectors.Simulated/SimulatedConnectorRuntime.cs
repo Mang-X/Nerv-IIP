@@ -34,10 +34,14 @@ internal sealed class SimulatedConnectorRuntime
                 .ToArray(),
             timeProvider,
             manifestSignal is null ? static _ => { } : manifestSignal.Signal);
-        var observedAtUtc = timeProvider.GetUtcNow();
         DeviceStates = profile.Devices.ToDictionary(
             device => device.DeviceAssetId,
-            _ => new SimulatedDeviceRuntimeState("running", observedAtUtc),
+            _ => new SimulatedDeviceRuntimeState(
+                "running",
+                new SimulatedPendingDeviceStateObservation(
+                    "running",
+                    null,
+                    null)),
             StringComparer.Ordinal);
         ConnectionTracker.MarkAlive();
     }
@@ -60,4 +64,9 @@ internal sealed class SimulatedConnectorRuntime
 
 internal sealed record SimulatedDeviceRuntimeState(
     string State,
-    DateTimeOffset OccurredAtUtc);
+    SimulatedPendingDeviceStateObservation? PendingObservation);
+
+internal sealed record SimulatedPendingDeviceStateObservation(
+    string State,
+    string? SourceSequence,
+    DateTimeOffset? OccurredAtUtc);

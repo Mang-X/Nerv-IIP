@@ -19,7 +19,9 @@ public sealed class SimulatedScenarioEvaluator(SimulatedConnectorOptions options
             throw new ArgumentOutOfRangeException(nameof(cycle));
         }
 
-        var phase = ResolvePhase(observedAtUtc, tag.PhaseOffset);
+        var phase = tag.AlarmScenarioEnabled
+            ? ResolvePhase(observedAtUtc, tag.PhaseOffset)
+            : (Name: "normal", Progress: 0m);
         var baseline = DeterministicBaseline(tag, cycle);
         var value = controlledValue ?? phase.Name switch
         {

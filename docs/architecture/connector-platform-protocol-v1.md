@@ -358,21 +358,34 @@ IndustrialTelemetry 分别接收 44 / 28 / 24 项 replace-style manifest。Host 
 任一轴推断成另一轴。
 
 确定性来自 `Seed + connectorId + deviceAssetId + tagKey + cycle` 的稳定 hash 和 `TimeProvider`，不使用共享
-`Random` 或枚举顺序。默认 45 分钟 profile 为 normal 15 分钟、degrading/alarm/recovered 各 10 分钟；
+`Random` 或枚举顺序；同一 cycle 的 phase、bucket 起止和 state occurrence 都对齐
+`EpochUtc + cycle * SampleInterval`，因此在 cycle 内任意时刻重启都会重放完全相同的 request。
+默认 45 分钟 profile 为 normal 15 分钟、degrading/alarm/recovered 各 10 分钟；
 `DEV-CNC-03/vibration`、`DEV-CTG-02/bath-temperature`、`DEV-AUX-04/air-pressure` 使用 phase offset
-错峰。下游失败保留完全相同的 request/source sequence 做指数退避；`MaxPendingSamples` 和
-`CommandReceiptCacheCapacity` 都是硬上限，取消不会转换成采集失败。
+错峰，且只有这三个 tag 通过 `AlarmScenarioEnabled=true` 显式参与滚动报警；offset 只作用于被 override 的
+tag，其余 93 个点始终按确定性 normal baseline 运行。按 `WorldHistoryDeviceSpec` 实际规则阈值检查一个完整
+period，越限集合严格等于这三个目标，最多同时两个目标处于越限过渡。下游失败保留完全相同的
+request/source sequence 做指数退避；非 caller 触发的 `OperationCanceledException`（例如 HTTP timeout）
+进入相同重试/终态计数，只有 caller token 已取消才立即向上传播。`MaxDeliveryAttempts` 上限 64，
+`RetryBaseMilliseconds` 上限 1 天，实际 retry delay 饱和到 1 天且不会溢出；
+`MaxPendingSamples` 和 `CommandReceiptCacheCapacity` 都是硬上限。
 
 模拟器在完整 organization/environment/host/instance/device route 匹配后执行现有
 `device.control.command` 的 `write-tag`、`parameter-set` 和 `start-stop`。`OperationTaskId` 是进程内幂等键，
 成功与终态失败都缓存为不可变回执；输出始终携带 connector、protocol、command、task、correlation 和
 `deviceReceiptCode` / `deviceReceiptMessage`，终态码为 `Good`、`BadNotFound`、`BadNotSupported` 或
 `BadOutOfRange`。这只是现有 Ops claim/result 语义的适配器实现，不扩张协议 V1。
+设备状态不是每个 tag 的周期属性：启动时每台设备最多上报一次初始状态，之后只在实际 start/stop
+transition 时由该设备的一个确定性 tag 携带；观测与 outbox request 绑定，只有投递成功才清除，
+retry 保持原 payload，终态丢弃/容量驱逐后才允许后续 cycle 重新发出。
 
-真实进程验收启动 build 产物 `Nerv.IIP.ConnectorHost.Host`（不使用 `dotnet run`），对 loopback
+真实进程验收启动当前平台的 build AppHost 产物（Unix-like 为 `Nerv.IIP.ConnectorHost.Host`，Windows
+解析为 `Nerv.IIP.ConnectorHost.Host.exe`，不使用 `dotnet run`），对 loopback
 AppHub/Ops/IndustrialTelemetry 观察三个注册、每实例至少两次心跳、三个 CollectionHealth、三源 telemetry、
 44/28/24 manifest 和 correlated `Good` result；最后以 SIGTERM 精确停止该子进程，五秒内退出，force-kill
-只作为测试失败兜底。另有受控时钟测试推进 1,000 周期 / 250 个完整 phase period，对两次 96,000-sample
+只作为测试失败兜底。SIGTERM 进程生命周期证据显式限定在 Unix-like；Windows 始终运行 AppHost `.exe`
+解析/存在性契约，在引入明确的 Windows console graceful-control seam 前不伪装等价的温和停止证据。
+另有受控时钟测试推进 1,000 周期 / 250 个完整 phase period，对两次 96,000-sample
 stream digest、独立 44,000/28,000/24,000 counters、outbox/cache 上限和 cancellation 做回归。
 
 ## 非目标

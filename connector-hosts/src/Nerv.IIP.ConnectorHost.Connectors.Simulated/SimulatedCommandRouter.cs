@@ -10,12 +10,15 @@ internal sealed class SimulatedCommandRouter
     private readonly ConnectorHostRuntimeContext _runtimeContext;
     private readonly IReadOnlyDictionary<string, SimulatedConnectorRuntime> _runtimesById;
     private readonly TimeProvider _timeProvider;
+    private readonly DateTimeOffset _epochUtc;
+    private readonly long _sampleIntervalTicks;
     private readonly IConnectorReportSignal? _reportSignal;
     private readonly SimulatedCommandReceiptStore _receipts;
 
     public SimulatedCommandRouter(
         ConnectorHostRuntimeContext runtimeContext,
         IReadOnlyDictionary<string, SimulatedConnectorRuntime> runtimesById,
+        SimulatedConnectorOptions options,
         TimeProvider timeProvider,
         IConnectorReportSignal? reportSignal,
         int receiptCapacity)
@@ -23,6 +26,9 @@ internal sealed class SimulatedCommandRouter
         _runtimeContext = runtimeContext;
         _runtimesById = runtimesById;
         _timeProvider = timeProvider;
+        _epochUtc = options.EpochUtc;
+        _sampleIntervalTicks = TimeSpan.FromMilliseconds(
+            options.SampleIntervalMilliseconds).Ticks;
         _reportSignal = reportSignal;
         _receipts = new SimulatedCommandReceiptStore(receiptCapacity);
     }
@@ -268,9 +274,16 @@ internal sealed class SimulatedCommandRouter
 
         lock (runtime.Gate)
         {
-            runtime.DeviceStates[device.DeviceAssetId] = new SimulatedDeviceRuntimeState(
-                state,
-                _timeProvider.GetUtcNow());
+            var current = runtime.DeviceStates[device.DeviceAssetId];
+            if (!string.Equals(current.State, state, StringComparison.Ordinal))
+            {
+                runtime.DeviceStates[device.DeviceAssetId] = new SimulatedDeviceRuntimeState(
+                    state,
+                    new SimulatedPendingDeviceStateObservation(
+                        state,
+                        null,
+                        ResolveCycleTimestamp(_timeProvider.GetUtcNow())));
+            }
         }
 
         SimulatedCommandReceiptFactory.AddReceipt(
@@ -284,6 +297,15 @@ internal sealed class SimulatedCommandRouter
         output["successfulWriteCount"] = "1";
         SignalReport(runtime.Profile.ConnectorId);
         return ConnectorOperationExecution.Success(output);
+    }
+
+    private DateTimeOffset ResolveCycleTimestamp(DateTimeOffset observedAtUtc)
+    {
+        var elapsed = observedAtUtc - _epochUtc;
+        var cycle = elapsed <= TimeSpan.Zero
+            ? 0
+            : elapsed.Ticks / _sampleIntervalTicks;
+        return _epochUtc.AddTicks(checked(cycle * _sampleIntervalTicks));
     }
 
     private static SimulatedWriteValidation ValidateWrite(

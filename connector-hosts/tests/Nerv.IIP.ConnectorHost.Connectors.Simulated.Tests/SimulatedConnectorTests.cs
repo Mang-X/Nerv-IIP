@@ -66,6 +66,50 @@ public sealed class SimulatedConnectorTests
         AssertInvalid(values => values[key] = "0", "greater than zero");
     }
 
+    [Theory]
+    [InlineData("Simulated:MaxDeliveryAttempts", "65")]
+    [InlineData("Simulated:RetryBaseMilliseconds", "86400001")]
+    public void Configuration_rejects_delivery_values_above_operational_bounds(
+        string key,
+        string value)
+    {
+        AssertInvalid(values => values[key] = value, "must not exceed");
+    }
+
+    [Fact]
+    public void Maximum_delivery_values_saturate_retry_time_without_overflow()
+    {
+        var options = SimulatedTestConfiguration.Bind(mutate: values =>
+        {
+            values["Simulated:MaxDeliveryAttempts"] = "64";
+            values["Simulated:RetryBaseMilliseconds"] = "86400000";
+        });
+        var outbox = new SimulatedSampleOutbox(
+            capacity: 1,
+            options.MaxDeliveryAttempts,
+            TimeSpan.FromMilliseconds(options.RetryBaseMilliseconds));
+        var request = new Nerv.IIP.ConnectorHost.Connectors.Abstractions.RecordIndustrialTelemetrySampleRequest(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "vibration",
+            DateTimeOffset.Parse("2026-07-26T00:00:00Z"),
+            DateTimeOffset.Parse("2026-07-26T00:00:02Z"),
+            1,
+            2.5m,
+            2.5m,
+            2.5m,
+            "simulated:CONN-OPCUA-01:DEV-CNC-01:vibration:0",
+            "opcua",
+            "connector-host-001/CONN-OPCUA-01");
+        var nearMaximum = DateTimeOffset.MaxValue.AddHours(-1);
+
+        outbox.Enqueue(request, nearMaximum);
+
+        Assert.False(outbox.MarkFailed(request.SourceSequence, nearMaximum));
+        Assert.Empty(outbox.GetDue(nearMaximum));
+    }
+
     [Fact]
     public void Configuration_rejects_invalid_normal_and_writable_ranges()
     {

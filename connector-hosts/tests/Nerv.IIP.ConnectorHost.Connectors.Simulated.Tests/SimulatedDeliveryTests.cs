@@ -87,6 +87,100 @@ public sealed class SimulatedDeliveryTests
     }
 
     [Fact]
+    public async Task Restart_within_the_same_cycle_replays_the_complete_request_payload()
+    {
+        var firstClock = At(DateTimeOffset.Parse("2026-07-26T00:00:00.100Z"));
+        var secondClock = At(DateTimeOffset.Parse("2026-07-26T00:00:01.900Z"));
+        var firstSamples = new RecordingSamplesClient(firstClock);
+        var secondSamples = new RecordingSamplesClient(secondClock);
+        var options = SimulatedTestConfiguration.Bind();
+
+        await CreateConnector(options, firstSamples, firstClock)
+            .RunCollectionCycleAsync(CancellationToken.None);
+        await CreateConnector(options, secondSamples, secondClock)
+            .RunCollectionCycleAsync(CancellationToken.None);
+
+        Assert.Equal(
+            firstSamples.Attempts.Select(attempt => attempt.Request),
+            secondSamples.Attempts.Select(attempt => attempt.Request));
+    }
+
+    [Fact]
+    public async Task Non_caller_cancellation_retries_at_exact_due_times_and_drops_at_the_terminal_attempt()
+    {
+        var clock = At(DateTimeOffset.Parse("2026-07-26T00:00:00Z"));
+        const string sourceSequence = "simulated:CONN-OPCUA-01:DEV-CNC-01:vibration:0";
+        var samples = new RecordingSamplesClient(
+            clock,
+            sourceSequence,
+            failures: 3,
+            throwNonCallerCancellation: true);
+        var connector = CreateConnector(SimulatedTestConfiguration.Bind(), samples, clock);
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+        clock.Advance(TimeSpan.FromMilliseconds(99));
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+        clock.Advance(TimeSpan.FromMilliseconds(1));
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+        clock.Advance(TimeSpan.FromMilliseconds(199));
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+        clock.Advance(TimeSpan.FromMilliseconds(1));
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [
+                DateTimeOffset.Parse("2026-07-26T00:00:00Z"),
+                DateTimeOffset.Parse("2026-07-26T00:00:00.100Z"),
+                DateTimeOffset.Parse("2026-07-26T00:00:00.300Z")
+            ],
+            samples.Attempts
+                .Where(attempt => attempt.Request.SourceSequence == sourceSequence)
+                .Select(attempt => attempt.AtUtc));
+        var health = (await connector.DiscoverAsync(CancellationToken.None))
+            .Single(target => target.InstanceKey == "CONN-OPCUA-01")
+            .CollectionHealth!;
+        Assert.Equal(3, health.ErrorCount);
+        Assert.Equal(1, health.DroppedCount);
+        Assert.Equal(0, connector.PendingSampleCounts["CONN-OPCUA-01"]);
+    }
+
+    [Fact]
+    public async Task State_observation_stays_on_the_retried_request_until_success_then_is_not_repeated()
+    {
+        var clock = At(DateTimeOffset.Parse("2026-07-26T00:00:00Z"));
+        const string stateSourceSequence =
+            "simulated:CONN-OPCUA-01:DEV-CNC-01:spindle-speed:0";
+        var samples = new RecordingSamplesClient(
+            clock,
+            stateSourceSequence,
+            failures: 1);
+        var connector = CreateConnector(SimulatedTestConfiguration.Bind(), samples, clock);
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+        clock.Advance(TimeSpan.FromMilliseconds(100));
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+        clock.Advance(TimeSpan.FromMilliseconds(1900));
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        var stateAttempts = samples.Attempts
+            .Where(attempt => attempt.Request.SourceSequence == stateSourceSequence)
+            .ToArray();
+        Assert.Equal(2, stateAttempts.Length);
+        Assert.All(stateAttempts, attempt =>
+        {
+            Assert.Equal("running", attempt.Request.DeviceState);
+            Assert.Equal(
+                DateTimeOffset.Parse("2026-07-26T00:00:00Z"),
+                attempt.Request.StateOccurredAtUtc);
+        });
+        Assert.DoesNotContain(
+            samples.Attempts,
+            attempt => attempt.Request.DeviceAssetId == "DEV-CNC-01"
+                && attempt.Request.SourceSequence.EndsWith(":1", StringComparison.Ordinal)
+                && attempt.Request.DeviceState is not null);
+    }
+
+    [Fact]
     public async Task Pending_capacity_evicts_oldest_requests_and_accounts_drops_per_connector()
     {
         var clock = new ControllableTimeProvider();
@@ -159,23 +253,33 @@ public sealed class SimulatedDeliveryTests
             reportSignal,
             manifestSignal);
 
+    private static ControllableTimeProvider At(DateTimeOffset timestamp)
+    {
+        var clock = new ControllableTimeProvider();
+        clock.Advance(timestamp - clock.GetUtcNow());
+        return clock;
+    }
+
     private sealed class RecordingSamplesClient : IIndustrialTelemetrySamplesClient
     {
         private readonly TimeProvider _timeProvider;
         private readonly string? _failingSourceSequence;
         private readonly bool _failEveryAttempt;
+        private readonly bool _throwNonCallerCancellation;
         private int _remainingFailures;
 
         public RecordingSamplesClient(
             TimeProvider timeProvider,
             string? failingSourceSequence = null,
             int failures = 0,
-            bool failEveryAttempt = false)
+            bool failEveryAttempt = false,
+            bool throwNonCallerCancellation = false)
         {
             _timeProvider = timeProvider;
             _failingSourceSequence = failingSourceSequence;
             _remainingFailures = failures;
             _failEveryAttempt = failEveryAttempt;
+            _throwNonCallerCancellation = throwNonCallerCancellation;
         }
 
         public List<(DateTimeOffset AtUtc, RecordIndustrialTelemetrySampleRequest Request)> Attempts { get; } = [];
@@ -190,6 +294,11 @@ public sealed class SimulatedDeliveryTests
                 || string.Equals(request.SourceSequence, _failingSourceSequence, StringComparison.Ordinal)
                 && _remainingFailures-- > 0)
             {
+                if (_throwNonCallerCancellation)
+                {
+                    throw new OperationCanceledException("Simulated downstream timeout.");
+                }
+
                 throw new HttpRequestException("IndustrialTelemetry unavailable.");
             }
 
