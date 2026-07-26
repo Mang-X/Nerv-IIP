@@ -54,6 +54,7 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
             "business.maintenance.work-orders.read",
             "business.maintenance.work-orders.manage",
             "business.maintenance.plans.read",
+            "business.masterdata.resources.read",
         ]),
         (WarehouseRoleId, "仓储库管（PDA）",
         [
@@ -64,12 +65,14 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
             "business.inventory.ledger.read",
             "business.inventory.counts.manage",
             "business.inventory.movements.create",
+            "business.masterdata.resources.read",
         ]),
         (InspectorRoleId, "质量检验员（PDA）",
         [
             "business.quality.inspection-records.read",
             "business.quality.inspection-records.create",
             "business.mes.work-orders.read",
+            "business.masterdata.resources.read",
         ]),
     ];
 

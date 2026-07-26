@@ -159,7 +159,7 @@ test('报警 → 报修穿透：行详情「去报修」带 deviceAssetId + sour
 
 test('首页 → 报修：点应用墙「报修」跳 /equipment/repair', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '工作台' })).toBeVisible()
+  await expect(page.getByTestId('home-name')).toBeVisible()
 
   await page.getByRole('button', { name: '报修' }).click()
   await expect(page).toHaveURL('/equipment/repair')
