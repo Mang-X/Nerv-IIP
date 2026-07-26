@@ -437,10 +437,10 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             .ToListAsync(cancellationToken);
         var consumptionWindowStart = forecastInputs.Count == 0
             ? horizonStart
-            : forecastInputs.Min(x => x.PeriodStartDate.AddDays(-x.BackwardConsumptionDays));
+            : forecastInputs.Min(x => AddDaysSaturating(x.PeriodStartDate, -(long)x.BackwardConsumptionDays));
         var consumptionWindowEnd = forecastInputs.Count == 0
             ? horizonEnd
-            : forecastInputs.Max(x => x.PeriodEndDate.AddDays(x.ForwardConsumptionDays));
+            : forecastInputs.Max(x => AddDaysSaturating(x.PeriodEndDate, x.ForwardConsumptionDays));
         var consumingDemandSources = await dbContext.DemandSources
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
@@ -478,8 +478,8 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
         var forecastDemands = forecastInputs
             .SelectMany(forecast =>
             {
-                var consumptionStart = forecast.PeriodStartDate.AddDays(-forecast.BackwardConsumptionDays);
-                var consumptionEnd = forecast.PeriodEndDate.AddDays(forecast.ForwardConsumptionDays);
+                var consumptionStart = AddDaysSaturating(forecast.PeriodStartDate, -(long)forecast.BackwardConsumptionDays);
+                var consumptionEnd = AddDaysSaturating(forecast.PeriodEndDate, forecast.ForwardConsumptionDays);
                 var forecastUomCode = ResolvePlanningUom(forecast.SkuCode, forecast.SiteCode, forecast.UomCode, planningParameters);
                 var hasPlanningUomContext = planningParameters.Count > 0 || uomConversions.Count > 0;
                 var forecastQuantity = ConvertForecastConsumptionQuantity(
@@ -533,17 +533,6 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
         DateOnly horizonEnd,
         CancellationToken cancellationToken)
     {
-        var demandSources = await dbContext.DemandSources
-            .AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId
-                && x.EnvironmentId == environmentId
-                && x.DemandType != "forecast"
-                && x.SourceStatus == "active"
-                && x.Quantity > 0m
-                && x.DueDate >= horizonStart
-                && x.DueDate <= horizonEnd)
-            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
-            .ToListAsync(cancellationToken);
         var forecastInputs = await dbContext.ForecastInputs
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
@@ -551,38 +540,75 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 && x.PeriodEndDate >= horizonStart
                 && x.PeriodStartDate <= horizonEnd)
             .ToListAsync(cancellationToken);
+        var consumptionWindowStart = forecastInputs.Count == 0
+            ? horizonStart
+            : forecastInputs.Min(x => AddDaysSaturating(x.PeriodStartDate, -(long)x.BackwardConsumptionDays));
+        var consumptionWindowEnd = forecastInputs.Count == 0
+            ? horizonEnd
+            : forecastInputs.Max(x => AddDaysSaturating(x.PeriodEndDate, x.ForwardConsumptionDays));
+        var demandSources = await dbContext.DemandSources
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.DemandType != "forecast"
+                && x.SourceStatus == "active"
+                && x.Quantity > 0m
+                && x.DueDate >= consumptionWindowStart
+                && x.DueDate <= consumptionWindowEnd)
+            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
+            .ToListAsync(cancellationToken);
         var mpsBuckets = await dbContext.MasterProductionSchedules
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
                 && x.Status == MasterProductionScheduleStatus.Released
-                && x.BucketDate >= horizonStart
-                && x.BucketDate <= horizonEnd)
-            .ToListAsync(cancellationToken);
-
-        return demandSources
-            .Concat(forecastInputs.SelectMany(x => TimePhaseForecast(
-                x.ForecastReference,
-                x.SkuCode,
-                x.UomCode,
-                x.SiteCode,
-                x.PeriodStartDate,
-                x.PeriodEndDate,
-                x.Quantity,
-                horizonStart,
-                horizonEnd)))
-            .Concat(mpsBuckets.Select(x => new DemandSnapshot(
+                && x.BucketDate >= consumptionWindowStart
+                && x.BucketDate <= consumptionWindowEnd)
+            .Select(x => new DemandSnapshot(
                 $"MPS:{x.Id}",
                 x.SkuCode,
                 x.UomCode,
                 x.SiteCode,
                 x.Quantity,
                 x.BucketDate,
-                "mps")))
+                "mps"))
+            .ToListAsync(cancellationToken);
+        var forecastIdentities = forecastInputs.Select(x => new DemandSnapshot(
+            x.ForecastReference,
+            x.SkuCode,
+            x.UomCode,
+            x.SiteCode,
+            x.Quantity,
+            x.PeriodStartDate > horizonStart ? x.PeriodStartDate : horizonStart,
+            "forecast"));
+        var consumptionUomFacts = demandSources
+            .Concat(mpsBuckets)
+            .Where(demand => IsForecastConsumingDemand(demand)
+                && forecastInputs.Any(forecast =>
+                    string.Equals(demand.SkuCode, forecast.SkuCode, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(demand.SiteCode, forecast.SiteCode, StringComparison.OrdinalIgnoreCase)
+                    && demand.DueDate >= AddDaysSaturating(forecast.PeriodStartDate, -(long)forecast.BackwardConsumptionDays)
+                    && demand.DueDate <= AddDaysSaturating(forecast.PeriodEndDate, forecast.ForwardConsumptionDays)));
+
+        return demandSources
+            .Where(x => x.DueDate >= horizonStart && x.DueDate <= horizonEnd)
+            .Concat(forecastIdentities)
+            .Concat(mpsBuckets.Where(x => x.DueDate >= horizonStart && x.DueDate <= horizonEnd))
+            .Concat(consumptionUomFacts)
+            .Distinct()
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SourceType)
             .ThenBy(x => x.DemandSourceReference)
             .ToArray();
+    }
+
+    private static DateOnly AddDaysSaturating(DateOnly date, long days)
+    {
+        var dayNumber = Math.Clamp(
+            date.DayNumber + days,
+            DateOnly.MinValue.DayNumber,
+            DateOnly.MaxValue.DayNumber);
+        return DateOnly.FromDayNumber((int)dayNumber);
     }
 
     private static bool IsForecastConsumingDemand(DemandSnapshot demand)

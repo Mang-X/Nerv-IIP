@@ -509,6 +509,312 @@ public sealed class PlanningInputAdapterTests
     }
 
     [Fact]
+    public async Task Forecast_discovery_review_requests_alternate_sales_uom_across_adjacent_horizons()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await AddForecastAsync(
+            dbContext,
+            "FC-ALT-SALES",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 6),
+            6m);
+        dbContext.DemandSources.Add(DemandSource.CreateSalesOrderDemand(
+            "org-001",
+            "env-dev",
+            "sales-order-id-alt-uom",
+            "SO-ALT-UOM",
+            "10",
+            "CUST-001",
+            "SKU-FG-1000",
+            "box",
+            "SITE-01",
+            1m,
+            new DateOnly(2026, 7, 5),
+            1));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var planningParameters = new RequestAwareBoxPlanningParameterClient();
+        var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext,
+            new FakePlanningProductEngineeringClient(),
+            new FakePlanningInventoryClient(),
+            null,
+            planningParameters);
+
+        var first = await providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 3),
+            CancellationToken.None);
+        var second = await providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 7, 4),
+            new DateOnly(2026, 7, 6),
+            CancellationToken.None);
+
+        Assert.Equal(2, planningParameters.RequestedUomCodes.Count);
+        Assert.All(planningParameters.RequestedUomCodes, request => Assert.Contains("box", request));
+        Assert.All(
+            first.Demands.Concat(second.Demands).Where(x => x.SourceType == "forecast"),
+            x => Assert.Equal("pcs", x.UomCode));
+        Assert.Equal(
+            [
+                (new DateOnly(2026, 7, 1), 0.666667m),
+                (new DateOnly(2026, 7, 2), 0.666666m),
+                (new DateOnly(2026, 7, 3), 0.666667m),
+            ],
+            first.Demands
+                .Where(x => x.SourceType == "forecast")
+                .Select(x => (x.DueDate, x.Quantity))
+                .ToArray());
+        Assert.Equal(
+            [
+                (new DateOnly(2026, 7, 4), 0.666667m),
+                (new DateOnly(2026, 7, 5), 0.666666m),
+                (new DateOnly(2026, 7, 6), 0.666667m),
+            ],
+            second.Demands
+                .Where(x => x.SourceType == "forecast")
+                .Select(x => (x.DueDate, x.Quantity))
+                .ToArray());
+        Assert.Equal(
+            4.000000m,
+            first.Demands
+                .Concat(second.Demands)
+                .Where(x => x.SourceType == "forecast")
+                .Sum(x => x.Quantity));
+        Assert.DoesNotContain(first.Demands, x => x.DemandSourceReference == "SO-ALT-UOM");
+        var salesOrder = Assert.Single(second.Demands, x => x.DemandSourceReference == "SO-ALT-UOM");
+        Assert.Equal("box", salesOrder.UomCode);
+        Assert.Equal(1m, salesOrder.Quantity);
+    }
+
+    [Fact]
+    public async Task Forecast_discovery_review_requests_alternate_released_mps_uom_across_adjacent_horizons()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await AddForecastAsync(
+            dbContext,
+            "FC-ALT-MPS",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 6),
+            6m);
+        var mps = MasterProductionSchedule.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "box",
+            "SITE-01",
+            new DateOnly(2026, 7, 5),
+            1m);
+        mps.MarkReviewed("planner.li");
+        mps.Release("planning.manager");
+        dbContext.MasterProductionSchedules.Add(mps);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var planningParameters = new RequestAwareBoxPlanningParameterClient();
+        var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext,
+            new FakePlanningProductEngineeringClient(),
+            new FakePlanningInventoryClient(),
+            null,
+            planningParameters);
+
+        var first = await providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 3),
+            CancellationToken.None);
+        var second = await providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 7, 4),
+            new DateOnly(2026, 7, 6),
+            CancellationToken.None);
+
+        Assert.Equal(2, planningParameters.RequestedUomCodes.Count);
+        Assert.All(planningParameters.RequestedUomCodes, request => Assert.Contains("box", request));
+        Assert.All(
+            first.Demands.Concat(second.Demands).Where(x => x.SourceType == "forecast"),
+            x => Assert.Equal("pcs", x.UomCode));
+        Assert.Equal(
+            [
+                (new DateOnly(2026, 7, 1), 0.666667m),
+                (new DateOnly(2026, 7, 2), 0.666666m),
+                (new DateOnly(2026, 7, 3), 0.666667m),
+            ],
+            first.Demands
+                .Where(x => x.SourceType == "forecast")
+                .Select(x => (x.DueDate, x.Quantity))
+                .ToArray());
+        Assert.Equal(
+            [
+                (new DateOnly(2026, 7, 4), 0.666667m),
+                (new DateOnly(2026, 7, 5), 0.666666m),
+                (new DateOnly(2026, 7, 6), 0.666667m),
+            ],
+            second.Demands
+                .Where(x => x.SourceType == "forecast")
+                .Select(x => (x.DueDate, x.Quantity))
+                .ToArray());
+        Assert.Equal(
+            2.000000m,
+            first.Demands.Where(x => x.SourceType == "forecast").Sum(x => x.Quantity));
+        Assert.Equal(
+            2.000000m,
+            second.Demands.Where(x => x.SourceType == "forecast").Sum(x => x.Quantity));
+        Assert.Equal(
+            4.000000m,
+            first.Demands
+                .Concat(second.Demands)
+                .Where(x => x.SourceType == "forecast")
+                .Sum(x => x.Quantity));
+        Assert.DoesNotContain(first.Demands, x => x.SourceType == "mps");
+        var releasedMps = Assert.Single(second.Demands, x => x.SourceType == "mps");
+        Assert.Equal("box", releasedMps.UomCode);
+        Assert.Equal(1m, releasedMps.Quantity);
+        Assert.Equal(new DateOnly(2026, 7, 5), releasedMps.DueDate);
+    }
+
+    [Fact]
+    public async Task Forecast_discovery_review_redistributes_consumed_sub_micro_forecast_into_requested_day()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await AddForecastAsync(
+            dbContext,
+            "FC-SUB-MICRO",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 3),
+            0.000002m);
+        dbContext.DemandSources.Add(DemandSource.CreateSalesOrderDemand(
+            "org-001",
+            "env-dev",
+            "sales-order-id-sub-micro",
+            "SO-SUB-MICRO",
+            "10",
+            "CUST-001",
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            0.000001m,
+            new DateOnly(2026, 7, 1),
+            1));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var first = await ReadSnapshotAsync(
+            dbContext,
+            new DateOnly(2026, 7, 2),
+            new DateOnly(2026, 7, 2));
+        dbContext.ChangeTracker.Clear();
+        var second = await ReadSnapshotAsync(
+            dbContext,
+            new DateOnly(2026, 7, 2),
+            new DateOnly(2026, 7, 2));
+
+        var expected = new DemandSnapshot(
+            "FC-SUB-MICRO",
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            0.000001m,
+            new DateOnly(2026, 7, 2),
+            "forecast");
+        Assert.Equal(expected, Assert.Single(first.Demands));
+        Assert.Equal(first.Demands, second.Demands);
+        Assert.Equal(0.000001m, first.Demands.Sum(x => x.Quantity));
+        Assert.DoesNotContain(first.Demands, x => x.DemandSourceReference == "SO-SUB-MICRO");
+    }
+
+    [Fact]
+    public async Task Forecast_discovery_review_saturates_backward_window_at_dateonly_minimum()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await AddForecastAsync(
+            dbContext,
+            "FC-DATE-MIN",
+            DateOnly.MinValue,
+            DateOnly.MinValue,
+            2m,
+            backwardConsumptionDays: 1);
+        dbContext.DemandSources.Add(DemandSource.CreateSalesOrderDemand(
+            "org-001",
+            "env-dev",
+            "sales-order-id-date-min",
+            "SO-DATE-MIN",
+            "10",
+            "CUST-001",
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            1m,
+            DateOnly.MinValue,
+            1));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var snapshot = await ReadSnapshotAsync(dbContext, DateOnly.MinValue, DateOnly.MinValue);
+
+        AssertForecastFacts(
+            snapshot,
+            "FC-DATE-MIN",
+            DateOnly.MinValue,
+            DateOnly.MinValue,
+            [(DateOnly.MinValue, 1.000000m)]);
+        Assert.Equal(
+            1m,
+            Assert.Single(snapshot.Demands, x => x.DemandSourceReference == "SO-DATE-MIN").Quantity);
+    }
+
+    [Fact]
+    public async Task Forecast_discovery_review_saturates_forward_window_at_dateonly_maximum()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await AddForecastAsync(
+            dbContext,
+            "FC-DATE-MAX",
+            DateOnly.MaxValue,
+            DateOnly.MaxValue,
+            2m,
+            forwardConsumptionDays: 1);
+        dbContext.DemandSources.Add(DemandSource.CreateSalesOrderDemand(
+            "org-001",
+            "env-dev",
+            "sales-order-id-date-max",
+            "SO-DATE-MAX",
+            "10",
+            "CUST-001",
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            1m,
+            DateOnly.MaxValue,
+            1));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var snapshot = await ReadSnapshotAsync(dbContext, DateOnly.MaxValue, DateOnly.MaxValue);
+
+        AssertForecastFacts(
+            snapshot,
+            "FC-DATE-MAX",
+            DateOnly.MaxValue,
+            DateOnly.MaxValue,
+            [(DateOnly.MaxValue, 1.000000m)]);
+        Assert.Equal(
+            1m,
+            Assert.Single(snapshot.Demands, x => x.DemandSourceReference == "SO-DATE-MAX").Quantity);
+    }
+
+    [Fact]
     public async Task Forecast_time_phasing_preserves_ordinary_sales_order_fact()
     {
         await using var provider = CreateInMemoryProvider();
@@ -1849,6 +2155,34 @@ public sealed class PlanningInputAdapterTests
                 [
                     new UomConversionSnapshot("box", "pcs", 10m, 0m, 0, "half-up"),
                 ]));
+        }
+    }
+
+    private sealed class RequestAwareBoxPlanningParameterClient : IPlanningParameterSnapshotClient
+    {
+        private readonly List<IReadOnlyCollection<string>> requestedUomCodes = [];
+
+        public IReadOnlyCollection<IReadOnlyCollection<string>> RequestedUomCodes => requestedUomCodes;
+
+        public Task<PlanningParameterSnapshotResult> GetPlanningParametersAsync(
+            string internalBearerToken,
+            PlanningParameterSnapshotRequest request,
+            CancellationToken cancellationToken)
+        {
+            var uomCodes = request.Items
+                .Select(x => x.UomCode)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            requestedUomCodes.Add(uomCodes);
+            var conversions = uomCodes.Contains("box", StringComparer.OrdinalIgnoreCase)
+                ? new[] { new UomConversionSnapshot("box", "pcs", 2m, 0m, 0, "half-up") }
+                : [];
+            return Task.FromResult(new PlanningParameterSnapshotResult(
+                $"master-data-planning-parameters:1;master-data-uom-conversions:{conversions.Length}",
+                [
+                    new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 0m, null, null, null),
+                ],
+                conversions));
         }
     }
 
