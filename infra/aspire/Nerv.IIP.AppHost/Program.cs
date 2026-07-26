@@ -81,6 +81,8 @@ var minioRootPassword = builder.AddParameter("minio-root-password", secret: true
 var redisPassword = builder.AddParameter("redis-password", secret: true);
 var iamSeedAdminPassword = builder.AddParameter("iam-seed-admin-password", secret: true);
 var iamSeedConnectorHostSecret = builder.AddParameter("iam-seed-connector-host-secret", secret: true);
+// 可选：PDA 演示工人统一口令（缺省为空 = 不开通演示工人账号），不建为必填 Parameter 以免阻塞常规启动。
+var iamSeedDemoWorkerPassword = builder.Configuration["Parameters:iam-seed-demo-worker-password"] ?? string.Empty;
 var connectorIngestionTokenSigningKey = builder.AddParameter("connector-ingestion-token-signing-key", secret: true);
 var messagingProvider = builder.Configuration["Messaging:Provider"] ?? "InMemory";
 var useRabbitMq = string.Equals(messagingProvider, "RabbitMQ", StringComparison.OrdinalIgnoreCase);
@@ -195,6 +197,7 @@ var iam = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProjec
     .WithEnvironment("Iam__Seed__Enabled", "true")
     .WithEnvironment("Iam__Seed__AdminPassword", iamSeedAdminPassword)
     .WithEnvironment("Iam__Seed__ConnectorHostSecret", iamSeedConnectorHostSecret)
+    .WithEnvironment("Iam__Seed__DemoWorkerPassword", iamSeedDemoWorkerPassword)
     .WithEnvironment("LeaderDemo__World__Enabled", leaderDemoWorldEnabledValue)
     .WithEnvironment("Iam__Jwt__SigningKeys__0__Kid", iamJwtSigningKeyId)
     .WithEnvironment("Iam__Jwt__SigningKeys__0__PrivateKeyPem", iamJwtPrivateKeyPem)
