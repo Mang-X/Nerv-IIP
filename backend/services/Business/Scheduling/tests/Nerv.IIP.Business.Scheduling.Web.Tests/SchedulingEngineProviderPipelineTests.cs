@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -20,6 +21,21 @@ public sealed class SchedulingEngineProviderPipelineTests
 
         Assert.Equal("finite-capacity", engine.EngineId);
         Assert.Equal("aps-lite-v1", engine.Version);
+    }
+
+    [Fact]
+    public async Task Default_rule_provider_exposes_stable_built_in_profile_without_transforming_problem()
+    {
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var provider = new DefaultSchedulingRuleProvider();
+
+        var result = await provider.ApplyAsync(problem, CancellationToken.None);
+
+        Assert.Equal("built-in", result.ProviderId);
+        Assert.Equal("adr-0014-default", result.ProfileId);
+        Assert.Equal("v1", result.ProfileVersion);
+        Assert.Same(problem, result.EffectiveProblem);
+        Assert.Empty(result.Summaries);
     }
 
     [Fact]
@@ -71,8 +87,20 @@ public sealed class SchedulingEngineProviderPipelineTests
                 calls.Add("rule");
                 Assert.Same(original, problem);
                 return new SchedulingRuleProviderResult(
-                    ruled,
-                    [new SchedulingProviderSummary("test-rule", SchedulingProviderOutcome.Applied, 1, [])]);
+                    ProviderId: "test-rule-provider",
+                    ProfileId: "test-rule-profile",
+                    ProfileVersion: "test-v1",
+                    EffectiveProblem: ruled,
+                    Summaries:
+                    [
+                        new SchedulingProviderSummary(
+                            SourceId: "test-rule",
+                            SourceVersion: "test-v1",
+                            Outcome: SchedulingProviderOutcome.Applied,
+                            FactCount: 1,
+                            FactsFingerprint: new string('0', 64),
+                            ReasonCodes: ["facts-applied"])
+                    ]);
             }),
             new StubConstraintProvider(async (problem, cancellationToken) =>
             {
@@ -83,7 +111,15 @@ public sealed class SchedulingEngineProviderPipelineTests
                 return new SchedulingConstraintProviderResult(
                     problem,
                     effective,
-                    [new SchedulingProviderSummary("test-constraint", SchedulingProviderOutcome.Applied, 1, [])]);
+                    [
+                        new SchedulingProviderSummary(
+                            SourceId: "test-constraint",
+                            SourceVersion: "test-v1",
+                            Outcome: SchedulingProviderOutcome.Applied,
+                            FactCount: 1,
+                            FactsFingerprint: new string('1', 64),
+                            ReasonCodes: ["facts-applied"])
+                    ]);
             }),
             engine);
 
@@ -106,22 +142,31 @@ public sealed class SchedulingEngineProviderPipelineTests
         var engine = new RecordingEngine([]);
         var generator = new SchedulingPlanGenerator(
             new StubRuleProvider((value, _) => Task.FromResult(
-                new SchedulingRuleProviderResult(value, []))),
+                new SchedulingRuleProviderResult(
+                    "test-rule-provider",
+                    "test-rule-profile",
+                    "test-v1",
+                    value,
+                    []))),
             new StubConstraintProvider((value, _) => Task.FromResult(
                 new SchedulingConstraintProviderResult(
                     value,
                     value,
                     [
                         new SchedulingProviderSummary(
-                            "duplicate-source",
-                            SchedulingProviderOutcome.NoData,
-                            0,
-                            []),
+                            SourceId: "duplicate-source",
+                            SourceVersion: "test-v1",
+                            Outcome: SchedulingProviderOutcome.NoData,
+                            FactCount: 0,
+                            FactsFingerprint: new string('2', 64),
+                            ReasonCodes: ["no-data"]),
                         new SchedulingProviderSummary(
-                            "duplicate-source",
-                            SchedulingProviderOutcome.Degraded,
-                            1,
-                            ["source.unavailable"])
+                            SourceId: "duplicate-source",
+                            SourceVersion: "test-v2",
+                            Outcome: SchedulingProviderOutcome.Degraded,
+                            FactCount: 1,
+                            FactsFingerprint: new string('3', 64),
+                            ReasonCodes: ["source-unavailable"])
                     ]))),
             engine);
 
@@ -139,6 +184,7 @@ public sealed class SchedulingEngineProviderPipelineTests
     {
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
         var noDataProvider = new DefaultSchedulingConstraintProvider(
+            new PassthroughOverrideOverlay(),
             new StubEquipmentAvailabilityProvider(CreateAvailability(problem, [])),
             new StubMaterialReadinessProvider([]));
 
@@ -146,6 +192,12 @@ public sealed class SchedulingEngineProviderPipelineTests
 
         Assert.Collection(
             noData.Summaries,
+            summary =>
+            {
+                Assert.Equal(DefaultSchedulingConstraintProvider.OperationOverrideSourceId, summary.SourceId);
+                Assert.Equal(SchedulingProviderOutcome.NoData, summary.Outcome);
+                Assert.Equal(0, summary.FactCount);
+            },
             summary =>
             {
                 Assert.Equal(DefaultSchedulingConstraintProvider.EquipmentSourceId, summary.SourceId);
@@ -158,9 +210,16 @@ public sealed class SchedulingEngineProviderPipelineTests
                 Assert.Equal(SchedulingProviderOutcome.NoData, summary.Outcome);
                 Assert.Equal(0, summary.FactCount);
             });
+        Assert.All(noData.Summaries, summary =>
+        {
+            Assert.Equal("v1", summary.SourceVersion);
+            Assert.Matches("^[0-9a-f]{64}$", summary.FactsFingerprint);
+            Assert.Equal(["no-data"], summary.ReasonCodes);
+        });
 
         var resource = problem.Resources.First();
         var degradedProvider = new DefaultSchedulingConstraintProvider(
+            new PassthroughOverrideOverlay(),
             new StubEquipmentAvailabilityProvider(CreateAvailability(
                 problem,
                 [
@@ -190,20 +249,209 @@ public sealed class SchedulingEngineProviderPipelineTests
         var degraded = await degradedProvider.ApplyAsync(problem, CancellationToken.None);
 
         Assert.All(
-            degraded.Summaries,
+            degraded.Summaries.Where(x =>
+                x.SourceId != DefaultSchedulingConstraintProvider.OperationOverrideSourceId),
             summary => Assert.Equal(SchedulingProviderOutcome.Degraded, summary.Outcome));
         Assert.Equal(
             [
-                HttpSchedulingEquipmentAvailabilityProvider.SourceUnavailableReasonCode
+                "source-unavailable"
             ],
             degraded.Summaries.Single(x =>
                 x.SourceId == DefaultSchedulingConstraintProvider.EquipmentSourceId).ReasonCodes);
         Assert.Equal(
             [
-                HttpSchedulingMaterialReadinessProvider.SourceUnavailableReasonCode
+                "source-unavailable"
             ],
             degraded.Summaries.Single(x =>
                 x.SourceId == DefaultSchedulingConstraintProvider.MaterialSourceId).ReasonCodes);
+    }
+
+    [Fact]
+    public async Task Default_provider_summaries_do_not_copy_raw_lock_equipment_or_material_reasons()
+    {
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var order = problem.Orders.First();
+        var operation = order.Operations.First();
+        var resource = problem.Resources.First(x => x.ResourceId == operation.EligibleResourceIds.First());
+        var lockReason = $"planner:{new string('l', 4096)}:employee-042";
+        var equipmentReason = $"alarm:{new string('e', 4096)}:device-secret-042";
+        var materialReason = $"shortage:{new string('m', 4096)}:lot-sensitive-042";
+        var postOverride = problem with
+        {
+            LockedAssignments =
+            [
+                new SchedulingLockedAssignmentContract(
+                    "lock-sensitive-001",
+                    order.OrderId,
+                    operation.OperationId,
+                    operation.OperationSequence,
+                    resource.ResourceId,
+                    resource.WorkCenterId,
+                    problem.HorizonStartUtc,
+                    problem.HorizonStartUtc.AddMinutes(operation.DurationMinutes),
+                    lockReason)
+            ]
+        };
+        var rules = await new DefaultSchedulingRuleProvider()
+            .ApplyAsync(problem, CancellationToken.None);
+        var constraints = await new DefaultSchedulingConstraintProvider(
+                new FixedOverrideOverlay(postOverride),
+                new StubEquipmentAvailabilityProvider(CreateAvailability(
+                    postOverride,
+                    [
+                        new EquipmentRuntimeAvailabilityWindowContract(
+                            resource.ResourceId,
+                            resource.WorkCenterId,
+                            EquipmentRuntimeAvailabilityStatus.Unavailable,
+                            equipmentReason,
+                            EquipmentRuntimeSeverity.Blocked,
+                            postOverride.HorizonStartUtc,
+                            postOverride.HorizonStartUtc.AddHours(1),
+                            EquipmentRuntimeSourceType.Alarm,
+                            "alarm-sensitive-042",
+                            "equipment.dynamic",
+                            [])
+                    ])),
+                new StubMaterialReadinessProvider(
+                    [
+                        new SchedulingMaterialReadinessContract(
+                            "order",
+                            order.OrderId,
+                            null,
+                            false,
+                            [materialReason])
+                    ]))
+            .ApplyAsync(rules.EffectiveProblem, CancellationToken.None);
+        var summaries = rules.Summaries.Concat(constraints.Summaries).ToArray();
+        var summaryReasonCodes = summaries.SelectMany(x => x.ReasonCodes).ToArray();
+
+        Assert.Contains(
+            constraints.BaseProblem.LockedAssignments,
+            x => x.LockReasonCode == lockReason);
+        Assert.Contains(
+            constraints.EffectiveProblem.UnavailabilityWindows,
+            x => x.ReasonCode == equipmentReason);
+        Assert.Contains(
+            constraints.EffectiveProblem.MaterialReadiness,
+            x => x.ReasonCodes.Contains(materialReason, StringComparer.Ordinal));
+        Assert.DoesNotContain(lockReason, summaryReasonCodes);
+        Assert.DoesNotContain(equipmentReason, summaryReasonCodes);
+        Assert.DoesNotContain(materialReason, summaryReasonCodes);
+        Assert.All(
+            summaryReasonCodes,
+            code => Assert.Contains(code, new[] { "facts-applied", "no-data", "source-unavailable" }));
+        Assert.All(summaries, summary => Assert.InRange(summary.ReasonCodes.Count, 0, 1));
+        Assert.InRange(
+            Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(summaries, SchedulingJson.Options)),
+            1,
+            2048);
+    }
+
+    [Fact]
+    public async Task Constraint_fact_fingerprints_are_order_invariant_and_content_sensitive()
+    {
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var order = problem.Orders.First();
+        var operation = order.Operations.First();
+        var resource = problem.Resources.First(x => x.ResourceId == operation.EligibleResourceIds.First());
+        var firstLock = new SchedulingLockedAssignmentContract(
+            "lock-fingerprint-a",
+            order.OrderId,
+            operation.OperationId,
+            operation.OperationSequence,
+            resource.ResourceId,
+            resource.WorkCenterId,
+            problem.HorizonStartUtc,
+            problem.HorizonStartUtc.AddMinutes(operation.DurationMinutes),
+            "lock.dynamic-a");
+        var secondLock = firstLock with
+        {
+            AssignmentId = "lock-fingerprint-b",
+            LockReasonCode = "lock.dynamic-b"
+        };
+        var firstEquipment = new EquipmentRuntimeAvailabilityWindowContract(
+            resource.ResourceId,
+            resource.WorkCenterId,
+            EquipmentRuntimeAvailabilityStatus.Unavailable,
+            "equipment.dynamic-a",
+            EquipmentRuntimeSeverity.Blocked,
+            problem.HorizonStartUtc,
+            problem.HorizonStartUtc.AddHours(1),
+            EquipmentRuntimeSourceType.Alarm,
+            "alarm-fingerprint-a",
+            "equipment.dynamic-a",
+            ["substitute-b", "substitute-a"]);
+        var secondEquipment = firstEquipment with
+        {
+            ReasonCode = "equipment.dynamic-b",
+            SourceReferenceId = "alarm-fingerprint-b",
+            SubstituteDeviceAssetIds = ["substitute-c"]
+        };
+        var firstMaterial = new SchedulingMaterialReadinessContract(
+            "order",
+            order.OrderId,
+            null,
+            false,
+            ["material.dynamic-b", "material.dynamic-a"]);
+        var secondMaterial = firstMaterial with
+        {
+            ScopeType = "operation",
+            ScopeId = operation.OperationId,
+            ReasonCodes = ["material.dynamic-c"]
+        };
+        var first = await new DefaultSchedulingConstraintProvider(
+                new FixedOverrideOverlay(problem with
+                {
+                    LockedAssignments = [firstLock, firstLock, secondLock]
+                }),
+                new StubEquipmentAvailabilityProvider(CreateAvailability(
+                    problem,
+                    [firstEquipment, firstEquipment, secondEquipment])),
+                new StubMaterialReadinessProvider([firstMaterial, firstMaterial, secondMaterial]))
+            .ApplyAsync(problem, CancellationToken.None);
+        var reordered = await new DefaultSchedulingConstraintProvider(
+                new FixedOverrideOverlay(problem with
+                {
+                    LockedAssignments = [secondLock, firstLock, firstLock]
+                }),
+                new StubEquipmentAvailabilityProvider(CreateAvailability(
+                    problem,
+                    [secondEquipment, firstEquipment, firstEquipment])),
+                new StubMaterialReadinessProvider(
+                    [
+                        secondMaterial,
+                        firstMaterial with
+                        {
+                            ReasonCodes = ["material.dynamic-a", "material.dynamic-b"]
+                        },
+                        firstMaterial
+                    ]))
+            .ApplyAsync(problem, CancellationToken.None);
+        var changed = await new DefaultSchedulingConstraintProvider(
+                new FixedOverrideOverlay(problem with
+                {
+                    LockedAssignments = [secondLock, firstLock, firstLock]
+                }),
+                new StubEquipmentAvailabilityProvider(CreateAvailability(
+                    problem,
+                    [secondEquipment, firstEquipment, firstEquipment])),
+                new StubMaterialReadinessProvider(
+                    [
+                        secondMaterial with { ReasonCodes = ["material.changed"] },
+                        firstMaterial,
+                        firstMaterial
+                    ]))
+            .ApplyAsync(problem, CancellationToken.None);
+
+        Assert.Equal(
+            first.Summaries.Select(x => (x.SourceId, x.FactsFingerprint)),
+            reordered.Summaries.Select(x => (x.SourceId, x.FactsFingerprint)));
+        Assert.All(first.Summaries, summary => Assert.Matches("^[0-9a-f]{64}$", summary.FactsFingerprint));
+        Assert.NotEqual(
+            reordered.Summaries.Single(x =>
+                x.SourceId == DefaultSchedulingConstraintProvider.MaterialSourceId).FactsFingerprint,
+            changed.Summaries.Single(x =>
+                x.SourceId == DefaultSchedulingConstraintProvider.MaterialSourceId).FactsFingerprint);
     }
 
     [Fact]
@@ -229,8 +477,10 @@ public sealed class SchedulingEngineProviderPipelineTests
                 locked
             ]
         };
+        var calls = new List<string>();
         var resource = postOverride.Resources.First();
         var provider = new DefaultSchedulingConstraintProvider(
+            new FixedOverrideOverlay(postOverride, calls),
             new StubEquipmentAvailabilityProvider(CreateAvailability(
                 postOverride,
                 [
@@ -246,7 +496,12 @@ public sealed class SchedulingEngineProviderPipelineTests
                         "equipment-test-window",
                         "equipment.test-window",
                         [])
-                ])),
+                ]),
+                queriedProblem =>
+                {
+                    Assert.Same(postOverride, queriedProblem);
+                    calls.Add("equipment");
+                }),
             new StubMaterialReadinessProvider(
                 [
                     new SchedulingMaterialReadinessContract(
@@ -255,9 +510,14 @@ public sealed class SchedulingEngineProviderPipelineTests
                         null,
                         false,
                         ["material.test-block"])
-                ]));
+                ],
+                queriedProblem =>
+                {
+                    Assert.Same(postOverride, queriedProblem);
+                    calls.Add("material");
+                }));
 
-        var result = await provider.ApplyAsync(postOverride, CancellationToken.None);
+        var result = await provider.ApplyAsync(original, CancellationToken.None);
 
         Assert.Same(postOverride, result.BaseProblem);
         Assert.DoesNotContain(
@@ -278,6 +538,7 @@ public sealed class SchedulingEngineProviderPipelineTests
         Assert.Contains(
             result.EffectiveProblem.LockedAssignments,
             x => x.AssignmentId == "post-override-lock");
+        Assert.Equal(["override", "equipment", "material"], calls);
     }
 
     [Fact]
@@ -287,8 +548,9 @@ public sealed class SchedulingEngineProviderPipelineTests
         var postOverride = problem with { ProblemId = "problem-default-parity-after-override" };
         var scheduler = new FiniteCapacityScheduler();
         var generator = new SchedulingPlanGenerator(
-            new DefaultSchedulingRuleProvider(new FixedOverrideOverlay(postOverride)),
+            new DefaultSchedulingRuleProvider(),
             new DefaultSchedulingConstraintProvider(
+                new FixedOverrideOverlay(postOverride),
                 new NoopSchedulingEquipmentAvailabilityProvider(),
                 new NoopSchedulingMaterialReadinessProvider()),
             scheduler);
@@ -364,37 +626,55 @@ public sealed class SchedulingEngineProviderPipelineTests
         }
     }
 
-    private sealed class StubEquipmentAvailabilityProvider(EquipmentRuntimeAvailabilityResponse response)
+    private sealed class StubEquipmentAvailabilityProvider(
+        EquipmentRuntimeAvailabilityResponse response,
+        Action<SchedulingProblemContract>? onQuery = null)
         : ISchedulingEquipmentAvailabilityProvider
     {
         public Task<EquipmentRuntimeAvailabilityResponse> QueryAsync(
             SchedulingProblemContract problem,
             CancellationToken cancellationToken)
         {
+            onQuery?.Invoke(problem);
             return Task.FromResult(response);
         }
     }
 
     private sealed class StubMaterialReadinessProvider(
-        IReadOnlyCollection<SchedulingMaterialReadinessContract> readiness)
+        IReadOnlyCollection<SchedulingMaterialReadinessContract> readiness,
+        Action<SchedulingProblemContract>? onQuery = null)
         : ISchedulingMaterialReadinessProvider
     {
         public Task<IReadOnlyCollection<SchedulingMaterialReadinessContract>> QueryAsync(
             SchedulingProblemContract problem,
             CancellationToken cancellationToken)
         {
+            onQuery?.Invoke(problem);
             return Task.FromResult(readiness);
         }
     }
 
-    private sealed class FixedOverrideOverlay(SchedulingProblemContract result)
+    private sealed class FixedOverrideOverlay(
+        SchedulingProblemContract result,
+        List<string>? calls = null)
         : ISchedulingOperationOverrideOverlay
     {
         public Task<SchedulingProblemContract> ApplyAsync(
             SchedulingProblemContract problem,
             CancellationToken cancellationToken)
         {
+            calls?.Add("override");
             return Task.FromResult(result);
+        }
+    }
+
+    private sealed class PassthroughOverrideOverlay : ISchedulingOperationOverrideOverlay
+    {
+        public Task<SchedulingProblemContract> ApplyAsync(
+            SchedulingProblemContract problem,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(problem);
         }
     }
 }

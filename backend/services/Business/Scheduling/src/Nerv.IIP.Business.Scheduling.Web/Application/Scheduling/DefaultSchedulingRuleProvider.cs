@@ -2,37 +2,24 @@ using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 
-public sealed class DefaultSchedulingRuleProvider(
-    ISchedulingOperationOverrideOverlay overrideOverlay) : ISchedulingRuleProvider
+public sealed class DefaultSchedulingRuleProvider : ISchedulingRuleProvider
 {
-    public const string SourceId = "operation-overrides";
-    private const int MaxSummaryReasonCodes = 16;
+    public const string ProviderId = "built-in";
+    public const string ProfileId = "adr-0014-default";
+    public const string ProfileVersion = "v1";
 
-    public async Task<SchedulingRuleProviderResult> ApplyAsync(
+    public Task<SchedulingRuleProviderResult> ApplyAsync(
         SchedulingProblemContract problem,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(problem);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        var effectiveProblem = await overrideOverlay.ApplyAsync(problem, cancellationToken);
-        var reasonCodes = effectiveProblem.LockedAssignments
-            .Select(x => x.LockReasonCode)
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Distinct(StringComparer.Ordinal)
-            .Order(StringComparer.Ordinal)
-            .Take(MaxSummaryReasonCodes)
-            .ToArray();
-
-        return new SchedulingRuleProviderResult(
-            effectiveProblem,
-            [
-                new SchedulingProviderSummary(
-                    SourceId,
-                    effectiveProblem.LockedAssignments.Count == 0
-                        ? SchedulingProviderOutcome.NoData
-                        : SchedulingProviderOutcome.Applied,
-                    effectiveProblem.LockedAssignments.Count,
-                    reasonCodes)
-            ]);
+        return Task.FromResult(new SchedulingRuleProviderResult(
+            ProviderId,
+            ProfileId,
+            ProfileVersion,
+            problem,
+            []));
     }
 }
