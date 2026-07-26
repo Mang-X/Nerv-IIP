@@ -144,12 +144,35 @@ public sealed record SetMasterDataResourceEnabledCommand(
     string Reason = "",
     DateOnly? EffectiveFrom = null) : ICommand<MasterDataResourceDetail>;
 
-public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext dbContext, IReferenceDataCodeRepository referenceDataRepository)
+public sealed class UpdateMasterDataResourceCommandHandler(
+    ApplicationDbContext dbContext,
+    IReferenceDataCodeRepository referenceDataRepository,
+    IDeviceAssetReferenceValidator? deviceAssetReferenceValidator = null,
+    IMasterDataReferenceScopeCoordinator? referenceScopeCoordinator = null)
     : ICommandHandler<UpdateMasterDataResourceCommand, MasterDataResourceDetail>
 {
-    public async Task<MasterDataResourceDetail> Handle(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken)
+    private readonly IDeviceAssetReferenceValidator deviceAssetReferenceValidator =
+        deviceAssetReferenceValidator ?? new DeviceAssetReferenceValidator(dbContext);
+
+    public Task<MasterDataResourceDetail> Handle(
+        UpdateMasterDataResourceCommand request,
+        CancellationToken cancellationToken)
     {
         var type = GetMasterDataResourceDetailQueryHandler.NormalizeType(request.ResourceType);
+        return type == "device-asset" && referenceScopeCoordinator is not null
+            ? referenceScopeCoordinator.ExecuteAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                token => HandleCoreAsync(request, type, token),
+                cancellationToken)
+            : HandleCoreAsync(request, type, cancellationToken);
+    }
+
+    private async Task<MasterDataResourceDetail> HandleCoreAsync(
+        UpdateMasterDataResourceCommand request,
+        string type,
+        CancellationToken cancellationToken)
+    {
         switch (type)
         {
             case "sku":
@@ -360,6 +383,11 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                 return Detail(workCenter);
             case "device-asset":
                 var device = await FindDeviceAssetAsync(request, cancellationToken);
+                var validatedReferences = await deviceAssetReferenceValidator.ValidateForUpdateAsync(
+                    device,
+                    request.SupplierPartnerCode,
+                    request.ParentDeviceId,
+                    cancellationToken);
                 var purchaseCurrencyCode = DeviceAssetCommandValidator.NormalizeCurrencyCode(request.PurchaseCurrencyCode, device.PurchaseCurrencyCode);
                 DeviceAssetCommandValidator.EnsureValidComponents(request.Components?.Select(x => new DeviceAssetComponentDraft(x.ComponentCode, x.ComponentName, x.Quantity, x.Critical)).ToArray());
                 device.UpdateCapability(
@@ -380,12 +408,12 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     request.PurchaseCost ?? device.PurchaseCost,
                     purchaseCurrencyCode,
                     request.WarrantyExpiresOn ?? device.WarrantyExpiresOn,
-                    request.SupplierPartnerCode ?? device.SupplierPartnerCode,
+                    validatedReferences.SupplierPartnerCode,
                     request.SiteCode ?? device.SiteCode,
                     request.WorkshopCode ?? device.WorkshopCode,
                     request.LineCode ?? device.LineCode,
                     request.StationCode ?? device.StationCode,
-                    request.ParentDeviceId ?? device.ParentDeviceId,
+                    validatedReferences.ParentDeviceId,
                     request.RetiredOn ?? device.RetiredOn);
                 if (request.Components is not null)
                 {
@@ -683,12 +711,15 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
 
 public sealed class SetMasterDataResourceEnabledCommandHandler(
     ApplicationDbContext dbContext,
-    IMasterDataDownstreamReferenceChecker? downstreamReferenceChecker = null)
+    IMasterDataDownstreamReferenceChecker? downstreamReferenceChecker = null,
+    IMasterDataReferenceScopeCoordinator? referenceScopeCoordinator = null)
     : ICommandHandler<SetMasterDataResourceEnabledCommand, MasterDataResourceDetail>
 {
     private readonly IMasterDataDownstreamReferenceChecker downstreamReferenceChecker = downstreamReferenceChecker ?? NullMasterDataDownstreamReferenceChecker.Instance;
 
-    public async Task<MasterDataResourceDetail> Handle(SetMasterDataResourceEnabledCommand request, CancellationToken cancellationToken)
+    public Task<MasterDataResourceDetail> Handle(
+        SetMasterDataResourceEnabledCommand request,
+        CancellationToken cancellationToken)
     {
         var reason = request.Reason.Trim();
         if (string.IsNullOrWhiteSpace(reason)) throw new KnownException("A lifecycle change reason is required.");
@@ -696,6 +727,24 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
         if (string.IsNullOrWhiteSpace(request.ActorId)) throw new KnownException("A trusted lifecycle actor is required.");
         if (string.IsNullOrWhiteSpace(request.OperationId)) throw new KnownException("A governed lifecycle operation identity is required.");
         var type = GetMasterDataResourceDetailQueryHandler.NormalizeType(request.ResourceType);
+        var guardsSharedReferences =
+            !request.Enabled &&
+            (type == "business-partner" || type == "device-asset");
+        return guardsSharedReferences && referenceScopeCoordinator is not null
+            ? referenceScopeCoordinator.ExecuteAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                token => HandleCoreAsync(request, type, reason, token),
+                cancellationToken)
+            : HandleCoreAsync(request, type, reason, cancellationToken);
+    }
+
+    private async Task<MasterDataResourceDetail> HandleCoreAsync(
+        SetMasterDataResourceEnabledCommand request,
+        string type,
+        string reason,
+        CancellationToken cancellationToken)
+    {
         var resourceIdentity = await ResolveLifecycleIdentityAsync(request, type, cancellationToken);
         var isReplay = await IsReplayAsync(request, type, resourceIdentity, reason, cancellationToken);
         switch (type)
