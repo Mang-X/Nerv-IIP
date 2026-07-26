@@ -123,8 +123,7 @@ the current process only:
 
 ```powershell
 $env:NERV_IIP_LEADER_DEMO_SCALE_ORDERS = "200"   # 0 disables the scale block
-.
-erv.ps1 demo reset
+.\nerv.ps1 demo reset
 ```
 
 The scale block uses a dedicated `*-SCALE-*` segment (`SO-SCALE-#####`,
@@ -137,6 +136,29 @@ no production reports, inspections, receipts, shipments, or receivables. Repeat
 in MES on a local Docker PostgreSQL. The workbench batch limit is 500 orders per
 generation (`SchedulingWorkbenchLimits.MaxOrderCount`), so 1000 seeded orders form
 the backlog pool while one generation consumes up to 500 of them.
+
+A second opt-in block seeds the **factory world-bible L0 master data**
+(`docs/superpowers/plans/2026-07-26-factory-world-bible.md` sections 1-6): 3 workshops,
+14 production lines, 17 work centers, 46 device assets with 96 collection tags across
+3 collection connectors, 84 SKUs with BOMs / routings / production versions, 58
+employees with teams and skills, 8 customers and 10 suppliers. It is controlled by
+`LeaderDemo:World:Enabled`; the AppHost enables it under the leader-demo profile and
+disables it everywhere else. Override it for the current process only:
+
+```powershell
+$env:NERV_IIP_LEADER_DEMO_WORLD = "false"   # disables the world-bible L0 block
+.\nerv.ps1 demo reset
+```
+
+The block uses dedicated `WS-`, `LINE-WB-`, `WC-`, `DEV-`, `FG-/SF-/RM-/PK-`,
+`CUST-WB-`, `SUP-WB-` and `EMP-` segments and never touches the fixed keys or the
+`*-SCALE-*` segment, so the exact-match counts stay at one and
+`LINE-DEMO-01.WorkshopCode` stays empty. It creates structural master data only - no
+orders, work orders, production reports, inspections, stock, telemetry samples, alarms
+or maintenance work orders. Connector tag bindings are seeded as `pending`: whether a
+connector is online is decided by real connector or simulator heartbeats, never by the
+seed. Seeding costs roughly 1.1 s in MasterData and 1.9 s in ProductEngineering on a
+local Docker PostgreSQL, and repeat runs are idempotent.
 
 Every successful or failed `seed` and `health-check` preserves redacted evidence
 at `artifacts/leader-demo/<UTC-run-id>/evidence.json`. The manifest includes the
