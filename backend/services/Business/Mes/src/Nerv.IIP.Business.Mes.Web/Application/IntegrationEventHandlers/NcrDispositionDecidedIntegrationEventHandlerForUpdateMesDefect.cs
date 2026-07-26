@@ -46,6 +46,7 @@ public sealed class NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefe
         var defectNo = integrationEvent.Payload.SourceDocumentId;
         if (string.IsNullOrWhiteSpace(defectNo))
         {
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
@@ -57,22 +58,63 @@ public sealed class NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefe
             cancellationToken);
         if (defect is null)
         {
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
-        var referenceId = integrationEvent.Payload.DispositionType.Trim().ToLowerInvariant() switch
+        var payload = integrationEvent.Payload;
+        if (string.IsNullOrWhiteSpace(payload.NcrId) ||
+            string.IsNullOrWhiteSpace(payload.NcrCode) ||
+            string.IsNullOrWhiteSpace(payload.DispositionType))
         {
-            QualityNcrDispositionTypes.Rework => integrationEvent.Payload.ReworkWorkOrderId,
-            QualityNcrDispositionTypes.Scrap => integrationEvent.Payload.ScrapMovementId,
-            QualityNcrDispositionTypes.ReturnToSupplier => integrationEvent.Payload.ReturnDocumentId,
+            await AddBusinessDivergenceDeadLetterAsync(
+                integrationEvent,
+                "NCR disposition requires non-blank NCR id, NCR code, and disposition type.",
+                cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        var referenceId = payload.DispositionType.Trim().ToLowerInvariant() switch
+        {
+            QualityNcrDispositionTypes.Rework => payload.ReworkWorkOrderId,
+            QualityNcrDispositionTypes.Scrap => payload.ScrapMovementId,
+            QualityNcrDispositionTypes.ReturnToSupplier => payload.ReturnDocumentId,
             QualityNcrDispositionTypes.ConditionalRelease or QualityNcrDispositionTypes.SortAndScreen => null,
             _ => null,
         };
-        defect.AcceptDisposition(
-            integrationEvent.Payload.NcrId,
-            integrationEvent.Payload.NcrCode,
-            integrationEvent.Payload.DispositionType,
-            referenceId,
-            integrationEvent.Payload.ChangedAtUtc);
+        try
+        {
+            defect.AcceptDisposition(
+                payload.NcrId,
+                payload.NcrCode,
+                payload.DispositionType,
+                referenceId,
+                payload.ChangedAtUtc);
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            await dbContext.Entry(defect).ReloadAsync(cancellationToken);
+            await AddBusinessDivergenceDeadLetterAsync(
+                integrationEvent,
+                exception.Message,
+                cancellationToken);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private Task AddBusinessDivergenceDeadLetterAsync(
+        NcrDispositionDecidedIntegrationEvent integrationEvent,
+        string failureMessage,
+        CancellationToken cancellationToken)
+    {
+        return deadLetterStore.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                ConsumerName,
+                integrationEvent,
+                "quality-ncr-disposition-divergence",
+                failureMessage),
+            cancellationToken);
     }
 }

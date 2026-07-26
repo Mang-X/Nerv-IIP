@@ -136,6 +136,8 @@ public sealed class AssetRestoredIntegrationEventHandlerForReschedule(
                 await store.GetUnavailabilitiesAsync(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, cancellationToken));
             await store.AddScheduleResultAsync(RescheduleTrigger.AssetRestored, integrationEvent.OccurredAtUtc, plan, cancellationToken: cancellationToken);
         }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 }
 
