@@ -31,6 +31,9 @@ public sealed class UserEntityTypeConfiguration : IEntityTypeConfiguration<User>
         builder.Property(x => x.PasswordChangedAtUtc).HasComment("UTC time when the current password hash was set.");
         builder.Property(x => x.PasswordExpiresAtUtc).HasComment("Optional UTC time after which login must force password change.");
         builder.Property(x => x.PasswordChangeRequired).HasComment("Whether the user must change password after login before normal use.");
+        builder.Property(x => x.DisplayName).HasMaxLength(128).HasComment("Optional worker display name shown in the worker directory.");
+        builder.Property(x => x.EmployeeNo).HasMaxLength(64).HasComment("Optional employee number shown in the worker directory.");
+        builder.Property(x => x.DepartmentName).HasMaxLength(128).HasComment("Optional department display name shown in the worker directory.");
         builder.Property(x => x.Deleted).HasConversion(x => x.Value, x => new Deleted(x)).HasComment("Soft delete flag.");
         builder.Property(x => x.RowVersion).HasConversion(x => x.VersionNumber, x => new RowVersion(x)).HasComment("Optimistic row version.");
 

@@ -342,7 +342,10 @@ public sealed class PostgreSqlIamUserApplicationService(
             user.AccountExpiresAtUtc,
             user.PasswordChangeRequired,
             user.PasswordExpiresAtUtc,
-            user.LockoutUntilUtc);
+            user.LockoutUntilUtc,
+            user.DisplayName,
+            user.EmployeeNo,
+            user.DepartmentName);
     }
 }
 
