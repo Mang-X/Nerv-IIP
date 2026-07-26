@@ -23,7 +23,10 @@ public class User : Entity<UserId>, IAggregateRoot
         DateTimeOffset? accountExpiresAtUtc = null,
         DateTimeOffset? passwordChangedAtUtc = null,
         DateTimeOffset? passwordExpiresAtUtc = null,
-        bool passwordChangeRequired = false)
+        bool passwordChangeRequired = false,
+        string? displayName = null,
+        string? employeeNo = null,
+        string? departmentName = null)
     {
         Id = id;
         LoginName = loginName;
@@ -36,6 +39,9 @@ public class User : Entity<UserId>, IAggregateRoot
         PasswordChangedAtUtc = passwordChangedAtUtc;
         PasswordExpiresAtUtc = passwordExpiresAtUtc;
         PasswordChangeRequired = passwordChangeRequired;
+        DisplayName = Normalize(displayName);
+        EmployeeNo = Normalize(employeeNo);
+        DepartmentName = Normalize(departmentName);
     }
 
     private readonly List<UserPasswordHistory> passwordHistory = [];
@@ -54,9 +60,30 @@ public class User : Entity<UserId>, IAggregateRoot
     public DateTimeOffset? PasswordChangedAtUtc { get; private set; }
     public DateTimeOffset? PasswordExpiresAtUtc { get; private set; }
     public bool PasswordChangeRequired { get; private set; }
+
+    /// <summary>工人档案显示名（中文姓名）。为空时读面回落到 <see cref="LoginName"/>。</summary>
+    public string? DisplayName { get; private set; }
+
+    /// <summary>工号（例如 <c>EMP-001</c>）。IAM 是全平台唯一的「人」权威来源，工号随人走。</summary>
+    public string? EmployeeNo { get; private set; }
+
+    /// <summary>所属部门显示名，仅用于工人目录展示，不参与授权。</summary>
+    public string? DepartmentName { get; private set; }
+
     public Deleted Deleted { get; private set; } = new(false);
     public RowVersion RowVersion { get; private set; } = new(0);
     public IReadOnlyCollection<UserPasswordHistory> PasswordHistory => passwordHistory;
+
+    /// <summary>设置工人档案（显示名/工号/部门）。空白值一律规范化为 null。</summary>
+    public void SetWorkerProfile(string? displayName, string? employeeNo, string? departmentName)
+    {
+        DisplayName = Normalize(displayName);
+        EmployeeNo = Normalize(employeeNo);
+        DepartmentName = Normalize(departmentName);
+    }
+
+    private static string? Normalize(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     public bool IsLockedOut(DateTimeOffset now)
     {

@@ -142,6 +142,46 @@ review follow-up 真实栈 session `nerv-bad6-17be94` 已将 `mes-task-productio
 
 本变更没有新增或修改业务 HTTP endpoint，也没有改变 Gateway 公开契约；facade coverage 登记、OpenAPI 快照与 generated client 均无需刷新。
 
+### 工厂世界观设定集 L0 主数据全量块（MAN-519 白名单内）
+
+《工厂世界观设定集》（`docs/superpowers/plans/2026-07-26-factory-world-bible.md`）把演示环境的数据分成 L0 主数据 / L1 背景历史 / L2 现场演示 / L3 实时模拟四层。本块交付其中的 **L0 主数据全量（设定集 §1–§6）**：宁沪减振科技有限公司的组织、车间产线、设备台账、产品与物料、客户供应商、人员与技能。
+
+开关：`LeaderDemo:World:Enabled`（AppHost 在 leader-demo profile 下默认 `true`，`NERV_IIP_LEADER_DEMO_WORLD=false` 关闭；非 leader-demo 会话恒为 `false`）。写入服务为 MasterData、ProductEngineering、IndustrialTelemetry、IAM 四个。
+
+与设定集的逐节对照：
+
+| 设定集 | 交付事实 | 归属服务 |
+| --- | --- | --- |
+| §1 组织 | `SITE-001` 一号工厂；6 个部门 `DEPT-{PROD,PLAN,QA,EQ,WH,BIZ}`；两班制班次 `EARLY` 08:00–16:00 / `MIDDLE` 16:00–24:00 | MasterData |
+| §2 车间与产线 | 3 个车间 `WS-01/02/03`；14 条产线 `LINE-WB-*`；17 个工作中心（14 条产线各 1 个 + 3 个车间级辅助动力工作中心 `WC-AUX-*`） | MasterData |
+| §3 设备台账 | 46 台设备（`DEV-CNC-01..10`、`DEV-GRD-01..04`、`DEV-ASM-01..12`、`DEV-WLD-01..03`、`DEV-CTG-01..03`、`DEV-TST-01..04`、`DEV-PKG-01..02`、`DEV-AUX-01..08`），逐台挂工作中心/产线/车间/厂区；每台设备的采集点位（合计 96 个标签）与 3 个采集连接器 `CONN-OPCUA-01`（机加 17 台）/`CONN-MQTT-01`（装配检测 16 台）/`CONN-MODBUS-01`（辅助与涂装包装 13 台）的标签清单 | MasterData + IndustrialTelemetry |
+| §4 产品与物料 | 84 SKU（24 成品 `FG-QJ/HJ-<平台>-<L/R>` + 18 半成品 `SF-*` + 30 原材料 `RM-*` + 12 包材 `PK-*`），全中文名；每个成品 1 条 EBOM（9 行）+ 1 条 MBOM（11 行）+ 1 条 8 道工序路线（下料→CNC 精车→精磨→阀系预装→总装→电泳→性能终检→包装，跨三车间流转）+ 生产版本；热销平台 P1/S1 的 8 款另有 V2「换二供弹簧」的版本演进（V1 于 2026-06-30 失效，V2 自 2026-07-01 起为默认版本） | MasterData + ProductEngineering |
+| §5 人员与角色 | 58 名在册员工（工号 `EMP-001..EMP-058`、`user-emp-001..058`、中文姓名由确定性姓名池生成），按设定集人数分布落到 6 个部门与 16 个岗位；6 个班组 `TEAM-WB-*`（三车间各早/中班）含 6 名班组长与 19 名操作工；10 项技能目录（含分组/是否需证/有效期）+ 54 人的技能绑定（经营部销售/采购 4 人不在现场技能矩阵内） | IAM（员工档案）+ MasterData（班组/技能） |
+| §6 客户与供应商 | 8 家客户（`CUST-DEMO-001` 华东汽车零部件采购中心为既有 L2 固定事实 + 7 家 `CUST-WB-00X`）、10 家供应商 `SUP-WB-*` | MasterData |
+
+约束与隔离：
+
+1. 本块**只创建结构性主数据**，不创建任何结果事实（无订单、工单、报工、检验、库存、遥测采样、报警、维修工单）。设定集 §0 对 L1 背景历史放宽的「种子可直写结果事实」条款不适用于本块。
+2. 号段 `WS-` / `LINE-WB-` / `WC-` / `DEV-` / `FG-|SF-|RM-|PK-` / `CUST-WB-` / `SUP-WB-` / `EMP-` 与 MAN-519 固定演示事实（`*-DEMO-*`）、千单规模块（`*-SCALE-*`）完全隔离，`demo health-check` 对 `SO-DEMO-001`/`WO-DEMO-Q01`/`DEV-CNC-DEMO`/`ALARM-DEMO-001`/`MWO-DEMO-001` 的唯一匹配计数不受影响；`LINE-DEMO-01.WorkshopCode` 仍为空，由回归测试锁定。
+3. 重复执行幂等（存在即跳过），与租户已有同号段数据冲突时直接失败而不覆盖；写入分批 `SaveChanges`（MasterData 按域分 6 批、ProductEngineering 每 6 个成品一批、IAM 每 20 人一批）。
+4. SKU / 工作中心 / 工序 / 员工标识在 MasterData、ProductEngineering、IndustrialTelemetry、IAM 四侧按同一字面量重复声明，每侧各有黄金向量测试防止跨服务漂移。
+5. 采集清单里的绑定一律登记为 `pending`：种子只声明「该点位配置上归属该连接器」。**连接器是否在线由 L3 常驻模拟/真实连接器心跳决定，本块不伪造 3 条「在线」连接**——采集健康页要显示 3 条在线连接仍需 #1086 常驻模拟接管。
+
+IAM 侧同时补齐了工人档案：`iam.users` 新增可空列 `DisplayName` / `EmployeeNo` / `DepartmentName`（migration `20260726055246_AddUserWorkerProfile`），内部工人目录 `GET /internal/iam/v1/workers` 原先写死的 `null` 显示名/工号/部门改为读取真实档案，缺档案时仍回落到 login name。这 58 个账号**不是可登录账号**：口令哈希取一次性随机值、强制改密、不授予任何角色或成员资格，只用于人员目录/班组/技能矩阵的展示与引用。
+
+耗时实测（2026-07-26，Windows 10.0.26200、.NET 10.0.0、Docker PostgreSQL、`infra/docker-compose.dev.yml` 的共享开发实例）：
+
+| 观测 | 数值 |
+| --- | --- |
+| MasterData L0 首次 seed（3 车间 + 14 产线 + 17 工作中心 + 46 设备 + 84 SKU + 17 业务伙伴 + 6 班组 + 25 班组成员 + 54 人的技能绑定） | 1115 ms |
+| MasterData L0 幂等重跑 | 1011 ms |
+| ProductEngineering L0 首次 seed（8 标准工序 + 32 EBOM + 32 MBOM + 24 路线 + 32 生产版本） | 1904 ms |
+| ProductEngineering L0 幂等重跑 | 975 ms |
+
+两段合计约 3 秒，加上千单规模块的约 9 秒仍远低于 90 秒启动预算，因此 leader-demo profile 下默认开启。IndustrialTelemetry L0（96 个标签 + 3 条连接器清单）与 IAM L0（58 个用户）量级远小于以上两块，未单独做 PostgreSQL 耗时实测。耗时证据由 `NERV_IIP_TEST_POSTGRES` 门控的 `MasterDataWorldBibleSeedPostgresTests`、`WorldBibleSeedPostgresTests`（ProductEngineering）产出，默认 skip、不进 CI 门禁；形状与隔离证据由各服务的 `*WorldBible*Tests` 常规门禁测试产出。
+
+本变更没有新增或修改业务 HTTP endpoint，也没有改变 Gateway 公开契约；facade coverage 登记、OpenAPI 快照与 generated client 均无需刷新。IAM 内部工人目录只补充了原有 DTO 字段的取值，wire shape 不变。
+
 ## 当前结论
 
 1. 平台 HTTP 服务命名已经冻结为 .Web、.Domain、.Infrastructure。
