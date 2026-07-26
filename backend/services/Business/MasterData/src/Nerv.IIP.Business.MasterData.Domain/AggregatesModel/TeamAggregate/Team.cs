@@ -10,7 +10,7 @@ public class Team : Entity<TeamId>, IAggregateRoot
     {
     }
 
-    private Team(string organizationId, string environmentId, string code, string name, string departmentCode, string shiftCode)
+    private Team(string organizationId, string environmentId, string code, string name, string departmentCode, string shiftCode, string? workCenterCode)
     {
         OrganizationId = Required(organizationId);
         EnvironmentId = Required(environmentId);
@@ -18,6 +18,7 @@ public class Team : Entity<TeamId>, IAggregateRoot
         Name = Required(name);
         DepartmentCode = Required(departmentCode);
         ShiftCode = Required(shiftCode);
+        WorkCenterCode = Optional(workCenterCode);
         CreatedAtUtc = DateTime.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
         this.AddDomainEvent(new MasterDataAggregateCreatedDomainEvent(nameof(Team), OrganizationId, EnvironmentId, Code));
@@ -29,21 +30,25 @@ public class Team : Entity<TeamId>, IAggregateRoot
     public string Name { get; private set; } = string.Empty;
     public string DepartmentCode { get; private set; } = string.Empty;
     public string ShiftCode { get; private set; } = string.Empty;
+
+    /// <summary>Optional work center the team staffs; drives MES dispatch candidate filtering.</summary>
+    public string? WorkCenterCode { get; private set; }
     public bool Disabled { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
 
-    public static Team Create(string organizationId, string environmentId, string code, string name, string departmentCode, string shiftCode)
+    public static Team Create(string organizationId, string environmentId, string code, string name, string departmentCode, string shiftCode, string? workCenterCode = null)
     {
-        return new Team(organizationId, environmentId, code, name, departmentCode, shiftCode);
+        return new Team(organizationId, environmentId, code, name, departmentCode, shiftCode, workCenterCode);
     }
 
-    public void Update(string name, string departmentCode, string shiftCode)
+    public void Update(string name, string departmentCode, string shiftCode, string? workCenterCode)
     {
         EnsureEnabled();
         Name = Required(name);
         DepartmentCode = Required(departmentCode);
         ShiftCode = Required(shiftCode);
+        WorkCenterCode = Optional(workCenterCode);
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateUpdatedDomainEvent(nameof(Team), OrganizationId, EnvironmentId, Code));
     }
@@ -81,5 +86,10 @@ public class Team : Entity<TeamId>, IAggregateRoot
     private static string Required(string value)
     {
         return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
+    }
+
+    private static string? Optional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 }

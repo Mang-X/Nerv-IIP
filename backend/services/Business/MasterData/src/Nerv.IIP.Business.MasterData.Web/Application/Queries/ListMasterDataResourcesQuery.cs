@@ -46,7 +46,10 @@ public sealed record MasterDataResourceItem(
     string? ParentDeviceId = null,
     DateOnly? RetiredOn = null,
     decimal? CreditLimit = null,
-    string? CreditCurrencyCode = null);
+    string? CreditCurrencyCode = null,
+    string? JobTitle = null,
+    string? EmploymentStatus = null,
+    string? Phone = null);
 
 public sealed record ListMasterDataResourcesResponse(
     IReadOnlyCollection<MasterDataResourceItem> Resources,
@@ -89,6 +92,7 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             "business-partner" or "partner" => ListPartners(request, "business-partner"),
             "department" => ListDepartments(request, type),
             "team" => ListTeams(request, type),
+            "worker" => ListWorkers(request, type),
             "personnel-skill" => ListPersonnelSkills(request, type),
             "workshop" => ListWorkshops(request, type),
             "work-center" => ListWorkCenters(request, type),
@@ -238,9 +242,24 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.DepartmentCode) || x.DepartmentCode == request.DepartmentCode)
             .Where(x => string.IsNullOrWhiteSpace(request.ShiftCode) || x.ShiftCode == request.ShiftCode)
+            .Where(x => string.IsNullOrWhiteSpace(request.WorkCenterCode) || x.WorkCenterCode == request.WorkCenterCode)
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
-            .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active", null, null, null, null, null, null, x.DepartmentCode, x.ShiftCode));
+            .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, x.WorkCenterCode, x.Disabled ? "disabled" : "active", null, null, null, null, null, null, x.DepartmentCode, x.ShiftCode));
+    }
+
+    private IQueryable<MasterDataResourceItem> ListWorkers(ListMasterDataResourcesQuery request, string resourceType)
+    {
+        var keyword = NormalizeKeyword(request.Keyword);
+        return dbContext.Workers
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => request.IncludeDisabled || !x.Disabled)
+            .Where(x => string.IsNullOrWhiteSpace(request.DepartmentCode) || x.DepartmentCode == request.DepartmentCode)
+            .Where(x => string.IsNullOrWhiteSpace(request.UserId) || x.UserId == request.UserId)
+            .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
+            .OrderBy(x => x.Code)
+            .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active", null, null, null, null, null, null, x.DepartmentCode, null, x.UserId, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, x.JobTitle, x.EmploymentStatus, x.Phone));
     }
 
     private IQueryable<MasterDataResourceItem> ListPersonnelSkills(ListMasterDataResourcesQuery request, string resourceType)
@@ -429,7 +448,10 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
         string? ParentDeviceId = null,
         DateOnly? RetiredOn = null,
         decimal? CreditLimit = null,
-        string? CreditCurrencyCode = null)
+        string? CreditCurrencyCode = null,
+        string? JobTitle = null,
+        string? EmploymentStatus = null,
+        string? Phone = null)
     {
         return new MasterDataResourceItem(
             resourceType,
@@ -475,7 +497,10 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             ParentDeviceId,
             RetiredOn,
             CreditLimit,
-            CreditCurrencyCode);
+            CreditCurrencyCode,
+            JobTitle,
+            EmploymentStatus,
+            Phone);
     }
 
     private static string? NormalizeKeyword(string? keyword)

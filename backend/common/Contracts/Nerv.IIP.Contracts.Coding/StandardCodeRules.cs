@@ -57,6 +57,7 @@ public static class StandardCodeRules
         BusinessPartner(),
         SimpleResource("department", "部门", "DEPT", 4, separator: "-"),
         SimpleResource("team", "班组", "TEAM", 4, separator: "-"),
+        SimpleResource("worker", "员工", "EMP", 4, separator: "-"),
         SimpleResource("work-calendar", "工作日历", "CAL", 4, separator: "-"),
     ];
 
