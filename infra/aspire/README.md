@@ -191,6 +191,25 @@ costs roughly 11 s in ERP and 28 s in MES on a local Docker PostgreSQL, and repe
 are idempotent (about 0.2 s). Archived evidence:
 `scripts/verify-world-history.ps1` → `artifacts/world-history/<runId>/`.
 
+The same switch now also drives the **phase-2 history domains**, which hang off the
+very same order plan: **Quality** (about 6873 inspection tasks across incoming, in-process
+and final inspection, 6570 records including 90 reinspections, 164 `NCR-2026-####`
+nonconformance reports with rework/concession/scrap dispositions and their hold trail),
+**Inventory** (about 61.9k stock movements — opening balance, purchase receipts, quality
+release, putaway, material issues, line-side back-flush, finished-goods receipts,
+deliveries and scrap adjustments — over 5035 ledger rows and 3681 lots, with
+`on-hand = opening + in - out` reconciled independently), **WMS** (3659 inbound orders,
+22677 outbound orders and 26336 warehouse tasks, all terminal), and **BarcodeLabel**,
+which is built from nothing: 4 label templates and barcode rules, 900 print batches,
+3373 label items, 1346 EPCIS events and 3000 scan records whose timestamps line up with
+the source documents they belong to.
+
+Each of the four runs its own fail-closed validator too. Full-scale seeding costs about
+7 s in Quality, 20 s in Inventory, 12 s in WMS and 3 s in BarcodeLabel, so the whole L1
+chain — phase 1 and phase 2 together — lands around 82 s, well inside the 5-minute
+startup budget. `scripts/verify-world-history.ps1` collects evidence from all six
+services and additionally prints a 20-order cross-domain traceability table.
+
 Every successful or failed `seed` and `health-check` preserves redacted evidence
 at `artifacts/leader-demo/<UTC-run-id>/evidence.json`. The manifest includes the
 session ID, commit, resource states, non-secret URLs, actual account role IDs

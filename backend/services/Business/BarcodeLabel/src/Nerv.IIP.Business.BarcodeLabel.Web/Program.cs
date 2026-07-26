@@ -6,6 +6,7 @@ using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Seed;
 using Nerv.IIP.Business.BarcodeLabel.Web.Endpoints.BarcodeLabel;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Printing;
@@ -60,6 +61,7 @@ try
     builder.Services.Configure<LabelPrinterOptions>(builder.Configuration.GetSection("LabelPrinter"));
     builder.Services.AddSingleton<ZplTcpLabelPrinter>();
     builder.Services.AddSingleton<ILabelPrinter, ConfiguredLabelPrinter>();
+    builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddHttpContextAccessor();
@@ -110,6 +112,47 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
+    }
+
+    // 《工厂世界观设定集》L1 背景历史（条码标签域侧）。校验器 fail-closed：对账不平就让启动失败。
+    // BarcodeLabel 没有固定演示 seed，因此这里直接以 History 开关为准，并沿用「只在 Development 允许」的口径。
+    if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
+    {
+        if (!app.Environment.IsDevelopment())
+        {
+            throw new InvalidOperationException(
+                "LeaderDemo:History:Enabled=true is only allowed for BusinessBarcodeLabel in Development.");
+        }
+
+        using var scope = app.Services.CreateScope();
+        var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
+            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev",
+            WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+            WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+        app.Logger.LogInformation(
+            "World-history barcode-label seed completed: {Templates} label templates, {Rules} barcode rules, " +
+            "{Batches} print batches, {Items} print items, {Epcis} EPCIS events, {Scans} scan records; " +
+            "validator checked {CheckedBatches} batches ({Printed} printed / {Failed} failed, {CheckedItems} items) " +
+            "and {CheckedScans} scans ({Accepted} accepted / {Rejected} rejected) across {Devices} devices.",
+            report.LabelTemplatesWritten,
+            report.BarcodeRulesWritten,
+            report.PrintBatchesWritten,
+            report.PrintItemsWritten,
+            report.EpcisEventsWritten,
+            report.ScanRecordsWritten,
+            report.Validation.PrintBatchesChecked,
+            report.Validation.PrintedBatchesChecked,
+            report.Validation.FailedBatchesChecked,
+            report.Validation.PrintItemsChecked,
+            report.Validation.ScanRecordsChecked,
+            report.Validation.AcceptedScansChecked,
+            report.Validation.RejectedScansChecked,
+            report.Validation.DeviceFleetSize);
+        foreach (var line in report.Validation.Sample)
+        {
+            app.Logger.LogInformation("World-history sample: {Chain}", line);
+        }
     }
 
     app.UseNervIipRequestLocalization();

@@ -82,6 +82,7 @@ try
 
     builder.Services.AddInventoryPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<LeaderDemoSeedService>();
+    builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
@@ -146,9 +147,39 @@ try
     if (leaderDemoSeedEnabled)
     {
         using var scope = app.Services.CreateScope();
+        var leaderDemoOrganizationId = builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001";
+        var leaderDemoEnvironmentId = builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev";
         await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(
-            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
+            leaderDemoOrganizationId,
+            leaderDemoEnvironmentId);
+
+        // 《工厂世界观设定集》L1 背景历史（库存域侧）。校验器 fail-closed：对账不平就让启动失败。
+        if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
+        {
+            var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
+                leaderDemoOrganizationId,
+                leaderDemoEnvironmentId,
+                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+            app.Logger.LogInformation(
+                "World-history inventory seed completed: {Locations} stock locations, {Movements} stock movements, " +
+                "{Ledgers} new ledger dimensions; validator checked {CheckedMovements} movements / {CheckedLedgers} ledgers " +
+                "across {Lots} lots: opening {Opening}, inbound {Inbound}, outbound {Outbound}, closing {Closing}.",
+                report.StockLocationsWritten,
+                report.StockMovementsWritten,
+                report.StockLedgersCreated,
+                report.Validation.StockMovementsChecked,
+                report.Validation.StockLedgersChecked,
+                report.Validation.DistinctLotsChecked,
+                report.Validation.OpeningQuantityTotal,
+                report.Validation.InboundQuantityTotal,
+                report.Validation.OutboundQuantityTotal,
+                report.Validation.ClosingQuantityTotal);
+            foreach (var line in report.Validation.Sample)
+            {
+                app.Logger.LogInformation("World-history sample: {Movement}", line);
+            }
+        }
     }
 
     app.UseNervIipRequestLocalization();
