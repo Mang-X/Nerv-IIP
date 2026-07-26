@@ -23,6 +23,7 @@ import type { ProductionReportContext } from '@/composables/mes/useProductionRep
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { toIsoFromLocalInput, toLocalDateTimeInput } from '@/utils/datetime'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
@@ -324,14 +325,6 @@ function toOptionalNumber(value: string) {
 function toOptionalInteger(value: string) {
   const parsed = Number.parseInt(value, 10)
   return Number.isFinite(parsed) ? parsed : undefined
-}
-function toIsoFromLocalInput(value: string) {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toISOString()
-}
-function toLocalDateTimeInput(date: Date) {
-  const offset = date.getTimezoneOffset() * 60_000
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
 }
 function formatDateTime(value?: string | null) {
   if (!value) return '无'
