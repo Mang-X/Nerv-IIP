@@ -73,7 +73,9 @@ public sealed class CreateSchedulePlanCommandHandler(
                         x.ProblemId == baseProblem.ProblemId,
                     cancellationToken)
                 ?? throw new KnownException($"Schedule problem snapshot exists but generated plan was not found, ProblemId = {request.Problem.ProblemId}");
-            var existingPlanContract = SchedulePlanContractMapper.ToContract(existingPlan);
+            var existingPlanContract = SchedulePlanContractMapper.ToContract(
+                existingPlan,
+                existingSnapshot.EngineInputFingerprint);
             await urgencyService.CapturePlanAsync(
                 effectiveProblem,
                 existingPlanContract,
@@ -86,9 +88,12 @@ public sealed class CreateSchedulePlanCommandHandler(
         var urgencyInputFingerprint = CalculateProblemFingerprint(effectiveProblem);
         var normalizedEngineInput = SchedulingProblemNormalizer.Normalize(effectiveProblem);
         var engineInputJson = JsonSerializer.Serialize(normalizedEngineInput, SchedulingJson.Options);
-        var generated = SchedulePlanContractMapper.WithStatus(
-            generation.Plan,
-            SchedulePlanStatusContract.Generated);
+        var generated = SchedulePlanContractMapper.WithProvenance(
+            SchedulePlanContractMapper.WithStatus(
+                generation.Plan,
+                SchedulePlanStatusContract.Generated),
+            generation,
+            urgencyInputFingerprint);
         var persistedPlan = SchedulePlanContractMapper.ToDomainSnapshot(generated) with
         {
             AlgorithmVersion = generation.EngineVersion,
@@ -109,41 +114,10 @@ public sealed class CreateSchedulePlanCommandHandler(
             baseProblem.OrganizationId,
             baseProblem.EnvironmentId,
             persistedPlan,
-            CreateExecutionTrace(generation)));
+            SchedulePlanContractMapper.ToExecutionTrace(generated.Provenance!)));
         await urgencyService.CapturePlanAsync(
             effectiveProblem, generated, urgencyInputFingerprint, generatedAtUtc, cancellationToken);
         return generated;
-    }
-
-    private static SchedulePlanExecutionTraceSnapshot CreateExecutionTrace(
-        SchedulingPlanGenerationResult generation)
-    {
-        var sources = generation.Constraints.Summaries
-            .OrderBy(x => x.SourceId, StringComparer.Ordinal)
-            .ThenBy(x => x.SourceVersion, StringComparer.Ordinal)
-            .Select(x => new ConstraintSourceTrace(
-                x.SourceId,
-                x.SourceVersion,
-                x.Outcome,
-                x.FactCount,
-                x.FactsFingerprint,
-                x.ReasonCodes
-                    .Distinct(StringComparer.Ordinal)
-                    .Order(StringComparer.Ordinal)
-                    .ToArray()))
-            .ToArray();
-        var document = new ConstraintSourcesTraceDocument(
-            SchedulingExecutionTraceSchema.CurrentVersion,
-            sources);
-
-        return new SchedulePlanExecutionTraceSnapshot(
-            generation.EngineId,
-            generation.Rules.ProviderId,
-            generation.Rules.ProfileId,
-            generation.Rules.ProfileVersion,
-            JsonSerializer.Serialize(document, SchedulingJson.Options),
-            SchedulingExecutionTraceSchema.CurrentVersion,
-            SchedulingReplayStatuses.Available);
     }
 
     private static string CalculateProblemFingerprint(SchedulingProblemContract problem)
@@ -153,16 +127,4 @@ public sealed class CreateSchedulePlanCommandHandler(
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(json));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
-
-    private sealed record ConstraintSourcesTraceDocument(
-        int SchemaVersion,
-        IReadOnlyList<ConstraintSourceTrace> Sources);
-
-    private sealed record ConstraintSourceTrace(
-        string SourceId,
-        string SourceVersion,
-        SchedulingProviderOutcome Outcome,
-        int FactCount,
-        string FactsFingerprint,
-        IReadOnlyList<string> ReasonCodes);
 }

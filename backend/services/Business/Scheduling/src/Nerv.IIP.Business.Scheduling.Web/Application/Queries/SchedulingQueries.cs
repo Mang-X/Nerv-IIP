@@ -136,8 +136,15 @@ public sealed class GetSchedulePlanDetailQueryHandler(ApplicationDbContext dbCon
                     x.EnvironmentId == request.EnvironmentId,
                 cancellationToken)
             ?? throw new KnownException($"Schedule plan was not found, PlanId = {request.PlanId}");
+        var engineInputFingerprint = await dbContext.ScheduleProblems.AsNoTracking()
+            .Where(x =>
+                x.ProblemId == plan.ProblemId &&
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId)
+            .Select(x => x.EngineInputFingerprint)
+            .SingleOrDefaultAsync(cancellationToken);
 
-        return SchedulePlanContractMapper.ToContract(plan);
+        return SchedulePlanContractMapper.ToContract(plan, engineInputFingerprint);
     }
 }
 

@@ -1,11 +1,15 @@
+using System.Text.Json;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
+using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 
 public static class SchedulePlanContractMapper
 {
-    public static SchedulePlanContract ToContract(SchedulePlan plan)
+    public static SchedulePlanContract ToContract(
+        SchedulePlan plan,
+        string? engineInputFingerprint = null)
     {
         var status = ToContractStatus(plan.Status);
         var assignments = plan.Assignments
@@ -110,8 +114,115 @@ public static class SchedulePlanContractMapper
                     Status: status,
                     HasConflict: hasConflict,
                     ConflictReasonCode: hasConflict ? conflict!.ReasonCode : null);
-            }).ToArray());
+            }).ToArray(),
+            Provenance: ToProvenance(plan, engineInputFingerprint));
     }
+
+    public static SchedulePlanContract WithProvenance(
+        SchedulePlanContract plan,
+        SchedulingPlanGenerationResult generation,
+        string engineInputFingerprint)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(generation);
+        ArgumentException.ThrowIfNullOrWhiteSpace(engineInputFingerprint);
+
+        return plan with
+        {
+            Provenance = new SchedulePlanProvenanceContract(
+                generation.EngineId,
+                generation.Rules.ProviderId,
+                generation.Rules.ProfileId,
+                generation.Rules.ProfileVersion,
+                engineInputFingerprint,
+                SchedulingExecutionTraceSchema.CurrentVersion,
+                SchedulingReplayStatuses.Available,
+                generation.Constraints.Summaries
+                    .OrderBy(x => x.SourceId, StringComparer.Ordinal)
+                    .ThenBy(x => x.SourceVersion, StringComparer.Ordinal)
+                    .Select(x => new SchedulePlanConstraintSourceContract(
+                        x.SourceId,
+                        x.SourceVersion,
+                        JsonNamingPolicy.CamelCase.ConvertName(x.Outcome.ToString()),
+                        x.FactCount,
+                        x.FactsFingerprint,
+                        x.ReasonCodes
+                            .Distinct(StringComparer.Ordinal)
+                            .Order(StringComparer.Ordinal)
+                            .ToArray()))
+                    .ToArray())
+        };
+    }
+
+    public static SchedulePlanExecutionTraceSnapshot ToExecutionTrace(
+        SchedulePlanProvenanceContract provenance)
+    {
+        ArgumentNullException.ThrowIfNull(provenance);
+
+        return new SchedulePlanExecutionTraceSnapshot(
+            provenance.EngineId,
+            provenance.RuleProviderId,
+            provenance.RuleProfileId,
+            provenance.RuleProfileVersion,
+            JsonSerializer.Serialize(
+                new ConstraintSourcesTraceDocument(
+                    provenance.TraceSchemaVersion,
+                    provenance.ConstraintSources),
+                SchedulingJson.Options),
+            provenance.TraceSchemaVersion,
+            provenance.ReplayStatus);
+    }
+
+    private static SchedulePlanProvenanceContract ToProvenance(
+        SchedulePlan plan,
+        string? engineInputFingerprint)
+    {
+        var replayStatus = string.IsNullOrWhiteSpace(engineInputFingerprint)
+            ? SchedulingReplayStatuses.LegacyUnavailable
+            : plan.ReplayStatus;
+        try
+        {
+            var trace = JsonSerializer.Deserialize<ConstraintSourcesTraceDocument>(
+                plan.ConstraintSourcesJson,
+                SchedulingJson.Options);
+            return new SchedulePlanProvenanceContract(
+                plan.EngineId,
+                plan.RuleProviderId,
+                plan.RuleProfileId,
+                plan.RuleProfileVersion,
+                engineInputFingerprint,
+                plan.TraceSchemaVersion,
+                replayStatus,
+                trace?.Sources
+                    .OrderBy(x => x.SourceId, StringComparer.Ordinal)
+                    .ThenBy(x => x.SourceVersion, StringComparer.Ordinal)
+                    .Select(x => x with
+                    {
+                        ReasonCodes = x.ReasonCodes
+                            .Distinct(StringComparer.Ordinal)
+                            .Order(StringComparer.Ordinal)
+                            .ToArray()
+                    })
+                    .ToArray()
+                    ?? []);
+        }
+        catch (JsonException)
+        {
+            return new SchedulePlanProvenanceContract(
+                plan.EngineId,
+                plan.RuleProviderId,
+                plan.RuleProfileId,
+                plan.RuleProfileVersion,
+                engineInputFingerprint,
+                plan.TraceSchemaVersion,
+                SchedulingReplayStatuses.LegacyUnavailable,
+                []);
+        }
+    }
+
+    private sealed record ConstraintSourcesTraceDocument(
+        int SchemaVersion,
+        IReadOnlyCollection<SchedulePlanConstraintSourceContract> Sources);
 
     private static ScheduleChangeContract ToChangeSummary(
         ScheduleAssignmentContract assignment,

@@ -121,6 +121,10 @@ public sealed class SchedulingEndpointContractTests
         Assert.Equal(SchedulePlanStatusContract.Preview, first.Status);
         Assert.Equal(first.Assignments.Select(x => (x.OperationId, x.ResourceId, x.StartUtc, x.EndUtc)), second.Assignments.Select(x => (x.OperationId, x.ResourceId, x.StartUtc, x.EndUtc)));
         Assert.NotEmpty(first.GanttItems);
+        AssertAvailableProvenance(first);
+        Assert.Equal(
+            JsonSerializer.Serialize(first.Provenance, SchedulingJson.Options),
+            JsonSerializer.Serialize(second.Provenance, SchedulingJson.Options));
         Assert.False(await dbContext.SchedulePlans.AnyAsync(CancellationToken.None));
     }
 
@@ -204,6 +208,10 @@ public sealed class SchedulingEndpointContractTests
 
         Assert.Equal(SchedulePlanStatusContract.Generated, created.Status);
         Assert.Equal(created.PlanId, detail.PlanId);
+        AssertAvailableProvenance(created);
+        Assert.Equal(
+            JsonSerializer.Serialize(created.Provenance, SchedulingJson.Options),
+            JsonSerializer.Serialize(detail.Provenance, SchedulingJson.Options));
         Assert.NotEmpty(detail.Assignments);
         Assert.NotEmpty(detail.Conflicts);
         Assert.NotEmpty(detail.UnscheduledOperations);
@@ -215,6 +223,48 @@ public sealed class SchedulingEndpointContractTests
         Assert.NotEmpty(detail.GanttItems);
         Assert.True(await dbContext.ScheduleProblems.AnyAsync(x => x.ProblemId == created.ProblemId, CancellationToken.None));
         Assert.True(await dbContext.SchedulePlans.AnyAsync(x => x.PlanId == created.PlanId, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Detail_marks_legacy_plan_provenance_unavailable_when_exact_input_is_missing()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var problemJson = JsonSerializer.Serialize(problem, SchedulingJson.Options);
+        dbContext.SchedulePlans.Add(CreatePersistedPlan(
+            "plan-legacy-provenance",
+            problem.ProblemId,
+            FixedNow));
+        var snapshot = new ScheduleProblemSnapshot(
+            problem.ProblemId,
+            problem.ContractVersion,
+            problem.OrganizationId,
+            problem.EnvironmentId,
+            "legacy-problem-fingerprint",
+            problemJson,
+            problem.HorizonStartUtc,
+            problem.HorizonEndUtc,
+            FixedNow,
+            SchedulingPersistenceTestData.UnchangedEffectiveInputFingerprint(problemJson),
+            problemJson);
+        dbContext.ScheduleProblems.Add(snapshot);
+        dbContext.Entry(snapshot).Property(x => x.EngineInputFingerprint).CurrentValue = null;
+        dbContext.Entry(snapshot).Property(x => x.EngineInputJson).CurrentValue = null;
+        await dbContext.SaveChangesAsync();
+        var handler = new GetSchedulePlanDetailQueryHandler(dbContext);
+
+        var detail = await handler.Handle(
+            new GetSchedulePlanDetailQuery(
+                "plan-legacy-provenance",
+                problem.OrganizationId,
+                problem.EnvironmentId),
+            CancellationToken.None);
+
+        var provenance = Assert.IsType<SchedulePlanProvenanceContract>(detail.Provenance);
+        Assert.Null(provenance.EngineInputFingerprint);
+        Assert.Equal(SchedulingReplayStatuses.LegacyUnavailable, provenance.ReplayStatus);
     }
 
     [Fact]
@@ -746,6 +796,23 @@ public sealed class SchedulingEndpointContractTests
                 overrideOverlay: overrideOverlay ?? new SchedulingOperationOverrideOverlay(dbContext)),
             clock,
             new OrderUrgencyService(dbContext, clock));
+    }
+
+    private static void AssertAvailableProvenance(SchedulePlanContract plan)
+    {
+        var provenance = Assert.IsType<SchedulePlanProvenanceContract>(plan.Provenance);
+        Assert.Equal("finite-capacity", provenance.EngineId);
+        Assert.Equal("built-in", provenance.RuleProviderId);
+        Assert.Equal("adr-0014-default", provenance.RuleProfileId);
+        Assert.Equal("v1", provenance.RuleProfileVersion);
+        Assert.Equal(SchedulingExecutionTraceSchema.CurrentVersion, provenance.TraceSchemaVersion);
+        Assert.Equal(SchedulingReplayStatuses.Available, provenance.ReplayStatus);
+        Assert.Equal(3, provenance.ConstraintSources.Count);
+        Assert.All(provenance.ConstraintSources, source =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(source.FactsFingerprint));
+            Assert.NotEmpty(source.ReasonCodes);
+        });
     }
 
     private static SchedulingPlanGenerator CreateGenerator(

@@ -96,6 +96,7 @@ try
     builder.Services.AddScoped<ISchedulingRuleProvider, DefaultSchedulingRuleProvider>();
     builder.Services.AddScoped<ISchedulingConstraintProvider, DefaultSchedulingConstraintProvider>();
     builder.Services.AddScoped<SchedulingPlanGenerator>();
+    builder.Services.AddScoped<SchedulePlanReplayService>();
     builder.Services.AddScoped<OrderUrgencyService>();
     builder.Services.AddSingleton(new OrderUrgencyRetentionWorkerIdentity(
         $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}"));

@@ -36,8 +36,11 @@ public sealed class PreviewSchedulePlanCommandHandler(
             $"preview-{request.Problem.ProblemId}",
             timeProvider.GetUtcNow(),
             cancellationToken);
-        return SchedulePlanContractMapper.WithStatus(
-            generation.Plan,
-            SchedulePlanStatusContract.Preview);
+        return SchedulePlanContractMapper.WithProvenance(
+            SchedulePlanContractMapper.WithStatus(
+                generation.Plan,
+                SchedulePlanStatusContract.Preview),
+            generation,
+            generation.Plan.ProblemFingerprint);
     }
 }
