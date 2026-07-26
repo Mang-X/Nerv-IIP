@@ -1,8 +1,8 @@
 # MAN-422 Scheduling Provider / Engine Boundary Design
 
-**Issue:** Linear MAN-422 / GitHub #763  
-**Date:** 2026-07-26  
-**Status:** Approved for implementation by ADR 0022 and the MAN-422 delegation  
+**Issue:** Linear MAN-422 / GitHub #763
+**Date:** 2026-07-26
+**Status:** Approved for implementation by ADR 0022 and the MAN-422 delegation
 **Decision sources:** ADR 0014, ADR 0022, BusinessScheduling APS lite design
 
 ## 1. Outcome
