@@ -155,21 +155,30 @@ describe('business workbench page', () => {
     }
   })
 
-  it('does not show negative empty states while the summary is loading', async () => {
+  it('holds the dashboard shape with in-card skeletons while the summary is loading', async () => {
     coladaState.isLoading = true
     coladaState.queryData = undefined
 
     const wrapper = mountWorkbench(['business.mes.work-orders.read'])
     await flushPromises()
 
+    // 加载态是卡内骨架，不是页面顶部一行裸文字
+    expect(wrapper.findAll('[data-slot="skeleton"]').length).toBeGreaterThan(0)
+    // 英雄区左格恒有节点：4 张骨架指标卡占位，环图卡不会被自动布局顶进 1fr 列
+    const heroSection = wrapper.get('section[aria-label="跨域指标"]')
+    expect(heroSection.element.children).toHaveLength(2)
+    // 三张行动卡形状恒定，读数位也是骨架，不先亮 0 再跳变
+    expect(wrapper.findAll('[data-focus]')).toHaveLength(3)
+
     const text = wrapper.text()
-    expect(text).toContain('正在刷新工作台摘要')
+    expect(text).not.toContain('正在刷新工作台摘要')
+    expect(text).not.toContain('项待处理')
     expect(text).not.toContain('暂无可显示指标')
     expect(text).not.toContain('当前角色没有可汇总的跨域指标')
-    expect(text).not.toContain('暂无待处理事项')
+    expect(text).not.toContain('待办已清空')
     expect(text).not.toContain('暂无未读消息')
-    expect(text).not.toContain('暂无当前预警')
-    expect(text).not.toContain('正在等待来源状态')
+    expect(text).not.toContain('设备当前运行正常')
+    expect(text).not.toContain('今天没有待处理事项')
   })
 
   it('renders the facade summary instead of local static workbench items', async () => {
@@ -184,13 +193,20 @@ describe('business workbench page', () => {
     await flushPromises()
 
     const text = wrapper.text()
+    // 英雄区：facade KPI + 待办 / 设备预警的权威总量
     expect(text).toContain('已下达工单')
     expect(text).toContain('7')
     expect(text).toContain('未关闭质量异常')
-    expect(text).toContain('待办 2')
-    expect(text).toContain('消息 2')
-    expect(text).toContain('设备预警 1')
+    expect(text).toContain('待办事项')
+    expect(text).toContain('未解除设备预警')
+    // 页头汇总 = 待办 2 + 未读 1 + 预警 1
+    expect(text).toContain('4 项待处理')
+    // 行动卡条目展示 facade 返回的人读编码，而不是内部 id
+    expect(text).toContain('PO-260701-0001')
+    expect(text).toContain('WO-260701-0001')
     expect(text).toContain('DEV-1001')
+    expect(text).not.toContain('approval-1')
+    expect(text).not.toContain('message-1')
     expect(text).not.toContain('设备停机影响')
     expect(text).not.toContain('Sensitive customer escalation')
     expect(text).not.toContain('Sensitive receivables amount')
@@ -198,15 +214,96 @@ describe('business workbench page', () => {
     expect(text).not.toContain('global-inventory-workbench-summary-not-connected')
   })
 
-  it('shows only route-ready shortcuts allowed by the principal permissions', async () => {
+  // Owner 裁决（覆盖 MAN-153 的 dashboard-01 渐变条款）：工作台各卡一律纯色平面。
+  it('builds the hero from library metric components and keeps every surface flat', async () => {
+    const wrapper = mountWorkbench([
+      'business.mes.work-orders.read',
+      'business.quality.ncr.read',
+      'business.approvals.read',
+      'business.notification.messages.read',
+      'business.iiot.alarms.read',
+    ])
+    await flushPromises()
+
+    // 英雄区四张 KPI 卡是库件 NvMetricCard，构成卡是库件 NvMetricRing——不自绘卡片
+    expect(wrapper.findAll('.nv-metric')).toHaveLength(4)
+    expect(wrapper.findAll('.nv-ring-card')).toHaveLength(1)
+    // 任何渐变填充都不许回潮
+    expect(wrapper.html()).not.toContain('bg-gradient')
+  })
+
+  // 真机回归：demo 网关的审批链消息 resourceId 就是内部 GUID，status 是 `unread`。
+  it('keeps internal GUIDs and raw item statuses out of the action cards', async () => {
+    coladaState.queryData = {
+      success: true,
+      data: {
+        kpis: [],
+        todos: {
+          status: 'available',
+          total: 1,
+          items: [
+            {
+              source: 'BusinessApproval',
+              itemId: 'approval-9',
+              itemType: 'purchase-order',
+              status: 'pending',
+              referenceId: '019f9c8b-88f8-71fd-98d2-686490f945b7',
+            },
+          ],
+        },
+        messages: {
+          status: 'available',
+          total: 1,
+          unread: 1,
+          items: [
+            {
+              messageId: '019f9c8b-d1b2-78e6-9f16-3d209e243a87',
+              status: 'unread',
+              severity: 'info',
+              resourceType: 'approval-chain',
+              resourceId: '019f9c8b-88f8-71fd-98d2-686490f945b7',
+              createdAtUtc: '2026-07-26T03:50:36Z',
+            },
+          ],
+        },
+        alerts: { status: 'available', total: 0, critical: 0, items: [] },
+        sourceStatuses: [],
+      },
+    }
+
+    const wrapper = mountWorkbench([
+      'business.approvals.read',
+      'business.notification.messages.read',
+    ])
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).not.toContain('019f9c8b')
+    // GUID 不可读 → 回落到业务口径，而不是把内部 id 摆到主行
+    expect(text).toContain('审批流转')
+    expect(text).toContain('审批 · 采购单据')
+    // 条目状态用条目自己的词表：unread → 未读、pending → 待处理，不是来源状态的兜底
+    expect(text).toContain('未读')
+    expect(text).toContain('待处理')
+    expect(text).not.toContain('待确认')
+  })
+
+  it('collapses shortcuts into permitted business-domain tiles', async () => {
     const wrapper = mountWorkbench(['business.inventory.ledger.read'])
     await flushPromises()
 
     const links = wrapper.findAll('a').map((link) => link.attributes('href'))
+    // 磁贴落点 = 该域中当前角色第一个有权限的页面
     expect(links).toContain('/inventory/availability')
     expect(links).not.toContain('/mes/work-orders')
     expect(links).not.toContain('/quality/ncrs')
-    expect(wrapper.text()).not.toContain('工单与派工')
+
+    const text = wrapper.text()
+    expect(text).toContain('业务域入口')
+    expect(text).toContain('库存管理')
+    // 域内页面收纳在域后面，首屏不再平铺成文字链接海
+    expect(text).not.toContain('库存移动')
+    expect(text).not.toContain('工单与派工')
   })
 
   it('centers the business-facing empty states instead of ops-style placeholders', async () => {
@@ -228,6 +325,7 @@ describe('business workbench page', () => {
     expect(text).toContain('待办已清空')
     expect(text).toContain('暂无未读消息')
     expect(text).toContain('设备当前运行正常')
+    expect(text).toContain('今天没有待处理事项')
     expect(text).not.toContain('审批和通知任务按当前用户过滤')
     expect(text).not.toContain('只展示消息状态，不展开消息标题')
     expect(text).not.toContain('来自设备运行事实的当前报警')
