@@ -13,7 +13,9 @@ import {
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvCombobox,
@@ -42,7 +44,6 @@ import {
   NvSheetTitle,
   Spinner,
   NvStatusBadge,
-  toast,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { storeToRefs } from 'pinia'
@@ -65,10 +66,8 @@ const {
   refreshWorkOrders,
   createWorkOrder,
   createWorkOrderPending,
-  createWorkOrderError,
   completeWorkOrder,
   completeWorkOrderPending,
-  completeWorkOrderError,
   filters,
 } = useMaintenanceWorkOrders()
 const { page, pageSize } = usePagedList(filters)
@@ -203,13 +202,30 @@ const sparePartCostDisplay = computed({
   },
 })
 const listErrorMessage = computed(() => formatError(workOrdersError.value))
-const createErrorMessage = computed(
-  () => createError.value || formatError(createWorkOrderError.value),
-)
-const completeErrorMessage = computed(
-  () => completeError.value || formatError(completeWorkOrderError.value),
-)
+// 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
+const createErrorMessage = computed(() => createError.value)
+const completeErrorMessage = computed(() => completeError.value)
 const queryPrefilled = shallowRef(false)
+// 从报警行「创建维修工单」带入时：设备与来源报警是既定事实，只读呈现，不再给输入位。
+const createCarried = shallowRef(false)
+const createCarriedItems = computed(() => [
+  { label: '设备', value: createForm.deviceAssetId },
+  { label: '来源报警', value: createForm.sourceAlarmId },
+])
+const completeCarriedItems = computed(() => {
+  const target = completeTarget.value
+  if (!target) return []
+  // 「—」是列表占位符，不是事实——只读区里直接不渲染该条。
+  const omitPlaceholder = (value: string) => (value === '—' ? undefined : value)
+  return [
+    { label: '工单号', value: workOrderNo(target) },
+    { label: '设备', value: target.deviceAssetId },
+    { label: '优先级', value: omitPlaceholder(priorityLabel(target.priority)) },
+    { label: '保修', value: omitPlaceholder(warrantyStatusLabel(target.warrantyStatus)) },
+    { label: '供应商', value: target.supplierPartnerCode },
+    { label: '开单时间', value: omitPlaceholder(formatDateTime(target.openedAtUtc)) },
+  ]
+})
 
 type WorkOrderRow = BusinessConsoleMaintenanceWorkOrderItem
 const columns: NvDataTableColumn<WorkOrderRow>[] = [
@@ -288,6 +304,7 @@ function round2(value: number) {
 }
 
 function openCreate(prefill: Partial<typeof createForm> = {}) {
+  createCarried.value = Boolean(prefill.deviceAssetId || prefill.sourceAlarmId)
   createForm.deviceAssetId = prefill.deviceAssetId ?? ''
   createForm.priority = 'medium'
   createForm.openedByUserId = currentUserId.value
@@ -320,9 +337,9 @@ async function submitCreate() {
   try {
     await createWorkOrder(body)
     createOpen.value = false
-    toast.success('维护工单已创建')
-  } catch {
-    // 失败信息由抽屉错误区呈现。
+    notifySuccess('维护工单已创建')
+  } catch (error) {
+    notifyError(error, '维护工单创建失败，请稍后重试。')
   }
 }
 
@@ -419,9 +436,9 @@ async function submitComplete() {
       actualTechnicianUserId: completeForm.actualTechnicianUserId.trim() || undefined,
     })
     completeOpen.value = false
-    toast.success(`维护工单 ${workOrderNo(target)} 已完成`)
-  } catch {
-    // 失败信息由抽屉错误区呈现。
+    notifySuccess(`维护工单 ${workOrderNo(target)} 已完成`)
+  } catch (error) {
+    notifyError(error, '维护工单完成失败，请稍后重试。')
   }
 }
 
@@ -576,13 +593,21 @@ watch(
       <NvSheetContent class="flex w-full flex-col overflow-y-auto sm:max-w-xl">
         <NvSheetHeader>
           <NvSheetTitle>新建维护工单</NvSheetTitle>
-          <NvSheetDescription
-            >对设备开具维护工单，可关联触发的设备报警，并指派技师与预估工时。</NvSheetDescription
-          >
+          <!-- 开单对象在下方呈现；此处仅供读屏播报。 -->
+          <NvSheetDescription class="sr-only">
+            为设备 {{ createForm.deviceAssetId || '（待选择）' }} 开具维护工单。
+          </NvSheetDescription>
         </NvSheetHeader>
         <form class="grid gap-4 px-4 pb-4" @submit.prevent="submitCreate">
+          <!-- 从报警行带入：设备与来源报警只读呈现，不做成看起来还能改的输入位。 -->
+          <CarriedContextSummary
+            v-if="createCarried"
+            label="开单对象"
+            :items="createCarriedItems"
+          />
+
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField>
+            <NvField v-if="!createCarried">
               <NvFieldLabel for="mwo-device">设备</NvFieldLabel>
               <NvCombobox
                 id="mwo-device"
@@ -616,7 +641,7 @@ watch(
                 search-placeholder="搜索姓名 / 工号…"
               />
             </NvField>
-            <NvField>
+            <NvField v-if="!createCarried">
               <NvFieldLabel for="mwo-alarm">关联报警</NvFieldLabel>
               <NvInput
                 id="mwo-alarm"
@@ -664,15 +689,14 @@ watch(
       <NvSheetContent class="flex w-full flex-col overflow-y-auto sm:max-w-xl">
         <NvSheetHeader>
           <NvSheetTitle>完成维护工单</NvSheetTitle>
-          <NvSheetDescription>
-            {{
-              completeTarget
-                ? `${workOrderNo(completeTarget)} · ${completeTarget.deviceAssetId ?? ''}`
-                : '登记维护结果、工时与成本。'
-            }}
+          <!-- 工单事实已在下方只读区完整呈现；此处仅供读屏播报。 -->
+          <NvSheetDescription class="sr-only">
+            {{ completeTarget ? workOrderNo(completeTarget) : '完成维护工单' }} 的完工登记。
           </NvSheetDescription>
         </NvSheetHeader>
         <form class="grid gap-4 px-4 pb-4" @submit.prevent="submitComplete">
+          <CarriedContextSummary label="完工工单" :items="completeCarriedItems" />
+
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="mwo-result">维护结果</NvFieldLabel>
@@ -796,11 +820,6 @@ watch(
                 step="any"
                 :placeholder="`自动合计 ${round2(autoSparePartCost)}`"
               />
-              <p class="text-xs text-muted-foreground">
-                自动从备件行（数量 × 单价）合计
-                <span class="tabular-nums">{{ round2(autoSparePartCost) }}</span
-                >，可直接改写。
-              </p>
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-external-cost">外委费用</NvFieldLabel>

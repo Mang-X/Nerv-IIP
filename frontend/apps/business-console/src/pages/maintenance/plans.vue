@@ -5,6 +5,7 @@ import type {
   BusinessConsoleUpdateMaintenancePlanRequest,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import MaintenancePlanFormDialog from '@/components/maintenance/MaintenancePlanFormDialog.vue'
 import { useMaintenancePlans } from '@/composables/useBusinessMaintenance'
 import { useMaintenancePlanRuntimeRemaining } from '@/composables/useBusinessTelemetry'
@@ -61,7 +62,6 @@ const {
   updatePlanPending,
   generateDue,
   generateDuePending,
-  generateDueError,
   filters,
 } = useMaintenancePlans()
 const { page, pageSize } = usePagedList(filters)
@@ -104,9 +104,11 @@ const generateForm = reactive({
 const generateError = shallowRef('')
 
 const listErrorMessage = computed(() => formatError(plansError.value))
-const generateErrorMessage = computed(
-  () => generateError.value || formatError(generateDueError.value),
-)
+// 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
+const generateErrorMessage = computed(() => generateError.value)
+// 发起人由当前登录账号带出，不让用户手打自己的名字。
+const currentActor = computed(() => auth.principal?.loginName ?? auth.principal?.principalId ?? '')
+const generateContextItems = computed(() => [{ label: '发起人', value: generateForm.requestedBy }])
 
 type PlanRow = BusinessConsoleMaintenancePlanItem
 const columns: NvDataTableColumn<PlanRow>[] = [
@@ -212,7 +214,7 @@ async function submitPlan(submission: PlanFormSubmission) {
 
 function openGenerate() {
   generateForm.businessDate = todayDate()
-  generateForm.requestedBy = ''
+  generateForm.requestedBy = currentActor.value
   generateError.value = ''
   generateOpen.value = true
 }
@@ -229,8 +231,8 @@ async function submitGenerate() {
     const count = result?.data?.generatedCount ?? 0
     generateOpen.value = false
     notifySuccess(count > 0 ? `已生成 ${count} 张到期维护工单` : '当前无到期保养计划')
-  } catch {
-    // 失败信息由对话框错误区呈现。
+  } catch (error) {
+    notifyError(error, '生成到期工单失败，请稍后重试。')
   }
 }
 
@@ -311,24 +313,18 @@ function formatError(error: unknown) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>生成到期工单</NvDialogTitle>
-          <NvDialogDescription
-            >按业务日期扫描全部保养计划，对到期者批量开具维护工单。</NvDialogDescription
+          <NvDialogDescription class="sr-only"
+            >按业务日期为到期保养计划批量开单。</NvDialogDescription
           >
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitGenerate">
+          <!-- 发起人由当前登录账号带出，只读呈现。 -->
+          <CarriedContextSummary label="开单发起" :items="generateContextItems" />
+
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="gen-date">业务日期</NvFieldLabel>
               <NvInput id="gen-date" v-model="generateForm.businessDate" type="date" />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="gen-by">发起人</NvFieldLabel>
-              <NvInput
-                id="gen-by"
-                v-model="generateForm.requestedBy"
-                autocomplete="off"
-                placeholder="如 设备调度"
-              />
             </NvField>
           </NvFieldGroup>
 

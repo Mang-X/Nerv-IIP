@@ -9,6 +9,7 @@ import { useMaintenanceInspections } from '@/composables/useBusinessMaintenance'
 import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   COMMON_INSPECTION_CHARACTERISTICS,
@@ -41,7 +42,6 @@ import {
   NvSheetTitle,
   Spinner,
   NvStatusBadge,
-  toast,
 } from '@nerv-iip/ui'
 import {
   AlertTriangleIcon,
@@ -70,7 +70,6 @@ const {
   refreshInspections,
   recordInspection,
   recordInspectionPending,
-  recordInspectionError,
 } = useMaintenanceInspections()
 const { page, pageSize } = usePagedList(filters)
 
@@ -148,9 +147,8 @@ const characteristicOptions = computed(() => {
 })
 
 const listErrorMessage = computed(() => formatError(inspectionsError.value))
-const recordErrorMessage = computed(
-  () => recordError.value || formatError(recordInspectionError.value),
-)
+// 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
+const recordErrorMessage = computed(() => recordError.value)
 
 type InspectionRow = BusinessConsoleMaintenanceInspectionItem
 type MeasurementItem = BusinessConsoleMaintenanceInspectionMeasurementItem
@@ -262,9 +260,9 @@ async function submitRecord() {
   try {
     await recordInspection(body)
     recordOpen.value = false
-    toast.success('点检记录已提交')
-  } catch {
-    // 失败信息由抽屉错误区呈现。
+    notifySuccess('点检记录已提交')
+  } catch (error) {
+    notifyError(error, '点检记录提交失败，请稍后重试。')
   }
 }
 
@@ -350,9 +348,8 @@ function formatError(error: unknown) {
       <NvSheetContent class="flex w-full flex-col overflow-y-auto sm:max-w-xl">
         <NvSheetHeader>
           <NvSheetTitle>记录点检</NvSheetTitle>
-          <NvSheetDescription
-            >点检可关联保养计划或维修工单，用于释放设备维护上下文。可记录测量值，超出上下限的行会即时红色警示。</NvSheetDescription
-          >
+          <!-- 点检内容由下方表单呈现；此处仅供读屏播报。 -->
+          <NvSheetDescription class="sr-only">登记点检结果与测量值。</NvSheetDescription>
         </NvSheetHeader>
         <form class="grid gap-5 px-4 pb-4" @submit.prevent="submitRecord">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
@@ -406,9 +403,7 @@ function formatError(error: unknown) {
 
           <div class="grid gap-2">
             <div class="flex items-center justify-between">
-              <span class="text-sm font-medium"
-                >测量值 <span class="text-muted-foreground">（可选，填了就须完整）</span></span
-              >
+              <span class="text-sm font-medium">测量值</span>
               <NvButton type="button" variant="outline" size="sm" @click="addMeasurementRow">
                 <PlusIcon aria-hidden="true" />
                 添加一行

@@ -428,6 +428,41 @@ export interface UseMesWorkOrdersOptions {
   initialTake?: number
 }
 
+/**
+ * 生产报工（写）单独成钩：报工弹窗从工单列表 / 工序执行两处行内打开，不应为了一个写操作再拉一份工单列表。
+ * 业务上下文（组织 / 环境）由本钩内部绑定并补齐到请求体，调用方只传报工对象与数量。
+ */
+export function useMesProductionReporting() {
+  const context = defaultContext()
+  const queryCache = useQueryCache()
+
+  const reportMutation = useMutation({
+    ...recordBusinessConsoleMesProductionReportMutationOptions(),
+    onSuccess() {
+      void invalidateMesQueries(queryCache, [
+        'getBusinessConsoleMesOverview',
+        'getBusinessConsoleMesWipSummary',
+        'listBusinessConsoleMesProductionReports',
+        'listBusinessConsoleMesWorkOrders',
+        'listBusinessConsoleMesOperationTasks',
+      ]).catch(ignoreBackgroundError)
+    },
+  })
+
+  return {
+    recordProductionReport: (body: BusinessConsoleRecordProductionReportRequest) =>
+      reportMutation.mutateAsync({
+        body: {
+          organizationId: context.organizationId,
+          environmentId: context.environmentId,
+          ...body,
+        },
+      }),
+    recordProductionReportError: reportMutation.error,
+    recordProductionReportPending: reportMutation.isLoading,
+  }
+}
+
 export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
   const filters = defaultFilters(options.initialTake)
   const queryCache = useQueryCache()
@@ -453,17 +488,8 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
     },
   })
 
-  const reportMutation = useMutation({
-    ...recordBusinessConsoleMesProductionReportMutationOptions(),
-    onSuccess() {
-      void invalidateMesQueries(queryCache, [
-        'getBusinessConsoleMesOverview',
-        'getBusinessConsoleMesWipSummary',
-        'listBusinessConsoleMesProductionReports',
-        'listBusinessConsoleMesWorkOrders',
-      ]).catch(ignoreBackgroundError)
-    },
-  })
+  // 报工写操作与工单列表解耦，统一走 useMesProductionReporting（报工弹窗在工序执行页也用同一个）。
+  const reporting = useMesProductionReporting()
 
   const releaseMutation = useMutation({
     ...releaseBusinessConsoleMesWorkOrderMutationOptions(),
@@ -483,10 +509,9 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
     createRushWorkOrderError: createRushMutation.error,
     createRushWorkOrderPending: createRushMutation.isLoading,
     filters,
-    recordProductionReport: (body: BusinessConsoleRecordProductionReportRequest) =>
-      reportMutation.mutateAsync({ body }),
-    recordProductionReportError: reportMutation.error,
-    recordProductionReportPending: reportMutation.isLoading,
+    recordProductionReport: reporting.recordProductionReport,
+    recordProductionReportError: reporting.recordProductionReportError,
+    recordProductionReportPending: reporting.recordProductionReportPending,
     refreshWorkOrders: () => refetchWithBusinessContext(filters, workOrdersQuery),
     releaseWorkOrder: (
       workOrderId: string,

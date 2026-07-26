@@ -2,7 +2,6 @@
 import type {
   BusinessConsoleCreateRushWorkOrderRequest,
   BusinessConsoleMesWorkOrderItem,
-  BusinessConsoleRecordProductionReportRequest,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
@@ -19,12 +18,14 @@ import {
   orderRowsByUrgency,
   type UrgencyDisplayMode,
 } from '@/composables/useUrgencyDisplayMode'
+import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
+import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
-  NvCheckbox,
   NvDataTable,
   NvDialog,
   NvDialogContent,
@@ -35,7 +36,6 @@ import {
   NvDropdownMenuItem,
   NvDropdownMenuSeparator,
   NvField,
-  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -64,7 +64,7 @@ import {
   WrenchIcon,
 } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -81,9 +81,6 @@ const {
   createRushWorkOrderError,
   createRushWorkOrderPending,
   filters,
-  recordProductionReport,
-  recordProductionReportError,
-  recordProductionReportPending,
   refreshWorkOrders,
   workOrders,
   workOrdersError,
@@ -99,18 +96,13 @@ function refreshUrgency() {
   refreshWorkOrders()
 }
 
-const route = useRoute()
 const router = useRouter()
 const { skus } = useBusinessSkus()
 const { resolveSku, resolveWorkCenter } = useMesDisplayNames()
 const { resources: workCenterResources } = useBusinessMasterDataResources('work-center')
 
-const rushSuccess = shallowRef('')
-const reportSuccess = shallowRef('')
 const rushSheetOpen = shallowRef(false)
 const reportSheetOpen = shallowRef(false)
-const lastRushAffectedWorkOrders = shallowRef<string[]>([])
-const lastRushScheduleVersion = shallowRef<number>()
 
 // --- Filters (live) ---
 const keyword = ref('')
@@ -146,31 +138,10 @@ const rushForm = reactive({
   idempotencyKey: newMesIdempotencyKey('rush-work-order'),
 })
 
-const reportForm = reactive({
-  organizationId: filters.organizationId,
-  environmentId: filters.environmentId,
-  workOrderId: '',
-  operationTaskId: '',
-  goodQuantity: '1',
-  scrapQuantity: '0',
-  completesOperation: true,
-  reportedAtUtc: toLocalDateTimeInput(new Date()),
-  idempotencyKey: newMesIdempotencyKey('production-report'),
-})
+// 报工对象由所选工单行带出（工单 + 该工单的首道可报工序），弹窗不提供任何挑选入口。
+const reportContext = shallowRef<ProductionReportContext | null>(null)
 
 const listErrorMessage = computed(() => formatError(workOrdersError.value))
-const rushErrorMessage = computed(() => formatError(createRushWorkOrderError.value))
-const reportErrorMessage = computed(() => formatError(recordProductionReportError.value))
-const reportGoodQuantity = computed(() => toOptionalNumber(reportForm.goodQuantity))
-const reportScrapQuantity = computed(() => toOptionalNumber(reportForm.scrapQuantity))
-const reportQuantitiesAreValid = computed(
-  () =>
-    reportGoodQuantity.value !== undefined &&
-    reportScrapQuantity.value !== undefined &&
-    reportGoodQuantity.value >= 0 &&
-    reportScrapQuantity.value >= 0 &&
-    reportGoodQuantity.value + reportScrapQuantity.value > 0,
-)
 
 const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
 const skuOptions = computed(() => toResourceOptions(skus.value))
@@ -186,15 +157,6 @@ const canCreateRush = computed(
     isNonEmpty(rushForm.dueUtc) &&
     isNonEmpty(rushForm.workCenterId) &&
     toOptionalNumber(rushForm.durationMinutes) !== undefined,
-)
-const canRecordReport = computed(
-  () =>
-    isNonEmpty(reportForm.organizationId) &&
-    isNonEmpty(reportForm.environmentId) &&
-    isNonEmpty(reportForm.workOrderId) &&
-    isNonEmpty(reportForm.operationTaskId) &&
-    reportQuantitiesAreValid.value &&
-    isNonEmpty(reportForm.reportedAtUtc),
 )
 
 // --- Sort (page-owned, before pagination) ---
@@ -243,18 +205,8 @@ watch(
   { immediate: true },
 )
 
-watch(
-  () => route.query,
-  (query) => {
-    const workOrderId = firstQueryValue(query.workOrderId)
-    const operationTaskId = firstQueryValue(query.operationTaskId)
-    if (!workOrderId || !operationTaskId) return
-    reportForm.workOrderId = workOrderId
-    reportForm.operationTaskId = operationTaskId
-    reportSheetOpen.value = true
-  },
-  { immediate: true },
-)
+// 报工不再靠 URL query 跨页唤起：工序执行页与报工记录页都在本地行上直接打开同一个报工弹窗，
+// 上下文随行带出，避免跳到本页后只剩两个 ID、工作中心/物料/计划数量全丢。
 
 const columns: NvDataTableColumn<Row>[] = [
   { key: 'workOrderId', header: '工单', sortable: true, cellClass: 'font-medium' },
@@ -288,14 +240,31 @@ function rowKey(order: Row) {
   return order.workOrderId ?? `${order.skuId ?? 'wo'}-${order.dueUtc ?? ''}`
 }
 
-function useWorkOrder(order: Row) {
-  reportForm.workOrderId = order.workOrderId ?? ''
-  reportForm.operationTaskId = order.operationTasks?.[0]?.operationTaskId ?? ''
-  reportSuccess.value = ''
+// 一个工单可能有多道工序：优先带出「还没做完」的第一道（executing/ready/queued 之类），
+// 都做完了才退回第一道，避免默认把报工记到已完成工序上。
+function reportableTask(order: Row) {
+  const tasks = (order.operationTasks ?? []).filter((task) => task.operationTaskId)
+  const done = new Set(['completed', 'closed', 'cancelled'])
+  return tasks.find((task) => !done.has((task.status ?? '').toLowerCase())) ?? tasks[0]
+}
+function openReport(order: Row) {
+  const task = reportableTask(order)
+  if (!order.workOrderId || !task?.operationTaskId) return
+  reportContext.value = {
+    workOrderId: order.workOrderId,
+    workOrderNo: order.workOrderNo,
+    operationTaskId: task.operationTaskId,
+    operationTaskNo: task.operationTaskNo,
+    operationSequence: task.operationSequence,
+    workCenterLabel:
+      task.workCenterName ?? resolveWorkCenter(task.workCenterCode ?? task.workCenterId),
+    skuLabel: resolveSku(order.skuCode ?? order.skuId),
+    plannedQuantity: order.quantity,
+  }
   reportSheetOpen.value = true
 }
 function canReportOrder(order: Row) {
-  return Boolean(order.workOrderId && order.operationTasks?.some((task) => task.operationTaskId))
+  return Boolean(order.workOrderId && reportableTask(order)?.operationTaskId)
 }
 function openOrderDetail(order: Row) {
   if (!order.workOrderId) return
@@ -323,29 +292,19 @@ async function submitRushWorkOrder() {
     durationMinutes: toOptionalInteger(rushForm.durationMinutes),
     idempotencyKey: rushForm.idempotencyKey,
   }
-  const response = await createRushWorkOrder(body)
-  rushSuccess.value = `急单 ${response?.data?.workOrderId ?? '已提交'} 已提交。`
-  lastRushAffectedWorkOrders.value = response?.data?.affectedWorkOrderIds ?? []
-  lastRushScheduleVersion.value = response?.data?.schedule?.scheduleVersion
-  rushForm.idempotencyKey = newMesIdempotencyKey('rush-work-order')
-}
-
-async function submitProductionReport() {
-  if (!canRecordReport.value) return
-  const body: BusinessConsoleRecordProductionReportRequest = {
-    organizationId: reportForm.organizationId.trim(),
-    environmentId: reportForm.environmentId.trim(),
-    workOrderId: reportForm.workOrderId.trim(),
-    operationTaskId: reportForm.operationTaskId.trim(),
-    goodQuantity: reportGoodQuantity.value,
-    scrapQuantity: reportScrapQuantity.value,
-    completesOperation: reportForm.completesOperation,
-    reportedAtUtc: toIsoFromLocalInput(reportForm.reportedAtUtc),
-    idempotencyKey: reportForm.idempotencyKey,
+  try {
+    const response = await createRushWorkOrder(body)
+    const affected = response?.data?.affectedWorkOrderIds ?? []
+    // 排程反馈是结果、不是常驻说明：随成功 toast 一次说清，弹窗即关，不在表单里堆一块「反馈区」。
+    notifySuccess(
+      `已创建急单 ${response?.data?.workOrderId ?? ''}` +
+        (affected.length ? ` · 重排影响 ${affected.length} 个在制工单` : ''),
+    )
+    rushForm.idempotencyKey = newMesIdempotencyKey('rush-work-order')
+    rushSheetOpen.value = false
+  } catch (error) {
+    notifyError(createRushWorkOrderError.value ?? error, '创建急单失败，请稍后重试。')
   }
-  const response = await recordProductionReport(body)
-  reportSuccess.value = `生产报工 ${response?.data?.reportNo ?? response?.data?.productionReportId ?? body.workOrderId} 已提交。`
-  reportForm.idempotencyKey = newMesIdempotencyKey('production-report')
 }
 
 function resetFilters() {
@@ -405,10 +364,6 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       label: item.displayName ? `${item.displayName} (${item.code})` : item.code!,
       value: item.code!,
     }))
-}
-function firstQueryValue(value: unknown) {
-  if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
-  return typeof value === 'string' ? value : ''
 }
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
@@ -591,7 +546,7 @@ function isNonEmpty(value: string) {
             查看工序
           </NvDropdownMenuItem>
           <NvDropdownMenuSeparator />
-          <NvDropdownMenuItem :disabled="!canReportOrder(row)" @click="useWorkOrder(row)">
+          <NvDropdownMenuItem :disabled="!canReportOrder(row)" @click="openReport(row)">
             <ClipboardCheckIcon aria-hidden="true" />
             {{ canReportOrder(row) ? '生产报工' : '暂无工序，不能报工' }}
           </NvDropdownMenuItem>
@@ -607,17 +562,11 @@ function isNonEmpty(value: string) {
       <NvDialogContent class="sm:max-w-2xl">
         <NvDialogHeader>
           <NvDialogTitle>创建急单</NvDialogTitle>
-          <NvDialogDescription
-            >急单用于生产插单和临时补单；提交后系统返回 MES
-            规则排程反馈，正式排产输出请进入排产工作台。</NvDialogDescription
+          <NvDialogDescription class="sr-only"
+            >临时插单，填写物料、数量、交期与工作中心后提交。</NvDialogDescription
           >
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitRushWorkOrder">
-          <p v-if="rushErrorMessage" class="text-sm text-destructive" role="alert">
-            {{ rushErrorMessage }}
-          </p>
-          <p v-if="rushSuccess" class="text-sm text-success" role="status">{{ rushSuccess }}</p>
-
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="rush-sku"
@@ -706,141 +655,32 @@ function isNonEmpty(value: string) {
             </NvField>
           </NvFieldGroup>
 
-          <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
-            <p class="text-sm text-muted-foreground">
-              正式排产输出、冲突治理和甘特请进入排产工作台。
-            </p>
-            <NvButton size="sm" type="button" variant="outline" as-child>
+          <NvDialogFooter class="sm:justify-between">
+            <NvButton size="sm" type="button" variant="ghost" as-child>
               <RouterLink to="/scheduling"
                 ><CalendarCogIcon aria-hidden="true" />排产工作台</RouterLink
               >
             </NvButton>
-          </div>
-
-          <div
-            v-if="lastRushScheduleVersion || lastRushAffectedWorkOrders.length"
-            class="grid gap-2 rounded-lg border p-3"
-          >
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <p class="text-sm font-semibold text-foreground">规则排程反馈</p>
+            <div class="flex gap-2">
+              <NvButton type="button" variant="outline" @click="rushSheetOpen = false"
+                >取消</NvButton
+              >
+              <NvButton type="submit" :disabled="createRushWorkOrderPending || !canCreateRush">
+                <Spinner v-if="createRushWorkOrderPending" aria-hidden="true" />
+                <FactoryIcon v-else aria-hidden="true" />
+                创建急单
+              </NvButton>
             </div>
-            <p v-if="lastRushScheduleVersion" class="text-sm text-muted-foreground">
-              规则版本 {{ lastRushScheduleVersion }}；正式排产输出以排产工作台为准。
-            </p>
-            <p v-if="lastRushAffectedWorkOrders.length" class="text-sm text-muted-foreground">
-              受影响工单：{{ lastRushAffectedWorkOrders.join(', ') }}
-            </p>
-          </div>
-
-          <NvDialogFooter>
-            <NvButton type="button" variant="outline" @click="rushSheetOpen = false">取消</NvButton>
-            <NvButton type="submit" :disabled="createRushWorkOrderPending || !canCreateRush">
-              <Spinner v-if="createRushWorkOrderPending" aria-hidden="true" />
-              <FactoryIcon v-else aria-hidden="true" />
-              创建急单
-            </NvButton>
           </NvDialogFooter>
         </form>
       </NvDialogContent>
     </NvDialog>
 
-    <NvDialog v-model:open="reportSheetOpen">
-      <NvDialogContent>
-        <NvDialogHeader>
-          <NvDialogTitle>生产报工</NvDialogTitle>
-          <NvDialogDescription
-            >从工单或工序任务进入报工，系统带出必要字段，一线人员只补充数量和完成状态。</NvDialogDescription
-          >
-        </NvDialogHeader>
-        <form class="grid content-start gap-4" @submit.prevent="submitProductionReport">
-          <p v-if="reportErrorMessage" class="text-sm text-destructive" role="alert">
-            {{ reportErrorMessage }}
-          </p>
-          <p v-if="reportSuccess" class="text-sm text-success" role="status">{{ reportSuccess }}</p>
-
-          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField class="sm:col-span-2">
-              <NvFieldLabel>报工对象</NvFieldLabel>
-              <div class="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                工单与工序来自所选行，只能从工单列表或工序任务带入。
-              </div>
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="report-work-order"
-                >工单号 <span class="text-destructive">*</span></NvFieldLabel
-              >
-              <NvInput id="report-work-order" v-model="reportForm.workOrderId" readonly required />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="report-operation-task"
-                >工序任务 <span class="text-destructive">*</span></NvFieldLabel
-              >
-              <NvInput
-                id="report-operation-task"
-                v-model="reportForm.operationTaskId"
-                readonly
-                required
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="report-good"
-                >良品数 <span class="text-destructive">*</span></NvFieldLabel
-              >
-              <NvInput
-                id="report-good"
-                v-model="reportForm.goodQuantity"
-                inputmode="decimal"
-                min="0"
-                required
-                type="number"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="report-scrap"
-                >报废数 <span class="text-destructive">*</span></NvFieldLabel
-              >
-              <NvInput
-                id="report-scrap"
-                v-model="reportForm.scrapQuantity"
-                inputmode="decimal"
-                min="0"
-                required
-                type="number"
-              />
-              <NvFieldDescription>良品和报废必须为非负数，合计必须大于 0。</NvFieldDescription>
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="report-time"
-                >报工时间 <span class="text-destructive">*</span></NvFieldLabel
-              >
-              <NvInput
-                id="report-time"
-                v-model="reportForm.reportedAtUtc"
-                required
-                type="datetime-local"
-              />
-            </NvField>
-            <NvField
-              orientation="horizontal"
-              class="items-center justify-between rounded-lg border p-3"
-            >
-              <NvFieldLabel for="report-complete">完成当前工序</NvFieldLabel>
-              <NvCheckbox id="report-complete" v-model:checked="reportForm.completesOperation" />
-            </NvField>
-          </NvFieldGroup>
-
-          <NvDialogFooter>
-            <NvButton type="button" variant="outline" @click="reportSheetOpen = false"
-              >取消</NvButton
-            >
-            <NvButton type="submit" :disabled="recordProductionReportPending || !canRecordReport">
-              <Spinner v-if="recordProductionReportPending" aria-hidden="true" />
-              <ClipboardCheckIcon v-else aria-hidden="true" />
-              提交报工
-            </NvButton>
-          </NvDialogFooter>
-        </form>
-      </NvDialogContent>
-    </NvDialog>
+    <!-- 报工「带出式录入」样板：上下文只能由所选工单行带出，弹窗自身不提供工单/工序挑选入口。 -->
+    <ProductionReportDialog
+      v-model:open="reportSheetOpen"
+      :context="reportContext"
+      @reported="refreshWorkOrders"
+    />
   </BusinessLayout>
 </template>

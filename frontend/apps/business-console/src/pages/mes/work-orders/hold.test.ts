@@ -41,6 +41,12 @@ const detailState = vi.hoisted(() => ({
 }))
 
 vi.mock('@/composables/useBusinessMes', () => ({
+  makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
+  useMesProductionReporting: () => ({
+    recordProductionReport: vi.fn(),
+    recordProductionReportError: ref(undefined),
+    recordProductionReportPending: ref(false),
+  }),
   describeMesReadinessReason: (code: string) => ({ code, label: code, nextStep: '' }),
   useMesWorkOrderDetail: () => ({
     activateCancelPreview: vi.fn(),

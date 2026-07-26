@@ -21,7 +21,6 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
-  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -294,19 +293,18 @@ async function submitForm() {
 const viewOpen = shallowRef(false)
 const viewTarget = shallowRef<BusinessConsoleEngineeringBomItem | null>(null)
 const detailPending = ref(false)
-const detailError = ref('')
 const viewLines = computed(() => viewTarget.value?.lines ?? [])
 async function openView(row: BusinessConsoleEngineeringBomItem) {
   viewTarget.value = row
   viewOpen.value = true
-  detailError.value = ''
   if (!row.bomCode || !row.revision) return
   detailPending.value = true
   try {
     const detail = await fetchEbomDetail(row.bomCode, row.revision)
     if (detail) viewTarget.value = detail
   } catch (error) {
-    detailError.value = formatError(error) || '加载组件行失败，请稍后重试。'
+    // 结果一律 toast；不在抽屉里留常驻错误条。
+    notifyError(error, '加载组件行失败，请稍后重试。')
   } finally {
     detailPending.value = false
   }
@@ -349,9 +347,9 @@ function uomLabel(code?: string | null) {
           <NvDialogContent class="sm:max-w-3xl">
             <NvDialogHeader>
               <NvDialogTitle>发布设计 BOM 新版本</NvDialogTitle>
-              <NvDialogDescription>
-                设计 BOM 一经发布即不可变。修改请填一套新的组件行 + 新修订号，发布出新版本。带 *
-                为必填项。
+              <!-- 说明不上界面：仅供读屏播报。 -->
+              <NvDialogDescription class="sr-only">
+                填写父项物料、修订号与组件行，发布为不可变版本。
               </NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
@@ -393,7 +391,6 @@ function uomLabel(code?: string | null) {
                       }}</NvSelectItem>
                     </NvSelectContent>
                   </NvSelect>
-                  <NvFieldDescription>来自基础数据物料。</NvFieldDescription>
                 </NvField>
                 <NvField :data-invalid="showErrors && !revisionValid">
                   <NvFieldLabel for="ebom-rev"
@@ -593,13 +590,6 @@ function uomLabel(code?: string | null) {
             <Spinner aria-hidden="true" />
             加载组件行…
           </div>
-          <p
-            v-else-if="detailError"
-            class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-            role="alert"
-          >
-            {{ detailError }}
-          </p>
           <div v-else-if="viewLines.length" class="overflow-hidden rounded-md border">
             <table class="w-full text-sm">
               <thead class="bg-muted/40 text-muted-foreground">

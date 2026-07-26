@@ -119,6 +119,12 @@ vi.mock('@/composables/useBusinessMes', async () => {
   mesState.detailPending = shallowRef(false)
   mesState.detailError = shallowRef()
   return {
+    makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
+    useMesProductionReporting: () => ({
+      recordProductionReport: vi.fn(),
+      recordProductionReportError: shallowRef(undefined),
+      recordProductionReportPending: shallowRef(false),
+    }),
     useMesProductionReports: () => ({
       filters: mesState.filters,
       // 按 keyword 过滤时返回对方那一行(模拟服务端跨页返回),否则返回本页三行——让跨页定位的
@@ -249,7 +255,11 @@ beforeEach(() => {
   if (mesState.detailError) mesState.detailError.value = undefined
   mesState.activateReverseDetail.mockClear()
   mesState.activateReverseDetail.mockImplementation((reportNo: string) => {
-    if ((mesState.detail.value as { report?: { reportNo?: string } } | undefined)?.report?.reportNo === reportNo) return
+    if (
+      (mesState.detail.value as { report?: { reportNo?: string } } | undefined)?.report
+        ?.reportNo === reportNo
+    )
+      return
     const report = rows.find((row) => row.reportNo === reportNo) ?? { ...rows[0], reportNo }
     mesState.detail.value = { report, consumedMaterialLots: [] }
   })
@@ -265,12 +275,26 @@ describe('production reports page — reversal permission & cross-page interlink
     mesState.detail.value = {
       report: rows[0],
       consumedMaterialLots: [
-        { materialId: 'MAT-1', materialLotId: 'LOT-1', consumedQuantity: 2.5, uomCode: 'KG', materialIssueRequestNo: 'MIR-1' },
-        { materialId: 'MAT-2', materialLotId: 'LOT-2', consumedQuantity: 3, uomCode: 'EA', materialIssueRequestNo: 'MIR-2' },
+        {
+          materialId: 'MAT-1',
+          materialLotId: 'LOT-1',
+          consumedQuantity: 2.5,
+          uomCode: 'KG',
+          materialIssueRequestNo: 'MIR-1',
+        },
+        {
+          materialId: 'MAT-2',
+          materialLotId: 'LOT-2',
+          consumedQuantity: 3,
+          uomCode: 'EA',
+          materialIssueRequestNo: 'MIR-2',
+        },
       ],
     }
     const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
-    ;(wrapper.vm as unknown as { openReverse: (row: (typeof rows)[number]) => void }).openReverse(rows[0])
+    ;(wrapper.vm as unknown as { openReverse: (row: (typeof rows)[number]) => void }).openReverse(
+      rows[0],
+    )
     await flushPromises()
 
     expect(wrapper.text()).toContain('良品')
@@ -288,14 +312,22 @@ describe('production reports page — reversal permission & cross-page interlink
 
   it('renders explicit loading, empty and failure states and locks confirmation until detail is ready', async () => {
     const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
-    const vm = wrapper.vm as unknown as { openReverse: (row: (typeof rows)[number]) => void; reverseForm: { reasonCode: string } }
+    const vm = wrapper.vm as unknown as {
+      openReverse: (row: (typeof rows)[number]) => void
+      reverseForm: { reasonCode: string }
+    }
     vm.openReverse(rows[0])
     vm.reverseForm.reasonCode = 'mis-report'
 
     mesState.detailPending.value = true
     await flushPromises()
     expect(wrapper.text()).toContain('正在加载物料消耗明细')
-    expect(wrapper.findAll('button').find((button) => button.text().includes('确认冲销'))?.attributes('disabled')).toBeDefined()
+    expect(
+      wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('确认冲销'))
+        ?.attributes('disabled'),
+    ).toBeDefined()
 
     mesState.detailPending.value = false
     mesState.detail.value = { report: rows[0], consumedMaterialLots: [] }
@@ -306,7 +338,12 @@ describe('production reports page — reversal permission & cross-page interlink
     mesState.detailError.value = new Error('detail unavailable')
     await flushPromises()
     expect(wrapper.text()).toContain('物料消耗明细加载失败')
-    expect(wrapper.findAll('button').find((button) => button.text().includes('确认冲销'))?.attributes('disabled')).toBeDefined()
+    expect(
+      wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('确认冲销'))
+        ?.attributes('disabled'),
+    ).toBeDefined()
   })
 
   it('clears prior detail when closing or switching reversal reports', async () => {

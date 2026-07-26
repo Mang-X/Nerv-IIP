@@ -21,6 +21,7 @@ import {
 import { PackageCheckIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
 
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { useReceiptCreateForm } from '@/composables/mes/useReceiptCreateForm'
 
 // 路由页只负责编排：传入工单上下文与开合，登记表单状态/提交/产出批次全部封装在此组件（Vue best-practices §2）。
@@ -69,6 +70,12 @@ const {
 function formatQuantity(value?: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
 }
+
+// 由所选工单行/工单详情带出的只读上下文（不可编辑，不做输入位）。
+const contextItems = computed(() => [
+  { label: '工单', value: props.workOrderId },
+  { label: '成品', value: props.skuId },
+])
 </script>
 
 <template>
@@ -76,23 +83,19 @@ function formatQuantity(value?: number) {
     <NvSheetContent class="w-full overflow-y-auto sm:max-w-xl">
       <NvSheetHeader>
         <NvSheetTitle>登记完工入库</NvSheetTitle>
-        <NvSheetDescription
-          >把完工成品登记入库。工单与成品由报工完成或工单详情带出，选择产出批次后确认入库数量、单位成本和单位。</NvSheetDescription
-        >
+        <!-- 入库对象已在下方只读区完整呈现；此处仅供读屏播报，不在界面上再写一遍说明。 -->
+        <NvSheetDescription class="sr-only">
+          入库对象：工单 {{ workOrderId }}，成品 {{ skuId }}。
+        </NvSheetDescription>
       </NvSheetHeader>
 
       <!-- 结果一律走 toast（成功/失败/超量均 notifySuccess·notifyError）：Sheet 内不留常驻结果条。
            成功后重置表单留在原地支持高频连录，失败保持打开可修正重提。 -->
       <form class="grid content-start gap-4 p-4" @submit.prevent="submit">
+        <!-- 工单与成品由工单详情/报工带出：只读上下文区呈现，不做 readonly 输入框（会被误当成可改的输入位）。 -->
+        <CarriedContextSummary label="入库对象" :items="contextItems" />
+
         <NvFieldGroup class="grid gap-3">
-          <NvField>
-            <NvFieldLabel for="receipt-work-order">工单号</NvFieldLabel>
-            <NvInput id="receipt-work-order" :model-value="workOrderId" readonly required />
-          </NvField>
-          <NvField>
-            <NvFieldLabel for="receipt-sku">成品</NvFieldLabel>
-            <NvInput id="receipt-sku" :model-value="skuId" readonly required />
-          </NvField>
           <NvField>
             <NvFieldLabel for="receipt-produced-lot">产出批次</NvFieldLabel>
             <NvSelect
@@ -203,7 +206,7 @@ function formatQuantity(value?: number) {
           <NvButton type="submit" :disabled="createReceiptRequestPending">
             <Spinner v-if="createReceiptRequestPending" aria-hidden="true" />
             <PackageCheckIcon v-else aria-hidden="true" />
-            提交入库登记
+            登记入库
           </NvButton>
         </NvSheetFooter>
       </form>

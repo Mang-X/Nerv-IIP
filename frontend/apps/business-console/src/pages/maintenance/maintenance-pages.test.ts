@@ -223,8 +223,12 @@ describe('maintenance work orders page', () => {
     expect(document.body.textContent).toContain('新建维护工单')
     expect(document.body.textContent).toContain('在保')
     expect(document.body.textContent).toContain('SUP-ACME')
-    expect(document.body.querySelector<HTMLInputElement>('#mwo-device')?.value).toBe('DEV-PRESS-01')
-    expect(document.body.querySelector<HTMLInputElement>('#mwo-alarm')?.value).toBe('ALARM-9001')
+    // 带出式录入：设备与来源报警由报警行带出，只读呈现，不再是输入框。
+    const carried = document.body.querySelector('[data-slot="carried-context"]')
+    expect(carried?.textContent).toContain('DEV-PRESS-01')
+    expect(carried?.textContent).toContain('ALARM-9001')
+    expect(document.body.querySelector('#mwo-device')).toBeNull()
+    expect(document.body.querySelector('#mwo-alarm')).toBeNull()
   })
 
   it('offers a technician selector and estimated labor on the create sheet', async () => {
@@ -247,8 +251,7 @@ describe('maintenance work orders page', () => {
       el.value = String(value)
       el.dispatchEvent(new Event('input', { bubbles: true }))
     }
-    setInput('#mwo-device', 'DEV-SMT-01')
-    // 开单人不再自由输入：默认当前登录用户（admin），无需填写。
+    // 设备由报警上下文带出（DEV-PRESS-01），开单人默认当前登录用户（admin），二者都无需填写。
     // 直接以 number 赋值，复现 number 型 v-model 回传。
     setInput('#mwo-est-labor', 45)
     await flushPromises()
@@ -261,7 +264,7 @@ describe('maintenance work orders page', () => {
 
     expect(state.createWorkOrder).toHaveBeenCalledTimes(1)
     const body = state.createWorkOrder.mock.calls[0][0]
-    expect(body.deviceAssetId).toBe('DEV-SMT-01')
+    expect(body.deviceAssetId).toBe('DEV-PRESS-01')
     expect(body.estimatedLaborMinutes).toBe(45)
     // 开单人默认解析为当前用户显示名（验证「默认当前用户」）。
     expect(body.openedBy).toBe('admin')
@@ -792,15 +795,14 @@ describe('maintenance plans page', () => {
       await openEditDialog(plan.planCode)
 
       expect(document.body.textContent).toContain('编辑保养计划')
-      const device = bodyWrapper<HTMLInputElement>('#plan-device')
-      const planCode = bodyWrapper<HTMLInputElement>('#plan-code')
-      const startsOn = bodyWrapper<HTMLInputElement>('#plan-starts')
-      expect(device.element.value).toBe(plan.deviceAssetId)
-      expect(planCode.element.value).toBe(plan.planCode)
-      expect(startsOn.element.value).toBe(plan.startsOn)
-      expect(device.attributes('readonly')).toBeDefined()
-      expect(planCode.attributes('readonly')).toBeDefined()
-      expect(startsOn.attributes('readonly')).toBeDefined()
+      // 计划身份（设备 / 计划编号 / 起始日期）走只读带出区，不再是 readonly 输入框。
+      const carried = bodyWrapper<HTMLElement>('[data-slot="carried-context"]')
+      expect(carried.text()).toContain(plan.deviceAssetId)
+      expect(carried.text()).toContain(plan.planCode)
+      expect(carried.text()).toContain(plan.startsOn)
+      expect(document.body.querySelector('#plan-device')).toBeNull()
+      expect(document.body.querySelector('#plan-code')).toBeNull()
+      expect(document.body.querySelector('#plan-starts')).toBeNull()
       expect(
         bodyWrapperByText(
           '[role="dialog"]',

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { CreateSkillCatalogRequest, SkillCatalogItem } from '@/composables/usePromotedCatalogs'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useSkillCatalog } from '@/composables/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -24,7 +25,6 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
-  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -238,13 +238,16 @@ async function confirmArchive() {
           <NvDialogContent class="sm:max-w-2xl">
             <NvDialogHeader>
               <NvDialogTitle>{{ editingCode ? '编辑技能' : '新建技能' }}</NvDialogTitle>
-              <NvDialogDescription>
-                技能目录维护技能定义（技能组 +
-                证书有效期），是可复用的基础数据；与「人员技能」矩阵（人员-技能登记）是两件事。带 *
-                为必填项。
+              <NvDialogDescription class="sr-only">
+                {{ editingCode ? `技能 ${editingCode}` : '新建技能定义' }}
               </NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
+              <CarriedContextSummary
+                v-if="editingCode"
+                label="技能标识"
+                :items="[{ label: '技能编码', value: editingCode }]"
+              />
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请填写技能名与技能组，并确保证书有效期为非负数（已标红）。
               </p>
@@ -256,11 +259,6 @@ async function confirmArchive() {
                     >技能名 <span class="text-destructive">*</span></NvFieldLabel
                   >
                   <NvInput id="skill-name" v-model="form.skillName" placeholder="例如：CNC 编程" />
-                </NvField>
-                <NvField v-if="editingCode">
-                  <NvFieldLabel>编码</NvFieldLabel>
-                  <NvInput :model-value="editingCode" readonly disabled />
-                  <NvFieldDescription>编码由系统自动生成。</NvFieldDescription>
                 </NvField>
                 <NvField :data-invalid="showErrors && !groupValid">
                   <NvFieldLabel for="skill-group"
@@ -291,7 +289,6 @@ async function confirmArchive() {
                     min="0"
                     placeholder="0"
                   />
-                  <NvFieldDescription>需证书时填写；到期需复评。</NvFieldDescription>
                 </NvField>
               </NvFieldGroup>
 
@@ -385,7 +382,11 @@ async function confirmArchive() {
         </NvAlertDialogHeader>
         <NvAlertDialogFooter>
           <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-          <NvAlertDialogAction :disabled="archivePending" @click="confirmArchive">
+          <NvAlertDialogAction
+            variant="destructive"
+            :disabled="archivePending"
+            @click="confirmArchive"
+          >
             <Spinner v-if="archivePending" aria-hidden="true" />
             确认停用
           </NvAlertDialogAction>

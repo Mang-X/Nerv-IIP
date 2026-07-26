@@ -8,6 +8,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvAlertDialog,
   NvAlertDialogCancel,
@@ -38,7 +39,6 @@ import {
   NvSelectValue,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
@@ -201,9 +201,9 @@ async function submitCreate() {
       lines,
     })
     createOpen.value = false
-    toast.success('入库单已创建')
+    notifySuccess('入库单已创建')
   } catch (error) {
-    toast.error(formatError(error) || '创建入库单失败，请稍后重试。')
+    notifyError(error, '创建入库单失败，请稍后重试。')
   }
 }
 
@@ -220,9 +220,9 @@ async function confirmComplete() {
   try {
     await completeInbound(id)
     completeOpen.value = false
-    toast.success('入库单已完成')
+    notifySuccess('入库单已完成')
   } catch (error) {
-    toast.error(formatError(error) || '完成入库失败，请稍后重试。')
+    notifyError(error, '完成入库失败，请稍后重试。')
   }
 }
 
@@ -392,8 +392,9 @@ function formatError(error: unknown) {
       <NvAlertDialogContent>
         <NvAlertDialogHeader>
           <NvAlertDialogTitle>完成入库</NvAlertDialogTitle>
+          <!-- 破坏性/不可逆确认：保留一行「会发生什么」，这是决策信息而非说明书。 -->
           <NvAlertDialogDescription>
-            确认完成入库单 {{ pendingOrder?.inboundOrderNo ?? '' }}？完成后将按已收货明细过账入库。
+            确认完成入库单 {{ pendingOrder?.inboundOrderNo ?? '' }}？完成后按已收货明细过账入库。
           </NvAlertDialogDescription>
         </NvAlertDialogHeader>
         <NvAlertDialogFooter>
@@ -409,9 +410,8 @@ function formatError(error: unknown) {
       <NvDialogContent class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl">
         <NvDialogHeader>
           <NvDialogTitle>新建入库单</NvDialogTitle>
-          <NvDialogDescription
-            >登记收货入库单的来源与明细，提交后进入入库待处理。</NvDialogDescription
-          >
+          <!-- 界面上不再写说明书；仅供读屏播报对象范围。 -->
+          <NvDialogDescription class="sr-only">收货入库单的单头与收货明细。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">

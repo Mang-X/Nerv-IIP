@@ -4,6 +4,7 @@ import type {
   ProductCategoryItem,
 } from '@/composables/usePromotedCatalogs'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useProductCategories } from '@/composables/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -26,7 +27,6 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
-  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -246,12 +246,16 @@ async function confirmArchive() {
           <NvDialogContent class="sm:max-w-2xl">
             <NvDialogHeader>
               <NvDialogTitle>{{ editingCode ? '编辑产品分类' : '新建产品分类' }}</NvDialogTitle>
-              <NvDialogDescription>
-                产品分类是物料与产品的归类主数据：维护层级（上级分类）后，可在选型与统计中按分类树聚合。带
-                * 为必填项。
+              <NvDialogDescription class="sr-only">
+                {{ editingCode ? `产品分类 ${editingCode}` : '新建产品分类' }}
               </NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
+              <CarriedContextSummary
+                v-if="editingCode"
+                label="分类标识"
+                :items="[{ label: '分类编码', value: editingCode }]"
+              />
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请填写分类名（已标红）。
               </p>
@@ -263,11 +267,6 @@ async function confirmArchive() {
                     >分类名 <span class="text-destructive">*</span></NvFieldLabel
                   >
                   <NvInput id="cat-name" v-model="form.categoryName" placeholder="例如：结构件" />
-                </NvField>
-                <NvField v-if="editingCode">
-                  <NvFieldLabel>编码</NvFieldLabel>
-                  <NvInput :model-value="editingCode" readonly disabled />
-                  <NvFieldDescription>编码由系统自动生成，不可更改。</NvFieldDescription>
                 </NvField>
                 <NvField>
                   <NvFieldLabel for="cat-parent">上级分类</NvFieldLabel>
@@ -281,7 +280,6 @@ async function confirmArchive() {
                       }}</NvSelectItem>
                     </NvSelectContent>
                   </NvSelect>
-                  <NvFieldDescription>选择上级以形成分类树；留空为顶级分类。</NvFieldDescription>
                 </NvField>
               </NvFieldGroup>
 
@@ -367,7 +365,11 @@ async function confirmArchive() {
         </NvAlertDialogHeader>
         <NvAlertDialogFooter>
           <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-          <NvAlertDialogAction :disabled="archivePending" @click="confirmArchive">
+          <NvAlertDialogAction
+            variant="destructive"
+            :disabled="archivePending"
+            @click="confirmArchive"
+          >
             <Spinner v-if="archivePending" aria-hidden="true" />
             确认停用
           </NvAlertDialogAction>

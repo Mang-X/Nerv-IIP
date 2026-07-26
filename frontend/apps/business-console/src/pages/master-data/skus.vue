@@ -4,6 +4,7 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import {
@@ -25,7 +26,6 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
-  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -491,15 +491,16 @@ function isNonEmpty(value: string) {
               <NvDialogTitle>{{
                 editingCode ? `编辑物料 · ${editingCode}` : '新建物料'
               }}</NvDialogTitle>
-              <NvDialogDescription>
-                {{
-                  editingCode
-                    ? '修改物料档案（编码不可修改）。带 * 为必填项。'
-                    : '为采购、生产、库存和销售建立统一的物料档案。带 * 为必填项。'
-                }}
+              <NvDialogDescription class="sr-only">
+                {{ editingCode ? `物料 ${editingCode}` : '新建物料档案' }}
               </NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitSku">
+              <CarriedContextSummary
+                v-if="editingCode"
+                label="物料标识"
+                :items="[{ label: '物料编号', value: editingCode }]"
+              />
               <p
                 v-if="createShowErrors && !canCreateSku"
                 class="text-sm text-destructive"
@@ -510,18 +511,6 @@ function isNonEmpty(value: string) {
 
               <FormSectionTitle>基础信息</FormSectionTitle>
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                <NvField>
-                  <NvFieldLabel>物料编号</NvFieldLabel>
-                  <div
-                    class="rounded-md border bg-muted/40 px-3 py-2 text-sm"
-                    :class="editingCode ? 'font-medium text-foreground' : 'text-muted-foreground'"
-                  >
-                    {{ editingCode || '保存后由系统分配' }}
-                  </div>
-                  <NvFieldDescription>{{
-                    editingCode ? '编码由系统分配，不可修改。' : '无需手填，系统自动编号。'
-                  }}</NvFieldDescription>
-                </NvField>
                 <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
                   <NvFieldLabel for="sku-name"
                     >物料名称 <span class="text-destructive">*</span></NvFieldLabel
@@ -555,9 +544,6 @@ function isNonEmpty(value: string) {
                       >
                     </NvSelectContent>
                   </NvSelect>
-                  <NvFieldDescription
-                    >来自数据字典 · 产品分类。缺少分类？去数据字典维护。</NvFieldDescription
-                  >
                 </NvField>
                 <NvField
                   :data-invalid="
@@ -602,9 +588,6 @@ function isNonEmpty(value: string) {
                       >
                     </NvSelectContent>
                   </NvSelect>
-                  <NvFieldDescription
-                    >库存与核算的最小计量单位，取自「计量单位」维护页。</NvFieldDescription
-                  >
                 </NvField>
                 <NvField class="self-start">
                   <NvFieldLabel>质检要求</NvFieldLabel>
@@ -720,17 +703,6 @@ function isNonEmpty(value: string) {
                       >
                     </NvSelectContent>
                   </NvSelect>
-                  <NvFieldDescription>
-                    <RouterLink
-                      class="text-primary underline-offset-4 hover:underline"
-                      :to="{
-                        path: '/barcode/rules',
-                        query: { ruleCode: createForm.defaultBarcodeRuleCode },
-                      }"
-                    >
-                      去条码规则维护
-                    </RouterLink>
-                  </NvFieldDescription>
                 </NvField>
                 <NvField class="sm:col-span-2">
                   <NvFieldLabel>质量/合规标签</NvFieldLabel>
@@ -747,7 +719,6 @@ function isNonEmpty(value: string) {
                       {{ option.label }}
                     </label>
                   </div>
-                  <NvFieldDescription>来自数据字典 · 合规标签，可多选、可留空。</NvFieldDescription>
                 </NvField>
               </NvFieldGroup>
               <NvDialogFooter>

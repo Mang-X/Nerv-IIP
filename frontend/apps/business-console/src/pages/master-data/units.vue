@@ -5,6 +5,7 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import {
   useBusinessMasterDataResources,
@@ -544,13 +545,16 @@ async function submitConversion() {
                   <NvDialogTitle>{{
                     editingCode ? `编辑计量单位 · ${editingCode}` : '新建计量单位'
                   }}</NvDialogTitle>
-                  <NvDialogDescription>{{
-                    editingCode
-                      ? '修改计量单位（编码不可修改）。带 * 为必填项。'
-                      : '为库存、核算与单位换算建立统一的计量单位。带 * 为必填项。'
+                  <NvDialogDescription class="sr-only">{{
+                    editingCode ? `计量单位 ${editingCode}` : '新建计量单位'
                   }}</NvDialogDescription>
                 </NvDialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitUom">
+                  <CarriedContextSummary
+                    v-if="editingCode"
+                    label="单位标识"
+                    :items="[{ label: '单位编码', value: createForm.code }]"
+                  />
                   <p
                     v-if="createShowErrors && !canCreateUom"
                     class="text-sm text-destructive"
@@ -559,11 +563,6 @@ async function submitConversion() {
                     请完整填写带 * 的必填项（已标红）。
                   </p>
                   <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <NvField v-if="editingCode">
-                      <NvFieldLabel for="uom-code">编码</NvFieldLabel>
-                      <NvInput id="uom-code" :model-value="createForm.code" disabled />
-                      <NvFieldDescription>系统分配，不可修改。</NvFieldDescription>
-                    </NvField>
                     <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
                       <NvFieldLabel for="uom-name"
                         >名称 <span class="text-destructive">*</span></NvFieldLabel
@@ -574,9 +573,6 @@ async function submitConversion() {
                         autocomplete="off"
                         required
                       />
-                      <NvFieldDescription v-if="!editingCode"
-                        >编码由系统自动生成（如 EA、pcs、kg）。</NvFieldDescription
-                      >
                     </NvField>
                     <NvField
                       :data-invalid="
@@ -634,7 +630,6 @@ async function submitConversion() {
                         autocomplete="off"
                         placeholder="可留空"
                       />
-                      <NvFieldDescription>保留的小数位数，可留空。</NvFieldDescription>
                     </NvField>
                   </NvFieldGroup>
                   <NvDialogFooter>
@@ -713,10 +708,7 @@ async function submitConversion() {
               <NvDialogContent class="sm:max-w-2xl">
                 <NvDialogHeader>
                   <NvDialogTitle>新建换算关系</NvDialogTitle>
-                  <NvDialogDescription
-                    >定义一组单位换算：1 源单位 = 系数 × 目标单位（可带偏移量）。带 *
-                    为必填项。</NvDialogDescription
-                  >
+                  <NvDialogDescription class="sr-only">新建单位换算关系</NvDialogDescription>
                 </NvDialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitConversion">
                   <p
@@ -774,7 +766,6 @@ async function submitConversion() {
                           >
                         </NvSelectContent>
                       </NvSelect>
-                      <NvFieldDescription>目标单位需与源单位不同。</NvFieldDescription>
                     </NvField>
                     <NvField
                       :data-invalid="conversionShowErrors && !isFactorValid(conversionForm.factor)"
@@ -791,7 +782,8 @@ async function submitConversion() {
                         autocomplete="off"
                         placeholder="如 1000"
                       />
-                      <NvFieldDescription>1 源单位等于多少目标单位，须大于 0。</NvFieldDescription>
+                      <!-- 换算口径（非显而易见），保留一行。 -->
+                      <NvFieldDescription>1 源单位等于多少目标单位。</NvFieldDescription>
                     </NvField>
                     <NvField
                       :data-invalid="conversionShowErrors && !isOffsetValid(conversionForm.offset)"
@@ -805,9 +797,8 @@ async function submitConversion() {
                         autocomplete="off"
                         placeholder="可留空"
                       />
-                      <NvFieldDescription
-                        >线性换算的常数项（如温标换算），可留空。</NvFieldDescription
-                      >
+                      <!-- 换算口径（非显而易见），保留一行。 -->
+                      <NvFieldDescription>线性换算的常数项，如温标换算。</NvFieldDescription>
                     </NvField>
                     <NvField
                       :data-invalid="
@@ -845,7 +836,6 @@ async function submitConversion() {
                         autocomplete="off"
                         placeholder="可留空"
                       />
-                      <NvFieldDescription>换算结果保留的小数位数，可留空。</NvFieldDescription>
                     </NvField>
                   </NvFieldGroup>
                   <NvDialogFooter>

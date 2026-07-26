@@ -21,7 +21,6 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
-  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -231,6 +230,11 @@ const formOpen = shallowRef(false)
 const showErrors = ref(false)
 const form = reactive<MbomForm>(blankForm())
 
+// 只有一份可引用的已发布设计 BOM 时直接选中——没有选择余地的「选择」不该让用户做。
+watch([ebomOptions, formOpen], ([options, open]) => {
+  if (open && !form.ebomKey && options.length === 1) form.ebomKey = options[0]!.value
+})
+
 function parseNumber(value: string | number | null | undefined): number | undefined {
   if (value === null || value === undefined) return undefined
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
@@ -355,21 +359,20 @@ async function submitForm() {
 const viewOpen = shallowRef(false)
 const viewTarget = shallowRef<BusinessConsoleManufacturingBomItem | null>(null)
 const detailPending = ref(false)
-const detailError = ref('')
 const viewMaterialLines = computed(() => viewTarget.value?.materialLines ?? [])
 const viewRecipeLines = computed(() => viewTarget.value?.recipeLines ?? [])
 async function openView(row: BusinessConsoleManufacturingBomItem) {
   // list 已带物料行，先用它即时显示；再 get-by-id 补齐配方行并刷新物料行。
   viewTarget.value = row
   viewOpen.value = true
-  detailError.value = ''
   if (!row.bomCode || !row.revision) return
   detailPending.value = true
   try {
     const detail = await fetchMbomDetail(row.bomCode, row.revision)
     if (detail) viewTarget.value = detail
   } catch (error) {
-    detailError.value = formatError(error) || '加载配方行失败，请稍后重试。'
+    // 结果一律 toast；不在抽屉里留常驻错误条。
+    notifyError(error, '加载配方行失败，请稍后重试。')
   } finally {
     detailPending.value = false
   }
@@ -416,9 +419,9 @@ function uomLabel(code?: string | null) {
           <NvDialogContent class="sm:max-w-3xl">
             <NvDialogHeader>
               <NvDialogTitle>发布制造 BOM 新版本</NvDialogTitle>
-              <NvDialogDescription>
-                制造 BOM 须引用一份已发布的设计 BOM。一经发布即不可变，修改请填新物料行 +
-                新修订号再发布。带 * 为必填项。
+              <!-- 说明不上界面：仅供读屏播报。 -->
+              <NvDialogDescription class="sr-only">
+                引用一份已发布的设计 BOM，填写产出物料、修订号与物料行。
               </NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
@@ -468,7 +471,6 @@ function uomLabel(code?: string | null) {
                       }}</NvSelectItem>
                     </NvSelectContent>
                   </NvSelect>
-                  <NvFieldDescription>仅可选择已发布的设计 BOM。</NvFieldDescription>
                 </NvField>
                 <NvField :data-invalid="showErrors && !skuValid">
                   <NvFieldLabel for="mbom-sku"
@@ -484,7 +486,6 @@ function uomLabel(code?: string | null) {
                       }}</NvSelectItem>
                     </NvSelectContent>
                   </NvSelect>
-                  <NvFieldDescription>来自基础数据物料。</NvFieldDescription>
                 </NvField>
                 <NvField :data-invalid="showErrors && !revisionValid">
                   <NvFieldLabel for="mbom-rev"
@@ -592,9 +593,6 @@ function uomLabel(code?: string | null) {
                   增加配方
                 </NvButton>
               </div>
-              <p class="text-xs text-muted-foreground">
-                配方参数（如温度、压力、时长）按需登记。发布后可在「查看物料」里查看配方行。
-              </p>
               <div v-if="form.recipeLines.length" class="grid gap-2">
                 <div
                   v-for="(line, index) in form.recipeLines"
@@ -777,13 +775,6 @@ function uomLabel(code?: string | null) {
               <Spinner aria-hidden="true" />
               加载配方行…
             </div>
-            <p
-              v-else-if="detailError"
-              class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-              role="alert"
-            >
-              {{ detailError }}
-            </p>
             <div v-else-if="viewRecipeLines.length" class="overflow-hidden rounded-md border">
               <table class="w-full text-sm">
                 <thead class="bg-muted/40 text-muted-foreground">

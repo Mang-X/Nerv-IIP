@@ -33,11 +33,12 @@ import {
   NvSelectValue,
   Spinner,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
 import { EditIcon, LineChartIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { RouterLink } from 'vue-router'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -55,12 +56,12 @@ const {
   filters,
   refreshAlarmRules,
   saveAlarmRule,
-  saveAlarmRuleError,
   saveAlarmRulePending,
 } = useBusinessTelemetryAlarmRules()
 const { page, pageSize } = usePagedList(filters)
 
 const formOpen = shallowRef(false)
+const formEditing = shallowRef(false)
 const formError = shallowRef('')
 const form = reactive<SaveTelemetryAlarmRuleInput>({
   deviceAssetId: '',
@@ -75,7 +76,15 @@ const form = reactive<SaveTelemetryAlarmRuleInput>({
 })
 
 const errorMessage = computed(() => formatError(alarmRulesError.value))
-const formErrorMessage = computed(() => formError.value || formatError(saveAlarmRuleError.value))
+// 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
+const formErrorMessage = computed(() => formError.value)
+// 编辑态：规则身份（设备 / 采集标签 / 规则编号 / 报警编号）由所选行带出，只读呈现。
+const ruleContextItems = computed(() => [
+  { label: '设备', value: form.deviceAssetId },
+  { label: '采集标签', value: form.tagKey },
+  { label: '规则编号', value: form.ruleCode },
+  { label: '报警编号', value: form.alarmCode },
+])
 const formEnabledValue = computed({
   get: () => (form.isEnabled ? 'enabled' : 'disabled'),
   set: (value: string) => {
@@ -126,10 +135,12 @@ function openCreate() {
     unitCode: '',
     isEnabled: true,
   })
+  formEditing.value = false
   formError.value = ''
   formOpen.value = true
 }
 function openEdit(row: BusinessConsoleTelemetryAlarmRuleItem) {
+  formEditing.value = true
   Object.assign(form, {
     deviceAssetId: row.deviceAssetId ?? '',
     ruleCode: row.ruleCode ?? '',
@@ -169,9 +180,9 @@ async function submitRule() {
       thresholdValue,
     })
     formOpen.value = false
-    toast.success('报警规则已保存')
-  } catch {
-    // 错误由表单错误区域展示。
+    notifySuccess('报警规则已保存')
+  } catch (error) {
+    notifyError(error, '报警规则保存失败，请稍后重试。')
   }
 }
 function severityLabel(value?: string | null) {
@@ -312,14 +323,17 @@ function formatError(error: unknown) {
     <NvDialog v-model:open="formOpen">
       <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <NvDialogHeader>
-          <NvDialogTitle>维护报警规则</NvDialogTitle>
-          <NvDialogDescription
-            >规则保存后按设备实际采样值自动判定，不做界面模拟。</NvDialogDescription
-          >
+          <NvDialogTitle>{{ formEditing ? '编辑报警规则' : '新建报警规则' }}</NvDialogTitle>
+          <NvDialogDescription class="sr-only">
+            {{ formEditing ? `编辑报警规则 ${form.ruleCode}。` : '为设备采集标签配置报警阈值。' }}
+          </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitRule">
+          <!-- 编辑态：规则身份由所选行带出，只读呈现，不做成看起来还能改的输入位。 -->
+          <CarriedContextSummary v-if="formEditing" label="报警规则" :items="ruleContextItems" />
+
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField>
+            <NvField v-if="!formEditing">
               <NvFieldLabel for="rule-device">设备</NvFieldLabel>
               <NvInput
                 id="rule-device"
@@ -328,7 +342,7 @@ function formatError(error: unknown) {
                 placeholder="如 DEV-CNC-01"
               />
             </NvField>
-            <NvField>
+            <NvField v-if="!formEditing">
               <NvFieldLabel for="rule-tag">采集标签</NvFieldLabel>
               <NvInput
                 id="rule-tag"
@@ -337,7 +351,7 @@ function formatError(error: unknown) {
                 placeholder="如 temperature"
               />
             </NvField>
-            <NvField>
+            <NvField v-if="!formEditing">
               <NvFieldLabel for="rule-code">规则编号</NvFieldLabel>
               <NvInput
                 id="rule-code"
@@ -346,7 +360,7 @@ function formatError(error: unknown) {
                 placeholder="如 TEMP_HIGH"
               />
             </NvField>
-            <NvField>
+            <NvField v-if="!formEditing">
               <NvFieldLabel for="rule-alarm">报警编号</NvFieldLabel>
               <NvInput
                 id="rule-alarm"

@@ -5,6 +5,7 @@ import type {
   BusinessConsoleCreateCodeRuleVersionRequest,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useCodeRules } from '@/composables/useCodeRules'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -21,7 +22,6 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
-  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -324,6 +324,8 @@ function blankForm(): VersionForm {
 const formOpen = shallowRef(false)
 const showErrors = ref(false)
 const editingRuleKey = shallowRef<string | null>(null)
+// 从所选规则行带出的只读上下文（规则键 / 当前版本），不让用户重填。
+const editingCurrentVersion = shallowRef<string>('')
 const form = reactive<VersionForm>(blankForm())
 const formPreview = ref('')
 const formPreviewPending = ref(false)
@@ -420,6 +422,8 @@ function rowToSegment(row: SegmentRow): BusinessConsoleCodeRuleSegment {
 function openCreate(row: BusinessConsoleCodeRuleItem) {
   if (!row.ruleKey) return
   editingRuleKey.value = row.ruleKey
+  editingCurrentVersion.value =
+    row.version === null || row.version === undefined ? '' : String(row.version)
   showErrors.value = false
   formPreview.value = ''
   Object.assign(form, {
@@ -688,11 +692,19 @@ async function submitForm() {
       <NvDialogContent class="sm:max-w-3xl">
         <NvDialogHeader>
           <NvDialogTitle>新建编码规则版本</NvDialogTitle>
-          <NvDialogDescription>
-            发布新版本会带入该规则当前值，不影响已分配的历史编码。带 * 为必填项。
+          <!-- 规则键与当前版本已在下方只读区呈现；此处仅供读屏播报。 -->
+          <NvDialogDescription class="sr-only">
+            规则 {{ editingRuleKey }}，当前版本 {{ editingCurrentVersion || '无' }}
           </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-5" @submit.prevent="submitForm">
+          <CarriedContextSummary
+            label="规则上下文"
+            :items="[
+              { label: '规则键', value: editingRuleKey },
+              { label: '当前版本', value: editingCurrentVersion },
+            ]"
+          />
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
             请填写带 * 的必填项（名称、创建人），并修正下方红字提示的段定义。
           </p>
@@ -729,7 +741,6 @@ async function submitForm() {
                 placeholder="留空即时生效"
                 class="w-full"
               />
-              <NvFieldDescription>留空即时生效。</NvFieldDescription>
             </NvField>
             <NvField>
               <NvFieldLabel for="cr-reason">变更原因</NvFieldLabel>

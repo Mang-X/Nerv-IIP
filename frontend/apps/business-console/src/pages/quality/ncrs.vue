@@ -6,11 +6,12 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useQualityNcrs } from '@/composables/useBusinessQuality'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError } from '@/utils/notify'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvAlertDialog,
   NvAlertDialogAction,
@@ -61,7 +62,6 @@ const route = useRoute()
 const initialNcrKeyword = firstQuery(route.query.ncrId)
 const {
   closeNcr,
-  closeNcrError,
   closeNcrPending,
   filters,
   ncrs,
@@ -70,7 +70,6 @@ const {
   ncrsTotal,
   refreshNcrs,
   submitDisposition,
-  submitDispositionError,
   submitDispositionPending,
 } = useQualityNcrs(initialNcrKeyword ? { keyword: initialNcrKeyword } : {})
 const { page, pageSize } = usePagedList(filters, {
@@ -79,8 +78,6 @@ const { page, pageSize } = usePagedList(filters, {
 
 const selectedNcr = shallowRef<BusinessConsoleQualityItem>()
 const detailOpen = shallowRef(false)
-const dispositionSuccess = shallowRef('')
-const closeSuccess = shallowRef('')
 const statusOptions = [
   { label: '全部状态', value: 'all' },
   { label: '待处理', value: 'open' },
@@ -115,9 +112,22 @@ const targetNcrMissing = computed(
 const locatedTargetId = shallowRef('')
 
 const listErrorMessage = computed(() => formatError(ncrsError.value))
-const dispositionErrorMessage = computed(() => formatError(submitDispositionError.value))
-const closeErrorMessage = computed(() => formatError(closeNcrError.value))
 const selectedNcrId = computed(() => selectedNcr.value?.id ?? '')
+// 带出式录入：所选 NCR 行已有的事实一律只读呈现，不做成看起来还能改的输入位。
+const ncrContextItems = computed(() => {
+  const ncr = selectedNcr.value
+  if (!ncr) return []
+  return [
+    { label: '来源单据', value: ncr.sourceDocumentId },
+    { label: '来源类型', value: ncr.sourceType },
+    { label: '物料', value: ncr.skuCode },
+    { label: '不合格数量', value: ncr.defectQuantity },
+    { label: '不合格原因', value: ncr.defectReason },
+    { label: '批次', value: ncr.batchNo },
+    { label: '序列号', value: ncr.serialNo },
+    { label: '返工工单', value: closeForm.reworkWorkOrderId },
+  ]
+})
 const canSubmitDisposition = computed(
   () =>
     hasBusinessContext(filters) &&
@@ -145,8 +155,6 @@ const columns: NvDataTableColumn<NcrRow>[] = [
 
 function openNcr(ncr: BusinessConsoleQualityItem) {
   selectedNcr.value = ncr
-  dispositionSuccess.value = ''
-  closeSuccess.value = ''
   dispositionForm.dispositionApprovalChainId = ''
   closeForm.reason = ''
   closeForm.reworkWorkOrderId =
@@ -165,8 +173,15 @@ async function submitNcrDisposition() {
     dispositionApprovalChainId: optionalText(dispositionForm.dispositionApprovalChainId),
     attachmentFileIds: splitCsv(dispositionForm.attachmentFileIds),
   }
-  await submitDisposition(selectedNcrId.value, body)
-  dispositionSuccess.value = `不合格品 ${selectedNcr.value?.code ?? selectedNcrId.value} 处置已提交。`
+  const label = selectedNcr.value?.code ?? selectedNcrId.value
+  try {
+    await submitDisposition(selectedNcrId.value, body)
+  } catch (error) {
+    notifyError(error, '处置提交失败，请稍后重试。')
+    return
+  }
+  notifySuccess(`不合格品 ${label} 处置已提交。`)
+  detailOpen.value = false
 }
 
 async function submitCloseNcr() {
@@ -181,8 +196,15 @@ async function submitCloseNcr() {
     scrapMovementId: optionalText(closeForm.scrapMovementId),
     returnDocumentId: optionalText(closeForm.returnDocumentId),
   }
-  await closeNcr(selectedNcrId.value, body)
-  closeSuccess.value = `不合格品 ${selectedNcr.value?.code ?? selectedNcrId.value} 关闭已提交。`
+  const label = selectedNcr.value?.code ?? selectedNcrId.value
+  try {
+    await closeNcr(selectedNcrId.value, body)
+  } catch (error) {
+    notifyError(error, '不合格品关闭失败，请稍后重试。')
+    return
+  }
+  notifySuccess(`不合格品 ${label} 已关闭。`)
+  detailOpen.value = false
 }
 
 function optionalText(value: string) {
@@ -336,41 +358,23 @@ watch(
       <NvSheetContent class="w-full overflow-y-auto sm:max-w-xl">
         <NvSheetHeader>
           <NvSheetTitle>{{ selectedNcr?.code ?? '不合格品详情' }}</NvSheetTitle>
-          <NvSheetDescription>{{
-            selectedNcr ? qualityItemSummary(selectedNcr) : '查看并提交质量动作。'
-          }}</NvSheetDescription>
+          <!-- 不合格品事实已在下方只读区完整呈现；此处仅供读屏播报。 -->
+          <NvSheetDescription class="sr-only">
+            不合格品 {{ selectedNcr?.code ?? selectedNcrId }} 的处置与关闭。
+          </NvSheetDescription>
         </NvSheetHeader>
 
         <div class="grid gap-4 px-1">
-          <div class="grid gap-2 rounded-lg border p-3">
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-sm font-medium text-foreground">状态</span>
-              <NvStatusBadge :value="selectedNcr?.status" />
-            </div>
-            <p class="text-sm text-muted-foreground">
-              {{ selectedNcr ? qualityItemSummary(selectedNcr) : '无' }}
-            </p>
+          <div class="flex items-center justify-between gap-2 rounded-lg border p-3">
+            <span class="text-sm font-medium text-foreground">状态</span>
+            <NvStatusBadge :value="selectedNcr?.status" />
           </div>
+
+          <CarriedContextSummary label="不合格品信息" :items="ncrContextItems" />
 
           <form class="grid gap-3 rounded-lg border p-3" @submit.prevent="submitNcrDisposition">
             <h2 class="text-base font-semibold text-foreground">提交处置</h2>
-            <p v-if="dispositionErrorMessage" class="text-sm text-destructive" role="alert">
-              {{ dispositionErrorMessage }}
-            </p>
-            <p v-if="dispositionSuccess" class="text-sm text-success" role="status">
-              {{ dispositionSuccess }}
-            </p>
             <NvFieldGroup class="grid gap-3">
-              <NvField>
-                <NvFieldLabel for="ncr-close-reason">关闭原因</NvFieldLabel>
-                <NvInput
-                  id="ncr-close-reason"
-                  v-model="closeForm.reason"
-                  required
-                  maxlength="500"
-                  placeholder="请说明关闭依据和处理结果"
-                />
-              </NvField>
               <NvField>
                 <NvFieldLabel>处置类型</NvFieldLabel>
                 <NvSelect v-model="dispositionForm.dispositionType">
@@ -391,11 +395,11 @@ watch(
                 :document-id="selectedNcr?.code ?? selectedNcr?.id"
               />
               <NvField>
-                <NvFieldLabel for="ncr-disposition-files">附件文件 ID</NvFieldLabel>
+                <NvFieldLabel for="ncr-disposition-files">附件</NvFieldLabel>
                 <NvInput
                   id="ncr-disposition-files"
                   v-model="dispositionForm.attachmentFileIds"
-                  placeholder="file-1, file-2"
+                  placeholder="多个附件用逗号分隔"
                 />
               </NvField>
             </NvFieldGroup>
@@ -410,14 +414,18 @@ watch(
 
           <form class="grid gap-3 rounded-lg border p-3" @submit.prevent>
             <h2 class="text-base font-semibold text-foreground">关闭不合格品</h2>
-            <p v-if="closeErrorMessage" class="text-sm text-destructive" role="alert">
-              {{ closeErrorMessage }}
-            </p>
-            <p v-if="closeSuccess" class="text-sm text-success" role="status">{{ closeSuccess }}</p>
             <NvFieldGroup class="grid gap-3">
               <NvField>
-                <NvFieldLabel for="ncr-rework">返工工单</NvFieldLabel>
-                <NvInput id="ncr-rework" v-model="closeForm.reworkWorkOrderId" />
+                <NvFieldLabel for="ncr-close-reason">
+                  关闭原因 <span class="text-destructive">*</span>
+                </NvFieldLabel>
+                <NvInput
+                  id="ncr-close-reason"
+                  v-model="closeForm.reason"
+                  required
+                  maxlength="500"
+                  placeholder="说明关闭依据与处理结果"
+                />
               </NvField>
               <NvField>
                 <NvFieldLabel for="ncr-scrap">报废库存移动</NvFieldLabel>
@@ -446,8 +454,7 @@ watch(
                   <NvAlertDialogHeader>
                     <NvAlertDialogTitle>确认关闭该不合格品？</NvAlertDialogTitle>
                     <NvAlertDialogDescription
-                      >这里仅提交质量关闭动作，库存、WMS 和 MES
-                      仍按各自服务流程处理。</NvAlertDialogDescription
+                      >关闭后该不合格品不再进入待处理队列。</NvAlertDialogDescription
                     >
                   </NvAlertDialogHeader>
                   <NvAlertDialogFooter>

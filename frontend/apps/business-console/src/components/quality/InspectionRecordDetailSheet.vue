@@ -54,7 +54,8 @@ watch(
     <NvSheetContent class="w-full overflow-y-auto sm:max-w-xl">
       <NvSheetHeader>
         <NvSheetTitle>检验记录 {{ recordId }}</NvSheetTitle>
-        <NvSheetDescription>来源检验记录只读详情，含判定结论与特性实测值。</NvSheetDescription>
+        <!-- 记录内容已在下方完整呈现；此处仅供读屏播报。 -->
+        <NvSheetDescription class="sr-only">检验记录 {{ recordId }} 只读详情。</NvSheetDescription>
       </NvSheetHeader>
       <div class="grid content-start gap-4 p-4">
         <div v-if="recordPending" class="flex items-center gap-2 text-muted-foreground">

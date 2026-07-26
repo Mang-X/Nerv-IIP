@@ -5,6 +5,9 @@
 必须 `NvSheet`，复杂多段/多步走独立页。本文的流程约定（开关/校验/反馈/成功引导）对
 Dialog 与 Sheet 同样适用。
 
+> 对象**已经由所选行确定**、用户只补"这次干了多少"的写弹窗（报工 / 入库 / 收货 / 上架 /
+> 检验录入 / 处置…）不走本流，见 `carried-context-entry.md`（带出式录入）。
+
 ## 规则
 
 1. **开关**：`v-model:open` 控制；触发按钮在工具条/页头 `#actions`（`NvDialogTrigger
@@ -91,8 +94,9 @@ function openCreate() {
 
 ❌ **5~6 字段建档塞居中 Dialog** —— `master-data/units.vue`（新建计量单位 5 字段、新建
 换算关系 6 字段）、`quality/reason-codes.vue`（新建原因 5 字段）；完工入库 6 字段
-（`mes/receipts.vue`，运行时 inputCount=6）、工单报工 7 字段（`mes/work-orders/index.vue`）。
-违反承载分级 §1（4~8 字段应 `NvSheet`）。出处：
+（`mes/receipts.vue`，运行时 inputCount=6）。违反承载分级 §1（4~8 字段应 `NvSheet`）。
+（工单报工原 7 字段已整改为带出式录入，录入项降到 3 个，见 `carried-context-entry.md`。）
+出处：
 `frontend/DESIGN/roadmaps/2026-07-11-ux-walkthrough-findings.md` §3.2 P1-1/P1-2、
 §3.3 P2-1（截图 `mes-receipts-dialog-6fields.png`、`masterdata-units.png`）。
 

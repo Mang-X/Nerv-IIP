@@ -18,7 +18,6 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
-  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -32,7 +31,7 @@ import {
   Spinner,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { FileTextIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
+import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -189,18 +188,17 @@ async function submitForm() {
 const viewOpen = shallowRef(false)
 const viewTarget = shallowRef<BusinessConsoleEngineeringDocumentItem | null>(null)
 const detailPending = ref(false)
-const detailError = ref('')
 async function openView(row: BusinessConsoleEngineeringDocumentItem) {
   viewTarget.value = row
   viewOpen.value = true
-  detailError.value = ''
   if (!row.documentNumber || !row.revision) return
   detailPending.value = true
   try {
     const detail = await fetchDocumentDetail(row.documentNumber, row.revision)
     if (detail) viewTarget.value = detail
   } catch (error) {
-    detailError.value = formatError(error) || '加载文档明细失败，请稍后重试。'
+    // 结果一律 toast；列表行数据仍可展示，不在抽屉里留常驻错误条。
+    notifyError(error, '加载文档明细失败，请稍后重试。')
   } finally {
     detailPending.value = false
   }
@@ -239,9 +237,10 @@ function formatError(error: unknown) {
           <NvDialogContent class="sm:max-w-xl">
             <NvDialogHeader>
               <NvDialogTitle>登记工程文档</NvDialogTitle>
-              <NvDialogDescription>
-                按文档号 + 修订登记一份工程文档及其文件引用。带 * 为必填项。
-              </NvDialogDescription>
+              <!-- 说明不上界面：仅供读屏播报。 -->
+              <NvDialogDescription class="sr-only"
+                >按文档号与修订登记工程文档。</NvDialogDescription
+              >
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
@@ -289,9 +288,6 @@ function formatError(error: unknown) {
                     v-model="form.fileId"
                     placeholder="填写文件存储引用 ID"
                   />
-                  <NvFieldDescription>
-                    文件上传待接入，先填已存在的文件引用 ID（不在此页直接上传文件）。
-                  </NvFieldDescription>
                 </NvField>
                 <NvField :data-invalid="showErrors && !fileNameValid">
                   <NvFieldLabel for="doc-file-name"
@@ -319,7 +315,6 @@ function formatError(error: unknown) {
               <NvField>
                 <NvFieldLabel for="doc-item-code">关联物料编码</NvFieldLabel>
                 <NvInput id="doc-item-code" v-model="form.itemCode" placeholder="可留空" />
-                <NvFieldDescription>如该文档对应某工程物料，填其编码以便追溯。</NvFieldDescription>
               </NvField>
 
               <NvDialogFooter>
@@ -392,13 +387,6 @@ function formatError(error: unknown) {
             <Spinner aria-hidden="true" />
             加载文档明细…
           </div>
-          <p
-            v-else-if="detailError"
-            class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-            role="alert"
-          >
-            {{ detailError }}
-          </p>
           <div v-else class="grid gap-2 text-sm">
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">类型</span>
@@ -424,10 +412,6 @@ function formatError(error: unknown) {
               <span class="text-muted-foreground">登记时间</span>
               <span class="font-medium">{{ formatDateTime(viewTarget.registeredAtUtc) }}</span>
             </div>
-            <p class="flex items-center gap-1.5 pt-1 text-xs text-muted-foreground">
-              <FileTextIcon class="size-3.5" aria-hidden="true" />
-              文件下载待接入，当前仅登记文件引用。
-            </p>
           </div>
         </div>
       </NvSheetContent>

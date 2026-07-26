@@ -4,6 +4,7 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import {
   useBusinessPartners,
@@ -173,13 +174,14 @@ const creditLimitValidationMessage = computed(() => {
   if (!creditCurrencyValue.value) return '填写信用额度时必须填写币种。'
   return ''
 })
+// 只保留「会清空已有额度」这类非显而易见的后果提示；一般情况不写说明。
 const creditLimitDescription = computed(() => {
-  if (!editingCode.value) return '销售订单信用检查使用的客户额度。'
+  if (!editingCode.value) return ''
   if (!hasCustomerRole.value && hasOriginalCreditProfile.value)
     return '移除客户角色后保存会同步清空信用额度。'
   if (hasOriginalCreditProfile.value && !creditLimitValue.value)
     return '留空保存会清空已有信用额度。'
-  return '销售订单信用检查使用的客户额度。'
+  return ''
 })
 
 const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
@@ -385,13 +387,16 @@ function formatCreditLimit(
               <NvDialogTitle>{{
                 editingCode ? `编辑业务伙伴 · ${editingCode}` : '新建业务伙伴'
               }}</NvDialogTitle>
-              <NvDialogDescription>{{
-                editingCode
-                  ? '修改伙伴档案（编码不可修改）。一个伙伴可兼具多个角色。带 * 为必填项。'
-                  : '客户、供应商、承运商统一建档。一个伙伴可兼具多个角色。带 * 为必填项。'
+              <NvDialogDescription class="sr-only">{{
+                editingCode ? `业务伙伴 ${editingCode}` : '新建业务伙伴'
               }}</NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-4" @submit.prevent="submitPartner">
+              <CarriedContextSummary
+                v-if="editingCode"
+                label="伙伴标识"
+                :items="[{ label: '伙伴编码', value: createForm.code }]"
+              />
               <p
                 v-if="createShowErrors && !canCreatePartner"
                 class="text-sm text-destructive"
@@ -401,10 +406,6 @@ function formatCreditLimit(
               </p>
 
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                <NvField v-if="editingCode">
-                  <NvFieldLabel for="partner-code">编码</NvFieldLabel>
-                  <NvInput id="partner-code" :model-value="createForm.code" disabled />
-                </NvField>
                 <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
                   <NvFieldLabel for="partner-name"
                     >名称 <span class="text-destructive">*</span></NvFieldLabel
@@ -416,7 +417,6 @@ function formatCreditLimit(
                     aria-required="true"
                     required
                   />
-                  <NvFieldDescription v-if="!editingCode">编码由系统自动生成。</NvFieldDescription>
                 </NvField>
                 <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.partnerType)">
                   <NvFieldLabel for="partner-type"
@@ -433,7 +433,6 @@ function formatCreditLimit(
                       >
                     </NvSelectContent>
                   </NvSelect>
-                  <NvFieldDescription>该伙伴的主要业务角色。</NvFieldDescription>
                 </NvField>
                 <NvField>
                   <NvFieldLabel for="partner-tax">统一社会信用代码</NvFieldLabel>
@@ -443,7 +442,6 @@ function formatCreditLimit(
                     autocomplete="off"
                     placeholder="可留空"
                   />
-                  <NvFieldDescription>用于开票与对账，可后续补录。</NvFieldDescription>
                 </NvField>
                 <NvField
                   v-if="shouldShowCreditFields"
@@ -460,9 +458,12 @@ function formatCreditLimit(
                     autocomplete="off"
                     placeholder="可留空"
                   />
-                  <NvFieldDescription>{{
-                    creditLimitValidationMessage || creditLimitDescription
-                  }}</NvFieldDescription>
+                  <NvFieldDescription
+                    v-if="creditLimitValidationMessage || creditLimitDescription"
+                    >{{
+                      creditLimitValidationMessage || creditLimitDescription
+                    }}</NvFieldDescription
+                  >
                 </NvField>
                 <NvField
                   v-if="shouldShowCreditFields"
@@ -475,7 +476,6 @@ function formatCreditLimit(
                     autocomplete="off"
                     maxlength="10"
                   />
-                  <NvFieldDescription>填写信用额度时使用，默认 CNY。</NvFieldDescription>
                 </NvField>
               </NvFieldGroup>
 
@@ -491,7 +491,6 @@ function formatCreditLimit(
                     {{ o.label }}
                   </label>
                 </div>
-                <NvFieldDescription>除主角色外，该伙伴还承担的角色，可不选。</NvFieldDescription>
               </NvField>
 
               <NvDialogFooter>

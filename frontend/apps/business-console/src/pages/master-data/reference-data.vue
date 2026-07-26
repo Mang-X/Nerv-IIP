@@ -4,6 +4,7 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import {
   useReferenceDataCodes,
@@ -21,16 +22,10 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
-  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
   NvPageHeader,
-  NvSelect,
-  NvSelectContent,
-  NvSelectItem,
-  NvSelectTrigger,
-  NvSelectValue,
   Spinner,
   NvStatusBadge,
   NvToolbar,
@@ -306,13 +301,21 @@ function isNonEmpty(value: string) {
               <NvDialogTitle>{{
                 editingCode ? `编辑字典条目 · ${editingCode}` : '新建字典条目'
               }}</NvDialogTitle>
-              <NvDialogDescription>{{
+              <NvDialogDescription class="sr-only">{{
                 editingCode
-                  ? '修改字典条目名称（所属字典与编码不可修改）。带 * 为必填项。'
-                  : '选择所属字典，填写编码与名称。带 * 为必填项。'
+                  ? `字典 ${codeSetLabel(createForm.codeSet)}，条目 ${editingCode}`
+                  : `所属字典：${codeSetLabel(createForm.codeSet)}`
               }}</NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-4" @submit.prevent="submitCode">
+              <!-- 所属字典由左侧所选分组带出；编辑态编码也固定，一并只读展示。 -->
+              <CarriedContextSummary
+                label="字典归属"
+                :items="[
+                  { label: '所属字典', value: codeSetLabel(createForm.codeSet) },
+                  { label: '条目编码', value: editingCode ?? '' },
+                ]"
+              />
               <p
                 v-if="createShowErrors && !canSubmitCode"
                 class="text-sm text-destructive"
@@ -321,28 +324,11 @@ function isNonEmpty(value: string) {
                 请完整填写带 * 的必填项（已标红）。
               </p>
 
-              <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.codeSet)">
-                <NvFieldLabel for="ref-code-set"
-                  >所属字典 <span class="text-destructive">*</span></NvFieldLabel
-                >
-                <NvSelect v-model="createForm.codeSet" :disabled="!!editingCode">
-                  <NvSelectTrigger id="ref-code-set"><NvSelectValue /></NvSelectTrigger>
-                  <NvSelectContent>
-                    <NvSelectItem
-                      v-for="s in CODE_SETS"
-                      :key="s.codeSet"
-                      :value="s.codeSet"
-                      :disabled="s.kind === 'system-enum'"
-                    >
-                      {{ s.label }}
-                    </NvSelectItem>
-                  </NvSelectContent>
-                </NvSelect>
-                <NvFieldDescription>该条目归属的字典分组。</NvFieldDescription>
-              </NvField>
-
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
+                <NvField
+                  v-if="!editingCode"
+                  :data-invalid="createShowErrors && !isNonEmpty(createForm.code)"
+                >
                   <NvFieldLabel for="ref-code"
                     >编码 <span class="text-destructive">*</span></NvFieldLabel
                   >
@@ -351,7 +337,6 @@ function isNonEmpty(value: string) {
                     v-model="createForm.code"
                     autocomplete="off"
                     aria-required="true"
-                    :disabled="!!editingCode"
                     required
                   />
                 </NvField>

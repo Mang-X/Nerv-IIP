@@ -4,6 +4,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useInventoryMovement } from '@/composables/useBusinessInventory'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -38,7 +39,15 @@ definePage({
 
 const route = useRoute()
 const businessContext = useBusinessContextStore()
-const { postMovement, postMovementError, postMovementPending } = useInventoryMovement()
+const { postMovement, postMovementPending } = useInventoryMovement()
+
+// 受控值：UI 说人话，下发仍是后端码值。
+const QUALITY_OPTIONS = [
+  { label: '可用', value: 'available' },
+  { label: '待检', value: 'inspection' },
+  { label: '冻结', value: 'blocked' },
+  { label: '不合格', value: 'rejected' },
+]
 
 const form = reactive({
   movementType: 'receipt',
@@ -69,10 +78,8 @@ interface MovementQueueRow {
   sourceDocumentId: string
 }
 
-const successMessage = shallowRef('')
 const movementSheetOpen = shallowRef(false)
 const movementQueue = shallowRef<MovementQueueRow[]>([])
-const errorMessage = computed(() => formatError(postMovementError.value))
 
 // 上下文穿透：从来源单据（收货/完工入库/领料/盘点）带入 SKU/库位/批次。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
@@ -152,8 +159,13 @@ async function submitMovement() {
     ownerId: optionalText(form.ownerId),
     quantity: toOptionalNumber(form.quantity),
   }
-  const response = await postMovement(body)
-  successMessage.value = `库存移动 ${response?.data?.movementId ?? body.idempotencyKey} 已受理。`
+  let response
+  try {
+    response = await postMovement(body)
+  } catch (error) {
+    notifyError(error, '提交库存移动失败，请稍后重试。')
+    return
+  }
   movementQueue.value = [
     {
       movementId: response?.data?.movementId ?? body.sourceDocumentId ?? '待返回',
@@ -167,6 +179,8 @@ async function submitMovement() {
     },
     ...movementQueue.value,
   ]
+  movementSheetOpen.value = false
+  notifySuccess(`库存移动 ${response?.data?.movementId ?? body.idempotencyKey} 已受理`)
 }
 
 function optionalText(value: string) {
@@ -180,9 +194,6 @@ function toOptionalNumber(value: string) {
 function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
-}
-function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0
@@ -226,18 +237,10 @@ function isNonEmpty(value: string) {
       <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <NvDialogHeader>
           <NvDialogTitle>新建库存移动</NvDialogTitle>
-          <NvDialogDescription
-            >用于少量人工补录和异常处理；常规业务应从来源单据自动发起。</NvDialogDescription
-          >
+          <!-- 界面上不再写说明书；仅供读屏播报对象范围。 -->
+          <NvDialogDescription class="sr-only">人工补录一条库存移动过账。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitMovement">
-          <p v-if="errorMessage" class="text-sm text-destructive" role="alert">
-            {{ errorMessage }}
-          </p>
-          <p v-if="successMessage" class="text-sm text-success" role="status">
-            {{ successMessage }}
-          </p>
-
           <NvFieldGroup class="grid gap-3 md:grid-cols-3">
             <NvField>
               <NvFieldLabel>移动类型</NvFieldLabel>
@@ -286,8 +289,15 @@ function isNonEmpty(value: string) {
               />
             </NvField>
             <NvField>
-              <NvFieldLabel for="movement-quality">质量状态</NvFieldLabel>
-              <NvInput id="movement-quality" v-model="form.qualityStatus" required />
+              <NvFieldLabel>质量状态</NvFieldLabel>
+              <NvSelect v-model="form.qualityStatus">
+                <NvSelectTrigger aria-label="质量状态"><NvSelectValue /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem v-for="o in QUALITY_OPTIONS" :key="o.value" :value="o.value">{{
+                    o.label
+                  }}</NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
             </NvField>
             <NvField>
               <NvFieldLabel for="movement-owner-id">货主</NvFieldLabel>

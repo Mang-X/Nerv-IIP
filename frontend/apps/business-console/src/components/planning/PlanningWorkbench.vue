@@ -703,10 +703,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         <NvDialogContent>
           <NvDialogHeader>
             <NvDialogTitle>运行 MRP</NvDialogTitle>
-            <NvDialogDescription
-              >按计划周期汇总已发布
-              MPS、销售需求、预测和安全库存，生成生产与采购建议。</NvDialogDescription
-            >
+            <NvDialogDescription class="sr-only">选择本次运算的计划范围。</NvDialogDescription>
           </NvDialogHeader>
           <form class="grid gap-4" @submit.prevent="submitMrpRun">
             <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
@@ -731,7 +728,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               <NvButton type="button" variant="outline" @click="mrpOpen = false">取消</NvButton>
               <NvButton type="submit" :disabled="runMrpPending">
                 <Spinner v-if="runMrpPending" aria-hidden="true" />
-                运行
+                运行 MRP
               </NvButton>
             </NvDialogFooter>
           </form>
@@ -748,8 +745,8 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         <NvDialogContent class="sm:max-w-2xl">
           <NvDialogHeader>
             <NvDialogTitle>新建主计划行</NvDialogTitle>
-            <NvDialogDescription
-              >维护主生产计划的一个计划周期，评审并发布后进入 MRP 输入。</NvDialogDescription
+            <NvDialogDescription class="sr-only"
+              >录入一个计划周期的主生产计划。</NvDialogDescription
             >
           </NvDialogHeader>
           <form class="grid gap-4" @submit.prevent="submitMpsBucket">
@@ -816,7 +813,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               <NvButton type="button" variant="outline" @click="mpsOpen = false">取消</NvButton>
               <NvButton type="submit" :disabled="createMpsBucketPending || !canSubmitMps">
                 <Spinner v-if="createMpsBucketPending" aria-hidden="true" />
-                保存 MPS
+                保存主计划行
               </NvButton>
             </NvDialogFooter>
           </form>
@@ -833,9 +830,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         <NvDialogContent class="sm:max-w-2xl">
           <NvDialogHeader>
             <NvDialogTitle>新建需求</NvDialogTitle>
-            <NvDialogDescription
-              >录入销售订单、预测或安全库存需求，作为 MRP 与计划建议的来源。</NvDialogDescription
-            >
+            <NvDialogDescription class="sr-only">录入一条计划需求。</NvDialogDescription>
           </NvDialogHeader>
           <form class="grid gap-4" @submit.prevent="submitDemand">
             <NvFieldGroup class="grid gap-3 sm:grid-cols-2">

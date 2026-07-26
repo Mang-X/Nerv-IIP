@@ -19,10 +19,10 @@ import {
   NvDropdownMenuItem,
   NvRowActions,
   NvStatusBadge,
-  toast,
 } from '@nerv-iip/ui'
 import { CircleSlashIcon, EyeIcon, PencilIcon, PlayIcon } from '@lucide/vue'
 import { ref } from 'vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 
 export interface DetailField {
   label: string
@@ -51,10 +51,6 @@ const emit = defineEmits<{ edit: [row: BusinessConsoleResourceItem] }>()
 const detailOpen = ref(false)
 const toggleOpen = ref(false)
 
-function formatError(error: unknown) {
-  return error instanceof Error ? error.message : '请求失败，请稍后重试。'
-}
-
 async function confirmToggle() {
   const code = props.row.code
   if (!code) return
@@ -62,14 +58,14 @@ async function confirmToggle() {
   try {
     if (isActive) {
       await props.actions.disable(code)
-      toast.success('已停用')
+      notifySuccess(`${props.entityLabel}已停用。`)
     } else {
       await props.actions.enable(code)
-      toast.success('已启用')
+      notifySuccess(`${props.entityLabel}已启用。`)
     }
     toggleOpen.value = false
   } catch (error) {
-    toast.error(formatError(error))
+    notifyError(error)
   }
 }
 </script>
@@ -96,9 +92,9 @@ async function confirmToggle() {
     <NvDialogContent class="sm:max-w-lg">
       <NvDialogHeader>
         <NvDialogTitle>{{ entityLabel }}详情</NvDialogTitle>
-        <NvDialogDescription
-          >{{ row.displayName ?? row.code ?? '' }} 的关键信息。</NvDialogDescription
-        >
+        <NvDialogDescription class="sr-only">{{
+          row.displayName ?? row.code ?? ''
+        }}</NvDialogDescription>
       </NvDialogHeader>
       <dl class="grid gap-3 sm:grid-cols-2">
         <div v-for="field in detailFields" :key="field.label" class="grid gap-1">
@@ -134,6 +130,7 @@ async function confirmToggle() {
       <NvAlertDialogFooter>
         <NvAlertDialogCancel>取消</NvAlertDialogCancel>
         <NvAlertDialogAction
+          :variant="row.active !== false ? 'destructive' : 'default'"
           :disabled="actions.disablePending.value || actions.enablePending.value"
           @click="confirmToggle"
         >

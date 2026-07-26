@@ -20,10 +20,11 @@ Quick lookup: scenario → which pattern to apply.
 
 ## Flows (multi-step interactions)
 
-| Scenario                                         | Pattern         | File                       |
-| ------------------------------------------------ | --------------- | -------------------------- |
-| Create a new entity                              | Create Dialog   | `flows/create-dialog.md`   |
-| Confirm an irreversible action (delete, disable) | Confirm Destroy | `flows/confirm-destroy.md` |
+| Scenario                                         | Pattern               | File                             |
+| ------------------------------------------------ | --------------------- | -------------------------------- |
+| Create a new entity                              | Create Dialog         | `flows/create-dialog.md`         |
+| Record work against an already-selected row      | Carried-Context Entry | `flows/carried-context-entry.md` |
+| Confirm an irreversible action (delete, disable) | Confirm Destroy       | `flows/confirm-destroy.md`       |
 
 ## Blocks (functional page sections)
 

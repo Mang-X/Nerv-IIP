@@ -258,10 +258,8 @@ function formatError(error: unknown) {
           <NvDialogContent class="sm:max-w-2xl">
             <NvDialogHeader>
               <NvDialogTitle>补录扫码审计</NvDialogTitle>
-              <NvDialogDescription
-                >记录 PC 端可见的扫码审计事实；PDA
-                扫码界面和离线能力不在本页实现。</NvDialogDescription
-              >
+              <!-- 说明不上界面：仅供读屏播报。 -->
+              <NvDialogDescription class="sr-only">补录一条扫码审计记录。</NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-4" @submit.prevent="submitScan">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">

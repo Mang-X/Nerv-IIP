@@ -22,8 +22,24 @@ const actionStub = vi.hoisted(() => ({
 
 // 列表桩数据带真实 typed 角色字段（partnerType 主角色 + partnerRoles 附加角色）。
 const partnerRows = [
-  { resourceType: 'business-partner', code: 'P-001', displayName: '广汽集团', active: true, partnerType: 'customer', partnerRoles: ['carrier'], taxId: '91440000MA5R', creditLimit: 300000, creditCurrencyCode: 'CNY' },
-  { resourceType: 'business-partner', code: 'P-002', displayName: '中石化润滑油', active: true, partnerType: 'supplier' },
+  {
+    resourceType: 'business-partner',
+    code: 'P-001',
+    displayName: '广汽集团',
+    active: true,
+    partnerType: 'customer',
+    partnerRoles: ['carrier'],
+    taxId: '91440000MA5R',
+    creditLimit: 300000,
+    creditCurrencyCode: 'CNY',
+  },
+  {
+    resourceType: 'business-partner',
+    code: 'P-002',
+    displayName: '中石化润滑油',
+    active: true,
+    partnerType: 'supplier',
+  },
 ]
 
 function stubPartners() {
@@ -31,7 +47,13 @@ function stubPartners() {
     createPartner: stub.createPartner,
     createPartnerError: shallowRef(undefined),
     createPartnerPending: shallowRef(false),
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', resourceType: 'business-partner', skip: 0, take: 10 }),
+    filters: reactive({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      resourceType: 'business-partner',
+      skip: 0,
+      take: 10,
+    }),
     partners: computed(() => partnerRows),
     partnersError: shallowRef(undefined),
     partnersPending: shallowRef(false),
@@ -69,13 +91,19 @@ const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
   // RowActions 内的下拉项已迁到 Pro（NvDropdownMenuItem 是真 .vue 包装，stub 按 Pro 名）。
-  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuItem: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
 }
 // 行操作里 RowActions 的下拉内容 + 二次确认弹窗已迁到 Pro（NvDropdownMenuContent / NvAlertDialogContent
 // 含 reka portal/Teleport，jsdom 下卸载会崩）就地渲染，避免渲染崩溃。
 const alertDialogStubs = {
   NvDropdownMenuContent: { template: '<div><slot /></div>' },
-  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuItem: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
   NvAlertDialog: { template: '<div><slot /></div>' },
   NvAlertDialogTrigger: { template: '<div><slot /></div>' },
   NvAlertDialogContent: { template: '<div><slot /></div>' },
@@ -84,7 +112,10 @@ const alertDialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvAlertDialogAction: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
 }
 // 对话框就地渲染（不 teleport），便于填写表单。
 const dialogStubs = {
@@ -104,7 +135,8 @@ const selectStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   // NvSelectValue 是 reka-ui SelectValue 再导出，组件名仍是 SelectValue。
@@ -116,7 +148,10 @@ const selectStubs = {
 
 // 打开「新建伙伴」并填好默认空的必填项（名称；主角色默认 customer 合法；编码由系统自动生成）。
 async function openAndFillValid(wrapper: ReturnType<typeof mount>) {
-  await wrapper.findAll('button').find((b) => b.text().includes('新建伙伴'))!.trigger('click')
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text().includes('新建伙伴'))!
+    .trigger('click')
   await flushPromises()
   await wrapper.find('#partner-name').setValue('新伙伴公司')
   await flushPromises()
@@ -148,7 +183,10 @@ describe('master-data partners page', () => {
     const wrapper = mount(PartnersPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建伙伴'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建伙伴'))!
+      .trigger('click')
     await flushPromises()
 
     const body = document.body.textContent ?? ''
@@ -161,7 +199,9 @@ describe('master-data partners page', () => {
     const wrapper = mount(PartnersPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
-    const triggers = wrapper.findAll('button').filter((b) => b.attributes('aria-label')?.includes('操作'))
+    const triggers = wrapper
+      .findAll('button')
+      .filter((b) => b.attributes('aria-label')?.includes('操作'))
     expect(triggers.length).toBeGreaterThan(0)
   })
 
@@ -177,11 +217,12 @@ describe('master-data partners page', () => {
 
     // 详情被拉取用于全字段回填（第一行编码 P-001）。
     expect(actionStub.fetchDetail).toHaveBeenCalledWith('P-001')
-    // 对话框进入编辑态：标题含「编辑业务伙伴」，编码只读。
+    // 对话框进入编辑态：标题含「编辑业务伙伴」，编码走只读上下文区（非 disabled 输入框）。
     const body = document.body.textContent ?? ''
     expect(body).toContain('编辑业务伙伴')
-    const codeInput = document.getElementById('partner-code') as HTMLInputElement | null
-    expect(codeInput?.disabled).toBe(true)
+    expect(document.getElementById('partner-code')).toBeNull()
+    const carried = document.body.querySelector('[data-slot="carried-context"]')
+    expect(carried?.textContent).toContain('P-001')
   })
 
   it('blocks create on empty required fields with a summary alert and no create call', async () => {
@@ -190,7 +231,10 @@ describe('master-data partners page', () => {
     await flushPromises()
 
     // 打开「新建伙伴」对话框（重置后 name 为空 → 非法；编码已由系统自动生成）。
-    await wrapper.findAll('button').find((b) => b.text().includes('新建伙伴'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建伙伴'))!
+      .trigger('click')
     await flushPromises()
 
     // 对话框 teleport 到 body，从 body 取就地表单触发提交。
@@ -207,7 +251,9 @@ describe('master-data partners page', () => {
     stub.createPartner.mockClear()
     stub.toastSuccess.mockClear()
     stub.toastError.mockClear()
-    const wrapper = mount(PartnersPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, ...alertDialogStubs } } })
+    const wrapper = mount(PartnersPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, ...alertDialogStubs } },
+    })
     await flushPromises()
     await openAndFillValid(wrapper)
 
@@ -215,7 +261,11 @@ describe('master-data partners page', () => {
     await flushPromises()
 
     expect(stub.createPartner).toHaveBeenCalledTimes(1)
-    const body = stub.createPartner.mock.calls[0]![0] as { code?: string, name: string, partnerType: string }
+    const body = stub.createPartner.mock.calls[0]![0] as {
+      code?: string
+      name: string
+      partnerType: string
+    }
     expect(body.code).toBeUndefined()
     expect(body.name).toBe('新伙伴公司')
     expect(body.partnerType).toBe('customer')
@@ -225,7 +275,9 @@ describe('master-data partners page', () => {
 
   it('客户建档可填写信用额度并提交给 createPartner', async () => {
     stub.createPartner.mockClear()
-    const wrapper = mount(PartnersPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, ...alertDialogStubs } } })
+    const wrapper = mount(PartnersPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, ...alertDialogStubs } },
+    })
     await flushPromises()
     await openAndFillValid(wrapper)
 
@@ -235,7 +287,10 @@ describe('master-data partners page', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    const body = stub.createPartner.mock.calls[0]![0] as { creditLimit?: number, creditCurrencyCode?: string }
+    const body = stub.createPartner.mock.calls[0]![0] as {
+      creditLimit?: number
+      creditCurrencyCode?: string
+    }
     expect(body.creditLimit).toBe(500000)
     expect(body.creditCurrencyCode).toBe('CNY')
   })
@@ -250,7 +305,17 @@ describe('master-data partners page', () => {
       creditLimit: 300000,
       creditCurrencyCode: 'CNY',
     })
-    const wrapper = mount(PartnersPage, { global: { stubs: { ...layoutStub, ...rowActionStubs, ...dialogStubs, ...selectStubs, ...alertDialogStubs } } })
+    const wrapper = mount(PartnersPage, {
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...rowActionStubs,
+          ...dialogStubs,
+          ...selectStubs,
+          ...alertDialogStubs,
+        },
+      },
+    })
     await flushPromises()
 
     const editItem = wrapper.findAll('button').find((b) => b.text().trim() === '编辑')
@@ -270,7 +335,9 @@ describe('master-data partners page', () => {
     stub.toastSuccess.mockClear()
     stub.toastError.mockClear()
     stub.createPartner.mockRejectedValueOnce(new Error('downstream-invalid-response'))
-    const wrapper = mount(PartnersPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, ...alertDialogStubs } } })
+    const wrapper = mount(PartnersPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, ...alertDialogStubs } },
+    })
     await flushPromises()
     await openAndFillValid(wrapper)
 

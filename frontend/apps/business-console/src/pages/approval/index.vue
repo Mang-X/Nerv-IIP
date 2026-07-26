@@ -7,6 +7,7 @@ import type {
   BusinessConsoleApprovalTemplateItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useBusinessApproval } from '@/composables/useBusinessApproval'
@@ -88,6 +89,8 @@ const delegationPager = usePagedList(approval.delegationFilters)
 const templatePager = usePagedList(approval.templateFilters)
 
 const taskDecisionOpen = shallowRef(false)
+// 所选审批任务行：弹窗里的单据/步骤/到期全部从它带出，不让审批人再找一遍。
+const decisionTarget = shallowRef<BusinessConsoleApprovalTaskItem | null>(null)
 const decisionForm = reactive({
   chainId: '',
   stepNo: 0,
@@ -215,6 +218,17 @@ function approverLabel(approverType?: string | null, approverRef?: string | null
   return ref ? `${label} ${ref}` : `${label}待指定`
 }
 
+const decisionContextItems = computed(() => {
+  const row = decisionTarget.value
+  if (!row) return []
+  return [
+    { label: '单据', value: row.documentId ?? row.documentType },
+    { label: '单据类型', value: row.documentType },
+    { label: '当前步骤', value: row.stepName ?? (row.stepNo ? `第 ${row.stepNo} 步` : undefined) },
+    { label: '到期时间', value: row.dueAtUtc ? formatDateTime(row.dueAtUtc) : undefined },
+  ]
+})
+
 function documentLabel(row: { documentType?: string | null; documentId?: string | null }) {
   const id = row.documentId ?? ''
   return id ? `${row.documentType ?? '业务单据'} · ${id}` : (row.documentType ?? '业务单据')
@@ -266,6 +280,7 @@ function formatStatus(value?: boolean | string | null) {
 
 function openTaskDecision(row: BusinessConsoleApprovalTaskItem, decision: string) {
   if (!canManageApprovals.value || !row.chainId || row.stepNo === undefined) return
+  decisionTarget.value = row
   decisionForm.chainId = row.chainId
   decisionForm.stepNo = row.stepNo
   decisionForm.decision = decision
@@ -693,17 +708,20 @@ function toIsoFromLocalInput(value: string) {
       </NvTabs>
     </template>
 
-    <NvDialog v-model:open="taskDecisionOpen">
+    <!-- 仅有审批处理权限时才装载：只读账号既开不了这个弹窗，也不该出现它的决策按钮。 -->
+    <NvDialog v-if="canManageApprovals" v-model:open="taskDecisionOpen">
       <NvDialogContent>
         <NvDialogHeader>
-          <NvDialogTitle>处理审批任务</NvDialogTitle>
-          <NvDialogDescription
-            >{{
-              decisionLabel(decisionForm.decision)
-            }}当前审批步骤，并记录处理意见。</NvDialogDescription
-          >
+          <NvDialogTitle>{{ decisionLabel(decisionForm.decision) }}审批任务</NvDialogTitle>
+          <!-- 审批对象已在下方只读区完整呈现；此处仅供读屏播报。 -->
+          <NvDialogDescription class="sr-only">
+            审批对象：{{ decisionTarget ? documentLabel(decisionTarget) : '' }}。
+          </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitTaskDecision">
+          <!-- 单据 / 步骤 / 类型 / 到期由所选任务行带出，只读呈现，审批人只补一条意见。 -->
+          <CarriedContextSummary label="审批对象" :items="decisionContextItems" />
+
           <NvField>
             <NvFieldLabel for="approval-comment">处理意见</NvFieldLabel>
             <NvInput id="approval-comment" v-model="decisionForm.comment" autocomplete="off" />
@@ -712,9 +730,13 @@ function toIsoFromLocalInput(value: string) {
             <NvDialogClose as-child>
               <NvButton type="button" variant="outline">取消</NvButton>
             </NvDialogClose>
-            <NvButton type="submit" :disabled="approval.resolveTaskPending.value">
+            <NvButton
+              type="submit"
+              :variant="decisionForm.decision === 'Reject' ? 'destructive' : 'default'"
+              :disabled="approval.resolveTaskPending.value"
+            >
               <Spinner v-if="approval.resolveTaskPending.value" aria-hidden="true" />
-              提交处理
+              {{ decisionLabel(decisionForm.decision) }}
             </NvButton>
           </NvDialogFooter>
         </form>
@@ -725,7 +747,7 @@ function toIsoFromLocalInput(value: string) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建审批委托</NvDialogTitle>
-          <NvDialogDescription>把指定人员的审批任务临时委托给代理人。</NvDialogDescription>
+          <NvDialogDescription class="sr-only">设置审批任务的临时代理人。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitDelegation">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
@@ -797,9 +819,7 @@ function toIsoFromLocalInput(value: string) {
       <NvDialogContent class="sm:max-w-2xl">
         <NvDialogHeader>
           <NvDialogTitle>维护审批模板</NvDialogTitle>
-          <NvDialogDescription
-            >维护业务单据审批模板和首个步骤；复杂步骤继续由后端模板能力承载。</NvDialogDescription
-          >
+          <NvDialogDescription class="sr-only">维护审批模板与首个步骤。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitTemplate">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">

@@ -15,7 +15,6 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvField,
-  NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -24,11 +23,11 @@ import {
   Spinner,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { formatDateTime, formatError } from '../shared'
+import { notifyError, notifySuccess } from '@/utils/notify'
+import { formatDateTime } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: '销售机会', requiredPermissions: ['business.erp.sales.read'] },
@@ -72,30 +71,33 @@ const opportunityCells = computed<NvMetricStripCell[]>(() => [
 
 const open = shallowRef(false)
 const form = reactive({ customerCode: '', topic: '' })
-const formError = shallowRef('')
+// 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
+const showErrors = shallowRef(false)
+const invalid = computed(() => ({
+  customerCode: !form.customerCode.trim(),
+  topic: !form.topic.trim(),
+}))
+const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 
 function openDialog() {
   form.customerCode = ''
   form.topic = ''
-  formError.value = ''
+  showErrors.value = false
   open.value = true
 }
 
 async function submit() {
-  if (!form.customerCode.trim() || !form.topic.trim()) {
-    formError.value = '请填写客户与商机主题。'
-    return
-  }
+  showErrors.value = true
+  if (!canSubmit.value) return
   try {
     await opportunities.openOpportunity({
       customerCode: form.customerCode.trim(),
       topic: form.topic.trim(),
     })
     open.value = false
-    toast.success('销售机会已开立')
-  } catch {
-    formError.value =
-      formatError(opportunities.openOpportunityError.value) || '开立失败，请稍后重试。'
+    notifySuccess('销售机会已开立')
+  } catch (error) {
+    notifyError(opportunities.openOpportunityError.value ?? error, '开立机会失败，请稍后重试。')
   }
 }
 </script>
@@ -160,29 +162,43 @@ async function submit() {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>开立销售机会</NvDialogTitle>
-          <NvDialogDescription
-            >登记客户线索与机会主题，作为报价前的销售上下文。</NvDialogDescription
-          >
+          <NvDialogDescription class="sr-only">登记客户与机会主题。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submit">
           <NvFieldGroup>
-            <NvField
-              ><NvFieldLabel for="erp-opp-customer">客户</NvFieldLabel
-              ><NvInput id="erp-opp-customer" v-model="form.customerCode" autocomplete="off"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-opp-topic">机会主题</NvFieldLabel
-              ><NvInput id="erp-opp-topic" v-model="form.topic" autocomplete="off"
-            /></NvField>
+            <NvField>
+              <NvFieldLabel for="erp-opp-customer">
+                客户 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-opp-customer"
+                v-model="form.customerCode"
+                autocomplete="off"
+                :data-invalid="showErrors && invalid.customerCode ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-opp-topic">
+                机会主题 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-opp-topic"
+                v-model="form.topic"
+                autocomplete="off"
+                :data-invalid="showErrors && invalid.topic ? '' : undefined"
+              />
+            </NvField>
           </NvFieldGroup>
-          <NvFieldError v-if="formError" :errors="[formError]" />
+          <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+            请填写客户与机会主题。
+          </p>
           <NvDialogFooter>
             <NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             >
             <NvButton type="submit" :disabled="opportunities.openOpportunityPending.value">
               <Spinner v-if="opportunities.openOpportunityPending.value" aria-hidden="true" />
-              开立
+              开立机会
             </NvButton>
           </NvDialogFooter>
         </form>
