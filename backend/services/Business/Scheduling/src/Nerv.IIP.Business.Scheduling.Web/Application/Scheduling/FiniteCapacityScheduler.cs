@@ -5,9 +5,13 @@ using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 
-public sealed class FiniteCapacityScheduler
+public sealed class FiniteCapacityScheduler : ISchedulingEngine
 {
     public const string AlgorithmVersion = "aps-lite-v1";
+
+    public string EngineId => "finite-capacity";
+
+    public string Version => AlgorithmVersion;
 
     public SchedulePlanContract Schedule(
         SchedulingProblemContract problem,

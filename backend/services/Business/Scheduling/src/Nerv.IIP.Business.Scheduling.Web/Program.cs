@@ -88,9 +88,14 @@ try
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
     builder.Services.AddSingleton<FiniteCapacityScheduler>();
+    builder.Services.AddSingleton<ISchedulingEngine>(services =>
+        services.GetRequiredService<FiniteCapacityScheduler>());
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
     builder.Services.AddScoped<ISchedulingOperationOverrideOverlay, SchedulingOperationOverrideOverlay>();
+    builder.Services.AddScoped<ISchedulingRuleProvider, DefaultSchedulingRuleProvider>();
+    builder.Services.AddScoped<ISchedulingConstraintProvider, DefaultSchedulingConstraintProvider>();
+    builder.Services.AddScoped<SchedulingPlanGenerator>();
     builder.Services.AddScoped<OrderUrgencyService>();
     builder.Services.AddSingleton(new OrderUrgencyRetentionWorkerIdentity(
         $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}"));
