@@ -16,6 +16,9 @@ public static class WorldBibleSpec
     /// <summary>热销 8 款的 V2（换弹簧供应商）自 2026-07-01 生效，V1 同日前一天失效。</summary>
     public static readonly DateOnly V2EffectiveDate = new(2026, 7, 1);
 
+    /// <summary>热销 8 款的 V1 在 V2 生效前一天失效，形成可讲述的版本演进。</summary>
+    public static readonly DateOnly HotV1ValidTo = new(2026, 6, 30);
+
     public const string V1Revision = "1";
     public const string V2Revision = "2";
 
@@ -40,20 +43,20 @@ public static class WorldBibleSpec
     public static readonly string[] HotPlatformCodes = ["P1", "S1"];
 
     /// <summary>8 道标准工序（设定集 §4：下料→CNC 精车→精磨→阀系预装→总装→电泳→性能终检→包装）。</summary>
-    public static readonly WorldBibleStandardOperation[] StandardOperations =
+    public static readonly IReadOnlyList<WorldBibleStandardOperation> StandardOperations =
     [
-        new(10, "OP-WB-CUT", "下料", 15, 2, 5, false),
-        new(20, "OP-WB-CNC", "CNC 精车", 20, 6, 5, false),
-        new(30, "OP-WB-GRD", "精磨", 12, 4, 4, false),
-        new(40, "OP-WB-VLV", "阀系预装", 8, 3, 3, false),
-        new(50, "OP-WB-ASM", "总装", 10, 5, 4, false),
-        new(60, "OP-WB-CTG", "电泳涂装", 25, 3, 8, false),
-        new(70, "OP-WB-TST", "性能终检", 6, 2, 2, true),
-        new(80, "OP-WB-PKG", "包装", 5, 1, 2, false),
+        new(10, "OP-WB-CUT", "下料", "WC-TUB-01", 15, 2, 5, false),
+        new(20, "OP-WB-CNC", "CNC 精车", "WC-ROD-01", 20, 6, 5, false),
+        new(30, "OP-WB-GRD", "精磨", "WC-GRD-01", 12, 4, 4, false),
+        new(40, "OP-WB-VLV", "阀系预装", "WC-VA-01", 8, 3, 3, false),
+        new(50, "OP-WB-ASM", "总装", "WC-FA-01", 10, 5, 4, false),
+        new(60, "OP-WB-CTG", "电泳涂装", "WC-CT-01", 25, 3, 8, false),
+        new(70, "OP-WB-TST", "性能终检", "WC-TS-01", 6, 2, 2, true),
+        new(80, "OP-WB-PKG", "包装", "WC-PK-01", 5, 1, 2, false),
     ];
 
     /// <summary>24 个成品的完整工程形状，按平台 × 类型 × 左右确定性展开。</summary>
-    public static readonly WorldBibleProduct[] Products = BuildProducts();
+    public static readonly IReadOnlyList<WorldBibleProduct> Products = BuildProducts();
 
     public static string EngineeringBomCode(string skuCode) => $"EBOM-{skuCode}";
 
@@ -63,7 +66,7 @@ public static class WorldBibleSpec
 
     public static string VersionId(string code, string revision) => $"{code}:{revision}";
 
-    private static WorldBibleProduct[] BuildProducts()
+    private static IReadOnlyList<WorldBibleProduct> BuildProducts()
     {
         var products = new List<WorldBibleProduct>(24);
         for (var platformIndex = 0; platformIndex < Platforms.Length; platformIndex++)
@@ -114,6 +117,7 @@ public sealed record WorldBibleStandardOperation(
     int Sequence,
     string OperationCode,
     string OperationName,
+    string DefaultWorkCenterCode,
     int SetupMinutes,
     int RunMinutes,
     int TeardownMinutes,
