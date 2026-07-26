@@ -45,7 +45,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         CheckOrderPopulation(plans, orders, failures);
         CheckChainPerOrder(plansByOrderNo, orders, deliveries, receivables, cashReceipts, voucherNos, asOfDate, failures);
         CheckDistribution(plans, failures);
-        CheckLedgerTotals(plans, receivables, cashReceipts, failures);
+        CheckLedgerTotals(orders, deliveries, receivables, cashReceipts, failures);
 
         if (failures.Count > 0)
         {
@@ -202,16 +202,25 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 failures.Add($"{salesOrderNo} 订单金额 {order.TotalAmount} 与计划 {plan.TotalAmount} 不符。");
             }
 
-            if (!plan.HasDelivery)
+            // 这里刻意**按库内既有事实**分流，而不是按计划的阶段：同一个库在更晚的日期重跑时，
+            // 订单总数变大会把老单的计划阶段往前推（在制 → 已结案），但库里的行早已写定不会重写。
+            // 「计划说该发货、库里没有发货单」在那种场景下是正常的，不该让 fail-closed 校验误杀。
+            // 真正要守的是链路自洽：有发货就必须有配套的应收与凭证，没发货就一条都不能有。
+            if (!deliveries.ContainsKey(salesOrderNo))
             {
-                if (deliveries.ContainsKey(salesOrderNo))
-                {
-                    failures.Add($"{salesOrderNo} 处于 {plan.Stage} 阶段却存在发货单。");
-                }
-
                 if (receivables.ContainsKey(salesOrderNo))
                 {
-                    failures.Add($"{salesOrderNo} 处于 {plan.Stage} 阶段却存在应收。");
+                    failures.Add($"{salesOrderNo} 没有发货单却存在应收。");
+                }
+
+                if (voucherNos.Contains(WorldHistorySpec.RevenueVoucherNo(plan.Index)))
+                {
+                    failures.Add($"{salesOrderNo} 没有发货单却存在收入凭证。");
+                }
+
+                if (order.DeliveredQuantity != 0m)
+                {
+                    failures.Add($"{salesOrderNo} 没有发货单却记录了已发数量 {order.DeliveredQuantity}。");
                 }
 
                 continue;
@@ -307,13 +316,19 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             failures.Add($"{salesOrderNo} 已发货却缺少收入凭证 {revenueVoucherNo}。");
         }
 
+        // 同上：按库内是否存在收款单分流，而不是按计划阶段。
         var collectionVoucherNo = WorldHistorySpec.CollectionVoucherNo(plan.Index);
-        if (plan.IsCollected)
+        if (cashReceipts.TryGetValue(receivable.ReceivableNo, out var cashReceipt))
         {
             if (Math.Abs(receivable.CollectedAmount - receivable.Amount) > AmountTolerance)
             {
                 failures.Add(
-                    $"{salesOrderNo} 应为已收款结案，应收 {receivable.Amount} 实收 {receivable.CollectedAmount}。");
+                    $"{salesOrderNo} 有收款单却未结清：应收 {receivable.Amount}，实收 {receivable.CollectedAmount}。");
+            }
+
+            if (Math.Abs(cashReceipt.Amount - receivable.Amount) > AmountTolerance)
+            {
+                failures.Add($"{salesOrderNo} 收款单金额 {cashReceipt.Amount} 与应收 {receivable.Amount} 不符。");
             }
 
             if (!voucherNos.Contains(collectionVoucherNo))
@@ -321,15 +336,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 failures.Add($"{salesOrderNo} 已收款却缺少收款凭证 {collectionVoucherNo}。");
             }
 
-            if (!cashReceipts.TryGetValue(receivable.ReceivableNo, out var cashReceipt))
-            {
-                failures.Add($"{salesOrderNo} 已收款却没有收款单。");
-            }
-            else if (Math.Abs(cashReceipt.Amount - receivable.Amount) > AmountTolerance)
-            {
-                failures.Add($"{salesOrderNo} 收款单金额 {cashReceipt.Amount} 与应收 {receivable.Amount} 不符。");
-            }
-            else if (delivery.ShippedAtUtc is not null && cashReceipt.RegisteredAtUtc < delivery.ShippedAtUtc)
+            if (delivery.ShippedAtUtc is not null && cashReceipt.RegisteredAtUtc < delivery.ShippedAtUtc)
             {
                 failures.Add($"{salesOrderNo} 收款时间早于发运时间。");
             }
@@ -339,12 +346,12 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
 
         if (receivable.CollectedAmount != 0m)
         {
-            failures.Add($"{salesOrderNo} 应为已发货待收款，却已收 {receivable.CollectedAmount}。");
+            failures.Add($"{salesOrderNo} 没有收款单却已收 {receivable.CollectedAmount}。");
         }
 
         if (voucherNos.Contains(collectionVoucherNo))
         {
-            failures.Add($"{salesOrderNo} 未收款却存在收款凭证 {collectionVoucherNo}。");
+            failures.Add($"{salesOrderNo} 没有收款单却存在收款凭证 {collectionVoucherNo}。");
         }
     }
 
@@ -382,26 +389,29 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         }
     }
 
+    /// <summary>
+    /// 总账层面的横向对账，全部**从库内事实推导**（不引用计划阶段），
+    /// 因此同一个库在更晚的日期重跑也不会误判。
+    /// </summary>
     private static void CheckLedgerTotals(
-        IReadOnlyList<WorldHistoryOrderPlan> plans,
+        Dictionary<string, OrderProjection> orders,
+        Dictionary<string, DeliveryProjection> deliveries,
         Dictionary<string, ReceivableProjection> receivables,
         Dictionary<string, CashReceiptProjection> cashReceipts,
         List<string> failures)
     {
-        var expectedReceivable = plans.Where(plan => plan.HasDelivery).Sum(plan => plan.TotalAmount);
+        // 应收总额 = 所有已发货订单的金额之和。
+        var expectedReceivable = deliveries.Keys
+            .Where(orders.ContainsKey)
+            .Sum(salesOrderNo => orders[salesOrderNo].TotalAmount);
         var actualReceivable = receivables.Values.Sum(x => x.Amount);
         if (Math.Abs(expectedReceivable - actualReceivable) > AmountTolerance)
         {
-            failures.Add($"应收总额不平：计划 {expectedReceivable}，库内 {actualReceivable}。");
+            failures.Add($"应收总额不平：已发货订单合计 {expectedReceivable}，应收合计 {actualReceivable}。");
         }
 
-        var expectedCollected = plans.Where(plan => plan.IsCollected).Sum(plan => plan.TotalAmount);
+        // 收款单合计 = 应收上的已收合计。
         var actualCollected = cashReceipts.Values.Sum(x => x.Amount);
-        if (Math.Abs(expectedCollected - actualCollected) > AmountTolerance)
-        {
-            failures.Add($"收款总额不平：计划 {expectedCollected}，库内 {actualCollected}。");
-        }
-
         var actualCollectedOnReceivables = receivables.Values.Sum(x => x.CollectedAmount);
         if (Math.Abs(actualCollected - actualCollectedOnReceivables) > AmountTolerance)
         {

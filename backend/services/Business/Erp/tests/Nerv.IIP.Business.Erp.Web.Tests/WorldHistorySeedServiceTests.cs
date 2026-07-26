@@ -100,6 +100,32 @@ public sealed class WorldHistorySeedServiceTests
     }
 
     [Fact]
+    public async Task Validator_still_passes_when_the_same_database_is_reseeded_on_a_later_date()
+    {
+        // 同一个库在更晚的日期重跑：订单总数变大会把老单的**计划**阶段往前推（在制 → 已结案），
+        // 但库里已写定的行不会重写。校验器必须按库内既有事实分流，否则这里会误报「该发货却没发货单」。
+        var laterDate = AsOfDate.AddDays(21);
+
+        // 先证明这个测试确实在考验那件事：同一张订单的计划阶段在两个日期下不同。
+        // 否则本测试可能在某次调参后悄悄退化成一次普通的幂等重跑。
+        var before = WorldHistorySpec.BuildOrderPlans(AsOfDate, TestScale).ToDictionary(x => x.SalesOrderNo, StringComparer.Ordinal);
+        var after = WorldHistorySpec.BuildOrderPlans(laterDate, TestScale);
+        Assert.Contains(after, plan => before.TryGetValue(plan.SalesOrderNo, out var original) && original.Stage != plan.Stage);
+
+        await using var provider = CreateProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var seed = new WorldHistorySeedService(dbContext);
+
+        await seed.SeedAsync("org-001", "env-dev", AsOfDate, TestScale);
+        var later = await seed.SeedAsync("org-001", "env-dev", laterDate, TestScale);
+
+        // 晚三周重跑会补出新一批订单，并且新旧两批一起通过校验。
+        Assert.True(later.SalesOrdersWritten > 0);
+        Assert.Equal(WorldHistorySpec.TotalOrders(laterDate, TestScale), later.Validation.OrdersChecked);
+    }
+
+    [Fact]
     public async Task History_seed_never_touches_the_reserved_demo_or_scale_number_segments()
     {
         await using var provider = CreateProvider();
