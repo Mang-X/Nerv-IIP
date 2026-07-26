@@ -24,7 +24,7 @@ public sealed class DeviceAssetReferenceValidationTests
             "SUP-VALID",
             "customer",
             "Supplier-capable partner",
-            ["customer", "supplier"],
+            ["customer", "SuPpLiEr"],
             null));
         var parent = DeviceAsset.Register(
             OrganizationId,

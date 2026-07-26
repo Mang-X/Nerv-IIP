@@ -159,7 +159,8 @@ public sealed class UpdateMasterDataResourceCommandHandler(
         CancellationToken cancellationToken)
     {
         var type = GetMasterDataResourceDetailQueryHandler.NormalizeType(request.ResourceType);
-        return type == "device-asset" && referenceScopeCoordinator is not null
+        var guardsSharedReferences = type is "device-asset" or "business-partner";
+        return guardsSharedReferences && referenceScopeCoordinator is not null
             ? referenceScopeCoordinator.ExecuteAsync(
                 request.OrganizationId,
                 request.EnvironmentId,
@@ -244,6 +245,10 @@ public sealed class UpdateMasterDataResourceCommandHandler(
                 return Detail(conversion);
             case "business-partner":
                 var partner = await FindBusinessPartnerAsync(request, cancellationToken);
+                await deviceAssetReferenceValidator.EnsureSupplierRoleRemovalAllowedAsync(
+                    partner,
+                    ProposedPartnerRoles(partner, request),
+                    cancellationToken);
                 var taxId = string.IsNullOrWhiteSpace(request.TaxId) ? null : request.TaxId.Trim();
                 if (taxId is not null &&
                     !string.Equals(taxId, partner.TaxId, StringComparison.Ordinal) &&
@@ -428,6 +433,32 @@ public sealed class UpdateMasterDataResourceCommandHandler(
             default:
                 throw new KnownException($"Unsupported master data resource type '{request.ResourceType}'.");
         }
+    }
+
+    private static IReadOnlyCollection<string> ProposedPartnerRoles(
+        BusinessPartner partner,
+        UpdateMasterDataResourceCommand request)
+    {
+        if (request.PartnerRoles is not null)
+        {
+            return request.PartnerRoles;
+        }
+
+        if (request.PartnerType is null)
+        {
+            return partner.PartnerRoles;
+        }
+
+        return
+        [
+            request.PartnerType,
+            .. partner.PartnerRoles
+                .Skip(1)
+                .Where(role => !string.Equals(
+                    role,
+                    request.PartnerType,
+                    StringComparison.OrdinalIgnoreCase)),
+        ];
     }
 
     private async Task<Sku> FindSkuAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
@@ -712,10 +743,13 @@ public sealed class UpdateMasterDataResourceCommandHandler(
 public sealed class SetMasterDataResourceEnabledCommandHandler(
     ApplicationDbContext dbContext,
     IMasterDataDownstreamReferenceChecker? downstreamReferenceChecker = null,
-    IMasterDataReferenceScopeCoordinator? referenceScopeCoordinator = null)
+    IMasterDataReferenceScopeCoordinator? referenceScopeCoordinator = null,
+    IDeviceAssetReferenceValidator? deviceAssetReferenceValidator = null)
     : ICommandHandler<SetMasterDataResourceEnabledCommand, MasterDataResourceDetail>
 {
     private readonly IMasterDataDownstreamReferenceChecker downstreamReferenceChecker = downstreamReferenceChecker ?? NullMasterDataDownstreamReferenceChecker.Instance;
+    private readonly IDeviceAssetReferenceValidator deviceAssetReferenceValidator =
+        deviceAssetReferenceValidator ?? new DeviceAssetReferenceValidator(dbContext);
 
     public Task<MasterDataResourceDetail> Handle(
         SetMasterDataResourceEnabledCommand request,
@@ -728,8 +762,8 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
         if (string.IsNullOrWhiteSpace(request.OperationId)) throw new KnownException("A governed lifecycle operation identity is required.");
         var type = GetMasterDataResourceDetailQueryHandler.NormalizeType(request.ResourceType);
         var guardsSharedReferences =
-            !request.Enabled &&
-            (type == "business-partner" || type == "device-asset");
+            type == "device-asset" ||
+            (!request.Enabled && type == "business-partner");
         return guardsSharedReferences && referenceScopeCoordinator is not null
             ? referenceScopeCoordinator.ExecuteAsync(
                 request.OrganizationId,
@@ -856,7 +890,13 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
                 var device = await FindAsync(dbContext.DeviceAssets, request, cancellationToken);
                 if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(device);
                 if (device.Disabled == !request.Enabled) { AddAudit(request, type, device.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(device); }
-                if (!request.Enabled)
+                if (request.Enabled)
+                {
+                    await deviceAssetReferenceValidator.ValidateStoredReferencesForEnableAsync(
+                        device,
+                        cancellationToken);
+                }
+                else
                 {
                     await EnsureDeviceAssetIsNotReferencedAsync(request, device.Id.ToString(), cancellationToken);
                 }
@@ -1043,12 +1083,18 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
 
     private async Task EnsureDeviceAssetIsNotReferencedAsync(SetMasterDataResourceEnabledCommand request, string publicId, CancellationToken cancellationToken)
     {
-        var referencedByChildDevice = await dbContext.DeviceAssets.AnyAsync(x =>
-            x.OrganizationId == request.OrganizationId &&
-            x.EnvironmentId == request.EnvironmentId &&
-            !x.Disabled &&
-            (x.ParentDeviceId == request.Code || x.ParentDeviceId == publicId),
-            cancellationToken);
+        var storedParentReferences = await dbContext.DeviceAssets
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                !x.Disabled &&
+                x.ParentDeviceId != string.Empty)
+            .Select(x => x.ParentDeviceId)
+            .ToArrayAsync(cancellationToken);
+        var parentPublicId = Guid.Parse(publicId);
+        var referencedByChildDevice = storedParentReferences.Any(stored =>
+            string.Equals(stored.Trim(), request.Code, StringComparison.Ordinal) ||
+            (Guid.TryParse(stored.Trim(), out var parsed) && parsed == parentPublicId));
         if (referencedByChildDevice)
         {
             throw new KnownException($"Device asset '{request.Code}' cannot be disabled because it is referenced by active child device asset records.");

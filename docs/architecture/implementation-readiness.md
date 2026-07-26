@@ -4,9 +4,9 @@
 
 ## DeviceAsset 供应商与父设备引用闭环（MAN-424 / #772）
 
-BusinessMasterData 的 DeviceAsset 注册和更新现在对 `supplierPartnerCode` 与 `parentDeviceId` fail closed：供应商必须是同 organization/environment 内 active 且含 `supplier` 角色的 BusinessPartner；父设备必须是同 scope active DeviceAsset 的公共 GUID，写入前规范化为 canonical GUID，并拒绝自引用、直接/多级循环、缺失或停用祖先以及既存的畸形/循环祖先链。更新未提交这两个字段时继续保留既有值，避免历史数据被无关字段修改追溯性阻断；显式空字符串仍表示清除引用。
+BusinessMasterData 的 DeviceAsset 注册、更新和从 disabled 重新启用现在都对 `supplierPartnerCode` 与 `parentDeviceId` fail closed：供应商必须是同 organization/environment 内 active 且含大小写不敏感 `supplier` 角色的 BusinessPartner；父设备必须是同 scope active DeviceAsset 的公共 GUID，写入前规范化为 canonical GUID，并拒绝自引用、直接/多级循环、缺失或停用祖先以及既存的畸形/循环祖先链。更新未提交这两个字段时继续保留既有值，避免历史数据被无关字段修改追溯性阻断；显式空字符串仍表示清除引用。被 active DeviceAsset 引用的 BusinessPartner 不允许移除 supplier 角色；保留 supplier 的多角色更新继续允许。
 
-DeviceAsset 注册/更新，以及 BusinessPartner 或父 DeviceAsset 停用前的被引用检查，按同一 organization/environment PostgreSQL transaction-scoped advisory lock 串行，并在锁释放前完成校验、聚合变更与保存。真实 PostgreSQL 并发回归覆盖双向父子赋值、供应商赋值与停用竞态、父设备赋值与停用竞态，证明两条冲突路径不能同时提交并留下无效 active 引用。provider-light 测试只验证命令与校验逻辑，不作为串行化证据。本项未新增或修改 endpoint、schema、migration、公开契约或 facade declaration。
+DeviceAsset 注册/更新/重新启用、BusinessPartner 角色更新，以及 BusinessPartner 或父 DeviceAsset 停用前的被引用检查，按同一 organization/environment PostgreSQL transaction-scoped advisory lock 串行，并在锁释放前完成校验、聚合变更与保存。父设备停用门禁按 GUID 语义识别既有大写、花括号等可解析存量写法，不依赖字符串格式相等。真实 PostgreSQL 并发回归使用 caller-owned transaction 覆盖双向父子赋值、供应商/父设备赋值与停用、供应商/父设备停用与子设备重新启用、供应商赋值与 supplier 角色移除竞态，证明冲突路径不能同时提交并留下无效 active 引用；同时验证协调器不提交/回滚调用方事务、锁内保存、取消传播和调用方 rollback 后无残留变更。provider-light 测试只验证命令与校验逻辑，不作为串行化证据。本项未新增或修改 endpoint、schema、migration、公开契约或 facade declaration。
 
 ## Quality 复检历史与 MES hold 自动释放闭环（MAN-516 / #954）
 

@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 
 namespace Nerv.IIP.Business.MasterData.Infrastructure;
@@ -19,6 +20,15 @@ public interface IDeviceAssetReferenceValidator
         DeviceAsset device,
         string? supplierPartnerCode,
         string? parentDeviceId,
+        CancellationToken cancellationToken);
+
+    Task ValidateStoredReferencesForEnableAsync(
+        DeviceAsset device,
+        CancellationToken cancellationToken);
+
+    Task EnsureSupplierRoleRemovalAllowedAsync(
+        BusinessPartner partner,
+        IReadOnlyCollection<string> proposedRoles,
         CancellationToken cancellationToken);
 }
 
@@ -70,6 +80,48 @@ public sealed class DeviceAssetReferenceValidator(ApplicationDbContext dbContext
         return new DeviceAssetReferenceValidationResult(normalizedSupplierCode, normalizedParentId);
     }
 
+    public async Task ValidateStoredReferencesForEnableAsync(
+        DeviceAsset device,
+        CancellationToken cancellationToken)
+    {
+        await NormalizeAndValidateSupplierAsync(
+            device.OrganizationId,
+            device.EnvironmentId,
+            device.SupplierPartnerCode,
+            cancellationToken);
+        await NormalizeAndValidateParentAsync(
+            device.OrganizationId,
+            device.EnvironmentId,
+            device.ParentDeviceId,
+            device.Id,
+            cancellationToken);
+    }
+
+    public async Task EnsureSupplierRoleRemovalAllowedAsync(
+        BusinessPartner partner,
+        IReadOnlyCollection<string> proposedRoles,
+        CancellationToken cancellationToken)
+    {
+        var isSupplier = partner.PartnerRoles.Any(IsSupplierRole);
+        var remainsSupplier = proposedRoles.Any(IsSupplierRole);
+        if (!isSupplier || remainsSupplier)
+        {
+            return;
+        }
+
+        var referenced = await dbContext.DeviceAssets.AnyAsync(
+            x => x.OrganizationId == partner.OrganizationId &&
+                x.EnvironmentId == partner.EnvironmentId &&
+                !x.Disabled &&
+                x.SupplierPartnerCode == partner.Code,
+            cancellationToken);
+        if (referenced)
+        {
+            throw new KnownException(
+                $"Business partner '{partner.Code}' cannot remove the supplier role because it is referenced by active device asset records.");
+        }
+    }
+
     private async Task<string> NormalizeAndValidateSupplierAsync(
         string organizationId,
         string environmentId,
@@ -89,8 +141,7 @@ public sealed class DeviceAssetReferenceValidator(ApplicationDbContext dbContext
                 !x.Disabled,
             cancellationToken);
         if (supplier is null ||
-            !supplier.PartnerRoles.Any(role =>
-                string.Equals(role, "supplier", StringComparison.OrdinalIgnoreCase)))
+            !supplier.PartnerRoles.Any(IsSupplierRole))
         {
             throw new KnownException(
                 $"Device asset supplier '{normalizedSupplierCode}' must reference an active supplier partner in the same organization and environment.");
@@ -179,4 +230,7 @@ public sealed class DeviceAssetReferenceValidator(ApplicationDbContext dbContext
 
         throw new KnownException("Device asset parent hierarchy exceeds the supported depth.");
     }
+
+    private static bool IsSupplierRole(string role) =>
+        string.Equals(role, "supplier", StringComparison.OrdinalIgnoreCase);
 }

@@ -7,6 +7,9 @@ using Nerv.IIP.Business.MasterData.Infrastructure;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Testing.PostgreSql;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
+using NetCorePal.Extensions.Primitives;
+using Npgsql;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
@@ -23,7 +26,7 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
             await setup.SaveChangesAsync();
         }
 
-        var barrier = new AsyncBarrier(2);
+        var commitWindow = new AsyncCommitWindow(2);
         await using var firstContext = CreateContext(database.ConnectionString);
         await using var secondContext = CreateContext(database.ConnectionString);
         var first = await firstContext.DeviceAssets.SingleAsync(x => x.Code == "DEV-A");
@@ -34,15 +37,15 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
                 new UpdateMasterDataResourceCommand(
                     OrganizationId, EnvironmentId, "device-asset", first.Code,
                     ParentDeviceId: second.Id.ToString()),
-                barrier),
+                commitWindow),
             RunUpdateAsync(
                 secondContext,
                 new UpdateMasterDataResourceCommand(
                     OrganizationId, EnvironmentId, "device-asset", second.Code,
                     ParentDeviceId: first.Id.ToString()),
-                barrier));
+                commitWindow));
 
-        Assert.Single(outcomes, outcome => outcome is not null);
+        AssertSingleKnownException(outcomes);
         await using var verification = CreateContext(database.ConnectionString);
         await AssertParentReferencesAreValidAsync(verification);
     }
@@ -64,7 +67,7 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
             await setup.SaveChangesAsync();
         }
 
-        var barrier = new AsyncBarrier(2);
+        var commitWindow = new AsyncCommitWindow(2);
         await using var assignmentContext = CreateContext(database.ConnectionString);
         await using var disableContext = CreateContext(database.ConnectionString);
         var outcomes = await Task.WhenAll(
@@ -73,7 +76,7 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
                 new UpdateMasterDataResourceCommand(
                     OrganizationId, EnvironmentId, "device-asset", "DEV-SUPPLIER-RACE",
                     SupplierPartnerCode: "SUP-RACE"),
-                barrier),
+                commitWindow),
             RunLifecycleAsync(
                 disableContext,
                 new SetMasterDataResourceEnabledCommand(
@@ -85,9 +88,9 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
                     "test:postgres",
                     "disable-supplier-race",
                     Reason: "race validation"),
-                barrier));
+                commitWindow));
 
-        Assert.Single(outcomes, outcome => outcome is not null);
+        AssertSingleKnownException(outcomes);
         await using var verification = CreateContext(database.ConnectionString);
         await AssertSupplierReferencesAreValidAsync(verification);
     }
@@ -103,7 +106,7 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
             await setup.SaveChangesAsync();
         }
 
-        var barrier = new AsyncBarrier(2);
+        var commitWindow = new AsyncCommitWindow(2);
         await using var assignmentContext = CreateContext(database.ConnectionString);
         await using var disableContext = CreateContext(database.ConnectionString);
         var parentId = (await assignmentContext.DeviceAssets.SingleAsync(x => x.Code == "DEV-PARENT-RACE")).Id;
@@ -113,7 +116,7 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
                 new UpdateMasterDataResourceCommand(
                     OrganizationId, EnvironmentId, "device-asset", "DEV-CHILD-RACE",
                     ParentDeviceId: parentId.ToString()),
-                barrier),
+                commitWindow),
             RunLifecycleAsync(
                 disableContext,
                 new SetMasterDataResourceEnabledCommand(
@@ -125,18 +128,278 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
                     "test:postgres",
                     "disable-parent-race",
                     Reason: "race validation"),
-                barrier));
+                commitWindow));
 
-        Assert.Single(outcomes, outcome => outcome is not null);
+        AssertSingleKnownException(outcomes);
         await using var verification = CreateContext(database.ConnectionString);
         await AssertParentReferencesAreValidAsync(verification);
+    }
+
+    [PostgresFact]
+    public async Task SupplierDisableRacingChildReEnable_CannotCommitInvalidReference()
+    {
+        await using var database = await CreateDatabaseAsync();
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            await setup.Database.MigrateAsync();
+            var supplier = BusinessPartner.Create(
+                OrganizationId,
+                EnvironmentId,
+                "SUP-REENABLE-RACE",
+                "supplier",
+                "Re-enable race supplier");
+            var child = NewDevice("DEV-REENABLE-SUPPLIER-RACE")
+                .WithLedger(
+                    null,
+                    null,
+                    string.Empty,
+                    null,
+                    supplier.Code,
+                    string.Empty,
+                    string.Empty,
+                    "LINE-1",
+                    string.Empty,
+                    string.Empty,
+                    null);
+            child.Disable("test setup");
+            setup.BusinessPartners.Add(supplier);
+            setup.DeviceAssets.Add(child);
+            await setup.SaveChangesAsync();
+        }
+
+        var commitWindow = new AsyncCommitWindow(2);
+        await using var enableContext = CreateContext(database.ConnectionString);
+        await using var disableContext = CreateContext(database.ConnectionString);
+        var outcomes = await Task.WhenAll(
+            RunLifecycleAsync(
+                enableContext,
+                new SetMasterDataResourceEnabledCommand(
+                    OrganizationId,
+                    EnvironmentId,
+                    "device-asset",
+                    "DEV-REENABLE-SUPPLIER-RACE",
+                    true,
+                    "test:postgres",
+                    "reenable-supplier-race",
+                    Reason: "race validation"),
+                commitWindow),
+            RunLifecycleAsync(
+                disableContext,
+                new SetMasterDataResourceEnabledCommand(
+                    OrganizationId,
+                    EnvironmentId,
+                    "business-partner",
+                    "SUP-REENABLE-RACE",
+                    false,
+                    "test:postgres",
+                    "disable-reenable-supplier-race",
+                    Reason: "race validation"),
+                commitWindow));
+
+        AssertSingleKnownException(outcomes);
+        await using var verification = CreateContext(database.ConnectionString);
+        await AssertSupplierReferencesAreValidAsync(verification);
+    }
+
+    [PostgresFact]
+    public async Task ParentDisableRacingChildReEnable_CannotCommitInvalidReference()
+    {
+        await using var database = await CreateDatabaseAsync();
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            await setup.Database.MigrateAsync();
+            var parent = NewDevice("DEV-REENABLE-PARENT-RACE");
+            setup.DeviceAssets.Add(parent);
+            await setup.SaveChangesAsync();
+            var child = NewDevice("DEV-REENABLE-CHILD-RACE")
+                .WithLedger(
+                    null,
+                    null,
+                    string.Empty,
+                    null,
+                    string.Empty,
+                    string.Empty,
+                    string.Empty,
+                    "LINE-1",
+                    string.Empty,
+                    parent.Id.ToString(),
+                    null);
+            child.Disable("test setup");
+            setup.DeviceAssets.Add(child);
+            await setup.SaveChangesAsync();
+        }
+
+        var commitWindow = new AsyncCommitWindow(2);
+        await using var enableContext = CreateContext(database.ConnectionString);
+        await using var disableContext = CreateContext(database.ConnectionString);
+        var outcomes = await Task.WhenAll(
+            RunLifecycleAsync(
+                enableContext,
+                new SetMasterDataResourceEnabledCommand(
+                    OrganizationId,
+                    EnvironmentId,
+                    "device-asset",
+                    "DEV-REENABLE-CHILD-RACE",
+                    true,
+                    "test:postgres",
+                    "reenable-parent-race",
+                    Reason: "race validation"),
+                commitWindow),
+            RunLifecycleAsync(
+                disableContext,
+                new SetMasterDataResourceEnabledCommand(
+                    OrganizationId,
+                    EnvironmentId,
+                    "device-asset",
+                    "DEV-REENABLE-PARENT-RACE",
+                    false,
+                    "test:postgres",
+                    "disable-reenable-parent-race",
+                    Reason: "race validation"),
+                commitWindow));
+
+        AssertSingleKnownException(outcomes);
+        await using var verification = CreateContext(database.ConnectionString);
+        await AssertParentReferencesAreValidAsync(verification);
+    }
+
+    [PostgresFact]
+    public async Task SupplierAssignmentRacingRoleRemoval_CannotCommitInvalidReference()
+    {
+        await using var database = await CreateDatabaseAsync();
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            await setup.Database.MigrateAsync();
+            setup.BusinessPartners.Add(BusinessPartner.Create(
+                OrganizationId,
+                EnvironmentId,
+                "SUP-ROLE-RACE",
+                "supplier",
+                "Role race supplier",
+                ["supplier", "customer"],
+                null));
+            setup.DeviceAssets.Add(NewDevice("DEV-ROLE-RACE"));
+            await setup.SaveChangesAsync();
+        }
+
+        var commitWindow = new AsyncCommitWindow(2);
+        await using var assignmentContext = CreateContext(database.ConnectionString);
+        await using var roleContext = CreateContext(database.ConnectionString);
+        var outcomes = await Task.WhenAll(
+            RunUpdateAsync(
+                assignmentContext,
+                new UpdateMasterDataResourceCommand(
+                    OrganizationId,
+                    EnvironmentId,
+                    "device-asset",
+                    "DEV-ROLE-RACE",
+                    SupplierPartnerCode: "SUP-ROLE-RACE"),
+                commitWindow),
+            RunUpdateAsync(
+                roleContext,
+                new UpdateMasterDataResourceCommand(
+                    OrganizationId,
+                    EnvironmentId,
+                    "business-partner",
+                    "SUP-ROLE-RACE",
+                    PartnerRoles: ["customer"]),
+                commitWindow));
+
+        AssertSingleKnownException(outcomes);
+        await using var verification = CreateContext(database.ConnectionString);
+        await AssertSupplierReferencesAreValidAsync(verification);
+    }
+
+    [PostgresFact]
+    public async Task JoinedTransaction_SavesBeforeReturnRetainsLockAndCallerRollbackRemovesMutation()
+    {
+        await using var database = await CreateDatabaseAsync();
+        await using var dbContext = CreateContext(database.ConnectionString);
+        await dbContext.Database.MigrateAsync();
+        var unitOfWork = (ITransactionUnitOfWork)dbContext;
+        await using var transaction = await dbContext.Database.BeginTransactionAsync();
+        unitOfWork.CurrentTransaction = transaction;
+        var coordinator = new PostgreSqlMasterDataReferenceScopeCoordinator(dbContext);
+
+        await coordinator.ExecuteAsync(
+            OrganizationId,
+            EnvironmentId,
+            token =>
+            {
+                dbContext.DeviceAssets.Add(NewDevice("DEV-JOINED-ROLLBACK"));
+                return Task.FromResult(true);
+            },
+            CancellationToken.None);
+
+        Assert.Same(transaction, unitOfWork.CurrentTransaction);
+        Assert.False(dbContext.ChangeTracker.HasChanges());
+        await using (var observer = CreateContext(database.ConnectionString))
+        {
+            Assert.False(await observer.DeviceAssets.AnyAsync(x => x.Code == "DEV-JOINED-ROLLBACK"));
+        }
+
+        await using (var contender = CreateContext(database.ConnectionString))
+        await using (var contenderTransaction = await contender.Database.BeginTransactionAsync())
+        {
+            await contender.Database.ExecuteSqlRawAsync("SET LOCAL lock_timeout = '250ms'");
+            var lockKey = $"masterdata-reference:{OrganizationId}:{EnvironmentId}";
+            var exception = await Assert.ThrowsAsync<PostgresException>(() =>
+                contender.Database.ExecuteSqlInterpolatedAsync(
+                    $"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))"));
+            Assert.Equal(PostgresErrorCodes.LockNotAvailable, exception.SqlState);
+        }
+
+        await transaction.RollbackAsync();
+        unitOfWork.CurrentTransaction = null;
+        await using var verification = CreateContext(database.ConnectionString);
+        Assert.False(await verification.DeviceAssets.AnyAsync(x => x.Code == "DEV-JOINED-ROLLBACK"));
+    }
+
+    [PostgresFact]
+    public async Task JoinedTransaction_CancellationPropagatesWithoutOwningCallerTransaction()
+    {
+        await using var database = await CreateDatabaseAsync();
+        await using var dbContext = CreateContext(database.ConnectionString);
+        await dbContext.Database.MigrateAsync();
+        var unitOfWork = (ITransactionUnitOfWork)dbContext;
+        await using var transaction = await dbContext.Database.BeginTransactionAsync();
+        unitOfWork.CurrentTransaction = transaction;
+        var actionCalled = false;
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            new PostgreSqlMasterDataReferenceScopeCoordinator(dbContext).ExecuteAsync(
+                OrganizationId,
+                EnvironmentId,
+                _ =>
+                {
+                    actionCalled = true;
+                    return Task.FromResult(true);
+                },
+                cancellation.Token));
+
+        Assert.False(actionCalled);
+        Assert.Same(transaction, unitOfWork.CurrentTransaction);
+        await transaction.RollbackAsync();
+        unitOfWork.CurrentTransaction = null;
+    }
+
+    private static void AssertSingleKnownException(IReadOnlyCollection<Exception?> outcomes)
+    {
+        var exception = Assert.Single(outcomes, outcome => outcome is not null);
+        Assert.IsType<KnownException>(exception);
+        Assert.Single(outcomes, outcome => outcome is null);
     }
 
     private static async Task<Exception?> RunUpdateAsync(
         ApplicationDbContext dbContext,
         UpdateMasterDataResourceCommand command,
-        AsyncBarrier barrier)
+        AsyncCommitWindow commitWindow)
     {
+        var unitOfWork = (ITransactionUnitOfWork)dbContext;
+        await using var transaction = await dbContext.Database.BeginTransactionAsync();
+        unitOfWork.CurrentTransaction = transaction;
         Exception? exception = null;
         try
         {
@@ -152,17 +415,26 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
             exception = caught;
         }
 
-        await barrier.SignalAndWaitAsync();
-        if (exception is null && dbContext.ChangeTracker.HasChanges())
+        await commitWindow.SignalAndWaitAsync();
+        try
         {
-            try
+            if (exception is null)
             {
-                await dbContext.SaveChangesAsync();
+                await transaction.CommitAsync();
             }
-            catch (Exception caught)
+            else
             {
-                exception = caught;
+                await transaction.RollbackAsync();
             }
+        }
+        catch (Exception caught)
+        {
+            exception = caught;
+            await transaction.RollbackAsync();
+        }
+        finally
+        {
+            unitOfWork.CurrentTransaction = null;
         }
 
         return exception;
@@ -171,8 +443,11 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
     private static async Task<Exception?> RunLifecycleAsync(
         ApplicationDbContext dbContext,
         SetMasterDataResourceEnabledCommand command,
-        AsyncBarrier barrier)
+        AsyncCommitWindow commitWindow)
     {
+        var unitOfWork = (ITransactionUnitOfWork)dbContext;
+        await using var transaction = await dbContext.Database.BeginTransactionAsync();
+        unitOfWork.CurrentTransaction = transaction;
         Exception? exception = null;
         try
         {
@@ -186,17 +461,26 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
             exception = caught;
         }
 
-        await barrier.SignalAndWaitAsync();
-        if (exception is null && dbContext.ChangeTracker.HasChanges())
+        await commitWindow.SignalAndWaitAsync();
+        try
         {
-            try
+            if (exception is null)
             {
-                await dbContext.SaveChangesAsync();
+                await transaction.CommitAsync();
             }
-            catch (Exception caught)
+            else
             {
-                exception = caught;
+                await transaction.RollbackAsync();
             }
+        }
+        catch (Exception caught)
+        {
+            exception = caught;
+            await transaction.RollbackAsync();
+        }
+        finally
+        {
+            unitOfWork.CurrentTransaction = null;
         }
 
         return exception;
@@ -274,7 +558,7 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
             "LINE-1",
             "WC-1");
 
-    private sealed class AsyncBarrier(int participantCount)
+    private sealed class AsyncCommitWindow(int participantCount)
     {
         private readonly TaskCompletionSource release =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -287,7 +571,7 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
                 release.TrySetResult();
             }
 
-            await release.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            await Task.WhenAny(release.Task, Task.Delay(TimeSpan.FromMilliseconds(300)));
         }
     }
 
