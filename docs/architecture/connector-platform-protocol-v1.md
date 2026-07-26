@@ -341,6 +341,40 @@ Connector Host 通过 IndustrialTelemetry 内部 endpoint `POST /api/business/v1
 
 IndustrialTelemetry 通过 `GET /api/business/v1/iiot/connectors/{collectionConnectorId}/tag-coverage`（operation `getBusinessIiotConnectorTagCoverage`）从 current bindings 出发并 LEFT JOIN `telemetry_summaries`。它不扫描 raw historian、不使用 device-control bindings，也不把 sample presence 推断成 quality/freshness。旧 Host 从未上报 manifest 时返回 `manifestStatus=unavailable`；current manifest 的零 bindings 才表示真实空配置。
 
+## 常驻模拟设备适配器（MAN-603 / #1088）
+
+`Nerv.IIP.ConnectorHost.Connectors.Simulated` 是 Connector Host 内的一等适配器，不是测试旁路或脚本写入器。它只在
+`Simulated:Enabled=true` 时注册到现有 `IConnector`、`IIndustrialTelemetryCollectionConnector`、
+`IConnectorConnectionMonitor` 和 `IConnectorOperationExecutor` 四个 seam；默认 Development 配置保持关闭，
+leader-demo AppHost 仅在 `LeaderDemo:World:Enabled=true` 时开启。适配器不引用 backend/frontend 实现项目，
+继续通过 Connector Protocol、Ops SDK 和 IndustrialTelemetry 内部 HTTP 边界工作，未新增或修改公开 DTO、
+HTTP endpoint、facade、OpenAPI 或 generated client。
+
+一个进程内有三个隔离的逻辑运行时，canonical `instanceKey` / `collectionConnectorId` 固定为
+`CONN-OPCUA-01`、`CONN-MQTT-01`、`CONN-MODBUS-01`。配置以 compact device group 展开 46 台设备和
+96 个 tag；AppHub 对每个身份分别接收 registration、heartbeat、state snapshot 和 CollectionHealth，
+IndustrialTelemetry 分别接收 44 / 28 / 24 项 replace-style manifest。Host liveness、field connection
+(`alive`)、collector counters/last sample 与 tag sample presence 仍是上述四个独立事实面，模拟身份不得把其中
+任一轴推断成另一轴。
+
+确定性来自 `Seed + connectorId + deviceAssetId + tagKey + cycle` 的稳定 hash 和 `TimeProvider`，不使用共享
+`Random` 或枚举顺序。默认 45 分钟 profile 为 normal 15 分钟、degrading/alarm/recovered 各 10 分钟；
+`DEV-CNC-03/vibration`、`DEV-CTG-02/bath-temperature`、`DEV-AUX-04/air-pressure` 使用 phase offset
+错峰。下游失败保留完全相同的 request/source sequence 做指数退避；`MaxPendingSamples` 和
+`CommandReceiptCacheCapacity` 都是硬上限，取消不会转换成采集失败。
+
+模拟器在完整 organization/environment/host/instance/device route 匹配后执行现有
+`device.control.command` 的 `write-tag`、`parameter-set` 和 `start-stop`。`OperationTaskId` 是进程内幂等键，
+成功与终态失败都缓存为不可变回执；输出始终携带 connector、protocol、command、task、correlation 和
+`deviceReceiptCode` / `deviceReceiptMessage`，终态码为 `Good`、`BadNotFound`、`BadNotSupported` 或
+`BadOutOfRange`。这只是现有 Ops claim/result 语义的适配器实现，不扩张协议 V1。
+
+真实进程验收启动 build 产物 `Nerv.IIP.ConnectorHost.Host`（不使用 `dotnet run`），对 loopback
+AppHub/Ops/IndustrialTelemetry 观察三个注册、每实例至少两次心跳、三个 CollectionHealth、三源 telemetry、
+44/28/24 manifest 和 correlated `Good` result；最后以 SIGTERM 精确停止该子进程，五秒内退出，force-kill
+只作为测试失败兜底。另有受控时钟测试推进 1,000 周期 / 250 个完整 phase period，对两次 96,000-sample
+stream digest、独立 44,000/28,000/24,000 counters、outbox/cache 上限和 cancellation 做回归。
+
 ## 非目标
 
 1. 不在本文档中定义全部命令下发传输形态；当前只冻结第二阶段采用的 HTTP claim/lease 拉取模型。
