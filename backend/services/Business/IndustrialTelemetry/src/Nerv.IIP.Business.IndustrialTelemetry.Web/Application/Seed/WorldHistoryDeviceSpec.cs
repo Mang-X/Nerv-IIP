@@ -22,8 +22,8 @@ public static class WorldHistoryDeviceSpec
     public const string ModbusConnectorId = "CONN-MODBUS-01";
     public const string MqttConnectorId = "CONN-MQTT-01";
 
-    /// <summary>报警密度参数：46 台 × 29 周 × 约 0.288 起/台周 ≈ 385 起（设定集 §7「约 400 起」）。</summary>
-    public const double WeeklyAlarmProbability = 0.24;
+    /// <summary>报警密度参数：46 台 × 29 周 × 约 0.34 起/台周（含掉点损耗）≈ 400 起（设定集 §7「约 400 起」）。</summary>
+    public const double WeeklyAlarmProbability = 0.28;
     public const double SecondAlarmProbability = 0.20;
 
     /// <summary>报警转维修工单概率：critical 0.55 / warning 0.18 ≈ 报警总量的 30% ≈ 120 张（§7）。</summary>
@@ -293,7 +293,7 @@ public static class WorldHistoryDeviceSpec
                 var slots = random.Chance(SecondAlarmProbability) ? 2 : 1;
                 for (var slot = 0; slot < slots; slot++)
                 {
-                    var draft = BuildAlarmDraft(device, alarmTags, week, slot, asOfDate, random);
+                    var draft = BuildAlarmDraft(device, alarmTags, week, slot, asOfDate);
                     if (draft is not null)
                     {
                         drafts.Add(draft);
@@ -306,20 +306,24 @@ public static class WorldHistoryDeviceSpec
             .OrderBy(x => x.RaisedAtUtc)
             .ThenBy(x => x.Device.DeviceAssetId, StringComparer.Ordinal)
             .ToArray();
+        var deviceIndexById = Devices
+            .Select((device, index) => (device.DeviceAssetId, index))
+            .ToDictionary(x => x.DeviceAssetId, x => x.index, StringComparer.Ordinal);
 
         var plans = new List<WorldHistoryAlarmPlan>(ordered.Length);
-        var workOrderSequence = 0;
         for (var index = 0; index < ordered.Length; index++)
         {
             var draft = ordered[index];
             var ordinal = index + 1;
             var isOpen = draft.RaisedAtUtc >= openTailStartUtc;
-            string? workOrderNo = null;
-            if (draft.HasWorkOrder)
-            {
-                workOrderSequence++;
-                workOrderNo = $"MWO-2026-{workOrderSequence:D4}";
-            }
+
+            // 号段必须由草稿的稳定身份（周 × 设备 × 槽位）推导，而不是全局序号：
+            // 截止日推进会让「当周被 day > asOf 暂时挡下的草稿」事后补进序列中段，
+            // 位置化编号会整体漂移，幂等与两侧对账随之断裂。工单号按周分块（每周 92 个槽位），
+            // 时间上仍大体递增，允许留空号。
+            string? workOrderNo = draft.HasWorkOrder
+                ? $"MWO-2026-{(draft.Week * 92) + (deviceIndexById[draft.Device.DeviceAssetId] * 2) + draft.Slot + 1:D4}"
+                : null;
 
             var clearedAtUtc = draft.RaisedAtUtc.AddMinutes(draft.DurationMinutes);
             var repairRandom = new WorldHistoryRandom($"repair:{draft.Device.DeviceAssetId}:{draft.Week:D3}:{draft.Slot}");
@@ -329,7 +333,7 @@ public static class WorldHistoryDeviceSpec
 
             plans.Add(new WorldHistoryAlarmPlan(
                 Ordinal: ordinal,
-                ExternalAlarmId: $"{RuleCode(draft.Device.DeviceAssetId, draft.Tag.TagKey)}:{ordinal:D4}",
+                ExternalAlarmId: $"{RuleCode(draft.Device.DeviceAssetId, draft.Tag.TagKey)}:{draft.Week:D3}{draft.Slot}",
                 DeviceAssetId: draft.Device.DeviceAssetId,
                 TagKey: draft.Tag.TagKey,
                 UnitCode: draft.Tag.UnitCode,
@@ -362,9 +366,11 @@ public static class WorldHistoryDeviceSpec
         WorldHistoryTagBehavior[] alarmTags,
         int week,
         int slot,
-        DateOnly asOfDate,
-        WorldHistoryRandom random)
+        DateOnly asOfDate)
     {
+        // 每个草稿独立流键：抽样序列不得依赖截止日——若与外层共享流，`day > asOf` 的早退会
+        // 少消耗抽样数，让后续槽位的内容随截止日推进而漂移，幂等与两侧对账随之断裂。
+        var random = new WorldHistoryRandom($"device-alarm-draft:{device.DeviceAssetId}:{week:D3}:{slot}");
         var weekStart = WorldHistoryCalendar.WeekStart(week);
         var day = weekStart.AddDays(random.NextInt(0, 6));
         if (day > asOfDate || !WorldHistoryCalendar.IsWorkingDay(day))
