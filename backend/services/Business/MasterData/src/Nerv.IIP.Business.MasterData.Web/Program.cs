@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Prometheus;
 using System.Reflection;
@@ -132,6 +132,7 @@ try
     builder.Services.AddScoped<CodeRuleVersionActivationService>();
     builder.Services.AddScoped<MasterDataSeedService>();
     builder.Services.AddScoped<LeaderDemoSeedService>();
+    builder.Services.AddScoped<LeaderDemoScaleSeedService>();
     var productEngineeringBaseAddress = ResolveServiceBaseAddress(
         builder.Configuration,
         builder.Environment,
@@ -231,9 +232,13 @@ try
     if (leaderDemoSeedEnabled)
     {
         using var scope = app.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(
-            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
+        var organizationId = builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001";
+        var environmentId = builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev";
+        await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(organizationId, environmentId);
+        await scope.ServiceProvider.GetRequiredService<LeaderDemoScaleSeedService>().SeedAsync(
+            organizationId,
+            environmentId,
+            builder.Configuration.GetValue("LeaderDemo:Scale:OrderCount", 0));
     }
 
     app.UseNervIipRequestLocalization();

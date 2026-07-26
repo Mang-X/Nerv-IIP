@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Text.Json;
 using FastEndpoints;
 using FastEndpoints.Swagger;
@@ -79,6 +79,7 @@ try
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddScoped<ErpCodingService>();
     builder.Services.AddScoped<SalesOrderDemandDemoSeedService>();
+    builder.Services.AddScoped<LeaderDemoScaleSeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
@@ -154,9 +155,14 @@ try
     {
         using var scope = app.Services.CreateScope();
         var seed = scope.ServiceProvider.GetRequiredService<SalesOrderDemandDemoSeedService>();
-        await seed.SeedAsync(
-            builder.Configuration["Erp:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["Erp:Seed:EnvironmentId"] ?? "env-dev");
+        var organizationId = builder.Configuration["Erp:Seed:OrganizationId"] ?? "org-001";
+        var environmentId = builder.Configuration["Erp:Seed:EnvironmentId"] ?? "env-dev";
+        await seed.SeedAsync(organizationId, environmentId);
+        await scope.ServiceProvider.GetRequiredService<LeaderDemoScaleSeedService>().SeedAsync(
+            organizationId,
+            environmentId,
+            builder.Configuration.GetValue("LeaderDemo:Scale:OrderCount", 0),
+            DateTimeOffset.UtcNow);
     }
 
     await app.WaitForShutdownAsync();

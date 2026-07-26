@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using System.Text.RegularExpressions;
 
 var builder = DistributedApplication.CreateBuilder(args);
@@ -13,6 +13,22 @@ var leaderDemoEnabled = string.Equals(
     Environment.GetEnvironmentVariable("NERV_IIP_LEADER_DEMO"),
     "true",
     StringComparison.OrdinalIgnoreCase);
+// MAN-519 白名单内的领导演示「规模块」订单数（默认 1000，设为 0 关闭）。
+// 仅在 leader-demo profile 下生效，普通 dev/full-stack 会话保持既有个位数固定案例。
+var leaderDemoScaleOrderCount = 0;
+if (leaderDemoEnabled)
+{
+    leaderDemoScaleOrderCount =
+        int.TryParse(
+            Environment.GetEnvironmentVariable("NERV_IIP_LEADER_DEMO_SCALE_ORDERS"),
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var configuredScaleOrderCount) && configuredScaleOrderCount >= 0
+            ? configuredScaleOrderCount
+            : 1000;
+}
+
+var leaderDemoScaleOrderCountValue = leaderDemoScaleOrderCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
 if (fullStackEphemeral &&
     (string.IsNullOrWhiteSpace(fullStackSessionId) ||
@@ -254,6 +270,7 @@ var businessMasterData = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(bu
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
+    .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMasterDataDatabase, "PostgreSQL")
     .WithReference(redis)
@@ -272,6 +289,7 @@ var businessProductEngineering = WithNervIipTelemetry(WithLocalDevelopmentEnviro
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
+    .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessProductEngineeringDatabase, "PostgreSQL")
@@ -328,6 +346,7 @@ var businessMes = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
+    .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
@@ -487,6 +506,7 @@ var businessErp = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("Erp__Seed__SalesOrderDemandDemo__Enabled", "true")
+    .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("Approval__BaseUrl", businessApproval.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)

@@ -115,6 +115,29 @@ approval disposition, shipment, receivable, telemetry sample, alarm event, or
 completed maintenance work order. Those outcomes must be produced by the actual
 demo workflow.
 
+Alongside the fixed keys, an opt-in **scale block** seeds batch prerequisites so
+the scheduling workbench can demonstrate thousand-order automatic scheduling.
+It is controlled by `LeaderDemo:Scale:OrderCount`; the AppHost defaults it to
+`1000` under the leader-demo profile and to `0` everywhere else. Override it for
+the current process only:
+
+```powershell
+$env:NERV_IIP_LEADER_DEMO_SCALE_ORDERS = "200"   # 0 disables the scale block
+.
+erv.ps1 demo reset
+```
+
+The scale block uses a dedicated `*-SCALE-*` segment (`SO-SCALE-#####`,
+`WO-SCALE-#####`, `WC-SCALE-*`, `DEV-SCALE-*`, `SKU-SCALE-*`) and never touches
+the fixed keys above, so the exact-match counts stay at one. It stays inside the
+prerequisite boundary: released sales orders and released work orders with four
+predecessor-linked operations across four work centers and 24 device resources —
+no production reports, inspections, receipts, shipments, or receivables. Repeat
+`seed` runs are idempotent. Seeding 1000 orders costs roughly 3 s in ERP and 6 s
+in MES on a local Docker PostgreSQL. The workbench batch limit is 500 orders per
+generation (`SchedulingWorkbenchLimits.MaxOrderCount`), so 1000 seeded orders form
+the backlog pool while one generation consumes up to 500 of them.
+
 Every successful or failed `seed` and `health-check` preserves redacted evidence
 at `artifacts/leader-demo/<UTC-run-id>/evidence.json`. The manifest includes the
 session ID, commit, resource states, non-secret URLs, actual account role IDs

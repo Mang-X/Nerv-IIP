@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Text.Json;
 using FastEndpoints;
 using FastEndpoints.Swagger;
@@ -91,6 +91,7 @@ try
 
     builder.Services.AddProductEngineeringPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<LeaderDemoSeedService>();
+    builder.Services.AddScoped<LeaderDemoScaleSeedService>();
     builder.Services.AddScoped<ProductEngineeringCodingService>();
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddSingleton<IProductEngineeringBusinessDateProvider, ConfigurationProductEngineeringBusinessDateProvider>();
@@ -160,9 +161,13 @@ try
     if (leaderDemoSeedEnabled)
     {
         using var scope = app.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(
-            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
+        var organizationId = builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001";
+        var environmentId = builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev";
+        await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(organizationId, environmentId);
+        await scope.ServiceProvider.GetRequiredService<LeaderDemoScaleSeedService>().SeedAsync(
+            organizationId,
+            environmentId,
+            builder.Configuration.GetValue("LeaderDemo:Scale:OrderCount", 0));
     }
 
     app.UseNervIipRequestLocalization();
