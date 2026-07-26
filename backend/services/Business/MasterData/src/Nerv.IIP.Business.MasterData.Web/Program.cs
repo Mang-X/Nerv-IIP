@@ -133,6 +133,7 @@ try
     builder.Services.AddScoped<MasterDataSeedService>();
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<LeaderDemoScaleSeedService>();
+    builder.Services.AddScoped<WorldBibleSeedService>();
     var productEngineeringBaseAddress = ResolveServiceBaseAddress(
         builder.Configuration,
         builder.Environment,
@@ -239,6 +240,10 @@ try
             organizationId,
             environmentId,
             builder.Configuration.GetValue("LeaderDemo:Scale:OrderCount", 0));
+        if (builder.Configuration.GetValue("LeaderDemo:World:Enabled", false))
+        {
+            await scope.ServiceProvider.GetRequiredService<WorldBibleSeedService>().SeedAsync(organizationId, environmentId);
+        }
     }
 
     app.UseNervIipRequestLocalization();
