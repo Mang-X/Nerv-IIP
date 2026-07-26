@@ -189,7 +189,7 @@ const columns: NvDataTableColumn<BusinessConsoleMesProductionPlanRow>[] = [
 function openConvert(plan: BusinessConsoleMesProductionPlanRow) {
   selectedPlan.value = plan
   convertForm.workCenterId = ''
-  const plannedDue = plan.plannedEndUtc || plan.plannedStartUtc
+  const plannedDue = plan.plannedEndUtc ?? plan.plannedStartUtc
   convertForm.dueUtc = toLocalDateTimeInput(plannedDue || new Date(Date.now() + 86_400_000))
   convertForm.idempotencyKey = newPlanIdempotencyKey(`convert-${plan.productionPlanId ?? 'plan'}`)
   convertOpen.value = true

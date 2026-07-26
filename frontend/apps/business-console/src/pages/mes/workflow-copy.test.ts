@@ -21,6 +21,7 @@ const routerState = vi.hoisted(() => ({
 
 const mesSpies = vi.hoisted(() => ({
   createReceiptRequest: vi.fn(async () => undefined),
+  productionPlans: [] as Array<Record<string, unknown>>,
   refreshReceiptRequests: vi.fn(async () => undefined),
   retryInventoryPosting: vi.fn(async () => undefined),
   traceabilityFilters: undefined as
@@ -124,17 +125,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
       environmentId: 'dev',
       organizationId: 'org',
     },
-    productionPlans: ref([
-      {
-        productionPlanId: 'PLAN-001',
-        sourceSystem: 'sales-order',
-        sourceDocumentId: 'SO-001',
-        skuId: 'FG-001',
-        plannedQuantity: 10,
-        readinessStatus: 'Ready',
-        plannedStartUtc: '2026-05-25T08:00:00.000Z',
-      },
-    ]),
+    productionPlans: ref(mesSpies.productionPlans),
     productionPlansError: ref(undefined),
     productionPlansPending: ref(false),
     productionPlansTotal: ref(1),
@@ -410,6 +401,17 @@ describe('MES workflow copy', () => {
     routeState.query = {}
     routerState.push.mockReset()
     mesSpies.createReceiptRequest.mockClear()
+    mesSpies.productionPlans = [
+      {
+        productionPlanId: 'PLAN-001',
+        sourceSystem: 'sales-order',
+        sourceDocumentId: 'SO-001',
+        skuId: 'FG-001',
+        plannedQuantity: 10,
+        readinessStatus: 'Ready',
+        plannedStartUtc: '2026-05-25T08:00:00.000Z',
+      },
+    ]
     mesSpies.refreshReceiptRequests.mockClear()
     mesSpies.traceabilityFilters = undefined
   })
@@ -474,6 +476,38 @@ describe('MES workflow copy', () => {
     expect(wrapper.find('#add-plan-id').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('生成')
     expectNoForbiddenVisibleTerms(wrapper.text())
+  })
+
+  it('defaults a plan with an explicitly empty end time to tomorrow', async () => {
+    const originalTimezone = process.env.TZ
+    process.env.TZ = 'Asia/Shanghai'
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-01T04:00:00.000Z'))
+    mesSpies.productionPlans = [
+      {
+        productionPlanId: 'PLAN-EMPTY-END',
+        plannedEndUtc: '',
+        plannedStartUtc: '2026-05-25T08:00:00.000Z',
+        plannedQuantity: 10,
+        readinessStatus: 'Ready',
+      },
+    ]
+
+    try {
+      const wrapper = mountMesPage(PlansPage)
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('转工单'))!
+        .trigger('click')
+
+      expect((wrapper.get('#convert-due').element as HTMLInputElement).value).toBe(
+        '2026-07-02T12:00',
+      )
+    } finally {
+      vi.useRealTimers()
+      if (originalTimezone === undefined) delete process.env.TZ
+      else process.env.TZ = originalTimezone
+    }
   })
 
   it('requires finished-goods receipt context instead of hand-entered system fields', () => {

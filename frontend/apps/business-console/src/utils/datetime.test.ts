@@ -50,3 +50,27 @@ describe('toLocalDateTimeInput', () => {
     expect(toLocalDateTimeInput('2026-07-01T01:30:59.999Z')).toBe('2026-07-01T09:30')
   })
 })
+
+describe('daylight-saving timezone conversion', () => {
+  it('uses the New York winter and summer offsets for local input to UTC', () => {
+    process.env.TZ = 'America/New_York'
+
+    try {
+      expect(toIsoFromLocalInput('2026-01-15T09:30')).toBe('2026-01-15T14:30:00.000Z')
+      expect(toIsoFromLocalInput('2026-07-15T09:30')).toBe('2026-07-15T13:30:00.000Z')
+    } finally {
+      process.env.TZ = 'Asia/Shanghai'
+    }
+  })
+
+  it('uses the New York winter and summer offsets for UTC to local input', () => {
+    process.env.TZ = 'America/New_York'
+
+    try {
+      expect(toLocalDateTimeInput('2026-01-15T14:30:00.000Z')).toBe('2026-01-15T09:30')
+      expect(toLocalDateTimeInput('2026-07-15T13:30:00.000Z')).toBe('2026-07-15T09:30')
+    } finally {
+      process.env.TZ = 'Asia/Shanghai'
+    }
+  })
+})
