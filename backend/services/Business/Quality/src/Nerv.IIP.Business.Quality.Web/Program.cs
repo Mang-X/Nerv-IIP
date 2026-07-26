@@ -118,6 +118,7 @@ try
     builder.Services.AddScoped<QualityCodingService>();
     builder.Services.AddScoped<QualitySeedService>();
     builder.Services.AddScoped<LeaderDemoSeedService>();
+    builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddSingleton<IInspectionUomConversionClient>(NullInspectionUomConversionClient.Instance);
     builder.Services.AddScoped<IInspectionSourceDocumentVerifier, ErpPurchaseReceiptInspectionSourceDocumentVerifier>();
     builder.Services.AddScoped<IQualityIntegrationEventContextAccessor, HttpQualityIntegrationEventContextAccessor>();
@@ -211,9 +212,40 @@ try
     if (leaderDemoSeedEnabled)
     {
         using var scope = app.Services.CreateScope();
+        var leaderDemoOrganizationId = builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001";
+        var leaderDemoEnvironmentId = builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev";
         await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(
-            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
+            leaderDemoOrganizationId,
+            leaderDemoEnvironmentId);
+
+        // 《工厂世界观设定集》L1 背景历史（质量域侧）。校验器 fail-closed：对账不平就让启动失败。
+        if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
+        {
+            var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
+                leaderDemoOrganizationId,
+                leaderDemoEnvironmentId,
+                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+            app.Logger.LogInformation(
+                "World-history quality seed completed: {Plans} inspection plans, {Tasks} inspection tasks, " +
+                "{Records} inspection records ({Reinspections} reinspections), {Ncrs} nonconformance reports; " +
+                "validator checked {CheckedTasks} tasks / {CheckedCompleted} completed inspections / " +
+                "{CheckedRecords} records / {CheckedNcrs} NCRs at a {Rate:P2} nonconforming rate.",
+                report.InspectionPlansWritten,
+                report.InspectionTasksWritten,
+                report.InspectionRecordsWritten,
+                report.ReinspectionRecordsWritten,
+                report.NonconformanceReportsWritten,
+                report.Validation.InspectionTasksChecked,
+                report.Validation.CompletedInspectionsChecked,
+                report.Validation.InspectionRecordsChecked,
+                report.Validation.NonconformanceReportsChecked,
+                report.Validation.NonconformingRate);
+            foreach (var line in report.Validation.Sample)
+            {
+                app.Logger.LogInformation("World-history sample: {Chain}", line);
+            }
+        }
     }
 
     app.UseNervIipRequestLocalization();

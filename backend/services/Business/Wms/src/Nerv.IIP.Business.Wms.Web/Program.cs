@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
+using Nerv.IIP.Business.Wms.Web.Application.Seed;
 using Nerv.IIP.Business.Wms.Web.Application.WcsAdapters;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.Localization;
@@ -64,6 +65,7 @@ try
     }
 
     builder.Services.AddWmsPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
+    builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
@@ -115,6 +117,43 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
+    }
+
+    // 《工厂世界观设定集》L1 背景历史（仓储域侧）。校验器 fail-closed：对账不平就让启动失败。
+    // WMS 没有固定演示 seed，因此这里直接以 History 开关为准，并沿用「只在 Development 允许」的口径。
+    if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
+    {
+        if (!app.Environment.IsDevelopment())
+        {
+            throw new InvalidOperationException(
+                "LeaderDemo:History:Enabled=true is only allowed for BusinessWms in Development.");
+        }
+
+        using var scope = app.Services.CreateScope();
+        var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
+            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev",
+            WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+            WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+        app.Logger.LogInformation(
+            "World-history WMS seed completed: {Inbound} inbound orders, {Outbound} outbound orders, " +
+            "{Tasks} warehouse tasks, {Requests} Inventory movement requests; validator checked " +
+            "{CheckedInbound} inbound / {CheckedOutbound} outbound / {CheckedTasks} tasks " +
+            "({Putaway} putaway, {Picking} picking) / {CheckedRequests} posted requests.",
+            report.InboundOrdersWritten,
+            report.OutboundOrdersWritten,
+            report.WarehouseTasksWritten,
+            report.InventoryMovementRequestsWritten,
+            report.Validation.InboundOrdersChecked,
+            report.Validation.OutboundOrdersChecked,
+            report.Validation.WarehouseTasksChecked,
+            report.Validation.PutawayTasksChecked,
+            report.Validation.PickingTasksChecked,
+            report.Validation.PostedMovementRequestsChecked);
+        foreach (var line in report.Validation.Sample)
+        {
+            app.Logger.LogInformation("World-history sample: {Document}", line);
+        }
     }
 
     app.UseNervIipRequestLocalization();
