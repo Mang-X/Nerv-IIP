@@ -39,6 +39,26 @@ var leaderDemoWorldEnabled = leaderDemoEnabled && !string.Equals(
     StringComparison.OrdinalIgnoreCase);
 var leaderDemoWorldEnabledValue = leaderDemoWorldEnabled ? "true" : "false";
 
+// 《工厂世界观设定集》L1 背景历史引擎（2026-01-05 至今约 29 周的 ERP/MES 单据历史）。
+// 依赖 L0 主数据，因此只在 L0 打开时生效；NERV_IIP_LEADER_DEMO_HISTORY=false 可单独关闭。
+// NERV_IIP_LEADER_DEMO_HISTORY_SCALE=0.1 生成约十分之一的量用于快速验证。
+var leaderDemoHistoryEnabled = leaderDemoWorldEnabled && !string.Equals(
+    Environment.GetEnvironmentVariable("NERV_IIP_LEADER_DEMO_HISTORY"),
+    "false",
+    StringComparison.OrdinalIgnoreCase);
+var leaderDemoHistoryEnabledValue = leaderDemoHistoryEnabled ? "true" : "false";
+var leaderDemoHistoryScaleValue =
+    (double.TryParse(
+        Environment.GetEnvironmentVariable("NERV_IIP_LEADER_DEMO_HISTORY_SCALE"),
+        System.Globalization.NumberStyles.Float,
+        System.Globalization.CultureInfo.InvariantCulture,
+        out var configuredHistoryScale) && configuredHistoryScale is > 0 and <= 10
+        ? configuredHistoryScale
+        : 1.0d).ToString(System.Globalization.CultureInfo.InvariantCulture);
+// ERP 与 MES 必须用同一个历史截止日：两侧若各自取「今天」而恰好跨零点启动，
+// 订单计划表会错开一周，SO-2026-* 与 WO-2026-* 的配对随之断裂。
+var leaderDemoHistoryAsOfDateValue = DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
 if (fullStackEphemeral &&
     (string.IsNullOrWhiteSpace(fullStackSessionId) ||
      !Regex.IsMatch(fullStackSessionId, "^nerv-[a-f0-9]{4}-[a-f0-9]{6}$", RegexOptions.CultureInvariant)))
@@ -359,6 +379,9 @@ var businessMes = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
+    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
+    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
+    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
@@ -520,6 +543,9 @@ var businessErp = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("Erp__Seed__SalesOrderDemandDemo__Enabled", "true")
     .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
+    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
+    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
+    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("Approval__BaseUrl", businessApproval.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
