@@ -108,6 +108,40 @@ review follow-up 真实栈 session `nerv-bad6-17be94` 已将 `mes-task-productio
 
 该 profile 强制使用 PostgreSQL + Redis 跨进程消息；`seed` 只验证各服务 opt-in startup seed 已收敛到 `SO-DEMO-001`、`WO-DEMO-Q01`、`DEV-CNC-DEMO`、`ALARM-DEMO-001` enabled alarm rule 和 `MWO-DEMO-001` open alarm-sourced Maintenance work order 等固定前置事实，不直接写表。维修前置工单以 `SourceAlarmId=ALARM-DEMO-001` 参与真实 raise/clear 生命周期，以 `SourceReferenceId=MWO-DEMO-001` 保留演示案例引用。种子不得创建生产报工/完工数量、成品库存、检验结论或 NCR/隔离/审批结果、发货、应收、遥测样本/报警事件或已完成维修工单。每次 `seed` 和 `health-check` 成功或失败都保留脱敏证据到 `artifacts/leader-demo/<UTC-run-id>/evidence.json`；该证据必须显示 `Messaging Provider=Redis`、`/auth/me` 返回的实际角色 ID 经公开角色 catalog 解析后的账号角色，以及每个公开固定事实的 key event、观测时间和唯一匹配计数，重复 reset/seed 产生重复事实时必须失败；同时记录精确 cleanup 命令。完整操作手册见 `infra/aspire/README.md`。
 
+### 演示种子千单规模块（MAN-519 白名单内）
+
+领导演示的固定案例只有 `SO-DEMO-001`、`WO-DEMO-Q01` 等个位数事实，不足以展示自动排产。规模块在同一 opt-in seed 体系内补齐**批量前置事实**，由 `LeaderDemo:Scale:OrderCount` 控制（AppHost 在 leader-demo profile 下默认 `1000`，`NERV_IIP_LEADER_DEMO_SCALE_ORDERS` 可覆盖，`0` 关闭；非 leader-demo 会话恒为 `0`）。规模块使用独立 `*-SCALE-*` 号段，与固定演示事实完全隔离，因此 `demo health-check` 对 `SO-DEMO-001`/`WO-DEMO-Q01`/`DEV-CNC-DEMO`/`ALARM-DEMO-001`/`MWO-DEMO-001` 的唯一匹配计数不受影响；重复 `seed` 幂等（存在即跳过），与租户已有同号段数据冲突时直接失败而不覆盖。
+
+数据形状对齐 APS 基准（MAN-581 / #1050）的可排性口径：
+
+| 服务 | 规模块事实 |
+| --- | --- |
+| MasterData | `LINE-SCALE-01` 产线；4 个工作中心 `WC-SCALE-{WELD,ROD,SEAL,TEST}`（默认日历 `STANDARD`）；每个工作中心 6 台设备资产，合计 24 台可排资源；6 个成品 SKU `SKU-SCALE-001..006` + 1 个原材料 `SKU-SCALE-RM-001`；4 个客户 `CUST-SCALE-001..004` |
+| ProductEngineering | 每个成品 SKU 一条已发布 MBOM `MBOM-SCALE-00X:1`、一条 4 道有前后置工序的已发布路线 `ROUTING-SCALE-00X:1`（10 焊接 → 20 活塞杆装配 → 30 油封压装 → 40 阻尼检测，单件 1 分钟 + 固定收尾）、一个 active 默认生产版本 |
+| ERP | `QUO-SCALE-#####` 已审报价单 + `SO-SCALE-#####` 已下达销售订单，每单一行 |
+| MES | `WO-SCALE-#####` 已下达工单 + 4 条工序任务，绑定 ProductEngineering 解析出的 active 生产版本 |
+
+订单分布按 1-based 序号确定性派生，ERP 与 MES 使用同一字面量公式，因此第 i 张销售订单与第 i 张工单一一对应：SKU 在 6 个成品间轮转、数量 20/30/40/50/60 件循环、交期梯度落在锚定日后 14–42 天（未来 2–6 周）、每 29 张一张急单（优先级 100）其余优先级 1–9。两侧各有黄金向量测试锁住该公式，防止跨服务漂移。
+
+规模块**只写前置事实**：销售订单下达与工单下达。不产生报工、完工数量、检验结论、NCR、入库、发货、应收或遥测事实，符合 MAN-519 白名单。批量写入使用 `SaveChangesAsync` 分批（每批 100 张单，批间清空 change tracker），不派发领域事件，避免千单级 seed 触发下游事件风暴；固定演示事实仍保留原有 `SaveEntitiesAsync` 事件路径。规模块路线一律不要求质检——`SchedulingProblemProducer` 会把 `RequiresQualityInspection` 翻译成 `quality.inspectionRequired` 门禁，使工序被直接判为不可排。
+
+`BusinessGateway` 与 Scheduling 服务的排产工作台单批上限是 `SchedulingWorkbenchLimits.MaxOrderCount = 500`（Business Console 候选池也按 500 拉取）。因此默认 1000 张工单构成**待排池**，一次「批量生成」最多吃 500 张；本变更不放宽该上限。
+
+耗时与可排性实测（2026-07-26，Windows 10.0.26200、.NET 10.0.0、Docker PostgreSQL、`infra/docker-compose.dev.yml` 的共享开发实例）：
+
+| 观测 | 数值 |
+| --- | --- |
+| ERP 规模块首次 seed（1000 销售订单 + 1000 报价单） | 3112 ms |
+| ERP 规模块幂等重跑 | 39 ms |
+| MES 规模块首次 seed（1000 工单 + 4000 工序任务） | 6066 ms |
+| MES 规模块幂等重跑 | 41 ms |
+| 500 单批量生成：已排 / 未排工序 | 2000 / 0 |
+| 500 单批量生成：准交率 / 平均资源利用率 / makespan | 1.0000 / 0.6180 / 5181 分钟 |
+
+两段 seed 合计约 9 秒，远低于 90 秒启动预算，因此默认值保留 1000。耗时证据由 `NERV_IIP_TEST_POSTGRES` 门控的 `LeaderDemoScaleSeedPostgresTests`（ERP、MES 各一）产出，默认 skip、不进 CI 门禁；可排性证据由 `Nerv.IIP.Business.Scheduling.Web.Tests.LeaderDemoScaleSchedulabilityTests` 产出，它用与 seed 完全一致的形状跑真实 problem 装配与 `aps-lite-v1` 有限产能算法，属常规门禁。该可排性证据不是性能基准，性能基准仍以 `scripts/verify-business-scheduling-scale-benchmark.ps1` 为准。
+
+本变更没有新增或修改业务 HTTP endpoint，也没有改变 Gateway 公开契约；facade coverage 登记、OpenAPI 快照与 generated client 均无需刷新。
+
 ## 当前结论
 
 1. 平台 HTTP 服务命名已经冻结为 .Web、.Domain、.Infrastructure。
