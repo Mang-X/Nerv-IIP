@@ -17,6 +17,7 @@ public sealed class WorldBibleSeedServiceTests
         Assert.Equal(3, WorldBibleSpec.Connectors.Length);
         Assert.Equal(46, WorldBibleSpec.DeviceClasses.Sum(x => x.DeviceCount));
         Assert.Equal(46, WorldBibleSpec.DeviceTags.Select(x => x.DeviceAssetId).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(96, WorldBibleSpec.DeviceTags.Count);
 
         var connectorIds = WorldBibleSpec.Connectors.Select(x => x.ConnectorId).ToArray();
         Assert.All(WorldBibleSpec.DeviceTags, tag => Assert.Contains(tag.CollectionConnectorId, connectorIds));

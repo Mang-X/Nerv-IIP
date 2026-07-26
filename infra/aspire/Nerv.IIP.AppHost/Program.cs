@@ -30,6 +30,15 @@ if (leaderDemoEnabled)
 
 var leaderDemoScaleOrderCountValue = leaderDemoScaleOrderCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
+// 《工厂世界观设定集》L0 主数据全量块（3 车间/14 产线/46 设备/84 SKU/58 员工/3 采集连接器）。
+// 只在 leader-demo profile 下生效，NERV_IIP_LEADER_DEMO_WORLD=false 可关闭；普通 dev/full-stack
+// 会话恒为 false，保持既有个位数固定案例与常规种子形状不变。
+var leaderDemoWorldEnabled = leaderDemoEnabled && !string.Equals(
+    Environment.GetEnvironmentVariable("NERV_IIP_LEADER_DEMO_WORLD"),
+    "false",
+    StringComparison.OrdinalIgnoreCase);
+var leaderDemoWorldEnabledValue = leaderDemoWorldEnabled ? "true" : "false";
+
 if (fullStackEphemeral &&
     (string.IsNullOrWhiteSpace(fullStackSessionId) ||
      !Regex.IsMatch(fullStackSessionId, "^nerv-[a-f0-9]{4}-[a-f0-9]{6}$", RegexOptions.CultureInvariant)))
@@ -166,6 +175,7 @@ var iam = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProjec
     .WithEnvironment("Iam__Seed__Enabled", "true")
     .WithEnvironment("Iam__Seed__AdminPassword", iamSeedAdminPassword)
     .WithEnvironment("Iam__Seed__ConnectorHostSecret", iamSeedConnectorHostSecret)
+    .WithEnvironment("LeaderDemo__World__Enabled", leaderDemoWorldEnabledValue)
     .WithEnvironment("Iam__Jwt__SigningKeys__0__Kid", iamJwtSigningKeyId)
     .WithEnvironment("Iam__Jwt__SigningKeys__0__PrivateKeyPem", iamJwtPrivateKeyPem)
     .WithEnvironment("Iam__Secrets__Pepper", iamSecretsPepper)
@@ -270,6 +280,7 @@ var businessMasterData = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(bu
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
+    .WithEnvironment("LeaderDemo__World__Enabled", leaderDemoWorldEnabledValue)
     .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMasterDataDatabase, "PostgreSQL")
@@ -289,6 +300,7 @@ var businessProductEngineering = WithNervIipTelemetry(WithLocalDevelopmentEnviro
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
+    .WithEnvironment("LeaderDemo__World__Enabled", leaderDemoWorldEnabledValue)
     .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
@@ -459,6 +471,7 @@ var businessIndustrialTelemetry = WithNervIipTelemetry(WithLocalDevelopmentEnvir
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
+    .WithEnvironment("LeaderDemo__World__Enabled", leaderDemoWorldEnabledValue)
     .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessIndustrialTelemetryDatabase, "PostgreSQL")
