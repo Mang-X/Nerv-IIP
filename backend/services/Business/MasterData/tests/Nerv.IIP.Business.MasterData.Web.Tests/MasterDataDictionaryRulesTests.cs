@@ -399,7 +399,7 @@ public sealed class MasterDataDictionaryRulesTests
             ["barcode-rule"] = ["code128", "customer-spec", "ean13", "gs1-128", "qr"],
             ["uom-dimension"] = ["area", "count", "length", "time", "volume", "weight"],
             ["partner-type"] = ["carrier", "customer", "supplier"],
-            ["skill"] = ["assembly", "cnc-operation", "forklift", "inspection", "welding"],
+            ["skill"] = ["assembly", "cnc-operation", "equipment-maintenance", "forklift", "inspection", "welding"],
             ["skill-level"] = ["expert", "intermediate", "junior", "senior"],
             ["operation"] = ["assembly", "cnc-operation", "inspection", "packaging", "welding"],
             ["quality-reason"] = ["dimension-ng", "missing-part", "scratch", "solder-defect"],

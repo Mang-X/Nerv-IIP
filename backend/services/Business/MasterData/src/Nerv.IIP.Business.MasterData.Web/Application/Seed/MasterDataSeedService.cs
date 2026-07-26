@@ -1,7 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.CodeRuleAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.PersonnelSkillAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
@@ -26,9 +32,75 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
 
     private static readonly ShiftSeed[] Shifts =
     [
-        new("DAY", "Day Shift", new TimeOnly(8, 0), new TimeOnly(20, 0), 720),
-        new("NIGHT", "Night Shift", new TimeOnly(20, 0), new TimeOnly(8, 0), 720)
+        new("DAY", "早班", new TimeOnly(8, 0), new TimeOnly(20, 0), 720),
+        new("NIGHT", "晚班", new TimeOnly(20, 0), new TimeOnly(8, 0), 720)
     ];
+
+    private static readonly DepartmentSeed[] Departments =
+    [
+        new("DEPT-PROD", "生产部", null),
+        new("DEPT-QA", "质量部", null),
+        new("DEPT-EQ", "设备部", null),
+        new("DEPT-WH", "仓储部", null),
+        new("DEPT-PLAN", "计划部", null)
+    ];
+
+    private static readonly ProductCategorySeed[] ProductCategories =
+    [
+        new("PCAT-SHOCK", "减振器总成", null, "面向整车厂交付的减振器成品分类"),
+        new("PCAT-SHOCK-FR", "前减振器", "PCAT-SHOCK", "前悬架减振器总成"),
+        new("PCAT-SHOCK-RR", "后减振器", "PCAT-SHOCK", "后悬架减振器总成"),
+        new("PCAT-PART", "零部件", null, "减振器自制与外购零部件分类"),
+        new("PCAT-PART-ROD", "活塞杆类", "PCAT-PART", "活塞杆棒料及其精加工件"),
+        new("PCAT-PART-SEAL", "密封件类", "PCAT-PART", "油封、导向器等密封类零件")
+    ];
+
+    private static readonly SkillSeed[] Skills =
+    [
+        new("cnc-operation", "CNC 操作", "设备操作", true, 24, "数控加工中心上下料、程序调用与首件确认"),
+        new("assembly", "减振器装配", "装配作业", false, null, "减振器总成装配线标准作业与扭矩控制"),
+        new("inspection", "质量检验", "质量管理", true, 12, "首件、巡检与成品检验，含量具使用"),
+        new("welding", "焊接", "特种作业", true, 36, "储油缸筒焊接，需持特种作业操作证"),
+        new("equipment-maintenance", "设备维护", "设备管理", false, null, "设备点检保养与一般故障处理"),
+        new("forklift", "叉车驾驶", "物流仓储", true, 48, "厂内叉车驾驶与物料转运，需持证上岗")
+    ];
+
+    private static readonly TeamSeed[] Teams =
+    [
+        new("TEAM-ASSY-A", "装配一线早班组", "DEPT-PROD", "DAY"),
+        new("TEAM-ASSY-B", "装配一线晚班组", "DEPT-PROD", "NIGHT")
+    ];
+
+    private static readonly TeamMemberSeed[] TeamMembers =
+    [
+        new("TEAM-ASSY-A", "user-op-001", true),
+        new("TEAM-ASSY-A", "user-op-002", false),
+        new("TEAM-ASSY-A", "user-qc-001", false),
+        new("TEAM-ASSY-B", "user-op-003", true),
+        new("TEAM-ASSY-B", "user-op-004", false),
+        new("TEAM-ASSY-B", "user-eq-001", false)
+    ];
+
+    private static readonly PersonnelSkillSeed[] PersonnelSkills =
+    [
+        new("user-op-001", "assembly", "senior"),
+        new("user-op-001", "cnc-operation", "intermediate"),
+        new("user-op-001", "inspection", "junior"),
+        new("user-op-002", "assembly", "intermediate"),
+        new("user-op-002", "equipment-maintenance", "junior"),
+        new("user-qc-001", "inspection", "senior"),
+        new("user-qc-001", "assembly", "junior"),
+        new("user-op-003", "cnc-operation", "senior"),
+        new("user-op-003", "welding", "intermediate"),
+        new("user-op-004", "assembly", "intermediate"),
+        new("user-op-004", "forklift", "junior"),
+        new("user-eq-001", "equipment-maintenance", "expert"),
+        new("user-eq-001", "cnc-operation", "intermediate")
+    ];
+
+    private static readonly DateOnly PersonnelSkillEffectiveFrom = new(2026, 1, 1);
+    private static readonly DateOnly PersonnelSkillEffectiveTo = new(2030, 12, 31);
+    private static readonly DateOnly TeamMemberEffectiveFrom = new(2026, 1, 1);
 
     public async Task SeedAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default)
     {
@@ -84,7 +156,7 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
                     CodeRuleVersionStatus.Active,
                     DateTimeOffset.UnixEpoch,
                     "standard-seed",
-                    "standard code rule seed",
+                    "标准编码规则种子",
                     DateTimeOffset.UtcNow));
             }
         }
@@ -123,7 +195,7 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
         foreach (var item in obsoleteReferenceData.Where(item =>
             MasterDataDictionaryRules.ObsoleteSeedCodes[item.CodeSet].Contains(item.Code)))
         {
-            item.Disable("disabled by master-data dictionary rules seed");
+            item.Disable("按主数据字典规则种子停用");
         }
 
         foreach (var item in Units)
@@ -199,7 +271,7 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
                 x.Code == "STANDARD",
                 cancellationToken))
         {
-            var calendar = WorkCalendar.Create(organizationId, environmentId, "STANDARD", "Standard Calendar");
+            var calendar = WorkCalendar.Create(organizationId, environmentId, "STANDARD", "标准工作日历");
             foreach (var day in new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday })
             {
                 calendar.AddWorkingDay(day);
@@ -208,10 +280,138 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
             dbContext.WorkCalendars.Add(calendar);
         }
 
+        await SeedOrganizationAsync(organizationId, environmentId, cancellationToken);
+        await SeedProductCategoriesAsync(organizationId, environmentId, cancellationToken);
+        await SeedSkillsAsync(organizationId, environmentId, cancellationToken);
+
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    // 组织与班组：仅在缺失时补齐，已存在的租户数据一律保留（不覆盖、不改名）。
+    private async Task SeedOrganizationAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
+    {
+        foreach (var item in Departments)
+        {
+            if (!await dbContext.Departments.AnyAsync(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.Code == item.Code,
+                    cancellationToken))
+            {
+                dbContext.Departments.Add(Department.Create(organizationId, environmentId, item.Code, item.Name, item.ParentCode));
+            }
+        }
+
+        foreach (var item in Teams)
+        {
+            if (!await dbContext.Teams.AnyAsync(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.Code == item.Code,
+                    cancellationToken))
+            {
+                dbContext.Teams.Add(Team.Create(organizationId, environmentId, item.Code, item.Name, item.DepartmentCode, item.ShiftCode));
+            }
+        }
+
+        foreach (var item in TeamMembers)
+        {
+            if (!await dbContext.TeamMembers.AnyAsync(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.TeamCode == item.TeamCode &&
+                    x.UserId == item.UserId,
+                    cancellationToken))
+            {
+                dbContext.TeamMembers.Add(TeamMember.Assign(
+                    organizationId,
+                    environmentId,
+                    item.TeamCode,
+                    item.UserId,
+                    item.IsLeader,
+                    TeamMemberEffectiveFrom,
+                    null));
+            }
+        }
+
+        foreach (var item in PersonnelSkills)
+        {
+            if (!await dbContext.PersonnelSkills.AnyAsync(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.UserId == item.UserId &&
+                    x.SkillCode == item.SkillCode,
+                    cancellationToken))
+            {
+                dbContext.PersonnelSkills.Add(PersonnelSkill.Assign(
+                    organizationId,
+                    environmentId,
+                    item.UserId,
+                    item.SkillCode,
+                    item.Level,
+                    PersonnelSkillEffectiveFrom,
+                    PersonnelSkillEffectiveTo));
+            }
+        }
+    }
+
+    private async Task SeedProductCategoriesAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
+    {
+        foreach (var item in ProductCategories)
+        {
+            if (!await dbContext.ProductCategories.AnyAsync(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.CategoryCode == item.Code,
+                    cancellationToken))
+            {
+                dbContext.ProductCategories.Add(ProductCategory.Create(
+                    organizationId,
+                    environmentId,
+                    item.Code,
+                    item.Name,
+                    item.ParentCode,
+                    item.Description));
+            }
+        }
+    }
+
+    private async Task SeedSkillsAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
+    {
+        foreach (var item in Skills)
+        {
+            if (!await dbContext.Skills.AnyAsync(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.SkillCode == item.Code,
+                    cancellationToken))
+            {
+                dbContext.Skills.Add(Skill.Create(
+                    organizationId,
+                    environmentId,
+                    item.Code,
+                    item.Name,
+                    item.GroupName,
+                    item.RequiresCertification,
+                    item.ValidityMonths,
+                    item.Description));
+            }
+        }
     }
 
     private sealed record UomSeed(string Code, string Name, string DimensionType, int Precision, string RoundingMode);
 
     private sealed record ShiftSeed(string Code, string Name, TimeOnly StartsAt, TimeOnly EndsAt, int PaidMinutes);
+
+    private sealed record DepartmentSeed(string Code, string Name, string? ParentCode);
+
+    private sealed record ProductCategorySeed(string Code, string Name, string? ParentCode, string Description);
+
+    private sealed record SkillSeed(string Code, string Name, string GroupName, bool RequiresCertification, int? ValidityMonths, string Description);
+
+    private sealed record TeamSeed(string Code, string Name, string DepartmentCode, string ShiftCode);
+
+    private sealed record TeamMemberSeed(string TeamCode, string UserId, bool IsLeader);
+
+    private sealed record PersonnelSkillSeed(string UserId, string SkillCode, string Level);
 }
