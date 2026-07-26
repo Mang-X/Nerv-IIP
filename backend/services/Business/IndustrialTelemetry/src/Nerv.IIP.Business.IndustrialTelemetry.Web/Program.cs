@@ -84,6 +84,7 @@ try
 
     builder.Services.AddIndustrialTelemetryPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<LeaderDemoSeedService>();
+    builder.Services.AddScoped<WorldBibleSeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
@@ -148,9 +149,13 @@ try
     if (leaderDemoSeedEnabled)
     {
         using var scope = app.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(
-            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
+        var organizationId = builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001";
+        var environmentId = builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev";
+        await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(organizationId, environmentId);
+        if (builder.Configuration.GetValue("LeaderDemo:World:Enabled", false))
+        {
+            await scope.ServiceProvider.GetRequiredService<WorldBibleSeedService>().SeedAsync(organizationId, environmentId);
+        }
     }
 
     app.UseNervIipRequestLocalization();
