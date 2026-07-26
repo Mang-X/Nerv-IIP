@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleBarcodeTemplateItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBarcodeTemplates } from '@/composables/useBusinessBarcode'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -113,6 +114,8 @@ watch(pageSize, () => {
 const errorMessage = computed(() =>
   templatesError.value instanceof Error ? templatesError.value.message : '',
 )
+// 编辑态由所选行带出的只读上下文（模板编码是身份，不可改）。
+const carriedItems = computed(() => [{ label: '模板编码', value: editingTemplateCode.value }])
 const canSubmit = computed(
   () =>
     form.templateCode.trim().length > 0 &&
@@ -228,18 +231,28 @@ async function submitTemplate() {
               <NvDialogTitle>{{
                 editingTemplateCode ? `编辑标签模板 · ${editingTemplateCode}` : '新建标签模板'
               }}</NvDialogTitle>
-              <NvDialogDescription>{{
+              <!-- 说明不上界面：仅供读屏播报。 -->
+              <NvDialogDescription class="sr-only">{{
                 editingTemplateCode
-                  ? '修改标签模板引用和字段结构，模板编码不可修改。'
-                  : '创建标签模板。模板文件由文件服务管理，本页只维护引用和字段结构。'
+                  ? `标签模板 ${editingTemplateCode} 的配置。`
+                  : '登记一个标签模板。'
               }}</NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitTemplate">
+              <!-- 编辑态：模板编码由所选行带出，只读展示，不做成 readonly 输入框。 -->
+              <CarriedContextSummary
+                v-if="editingTemplateCode"
+                label="编辑对象"
+                :items="carriedItems"
+              />
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请填写模板编码、名称、模板文件，并提供合法 JSON 字段说明。
               </p>
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                <NvField :data-invalid="showErrors && !form.templateCode.trim()">
+                <NvField
+                  v-if="!editingTemplateCode"
+                  :data-invalid="showErrors && !form.templateCode.trim()"
+                >
                   <NvFieldLabel for="barcode-template-code"
                     >模板编码 <span class="text-destructive">*</span></NvFieldLabel
                   >
@@ -247,11 +260,7 @@ async function submitTemplate() {
                     id="barcode-template-code"
                     v-model="form.templateCode"
                     autocomplete="off"
-                    :readonly="Boolean(editingTemplateCode)"
                   />
-                  <NvFieldDescription v-if="editingTemplateCode"
-                    >模板编码由后端作为更新键，不可在编辑时修改。</NvFieldDescription
-                  >
                 </NvField>
                 <NvField :data-invalid="showErrors && !form.templateName.trim()">
                   <NvFieldLabel for="barcode-template-name"
@@ -272,7 +281,6 @@ async function submitTemplate() {
                     v-model="form.templateFileId"
                     autocomplete="off"
                   />
-                  <NvFieldDescription>填写文件服务返回的模板文件标识。</NvFieldDescription>
                 </NvField>
                 <NvField>
                   <NvFieldLabel>状态</NvFieldLabel>
@@ -300,8 +308,9 @@ async function submitTemplate() {
                     v-model="form.variableSchemaJson"
                     class="min-h-24 rounded-md border bg-background px-3 py-2 text-sm"
                   />
+                  <!-- JSON 结构不是显然的，保留一行语法示例。 -->
                   <NvFieldDescription
-                    >建议包含适用对象和字段数组，例如 SKU、批次、有效期或 SSCC。</NvFieldDescription
+                    >JSON 格式，如 {"fields":["skuCode","lotNo"]}</NvFieldDescription
                   >
                 </NvField>
               </NvFieldGroup>

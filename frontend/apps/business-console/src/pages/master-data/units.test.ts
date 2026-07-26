@@ -58,7 +58,13 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     createUom: stub.createUom,
     createUomError: shallowRef(undefined),
     createUomPending: shallowRef(false),
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', resourceType: 'unit-of-measure', skip: 0, take: 10 }),
+    filters: reactive({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      resourceType: 'unit-of-measure',
+      skip: 0,
+      take: 10,
+    }),
     refreshUoms: vi.fn(),
     uoms: computed(() => [uomRow, uomRowBox]),
     uomsError: shallowRef(undefined),
@@ -69,7 +75,13 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     createUomConversion: stub.createUomConversion,
     createUomConversionError: shallowRef(undefined),
     createUomConversionPending: shallowRef(false),
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', resourceType: 'uom-conversion', skip: 0, take: 10 }),
+    filters: reactive({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      resourceType: 'uom-conversion',
+      skip: 0,
+      take: 10,
+    }),
     refreshConversions: vi.fn(),
     conversions: computed(() => conversionState.rows),
     conversionsError: shallowRef(undefined),
@@ -87,7 +99,10 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     actionError: shallowRef(undefined),
   }),
   // 量纲实时拉取：实时为空，页面回退量纲常量。
-  useBusinessMasterDataResources: () => ({ resources: shallowRef([]), resourcesPending: shallowRef(false) }),
+  useBusinessMasterDataResources: () => ({
+    resources: shallowRef([]),
+    resourcesPending: shallowRef(false),
+  }),
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -100,13 +115,19 @@ const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
   // RowActions 内的下拉项已迁到 Pro（NvDropdownMenuItem 是真 .vue 包装，stub 按 Pro 名）。
-  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuItem: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
 }
 // RowActions / MasterDataRowActions 内的 Pro 下拉与确认弹层均含 reka portal/Teleport，
 // jsdom 卸载会崩；仅挂 layoutStub 的用例需把这些就地渲染。
 const rowActionsTeleportStubs = {
   NvDropdownMenuContent: { template: '<div><slot /></div>' },
-  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuItem: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
   NvAlertDialog: { template: '<div><slot /></div>' },
   NvAlertDialogContent: { template: '<div><slot /></div>' },
   NvAlertDialogHeader: { template: '<div><slot /></div>' },
@@ -114,7 +135,10 @@ const rowActionsTeleportStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvAlertDialogAction: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
 }
 // 对话框就地渲染（不 teleport），便于断言/填写表单内容。
 const dialogStubs = {
@@ -130,7 +154,10 @@ const dialogStubs = {
   // 行操作里 RowActions 的下拉内容已迁到 Pro（NvDropdownMenuContent 含 reka portal/Teleport，
   // jsdom 卸载会崩）就地渲染，避免渲染崩溃。
   NvDropdownMenuContent: { template: '<div><slot /></div>' },
-  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuItem: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
   // 行操作里的 AlertDialog 已迁到 Pro（NvAlertDialogContent 含 reka portal/Teleport，jsdom 卸载会崩）就地渲染。
   NvAlertDialog: { template: '<div><slot /></div>' },
   NvAlertDialogTrigger: { template: '<div><slot /></div>' },
@@ -140,7 +167,10 @@ const dialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvAlertDialogAction: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
 }
 // 停用/启用二次确认弹窗（已迁到 Pro AlertDialog）就地渲染（不 teleport），便于点「确认停用」。
 const alertDialogStubs = {
@@ -151,14 +181,18 @@ const alertDialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvAlertDialogAction: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
 }
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue 完成"填表→提交"。
 const selectStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
@@ -169,7 +203,10 @@ const selectStubs = {
 
 // 打开「新建计量单位」并填合法值（名称为文本，量纲/取整为常量回退下拉；编码由系统自动生成）。
 async function openAndFillValid(wrapper: ReturnType<typeof mount>) {
-  await wrapper.findAll('button').find((b) => b.text().includes('新建计量单位'))!.trigger('click')
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text().includes('新建计量单位'))!
+    .trigger('click')
   await flushPromises()
   await wrapper.find('#uom-name').setValue('个')
   await flushPromises()
@@ -212,7 +249,9 @@ describe('master-data units page', () => {
   })
 
   it('填全必填后提交：调用 createUom 并弹成功 toast', async () => {
-    const wrapper = mount(UnitsPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(UnitsPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
     await flushPromises()
     await openAndFillValid(wrapper)
 
@@ -220,7 +259,12 @@ describe('master-data units page', () => {
     await flushPromises()
 
     expect(stub.createUom).toHaveBeenCalledTimes(1)
-    const body = stub.createUom.mock.calls[0]![0] as { code?: string, name: string, dimensionType: string, roundingMode: string }
+    const body = stub.createUom.mock.calls[0]![0] as {
+      code?: string
+      name: string
+      dimensionType: string
+      roundingMode: string
+    }
     expect(body.code).toBeUndefined()
     expect(body.name).toBe('个')
     expect(body.dimensionType).toBe('count')
@@ -231,7 +275,9 @@ describe('master-data units page', () => {
 
   it('提交失败：弹错误 toast（人话）且不重置表单', async () => {
     stub.createUom.mockRejectedValueOnce(new Error('downstream-invalid-response'))
-    const wrapper = mount(UnitsPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(UnitsPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
     await flushPromises()
     await openAndFillValid(wrapper)
 
@@ -246,7 +292,9 @@ describe('master-data units page', () => {
   })
 
   it('行「编辑」触发：拉详情回填、对话框进入编辑态、编码只读', async () => {
-    const wrapper = mount(UnitsPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...rowActionStubs } } })
+    const wrapper = mount(UnitsPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...rowActionStubs } },
+    })
     await flushPromises()
 
     const editItem = wrapper.findAll('button').find((b) => b.text().trim() === '编辑')
@@ -256,10 +304,10 @@ describe('master-data units page', () => {
 
     // 详情被拉取用于全字段回填。
     expect(stub.fetchDetail).toHaveBeenCalledWith('EA')
-    // 对话框进入编辑态：标题含「编辑计量单位」，编码只读。
+    // 对话框进入编辑态：标题含「编辑计量单位」，编码走只读上下文区（非 disabled 输入框）。
     expect(wrapper.text()).toContain('编辑计量单位')
-    const codeInput = wrapper.find('#uom-code').element as HTMLInputElement
-    expect(codeInput.disabled).toBe(true)
+    expect(wrapper.find('#uom-code').exists()).toBe(false)
+    expect(wrapper.find('[data-slot="carried-context"]').text()).toContain('EA')
   })
 
   it('必填未填点保存：出现汇总提示且不发创建请求', async () => {
@@ -279,7 +327,9 @@ describe('master-data units page', () => {
   })
 
   it('换算 Tab：渲染换算列表，源/目标单位显示名称（非编码）', async () => {
-    const wrapper = mount(UnitsPage, { global: { stubs: { ...layoutStub, ...rowActionsTeleportStubs } } })
+    const wrapper = mount(UnitsPage, {
+      global: { stubs: { ...layoutStub, ...rowActionsTeleportStubs } },
+    })
     await flushPromises()
     await switchTab(wrapper, '换算关系')
 
@@ -291,11 +341,16 @@ describe('master-data units page', () => {
   })
 
   it('换算 Tab：填全必填后提交，createUomConversion 收到 body 且弹成功 toast', async () => {
-    const wrapper = mount(UnitsPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(UnitsPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
     await flushPromises()
     await switchTab(wrapper, '换算关系')
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建换算关系'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建换算关系'))!
+      .trigger('click')
     await flushPromises()
     // 表单内的下拉顺序：源单位 / 目标单位 / 取整方式。
     const selects = wrapper.findAll('select')
@@ -309,7 +364,10 @@ describe('master-data units page', () => {
 
     expect(stub.createUomConversion).toHaveBeenCalledTimes(1)
     const body = stub.createUomConversion.mock.calls[0]![0] as {
-      fromUomCode: string, toUomCode: string, factor: number, roundingMode: string
+      fromUomCode: string
+      toUomCode: string
+      factor: number
+      roundingMode: string
     }
     expect(body.fromUomCode).toBe('BOX')
     expect(body.toUomCode).toBe('EA')
@@ -320,11 +378,16 @@ describe('master-data units page', () => {
   })
 
   it('换算 Tab：源=目标单位时校验拦截，不发创建请求', async () => {
-    const wrapper = mount(UnitsPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(UnitsPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
     await flushPromises()
     await switchTab(wrapper, '换算关系')
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建换算关系'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建换算关系'))!
+      .trigger('click')
     await flushPromises()
     const selects = wrapper.findAll('select')
     await selects[0]!.setValue('EA')
@@ -340,11 +403,16 @@ describe('master-data units page', () => {
   })
 
   it('换算 Tab：factor≤0 时校验拦截，不发创建请求', async () => {
-    const wrapper = mount(UnitsPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(UnitsPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
     await flushPromises()
     await switchTab(wrapper, '换算关系')
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建换算关系'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建换算关系'))!
+      .trigger('click')
     await flushPromises()
     const selects = wrapper.findAll('select')
     await selects[0]!.setValue('BOX')
@@ -359,7 +427,9 @@ describe('master-data units page', () => {
   })
 
   it('换算 Tab：行「停用」二次确认后调用换算的 disable', async () => {
-    const wrapper = mount(UnitsPage, { global: { stubs: { ...layoutStub, ...rowActionStubs, ...alertDialogStubs } } })
+    const wrapper = mount(UnitsPage, {
+      global: { stubs: { ...layoutStub, ...rowActionStubs, ...alertDialogStubs } },
+    })
     await flushPromises()
     await switchTab(wrapper, '换算关系')
 
@@ -378,7 +448,9 @@ describe('master-data units page', () => {
 
   it('换算 Tab：无换算时显示「去新建」空态', async () => {
     conversionState.rows = []
-    const wrapper = mount(UnitsPage, { global: { stubs: { ...layoutStub, ...rowActionsTeleportStubs } } })
+    const wrapper = mount(UnitsPage, {
+      global: { stubs: { ...layoutStub, ...rowActionsTeleportStubs } },
+    })
     await flushPromises()
     await switchTab(wrapper, '换算关系')
 

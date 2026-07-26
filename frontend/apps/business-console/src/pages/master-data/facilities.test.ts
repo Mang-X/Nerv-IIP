@@ -16,31 +16,61 @@ const stub = vi.hoisted(() => ({
 // 两个工厂 → 树不压扁根，工厂节点可见、可就地建子级。
 // 关系靠 typed code 链路：workshop.siteCode / line.workshopCode / workCenter.lineCode。
 const SITE_ROWS = [
-  { resourceType: 'site', code: 'PLANT-A', displayName: '宁波工厂', active: true, snapshotVersion: '1' },
-  { resourceType: 'site', code: 'PLANT-B', displayName: '上海工厂', active: true, snapshotVersion: '1' },
+  {
+    resourceType: 'site',
+    code: 'PLANT-A',
+    displayName: '宁波工厂',
+    active: true,
+    snapshotVersion: '1',
+  },
+  {
+    resourceType: 'site',
+    code: 'PLANT-B',
+    displayName: '上海工厂',
+    active: true,
+    snapshotVersion: '1',
+  },
 ]
 const WORKSHOP_ROWS = [
-  { resourceType: 'workshop', code: 'WS-A', displayName: '总装车间', active: true, siteCode: 'PLANT-A' },
+  {
+    resourceType: 'workshop',
+    code: 'WS-A',
+    displayName: '总装车间',
+    active: true,
+    siteCode: 'PLANT-A',
+  },
 ]
 const LINE_ROWS = [
-  { resourceType: 'production-line', code: 'LINE-A', displayName: '前桥线', active: true, siteCode: 'PLANT-A', workshopCode: 'WS-A' },
+  {
+    resourceType: 'production-line',
+    code: 'LINE-A',
+    displayName: '前桥线',
+    active: true,
+    siteCode: 'PLANT-A',
+    workshopCode: 'WS-A',
+  },
 ]
 const WC_ROWS = [
-  { resourceType: 'work-center', code: 'WC-A', displayName: '焊接中心', active: true, plantCode: 'PLANT-A', lineCode: 'LINE-A', capacityMinutesPerDay: 480 },
+  {
+    resourceType: 'work-center',
+    code: 'WC-A',
+    displayName: '焊接中心',
+    active: true,
+    plantCode: 'PLANT-A',
+    lineCode: 'LINE-A',
+    capacityMinutesPerDay: 480,
+  },
 ]
 
 const CREATE_BY_TYPE: Record<string, ReturnType<typeof vi.fn>> = {
-  'site': stub.createSite,
+  site: stub.createSite,
   'production-line': stub.createLine,
   'work-center': stub.createWorkCenter,
 }
 
 function stubResource(resourceType: string) {
-  const rows = resourceType === 'site'
-    ? SITE_ROWS
-    : resourceType === 'production-line'
-      ? LINE_ROWS
-      : WC_ROWS
+  const rows =
+    resourceType === 'site' ? SITE_ROWS : resourceType === 'production-line' ? LINE_ROWS : WC_ROWS
   return {
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 200 }),
     items: computed(() => rows),
@@ -112,7 +142,11 @@ const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const routerLinkStub = {
   RouterLink: {
     props: ['to'],
-    computed: { serialized() { return JSON.stringify((this as unknown as { to: unknown }).to) } },
+    computed: {
+      serialized() {
+        return JSON.stringify((this as unknown as { to: unknown }).to)
+      },
+    },
     template: '<a :data-to="serialized"><slot /></a>',
   },
 }
@@ -133,7 +167,8 @@ const formSelectStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
@@ -144,7 +179,9 @@ const formSelectStubs = {
 
 // 找到树里某节点的「选中」按钮（按文本）。
 function findNodeButton(wrapper: ReturnType<typeof mount>, label: string) {
-  return wrapper.findAll('button').find((b) => b.text().includes(label) && !b.attributes('aria-label')?.includes('新建'))
+  return wrapper
+    .findAll('button')
+    .find((b) => b.text().includes(label) && !b.attributes('aria-label')?.includes('新建'))
 }
 
 const mountOpts = { global: { stubs: { ...layoutStub, ...dialogStubs, ...routerLinkStub } } }
@@ -199,7 +236,7 @@ describe('master-data facilities tree page', () => {
     expect(String(to)).toContain('WC-A')
   })
 
-  it('「新建子级」prefills parent code read-only (site → workshop)', async () => {
+  it('「新建子级」carries the parent as read-only context (site → workshop)', async () => {
     const wrapper = mount(FacilitiesPage, mountOpts)
     await flushPromises()
 
@@ -212,11 +249,13 @@ describe('master-data facilities tree page', () => {
     await createChildBtn!.trigger('click')
     await flushPromises()
 
-    // 对话框：标题「新建车间」，父归属（所属工厂）预填 PLANT-A 且只读。
+    // 对话框：标题「新建车间」，父归属走只读上下文区（显示工厂名，不做 disabled 输入框）。
     expect(wrapper.text()).toContain('新建车间')
-    const siteInput = wrapper.find('#create-site').element as HTMLInputElement
-    expect(siteInput.value).toBe('PLANT-A')
-    expect(siteInput.disabled).toBe(true)
+    expect(wrapper.find('#create-site').exists()).toBe(false)
+    const carried = wrapper.find('[data-slot="carried-context"]')
+    expect(carried.exists()).toBe(true)
+    expect(carried.text()).toContain('所属工厂')
+    expect(carried.text()).toContain('宁波工厂')
   })
 
   it('creating a workshop posts with prefilled siteCode and fires success toast', async () => {
@@ -228,7 +267,10 @@ describe('master-data facilities tree page', () => {
 
     await findNodeButton(wrapper, '宁波工厂')!.trigger('click')
     await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text().includes('新建车间'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建车间'))!
+      .trigger('click')
     await flushPromises()
 
     // 新建态不再有编码输入框（编码由系统自动生成）。
@@ -239,7 +281,11 @@ describe('master-data facilities tree page', () => {
     await flushPromises()
 
     expect(stub.createWorkshop).toHaveBeenCalledTimes(1)
-    const body = stub.createWorkshop.mock.calls[0]![0] as { code?: string, name: string, siteCode: string }
+    const body = stub.createWorkshop.mock.calls[0]![0] as {
+      code?: string
+      name: string
+      siteCode: string
+    }
     expect(body.code).toBeUndefined()
     expect(body.name).toBe('涂装车间')
     expect(body.siteCode).toBe('PLANT-A')
@@ -253,7 +299,10 @@ describe('master-data facilities tree page', () => {
     const wrapper = mount(FacilitiesPage, mountOpts)
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建工厂'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建工厂'))!
+      .trigger('click')
     await flushPromises()
 
     // 新建态不再有编码输入框（编码由系统自动生成）。
@@ -264,7 +313,11 @@ describe('master-data facilities tree page', () => {
     await flushPromises()
 
     expect(stub.createSite).toHaveBeenCalledTimes(1)
-    const body = stub.createSite.mock.calls[0]![0] as { code?: string, name: string, timezone: string }
+    const body = stub.createSite.mock.calls[0]![0] as {
+      code?: string
+      name: string
+      timezone: string
+    }
     expect(body.code).toBeUndefined()
     expect(body.name).toBe('广州工厂')
     expect(body.timezone).toBe('Asia/Shanghai')
@@ -276,7 +329,10 @@ describe('master-data facilities tree page', () => {
     const wrapper = mount(FacilitiesPage, mountOpts)
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建工厂'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建工厂'))!
+      .trigger('click')
     await flushPromises()
     // 名称留空 → 非法（编码已由系统自动生成，不再校验）。
     await wrapper.find('form').trigger('submit')
@@ -294,7 +350,10 @@ describe('master-data facilities tree page', () => {
     const wrapper = mount(FacilitiesPage, mountOpts)
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建工厂'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建工厂'))!
+      .trigger('click')
     await flushPromises()
     await wrapper.find('#create-name').setValue('广州工厂')
     await flushPromises()
@@ -310,13 +369,24 @@ describe('master-data facilities tree page', () => {
 
   const editStubs = {
     RowActions: { template: '<div><slot /></div>' },
-    DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+    DropdownMenuItem: {
+      emits: ['click'],
+      template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+    },
   }
 
   it('编辑工厂：编码只读、可改名 / 时区（工厂无归属，不显示归属选择）', async () => {
     actionStub.fetchDetail.mockClear()
     const wrapper = mount(FacilitiesPage, {
-      global: { stubs: { ...layoutStub, ...dialogStubs, ...routerLinkStub, ...formSelectStubs, ...editStubs } },
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...routerLinkStub,
+          ...formSelectStubs,
+          ...editStubs,
+        },
+      },
     })
     await flushPromises()
 
@@ -331,8 +401,9 @@ describe('master-data facilities tree page', () => {
 
     expect(actionStub.fetchDetail).toHaveBeenCalledWith('PLANT-A')
     expect(wrapper.text()).toContain('编辑工厂')
-    const codeInput = wrapper.find('#edit-code').element as HTMLInputElement
-    expect(codeInput.disabled).toBe(true)
+    // 系统编号只读展示，不做 disabled 输入框。
+    expect(wrapper.find('#edit-code').exists()).toBe(false)
+    expect(wrapper.find('[data-slot="carried-context"]').text()).toContain('PLANT-A')
     // 改挂提示已删除；工厂无上级，不渲染归属选择器。
     expect(wrapper.text()).not.toContain('归属（上级）创建后不可更改')
     expect(wrapper.find('#edit-site').exists()).toBe(false)
@@ -341,7 +412,15 @@ describe('master-data facilities tree page', () => {
   it('编辑车间：可改挂工厂（update 收到新 siteCode），编码只读', async () => {
     actionStub.update.mockClear()
     const wrapper = mount(FacilitiesPage, {
-      global: { stubs: { ...layoutStub, ...dialogStubs, ...routerLinkStub, ...formSelectStubs, ...editStubs } },
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...routerLinkStub,
+          ...formSelectStubs,
+          ...editStubs,
+        },
+      },
     })
     await flushPromises()
 
@@ -352,7 +431,8 @@ describe('master-data facilities tree page', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('编辑车间')
-    expect((wrapper.find('#edit-code').element as HTMLInputElement).disabled).toBe(true)
+    expect(wrapper.find('#edit-code').exists()).toBe(false)
+    expect(wrapper.find('[data-slot="carried-context"]').text()).toContain('WS-A')
     // 改挂工厂：PLANT-A → PLANT-B。
     const siteSelect = wrapper.findAll('select').find((s) => s.html().includes('PLANT-B'))!
     await siteSelect.setValue('PLANT-B')
@@ -360,13 +440,24 @@ describe('master-data facilities tree page', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(actionStub.update).toHaveBeenCalledWith('WS-A', expect.objectContaining({ siteCode: 'PLANT-B' }))
+    expect(actionStub.update).toHaveBeenCalledWith(
+      'WS-A',
+      expect.objectContaining({ siteCode: 'PLANT-B' }),
+    )
   })
 
   it('编辑工作中心：可改挂工厂 / 产线（update 收到新 plantCode + lineCode）', async () => {
     actionStub.update.mockClear()
     const wrapper = mount(FacilitiesPage, {
-      global: { stubs: { ...layoutStub, ...dialogStubs, ...routerLinkStub, ...formSelectStubs, ...editStubs } },
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...routerLinkStub,
+          ...formSelectStubs,
+          ...editStubs,
+        },
+      },
     })
     await flushPromises()
 
@@ -393,7 +484,15 @@ describe('master-data facilities tree page', () => {
   it('编辑产线改挂工厂后清空不匹配的车间（防归属错配）', async () => {
     actionStub.update.mockClear()
     const wrapper = mount(FacilitiesPage, {
-      global: { stubs: { ...layoutStub, ...dialogStubs, ...routerLinkStub, ...formSelectStubs, ...editStubs } },
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...routerLinkStub,
+          ...formSelectStubs,
+          ...editStubs,
+        },
+      },
     })
     await flushPromises()
 
@@ -407,7 +506,9 @@ describe('master-data facilities tree page', () => {
     // 初始：siteCode=PLANT-A、workshopCode=WS-A（属 PLANT-A）。改挂到 PLANT-B：
     // WS-A 不属 PLANT-B → 车间应被级联清空，避免归属错配。
     const siteSelect = wrapper.find('#edit-line-site').exists()
-      ? wrapper.findAll('select').find((s) => s.html().includes('PLANT-B') && s.html().includes('PLANT-A'))!
+      ? wrapper
+          .findAll('select')
+          .find((s) => s.html().includes('PLANT-B') && s.html().includes('PLANT-A'))!
       : wrapper.findAll('select')[0]!
     await siteSelect.setValue('PLANT-B')
     await flushPromises()

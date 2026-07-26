@@ -9,6 +9,7 @@ import {
   useBusinessWorkers,
 } from '@/composables/useBusinessMasterData'
 import { useSkillCatalog } from '@/composables/usePromotedCatalogs'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -198,6 +199,9 @@ watch(skillOpen, (open) => {
   }
 })
 /** 打开登记弹窗，可预填某工人某技能（格子点击进入）。 */
+// 从矩阵格子进入时，工人与技能由该格带出：只读展示，不再给挑选控件。
+const assignLockedUser = ref(false)
+const assignLockedSkill = ref(false)
 function openAssign(prefill?: { userId?: string; skillCode?: string }) {
   Object.assign(skillForm, {
     userId: prefill?.userId ?? '',
@@ -205,6 +209,8 @@ function openAssign(prefill?: { userId?: string; skillCode?: string }) {
     level: '',
     effectiveFrom: '',
   })
+  assignLockedUser.value = Boolean(prefill?.userId)
+  assignLockedSkill.value = Boolean(prefill?.skillCode)
   skillShowErrors.value = false
   skillOpen.value = true
 }
@@ -441,11 +447,23 @@ async function submitSkill() {
       <NvDialogContent class="sm:max-w-lg">
         <NvDialogHeader>
           <NvDialogTitle>登记人员技能</NvDialogTitle>
-          <NvDialogDescription
-            >为某位工人登记一项技能与等级，可选填生效日期。带 * 为必填项。</NvDialogDescription
-          >
+          <NvDialogDescription class="sr-only">
+            {{
+              assignLockedUser
+                ? `${workerName(skillForm.userId)} · ${skillName(skillForm.skillCode)}`
+                : '登记人员技能'
+            }}
+          </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitSkill">
+          <CarriedContextSummary
+            v-if="assignLockedUser || assignLockedSkill"
+            label="登记对象"
+            :items="[
+              { label: '工人', value: assignLockedUser ? workerName(skillForm.userId) : '' },
+              { label: '技能', value: assignLockedSkill ? skillName(skillForm.skillCode) : '' },
+            ]"
+          />
           <p
             v-if="skillShowErrors && !canAssignSkill"
             class="text-sm text-destructive"
@@ -455,6 +473,7 @@ async function submitSkill() {
           </p>
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField
+              v-if="!assignLockedUser"
               class="sm:col-span-2"
               :data-invalid="skillShowErrors && !isNonEmpty(skillForm.userId)"
             >
@@ -467,7 +486,10 @@ async function submitSkill() {
                 placeholder="搜索并选择工人"
               />
             </NvField>
-            <NvField :data-invalid="skillShowErrors && !isNonEmpty(skillForm.skillCode)">
+            <NvField
+              v-if="!assignLockedSkill"
+              :data-invalid="skillShowErrors && !isNonEmpty(skillForm.skillCode)"
+            >
               <NvFieldLabel for="skill-code"
                 >技能 <span class="text-destructive">*</span></NvFieldLabel
               >

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricStatus, NvMetricTone } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import QualityHoldPanel from '@/components/mes/QualityHoldPanel.vue'
 import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
@@ -301,6 +302,7 @@ const finalReasonLength = computed(() => {
     ? cancelReasonLabel.value.length + 1 + remark.length
     : cancelReasonLabel.value.length
 })
+const showReasonLengthHint = computed(() => finalReasonLength.value > REASON_MAX_LENGTH * 0.8)
 const remarkMaxLength = computed(() =>
   Math.max(0, REASON_MAX_LENGTH - cancelReasonLabel.value.length - 1),
 )
@@ -314,6 +316,14 @@ const canSubmitCancel = computed(() => {
   if (finalReasonLength.value > REASON_MAX_LENGTH) return false
   return true
 })
+
+// 取消弹窗的只读上下文：全部来自当前工单详情，操作员只补原因与备注。
+const cancelContextItems = computed(() => [
+  { label: '工单', value: filters.workOrderId },
+  { label: '状态', value: formatStatus(detail.value?.status) },
+  { label: '物料', value: skuLabel.value },
+  { label: '计划数量', value: formatQuantity(detail.value?.quantity) },
+])
 
 function resetCancelForm() {
   cancelForm.reasonCode = ''
@@ -616,16 +626,17 @@ function formatError(error: unknown) {
       <NvAlertDialogContent class="sm:max-w-lg">
         <NvAlertDialogHeader>
           <NvAlertDialogTitle>取消工单 · {{ filters.workOrderId }}</NvAlertDialogTitle>
+          <!-- 破坏性动作：保留一句后果陈述，明细由下方补偿预览给出。 -->
           <NvAlertDialogDescription>
-            取消后将释放库存预留、生成线边退料指引，并取消该工单未完成的完工入库请求与工序任务。此操作不可撤销。
+            取消后将释放预留、生成退料指引，并取消未完成的入库请求与工序任务，操作不可撤销。
           </NvAlertDialogDescription>
         </NvAlertDialogHeader>
 
+        <!-- 工单 / 状态 / 物料 / 计划数量由本页带出，只读呈现，取消时不需要再核对别处。 -->
+        <CarriedContextSummary label="取消对象" :items="cancelContextItems" />
+
         <section aria-label="补偿预览" class="grid gap-3 rounded-lg border bg-muted/30 p-3 text-sm">
-          <div class="flex items-center justify-between">
-            <span class="font-semibold text-foreground">补偿预览</span>
-            <span class="text-xs text-muted-foreground">按关联单据汇总</span>
-          </div>
+          <span class="font-semibold text-foreground">补偿预览</span>
 
           <div v-if="cancelPreviewPending" class="flex items-center gap-2 text-muted-foreground">
             <Spinner aria-hidden="true" />
@@ -681,7 +692,7 @@ function formatError(error: unknown) {
               class="grid gap-1 rounded-md border border-destructive/40 bg-destructive/5 p-2"
             >
               <p class="text-xs font-medium text-destructive">
-                以下已收料申请缺少物料批次，无法退料，直接取消整单会被后端拒绝。请先补录批次或消耗后再取消。
+                以下已收料申请缺少物料批次，无法退料；请先补录批次或消耗后再取消整单。
               </p>
               <ul class="max-h-24 divide-y overflow-y-auto rounded-md border bg-background">
                 <li
@@ -773,9 +784,11 @@ function formatError(error: unknown) {
               id="cancel-remark"
               v-model="cancelForm.remark"
               :maxlength="remarkMaxLength"
-              placeholder="补充取消说明，随请求提交并进入审计"
+              placeholder="补充取消说明"
             />
+            <!-- 字数只在接近/超过上限时提示：平时是噪音，超限时才是决策信息（后端限 500 字）。 -->
             <p
+              v-if="showReasonLengthHint"
               class="text-xs"
               :class="
                 finalReasonLength > REASON_MAX_LENGTH ? 'text-destructive' : 'text-muted-foreground'

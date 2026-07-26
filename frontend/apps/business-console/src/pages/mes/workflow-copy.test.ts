@@ -45,6 +45,11 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 }))
 
 vi.mock('@/composables/useBusinessMes', () => ({
+  useMesProductionReporting: () => ({
+    recordProductionReport: vi.fn(),
+    recordProductionReportError: ref(undefined),
+    recordProductionReportPending: ref(false),
+  }),
   describeMesReadinessReason: (code: string) => ({
     code,
     label: code || '未检',
@@ -409,7 +414,8 @@ describe('MES workflow copy', () => {
     mesSpies.traceabilityFilters = undefined
   })
 
-  it('keeps work-order reporting business-facing and row-context driven', () => {
+  it('keeps work-order reporting row-context driven with no typed context fields', () => {
+    // 报工上下文只能由所选行带出：页面既不再靠 URL query 唤起，也不再提供工单/工序输入位。
     routeState.query = {
       operationTaskId: 'OP-001-10',
       workOrderId: 'WO-001',
@@ -417,9 +423,9 @@ describe('MES workflow copy', () => {
 
     const wrapper = mountMesPage(WorkOrdersPage)
 
-    expect(wrapper.text()).toContain('工单与工序来自所选行')
-    expect(wrapper.find('#report-work-order').attributes('readonly')).toBeDefined()
-    expect(wrapper.find('#report-operation-task').attributes('readonly')).toBeDefined()
+    expect(wrapper.find('#report-work-order').exists()).toBe(false)
+    expect(wrapper.find('#report-operation-task').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('工单与工序来自所选行')
     expectNoForbiddenVisibleTerms(wrapper.text())
   })
 
@@ -429,7 +435,7 @@ describe('MES workflow copy', () => {
       .findAll('[data-router-link]')
       .find((link) => link.attributes('data-to') === '"/scheduling"')
 
-    expect(wrapper.text()).toContain('正式排产输出')
+    expect(wrapper.text()).not.toContain('正式排产输出')
     expect(wrapper.text()).not.toContain('排程结果')
     expect(schedulingLink).toBeDefined()
     expect(schedulingLink!.text()).toContain('排产工作台')
@@ -444,7 +450,7 @@ describe('MES workflow copy', () => {
     expectNoForbiddenVisibleTerms(wrapper.text())
   })
 
-  it('carries operation-task context into the work-order reporting sheet route', async () => {
+  it('opens reporting in place from the operation-task row and carries the row context', async () => {
     const wrapper = mountMesPage(OperationTasksPage)
 
     await wrapper
@@ -452,14 +458,12 @@ describe('MES workflow copy', () => {
       .find((button) => button.text().includes('报工'))!
       .trigger('click')
 
-    expect(routerState.push).toHaveBeenCalledWith({
-      path: '/mes/work-orders',
-      query: {
-        operationTaskId: 'OP-001-10',
-        workCenterId: 'WC-01',
-        workOrderId: 'WO-001',
-      },
-    })
+    // 就地打开，不跳页——跳页会把工作中心等上下文丢成两个裸 ID。
+    expect(routerState.push).not.toHaveBeenCalled()
+    const carried = wrapper.find('[data-slot="carried-context"]')
+    expect(carried.exists()).toBe(true)
+    expect(carried.text()).toContain('WO-001')
+    expect(carried.text()).toContain('OP-001-10')
   })
 
   it('keeps production plans business-facing without manual system number generation', () => {
@@ -476,9 +480,24 @@ describe('MES workflow copy', () => {
     const wrapper = mountMesPage(ReceiptsPage)
 
     expect(wrapper.text()).toContain('从工单详情发起')
-    expect(wrapper.find('#receipt-work-order').attributes('readonly')).toBeDefined()
-    expect(wrapper.find('#receipt-sku').attributes('readonly')).toBeDefined()
+    // 工单/成品不再是（只读）输入位——只读输入框看起来仍像可填的位置。
+    expect(wrapper.find('#receipt-work-order').exists()).toBe(false)
+    expect(wrapper.find('#receipt-sku').exists()).toBe(false)
     expectNoForbiddenVisibleTerms(wrapper.text())
+  })
+
+  it('renders the receipt work order and sku as a read-only carried-context block', () => {
+    routeState.query = {
+      quantity: '10',
+      skuId: 'FG-001',
+      workOrderId: 'WO-001',
+    }
+    const wrapper = mountMesPage(ReceiptsPage)
+
+    const carried = wrapper.find('[data-slot="carried-context"]')
+    expect(carried.exists()).toBe(true)
+    expect(carried.text()).toContain('WO-001')
+    expect(carried.text()).toContain('FG-001')
   })
 
   it('submits finished-goods receipt context with unit cost', async () => {

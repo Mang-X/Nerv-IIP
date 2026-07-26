@@ -19,6 +19,7 @@ const inventoryState = vi.hoisted(() => ({
   availabilityError: undefined as { value: unknown } | undefined,
   availabilityRows: undefined as { value: Array<Record<string, unknown>> } | undefined,
   notifyError: vi.fn(),
+  notifySuccess: vi.fn(),
 }))
 
 const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }))
@@ -151,7 +152,10 @@ vi.mock('@/composables/useBusinessInventory', () => ({
   }),
 }))
 
-vi.mock('@/utils/notify', () => ({ notifyError: inventoryState.notifyError }))
+vi.mock('@/utils/notify', () => ({
+  notifyError: inventoryState.notifyError,
+  notifySuccess: inventoryState.notifySuccess,
+}))
 
 const uiStubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
@@ -235,6 +239,7 @@ describe('inventory workflow pages', () => {
     inventoryState.createCountTask.mockReset()
     inventoryState.postMovement.mockReset()
     inventoryState.notifyError.mockReset()
+    inventoryState.notifySuccess.mockReset()
     inventoryState.availabilityRows = undefined
   })
 
@@ -440,7 +445,8 @@ describe('inventory workflow pages', () => {
   it('requires the adjustment action to be opened from a count task row before submitting', async () => {
     const wrapper = mountInventoryPage(CountsPage)
 
-    await wrapper.find('#count-adjust-task-id').setValue('COUNT-TASK-ORPHAN')
+    // 盘点任务不再是可输入字段：只能由所选任务行带出，没有带出就不该发请求。
+    expect(wrapper.find('#count-adjust-task-id').exists()).toBe(false)
     await wrapper.find('#count-adjust-quantity').setValue('7')
     await wrapper.findAll('form')[1]!.trigger('submit')
 

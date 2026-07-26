@@ -30,6 +30,8 @@ import {
 } from '@nerv-iip/ui'
 import { computed, reactive, shallowRef, watch } from 'vue'
 
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+
 type TriggerMode = 'calendar' | 'runtime' | 'both'
 type DialogMode = 'create' | 'edit'
 
@@ -109,6 +111,11 @@ const intervalOptions = computed(() => {
 })
 
 const isEditMode = computed(() => props.mode === 'edit')
+const planContextItems = computed(() => [
+  { label: '设备', value: form.deviceAssetId },
+  { label: '计划编号', value: form.planCode },
+  { label: '起始日期', value: form.startsOn },
+])
 const usesCalendar = computed(() => form.triggerMode !== 'runtime')
 const usesRuntime = computed(() => form.triggerMode !== 'calendar')
 const deviceInvalid = computed(
@@ -216,15 +223,19 @@ function submitForm() {
     <NvDialogContent>
       <NvDialogHeader>
         <NvDialogTitle>{{ isEditMode ? '编辑保养计划' : '新建保养计划' }}</NvDialogTitle>
-        <NvDialogDescription v-if="isEditMode">
-          调整未来的触发条件；保存后系统会重算后续到期点，不影响已经生成的维护工单。
-        </NvDialogDescription>
-        <NvDialogDescription v-else>
-          为设备登记周期保养，系统据此推算到期并批量生成维护工单。
+        <!-- 计划事实与录入项已在下方呈现；此处仅供读屏播报。 -->
+        <NvDialogDescription class="sr-only">
+          {{
+            isEditMode
+              ? `调整保养计划 ${form.planCode || form.deviceAssetId} 的触发条件。`
+              : '为设备登记周期保养。'
+          }}
         </NvDialogDescription>
       </NvDialogHeader>
 
       <form class="grid gap-4" @submit.prevent="submitForm">
+        <!-- 编辑态：设备 / 计划编号 / 起始日期是既定事实，只读呈现，不做成 readonly 输入位。 -->
+        <CarriedContextSummary v-if="isEditMode" label="保养计划" :items="planContextItems" />
         <NvField>
           <NvFieldLabel>触发模式</NvFieldLabel>
           <NvTabs v-model="form.triggerMode">
@@ -235,40 +246,34 @@ function submitForm() {
             </NvTabsList>
           </NvTabs>
           <p class="text-xs text-muted-foreground">
-            <template v-if="form.triggerMode === 'calendar'">
-              按保养周期到期开单，例如每月一次。
-            </template>
-            <template v-else-if="form.triggerMode === 'runtime'">
-              按设备累计运行小时到期开单，不受日历影响；例如每运行满 1000 小时保养一次。
-            </template>
-            <template v-else>
-              同时保留日历周期与运行小时两条到期线，两条线各自到期、各自开单。
-            </template>
+            <template v-if="form.triggerMode === 'calendar'">按日历周期到期开单。</template>
+            <template v-else-if="form.triggerMode === 'runtime'"
+              >按设备累计运行小时到期开单，不看日历。</template
+            >
+            <template v-else>日历与运行小时两条到期线，各自到期各自开单。</template>
           </p>
         </NvField>
 
         <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-          <NvField>
+          <NvField v-if="!isEditMode">
             <NvFieldLabel for="plan-device">设备</NvFieldLabel>
             <NvInput
               id="plan-device"
               v-model="form.deviceAssetId"
               autocomplete="off"
               placeholder="如 DEV-SMT-01"
-              :readonly="isEditMode"
               :invalid="deviceInvalid"
             />
             <NvFieldError v-if="deviceInvalid" :errors="['请选择或填写设备。']" />
           </NvField>
 
-          <NvField>
+          <NvField v-if="!isEditMode">
             <NvFieldLabel for="plan-code">计划编号</NvFieldLabel>
             <NvInput
               id="plan-code"
               v-model="form.planCode"
               autocomplete="off"
               placeholder="可选，如 PM-SMT-01-M"
-              :readonly="isEditMode"
             />
           </NvField>
 
@@ -323,9 +328,9 @@ function submitForm() {
             </div>
           </NvField>
 
-          <NvField>
+          <NvField v-if="!isEditMode">
             <NvFieldLabel for="plan-starts">起始日期</NvFieldLabel>
-            <NvInput id="plan-starts" v-model="form.startsOn" type="date" :readonly="isEditMode" />
+            <NvInput id="plan-starts" v-model="form.startsOn" type="date" />
           </NvField>
 
           <NvField v-if="!isEditMode" class="sm:col-span-2">

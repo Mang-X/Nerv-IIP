@@ -6,6 +6,7 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { MasterDataTreeNodeData } from '@/components/masterData/MasterDataTreeNode.vue'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import MasterDataTreeNode from '@/components/masterData/MasterDataTreeNode.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
@@ -488,18 +489,44 @@ watch(createOpen, (open) => {
 })
 
 const createTitle = computed(() => `新建${NODE_LABEL[createType.value]}`)
-const createDescription = computed(() => {
+// 归属由所选节点带出，只读展示（不做 disabled 输入框、也不再让用户挑一次）。
+const createContextItems = computed(() => {
   switch (createType.value) {
-    case 'site':
-      return '登记一个生产站点，作为工厂结构的根。带 * 为必填项。'
     case 'workshop':
-      return '在所属工厂下登记一个车间。归属已带入且不可更改。带 * 为必填项。'
+      return [{ label: '所属工厂', value: nameOf(siteNameByCode.value, parentCtx.siteCode) }]
     case 'production-line':
-      return '在所属车间下登记一条产线。归属已带入且不可更改。带 * 为必填项。'
+      return [
+        { label: '所属工厂', value: nameOf(siteNameByCode.value, parentCtx.siteCode) },
+        { label: '所属车间', value: nameOf(workshopNameByCode.value, parentCtx.workshopCode) },
+      ]
     case 'work-center':
-      return '在所属产线下登记一个产能资源。归属已带入且不可更改。带 * 为必填项。'
+      return [
+        { label: '所属工厂', value: nameOf(siteNameByCode.value, parentCtx.plantCode) },
+        { label: '所属产线', value: nameOf(lineNameByCode.value, parentCtx.lineCode) },
+      ]
+    default:
+      return []
   }
 })
+// 读屏用的一行事实；界面上归属已在只读区呈现，不再写说明。
+const createContextLine = computed(() =>
+  createContextItems.value.length
+    ? createContextItems.value.map((i) => `${i.label}：${i.value}`).join('，')
+    : '工厂结构根节点',
+)
+
+// 工作日历改为从已维护的日历中选，不让用户手抄编码；只有一条时自动选中。
+const calendarOptions = computed(() => calendars.items.value.filter((c) => Boolean(c.code)))
+watch(
+  [createOpen, calendarOptions],
+  () => {
+    if (!createOpen.value || createType.value !== 'work-center') return
+    if (createForm.defaultCalendarCode) return
+    const only = calendarOptions.value.length === 1 ? calendarOptions.value[0] : undefined
+    if (only?.code) createForm.defaultCalendarCode = only.code
+  },
+  { immediate: true },
+)
 
 const canCreate = computed(() => {
   if (!isNonEmpty(createForm.name)) return false
@@ -1007,9 +1034,15 @@ function childLabelOf(type: string): string | undefined {
       <NvDialogContent class="sm:max-w-lg">
         <NvDialogHeader>
           <NvDialogTitle>{{ createTitle }}</NvDialogTitle>
-          <NvDialogDescription>{{ createDescription }}</NvDialogDescription>
+          <!-- 归属已在下方只读区完整呈现；此处仅供读屏播报。 -->
+          <NvDialogDescription class="sr-only">{{ createContextLine }}</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
+          <CarriedContextSummary
+            v-if="createContextItems.length"
+            label="归属"
+            :items="createContextItems"
+          />
           <p v-if="createShowErrors && !canCreate" class="text-sm text-destructive" role="alert">
             请完整填写带 * 的必填项（已标红）。
           </p>
@@ -1021,7 +1054,6 @@ function childLabelOf(type: string): string | undefined {
                 <span class="text-destructive">*</span></NvFieldLabel
               >
               <NvInput id="create-name" v-model="createForm.name" autocomplete="off" required />
-              <NvFieldDescription>编码由系统自动生成，保存后即可在列表查看。</NvFieldDescription>
             </NvField>
             <!-- 工厂：时区 -->
             <NvField
@@ -1032,32 +1064,8 @@ function childLabelOf(type: string): string | undefined {
                 >时区 <span class="text-destructive">*</span></NvFieldLabel
               >
               <NvInput id="create-tz" v-model="createForm.timezone" autocomplete="off" required />
-              <NvFieldDescription>如 Asia/Shanghai，用于排程与报表的本地时间。</NvFieldDescription>
             </NvField>
           </NvFieldGroup>
-
-          <!-- 归属（就地建子级时带入且只读） -->
-          <template v-if="createType !== 'site'">
-            <FormSectionTitle>归属</FormSectionTitle>
-            <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-              <NvField v-if="createType === 'workshop' || createType === 'production-line'">
-                <NvFieldLabel for="create-site">所属工厂</NvFieldLabel>
-                <NvInput id="create-site" :model-value="parentCtx.siteCode" disabled />
-              </NvField>
-              <NvField v-if="createType === 'production-line'">
-                <NvFieldLabel for="create-workshop">所属车间</NvFieldLabel>
-                <NvInput id="create-workshop" :model-value="parentCtx.workshopCode" disabled />
-              </NvField>
-              <NvField v-if="createType === 'work-center'">
-                <NvFieldLabel for="create-plant">所属工厂</NvFieldLabel>
-                <NvInput id="create-plant" :model-value="parentCtx.plantCode" disabled />
-              </NvField>
-              <NvField v-if="createType === 'work-center'">
-                <NvFieldLabel for="create-line">所属产线</NvFieldLabel>
-                <NvInput id="create-line" :model-value="parentCtx.lineCode" disabled />
-              </NvField>
-            </NvFieldGroup>
-          </template>
 
           <!-- 工作中心：产能 -->
           <template v-if="createType === 'work-center'">
@@ -1069,13 +1077,26 @@ function childLabelOf(type: string): string | undefined {
                 <NvFieldLabel for="create-cal"
                   >默认工作日历 <span class="text-destructive">*</span></NvFieldLabel
                 >
-                <NvInput
-                  id="create-cal"
-                  v-model="createForm.defaultCalendarCode"
-                  autocomplete="off"
-                  required
-                />
-                <NvFieldDescription>填写「排班与日历」页中已建工作日历的编码。</NvFieldDescription>
+                <NvSelect v-if="calendarOptions.length" v-model="createForm.defaultCalendarCode">
+                  <NvSelectTrigger id="create-cal"
+                    ><NvSelectValue placeholder="请选择工作日历"
+                  /></NvSelectTrigger>
+                  <NvSelectContent>
+                    <NvSelectItem v-for="c in calendarOptions" :key="c.code" :value="c.code ?? ''">
+                      {{ c.displayName ?? c.code }}
+                    </NvSelectItem>
+                  </NvSelectContent>
+                </NvSelect>
+                <template v-else>
+                  <NvInput
+                    id="create-cal"
+                    v-model="createForm.defaultCalendarCode"
+                    autocomplete="off"
+                    required
+                  />
+                  <!-- 尚无可选日历时的取值来源（非显而易见），保留一行。 -->
+                  <NvFieldDescription>先在「排班与日历」页建工作日历。</NvFieldDescription>
+                </template>
               </NvField>
               <NvField
                 :data-invalid="
@@ -1092,7 +1113,6 @@ function childLabelOf(type: string): string | undefined {
                   min="1"
                   inputmode="numeric"
                 />
-                <NvFieldDescription>单日可用产能分钟数，默认 480（8 小时）。</NvFieldDescription>
               </NvField>
             </NvFieldGroup>
           </template>
@@ -1113,21 +1133,20 @@ function childLabelOf(type: string): string | undefined {
       <NvDialogContent class="sm:max-w-lg">
         <NvDialogHeader>
           <NvDialogTitle>{{ editTitle }}</NvDialogTitle>
-          <NvDialogDescription
-            >修改{{ NODE_LABEL[editType] }}名称，或改挂到其他上级（编码不可修改）。带 *
-            为必填项。</NvDialogDescription
+          <NvDialogDescription class="sr-only"
+            >{{ NODE_LABEL[editType] }} {{ editCode }}</NvDialogDescription
           >
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitEdit">
+          <CarriedContextSummary
+            :label="`${NODE_LABEL[editType]}标识`"
+            :items="[{ label: `${NODE_LABEL[editType]}编码`, value: editCode }]"
+          />
           <p v-if="editShowErrors && !canEdit" class="text-sm text-destructive" role="alert">
             请完整填写带 * 的必填项（已标红）。
           </p>
           <FormSectionTitle>基础信息</FormSectionTitle>
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField>
-              <NvFieldLabel for="edit-code">{{ NODE_LABEL[editType] }}编码</NvFieldLabel>
-              <NvInput id="edit-code" :model-value="editCode" disabled />
-            </NvField>
             <NvField :data-invalid="editShowErrors && !isNonEmpty(editForm.name)">
               <NvFieldLabel for="edit-name"
                 >{{ NODE_LABEL[editType] }}名称
@@ -1204,9 +1223,6 @@ function childLabelOf(type: string): string | undefined {
                       </NvSelectItem>
                     </NvSelectContent>
                   </NvSelect>
-                  <NvFieldDescription
-                    >留空表示该产线直接挂在工厂下（无车间层）。</NvFieldDescription
-                  >
                 </NvField>
               </template>
               <template v-if="editType === 'work-center'">

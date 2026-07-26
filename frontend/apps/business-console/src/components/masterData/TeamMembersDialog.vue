@@ -22,10 +22,10 @@ import {
   NvFieldLabel,
   Spinner,
   NvStatusBadge,
-  toast,
 } from '@nerv-iip/ui'
 import { Trash2Icon } from '@lucide/vue'
 import { computed, ref, toRef, watch } from 'vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 
 const props = defineProps<{
   teamCode: string
@@ -69,10 +69,10 @@ const showErrors = ref(false)
 const removeTarget = ref<string | null>(null)
 
 const canAdd = computed(() => Boolean(selectedUserId.value))
-const errorText = computed(() => {
-  const error = memberError.value
-  if (!error) return ''
-  return error instanceof Error ? error.message : '请求失败，请稍后重试。'
+
+// 成员加载失败一律 toast，不在弹窗里留常驻错误条。
+watch(memberError, (error) => {
+  if (error) notifyError(error, '成员加载失败，请稍后重试。')
 })
 
 watch(open, (isOpen) => {
@@ -91,12 +91,12 @@ async function submitAdd() {
   }
   try {
     await addMember({ userId: selectedUserId.value, isLeader: isLeader.value })
-    toast.success('已添加成员。')
+    notifySuccess('已添加成员。')
     selectedUserId.value = ''
     isLeader.value = false
     showErrors.value = false
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : '添加失败，请稍后重试。')
+    notifyError(error, '添加成员失败，请稍后重试。')
   }
 }
 
@@ -105,10 +105,10 @@ async function confirmRemove() {
   if (!userId) return
   try {
     await removeMember(userId)
-    toast.success('已移除成员。')
+    notifySuccess('已移除成员。')
     removeTarget.value = null
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : '移除失败，请稍后重试。')
+    notifyError(error, '移除成员失败，请稍后重试。')
   }
 }
 </script>
@@ -118,12 +118,8 @@ async function confirmRemove() {
     <NvDialogContent class="sm:max-w-2xl">
       <NvDialogHeader>
         <NvDialogTitle>{{ teamName }} · 成员维护</NvDialogTitle>
-        <NvDialogDescription
-          >登记班组成员与组长，移除时仅解除归属、不影响人员档案。</NvDialogDescription
-        >
+        <NvDialogDescription class="sr-only">班组 {{ teamCode }} 的成员</NvDialogDescription>
       </NvDialogHeader>
-
-      <p v-if="errorText" class="text-sm text-destructive" role="alert">{{ errorText }}</p>
 
       <form
         class="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end"
@@ -148,7 +144,7 @@ async function confirmRemove() {
         <ul class="divide-y">
           <li v-if="membersPending" class="px-3 py-3 text-sm text-muted-foreground">加载成员中…</li>
           <li v-else-if="members.length === 0" class="px-3 py-3 text-sm text-muted-foreground">
-            暂无成员，使用上方表单添加。
+            暂无成员。
           </li>
           <li
             v-for="member in members"
@@ -192,13 +188,11 @@ async function confirmRemove() {
     <NvAlertDialogContent>
       <NvAlertDialogHeader>
         <NvAlertDialogTitle>确认移除该成员？</NvAlertDialogTitle>
-        <NvAlertDialogDescription
-          >移除后该工人将不再归属本班组，可随时重新添加。</NvAlertDialogDescription
-        >
+        <NvAlertDialogDescription>移除后该工人不再归属本班组。</NvAlertDialogDescription>
       </NvAlertDialogHeader>
       <NvAlertDialogFooter>
         <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-        <NvAlertDialogAction :disabled="removePending" @click="confirmRemove"
+        <NvAlertDialogAction variant="destructive" :disabled="removePending" @click="confirmRemove"
           >确认移除</NvAlertDialogAction
         >
       </NvAlertDialogFooter>

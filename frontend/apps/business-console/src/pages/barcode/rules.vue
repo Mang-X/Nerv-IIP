@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleBarcodeRuleItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBarcodeRules } from '@/composables/useBusinessBarcode'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -156,6 +157,8 @@ const errorMessage = computed(() =>
   rulesError.value instanceof Error ? rulesError.value.message : '',
 )
 const isGs1 = computed(() => form.barcodeType.toLowerCase().includes('gs1'))
+// 编辑态由所选行带出的只读上下文（规则编码是身份，不可改）。
+const carriedItems = computed(() => [{ label: '规则编码', value: editingRuleCode.value }])
 const gs1PrefixNumber = computed(() => Number(form.gs1CompanyPrefixLength))
 const canSubmit = computed(
   () =>
@@ -291,13 +294,18 @@ async function submitRule() {
               <NvDialogTitle>{{
                 editingRuleCode ? `编辑条码规则 · ${editingRuleCode}` : '新建条码规则'
               }}</NvDialogTitle>
-              <NvDialogDescription>{{
-                editingRuleCode
-                  ? '修改条码规则配置，规则编码不可修改。'
-                  : '创建条码规则。GS1 类型必须填写公司前缀长度。'
+              <!-- 说明不上界面：仅供读屏播报。 -->
+              <NvDialogDescription class="sr-only">{{
+                editingRuleCode ? `条码规则 ${editingRuleCode} 的配置。` : '登记一条条码规则。'
               }}</NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitRule">
+              <!-- 编辑态：规则编码由所选行带出，只读展示，不做成 readonly 输入框。 -->
+              <CarriedContextSummary
+                v-if="editingRuleCode"
+                label="编辑对象"
+                :items="carriedItems"
+              />
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 {{
                   isGs1 && !form.gs1CompanyPrefixLength
@@ -306,19 +314,14 @@ async function submitRule() {
                 }}
               </p>
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                <NvField :data-invalid="showErrors && !form.ruleCode.trim()">
+                <NvField
+                  v-if="!editingRuleCode"
+                  :data-invalid="showErrors && !form.ruleCode.trim()"
+                >
                   <NvFieldLabel for="barcode-rule-code"
                     >规则编码 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
-                    id="barcode-rule-code"
-                    v-model="form.ruleCode"
-                    autocomplete="off"
-                    :readonly="Boolean(editingRuleCode)"
-                  />
-                  <NvFieldDescription v-if="editingRuleCode"
-                    >规则编码由后端作为更新键，不可在编辑时修改。</NvFieldDescription
-                  >
+                  <NvInput id="barcode-rule-code" v-model="form.ruleCode" autocomplete="off" />
                 </NvField>
                 <NvField>
                   <NvFieldLabel>状态</NvFieldLabel>
@@ -383,7 +386,7 @@ async function submitRule() {
                     type="number"
                     min="1"
                   />
-                  <NvFieldDescription>仅 GS1-128 / GS1 DataMatrix 等规则必填。</NvFieldDescription>
+                  <NvFieldDescription>GS1 类条码必填。</NvFieldDescription>
                 </NvField>
                 <NvField class="sm:col-span-2">
                   <NvFieldLabel>适用场景</NvFieldLabel>

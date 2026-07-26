@@ -13,8 +13,9 @@ import { useQualityInspectionTaskActions } from '@/composables/useQualityInspect
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError } from '@/utils/notify'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
 import {
   NvButton,
@@ -22,6 +23,7 @@ import {
   NvDialog,
   NvDialogContent,
   NvDialogDescription,
+  NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
   NvDropdownMenuItem,
@@ -59,7 +61,6 @@ const auth = useAuthStore()
 const initialInspectionPlanKeyword = firstQuery(route.query.inspectionPlanId)
 const {
   createInspectionRecord,
-  createInspectionRecordError,
   createInspectionRecordPending,
   filters,
   inspectionPlans,
@@ -75,7 +76,6 @@ const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.keyword],
 })
 
-const recordSuccess = shallowRef('')
 const recordSheetOpen = shallowRef(false)
 const recordCreatedFromLocatedPlanId = shallowRef('')
 const characteristicsAppliedPlanId = shallowRef('')
@@ -225,9 +225,18 @@ watch(
 )
 
 const listErrorMessage = computed(() => formatError(inspectionPlansError.value))
-const createErrorMessage = computed(() => formatError(createInspectionRecordError.value))
 const inspectedQuantity = computed(() => toOptionalNumber(recordForm.inspectedQuantity))
 const isInspectionTaskFlow = computed(() => !!firstQuery(route.query.inspectionTaskId))
+// 从待检任务行进入时来源字段全部由任务带出——只读呈现，不给用户改的错觉。
+const recordContextItems = computed(() => [
+  { label: '检验方案', value: recordForm.inspectionPlanId },
+  { label: '来源类型', value: sourceTypeLabel(recordForm.sourceType) },
+  { label: '来源单据', value: recordForm.sourceDocumentId },
+  { label: '物料', value: recordForm.skuCode },
+  { label: '检验数量', value: recordForm.inspectedQuantity },
+  { label: '批次', value: recordForm.batchNo },
+  { label: '序列号', value: recordForm.serialNo },
+])
 const requiresDispositionReason = computed(() =>
   recordForm.resultLines.some(
     (line) => line.result === 'failed' || line.result === 'conditional-release',
@@ -311,7 +320,6 @@ function formatSpecification(characteristic: {
 function useInspectionPlan(plan: BusinessConsoleQualityItem) {
   recordForm.inspectionPlanId = plan.id ?? ''
   if (plan.skuCode && !firstQuery(route.query.skuCode)) recordForm.skuCode = plan.skuCode
-  recordSuccess.value = ''
   recordSheetOpen.value = true
 }
 function addCharacteristicRow() {
@@ -338,13 +346,22 @@ async function submitInspectionRecord() {
       notifyError('当前账号缺少质检员身份，无法提交检验。')
       return
     }
-    const response = await taskActions.startInspection(inspectionTaskId, {
-      inspectorUserId,
-      resultLines: toCharacteristicResults(),
-      dispositionReason: optionalText(recordForm.dispositionReason),
-      dispositionAttachmentFileIds: splitCsv(recordForm.dispositionAttachmentFileIds),
-    })
-    recordSuccess.value = `检验记录 ${response?.data?.inspectionRecordId ?? inspectionTaskId} 已提交，待检任务已闭合。`
+    let response
+    try {
+      response = await taskActions.startInspection(inspectionTaskId, {
+        inspectorUserId,
+        resultLines: toCharacteristicResults(),
+        dispositionReason: optionalText(recordForm.dispositionReason),
+        dispositionAttachmentFileIds: splitCsv(recordForm.dispositionAttachmentFileIds),
+      })
+    } catch (error) {
+      notifyError(error, '检验记录提交失败，请稍后重试。')
+      return
+    }
+    recordSheetOpen.value = false
+    notifySuccess(
+      `检验记录 ${response?.data?.inspectionRecordId ?? inspectionTaskId} 已提交，待检任务已闭合。`,
+    )
     await router.push({
       path: '/quality/inspection-tasks',
     })
@@ -365,8 +382,15 @@ async function submitInspectionRecord() {
     dispositionReason: optionalText(recordForm.dispositionReason),
     dispositionAttachmentFileIds: splitCsv(recordForm.dispositionAttachmentFileIds),
   }
-  const response = await createInspectionRecord(body)
-  recordSuccess.value = `检验记录 ${response?.data?.inspectionRecordId ?? body.sourceDocumentId} 已提交。`
+  let response
+  try {
+    response = await createInspectionRecord(body)
+  } catch (error) {
+    notifyError(error, '检验记录提交失败，请稍后重试。')
+    return
+  }
+  recordSheetOpen.value = false
+  notifySuccess(`检验记录 ${response?.data?.inspectionRecordId ?? body.sourceDocumentId} 已提交。`)
 }
 
 function toCharacteristicResults(): BusinessConsoleInspectionCharacteristicResult[] {
@@ -411,6 +435,19 @@ const CATEGORY_LABELS: Record<string, string> = {
   final: '终检',
   outgoing: '出货检',
   rework: '返工检',
+}
+// 来源类型是英文码，只读带出区要显示中文。
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  operation: '工序',
+  receiving: '收货',
+  final: '终检',
+  maintenance: '维修',
+  'customer-return': '客户退货',
+}
+function sourceTypeLabel(value?: string | null) {
+  const code = (value ?? '').trim()
+  if (!code) return ''
+  return SOURCE_TYPE_LABELS[code.toLowerCase()] ?? code
 }
 function categoryLabel(value?: string | null) {
   const code = (value ?? '').trim()
@@ -527,19 +564,23 @@ function isPresent(value: string | undefined | null): value is string {
       <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
         <NvDialogHeader>
           <NvDialogTitle>创建检验记录</NvDialogTitle>
-          <NvDialogDescription
-            >检验记录尽量从方案、工单、收货或质量任务带出信息，减少手输来源字段。</NvDialogDescription
-          >
+          <!-- 检验对象由下方只读区或来源字段呈现；此处仅供读屏播报。 -->
+          <NvDialogDescription class="sr-only">
+            检验对象：来源单据 {{ recordForm.sourceDocumentId || '未指定' }}，物料
+            {{ recordForm.skuCode }}。
+          </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid content-start gap-4" @submit.prevent="submitInspectionRecord">
-          <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">
-            {{ createErrorMessage }}
-          </p>
-          <p v-if="recordSuccess" class="text-sm text-success" role="status">{{ recordSuccess }}</p>
+          <!-- 从待检任务行进入：来源单据 / 物料 / 数量 / 批次 全部由任务带出，只读呈现。 -->
+          <CarriedContextSummary
+            v-if="isInspectionTaskFlow"
+            label="检验对象"
+            :items="recordContextItems"
+          />
 
-          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+          <NvFieldGroup v-else class="grid gap-3 sm:grid-cols-2">
             <NvField>
-              <NvFieldLabel for="record-plan">检验方案 ID</NvFieldLabel>
+              <NvFieldLabel for="record-plan">检验方案</NvFieldLabel>
               <NvInput id="record-plan" v-model="recordForm.inspectionPlanId" />
             </NvField>
             <NvField>
@@ -702,35 +743,36 @@ function isPresent(value: string | undefined | null): value is string {
 
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
-              <NvFieldLabel for="record-disposition"
-                >处置原因{{ requiresDispositionReason ? ' *' : '' }}</NvFieldLabel
-              >
+              <NvFieldLabel for="record-disposition">
+                处置原因
+                <span v-if="requiresDispositionReason" class="text-destructive">*</span>
+              </NvFieldLabel>
               <NvInput
                 id="record-disposition"
                 v-model="recordForm.dispositionReason"
                 :required="requiresDispositionReason"
               />
-              <NvFieldDescription v-if="requiresDispositionReason"
-                >当任一特性不合格或让步放行时必填。</NvFieldDescription
-              >
             </NvField>
             <NvField>
-              <NvFieldLabel for="record-files">附件文件 ID</NvFieldLabel>
+              <NvFieldLabel for="record-files">附件</NvFieldLabel>
               <NvInput
                 id="record-files"
                 v-model="recordForm.dispositionAttachmentFileIds"
-                placeholder="file-1, file-2"
+                placeholder="多个附件用逗号分隔"
               />
             </NvField>
           </NvFieldGroup>
 
-          <div class="flex justify-end">
+          <NvDialogFooter>
+            <NvButton type="button" variant="outline" @click="recordSheetOpen = false"
+              >取消</NvButton
+            >
             <NvButton type="submit" :disabled="createInspectionRecordPending || !canCreateRecord">
               <Spinner v-if="createInspectionRecordPending" aria-hidden="true" />
               <ClipboardCheckIcon v-else aria-hidden="true" />
-              提交记录
+              提交检验记录
             </NvButton>
-          </div>
+          </NvDialogFooter>
         </form>
       </NvDialogContent>
     </NvDialog>

@@ -22,7 +22,14 @@ const docRow = {
   registeredAtUtc: '2026-01-02T00:00:00Z',
 }
 
-const filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev', itemCode: undefined as string | undefined, documentType: undefined as string | undefined, skip: 0, take: 10 })
+const filters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
+  itemCode: undefined as string | undefined,
+  documentType: undefined as string | undefined,
+  skip: 0,
+  take: 10,
+})
 
 vi.mock('@/composables/useProductEngineering', () => ({
   useEngineeringDocuments: () => ({
@@ -89,13 +96,15 @@ describe('engineering documents page', () => {
     expect(wrapper.text()).toContain('drawing.pdf')
   })
 
-  it('fileId 字段标注文件上传待接入（不假装能上传）', async () => {
+  it('只登记文件引用，不假装能上传（无上传控件、只有文件引用 ID）', async () => {
     const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
     await flushPromises()
     await findButton(wrapper, '登记文档')!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('文件上传待接入')
+    expect(wrapper.find('#doc-file-id').exists()).toBe(true)
+    expect(wrapper.find('input[type="file"]').exists()).toBe(false)
+    expect(wrapper.findAll('button').some((b) => b.text().includes('上传'))).toBe(false)
   })
 
   it('登记向导：填完字段提交，register 收到正确 body', async () => {

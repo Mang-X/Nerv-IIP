@@ -263,19 +263,18 @@ async function submitForm() {
 const viewOpen = shallowRef(false)
 const viewTarget = shallowRef<BusinessConsoleEngineeringChangeItem | null>(null)
 const detailPending = ref(false)
-const detailError = ref('')
 const viewAffected = computed(() => viewTarget.value?.affectedVersions ?? [])
 async function openView(row: BusinessConsoleEngineeringChangeItem) {
   viewTarget.value = row
   viewOpen.value = true
-  detailError.value = ''
   if (!row.changeNumber) return
   detailPending.value = true
   try {
     const detail = await fetchChangeDetail(row.changeNumber)
     if (detail) viewTarget.value = detail
   } catch (error) {
-    detailError.value = formatError(error) || '加载受影响版本失败，请稍后重试。'
+    // 结果一律 toast；不在抽屉里留常驻错误条。
+    notifyError(error, '加载受影响版本失败，请稍后重试。')
   } finally {
     detailPending.value = false
   }
@@ -352,9 +351,9 @@ function riskTone(severity?: string | null): StatusTone {
           <NvDialogContent class="sm:max-w-2xl">
             <NvDialogHeader>
               <NvDialogTitle>发布工程变更</NvDialogTitle>
-              <NvDialogDescription>
-                变更一步发布并即时生效。先关联真实审批链，再填写变更原因、生效日与受影响版本。带 *
-                为必填项。
+              <!-- 说明不上界面：仅供读屏播报。 -->
+              <NvDialogDescription class="sr-only">
+                填写变更原因、审批链、生效日与受影响版本。
               </NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
@@ -456,12 +455,7 @@ function riskTone(severity?: string | null): StatusTone {
 
               <div class="grid gap-3 rounded-md border bg-muted/20 p-3">
                 <div class="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <FormSectionTitle>发布前影响预览</FormSectionTitle>
-                    <p class="mt-1 text-sm text-muted-foreground">
-                      展示受影响的 MBOM、Routing、ProductionVersion 与下游候选，不自动修改下游单据。
-                    </p>
-                  </div>
+                  <FormSectionTitle>发布前影响预览</FormSectionTitle>
                   <NvButton
                     type="button"
                     variant="outline"
@@ -632,13 +626,6 @@ function riskTone(severity?: string | null): StatusTone {
             <Spinner aria-hidden="true" />
             加载受影响版本…
           </div>
-          <p
-            v-else-if="detailError"
-            class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-            role="alert"
-          >
-            {{ detailError }}
-          </p>
           <div v-else-if="viewAffected.length" class="overflow-hidden rounded-md border">
             <table class="w-full text-sm">
               <thead class="bg-muted/40 text-muted-foreground">

@@ -4,6 +4,7 @@ import type {
   BusinessConsoleProductionVersionItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessSkus } from '@/composables/useBusinessMasterData'
 import {
@@ -242,7 +243,18 @@ const formOpen = shallowRef(false)
 const showErrors = ref(false)
 // null = 新建，否则为正在编辑的 productionVersionId。
 const editingId = shallowRef<string | null>(null)
+const editingRow = shallowRef<BusinessConsoleProductionVersionItem | null>(null)
 const form = reactive<ProductionVersionForm>(blankForm())
+
+// 编辑态由所选行带出的只读上下文（物料是生产版本的身份，不可改）。
+const carriedItems = computed(() => [
+  { label: '物料', value: editingRow.value ? skuLabel(editingRow.value.skuCode) : undefined },
+  { label: '物料编码', value: editingRow.value?.skuCode },
+  {
+    label: '当前状态',
+    value: editingRow.value ? statusLabel(editingRow.value.status) : undefined,
+  },
+])
 
 function parseNumber(value: string | number | null | undefined): number | undefined {
   if (value === null || value === undefined) return undefined
@@ -278,6 +290,14 @@ const canSubmit = computed(
     lotRangeValid.value,
 )
 
+// 只有一份已发布 MBOM / 工艺路线时直接选中——没有选择余地的「选择」不该让用户做。
+watch([mbomOptions, routingOptions, formOpen], ([mbomList, routingList, open]) => {
+  if (!open) return
+  if (!form.mbomVersionId && mbomList.length === 1) form.mbomVersionId = mbomList[0]!.value
+  if (!form.routingVersionId && routingList.length === 1)
+    form.routingVersionId = routingList[0]!.value
+})
+
 const selectorsPending = computed(() => mbomsPending.value || routingsPending.value)
 const hasSelectorData = computed(
   () => mbomOptions.value.length > 0 && routingOptions.value.length > 0,
@@ -285,6 +305,7 @@ const hasSelectorData = computed(
 
 function openCreate() {
   editingId.value = null
+  editingRow.value = null
   Object.assign(form, blankForm())
   showErrors.value = false
   formOpen.value = true
@@ -293,6 +314,7 @@ function openEdit(row: BusinessConsoleProductionVersionItem) {
   if (!row.productionVersionId) return
   if (row.status?.toLowerCase() === 'archived') return
   editingId.value = row.productionVersionId
+  editingRow.value = row
   showErrors.value = false
   Object.assign(form, {
     skuCode: row.skuCode ?? '',
@@ -347,6 +369,7 @@ async function submitForm() {
     showErrors.value = false
     formOpen.value = false
     editingId.value = null
+    editingRow.value = null
   } catch (error) {
     notifyError(error)
   }
@@ -434,9 +457,9 @@ function formatError(error: unknown) {
           <NvDialogContent class="sm:max-w-2xl">
             <NvDialogHeader>
               <NvDialogTitle>{{ editingId ? '编辑生产版本' : '新建生产版本' }}</NvDialogTitle>
-              <NvDialogDescription>
-                把物料绑定到一套已发布的 MBOM 与工艺路线，并约定有效期、批量区间和优先级。带 *
-                为必填项。
+              <!-- 说明不上界面：仅供读屏播报。 -->
+              <NvDialogDescription class="sr-only">
+                把物料绑定到已发布的 MBOM 与工艺路线，并约定有效期与批量区间。
               </NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
@@ -452,13 +475,16 @@ function formatError(error: unknown) {
                 工艺路线页发布版本，再回来创建生产版本。
               </p>
 
+              <!-- 编辑态：物料由所选行带出，只读展示，不做成禁用的选择框。 -->
+              <CarriedContextSummary v-if="editingId" label="编辑对象" :items="carriedItems" />
+
               <FormSectionTitle>绑定对象</FormSectionTitle>
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                <NvField :data-invalid="showErrors && !skuValid">
+                <NvField v-if="!editingId" :data-invalid="showErrors && !skuValid">
                   <NvFieldLabel for="pv-sku"
                     >物料 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="form.skuCode" :disabled="!!editingId">
+                  <NvSelect v-model="form.skuCode">
                     <NvSelectTrigger id="pv-sku"
                       ><NvSelectValue placeholder="选择物料"
                     /></NvSelectTrigger>
@@ -468,11 +494,6 @@ function formatError(error: unknown) {
                       }}</NvSelectItem>
                     </NvSelectContent>
                   </NvSelect>
-                  <NvFieldDescription
-                    >来自基础数据 SKU。{{
-                      editingId ? '编辑时物料不可更改。' : '缺少物料？去基础数据维护。'
-                    }}</NvFieldDescription
-                  >
                 </NvField>
                 <NvField class="self-start">
                   <NvFieldLabel>设为默认</NvFieldLabel>
@@ -498,7 +519,6 @@ function formatError(error: unknown) {
                       }}</NvSelectItem>
                     </NvSelectContent>
                   </NvSelect>
-                  <NvFieldDescription>仅可选择已发布的 MBOM。</NvFieldDescription>
                 </NvField>
                 <NvField :data-invalid="showErrors && !routingValid">
                   <NvFieldLabel for="pv-routing"
@@ -514,7 +534,6 @@ function formatError(error: unknown) {
                       }}</NvSelectItem>
                     </NvSelectContent>
                   </NvSelect>
-                  <NvFieldDescription>仅可选择已发布的工艺路线。</NvFieldDescription>
                 </NvField>
               </NvFieldGroup>
 
@@ -535,9 +554,6 @@ function formatError(error: unknown) {
                     placeholder="留空表示长期有效"
                     class="w-full"
                   />
-                  <NvFieldDescription
-                    >留空表示长期有效；填写时须不早于生效起日。</NvFieldDescription
-                  >
                 </NvField>
                 <NvField :data-invalid="showErrors && !lotRangeValid">
                   <NvFieldLabel for="pv-lot-min">批量下限</NvFieldLabel>
@@ -558,7 +574,6 @@ function formatError(error: unknown) {
                     min="0"
                     placeholder="不限"
                   />
-                  <NvFieldDescription>下限须不大于上限；两者皆可留空表示不限。</NvFieldDescription>
                 </NvField>
                 <NvField>
                   <NvFieldLabel for="pv-priority">优先级</NvFieldLabel>
@@ -571,7 +586,7 @@ function formatError(error: unknown) {
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="createPending || updatePending">
                   <Spinner v-if="createPending || updatePending" aria-hidden="true" />
-                  {{ editingId ? '保存修改' : '创建版本' }}
+                  {{ editingId ? '保存生产版本' : '创建生产版本' }}
                 </NvButton>
               </NvDialogFooter>
             </form>
@@ -748,19 +763,14 @@ function formatError(error: unknown) {
         <NvAlertDialogHeader>
           <NvAlertDialogTitle>归档生产版本</NvAlertDialogTitle>
           <NvAlertDialogDescription>
-            归档后该版本不可再编辑，也不会被新工单引用。物料「{{
+            归档后物料「{{
               skuLabel(archiveTarget?.skuCode)
-            }}」的此版本将被归档。
+            }}」的此版本不可再编辑，也不会被新工单引用。
           </NvAlertDialogDescription>
         </NvAlertDialogHeader>
         <NvField class="px-1">
           <NvFieldLabel for="archive-reason">归档原因</NvFieldLabel>
-          <NvInput
-            id="archive-reason"
-            v-model="archiveReason"
-            placeholder="例如：工艺变更，已切换到新版本"
-          />
-          <NvFieldDescription>留空将记录默认原因「不再用于排产」。</NvFieldDescription>
+          <NvInput id="archive-reason" v-model="archiveReason" placeholder="不再用于排产" />
         </NvField>
         <NvAlertDialogFooter>
           <NvAlertDialogCancel>取消</NvAlertDialogCancel>

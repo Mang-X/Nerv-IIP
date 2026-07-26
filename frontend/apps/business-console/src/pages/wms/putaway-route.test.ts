@@ -66,9 +66,10 @@ describe('WMS putaway route handoff', () => {
     await flushPromises()
 
     expect(document.body.textContent).toContain('新建上架任务')
-    expect(document.body.querySelector<HTMLInputElement>('#wms-putaway-inbound')?.value).toBe(
-      'ib-1',
-    )
+    // 带出式录入：入库单来自所选收货行 → 只读展示人读单号，不再是可编辑输入框。
+    const carried = document.body.querySelector('[data-slot="carried-context"]')
+    expect(carried?.textContent).toContain('IB-1')
+    expect(document.body.querySelector('#wms-putaway-inbound')).toBeNull()
 
     await setInput('#wms-putaway-no', 'PUT-IB-1-01')
     await setInput('#wms-putaway-line', '1')
@@ -114,7 +115,8 @@ describe('WMS putaway route handoff', () => {
     const wrapper = mountPutaway()
     await flushPromises()
 
-    expect(document.body.querySelector('#wms-putaway-inbound')).toBeNull()
+    expect(document.body.querySelector('[data-slot="carried-context"]')).toBeNull()
+    expect(document.body.querySelector('#wms-putaway-no')).toBeNull()
     expect(wrapper.text()).not.toContain('新建上架任务')
     wrapper.unmount()
   })

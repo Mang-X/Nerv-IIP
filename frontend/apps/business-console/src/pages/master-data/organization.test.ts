@@ -14,17 +14,58 @@ const stub = vi.hoisted(() => ({
 // 列表回传 parentDepartmentCode（#375）→ 前端拼多层部门树：
 // DEPT-A（总装部，根）▸ DEPT-A1（总装一工段，挂 DEPT-A）；DEPT-B（焊接部，根）。
 const DEPT_ROWS = [
-  { resourceType: 'department', code: 'DEPT-A', displayName: '总装部', active: true, snapshotVersion: '1' },
-  { resourceType: 'department', code: 'DEPT-A1', displayName: '总装一工段', active: true, snapshotVersion: '1', parentDepartmentCode: 'DEPT-A' },
-  { resourceType: 'department', code: 'DEPT-B', displayName: '焊接部', active: true, snapshotVersion: '1' },
+  {
+    resourceType: 'department',
+    code: 'DEPT-A',
+    displayName: '总装部',
+    active: true,
+    snapshotVersion: '1',
+  },
+  {
+    resourceType: 'department',
+    code: 'DEPT-A1',
+    displayName: '总装一工段',
+    active: true,
+    snapshotVersion: '1',
+    parentDepartmentCode: 'DEPT-A',
+  },
+  {
+    resourceType: 'department',
+    code: 'DEPT-B',
+    displayName: '焊接部',
+    active: true,
+    snapshotVersion: '1',
+  },
 ]
 // 列表回传 team.departmentCode（#375）→ 班组按部门归集：TEAM-A 属 DEPT-A、TEAM-B 属 DEPT-B。
 const TEAM_ROWS = [
-  { resourceType: 'team', code: 'TEAM-A', displayName: '白班班组', active: true, snapshotVersion: '1', departmentCode: 'DEPT-A', shiftCode: 'SHIFT-A' },
-  { resourceType: 'team', code: 'TEAM-B', displayName: '焊工班组', active: true, snapshotVersion: '1', departmentCode: 'DEPT-B', shiftCode: 'SHIFT-A' },
+  {
+    resourceType: 'team',
+    code: 'TEAM-A',
+    displayName: '白班班组',
+    active: true,
+    snapshotVersion: '1',
+    departmentCode: 'DEPT-A',
+    shiftCode: 'SHIFT-A',
+  },
+  {
+    resourceType: 'team',
+    code: 'TEAM-B',
+    displayName: '焊工班组',
+    active: true,
+    snapshotVersion: '1',
+    departmentCode: 'DEPT-B',
+    shiftCode: 'SHIFT-A',
+  },
 ]
 const SHIFT_ROWS = [
-  { resourceType: 'shift', code: 'SHIFT-A', displayName: '白班', active: true, snapshotVersion: '1' },
+  {
+    resourceType: 'shift',
+    code: 'SHIFT-A',
+    displayName: '白班',
+    active: true,
+    snapshotVersion: '1',
+  },
 ]
 
 const CREATE_BY_TYPE: Record<string, ReturnType<typeof vi.fn>> = {
@@ -33,11 +74,8 @@ const CREATE_BY_TYPE: Record<string, ReturnType<typeof vi.fn>> = {
 }
 
 function stubResource(resourceType: string) {
-  const rows = resourceType === 'department'
-    ? DEPT_ROWS
-    : resourceType === 'team'
-      ? TEAM_ROWS
-      : SHIFT_ROWS
+  const rows =
+    resourceType === 'department' ? DEPT_ROWS : resourceType === 'team' ? TEAM_ROWS : SHIFT_ROWS
   return {
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 200 }),
     items: computed(() => rows),
@@ -71,10 +109,22 @@ function stubActions() {
 
 function stubWorkers() {
   const rows = [
-    { userId: 'usr-1', displayName: '张三', employeeNo: 'E001', department: '总装部', status: 'active' },
+    {
+      userId: 'usr-1',
+      displayName: '张三',
+      employeeNo: 'E001',
+      department: '总装部',
+      status: 'active',
+    },
   ]
   return {
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', keyword: undefined, pageIndex: 0, pageSize: 100 }),
+    filters: reactive({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      keyword: undefined,
+      pageIndex: 0,
+      pageSize: 100,
+    }),
     refresh: vi.fn(),
     workers: computed(() => rows),
     workersError: shallowRef(undefined),
@@ -127,7 +177,8 @@ const formSelectStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
@@ -138,7 +189,9 @@ const formSelectStubs = {
 
 // 找到树里某节点的「选中」按钮（按文本，排除带「新建」aria-label 的 + 按钮）。
 function findNodeButton(wrapper: ReturnType<typeof mount>, label: string) {
-  return wrapper.findAll('button').find((b) => b.text().includes(label) && !b.attributes('aria-label')?.includes('新建'))
+  return wrapper
+    .findAll('button')
+    .find((b) => b.text().includes(label) && !b.attributes('aria-label')?.includes('新建'))
 }
 
 const mountOpts = { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } }
@@ -183,7 +236,9 @@ describe('master-data organization (department tree) page', () => {
     expect(wrapper.text()).toContain('总装部')
     expect(wrapper.text()).toContain('总装一工段')
     // 子部门是 treeitem，且其父行 aria-expanded 反映层级（有子级）。
-    const parentItem = wrapper.findAll('[role="treeitem"]').find((li) => li.text().includes('总装部'))
+    const parentItem = wrapper
+      .findAll('[role="treeitem"]')
+      .find((li) => li.text().includes('总装部'))
     expect(parentItem?.attributes('aria-expanded')).toBe('true')
   })
 
@@ -196,8 +251,10 @@ describe('master-data organization (department tree) page', () => {
     expect(wrapper.text()).not.toContain('焊工班组')
   })
 
-  it('「新建子部门」prefills parent department code read-only', async () => {
-    const wrapper = mount(OrganizationPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } })
+  it('「新建子部门」carries the parent department as read-only context', async () => {
+    const wrapper = mount(OrganizationPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } },
+    })
     await flushPromises()
 
     await findNodeButton(wrapper, '总装部')!.trigger('click')
@@ -209,35 +266,51 @@ describe('master-data organization (department tree) page', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('新建子部门')
-    const parentInput = wrapper.find('#dept-parent').element as HTMLInputElement
-    expect(parentInput.value).toBe('DEPT-A')
-    expect(parentInput.disabled).toBe(true)
+    // 上级部门走「带出式录入」只读上下文区，不再是 readonly 输入框，也不给挑选控件。
+    expect(wrapper.find('#dept-parent').exists()).toBe(false)
+    const carried = wrapper.find('[data-slot="carried-context"]')
+    expect(carried.exists()).toBe(true)
+    expect(carried.text()).toContain('上级部门')
+    expect(carried.text()).toContain('总装部')
   })
 
-  it('在此部门下新建班组 prefills departmentCode read-only', async () => {
-    const wrapper = mount(OrganizationPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } })
+  it('在此部门下新建班组 carries the department as read-only context', async () => {
+    const wrapper = mount(OrganizationPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } },
+    })
     await flushPromises()
 
     await findNodeButton(wrapper, '总装部')!.trigger('click')
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('在此部门下新建班组'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('在此部门下新建班组'))!
+      .trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('新建班组')
-    const deptInput = wrapper.find('#team-dept-locked').element as HTMLInputElement
-    expect(deptInput.value).toBe('DEPT-A')
-    expect(deptInput.disabled).toBe(true)
+    expect(wrapper.find('#team-dept-locked').exists()).toBe(false)
+    // 所属部门带出为只读上下文（显示部门名，不暴露编码），且不再给部门下拉。
+    expect(wrapper.find('#team-dept').exists()).toBe(false)
+    const carried = wrapper.find('[data-slot="carried-context"]')
+    expect(carried.text()).toContain('所属部门')
+    expect(carried.text()).toContain('总装部')
   })
 
   it('creating a root department posts name (no code — system-assigned) and fires success toast', async () => {
     stub.createDept.mockClear()
     stub.toastSuccess.mockClear()
     stub.toastError.mockClear()
-    const wrapper = mount(OrganizationPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } })
+    const wrapper = mount(OrganizationPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } },
+    })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建部门'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建部门'))!
+      .trigger('click')
     await flushPromises()
     // 新建态不再有编码输入框（编码由系统自动生成）。
     expect(wrapper.find('#dept-code').exists()).toBe(false)
@@ -247,7 +320,7 @@ describe('master-data organization (department tree) page', () => {
     await flushPromises()
 
     expect(stub.createDept).toHaveBeenCalledTimes(1)
-    const body = stub.createDept.mock.calls[0]![0] as { code?: string, name: string }
+    const body = stub.createDept.mock.calls[0]![0] as { code?: string; name: string }
     expect(body.code).toBeUndefined()
     expect(body.name).toBe('喷涂部')
     expect(stub.toastSuccess).toHaveBeenCalled()
@@ -256,10 +329,15 @@ describe('master-data organization (department tree) page', () => {
 
   it('blocks department create on empty required fields with summary alert and no create call', async () => {
     stub.createDept.mockClear()
-    const wrapper = mount(OrganizationPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } })
+    const wrapper = mount(OrganizationPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } },
+    })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建部门'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建部门'))!
+      .trigger('click')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
     await flushPromises()
@@ -271,12 +349,17 @@ describe('master-data organization (department tree) page', () => {
   it('creating a team under a department posts prefilled departmentCode + shiftCode', async () => {
     stub.createTeam.mockClear()
     stub.toastSuccess.mockClear()
-    const wrapper = mount(OrganizationPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } })
+    const wrapper = mount(OrganizationPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } },
+    })
     await flushPromises()
 
     await findNodeButton(wrapper, '总装部')!.trigger('click')
     await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text().includes('在此部门下新建班组'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('在此部门下新建班组'))!
+      .trigger('click')
     await flushPromises()
 
     // 新建态不再有编码输入框（编码由系统自动生成）。
@@ -290,7 +373,12 @@ describe('master-data organization (department tree) page', () => {
     await flushPromises()
 
     expect(stub.createTeam).toHaveBeenCalledTimes(1)
-    const body = stub.createTeam.mock.calls[0]![0] as { code?: string, name: string, departmentCode: string, shiftCode: string }
+    const body = stub.createTeam.mock.calls[0]![0] as {
+      code?: string
+      name: string
+      departmentCode: string
+      shiftCode: string
+    }
     expect(body.code).toBeUndefined()
     expect(body.departmentCode).toBe('DEPT-A')
     expect(body.shiftCode).toBe('SHIFT-A')
@@ -302,7 +390,10 @@ describe('master-data organization (department tree) page', () => {
     actionStub.update.mockClear()
     const rowActionStubs = {
       RowActions: { template: '<div><slot /></div>' },
-      DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+      DropdownMenuItem: {
+        emits: ['click'],
+        template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+      },
     }
     const wrapper = mount(OrganizationPage, {
       global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs, ...rowActionStubs } },
@@ -321,8 +412,9 @@ describe('master-data organization (department tree) page', () => {
 
     expect(actionStub.fetchDetail).toHaveBeenCalledWith('DEPT-A1')
     expect(wrapper.text()).toContain('编辑部门')
-    const codeInput = wrapper.find('#dept-edit-code').element as HTMLInputElement
-    expect(codeInput.disabled).toBe(true)
+    // 系统编号只读展示，不做 disabled 输入框。
+    expect(wrapper.find('#dept-edit-code').exists()).toBe(false)
+    expect(wrapper.find('[data-slot="carried-context"]').text()).toContain('DEPT-A1')
     // 改挂上级：把 DEPT-A1 从 DEPT-A 改挂到 DEPT-B。
     const parentSelect = wrapper.findAll('select').find((s) => s.html().includes('DEPT-B'))!
     await parentSelect.setValue('DEPT-B')
@@ -330,13 +422,19 @@ describe('master-data organization (department tree) page', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(actionStub.update).toHaveBeenCalledWith('DEPT-A1', expect.objectContaining({ parentDepartmentCode: 'DEPT-B' }))
+    expect(actionStub.update).toHaveBeenCalledWith(
+      'DEPT-A1',
+      expect.objectContaining({ parentDepartmentCode: 'DEPT-B' }),
+    )
   })
 
   it('防环：编辑部门时上级候选排除自身及其子孙', async () => {
     const rowActionStubs = {
       RowActions: { template: '<div><slot /></div>' },
-      DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+      DropdownMenuItem: {
+        emits: ['click'],
+        template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+      },
     }
     const wrapper = mount(OrganizationPage, {
       global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs, ...rowActionStubs } },
@@ -364,7 +462,10 @@ describe('master-data organization (department tree) page', () => {
     actionStub.update.mockClear()
     const rowActionStubs = {
       RowActions: { template: '<div><slot /></div>' },
-      DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+      DropdownMenuItem: {
+        emits: ['click'],
+        template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+      },
     }
     const wrapper = mount(OrganizationPage, {
       global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs, ...rowActionStubs } },
@@ -379,10 +480,13 @@ describe('master-data organization (department tree) page', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('编辑班组')
-    // 班组编码只读。
-    expect((wrapper.find('#team-code').element as HTMLInputElement).disabled).toBe(true)
+    // 班组编码只读展示（带出式上下文），不做 disabled 输入框。
+    expect(wrapper.find('#team-code').exists()).toBe(false)
+    expect(wrapper.find('[data-slot="carried-context"]').text()).toContain('TEAM-A')
     // 改挂部门：DEPT-A → DEPT-B（部门下拉可改，非只读）。
-    const deptSelect = wrapper.findAll('select').find((s) => s.html().includes('DEPT-B') && s.html().includes('DEPT-A'))!
+    const deptSelect = wrapper
+      .findAll('select')
+      .find((s) => s.html().includes('DEPT-B') && s.html().includes('DEPT-A'))!
     await deptSelect.setValue('DEPT-B')
     await flushPromises()
     await wrapper.find('form').trigger('submit')

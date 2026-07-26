@@ -15,7 +15,6 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvField,
-  NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -29,11 +28,11 @@ import {
   Spinner,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { formatAmount, formatError } from '../shared'
+import { notifyError, notifySuccess } from '@/utils/notify'
+import { formatAmount } from '../shared'
 
 definePage({
   meta: {
@@ -91,33 +90,36 @@ const costCells = computed<NvMetricStripCell[]>(() => [
 
 const open = shallowRef(false)
 const form = reactive({ sourceType: 'production', sourceDocumentNo: '', amount: '0' })
-const formError = shallowRef('')
+// 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
+const showErrors = shallowRef(false)
+const invalid = computed(() => ({
+  sourceDocumentNo: !form.sourceDocumentNo.trim(),
+  amount: !(Number(form.amount) > 0),
+}))
+const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 
 function openDialog() {
   form.sourceType = 'production'
   form.sourceDocumentNo = ''
   form.amount = '0'
-  formError.value = ''
+  showErrors.value = false
   open.value = true
 }
 
 async function submit() {
-  const value = Number(form.amount)
-  if (!form.sourceDocumentNo.trim() || !(value > 0)) {
-    formError.value = '请填写来源单据和正数金额。'
-    return
-  }
+  showErrors.value = true
+  if (!canSubmit.value) return
   try {
     await costs.createCostCandidate({
       sourceType: form.sourceType,
       sourceDocumentNo: form.sourceDocumentNo.trim(),
-      amount: value,
+      amount: Number(form.amount),
       currencyCode: 'CNY',
     })
     open.value = false
-    toast.success('成本候选已登记')
-  } catch {
-    formError.value = formatError(costs.createCostCandidateError.value) || '登记失败，请稍后重试。'
+    notifySuccess('成本候选已登记')
+  } catch (error) {
+    notifyError(costs.createCostCandidateError.value ?? error, '登记成本失败，请稍后重试。')
   }
 }
 </script>
@@ -186,8 +188,8 @@ async function submit() {
       <NvDialogContent>
         <NvDialogHeader
           ><NvDialogTitle>登记成本候选</NvDialogTitle
-          ><NvDialogDescription
-            >归集待入账成本；完整成本核算与月结仍不在当前范围。</NvDialogDescription
+          ><NvDialogDescription class="sr-only"
+            >归集一笔待入账成本。</NvDialogDescription
           ></NvDialogHeader
         >
         <form class="grid gap-4" @submit.prevent="submit">
@@ -206,21 +208,41 @@ async function submit() {
                 </NvSelectContent>
               </NvSelect>
             </NvField>
-            <NvField
-              ><NvFieldLabel for="erp-cc-source">来源单据</NvFieldLabel
-              ><NvInput id="erp-cc-source" v-model="form.sourceDocumentNo"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-cc-amount">金额（元）</NvFieldLabel
-              ><NvInput id="erp-cc-amount" v-model="form.amount" type="number" min="0" step="0.01"
-            /></NvField>
+            <NvField>
+              <NvFieldLabel for="erp-cc-source">
+                来源单据 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-cc-source"
+                v-model="form.sourceDocumentNo"
+                :data-invalid="showErrors && invalid.sourceDocumentNo ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-cc-amount">
+                金额（元） <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-cc-amount"
+                v-model="form.amount"
+                type="number"
+                min="0"
+                step="0.01"
+                :data-invalid="showErrors && invalid.amount ? '' : undefined"
+              />
+            </NvField>
           </NvFieldGroup>
-          <NvFieldError v-if="formError" :errors="[formError]" />
+          <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+            请填写来源单据，并给出正数金额。
+          </p>
           <NvDialogFooter
             ><NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             ><NvButton type="submit" :disabled="costs.createCostCandidatePending.value"
-              ><Spinner v-if="costs.createCostCandidatePending.value" />登记</NvButton
+              ><Spinner
+                v-if="costs.createCostCandidatePending.value"
+                aria-hidden="true"
+              />登记成本</NvButton
             ></NvDialogFooter
           >
         </form>

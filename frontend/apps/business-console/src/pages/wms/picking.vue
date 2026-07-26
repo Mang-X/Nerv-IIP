@@ -5,6 +5,7 @@ import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.
 import { useWmsPickingTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -23,7 +24,6 @@ import {
   NvPageHeader,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
@@ -111,9 +111,9 @@ async function submitCreate() {
       quantity: createForm.quantity === '' ? undefined : Number(createForm.quantity),
     })
     createOpen.value = false
-    toast.success('拣货任务已创建')
-  } catch {
-    // 失败信息由页面错误区呈现。
+    notifySuccess('拣货任务已创建')
+  } catch (error) {
+    notifyError(error, '创建拣货任务失败，请稍后重试。')
   }
 }
 
@@ -249,9 +249,8 @@ function firstQuery(value: unknown) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建拣货任务</NvDialogTitle>
-          <NvDialogDescription
-            >从拣货库位拣出出库单所需库存，完成出库拣货扣减。</NvDialogDescription
-          >
+          <!-- 界面上不再写说明书；仅供读屏播报对象范围。 -->
+          <NvDialogDescription class="sr-only">出库单下的单行拣货任务。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
@@ -261,7 +260,6 @@ function firstQuery(value: unknown) {
                 id="wms-picking-outbound"
                 v-model="createForm.outboundOrderId"
                 autocomplete="off"
-                placeholder="出库单标识"
               />
             </NvField>
             <NvField>
@@ -291,7 +289,7 @@ function firstQuery(value: unknown) {
               />
             </NvField>
             <NvField>
-              <NvFieldLabel for="wms-picking-qty">拣货数量</NvFieldLabel>
+              <NvFieldLabel for="wms-picking-qty">拣货数量（可选）</NvFieldLabel>
               <NvInput
                 id="wms-picking-qty"
                 v-model="createForm.quantity"
@@ -299,7 +297,6 @@ function firstQuery(value: unknown) {
                 min="0"
                 step="any"
                 autocomplete="off"
-                placeholder="可选"
               />
             </NvField>
           </NvFieldGroup>

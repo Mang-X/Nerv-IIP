@@ -4,6 +4,7 @@ import type {
   QualityReasonItem,
 } from '@/composables/usePromotedCatalogs'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useQualityReasonCodes } from '@/composables/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -26,7 +27,6 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
-  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -254,32 +254,31 @@ async function confirmArchive() {
           <NvDialogContent class="sm:max-w-2xl">
             <NvDialogHeader>
               <NvDialogTitle>{{ editingCode ? '编辑质量原因' : '新建质量原因' }}</NvDialogTitle>
-              <NvDialogDescription>
-                质量原因是可复用的质量主数据：按原因组归类，预设严重度与默认处置，供检验 /
-                不合格品记录引用。带 * 为必填项。
-              </NvDialogDescription>
+              <NvDialogDescription>供检验与不合格品记录引用</NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请填写带 * 的必填项（已标红）。
               </p>
 
+              <!-- 编辑态：原因编码是不可改的自然键，带出只读展示，不占输入位。 -->
+              <CarriedContextSummary
+                v-if="editingCode"
+                label="正在编辑的质量原因"
+                :items="[{ label: '原因编码', value: editingCode }]"
+              />
+
               <FormSectionTitle>基本信息</FormSectionTitle>
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                <NvField :data-invalid="showErrors && !codeValid">
+                <NvField v-if="!editingCode" :data-invalid="showErrors && !codeValid">
                   <NvFieldLabel for="reason-code"
                     >原因编码 <span class="text-destructive">*</span></NvFieldLabel
                   >
                   <NvInput
-                    v-if="!editingCode"
                     id="reason-code"
                     v-model="form.reasonCode"
                     placeholder="例如：DEF-SCRATCH"
                   />
-                  <NvInput v-else :model-value="editingCode" readonly disabled />
-                  <NvFieldDescription>{{
-                    editingCode ? '编码是原因身份，不可更改。' : '由工厂自定义、需唯一。'
-                  }}</NvFieldDescription>
                 </NvField>
                 <NvField :data-invalid="showErrors && !nameValid">
                   <NvFieldLabel for="reason-name"
@@ -406,8 +405,7 @@ async function confirmArchive() {
         <NvAlertDialogHeader>
           <NvAlertDialogTitle>停用质量原因</NvAlertDialogTitle>
           <NvAlertDialogDescription>
-            停用后原因「{{ archiveTarget?.reasonName }}」将不可在新的检验 /
-            不合格品记录中引用，历史记录不受影响。
+            停用后「{{ archiveTarget?.reasonName }}」不可再被新的检验与不合格品记录引用。
           </NvAlertDialogDescription>
         </NvAlertDialogHeader>
         <NvAlertDialogFooter>

@@ -31,9 +31,9 @@ const openModel = computed({
           履约追踪
           <span v-if="order?.salesOrderNo" class="text-primary">· {{ order.salesOrderNo }}</span>
         </NvSheetTitle>
-        <NvSheetDescription>
-          从销售订单沿计划 / 排程 / 生产 / 质量 / 库存 / 发货 /
-          应收全链路追踪当前卡点。仅串接已建立稳定关联的节点，其余显式标注「尚未建立关联」。
+        <!-- 各节点状态由下方时间线自己说清楚；此处仅供读屏播报，不在界面上再写一遍说明。 -->
+        <NvSheetDescription class="sr-only">
+          销售订单 {{ order?.salesOrderNo ?? '' }} 的履约节点时间线。
         </NvSheetDescription>
       </NvSheetHeader>
 

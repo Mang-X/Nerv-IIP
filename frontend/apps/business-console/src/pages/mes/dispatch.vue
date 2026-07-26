@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesDispatchTasks } from '@/composables/useBusinessMes'
 import {
@@ -127,6 +128,26 @@ const columns: NvDataTableColumn<DispatchRow>[] = [
 const assignOpen = shallowRef(false)
 const assignTarget = shallowRef<DispatchRow | null>(null)
 const assignedUserId = ref('')
+// 点提交才标红（create-dialog 硬规则）：未选操作员时不禁用按钮，而是标红 + 提示且不发请求。
+const assignShowErrors = ref(false)
+
+// 派工弹窗的只读上下文：全部由所选行带出（设备/班次沿用排程结果，不在此变更）。
+const assignContextItems = computed(() => {
+  const row = assignTarget.value
+  if (!row) return []
+  return [
+    { label: '工序任务', value: row.operationTaskNo ?? row.operationTaskId },
+    { label: '工单', value: row.workOrderNo ?? row.workOrderId },
+    {
+      label: '工作中心',
+      value: row.workCenterName ?? resolveWorkCenter(row.workCenterCode ?? row.workCenterId),
+    },
+    { label: '设备', value: row.deviceAssetName ?? row.deviceAssetCode ?? row.deviceAssetId },
+    { label: '班次', value: row.shiftId },
+    { label: '计划开始', value: formatDateTime(row.plannedStartUtc) },
+  ]
+})
+
 function canDispatch(row: DispatchRow) {
   return (
     Boolean(row.operationTaskId) &&
@@ -137,10 +158,14 @@ function canDispatch(row: DispatchRow) {
 function openAssign(row: DispatchRow) {
   if (!canDispatch(row)) return
   assignTarget.value = row
-  assignedUserId.value = ''
+  // 只有一个可选操作员时直接选中，别让班组长多点一次。
+  assignedUserId.value = workerOptions.value.length === 1 ? workerOptions.value[0]!.value : ''
+  assignShowErrors.value = false
   assignOpen.value = true
 }
 async function confirmAssign() {
+  // 点提交才校验：未选操作员则标红 + 提示，不发请求。
+  assignShowErrors.value = true
   const target = assignTarget.value
   if (!target?.operationTaskId || !assignedUserId.value) return
   try {
@@ -294,19 +319,25 @@ function formatError(error: unknown) {
     <NvDialog v-model:open="assignOpen">
       <NvDialogContent>
         <NvDialogHeader>
-          <NvDialogTitle>派工 · 指派操作员</NvDialogTitle>
-          <NvDialogDescription>
-            为工单
-            {{ assignTarget?.workOrderId ?? '' }} 的工序任务指派操作员；设备与班次沿用排程结果。
+          <NvDialogTitle>派工</NvDialogTitle>
+          <!-- 派工对象已在下方只读区完整呈现；此处仅供读屏播报。 -->
+          <NvDialogDescription class="sr-only">
+            派工对象：工序任务
+            {{ assignTarget?.operationTaskNo ?? assignTarget?.operationTaskId }}。
           </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="confirmAssign">
+          <!-- 工序任务 / 工单 / 工作中心 / 设备 / 班次 / 计划开始全部由所选行带出，只读呈现；班组长只挑操作员。 -->
+          <CarriedContextSummary label="派工对象" :items="assignContextItems" />
+
           <NvField>
             <NvFieldLabel for="assign-operator"
               >操作员 <span class="text-destructive">*</span></NvFieldLabel
             >
             <NvSelect v-model="assignedUserId">
-              <NvSelectTrigger id="assign-operator"
+              <NvSelectTrigger
+                id="assign-operator"
+                :data-invalid="assignShowErrors && !assignedUserId ? '' : undefined"
                 ><NvSelectValue placeholder="选择操作员"
               /></NvSelectTrigger>
               <NvSelectContent>
@@ -316,11 +347,20 @@ function formatError(error: unknown) {
               </NvSelectContent>
             </NvSelect>
           </NvField>
+          <!-- 点提交才标红；未选操作员不发请求。 -->
+          <p
+            v-if="assignShowErrors && !assignedUserId"
+            class="text-sm text-destructive"
+            role="alert"
+          >
+            请选择操作员（已标红）。
+          </p>
           <NvDialogFooter>
             <NvButton type="button" variant="outline" @click="assignOpen = false">取消</NvButton>
-            <NvButton type="submit" :disabled="assignDispatchTaskPending || !assignedUserId">
+            <NvButton type="submit" :disabled="assignDispatchTaskPending">
               <Spinner v-if="assignDispatchTaskPending" aria-hidden="true" />
-              确认派工
+              <UserCheckIcon v-else aria-hidden="true" />
+              派工
             </NvButton>
           </NvDialogFooter>
         </form>

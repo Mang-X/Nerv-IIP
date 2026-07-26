@@ -20,6 +20,12 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 vi.mock('@/composables/useBusinessMes', async () => {
   state.filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev' })
   return {
+    makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
+    useMesProductionReporting: () => ({
+      recordProductionReport: vi.fn(),
+      recordProductionReportError: shallowRef(undefined),
+      recordProductionReportPending: shallowRef(false),
+    }),
     describeMesReadinessReason: (v: string) => ({ code: v, label: v, nextStep: '' }),
     useMesOperationTasks: () => ({
       filters: state.filters,

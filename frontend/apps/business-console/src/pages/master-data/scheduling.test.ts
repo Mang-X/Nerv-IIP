@@ -13,7 +13,12 @@ const stub = vi.hoisted(() => ({
 // 各资源类型独立的 actions stub，避免 shift 与 work-calendar 互相串调用记录。
 const actionStub = vi.hoisted(() => ({
   shiftUpdate: vi.fn().mockResolvedValue({}),
-  shiftFetchDetail: vi.fn().mockResolvedValue({ name: '白班', startsAt: '08:00:00', endsAt: '20:00:00', paidMinutes: 660 }),
+  shiftFetchDetail: vi.fn().mockResolvedValue({
+    name: '白班',
+    startsAt: '08:00:00',
+    endsAt: '20:00:00',
+    paidMinutes: 660,
+  }),
   calUpdate: vi.fn().mockResolvedValue({}),
   calFetchDetail: vi.fn().mockResolvedValue({
     name: '标准日历',
@@ -27,12 +32,22 @@ const actionStub = vi.hoisted(() => ({
 }))
 
 function stubResource(resourceType: string) {
-  const labelByType: Record<string, { code: string, name: string }> = {
-    'shift': { code: 'SHIFT-A', name: '白班' },
+  const labelByType: Record<string, { code: string; name: string }> = {
+    shift: { code: 'SHIFT-A', name: '白班' },
     'work-calendar': { code: 'CAL-A', name: '标准日历' },
   }
   const entry = labelByType[resourceType]
-  const rows = entry ? [{ resourceType, code: entry.code, displayName: entry.name, active: true, snapshotVersion: '1' }] : []
+  const rows = entry
+    ? [
+        {
+          resourceType,
+          code: entry.code,
+          displayName: entry.name,
+          active: true,
+          snapshotVersion: '1',
+        },
+      ]
+    : []
   return {
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 10 }),
     items: computed(() => rows),
@@ -75,7 +90,10 @@ const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 // 下拉项已迁到 Pro（NvDropdownMenuItem 是真 .vue 包装，stub 按 Pro 名）。
 const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
-  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuItem: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
 }
 // 工作日历左列：压平行尾「⋯」菜单 + StatusBadge，让整行按钮的可见文本就是日历名。
 const calRowActionStubs = {
@@ -95,7 +113,10 @@ const dialogStubs = {
   // 班次表行操作里 RowActions 的下拉内容已迁到 Pro（NvDropdownMenuContent 含 reka portal/Teleport，
   // jsdom 卸载会崩）就地渲染；下拉项 NvDropdownMenuItem 也一并桩，避免脱离 MenuContent 上下文报错。
   NvDropdownMenuContent: { template: '<div><slot /></div>' },
-  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuItem: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
   // 班次表行操作里的 AlertDialog 已迁到 Pro（NvAlertDialogContent 含 reka portal/Teleport，jsdom 卸载会崩）就地渲染。
   NvAlertDialog: { template: '<div><slot /></div>' },
   NvAlertDialogTrigger: { template: '<div><slot /></div>' },
@@ -105,7 +126,10 @@ const dialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvAlertDialogAction: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
 }
 // 抽屉照 dialog 风格内联展开，使其内容在挂载后即可断言。
 // Sheet 已迁到 Pro：NvSheet/NvSheetTrigger/NvSheetClose 是 reka-ui 原语再导出（组件名仍是
@@ -123,7 +147,8 @@ const datePickerStub = {
   NvDatePicker: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
+    template:
+      '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
   },
 }
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue。
@@ -131,7 +156,8 @@ const formSelectStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
@@ -151,7 +177,11 @@ const alertDialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: { emits: ['click'], template: '<button type="button" data-testid="confirm-delete" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvAlertDialogAction: {
+    emits: ['click'],
+    template:
+      '<button type="button" data-testid="confirm-delete" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
 }
 
 // 班次 / 工作日历的新建对话框（已迁到 Pro）。NvTabsContent 对未激活页签 force-mount，
@@ -167,7 +197,15 @@ const dialogContentStubs = {
   NvDialogDescription: { template: '<p><slot /></p>' },
 }
 
-const calStubs = { ...layoutStub, ...calRowActionStubs, ...sheetStubs, ...dialogContentStubs, ...datePickerStub, ...formSelectStubs, ...alertDialogStubs }
+const calStubs = {
+  ...layoutStub,
+  ...calRowActionStubs,
+  ...sheetStubs,
+  ...dialogContentStubs,
+  ...datePickerStub,
+  ...formSelectStubs,
+  ...alertDialogStubs,
+}
 
 async function switchTab(wrapper: ReturnType<typeof mount>, label: string) {
   const tab = wrapper.findAll('[role="tab"]').find((t) => t.text().includes(label))!
@@ -190,7 +228,15 @@ async function selectStandardCalendar(wrapper: ReturnType<typeof mount>) {
 }
 
 beforeEach(() => {
-  for (const fn of [stub.create, stub.toastSuccess, stub.toastError, actionStub.shiftUpdate, actionStub.shiftFetchDetail, actionStub.calUpdate, actionStub.calFetchDetail]) {
+  for (const fn of [
+    stub.create,
+    stub.toastSuccess,
+    stub.toastError,
+    actionStub.shiftUpdate,
+    actionStub.shiftFetchDetail,
+    actionStub.calUpdate,
+    actionStub.calFetchDetail,
+  ]) {
     fn.mockClear()
   }
 })
@@ -211,7 +257,9 @@ describe('master-data scheduling page', () => {
   })
 
   it('shift edit loads time/paid fields editable and update posts startsAt/endsAt/paidMinutes', async () => {
-    const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...rowActionStubs, ...dialogStubs } } })
+    const wrapper = mount(SchedulingPage, {
+      global: { stubs: { ...layoutStub, ...rowActionStubs, ...dialogStubs } },
+    })
     await flushPromises()
 
     const editItem = wrapper.findAll('button').find((b) => b.text().trim() === '编辑')
@@ -221,15 +269,15 @@ describe('master-data scheduling page', () => {
 
     expect(actionStub.shiftFetchDetail).toHaveBeenCalledWith('SHIFT-A')
     expect(wrapper.text()).toContain('编辑班次')
-    // 编码只读，时段 / 计薪可改（不再 disabled）。
-    const codeInput = wrapper.find('#shift-code').element as HTMLInputElement
-    expect(codeInput.disabled).toBe(true)
+    // 编码走只读上下文区（非 disabled 输入框），时段 / 计薪可改。
+    expect(wrapper.find('#shift-code').exists()).toBe(false)
+    expect(wrapper.find('[data-slot="carried-context"]').text()).toContain('SHIFT-A')
     const startInput = wrapper.find('#shift-start').element as HTMLInputElement
     expect(startInput.disabled).toBe(false)
     expect(startInput.value).toBe('08:00')
 
-    // 编辑态有「班次编码」「班次名称」两个 form？只有一个班次表单（dialogStubs 内联）。
-    const shiftForm = wrapper.findAll('form').find((f) => f.find('#shift-code').exists())!
+    // 只有一个班次表单（dialogStubs 内联）。
+    const shiftForm = wrapper.findAll('form').find((f) => f.find('#shift-name').exists())!
     await shiftForm.trigger('submit')
     await flushPromises()
 
@@ -245,7 +293,10 @@ describe('master-data scheduling page', () => {
     const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...dialogStubs } } })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建班次'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建班次'))!
+      .trigger('click')
     await flushPromises()
     // 新建态不再有编码输入框（编码由系统自动生成）。
     expect(wrapper.find('#shift-code').exists()).toBe(false)
@@ -255,7 +306,11 @@ describe('master-data scheduling page', () => {
     await flushPromises()
 
     expect(stub.create).toHaveBeenCalledTimes(1)
-    const body = stub.create.mock.calls[0]![0] as { code?: string, name: string, paidMinutes: number }
+    const body = stub.create.mock.calls[0]![0] as {
+      code?: string
+      name: string
+      paidMinutes: number
+    }
     expect(body.code).toBeUndefined()
     expect(body.name).toBe('夜班')
     expect(body.paidMinutes).toBe(480)
@@ -319,9 +374,9 @@ describe('master-data scheduling page', () => {
 
     expect(actionStub.calUpdate).toHaveBeenCalledTimes(1)
     const [, patch] = actionStub.calUpdate.mock.calls[0]!
-    expect(patch.workingTimes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ dayOfWeek: 'wednesday' }),
-    ]))
+    expect(patch.workingTimes).toEqual(
+      expect.arrayContaining([expect.objectContaining({ dayOfWeek: 'wednesday' })]),
+    )
   })
 
   it('opens the holiday/exception sheet from the 管理 button and lists existing detail there', async () => {
@@ -344,7 +399,10 @@ describe('master-data scheduling page', () => {
     await flushPromises()
     await selectStandardCalendar(wrapper)
 
-    await wrapper.findAll('button').find((b) => b.text().includes('管理节假日'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('管理节假日'))!
+      .trigger('click')
     await flushPromises()
 
     // 抽屉内的节假日表单：DatePicker(原生 date 桩) + 名称。
@@ -358,10 +416,12 @@ describe('master-data scheduling page', () => {
     expect(actionStub.calUpdate).toHaveBeenCalledTimes(1)
     const [code, patch] = actionStub.calUpdate.mock.calls[0]!
     expect(code).toBe('CAL-A')
-    expect(patch.holidays).toEqual(expect.arrayContaining([
-      expect.objectContaining({ date: '2026-06-19' }),
-      expect.objectContaining({ date: '2026-10-01', name: '国庆节' }),
-    ]))
+    expect(patch.holidays).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ date: '2026-06-19' }),
+        expect.objectContaining({ date: '2026-10-01', name: '国庆节' }),
+      ]),
+    )
     expect(stub.toastSuccess).toHaveBeenCalled()
   })
 
@@ -370,7 +430,10 @@ describe('master-data scheduling page', () => {
     await flushPromises()
     await selectStandardCalendar(wrapper)
 
-    await wrapper.findAll('button').find((b) => b.text().includes('管理节假日'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('管理节假日'))!
+      .trigger('click')
     await flushPromises()
 
     // 例外日表单：含「原因」字段，借此定位该 form。
@@ -385,10 +448,12 @@ describe('master-data scheduling page', () => {
     expect(actionStub.calUpdate).toHaveBeenCalledTimes(1)
     const [code, patch] = actionStub.calUpdate.mock.calls[0]!
     expect(code).toBe('CAL-A')
-    expect(patch.exceptions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ date: '2026-06-20', isWorkingDay: true }),
-      expect.objectContaining({ date: '2026-10-08', isWorkingDay: false, reason: '补休' }),
-    ]))
+    expect(patch.exceptions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ date: '2026-06-20', isWorkingDay: true }),
+        expect.objectContaining({ date: '2026-10-08', isWorkingDay: false, reason: '补休' }),
+      ]),
+    )
     expect(stub.toastSuccess).toHaveBeenCalled()
   })
 
@@ -397,11 +462,16 @@ describe('master-data scheduling page', () => {
     await flushPromises()
     await selectStandardCalendar(wrapper)
 
-    await wrapper.findAll('button').find((b) => b.text().includes('管理节假日'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('管理节假日'))!
+      .trigger('click')
     await flushPromises()
 
     // 找到节假日删除触发按钮（aria-label）；点它本身不应直接调 update。
-    const delTrigger = wrapper.findAll('button').find((b) => b.attributes('aria-label') === '删除节假日')
+    const delTrigger = wrapper
+      .findAll('button')
+      .find((b) => b.attributes('aria-label') === '删除节假日')
     expect(delTrigger).toBeTruthy()
     await delTrigger!.trigger('click')
     await flushPromises()
@@ -426,10 +496,15 @@ describe('master-data scheduling page', () => {
     await flushPromises()
     await selectStandardCalendar(wrapper)
 
-    await wrapper.findAll('button').find((b) => b.text().includes('管理节假日'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('管理节假日'))!
+      .trigger('click')
     await flushPromises()
 
-    const delTrigger = wrapper.findAll('button').find((b) => b.attributes('aria-label') === '删除例外日')
+    const delTrigger = wrapper
+      .findAll('button')
+      .find((b) => b.attributes('aria-label') === '删除例外日')
     expect(delTrigger).toBeTruthy()
     await delTrigger!.trigger('click')
     await flushPromises()
@@ -438,7 +513,9 @@ describe('master-data scheduling page', () => {
     expect(wrapper.text()).toContain('确定删除例外日')
 
     // 在「确定删除例外日」那个确认弹层内点确认（按弹层文案定位，避开互斥冲突弹层）。
-    const exDialog = wrapper.findAll('[data-testid="confirm"]').find((d) => d.text().includes('确定删除例外日'))!
+    const exDialog = wrapper
+      .findAll('[data-testid="confirm"]')
+      .find((d) => d.text().includes('确定删除例外日'))!
     await exDialog.find('[data-testid="confirm-delete"]').trigger('click')
     await flushPromises()
 
@@ -452,7 +529,10 @@ describe('master-data scheduling page', () => {
     await flushPromises()
     await selectStandardCalendar(wrapper)
 
-    await wrapper.findAll('button').find((b) => b.text().includes('管理节假日'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('管理节假日'))!
+      .trigger('click')
     await flushPromises()
 
     // 2026-06-20 当前是例外日（调休）。在节假日表单为该日加节假日 → 应弹冲突确认，先不写回。
@@ -463,7 +543,9 @@ describe('master-data scheduling page', () => {
     await flushPromises()
 
     expect(actionStub.calUpdate).not.toHaveBeenCalled()
-    const conflictDialog = wrapper.findAll('[data-testid="confirm"]').find((d) => d.text().includes('已设为例外日'))
+    const conflictDialog = wrapper
+      .findAll('[data-testid="confirm"]')
+      .find((d) => d.text().includes('已设为例外日'))
     expect(conflictDialog).toBeTruthy()
 
     // 确认替换：删掉该日例外日、加节假日，单次写回。
@@ -483,7 +565,10 @@ describe('master-data scheduling page', () => {
     await flushPromises()
     await selectStandardCalendar(wrapper)
 
-    await wrapper.findAll('button').find((b) => b.text().includes('管理节假日'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('管理节假日'))!
+      .trigger('click')
     await flushPromises()
 
     // 2026-06-19 当前是节假日（端午节）。在例外日表单为该日加例外日 → 应弹冲突确认。
@@ -496,7 +581,9 @@ describe('master-data scheduling page', () => {
     await flushPromises()
 
     expect(actionStub.calUpdate).not.toHaveBeenCalled()
-    const conflictDialog = wrapper.findAll('[data-testid="confirm"]').find((d) => d.text().includes('已是节假日'))
+    const conflictDialog = wrapper
+      .findAll('[data-testid="confirm"]')
+      .find((d) => d.text().includes('已是节假日'))
     expect(conflictDialog).toBeTruthy()
 
     await conflictDialog!.find('[data-testid="confirm-delete"]').trigger('click')
@@ -506,7 +593,12 @@ describe('master-data scheduling page', () => {
     const [code, patch] = actionStub.calUpdate.mock.calls[0]!
     expect(code).toBe('CAL-A')
     expect(patch.holidays.some((h: { date?: string }) => h.date === '2026-06-19')).toBe(false)
-    expect(patch.exceptions.some((e: { date?: string, isWorkingDay?: boolean }) => e.date === '2026-06-19' && e.isWorkingDay === false)).toBe(true)
+    expect(
+      patch.exceptions.some(
+        (e: { date?: string; isWorkingDay?: boolean }) =>
+          e.date === '2026-06-19' && e.isWorkingDay === false,
+      ),
+    ).toBe(true)
     expect(stub.toastSuccess).toHaveBeenCalled()
   })
 
@@ -541,7 +633,9 @@ describe('master-data scheduling page', () => {
     const [, patch] = actionStub.calUpdate.mock.calls[0]!
 
     // workingTimes 按 dayOfWeek 去重：monday 仅一条（保留第一条 08:00）。
-    const mondays = patch.workingTimes.filter((w: { dayOfWeek?: string }) => w.dayOfWeek === 'monday')
+    const mondays = patch.workingTimes.filter(
+      (w: { dayOfWeek?: string }) => w.dayOfWeek === 'monday',
+    )
     expect(mondays).toHaveLength(1)
     expect(mondays[0].startsAt).toBe('08:00:00')
 

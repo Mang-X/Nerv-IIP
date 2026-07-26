@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsWarehouseTaskItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { useWmsPutawayTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -25,7 +27,6 @@ import {
   NvPageHeader,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
@@ -127,11 +128,17 @@ async function submitCreate() {
       quantity: Number(createForm.quantity),
     })
     createOpen.value = false
-    toast.success('上架任务已创建')
-  } catch {
-    // 失败信息由页面错误区呈现。
+    notifySuccess('上架任务已创建')
+  } catch (error) {
+    notifyError(error, '创建上架任务失败，请稍后重试。')
   }
 }
+
+// 从收货入库行带出的上下文：有入库单就只读展示（人读单号优先），没有才让用户自己填。
+const carriedFromInbound = computed(() => Boolean(inboundOrderId.value))
+const carriedContextItems = computed(() => [
+  { label: '入库单', value: inboundOrderNo.value || inboundOrderId.value },
+])
 
 const errorMessage = computed(() =>
   formatError(putawayTasksError.value ?? createPutawayError.value),
@@ -264,19 +271,24 @@ function firstQuery(value: unknown) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建上架任务</NvDialogTitle>
-          <NvDialogDescription
-            >将收货入库单的暂存库存移入目标库位，完成上架增量。</NvDialogDescription
-          >
+          <!-- 上架来源已在下方只读区呈现；此处仅供读屏播报。 -->
+          <NvDialogDescription class="sr-only">
+            入库单 {{ inboundOrderNo || inboundOrderId || '未指定' }} 的上架任务。
+          </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
+          <CarriedContextSummary
+            v-if="carriedFromInbound"
+            label="上架来源"
+            :items="carriedContextItems"
+          />
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField class="sm:col-span-2">
+            <NvField v-if="!carriedFromInbound" class="sm:col-span-2">
               <NvFieldLabel for="wms-putaway-inbound">入库单</NvFieldLabel>
               <NvInput
                 id="wms-putaway-inbound"
                 v-model="createForm.inboundOrderId"
                 autocomplete="off"
-                placeholder="入库单标识"
               />
             </NvField>
             <NvField>
@@ -315,7 +327,6 @@ function firstQuery(value: unknown) {
                 step="any"
                 autocomplete="off"
                 required
-                placeholder="必填正数"
               />
             </NvField>
           </NvFieldGroup>

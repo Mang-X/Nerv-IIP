@@ -8,6 +8,8 @@ import { useErpPurchaseRequisitions } from '@/composables/useBusinessErp'
 import { useBusinessPartners } from '@/composables/useBusinessMasterData'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { usePagedList } from '@/composables/usePagedList'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -35,7 +37,7 @@ import {
 import { FileSearchIcon, RefreshCwIcon, ShoppingCartIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { firstQueryParam, formatDate, formatError, formatQuantity } from './shared'
+import { firstQueryParam, formatDate, formatQuantity } from './shared'
 
 definePage({
   meta: {
@@ -95,6 +97,8 @@ const requisitionSegments = computed(() => {
 const rfqDialogOpen = shallowRef(false)
 const rfqRow = shallowRef<BusinessConsoleErpPurchaseRequisitionItem | null>(null)
 const rfqSupplierSelection = reactive<Record<string, boolean>>({})
+// 点「生成 RFQ」后才标红/给汇总提示，打开弹窗时不预先报错。
+const rfqShowErrors = shallowRef(false)
 
 const columns: NvDataTableColumn<BusinessConsoleErpPurchaseRequisitionItem>[] = [
   {
@@ -166,6 +170,24 @@ const selectedRfqSupplierCodes = computed(() =>
     .filter((code) => rfqSupplierSelection[code])
     .sort((a, b) => a.localeCompare(b, 'en')),
 )
+// 询价对象完全由所选申请行带出，弹窗里不再让用户重填单号/物料/数量。
+const rfqContextItems = computed(() => {
+  const row = rfqRow.value
+  if (!row) return []
+  return [
+    { label: '采购申请', value: row.requisitionNo },
+    { label: '物料', value: row.skuCode },
+    {
+      label: '申请数量',
+      value:
+        row.quantity === null || row.quantity === undefined
+          ? undefined
+          : `${formatQuantity(row.quantity)}${row.uomCode ? ` ${row.uomCode}` : ''}`,
+    },
+    { label: '需求日期', value: row.requiredDate ? formatDate(row.requiredDate) : undefined },
+    { label: '工厂', value: row.siteCode },
+  ]
+})
 
 async function convertToPurchaseOrder(row: BusinessConsoleErpPurchaseRequisitionItem) {
   if (!canConvert(row)) return
@@ -173,20 +195,18 @@ async function convertToPurchaseOrder(row: BusinessConsoleErpPurchaseRequisition
     const response = await requisitions.convertToPurchaseOrder([row.requisitionNo!])
     const data = response?.success ? response.data : undefined
     if (data?.status === 'PurchaseOrderCreated' || data?.status === 'AlreadyConverted') {
-      toast.success(
+      notifySuccess(
         data.purchaseOrderNo ? `已转采购订单 ${data.purchaseOrderNo}` : '采购申请已转采购订单',
       )
       return
     }
     if (data?.status === 'RfqCreated') {
-      toast.success(data.rfqNo ? `已生成 RFQ ${data.rfqNo}` : '已进入 RFQ 流程')
+      notifySuccess(data.rfqNo ? `已生成 RFQ ${data.rfqNo}` : '已进入 RFQ 流程')
       return
     }
     toast.warning('缺少有效价源，请先发起 RFQ')
-  } catch {
-    toast.error(
-      formatError(requisitions.convertToPurchaseOrderError.value) || '转单失败，请稍后重试。',
-    )
+  } catch (error) {
+    notifyError(requisitions.convertToPurchaseOrderError.value ?? error, '转单失败，请稍后重试。')
   }
 }
 
@@ -200,23 +220,23 @@ function openRfqDialog(row: BusinessConsoleErpPurchaseRequisitionItem) {
   if (!canConvert(row)) return
   rfqRow.value = row
   resetRfqSelection()
+  rfqShowErrors.value = false
   rfqDialogOpen.value = true
 }
 
 function closeRfqDialog() {
   rfqDialogOpen.value = false
   rfqRow.value = null
+  rfqShowErrors.value = false
   resetRfqSelection()
 }
 
 async function submitRfq() {
   const row = rfqRow.value
   if (!row || !canConvert(row)) return
+  rfqShowErrors.value = true
   const supplierCodes = selectedRfqSupplierCodes.value
-  if (supplierCodes.length === 0) {
-    toast.warning('请先选择供应商')
-    return
-  }
+  if (supplierCodes.length === 0) return
 
   try {
     const response = await requisitions.convertToPurchaseOrder([row.requisitionNo!], {
@@ -224,13 +244,13 @@ async function submitRfq() {
     })
     const data = response?.success ? response.data : undefined
     if (data?.status === 'RfqCreated') {
-      toast.success(data.rfqNo ? `已生成 RFQ ${data.rfqNo}` : '已进入 RFQ 流程')
+      notifySuccess(data.rfqNo ? `已生成 RFQ ${data.rfqNo}` : '已进入 RFQ 流程')
       closeRfqDialog()
       return
     }
 
     if (data?.status === 'PurchaseOrderCreated' || data?.status === 'AlreadyConverted') {
-      toast.success(
+      notifySuccess(
         data.purchaseOrderNo ? `已转采购订单 ${data.purchaseOrderNo}` : '采购申请已转采购订单',
       )
       closeRfqDialog()
@@ -238,9 +258,10 @@ async function submitRfq() {
     }
 
     toast.warning('缺少有效价源，请检查供应商候选')
-  } catch {
-    toast.error(
-      formatError(requisitions.convertToPurchaseOrderError.value) || '发起 RFQ 失败，请稍后重试。',
+  } catch (error) {
+    notifyError(
+      requisitions.convertToPurchaseOrderError.value ?? error,
+      '发起 RFQ 失败，请稍后重试。',
     )
   }
 }
@@ -357,22 +378,35 @@ async function submitRfq() {
       <NvDialogContent class="sm:max-w-lg">
         <NvDialogHeader>
           <NvDialogTitle>选择询价供应商</NvDialogTitle>
-          <NvDialogDescription>{{ rfqRow?.requisitionNo ?? '' }}</NvDialogDescription>
+          <!-- 询价对象已在下方只读区呈现，描述仅供读屏播报。 -->
+          <NvDialogDescription class="sr-only">
+            询价对象：采购申请 {{ rfqRow?.requisitionNo ?? '' }}。
+          </NvDialogDescription>
         </NvDialogHeader>
-        <div class="grid gap-2">
-          <label
-            v-for="supplier in supplierCandidates"
-            :key="supplier.code"
-            class="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+        <div class="grid gap-4">
+          <CarriedContextSummary label="询价对象" :items="rfqContextItems" />
+          <div class="grid gap-2">
+            <label
+              v-for="supplier in supplierCandidates"
+              :key="supplier.code"
+              class="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+            >
+              <span>
+                <span class="font-medium">{{ supplier.displayName ?? supplier.code }}</span>
+                <span class="ml-2 text-muted-foreground">{{ supplier.code }}</span>
+              </span>
+              <NvCheckbox v-model="rfqSupplierSelection[supplier.code!]" />
+            </label>
+            <p v-if="supplierCandidates.length === 0" class="text-sm text-muted-foreground">
+              未找到可用供应商。
+            </p>
+          </div>
+          <p
+            v-if="rfqShowErrors && selectedRfqSupplierCodes.length === 0"
+            class="text-sm text-destructive"
+            role="alert"
           >
-            <span>
-              <span class="font-medium">{{ supplier.displayName ?? supplier.code }}</span>
-              <span class="ml-2 text-muted-foreground">{{ supplier.code }}</span>
-            </span>
-            <NvCheckbox v-model="rfqSupplierSelection[supplier.code!]" />
-          </label>
-          <p v-if="supplierCandidates.length === 0" class="text-sm text-muted-foreground">
-            未找到可用供应商。
+            请至少选择一家供应商。
           </p>
         </div>
         <NvDialogFooter>
@@ -381,10 +415,7 @@ async function submitRfq() {
           </NvDialogClose>
           <NvButton
             type="button"
-            :disabled="
-              selectedRfqSupplierCodes.length === 0 ||
-              requisitions.convertToPurchaseOrderPending.value
-            "
+            :disabled="requisitions.convertToPurchaseOrderPending.value"
             @click="submitRfq"
           >
             <FileSearchIcon aria-hidden="true" />

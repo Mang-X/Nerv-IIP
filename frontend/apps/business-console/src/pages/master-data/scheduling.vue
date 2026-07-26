@@ -9,6 +9,7 @@ import type {
   SystemDayOfWeek,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import {
   useMasterDataResource,
@@ -793,13 +794,16 @@ const sortedExceptions = computed(() =>
                   <NvDialogTitle>{{
                     shiftEditingCode ? `编辑班次 · ${shiftEditingCode}` : '新建班次'
                   }}</NvDialogTitle>
-                  <NvDialogDescription>{{
-                    shiftEditingCode
-                      ? '可修改名称、起止时间与计薪时长（编码不可修改）。带 * 为必填项。'
-                      : '定义一个排班时段及计薪时长。带 * 为必填项。'
+                  <NvDialogDescription class="sr-only">{{
+                    shiftEditingCode ? `班次 ${shiftEditingCode}` : '新建班次'
                   }}</NvDialogDescription>
                 </NvDialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitShift">
+                  <CarriedContextSummary
+                    v-if="shiftEditingCode"
+                    label="班次标识"
+                    :items="[{ label: '班次编码', value: shiftForm.code }]"
+                  />
                   <p
                     v-if="shiftShowErrors && !shiftFormValid"
                     class="text-sm text-destructive"
@@ -808,10 +812,6 @@ const sortedExceptions = computed(() =>
                     请完整填写带 * 的必填项（已标红）。
                   </p>
                   <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <NvField v-if="shiftEditingCode">
-                      <NvFieldLabel for="shift-code">班次编码</NvFieldLabel>
-                      <NvInput id="shift-code" :model-value="shiftForm.code" disabled />
-                    </NvField>
                     <NvField :data-invalid="shiftShowErrors && !isNonEmpty(shiftForm.name)">
                       <NvFieldLabel for="shift-name"
                         >班次名称 <span class="text-destructive">*</span></NvFieldLabel
@@ -822,9 +822,6 @@ const sortedExceptions = computed(() =>
                         autocomplete="off"
                         required
                       />
-                      <NvFieldDescription v-if="!shiftEditingCode"
-                        >编码由系统自动生成。</NvFieldDescription
-                      >
                     </NvField>
                     <NvField>
                       <NvFieldLabel for="shift-start">开始时间</NvFieldLabel>
@@ -848,9 +845,6 @@ const sortedExceptions = computed(() =>
                         min="1"
                         inputmode="numeric"
                       />
-                      <NvFieldDescription
-                        >扣除休息后的有效计薪分钟数，默认 480（8 小时）。</NvFieldDescription
-                      >
                     </NvField>
                   </NvFieldGroup>
                   <NvDialogFooter>
@@ -924,13 +918,16 @@ const sortedExceptions = computed(() =>
                   <NvDialogTitle>{{
                     calEditingCode ? `编辑工作日历 · ${calEditingCode}` : '新建工作日历'
                   }}</NvDialogTitle>
-                  <NvDialogDescription>{{
-                    calEditingCode
-                      ? '修改日历名称（编码不可修改）。工作日 / 节假日在下方月历里维护。带 * 为必填项。'
-                      : '登记一个工作日历，供工作中心与排程引用。带 * 为必填项。'
+                  <NvDialogDescription class="sr-only">{{
+                    calEditingCode ? `工作日历 ${calEditingCode}` : '新建工作日历'
                   }}</NvDialogDescription>
                 </NvDialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitCal">
+                  <CarriedContextSummary
+                    v-if="calEditingCode"
+                    label="日历标识"
+                    :items="[{ label: '日历编码', value: calForm.code }]"
+                  />
                   <p
                     v-if="calShowErrors && !canCreateCal"
                     class="text-sm text-destructive"
@@ -939,18 +936,11 @@ const sortedExceptions = computed(() =>
                     请完整填写带 * 的必填项（已标红）。
                   </p>
                   <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <NvField v-if="calEditingCode">
-                      <NvFieldLabel for="cal-code">日历编码</NvFieldLabel>
-                      <NvInput id="cal-code" :model-value="calForm.code" disabled />
-                    </NvField>
                     <NvField :data-invalid="calShowErrors && !isNonEmpty(calForm.name)">
                       <NvFieldLabel for="cal-name"
                         >日历名称 <span class="text-destructive">*</span></NvFieldLabel
                       >
                       <NvInput id="cal-name" v-model="calForm.name" autocomplete="off" required />
-                      <NvFieldDescription v-if="!calEditingCode"
-                        >编码由系统自动生成。</NvFieldDescription
-                      >
                     </NvField>
                   </NvFieldGroup>
                   <NvDialogFooter>
@@ -1196,7 +1186,9 @@ const sortedExceptions = computed(() =>
           <NvSheetContent class="w-full gap-0 overflow-y-auto sm:max-w-md">
             <NvSheetHeader>
               <NvSheetTitle>节假日 / 例外日 · {{ selectedCalName }}</NvSheetTitle>
-              <NvSheetDescription>增删后立即保存到该日历，月历会同步刷新。</NvSheetDescription>
+              <NvSheetDescription class="sr-only"
+                >日历 {{ selectedCalName }} 的节假日与例外日</NvSheetDescription
+              >
             </NvSheetHeader>
 
             <div class="grid gap-6 px-4 pb-6">
@@ -1256,12 +1248,13 @@ const sortedExceptions = computed(() =>
                             }}{{ h.name ? ` ${h.name}` : '' }}？</NvAlertDialogTitle
                           >
                           <NvAlertDialogDescription
-                            >此操作立即生效，该日将不再标记为节假日。</NvAlertDialogDescription
+                            >该日将不再标记为节假日。</NvAlertDialogDescription
                           >
                         </NvAlertDialogHeader>
                         <NvAlertDialogFooter>
                           <NvAlertDialogCancel>取消</NvAlertDialogCancel>
                           <NvAlertDialogAction
+                            variant="destructive"
                             :disabled="calBoardSaving"
                             @click="removeHoliday(h.date!)"
                             >确认删除</NvAlertDialogAction
@@ -1276,9 +1269,6 @@ const sortedExceptions = computed(() =>
               <!-- 例外日 -->
               <section class="grid gap-2 border-t border-border pt-4">
                 <p class="text-sm font-medium">例外日</p>
-                <p class="text-xs text-muted-foreground">
-                  指定某天「当日上班 / 当日休息」，覆盖每周工作模式（如调休）。
-                </p>
                 <form class="grid gap-2" @submit.prevent="addException">
                   <div class="grid gap-2 sm:grid-cols-2">
                     <div class="grid gap-1">
@@ -1356,12 +1346,13 @@ const sortedExceptions = computed(() =>
                             }}）？</NvAlertDialogTitle
                           >
                           <NvAlertDialogDescription
-                            >此操作立即生效，该日将恢复按每周工作模式判定。</NvAlertDialogDescription
+                            >该日将恢复按每周工作模式判定。</NvAlertDialogDescription
                           >
                         </NvAlertDialogHeader>
                         <NvAlertDialogFooter>
                           <NvAlertDialogCancel>取消</NvAlertDialogCancel>
                           <NvAlertDialogAction
+                            variant="destructive"
                             :disabled="calBoardSaving"
                             @click="removeException(e.date!)"
                             >确认删除</NvAlertDialogAction

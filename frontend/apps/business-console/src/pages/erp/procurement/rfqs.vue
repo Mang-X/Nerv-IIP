@@ -15,7 +15,6 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvField,
-  NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -24,11 +23,11 @@ import {
   Spinner,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { formatDate, formatError, formatQuantity } from '../shared'
+import { notifyError, notifySuccess } from '@/utils/notify'
+import { formatDate, formatQuantity } from '../shared'
 
 definePage({
   meta: {
@@ -90,7 +89,22 @@ const form = reactive({
   quantity: '1',
   requiredDate: '',
 })
-const formError = shallowRef('')
+// 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
+const showErrors = shallowRef(false)
+const supplierCodeList = computed(() =>
+  form.suppliers
+    .split(/[,\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean),
+)
+const invalid = computed(() => ({
+  suppliers: supplierCodeList.value.length === 0,
+  skuCode: !form.skuCode.trim(),
+  uomCode: !form.uomCode.trim(),
+  requiredDate: !form.requiredDate,
+  quantity: !(Number(form.quantity) > 0),
+}))
+const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 
 function openDialog() {
   form.suppliers = ''
@@ -98,24 +112,15 @@ function openDialog() {
   form.uomCode = 'EA'
   form.quantity = '1'
   form.requiredDate = ''
-  formError.value = ''
+  showErrors.value = false
   open.value = true
 }
 
 async function submit() {
+  showErrors.value = true
+  if (!canSubmit.value) return
   const quantity = Number(form.quantity)
-  const supplierCodes = form.suppliers
-    .split(/[,\s]+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-  if (!supplierCodes.length || !form.skuCode.trim() || !form.uomCode.trim() || !form.requiredDate) {
-    formError.value = '请填写供应商、物料、单位和需求日期。'
-    return
-  }
-  if (!(quantity > 0)) {
-    formError.value = '数量需为正数。'
-    return
-  }
+  const supplierCodes = supplierCodeList.value
   try {
     await rfqs.createRequestForQuotation({
       supplierCodes,
@@ -130,10 +135,9 @@ async function submit() {
       ],
     })
     open.value = false
-    toast.success('RFQ 已创建')
-  } catch {
-    formError.value =
-      formatError(rfqs.createRequestForQuotationError.value) || '创建失败，请稍后重试。'
+    notifySuccess('RFQ 已创建')
+  } catch (error) {
+    notifyError(rfqs.createRequestForQuotationError.value ?? error, '发起询价失败，请稍后重试。')
   }
 }
 </script>
@@ -198,46 +202,79 @@ async function submit() {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建 RFQ</NvDialogTitle>
-          <NvDialogDescription
-            >向一个或多个供应商发起询价，后续在供应商报价页录入回价。</NvDialogDescription
-          >
+          <NvDialogDescription class="sr-only">向供应商发起单项物料询价。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submit">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField class="sm:col-span-2">
-              <NvFieldLabel for="erp-rfq-suppliers">供应商</NvFieldLabel>
+              <NvFieldLabel for="erp-rfq-suppliers">
+                供应商 <span class="text-destructive">*</span>
+              </NvFieldLabel>
               <NvInput
                 id="erp-rfq-suppliers"
                 v-model="form.suppliers"
                 autocomplete="off"
                 placeholder="多个供应商用空格或逗号分隔"
+                :data-invalid="showErrors && invalid.suppliers ? '' : undefined"
               />
             </NvField>
             <NvField>
-              <NvFieldLabel for="erp-rfq-sku">物料</NvFieldLabel>
-              <NvInput id="erp-rfq-sku" v-model="form.skuCode" autocomplete="off" />
+              <NvFieldLabel for="erp-rfq-sku">
+                物料 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-rfq-sku"
+                v-model="form.skuCode"
+                autocomplete="off"
+                :data-invalid="showErrors && invalid.skuCode ? '' : undefined"
+              />
             </NvField>
             <NvField>
-              <NvFieldLabel for="erp-rfq-uom">单位</NvFieldLabel>
-              <NvInput id="erp-rfq-uom" v-model="form.uomCode" autocomplete="off" />
+              <NvFieldLabel for="erp-rfq-uom">
+                单位 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-rfq-uom"
+                v-model="form.uomCode"
+                autocomplete="off"
+                :data-invalid="showErrors && invalid.uomCode ? '' : undefined"
+              />
             </NvField>
             <NvField>
-              <NvFieldLabel for="erp-rfq-qty">数量</NvFieldLabel>
-              <NvInput id="erp-rfq-qty" v-model="form.quantity" type="number" min="1" step="1" />
+              <NvFieldLabel for="erp-rfq-qty">
+                数量 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-rfq-qty"
+                v-model="form.quantity"
+                type="number"
+                min="1"
+                step="1"
+                :data-invalid="showErrors && invalid.quantity ? '' : undefined"
+              />
             </NvField>
             <NvField>
-              <NvFieldLabel for="erp-rfq-date">需求日期</NvFieldLabel>
-              <NvInput id="erp-rfq-date" v-model="form.requiredDate" type="date" />
+              <NvFieldLabel for="erp-rfq-date">
+                需求日期 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-rfq-date"
+                v-model="form.requiredDate"
+                type="date"
+                :data-invalid="showErrors && invalid.requiredDate ? '' : undefined"
+              />
             </NvField>
           </NvFieldGroup>
-          <NvFieldError v-if="formError" :errors="[formError]" />
+          <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+            请填写供应商、物料、单位、需求日期，并给出正数数量。
+          </p>
           <NvDialogFooter>
             <NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             >
             <NvButton type="submit" :disabled="rfqs.createRequestForQuotationPending.value">
               <Spinner v-if="rfqs.createRequestForQuotationPending.value" aria-hidden="true" />
-              创建
+              发起询价
             </NvButton>
           </NvDialogFooter>
         </form>

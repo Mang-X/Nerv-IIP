@@ -37,14 +37,7 @@ import {
   NvTabsList,
   NvTabsTrigger,
 } from '@nerv-iip/ui'
-import {
-  CheckCircle2Icon,
-  Loader2Icon,
-  PlusIcon,
-  ShieldAlertIcon,
-  Trash2Icon,
-  XCircleIcon,
-} from '@lucide/vue'
+import { CheckCircle2Icon, Loader2Icon, PlusIcon, Trash2Icon, XCircleIcon } from '@lucide/vue'
 import { computed, reactive, ref, toRef, watch } from 'vue'
 
 const props = defineProps<{ deviceAssetId: string }>()
@@ -256,9 +249,8 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
     <NvSheetContent class="flex w-full flex-col gap-0 overflow-y-auto sm:max-w-xl">
       <NvSheetHeader class="border-b">
         <NvSheetTitle>设备控制 · {{ deviceAssetId }}</NvSheetTitle>
-        <NvSheetDescription>
-          命令通过设备绑定的连接器通道下发，需运维审批·全程审计。
-        </NvSheetDescription>
+        <!-- 破坏性动作：审批与审计是操作员必须知道的后果，保留这一行。 -->
+        <NvSheetDescription>命令需运维审批后下发，全程审计。</NvSheetDescription>
       </NvSheetHeader>
 
       <!-- 表单阶段 -->
@@ -449,19 +441,6 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
             {{ reasonError }}
           </p>
         </NvField>
-
-        <div
-          v-if="!noWritableTags"
-          class="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
-        >
-          <ShieldAlertIcon class="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-          <p class="text-foreground">
-            该命令需经 <span class="font-semibold">运维审批</span>，通过后才会下发到设备，<span
-              class="font-semibold"
-              >全程审计</span
-            >。
-          </p>
-        </div>
       </div>
 
       <!-- 状态跟踪阶段 -->
@@ -539,7 +518,7 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
         </div>
 
         <div v-if="!trackedTerminal" class="rounded-md bg-muted p-3 text-xs text-muted-foreground">
-          命令已提交，正在等待审批与执行，本面板会自动刷新状态。可关闭抽屉，稍后在「控制命令历史」查看结果。
+          可关闭抽屉，稍后在「控制命令历史」查看结果。
         </div>
       </div>
 
@@ -547,7 +526,7 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
         <template v-if="phase === 'form'">
           <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
           <NvButton type="button" :disabled="noWritableTags || dispatchPending" @click="submit">
-            提交下发
+            确认下发
           </NvButton>
         </template>
         <template v-else>

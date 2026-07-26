@@ -18,7 +18,6 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvField,
-  NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -32,11 +31,11 @@ import {
   Spinner,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { formatAmount, formatError } from '../shared'
+import { notifyError, notifySuccess } from '@/utils/notify'
+import { formatAmount } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: 'AR/AP', requiredPermissions: ['business.erp.finance.read'] },
@@ -130,65 +129,68 @@ const receivableOpen = shallowRef(false)
 const payableOpen = shallowRef(false)
 const receivableForm = reactive({ sourceDocumentNo: '', customerCode: '', amount: '0' })
 const payableForm = reactive({ sourceDocumentNo: '', supplierCode: '', amount: '0' })
-const formError = shallowRef('')
+// 两个弹窗各自的校验状态：点提交才标红；结果一律 toast，弹窗不留常驻结果条。
+const receivableShowErrors = shallowRef(false)
+const payableShowErrors = shallowRef(false)
+const receivableInvalid = computed(() => ({
+  sourceDocumentNo: !receivableForm.sourceDocumentNo.trim(),
+  customerCode: !receivableForm.customerCode.trim(),
+  amount: !(Number(receivableForm.amount) > 0),
+}))
+const payableInvalid = computed(() => ({
+  sourceDocumentNo: !payableForm.sourceDocumentNo.trim(),
+  supplierCode: !payableForm.supplierCode.trim(),
+  amount: !(Number(payableForm.amount) > 0),
+}))
+const canSubmitReceivable = computed(() => !Object.values(receivableInvalid.value).some(Boolean))
+const canSubmitPayable = computed(() => !Object.values(payableInvalid.value).some(Boolean))
 
 function openReceivableDialog() {
   receivableForm.sourceDocumentNo = ''
   receivableForm.customerCode = ''
   receivableForm.amount = '0'
-  formError.value = ''
+  receivableShowErrors.value = false
   receivableOpen.value = true
 }
 function openPayableDialog() {
   payableForm.sourceDocumentNo = ''
   payableForm.supplierCode = ''
   payableForm.amount = '0'
-  formError.value = ''
+  payableShowErrors.value = false
   payableOpen.value = true
 }
 
 async function submitReceivable() {
-  const amount = Number(receivableForm.amount)
-  if (
-    !receivableForm.sourceDocumentNo.trim() ||
-    !receivableForm.customerCode.trim() ||
-    !(amount > 0)
-  ) {
-    formError.value = '请填写来源单据、客户和正数金额。'
-    return
-  }
+  receivableShowErrors.value = true
+  if (!canSubmitReceivable.value) return
   try {
     await receivables.createReceivable({
       sourceDocumentNo: receivableForm.sourceDocumentNo.trim(),
       customerCode: receivableForm.customerCode.trim(),
-      amount,
+      amount: Number(receivableForm.amount),
       currencyCode: 'CNY',
     })
     receivableOpen.value = false
-    toast.success('应收已登记')
-  } catch {
-    formError.value =
-      formatError(receivables.createReceivableError.value) || '登记失败，请稍后重试。'
+    notifySuccess('应收已登记')
+  } catch (error) {
+    notifyError(receivables.createReceivableError.value ?? error, '登记应收失败，请稍后重试。')
   }
 }
 
 async function submitPayable() {
-  const amount = Number(payableForm.amount)
-  if (!payableForm.sourceDocumentNo.trim() || !payableForm.supplierCode.trim() || !(amount > 0)) {
-    formError.value = '请填写来源单据、供应商和正数金额。'
-    return
-  }
+  payableShowErrors.value = true
+  if (!canSubmitPayable.value) return
   try {
     await payables.createPayable({
       sourceDocumentNo: payableForm.sourceDocumentNo.trim(),
       supplierCode: payableForm.supplierCode.trim(),
-      amount,
+      amount: Number(payableForm.amount),
       currencyCode: 'CNY',
     })
     payableOpen.value = false
-    toast.success('应付已登记')
-  } catch {
-    formError.value = formatError(payables.createPayableError.value) || '登记失败，请稍后重试。'
+    notifySuccess('应付已登记')
+  } catch (error) {
+    notifyError(payables.createPayableError.value ?? error, '登记应付失败，请稍后重试。')
   }
 }
 </script>
@@ -328,33 +330,65 @@ async function submitPayable() {
       <NvDialogContent>
         <NvDialogHeader
           ><NvDialogTitle>登记应收</NvDialogTitle
-          ><NvDialogDescription
-            >对销售发货或其他收入来源登记客户应收。</NvDialogDescription
+          ><NvDialogDescription class="sr-only"
+            >登记客户应收款项。</NvDialogDescription
           ></NvDialogHeader
         >
         <form class="grid gap-4" @submit.prevent="submitReceivable">
-          <NvFieldGroup
-            ><NvField
-              ><NvFieldLabel for="erp-ar-source">来源单据</NvFieldLabel
-              ><NvInput id="erp-ar-source" v-model="receivableForm.sourceDocumentNo" /></NvField
-            ><NvField
-              ><NvFieldLabel for="erp-ar-customer">客户</NvFieldLabel
-              ><NvInput id="erp-ar-customer" v-model="receivableForm.customerCode" /></NvField
-            ><NvField
-              ><NvFieldLabel for="erp-ar-amount">金额（元）</NvFieldLabel
-              ><NvInput
+          <NvFieldGroup>
+            <NvField>
+              <NvFieldLabel for="erp-ar-source">
+                来源单据 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-ar-source"
+                v-model="receivableForm.sourceDocumentNo"
+                :data-invalid="
+                  receivableShowErrors && receivableInvalid.sourceDocumentNo ? '' : undefined
+                "
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-ar-customer">
+                客户 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-ar-customer"
+                v-model="receivableForm.customerCode"
+                :data-invalid="
+                  receivableShowErrors && receivableInvalid.customerCode ? '' : undefined
+                "
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-ar-amount">
+                金额（元） <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
                 id="erp-ar-amount"
                 v-model="receivableForm.amount"
                 type="number"
                 min="0"
-                step="0.01" /></NvField
-          ></NvFieldGroup>
-          <NvFieldError v-if="formError" :errors="[formError]" />
+                step="0.01"
+                :data-invalid="receivableShowErrors && receivableInvalid.amount ? '' : undefined"
+              />
+            </NvField>
+          </NvFieldGroup>
+          <p
+            v-if="receivableShowErrors && !canSubmitReceivable"
+            class="text-sm text-destructive"
+            role="alert"
+          >
+            请填写来源单据、客户，并给出正数金额。
+          </p>
           <NvDialogFooter
             ><NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             ><NvButton type="submit" :disabled="receivables.createReceivablePending.value"
-              ><Spinner v-if="receivables.createReceivablePending.value" />登记</NvButton
+              ><Spinner
+                v-if="receivables.createReceivablePending.value"
+                aria-hidden="true"
+              />登记应收</NvButton
             ></NvDialogFooter
           >
         </form>
@@ -365,33 +399,63 @@ async function submitPayable() {
       <NvDialogContent>
         <NvDialogHeader
           ><NvDialogTitle>登记应付</NvDialogTitle
-          ><NvDialogDescription
-            >对采购收货或其他供应商来源登记应付。</NvDialogDescription
+          ><NvDialogDescription class="sr-only"
+            >登记供应商应付款项。</NvDialogDescription
           ></NvDialogHeader
         >
         <form class="grid gap-4" @submit.prevent="submitPayable">
-          <NvFieldGroup
-            ><NvField
-              ><NvFieldLabel for="erp-ap-source">来源单据</NvFieldLabel
-              ><NvInput id="erp-ap-source" v-model="payableForm.sourceDocumentNo" /></NvField
-            ><NvField
-              ><NvFieldLabel for="erp-ap-supplier">供应商</NvFieldLabel
-              ><NvInput id="erp-ap-supplier" v-model="payableForm.supplierCode" /></NvField
-            ><NvField
-              ><NvFieldLabel for="erp-ap-amount">金额（元）</NvFieldLabel
-              ><NvInput
+          <NvFieldGroup>
+            <NvField>
+              <NvFieldLabel for="erp-ap-source">
+                来源单据 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-ap-source"
+                v-model="payableForm.sourceDocumentNo"
+                :data-invalid="
+                  payableShowErrors && payableInvalid.sourceDocumentNo ? '' : undefined
+                "
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-ap-supplier">
+                供应商 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-ap-supplier"
+                v-model="payableForm.supplierCode"
+                :data-invalid="payableShowErrors && payableInvalid.supplierCode ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-ap-amount">
+                金额（元） <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
                 id="erp-ap-amount"
                 v-model="payableForm.amount"
                 type="number"
                 min="0"
-                step="0.01" /></NvField
-          ></NvFieldGroup>
-          <NvFieldError v-if="formError" :errors="[formError]" />
+                step="0.01"
+                :data-invalid="payableShowErrors && payableInvalid.amount ? '' : undefined"
+              />
+            </NvField>
+          </NvFieldGroup>
+          <p
+            v-if="payableShowErrors && !canSubmitPayable"
+            class="text-sm text-destructive"
+            role="alert"
+          >
+            请填写来源单据、供应商，并给出正数金额。
+          </p>
           <NvDialogFooter
             ><NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             ><NvButton type="submit" :disabled="payables.createPayablePending.value"
-              ><Spinner v-if="payables.createPayablePending.value" />登记</NvButton
+              ><Spinner
+                v-if="payables.createPayablePending.value"
+                aria-hidden="true"
+              />登记应付</NvButton
             ></NvDialogFooter
           >
         </form>

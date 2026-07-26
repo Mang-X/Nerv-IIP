@@ -3,6 +3,8 @@ import type { BusinessConsoleErpRequestForQuotationItem } from '@nerv-iip/api-cl
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpSupplierQuotations } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -15,20 +17,23 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvField,
-  NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
   NvMetricStrip,
   NvPageHeader,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
+import { RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { formatError, formatQuantity } from '../shared'
+import { formatDate, formatQuantity } from '../shared'
 
 definePage({
   meta: {
@@ -83,71 +88,86 @@ const quoteCells = computed<NvMetricStripCell[]>(() => [
   },
 ])
 
+// 「带出式录入」：回价对象只能由所选询价单行带入——RFQ / 物料 / 单位 / 数量只读带出，
+// 用户只补供应商真正给出的新信息（单价、承诺日期、对方报价号）。
 const open = shallowRef(false)
-const form = reactive({
-  rfqNo: '',
-  supplierCode: '',
-  quotationNo: '',
-  skuCode: '',
-  uomCode: 'EA',
-  quantity: '1',
-  unitPrice: '0',
-  promisedDate: '',
-})
-const formError = shallowRef('')
+const quoteRow = shallowRef<BusinessConsoleErpRequestForQuotationItem | null>(null)
+const form = reactive({ supplierCode: '', quotationNo: '', unitPrice: '0', promisedDate: '' })
+// 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
+const showErrors = shallowRef(false)
 
-function openDialog(row?: BusinessConsoleErpRequestForQuotationItem) {
-  const firstLine = row?.lines?.[0]
-  form.rfqNo = row?.rfqNo ?? ''
-  form.supplierCode = row?.supplierCodes?.[0] ?? ''
+/** 询价供应商候选：只有一家时自动选中并只读带出，多家时才需要用户挑。 */
+const supplierOptions = computed(() =>
+  (quoteRow.value?.supplierCodes ?? []).map((code) => (code ?? '').trim()).filter(Boolean),
+)
+const needsSupplierChoice = computed(() => supplierOptions.value.length > 1)
+const quotedLine = computed(() => quoteRow.value?.lines?.[0])
+
+const quoteContextItems = computed(() => {
+  const row = quoteRow.value
+  if (!row) return []
+  const line = quotedLine.value
+  return [
+    { label: '询价单', value: row.rfqNo },
+    { label: '供应商', value: needsSupplierChoice.value ? undefined : supplierOptions.value[0] },
+    { label: '物料', value: line?.skuCode },
+    {
+      label: '询价数量',
+      value:
+        line?.quantity === null || line?.quantity === undefined
+          ? undefined
+          : `${formatQuantity(line.quantity)}${line.uomCode ? ` ${line.uomCode}` : ''}`,
+    },
+    { label: '需求日期', value: line?.requiredDate ? formatDate(line.requiredDate) : undefined },
+  ]
+})
+
+const invalid = computed(() => ({
+  supplierCode: !form.supplierCode.trim(),
+  promisedDate: !form.promisedDate,
+  unitPrice: !(Number(form.unitPrice) >= 0),
+}))
+const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
+
+function openDialog(row: BusinessConsoleErpRequestForQuotationItem) {
+  quoteRow.value = row
+  const codes = (row.supplierCodes ?? []).map((code) => (code ?? '').trim()).filter(Boolean)
+  // 只有一家询价供应商时自动选中，不让用户再点一次。
+  form.supplierCode = codes.length === 1 ? codes[0]! : ''
   form.quotationNo = ''
-  form.skuCode = firstLine?.skuCode ?? ''
-  form.uomCode = firstLine?.uomCode ?? 'EA'
-  form.quantity = String(firstLine?.quantity ?? 1)
   form.unitPrice = '0'
-  form.promisedDate = firstLine?.requiredDate ?? ''
-  formError.value = ''
+  // 承诺日期默认取询价需求日期，供应商改期时才动。
+  form.promisedDate = row.lines?.[0]?.requiredDate ?? ''
+  showErrors.value = false
   open.value = true
 }
 
 async function submit() {
-  const quantity = Number(form.quantity)
-  const unitPrice = Number(form.unitPrice)
-  if (
-    !form.rfqNo.trim() ||
-    !form.supplierCode.trim() ||
-    !form.skuCode.trim() ||
-    !form.uomCode.trim() ||
-    !form.promisedDate
-  ) {
-    formError.value = '请填写 RFQ、供应商、物料、单位和承诺日期。'
-    return
-  }
-  if (!(quantity > 0) || !(unitPrice >= 0)) {
-    formError.value = '数量需为正数、单价不可为负。'
-    return
-  }
+  const row = quoteRow.value
+  const line = quotedLine.value
+  if (!row?.rfqNo || !line?.skuCode) return
+  showErrors.value = true
+  if (!canSubmit.value) return
   try {
     await quotes.receiveSupplierQuotation({
-      rfqNo: form.rfqNo.trim(),
+      rfqNo: row.rfqNo,
       supplierCode: form.supplierCode.trim(),
       quotationNo: form.quotationNo.trim() || undefined,
       lines: [
         {
           lineNo: '10',
-          skuCode: form.skuCode.trim(),
-          uomCode: form.uomCode.trim(),
-          quantity,
-          unitPrice,
+          skuCode: line.skuCode,
+          uomCode: line.uomCode ?? 'EA',
+          quantity: line.quantity ?? 1,
+          unitPrice: Number(form.unitPrice),
           promisedDate: form.promisedDate,
         },
       ],
     })
     open.value = false
-    toast.success('供应商报价已录入')
-  } catch {
-    formError.value =
-      formatError(quotes.receiveSupplierQuotationError.value) || '录入失败，请稍后重试。'
+    notifySuccess(`${row.rfqNo} 的供应商报价已录入`)
+  } catch (error) {
+    notifyError(quotes.receiveSupplierQuotationError.value ?? error, '录入报价失败，请稍后重试。')
   }
 }
 </script>
@@ -169,10 +189,6 @@ async function submit() {
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </NvButton>
-        <NvButton size="sm" type="button" @click="openDialog()">
-          <PlusIcon aria-hidden="true" />
-          录入报价
         </NvButton>
       </template>
     </NvPageHeader>
@@ -207,69 +223,87 @@ async function submit() {
     >
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
       <template #cell-actions="{ row }">
-        <NvButton size="sm" type="button" variant="outline" @click="openDialog(row)"
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="!row.rfqNo || !row.lines?.length"
+          @click="openDialog(row)"
           >录入报价</NvButton
         >
       </template>
     </NvDataTable>
 
+    <!-- 「带出式录入」：RFQ / 物料 / 单位 / 数量由所选询价行带出，只读呈现，不做输入位。 -->
     <NvDialog v-model:open="open">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>录入供应商报价</NvDialogTitle>
-          <NvDialogDescription
-            >记录供应商真实回价。报价列表尚未开放，提交后请回到对应询价单继续跟进。</NvDialogDescription
-          >
+          <NvDialogDescription class="sr-only">
+            回价对象：询价单 {{ quoteRow?.rfqNo ?? '' }}。
+          </NvDialogDescription>
         </NvDialogHeader>
-        <form class="grid gap-4" @submit.prevent="submit">
+        <form v-if="quoteRow" class="grid gap-4" @submit.prevent="submit">
+          <CarriedContextSummary label="回价对象" :items="quoteContextItems" />
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField>
-              <NvFieldLabel for="erp-sq-rfq">RFQ</NvFieldLabel>
-              <NvInput id="erp-sq-rfq" v-model="form.rfqNo" autocomplete="off" />
+            <NvField v-if="needsSupplierChoice">
+              <NvFieldLabel for="erp-sq-supplier">
+                回价供应商 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvSelect v-model="form.supplierCode">
+                <NvSelectTrigger
+                  id="erp-sq-supplier"
+                  :data-invalid="showErrors && invalid.supplierCode ? '' : undefined"
+                >
+                  <NvSelectValue placeholder="选择供应商" />
+                </NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem v-for="code in supplierOptions" :key="code" :value="code">{{
+                    code
+                  }}</NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
             </NvField>
             <NvField>
-              <NvFieldLabel for="erp-sq-supplier">供应商</NvFieldLabel>
-              <NvInput id="erp-sq-supplier" v-model="form.supplierCode" autocomplete="off" />
-            </NvField>
-            <NvField class="sm:col-span-2">
-              <NvFieldLabel for="erp-sq-no">供应商报价号（可选）</NvFieldLabel>
-              <NvInput id="erp-sq-no" v-model="form.quotationNo" autocomplete="off" />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="erp-sq-sku">物料</NvFieldLabel>
-              <NvInput id="erp-sq-sku" v-model="form.skuCode" autocomplete="off" />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="erp-sq-uom">单位</NvFieldLabel>
-              <NvInput id="erp-sq-uom" v-model="form.uomCode" autocomplete="off" />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="erp-sq-qty">数量</NvFieldLabel>
-              <NvInput id="erp-sq-qty" v-model="form.quantity" type="number" min="1" step="1" />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="erp-sq-price">单价（元）</NvFieldLabel>
+              <NvFieldLabel for="erp-sq-price">
+                单价（元） <span class="text-destructive">*</span>
+              </NvFieldLabel>
               <NvInput
                 id="erp-sq-price"
                 v-model="form.unitPrice"
                 type="number"
                 min="0"
                 step="0.01"
+                autofocus
+                :data-invalid="showErrors && invalid.unitPrice ? '' : undefined"
               />
             </NvField>
             <NvField>
-              <NvFieldLabel for="erp-sq-date">承诺日期</NvFieldLabel>
-              <NvInput id="erp-sq-date" v-model="form.promisedDate" type="date" />
+              <NvFieldLabel for="erp-sq-date">
+                承诺交期 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-sq-date"
+                v-model="form.promisedDate"
+                type="date"
+                :data-invalid="showErrors && invalid.promisedDate ? '' : undefined"
+              />
+            </NvField>
+            <NvField class="sm:col-span-2">
+              <NvFieldLabel for="erp-sq-no">供应商报价号（可选）</NvFieldLabel>
+              <NvInput id="erp-sq-no" v-model="form.quotationNo" autocomplete="off" />
             </NvField>
           </NvFieldGroup>
-          <NvFieldError v-if="formError" :errors="[formError]" />
+          <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+            请选择回价供应商，并填写非负单价与承诺交期。
+          </p>
           <NvDialogFooter>
             <NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             >
             <NvButton type="submit" :disabled="quotes.receiveSupplierQuotationPending.value">
               <Spinner v-if="quotes.receiveSupplierQuotationPending.value" aria-hidden="true" />
-              提交报价
+              录入报价
             </NvButton>
           </NvDialogFooter>
         </form>

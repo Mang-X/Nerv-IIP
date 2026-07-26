@@ -4,6 +4,7 @@ import type {
   BusinessConsoleStandardOperationItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { useStandardOperations } from '@/composables/useProductEngineering'
@@ -164,7 +165,24 @@ const formOpen = shallowRef(false)
 const showErrors = ref(false)
 // null = 新建，否则为正在编辑工序的 operationCode（编码即身份，编辑态只读）。
 const editingCode = shallowRef<string | null>(null)
+const editingRow = shallowRef<BusinessConsoleStandardOperationItem | null>(null)
 const form = reactive<StandardOperationForm>(blankForm())
+
+// 编辑态由所选行带出的只读上下文（编码即身份，不可改）。
+const carriedItems = computed(() => [
+  { label: '工序编码', value: editingCode.value },
+  {
+    label: '当前状态',
+    value: editingRow.value ? (editingRow.value.enabled === false ? '停用' : '启用') : undefined,
+  },
+])
+
+// 全厂只有一个工作中心时直接选中——没有选择余地的「选择」不该让用户做。
+watch([workCenterOptions, formOpen], ([options, open]) => {
+  if (open && !form.defaultWorkCenterCode && options.length === 1) {
+    form.defaultWorkCenterCode = options[0]!.value
+  }
+})
 
 function parseNumber(value: string): number | undefined {
   const trimmed = value.trim()
@@ -200,6 +218,7 @@ const canSubmit = computed(
 
 function openCreate() {
   editingCode.value = null
+  editingRow.value = null
   Object.assign(form, blankForm())
   showErrors.value = false
   formOpen.value = true
@@ -207,6 +226,7 @@ function openCreate() {
 function openEdit(row: BusinessConsoleStandardOperationItem) {
   if (!row.operationCode) return
   editingCode.value = row.operationCode
+  editingRow.value = row
   showErrors.value = false
   Object.assign(form, {
     operationCode: row.operationCode ?? '',
@@ -260,6 +280,7 @@ async function submitForm() {
     showErrors.value = false
     formOpen.value = false
     editingCode.value = null
+    editingRow.value = null
   } catch (error) {
     notifyError(error)
   }
@@ -315,9 +336,13 @@ async function confirmArchive() {
           <NvDialogContent class="sm:max-w-2xl">
             <NvDialogHeader>
               <NvDialogTitle>{{ editingCode ? '编辑标准工序' : '新建标准工序' }}</NvDialogTitle>
-              <NvDialogDescription>
-                标准工序是可复用的工程主数据：预设默认工作中心、控制键与标准工时，工艺路线选用时自动带出，避免逐行重填。带
-                * 为必填项。
+              <!-- 说明不上界面：仅供读屏播报。 -->
+              <NvDialogDescription class="sr-only">
+                {{
+                  editingCode
+                    ? `工序 ${editingCode} 的默认工作中心、工时与控制标志。`
+                    : '登记可复用的标准工序。'
+                }}
               </NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
@@ -325,22 +350,21 @@ async function confirmArchive() {
                 请填写带 * 的必填项，并确保标准工时为非负数（已标红）。
               </p>
 
+              <!-- 编辑态：编码由所选行带出，只读展示，不做成看起来可改的输入框。 -->
+              <CarriedContextSummary v-if="editingCode" label="编辑对象" :items="carriedItems" />
+
               <FormSectionTitle>基本信息</FormSectionTitle>
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                <NvField :data-invalid="showErrors && !codeValid">
+                <NvField v-if="!editingCode" :data-invalid="showErrors && !codeValid">
                   <NvFieldLabel for="op-code"
                     >工序编码 <span class="text-destructive">*</span></NvFieldLabel
                   >
                   <NvInput
-                    v-if="!editingCode"
                     id="op-code"
                     v-model="form.operationCode"
                     placeholder="例如：OP-CNC-ROUGH"
                   />
-                  <NvInput v-else :model-value="editingCode" readonly disabled />
-                  <NvFieldDescription>{{
-                    editingCode ? '编码是工序身份，不可更改。' : '由工厂自定义、需唯一。'
-                  }}</NvFieldDescription>
+                  <NvFieldDescription>由工厂自定义、需唯一。</NvFieldDescription>
                 </NvField>
                 <NvField :data-invalid="showErrors && !nameValid">
                   <NvFieldLabel for="op-name"
@@ -369,9 +393,7 @@ async function confirmArchive() {
                       >
                     </NvSelectContent>
                   </NvSelect>
-                  <NvFieldDescription
-                    >来自基础数据工作中心；工艺路线选此工序时自动带出。</NvFieldDescription
-                  >
+                  <NvFieldDescription>工艺路线选此工序时自动带出。</NvFieldDescription>
                 </NvField>
                 <NvField :data-invalid="showErrors && !controlKeyValid">
                   <NvFieldLabel for="op-control"
@@ -382,7 +404,6 @@ async function confirmArchive() {
                     v-model="form.controlKey"
                     placeholder="例如：INHOUSE / INHOUSE-QC"
                   />
-                  <NvFieldDescription>决定报工/质检/外协等执行行为的控制键。</NvFieldDescription>
                 </NvField>
               </NvFieldGroup>
 
@@ -407,9 +428,7 @@ async function confirmArchive() {
                     min="0"
                     placeholder="0"
                   />
-                  <NvFieldDescription
-                    >单件加工标准时间；与准备工时一并带入工艺路线。</NvFieldDescription
-                  >
+                  <NvFieldDescription>单件加工标准时间。</NvFieldDescription>
                 </NvField>
               </NvFieldGroup>
 
@@ -454,7 +473,7 @@ async function confirmArchive() {
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="createPending || updatePending">
                   <Spinner v-if="createPending || updatePending" aria-hidden="true" />
-                  {{ editingCode ? '保存修改' : '创建工序' }}
+                  {{ editingCode ? '保存工序' : '创建工序' }}
                 </NvButton>
               </NvDialogFooter>
             </form>
