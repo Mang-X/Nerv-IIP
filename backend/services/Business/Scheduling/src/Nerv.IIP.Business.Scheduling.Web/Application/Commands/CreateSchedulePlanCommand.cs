@@ -94,10 +94,6 @@ public sealed class CreateSchedulePlanCommandHandler(
                 SchedulePlanStatusContract.Generated),
             generation,
             urgencyInputFingerprint);
-        var persistedPlan = SchedulePlanContractMapper.ToDomainSnapshot(generated) with
-        {
-            AlgorithmVersion = generation.EngineVersion,
-        };
         dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(
             baseProblem.ProblemId,
             baseProblem.ContractVersion,
@@ -113,8 +109,8 @@ public sealed class CreateSchedulePlanCommandHandler(
         dbContext.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(
             baseProblem.OrganizationId,
             baseProblem.EnvironmentId,
-            persistedPlan,
-            SchedulePlanContractMapper.ToExecutionTrace(generated.Provenance!)));
+            SchedulePlanContractMapper.ToDomainSnapshot(generated),
+            SchedulePlanContractMapper.ToExecutionTrace(generated)));
         await urgencyService.CapturePlanAsync(
             effectiveProblem, generated, urgencyInputFingerprint, generatedAtUtc, cancellationToken);
         return generated;

@@ -100,6 +100,7 @@ public sealed class SchedulingEngineTracePostgresTests(ITestOutputHelper output)
                 CreatePlanSnapshot(),
                 new SchedulePlanExecutionTraceSnapshot(
                     EngineId: "finite-capacity",
+                    EngineVersion: "aps-lite-v1",
                     RuleProviderId: "built-in",
                     RuleProfileId: "adr-0014-default",
                     RuleProfileVersion: "v1",

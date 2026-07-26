@@ -140,6 +140,7 @@ public static class SchedulingExecutionTraceSchema
 
 public sealed record SchedulePlanExecutionTraceSnapshot(
     string EngineId,
+    string EngineVersion,
     string RuleProviderId,
     string RuleProfileId,
     string RuleProfileVersion,
@@ -149,6 +150,7 @@ public sealed record SchedulePlanExecutionTraceSnapshot(
 {
     public static SchedulePlanExecutionTraceSnapshot LegacyUnavailable { get; } = new(
         EngineId: "finite-capacity",
+        EngineVersion: "aps-lite-v1",
         RuleProviderId: "built-in",
         RuleProfileId: "adr-0014-default",
         RuleProfileVersion: "v1",
@@ -285,6 +287,7 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
             throw new InvalidOperationException("Released contract plans cannot be persisted as newly generated plans.");
         }
 
+        EnsureMatchingEngineVersion(plan, trace);
         OrganizationId = Required(organizationId, nameof(organizationId));
         EnvironmentId = Required(environmentId, nameof(environmentId));
         PlanId = Required(plan.PlanId, nameof(plan.PlanId));
@@ -456,6 +459,7 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
             throw new InvalidOperationException("Replacement schedule plan contract must keep the same public plan identity.");
         }
 
+        EnsureMatchingEngineVersion(plan, trace);
         ProblemId = Required(plan.ProblemId, nameof(plan.ProblemId));
         ProblemFingerprint = Required(plan.ProblemFingerprint, nameof(plan.ProblemFingerprint));
         AlgorithmVersion = Required(plan.AlgorithmVersion, nameof(plan.AlgorithmVersion));
@@ -509,6 +513,23 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
 
         TraceSchemaVersion = trace.TraceSchemaVersion;
         ReplayStatus = Required(trace.ReplayStatus, nameof(trace.ReplayStatus));
+    }
+
+    private static void EnsureMatchingEngineVersion(
+        GeneratedSchedulePlanSnapshot plan,
+        SchedulePlanExecutionTraceSnapshot trace)
+    {
+        var algorithmVersion = Required(
+            plan.AlgorithmVersion,
+            nameof(plan.AlgorithmVersion));
+        var engineVersion = Required(
+            trace.EngineVersion,
+            nameof(trace.EngineVersion));
+        if (!string.Equals(algorithmVersion, engineVersion, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Generated schedule plan AlgorithmVersion must match the execution trace EngineVersion.");
+        }
     }
 
     private void ApplyMetrics(GeneratedSchedulePlanMetricsSnapshot metrics)

@@ -115,6 +115,8 @@ public sealed class SchedulingEngineProviderPipelineTests
             calls);
         Assert.Equal(SchedulePlanStatusContract.Generated, created.Status);
         Assert.Equal(SchedulePlanStatusContract.Preview, previewed.Status);
+        Assert.Equal("test-v1", created.AlgorithmVersion);
+        Assert.Equal("test-v1", previewed.AlgorithmVersion);
         var persistedProblem = dbContext.ScheduleProblems.Local.Single();
         Assert.NotNull(persistedProblem.EngineInputJson);
         Assert.NotNull(persistedProblem.EngineInputFingerprint);
@@ -128,6 +130,77 @@ public sealed class SchedulingEngineProviderPipelineTests
             """{"schemaVersion":1,"sources":[{"sourceId":"constraint-a","sourceVersion":"v1","outcome":"applied","factCount":1,"factsFingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","reasonCodes":["reason-a","reason-b"]},{"sourceId":"constraint-z","sourceVersion":"v2","outcome":"noData","factCount":0,"factsFingerprint":"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz","reasonCodes":[]}]}""",
             persistedPlan.ConstraintSourcesJson);
         Assert.Equal(SchedulingReplayStatuses.Available, persistedPlan.ReplayStatus);
+    }
+
+    [Theory]
+    [InlineData(nameof(SchedulePlanContract.PlanId))]
+    [InlineData(nameof(SchedulePlanContract.ProblemId))]
+    [InlineData(nameof(SchedulePlanContract.ContractVersion))]
+    [InlineData(nameof(SchedulePlanContract.GeneratedAtUtc))]
+    [InlineData(nameof(SchedulePlanContract.ProblemFingerprint))]
+    [InlineData(nameof(SchedulePlanContract.AlgorithmVersion))]
+    public async Task Generate_rejects_engine_output_that_does_not_match_invocation(
+        string mismatchedField)
+    {
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var generator = new SchedulingPlanGenerator(
+            new StubRuleProvider((value, _) => Task.FromResult(
+                new SchedulingRuleProviderResult(
+                    "test-rule-provider",
+                    "test-rule-profile",
+                    "test-v1",
+                    value,
+                    []))),
+            new StubConstraintProvider((value, _) => Task.FromResult(
+                new SchedulingConstraintProviderResult(value, value, []))),
+            new BrokenOutputEngine(mismatchedField));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            generator.GenerateAsync(
+                problem,
+                "plan-invalid-output",
+                GeneratedAtUtc,
+                CancellationToken.None));
+
+        Assert.Contains(mismatchedField, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Create_rejects_broken_engine_output_before_adding_persistence_entities()
+    {
+        var services = new ServiceCollection();
+        services.AddMediatR(configuration =>
+            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options.UseInMemoryDatabase($"scheduling-invalid-engine-output-{Guid.NewGuid():N}"));
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var generator = new SchedulingPlanGenerator(
+            new StubRuleProvider((value, _) => Task.FromResult(
+                new SchedulingRuleProviderResult(
+                    "test-rule-provider",
+                    "test-rule-profile",
+                    "test-v1",
+                    value,
+                    []))),
+            new StubConstraintProvider((value, _) => Task.FromResult(
+                new SchedulingConstraintProviderResult(value, value, []))),
+            new BrokenOutputEngine(nameof(SchedulePlanContract.AlgorithmVersion)));
+        var clock = new FixedTimeProvider(GeneratedAtUtc);
+        var handler = new CreateSchedulePlanCommandHandler(
+            dbContext,
+            generator,
+            clock,
+            new OrderUrgencyService(dbContext, clock));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            handler.Handle(
+                new CreateSchedulePlanCommand(ShockAbsorberSchedulingFixture.CreateProblem()),
+                CancellationToken.None));
+
+        Assert.Empty(dbContext.ScheduleProblems.Local);
+        Assert.Empty(dbContext.SchedulePlans.Local);
     }
 
     [Fact]
@@ -692,7 +765,10 @@ public sealed class SchedulingEngineProviderPipelineTests
         {
             calls.Add("engine");
             ReceivedProblem = problem;
-            return new FiniteCapacityScheduler().Schedule(problem, planId, generatedAtUtc);
+            return new FiniteCapacityScheduler().Schedule(problem, planId, generatedAtUtc) with
+            {
+                AlgorithmVersion = Version,
+            };
         }
     }
 
@@ -762,7 +838,49 @@ public sealed class SchedulingEngineProviderPipelineTests
         {
             CallCount++;
             calls.Add($"engine:{problem.ProblemId}:{generatedAtUtc:O}");
-            return new FiniteCapacityScheduler().Schedule(problem, planId, generatedAtUtc);
+            return new FiniteCapacityScheduler().Schedule(problem, planId, generatedAtUtc) with
+            {
+                AlgorithmVersion = Version,
+            };
+        }
+    }
+
+    private sealed class BrokenOutputEngine(string mismatchedField) : ISchedulingEngine
+    {
+        public string EngineId => "broken-output-engine";
+
+        public string Version => "broken-v1";
+
+        public SchedulePlanContract Schedule(
+            SchedulingProblemContract problem,
+            string planId,
+            DateTimeOffset generatedAtUtc)
+        {
+            var valid = new FiniteCapacityScheduler()
+                .Schedule(problem, planId, generatedAtUtc) with
+            {
+                AlgorithmVersion = Version,
+            };
+
+            return mismatchedField switch
+            {
+                nameof(SchedulePlanContract.PlanId) =>
+                    valid with { PlanId = "plan-output-mismatch" },
+                nameof(SchedulePlanContract.ProblemId) =>
+                    valid with { ProblemId = "problem-output-mismatch" },
+                nameof(SchedulePlanContract.ContractVersion) =>
+                    valid with { ContractVersion = valid.ContractVersion + 1 },
+                nameof(SchedulePlanContract.GeneratedAtUtc) =>
+                    valid with { GeneratedAtUtc = valid.GeneratedAtUtc.AddTicks(1) },
+                nameof(SchedulePlanContract.ProblemFingerprint) =>
+                    valid with { ProblemFingerprint = new string('0', 64) },
+                nameof(SchedulePlanContract.AlgorithmVersion) =>
+                    valid with { AlgorithmVersion = "output-v0" },
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(mismatchedField),
+                    mismatchedField,
+                    "Unsupported engine output mismatch field."),
+            };
         }
     }
 

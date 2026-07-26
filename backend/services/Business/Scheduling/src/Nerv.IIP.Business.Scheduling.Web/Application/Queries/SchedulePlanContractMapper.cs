@@ -155,12 +155,17 @@ public static class SchedulePlanContractMapper
     }
 
     public static SchedulePlanExecutionTraceSnapshot ToExecutionTrace(
-        SchedulePlanProvenanceContract provenance)
+        SchedulePlanContract plan)
     {
-        ArgumentNullException.ThrowIfNull(provenance);
+        ArgumentNullException.ThrowIfNull(plan);
+        var provenance = plan.Provenance
+            ?? throw new ArgumentException(
+                "Schedule plan provenance is required to create an execution trace.",
+                nameof(plan));
 
         return new SchedulePlanExecutionTraceSnapshot(
             provenance.EngineId,
+            plan.AlgorithmVersion,
             provenance.RuleProviderId,
             provenance.RuleProfileId,
             provenance.RuleProfileVersion,

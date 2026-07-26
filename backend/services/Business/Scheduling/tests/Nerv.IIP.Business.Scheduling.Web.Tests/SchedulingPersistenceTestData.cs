@@ -10,6 +10,7 @@ internal static class SchedulingPersistenceTestData
     // current trace for their synthetic generated output.
     public static SchedulePlanExecutionTraceSnapshot CurrentAvailableTrace { get; } = new(
         EngineId: "finite-capacity",
+        EngineVersion: "aps-lite-v1",
         RuleProviderId: "built-in",
         RuleProfileId: "adr-0014-default",
         RuleProfileVersion: "v1",

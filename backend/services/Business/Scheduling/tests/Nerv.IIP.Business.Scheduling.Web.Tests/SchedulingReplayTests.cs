@@ -55,7 +55,11 @@ public sealed class SchedulingReplayTests
             db,
             problem,
             new FiniteCapacityScheduler(),
-            SchedulingPersistenceTestData.CurrentAvailableTrace with { EngineId = persistedEngineId },
+            SchedulingPersistenceTestData.CurrentAvailableTrace with
+            {
+                EngineId = persistedEngineId,
+                EngineVersion = persistedAlgorithmVersion,
+            },
             persistedAlgorithmVersion: persistedAlgorithmVersion);
         await db.SaveChangesAsync();
         var service = new SchedulePlanReplayService(db, [currentEngine]);

@@ -181,6 +181,7 @@ public sealed class SchedulingPersistenceTests
     {
         return new SchedulePlanExecutionTraceSnapshot(
             EngineId: engineId,
+            EngineVersion: "aps-lite-v1",
             RuleProviderId: ruleProviderId,
             RuleProfileId: ruleProfileId,
             RuleProfileVersion: ruleProfileVersion,
