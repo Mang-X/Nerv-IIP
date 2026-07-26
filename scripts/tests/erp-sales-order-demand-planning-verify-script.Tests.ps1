@@ -130,12 +130,31 @@ $functionAsts = @($verifyAst.FindAll({ param($node) $node -is [System.Management
 $sourceReadinessAst = @($functionAsts | Where-Object Name -eq 'Wait-ErpSalesOrderSource')
 $invokeJsonPostAst = @($functionAsts | Where-Object Name -eq 'Invoke-JsonPost')
 $diagnosticRedactorAst = @($functionAsts | Where-Object Name -eq 'Protect-Man517DiagnosticText')
+$successEvidenceAst = @($functionAsts | Where-Object Name -eq 'Write-Man517SuccessEvidence')
 Assert-Contract ($sourceReadinessAst.Count -eq 1) 'Source readiness helper must have one inspectable function definition.'
 Assert-Contract ($invokeJsonPostAst.Count -eq 1) 'POST validator must have one inspectable function definition.'
 Assert-Contract ($diagnosticRedactorAst.Count -eq 1) 'POST validator must use the production MAN-517 diagnostic redactor.'
-Assert-Contract ($content.Contains('sourceReadiness = $sourceReadiness')) 'Success evidence must retain committed ERP source-readiness evidence.'
-Assert-Contract ($content.Contains('stateChangingPostInvocationCount = $stateChangingPostInvocationCount')) 'Success evidence must retain the state-changing POST invocation count.'
-Assert-Contract ($content.Contains('if ($stateChangingPostInvocationCount -ne 3)')) 'This acceptance scenario must fail instead of writing success evidence when mutation invocation count is not three.'
+Assert-Contract ($successEvidenceAst.Count -eq 1) 'Success evidence must have one inspectable production writer helper.'
+$successEvidenceHashTables = @($successEvidenceAst[0].Body.FindAll({ param($node) $node -is [System.Management.Automation.Language.HashtableAst] }, $true))
+$successEvidenceHashTable = @($successEvidenceHashTables | Where-Object {
+    @($_.KeyValuePairs | ForEach-Object { $_.Item1.Extent.Text }) -contains 'scenario'
+})
+Assert-Contract ($successEvidenceHashTable.Count -eq 1) 'Success evidence writer must contain one live top-level evidence hashtable.'
+$sourceReadinessEntry = @($successEvidenceHashTable[0].KeyValuePairs | Where-Object { $_.Item1.Extent.Text -eq 'sourceReadiness' })
+$mutationCountEntry = @($successEvidenceHashTable[0].KeyValuePairs | Where-Object { $_.Item1.Extent.Text -eq 'stateChangingPostInvocationCount' })
+Assert-Contract ($sourceReadinessEntry.Count -eq 1 -and $sourceReadinessEntry[0].Item2.Extent.Text -eq '$SourceReadiness') 'Success evidence hashtable must retain live sourceReadiness=$SourceReadiness.'
+Assert-Contract ($mutationCountEntry.Count -eq 1 -and $mutationCountEntry[0].Item2.Extent.Text -eq '$StateChangingPostInvocationCount') 'Success evidence hashtable must retain live stateChangingPostInvocationCount=$StateChangingPostInvocationCount.'
+$countGateAsts = @($successEvidenceAst[0].Body.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.IfStatementAst] -and
+    $node.Extent.Text.Contains('$StateChangingPostInvocationCount -ne 3')
+}, $true))
+$evidenceWriteAsts = @($successEvidenceAst[0].Body.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.CommandAst] -and
+    $node.CommandElements.Count -gt 0 -and $node.CommandElements[0].Extent.Text -eq 'Set-Content'
+}, $true))
+Assert-Contract ($countGateAsts.Count -eq 1 -and $evidenceWriteAsts.Count -eq 1 -and $countGateAsts[0].Extent.StartOffset -lt $evidenceWriteAsts[0].Extent.StartOffset) 'The exact-three mutation gate must execute before the success evidence write.'
 
 $commandAsts = @($verifyAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
 $releasedV1Wait = @($commandAsts | Where-Object {
@@ -281,5 +300,65 @@ Assert-Contract ($sourceReadiness.stage -eq 'erp-source-readiness') 'Committed s
 Assert-Contract ($sourceReadiness.attemptCount -eq 1) 'Committed source readiness evidence must retain its attempt count.'
 Assert-Contract ($sourceReadiness.matchingRowCount -eq 1 -and $sourceReadiness.matchingRow -eq 'SO-DEMO-001|1|released|10|2') 'Committed source readiness evidence must retain the exact matching row and row count.'
 Assert-Contract ($null -ne $sourceReadiness.observedAtUtc) 'Committed source readiness evidence must retain its observation time.'
+Assert-Contract (@($sourceReadiness).Count -eq 1) 'Committed source readiness must return exactly one evidence object, not property enumeration.'
+Assert-Contract ($sourceReadiness -is [pscustomobject]) 'Committed source readiness must return the exact PSCustomObject evidence type.'
+
+. ([scriptblock]::Create($successEvidenceAst[0].Extent.Text))
+$script:evidenceWriteCount = 0
+$script:evidenceWriteJson = $null
+function Set-Content {
+    param(
+        [Parameter(ValueFromPipeline)]
+        [string]$Value,
+        [string]$LiteralPath,
+        [string]$Encoding
+    )
+
+    process {
+        $script:evidenceWriteCount++
+        $script:evidenceWriteJson = $Value
+    }
+}
+
+$evidenceSourceReadiness = [pscustomobject]@{
+    stage = 'erp-source-readiness'
+    attemptCount = 1
+    observedAtUtc = [DateTimeOffset]::UtcNow
+    matchingRowCount = 1
+    matchingRow = 'SO-DEMO-001|1|released|10|2'
+}
+$evidenceParameters = @{
+    EvidencePath = 'test-evidence.json'
+    DatabaseName = 'test_database'
+    CapVersion = 'test-cap'
+    MasterDataProcess = [pscustomobject]@{ ProcessId = 1 }
+    ErpProcess = [pscustomobject]@{ ProcessId = 2 }
+    DemandPlanningProcess = [pscustomobject]@{ ProcessId = 3 }
+    SourceReadiness = $evidenceSourceReadiness
+    Released = [pscustomobject]@{ sourceVersion = 1 }
+    DuplicateReplay = [pscustomobject]@{ sourceVersion = 3 }
+    ChangedV2 = [pscustomobject]@{ sourceVersion = 2 }
+    ChangedV3 = [pscustomobject]@{ sourceVersion = 3 }
+    OutOfOrder = [pscustomobject]@{ sourceVersion = 3 }
+    Cancelled = [pscustomobject]@{ sourceVersion = 4 }
+}
+foreach ($invalidMutationCount in @(2, 4)) {
+    $script:evidenceWriteCount = 0
+    $threw = $false
+    try {
+        Write-Man517SuccessEvidence @evidenceParameters -StateChangingPostInvocationCount $invalidMutationCount
+    }
+    catch {
+        $threw = $true
+    }
+    Assert-Contract $threw "Success evidence writer must reject mutation count $invalidMutationCount immediately."
+    Assert-Contract ($script:evidenceWriteCount -eq 0) "Success evidence writer must not write evidence for mutation count $invalidMutationCount."
+}
+$script:evidenceWriteCount = 0
+Write-Man517SuccessEvidence @evidenceParameters -StateChangingPostInvocationCount 3
+Assert-Contract ($script:evidenceWriteCount -eq 1) 'Success evidence writer must write once for the expected mutation count.'
+$successEvidence = $script:evidenceWriteJson | ConvertFrom-Json
+Assert-Contract ($successEvidence.stateChangingPostInvocationCount -eq 3) 'Success evidence writer must persist the exact mutation count.'
+Assert-Contract ($successEvidence.sourceReadiness.stage -eq 'erp-source-readiness' -and $successEvidence.sourceReadiness.matchingRowCount -eq 1 -and $successEvidence.sourceReadiness.matchingRow -eq 'SO-DEMO-001|1|released|10|2') 'Success evidence writer must persist committed source-readiness evidence.'
 
 Write-Host 'ERP sales-order DemandPlanning cross-process verify script contract tests passed.'

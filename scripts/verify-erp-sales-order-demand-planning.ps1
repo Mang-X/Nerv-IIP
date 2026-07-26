@@ -273,6 +273,40 @@ function Assert-DemandStable {
     return $row
 }
 
+function Write-Man517SuccessEvidence {
+    param(
+        [string]$EvidencePath,
+        [string]$DatabaseName,
+        [string]$CapVersion,
+        [object]$MasterDataProcess,
+        [object]$ErpProcess,
+        [object]$DemandPlanningProcess,
+        [object]$SourceReadiness,
+        [int]$StateChangingPostInvocationCount,
+        [object]$Released,
+        [object]$DuplicateReplay,
+        [object]$ChangedV2,
+        [object]$ChangedV3,
+        [object]$OutOfOrder,
+        [object]$Cancelled
+    )
+
+    if ($StateChangingPostInvocationCount -ne 3) {
+        throw "MAN-517 expected exactly three state-changing POST helper invocations, observed $StateChangingPostInvocationCount."
+    }
+
+    [ordered]@{
+        scenario = 'MAN-517 ERP SalesOrder to DemandPlanning DemandSource'
+        completedAtUtc = [DateTimeOffset]::UtcNow
+        database = $DatabaseName
+        capVersion = $CapVersion
+        processes = @{ masterData = $MasterDataProcess.ProcessId; erp = $ErpProcess.ProcessId; demandPlanning = $DemandPlanningProcess.ProcessId }
+        sourceReadiness = $SourceReadiness
+        stateChangingPostInvocationCount = $StateChangingPostInvocationCount
+        checkpoints = @{ released = $Released; duplicateReplay = $DuplicateReplay; changedV2 = $ChangedV2; changedV3 = $ChangedV3; outOfOrder = $OutOfOrder; cancelled = $Cancelled }
+    } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $EvidencePath -Encoding utf8
+}
+
 function Protect-Man517DiagnosticText {
     param([AllowNull()][string]$Text)
     if ($null -eq $Text) { return $null }
@@ -564,22 +598,23 @@ try {
     Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 4 -Quantity 0 -Status 'cancelled' | Out-Null
     $cancelled = Assert-DemandStable -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 4 -Quantity 0 -Status 'cancelled'
 
-    if ($stateChangingPostInvocationCount -ne 3) {
-        throw "MAN-517 expected exactly three state-changing POST helper invocations, observed $stateChangingPostInvocationCount."
-    }
-
     $evidencePath = Join-Path $root 'artifacts/acceptance/man517/sales-order-demand-planning-evidence.json'
     [System.IO.Directory]::CreateDirectory((Split-Path -Parent $evidencePath)) | Out-Null
-    @{
-        scenario = 'MAN-517 ERP SalesOrder to DemandPlanning DemandSource'
-        completedAtUtc = [DateTimeOffset]::UtcNow
-        database = $databaseName
-        capVersion = $capVersion
-        processes = @{ masterData = $masterDataProcess.ProcessId; erp = $erpProcess.ProcessId; demandPlanning = $demandPlanningProcess.ProcessId }
-        sourceReadiness = $sourceReadiness
-        stateChangingPostInvocationCount = $stateChangingPostInvocationCount
-        checkpoints = @{ released = $released; duplicateReplay = $duplicateReplay; changedV2 = $changedV2; changedV3 = $changedV3; outOfOrder = $outOfOrder; cancelled = $cancelled }
-    } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $evidencePath -Encoding utf8
+    Write-Man517SuccessEvidence `
+        -EvidencePath $evidencePath `
+        -DatabaseName $databaseName `
+        -CapVersion $capVersion `
+        -MasterDataProcess $masterDataProcess `
+        -ErpProcess $erpProcess `
+        -DemandPlanningProcess $demandPlanningProcess `
+        -SourceReadiness $sourceReadiness `
+        -StateChangingPostInvocationCount $stateChangingPostInvocationCount `
+        -Released $released `
+        -DuplicateReplay $duplicateReplay `
+        -ChangedV2 $changedV2 `
+        -ChangedV3 $changedV3 `
+        -OutOfOrder $outOfOrder `
+        -Cancelled $cancelled
     Write-Host "MAN-517 separate-process PostgreSQL + Redis acceptance passed. Evidence: $evidencePath"
 }
 catch {
