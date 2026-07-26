@@ -457,7 +457,12 @@ describe('quality route location behavior', () => {
     const wrapper = mountQualityPage(InspectionsPage)
     await nextRenderTick()
 
-    expect(wrapper.get('#record-quantity').attributes('step')).toBe('any')
+    // 待检任务流：来源单据 / 物料 / 检验数量全部由任务带出，只读呈现而非输入框。
+    const carried = wrapper.get('[data-slot="carried-context"]')
+    expect(carried.text()).toContain('1200')
+    expect(carried.text()).toContain('SKU-RM-001')
+    expect(carried.text()).toContain('GR-001')
+    expect(wrapper.find('#record-quantity').exists()).toBe(false)
   })
 
   it('enables task submission after business context arrives asynchronously', async () => {

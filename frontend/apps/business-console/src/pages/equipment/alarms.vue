@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricFacet, NvMetricSegment } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { useBusinessEquipmentAlarms } from '@/composables/useBusinessEquipment'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
@@ -449,6 +450,18 @@ const resolvedMinutes = computed(() =>
   shelve.duration === 'custom' ? Math.trunc(Number(shelve.customMinutes)) : Number(shelve.duration),
 )
 const shelveIsBatch = computed(() => shelve.targets.length > 1)
+// 单条搁置时，报警的既有事实一律只读带出，操作员只决定时长与原因。
+const shelveContextItems = computed(() => {
+  const target = shelve.targets[0]
+  if (!target) return []
+  return [
+    { label: '报警', value: target.alarmEventId },
+    { label: '设备', value: target.deviceAssetId },
+    { label: '报警代码', value: target.alarmCode },
+    { label: '级别', value: severityLabel(target.severity) },
+    { label: '发生时间', value: formatDateTime(target.raisedAtUtc) },
+  ]
+})
 // 批量搁置是「对多行做同一破坏性动作」→ A1 §5.2 要求原因必填;单条搁置保持可选。
 const reasonRequired = computed(() => shelveIsBatch.value)
 // Field-level validation (inline red text, not toast — 见 feedback-and-notifications 规范).
@@ -759,20 +772,19 @@ function formatError(error: unknown) {
           }}</NvDialogTitle>
           <NvDialogDescription>
             <template v-if="shelve.locked"
-              >已提交，{{
-                shelve.targets.length
-              }}
-              条搁置失败。请原样重试（时长/原因已锁定以复用相同幂等键），或放弃重试。</template
+              >{{ shelve.targets.length }} 条搁置失败，请原样重试或放弃重试。</template
             >
-            <template v-else
-              >搁置期间该报警暂不再提醒；到期后自动恢复。请选择搁置时长{{
-                reasonRequired ? '并填写原因' : ''
-              }}。</template
-            >
+            <template v-else>搁置期间不再提醒，到期自动恢复。</template>
           </NvDialogDescription>
         </NvDialogHeader>
 
         <div class="grid gap-4 py-1">
+          <!-- 单条搁置：报警事实由所选行带出，只读呈现。 -->
+          <CarriedContextSummary
+            v-if="!shelveIsBatch"
+            label="搁置对象"
+            :items="shelveContextItems"
+          />
           <NvField>
             <NvFieldLabel>搁置时长</NvFieldLabel>
             <NvRadioGroup
@@ -866,8 +878,7 @@ function formatError(error: unknown) {
         <NvAlertDialogHeader>
           <NvAlertDialogTitle>批量确认报警</NvAlertDialogTitle>
           <NvAlertDialogDescription>
-            将确认选中的
-            {{ ackTargets.length }} 条报警。确认后记录当前操作人与时间，可重复执行且不影响已确认项。
+            将确认选中的 {{ ackTargets.length }} 条报警。
           </NvAlertDialogDescription>
         </NvAlertDialogHeader>
         <NvAlertDialogFooter>

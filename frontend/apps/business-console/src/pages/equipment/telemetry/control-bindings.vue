@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleTelemetryDeviceControlBindingItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { useBusinessDeviceControlBindings } from '@/composables/useBusinessDeviceControlBinding'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -106,6 +107,14 @@ const instanceError = computed(() =>
 const formValid = computed(
   () => form.deviceAssetId.trim() && form.connectorHostId.trim() && form.instanceKey.trim(),
 )
+// 编辑态：设备编号是绑定身份，由所选行带出，只读呈现。
+const bindingContextItems = computed(() => [{ label: '设备编号', value: form.deviceAssetId }])
+// 停用确认：目标绑定的事实由所选行带出。
+const disableContextItems = computed(() => [
+  { label: '设备编号', value: disableTarget.value?.deviceAssetId },
+  { label: '连接主机', value: disableTarget.value?.connectorHostId },
+  { label: '实例标识', value: disableTarget.value?.instanceKey },
+])
 
 function openCreate() {
   editing.value = false
@@ -200,24 +209,32 @@ function formatError(error: unknown) {
           <NvDialogContent class="sm:max-w-md">
             <NvDialogHeader>
               <NvDialogTitle>{{ editing ? '编辑控制通道绑定' : '新建控制通道绑定' }}</NvDialogTitle>
-              <NvDialogDescription>
-                绑定设备到连接器主机与实例，作为设备控制命令下发的路由目标。操作员下发时无需再手输。
+              <NvDialogDescription class="sr-only">
+                设备控制命令的下发通道路由目标。
               </NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-3" @submit.prevent="submit">
+              <!-- 编辑态：设备编号是绑定身份，只读呈现，不做成 readonly 输入位。 -->
+              <CarriedContextSummary v-if="editing" label="绑定设备" :items="bindingContextItems" />
+
               <NvFieldGroup class="grid gap-3">
-                <NvField>
+                <NvField v-if="!editing">
                   <NvFieldLabel for="binding-device"
                     >设备编号 <span class="text-destructive">*</span></NvFieldLabel
                   >
                   <NvInput
                     id="binding-device"
                     v-model="form.deviceAssetId"
-                    :readonly="editing"
                     placeholder="如 DEV-CNC-01"
                     :aria-invalid="!!deviceError"
+                    :aria-describedby="deviceError ? 'binding-device-error' : undefined"
                   />
-                  <p v-if="deviceError" class="text-xs text-destructive" role="alert">
+                  <p
+                    v-if="deviceError"
+                    id="binding-device-error"
+                    class="text-xs text-destructive"
+                    role="alert"
+                  >
                     {{ deviceError }}
                   </p>
                 </NvField>
@@ -254,7 +271,9 @@ function formatError(error: unknown) {
                 <NvButton type="button" variant="outline" @click="dialogOpen = false"
                   >取消</NvButton
                 >
-                <NvButton type="submit" :disabled="saveBindingPending">保存</NvButton>
+                <NvButton type="submit" :disabled="saveBindingPending">{{
+                  editing ? '保存绑定' : '创建绑定'
+                }}</NvButton>
               </NvDialogFooter>
             </form>
           </NvDialogContent>
@@ -314,9 +333,10 @@ function formatError(error: unknown) {
         <NvAlertDialogHeader>
           <NvAlertDialogTitle>确认停用该控制通道绑定？</NvAlertDialogTitle>
           <NvAlertDialogDescription>
-            停用后该设备将无法下发控制命令，直至重新配置绑定。已下发的命令不受影响。
+            停用后该设备将无法下发控制命令，直至重新配置绑定。
           </NvAlertDialogDescription>
         </NvAlertDialogHeader>
+        <CarriedContextSummary label="停用对象" :items="disableContextItems" />
         <NvField>
           <NvFieldLabel for="binding-disable-reason"
             >停用原因 <span class="text-destructive">*</span></NvFieldLabel

@@ -165,7 +165,7 @@ describe('DeviceControlSheet', () => {
     await wrapper.find('#devctl-reason').setValue('ramp up')
     await wrapper
       .findAll('button')
-      .find((b) => b.text().includes('提交下发'))!
+      .find((b) => b.text().includes('确认下发'))!
       .trigger('click')
     await flushPromises()
 
@@ -180,7 +180,7 @@ describe('DeviceControlSheet', () => {
     await wrapper.find('#devctl-reason').setValue('ramp to setpoint')
     await wrapper
       .findAll('button')
-      .find((b) => b.text().includes('提交下发'))!
+      .find((b) => b.text().includes('确认下发'))!
       .trigger('click')
     await flushPromises()
 
@@ -216,7 +216,7 @@ describe('DeviceControlSheet', () => {
     await wrapper.find('#devctl-reason').setValue('ramp to setpoint')
     await wrapper
       .findAll('button')
-      .find((b) => b.text().includes('提交下发'))!
+      .find((b) => b.text().includes('确认下发'))!
       .trigger('click')
     await flushPromises()
 

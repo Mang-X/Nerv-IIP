@@ -40,7 +40,7 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { GitBranchIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
+import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -209,18 +209,17 @@ async function submitForm() {
 const viewOpen = shallowRef(false)
 const viewTarget = shallowRef<BusinessConsoleEngineeringItemRevisionItem | null>(null)
 const detailPending = ref(false)
-const detailError = ref('')
 async function openView(row: BusinessConsoleEngineeringItemRevisionItem) {
   viewTarget.value = row
   viewOpen.value = true
-  detailError.value = ''
   if (!row.itemCode || !row.revision) return
   detailPending.value = true
   try {
     const detail = await fetchItemDetail(row.itemCode, row.revision)
     if (detail) viewTarget.value = detail
   } catch (error) {
-    detailError.value = formatError(error) || '加载物料修订明细失败，请稍后重试。'
+    // 结果一律 toast；列表行数据仍可展示，不在抽屉里留常驻错误条。
+    notifyError(error, '加载物料修订明细失败，请稍后重试。')
   } finally {
     detailPending.value = false
   }
@@ -259,10 +258,10 @@ function formatError(error: unknown) {
           <NvDialogContent class="sm:max-w-xl">
             <NvDialogHeader>
               <NvDialogTitle>新建物料修订</NvDialogTitle>
-              <NvDialogDescription>
-                工程物料不直接编辑，而是派生新修订。可新建一个物料，或在已有物料上派生下一修订。带 *
-                为必填项。
-              </NvDialogDescription>
+              <!-- 说明不上界面：仅供读屏播报。 -->
+              <NvDialogDescription class="sr-only"
+                >新建物料或在已有物料上派生修订。</NvDialogDescription
+              >
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
@@ -280,8 +279,8 @@ function formatError(error: unknown) {
                       <NvSelectItem value="existing">在已有物料上派生</NvSelectItem>
                     </NvSelectContent>
                   </NvSelect>
-                  <NvFieldDescription>
-                    新建物料时编码由系统自动生成；派生时沿用所选物料编码。
+                  <NvFieldDescription v-if="form.targetMode === 'new'">
+                    编码由系统自动生成。
                   </NvFieldDescription>
                 </NvField>
                 <NvField
@@ -301,7 +300,6 @@ function formatError(error: unknown) {
                       }}</NvSelectItem>
                     </NvSelectContent>
                   </NvSelect>
-                  <NvFieldDescription>从当前列表里已存在的物料编码中选择。</NvFieldDescription>
                 </NvField>
               </NvFieldGroup>
 
@@ -330,7 +328,7 @@ function formatError(error: unknown) {
                   <span>创建后立即发布该修订</span>
                   <NvCheckbox id="item-release" v-model:checked="form.release" />
                 </label>
-                <NvFieldDescription>不勾选则保存为草稿；发布后该修订不可变。</NvFieldDescription>
+                <NvFieldDescription>发布后该修订不可变。</NvFieldDescription>
               </NvField>
 
               <NvDialogFooter>
@@ -416,13 +414,6 @@ function formatError(error: unknown) {
             <Spinner aria-hidden="true" />
             加载修订明细…
           </div>
-          <p
-            v-else-if="detailError"
-            class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-            role="alert"
-          >
-            {{ detailError }}
-          </p>
           <div v-else class="grid gap-2 text-sm">
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">名称</span>
@@ -443,10 +434,6 @@ function formatError(error: unknown) {
               <span class="text-muted-foreground">更新时间</span>
               <span class="font-medium">{{ formatDateTime(viewTarget.updatedAtUtc) }}</span>
             </div>
-            <p class="flex items-center gap-1.5 pt-1 text-xs text-muted-foreground">
-              <GitBranchIcon class="size-3.5" aria-hidden="true" />
-              修改请在此物料上派生新修订，已发布修订不可变。
-            </p>
           </div>
         </div>
       </NvSheetContent>

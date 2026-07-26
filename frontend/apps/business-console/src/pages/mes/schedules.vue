@@ -7,6 +7,7 @@ import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useMesSchedules } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -43,7 +44,6 @@ definePage({
 const { lastSchedule, runSchedule, runScheduleError, runSchedulePending } = useMesSchedules()
 const businessContext = useBusinessContextStore()
 
-const runSuccess = shallowRef('')
 const scheduleSheetOpen = shallowRef(false)
 
 const runForm = reactive({
@@ -65,7 +65,6 @@ const assignments = computed<BusinessConsoleScheduledOperation[]>(
   () => lastSchedule.value?.assignments ?? [],
 )
 const affectedWorkOrderIds = computed(() => lastSchedule.value?.affectedWorkOrderIds ?? [])
-const errorMessage = computed(() => formatError(runScheduleError.value))
 const canRunSchedule = computed(
   () =>
     isNonEmpty(runForm.organizationId) &&
@@ -136,9 +135,14 @@ async function submitScheduleRun() {
     environmentId: runForm.environmentId.trim(),
     trigger: runForm.trigger.trim(),
   }
-  const response = await runSchedule(body)
-  runSuccess.value = `规则排程 ${response?.data?.scheduleVersion ?? body.trigger} 已完成。`
-  scheduleSheetOpen.value = false
+  // 结果一律 toast，弹窗内不留常驻结果条；成功即关闭，结果在下方分配表里看。
+  try {
+    const response = await runSchedule(body)
+    scheduleSheetOpen.value = false
+    notifySuccess(`规则排程已完成（版本 ${response?.data?.scheduleVersion ?? body.trigger}）。`)
+  } catch (error) {
+    notifyError(error ?? runScheduleError.value, '运行规则排程失败，请稍后重试。')
+  }
 }
 
 function rowKey(item: BusinessConsoleScheduledOperation) {
@@ -148,9 +152,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0
@@ -227,14 +228,10 @@ function isNonEmpty(value: string) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>运行规则排程</NvDialogTitle>
-          <NvDialogDescription
-            >规则排程只重新计算车间的工序分配；正式排产方案、甘特和发布动作请在排产工作台处理。</NvDialogDescription
-          >
+          <!-- 过渡入口的定位已写在页面上，弹窗里不再重复；此处仅供读屏播报。 -->
+          <NvDialogDescription class="sr-only">重新计算车间的工序分配。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitScheduleRun">
-          <p v-if="errorMessage" class="text-sm text-destructive" role="alert">
-            {{ errorMessage }}
-          </p>
           <p
             v-if="!isNonEmpty(runForm.organizationId) || !isNonEmpty(runForm.environmentId)"
             class="text-sm text-muted-foreground"
@@ -242,7 +239,6 @@ function isNonEmpty(value: string) {
           >
             请先完成业务上下文选择。
           </p>
-          <p v-if="runSuccess" class="text-sm text-success" role="status">{{ runSuccess }}</p>
 
           <NvFieldGroup class="grid gap-3">
             <NvField>

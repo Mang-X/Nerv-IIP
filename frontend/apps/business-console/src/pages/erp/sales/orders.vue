@@ -24,7 +24,6 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvField,
-  NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -33,12 +32,12 @@ import {
   Spinner,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, RouteIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { firstQueryParam, formatAmount, formatError } from '../shared'
+import { notifyError, notifySuccess } from '@/utils/notify'
+import { firstQueryParam, formatAmount } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: '销售订单', requiredPermissions: ['business.erp.sales.read'] },
@@ -119,7 +118,13 @@ const orderCells = computed<NvMetricStripCell[]>(() => [
 
 const open = shallowRef(false)
 const form = reactive({ quotationNo: '', salesOrderNo: '', siteCode: '' })
-const formError = shallowRef('')
+// 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
+const showErrors = shallowRef(false)
+const invalid = computed(() => ({
+  quotationNo: !form.quotationNo.trim(),
+  siteCode: !form.siteCode.trim(),
+}))
+const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 
 // 履约追踪 Sheet：行内入口按订单打开时间线。
 const timelineOpen = shallowRef(false)
@@ -134,19 +139,13 @@ function openDialog() {
   form.quotationNo = ''
   form.salesOrderNo = ''
   form.siteCode = ''
-  formError.value = ''
+  showErrors.value = false
   open.value = true
 }
 
 async function submit() {
-  if (!form.quotationNo.trim()) {
-    formError.value = '请输入已批准报价单号。'
-    return
-  }
-  if (!form.siteCode.trim()) {
-    formError.value = '请输入销售订单履约工厂编码。'
-    return
-  }
+  showErrors.value = true
+  if (!canSubmit.value) return
   try {
     await orders.createSalesOrder({
       quotationNo: form.quotationNo.trim(),
@@ -154,9 +153,9 @@ async function submit() {
       salesOrderNo: form.salesOrderNo.trim() || undefined,
     })
     open.value = false
-    toast.success('销售订单已创建')
-  } catch {
-    formError.value = formatError(orders.createSalesOrderError.value) || '创建失败，请稍后重试。'
+    notifySuccess('销售订单已创建')
+  } catch (error) {
+    notifyError(orders.createSalesOrderError.value ?? error, '创建销售订单失败，请稍后重试。')
   }
 }
 </script>
@@ -251,31 +250,47 @@ async function submit() {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建销售订单</NvDialogTitle>
-          <NvDialogDescription>由已批准的销售报价转换生成订单。</NvDialogDescription>
+          <NvDialogDescription class="sr-only">由已批准的销售报价转订单。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submit">
           <NvFieldGroup>
+            <NvField>
+              <NvFieldLabel for="erp-so-quotation">
+                已批准报价单号 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-so-quotation"
+                v-model="form.quotationNo"
+                autocomplete="off"
+                :data-invalid="showErrors && invalid.quotationNo ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-so-site">
+                履约工厂 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-so-site"
+                v-model="form.siteCode"
+                autocomplete="off"
+                :data-invalid="showErrors && invalid.siteCode ? '' : undefined"
+              />
+            </NvField>
             <NvField
-              ><NvFieldLabel for="erp-so-quotation">报价单号</NvFieldLabel
-              ><NvInput id="erp-so-quotation" v-model="form.quotationNo" autocomplete="off"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-so-no">销售单号（可选）</NvFieldLabel
+              ><NvFieldLabel for="erp-so-no">销售单号（留空自动编号）</NvFieldLabel
               ><NvInput id="erp-so-no" v-model="form.salesOrderNo" autocomplete="off"
             /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-so-site">履约工厂编码</NvFieldLabel
-              ><NvInput id="erp-so-site" v-model="form.siteCode" autocomplete="off"
-            /></NvField>
           </NvFieldGroup>
-          <NvFieldError v-if="formError" :errors="[formError]" />
+          <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+            请填写已批准报价单号与履约工厂。
+          </p>
           <NvDialogFooter>
             <NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             >
             <NvButton type="submit" :disabled="orders.createSalesOrderPending.value">
               <Spinner v-if="orders.createSalesOrderPending.value" aria-hidden="true" />
-              创建
+              创建订单
             </NvButton>
           </NvDialogFooter>
         </form>

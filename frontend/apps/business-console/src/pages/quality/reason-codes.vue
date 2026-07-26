@@ -26,7 +26,6 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
-  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -254,10 +253,7 @@ async function confirmArchive() {
           <NvDialogContent class="sm:max-w-2xl">
             <NvDialogHeader>
               <NvDialogTitle>{{ editingCode ? '编辑质量原因' : '新建质量原因' }}</NvDialogTitle>
-              <NvDialogDescription>
-                质量原因是可复用的质量主数据：按原因组归类，预设严重度与默认处置，供检验 /
-                不合格品记录引用。带 * 为必填项。
-              </NvDialogDescription>
+              <NvDialogDescription>供检验与不合格品记录引用</NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
@@ -277,9 +273,6 @@ async function confirmArchive() {
                     placeholder="例如：DEF-SCRATCH"
                   />
                   <NvInput v-else :model-value="editingCode" readonly disabled />
-                  <NvFieldDescription>{{
-                    editingCode ? '编码是原因身份，不可更改。' : '由工厂自定义、需唯一。'
-                  }}</NvFieldDescription>
                 </NvField>
                 <NvField :data-invalid="showErrors && !nameValid">
                   <NvFieldLabel for="reason-name"
@@ -406,8 +399,7 @@ async function confirmArchive() {
         <NvAlertDialogHeader>
           <NvAlertDialogTitle>停用质量原因</NvAlertDialogTitle>
           <NvAlertDialogDescription>
-            停用后原因「{{ archiveTarget?.reasonName }}」将不可在新的检验 /
-            不合格品记录中引用，历史记录不受影响。
+            停用后「{{ archiveTarget?.reasonName }}」不可再被新的检验与不合格品记录引用。
           </NvAlertDialogDescription>
         </NvAlertDialogHeader>
         <NvAlertDialogFooter>

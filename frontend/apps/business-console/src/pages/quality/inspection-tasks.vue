@@ -86,9 +86,7 @@ const emptyMessage = computed(() =>
     : '当前没有待检任务。免检 SKU 不会生成任务；若刚完成收货或报工，请刷新后再查看。',
 )
 const scopeHint = computed(() =>
-  locatorMessage.value
-    ? `共定位到 ${total.value} 个待检任务。`
-    : `共 ${total.value} 个待检任务，来源筛选作用于当前列表。`,
+  locatorMessage.value ? `共定位到 ${total.value} 个待检任务。` : `共 ${total.value} 个待检任务。`,
 )
 
 watch(
@@ -358,7 +356,6 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
     </NvDataTable>
 
     <p class="text-xs text-muted-foreground">
-      开始检验后会带入来源单据、SKU、检验计划与时限，直接进入检验记录填写。
       <RouterLink class="underline underline-offset-2" to="/quality/inspections"
         >查看检验记录</RouterLink
       >

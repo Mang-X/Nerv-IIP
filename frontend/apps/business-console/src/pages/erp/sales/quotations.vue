@@ -16,7 +16,6 @@ import {
   NvDialogTitle,
   NvDropdownMenuItem,
   NvField,
-  NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -31,11 +30,11 @@ import {
   Spinner,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { formatAmount, formatDate, formatError } from '../shared'
+import { notifyError, notifySuccess } from '@/utils/notify'
+import { formatAmount, formatDate } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: '销售报价', requiredPermissions: ['business.erp.sales.read'] },
@@ -103,7 +102,17 @@ const form = reactive({
   unitPrice: '0',
   requiredDate: '',
 })
-const formError = shallowRef('')
+// 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
+const showErrors = shallowRef(false)
+const invalid = computed(() => ({
+  customerCode: !form.customerCode.trim(),
+  expiresOn: !form.expiresOn,
+  skuCode: !form.skuCode.trim(),
+  requiredDate: !form.requiredDate,
+  quantity: !(Number(form.quantity) > 0),
+  unitPrice: !(Number(form.unitPrice) >= 0),
+}))
+const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 
 function openDialog() {
   form.customerCode = ''
@@ -112,21 +121,15 @@ function openDialog() {
   form.quantity = '1'
   form.unitPrice = '0'
   form.requiredDate = ''
-  formError.value = ''
+  showErrors.value = false
   open.value = true
 }
 
 async function submit() {
+  showErrors.value = true
+  if (!canSubmit.value) return
   const quantity = Number(form.quantity)
   const unitPrice = Number(form.unitPrice)
-  if (!form.customerCode.trim() || !form.expiresOn || !form.skuCode.trim() || !form.requiredDate) {
-    formError.value = '请填写客户、有效期、物料与需求日期。'
-    return
-  }
-  if (!(quantity > 0) || !(unitPrice >= 0)) {
-    formError.value = '数量需为正数、单价不可为负。'
-    return
-  }
   try {
     await quotations.createQuotation({
       customerCode: form.customerCode.trim(),
@@ -143,9 +146,9 @@ async function submit() {
       ],
     })
     open.value = false
-    toast.success('销售报价已创建')
-  } catch {
-    formError.value = formatError(quotations.createQuotationError.value) || '创建失败，请稍后重试。'
+    notifySuccess('销售报价已创建')
+  } catch (error) {
+    notifyError(quotations.createQuotationError.value ?? error, '创建报价失败，请稍后重试。')
   }
 }
 
@@ -157,9 +160,9 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
   if (!row.quotationNo || !isApprovable(row)) return
   try {
     await quotations.approveQuotation(row.quotationNo)
-    toast.success(`报价单 ${row.quotationNo} 已审批`)
-  } catch {
-    toast.error(formatError(quotations.approveQuotationError.value) || '审批失败，请稍后重试。')
+    notifySuccess(`报价单 ${row.quotationNo} 已审批`)
+  } catch (error) {
+    notifyError(quotations.approveQuotationError.value ?? error, '审批报价失败，请稍后重试。')
   }
 }
 </script>
@@ -251,48 +254,91 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建销售报价</NvDialogTitle>
-          <NvDialogDescription>报价审批通过后，可在销售订单页转为订单。</NvDialogDescription>
+          <NvDialogDescription class="sr-only">向客户报出单项物料价格。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submit">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField
-              ><NvFieldLabel for="erp-quo-customer">客户</NvFieldLabel
-              ><NvInput id="erp-quo-customer" v-model="form.customerCode" autocomplete="off"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-quo-expires">有效期至</NvFieldLabel
-              ><NvInput id="erp-quo-expires" v-model="form.expiresOn" type="date"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-quo-sku">物料</NvFieldLabel
-              ><NvInput id="erp-quo-sku" v-model="form.skuCode" autocomplete="off"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-quo-required">需求日期</NvFieldLabel
-              ><NvInput id="erp-quo-required" v-model="form.requiredDate" type="date"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-quo-qty">数量</NvFieldLabel
-              ><NvInput id="erp-quo-qty" v-model="form.quantity" type="number" min="1" step="1"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-quo-price">单价（元）</NvFieldLabel
-              ><NvInput
+            <NvField>
+              <NvFieldLabel for="erp-quo-customer">
+                客户 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-quo-customer"
+                v-model="form.customerCode"
+                autocomplete="off"
+                :data-invalid="showErrors && invalid.customerCode ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-quo-expires">
+                有效期至 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-quo-expires"
+                v-model="form.expiresOn"
+                type="date"
+                :data-invalid="showErrors && invalid.expiresOn ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-quo-sku">
+                物料 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-quo-sku"
+                v-model="form.skuCode"
+                autocomplete="off"
+                :data-invalid="showErrors && invalid.skuCode ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-quo-required">
+                需求日期 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-quo-required"
+                v-model="form.requiredDate"
+                type="date"
+                :data-invalid="showErrors && invalid.requiredDate ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-quo-qty">
+                数量 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-quo-qty"
+                v-model="form.quantity"
+                type="number"
+                min="1"
+                step="1"
+                :data-invalid="showErrors && invalid.quantity ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-quo-price">
+                单价（元） <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
                 id="erp-quo-price"
                 v-model="form.unitPrice"
                 type="number"
                 min="0"
                 step="0.01"
-            /></NvField>
+                :data-invalid="showErrors && invalid.unitPrice ? '' : undefined"
+              />
+            </NvField>
           </NvFieldGroup>
-          <NvFieldError v-if="formError" :errors="[formError]" />
+          <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+            请填写客户、有效期、物料、需求日期，并给出正数数量与非负单价。
+          </p>
           <NvDialogFooter>
             <NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             >
             <NvButton type="submit" :disabled="quotations.createQuotationPending.value">
               <Spinner v-if="quotations.createQuotationPending.value" aria-hidden="true" />
-              创建
+              创建报价
             </NvButton>
           </NvDialogFooter>
         </form>

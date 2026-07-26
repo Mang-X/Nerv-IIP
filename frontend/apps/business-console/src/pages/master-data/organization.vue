@@ -5,6 +5,7 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { MasterDataTreeNodeData } from '@/components/masterData/MasterDataTreeNode.vue'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import MasterDataTreeNode from '@/components/masterData/MasterDataTreeNode.vue'
 import TeamMembersDialog from '@/components/masterData/TeamMembersDialog.vue'
@@ -299,8 +300,9 @@ const teamListError = computed(() => {
 const deptCreateOpen = ref(false)
 const deptShowErrors = ref(false)
 const deptForm = reactive({ name: '', parentDepartmentCode: '' })
-// 父归属是否就地带入（决定上级部门字段是否只读）。
+// 父归属是否就地带入（带入时不再让用户选，改为只读上下文展示）。
 const deptParentLocked = ref(false)
+const deptParentName = ref('')
 const canCreateDept = computed(() => isNonEmpty(deptForm.name))
 watch(deptCreateOpen, (open) => {
   if (open) deptShowErrors.value = false
@@ -308,6 +310,7 @@ watch(deptCreateOpen, (open) => {
 function resetDeptForm() {
   Object.assign(deptForm, { name: '', parentDepartmentCode: '' })
   deptParentLocked.value = false
+  deptParentName.value = ''
 }
 function openCreateRootDept() {
   resetDeptForm()
@@ -317,6 +320,7 @@ function openCreateRootDept() {
 function openCreateChildDept(parent: MasterDataTreeNodeData) {
   resetDeptForm()
   deptForm.parentDepartmentCode = parent.code
+  deptParentName.value = parent.displayName || parent.code
   deptParentLocked.value = true
   deptShowErrors.value = false
   deptCreateOpen.value = true
@@ -409,6 +413,13 @@ async function submitEditDept() {
 }
 
 // ================= 班组（新建：挂部门 + 班次；编辑：仅改名） =================
+const departmentNameByCode = computed(
+  () => new Map(departments.items.value.map((d) => [d.code ?? '', d.displayName ?? d.code ?? ''])),
+)
+function departmentLabel(code: string) {
+  return departmentNameByCode.value.get(code) || code
+}
+
 const teamOpen = ref(false)
 const teamShowErrors = ref(false)
 const teamEditingCode = shallowRef<string | null>(null)
@@ -442,6 +453,17 @@ function openCreateTeam(departmentCode?: string) {
   teamShowErrors.value = false
   teamOpen.value = true
 }
+// 缺省值：班次只有一个可选时自动选中，不让用户为唯一选项再点一次。
+watch(
+  [teamOpen, () => shifts.items.value],
+  () => {
+    if (!teamOpen.value || teamEditingCode.value) return
+    if (teamForm.shiftCode) return
+    const only = shifts.items.value.length === 1 ? shifts.items.value[0] : undefined
+    if (only?.code) teamForm.shiftCode = only.code
+  },
+  { immediate: true },
+)
 async function openEditTeam(row: BusinessConsoleResourceItem) {
   if (!row.code) return
   teamEditingCode.value = row.code
@@ -709,9 +731,6 @@ function openMembers(row: BusinessConsoleResourceItem) {
                 新建班组
               </NvButton>
             </div>
-            <p class="mb-2 text-xs text-muted-foreground">
-              归属本部门的班组；可编辑、改挂部门 / 班次、维护成员，新建时已带入本部门归属。
-            </p>
             <p v-if="teamListError" class="text-sm text-destructive" role="alert">
               {{ teamListError }}
             </p>
@@ -773,15 +792,17 @@ function openMembers(row: BusinessConsoleResourceItem) {
       <NvDialogContent class="sm:max-w-lg">
         <NvDialogHeader>
           <NvDialogTitle>{{ deptParentLocked ? '新建子部门' : '新建部门' }}</NvDialogTitle>
-          <NvDialogDescription>
-            {{
-              deptParentLocked
-                ? '在所选上级部门下登记一个子部门。上级已带入且不可更改。带 * 为必填项。'
-                : '登记一个组织部门，可选挂靠上级部门。带 * 为必填项。'
-            }}
+          <!-- 上级归属已在只读上下文区呈现；此处仅供读屏播报。 -->
+          <NvDialogDescription class="sr-only">
+            {{ deptParentLocked ? `上级部门：${deptParentName}` : '新建顶级部门' }}
           </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitCreateDept">
+          <CarriedContextSummary
+            v-if="deptParentLocked"
+            label="上级归属"
+            :items="[{ label: '上级部门', value: deptParentName }]"
+          />
           <p v-if="deptShowErrors && !canCreateDept" class="text-sm text-destructive" role="alert">
             请完整填写带 * 的必填项（已标红）。
           </p>
@@ -791,13 +812,8 @@ function openMembers(row: BusinessConsoleResourceItem) {
                 >部门名称 <span class="text-destructive">*</span></NvFieldLabel
               >
               <NvInput id="dept-name" v-model="deptForm.name" autocomplete="off" required />
-              <NvFieldDescription>编码由系统自动生成，保存后即可在树中查看。</NvFieldDescription>
             </NvField>
-            <NvField v-if="deptParentLocked">
-              <NvFieldLabel for="dept-parent">上级部门</NvFieldLabel>
-              <NvInput id="dept-parent" :model-value="deptForm.parentDepartmentCode" disabled />
-            </NvField>
-            <NvField v-else>
+            <NvField v-if="!deptParentLocked">
               <NvFieldLabel for="dept-parent">上级部门</NvFieldLabel>
               <NvSelect v-model="deptForm.parentDepartmentCode">
                 <NvSelectTrigger id="dept-parent"
@@ -813,7 +829,6 @@ function openMembers(row: BusinessConsoleResourceItem) {
                   </NvSelectItem>
                 </NvSelectContent>
               </NvSelect>
-              <NvFieldDescription>留空表示顶级部门。</NvFieldDescription>
             </NvField>
           </NvFieldGroup>
           <NvDialogFooter>
@@ -833,12 +848,13 @@ function openMembers(row: BusinessConsoleResourceItem) {
       <NvDialogContent class="sm:max-w-lg">
         <NvDialogHeader>
           <NvDialogTitle>编辑部门 · {{ deptEditCode }}</NvDialogTitle>
-          <NvDialogDescription
-            >修改部门名称，或改挂到其他上级部门（编码不可修改）。带 *
-            为必填项。</NvDialogDescription
-          >
+          <NvDialogDescription class="sr-only">部门 {{ deptEditCode }}</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitEditDept">
+          <CarriedContextSummary
+            label="部门标识"
+            :items="[{ label: '部门编码', value: deptEditCode }]"
+          />
           <p
             v-if="deptEditShowErrors && !canEditDept"
             class="text-sm text-destructive"
@@ -847,10 +863,6 @@ function openMembers(row: BusinessConsoleResourceItem) {
             请完整填写带 * 的必填项（已标红）。
           </p>
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField>
-              <NvFieldLabel for="dept-edit-code">部门编码</NvFieldLabel>
-              <NvInput id="dept-edit-code" :model-value="deptEditCode" disabled />
-            </NvField>
             <NvField :data-invalid="deptEditShowErrors && !isNonEmpty(deptEditForm.name)">
               <NvFieldLabel for="dept-edit-name"
                 >部门名称 <span class="text-destructive">*</span></NvFieldLabel
@@ -879,9 +891,8 @@ function openMembers(row: BusinessConsoleResourceItem) {
                   </NvSelectItem>
                 </NvSelectContent>
               </NvSelect>
-              <NvFieldDescription
-                >留空表示顶级部门；不能挂到自己或其下级部门下。</NvFieldDescription
-              >
+              <!-- 层级归属约束（非显而易见），保留一行。 -->
+              <NvFieldDescription>不能挂到自己或其下级部门下。</NvFieldDescription>
             </NvField>
           </NvFieldGroup>
           <NvDialogFooter>
@@ -901,33 +912,43 @@ function openMembers(row: BusinessConsoleResourceItem) {
           <NvDialogTitle>{{
             teamEditingCode ? `编辑班组 · ${teamEditingCode}` : '新建班组'
           }}</NvDialogTitle>
-          <NvDialogDescription>{{
-            teamEditingCode
-              ? '修改班组名称，或改挂到其他部门 / 班次（编码不可修改）。带 * 为必填项。'
-              : '将班组挂靠到部门与班次。带 * 为必填项。'
-          }}</NvDialogDescription>
+          <NvDialogDescription class="sr-only">
+            {{
+              teamEditingCode
+                ? `班组 ${teamEditingCode}`
+                : `所属部门：${departmentLabel(teamForm.departmentCode)}`
+            }}
+          </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitTeam">
+          <CarriedContextSummary
+            v-if="teamEditingCode || teamDepartmentLocked"
+            label="班组归属"
+            :items="[
+              { label: '班组编码', value: teamEditingCode ? teamForm.code : '' },
+              {
+                label: '所属部门',
+                value:
+                  teamDepartmentLocked && !teamEditingCode
+                    ? departmentLabel(teamForm.departmentCode)
+                    : '',
+              },
+            ]"
+          />
           <p v-if="teamShowErrors && !teamFormValid" class="text-sm text-destructive" role="alert">
             请完整填写带 * 的必填项（已标红）。
           </p>
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField v-if="teamEditingCode">
-              <NvFieldLabel for="team-code">班组编码</NvFieldLabel>
-              <NvInput id="team-code" :model-value="teamForm.code" disabled />
-            </NvField>
             <NvField :data-invalid="teamShowErrors && !isNonEmpty(teamForm.name)">
               <NvFieldLabel for="team-name"
                 >班组名称 <span class="text-destructive">*</span></NvFieldLabel
               >
               <NvInput id="team-name" v-model="teamForm.name" autocomplete="off" required />
-              <NvFieldDescription v-if="!teamEditingCode">编码由系统自动生成。</NvFieldDescription>
             </NvField>
-            <NvField v-if="teamDepartmentLocked && !teamEditingCode">
-              <NvFieldLabel for="team-dept-locked">所属部门</NvFieldLabel>
-              <NvInput id="team-dept-locked" :model-value="teamForm.departmentCode" disabled />
-            </NvField>
-            <NvField v-else :data-invalid="teamShowErrors && !isNonEmpty(teamForm.departmentCode)">
+            <NvField
+              v-if="!teamDepartmentLocked || teamEditingCode"
+              :data-invalid="teamShowErrors && !isNonEmpty(teamForm.departmentCode)"
+            >
               <NvFieldLabel for="team-dept"
                 >所属部门 <span class="text-destructive">*</span></NvFieldLabel
               >
@@ -964,7 +985,6 @@ function openMembers(row: BusinessConsoleResourceItem) {
                   </NvSelectItem>
                 </NvSelectContent>
               </NvSelect>
-              <NvFieldDescription>班次在「排班与日历」页维护。</NvFieldDescription>
             </NvField>
           </NvFieldGroup>
           <NvDialogFooter>

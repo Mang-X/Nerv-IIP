@@ -25,7 +25,6 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
-  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -231,7 +230,10 @@ interface RoutingForm {
   operations: Operation[]
 }
 function blankOperation(sequence: number): Operation {
-  return { sequence, workCenterCode: '', operationCode: '', standardMinutes: '' }
+  // 全厂只有一个工作中心时直接带出——没有选择余地的「选择」不该让用户做。
+  const onlyWorkCenter =
+    workCenterOptions.value.length === 1 ? (workCenterOptions.value[0]?.value ?? '') : ''
+  return { sequence, workCenterCode: onlyWorkCenter, operationCode: '', standardMinutes: '' }
 }
 function blankForm(): RoutingForm {
   return { skuCode: '', revision: '', effectiveDate: today(), operations: [blankOperation(10)] }
@@ -348,7 +350,6 @@ async function submitForm() {
 const viewOpen = shallowRef(false)
 const viewTarget = shallowRef<BusinessConsoleRoutingItem | null>(null)
 const detailPending = ref(false)
-const detailError = ref('')
 // 工序行（来自 get-by-id；按序号排好）。
 const viewOperations = computed(() =>
   [...(viewTarget.value?.operations ?? [])].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0)),
@@ -356,14 +357,14 @@ const viewOperations = computed(() =>
 async function openView(row: BusinessConsoleRoutingItem) {
   viewTarget.value = row
   viewOpen.value = true
-  detailError.value = ''
   if (!row.routingCode || !row.revision) return
   detailPending.value = true
   try {
     const detail = await fetchRoutingDetail(row.routingCode, row.revision)
     if (detail) viewTarget.value = detail
   } catch (error) {
-    detailError.value = formatError(error) || '加载工序明细失败，请稍后重试。'
+    // 结果一律 toast；不在抽屉里留常驻错误条。
+    notifyError(error, '加载工序明细失败，请稍后重试。')
   } finally {
     detailPending.value = false
   }
@@ -402,9 +403,9 @@ function formatError(error: unknown) {
           <NvDialogContent class="sm:max-w-3xl">
             <NvDialogHeader>
               <NvDialogTitle>发布工艺路线新版本</NvDialogTitle>
-              <NvDialogDescription>
-                按顺序编排工序，每道工序指派一个工作中心。一经发布即不可变，修改请填新工序 +
-                新修订号再发布。带 * 为必填项。
+              <!-- 说明不上界面：仅供读屏播报。 -->
+              <NvDialogDescription class="sr-only">
+                按顺序编排工序并指派工作中心，发布为不可变版本。
               </NvDialogDescription>
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
@@ -449,7 +450,6 @@ function formatError(error: unknown) {
                       }}</NvSelectItem>
                     </NvSelectContent>
                   </NvSelect>
-                  <NvFieldDescription>来自基础数据物料。</NvFieldDescription>
                 </NvField>
                 <NvField :data-invalid="showErrors && !revisionValid">
                   <NvFieldLabel for="rt-rev"
@@ -551,7 +551,6 @@ function formatError(error: unknown) {
                       min="0"
                       step="any"
                     />
-                    <NvFieldDescription>选工序后自动带出，可改。</NvFieldDescription>
                   </NvField>
                   <div class="flex gap-1">
                     <NvButton
@@ -699,13 +698,6 @@ function formatError(error: unknown) {
             <Spinner aria-hidden="true" />
             加载工序明细…
           </div>
-          <p
-            v-else-if="detailError"
-            class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-            role="alert"
-          >
-            {{ detailError }}
-          </p>
           <div v-else-if="viewOperations.length" class="overflow-hidden rounded-md border">
             <table class="w-full text-sm">
               <thead class="bg-muted/40 text-muted-foreground">

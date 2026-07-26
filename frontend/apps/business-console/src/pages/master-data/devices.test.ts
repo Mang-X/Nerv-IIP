@@ -28,39 +28,71 @@ const actionStub = vi.hoisted(() => ({
     warrantyExpiresOn: '2027-01-14',
     supplierPartnerCode: 'SUP-ACME',
     parentDeviceId: 'EQ-PARENT',
-    components: [{ componentCode: 'MOTOR', componentName: '伺服电机', quantity: 1, critical: true }],
+    components: [
+      { componentCode: 'MOTOR', componentName: '伺服电机', quantity: 1, critical: true },
+    ],
     criticality: 'high',
     maintainable: true,
   }),
 }))
 
 function stubResource(resourceType: string) {
-  const rows = resourceType === 'device-asset'
-    ? [{
-        resourceType: 'device-asset',
-        code: 'EQ-01',
-        displayName: '焊接机器人',
-        active: true,
-        siteCode: 'PLANT-A',
-        workshopCode: 'WS-A',
-        lineCode: 'LINE-A',
-        workCenterCode: 'WC-A',
-        stationCode: 'ST-01',
-        purchaseDate: '2025-01-15',
-        purchaseCost: 125000,
-        purchaseCurrencyCode: 'CNY',
-        warrantyExpiresOn: '2027-01-14',
-        supplierPartnerCode: 'SUP-ACME',
-        parentDeviceId: 'EQ-PARENT',
-        snapshotVersion: '1',
-      }]
-    : resourceType === 'site'
-      ? [{ resourceType: 'site', code: 'PLANT-A', displayName: '宁波工厂', active: true, snapshotVersion: '1' }]
-    : resourceType === 'production-line'
-      ? [{ resourceType: 'production-line', code: 'LINE-A', displayName: '前桥线', active: true, siteCode: 'PLANT-A', workshopCode: 'WS-A', snapshotVersion: '1' }]
-      : resourceType === 'work-center'
-        ? [{ resourceType: 'work-center', code: 'WC-A', displayName: '焊接中心', active: true, lineCode: 'LINE-A', snapshotVersion: '1' }]
-        : []
+  const rows =
+    resourceType === 'device-asset'
+      ? [
+          {
+            resourceType: 'device-asset',
+            code: 'EQ-01',
+            displayName: '焊接机器人',
+            active: true,
+            siteCode: 'PLANT-A',
+            workshopCode: 'WS-A',
+            lineCode: 'LINE-A',
+            workCenterCode: 'WC-A',
+            stationCode: 'ST-01',
+            purchaseDate: '2025-01-15',
+            purchaseCost: 125000,
+            purchaseCurrencyCode: 'CNY',
+            warrantyExpiresOn: '2027-01-14',
+            supplierPartnerCode: 'SUP-ACME',
+            parentDeviceId: 'EQ-PARENT',
+            snapshotVersion: '1',
+          },
+        ]
+      : resourceType === 'site'
+        ? [
+            {
+              resourceType: 'site',
+              code: 'PLANT-A',
+              displayName: '宁波工厂',
+              active: true,
+              snapshotVersion: '1',
+            },
+          ]
+        : resourceType === 'production-line'
+          ? [
+              {
+                resourceType: 'production-line',
+                code: 'LINE-A',
+                displayName: '前桥线',
+                active: true,
+                siteCode: 'PLANT-A',
+                workshopCode: 'WS-A',
+                snapshotVersion: '1',
+              },
+            ]
+          : resourceType === 'work-center'
+            ? [
+                {
+                  resourceType: 'work-center',
+                  code: 'WC-A',
+                  displayName: '焊接中心',
+                  active: true,
+                  lineCode: 'LINE-A',
+                  snapshotVersion: '1',
+                },
+              ]
+            : []
   return {
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 10 }),
     items: computed(() => rows),
@@ -88,7 +120,15 @@ function stubActions() {
 }
 
 function stubWorkshops() {
-  const rows = [{ resourceType: 'workshop', code: 'WS-A', displayName: '总装车间', active: true, siteCode: 'PLANT-A' }]
+  const rows = [
+    {
+      resourceType: 'workshop',
+      code: 'WS-A',
+      displayName: '总装车间',
+      active: true,
+      siteCode: 'PLANT-A',
+    },
+  ]
   return {
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 10 }),
     workshops: computed(() => rows),
@@ -120,7 +160,10 @@ const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
   // RowActions 内的下拉项已迁到 Pro（NvDropdownMenuItem 是真 .vue 包装，stub 按 Pro 名）。
-  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuItem: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
 }
 // 对话框就地渲染（不 teleport），便于断言/填写表单内容。
 const dialogStubs = {
@@ -137,7 +180,10 @@ const dialogStubs = {
   // 行操作里 RowActions 的下拉内容已迁到 Pro（NvDropdownMenuContent 含 reka portal/Teleport，
   // jsdom 卸载会崩）就地渲染，避免渲染崩溃。
   NvDropdownMenuContent: { template: '<div><slot /></div>' },
-  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuItem: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
   // 行操作里的 AlertDialog 已迁到 Pro（NvAlertDialogContent 含 reka portal/Teleport，jsdom 卸载会崩）就地渲染。
   NvAlertDialog: { template: '<div><slot /></div>' },
   NvAlertDialogTrigger: { template: '<div><slot /></div>' },
@@ -147,14 +193,18 @@ const dialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvAlertDialogAction: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
 }
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue 完成"填表→提交"。
 const selectStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
@@ -165,20 +215,31 @@ const selectStubs = {
 
 // 打开「新建设备」并把默认空的必填项填成合法值（型号/厂商/SN/资产类为文本，产线/工作中心为 Select）。
 async function openAndFillValid(wrapper: ReturnType<typeof mount>) {
-  await wrapper.findAll('button').find((b) => b.text().includes('新建设备'))!.trigger('click')
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text().includes('新建设备'))!
+    .trigger('click')
   await flushPromises()
   // 新建态不再有编码输入框（编码由系统自动生成）。
   await wrapper.find('#dev-model').setValue('KR-210')
   await wrapper.find('#dev-maker').setValue('KUKA')
   await wrapper.find('#dev-serial').setValue('SN-9001')
   await wrapper.find('#dev-class').setValue('ROBOT')
-  const siteSelect = wrapper.findAll('select').find((s) => s.findAll('option').some((o) => o.text().includes('宁波工厂')))
+  const siteSelect = wrapper
+    .findAll('select')
+    .find((s) => s.findAll('option').some((o) => o.text().includes('宁波工厂')))
   await siteSelect!.setValue('PLANT-A')
-  const workshopSelect = wrapper.findAll('select').find((s) => s.findAll('option').some((o) => o.text().includes('总装车间')))
+  const workshopSelect = wrapper
+    .findAll('select')
+    .find((s) => s.findAll('option').some((o) => o.text().includes('总装车间')))
   await workshopSelect!.setValue('WS-A')
-  const lineSelect = wrapper.findAll('select').find((s) => s.findAll('option').some((o) => o.text().includes('前桥线')))
+  const lineSelect = wrapper
+    .findAll('select')
+    .find((s) => s.findAll('option').some((o) => o.text().includes('前桥线')))
   await lineSelect!.setValue('LINE-A')
-  const wcSelect = wrapper.findAll('select').find((s) => s.findAll('option').some((o) => o.text().includes('焊接中心')))
+  const wcSelect = wrapper
+    .findAll('select')
+    .find((s) => s.findAll('option').some((o) => o.text().includes('焊接中心')))
   await wcSelect!.setValue('WC-A')
   await wrapper.find('#dev-station').setValue('ST-01')
   await wrapper.find('#dev-purchase-date').setValue('2025-01-15')
@@ -205,7 +266,9 @@ describe('master-data devices page', () => {
     const wrapper = mount(DevicesPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
-    const triggers = wrapper.findAll('button').filter((b) => b.attributes('aria-label')?.includes('操作'))
+    const triggers = wrapper
+      .findAll('button')
+      .filter((b) => b.attributes('aria-label')?.includes('操作'))
     expect(triggers.length).toBeGreaterThan(0)
   })
 
@@ -221,11 +284,12 @@ describe('master-data devices page', () => {
 
     // 详情被拉取用于全字段回填。
     expect(actionStub.fetchDetail).toHaveBeenCalledWith('EQ-01')
-    // 对话框进入编辑态：标题含「编辑设备」，编码只读。
+    // 对话框进入编辑态：标题含「编辑设备」，编码走只读上下文区（非 disabled 输入框）。
     const body = document.body.textContent ?? ''
     expect(body).toContain('编辑设备')
-    const codeInput = document.getElementById('dev-code') as HTMLInputElement | null
-    expect(codeInput?.disabled).toBe(true)
+    expect(document.getElementById('dev-code')).toBeNull()
+    const carried = document.body.querySelector('[data-slot="carried-context"]')
+    expect(carried?.textContent).toContain('EQ-01')
   })
 
   it('blocks create on empty required fields with a summary alert and no create call', async () => {
@@ -251,7 +315,9 @@ describe('master-data devices page', () => {
     stub.create.mockClear()
     stub.toastSuccess.mockClear()
     stub.toastError.mockClear()
-    const wrapper = mount(DevicesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(DevicesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
     await flushPromises()
     await openAndFillValid(wrapper)
 
@@ -273,7 +339,7 @@ describe('master-data devices page', () => {
       warrantyExpiresOn?: string
       supplierPartnerCode?: string
       parentDeviceId?: string
-      components?: Array<{ componentCode?: string, componentName?: string, quantity?: number }>
+      components?: Array<{ componentCode?: string; componentName?: string; quantity?: number }>
     }
     expect(body.code).toBeUndefined()
     expect(body.model).toBe('KR-210')
@@ -288,7 +354,9 @@ describe('master-data devices page', () => {
     expect(body.warrantyExpiresOn).toBe('2027-01-14')
     expect(body.supplierPartnerCode).toBe('SUP-ACME')
     expect(body.parentDeviceId).toBe('EQ-PARENT')
-    expect(body.components).toEqual([{ componentCode: 'MOTOR', componentName: '伺服电机', quantity: 1, critical: false }])
+    expect(body.components).toEqual([
+      { componentCode: 'MOTOR', componentName: '伺服电机', quantity: 1, critical: false },
+    ])
     expect(stub.toastSuccess).toHaveBeenCalled()
     expect(stub.toastError).not.toHaveBeenCalled()
   })
@@ -297,7 +365,9 @@ describe('master-data devices page', () => {
     stub.create.mockClear()
     stub.toastSuccess.mockClear()
     stub.toastError.mockClear()
-    const wrapper = mount(DevicesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(DevicesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
     await flushPromises()
     await openAndFillValid(wrapper)
     await wrapper.find('#dev-currency').setValue('usd')
@@ -315,10 +385,17 @@ describe('master-data devices page', () => {
     expect(stub.create).toHaveBeenCalledTimes(1)
     const body = stub.create.mock.calls[0]![0] as {
       purchaseCurrencyCode?: string
-      components?: Array<{ componentCode?: string, componentName?: string, quantity?: number, critical?: boolean }>
+      components?: Array<{
+        componentCode?: string
+        componentName?: string
+        quantity?: number
+        critical?: boolean
+      }>
     }
     expect(body.purchaseCurrencyCode).toBe('USD')
-    expect(body.components).toEqual([{ componentCode: 'MOTOR', componentName: '伺服电机', quantity: 1.5, critical: false }])
+    expect(body.components).toEqual([
+      { componentCode: 'MOTOR', componentName: '伺服电机', quantity: 1.5, critical: false },
+    ])
     expect(stub.toastError).not.toHaveBeenCalled()
   })
 
@@ -327,7 +404,9 @@ describe('master-data devices page', () => {
     stub.toastSuccess.mockClear()
     stub.toastError.mockClear()
     stub.create.mockRejectedValueOnce(new Error('downstream-invalid-response'))
-    const wrapper = mount(DevicesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(DevicesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
     await flushPromises()
     await openAndFillValid(wrapper)
 

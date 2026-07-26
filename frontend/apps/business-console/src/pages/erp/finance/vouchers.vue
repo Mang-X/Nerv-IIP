@@ -15,7 +15,6 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvField,
-  NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -24,11 +23,11 @@ import {
   Spinner,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { formatAmount, formatDate, formatError } from '../shared'
+import { notifyError, notifySuccess } from '@/utils/notify'
+import { formatAmount, formatDate } from '../shared'
 
 definePage({
   meta: {
@@ -107,30 +106,37 @@ const form = reactive({
   amount: '0',
   memo: '',
 })
-const formError = shallowRef('')
+// 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
+const showErrors = shallowRef(false)
+const invalid = computed(() => ({
+  postingDate: !form.postingDate,
+  debitAccount: !form.debitAccount.trim(),
+  creditAccount: !form.creditAccount.trim(),
+  memo: !form.memo.trim(),
+  amount: !(Number(form.amount) > 0),
+}))
+const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
+
+/** 本地当天，作为过账日期默认值（凭证绝大多数当天过账）。 */
+function todayInputValue() {
+  const now = new Date()
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
+}
 
 function openDialog() {
-  form.postingDate = ''
+  form.postingDate = todayInputValue()
   form.debitAccount = ''
   form.creditAccount = ''
   form.amount = '0'
   form.memo = ''
-  formError.value = ''
+  showErrors.value = false
   open.value = true
 }
 
 async function submit() {
+  showErrors.value = true
+  if (!canSubmit.value) return
   const amount = Number(form.amount)
-  if (
-    !form.postingDate ||
-    !form.debitAccount.trim() ||
-    !form.creditAccount.trim() ||
-    !form.memo.trim() ||
-    !(amount > 0)
-  ) {
-    formError.value = '请填写过账日期、借贷科目、摘要和正数金额。'
-    return
-  }
   try {
     await vouchers.postVoucher({
       postingDate: form.postingDate,
@@ -150,9 +156,9 @@ async function submit() {
       ],
     })
     open.value = false
-    toast.success('会计凭证已过账')
-  } catch {
-    formError.value = formatError(vouchers.postVoucherError.value) || '过账失败，请稍后重试。'
+    notifySuccess('会计凭证已过账')
+  } catch (error) {
+    notifyError(vouchers.postVoucherError.value ?? error, '过账凭证失败，请稍后重试。')
   }
 }
 </script>
@@ -219,39 +225,78 @@ async function submit() {
       <NvDialogContent>
         <NvDialogHeader
           ><NvDialogTitle>过账会计凭证</NvDialogTitle
-          ><NvDialogDescription
-            >登记一借一贷分录，后端校验借贷平衡。</NvDialogDescription
+          ><NvDialogDescription class="sr-only"
+            >登记一借一贷分录。</NvDialogDescription
           ></NvDialogHeader
         >
         <form class="grid gap-4" @submit.prevent="submit">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField
-              ><NvFieldLabel for="erp-jv-date">过账日期</NvFieldLabel
-              ><NvInput id="erp-jv-date" v-model="form.postingDate" type="date"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-jv-amount">金额（元）</NvFieldLabel
-              ><NvInput id="erp-jv-amount" v-model="form.amount" type="number" min="0" step="0.01"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-jv-debit">借方科目</NvFieldLabel
-              ><NvInput id="erp-jv-debit" v-model="form.debitAccount"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-jv-credit">贷方科目</NvFieldLabel
-              ><NvInput id="erp-jv-credit" v-model="form.creditAccount"
-            /></NvField>
-            <NvField class="sm:col-span-2"
-              ><NvFieldLabel for="erp-jv-memo">摘要</NvFieldLabel
-              ><NvInput id="erp-jv-memo" v-model="form.memo"
-            /></NvField>
+            <NvField>
+              <NvFieldLabel for="erp-jv-date">
+                过账日期 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-jv-date"
+                v-model="form.postingDate"
+                type="date"
+                :data-invalid="showErrors && invalid.postingDate ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-jv-amount">
+                金额（元） <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-jv-amount"
+                v-model="form.amount"
+                type="number"
+                min="0"
+                step="0.01"
+                :data-invalid="showErrors && invalid.amount ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-jv-debit">
+                借方科目 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-jv-debit"
+                v-model="form.debitAccount"
+                :data-invalid="showErrors && invalid.debitAccount ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-jv-credit">
+                贷方科目 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-jv-credit"
+                v-model="form.creditAccount"
+                :data-invalid="showErrors && invalid.creditAccount ? '' : undefined"
+              />
+            </NvField>
+            <NvField class="sm:col-span-2">
+              <NvFieldLabel for="erp-jv-memo">
+                摘要 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-jv-memo"
+                v-model="form.memo"
+                :data-invalid="showErrors && invalid.memo ? '' : undefined"
+              />
+            </NvField>
           </NvFieldGroup>
-          <NvFieldError v-if="formError" :errors="[formError]" />
+          <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+            请填写过账日期、借贷科目、摘要，并给出正数金额。
+          </p>
           <NvDialogFooter
             ><NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             ><NvButton type="submit" :disabled="vouchers.postVoucherPending.value"
-              ><Spinner v-if="vouchers.postVoucherPending.value" />过账</NvButton
+              ><Spinner
+                v-if="vouchers.postVoucherPending.value"
+                aria-hidden="true"
+              />过账凭证</NvButton
             ></NvDialogFooter
           >
         </form>

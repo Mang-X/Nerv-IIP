@@ -480,9 +480,24 @@ describe('MES workflow copy', () => {
     const wrapper = mountMesPage(ReceiptsPage)
 
     expect(wrapper.text()).toContain('从工单详情发起')
-    expect(wrapper.find('#receipt-work-order').attributes('readonly')).toBeDefined()
-    expect(wrapper.find('#receipt-sku').attributes('readonly')).toBeDefined()
+    // 工单/成品不再是（只读）输入位——只读输入框看起来仍像可填的位置。
+    expect(wrapper.find('#receipt-work-order').exists()).toBe(false)
+    expect(wrapper.find('#receipt-sku').exists()).toBe(false)
     expectNoForbiddenVisibleTerms(wrapper.text())
+  })
+
+  it('renders the receipt work order and sku as a read-only carried-context block', () => {
+    routeState.query = {
+      quantity: '10',
+      skuId: 'FG-001',
+      workOrderId: 'WO-001',
+    }
+    const wrapper = mountMesPage(ReceiptsPage)
+
+    const carried = wrapper.find('[data-slot="carried-context"]')
+    expect(carried.exists()).toBe(true)
+    expect(carried.text()).toContain('WO-001')
+    expect(carried.text()).toContain('FG-001')
   })
 
   it('submits finished-goods receipt context with unit cost', async () => {

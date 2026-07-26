@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { useMesQualityHold } from '@/composables/useBusinessMes'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
@@ -77,6 +78,14 @@ watch(timelineError, (err) => {
 })
 
 const scopeLabel = computed(() => (props.scope === 'operation-task' ? '工序级保留' : '工单级保留'))
+
+// 强制释放弹窗的只读上下文：全部由本面板（所选保留）带出，不让用户再选一遍。
+const releaseContextItems = computed(() => [
+  { label: '保留对象', value: props.sourceDocumentId },
+  { label: '保留范围', value: scopeLabel.value },
+  { label: '工序', value: props.operationTaskId },
+  { label: '施加原因', value: props.holdReason },
+])
 
 // 释放方式（ReleaseSource）→ 一线可读：manual-force-release=人工强制释放，其余（检验联动）=复检自动放行。
 const releaseSourceLabel = computed(() =>
@@ -253,10 +262,13 @@ async function confirmRelease() {
       <NvAlertDialogContent>
         <NvAlertDialogHeader>
           <NvAlertDialogTitle>人工强制释放质量保留</NvAlertDialogTitle>
+          <!-- 破坏性动作：保留一句后果陈述，去掉「记入时间线 / 进入审计」这类后端行为描述。 -->
           <NvAlertDialogDescription>
-            强制释放会解除该对象的质量保留、允许继续放行或开工，并记入保留时间线。请填写释放理由，随请求提交并进入审计。
+            释放后 {{ sourceDocumentId }} 可继续放行或开工，此操作不可撤销。
           </NvAlertDialogDescription>
         </NvAlertDialogHeader>
+        <!-- 保留对象由所在面板带出：只读呈现，操作员只补一条释放理由。 -->
+        <CarriedContextSummary label="保留对象" :items="releaseContextItems" />
         <NvField>
           <NvFieldLabel for="force-release-reason">
             释放理由 <span class="text-destructive">*</span>
@@ -265,7 +277,7 @@ async function confirmRelease() {
             id="force-release-reason"
             v-model="releaseReason"
             :maxlength="500"
-            placeholder="说明为何强制释放该质量保留"
+            placeholder="如：复检合格，已确认可放行"
             :data-invalid="releaseShowErrors && !releaseReason.trim() ? '' : undefined"
           />
           <p

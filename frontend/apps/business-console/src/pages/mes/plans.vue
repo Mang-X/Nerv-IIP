@@ -4,6 +4,7 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort, StatusTone } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesProductionPlans } from '@/composables/useBusinessMes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
@@ -133,6 +134,23 @@ const selectedPlanBlocked = computed(
 const canConvert = computed(
   () => Boolean(selectedPlan.value?.productionPlanId) && !selectedPlanBlocked.value,
 )
+// 「下达工单」弹窗的只读上下文：全部来自所选计划行，计划员只补工作中心与交期。
+const convertContextItems = computed(() => {
+  const plan = selectedPlan.value
+  if (!plan) return []
+  return [
+    { label: '计划号', value: plan.productionPlanId },
+    { label: '来源计划', value: formatPlanSource(plan.sourceSystem) },
+    { label: '物料', value: plan.skuId ? resolveSkuLabel(plan.skuId) : undefined },
+    {
+      label: '计划数量',
+      value: plan.uomCode
+        ? `${formatQuantity(plan.plannedQuantity)} ${plan.uomCode}`
+        : formatQuantity(plan.plannedQuantity),
+    },
+    { label: '计划开始', value: formatDateTime(plan.plannedStartUtc) },
+  ]
+})
 const errorMessage = computed(() => formatError(productionPlansError.value))
 const hasActiveFilters = computed(
   () =>
@@ -397,13 +415,14 @@ function formatError(error: unknown) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>下达工单</NvDialogTitle>
-          <NvDialogDescription>
-            把计划 {{ selectedPlan?.productionPlanId ?? '' }}（来源：{{
-              formatPlanSource(selectedPlan?.sourceSystem)
-            }}）下达为工单。下达后进入「工单与派工」安排生产。工作中心与交期可留空，按工艺路线默认。
+          <!-- 计划上下文已在下方只读区完整呈现；此处仅供读屏播报。 -->
+          <NvDialogDescription class="sr-only">
+            下达对象：计划 {{ selectedPlan?.productionPlanId ?? '' }}。
           </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitConvertPlan">
+          <!-- 计划号 / 来源 / 物料 / 数量 / 计划开始全部由所选行带出，只读呈现，不让计划员再填一遍。 -->
+          <CarriedContextSummary label="下达对象" :items="convertContextItems" />
           <div
             v-if="selectedBlockingReasons.length"
             class="grid gap-1 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
@@ -440,7 +459,7 @@ function formatError(error: unknown) {
             <NvButton type="submit" :disabled="convertPlanToWorkOrderPending || !canConvert">
               <Spinner v-if="convertPlanToWorkOrderPending" aria-hidden="true" />
               <ArrowRightIcon v-else aria-hidden="true" />
-              确认下达工单
+              下达工单
             </NvButton>
           </NvDialogFooter>
         </form>

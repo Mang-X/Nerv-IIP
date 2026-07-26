@@ -14,24 +14,28 @@ const barcode = vi.hoisted(() => ({
   recordScan: vi.fn(),
   printBatchSourceDocumentType: 'production.report',
   route: { query: {} as Record<string, unknown> },
-  ruleFilters: undefined as undefined | { keyword?: string, skip: number, take: number },
-  templateFilters: undefined as undefined | { skip: number, take: number },
-  printBatchFilters: undefined as undefined | {
-    sourceDocumentType?: string
-    sourceDocumentId?: string
-    status?: string
-    selectedPrintBatchId?: string
-    skip: number
-    take: number
-  },
-  scanFilters: undefined as undefined | {
-    deviceCode?: string
-    scannedValue?: string
-    sourceWorkflow?: string
-    sourceDocumentId?: string
-    skip: number
-    take: number
-  },
+  ruleFilters: undefined as undefined | { keyword?: string; skip: number; take: number },
+  templateFilters: undefined as undefined | { skip: number; take: number },
+  printBatchFilters: undefined as
+    | undefined
+    | {
+        sourceDocumentType?: string
+        sourceDocumentId?: string
+        status?: string
+        selectedPrintBatchId?: string
+        skip: number
+        take: number
+      },
+  scanFilters: undefined as
+    | undefined
+    | {
+        deviceCode?: string
+        scannedValue?: string
+        sourceWorkflow?: string
+        sourceDocumentId?: string
+        skip: number
+        take: number
+      },
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -39,7 +43,10 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }))
 
-const routerLinkStub = vi.hoisted(() => ({ props: ['to'], template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>' }))
+const routerLinkStub = vi.hoisted(() => ({
+  props: ['to'],
+  template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
+}))
 
 vi.mock('vue-router', () => ({
   RouterLink: routerLinkStub,
@@ -48,7 +55,14 @@ vi.mock('vue-router', () => ({
 
 vi.mock('@/composables/useBusinessBarcode', () => ({
   useBarcodeRules: () => {
-    const filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100, keyword: '', status: undefined })
+    const filters = reactive({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      skip: 0,
+      take: 100,
+      keyword: '',
+      status: undefined,
+    })
     barcode.ruleFilters = filters
     return {
       filters,
@@ -75,7 +89,13 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
     }
   },
   useBarcodeTemplates: () => {
-    const filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100, status: undefined })
+    const filters = reactive({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      skip: 0,
+      take: 100,
+      status: undefined,
+    })
     barcode.templateFilters = filters
     return {
       filters,
@@ -208,7 +228,8 @@ const selectStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select v-bind="$attrs" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select v-bind="$attrs" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<slot />' },
   NvSelectValue: { template: '<span />' },
@@ -238,7 +259,15 @@ describe('barcode pages', () => {
 
   it('renders rule maintenance with source usage, explicit SKU gap, and route-seeded keyword', async () => {
     barcode.route.query = { ruleCode: 'GS1-CASE' }
-    const wrapper = mount(RulesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, RouterLink: { props: ['to'], template: '<a><slot /></a>' } } } })
+    const wrapper = mount(RulesPage, {
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          RouterLink: { props: ['to'], template: '<a><slot /></a>' },
+        },
+      },
+    })
     await flushPromises()
 
     expect(wrapper.text()).toContain('条码规则')
@@ -252,10 +281,22 @@ describe('barcode pages', () => {
   })
 
   it('blocks GS1 rule submission without company prefix length', async () => {
-    const wrapper = mount(RulesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: { props: ['to'], template: '<a><slot /></a>' } } } })
+    const wrapper = mount(RulesPage, {
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...selectStubs,
+          RouterLink: { props: ['to'], template: '<a><slot /></a>' },
+        },
+      },
+    })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建规则'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建规则'))!
+      .trigger('click')
     await flushPromises()
     await setInput(wrapper, '#barcode-rule-code', 'GS1-PALLET')
     await setInput(wrapper, '#barcode-rule-prefix', '0691234')
@@ -272,10 +313,22 @@ describe('barcode pages', () => {
   })
 
   it('submits a valid GS1 rule with source document usage', async () => {
-    const wrapper = mount(RulesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: { props: ['to'], template: '<a><slot /></a>' } } } })
+    const wrapper = mount(RulesPage, {
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...selectStubs,
+          RouterLink: { props: ['to'], template: '<a><slot /></a>' },
+        },
+      },
+    })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建规则'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建规则'))!
+      .trigger('click')
     await flushPromises()
     await setInput(wrapper, '#barcode-rule-code', 'GS1-PALLET')
     await setInput(wrapper, '#barcode-rule-prefix', '0691234')
@@ -289,39 +342,60 @@ describe('barcode pages', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(barcode.saveRule).toHaveBeenCalledWith(expect.objectContaining({
-      ruleCode: 'GS1-PALLET',
-      barcodeType: 'gs1-128',
-      gs1CompanyPrefixLength: 7,
-      allowedSourceDocumentTypes: ['inventory.receipt'],
-      status: 'active',
-    }))
+    expect(barcode.saveRule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ruleCode: 'GS1-PALLET',
+        barcodeType: 'gs1-128',
+        gs1CompanyPrefixLength: 7,
+        allowedSourceDocumentTypes: ['inventory.receipt'],
+        status: 'active',
+      }),
+    )
   })
 
   it('prefills an existing barcode rule for update', async () => {
-    const wrapper = mount(RulesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: { props: ['to'], template: '<a><slot /></a>' } } } })
+    const wrapper = mount(RulesPage, {
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...selectStubs,
+          RouterLink: { props: ['to'], template: '<a><slot /></a>' },
+        },
+      },
+    })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('编辑'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('编辑'))!
+      .trigger('click')
     await flushPromises()
 
-    expect((wrapper.find('#barcode-rule-code').element as HTMLInputElement).value).toBe('GS1-CASE')
-    expect(wrapper.find('#barcode-rule-code').attributes('readonly')).toBeDefined()
+    // 规则编码由所选行带出，只读展示（不再是 readonly 输入框）。
+    const carried = wrapper.find('[data-slot="carried-context"]')
+    expect(carried.exists()).toBe(true)
+    expect(carried.text()).toContain('GS1-CASE')
+    expect(wrapper.find('#barcode-rule-code').exists()).toBe(false)
     expect((wrapper.find('#barcode-rule-prefix').element as HTMLInputElement).value).toBe('0691234')
 
     await setInput(wrapper, '#barcode-rule-prefix', '0699999')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(barcode.saveRule).toHaveBeenCalledWith(expect.objectContaining({
-      ruleCode: 'GS1-CASE',
-      prefix: '0699999',
-      gs1CompanyPrefixLength: 7,
-    }))
+    expect(barcode.saveRule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ruleCode: 'GS1-CASE',
+        prefix: '0699999',
+        gs1CompanyPrefixLength: 7,
+      }),
+    )
   })
 
   it('renders and saves a label template with field schema text', async () => {
-    const wrapper = mount(TemplatesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(TemplatesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
     await flushPromises()
 
     expect(wrapper.text()).toContain('标签模板')
@@ -329,7 +403,10 @@ describe('barcode pages', () => {
     expect(wrapper.text()).toContain('skuCode')
     expect(wrapper.text()).toContain('适用对象')
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建模板'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建模板'))!
+      .trigger('click')
     await flushPromises()
     await setInput(wrapper, '#barcode-template-code', 'PALLET_LABEL')
     await setInput(wrapper, '#barcode-template-name', '托盘标签')
@@ -340,35 +417,49 @@ describe('barcode pages', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(barcode.saveTemplate).toHaveBeenCalledWith(expect.objectContaining({
-      templateCode: 'PALLET_LABEL',
-      templateName: '托盘标签',
-      templateFileId: 'file-pallet',
-      variableSchemaJson: '{"fields":["sscc","lotNo"]}',
-      status: 'active',
-    }))
+    expect(barcode.saveTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        templateCode: 'PALLET_LABEL',
+        templateName: '托盘标签',
+        templateFileId: 'file-pallet',
+        variableSchemaJson: '{"fields":["sscc","lotNo"]}',
+        status: 'active',
+      }),
+    )
   })
 
   it('prefills an existing label template for update', async () => {
-    const wrapper = mount(TemplatesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(TemplatesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('编辑'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('编辑'))!
+      .trigger('click')
     await flushPromises()
 
-    expect((wrapper.find('#barcode-template-code').element as HTMLInputElement).value).toBe('SKU_BOX')
-    expect(wrapper.find('#barcode-template-code').attributes('readonly')).toBeDefined()
-    expect((wrapper.find('#barcode-template-file').element as HTMLInputElement).value).toBe('file-label-box')
+    // 模板编码由所选行带出，只读展示（不再是 readonly 输入框）。
+    const carried = wrapper.find('[data-slot="carried-context"]')
+    expect(carried.exists()).toBe(true)
+    expect(carried.text()).toContain('SKU_BOX')
+    expect(wrapper.find('#barcode-template-code').exists()).toBe(false)
+    expect((wrapper.find('#barcode-template-file').element as HTMLInputElement).value).toBe(
+      'file-label-box',
+    )
 
     await setInput(wrapper, '#barcode-template-name', '外箱标签 V2')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(barcode.saveTemplate).toHaveBeenCalledWith(expect.objectContaining({
-      templateCode: 'SKU_BOX',
-      templateName: '外箱标签 V2',
-      templateFileId: 'file-label-box',
-    }))
+    expect(barcode.saveTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        templateCode: 'SKU_BOX',
+        templateName: '外箱标签 V2',
+        templateFileId: 'file-label-box',
+      }),
+    )
   })
 
   it('renders print batch list, selected details, and source filters from route context', async () => {
@@ -377,7 +468,11 @@ describe('barcode pages', () => {
       sourceDocumentId: 'WO-001',
       printBatchId: 'pb-1',
     }
-    const wrapper = mount(PrintBatchesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub } } })
+    const wrapper = mount(PrintBatchesPage, {
+      global: {
+        stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub },
+      },
+    })
     await flushPromises()
 
     expect(wrapper.text()).toContain('打印批次')
@@ -391,32 +486,54 @@ describe('barcode pages', () => {
   })
 
   it('maps print batch source objects to scan workflow filters when drilling into scans', async () => {
-    const wrapper = mount(PrintBatchesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub } } })
+    const wrapper = mount(PrintBatchesPage, {
+      global: {
+        stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub },
+      },
+    })
     await flushPromises()
 
-    const scanLink = wrapper.findAll('[data-router-link]').find((link) => link.text().includes('扫码记录'))
+    const scanLink = wrapper
+      .findAll('[data-router-link]')
+      .find((link) => link.text().includes('扫码记录'))
 
     expect(scanLink?.attributes('data-to')).toContain('"path":"/barcode/scans"')
     expect(scanLink?.attributes('data-to')).toContain('"sourceWorkflow":"production.report"')
     expect(scanLink?.attributes('data-to')).toContain('"sourceDocumentId":"WO-001"')
   })
 
-  it.each(['inventory.receipt', 'inventory.issue'])('keeps %s print batches filtered when drilling into scan records', async (sourceDocumentType) => {
-    barcode.printBatchSourceDocumentType = sourceDocumentType
-    const wrapper = mount(PrintBatchesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub } } })
-    await flushPromises()
+  it.each(['inventory.receipt', 'inventory.issue'])(
+    'keeps %s print batches filtered when drilling into scan records',
+    async (sourceDocumentType) => {
+      barcode.printBatchSourceDocumentType = sourceDocumentType
+      const wrapper = mount(PrintBatchesPage, {
+        global: {
+          stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub },
+        },
+      })
+      await flushPromises()
 
-    const scanLink = wrapper.findAll('[data-router-link]').find((link) => link.text().includes('扫码记录'))
+      const scanLink = wrapper
+        .findAll('[data-router-link]')
+        .find((link) => link.text().includes('扫码记录'))
 
-    expect(scanLink?.attributes('data-to')).toContain(`"sourceWorkflow":"${sourceDocumentType}"`)
-    expect(scanLink?.attributes('data-to')).toContain('"sourceDocumentId":"WO-001"')
-  })
+      expect(scanLink?.attributes('data-to')).toContain(`"sourceWorkflow":"${sourceDocumentType}"`)
+      expect(scanLink?.attributes('data-to')).toContain('"sourceDocumentId":"WO-001"')
+    },
+  )
 
   it('creates a print batch with template, source object, and quantity', async () => {
-    const wrapper = mount(PrintBatchesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub } } })
+    const wrapper = mount(PrintBatchesPage, {
+      global: {
+        stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub },
+      },
+    })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建打印批次'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建打印批次'))!
+      .trigger('click')
     await flushPromises()
     await setInput(wrapper, '#barcode-print-template', 'tpl-2')
     await setInput(wrapper, '#barcode-print-source-type', 'inventory.count')
@@ -427,22 +544,33 @@ describe('barcode pages', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(barcode.createPrintBatch).toHaveBeenCalledWith(expect.objectContaining({
-      organizationId: 'org-001',
-      environmentId: 'env-dev',
-      labelTemplateId: 'tpl-2',
-      sourceDocumentType: 'inventory.count',
-      sourceDocumentId: 'COUNT-001',
-      requestedQuantity: 3,
-    }))
+    expect(barcode.createPrintBatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        labelTemplateId: 'tpl-2',
+        sourceDocumentType: 'inventory.count',
+        sourceDocumentId: 'COUNT-001',
+        requestedQuantity: 3,
+      }),
+    )
   })
 
   it('reuses the print batch idempotency key while retrying the same dialog submission', async () => {
-    barcode.createPrintBatch.mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(undefined)
-    const wrapper = mount(PrintBatchesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub } } })
+    barcode.createPrintBatch
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce(undefined)
+    const wrapper = mount(PrintBatchesPage, {
+      global: {
+        stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub },
+      },
+    })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建打印批次'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建打印批次'))!
+      .trigger('click')
     await flushPromises()
     await setInput(wrapper, '#barcode-print-template', 'tpl-2')
     await setInput(wrapper, '#barcode-print-source-type', 'inventory.count')
@@ -466,7 +594,9 @@ describe('barcode pages', () => {
       sourceWorkflow: 'inventory.count',
       sourceDocumentId: 'COUNT-001',
     }
-    const wrapper = mount(ScansPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(ScansPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
     await flushPromises()
 
     expect(wrapper.text()).toContain('扫码记录')
@@ -481,10 +611,15 @@ describe('barcode pages', () => {
   })
 
   it('records a manual scan audit attempt without pretending to be PDA scanning', async () => {
-    const wrapper = mount(ScansPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(ScansPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('补录扫码审计'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('补录扫码审计'))!
+      .trigger('click')
     await flushPromises()
     await setInput(wrapper, '#barcode-scan-device', 'PC-01')
     await setInput(wrapper, '#barcode-scan-value', '(01)06912345678901(10)L2407')
@@ -497,13 +632,15 @@ describe('barcode pages', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(barcode.recordScan).toHaveBeenCalledWith(expect.objectContaining({
-      deviceCode: 'PC-01',
-      scannedValue: '(01)06912345678901(10)L2407',
-      sourceWorkflow: 'wms.receiving',
-      sourceDocumentId: 'IB-001',
-      result: 'rejected',
-      rejectionReason: 'unsupported-workflow',
-    }))
+    expect(barcode.recordScan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deviceCode: 'PC-01',
+        scannedValue: '(01)06912345678901(10)L2407',
+        sourceWorkflow: 'wms.receiving',
+        sourceDocumentId: 'IB-001',
+        result: 'rejected',
+        rejectionReason: 'unsupported-workflow',
+      }),
+    )
   })
 })

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsOutboundOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { useWmsOutboundOrders } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvCheckbox,
@@ -30,7 +32,6 @@ import {
   NvSelectValue,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
@@ -172,9 +173,9 @@ async function submitCreate() {
       lines,
     })
     createOpen.value = false
-    toast.success('出库单已创建')
-  } catch {
-    // 失败信息由页面错误区呈现。
+    notifySuccess('出库单已创建')
+  } catch (error) {
+    notifyError(error, '创建出库单失败，请稍后重试。')
   }
 }
 
@@ -203,11 +204,22 @@ async function submitReview() {
   try {
     await completeOutbound(id, { packReviewNo: form.packReviewNo.trim(), passed: form.passed })
     reviewOpen.value = false
-    toast.success('出库复核已提交')
-  } catch {
-    // 失败信息由页面错误区呈现。
+    notifySuccess('出库复核已提交')
+  } catch (error) {
+    notifyError(error, '提交出库复核失败，请稍后重试。')
   }
 }
+
+// 复核对象由所选行带出，全部只读展示，不做成可编辑/只读输入框。
+const reviewContextItems = computed(() => [
+  { label: '出库单号', value: pendingOrder.value?.outboundOrderNo },
+  {
+    label: '创建时间',
+    value: pendingOrder.value?.createdAtUtc
+      ? formatDateTime(pendingOrder.value.createdAtUtc)
+      : undefined,
+  },
+])
 const openCount = computed(
   () => outboundOrders.value.filter((r) => (r.status ?? '').toLowerCase() !== 'completed').length,
 )
@@ -335,11 +347,13 @@ function formatError(error: unknown) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>出库复核</NvDialogTitle>
-          <NvDialogDescription>
-            对出库单 {{ pendingOrder?.outboundOrderNo ?? '' }} 进行发货前复核。
+          <!-- 复核对象已在下方只读区完整呈现；此处仅供读屏播报。 -->
+          <NvDialogDescription class="sr-only">
+            出库单 {{ pendingOrder?.outboundOrderNo ?? '' }} 的发货前复核。
           </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitReview">
+          <CarriedContextSummary label="复核对象" :items="reviewContextItems" />
           <NvFieldGroup>
             <NvField>
               <NvFieldLabel for="wms-pack-review-no">复核单号</NvFieldLabel>
@@ -373,9 +387,8 @@ function formatError(error: unknown) {
       <NvDialogContent class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl">
         <NvDialogHeader>
           <NvDialogTitle>新建出库单</NvDialogTitle>
-          <NvDialogDescription
-            >登记出库发货单的来源与明细，提交后进入拣货/复核流程。</NvDialogDescription
-          >
+          <!-- 界面上不再写说明书；仅供读屏播报对象范围。 -->
+          <NvDialogDescription class="sr-only">出库发货单的单头与发货明细。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">

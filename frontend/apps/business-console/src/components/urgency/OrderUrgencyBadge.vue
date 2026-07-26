@@ -227,8 +227,8 @@ function hasTimeReason(code: string) {
     <NvSheetContent side="right" class="w-full overflow-y-auto sm:max-w-xl">
       <NvSheetHeader>
         <NvSheetTitle>{{ orderReference }} · 紧急度解释</NvSheetTitle>
-        <NvSheetDescription>
-          三类贡献项独立呈现；最终等级取最高风险，不合并为不可解释分数。
+        <NvSheetDescription class="sr-only">
+          单据 {{ orderReference }} 的紧急度构成与结论。
         </NvSheetDescription>
       </NvSheetHeader>
 
@@ -239,10 +239,6 @@ function hasTimeReason(code: string) {
             <NvStatusBadge :label="presentation.label" :tone="presentation.tone" />
           </div>
           <dl class="mt-3 grid gap-2 text-sm text-muted-foreground">
-            <div class="flex justify-between gap-4">
-              <dt>模型版本</dt>
-              <dd class="font-mono text-foreground">{{ urgency.modelVersion }}</dd>
-            </div>
             <div class="flex justify-between gap-4">
               <dt>计算时间</dt>
               <dd class="text-foreground">{{ formatDateTime(urgency.calculatedAtUtc) }}</dd>

@@ -26,11 +26,11 @@ import {
   NvPageHeader,
   NvRowActions,
   Spinner,
-  toast,
 } from '@nerv-iip/ui'
 import { PackageSearchIcon, PlusIcon, RefreshCwIcon, WrenchIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { RouterLink } from 'vue-router'
+import { notifyError, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -49,7 +49,6 @@ const {
   refreshSpareParts,
   createSparePart,
   createSparePartPending,
-  createSparePartError,
 } = useMaintenanceSpareParts()
 const { page, pageSize } = usePagedList(filters)
 
@@ -63,9 +62,8 @@ const createForm = reactive({
 const createError = shallowRef('')
 
 const listErrorMessage = computed(() => formatError(sparePartsError.value))
-const createErrorMessage = computed(
-  () => createError.value || formatError(createSparePartError.value),
-)
+// 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
+const createErrorMessage = computed(() => createError.value)
 
 type SparePartRow = BusinessConsoleMaintenanceSparePartItem
 const columns: NvDataTableColumn<SparePartRow>[] = [
@@ -125,9 +123,9 @@ async function submitCreate() {
   try {
     await createSparePart(body)
     createOpen.value = false
-    toast.success('备件需求已创建')
-  } catch {
-    // 失败信息由对话框错误区呈现。
+    notifySuccess('备件需求已创建')
+  } catch (error) {
+    notifyError(error, '备件需求创建失败，请稍后重试。')
   }
 }
 
@@ -225,9 +223,7 @@ function formatError(error: unknown) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建备件需求</NvDialogTitle>
-          <NvDialogDescription
-            >备件需求关联维修工单；库存可用量以库存管理页面为准。</NvDialogDescription
-          >
+          <NvDialogDescription class="sr-only">为维修工单登记备件需求。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">

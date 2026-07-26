@@ -2,6 +2,8 @@
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpPurchaseReceipts } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -14,7 +16,6 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvField,
-  NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -23,11 +24,10 @@ import {
   Spinner,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
+import { PackageCheckIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { formatError, formatQuantity } from '../shared'
+import { formatQuantity } from '../shared'
 
 definePage({
   meta: {
@@ -82,45 +82,56 @@ const receiptCells = computed<NvMetricStripCell[]>(() => [
   },
 ])
 
+// 「带出式录入」：收货对象只能由所选采购行带入，弹窗自身不提供采购单/行号的挑选或补填入口。
 const open = shallowRef(false)
-const form = reactive({
-  purchaseOrderNo: '',
-  lineNo: '',
-  receivedQuantity: '1',
-  purchaseReceiptNo: '',
-})
-const formError = shallowRef('')
+const receiptRow = shallowRef<(typeof rows.value)[number] | null>(null)
+const form = reactive({ receivedQuantity: '1', purchaseReceiptNo: '' })
+// 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
+const showErrors = shallowRef(false)
+const invalid = computed(() => ({
+  receivedQuantity: !(Number(form.receivedQuantity) > 0),
+}))
+const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 
-function openDialog(row?: (typeof rows.value)[number]) {
-  form.purchaseOrderNo = row?.purchaseOrderNo === '-' ? '' : (row?.purchaseOrderNo ?? '')
-  form.lineNo = row?.lineNo === '-' ? '' : (row?.lineNo ?? '')
-  form.receivedQuantity = String(row?.openQuantity && row.openQuantity > 0 ? row.openQuantity : 1)
+const receiptContextItems = computed(() => {
+  const row = receiptRow.value
+  if (!row) return []
+  return [
+    { label: '采购单', value: row.purchaseOrderNo },
+    { label: '采购行', value: row.lineNo },
+    { label: '供应商', value: row.supplierCode },
+    { label: '物料', value: row.skuCode },
+    { label: '订单数量', value: formatQuantity(row.orderedQuantity) },
+    { label: '已收数量', value: formatQuantity(row.receivedQuantity) },
+    { label: '待收数量', value: formatQuantity(row.openQuantity) },
+  ]
+})
+
+function openDialog(row: (typeof rows.value)[number]) {
+  if (row.purchaseOrderNo === '-' || row.lineNo === '-') return
+  receiptRow.value = row
+  // 默认按待收数量整单收货，一线只在部分到货时改小。
+  form.receivedQuantity = String(row.openQuantity > 0 ? row.openQuantity : 1)
   form.purchaseReceiptNo = ''
-  formError.value = ''
+  showErrors.value = false
   open.value = true
 }
 
 async function submit() {
-  const receivedQuantity = Number(form.receivedQuantity)
-  if (!form.purchaseOrderNo.trim() || !form.lineNo.trim()) {
-    formError.value = '请填写采购单和行号。'
-    return
-  }
-  if (!(receivedQuantity > 0)) {
-    formError.value = '收货数量需为正数。'
-    return
-  }
+  const row = receiptRow.value
+  if (!row) return
+  showErrors.value = true
+  if (!canSubmit.value) return
   try {
     await receipts.recordPurchaseReceipt({
-      purchaseOrderNo: form.purchaseOrderNo.trim(),
+      purchaseOrderNo: row.purchaseOrderNo,
       purchaseReceiptNo: form.purchaseReceiptNo.trim() || undefined,
-      lines: [{ purchaseOrderLineNo: form.lineNo.trim(), receivedQuantity }],
+      lines: [{ purchaseOrderLineNo: row.lineNo, receivedQuantity: Number(form.receivedQuantity) }],
     })
     open.value = false
-    toast.success('采购收货已记录')
-  } catch {
-    formError.value =
-      formatError(receipts.recordPurchaseReceiptError.value) || '收货失败，请稍后重试。'
+    notifySuccess(`${row.purchaseOrderNo} 第 ${row.lineNo} 行已收货`)
+  } catch (error) {
+    notifyError(receipts.recordPurchaseReceiptError.value ?? error, '确认收货失败，请稍后重试。')
   }
 }
 </script>
@@ -142,10 +153,6 @@ async function submit() {
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </NvButton>
-        <NvButton size="sm" type="button" @click="openDialog()">
-          <PlusIcon aria-hidden="true" />
-          登记收货
         </NvButton>
       </template>
     </NvPageHeader>
@@ -202,46 +209,49 @@ async function submit() {
       </template>
     </NvDataTable>
 
+    <!-- 「带出式录入」：采购单 / 行号 / 物料 / 数量全部由所选行带出，只读呈现，不做输入位。 -->
     <NvDialog v-model:open="open">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>登记采购收货</NvDialogTitle>
-          <NvDialogDescription
-            >按采购订单行记录真实收货，后端负责暂估和后续库存/WMS 联动。</NvDialogDescription
-          >
+          <NvDialogDescription class="sr-only">
+            收货对象：采购单 {{ receiptRow?.purchaseOrderNo ?? '' }} 第
+            {{ receiptRow?.lineNo ?? '' }} 行。
+          </NvDialogDescription>
         </NvDialogHeader>
-        <form class="grid gap-4" @submit.prevent="submit">
+        <form v-if="receiptRow" class="grid gap-4" @submit.prevent="submit">
+          <CarriedContextSummary label="收货对象" :items="receiptContextItems" />
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField
-              ><NvFieldLabel for="erp-receipt-po">采购单</NvFieldLabel
-              ><NvInput id="erp-receipt-po" v-model="form.purchaseOrderNo" autocomplete="off"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-receipt-line">采购行</NvFieldLabel
-              ><NvInput id="erp-receipt-line" v-model="form.lineNo" autocomplete="off"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-receipt-qty">收货数量</NvFieldLabel
-              ><NvInput
+            <NvField>
+              <NvFieldLabel for="erp-receipt-qty">
+                收货数量 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
                 id="erp-receipt-qty"
                 v-model="form.receivedQuantity"
                 type="number"
                 min="1"
                 step="1"
-            /></NvField>
+                autofocus
+                :data-invalid="showErrors && invalid.receivedQuantity ? '' : undefined"
+              />
+            </NvField>
             <NvField
-              ><NvFieldLabel for="erp-receipt-no">收货单号（可选）</NvFieldLabel
+              ><NvFieldLabel for="erp-receipt-no">送货单号（可选）</NvFieldLabel
               ><NvInput id="erp-receipt-no" v-model="form.purchaseReceiptNo" autocomplete="off"
             /></NvField>
           </NvFieldGroup>
-          <NvFieldError v-if="formError" :errors="[formError]" />
+          <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+            收货数量需为正数。
+          </p>
           <NvDialogFooter>
             <NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             >
             <NvButton type="submit" :disabled="receipts.recordPurchaseReceiptPending.value">
               <Spinner v-if="receipts.recordPurchaseReceiptPending.value" aria-hidden="true" />
-              提交收货
+              <PackageCheckIcon v-else aria-hidden="true" />
+              确认收货
             </NvButton>
           </NvDialogFooter>
         </form>

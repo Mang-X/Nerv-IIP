@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsWcsTaskItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { useWmsWcsTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -27,7 +29,6 @@ import {
   NvRowActions,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, RefreshCwIcon, SendIcon, XCircleIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
@@ -122,9 +123,9 @@ async function submitDispatch() {
       payloadJson: dispatchForm.payloadJson,
     })
     openAction.value = ''
-    toast.success('WCS 任务已派发')
-  } catch {
-    // 失败信息由页面错误区呈现。
+    notifySuccess('WCS 任务已派发')
+  } catch (error) {
+    notifyError(error, '派发 WCS 任务失败，请稍后重试。')
   }
 }
 
@@ -141,9 +142,9 @@ async function submitFail() {
       failureMessage: failForm.failureMessage.trim(),
     })
     openAction.value = ''
-    toast.success('已标记为失败')
-  } catch {
-    // 失败信息由页面错误区呈现。
+    notifySuccess('已标记为失败')
+  } catch (error) {
+    notifyError(error, '标记失败未成功，请稍后重试。')
   }
 }
 
@@ -157,11 +158,24 @@ async function submitComplete() {
   try {
     await completeWcs(id, { completionPayloadJson: completeForm.completionPayloadJson })
     openAction.value = ''
-    toast.success('WCS 任务已完成')
-  } catch {
-    // 失败信息由页面错误区呈现。
+    notifySuccess('WCS 任务已完成')
+  } catch (error) {
+    notifyError(error, '标记完成失败，请稍后重试。')
   }
 }
+
+// 任务身份由所选行带出，只读展示；行上没有的值才留输入框（重新派发时可能需要改写适配器）。
+const taskContextItems = computed(() => {
+  const task = pendingTask.value
+  if (!task) return []
+  return [
+    { label: '外部任务号', value: task.externalTaskId },
+    { label: '适配器', value: task.adapterType },
+    { label: '仓库任务', value: task.warehouseTaskId },
+  ]
+})
+const hasCarriedAdapter = computed(() => Boolean(pendingTask.value?.adapterType))
+const hasCarriedExternalTaskId = computed(() => Boolean(pendingTask.value?.externalTaskId))
 const failedCount = computed(
   () =>
     wcsTasks.value.filter((t) => !!t.failedAtUtc || (t.status ?? '').toLowerCase() === 'failed')
@@ -358,15 +372,19 @@ function formatError(error: unknown) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>重新派发 WCS 任务</NvDialogTitle>
-          <NvDialogDescription>将仓库任务派发到设备控制系统（WCS）适配器。</NvDialogDescription>
+          <!-- 任务身份已在下方只读区呈现；此处仅供读屏播报。 -->
+          <NvDialogDescription class="sr-only">
+            外部任务 {{ pendingTask?.externalTaskId ?? '' }} 的重新派发。
+          </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitDispatch">
+          <CarriedContextSummary label="派发对象" :items="taskContextItems" />
           <NvFieldGroup>
-            <NvField>
+            <NvField v-if="!hasCarriedAdapter">
               <NvFieldLabel for="wcs-adapter">适配器</NvFieldLabel>
               <NvInput id="wcs-adapter" v-model="dispatchForm.adapterType" autocomplete="off" />
             </NvField>
-            <NvField>
+            <NvField v-if="!hasCarriedExternalTaskId">
               <NvFieldLabel for="wcs-external">外部任务号</NvFieldLabel>
               <NvInput id="wcs-external" v-model="dispatchForm.externalTaskId" autocomplete="off" />
             </NvField>
@@ -385,7 +403,7 @@ function formatError(error: unknown) {
             <NvDialogClose as-child>
               <NvButton type="button" variant="outline">取消</NvButton>
             </NvDialogClose>
-            <NvButton type="submit" :disabled="actionPending">派发</NvButton>
+            <NvButton type="submit" :disabled="actionPending">重新派发</NvButton>
           </NvDialogFooter>
         </form>
       </NvDialogContent>
@@ -402,13 +420,13 @@ function formatError(error: unknown) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>标记 WCS 任务失败</NvDialogTitle>
-          <NvDialogDescription
-            >记录
-            {{ pendingTask?.externalTaskId ?? '' }}
-            的失败代码与说明，便于后续重试。</NvDialogDescription
-          >
+          <!-- 任务身份已在下方只读区呈现；此处仅供读屏播报。 -->
+          <NvDialogDescription class="sr-only">
+            外部任务 {{ pendingTask?.externalTaskId ?? '' }} 的失败登记。
+          </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitFail">
+          <CarriedContextSummary label="失败任务" :items="taskContextItems" />
           <NvFieldGroup>
             <NvField>
               <NvFieldLabel for="wcs-failure-code">失败代码</NvFieldLabel>
@@ -447,11 +465,13 @@ function formatError(error: unknown) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>标记 WCS 任务完成</NvDialogTitle>
-          <NvDialogDescription
-            >提交 {{ pendingTask?.externalTaskId ?? '' }} 的完成回执。</NvDialogDescription
-          >
+          <!-- 任务身份已在下方只读区呈现；此处仅供读屏播报。 -->
+          <NvDialogDescription class="sr-only">
+            外部任务 {{ pendingTask?.externalTaskId ?? '' }} 的完成回执。
+          </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitComplete">
+          <CarriedContextSummary label="完成任务" :items="taskContextItems" />
           <NvFieldGroup>
             <NvField>
               <NvFieldLabel for="wcs-completion">完成回执（JSON）</NvFieldLabel>
@@ -468,7 +488,7 @@ function formatError(error: unknown) {
             <NvDialogClose as-child>
               <NvButton type="button" variant="outline">取消</NvButton>
             </NvDialogClose>
-            <NvButton type="submit" :disabled="actionPending">完成</NvButton>
+            <NvButton type="submit" :disabled="actionPending">标记完成</NvButton>
           </NvDialogFooter>
         </form>
       </NvDialogContent>

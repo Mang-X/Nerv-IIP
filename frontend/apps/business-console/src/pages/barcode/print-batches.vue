@@ -282,8 +282,9 @@ function formatError(error: unknown) {
           <NvDialogContent class="sm:max-w-2xl">
             <NvDialogHeader>
               <NvDialogTitle>新建打印批次</NvDialogTitle>
-              <NvDialogDescription
-                >提交标签模板和业务对象，生成可追溯的打印批次；本页不做打印机驱动或版面渲染。</NvDialogDescription
+              <!-- 说明不上界面：仅供读屏播报。 -->
+              <NvDialogDescription class="sr-only"
+                >按标签模板与业务对象提交打印批次。</NvDialogDescription
               >
             </NvDialogHeader>
             <form class="grid gap-4" @submit.prevent="submitCreate">

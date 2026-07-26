@@ -15,7 +15,6 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvField,
-  NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -29,11 +28,11 @@ import {
   Spinner,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { formatAmount, formatError, formatQuantity } from '../shared'
+import { notifyError, notifySuccess } from '@/utils/notify'
+import { formatAmount, formatQuantity } from '../shared'
 
 definePage({
   meta: {
@@ -118,7 +117,18 @@ const form = reactive({
   unitPrice: '0',
   promisedDate: '',
 })
-const formError = shallowRef('')
+// 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
+const showErrors = shallowRef(false)
+const invalid = computed(() => ({
+  supplierCode: !form.supplierCode.trim(),
+  siteCode: !form.siteCode.trim(),
+  skuCode: !form.skuCode.trim(),
+  uomCode: !form.uomCode.trim(),
+  promisedDate: !form.promisedDate,
+  quantity: !(Number(form.quantity) > 0),
+  unitPrice: !(Number(form.unitPrice) >= 0),
+}))
+const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 
 function openDialog() {
   form.supplierCode = ''
@@ -128,27 +138,15 @@ function openDialog() {
   form.quantity = '1'
   form.unitPrice = '0'
   form.promisedDate = ''
-  formError.value = ''
+  showErrors.value = false
   open.value = true
 }
 
 async function submit() {
+  showErrors.value = true
+  if (!canSubmit.value) return
   const quantity = Number(form.quantity)
   const unitPrice = Number(form.unitPrice)
-  if (
-    !form.supplierCode.trim() ||
-    !form.siteCode.trim() ||
-    !form.skuCode.trim() ||
-    !form.uomCode.trim() ||
-    !form.promisedDate
-  ) {
-    formError.value = '请填写供应商、工厂、物料、单位和承诺日期。'
-    return
-  }
-  if (!(quantity > 0) || !(unitPrice >= 0)) {
-    formError.value = '数量需为正数、单价不可为负。'
-    return
-  }
   try {
     await orders.createPurchaseOrder({
       supplierCode: form.supplierCode.trim(),
@@ -165,9 +163,9 @@ async function submit() {
       ],
     })
     open.value = false
-    toast.success('采购订单已创建')
-  } catch {
-    formError.value = formatError(orders.createPurchaseOrderError.value) || '创建失败，请稍后重试。'
+    notifySuccess('采购订单已创建')
+  } catch (error) {
+    notifyError(orders.createPurchaseOrderError.value ?? error, '创建采购单失败，请稍后重试。')
   }
 }
 </script>
@@ -258,52 +256,102 @@ async function submit() {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建采购订单</NvDialogTitle>
-          <NvDialogDescription>创建真实采购订单，后续可在收货页登记采购收货。</NvDialogDescription>
+          <NvDialogDescription class="sr-only">向供应商下达单项物料采购。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submit">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField
-              ><NvFieldLabel for="erp-po-supplier">供应商</NvFieldLabel
-              ><NvInput id="erp-po-supplier" v-model="form.supplierCode" autocomplete="off"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-po-site">工厂</NvFieldLabel
-              ><NvInput id="erp-po-site" v-model="form.siteCode" autocomplete="off"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-po-sku">物料</NvFieldLabel
-              ><NvInput id="erp-po-sku" v-model="form.skuCode" autocomplete="off"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-po-uom">单位</NvFieldLabel
-              ><NvInput id="erp-po-uom" v-model="form.uomCode" autocomplete="off"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-po-qty">数量</NvFieldLabel
-              ><NvInput id="erp-po-qty" v-model="form.quantity" type="number" min="1" step="1"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-po-price">单价（元）</NvFieldLabel
-              ><NvInput
+            <NvField>
+              <NvFieldLabel for="erp-po-supplier">
+                供应商 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-po-supplier"
+                v-model="form.supplierCode"
+                autocomplete="off"
+                :data-invalid="showErrors && invalid.supplierCode ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-po-site">
+                工厂 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-po-site"
+                v-model="form.siteCode"
+                autocomplete="off"
+                :data-invalid="showErrors && invalid.siteCode ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-po-sku">
+                物料 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-po-sku"
+                v-model="form.skuCode"
+                autocomplete="off"
+                :data-invalid="showErrors && invalid.skuCode ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-po-uom">
+                单位 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-po-uom"
+                v-model="form.uomCode"
+                autocomplete="off"
+                :data-invalid="showErrors && invalid.uomCode ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-po-qty">
+                数量 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-po-qty"
+                v-model="form.quantity"
+                type="number"
+                min="1"
+                step="1"
+                :data-invalid="showErrors && invalid.quantity ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-po-price">
+                单价（元） <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
                 id="erp-po-price"
                 v-model="form.unitPrice"
                 type="number"
                 min="0"
                 step="0.01"
-            /></NvField>
-            <NvField
-              ><NvFieldLabel for="erp-po-date">承诺日期</NvFieldLabel
-              ><NvInput id="erp-po-date" v-model="form.promisedDate" type="date"
-            /></NvField>
+                :data-invalid="showErrors && invalid.unitPrice ? '' : undefined"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-po-date">
+                承诺日期 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvInput
+                id="erp-po-date"
+                v-model="form.promisedDate"
+                type="date"
+                :data-invalid="showErrors && invalid.promisedDate ? '' : undefined"
+              />
+            </NvField>
           </NvFieldGroup>
-          <NvFieldError v-if="formError" :errors="[formError]" />
+          <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+            请填写供应商、工厂、物料、单位、承诺日期，并给出正数数量与非负单价。
+          </p>
           <NvDialogFooter>
             <NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             >
             <NvButton type="submit" :disabled="orders.createPurchaseOrderPending.value">
               <Spinner v-if="orders.createPurchaseOrderPending.value" aria-hidden="true" />
-              创建
+              创建采购单
             </NvButton>
           </NvDialogFooter>
         </form>

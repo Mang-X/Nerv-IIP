@@ -4,8 +4,10 @@ import type {
   BusinessConsoleCreateStockCountTaskRequest,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { useInventoryCounts } from '@/composables/useBusinessInventory'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -21,6 +23,11 @@ import {
   NvInput,
   NvPageHeader,
   NvRowActions,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, ClipboardPlusIcon } from '@lucide/vue'
@@ -38,16 +45,26 @@ definePage({
 const route = useRoute()
 const {
   confirmAdjustment,
-  confirmAdjustmentError,
   confirmAdjustmentPending,
   createCountTask,
-  createCountTaskError,
   createCountTaskPending,
   filters,
 } = useInventoryCounts()
 
-const taskSuccess = shallowRef('')
-const adjustmentSuccess = shallowRef('')
+// 受控值：UI 说人话，下发仍是后端码值。
+const QUALITY_OPTIONS = [
+  { label: '可用', value: 'available' },
+  { label: '待检', value: 'inspection' },
+  { label: '冻结', value: 'blocked' },
+  { label: '不合格', value: 'rejected' },
+]
+const OWNER_OPTIONS = [
+  { label: '自有', value: 'owned' },
+  { label: '客户', value: 'customer' },
+  { label: '供应商', value: 'supplier' },
+  { label: '寄售', value: 'consignment' },
+]
+
 const taskSheetOpen = shallowRef(false)
 const adjustmentSheetOpen = shallowRef(false)
 let adjustmentKeySequence = 0
@@ -98,9 +115,19 @@ watch(
   { immediate: true },
 )
 
-const taskErrorMessage = computed(() => formatError(createCountTaskError.value))
-const adjustmentErrorMessage = computed(() => formatError(confirmAdjustmentError.value))
 const countTaskQueue = shallowRef<CountTaskQueueRow[]>([])
+const adjustmentTarget = shallowRef<CountTaskQueueRow>()
+// 差异确认对象由所选任务行带出，只读展示，不做成（只读）输入框。
+const adjustmentContextItems = computed(() => {
+  const row = adjustmentTarget.value
+  if (!row) return []
+  return [
+    { label: '盘点任务', value: row.countTaskCode || row.countTaskId },
+    { label: '物料', value: row.skuCode },
+    { label: '库位', value: [row.siteCode, row.locationCode].filter(Boolean).join(' / ') },
+    { label: '状态', value: row.status },
+  ]
+})
 const canCreateTask = computed(
   () =>
     isNonEmpty(filters.organizationId) &&
@@ -144,9 +171,14 @@ async function submitTask() {
     ownerType: optionalText(taskForm.ownerType),
     ownerId: optionalText(taskForm.ownerId),
   }
-  const response = await createCountTask(body)
+  let response
+  try {
+    response = await createCountTask(body)
+  } catch (error) {
+    notifyError(error, '创建盘点任务失败，请稍后重试。')
+    return
+  }
   const taskId = response?.data?.countTaskId
-  taskSuccess.value = `盘点任务 ${taskId ?? body.countTaskCode} 已提交。`
   countTaskQueue.value = [
     {
       countTaskId: taskId ?? body.countTaskCode ?? '待返回',
@@ -159,6 +191,7 @@ async function submitTask() {
     ...countTaskQueue.value,
   ]
   taskSheetOpen.value = false
+  notifySuccess(`盘点任务 ${taskId ?? body.countTaskCode} 已创建`)
 }
 
 async function submitAdjustment() {
@@ -167,20 +200,29 @@ async function submitAdjustment() {
     countedQuantity: toOptionalNumber(adjustmentForm.countedQuantity),
     idempotencyKey: adjustmentForm.idempotencyKey.trim(),
   }
-  const response = await confirmAdjustment(adjustmentForm.countTaskId.trim(), body)
+  let response
+  try {
+    response = await confirmAdjustment(adjustmentForm.countTaskId.trim(), body)
+  } catch (error) {
+    notifyError(error, '确认库存调整失败，请稍后重试。')
+    return
+  }
   const approvalPending = response?.data?.status === 'pending-approval'
-  adjustmentSuccess.value = approvalPending
-    ? `库存调整 ${response?.data?.approvalChainId ?? body.idempotencyKey} 已进入审批。`
-    : `库存调整 ${response?.data?.movementId ?? body.idempotencyKey} 已确认。`
   countTaskQueue.value = countTaskQueue.value.map((row) =>
     row.countTaskId === adjustmentForm.countTaskId
-      ? { ...row, countedQuantity: body.countedQuantity, status: approvalPending ? '待审批' : '已确认' }
+      ? {
+          ...row,
+          countedQuantity: body.countedQuantity,
+          status: approvalPending ? '待审批' : '已确认',
+        }
       : row,
   )
+  adjustmentSheetOpen.value = false
+  notifySuccess(approvalPending ? '库存调整已进入审批' : '库存调整已确认')
 }
 
 function openAdjustment(row: CountTaskQueueRow) {
-  adjustmentSuccess.value = ''
+  adjustmentTarget.value = row
   adjustmentForm.countTaskId = row.countTaskId
   adjustmentForm.countedQuantity = String(row.countedQuantity ?? 0)
   adjustmentForm.idempotencyKey = createAdjustmentIdempotencyKey(row.countTaskId)
@@ -201,9 +243,6 @@ function toOptionalNumber(value: string) {
 function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
-}
-function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0
@@ -252,13 +291,12 @@ function isNonEmpty(value: string) {
       <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <NvDialogHeader>
           <NvDialogTitle>创建盘点任务</NvDialogTitle>
-          <NvDialogDescription>指定物料、工厂、库位和批次后创建盘点任务。</NvDialogDescription>
+          <!-- 界面上不再写说明书；仅供读屏播报对象范围。 -->
+          <NvDialogDescription class="sr-only"
+            >按物料、工厂与库位创建盘点任务。</NvDialogDescription
+          >
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitTask">
-          <p v-if="taskErrorMessage" class="text-sm text-destructive" role="alert">
-            {{ taskErrorMessage }}
-          </p>
-          <p v-if="taskSuccess" class="text-sm text-success" role="status">{{ taskSuccess }}</p>
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="count-task-sku">SKU</NvFieldLabel>
@@ -277,12 +315,26 @@ function isNonEmpty(value: string) {
               <NvInput id="count-task-location" v-model="taskForm.locationCode" required />
             </NvField>
             <NvField>
-              <NvFieldLabel for="count-task-quality">质量状态</NvFieldLabel>
-              <NvInput id="count-task-quality" v-model="taskForm.qualityStatus" />
+              <NvFieldLabel>质量状态</NvFieldLabel>
+              <NvSelect v-model="taskForm.qualityStatus">
+                <NvSelectTrigger aria-label="质量状态"><NvSelectValue /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem v-for="o in QUALITY_OPTIONS" :key="o.value" :value="o.value">{{
+                    o.label
+                  }}</NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
             </NvField>
             <NvField>
-              <NvFieldLabel for="count-task-owner-type">货主类型</NvFieldLabel>
-              <NvInput id="count-task-owner-type" v-model="taskForm.ownerType" />
+              <NvFieldLabel>货主类型</NvFieldLabel>
+              <NvSelect v-model="taskForm.ownerType">
+                <NvSelectTrigger aria-label="货主类型"><NvSelectValue /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem v-for="o in OWNER_OPTIONS" :key="o.value" :value="o.value">{{
+                    o.label
+                  }}</NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
             </NvField>
             <NvField>
               <NvFieldLabel for="count-task-owner-id">货主</NvFieldLabel>
@@ -316,27 +368,15 @@ function isNonEmpty(value: string) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>确认盘点差异</NvDialogTitle>
-          <NvDialogDescription
-            >从已完成实盘的任务进入差异确认，重复提交保护由系统处理。</NvDialogDescription
-          >
+          <!-- 盘点对象已在下方只读区完整呈现；此处仅供读屏播报。 -->
+          <NvDialogDescription class="sr-only">
+            盘点任务
+            {{ adjustmentTarget?.countTaskCode || adjustmentForm.countTaskId }} 的差异确认。
+          </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid content-start gap-4" @submit.prevent="submitAdjustment">
-          <p v-if="adjustmentErrorMessage" class="text-sm text-destructive" role="alert">
-            {{ adjustmentErrorMessage }}
-          </p>
-          <p v-if="adjustmentSuccess" class="text-sm text-success" role="status">
-            {{ adjustmentSuccess }}
-          </p>
+          <CarriedContextSummary label="盘点对象" :items="adjustmentContextItems" />
           <NvFieldGroup class="grid gap-3">
-            <NvField>
-              <NvFieldLabel for="count-adjust-task-id">盘点任务</NvFieldLabel>
-              <NvInput
-                id="count-adjust-task-id"
-                v-model="adjustmentForm.countTaskId"
-                readonly
-                required
-              />
-            </NvField>
             <NvField>
               <NvFieldLabel for="count-adjust-quantity">实盘数量</NvFieldLabel>
               <NvInput

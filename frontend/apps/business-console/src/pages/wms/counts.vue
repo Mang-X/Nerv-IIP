@@ -4,10 +4,12 @@ import type {
   BusinessConsoleWmsCountExecutionItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { useWmsCountExecutions } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -20,6 +22,7 @@ import {
   NvDialogTitle,
   NvDropdownMenuItem,
   NvField,
+  NvFieldDescription,
   NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
@@ -31,7 +34,6 @@ import {
   Spinner,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
@@ -52,10 +54,8 @@ const {
   refreshCountExecutions,
   createCountExecution,
   createCountExecutionPending,
-  createCountExecutionError,
   completeCountExecution,
   completeCountExecutionPending,
-  completeCountExecutionError,
   filters,
 } = useWmsCountExecutions()
 const { page, pageSize } = usePagedList(filters, {
@@ -98,12 +98,9 @@ const completeForm = reactive({ countedQuantity: '' })
 const completeError = shallowRef('')
 
 const listErrorMessage = computed(() => formatError(countExecutionsError.value))
-const createErrorMessage = computed(
-  () => createError.value || formatError(createCountExecutionError.value),
-)
-const completeErrorMessage = computed(
-  () => completeError.value || formatError(completeCountExecutionError.value),
-)
+// 弹窗内只留字段级校验汇总；提交失败一律 toast，不留常驻错误条。
+const createErrorMessage = computed(() => createError.value)
+const completeErrorMessage = computed(() => completeError.value)
 
 type CountRow = BusinessConsoleWmsCountExecutionItem
 const columns: NvDataTableColumn<CountRow>[] = [
@@ -195,18 +192,35 @@ async function submitCreate() {
   try {
     await createCountExecution(body)
     createOpen.value = false
-    toast.success('盘点单已创建')
-  } catch {
-    // 失败信息由对话框错误区呈现。
+    notifySuccess('盘点单已创建')
+  } catch (error) {
+    notifyError(error, '创建盘点单失败，请稍后重试。')
   }
 }
 
 function openComplete(row: CountRow) {
   completeTarget.value = row
-  completeForm.countedQuantity = row.countedQuantity != null ? String(row.countedQuantity) : ''
+  // 缺省值：已录实盘 → 沿用；否则用账面数量打底，仓管只需改差异行。
+  const seed = row.countedQuantity ?? row.expectedQuantity
+  completeForm.countedQuantity = seed != null ? String(seed) : ''
   completeError.value = ''
   completeOpen.value = true
 }
+
+// 盘点对象由所选行带出，只读展示，不做成输入框。
+const completeContextItems = computed(() => {
+  const row = completeTarget.value
+  if (!row) return []
+  return [
+    { label: '盘点单号', value: row.countNo ?? countNo(row) },
+    { label: '库位', value: [row.siteCode, row.locationCode].filter(Boolean).join(' / ') },
+    { label: 'SKU', value: row.skuCode },
+    {
+      label: '账面数量',
+      value: row.expectedQuantity == null ? undefined : formatQuantity(row.expectedQuantity),
+    },
+  ]
+})
 async function submitComplete() {
   const target = completeTarget.value
   if (!target?.countExecutionId) return
@@ -222,9 +236,9 @@ async function submitComplete() {
   try {
     await completeCountExecution(target.countExecutionId, counted)
     completeOpen.value = false
-    toast.success(`盘点单 ${target.countNo ?? countNo(target)} 已完成`)
-  } catch {
-    // 失败信息由对话框错误区呈现。
+    notifySuccess(`盘点单 ${target.countNo ?? countNo(target)} 已完成`)
+  } catch (error) {
+    notifyError(error, '完成盘点失败，请稍后重试。')
   }
 }
 
@@ -360,9 +374,8 @@ function formatError(error: unknown) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建盘点单</NvDialogTitle>
-          <NvDialogDescription
-            >按库位与 SKU 登记盘点单，账面数量留空则由系统取值。</NvDialogDescription
-          >
+          <!-- 界面上不再写说明书；仅供读屏播报对象范围。 -->
+          <NvDialogDescription class="sr-only">按库位与 SKU 登记盘点单。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
@@ -409,8 +422,9 @@ function formatError(error: unknown) {
                 type="number"
                 min="0"
                 step="any"
-                placeholder="可选"
               />
+              <!-- 非显而易见的业务口径：留空的取值来源。 -->
+              <NvFieldDescription>留空则按库存台账取账面数量。</NvFieldDescription>
             </NvField>
           </NvFieldGroup>
 
@@ -433,15 +447,17 @@ function formatError(error: unknown) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>完成盘点</NvDialogTitle>
-          <NvDialogDescription>
+          <!-- 盘点对象已在下方只读区完整呈现；此处仅供读屏播报。 -->
+          <NvDialogDescription class="sr-only">
             {{
               completeTarget
-                ? `${completeTarget.countNo ?? countNo(completeTarget)} · 账面 ${formatQuantity(completeTarget.expectedQuantity)}`
-                : '录入实盘数量。'
+                ? `盘点单 ${completeTarget.countNo ?? countNo(completeTarget)} 的实盘录入。`
+                : '实盘数量录入。'
             }}
           </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitComplete">
+          <CarriedContextSummary label="盘点对象" :items="completeContextItems" />
           <NvFieldGroup class="grid gap-3">
             <NvField>
               <NvFieldLabel for="cnt-counted">实盘数量</NvFieldLabel>
