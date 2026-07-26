@@ -178,6 +178,12 @@ const columns: NvDataTableColumn<Row>[] = [
   },
   { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
   {
+    key: 'assignedUserName',
+    header: '受派工人',
+    width: 'w-32',
+    accessor: (r) => r.assignedUserName ?? (r.assignedUserId ? '未知工人' : '未派工'),
+  },
+  {
     key: 'plannedStartUtc',
     header: '计划开始',
     accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0),

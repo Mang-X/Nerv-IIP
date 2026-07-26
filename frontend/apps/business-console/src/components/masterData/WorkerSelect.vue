@@ -11,7 +11,7 @@ import {
 import { computed, watch } from 'vue'
 
 /**
- * 可复用「工人选择器」。选项来自工人目录（IAM 用户），显示姓名（工号 · 部门），
+ * 可复用「工人选择器」。选项来自员工主数据目录（MasterData 员工），显示姓名（工号 · 部门），
  * 绑定值为内部 userId——UI 只呈现人员姓名 / 工号，userId 不直接暴露给用户输入。
  * 关键词走服务端检索（useBusinessWorkers 的 keyword 过滤）。
  */
@@ -37,7 +37,7 @@ const options = computed(() =>
     .filter((worker) => Boolean(worker.userId))
     .map((worker) => {
       const employeeNo = worker.employeeNo ? worker.employeeNo : ''
-      const department = worker.department ? worker.department : ''
+      const department = worker.departmentName ? worker.departmentName : ''
       const suffixParts = [employeeNo, department].filter(Boolean)
       const suffix = suffixParts.length > 0 ? `（${suffixParts.join(' · ')}）` : ''
       return {
@@ -51,11 +51,14 @@ const options = computed(() =>
 // Most consumers must not retain a worker outside the active result set. Completion forms opt in
 // to preserving a planned/selected technician while server-side search or pagination changes.
 watch(options, (list) => {
-  if (!props.keepOutOfRange && model.value && !list.some((option) => option.value === model.value)) {
+  if (
+    !props.keepOutOfRange &&
+    model.value &&
+    !list.some((option) => option.value === model.value)
+  ) {
     model.value = ''
   }
 })
-
 </script>
 
 <template>

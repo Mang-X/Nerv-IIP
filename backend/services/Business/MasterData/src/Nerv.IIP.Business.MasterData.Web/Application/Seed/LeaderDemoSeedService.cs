@@ -4,13 +4,19 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Seed;
 
 public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
 {
+    /// <summary>派工按「工作中心 → 车间 → 班组」收敛，演示工作中心必须挂在车间下才有候选人。</summary>
+    private const string DemoWorkshopCode = "WS-DEMO";
+
     public async Task SeedAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default)
     {
         var site = await dbContext.Sites.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == "SITE-001", cancellationToken);
@@ -33,17 +39,69 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
             throw Collision("LINE-DEMO-01");
         }
 
+        var demoWorkshop = await dbContext.Workshops.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == DemoWorkshopCode, cancellationToken);
+        if (demoWorkshop is null)
+        {
+            dbContext.Workshops.Add(Workshop.Create(organizationId, environmentId, DemoWorkshopCode, "演示车间", "SITE-001", null, null));
+        }
+
         var workCenter = await dbContext.WorkCenters.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == "WC-CNC-DEMO", cancellationToken);
         if (workCenter is null)
         {
             dbContext.WorkCenters.Add(WorkCenter.CreateResource(
                 organizationId, environmentId, "WC-CNC-DEMO", "CNC 精加工中心", 480, "work-center",
-                "SITE-001", "LINE-DEMO-01", "STANDARD", "minute", true));
+                "SITE-001", "LINE-DEMO-01", DemoWorkshopCode, "STANDARD", "minute", true));
         }
         else if (workCenter.Name != "CNC 精加工中心" || workCenter.CapacityMinutesPerDay != 480 ||
                  workCenter.PlantCode != "SITE-001" || workCenter.LineCode != "LINE-DEMO-01" || workCenter.Disabled)
         {
             throw Collision("WC-CNC-DEMO");
+        }
+        else if (workCenter.WorkshopCode is null)
+        {
+            // 车间归属是本次新增的事实，旧环境补挂即可，不算冲突。
+            workCenter.UpdateResource(
+                workCenter.Name,
+                workCenter.CapacityMinutesPerDay,
+                workCenter.ResourceType,
+                workCenter.PlantCode ?? "SITE-001",
+                workCenter.LineCode ?? "LINE-DEMO-01",
+                DemoWorkshopCode,
+                workCenter.DefaultCalendarCode ?? "STANDARD",
+                workCenter.CapacityUnit,
+                workCenter.FiniteCapacity);
+        }
+
+        // 派工按「工作中心 → 车间 → 班组」收敛，所以演示班组挂在车间上；WC-CNC-DEMO 未挂车间时
+        // 该链路查不到人，这里一并把演示工作中心归到 WS-DEMO。
+        var cncTeam = await dbContext.Teams.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == "TEAM-CNC-DEMO", cancellationToken);
+        if (cncTeam is null)
+        {
+            dbContext.Teams.Add(Team.Create(organizationId, environmentId, "TEAM-CNC-DEMO", "CNC 精加工班组", "DEPT-PROD", "DAY", DemoWorkshopCode));
+        }
+        else if (cncTeam.WorkshopCode is null)
+        {
+            cncTeam.Update(cncTeam.Name, cncTeam.DepartmentCode, cncTeam.ShiftCode, DemoWorkshopCode);
+        }
+
+        foreach (var (userId, isLeader) in new[] { ("user-op-003", true), ("user-op-001", false) })
+        {
+            if (!await dbContext.TeamMembers.AnyAsync(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.TeamCode == "TEAM-CNC-DEMO" &&
+                    x.UserId == userId,
+                    cancellationToken))
+            {
+                dbContext.TeamMembers.Add(TeamMember.Assign(
+                    organizationId,
+                    environmentId,
+                    "TEAM-CNC-DEMO",
+                    userId,
+                    isLeader,
+                    new DateOnly(2026, 1, 1),
+                    null));
+            }
         }
 
         await SeedSkuAsync(organizationId, environmentId, "SKU-DEMO-001", "汽车减振器总成", "finished-goods", cancellationToken);

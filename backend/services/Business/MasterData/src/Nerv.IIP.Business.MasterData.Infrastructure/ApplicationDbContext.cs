@@ -19,6 +19,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkerAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -37,6 +38,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
+    public DbSet<Worker> Workers => Set<Worker>();
     public DbSet<PersonnelSkill> PersonnelSkills => Set<PersonnelSkill>();
     public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
     public DbSet<Skill> Skills => Set<Skill>();

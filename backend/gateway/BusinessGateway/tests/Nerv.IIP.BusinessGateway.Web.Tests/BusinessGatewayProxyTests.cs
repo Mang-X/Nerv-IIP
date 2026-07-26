@@ -393,7 +393,7 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Master_data_worker_directory_facade_uses_internal_service_token_for_iam_worker_lookup()
+    public async Task Master_data_worker_directory_facade_reads_master_data_workers_with_the_internal_service_token()
     {
         var handler = new RecordingHandler(request =>
             new HttpResponseMessage(HttpStatusCode.OK)
@@ -409,12 +409,24 @@ public sealed class BusinessGatewayProxyTests
                         {
                             new
                             {
-                                userId = "user-worker-001",
-                                displayName = "operator.wang",
-                                employeeNo = (string?)null,
-                                department = (string?)null,
-                                status = "active",
-                                email = "operator.wang@nerv-iip.local",
+                                userId = "user-op-001",
+                                employeeNo = "EMP-1001",
+                                name = "陈志强",
+                                departmentCode = "DEPT-PROD",
+                                departmentName = "生产部",
+                                jobTitle = "装配班组长",
+                                employmentStatus = "active",
+                                phone = (string?)null,
+                                active = true,
+                                teams = new[]
+                                {
+                                    new { teamCode = "TEAM-CNC", teamName = "CNC 精加工班组", isLeader = true, workCenterCode = "WC-CNC" },
+                                },
+                                skills = new[]
+                                {
+                                    new { skillCode = "cnc-operation", skillName = "CNC 操作", level = "senior" },
+                                },
+                                snapshotVersion = "1",
                             },
                         },
                     },
@@ -427,29 +439,34 @@ public sealed class BusinessGatewayProxyTests
         await using var factory = CreateFactory(auth, services =>
         {
             services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
-                new NamedPrimaryHandlerFilter("IBusinessIamDirectoryClient", handler));
+                new NamedPrimaryHandlerFilter("IBusinessMasterDataClient", handler));
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/master-data/workers?organizationId=org-001&environmentId=env-dev&keyword=operator&pageIndex=1&pageSize=10&includeDisabled=false");
+        var response = await client.GetAsync(
+            "/api/business-console/v1/master-data/workers?organizationId=org-001&environmentId=env-dev&keyword=%E9%99%88&workCenterCode=WC-CNC&pageIndex=1&pageSize=10&includeDisabled=false");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(BusinessGatewayPermissions.MasterDataResourcesRead, auth.LastRequirement!.PermissionCode);
         var request = Assert.Single(handler.Requests);
         Assert.Equal(HttpMethod.Get, request.Method);
-        Assert.Equal("/internal/iam/v1/workers?filterSearch=operator&pageIndex=1&pageSize=10&filterEnabled=true", request.RequestUri!.PathAndQuery);
+        // 派工候选靠 workCenterCode 收敛，过滤条件必须原样落到 MasterData 员工目录。
+        Assert.StartsWith("/api/business/v1/master-data/workers?", request.RequestUri!.PathAndQuery, StringComparison.Ordinal);
+        Assert.Contains("workCenterCode=WC-CNC", request.RequestUri.PathAndQuery, StringComparison.Ordinal);
+        Assert.Contains("organizationId=org-001", request.RequestUri.PathAndQuery, StringComparison.Ordinal);
         Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
         Assert.Equal("internal-test-token", request.Headers.Authorization.Parameter);
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var worker = document.RootElement.GetProperty("data").GetProperty("items")[0];
-        Assert.Equal("user-worker-001", worker.GetProperty("userId").GetString());
-        Assert.Equal("operator.wang", worker.GetProperty("displayName").GetString());
-        Assert.Equal(JsonValueKind.Null, worker.GetProperty("employeeNo").ValueKind);
-        Assert.Equal("active", worker.GetProperty("status").GetString());
+        Assert.Equal("user-op-001", worker.GetProperty("userId").GetString());
+        Assert.Equal("EMP-1001", worker.GetProperty("employeeNo").GetString());
+        Assert.Equal("生产部", worker.GetProperty("departmentName").GetString());
+        Assert.Equal("active", worker.GetProperty("employmentStatus").GetString());
+        Assert.Equal("CNC 精加工班组", worker.GetProperty("teams")[0].GetProperty("teamName").GetString());
     }
 
     [Fact]
@@ -3093,20 +3110,97 @@ public sealed class BusinessGatewayProxyTests
     public async Task Mes_dispatch_facade_forwards_the_authorized_principal_as_actor()
     {
         var mes = new RecordingMesClient();
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
-        {
-            services.RemoveAll<IBusinessMesClient>();
-            services.AddSingleton<IBusinessMesClient>(mes);
-        });
+        await using var factory = CreateDispatchAssignFactory(mes, out _);
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.PostAsJsonAsync(
             "/api/business-console/v1/mes/dispatch-tasks/OP-001/assign?organizationId=org-001&environmentId=env-dev",
-            new { assignedUserId = "operator-1", deviceAssetId = "DEV-1", shiftId = "SHIFT-1", idempotencyKey = "dispatch-1" });
+            new { assignedUserId = "user-op-001", deviceAssetId = "DEV-1", shiftId = "SHIFT-1", idempotencyKey = "dispatch-1" });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("user:user-admin", mes.LastAssignDispatchActor);
+    }
+
+    [Fact]
+    public async Task Mes_dispatch_facade_snapshots_the_worker_name_resolved_from_master_data()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateDispatchAssignFactory(mes, out var masterData);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/dispatch-tasks/OP-001/assign?organizationId=org-001&environmentId=env-dev",
+            new { assignedUserId = "user-op-001", assignedUserName = "冒充的名字", idempotencyKey = "dispatch-2" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("user-op-001", masterData.LastListWorkersRequest?.UserId);
+        // 名字快照由网关从主数据解析，不采信请求体里的值。
+        Assert.Equal("陈志强", mes.LastAssignDispatchRequest?.AssignedUserName);
+    }
+
+    [Fact]
+    public async Task Mes_dispatch_facade_rejects_an_unknown_worker()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateDispatchAssignFactory(mes, out _);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/dispatch-tasks/OP-001/assign?organizationId=org-001&environmentId=env-dev",
+            new { assignedUserId = "user-not-registered", idempotencyKey = "dispatch-3" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(mes.LastAssignDispatchRequest);
+    }
+
+    [Fact]
+    public async Task Mes_dispatch_facade_rejects_a_worker_who_is_not_on_duty()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateDispatchAssignFactory(mes, out var masterData);
+        masterData.WorkerDirectory =
+        [
+            new(
+                "user-op-005",
+                "EMP-1005",
+                "何俊",
+                "DEPT-PROD",
+                "生产部",
+                "焊接操作工",
+                "on-leave",
+                null,
+                true,
+                [],
+                [],
+                "2026-01-01T00:00:00.0000000Z"),
+        ];
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/dispatch-tasks/OP-001/assign?organizationId=org-001&environmentId=env-dev",
+            new { assignedUserId = "user-op-005", idempotencyKey = "dispatch-4" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(mes.LastAssignDispatchRequest);
+    }
+
+    private static WebApplicationFactory<Program> CreateDispatchAssignFactory(
+        RecordingMesClient mes,
+        out RecordingMasterDataClient masterData)
+    {
+        var recordingMasterData = new RecordingMasterDataClient();
+        masterData = recordingMasterData;
+        return CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(recordingMasterData);
+        });
     }
 
     [Fact]
@@ -8259,6 +8353,52 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         return CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/workshops", "workshop", request.Code, request.Name);
     }
 
+    public BusinessConsoleCreateWorkerRequest? LastCreateWorkerRequest { get; private set; }
+
+    public BusinessConsoleWorkerDirectoryRequest? LastListWorkersRequest { get; private set; }
+
+    public IReadOnlyList<BusinessConsoleWorkerDirectoryItem> WorkerDirectory { get; set; } =
+    [
+        new(
+            "user-op-001",
+            "EMP-1001",
+            "陈志强",
+            "DEPT-PROD",
+            "生产部",
+            "装配班组长",
+            "active",
+            null,
+            true,
+            [],
+            [],
+            "2026-01-01T00:00:00.0000000Z"),
+    ];
+
+    public Task<BusinessConsoleResourceItem> CreateWorkerAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateWorkerRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastCreateWorkerRequest = request;
+        return CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/workers", "worker", request.Code, request.Name);
+    }
+
+    public Task<BusinessConsoleWorkerDirectoryResponse> ListWorkersAsync(
+        string internalBearerToken,
+        BusinessConsoleWorkerDirectoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastListWorkersRequest = request;
+        var items = string.IsNullOrWhiteSpace(request.UserId)
+            ? WorkerDirectory
+            : WorkerDirectory.Where(x => x.UserId == request.UserId).ToArray();
+        return Task.FromResult(new BusinessConsoleWorkerDirectoryResponse(
+            request.PageIndex,
+            request.PageSize,
+            items.Count,
+            items));
+    }
+
     public Task<BusinessConsoleResourceItem> CreateSiteAsync(
         string internalBearerToken,
         BusinessConsoleCreateSiteRequest request,
@@ -11877,14 +12017,17 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         CancellationToken cancellationToken) =>
         throw new NotSupportedException();
 
+    public BusinessConsoleMesAssignDispatchTaskForwardRequest? LastAssignDispatchRequest { get; private set; }
+
     public Task<BusinessConsoleAcceptedResponse> AssignDispatchTaskAsync(
         string internalBearerToken,
         string operationTaskId,
-        BusinessConsoleMesAssignDispatchTaskRequest request,
+        BusinessConsoleMesAssignDispatchTaskForwardRequest request,
         string actor,
         CancellationToken cancellationToken)
     {
         LastAssignDispatchActor = actor;
+        LastAssignDispatchRequest = request;
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
 

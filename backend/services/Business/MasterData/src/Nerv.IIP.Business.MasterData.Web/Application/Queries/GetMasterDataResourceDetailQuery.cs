@@ -125,7 +125,10 @@ public sealed record MasterDataResourceDetail(
     string? HolidayCalendarCode = null,
     int? BreakMinutes = null,
     decimal? CreditLimit = null,
-    string? CreditCurrencyCode = null);
+    string? CreditCurrencyCode = null,
+    string? JobTitle = null,
+    string? EmploymentStatus = null,
+    string? Phone = null);
 
 public sealed record GetMasterDataResourceDetailQuery(
     string OrganizationId,
@@ -166,6 +169,9 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
                 ?? throw NotFound(type, request.Code)),
             "team" => UpdateMasterDataResourceCommandHandler.Detail(
                 await dbContext.Teams.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+                ?? throw NotFound(type, request.Code)),
+            "worker" => UpdateMasterDataResourceCommandHandler.Detail(
+                await dbContext.Workers.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
                 ?? throw NotFound(type, request.Code)),
             "shift" => UpdateMasterDataResourceCommandHandler.Detail(
                 await dbContext.Shifts.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)

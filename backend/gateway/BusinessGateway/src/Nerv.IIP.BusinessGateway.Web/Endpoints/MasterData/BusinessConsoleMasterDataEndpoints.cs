@@ -582,8 +582,32 @@ public sealed class BusinessConsoleWorkerDirectoryRequestValidator : Validator<B
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Keyword).MaximumLength(100);
+        RuleFor(x => x.UserId).MaximumLength(100);
+        RuleFor(x => x.DepartmentCode).MaximumLength(100);
+        RuleFor(x => x.TeamCode).MaximumLength(100);
+        RuleFor(x => x.WorkshopCode).MaximumLength(100);
+        RuleFor(x => x.WorkCenterCode).MaximumLength(100);
+        RuleFor(x => x.SkillCode).MaximumLength(100);
+        RuleFor(x => x.EmploymentStatus).MaximumLength(50);
         RuleFor(x => x.PageIndex).GreaterThan(0);
         RuleFor(x => x.PageSize).InclusiveBetween(1, 200);
+    }
+}
+
+public sealed class BusinessConsoleCreateWorkerRequestValidator : Validator<BusinessConsoleCreateWorkerRequest>
+{
+    public BusinessConsoleCreateWorkerRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).MaximumLength(100);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.UserId).MaximumLength(100);
+        RuleFor(x => x.DepartmentCode).MaximumLength(100);
+        RuleFor(x => x.JobTitle).MaximumLength(200);
+        RuleFor(x => x.EmploymentStatus).MaximumLength(50);
+        RuleFor(x => x.Phone).MaximumLength(50);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -1132,7 +1156,7 @@ public sealed class CreateBusinessConsoleWorkshopEndpoint(
 [BusinessGatewayOperationId("listBusinessConsoleWorkers")]
 public sealed class ListBusinessConsoleWorkersEndpoint(
     IBusinessGatewayAuthorizationClient auth,
-    IBusinessIamDirectoryClient iamDirectory,
+    IBusinessMasterDataClient masterData,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleWorkerDirectoryRequest, BusinessConsoleWorkerDirectoryResponse>(
         auth,
@@ -1145,11 +1169,30 @@ public sealed class ListBusinessConsoleWorkersEndpoint(
     protected override Task<BusinessConsoleWorkerDirectoryResponse> ForwardAsync(
         BusinessConsoleWorkerDirectoryRequest request,
         string bearerToken,
-        CancellationToken cancellationToken)
-    {
-        // IAM users are currently platform-global; organization/environment are enforced as BusinessGateway auth scope.
-        return iamDirectory.ListWorkersAsync(tokenProvider.BearerToken, request, cancellationToken);
-    }
+        CancellationToken cancellationToken) =>
+        masterData.ListWorkersAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console MasterData")]
+[HttpPost("/api/business-console/v1/master-data/workers")]
+[BusinessGatewayOperationId("createBusinessConsoleWorker")]
+public sealed class CreateBusinessConsoleWorkerEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateWorkerRequest, BusinessConsoleResourceItem>(
+        auth,
+        BusinessGatewayPermissions.MasterDataResourcesManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateWorkerRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateWorkerRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleResourceItem> ForwardAsync(
+        BusinessConsoleCreateWorkerRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        masterData.CreateWorkerAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console MasterData")]

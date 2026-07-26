@@ -78,6 +78,9 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public long LaborTimeTicks { get; private set; }
     public long MachineTimeTicks { get; private set; }
     public string? AssignedUserId { get; private set; }
+
+    /// <summary>Display name of the assigned worker captured when the task was dispatched.</summary>
+    public string? AssignedUserName { get; private set; }
     public string? DeviceAssetId { get; private set; }
     public string? ShiftId { get; private set; }
     public DateTimeOffset? AssignedAtUtc { get; private set; }
@@ -270,7 +273,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         string? deviceAssetId,
         string? shiftId,
         DateTimeOffset assignedAtUtc,
-        string actor = "system:mes")
+        string actor = "system:mes",
+        string? assignedUserName = null)
     {
         if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
         {
@@ -311,6 +315,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         }
 
         AssignedUserId = NormalizeOptional(assignedUserId);
+        AssignedUserName = AssignedUserId is null ? null : NormalizeOptional(assignedUserName);
         DeviceAssetId = normalizedDeviceAssetId;
         ShiftId = NormalizeOptional(shiftId);
         AssignedAtUtc = assignedAtUtc;

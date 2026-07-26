@@ -39,6 +39,7 @@ public static class MasterDataPersistenceServiceCollectionExtensions
         services.AddScoped<IDepartmentRepository, DepartmentRepository>();
         services.AddScoped<ITeamRepository, TeamRepository>();
         services.AddScoped<ITeamMemberRepository, TeamMemberRepository>();
+        services.AddScoped<IWorkerRepository, WorkerRepository>();
         services.AddScoped<IPersonnelSkillRepository, PersonnelSkillRepository>();
         services.AddScoped<ISiteRepository, SiteRepository>();
         services.AddScoped<IWorkshopRepository, WorkshopRepository>();

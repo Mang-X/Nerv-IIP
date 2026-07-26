@@ -2440,6 +2440,32 @@
     {
       "service": "MasterData",
       "method": "POST",
+      "route": "/api/business/v1/master-data/workers",
+      "operationId": "createBusinessMasterDataWorker",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleWorker"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "GET",
+      "route": "/api/business/v1/master-data/workers",
+      "operationId": "listBusinessMasterDataWorkers",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleWorkers"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
       "route": "/api/business/v1/master-data/workshops",
       "operationId": "createBusinessMasterDataWorkshop",
       "classification": "exposed",

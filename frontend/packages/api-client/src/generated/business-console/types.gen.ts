@@ -3310,6 +3310,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     deviceAssetId?: string | null;
     shiftId?: string | null;
     assignedUserId?: string | null;
+    assignedUserName?: string | null;
     plannedStartUtc?: string | null;
     startedAtUtc?: string | null;
     qualityStatus?: string;
@@ -3582,6 +3583,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     deviceAssetId?: string | null;
     shiftId?: string | null;
     assignedUserId?: string | null;
+    assignedUserName?: string | null;
     plannedStartUtc?: string | null;
     blockingReasons?: Array<string>;
     workOrderNo?: string | null;
@@ -4165,6 +4167,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     retiredOn?: string | null;
     creditLimit?: number | null;
     creditCurrencyCode?: string | null;
+    jobTitle?: string | null;
+    employmentStatus?: string | null;
+    phone?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListResourcesRequest = {
@@ -4393,6 +4398,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     skillLevel?: string | null;
     creditLimit?: number | null;
     creditCurrencyCode?: string | null;
+    jobTitle?: string | null;
+    employmentStatus?: string | null;
+    phone?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent = {
@@ -4492,6 +4500,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
     creditLimit?: number | null;
     creditCurrencyCode?: string | null;
     clearCreditLimit?: boolean;
+    jobTitle?: string | null;
+    employmentStatus?: string | null;
+    phone?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSetMasterDataResourceEnabledRequest = {
@@ -4567,15 +4578,47 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerDirectoryItem = {
     userId?: string;
+    employeeNo?: string;
     displayName?: string;
-    employeeNo?: string | null;
-    department?: string | null;
-    status?: string;
-    email?: string | null;
+    departmentCode?: string | null;
+    departmentName?: string | null;
+    jobTitle?: string | null;
+    employmentStatus?: string;
+    phone?: string | null;
+    active?: boolean;
+    teams?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerTeamItem>;
+    skills?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerSkillItem>;
+    snapshotVersion?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerTeamItem = {
+    teamCode?: string;
+    teamName?: string;
+    isLeader?: boolean;
+    workshopCode?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerSkillItem = {
+    skillCode?: string;
+    skillName?: string;
+    level?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerDirectoryRequest = {
     [key: string]: never;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWorkerRequest = {
+    organizationId: string;
+    environmentId: string;
+    code?: string | null;
+    name: string;
+    userId?: string | null;
+    departmentCode?: string | null;
+    jobTitle?: string | null;
+    employmentStatus?: string | null;
+    phone?: string | null;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSiteRequest = {
@@ -4672,6 +4715,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     name: string;
     departmentCode: string;
     shiftCode: string;
+    workshopCode?: string | null;
     idempotencyKey?: string | null;
 };
 
@@ -14473,6 +14517,13 @@ export type ListBusinessConsoleWorkersData = {
         organizationId: string;
         environmentId: string;
         keyword?: string | null;
+        userId?: string | null;
+        departmentCode?: string | null;
+        teamCode?: string | null;
+        workshopCode?: string | null;
+        workCenterCode?: string | null;
+        skillCode?: string | null;
+        employmentStatus?: string | null;
         pageIndex?: number;
         pageSize?: number;
         includeDisabled?: boolean;
@@ -14505,6 +14556,39 @@ export type ListBusinessConsoleWorkersResponses = {
 };
 
 export type ListBusinessConsoleWorkersResponse = ListBusinessConsoleWorkersResponses[keyof ListBusinessConsoleWorkersResponses];
+
+export type CreateBusinessConsoleWorkerData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWorkerRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/master-data/workers';
+};
+
+export type CreateBusinessConsoleWorkerErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleWorkerError = CreateBusinessConsoleWorkerErrors[keyof CreateBusinessConsoleWorkerErrors];
+
+export type CreateBusinessConsoleWorkerResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResourceItem;
+};
+
+export type CreateBusinessConsoleWorkerResponse = CreateBusinessConsoleWorkerResponses[keyof CreateBusinessConsoleWorkerResponses];
 
 export type CreateBusinessConsoleSiteData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSiteRequest;
