@@ -76,7 +76,8 @@ public sealed record ListMasterDataResourcesQuery(
     string? DepartmentCode = null,
     string? ShiftCode = null,
     string? UserId = null,
-    string? SkillCode = null) : IQuery<ListMasterDataResourcesResponse>;
+    string? SkillCode = null,
+    string? WorkshopCode = null) : IQuery<ListMasterDataResourcesResponse>;
 
 public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMasterDataResourcesQuery, ListMasterDataResourcesResponse>
@@ -242,10 +243,10 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.DepartmentCode) || x.DepartmentCode == request.DepartmentCode)
             .Where(x => string.IsNullOrWhiteSpace(request.ShiftCode) || x.ShiftCode == request.ShiftCode)
-            .Where(x => string.IsNullOrWhiteSpace(request.WorkCenterCode) || x.WorkCenterCode == request.WorkCenterCode)
+            .Where(x => string.IsNullOrWhiteSpace(request.WorkshopCode) || x.WorkshopCode == request.WorkshopCode)
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
-            .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, x.WorkCenterCode, x.Disabled ? "disabled" : "active", null, null, null, null, null, null, x.DepartmentCode, x.ShiftCode));
+            .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, x.WorkshopCode, null, null, x.Disabled ? "disabled" : "active", null, null, null, null, null, null, x.DepartmentCode, x.ShiftCode));
     }
 
     private IQueryable<MasterDataResourceItem> ListWorkers(ListMasterDataResourcesQuery request, string resourceType)

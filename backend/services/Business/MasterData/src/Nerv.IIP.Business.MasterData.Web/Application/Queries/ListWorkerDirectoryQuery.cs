@@ -5,7 +5,7 @@ namespace Nerv.IIP.Business.MasterData.Web.Application.Queries;
 
 public sealed record WorkerSkillItem(string SkillCode, string SkillName, string Level);
 
-public sealed record WorkerTeamItem(string TeamCode, string TeamName, bool IsLeader, string? WorkCenterCode);
+public sealed record WorkerTeamItem(string TeamCode, string TeamName, bool IsLeader, string? WorkshopCode);
 
 public sealed record WorkerDirectoryItem(
     string UserId,
@@ -29,8 +29,9 @@ public sealed record ListWorkerDirectoryResponse(
 
 /// <summary>
 /// Worker directory read model used by the worker maintenance page and by MES dispatch candidate
-/// selection. <paramref name="WorkCenterCode"/> narrows candidates to the teams staffing that work
-/// center; <paramref name="SkillCode"/> narrows to workers holding a currently valid skill.
+/// selection. Teams are workshop-level, so <paramref name="WorkCenterCode"/> is resolved through the
+/// work center's workshop: work center -> workshop -> that workshop's teams -> their current members.
+/// <paramref name="SkillCode"/> narrows to workers holding a currently valid skill.
 /// </summary>
 public sealed record ListWorkerDirectoryQuery(
     string OrganizationId,
@@ -39,6 +40,7 @@ public sealed record ListWorkerDirectoryQuery(
     string? UserId = null,
     string? DepartmentCode = null,
     string? TeamCode = null,
+    string? WorkshopCode = null,
     string? WorkCenterCode = null,
     string? SkillCode = null,
     string? EmploymentStatus = null,
@@ -89,8 +91,9 @@ public sealed class ListWorkerDirectoryQueryHandler(ApplicationDbContext dbConte
             workers = workers.Where(x => x.EmploymentStatus == normalizedStatus);
         }
 
-        // Team membership drives both the explicit team filter and the work-center filter: a work
-        // center is staffed by the teams bound to it, so candidates are the members of those teams.
+        // Team membership drives the team / workshop / work-center filters. Teams are workshop-level
+        // (one shift crew covers every work center in its workshop), so a work center resolves to its
+        // workshop first and the candidates are the members of that workshop's teams.
         var memberships = dbContext.TeamMembers
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
@@ -98,8 +101,25 @@ public sealed class ListWorkerDirectoryQueryHandler(ApplicationDbContext dbConte
             .Where(x => x.EffectiveFrom <= today && (x.EffectiveTo == null || x.EffectiveTo >= today));
 
         var teamCode = Normalize(request.TeamCode);
+        var workshopCode = Normalize(request.WorkshopCode);
         var workCenterCode = Normalize(request.WorkCenterCode);
-        if (teamCode is not null || workCenterCode is not null)
+        if (workCenterCode is not null && workshopCode is null)
+        {
+            workshopCode = await dbContext.WorkCenters
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+                .Where(x => x.Code == workCenterCode)
+                .Select(x => x.WorkshopCode)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            // 工作中心没挂车间时不能把过滤悄悄降级成「全厂」——按空候选处理，由前端给出显式出路。
+            if (string.IsNullOrWhiteSpace(workshopCode))
+            {
+                return new ListWorkerDirectoryResponse([], 0, pageIndex, pageSize);
+            }
+        }
+
+        if (teamCode is not null || workshopCode is not null)
         {
             var scopedTeams = dbContext.Teams
                 .AsNoTracking()
@@ -110,9 +130,9 @@ public sealed class ListWorkerDirectoryQueryHandler(ApplicationDbContext dbConte
                 scopedTeams = scopedTeams.Where(x => x.Code == teamCode);
             }
 
-            if (workCenterCode is not null)
+            if (workshopCode is not null)
             {
-                scopedTeams = scopedTeams.Where(x => x.WorkCenterCode == workCenterCode);
+                scopedTeams = scopedTeams.Where(x => x.WorkshopCode == workshopCode);
             }
 
             var scopedTeamCodes = scopedTeams.Select(x => x.Code);
@@ -175,7 +195,7 @@ public sealed class ListWorkerDirectoryQueryHandler(ApplicationDbContext dbConte
                     team.Code,
                     team.Name,
                     member.IsLeader,
-                    team.WorkCenterCode,
+                    team.WorkshopCode,
                 })
             .ToListAsync(cancellationToken);
 
@@ -222,7 +242,7 @@ public sealed class ListWorkerDirectoryQueryHandler(ApplicationDbContext dbConte
                     .Where(team => string.Equals(team.UserId, worker.UserId, StringComparison.Ordinal))
                     .OrderByDescending(team => team.IsLeader)
                     .ThenBy(team => team.Code, StringComparer.Ordinal)
-                    .Select(team => new WorkerTeamItem(team.Code, team.Name, team.IsLeader, team.WorkCenterCode))
+                    .Select(team => new WorkerTeamItem(team.Code, team.Name, team.IsLeader, team.WorkshopCode))
                     .ToArray(),
                 skillRows
                     .Where(skill => string.Equals(skill.UserId, worker.UserId, StringComparison.Ordinal))

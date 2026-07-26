@@ -10,6 +10,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkerAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
@@ -300,15 +301,46 @@ public sealed class WorldBibleSeedService(ApplicationDbContext dbContext)
             if (existing is null)
             {
                 dbContext.Teams.Add(Team.Create(
-                    organizationId, environmentId, team.Code, team.Name, TeamDepartmentCode, team.ShiftCode));
+                    organizationId, environmentId, team.Code, team.Name, TeamDepartmentCode, team.ShiftCode, team.WorkshopCode));
             }
             else if (existing.Name != team.Name || existing.ShiftCode != team.ShiftCode || existing.Disabled)
             {
                 throw Collision(team.Code);
             }
+            else if (existing.WorkshopCode is null)
+            {
+                // 车间归属是本次新增的事实，旧环境补挂即可，不算冲突。
+                existing.Update(existing.Name, existing.DepartmentCode, existing.ShiftCode, team.WorkshopCode);
+            }
         }
 
         // 技能目录与班组先落库，再写 58 人的成员/技能绑定：两段分批，避免单次 SaveChanges 过大。
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        // 员工档案（工号/姓名/部门/岗位/在岗）落 MasterData —— 「人」的业务权威在这里；
+        // IAM 侧同名字段只是账号展示冗余，见 Iam WorldBibleWorkerSpec 的说明。
+        foreach (var employee in WorldBibleSpec.Employees)
+        {
+            if (await dbContext.Workers.AnyAsync(x =>
+                    x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                    x.UserId == employee.UserId,
+                    cancellationToken))
+            {
+                continue;
+            }
+
+            dbContext.Workers.Add(Worker.Create(
+                organizationId,
+                environmentId,
+                employee.EmployeeNo,
+                employee.Name,
+                employee.UserId,
+                employee.DepartmentCode,
+                employee.RoleName,
+                Worker.StatusActive,
+                null));
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken);
 
         for (var ordinal = 0; ordinal < WorldBibleSpec.Employees.Count; ordinal++)

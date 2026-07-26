@@ -73,7 +73,8 @@ public sealed record ListMasterDataResourcesRequest(
     string? DepartmentCode = null,
     string? ShiftCode = null,
     string? UserId = null,
-    string? SkillCode = null);
+    string? SkillCode = null,
+    string? WorkshopCode = null);
 
 public sealed record CreateSkuRequest(
     string OrganizationId,
@@ -145,7 +146,8 @@ public sealed class ListMasterDataResourcesEndpoint(ISender sender)
                 req.DepartmentCode,
                 req.ShiftCode,
                 req.UserId,
-                req.SkillCode),
+                req.SkillCode,
+                req.WorkshopCode),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
@@ -695,7 +697,7 @@ public sealed record CreateTeamRequest(
     string Name,
     string DepartmentCode,
     string ShiftCode,
-    string? WorkCenterCode = null,
+    string? WorkshopCode = null,
     string? IdempotencyKey = null);
 
 public sealed record AssignPersonnelSkillRequest(
@@ -796,7 +798,7 @@ public sealed class CreateTeamEndpoint(ISender sender)
             req.Name,
             req.DepartmentCode,
             req.ShiftCode,
-            req.WorkCenterCode,
+            req.WorkshopCode,
             req.IdempotencyKey), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
@@ -1111,6 +1113,7 @@ public sealed record ListWorkerDirectoryRequest(
     string? UserId = null,
     string? DepartmentCode = null,
     string? TeamCode = null,
+    string? WorkshopCode = null,
     string? WorkCenterCode = null,
     string? SkillCode = null,
     string? EmploymentStatus = null,
@@ -1162,6 +1165,7 @@ public sealed class ListWorkerDirectoryEndpoint(ISender sender)
             req.UserId,
             req.DepartmentCode,
             req.TeamCode,
+            req.WorkshopCode,
             req.WorkCenterCode,
             req.SkillCode,
             req.EmploymentStatus,

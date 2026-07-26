@@ -16816,6 +16816,14 @@
             }
           },
           {
+            "name": "workshopCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
             "name": "workCenterCode",
             "in": "query",
             "schema": {
@@ -41333,7 +41341,7 @@
           "isLeader": {
             "type": "boolean"
           },
-          "workCenterCode": {
+          "workshopCode": {
             "type": "string",
             "nullable": true
           }
@@ -41942,7 +41950,7 @@
             "minLength": 0,
             "nullable": false
           },
-          "workCenterCode": {
+          "workshopCode": {
             "type": "string",
             "nullable": true
           },

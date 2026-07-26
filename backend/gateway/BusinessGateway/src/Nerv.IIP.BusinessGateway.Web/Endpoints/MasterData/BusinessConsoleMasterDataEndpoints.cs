@@ -585,6 +585,7 @@ public sealed class BusinessConsoleWorkerDirectoryRequestValidator : Validator<B
         RuleFor(x => x.UserId).MaximumLength(100);
         RuleFor(x => x.DepartmentCode).MaximumLength(100);
         RuleFor(x => x.TeamCode).MaximumLength(100);
+        RuleFor(x => x.WorkshopCode).MaximumLength(100);
         RuleFor(x => x.WorkCenterCode).MaximumLength(100);
         RuleFor(x => x.SkillCode).MaximumLength(100);
         RuleFor(x => x.EmploymentStatus).MaximumLength(50);

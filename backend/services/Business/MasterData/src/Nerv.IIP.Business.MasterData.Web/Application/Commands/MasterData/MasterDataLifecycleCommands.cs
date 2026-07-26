@@ -304,7 +304,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     request.Name ?? team.Name,
                     request.DepartmentCode ?? team.DepartmentCode,
                     request.ShiftCode ?? team.ShiftCode,
-                    request.WorkCenterCode ?? team.WorkCenterCode);
+                    request.WorkshopCode ?? team.WorkshopCode);
                 return Detail(team);
             case "worker":
                 var worker = await FindWorkerAsync(request, cancellationToken);
@@ -606,7 +606,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
         new("department", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, ParentDepartmentCode: x.ParentDepartmentCode, Status: x.Disabled ? "disabled" : "active");
 
     internal static MasterDataResourceDetail Detail(Team x) =>
-        new("team", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, DepartmentCode: x.DepartmentCode, ShiftCode: x.ShiftCode, WorkCenterCode: x.WorkCenterCode, Status: x.Disabled ? "disabled" : "active");
+        new("team", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, DepartmentCode: x.DepartmentCode, ShiftCode: x.ShiftCode, WorkshopCode: x.WorkshopCode, Status: x.Disabled ? "disabled" : "active");
 
     internal static MasterDataResourceDetail Detail(Worker x) =>
         new("worker", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, DepartmentCode: x.DepartmentCode, UserId: x.UserId, JobTitle: x.JobTitle, EmploymentStatus: x.EmploymentStatus, Phone: x.Phone, Status: x.Disabled ? "disabled" : "active");

@@ -5,6 +5,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.PersonnelSkillAggregat
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkerAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
@@ -12,7 +13,8 @@ using Nerv.IIP.Business.MasterData.Web.Application.Queries;
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
 /// <summary>
-/// 员工目录读面：派工候选靠「工作中心 → 所辖班组 → 班组成员」收敛，技能只算当前有效的登记。
+/// 员工目录读面：派工候选靠「工作中心 → 车间 → 该车间班组 → 班组成员」收敛（班组是车间级的，
+/// 一个班次的人覆盖本车间全部工作中心），技能只算当前有效的登记。
 /// 这些过滤是派工弹窗候选人正确与否的唯一依据，必须锁死。
 /// </summary>
 public sealed class WorkerDirectoryQueryTests
@@ -23,7 +25,7 @@ public sealed class WorkerDirectoryQueryTests
     private static readonly DateOnly Future = new(2099, 12, 31);
 
     [Fact]
-    public async Task Work_center_filter_returns_only_members_of_teams_bound_to_that_work_center()
+    public async Task Work_center_filter_resolves_through_the_workshop_of_that_work_center()
     {
         await using var db = CreateDbContext();
         Seed(db);
@@ -101,7 +103,7 @@ public sealed class WorkerDirectoryQueryTests
         Assert.Equal("生产部", row.DepartmentName);
         var team = Assert.Single(row.Teams);
         Assert.Equal("CNC 精加工班组", team.TeamName);
-        Assert.Equal("WC-CNC", team.WorkCenterCode);
+        Assert.Equal("WS-MC", team.WorkshopCode);
         Assert.True(team.IsLeader);
         var skill = Assert.Single(row.Skills);
         Assert.Equal("CNC 操作", skill.SkillName);
@@ -125,6 +127,32 @@ public sealed class WorkerDirectoryQueryTests
         Assert.Contains(shown.Items, x => x.UserId == "user-gone-01" && !x.Active);
     }
 
+    [Fact]
+    public async Task Sibling_work_center_in_the_same_workshop_sees_the_same_crew()
+    {
+        await using var db = CreateDbContext();
+        Seed(db);
+        await db.SaveChangesAsync();
+
+        var response = await Handle(db, new ListWorkerDirectoryQuery(Org, Env, WorkCenterCode: "WC-GRD"));
+
+        Assert.Equal(["user-cnc-01", "user-cnc-02"], response.Items.Select(x => x.UserId).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task Work_center_without_a_workshop_yields_no_candidates_instead_of_the_whole_plant()
+    {
+        await using var db = CreateDbContext();
+        Seed(db);
+        await db.SaveChangesAsync();
+
+        var response = await Handle(db, new ListWorkerDirectoryQuery(Org, Env, WorkCenterCode: "WC-ORPHAN"));
+
+        // 宁可空候选让前端给出显式出路，也不能悄悄降级成「全厂在岗」。
+        Assert.Empty(response.Items);
+        Assert.Equal(0, response.TotalCount);
+    }
+
     private static Task<ListWorkerDirectoryResponse> Handle(ApplicationDbContext db, ListWorkerDirectoryQuery query) =>
         new ListWorkerDirectoryQueryHandler(db).Handle(query, CancellationToken.None);
 
@@ -133,8 +161,14 @@ public sealed class WorkerDirectoryQueryTests
         db.Departments.Add(Department.Create(Org, Env, "DEPT-PROD", "生产部", null));
         db.Skills.Add(Skill.Create(Org, Env, "cnc-operation", "CNC 操作", "设备操作", false, null, null));
 
-        db.Teams.Add(Team.Create(Org, Env, "TEAM-CNC", "CNC 精加工班组", "DEPT-PROD", "DAY", "WC-CNC"));
-        db.Teams.Add(Team.Create(Org, Env, "TEAM-ASSY", "装配班组", "DEPT-PROD", "DAY", "WC-ASSY"));
+        db.Teams.Add(Team.Create(Org, Env, "TEAM-CNC", "CNC 精加工班组", "DEPT-PROD", "DAY", "WS-MC"));
+        db.Teams.Add(Team.Create(Org, Env, "TEAM-ASSY", "装配班组", "DEPT-PROD", "DAY", "WS-AS"));
+
+        // 同一车间挂两个工作中心：任一个都应收敛到该车间的班组，验证不是 1:1 绑定。
+        db.WorkCenters.Add(WorkCenter.CreateResource(Org, Env, "WC-CNC", "CNC 加工中心", 480, "work-center", "SITE-1", "LINE-1", "WS-MC", "STANDARD", "minute", true));
+        db.WorkCenters.Add(WorkCenter.CreateResource(Org, Env, "WC-GRD", "精磨中心", 480, "work-center", "SITE-1", "LINE-1", "WS-MC", "STANDARD", "minute", true));
+        db.WorkCenters.Add(WorkCenter.CreateResource(Org, Env, "WC-ASSY", "装配中心", 480, "work-center", "SITE-1", "LINE-2", "WS-AS", "STANDARD", "minute", true));
+        db.WorkCenters.Add(WorkCenter.CreateResource(Org, Env, "WC-ORPHAN", "未挂车间的中心", 480, "work-center", "SITE-1", "LINE-1", "STANDARD", "minute", true));
 
         db.Workers.Add(Worker.Create(Org, Env, "EMP-1001", "陈志强", "user-cnc-01", "DEPT-PROD", "CNC 操作工", Worker.StatusActive, null));
         db.Workers.Add(Worker.Create(Org, Env, "EMP-1002", "李海涛", "user-cnc-02", "DEPT-PROD", "CNC 操作工", Worker.StatusOnLeave, null));

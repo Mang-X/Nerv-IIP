@@ -2303,6 +2303,7 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("userId", request.UserId),
                 ("departmentCode", request.DepartmentCode),
                 ("teamCode", request.TeamCode),
+                ("workshopCode", request.WorkshopCode),
                 ("workCenterCode", request.WorkCenterCode),
                 ("skillCode", request.SkillCode),
                 ("employmentStatus", request.EmploymentStatus),

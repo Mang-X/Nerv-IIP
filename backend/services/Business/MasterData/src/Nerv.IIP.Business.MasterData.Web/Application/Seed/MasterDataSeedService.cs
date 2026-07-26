@@ -66,18 +66,18 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
         new("forklift", "叉车驾驶", "物流仓储", true, 48, "厂内叉车驾驶与物料转运，需持证上岗")
     ];
 
+    /// <summary>
+    /// 基线班组成员对应的员工档案。工号用 <c>EMP-9xx</c> 段：既避开设定集 L0 的 <c>EMP-001..058</c>，
+    /// 也避开编码引擎 <c>worker</c> 规则发放的四位流水 <c>EMP-0001</c>，三者永不撞号。
+    /// </summary>
     private static readonly WorkerSeed[] Workers =
     [
-        new("EMP-1001", "陈志强", "user-op-001", "DEPT-PROD", "装配班组长", Worker.StatusActive),
-        new("EMP-1002", "李海涛", "user-op-002", "DEPT-PROD", "装配操作工", Worker.StatusActive),
-        new("EMP-1003", "王建军", "user-op-003", "DEPT-PROD", "CNC 操作工", Worker.StatusActive),
-        new("EMP-1004", "赵鹏", "user-op-004", "DEPT-PROD", "装配操作工", Worker.StatusActive),
-        new("EMP-1005", "何俊", "user-op-005", "DEPT-PROD", "焊接操作工", Worker.StatusOnLeave),
-        new("EMP-1006", "孙敏", "user-qc-001", "DEPT-QA", "质量检验员", Worker.StatusActive),
-        new("EMP-1007", "马丽", "user-qc-002", "DEPT-QA", "质量检验员", Worker.StatusActive),
-        new("EMP-1008", "周立新", "user-eq-001", "DEPT-EQ", "维修技师", Worker.StatusActive),
-        new("EMP-1009", "吴国斌", "user-wh-001", "DEPT-WH", "库管员", Worker.StatusActive),
-        new("EMP-1010", "郑晓芸", "user-plan-001", "DEPT-PLAN", "计划员", Worker.StatusActive)
+        new("EMP-901", "陈志强", "user-op-001", "DEPT-PROD", "装配班组长"),
+        new("EMP-902", "李海涛", "user-op-002", "DEPT-PROD", "装配操作工"),
+        new("EMP-903", "王建军", "user-op-003", "DEPT-PROD", "装配班组长"),
+        new("EMP-904", "赵鹏", "user-op-004", "DEPT-PROD", "装配操作工"),
+        new("EMP-905", "孙敏", "user-qc-001", "DEPT-QA", "质量检验员"),
+        new("EMP-906", "周立新", "user-eq-001", "DEPT-EQ", "维修技师")
     ];
 
     private static readonly TeamSeed[] Teams =
@@ -333,7 +333,7 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
                     item.UserId,
                     item.DepartmentCode,
                     item.JobTitle,
-                    item.EmploymentStatus,
+                    Worker.StatusActive,
                     null));
             }
         }
@@ -445,7 +445,7 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
 
     private sealed record SkillSeed(string Code, string Name, string GroupName, bool RequiresCertification, int? ValidityMonths, string Description);
 
-    private sealed record WorkerSeed(string Code, string Name, string UserId, string DepartmentCode, string JobTitle, string EmploymentStatus);
+    private sealed record WorkerSeed(string Code, string Name, string UserId, string DepartmentCode, string JobTitle);
 
     private sealed record TeamSeed(string Code, string Name, string DepartmentCode, string ShiftCode);
 

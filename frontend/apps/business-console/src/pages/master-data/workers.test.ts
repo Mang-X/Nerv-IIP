@@ -29,7 +29,7 @@ const stub = vi.hoisted(() => ({
           teamCode: 'TEAM-CNC',
           teamName: 'CNC 精加工班组',
           isLeader: true,
-          workCenterCode: 'WC-CNC',
+          workshopCode: 'WS-MC',
         },
       ],
       skills: [{ skillCode: 'cnc-operation', skillName: 'CNC 操作', level: 'senior' }],

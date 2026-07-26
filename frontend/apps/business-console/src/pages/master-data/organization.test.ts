@@ -73,6 +73,11 @@ const CREATE_BY_TYPE: Record<string, ReturnType<typeof vi.fn>> = {
   team: stub.createTeam,
 }
 
+const WORKSHOP_ROWS = [
+  { resourceType: 'workshop', code: 'WS-MC', displayName: '一车间 · 机加车间', active: true },
+  { resourceType: 'workshop', code: 'WS-AS', displayName: '二车间 · 装配车间', active: true },
+]
+
 function stubResource(resourceType: string) {
   const rows =
     resourceType === 'department' ? DEPT_ROWS : resourceType === 'team' ? TEAM_ROWS : SHIFT_ROWS
@@ -150,6 +155,15 @@ function stubTeamMembers() {
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useMasterDataResource: (resourceType: string) => stubResource(resourceType),
+  // 班组绑车间用只读读面（车间在「工厂结构」页维护，这里只取下拉选项）。
+  useBusinessMasterDataResources: () => ({
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 200 }),
+    resources: computed(() => WORKSHOP_ROWS),
+    resourcesTotal: computed(() => WORKSHOP_ROWS.length),
+    resourcesError: shallowRef(undefined),
+    resourcesPending: shallowRef(false),
+    refreshResources: vi.fn(),
+  }),
   useMasterDataResourceActions: () => stubActions(),
   useBusinessWorkers: () => stubWorkers(),
   useTeamMembers: () => stubTeamMembers(),
