@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.OpcUa.Tests;
 

@@ -1,6 +1,5 @@
 using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 using Nerv.IIP.ConnectorHost.Connectors.Modbus;
-using Nerv.IIP.ConnectorHost.Connectors.OpcUa;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.Modbus.Tests;
 

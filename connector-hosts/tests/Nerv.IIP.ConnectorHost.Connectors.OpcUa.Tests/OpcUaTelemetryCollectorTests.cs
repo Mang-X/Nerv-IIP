@@ -1,4 +1,5 @@
 using Nerv.IIP.ConnectorHost.Application;
+using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 using Nerv.IIP.ConnectorHost.Connectors.OpcUa;
 using Nerv.IIP.ConnectorHost.TestUtilities;
 
