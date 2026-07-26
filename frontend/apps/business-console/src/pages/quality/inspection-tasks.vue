@@ -101,12 +101,6 @@ watch(
 
 const columns: NvDataTableColumn<BusinessConsoleQualityInspectionTaskItem>[] = [
   {
-    key: 'inspectionTaskId',
-    header: '任务号',
-    width: 'w-44',
-    accessor: (row) => row.inspectionTaskId ?? '—',
-  },
-  {
     key: 'sourceDocumentId',
     header: '来源引用',
     width: 'w-40',
@@ -119,12 +113,6 @@ const columns: NvDataTableColumn<BusinessConsoleQualityInspectionTaskItem>[] = [
     accessor: (row) => sourceLabel(row.sourceType),
   },
   { key: 'skuCode', header: 'SKU', width: 'w-36', accessor: (row) => row.skuCode ?? '—' },
-  {
-    key: 'inspectionPlanId',
-    header: '检验计划',
-    width: 'w-36',
-    accessor: (row) => row.inspectionPlanId ?? '—',
-  },
   {
     key: 'createdAtUtc',
     header: '生成时间',

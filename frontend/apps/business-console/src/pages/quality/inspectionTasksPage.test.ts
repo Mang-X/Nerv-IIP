@@ -160,6 +160,13 @@ describe('quality inspection task workbench page', () => {
     ).columns.find((column) => column.key === 'actions')
     expect(actionColumn?.headerClass).toContain('sticky')
     expect(actionColumn?.cellClass).toContain('sticky')
+    const columnKeys = (
+      wrapper.vm as unknown as {
+        columns: Array<{ key: string }>
+      }
+    ).columns.map((column) => column.key)
+    expect(columnKeys).not.toContain('inspectionTaskId')
+    expect(columnKeys).not.toContain('inspectionPlanId')
   })
 
   it('uses the composable locator state as the pagination mode source of truth', () => {
