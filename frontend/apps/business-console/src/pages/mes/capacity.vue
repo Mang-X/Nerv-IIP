@@ -116,14 +116,30 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvMetricCard
-      class="sm:max-w-md"
-      variant="breakdown"
-      label="影响记录"
-      :value="capacityImpactsTotal"
-      unit="条"
-      :segments="impactSegments"
-    />
+    <div class="grid gap-4 sm:grid-cols-2">
+      <NvMetricCard
+        variant="breakdown"
+        label="影响记录"
+        :value="capacityImpactsTotal"
+        unit="条"
+        :segments="impactSegments"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="未恢复影响"
+        :value="openCount"
+        unit="条"
+        :tone="openCount > 0 ? 'danger' : 'neutral'"
+        :status="
+          openCount > 0
+            ? { label: '影响产能', tone: 'danger' }
+            : { label: '全部恢复', tone: 'success' }
+        "
+        :foot-start="
+          openCount > 0 ? '优先处理仍在影响排产的设备与停机事件。' : '当前没有未恢复的产能影响。'
+        "
+      />
+    </div>
 
     <NvToolbar :show-search="false">
       <template #filters>

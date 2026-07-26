@@ -492,14 +492,30 @@ function uomLabel(code?: string | null) {
       </template>
     </NvPageHeader>
 
-    <NvMetricCard
-      class="sm:max-w-md"
-      variant="breakdown"
-      label="设计 BOM 版本"
-      :value="ebomsTotal"
-      unit="个"
-      :segments="ebomSegments"
-    />
+    <div class="grid gap-4 sm:grid-cols-2">
+      <NvMetricCard
+        variant="breakdown"
+        label="设计 BOM 版本"
+        :value="ebomsTotal"
+        unit="个"
+        :segments="ebomSegments"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="草稿待发布"
+        :value="draftCount"
+        unit="个"
+        :tone="draftCount > 0 ? 'warning' : 'neutral'"
+        :status="
+          draftCount > 0
+            ? { label: '待评审', tone: 'warning' }
+            : { label: '无待办', tone: 'success' }
+        "
+        :foot-start="
+          draftCount > 0 ? '确认组件行后发布，供生产版本引用。' : '当前没有待发布的设计 BOM。'
+        "
+      />
+    </div>
 
     <NvToolbar v-model:search="parentSearch" search-placeholder="按父项物料编码筛选">
       <template #filters>

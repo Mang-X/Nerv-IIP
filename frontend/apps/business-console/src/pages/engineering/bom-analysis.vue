@@ -430,16 +430,45 @@ function formatError(value: unknown) {
   <BusinessLayout>
     <NvPageHeader title="BOM 分析" description="多级 BOM 树、滚算爆炸、反查与版本对比" />
 
-    <NvMetricCard
-      class="sm:max-w-lg"
-      variant="alert"
-      label="分析结果行"
-      :value="resultCount"
-      unit="行"
-      :tone="analysisTone"
-      :status="diagnosticStatus"
-      :foot-start="diagnosticNote"
-    />
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <NvMetricCard
+        variant="alert"
+        label="分析结果"
+        :value="resultCount"
+        unit="行"
+        :tone="analysisTone"
+        :status="diagnosticStatus"
+        :foot-start="diagnosticNote"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="阻断问题"
+        :value="errorCount"
+        unit="项"
+        :tone="errorCount > 0 ? 'danger' : 'neutral'"
+        :status="
+          errorCount > 0
+            ? { label: '需先修正', tone: 'danger' }
+            : { label: '无阻断', tone: 'success' }
+        "
+        :foot-start="errorCount > 0 ? '循环引用等问题会使展开结果不完整。' : '当前结构可继续分析。'"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="分析警告"
+        :value="warningCount"
+        unit="项"
+        :tone="warningCount > 0 ? 'warning' : 'neutral'"
+        :status="
+          warningCount > 0
+            ? { label: '建议核对', tone: 'warning' }
+            : { label: '无警告', tone: 'success' }
+        "
+        :foot-start="
+          warningCount > 0 ? '缺失下级版本等警告可能影响部分分支。' : '未发现需人工核对的分支。'
+        "
+      />
+    </div>
 
     <form class="grid gap-4 rounded-md border bg-background p-4" @submit.prevent="submit">
       <div class="flex flex-wrap items-center gap-2" role="group" aria-label="分析视图">

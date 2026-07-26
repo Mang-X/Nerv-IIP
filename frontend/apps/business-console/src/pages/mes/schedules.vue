@@ -36,7 +36,7 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 definePage({
   meta: {
     requiresAuth: true,
-    title: '规则排程（过渡）',
+    title: '规则排程',
     requiredPermissions: ['business.mes.schedules.read', 'business.mes.schedules.manage'],
   },
 })
@@ -161,7 +161,7 @@ function isNonEmpty(value: string) {
 <template>
   <BusinessLayout>
     <NvPageHeader
-      title="规则排程（过渡）"
+      title="规则排程"
       :breadcrumbs="[{ label: '制造执行' }]"
       :count="`${assignments.length} 条分配`"
     >
@@ -178,11 +178,6 @@ function isNonEmpty(value: string) {
         </NvButton>
       </template>
     </NvPageHeader>
-
-    <p class="max-w-3xl text-sm leading-6 text-muted-foreground">
-      此页是车间现场的规则排程过渡入口，用于查看或手动触发一次工序分配。正式 APS /
-      甘特、方案发布和冲突治理请进入排产工作台。
-    </p>
 
     <NvMetricStrip :cells="scheduleCells" />
 
@@ -206,7 +201,7 @@ function isNonEmpty(value: string) {
       :loading="runSchedulePending"
       :searchable="false"
       :column-settings="false"
-      empty-message="尚无规则排程结果。运行规则排程后，这里会显示工序的工作中心与起止时间。"
+      empty-message="尚无规则排程结果。数据来自最近一次规则排程运行；点击右上角运行后查看工作中心与起止时间。"
     >
       <template #cell-startUtc="{ row }">{{ formatDateTime(row.startUtc) }}</template>
       <template #cell-endUtc="{ row }">{{ formatDateTime(row.endUtc) }}</template>
@@ -228,7 +223,6 @@ function isNonEmpty(value: string) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>运行规则排程</NvDialogTitle>
-          <!-- 过渡入口的定位已写在页面上，弹窗里不再重复；此处仅供读屏播报。 -->
           <NvDialogDescription class="sr-only">重新计算车间的工序分配。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitScheduleRun">
