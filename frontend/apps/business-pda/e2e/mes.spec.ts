@@ -87,7 +87,7 @@ test('完工入库：列表渲染入库申请行（不退化为空态）', async
 test('首页 → 工序执行：点击应用墙入口跳转到 /mes/operation', async ({ page }) => {
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { name: '工作台' })).toBeVisible()
+  await expect(page.getByTestId('home-name')).toBeVisible()
   await page.getByRole('button', { name: '工序执行' }).click()
 
   await expect(page).toHaveURL('/mes/operation')

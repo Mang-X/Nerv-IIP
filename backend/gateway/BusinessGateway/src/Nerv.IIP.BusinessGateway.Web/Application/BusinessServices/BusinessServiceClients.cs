@@ -1449,7 +1449,7 @@ public interface IBusinessMesClient
 
     Task<BusinessConsoleMesDispatchTaskListResponse> ListDispatchTasksAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesDispatchTaskListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> AssignDispatchTaskAsync(
@@ -7000,12 +7000,12 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
 
     public Task<BusinessConsoleMesDispatchTaskListResponse> ListDispatchTasksAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesDispatchTaskListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleMesDispatchTaskListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/mes/dispatch-tasks?" + ListQuery(request),
+            "/api/business/v1/mes/dispatch-tasks?" + DispatchTaskListQuery(request),
             null,
             cancellationToken);
 
@@ -7376,6 +7376,19 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("shiftId", request.ShiftId),
             ("deviceAssetId", request.DeviceAssetId),
             ("workOrderId", request.WorkOrderId),
+            ("skip", request.Skip),
+            ("take", request.Take));
+
+    private static string DispatchTaskListQuery(BusinessConsoleMesDispatchTaskListRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("status", request.Status),
+            ("keyword", request.Keyword),
+            ("workCenterId", request.WorkCenterId),
+            ("shiftId", request.ShiftId),
+            ("deviceAssetId", request.DeviceAssetId),
+            ("assignedUserId", request.AssignedUserId),
             ("skip", request.Skip),
             ("take", request.Take));
 

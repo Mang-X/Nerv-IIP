@@ -12234,7 +12234,7 @@
             }
           },
           {
-            "name": "workOrderId",
+            "name": "assignedUserId",
             "in": "query",
             "schema": {
               "type": "string",
@@ -37442,6 +37442,10 @@
             "nullable": true
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchTaskListRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAssignDispatchTaskRequest": {
         "type": "object",

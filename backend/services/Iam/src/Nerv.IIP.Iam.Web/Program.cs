@@ -76,6 +76,7 @@ else
 }
 builder.Services.AddScoped<IamSeedService>();
 builder.Services.AddScoped<WorldBibleWorkerSeedService>();
+builder.Services.AddScoped<WorldBiblePdaDemoAccountSeedService>();
 
 var autoMigrate = string.Equals(builder.Configuration["Persistence:AutoMigrate"], "true", StringComparison.OrdinalIgnoreCase);
 
@@ -136,6 +137,7 @@ if (usesPostgreSql && autoMigrate)
     if (builder.Configuration.GetValue("LeaderDemo:World:Enabled", false))
     {
         await scope.ServiceProvider.GetRequiredService<WorldBibleWorkerSeedService>().SeedAsync();
+        await scope.ServiceProvider.GetRequiredService<WorldBiblePdaDemoAccountSeedService>().SeedAsync();
     }
 }
 

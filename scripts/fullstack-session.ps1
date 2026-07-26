@@ -388,6 +388,10 @@ function Start-NervFullStackSession {
         if (-not [string]::IsNullOrWhiteSpace($suppliedAdminPassword)) {
             $secretSet.Environment['Parameters__iam-seed-admin-password'] = $suppliedAdminPassword
         }
+        # 可选：PDA 演示工人统一口令（领导演示走查用）。只从当前进程环境读取，不落任何文件。
+        if (-not [string]::IsNullOrWhiteSpace($env:NERV_IIP_LEADER_DEMO_WORKER_PASSWORD)) {
+            $secretSet.Environment['Parameters__iam-seed-demo-worker-password'] = $env:NERV_IIP_LEADER_DEMO_WORKER_PASSWORD
+        }
         try {
             foreach ($entry in $sessionEnvironment.GetEnumerator()) { Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value }
             foreach ($entry in $secretSet.Environment.GetEnumerator()) { Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value }
