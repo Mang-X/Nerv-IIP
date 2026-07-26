@@ -317,6 +317,72 @@ IAM 侧同时补齐了工人档案：`iam.users` 新增可空列 `DisplayName` /
 9. **采购批目前只入不出**：领料消费的是期初批，采购批在库累积。收发存恒等式不受影响，但「原料按采购批消耗」的先进先出故事尚未铺开，登记为后续可补。
 10. 本变更没有新增或修改业务 HTTP endpoint，也没有改变 Gateway 公开契约；facade coverage 登记、OpenAPI 快照与 generated client 均无需刷新。
 
+### 工厂世界观设定集 L1 背景历史引擎 三期（设备域：IndustrialTelemetry / Maintenance）
+
+三期把设定集 §3/§7 的设备行落库：46 台设备（`DEV-*`，96 个采集点位）的遥测历史、约 400 起报警、
+约 120 张维修工单（`MWO-2026-####`，写在 `SourceReferenceId`，先例 `MWO-DEMO-001`）、92 条点检/保养
+计划与按频次展开的点检记录。开关沿用 `LeaderDemo:History:{Enabled,Scale,AsOfDate}`（AppHost 已向
+`business-industrial-telemetry` 与 `business-maintenance` 下发同一组值），Development-only 直接守卫。
+
+#### 共享形状与跨服务对账
+
+`WorldHistoryDeviceSpec` 在 IndustrialTelemetry 与 Maintenance 两侧同字面量重复声明：设备/点位/连接
+器与 L0 `WorldBibleSpec` 同表（测试逐条比对），设备→工作中心归属与 MasterData 侧同公式。报警计划由
+`BuildAlarmPlans(asOfDate, scale)` 确定性推导，**号段与抽样流都不依赖生成顺序或截止日**：每个草稿用
+独立流键（`device:week:slot`），`ExternalAlarmId = {RuleCode}:{week}{slot}`、工单号按周分块
+（`MWO-2026-{week*92+device*2+slot+1}`，允许留空号）——截止日每天推进时计划集合只增不改，黄金向量
+（asOfDate=2026-07-24：**395 起报警 / 116 张维修工单 / 链哈希 A021DFB4ED425CDB**）两侧测试锁同一批字面量。
+
+#### 遥测体积取舍（§7「分钟级聚合回填 29 周 + 近 7 天原始级」的落地）
+
+- 全历史（上线日 → 截止日）：日级 `telemetry_rollups(Daily)`（长趋势图数据源，保留 730 天）；
+- 近 7 天：小时级 rollup + 15 分钟桶 `telemetry_raw_samples`（raw 保留 7 天，随天滚动）；
+- 近 24 小时：5 分钟桶 `telemetry_summaries`（健康评分/ingest 面读的表）。
+波形按类别行为参数合成（正常上界恒低于 `WH-*` 报警规则阈值；报警窗口内 max 抬到计划越限值），
+周日/春节无生产遥测、辅助设备（`DEV-AUX-*`）7×24 底噪，装配双班、机加/表面早班+偶数序号中班。
+设备状态史（`running` / `faulted` / `planned-down`）与 OEE 产量事实（按设备唯一理论节拍）同步落库，
+OEE / MTBF / MTTR 三项都有完整输入。历史报警的开放尾部（截止日前 2 天）保持 `raised`，供工作台
+「设备预警」卡有历史底座；运行时规则评估会把该号段视作本规则报警并在设备实时恢复后闭环清除（预期行为）。
+
+#### 一致性校验器（fail-closed，两个服务各一份）
+
+- IndustrialTelemetry：报警事实与共享计划逐条对上（数量/时间戳/severity/状态）；日级聚合行数与
+  工作日历 × 班次覆盖的期望完全一致且周日无生产遥测；每起带停机的报警有对应 `faulted` 状态；
+  OEE 事实按设备唯一理论节拍、数量为正；抽样 20 条链写启动日志。
+- Maintenance：维修工单与计划逐条对上（工单号/源报警号/开单时刻），完工工单的停机分钟/工时/维修
+  起止与计划一致（MTBF/MTTR 输入）；点检记录条数与计划频次展开一致；本引擎计划的 `NextDueOn`
+  已推进到截止日之后（防调度器 29 周 catch-up 开单风暴）；停机原因目录齐备。
+- 截止日随启动日推进时的 catch-up：上一轮的开放尾部报警/工单由 seed 幂等补清除/补完工。
+
+#### 设备预警到工作台的接线
+
+Notification 对 `alarm-raised` 的收件人默认回退 `role:maintenance`，而消息面按 principalRef
+（`user:user-admin`）精确匹配、没有角色展开层；AppHost 已给 `notification` 显式下发
+`IndustrialTelemetry:AlarmNotification:RecipientRefs = ["user:user-admin", "role:maintenance"]`。
+工作台设备预警卡只查 `status=raised`。
+
+#### L3 常驻模拟的衔接（MAN-603 / #1088 承接）
+
+历史回填的上界是截止日 00:00 UTC；常驻模拟连接器（MAN-603 在 connector-hosts 内实现，以
+`CONN-OPCUA-01` / `CONN-MQTT-01` / `CONN-MODBUS-01` 身份注册 AppHub、心跳并上报 CollectionHealth）
+从当日起以实时样本续写。三期已为全部 96 个点位配好 `WH-*` 报警规则（阈值=形状参数上界），
+模拟器只要按设备档案让 2–3 台设备错峰越限即可获得真实 raised 报警并流到工作台。推荐滚动档案
+（阈值取自 `WorldHistoryDeviceSpec`）：`DEV-CNC-03` vibration（>6.5 mm/s，critical）、`DEV-CTG-02`
+bath-temperature（>34 degC，critical）、`DEV-AUX-04` air-pressure（<6.0 bar，warning），周期约
+45 分钟错峰（劣化→越限→恢复），保证任意时刻约 2 台处于 raised；健康页要显示 Fresh 需上报间隔 ≤2 分钟。
+
+#### 隔离与遗留
+
+1. 号段 `WH-*` 规则、`{RuleCode}:{week}{slot}` 报警、`MWO-2026-*`、`PM-WH-*`、`RPT-WH-*`、
+   `seed:world-history:*` sourceSequence 与 `*-DEMO-*` 完全隔离；`ALARM-DEMO-001` / `MWO-DEMO-001`
+   固定事实未触碰。
+2. OEE 产量事实是设备侧班次投影（`RPT-WH-{device}-{day}-S{shift}`），量级与周节奏和 MES 报工同一
+   工作日历推导，但未做单据级 join（MES `RPT-WO-*` 与设备班次产量的逐单对账登记为后续可补）。
+3. 部分周内迟到纳入的报警（day > 旧截止日）会给已写的当班 OEE 事实留下微小的停机口径差，仅影响
+   截止日推进后的最后一周，登记为已知近似。
+4. 本变更没有新增或修改业务 HTTP endpoint；facade coverage 登记、OpenAPI 快照与 generated client
+   均无需刷新。
+
 ## 当前结论
 
 1. 平台 HTTP 服务命名已经冻结为 .Web、.Domain、.Infrastructure。
