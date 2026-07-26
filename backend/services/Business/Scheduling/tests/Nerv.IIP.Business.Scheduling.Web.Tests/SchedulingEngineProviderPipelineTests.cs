@@ -2,8 +2,12 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Scheduling.Infrastructure;
+using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
+using Nerv.IIP.Business.Scheduling.Web.Application.Urgency;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Scheduling;
 
@@ -58,6 +62,58 @@ public sealed class SchedulingEngineProviderPipelineTests
         Assert.IsType<DefaultSchedulingConstraintProvider>(
             Assert.Single(services.GetServices<ISchedulingConstraintProvider>()));
         Assert.NotNull(services.GetRequiredService<SchedulingPlanGenerator>());
+    }
+
+    [Fact]
+    public async Task Create_and_preview_use_the_same_generation_pipeline_once_with_matching_trace_and_distinct_statuses()
+    {
+        var services = new ServiceCollection();
+        services.AddMediatR(configuration =>
+            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options.UseInMemoryDatabase($"scheduling-pipeline-handlers-{Guid.NewGuid():N}"));
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var calls = new List<string>();
+        var ruleProvider = new CountingRuleProvider(calls);
+        var constraintProvider = new CountingConstraintProvider(calls);
+        var engine = new CountingEngine(calls);
+        var generator = new SchedulingPlanGenerator(ruleProvider, constraintProvider, engine);
+        var clock = new FixedTimeProvider(GeneratedAtUtc);
+        var urgencyService = new OrderUrgencyService(dbContext, clock);
+        var createHandler = new CreateSchedulePlanCommandHandler(
+            dbContext,
+            generator,
+            clock,
+            urgencyService);
+        var previewHandler = new PreviewSchedulePlanCommandHandler(
+            generator,
+            clock);
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+
+        var created = await createHandler.Handle(
+            new CreateSchedulePlanCommand(problem),
+            CancellationToken.None);
+        var previewed = await previewHandler.Handle(
+            new PreviewSchedulePlanCommand(problem),
+            CancellationToken.None);
+
+        Assert.Equal(2, ruleProvider.CallCount);
+        Assert.Equal(2, constraintProvider.CallCount);
+        Assert.Equal(2, engine.CallCount);
+        Assert.Equal(
+            [
+                "rule:problem-shock-absorber-001",
+                "constraint:problem-shock-absorber-001",
+                "engine:problem-shock-absorber-001:2026-06-01T07:00:00.0000000+00:00",
+                "rule:problem-shock-absorber-001",
+                "constraint:problem-shock-absorber-001",
+                "engine:problem-shock-absorber-001:2026-06-01T07:00:00.0000000+00:00"
+            ],
+            calls);
+        Assert.Equal(SchedulePlanStatusContract.Generated, created.Status);
+        Assert.Equal(SchedulePlanStatusContract.Preview, previewed.Status);
     }
 
     [Fact]
@@ -626,6 +682,58 @@ public sealed class SchedulingEngineProviderPipelineTests
         }
     }
 
+    private sealed class CountingRuleProvider(List<string> calls) : ISchedulingRuleProvider
+    {
+        public int CallCount { get; private set; }
+
+        public Task<SchedulingRuleProviderResult> ApplyAsync(
+            SchedulingProblemContract problem,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            calls.Add($"rule:{problem.ProblemId}");
+            return Task.FromResult(new SchedulingRuleProviderResult(
+                "counting-rule-provider",
+                "counting-profile",
+                "test-v1",
+                problem,
+                []));
+        }
+    }
+
+    private sealed class CountingConstraintProvider(List<string> calls) : ISchedulingConstraintProvider
+    {
+        public int CallCount { get; private set; }
+
+        public Task<SchedulingConstraintProviderResult> ApplyAsync(
+            SchedulingProblemContract problem,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            calls.Add($"constraint:{problem.ProblemId}");
+            return Task.FromResult(new SchedulingConstraintProviderResult(problem, problem, []));
+        }
+    }
+
+    private sealed class CountingEngine(List<string> calls) : ISchedulingEngine
+    {
+        public string EngineId => "counting-engine";
+
+        public string Version => "test-v1";
+
+        public int CallCount { get; private set; }
+
+        public SchedulePlanContract Schedule(
+            SchedulingProblemContract problem,
+            string planId,
+            DateTimeOffset generatedAtUtc)
+        {
+            CallCount++;
+            calls.Add($"engine:{problem.ProblemId}:{generatedAtUtc:O}");
+            return new FiniteCapacityScheduler().Schedule(problem, planId, generatedAtUtc);
+        }
+    }
+
     private sealed class StubEquipmentAvailabilityProvider(
         EquipmentRuntimeAvailabilityResponse response,
         Action<SchedulingProblemContract>? onQuery = null)
@@ -676,5 +784,10 @@ public sealed class SchedulingEngineProviderPipelineTests
         {
             return Task.FromResult(problem);
         }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }

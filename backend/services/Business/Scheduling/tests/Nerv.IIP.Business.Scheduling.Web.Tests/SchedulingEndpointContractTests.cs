@@ -111,11 +111,8 @@ public sealed class SchedulingEndpointContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var handler = new PreviewSchedulePlanCommandHandler(
-            new FiniteCapacityScheduler(),
-            new FixedTimeProvider(FixedNow),
-            new NoopSchedulingEquipmentAvailabilityProvider(),
-            new NoopSchedulingMaterialReadinessProvider(),
-            new PassthroughSchedulingOperationOverrideOverlay());
+            CreateGenerator(),
+            new FixedTimeProvider(FixedNow));
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
 
         var first = await handler.Handle(new PreviewSchedulePlanCommand(problem), CancellationToken.None);
@@ -153,11 +150,8 @@ public sealed class SchedulingEndpointContractTests
                         [])
                 ]));
         var handler = new PreviewSchedulePlanCommandHandler(
-            new FiniteCapacityScheduler(),
-            new FixedTimeProvider(FixedNow),
-            availabilityProvider,
-            new NoopSchedulingMaterialReadinessProvider(),
-            new PassthroughSchedulingOperationOverrideOverlay());
+            CreateGenerator(equipmentAvailabilityProvider: availabilityProvider),
+            new FixedTimeProvider(FixedNow));
 
         var plan = await handler.Handle(new PreviewSchedulePlanCommand(problem), CancellationToken.None);
 
@@ -181,11 +175,8 @@ public sealed class SchedulingEndpointContractTests
                     ReasonCodes: ["MAT-A shortage 2"])
             ]);
         var handler = new PreviewSchedulePlanCommandHandler(
-            new FiniteCapacityScheduler(),
-            new FixedTimeProvider(FixedNow),
-            new NoopSchedulingEquipmentAvailabilityProvider(),
-            materialReadinessProvider,
-            new PassthroughSchedulingOperationOverrideOverlay());
+            CreateGenerator(materialReadinessProvider: materialReadinessProvider),
+            new FixedTimeProvider(FixedNow));
 
         var plan = await handler.Handle(new PreviewSchedulePlanCommand(problem), CancellationToken.None);
 
@@ -317,6 +308,63 @@ public sealed class SchedulingEndpointContractTests
         Assert.Equal(command.Problem.Orders.Count, await dbContext.OrderUrgencySnapshots.CountAsync());
         Assert.Equal(1, await dbContext.ScheduleProblems.CountAsync(x => x.ProblemId == command.Problem.ProblemId, CancellationToken.None));
         Assert.Equal(1, await dbContext.SchedulePlans.CountAsync(x => x.ProblemId == command.Problem.ProblemId, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Create_idempotency_uses_post_override_base_fingerprint_and_returns_the_historical_plan_when_runtime_facts_change()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var command = new CreateSchedulePlanCommand(problem);
+        var firstHandler = CreatePlanHandler(
+            dbContext,
+            new FixedSchedulingOperationOverrideOverlay(problem),
+            new NoopSchedulingMaterialReadinessProvider());
+        var first = await firstHandler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var runtimeBlockedHandler = CreatePlanHandler(
+            dbContext,
+            new FixedSchedulingOperationOverrideOverlay(problem),
+            new StubSchedulingMaterialReadinessProvider(
+                [
+                    new SchedulingMaterialReadinessContract(
+                        "order",
+                        problem.Orders.First().OrderId,
+                        null,
+                        false,
+                        ["material.runtime-change"])
+                ]));
+
+        var retried = await runtimeBlockedHandler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(first.PlanId, retried.PlanId);
+        Assert.Equal(first.ProblemFingerprint, retried.ProblemFingerprint);
+        Assert.Equal(first.Assignments, retried.Assignments);
+        Assert.Equal(first.UnscheduledOperations, retried.UnscheduledOperations);
+        Assert.Contains(
+            dbContext.OrderUrgencySnapshots.Local,
+            snapshot => snapshot.ResultJson.Contains("material.runtime-change", StringComparison.Ordinal));
+
+        var changedBaseProblem = problem with
+        {
+            Orders =
+            [
+                problem.Orders.First() with
+                {
+                    Quantity = problem.Orders.First().Quantity + 1
+                },
+                ..problem.Orders.Skip(1)
+            ]
+        };
+        var changedBaseHandler = CreatePlanHandler(
+            dbContext,
+            new FixedSchedulingOperationOverrideOverlay(changedBaseProblem),
+            new NoopSchedulingMaterialReadinessProvider());
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            changedBaseHandler.Handle(command, CancellationToken.None));
     }
 
     [Fact]
@@ -685,17 +733,33 @@ public sealed class SchedulingEndpointContractTests
         yield return [new HttpRequestMessage(HttpMethod.Post, "/api/business/v1/scheduling/plans/plan-missing/release")];
     }
 
-    private static CreateSchedulePlanCommandHandler CreatePlanHandler(ApplicationDbContext dbContext)
+    private static CreateSchedulePlanCommandHandler CreatePlanHandler(
+        ApplicationDbContext dbContext,
+        ISchedulingOperationOverrideOverlay? overrideOverlay = null,
+        ISchedulingMaterialReadinessProvider? materialReadinessProvider = null)
     {
         var clock = new FixedTimeProvider(FixedNow);
         return new CreateSchedulePlanCommandHandler(
             dbContext,
-            new FiniteCapacityScheduler(),
+            CreateGenerator(
+                materialReadinessProvider: materialReadinessProvider,
+                overrideOverlay: overrideOverlay ?? new SchedulingOperationOverrideOverlay(dbContext)),
             clock,
-            new NoopSchedulingEquipmentAvailabilityProvider(),
-            new NoopSchedulingMaterialReadinessProvider(),
-            new SchedulingOperationOverrideOverlay(dbContext),
             new OrderUrgencyService(dbContext, clock));
+    }
+
+    private static SchedulingPlanGenerator CreateGenerator(
+        ISchedulingEquipmentAvailabilityProvider? equipmentAvailabilityProvider = null,
+        ISchedulingMaterialReadinessProvider? materialReadinessProvider = null,
+        ISchedulingOperationOverrideOverlay? overrideOverlay = null)
+    {
+        return new SchedulingPlanGenerator(
+            new DefaultSchedulingRuleProvider(),
+            new DefaultSchedulingConstraintProvider(
+                overrideOverlay ?? new PassthroughSchedulingOperationOverrideOverlay(),
+                equipmentAvailabilityProvider ?? new NoopSchedulingEquipmentAvailabilityProvider(),
+                materialReadinessProvider ?? new NoopSchedulingMaterialReadinessProvider()),
+            new FiniteCapacityScheduler());
     }
 
     private static ServiceProvider CreateInMemoryProvider()
@@ -949,6 +1013,14 @@ public sealed class SchedulingEndpointContractTests
         public Task<SchedulingProblemContract> ApplyAsync(
             SchedulingProblemContract problem,
             CancellationToken cancellationToken) => Task.FromResult(problem);
+    }
+
+    private sealed class FixedSchedulingOperationOverrideOverlay(SchedulingProblemContract result)
+        : ISchedulingOperationOverrideOverlay
+    {
+        public Task<SchedulingProblemContract> ApplyAsync(
+            SchedulingProblemContract problem,
+            CancellationToken cancellationToken) => Task.FromResult(result);
     }
 
     private sealed class SchedulingLiveHttpTestFactory : WebApplicationFactory<Program>

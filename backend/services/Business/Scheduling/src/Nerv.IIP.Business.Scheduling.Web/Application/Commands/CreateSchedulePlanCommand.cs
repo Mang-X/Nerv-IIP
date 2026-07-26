@@ -32,23 +32,27 @@ public sealed class CreateSchedulePlanCommandValidator : AbstractValidator<Creat
 
 public sealed class CreateSchedulePlanCommandHandler(
     ApplicationDbContext dbContext,
-    FiniteCapacityScheduler scheduler,
+    SchedulingPlanGenerator generator,
     TimeProvider timeProvider,
-    ISchedulingEquipmentAvailabilityProvider equipmentAvailabilityProvider,
-    ISchedulingMaterialReadinessProvider materialReadinessProvider,
-    ISchedulingOperationOverrideOverlay overrideOverlay,
     OrderUrgencyService urgencyService) : ICommandHandler<CreateSchedulePlanCommand, SchedulePlanContract>
 {
     public async Task<SchedulePlanContract> Handle(CreateSchedulePlanCommand request, CancellationToken cancellationToken)
     {
-        var overlaidProblem = await overrideOverlay.ApplyAsync(request.Problem, cancellationToken);
-        var normalizedProblem = SchedulingProblemNormalizer.Normalize(overlaidProblem);
+        var generatedAtUtc = timeProvider.GetUtcNow();
+        var generation = await generator.GenerateAsync(
+            request.Problem,
+            $"plan-{Guid.CreateVersion7():N}",
+            generatedAtUtc,
+            cancellationToken);
+        var baseProblem = generation.Constraints.BaseProblem;
+        var effectiveProblem = generation.Constraints.EffectiveProblem;
+        var normalizedProblem = SchedulingProblemNormalizer.Normalize(baseProblem);
         var problemFingerprint = CalculateProblemFingerprint(normalizedProblem);
         var existingSnapshot = await dbContext.ScheduleProblems.AsNoTracking()
             .SingleOrDefaultAsync(
-                x => x.OrganizationId == overlaidProblem.OrganizationId &&
-                    x.EnvironmentId == overlaidProblem.EnvironmentId &&
-                    x.ProblemId == overlaidProblem.ProblemId,
+                x => x.OrganizationId == baseProblem.OrganizationId &&
+                    x.EnvironmentId == baseProblem.EnvironmentId &&
+                    x.ProblemId == baseProblem.ProblemId,
                 cancellationToken);
         if (existingSnapshot is not null)
         {
@@ -64,51 +68,41 @@ public sealed class CreateSchedulePlanCommandHandler(
                 .Include(x => x.UnscheduledOperations)
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(
-                    x => x.OrganizationId == request.Problem.OrganizationId &&
-                        x.EnvironmentId == request.Problem.EnvironmentId &&
-                        x.ProblemId == request.Problem.ProblemId,
+                    x => x.OrganizationId == baseProblem.OrganizationId &&
+                        x.EnvironmentId == baseProblem.EnvironmentId &&
+                        x.ProblemId == baseProblem.ProblemId,
                     cancellationToken)
                 ?? throw new KnownException($"Schedule problem snapshot exists but generated plan was not found, ProblemId = {request.Problem.ProblemId}");
             var existingPlanContract = SchedulePlanContractMapper.ToContract(existingPlan);
-            var currentAvailability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
-            var currentMaterialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
-            var currentProblem = MaterialReadinessSchedulingAdapter.Apply(
-                EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, currentAvailability),
-                currentMaterialReadiness);
             await urgencyService.CapturePlanAsync(
-                currentProblem,
+                effectiveProblem,
                 existingPlanContract,
-                CalculateProblemFingerprint(currentProblem),
-                timeProvider.GetUtcNow(),
+                CalculateProblemFingerprint(effectiveProblem),
+                generatedAtUtc,
                 cancellationToken);
             return existingPlanContract;
         }
 
-        var generatedAtUtc = timeProvider.GetUtcNow();
-        var availability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
-        var materialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
-        var schedulingProblem = MaterialReadinessSchedulingAdapter.Apply(
-            EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability),
-            materialReadiness);
-        var urgencyInputFingerprint = CalculateProblemFingerprint(schedulingProblem);
-        var preview = scheduler.Schedule(schedulingProblem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc);
-        var generated = SchedulePlanContractMapper.WithStatus(preview, SchedulePlanStatusContract.Generated);
+        var urgencyInputFingerprint = CalculateProblemFingerprint(effectiveProblem);
+        var generated = SchedulePlanContractMapper.WithStatus(
+            generation.Plan,
+            SchedulePlanStatusContract.Generated);
         dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(
-            overlaidProblem.ProblemId,
-            overlaidProblem.ContractVersion,
-            overlaidProblem.OrganizationId,
-            overlaidProblem.EnvironmentId,
+            baseProblem.ProblemId,
+            baseProblem.ContractVersion,
+            baseProblem.OrganizationId,
+            baseProblem.EnvironmentId,
             problemFingerprint,
             JsonSerializer.Serialize(normalizedProblem, SchedulingJson.Options),
-            overlaidProblem.HorizonStartUtc,
-            overlaidProblem.HorizonEndUtc,
+            baseProblem.HorizonStartUtc,
+            baseProblem.HorizonEndUtc,
             generatedAtUtc));
         dbContext.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(
-            overlaidProblem.OrganizationId,
-            overlaidProblem.EnvironmentId,
+            baseProblem.OrganizationId,
+            baseProblem.EnvironmentId,
             SchedulePlanContractMapper.ToDomainSnapshot(generated)));
         await urgencyService.CapturePlanAsync(
-            schedulingProblem, generated, urgencyInputFingerprint, generatedAtUtc, cancellationToken);
+            effectiveProblem, generated, urgencyInputFingerprint, generatedAtUtc, cancellationToken);
         return generated;
     }
 

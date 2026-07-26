@@ -31,10 +31,7 @@ public sealed class OrderUrgencyApplicationTests
                 BusinessReference = index == 0 ? "SO-URG-001" : $"SO-URG-{index + 1:000}"
             }).ToArray()
         };
-        var handler = new CreateSchedulePlanCommandHandler(
-            db, new FiniteCapacityScheduler(), clock,
-            new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
-            new SchedulingOperationOverrideOverlay(db), service);
+        var handler = CreateHandler(db, clock, service);
 
         await handler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
         await db.SaveChangesAsync(CancellationToken.None);
@@ -69,10 +66,7 @@ public sealed class OrderUrgencyApplicationTests
         var clock = new MutableTimeProvider(Now);
         var service = new OrderUrgencyService(db, clock);
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
-        var handler = new CreateSchedulePlanCommandHandler(
-            db, new FiniteCapacityScheduler(), clock,
-            new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
-            new SchedulingOperationOverrideOverlay(db), service);
+        var handler = CreateHandler(db, clock, service);
         await handler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
         await db.SaveChangesAsync(CancellationToken.None);
         var before = await db.OrderUrgencySnapshots.CountAsync();
@@ -97,10 +91,7 @@ public sealed class OrderUrgencyApplicationTests
         var clock = new MutableTimeProvider(Now);
         var service = new OrderUrgencyService(db, clock);
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
-        var handler = new CreateSchedulePlanCommandHandler(
-            db, new FiniteCapacityScheduler(), clock,
-            new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
-            new SchedulingOperationOverrideOverlay(db), service);
+        var handler = CreateHandler(db, clock, service);
         await handler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
         await db.SaveChangesAsync(CancellationToken.None);
         var original = Assert.Single(await service.ListAsync(
@@ -152,20 +143,14 @@ public sealed class OrderUrgencyApplicationTests
         var clock = new MutableTimeProvider(Now);
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
         var service = new OrderUrgencyService(db, clock);
-        var first = new CreateSchedulePlanCommandHandler(
-            db, new FiniteCapacityScheduler(), clock,
-            new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
-            new SchedulingOperationOverrideOverlay(db), service);
+        var first = CreateHandler(db, clock, service);
         await first.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
         await db.SaveChangesAsync(CancellationToken.None);
         db.OrderUrgencySnapshots.RemoveRange(await db.OrderUrgencySnapshots.ToArrayAsync());
         await db.SaveChangesAsync(CancellationToken.None);
         Assert.Empty(await db.OrderUrgencySnapshots.ToArrayAsync());
 
-        var replay = new CreateSchedulePlanCommandHandler(
-            db, new FiniteCapacityScheduler(), clock,
-            new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
-            new SchedulingOperationOverrideOverlay(db), service);
+        var replay = CreateHandler(db, clock, service);
         await replay.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
         await db.SaveChangesAsync(CancellationToken.None);
 
@@ -209,6 +194,21 @@ public sealed class OrderUrgencyApplicationTests
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase($"urgency-{Guid.NewGuid():N}"));
         return services.BuildServiceProvider();
+    }
+
+    private static CreateSchedulePlanCommandHandler CreateHandler(
+        ApplicationDbContext db,
+        TimeProvider clock,
+        OrderUrgencyService urgencyService)
+    {
+        var generator = new SchedulingPlanGenerator(
+            new DefaultSchedulingRuleProvider(),
+            new DefaultSchedulingConstraintProvider(
+                new SchedulingOperationOverrideOverlay(db),
+                new NoopSchedulingEquipmentAvailabilityProvider(),
+                new NoopSchedulingMaterialReadinessProvider()),
+            new FiniteCapacityScheduler());
+        return new CreateSchedulePlanCommandHandler(db, generator, clock, urgencyService);
     }
 
     private sealed class MutableTimeProvider(DateTimeOffset utcNow) : TimeProvider
