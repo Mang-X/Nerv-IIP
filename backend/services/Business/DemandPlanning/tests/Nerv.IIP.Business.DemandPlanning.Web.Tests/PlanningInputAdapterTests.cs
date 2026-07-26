@@ -216,6 +216,376 @@ public sealed class PlanningInputAdapterTests
     }
 
     [Fact]
+    public async Task Forecast_time_phasing_returns_each_day_when_forecast_is_fully_inside_horizon()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await AddForecastAsync(
+            dbContext,
+            "FC-INSIDE",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 3),
+            3m);
+
+        var snapshot = await ReadSnapshotAsync(
+            dbContext,
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 3));
+
+        AssertForecastFacts(
+            snapshot,
+            "FC-INSIDE",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 3),
+            [
+                (new DateOnly(2026, 7, 1), 1.000000m),
+                (new DateOnly(2026, 7, 2), 1.000000m),
+                (new DateOnly(2026, 7, 3), 1.000000m),
+            ]);
+    }
+
+    [Fact]
+    public async Task Forecast_time_phasing_returns_only_left_crossing_overlap()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await AddForecastAsync(
+            dbContext,
+            "FC-LEFT",
+            new DateOnly(2026, 6, 29),
+            new DateOnly(2026, 7, 2),
+            4m);
+
+        var snapshot = await ReadSnapshotAsync(
+            dbContext,
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 31));
+
+        AssertForecastFacts(
+            snapshot,
+            "FC-LEFT",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 31),
+            [
+                (new DateOnly(2026, 7, 1), 1.000000m),
+                (new DateOnly(2026, 7, 2), 1.000000m),
+            ]);
+        Assert.Equal(2.000000m, snapshot.Demands.Where(x => x.SourceType == "forecast").Sum(x => x.Quantity));
+    }
+
+    [Fact]
+    public async Task Forecast_time_phasing_replaces_right_cross_horizon_full_quantity_clamp()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await AddForecastAsync(
+            dbContext,
+            "FC-2026-Q3-SKU-FG-1000",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 9, 30),
+            90m,
+            7,
+            7);
+
+        var snapshot = await ReadSnapshotAsync(
+            dbContext,
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 31));
+
+        var facts = snapshot.Demands.Where(x => x.SourceType == "forecast").ToArray();
+        Assert.Equal(31, facts.Length);
+        Assert.Equal(30.326087m, facts.Sum(x => x.Quantity));
+        Assert.Equal(new DateOnly(2026, 7, 1), facts[0].DueDate);
+        Assert.Equal(0.978261m, facts[0].Quantity);
+        Assert.Equal(new DateOnly(2026, 7, 31), facts[^1].DueDate);
+        Assert.All(facts, x => Assert.Equal("FC-2026-Q3-SKU-FG-1000", x.DemandSourceReference));
+        AssertForecastFactInvariants(facts, new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 31));
+    }
+
+    [Fact]
+    public async Task Forecast_time_phasing_returns_daily_share_when_forecast_covers_horizon()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await AddForecastAsync(
+            dbContext,
+            "FC-COVERS-JULY",
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 8, 31),
+            92m);
+
+        var snapshot = await ReadSnapshotAsync(
+            dbContext,
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 31));
+
+        var facts = snapshot.Demands.Where(x => x.SourceType == "forecast").ToArray();
+        Assert.Equal(31, facts.Length);
+        Assert.Equal(31.000000m, facts.Sum(x => x.Quantity));
+        Assert.All(facts, x => Assert.Equal(1.000000m, x.Quantity));
+        AssertForecastFactInvariants(facts, new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 31));
+    }
+
+    [Fact]
+    public async Task Forecast_time_phasing_omits_forecast_fully_outside_horizon()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await AddForecastAsync(
+            dbContext,
+            "FC-OUTSIDE",
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 6, 30),
+            30m);
+
+        var snapshot = await ReadSnapshotAsync(
+            dbContext,
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 31));
+
+        Assert.DoesNotContain(snapshot.Demands, x => x.SourceType == "forecast");
+    }
+
+    [Fact]
+    public async Task Forecast_time_phasing_preserves_complete_quantity_for_single_day_period()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await AddForecastAsync(
+            dbContext,
+            "FC-SINGLE-DAY",
+            new DateOnly(2026, 7, 15),
+            new DateOnly(2026, 7, 15),
+            1.234567m);
+
+        var snapshot = await ReadSnapshotAsync(
+            dbContext,
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 31));
+
+        AssertForecastFacts(
+            snapshot,
+            "FC-SINGLE-DAY",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 31),
+            [(new DateOnly(2026, 7, 15), 1.234567m)]);
+    }
+
+    [Fact]
+    public async Task Forecast_time_phasing_handles_leap_day_and_month_boundary_across_horizons()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await AddForecastAsync(
+            dbContext,
+            "FC-LEAP-EDGE",
+            new DateOnly(2024, 2, 28),
+            new DateOnly(2024, 3, 1),
+            3m);
+
+        var february = await ReadSnapshotAsync(
+            dbContext,
+            new DateOnly(2024, 2, 1),
+            new DateOnly(2024, 2, 29));
+        var march = await ReadSnapshotAsync(
+            dbContext,
+            new DateOnly(2024, 3, 1),
+            new DateOnly(2024, 3, 31));
+
+        AssertForecastFacts(
+            february,
+            "FC-LEAP-EDGE",
+            new DateOnly(2024, 2, 1),
+            new DateOnly(2024, 2, 29),
+            [
+                (new DateOnly(2024, 2, 28), 1.000000m),
+                (new DateOnly(2024, 2, 29), 1.000000m),
+            ]);
+        AssertForecastFacts(
+            march,
+            "FC-LEAP-EDGE",
+            new DateOnly(2024, 3, 1),
+            new DateOnly(2024, 3, 31),
+            [(new DateOnly(2024, 3, 1), 1.000000m)]);
+    }
+
+    [Fact]
+    public async Task Forecast_time_phasing_balances_indivisible_micro_units_without_zero_or_negative_facts()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await AddForecastAsync(
+            dbContext,
+            "FC-INDIVISIBLE",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 3),
+            1m);
+
+        var snapshot = await ReadSnapshotAsync(
+            dbContext,
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 3));
+
+        AssertForecastFacts(
+            snapshot,
+            "FC-INDIVISIBLE",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 3),
+            [
+                (new DateOnly(2026, 7, 1), 0.333333m),
+                (new DateOnly(2026, 7, 2), 0.333334m),
+                (new DateOnly(2026, 7, 3), 0.333333m),
+            ]);
+        var facts = snapshot.Demands.Where(x => x.SourceType == "forecast").ToArray();
+        Assert.Equal(1.000000m, facts.Sum(x => x.Quantity));
+        Assert.All(facts, x => Assert.True(x.Quantity > 0m));
+    }
+
+    [Fact]
+    public async Task Forecast_time_phasing_keeps_adjacent_horizons_stable_after_consumption_outside_first_slice()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await AddForecastAsync(
+            dbContext,
+            "FC-ADJACENT",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 6),
+            6m);
+        dbContext.DemandSources.Add(DemandSource.CreateSalesOrderDemand(
+            "org-001",
+            "env-dev",
+            "sales-order-id-adjacent",
+            "SO-ADJACENT",
+            "10",
+            "CUST-001",
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            2m,
+            new DateOnly(2026, 7, 5),
+            1));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var first = await ReadSnapshotAsync(
+            dbContext,
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 3));
+        var second = await ReadSnapshotAsync(
+            dbContext,
+            new DateOnly(2026, 7, 4),
+            new DateOnly(2026, 7, 6));
+
+        var firstFacts = first.Demands.Where(x => x.SourceType == "forecast").ToArray();
+        var secondFacts = second.Demands.Where(x => x.SourceType == "forecast").ToArray();
+        Assert.Equal(
+            [
+                (new DateOnly(2026, 7, 1), 0.666667m),
+                (new DateOnly(2026, 7, 2), 0.666666m),
+                (new DateOnly(2026, 7, 3), 0.666667m),
+            ],
+            firstFacts.Select(x => (x.DueDate, x.Quantity)).ToArray());
+        Assert.Equal(
+            [
+                (new DateOnly(2026, 7, 4), 0.666667m),
+                (new DateOnly(2026, 7, 5), 0.666666m),
+                (new DateOnly(2026, 7, 6), 0.666667m),
+            ],
+            secondFacts.Select(x => (x.DueDate, x.Quantity)).ToArray());
+        Assert.Equal(4.000000m, firstFacts.Concat(secondFacts).Sum(x => x.Quantity));
+        Assert.DoesNotContain(first.Demands, x => x.DemandSourceReference == "SO-ADJACENT");
+        var salesOrder = Assert.Single(second.Demands, x => x.DemandSourceReference == "SO-ADJACENT");
+        Assert.Equal(2m, salesOrder.Quantity);
+        Assert.Equal(new DateOnly(2026, 7, 5), salesOrder.DueDate);
+    }
+
+    [Fact]
+    public async Task Forecast_time_phasing_preserves_ordinary_sales_order_fact()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await AddForecastAsync(
+            dbContext,
+            "FC-ORDINARY",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 3),
+            3m);
+        dbContext.DemandSources.Add(DemandSource.CreateSalesOrderDemand(
+            "org-001",
+            "env-dev",
+            "sales-order-id-ordinary",
+            "SO-ORDINARY",
+            "20",
+            "CUST-001",
+            "SKU-FG-1000",
+            "box",
+            "SITE-01",
+            2.345678m,
+            new DateOnly(2026, 7, 2),
+            1));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var snapshot = await ReadSnapshotAsync(
+            dbContext,
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 3));
+
+        Assert.Equal(
+            new DemandSnapshot(
+                "SO-ORDINARY",
+                "SKU-FG-1000",
+                "box",
+                "SITE-01",
+                2.345678m,
+                new DateOnly(2026, 7, 2),
+                "sales-order"),
+            Assert.Single(snapshot.Demands, x => x.DemandSourceReference == "SO-ORDINARY"));
+    }
+
+    [Fact]
+    public async Task Forecast_time_phasing_repeated_reads_are_ordered_identically_without_duplicate_reference_dates()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await AddForecastAsync(
+            dbContext,
+            "FC-REPEAT",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 7),
+            1m);
+
+        var first = await ReadSnapshotAsync(
+            dbContext,
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 7));
+        dbContext.ChangeTracker.Clear();
+        var second = await ReadSnapshotAsync(
+            dbContext,
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 7));
+
+        var firstFacts = first.Demands.Where(x => x.SourceType == "forecast").ToArray();
+        var secondFacts = second.Demands.Where(x => x.SourceType == "forecast").ToArray();
+        Assert.Equal(7, firstFacts.Length);
+        Assert.Equal(firstFacts, secondFacts);
+        Assert.Equal(
+            firstFacts.Length,
+            firstFacts.Select(x => (x.DemandSourceReference, x.DueDate)).Distinct().Count());
+        AssertForecastFactInvariants(firstFacts, new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 7));
+    }
+
+    [Fact]
     public async Task Upstream_adapter_consumes_forecast_with_overlapping_sales_orders()
     {
         await using var provider = CreateInMemoryProvider();
@@ -239,10 +609,10 @@ public sealed class PlanningInputAdapterTests
             CancellationToken.None);
 
         Assert.Contains(snapshot.Demands, x => x.SourceType == "sales-order" && x.DemandSourceReference == "SO-1000" && x.Quantity == 4m);
-        var forecast = Assert.Single(snapshot.Demands, x => x.SourceType == "forecast");
-        Assert.Equal("FC-2026-06-SKU-FG-1000", forecast.DemandSourceReference);
-        Assert.Equal(6m, forecast.Quantity);
-        Assert.Equal(new DateOnly(2026, 6, 30), forecast.DueDate);
+        var forecast = snapshot.Demands.Where(x => x.SourceType == "forecast").ToArray();
+        Assert.Equal(30, forecast.Length);
+        Assert.Equal(6m, forecast.Sum(x => x.Quantity));
+        Assert.All(forecast, x => Assert.Equal("FC-2026-06-SKU-FG-1000", x.DemandSourceReference));
     }
 
     [Fact]
@@ -306,47 +676,9 @@ public sealed class PlanningInputAdapterTests
             CancellationToken.None);
 
         Assert.Contains(snapshot.Demands, x => x.SourceType == "mps" && x.Quantity == 4m);
-        var forecast = Assert.Single(snapshot.Demands, x => x.SourceType == "forecast");
-        Assert.Equal(6m, forecast.Quantity);
-    }
-
-    [Fact]
-    public async Task Upstream_adapter_clamps_cross_horizon_forecast_due_date_to_horizon_end()
-    {
-        await using var provider = CreateInMemoryProvider();
-        using var scope = provider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await new CreateOrUpdateForecastInputCommandHandler(dbContext).Handle(
-            new CreateOrUpdateForecastInputCommand(
-                "org-001",
-                "env-dev",
-                "FC-2026-Q3-SKU-FG-1000",
-                "SKU-FG-1000",
-                "pcs",
-                "SITE-01",
-                new DateOnly(2026, 7, 1),
-                new DateOnly(2026, 9, 30),
-                90m,
-                7,
-                7),
-            CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
-        var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
-            dbContext,
-            new FakePlanningProductEngineeringClient(),
-            new FakePlanningInventoryClient());
-
-        var snapshot = await providerUnderTest.GetSnapshotAsync(
-            "org-001",
-            "env-dev",
-            new DateOnly(2026, 7, 1),
-            new DateOnly(2026, 7, 31),
-            CancellationToken.None);
-
-        var forecast = Assert.Single(snapshot.Demands, x => x.SourceType == "forecast");
-        Assert.Equal("FC-2026-Q3-SKU-FG-1000", forecast.DemandSourceReference);
-        Assert.Equal(90m, forecast.Quantity);
-        Assert.Equal(new DateOnly(2026, 7, 31), forecast.DueDate);
+        var forecast = snapshot.Demands.Where(x => x.SourceType == "forecast").ToArray();
+        Assert.Equal(30, forecast.Length);
+        Assert.Equal(6m, forecast.Sum(x => x.Quantity));
     }
 
     [Fact]
@@ -1332,6 +1664,78 @@ public sealed class PlanningInputAdapterTests
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase($"demand-planning-adapter-{Guid.NewGuid():N}"));
         return services.BuildServiceProvider();
+    }
+
+    private static async Task AddForecastAsync(
+        ApplicationDbContext dbContext,
+        string forecastReference,
+        DateOnly periodStartDate,
+        DateOnly periodEndDate,
+        decimal quantity,
+        int backwardConsumptionDays = 0,
+        int forwardConsumptionDays = 0)
+    {
+        await new CreateOrUpdateForecastInputCommandHandler(dbContext).Handle(
+            new CreateOrUpdateForecastInputCommand(
+                "org-001",
+                "env-dev",
+                forecastReference,
+                "SKU-FG-1000",
+                "pcs",
+                "SITE-01",
+                periodStartDate,
+                periodEndDate,
+                quantity,
+                backwardConsumptionDays,
+                forwardConsumptionDays),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
+    private static Task<PlanningInputSnapshotResult> ReadSnapshotAsync(
+        ApplicationDbContext dbContext,
+        DateOnly horizonStart,
+        DateOnly horizonEnd)
+    {
+        return new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext,
+            new FakePlanningProductEngineeringClient(),
+            new FakePlanningInventoryClient()).GetSnapshotAsync(
+                "org-001",
+                "env-dev",
+                horizonStart,
+                horizonEnd,
+                CancellationToken.None);
+    }
+
+    private static void AssertForecastFacts(
+        PlanningInputSnapshotResult snapshot,
+        string forecastReference,
+        DateOnly horizonStart,
+        DateOnly horizonEnd,
+        IReadOnlyCollection<(DateOnly DueDate, decimal Quantity)> expected)
+    {
+        var facts = snapshot.Demands
+            .Where(x => x.SourceType == "forecast")
+            .ToArray();
+        Assert.Equal(expected, facts.Select(x => (x.DueDate, x.Quantity)).ToArray());
+        Assert.All(facts, x => Assert.Equal(forecastReference, x.DemandSourceReference));
+        AssertForecastFactInvariants(facts, horizonStart, horizonEnd);
+    }
+
+    private static void AssertForecastFactInvariants(
+        IReadOnlyCollection<DemandSnapshot> facts,
+        DateOnly horizonStart,
+        DateOnly horizonEnd)
+    {
+        Assert.All(facts, fact =>
+        {
+            Assert.True(fact.Quantity > 0m);
+            Assert.InRange(fact.DueDate, horizonStart, horizonEnd);
+        });
+        Assert.Equal(
+            facts.Count,
+            facts.Select(x => (x.DemandSourceReference, x.DueDate)).Distinct().Count());
     }
 
     private static CreateOrUpdateForecastInputCommand NewForecastCommand()

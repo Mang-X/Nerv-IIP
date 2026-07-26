@@ -426,17 +426,6 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
         IReadOnlyCollection<UomConversionSnapshot> uomConversions,
         CancellationToken cancellationToken)
     {
-        var demandSources = await dbContext.DemandSources
-            .AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId
-                && x.EnvironmentId == environmentId
-                && x.DemandType != "forecast"
-                && x.SourceStatus == "active"
-                && x.Quantity > 0m
-                && x.DueDate >= horizonStart
-                && x.DueDate <= horizonEnd)
-            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
-            .ToListAsync(cancellationToken);
         var forecastInputs = await dbContext.ForecastInputs
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
@@ -446,13 +435,30 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             .OrderBy(x => x.PeriodStartDate)
             .ThenBy(x => x.ForecastReference)
             .ToListAsync(cancellationToken);
-        var mpsBuckets = await dbContext.MasterProductionSchedules
+        var consumptionWindowStart = forecastInputs.Count == 0
+            ? horizonStart
+            : forecastInputs.Min(x => x.PeriodStartDate.AddDays(-x.BackwardConsumptionDays));
+        var consumptionWindowEnd = forecastInputs.Count == 0
+            ? horizonEnd
+            : forecastInputs.Max(x => x.PeriodEndDate.AddDays(x.ForwardConsumptionDays));
+        var consumingDemandSources = await dbContext.DemandSources
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.DemandType != "forecast"
+                && x.SourceStatus == "active"
+                && x.Quantity > 0m
+                && x.DueDate >= consumptionWindowStart
+                && x.DueDate <= consumptionWindowEnd)
+            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
+            .ToListAsync(cancellationToken);
+        var consumingMpsBuckets = await dbContext.MasterProductionSchedules
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
                 && x.Status == MasterProductionScheduleStatus.Released
-                && x.BucketDate >= horizonStart
-                && x.BucketDate <= horizonEnd)
+                && x.BucketDate >= consumptionWindowStart
+                && x.BucketDate <= consumptionWindowEnd)
             .Select(x => new DemandSnapshot(
                 $"MPS:{x.Id}",
                 x.SkuCode,
@@ -462,9 +468,15 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 x.BucketDate,
                 "mps"))
             .ToListAsync(cancellationToken);
+        var demandSources = consumingDemandSources
+            .Where(x => x.DueDate >= horizonStart && x.DueDate <= horizonEnd)
+            .ToArray();
+        var mpsBuckets = consumingMpsBuckets
+            .Where(x => x.DueDate >= horizonStart && x.DueDate <= horizonEnd)
+            .ToArray();
         var converter = PlanningUomConverter.Create(uomConversions);
         var forecastDemands = forecastInputs
-            .Select(forecast =>
+            .SelectMany(forecast =>
             {
                 var consumptionStart = forecast.PeriodStartDate.AddDays(-forecast.BackwardConsumptionDays);
                 var consumptionEnd = forecast.PeriodEndDate.AddDays(forecast.ForwardConsumptionDays);
@@ -477,8 +489,8 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                     forecastUomCode,
                     forecast.Quantity,
                     requireConversion: true);
-                var consumed = demandSources
-                    .Concat(mpsBuckets)
+                var consumed = consumingDemandSources
+                    .Concat(consumingMpsBuckets)
                     .Where(demand => IsForecastConsumingDemand(demand)
                         && string.Equals(demand.SkuCode, forecast.SkuCode, StringComparison.OrdinalIgnoreCase)
                         && string.Equals(demand.SiteCode, forecast.SiteCode, StringComparison.OrdinalIgnoreCase)
@@ -492,19 +504,17 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                         demand.Quantity,
                         hasPlanningUomContext));
                 var remaining = Math.Max(0m, forecastQuantity - consumed);
-                return remaining <= 0m
-                    ? null
-                    : new DemandSnapshot(
-                        forecast.ForecastReference,
-                        forecast.SkuCode,
-                        forecastUomCode,
-                        forecast.SiteCode,
-                        remaining,
-                        ClampForecastDueDate(forecast.PeriodEndDate, horizonStart, horizonEnd),
-                        "forecast");
+                return TimePhaseForecast(
+                    forecast.ForecastReference,
+                    forecast.SkuCode,
+                    forecastUomCode,
+                    forecast.SiteCode,
+                    forecast.PeriodStartDate,
+                    forecast.PeriodEndDate,
+                    remaining,
+                    horizonStart,
+                    horizonEnd);
             })
-            .Where(x => x is not null)
-            .Select(x => x!)
             .ToArray();
 
         return demandSources
@@ -551,14 +561,16 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             .ToListAsync(cancellationToken);
 
         return demandSources
-            .Concat(forecastInputs.Select(x => new DemandSnapshot(
+            .Concat(forecastInputs.SelectMany(x => TimePhaseForecast(
                 x.ForecastReference,
                 x.SkuCode,
                 x.UomCode,
                 x.SiteCode,
+                x.PeriodStartDate,
+                x.PeriodEndDate,
                 x.Quantity,
-                ClampForecastDueDate(x.PeriodEndDate, horizonStart, horizonEnd),
-                "forecast")))
+                horizonStart,
+                horizonEnd)))
             .Concat(mpsBuckets.Select(x => new DemandSnapshot(
                 $"MPS:{x.Id}",
                 x.SkuCode,
@@ -580,16 +592,60 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             || string.Equals(demand.SourceType, "mps", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static DateOnly ClampForecastDueDate(DateOnly periodEndDate, DateOnly horizonStart, DateOnly horizonEnd)
+    private static IReadOnlyCollection<DemandSnapshot> TimePhaseForecast(
+        string forecastReference,
+        string skuCode,
+        string uomCode,
+        string siteCode,
+        DateOnly periodStartDate,
+        DateOnly periodEndDate,
+        decimal remainingQuantity,
+        DateOnly horizonStart,
+        DateOnly horizonEnd)
     {
-        if (periodEndDate < horizonStart)
+        const decimal MicroUnitsPerUnit = 1_000_000m;
+        var normalizedRemaining = decimal.Round(
+            Math.Max(0m, remainingQuantity),
+            6,
+            MidpointRounding.AwayFromZero);
+        var overlapStart = periodStartDate > horizonStart ? periodStartDate : horizonStart;
+        var overlapEnd = periodEndDate < horizonEnd ? periodEndDate : horizonEnd;
+        if (normalizedRemaining <= 0m || overlapStart > overlapEnd)
         {
-            return horizonStart;
+            return [];
         }
 
-        return periodEndDate > horizonEnd
-            ? horizonEnd
-            : periodEndDate;
+        var inclusiveDayCount = periodEndDate.DayNumber - periodStartDate.DayNumber + 1;
+        var totalMicroUnits = normalizedRemaining * MicroUnitsPerUnit;
+        var facts = new List<DemandSnapshot>(overlapEnd.DayNumber - overlapStart.DayNumber + 1);
+        for (var dayNumber = overlapStart.DayNumber; dayNumber <= overlapEnd.DayNumber; dayNumber++)
+        {
+            var dayOffset = dayNumber - periodStartDate.DayNumber;
+            var previousTarget = decimal.Round(
+                totalMicroUnits * dayOffset / inclusiveDayCount,
+                0,
+                MidpointRounding.AwayFromZero);
+            var cumulativeTarget = decimal.Round(
+                totalMicroUnits * (dayOffset + 1) / inclusiveDayCount,
+                0,
+                MidpointRounding.AwayFromZero);
+            var dailyMicroUnits = cumulativeTarget - previousTarget;
+            if (dailyMicroUnits <= 0m)
+            {
+                continue;
+            }
+
+            facts.Add(new DemandSnapshot(
+                forecastReference,
+                skuCode,
+                uomCode,
+                siteCode,
+                dailyMicroUnits / MicroUnitsPerUnit,
+                DateOnly.FromDayNumber(dayNumber),
+                "forecast"));
+        }
+
+        return facts;
     }
 
     private static string ResolvePlanningUom(
