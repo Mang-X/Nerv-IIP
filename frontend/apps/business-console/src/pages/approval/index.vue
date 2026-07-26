@@ -46,7 +46,9 @@ import {
   NvTabsContent,
   NvTabsList,
   NvTabsTrigger,
+  NvToolbar,
 } from '@nerv-iip/ui'
+import { watchDebounced } from '@vueuse/core'
 import {
   CheckCircle2Icon,
   EyeIcon,
@@ -57,7 +59,7 @@ import {
   UserRoundPlusIcon,
   XCircleIcon,
 } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
@@ -83,11 +85,193 @@ const canManageApprovals = computed(() => permissionCodes.value.includes(P.appro
 
 const approval = useBusinessApproval(actor)
 const route = useRoute() as { query?: Record<string, unknown> } | undefined
+applyRouteApprovalFilters()
+
+const chainStatuses = [
+  { label: '全部状态', value: 'all' },
+  { label: '待审批', value: 'pending' },
+  { label: '已通过', value: 'approved' },
+  { label: '已驳回', value: 'rejected' },
+  { label: '已退回', value: 'returned' },
+  { label: '已撤回', value: 'withdrawn' },
+]
+const decisionTypes = [
+  { label: '全部决策', value: 'all' },
+  { label: '通过', value: 'approve' },
+  { label: '驳回', value: 'reject' },
+  { label: '退回', value: 'return' },
+  { label: '撤回', value: 'withdraw' },
+  { label: '重新提交', value: 'resubmit' },
+  { label: '加签', value: 'add_signer' },
+  { label: '转交', value: 'transfer' },
+]
+const delegationStatuses = [
+  { label: '全部状态', value: 'all' },
+  { label: '生效中', value: 'active' },
+  { label: '已撤销', value: 'revoked' },
+]
+const templateStates = [
+  { label: '全部状态', value: 'all' },
+  { label: '启用', value: 'true' },
+  { label: '停用', value: 'false' },
+]
+
+const chainFilterDraft = reactive({
+  startedBy: approval.chainFilters.startedBy ?? '',
+  sourceService: approval.chainFilters.sourceService ?? '',
+  documentType: approval.chainFilters.documentType ?? '',
+  documentId: approval.chainFilters.documentId ?? '',
+})
+const chainStatusFilter = shallowRef(
+  supportedSelection(
+    approval.chainFilters.status,
+    chainStatuses.map((option) => option.value),
+  ),
+)
+const decisionFilterDraft = reactive({
+  chainId: approval.decisionFilters.chainId ?? '',
+  actorType: approval.decisionFilters.actorType ?? '',
+  actorRef: approval.decisionFilters.actorRef ?? '',
+  documentType: approval.decisionFilters.documentType ?? '',
+  documentId: approval.decisionFilters.documentId ?? '',
+})
+const decisionTypeFilter = shallowRef(
+  supportedSelection(
+    approval.decisionFilters.decision,
+    decisionTypes.map((option) => option.value),
+  ),
+)
+const delegationFilterDraft = reactive({
+  delegatorActorRef: approval.delegationFilters.delegatorActorRef ?? '',
+  delegateActorRef: approval.delegationFilters.delegateActorRef ?? '',
+  documentType: approval.delegationFilters.documentType ?? '',
+})
+const delegationStatusFilter = shallowRef(
+  supportedSelection(
+    approval.delegationFilters.status,
+    delegationStatuses.map((option) => option.value),
+  ),
+)
+const templateFilterDraft = reactive({
+  documentType: approval.templateFilters.documentType ?? '',
+})
+const templateStateFilter = shallowRef(
+  approval.templateFilters.isActive === undefined
+    ? 'all'
+    : String(approval.templateFilters.isActive),
+)
+
+watchDebounced(
+  () =>
+    [
+      chainFilterDraft.startedBy,
+      chainFilterDraft.sourceService,
+      chainFilterDraft.documentType,
+      chainFilterDraft.documentId,
+    ] as const,
+  ([startedBy, sourceService, documentType, documentId]) => {
+    approval.chainFilters.startedBy = normalizedFilterText(startedBy)
+    approval.chainFilters.sourceService = normalizedFilterText(sourceService)
+    approval.chainFilters.documentType = normalizedFilterText(documentType)
+    approval.chainFilters.documentId = normalizedFilterText(documentId)
+  },
+  { debounce: 300, maxWait: 1000 },
+)
+watchDebounced(
+  () =>
+    [
+      decisionFilterDraft.chainId,
+      decisionFilterDraft.actorType,
+      decisionFilterDraft.actorRef,
+      decisionFilterDraft.documentType,
+      decisionFilterDraft.documentId,
+    ] as const,
+  ([chainId, actorType, actorRef, documentType, documentId]) => {
+    approval.decisionFilters.chainId = normalizedFilterText(chainId)
+    approval.decisionFilters.actorType = normalizedFilterText(actorType)
+    approval.decisionFilters.actorRef = normalizedFilterText(actorRef)
+    approval.decisionFilters.documentType = normalizedFilterText(documentType)
+    approval.decisionFilters.documentId = normalizedFilterText(documentId)
+  },
+  { debounce: 300, maxWait: 1000 },
+)
+watchDebounced(
+  () =>
+    [
+      delegationFilterDraft.delegatorActorRef,
+      delegationFilterDraft.delegateActorRef,
+      delegationFilterDraft.documentType,
+    ] as const,
+  ([delegatorActorRef, delegateActorRef, documentType]) => {
+    approval.delegationFilters.delegatorActorRef = normalizedFilterText(delegatorActorRef)
+    approval.delegationFilters.delegateActorRef = normalizedFilterText(delegateActorRef)
+    approval.delegationFilters.documentType = normalizedFilterText(documentType)
+  },
+  { debounce: 300, maxWait: 1000 },
+)
+watchDebounced(
+  () => templateFilterDraft.documentType,
+  (documentType) => {
+    approval.templateFilters.documentType = normalizedFilterText(documentType)
+  },
+  { debounce: 300, maxWait: 1000 },
+)
+watch(
+  chainStatusFilter,
+  (value) => {
+    approval.chainFilters.status = value === 'all' ? undefined : value
+  },
+  { immediate: true },
+)
+watch(
+  decisionTypeFilter,
+  (value) => {
+    approval.decisionFilters.decision = value === 'all' ? undefined : value
+  },
+  { immediate: true },
+)
+watch(delegationStatusFilter, (value) => {
+  approval.delegationFilters.status = value === 'all' ? undefined : value
+})
+watch(
+  templateStateFilter,
+  (value) => {
+    approval.templateFilters.isActive = value === 'all' ? undefined : value === 'true'
+  },
+  { immediate: true },
+)
+
 const taskPager = usePagedList(approval.taskFilters)
-const chainPager = usePagedList(approval.chainFilters)
-const decisionPager = usePagedList(approval.decisionFilters)
-const delegationPager = usePagedList(approval.delegationFilters)
-const templatePager = usePagedList(approval.templateFilters)
+const chainPager = usePagedList(approval.chainFilters, {
+  resetOn: [
+    () => approval.chainFilters.status,
+    () => approval.chainFilters.startedBy,
+    () => approval.chainFilters.sourceService,
+    () => approval.chainFilters.documentType,
+    () => approval.chainFilters.documentId,
+  ],
+})
+const decisionPager = usePagedList(approval.decisionFilters, {
+  resetOn: [
+    () => approval.decisionFilters.chainId,
+    () => approval.decisionFilters.actorType,
+    () => approval.decisionFilters.actorRef,
+    () => approval.decisionFilters.decision,
+    () => approval.decisionFilters.documentType,
+    () => approval.decisionFilters.documentId,
+  ],
+})
+const delegationPager = usePagedList(approval.delegationFilters, {
+  resetOn: [
+    () => approval.delegationFilters.status,
+    () => approval.delegationFilters.delegatorActorRef,
+    () => approval.delegationFilters.delegateActorRef,
+    () => approval.delegationFilters.documentType,
+  ],
+})
+const templatePager = usePagedList(approval.templateFilters, {
+  resetOn: [() => approval.templateFilters.documentType, () => approval.templateFilters.isActive],
+})
 
 const taskDecisionOpen = shallowRef(false)
 // 所选审批任务行：弹窗里的单据/步骤/到期全部从它带出，不让审批人再找一遍。
@@ -201,8 +385,53 @@ const runningChains = computed(
       ['running', 'pending', 'open'].includes((item.status ?? '').toLowerCase()),
     ).length,
 )
-
-applyRouteApprovalFilters()
+const hasChainFilters = computed(
+  () =>
+    Boolean(approval.chainFilters.status?.trim()) ||
+    Boolean(approval.chainFilters.startedBy?.trim()) ||
+    Boolean(approval.chainFilters.sourceService?.trim()) ||
+    Boolean(approval.chainFilters.documentType?.trim()) ||
+    Boolean(approval.chainFilters.documentId?.trim()),
+)
+const hasDecisionFilters = computed(
+  () =>
+    Boolean(approval.decisionFilters.chainId?.trim()) ||
+    Boolean(approval.decisionFilters.actorType?.trim()) ||
+    Boolean(approval.decisionFilters.actorRef?.trim()) ||
+    Boolean(approval.decisionFilters.decision?.trim()) ||
+    Boolean(approval.decisionFilters.documentType?.trim()) ||
+    Boolean(approval.decisionFilters.documentId?.trim()),
+)
+const hasDelegationFilters = computed(
+  () =>
+    Boolean(approval.delegationFilters.status?.trim()) ||
+    Boolean(approval.delegationFilters.delegatorActorRef?.trim()) ||
+    Boolean(approval.delegationFilters.delegateActorRef?.trim()) ||
+    Boolean(approval.delegationFilters.documentType?.trim()),
+)
+const hasTemplateFilters = computed(
+  () =>
+    Boolean(approval.templateFilters.documentType?.trim()) ||
+    approval.templateFilters.isActive !== undefined,
+)
+const chainEmptyMessage = computed(() =>
+  hasChainFilters.value ? '没有符合当前筛选的审批流程。可清空筛选后重试。' : '当前没有审批流程。',
+)
+const decisionEmptyMessage = computed(() =>
+  hasDecisionFilters.value
+    ? '没有符合当前筛选的审批决策。可清空筛选后重试。'
+    : '当前没有审批决策记录。',
+)
+const delegationEmptyMessage = computed(() =>
+  hasDelegationFilters.value
+    ? '没有符合当前筛选的审批委托。可清空筛选后重试。'
+    : '当前没有审批委托。',
+)
+const templateEmptyMessage = computed(() =>
+  hasTemplateFilters.value
+    ? '没有符合当前筛选的审批模板。可清空筛选后重试。'
+    : '当前没有审批模板。',
+)
 
 /** 审批人类型码值 → 中文；UI 不直出 role/user/department 之类的原文。 */
 const APPROVER_TYPE_LABELS: Record<string, string> = {
@@ -272,6 +501,61 @@ function applyRouteApprovalFilters() {
     approval.chainFilters.documentId = documentId
     approval.decisionFilters.documentId = documentId
   }
+}
+
+function normalizedFilterText(value: string) {
+  return value.trim() || undefined
+}
+
+function supportedSelection(value: string | undefined, supported: readonly string[]) {
+  const normalized = value?.trim().toLowerCase()
+  return normalized && supported.includes(normalized) ? normalized : 'all'
+}
+
+function clearChainFilters() {
+  chainFilterDraft.startedBy = ''
+  chainFilterDraft.sourceService = ''
+  chainFilterDraft.documentType = ''
+  chainFilterDraft.documentId = ''
+  chainStatusFilter.value = 'all'
+  approval.chainFilters.status = undefined
+  approval.chainFilters.startedBy = undefined
+  approval.chainFilters.sourceService = undefined
+  approval.chainFilters.documentType = undefined
+  approval.chainFilters.documentId = undefined
+}
+
+function clearDecisionFilters() {
+  decisionFilterDraft.chainId = ''
+  decisionFilterDraft.actorType = ''
+  decisionFilterDraft.actorRef = ''
+  decisionFilterDraft.documentType = ''
+  decisionFilterDraft.documentId = ''
+  decisionTypeFilter.value = 'all'
+  approval.decisionFilters.chainId = undefined
+  approval.decisionFilters.actorType = undefined
+  approval.decisionFilters.actorRef = undefined
+  approval.decisionFilters.decision = undefined
+  approval.decisionFilters.documentType = undefined
+  approval.decisionFilters.documentId = undefined
+}
+
+function clearDelegationFilters() {
+  delegationFilterDraft.delegatorActorRef = ''
+  delegationFilterDraft.delegateActorRef = ''
+  delegationFilterDraft.documentType = ''
+  delegationStatusFilter.value = 'all'
+  approval.delegationFilters.status = undefined
+  approval.delegationFilters.delegatorActorRef = undefined
+  approval.delegationFilters.delegateActorRef = undefined
+  approval.delegationFilters.documentType = undefined
+}
+
+function clearTemplateFilters() {
+  templateFilterDraft.documentType = ''
+  templateStateFilter.value = 'all'
+  approval.templateFilters.documentType = undefined
+  approval.templateFilters.isActive = undefined
 }
 
 function formatStatus(value?: boolean | string | null) {
@@ -566,6 +850,72 @@ async function submitTemplate() {
         </NvTabsContent>
 
         <NvTabsContent value="chains" class="grid gap-3">
+          <NvToolbar :show-search="false">
+            <template #filters>
+              <NvSelect v-model="chainStatusFilter" aria-label="审批流程状态">
+                <NvSelectTrigger
+                  id="approval-chain-status-filter"
+                  aria-label="审批流程状态"
+                  class="w-full sm:w-40"
+                >
+                  <NvSelectValue placeholder="全部状态" />
+                </NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem
+                    v-for="option in chainStatuses"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+              <NvInput
+                id="approval-chain-starter-filter"
+                v-model="chainFilterDraft.startedBy"
+                aria-label="审批流程发起人"
+                autocomplete="off"
+                class="w-full sm:w-44"
+                placeholder="发起人"
+              />
+              <NvInput
+                id="approval-chain-source-filter"
+                v-model="chainFilterDraft.sourceService"
+                aria-label="审批流程来源服务"
+                autocomplete="off"
+                class="w-full sm:w-48"
+                placeholder="来源服务"
+              />
+              <NvInput
+                id="approval-chain-document-type-filter"
+                v-model="chainFilterDraft.documentType"
+                aria-label="审批流程单据类型"
+                autocomplete="off"
+                class="w-full sm:w-44"
+                placeholder="单据类型"
+              />
+              <NvInput
+                id="approval-chain-document-id-filter"
+                v-model="chainFilterDraft.documentId"
+                aria-label="审批流程单据编号"
+                autocomplete="off"
+                class="w-full sm:w-52"
+                placeholder="单据编号"
+              />
+            </template>
+            <template #actions>
+              <NvButton
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-label="清空审批流程筛选"
+                :disabled="!hasChainFilters"
+                @click="clearChainFilters"
+              >
+                清空筛选
+              </NvButton>
+            </template>
+          </NvToolbar>
           <NvDataTable
             manual
             :page="chainPager.page.value"
@@ -577,7 +927,7 @@ async function submitTemplate() {
             :loading="approval.chainsPending.value"
             :searchable="false"
             :column-settings="false"
-            empty-message="当前没有审批流程。"
+            :empty-message="chainEmptyMessage"
             @update:page="chainPager.page.value = $event"
             @update:page-size="(v) => (chainPager.pageSize.value = String(v))"
           >
@@ -617,6 +967,80 @@ async function submitTemplate() {
         </NvTabsContent>
 
         <NvTabsContent value="decisions" class="grid gap-3">
+          <NvToolbar :show-search="false">
+            <template #filters>
+              <NvInput
+                id="approval-decision-chain-filter"
+                v-model="decisionFilterDraft.chainId"
+                aria-label="审批决策流程编号"
+                autocomplete="off"
+                class="w-full sm:w-52"
+                placeholder="流程编号"
+              />
+              <NvInput
+                id="approval-decision-actor-type-filter"
+                v-model="decisionFilterDraft.actorType"
+                aria-label="审批决策处理人类型"
+                autocomplete="off"
+                class="w-full sm:w-44"
+                placeholder="处理人类型"
+              />
+              <NvInput
+                id="approval-decision-actor-filter"
+                v-model="decisionFilterDraft.actorRef"
+                aria-label="审批决策处理人"
+                autocomplete="off"
+                class="w-full sm:w-44"
+                placeholder="处理人"
+              />
+              <NvSelect v-model="decisionTypeFilter" aria-label="审批决策类型">
+                <NvSelectTrigger
+                  id="approval-decision-type-filter"
+                  aria-label="审批决策类型"
+                  class="w-full sm:w-40"
+                >
+                  <NvSelectValue placeholder="全部决策" />
+                </NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem
+                    v-for="option in decisionTypes"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+              <NvInput
+                id="approval-decision-document-type-filter"
+                v-model="decisionFilterDraft.documentType"
+                aria-label="审批决策单据类型"
+                autocomplete="off"
+                class="w-full sm:w-44"
+                placeholder="单据类型"
+              />
+              <NvInput
+                id="approval-decision-document-id-filter"
+                v-model="decisionFilterDraft.documentId"
+                aria-label="审批决策单据编号"
+                autocomplete="off"
+                class="w-full sm:w-52"
+                placeholder="单据编号"
+              />
+            </template>
+            <template #actions>
+              <NvButton
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-label="清空审批决策筛选"
+                :disabled="!hasDecisionFilters"
+                @click="clearDecisionFilters"
+              >
+                清空筛选
+              </NvButton>
+            </template>
+          </NvToolbar>
           <NvDataTable
             manual
             :page="decisionPager.page.value"
@@ -628,7 +1052,7 @@ async function submitTemplate() {
             :loading="approval.decisionsPending.value"
             :searchable="false"
             :column-settings="false"
-            empty-message="当前没有审批决策记录。"
+            :empty-message="decisionEmptyMessage"
             @update:page="decisionPager.page.value = $event"
             @update:page-size="(v) => (decisionPager.pageSize.value = String(v))"
           >
@@ -637,12 +1061,68 @@ async function submitTemplate() {
         </NvTabsContent>
 
         <NvTabsContent value="delegations" class="grid gap-3">
-          <div class="flex justify-end">
-            <NvButton v-if="canManageApprovals" size="sm" type="button" @click="openDelegation">
-              <UserRoundPlusIcon aria-hidden="true" />
-              新建委托
-            </NvButton>
-          </div>
+          <NvToolbar :show-search="false">
+            <template #filters>
+              <NvSelect v-model="delegationStatusFilter" aria-label="审批委托状态">
+                <NvSelectTrigger
+                  id="approval-delegation-status-filter"
+                  aria-label="审批委托状态"
+                  class="w-full sm:w-40"
+                >
+                  <NvSelectValue placeholder="全部状态" />
+                </NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem
+                    v-for="option in delegationStatuses"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+              <NvInput
+                id="approval-delegation-delegator-filter"
+                v-model="delegationFilterDraft.delegatorActorRef"
+                aria-label="审批委托委托人"
+                autocomplete="off"
+                class="w-full sm:w-44"
+                placeholder="委托人"
+              />
+              <NvInput
+                id="approval-delegation-delegate-filter"
+                v-model="delegationFilterDraft.delegateActorRef"
+                aria-label="审批委托代理人"
+                autocomplete="off"
+                class="w-full sm:w-44"
+                placeholder="代理人"
+              />
+              <NvInput
+                id="approval-delegation-document-filter"
+                v-model="delegationFilterDraft.documentType"
+                aria-label="审批委托单据范围"
+                autocomplete="off"
+                class="w-full sm:w-44"
+                placeholder="单据范围"
+              />
+            </template>
+            <template #actions>
+              <NvButton
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-label="清空审批委托筛选"
+                :disabled="!hasDelegationFilters"
+                @click="clearDelegationFilters"
+              >
+                清空筛选
+              </NvButton>
+              <NvButton v-if="canManageApprovals" size="sm" type="button" @click="openDelegation">
+                <UserRoundPlusIcon aria-hidden="true" />
+                新建委托
+              </NvButton>
+            </template>
+          </NvToolbar>
           <NvDataTable
             manual
             :page="delegationPager.page.value"
@@ -654,7 +1134,7 @@ async function submitTemplate() {
             :loading="approval.delegationsPending.value"
             :searchable="false"
             :column-settings="false"
-            empty-message="当前没有审批委托。"
+            :empty-message="delegationEmptyMessage"
             @update:page="delegationPager.page.value = $event"
             @update:page-size="(v) => (delegationPager.pageSize.value = String(v))"
           >
@@ -675,12 +1155,52 @@ async function submitTemplate() {
         </NvTabsContent>
 
         <NvTabsContent value="templates" class="grid gap-3">
-          <div class="flex justify-end">
-            <NvButton v-if="canManageApprovals" size="sm" type="button" @click="openTemplate">
-              <FilePlus2Icon aria-hidden="true" />
-              维护模板
-            </NvButton>
-          </div>
+          <NvToolbar :show-search="false">
+            <template #filters>
+              <NvInput
+                id="approval-template-document-type-filter"
+                v-model="templateFilterDraft.documentType"
+                aria-label="审批模板单据类型"
+                autocomplete="off"
+                class="w-full sm:w-48"
+                placeholder="单据类型"
+              />
+              <NvSelect v-model="templateStateFilter" aria-label="审批模板状态">
+                <NvSelectTrigger
+                  id="approval-template-state-filter"
+                  aria-label="审批模板状态"
+                  class="w-full sm:w-40"
+                >
+                  <NvSelectValue placeholder="全部状态" />
+                </NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem
+                    v-for="option in templateStates"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+            </template>
+            <template #actions>
+              <NvButton
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-label="清空审批模板筛选"
+                :disabled="!hasTemplateFilters"
+                @click="clearTemplateFilters"
+              >
+                清空筛选
+              </NvButton>
+              <NvButton v-if="canManageApprovals" size="sm" type="button" @click="openTemplate">
+                <FilePlus2Icon aria-hidden="true" />
+                维护模板
+              </NvButton>
+            </template>
+          </NvToolbar>
           <NvDataTable
             manual
             :page="templatePager.page.value"
@@ -692,7 +1212,7 @@ async function submitTemplate() {
             :loading="approval.templatesPending.value"
             :searchable="false"
             :column-settings="false"
-            empty-message="当前没有审批模板。"
+            :empty-message="templateEmptyMessage"
             @update:page="templatePager.page.value = $event"
             @update:page-size="(v) => (templatePager.pageSize.value = String(v))"
           >

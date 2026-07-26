@@ -132,13 +132,13 @@ flowchart LR
   Q0 -->|failed| Q1 --> A1 --> Q2 --> O1
 ```
 
-| 节点               | Business Console 页面   | BusinessGateway facade                                                                                             | 当前事实或缺口                                            |
-| ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
-| 检验记录           | `/quality/inspections`  | `/api/business-console/v1/quality/inspection-records`                                                              | 检验失败可打开 NCR。                                      |
-| NCR                | `/quality/ncrs`         | `/api/business-console/v1/quality/ncrs`                                                                            | 支持 NCR 列表、处置提交和关闭 facade。                    |
-| 原因码             | `/quality/reason-codes` | `/api/business-console/v1/quality/reason-codes`                                                                    | 已有独立原因码目录页面和 facade。                         |
-| 审批               | `/approval`             | `/api/business-console/v1/approval/**`                                                                             | 审批中心已有模板、流程实例、待办、决策记录和委托 facade。 |
-| 放行 / 返工 / 报废 | `/quality/ncrs`         | `/api/business-console/v1/quality/ncrs/{ncrId}/disposition`, `/api/business-console/v1/quality/ncrs/{ncrId}/close` | 处置结果可提交并关闭；完整质量处置工作台仍需后续产品化。  |
+| 节点               | Business Console 页面   | BusinessGateway facade                                                                                             | 当前事实或缺口                                                                                                                                                                |
+| ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 检验记录           | `/quality/inspections`  | `/api/business-console/v1/quality/inspection-records`                                                              | 检验失败可打开 NCR。                                                                                                                                                          |
+| NCR                | `/quality/ncrs`         | `/api/business-console/v1/quality/ncrs`                                                                            | 支持 NCR 列表、处置提交和关闭 facade。                                                                                                                                        |
+| 原因码             | `/quality/reason-codes` | `/api/business-console/v1/quality/reason-codes`                                                                    | 已有独立原因码目录页面和 facade。                                                                                                                                             |
+| 审批               | `/approval`             | `/api/business-console/v1/approval/**`                                                                             | 审批中心已有模板、流程实例、待办、决策记录和委托 facade；流程、决策、委托、模板四个页签可按 facade 已支持字段筛选，筛选变更会回到第一页且可一键清空；当前不提供时间范围筛选。 |
+| 放行 / 返工 / 报废 | `/quality/ncrs`         | `/api/business-console/v1/quality/ncrs/{ncrId}/disposition`, `/api/business-console/v1/quality/ncrs/{ncrId}/close` | 处置结果可提交并关闭；完整质量处置工作台仍需后续产品化。                                                                                                                      |
 
 ## 设备维护
 
