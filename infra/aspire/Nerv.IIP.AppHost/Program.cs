@@ -769,6 +769,18 @@ var connectorHost = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder
     .WaitFor(ops)
     .WaitFor(iam);
 
+if (leaderDemoWorldEnabled)
+{
+    connectorHost = connectorHost
+        .WithEnvironment("Simulated__Enabled", "true")
+        .WithEnvironment("ConnectorHost__CollectionCycleSeconds", "2")
+        .WithEnvironment("ConnectorHost__OperationPollSeconds", "1")
+        .WithEnvironment("Platform__IndustrialTelemetryBaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
+        .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
+        .WithReference(businessIndustrialTelemetry)
+        .WaitFor(businessIndustrialTelemetry);
+}
+
 if (connectorHealthAcceptanceEnabled)
 {
     var modbusEndpoint = builder.Configuration["ConnectorHealthAcceptance:ModbusEndpoint"];

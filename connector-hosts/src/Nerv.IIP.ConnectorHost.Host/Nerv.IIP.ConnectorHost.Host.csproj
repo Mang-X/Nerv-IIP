@@ -18,6 +18,7 @@
     <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Connectors.Modbus\Nerv.IIP.ConnectorHost.Connectors.Modbus.csproj" />
     <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Connectors.Mqtt\Nerv.IIP.ConnectorHost.Connectors.Mqtt.csproj" />
     <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Connectors.OpcUa\Nerv.IIP.ConnectorHost.Connectors.OpcUa.csproj" />
+    <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Connectors.Simulated\Nerv.IIP.ConnectorHost.Connectors.Simulated.csproj" />
     <ProjectReference Include="..\..\..\backend\common\Sdk\Nerv.IIP.Sdk.Ops\Nerv.IIP.Sdk.Ops.csproj" />
     <ProjectReference Include="..\..\..\backend\common\ServiceAuth\Nerv.IIP.ServiceAuth\Nerv.IIP.ServiceAuth.csproj" />
   </ItemGroup>

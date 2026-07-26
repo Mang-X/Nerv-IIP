@@ -17,9 +17,8 @@ public sealed class SimulatedConnector :
     private readonly TimeProvider _timeProvider;
     private readonly IConnectorReportSignal? _reportSignal;
     private readonly SimulatedScenarioEvaluator _evaluator;
-    private readonly IReadOnlyList<ConnectorRuntime> _runtimes;
-    private readonly Dictionary<string, ConnectorRuntime> _runtimesById;
-    private readonly SimulatedCommandReceiptStore _commandReceipts;
+    private readonly IReadOnlyList<SimulatedConnectorRuntime> _runtimes;
+    private readonly SimulatedCommandRouter _commandRouter;
 
     public SimulatedConnector(
         SimulatedConnectorOptions options,
@@ -36,17 +35,21 @@ public sealed class SimulatedConnector :
         _reportSignal = reportSignal;
         _evaluator = new SimulatedScenarioEvaluator(options);
         _runtimes = options.Connectors
-            .Select(profile => new ConnectorRuntime(
+            .Select(profile => new SimulatedConnectorRuntime(
                 profile,
                 options,
                 timeProvider,
                 reportSignal,
                 manifestSignal))
             .ToArray();
-        _runtimesById = _runtimes.ToDictionary(
+        var runtimesById = _runtimes.ToDictionary(
             runtime => runtime.Profile.ConnectorId,
             StringComparer.Ordinal);
-        _commandReceipts = new SimulatedCommandReceiptStore(
+        _commandRouter = new SimulatedCommandRouter(
+            runtimeContext,
+            runtimesById,
+            timeProvider,
+            reportSignal,
             options.CommandReceiptCacheCapacity);
     }
 
@@ -56,10 +59,8 @@ public sealed class SimulatedConnector :
             runtime => runtime.Outbox.Count,
             StringComparer.Ordinal);
 
-    public int CommandReceiptCount => _commandReceipts.Count;
-
-    public IReadOnlyList<string> CachedOperationTaskIds =>
-        _commandReceipts.OperationTaskIds;
+    public int CommandReceiptCount => _commandRouter.ReceiptCount;
+    public IReadOnlyList<string> CachedOperationTaskIds => _commandRouter.CachedOperationTaskIds;
 
     public Task<IReadOnlyList<ConnectorTarget>> DiscoverAsync(
         CancellationToken cancellationToken)
@@ -95,385 +96,16 @@ public sealed class SimulatedConnector :
         return Task.CompletedTask;
     }
 
-    public bool CanExecute(OperationTaskDispatchItem task)
-    {
-        ArgumentNullException.ThrowIfNull(task);
-        return string.Equals(task.OperationCode, "device.control.command", StringComparison.Ordinal)
-            && string.Equals(task.OrganizationId, _runtimeContext.OrganizationId, StringComparison.Ordinal)
-            && string.Equals(task.EnvironmentId, _runtimeContext.EnvironmentId, StringComparison.Ordinal)
-            && string.Equals(task.ConnectorHostId, _runtimeContext.ConnectorHostId, StringComparison.Ordinal)
-            && _runtimesById.ContainsKey(task.InstanceKey);
-    }
+    public bool CanExecute(OperationTaskDispatchItem task) =>
+        _commandRouter.CanExecute(task);
 
     public Task<ConnectorOperationExecution> ExecuteAsync(
         OperationTaskDispatchItem task,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (_commandReceipts.TryGet(task.OperationTaskId, out var cached))
-        {
-            return Task.FromResult(cached);
-        }
-
-        var execution = ExecuteCommand(task);
-        return Task.FromResult(
-            _commandReceipts.Store(task.OperationTaskId, execution));
+        return Task.FromResult(_commandRouter.Execute(task));
     }
-
-    private ConnectorOperationExecution ExecuteCommand(OperationTaskDispatchItem task)
-    {
-        var commandType = task.Parameters.GetValueOrDefault("commandType")?
-            .Trim()
-            .ToLowerInvariant() ?? "unknown";
-        if (!_runtimesById.TryGetValue(task.InstanceKey, out var runtime))
-        {
-            return Failure(
-                task,
-                task.InstanceKey,
-                "unknown",
-                commandType,
-                "BadNotFound",
-                "Simulated connector instance was not found.");
-        }
-
-        var output = CreateOutput(task, runtime.Profile, commandType);
-        if (!task.Parameters.TryGetValue("deviceAssetId", out var deviceAssetId)
-            || string.IsNullOrWhiteSpace(deviceAssetId))
-        {
-            return Failure(
-                output,
-                "BadNotFound",
-                "Simulated device identity was not supplied.");
-        }
-
-        var device = runtime.Profile.Devices.SingleOrDefault(candidate =>
-            string.Equals(
-                candidate.DeviceAssetId,
-                deviceAssetId.Trim(),
-                StringComparison.Ordinal));
-        if (device is null)
-        {
-            return Failure(
-                output,
-                "BadNotFound",
-                $"Simulated device '{deviceAssetId}' was not found.");
-        }
-
-        return commandType switch
-        {
-            "write-tag" => ExecuteSingleWrite(
-                task,
-                runtime,
-                device,
-                output),
-            "parameter-set" => ExecuteParameterSet(
-                task,
-                runtime,
-                device,
-                output),
-            "start-stop" => ExecuteStartStop(
-                task,
-                runtime,
-                device,
-                output),
-            _ => Failure(
-                output,
-                "BadNotSupported",
-                $"Simulated command type '{commandType}' is not supported.")
-        };
-    }
-
-    private ConnectorOperationExecution ExecuteSingleWrite(
-        OperationTaskDispatchItem task,
-        ConnectorRuntime runtime,
-        SimulatedDeviceProfile device,
-        Dictionary<string, string> output)
-    {
-        if (!task.Parameters.TryGetValue("tagKey", out var tagKey)
-            || string.IsNullOrWhiteSpace(tagKey))
-        {
-            return Failure(output, "BadNotFound", "Simulated tag identity was not supplied.");
-        }
-
-        var tag = device.Tags.SingleOrDefault(candidate =>
-            string.Equals(
-                candidate.TagKey,
-                tagKey.Trim(),
-                StringComparison.OrdinalIgnoreCase));
-        if (tag is null)
-        {
-            return Failure(
-                output,
-                "BadNotFound",
-                $"Simulated tag '{device.DeviceAssetId}/{tagKey}' was not found.");
-        }
-
-        if (!task.Parameters.TryGetValue("value", out var rawValue))
-        {
-            return Failure(
-                output,
-                "BadOutOfRange",
-                "Simulated tag value was not supplied.");
-        }
-
-        var validation = ValidateWrite(tag, rawValue);
-        if (!validation.Succeeded)
-        {
-            AddReceipt(
-                output,
-                0,
-                tag.TagKey,
-                rawValue,
-                validation.ReceiptCode,
-                validation.Message);
-            return Failure(output, validation.ReceiptCode, validation.Message);
-        }
-
-        lock (runtime.Gate)
-        {
-            runtime.ControlledValues[(device.DeviceAssetId, tag.TagKey)] =
-                validation.Value;
-        }
-
-        AddReceipt(
-            output,
-            0,
-            tag.TagKey,
-            Format(validation.Value),
-            "Good",
-            "Simulated command applied.");
-        output["writeCount"] = "1";
-        output["successfulWriteCount"] = "1";
-        SignalReport(runtime.Profile.ConnectorId);
-        return ConnectorOperationExecution.Success(output);
-    }
-
-    private ConnectorOperationExecution ExecuteParameterSet(
-        OperationTaskDispatchItem task,
-        ConnectorRuntime runtime,
-        SimulatedDeviceProfile device,
-        Dictionary<string, string> output)
-    {
-        var parameters = task.Parameters
-            .Where(item => item.Key.StartsWith("parameter.", StringComparison.Ordinal))
-            .OrderBy(item => item.Key, StringComparer.Ordinal)
-            .ToArray();
-        if (parameters.Length == 0)
-        {
-            return Failure(
-                output,
-                "BadNotSupported",
-                "Simulated parameter-set contains no values.");
-        }
-
-        var writes = new List<(SimulatedTagProfile Tag, decimal Value)>();
-        for (var index = 0; index < parameters.Length; index++)
-        {
-            var parameter = parameters[index];
-            var tagKey = parameter.Key["parameter.".Length..];
-            var tag = device.Tags.SingleOrDefault(candidate =>
-                string.Equals(
-                    candidate.TagKey,
-                    tagKey,
-                    StringComparison.OrdinalIgnoreCase));
-            if (tag is null)
-            {
-                AddReceipt(
-                    output,
-                    index,
-                    tagKey,
-                    parameter.Value,
-                    "BadNotFound",
-                    $"Simulated tag '{device.DeviceAssetId}/{tagKey}' was not found.");
-                return Failure(
-                    output,
-                    "BadNotFound",
-                    $"Simulated tag '{device.DeviceAssetId}/{tagKey}' was not found.");
-            }
-
-            var validation = ValidateWrite(tag, parameter.Value);
-            AddReceipt(
-                output,
-                index,
-                tag.TagKey,
-                validation.Succeeded ? Format(validation.Value) : parameter.Value,
-                validation.ReceiptCode,
-                validation.Message);
-            if (!validation.Succeeded)
-            {
-                return Failure(
-                    output,
-                    validation.ReceiptCode,
-                    validation.Message);
-            }
-
-            writes.Add((tag, validation.Value));
-        }
-
-        lock (runtime.Gate)
-        {
-            foreach (var write in writes)
-            {
-                runtime.ControlledValues[
-                    (device.DeviceAssetId, write.Tag.TagKey)] = write.Value;
-            }
-        }
-
-        output["writeCount"] = writes.Count.ToString(CultureInfo.InvariantCulture);
-        output["successfulWriteCount"] = writes.Count.ToString(
-            CultureInfo.InvariantCulture);
-        SetDeviceReceipt(
-            output,
-            "Good",
-            "Simulated parameter set applied.");
-        SignalReport(runtime.Profile.ConnectorId);
-        return ConnectorOperationExecution.Success(output);
-    }
-
-    private ConnectorOperationExecution ExecuteStartStop(
-        OperationTaskDispatchItem task,
-        ConnectorRuntime runtime,
-        SimulatedDeviceProfile device,
-        Dictionary<string, string> output)
-    {
-        var value = task.Parameters.GetValueOrDefault("value")?
-            .Trim()
-            .ToLowerInvariant();
-        var state = value switch
-        {
-            "start" => "running",
-            "stop" => "stopped",
-            _ => null
-        };
-        if (state is null)
-        {
-            return Failure(
-                output,
-                "BadNotSupported",
-                $"Simulated start-stop value '{value ?? "<missing>"}' is not supported.");
-        }
-
-        lock (runtime.Gate)
-        {
-            runtime.DeviceStates[device.DeviceAssetId] = new DeviceRuntimeState(
-                state,
-                _timeProvider.GetUtcNow());
-        }
-
-        AddReceipt(
-            output,
-            0,
-            "device-state",
-            value!,
-            "Good",
-            $"Simulated device entered {state} state.");
-        output["writeCount"] = "1";
-        output["successfulWriteCount"] = "1";
-        SignalReport(runtime.Profile.ConnectorId);
-        return ConnectorOperationExecution.Success(output);
-    }
-
-    private static WriteValidation ValidateWrite(
-        SimulatedTagProfile tag,
-        string rawValue)
-    {
-        if (!tag.Writable)
-        {
-            return WriteValidation.Failed(
-                "BadNotSupported",
-                $"Simulated tag '{tag.DeviceAssetId}/{tag.TagKey}' is read-only.");
-        }
-
-        if (!decimal.TryParse(
-                rawValue,
-                NumberStyles.Number,
-                CultureInfo.InvariantCulture,
-                out var value)
-            || value < tag.WritableMinimum
-            || value > tag.WritableMaximum)
-        {
-            return WriteValidation.Failed(
-                "BadOutOfRange",
-                $"Simulated value for '{tag.DeviceAssetId}/{tag.TagKey}' is outside the configured range.");
-        }
-
-        return WriteValidation.Success(value);
-    }
-
-    private static Dictionary<string, string> CreateOutput(
-        OperationTaskDispatchItem task,
-        SimulatedConnectorProfile profile,
-        string commandType) =>
-        new(StringComparer.Ordinal)
-        {
-            ["connectorId"] = profile.ConnectorId,
-            ["protocol"] = profile.Protocol,
-            ["commandType"] = commandType,
-            ["operationTaskId"] = task.OperationTaskId,
-            ["correlationId"] = task.CorrelationId
-        };
-
-    private static ConnectorOperationExecution Failure(
-        OperationTaskDispatchItem task,
-        string connectorId,
-        string protocol,
-        string commandType,
-        string receiptCode,
-        string message)
-    {
-        var output = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["connectorId"] = connectorId,
-            ["protocol"] = protocol,
-            ["commandType"] = commandType,
-            ["operationTaskId"] = task.OperationTaskId,
-            ["correlationId"] = task.CorrelationId
-        };
-        return Failure(output, receiptCode, message);
-    }
-
-    private static ConnectorOperationExecution Failure(
-        Dictionary<string, string> output,
-        string receiptCode,
-        string message)
-    {
-        SetDeviceReceipt(output, receiptCode, message);
-        return ConnectorOperationExecution.Failed(
-            "simulated.command.rejected",
-            message,
-            "validation",
-            false,
-            output);
-    }
-
-    private static void AddReceipt(
-        IDictionary<string, string> output,
-        int index,
-        string tagKey,
-        string writtenValue,
-        string receiptCode,
-        string message)
-    {
-        var prefix = $"receipt.{index.ToString(CultureInfo.InvariantCulture)}";
-        output[$"{prefix}.status"] = receiptCode == "Good" ? "Good" : "Bad";
-        output[$"{prefix}.code"] = receiptCode;
-        output[$"{prefix}.message"] = message;
-        output[$"{prefix}.tagKey"] = tagKey;
-        output[$"{prefix}.writtenValue"] = writtenValue;
-        SetDeviceReceipt(output, receiptCode, message);
-    }
-
-    private static void SetDeviceReceipt(
-        IDictionary<string, string> output,
-        string receiptCode,
-        string message)
-    {
-        output["deviceReceiptCode"] = receiptCode;
-        output["deviceReceiptMessage"] = message;
-    }
-
-    private static string Format(decimal value) =>
-        value.ToString(CultureInfo.InvariantCulture);
 
     private long ResolveCycle(DateTimeOffset nowUtc)
     {
@@ -488,7 +120,7 @@ public sealed class SimulatedConnector :
     }
 
     private void GenerateCycle(
-        ConnectorRuntime runtime,
+        SimulatedConnectorRuntime runtime,
         DateTimeOffset nowUtc,
         long cycle)
     {
@@ -558,7 +190,7 @@ public sealed class SimulatedConnector :
     }
 
     private async Task DeliverDueAsync(
-        ConnectorRuntime runtime,
+        SimulatedConnectorRuntime runtime,
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken)
     {
@@ -602,7 +234,7 @@ public sealed class SimulatedConnector :
         }
     }
 
-    private ConnectorTarget CreateTarget(ConnectorRuntime runtime)
+    private ConnectorTarget CreateTarget(SimulatedConnectorRuntime runtime)
     {
         long receivedCount;
         long droppedCount;
@@ -662,76 +294,4 @@ public sealed class SimulatedConnector :
     }
 
     private void SignalReport(string connectorId) => _reportSignal?.Signal(connectorId);
-
-    private sealed class ConnectorRuntime
-    {
-        public ConnectorRuntime(
-            SimulatedConnectorProfile profile,
-            SimulatedConnectorOptions options,
-            TimeProvider timeProvider,
-            IConnectorReportSignal? reportSignal,
-            IConnectorManifestSignal? manifestSignal)
-        {
-            Profile = profile;
-            Outbox = new SimulatedSampleOutbox(
-                options.MaxPendingSamples,
-                options.MaxDeliveryAttempts,
-                TimeSpan.FromMilliseconds(options.RetryBaseMilliseconds));
-            ConnectionTracker = new ConnectorConnectionStateTracker(
-                profile.ConnectorId,
-                timeProvider,
-                reportSignal is null ? static _ => { } : reportSignal.Signal);
-            ManifestTracker = new ConnectorTagManifestTracker(
-                profile.ConnectorId,
-                profile.SourceSystem,
-                profile.Devices
-                    .SelectMany(device => device.Tags)
-                    .Select(tag => new ConnectorTagManifestDefinition(
-                        tag.DeviceAssetId,
-                        tag.TagKey,
-                        true,
-                        tag.ProtocolAddress))
-                    .ToArray(),
-                timeProvider,
-                manifestSignal is null ? static _ => { } : manifestSignal.Signal);
-            var observedAtUtc = timeProvider.GetUtcNow();
-            DeviceStates = profile.Devices.ToDictionary(
-                device => device.DeviceAssetId,
-                _ => new DeviceRuntimeState("running", observedAtUtc),
-                StringComparer.Ordinal);
-            ConnectionTracker.MarkAlive();
-        }
-
-        public object Gate { get; } = new();
-        public SimulatedConnectorProfile Profile { get; }
-        public SimulatedSampleOutbox Outbox { get; }
-        public ConnectorConnectionStateTracker ConnectionTracker { get; }
-        public ConnectorTagManifestTracker ManifestTracker { get; }
-        public Guid CounterEpoch { get; } = Guid.CreateVersion7();
-        public Dictionary<(string DeviceAssetId, string TagKey), long> LastGeneratedCycles { get; } = [];
-        public Dictionary<(string DeviceAssetId, string TagKey), decimal?> ControlledValues { get; } = [];
-        public Dictionary<string, DeviceRuntimeState> DeviceStates { get; }
-        public bool ManifestActivated { get; set; }
-        public long ReceivedCount { get; set; }
-        public long DroppedCount { get; set; }
-        public long ErrorCount { get; set; }
-        public DateTimeOffset? LastSampleAtUtc { get; set; }
-    }
-
-    private sealed record DeviceRuntimeState(
-        string State,
-        DateTimeOffset OccurredAtUtc);
-
-    private sealed record WriteValidation(
-        bool Succeeded,
-        decimal Value,
-        string ReceiptCode,
-        string Message)
-    {
-        public static WriteValidation Success(decimal value) =>
-            new(true, value, "Good", "Simulated command applied.");
-
-        public static WriteValidation Failed(string receiptCode, string message) =>
-            new(false, 0m, receiptCode, message);
-    }
 }
