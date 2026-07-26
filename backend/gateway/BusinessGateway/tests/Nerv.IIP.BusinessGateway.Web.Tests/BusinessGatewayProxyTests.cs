@@ -393,7 +393,7 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Master_data_worker_directory_facade_uses_internal_service_token_for_iam_worker_lookup()
+    public async Task Master_data_worker_directory_facade_reads_master_data_workers_with_the_internal_service_token()
     {
         var handler = new RecordingHandler(request =>
             new HttpResponseMessage(HttpStatusCode.OK)
@@ -409,12 +409,24 @@ public sealed class BusinessGatewayProxyTests
                         {
                             new
                             {
-                                userId = "user-worker-001",
-                                displayName = "operator.wang",
-                                employeeNo = (string?)null,
-                                department = (string?)null,
-                                status = "active",
-                                email = "operator.wang@nerv-iip.local",
+                                userId = "user-op-001",
+                                employeeNo = "EMP-1001",
+                                name = "陈志强",
+                                departmentCode = "DEPT-PROD",
+                                departmentName = "生产部",
+                                jobTitle = "装配班组长",
+                                employmentStatus = "active",
+                                phone = (string?)null,
+                                active = true,
+                                teams = new[]
+                                {
+                                    new { teamCode = "TEAM-CNC", teamName = "CNC 精加工班组", isLeader = true, workCenterCode = "WC-CNC" },
+                                },
+                                skills = new[]
+                                {
+                                    new { skillCode = "cnc-operation", skillName = "CNC 操作", level = "senior" },
+                                },
+                                snapshotVersion = "1",
                             },
                         },
                     },
@@ -427,29 +439,34 @@ public sealed class BusinessGatewayProxyTests
         await using var factory = CreateFactory(auth, services =>
         {
             services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
-                new NamedPrimaryHandlerFilter("IBusinessIamDirectoryClient", handler));
+                new NamedPrimaryHandlerFilter("IBusinessMasterDataClient", handler));
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/master-data/workers?organizationId=org-001&environmentId=env-dev&keyword=operator&pageIndex=1&pageSize=10&includeDisabled=false");
+        var response = await client.GetAsync(
+            "/api/business-console/v1/master-data/workers?organizationId=org-001&environmentId=env-dev&keyword=%E9%99%88&workCenterCode=WC-CNC&pageIndex=1&pageSize=10&includeDisabled=false");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(BusinessGatewayPermissions.MasterDataResourcesRead, auth.LastRequirement!.PermissionCode);
         var request = Assert.Single(handler.Requests);
         Assert.Equal(HttpMethod.Get, request.Method);
-        Assert.Equal("/internal/iam/v1/workers?filterSearch=operator&pageIndex=1&pageSize=10&filterEnabled=true", request.RequestUri!.PathAndQuery);
+        // 派工候选靠 workCenterCode 收敛，过滤条件必须原样落到 MasterData 员工目录。
+        Assert.StartsWith("/api/business/v1/master-data/workers?", request.RequestUri!.PathAndQuery, StringComparison.Ordinal);
+        Assert.Contains("workCenterCode=WC-CNC", request.RequestUri.PathAndQuery, StringComparison.Ordinal);
+        Assert.Contains("organizationId=org-001", request.RequestUri.PathAndQuery, StringComparison.Ordinal);
         Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
         Assert.Equal("internal-test-token", request.Headers.Authorization.Parameter);
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var worker = document.RootElement.GetProperty("data").GetProperty("items")[0];
-        Assert.Equal("user-worker-001", worker.GetProperty("userId").GetString());
-        Assert.Equal("operator.wang", worker.GetProperty("displayName").GetString());
-        Assert.Equal(JsonValueKind.Null, worker.GetProperty("employeeNo").ValueKind);
-        Assert.Equal("active", worker.GetProperty("status").GetString());
+        Assert.Equal("user-op-001", worker.GetProperty("userId").GetString());
+        Assert.Equal("EMP-1001", worker.GetProperty("employeeNo").GetString());
+        Assert.Equal("生产部", worker.GetProperty("departmentName").GetString());
+        Assert.Equal("active", worker.GetProperty("employmentStatus").GetString());
+        Assert.Equal("CNC 精加工班组", worker.GetProperty("teams")[0].GetProperty("teamName").GetString());
     }
 
     [Fact]
