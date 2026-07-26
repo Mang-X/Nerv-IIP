@@ -37,7 +37,7 @@
 | CodeSet | 中文名 | 类别 | 标准码值 |
 |---|---|---|---|
 | `partner-type` | 业务伙伴角色 | 系统枚举 | `customer`=客户 / `supplier`=供应商 / `carrier`=承运商 |
-| `skill` | 技能/工种（legacy 兼容） | 工厂自定义 | 样例:`welding`=焊接 / `assembly`=装配 / `inspection`=质检 / `cnc-operation`=数控操作 / `forklift`=叉车 |
+| `skill` | 技能/工种（legacy 兼容） | 工厂自定义 | 样例:`welding`=焊接 / `assembly`=装配 / `inspection`=质检 / `cnc-operation`=数控操作 / `forklift`=叉车 / `equipment-maintenance`=设备维护 |
 | `skill-level` | 技能等级 | 系统枚举 | `junior`=初级 / `intermediate`=中级 / `senior`=高级 / `expert`=专家 |
 | `quality-reason` | 质量原因/不良代码（legacy 兼容） | 工厂自定义 | 样例:`scratch`=划伤 / `dimension-ng`=尺寸不良 / `missing-part`=缺件 / `solder-defect`=焊接不良 |
 | `compliance-tag` | 合规标签 | 平台预置+可维护 | `rohs`=RoHS / `reach`=REACH / `msd`=湿敏元件 / `ul`=UL认证 |
@@ -102,6 +102,7 @@ UoM 换算是有向换算规则,允许工厂同时维护正向和反向换算(�
 - ✅ 后端种子 `MasterDataSeedService` 已通过 #352/#369 对齐本文件:补齐 §2 权威码值,修正 `product-category`/`material-type` 旧错配,对 `batch-tracking-policy:lot`、`serial-tracking-policy:serial`、`shelf-life-policy:180d/365d`、`uom-dimension:mass/quantity` 等历史误种码值执行软停用而非物理删除；seed 会修复既有启用标准码的中文 name 与 UOM 种子的名称/量纲。
 - ✅ SKU 创建/更新会按 §3 校验受控字段必须引用启用 ReferenceData;人员技能登记会校验 legacy 技能 CodeSet 与技能等级必须引用启用 ReferenceData;系统枚举 CodeSet 禁止运行时新增非标准码或改写标准码名称,平台预置/工厂自定义 CodeSet 仍可按治理规则新增码值。
 - ✅ ProductCategory、Skill 和 QualityReason 已提供独立目录 API/BusinessGateway facade，用于产品分类树、技能证书属性和质量原因严重度/默认处置等结构化维护；legacy CodeSet 在切换期保留兼容。
+- ✅（2026-07-26）常规 opt-in 种子除字典/计量单位/班次/工作日历外，另补齐**部门、产品分类树、技能目录、班组与班组成员、人员技能矩阵**基线数据，避免全新环境这些页面空白；显示名一律中文（班次=早班/晚班、工作日历=标准工作日历、编码规则 DisplayName 全中文）。补齐遵循「只补缺失项」：按 org/env + 业务码已存在的一律跳过，不覆写租户事实。技能目录的 `skillCode` 与 legacy `skill` CodeSet 码值保持一致，保证人员技能登记校验可通过。
 
 ## 附:相关文件
 - 后端种子:`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Seed/MasterDataSeedService.cs`
