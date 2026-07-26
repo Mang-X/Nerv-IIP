@@ -147,4 +147,3 @@ Required evidence:
 Product documentation is unaffected because no end-user page or flow changes. Architecture readiness, Connector
 Protocol v1 operational guidance, and Aspire operator documentation are updated. No HTTP endpoint, database schema,
 facade matrix row, OpenAPI snapshot, or generated frontend client changes.
-
