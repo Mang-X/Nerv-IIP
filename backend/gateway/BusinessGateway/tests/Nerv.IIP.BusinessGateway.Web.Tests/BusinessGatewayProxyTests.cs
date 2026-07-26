@@ -4869,6 +4869,56 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Master_data_worker_directory_maps_downstream_name_to_display_name()
+    {
+        // 下游员工目录行是 `name`，facade 契约是 `displayName`——回归守卫：若网关又改回
+        // 用 facade 记录直接反序列化，姓名会静默变 null（员工页姓名列/派工姓名快照全空）。
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                items = new[]
+                {
+                    new
+                    {
+                        userId = "user-emp-010",
+                        employeeNo = "EMP-010",
+                        name = "吴桂芳",
+                        departmentCode = "DEPT-PROD",
+                        departmentName = "生产部",
+                        jobTitle = "操作工",
+                        employmentStatus = "active",
+                        phone = (string?)null,
+                        active = true,
+                        teams = new[] { new { teamCode = "TEAM-WB-MC-A", teamName = "机加车间早班组", isLeader = false, workshopCode = "WS-01" } },
+                        skills = Array.Empty<object>(),
+                        snapshotVersion = "v1",
+                    },
+                },
+                totalCount = 1,
+                pageIndex = 1,
+                pageSize = 1,
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var response = await client.ListWorkersAsync(
+            "internal-token-001",
+            new BusinessConsoleWorkerDirectoryRequest("org-001", "env-dev", UserId: "user-emp-010", PageIndex: 1, PageSize: 1),
+            CancellationToken.None);
+
+        var worker = Assert.Single(response.Items);
+        Assert.Equal("吴桂芳", worker.DisplayName);
+        Assert.Equal("EMP-010", worker.EmployeeNo);
+        Assert.Equal("机加车间早班组", Assert.Single(worker.Teams).TeamName);
+        Assert.Equal(1, response.TotalCount);
+    }
+
+    [Fact]
     public async Task Master_data_http_client_forwards_reference_code_set_and_lifecycle_paths()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new

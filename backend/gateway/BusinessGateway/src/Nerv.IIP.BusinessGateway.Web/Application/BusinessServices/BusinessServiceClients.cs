@@ -2289,11 +2289,37 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         CancellationToken cancellationToken) =>
         CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/workers", request, cancellationToken);
 
-    public Task<BusinessConsoleWorkerDirectoryResponse> ListWorkersAsync(
+    /// <summary>
+    /// 下游员工目录行的 wire 形状：MasterData 返回的是 <c>name</c>，facade 契约是
+    /// <c>displayName</c>——必须经本记录显式映射；直接用 facade 记录反序列化会让姓名
+    /// 静默变 null（员工页姓名列、派工姓名快照曾因此全空）。
+    /// </summary>
+    private sealed record MasterDataWorkerDirectoryWireItem(
+        string UserId,
+        string EmployeeNo,
+        string Name,
+        string? DepartmentCode,
+        string? DepartmentName,
+        string? JobTitle,
+        string EmploymentStatus,
+        string? Phone,
+        bool Active,
+        IReadOnlyCollection<BusinessConsoleWorkerTeamItem> Teams,
+        IReadOnlyCollection<BusinessConsoleWorkerSkillItem> Skills,
+        string SnapshotVersion);
+
+    private sealed record MasterDataWorkerDirectoryWireResponse(
+        IReadOnlyCollection<MasterDataWorkerDirectoryWireItem> Items,
+        int TotalCount,
+        int PageIndex,
+        int PageSize);
+
+    public async Task<BusinessConsoleWorkerDirectoryResponse> ListWorkersAsync(
         string internalBearerToken,
         BusinessConsoleWorkerDirectoryRequest request,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleWorkerDirectoryResponse>(
+        CancellationToken cancellationToken)
+    {
+        var wire = await SendAsync<MasterDataWorkerDirectoryWireResponse>(
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/master-data/workers?" + Query(
@@ -2312,6 +2338,26 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("pageSize", request.PageSize)),
             null,
             cancellationToken);
+        return new BusinessConsoleWorkerDirectoryResponse(
+            wire.PageIndex,
+            wire.PageSize,
+            wire.TotalCount,
+            wire.Items
+                .Select(x => new BusinessConsoleWorkerDirectoryItem(
+                    x.UserId,
+                    x.EmployeeNo,
+                    x.Name,
+                    x.DepartmentCode,
+                    x.DepartmentName,
+                    x.JobTitle,
+                    x.EmploymentStatus,
+                    x.Phone,
+                    x.Active,
+                    x.Teams,
+                    x.Skills,
+                    x.SnapshotVersion))
+                .ToArray());
+    }
 
     public Task<BusinessConsoleResourceItem> CreateSiteAsync(
         string internalBearerToken,
