@@ -26,15 +26,15 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
     IamPasswordService passwordService)
 {
     /// <summary>PDA 产线操作工角色：派工/工序执行/报工/领料/完工入库/SOP/报警/报修。</summary>
-    internal const string OperatorRoleId = "role-pda-operator";
+    public const string OperatorRoleId = "role-pda-operator";
 
     /// <summary>PDA 仓储库管角色：收货/上架/拣货/出库/盘点 + 库存联动字段。</summary>
-    internal const string WarehouseRoleId = "role-pda-warehouse";
+    public const string WarehouseRoleId = "role-pda-warehouse";
 
     /// <summary>PDA 质量检验员角色：检验任务执行与记录/NCR 查看。</summary>
-    internal const string InspectorRoleId = "role-pda-inspector";
+    public const string InspectorRoleId = "role-pda-inspector";
 
-    internal static readonly (string RoleId, string RoleName, string[] PermissionCodes)[] Roles =
+    public static readonly (string RoleId, string RoleName, string[] PermissionCodes)[] Roles =
     [
         (OperatorRoleId, "产线操作工（PDA）",
         [
@@ -81,7 +81,7 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
     /// EMP-010 机加车间早班组操作工、EMP-012 装配车间早班组操作工、
     /// EMP-034 检验员、EMP-049 库管。班组归属见 MasterData 侧 WorldBibleSpec（操作工按 6 班组轮转）。
     /// </summary>
-    internal static readonly (string UserId, string RoleId)[] Accounts =
+    public static readonly (string UserId, string RoleId)[] Accounts =
     [
         ("user-emp-010", OperatorRoleId),
         ("user-emp-012", OperatorRoleId),
