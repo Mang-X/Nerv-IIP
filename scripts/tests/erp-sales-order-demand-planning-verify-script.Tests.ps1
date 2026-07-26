@@ -28,6 +28,23 @@ function Assert-Contract {
     }
 }
 
+function Test-HasAstAncestor {
+    param(
+        [System.Management.Automation.Language.Ast]$Node,
+        [Type]$AncestorType
+    )
+
+    $ancestor = $Node.Parent
+    while ($null -ne $ancestor) {
+        if ($ancestor -is $AncestorType) {
+            return $true
+        }
+        $ancestor = $ancestor.Parent
+    }
+
+    return $false
+}
+
 Assert-Contract ($content.Contains('# Script-Governance:')) 'Verify script must declare script governance metadata.'
 Assert-Contract ($content.Contains('scripts/lib/ScriptAutomation.ps1')) 'Verify script must use ScriptAutomation helpers.'
 Assert-Contract ($content.Contains('Start-ManagedBackgroundProcess')) 'Verify script must launch managed service processes.'
@@ -157,6 +174,37 @@ $evidenceWriteAsts = @($successEvidenceAst[0].Body.FindAll({
 Assert-Contract ($countGateAsts.Count -eq 1 -and $evidenceWriteAsts.Count -eq 1 -and $countGateAsts[0].Extent.StartOffset -lt $evidenceWriteAsts[0].Extent.StartOffset) 'The exact-three mutation gate must execute before the success evidence write.'
 
 $commandAsts = @($verifyAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
+$topLevelEvidenceWriterCalls = @($commandAsts | Where-Object {
+    $_.CommandElements.Count -gt 0 -and
+    $_.CommandElements[0].Extent.Text -eq 'Write-Man517SuccessEvidence' -and
+    -not (Test-HasAstAncestor -Node $_ -AncestorType ([System.Management.Automation.Language.FunctionDefinitionAst]))
+})
+Assert-Contract ($topLevelEvidenceWriterCalls.Count -eq 1) 'Acceptance must invoke the success evidence writer exactly once from the live top-level path, not only from its helper definition.'
+$topLevelEvidenceWriterCall = $topLevelEvidenceWriterCalls[0]
+$topLevelEvidenceWriterElements = [string[]]@($topLevelEvidenceWriterCall.CommandElements | ForEach-Object { $_.Extent.Text })
+$sourceReadinessParameterIndex = [Array]::IndexOf($topLevelEvidenceWriterElements, '-SourceReadiness')
+$mutationCountParameterIndex = [Array]::IndexOf($topLevelEvidenceWriterElements, '-StateChangingPostInvocationCount')
+Assert-Contract (
+    $sourceReadinessParameterIndex -ge 0 -and
+    $sourceReadinessParameterIndex + 1 -lt $topLevelEvidenceWriterElements.Count -and
+    $topLevelEvidenceWriterElements[$sourceReadinessParameterIndex + 1] -eq '$sourceReadiness'
+) 'The live success evidence call must pass -SourceReadiness $sourceReadiness.'
+Assert-Contract (
+    $mutationCountParameterIndex -ge 0 -and
+    $mutationCountParameterIndex + 1 -lt $topLevelEvidenceWriterElements.Count -and
+    $topLevelEvidenceWriterElements[$mutationCountParameterIndex + 1] -eq '$stateChangingPostInvocationCount'
+) 'The live success evidence call must pass -StateChangingPostInvocationCount $stateChangingPostInvocationCount.'
+$successEvidenceWriteHosts = @($commandAsts | Where-Object {
+    $_.CommandElements.Count -gt 0 -and
+    $_.CommandElements[0].Extent.Text -eq 'Write-Host' -and
+    $_.Extent.Text.Contains('MAN-517 separate-process PostgreSQL + Redis acceptance passed.') -and
+    -not (Test-HasAstAncestor -Node $_ -AncestorType ([System.Management.Automation.Language.FunctionDefinitionAst]))
+})
+Assert-Contract (
+    (Test-HasAstAncestor -Node $topLevelEvidenceWriterCall -AncestorType ([System.Management.Automation.Language.TryStatementAst])) -and
+    $successEvidenceWriteHosts.Count -eq 1 -and
+    $topLevelEvidenceWriterCall.Extent.StartOffset -lt $successEvidenceWriteHosts[0].Extent.StartOffset
+) 'The live success evidence write must run on the acceptance try path before its success message.'
 $releasedV1Wait = @($commandAsts | Where-Object {
     $_.CommandElements.Count -gt 0 -and
     $_.CommandElements[0].Extent.Text -eq 'Wait-Demand' -and
@@ -360,5 +408,8 @@ Assert-Contract ($script:evidenceWriteCount -eq 1) 'Success evidence writer must
 $successEvidence = $script:evidenceWriteJson | ConvertFrom-Json
 Assert-Contract ($successEvidence.stateChangingPostInvocationCount -eq 3) 'Success evidence writer must persist the exact mutation count.'
 Assert-Contract ($successEvidence.sourceReadiness.stage -eq 'erp-source-readiness' -and $successEvidence.sourceReadiness.matchingRowCount -eq 1 -and $successEvidence.sourceReadiness.matchingRow -eq 'SO-DEMO-001|1|released|10|2') 'Success evidence writer must persist committed source-readiness evidence.'
+Assert-Contract ($successEvidence.sourceReadiness.attemptCount -eq 1) 'Success evidence writer must persist the committed source-readiness attempt count.'
+$serializedObservedAtUtc = [DateTimeOffset]$successEvidence.sourceReadiness.observedAtUtc
+Assert-Contract ($serializedObservedAtUtc -eq $evidenceSourceReadiness.observedAtUtc) 'Success evidence writer must persist the committed source-readiness observation time.'
 
 Write-Host 'ERP sales-order DemandPlanning cross-process verify script contract tests passed.'
