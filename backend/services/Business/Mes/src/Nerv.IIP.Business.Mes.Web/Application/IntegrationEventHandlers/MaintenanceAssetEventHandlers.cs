@@ -78,6 +78,8 @@ public sealed class AssetUnavailableIntegrationEventHandlerForReschedule(
                 await store.GetUnavailabilitiesAsync(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, cancellationToken));
             await store.AddScheduleResultAsync(RescheduleTrigger.AssetUnavailable, integrationEvent.OccurredAtUtc, plan, cancellationToken: cancellationToken);
         }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 }
 

@@ -20,6 +20,12 @@ MES `business-mes.quality-inspection-result` 消费者在记录 inbox 并新建�
 
 本修复没有新增或修改 HTTP endpoint、schema、migration、公开契约或 facade。对当前 58 个 `[IntegrationEventConsumer]` 文件的跨服务保守扫描仍发现其他“注入 `ApplicationDbContext` 但文件内无可见保存/命令/UoW 边界”的候选；MES 同类治理继续由 MAN-421 / #754 独立跟踪，本项不扩修其他消费者。
 
+## MES AssetUnavailable CAP 持久化边界（MAN-507 / #920）
+
+MES `business-mes.asset-unavailable` 消费者的 CAP 日志已经证明 `AssetUnavailableIntegrationEventHandlerForReschedule.HandleCapAsync` 被调度并成功返回，问题不是订阅未触发或 handler 抛错，而是 handler 只在同一个 `ApplicationDbContext` 中暂存 processed-event inbox、open work-center unavailability 和 scheduling result，返回前没有显式 `SaveChangesAsync` 边界。消费者现在完成全部可选排程变更后统一调用 `SaveChangesAsync(cancellationToken)`，由一次 EF Core 事务原子提交同一投递的三项事实。
+
+真实 PostgreSQL 18 + CAP InMemory 回归继续使用独立 scope 和原有 30 秒条件等待，并同时观测 `business-mes.asset-unavailable` inbox 行、open unavailability 与 scheduling result；修复前 handler 成功返回但三项事实均不可见，修复后一次投递的三项事实同时可见。本修复没有新增或修改 HTTP endpoint、facade、OpenAPI contract、schema 或 migration，也不修改 `asset-restored` 或其他 MES consumers；其他 MES handler 的持久化边界审计仍由 MAN-421 / #754 负责。
+
 ## 领导演示排产工作台闭环（MAN-580 / #1049）
 
 BusinessScheduling 已新增批量工作台生成与 base-plan 修订两条受管内部端点。批量生成只接受 1–500 个 distinct MES 工单 ID，由服务端读取 organization/environment 范围内的权威 SKU、数量、交期、工序最早开始与生产版本，并通过 ProductEngineering active production-version routing snapshot 解析已发布路线；缺工单、终态工单、缺生产版本或 SKU/版本不一致均 fail closed。修订从已持久化 normalized problem snapshot 过滤 included orders，校验显式锁定工序、可选资源、时间窗口和 scope，再复用既有 override overlay、设备/物料适配器与有限产能调度器持久化新 Generated 方案。响应按最新失效来源事件聚合受影响资源/工单/工序，并返回 base/candidate 权威 KPI、移动、锁定和未排计数；不新增 schema、调度引擎或合并评分。
