@@ -293,6 +293,84 @@ public sealed class SimulatedCommandTests
             rejectedStart.Output["deviceReceiptCode"]);
     }
 
+    [Fact]
+    public async Task Released_initial_observation_does_not_bypass_full_transition_queue()
+    {
+        var fixture = CreateFixture(
+            maxPendingStateTransitionsPerDevice: 1,
+            failingRequest: IsTargetInitialStateRequest);
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+        var stop = await fixture.Connector.ExecuteAsync(
+            StartTask("op-released-initial-stop", "DEV-CNC-01", "stop"),
+            CancellationToken.None);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(100));
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(200));
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        var rejectedStart = await fixture.Connector.ExecuteAsync(
+            StartTask("op-released-initial-rejected-start", "DEV-CNC-01", "start"),
+            CancellationToken.None);
+        var unchangedStop = await fixture.Connector.ExecuteAsync(
+            StartTask("op-released-initial-unchanged-stop", "DEV-CNC-01", "stop"),
+            CancellationToken.None);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(1700));
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        Assert.True(stop.Succeeded);
+        Assert.False(rejectedStart.Succeeded);
+        Assert.False(rejectedStart.Retryable);
+        Assert.Equal(
+            "BadResourceUnavailable",
+            rejectedStart.Output["deviceReceiptCode"]);
+        Assert.True(unchangedStop.Succeeded);
+        Assert.Equal(
+            ["stopped"],
+            fixture.Samples.Requests
+                .Where(request => request.DeviceAssetId == "DEV-CNC-01"
+                    && request.DeviceState is not null
+                    && request.BucketStartUtc
+                        > DateTimeOffset.Parse("2026-07-26T00:00:00Z"))
+                .Select(request => request.DeviceState));
+    }
+
+    [Fact]
+    public async Task Released_initial_observation_preserves_transition_fifo_order()
+    {
+        var fixture = CreateFixture(
+            maxPendingStateTransitionsPerDevice: 2,
+            failingRequest: IsTargetInitialStateRequest);
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+        var stop = await fixture.Connector.ExecuteAsync(
+            StartTask("op-released-initial-fifo-stop", "DEV-CNC-01", "stop"),
+            CancellationToken.None);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(100));
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(200));
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        var start = await fixture.Connector.ExecuteAsync(
+            StartTask("op-released-initial-fifo-start", "DEV-CNC-01", "start"),
+            CancellationToken.None);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(1700));
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+        await fixture.Connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        Assert.True(stop.Succeeded);
+        Assert.True(start.Succeeded);
+        Assert.Equal(
+            ["stopped", "running"],
+            fixture.Samples.Requests
+                .Where(request => request.DeviceAssetId == "DEV-CNC-01"
+                    && request.DeviceState is not null
+                    && request.BucketStartUtc
+                        > DateTimeOffset.Parse("2026-07-26T00:00:00Z"))
+                .Select(request => request.DeviceState));
+    }
+
     [Theory]
     [MemberData(nameof(TerminalFailures))]
     public async Task Terminal_validation_paths_return_auditable_device_receipts(
@@ -421,7 +499,8 @@ public sealed class SimulatedCommandTests
         int? receiptCapacity = null,
         DateTimeOffset? timestamp = null,
         int? maxPendingStateTransitionsPerDevice = null,
-        bool failDeliveries = false)
+        bool failDeliveries = false,
+        Func<RecordIndustrialTelemetrySampleRequest, bool>? failingRequest = null)
     {
         var clock = new ControllableTimeProvider();
         clock.Advance(
@@ -442,7 +521,7 @@ public sealed class SimulatedCommandTests
                         System.Globalization.CultureInfo.InvariantCulture);
             }
         });
-        var samples = new RecordingSamplesClient(failDeliveries);
+        var samples = new RecordingSamplesClient(failDeliveries, failingRequest);
         var connector = new SimulatedConnector(
             options,
             new ConnectorHostRuntimeContext(
@@ -470,6 +549,13 @@ public sealed class SimulatedCommandTests
                 ["deviceAssetId"] = deviceAssetId,
                 ["value"] = value
             });
+
+    private static bool IsTargetInitialStateRequest(
+        RecordIndustrialTelemetrySampleRequest request) =>
+        request.DeviceAssetId == "DEV-CNC-01"
+        && request.DeviceState == "running"
+        && request.BucketStartUtc
+            == DateTimeOffset.Parse("2026-07-26T00:00:00Z");
 
     private static OperationTaskDispatchItem CreateTask(
         string operationTaskId,
@@ -500,10 +586,14 @@ public sealed class SimulatedCommandTests
     private sealed class RecordingSamplesClient : IIndustrialTelemetrySamplesClient
     {
         private readonly bool _failDeliveries;
+        private readonly Func<RecordIndustrialTelemetrySampleRequest, bool>? _failingRequest;
 
-        public RecordingSamplesClient(bool failDeliveries)
+        public RecordingSamplesClient(
+            bool failDeliveries,
+            Func<RecordIndustrialTelemetrySampleRequest, bool>? failingRequest)
         {
             _failDeliveries = failDeliveries;
+            _failingRequest = failingRequest;
         }
 
         public List<RecordIndustrialTelemetrySampleRequest> Requests { get; } = [];
@@ -514,7 +604,7 @@ public sealed class SimulatedCommandTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Requests.Add(request);
-            if (_failDeliveries)
+            if (_failDeliveries || _failingRequest?.Invoke(request) == true)
             {
                 throw new HttpRequestException("Simulated delivery failure.");
             }

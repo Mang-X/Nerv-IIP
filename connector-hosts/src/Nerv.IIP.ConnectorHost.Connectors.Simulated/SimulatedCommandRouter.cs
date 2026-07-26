@@ -283,24 +283,35 @@ internal sealed class SimulatedCommandRouter
                     null,
                     ResolveCycleTimestamp(_timeProvider.GetUtcNow()),
                     false);
-                if (current.PendingObservations.First is
+                var initial = current.PendingObservations.First;
+                var hasUnreservedInitial = initial is
                     {
                         Value.IsInitial: true,
                         Value.SourceSequence: null
-                    } initial)
+                    };
+                if (hasUnreservedInitial
+                    && current.PendingObservations.Count == 1)
                 {
-                    initial.Value = transition;
+                    initial!.Value = transition;
                     current.State = state;
-                }
-                else if (current.PendingTransitionCount
-                    >= current.PendingTransitionCapacity)
-                {
-                    queueAtCapacity = true;
                 }
                 else
                 {
-                    current.PendingObservations.AddLast(transition);
-                    current.State = state;
+                    if (hasUnreservedInitial)
+                    {
+                        current.PendingObservations.RemoveFirst();
+                    }
+
+                    if (current.PendingTransitionCount
+                        >= current.PendingTransitionCapacity)
+                    {
+                        queueAtCapacity = true;
+                    }
+                    else
+                    {
+                        current.PendingObservations.AddLast(transition);
+                        current.State = state;
+                    }
                 }
             }
         }
