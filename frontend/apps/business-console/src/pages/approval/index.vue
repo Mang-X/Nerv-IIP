@@ -230,13 +230,9 @@ watch(
   },
   { immediate: true },
 )
-watch(
-  delegationStatusFilter,
-  (value) => {
-    approval.delegationFilters.status = value === 'all' ? undefined : value
-  },
-  { immediate: true },
-)
+watch(delegationStatusFilter, (value) => {
+  approval.delegationFilters.status = value === 'all' ? undefined : value
+})
 watch(
   templateStateFilter,
   (value) => {

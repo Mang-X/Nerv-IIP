@@ -46,7 +46,7 @@ const approvalState = vi.hoisted(() => ({
     },
   ],
   delegationFilters: {
-    status: undefined as string | undefined,
+    status: 'Active' as string | undefined,
     delegatorActorRef: undefined as string | undefined,
     delegateActorRef: undefined as string | undefined,
     documentType: undefined as string | undefined,
@@ -276,7 +276,7 @@ beforeEach(() => {
     take: 10,
   })
   Object.assign(approvalState.delegationFilters, {
-    status: undefined,
+    status: 'Active',
     delegatorActorRef: undefined,
     delegateActorRef: undefined,
     documentType: undefined,
@@ -434,6 +434,16 @@ describe('approval center page permissions and actions', () => {
 })
 
 describe('approval center tab filter panels', () => {
+  it('preserves the real Active delegation default while displaying the normalized selection', async () => {
+    const wrapper = mountApproval(['business.approvals.read'])
+    await flushPromises()
+
+    expect(
+      (filterControl(wrapper, filterLabels.delegation.status).element as HTMLSelectElement).value,
+    ).toBe('active')
+    expect(approvalState.delegationFilters.status).toBe('Active')
+  })
+
   it('renders an accessible control for every supported facade filter field', () => {
     const wrapper = mountApproval(['business.approvals.read'])
 
@@ -522,10 +532,11 @@ describe('approval center tab filter panels', () => {
     await filterControl(wrapper, filterLabels.decision.decision).setValue('all')
     expect(approvalState.decisionFilters.decision).toBeUndefined()
 
-    for (const status of ['active', 'revoked']) {
-      await filterControl(wrapper, filterLabels.delegation.status).setValue(status)
-      expect(approvalState.delegationFilters.status).toBe(status)
-    }
+    expect(approvalState.delegationFilters.status).toBe('Active')
+    await filterControl(wrapper, filterLabels.delegation.status).setValue('revoked')
+    expect(approvalState.delegationFilters.status).toBe('revoked')
+    await filterControl(wrapper, filterLabels.delegation.status).setValue('active')
+    expect(approvalState.delegationFilters.status).toBe('active')
     await filterControl(wrapper, filterLabels.delegation.status).setValue('all')
     expect(approvalState.delegationFilters.status).toBeUndefined()
 
@@ -613,6 +624,7 @@ describe('approval center tab filter panels', () => {
   })
 
   it('uses clear-filter guidance only for filtered empty tabs', async () => {
+    approvalState.delegationFilters.status = undefined
     const wrapper = mountApproval(['business.approvals.read'], { emptyRecords: true })
 
     expect(wrapper.text()).toContain('当前没有审批流程。')
