@@ -109,9 +109,91 @@ function Wait-Healthy {
     throw "Service did not become healthy at $Uri. Logs: $($ManagedProcess.LogDirectory)"
 }
 
+function Wait-ErpSalesOrderSource {
+    param([string]$ComposeFile, [string]$DatabaseName)
+    $deadline = (Get-Date).AddSeconds(90)
+    $lastSourceObservation = $null
+    $lastRequestException = $null
+    $sourceSql = @"
+SELECT so.sales_order_no, so.version, so.status, sol.line_no, sol.ordered_quantity
+FROM erp.sales_orders so
+JOIN erp.sales_order_lines sol ON sol.sales_order_id = so.id
+WHERE so.organization_id = 'org-001'
+  AND so.environment_id = 'env-dev'
+  AND so.sales_order_no = 'SO-DEMO-001'
+  AND so.version = 1
+  AND so.status = 'released'
+  AND sol.line_no = '10'
+  AND sol.ordered_quantity = 2;
+"@
+
+    do {
+        try {
+            $sourceResult = Invoke-NativeCommandOutput -Command 'docker' -Arguments @(
+                'compose', '-f', $ComposeFile, 'exec', '-T', 'postgres',
+                'psql', '-h', '127.0.0.1', '-U', 'nerv', '-d', $DatabaseName,
+                '-X', '-tA', '-F', '|', '-v', 'ON_ERROR_STOP=1', '-c', $sourceSql
+            ) -WorkingDirectory $root -Name 'man517-erp-source-readiness'
+            $sourceOutput = "$($sourceResult.Stdout)"
+            $boundedSourceOutput = if ($sourceOutput.Length -gt 8192) { $sourceOutput.Substring(0, 8192) } else { $sourceOutput }
+            $sourceRows = @($boundedSourceOutput -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            $lastSourceObservation = [ordered]@{
+                matchingRowCount = $sourceRows.Count
+                rows = @($sourceRows | Select-Object -First 10)
+            }
+            $lastRequestException = $null
+            if ($sourceRows.Count -eq 1) { return }
+        }
+        catch {
+            $exceptionMessage = "$($_.Exception.Message)"
+            $lastRequestException = if ($exceptionMessage.Length -gt 8192) { $exceptionMessage.Substring(0, 8192) } else { $exceptionMessage }
+        }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+
+    $lastObservation = [ordered]@{
+        sourceStage = 'erp-source-readiness'
+        expectedSource = [ordered]@{ salesOrderNo = 'SO-DEMO-001'; version = 1; lineNo = '10'; orderedQuantity = 2 }
+        lastSourceObservation = $lastSourceObservation
+        lastRequestException = $lastRequestException
+    } | ConvertTo-Json -Depth 8 -Compress
+    throw "ERP sales-order source did not become committed and ready. Last observation: $(Protect-Man517DiagnosticText -Text $lastObservation)"
+}
+
 function Invoke-JsonPost {
-    param([string]$Uri, [hashtable]$Body, [hashtable]$Headers)
-    Invoke-RestMethod -Method Post -Uri $Uri -Headers $Headers -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 12)
+    param([string]$Uri, [hashtable]$Body, [hashtable]$Headers, [string]$ExpectedData)
+    $httpResponse = $null
+    $httpStatus = $null
+    $responseBody = $null
+    $responseEnvelope = $null
+    $parseError = $null
+    try {
+        $httpResponse = Invoke-WebRequest -Method Post -Uri $Uri -Headers $Headers -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 12) -SkipHttpErrorCheck
+        $httpStatus = [int]$httpResponse.StatusCode
+        $fullResponseBody = "$($httpResponse.Content)"
+        $responseBody = if ($fullResponseBody.Length -gt 8192) { $fullResponseBody.Substring(0, 8192) } else { $fullResponseBody }
+        $responseEnvelope = $responseBody | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        $exceptionMessage = "$($_.Exception.Message)"
+        $parseError = if ($exceptionMessage.Length -gt 8192) { $exceptionMessage.Substring(0, 8192) } else { $exceptionMessage }
+    }
+
+    $hasSuccess = $null -ne $responseEnvelope -and $null -ne $responseEnvelope.PSObject.Properties['success']
+    $hasData = $null -ne $responseEnvelope -and $null -ne $responseEnvelope.PSObject.Properties['data']
+    $responseData = if ($hasData) { "$($responseEnvelope.data)" } else { $null }
+    if ($httpStatus -lt 200 -or $httpStatus -ge 300 -or
+        $null -eq $responseEnvelope -or -not $hasSuccess -or $responseEnvelope.success -ne $true -or
+        -not $hasData -or [string]::IsNullOrWhiteSpace($responseData) -or
+        $responseData -cne $ExpectedData) {
+        $failure = [ordered]@{
+            sourceStage = 'erp-state-changing-post'
+            expectedData = $ExpectedData
+            postResponse = [ordered]@{ uri = $Uri; httpStatus = $httpStatus; body = $responseBody; parseError = $parseError }
+        } | ConvertTo-Json -Depth 8 -Compress
+        throw "ERP state-changing POST was rejected. Last response: $(Protect-Man517DiagnosticText -Text $failure)"
+    }
+    return $responseEnvelope
 }
 
 function Wait-Demand {
@@ -386,12 +468,13 @@ try {
         'X-Authenticated-Actor' = 'user:planner-demo'
     }
     $released = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 1 -Quantity 2 -Status 'active'
+    Wait-ErpSalesOrderSource -ComposeFile $composeFile -DatabaseName $databaseName
 
-    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -Body @{
+    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -ExpectedData 'changed' -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; lineNo = '10'; orderedQuantity = 4; unitPrice = 100; requiredDate = '2026-08-15'; reason = 'MAN-517 change v2'
     } | Out-Null
     $changedV2 = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 2 -Quantity 4 -Status 'active'
-    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -Body @{
+    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -ExpectedData 'changed' -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; lineNo = '10'; orderedQuantity = 5; unitPrice = 100; requiredDate = '2026-08-15'; reason = 'MAN-517 change v3'
     } | Out-Null
     $changedV3 = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 3 -Quantity 5 -Status 'active'
@@ -446,7 +529,7 @@ try {
         }
     }
 
-    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/cancel" -Headers $headers -Body @{
+    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/cancel" -Headers $headers -ExpectedData 'cancelled' -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; reason = 'MAN-517 cancellation'
     } | Out-Null
     Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 4 -Quantity 0 -Status 'cancelled' | Out-Null

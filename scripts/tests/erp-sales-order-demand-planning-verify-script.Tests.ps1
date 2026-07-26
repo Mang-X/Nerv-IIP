@@ -59,6 +59,20 @@ Assert-Contract ($content.Contains('changed during the stability window')) 'Veri
 Assert-Contract ($content.Contains("Wait-Demand -DemandPlanningUrl `$demandPlanningUrl -Headers `$headers -Version 4 -Quantity 0 -Status 'cancelled'")) 'Verify script must wait for cancellation convergence before entering the strict stability window.'
 Assert-Contract ($content.Contains('sourceVersion')) 'Verify script must assert business-version convergence.'
 Assert-Contract ($content.Contains('sourceStatus')) 'Verify script must assert lifecycle-status convergence.'
+Assert-Contract ($content.Contains('function Wait-ErpSalesOrderSource')) 'Acceptance must poll the committed ERP source row.'
+Assert-Contract ($content.Contains('erp.sales_orders')) 'Source readiness must inspect the ERP-owned source table.'
+Assert-Contract ($content.Contains('erp.sales_order_lines')) 'Source readiness must verify line 10.'
+Assert-Contract ($content.Contains('sourceStage')) 'Failure diagnostics must identify the ERP source stage.'
+$sourceReadyCall = $content.IndexOf('Wait-ErpSalesOrderSource -ComposeFile $composeFile -DatabaseName $databaseName', [StringComparison]::Ordinal)
+$firstChangePost = $content.IndexOf('Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10"', [StringComparison]::Ordinal)
+Assert-Contract ($sourceReadyCall -ge 0 -and $firstChangePost -gt $sourceReadyCall) 'Committed ERP source readiness must complete before the first change POST.'
+Assert-Contract ($content.Contains('[string]$ExpectedData')) 'State-changing POST validation must require expected business data.'
+Assert-Contract ($content.Contains('SkipHttpErrorCheck')) 'POST validation must inspect bounded HTTP responses itself.'
+Assert-Contract ($content.Contains('$responseEnvelope.success')) 'POST validation must reject a business-error envelope.'
+Assert-Contract ($content.Contains('postResponse')) 'Failure diagnostics must identify the bounded POST response.'
+Assert-Contract (-not $content.Contains('Wait-ErpSalesOrderSource -ComposeFile $composeFile -DatabaseName $databaseName -RetryPost')) 'Readiness must never introduce POST retry.'
+Assert-Contract (($content.Split('-ExpectedData ''changed''').Count - 1) -eq 2) 'Both change POSTs must require data=changed.'
+Assert-Contract (($content.Split('-ExpectedData ''cancelled''').Count - 1) -eq 1) 'The cancellation POST must require data=cancelled.'
 Assert-Contract ($content.Contains('finally')) 'Verify script must clean up processes and disposable infrastructure in finally.'
 $cleanupFailureListIndex = $content.IndexOf('$cleanupFailures = [System.Collections.Generic.List[string]]::new()', [StringComparison]::Ordinal)
 $cleanupFinallyIndex = $content.IndexOf('finally {', [Math]::Max(0, $cleanupFailureListIndex), [StringComparison]::Ordinal)
