@@ -104,17 +104,43 @@ public sealed class TelemetryProductionCountDeltaIntegrationEventHandlerForAutom
             return;
         }
 
-        await sender.Send(new Commands.Production.RecordProductionReportCommand(
-            integrationEvent.OrganizationId,
-            integrationEvent.EnvironmentId,
-            operation.WorkOrderId,
-            operation.OperationTaskIdValue,
-            payload.DeltaQuantity,
-            0m,
-            CompletesOperation: false,
-            payload.BucketEndUtc,
-            IdempotencyKey: $"telemetry:{integrationEvent.IdempotencyKey}",
-            Source: ProductionReport.TelemetrySource), cancellationToken);
+        try
+        {
+            await sender.Send(new Commands.Production.RecordProductionReportCommand(
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId,
+                operation.WorkOrderId,
+                operation.OperationTaskIdValue,
+                payload.DeltaQuantity,
+                0m,
+                CompletesOperation: false,
+                payload.BucketEndUtc,
+                IdempotencyKey: $"telemetry:{integrationEvent.IdempotencyKey}",
+                Source: ProductionReport.TelemetrySource), cancellationToken);
+        }
+        catch (Exception exception) when (exception is KnownException or ArgumentException or InvalidOperationException)
+        {
+            // The command can mutate tracked aggregates before a terminal domain rule rejects the report.
+            // Discard those changes before the persistent dead-letter store saves this DbContext.
+            dbContext.ChangeTracker.Clear();
+            if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(
+                    dbContext,
+                    ConsumerName,
+                    integrationEvent,
+                    cancellationToken))
+            {
+                return;
+            }
+
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    "telemetry-production-report-divergence",
+                    exception.Message),
+                cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
     }
 
     private static PayloadValidationResult ValidatePayload(TelemetryProductionCountDeltaPayload? payload)

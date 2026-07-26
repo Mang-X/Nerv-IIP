@@ -77,6 +77,7 @@ public sealed class StockMovementPostingFailedIntegrationEventHandlerForMarkMesR
         }
 
         LogUnmatched(integrationEvent, "unknown MES Inventory movement idempotency key");
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async Task MarkFinishedGoodsReceiptFailedAsync(

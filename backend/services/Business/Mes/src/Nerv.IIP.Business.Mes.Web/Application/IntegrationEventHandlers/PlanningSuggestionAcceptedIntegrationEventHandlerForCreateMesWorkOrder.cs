@@ -91,6 +91,7 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
             cancellationToken);
         if (existing)
         {
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 

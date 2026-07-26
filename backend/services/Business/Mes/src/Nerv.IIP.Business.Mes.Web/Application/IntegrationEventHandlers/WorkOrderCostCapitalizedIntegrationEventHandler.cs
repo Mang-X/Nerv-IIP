@@ -65,14 +65,42 @@ public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
             cancellationToken)
             ?? throw new InvalidOperationException(
                 $"No MES work order exists for capitalized cost '{integrationEvent.Payload.WorkOrderId}'.");
-        workOrder.ApplyCapitalizedUnitCost(integrationEvent.Payload.UnitCost);
         var receipts = await dbContext.FinishedGoodsReceiptRequests
             .Where(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.WorkOrderId == integrationEvent.Payload.WorkOrderId)
             .ToListAsync(cancellationToken);
-        foreach (var receipt in receipts.Where(x => x.Status == FinishedGoodsReceiptRequest.RequestedStatus))
+        try
         {
-            receipt.ApplyCapitalizedUnitCost(integrationEvent.Payload.UnitCost);
+            workOrder.ApplyCapitalizedUnitCost(integrationEvent.Payload.UnitCost);
+            foreach (var receipt in receipts.Where(x => x.Status == FinishedGoodsReceiptRequest.RequestedStatus))
+            {
+                receipt.ApplyCapitalizedUnitCost(integrationEvent.Payload.UnitCost);
+            }
         }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            // Aggregate validation can reject after earlier tracked aggregates were changed.
+            // Rebuild only the terminal reliability facts so no partial cost or outbox state is saved.
+            dbContext.ChangeTracker.Clear();
+            if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(
+                    dbContext,
+                    ConsumerName,
+                    integrationEvent,
+                    cancellationToken))
+            {
+                return;
+            }
+
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    "work-order-capitalization-divergence",
+                    exception.Message),
+                cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
         await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
     }
 }

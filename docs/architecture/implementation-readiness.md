@@ -2,6 +2,49 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## MES CAP 消费保存边界审计（MAN-421 / #754）
+
+BusinessMES 当前 `Application/IntegrationEventHandlers` 下的 16 个 CAP
+consumer 已完成逐类审计，权威矩阵见
+`docs/architecture/mes-cap-handler-save-boundary-audit.md`。审计明确区分
+“未触发”“已触发但失败”“已成功返回但未保存”，并把 coordinator
+拥有的 `SaveChangesAsync` / transaction 视为完整边界，不重复补 save。
+`AssetUnavailable` 保持 MAN-507 / #920 已交付基线，不属于本次生产修改。
+
+MAN-421 为 `AssetRestored`、NCR disposition、ProductionVersion bind 补齐
+domain/projection 与 inbox 同次保存，并补齐 Planning suggestion
+already-exists、StockMovementPosted no-match 和 StockMovementPostingFailed
+unknown-key 的 post-inbox terminal save。NCR 的领域分歧会在丢弃部分
+tracked mutation 后进入持久 DLQ；Telemetry posted 报工在
+`KnownException` / `ArgumentException` / `InvalidOperationException` 时先清除
+命令已跟踪的半成品，再重建 inbox 并写入终止性 DLQ，避免重试 poison
+或由 persistent dead-letter store 顺带提交部分业务状态。资本化消费的工单
+或 Requested 收货成本分歧同样只捕获聚合
+`ArgumentException` / `InvalidOperationException`，清除前序 tracked
+成本/领域事件后在同一 work-order coordinator 事务内重建 inbox 并持久化
+`work-order-capitalization-divergence`；工单缺失、基础设施失败和取消仍会
+回滚并逃逸。其余 consumer 已有显式 save、MediatR UnitOfWork 或
+PostgreSQL scope coordinator 边界。
+
+PostgreSQL 18 独立 DbContext 证据覆盖 AssetRestored close/reschedule/replay、
+SchedulePlanReleased assignment provenance/replay、所有已证明缺口、NCR
+并发 inbox unique-conflict 收敛、Telemetry 超量报工终止性分歧，以及工单
+既有成本/后续收货成本分歧的无部分成本或 outbox 收敛；必选 focused gate
+为 11/11 passed。完整 MES Web 项目门禁为 378/379 passed，唯一
+失败是 stacked-base 既有
+`SkuDisabledConsumerTests.PostgreSQL_disable_commit_serializes_before_new_work_order_creation`：
+该 fixture 未提供 routing snapshot，handler 在进入其断言所期待的 SKU
+coordinator lock 前即以 routing-missing dead letter 正常返回；隔离重跑
+结果相同。该 exact filter 又在现成 frozen-base worktree 的
+`68dae3c8befabf0957eeb7f4449ea1d2027be332` 上复跑，仍为 1/1 failed 且
+错误文本相同；相关 test/coordinator/command path 均未被 MAN-421 修改。
+
+本次不新增/修改 HTTP endpoint、Gateway facade、OpenAPI、generated
+client、公共 integration contract、数据库 schema 或 migration；产品文档
+无影响。只因终止性 business-divergence 与 accepted no-match 的 durable
+语义变更，同步更新 `integration-event-consumption-matrix.md`，其
+`consumed-internally` 分类不变。
+
 ## Quality 复检历史与 MES hold 自动释放闭环（MAN-516 / #954）
 
 BusinessQuality 现在将首检幂等和复检历史分开建模：原有创建命令继续按来源业务键返回首条记录；新增 predecessor-targeted 复检命令只允许对非合格记录追加不可变 successor，并记录 `attempt_number` 与 `reinspection_of_inspection_record_id`。每个前置记录最多一个直接 successor，命令重放返回同一 successor；多次复检需以上一次未通过结果作为新的 predecessor。计划检验复用原方案和来源/批次/库存维度，已 superseded 的历史方案仍可用于该记录复检，但跨组织、环境、方案或合格终态均 fail closed。`AddQualityReinspectionHistory` migration 增加正数约束、自引用 Restrict 外键、前置唯一索引，并把来源唯一键扩展到 attempt。

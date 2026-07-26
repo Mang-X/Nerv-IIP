@@ -63,6 +63,8 @@ public sealed class ProductionVersionCreatedIntegrationEventHandlerForBindMesWor
         {
             workOrder.BindProductionVersion(payload.ProductionVersionId);
         }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 }
 
