@@ -7,6 +7,19 @@ using System.Net.Http.Json;
 namespace Nerv.IIP.Business.Mes.Web.Application.Seed;
 
 /// <summary>
+/// 成品 SKU → ProductEngineering 生产版本 id 的解析边界。
+/// 抽成接口是为了让 seed 的形状测试不必架起 HTTP 桩——解析路径本身由规模块既有测试覆盖。
+/// </summary>
+public interface IWorldHistoryProductionVersionResolver
+{
+    Task<IReadOnlyDictionary<string, string>> ResolveAsync(
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<string> skuCodes,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// 通过**真实 HTTP 边界**把 L0 的成品 SKU 解析成 ProductEngineering 的生产版本 id。
 ///
 /// 生产版本 id 是 ProductEngineering 侧 DB 生成的 GUID，MES 无法本地推导，
@@ -15,7 +28,7 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Seed;
 /// </summary>
 public sealed class WorldHistoryProductionVersionResolver(
     MesProductEngineeringHttpClient productEngineeringClient,
-    IInternalServiceTokenProvider internalTokenProvider)
+    IInternalServiceTokenProvider internalTokenProvider) : IWorldHistoryProductionVersionResolver
 {
     private const int ResolutionAttempts = 5;
     private static readonly TimeSpan InitialRetryDelay = TimeSpan.FromMilliseconds(250);

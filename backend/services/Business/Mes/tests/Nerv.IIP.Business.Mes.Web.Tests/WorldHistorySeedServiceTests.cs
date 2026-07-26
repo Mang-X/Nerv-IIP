@@ -1,0 +1,309 @@
+using MediatR;
+using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Seed;
+
+namespace Nerv.IIP.Business.Mes.Web.Tests;
+
+/// <summary>
+/// 《工厂世界观设定集》L1 背景历史引擎（MES 侧）的形状、跨服务一致性与幂等性证据。
+/// 真实 PostgreSQL 的全量耗时实测在 <c>WorldHistorySeedPostgresTests</c>。
+/// </summary>
+public sealed class WorldHistorySeedServiceTests
+{
+    private static readonly DateOnly AsOfDate = new(2026, 7, 26);
+    private const double TestScale = 0.02d;
+
+    [Fact]
+    public async Task History_seed_writes_the_full_work_order_chain_and_passes_its_own_validator()
+    {
+        await using var dbContext = CreateDbContext();
+
+        var report = await CreateSeed(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, TestScale);
+
+        var plans = WorldHistorySpec.BuildOrderPlans(AsOfDate, TestScale).Where(x => x.HasWorkOrder).ToArray();
+        Assert.Equal(plans.Length, report.OrderWorkOrdersWritten);
+        Assert.True(report.ReworkWorkOrdersWritten > 0);
+        Assert.NotEmpty(report.Validation.Sample);
+
+        // 设定集 §7：约 3600 张工单 = 3200 订单工单 + 12.5% 内部补产。
+        var expectedRework = (int)Math.Round(plans.Length * WorldHistoryMesSpec.ReworkWorkOrderRatio, MidpointRounding.AwayFromZero);
+        Assert.Equal(expectedRework, report.ReworkWorkOrdersWritten);
+        Assert.Equal(plans.Length + expectedRework, await dbContext.WorkOrders.CountAsync());
+
+        // 每单 6–8 道工序任务。
+        var taskCounts = await dbContext.OperationTasks
+            .GroupBy(x => x.WorkOrderId)
+            .Select(group => group.Count())
+            .ToArrayAsync();
+        Assert.All(taskCounts, count => Assert.InRange(count, 6, 8));
+        Assert.Contains(taskCounts, count => count == 6);
+        Assert.Contains(taskCounts, count => count == 8);
+    }
+
+    [Fact]
+    public async Task Closed_work_orders_balance_reports_receipts_and_the_sales_order_quantity()
+    {
+        await using var dbContext = CreateDbContext();
+        await CreateSeed(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, TestScale);
+
+        var settled = WorldHistorySpec.BuildOrderPlans(AsOfDate, TestScale)
+            .First(plan => plan.Stage == WorldHistoryOrderStage.Settled);
+
+        var workOrder = await dbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == settled.WorkOrderNo);
+        Assert.Equal(WorkOrder.ClosedStatus, workOrder.Status);
+
+        // 这是整条链的核心不变量：好品产出 == 销售订单数量，投料按报废量放大。
+        Assert.Equal(settled.Quantity, workOrder.CompletedQuantity);
+        Assert.Equal(workOrder.Quantity, workOrder.CompletedQuantity + workOrder.ScrapQuantity);
+
+        var reports = await dbContext.ProductionReports.Where(x => x.WorkOrderId == settled.WorkOrderNo).ToArrayAsync();
+        Assert.InRange(reports.Length, 2, 5);
+        Assert.Equal(workOrder.CompletedQuantity, reports.Sum(x => x.GoodQuantity));
+        Assert.Equal(workOrder.ScrapQuantity, reports.Sum(x => x.ScrapQuantity));
+
+        var receipt = await dbContext.FinishedGoodsReceiptRequests.SingleAsync(x => x.WorkOrderId == settled.WorkOrderNo);
+        Assert.Equal("Posted", receipt.Status);
+        Assert.Equal(settled.Quantity, receipt.PostedQuantity);
+
+        // 齐套快照与领料单齐全。
+        Assert.Equal(4, await dbContext.MaterialRequirements.CountAsync(x => x.WorkOrderId == settled.WorkOrderNo));
+        Assert.True(await dbContext.MaterialIssueRequests.CountAsync(x => x.WorkOrderId == settled.WorkOrderNo) >= 4);
+
+        // 工单来源指回销售订单，跨服务只靠业务编码引用。
+        Assert.NotNull(workOrder.SourcePlanReference);
+        Assert.Equal(settled.SalesOrderNo, workOrder.SourcePlanReference!.SourceDocumentId);
+    }
+
+    [Fact]
+    public async Task Work_order_execution_depth_follows_the_sales_order_stage()
+    {
+        await using var dbContext = CreateDbContext();
+        await CreateSeed(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, TestScale);
+
+        var plans = WorldHistorySpec.BuildOrderPlans(AsOfDate, TestScale);
+
+        // 已下达待开工：工序全部排队、无报工。
+        var released = plans.First(plan => plan.Stage == WorldHistoryOrderStage.Released);
+        var releasedWorkOrder = await dbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == released.WorkOrderNo);
+        Assert.Equal(WorkOrder.ReleasedStatus, releasedWorkOrder.Status);
+        Assert.Equal(0m, releasedWorkOrder.CompletedQuantity);
+        Assert.Empty(await dbContext.ProductionReports.Where(x => x.WorkOrderId == released.WorkOrderNo).ToArrayAsync());
+        Assert.All(
+            await dbContext.OperationTasks.Where(x => x.WorkOrderId == released.WorkOrderNo).ToArrayAsync(),
+            task => Assert.Equal(OperationTaskLifecycleStatus.Queued, task.Status));
+
+        // 在制：部分工序完工、当前工序进行中、有部分报工但未完工入库。
+        var inProgress = plans.First(plan => plan.Stage == WorldHistoryOrderStage.InProgress);
+        var inProgressWorkOrder = await dbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == inProgress.WorkOrderNo);
+        Assert.Equal(WorkOrder.StartedStatus, inProgressWorkOrder.Status);
+        Assert.True(inProgressWorkOrder.CompletedQuantity > 0m);
+        Assert.True(inProgressWorkOrder.CompletedQuantity < inProgressWorkOrder.Quantity);
+        Assert.Empty(await dbContext.FinishedGoodsReceiptRequests.Where(x => x.WorkOrderId == inProgress.WorkOrderNo).ToArrayAsync());
+
+        var inProgressTasks = await dbContext.OperationTasks.Where(x => x.WorkOrderId == inProgress.WorkOrderNo).ToArrayAsync();
+        Assert.Contains(inProgressTasks, task => task.Status == OperationTaskLifecycleStatus.Completed);
+        Assert.Contains(inProgressTasks, task => task.Status == OperationTaskLifecycleStatus.InProgress);
+        Assert.Contains(inProgressTasks, task => task.Status == OperationTaskLifecycleStatus.Queued);
+
+        // 废弃单不产生工单。
+        var cancelled = plans.First(plan => plan.Stage == WorldHistoryOrderStage.Cancelled);
+        Assert.Null(await dbContext.WorkOrders.SingleOrDefaultAsync(x => x.WorkOrderIdValue == cancelled.WorkOrderNo));
+    }
+
+    [Fact]
+    public async Task Operation_tasks_fall_inside_shift_windows_and_carry_l0_facts()
+    {
+        await using var dbContext = CreateDbContext();
+        await CreateSeed(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, TestScale);
+
+        var operatorIds = WorldHistoryMesSpec.Operators.Select(x => x.UserId).ToHashSet(StringComparer.Ordinal);
+        var completed = await dbContext.OperationTasks
+            .Where(x => x.Status == OperationTaskLifecycleStatus.Completed)
+            .ToArrayAsync();
+        Assert.NotEmpty(completed);
+
+        Assert.All(completed, task =>
+        {
+            Assert.NotNull(task.ExistingStartUtc);
+            Assert.NotNull(task.ExistingEndUtc);
+            Assert.True(task.ExistingEndUtc >= task.ExistingStartUtc);
+
+            // 报工人员必须是 L0 的 25 名班组成员之一，不得凭空捏造工号。
+            Assert.NotNull(task.AssignedUserId);
+            Assert.Contains(task.AssignedUserId!, operatorIds);
+
+            // 工序时刻落在早班（本地 08:00–16:00）或中班（16:00–24:00）内，且不在周日。
+            AssertInsideShiftWindow(task.ExistingStartUtc!.Value);
+            AssertInsideShiftWindow(task.ExistingEndUtc!.Value);
+        });
+
+        // 性能终检工序带质检标志——这是二期质量域接管检验任务的预留引用点。
+        var inspectionTasks = await dbContext.OperationTasks
+            .Where(x => x.OperationSequence == WorldHistoryMesSpec.QualityInspectionSequence)
+            .ToArrayAsync();
+        Assert.NotEmpty(inspectionTasks);
+        Assert.All(inspectionTasks, task => Assert.True(task.RequiresQualityInspection));
+    }
+
+    [Fact]
+    public async Task History_seed_is_idempotent_and_stays_out_of_the_reserved_number_segments()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+
+        var first = await seed.SeedAsync("org-001", "env-dev", AsOfDate, TestScale);
+        var second = await seed.SeedAsync("org-001", "env-dev", AsOfDate, TestScale);
+
+        Assert.True(first.OrderWorkOrdersWritten > 0);
+        Assert.Equal(0, second.OrderWorkOrdersWritten);
+        Assert.Equal(0, second.ReworkWorkOrdersWritten);
+
+        var workOrderIds = await dbContext.WorkOrders.Select(x => x.WorkOrderIdValue).ToArrayAsync();
+        Assert.All(workOrderIds, id =>
+        {
+            Assert.StartsWith("WO-2026-", id, StringComparison.Ordinal);
+            Assert.DoesNotContain("-DEMO-", id, StringComparison.Ordinal);
+            Assert.DoesNotContain("-SCALE-", id, StringComparison.Ordinal);
+        });
+    }
+
+    [Theory]
+    // 黄金向量：与 ERP 侧 WorldHistorySeedServiceTests 逐字段相同的一份副本。
+    // 任何一侧改动确定性派生，两侧测试都会同时变红——这是跨服务配对不漂移的锁。
+    [InlineData(1, "FG-HJ-E1-R", "CUST-WB-001", 80, 300)]
+    [InlineData(42, "FG-HJ-S1-L", "CUST-WB-003", 100, 264)]
+    [InlineData(500, "FG-QJ-S1-R", "CUST-WB-002", 100, 350)]
+    public void Order_plan_stays_on_the_shared_golden_vector(
+        int index,
+        string skuCode,
+        string customerCode,
+        int quantity,
+        int unitPrice)
+    {
+        var plan = WorldHistorySpec.BuildOrderPlans(AsOfDate, 1.0d).Single(x => x.Index == index);
+
+        Assert.Equal(WorldHistorySpec.SalesOrderNo(index), plan.SalesOrderNo);
+        Assert.Equal(WorldHistorySpec.WorkOrderNo(index), plan.WorkOrderNo);
+        Assert.Equal(skuCode, plan.SkuCode);
+        Assert.Equal(customerCode, plan.CustomerCode);
+        Assert.Equal(quantity, plan.Quantity);
+        Assert.Equal(unitPrice, plan.UnitPrice);
+    }
+
+    [Fact]
+    public void Shared_engine_core_matches_the_erp_side_literals()
+    {
+        // 引擎核心（PRNG 根种子 / 上线日 / 节奏参数 / 班次）在两侧重复声明，这里锁住字面量。
+        Assert.Equal(0xCFC630FB3054AF1EUL, WorldHistoryRandom.Fnv1a64("SO-2026-00001"));
+        Assert.Equal(new DateOnly(2026, 1, 5), WorldHistoryCalendar.GoLiveDate);
+        Assert.Equal(new DateOnly(2026, 2, 9), WorldHistoryCalendar.SpringFestivalStart);
+        Assert.Equal(new DateOnly(2026, 2, 22), WorldHistoryCalendar.SpringFestivalEnd);
+        Assert.Equal(105, WorldHistoryCalendar.BaseWeeklyOrders);
+        Assert.Equal(TimeSpan.FromHours(8), WorldHistoryCalendar.SiteUtcOffset);
+        Assert.Equal(3283, WorldHistorySpec.TotalOrders(AsOfDate, 1.0d));
+    }
+
+    [Fact]
+    public void Work_center_mapping_matches_the_l0_routing_stages()
+    {
+        // L0 ProductEngineering 的 RoutingStages() 公式：本侧重算必须逐条一致。
+        Assert.Equal("WC-TUB-01", WorldHistoryMesSpec.WorkCenterCode("FG-QJ-P1-L", 10));
+        Assert.Equal("WC-ROD-01", WorldHistoryMesSpec.WorkCenterCode("FG-QJ-P1-L", 20));
+        Assert.Equal("WC-GRD-01", WorldHistoryMesSpec.WorkCenterCode("FG-QJ-P1-L", 30));
+        Assert.Equal("WC-VA-01", WorldHistoryMesSpec.WorkCenterCode("FG-QJ-P1-L", 40));
+        Assert.Equal("WC-FA-01", WorldHistoryMesSpec.WorkCenterCode("FG-QJ-P1-L", 50));
+        Assert.Equal("WC-CT-01", WorldHistoryMesSpec.WorkCenterCode("FG-QJ-P1-L", 60));
+        Assert.Equal("WC-TS-01", WorldHistoryMesSpec.WorkCenterCode("FG-QJ-P1-L", 70));
+        Assert.Equal("WC-PK-01", WorldHistoryMesSpec.WorkCenterCode("FG-QJ-P1-L", 80));
+
+        // 后减振器总成走后减装配线；E1 平台（index 5）的下料/精车落在二号线。
+        Assert.Equal("WC-RA-01", WorldHistoryMesSpec.WorkCenterCode("FG-HJ-P1-L", 50));
+        Assert.Equal("WC-TUB-02", WorldHistoryMesSpec.WorkCenterCode("FG-QJ-E1-R", 10));
+
+        // 主料与 L0 MBOM 前四行同码。
+        Assert.Equal(
+            ["SF-ROD-01", "SF-TUB-01", "SF-VLV-01", "RM-SPR-01"],
+            WorldHistoryMesSpec.Components("FG-QJ-P1-L").Select(x => x.SkuCode));
+    }
+
+    [Fact]
+    public void Operator_pool_matches_the_l0_twenty_five_team_members()
+    {
+        var operators = WorldHistoryMesSpec.Operators;
+
+        // L0 §5：6 名班组长（EMP-004..009）+ 19 名操作工（EMP-010..028）。
+        Assert.Equal(25, operators.Count);
+        Assert.Equal("EMP-004", operators[0].EmployeeNo);
+        Assert.Equal("user-emp-004", operators[0].UserId);
+        Assert.Equal("EMP-028", operators[^1].EmployeeNo);
+        Assert.All(operators, member => Assert.StartsWith("TEAM-WB-", member.TeamCode, StringComparison.Ordinal));
+
+        // 三个车间都有人可派，否则某些工序会找不到报工人员。
+        Assert.NotEmpty(WorldHistoryMesSpec.OperatorsIn(WorldHistoryWorkshop.Machining));
+        Assert.NotEmpty(WorldHistoryMesSpec.OperatorsIn(WorldHistoryWorkshop.Assembly));
+        Assert.NotEmpty(WorldHistoryMesSpec.OperatorsIn(WorldHistoryWorkshop.Surface));
+    }
+
+    private static void AssertInsideShiftWindow(DateTimeOffset moment)
+    {
+        var local = moment.ToOffset(WorldHistoryCalendar.SiteUtcOffset);
+        Assert.NotEqual(DayOfWeek.Sunday, DateOnly.FromDateTime(local.Date).DayOfWeek);
+
+        // 早班 08:00–16:00，中班 16:00–24:00：合起来就是本地 08:00 之后的任何时刻。
+        Assert.True(
+            local.Hour >= WorldHistoryCalendar.EarlyShiftStartLocalHour,
+            $"Operation moment {local:O} falls outside the 08:00–24:00 two-shift window.");
+    }
+
+    private static WorldHistorySeedService CreateSeed(ApplicationDbContext dbContext) =>
+        new(dbContext, new StubProductionVersionResolver());
+
+    private static ApplicationDbContext CreateDbContext()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"mes-world-history-seed-{Guid.CreateVersion7():N}")
+            .Options;
+        return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed class NoopMediator : IMediator
+    {
+        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+            where TNotification : INotification => Task.CompletedTask;
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// 生产版本解析走真实 HTTP（ProductEngineering 的 resolve 端点），单测里换成确定性桩：
+    /// 本测试关心的是工单链的形状，解析路径本身由规模块既有测试覆盖。
+    /// </summary>
+    private sealed class StubProductionVersionResolver : IWorldHistoryProductionVersionResolver
+    {
+        public Task<IReadOnlyDictionary<string, string>> ResolveAsync(
+            string organizationId,
+            string environmentId,
+            IReadOnlyCollection<string> skuCodes,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyDictionary<string, string>>(
+                skuCodes.ToDictionary(sku => sku, sku => $"PV-{sku}", StringComparer.Ordinal));
+    }
+}

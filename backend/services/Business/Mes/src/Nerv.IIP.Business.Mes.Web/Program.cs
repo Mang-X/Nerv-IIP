@@ -63,7 +63,7 @@ builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProdu
 builder.Services.AddScoped<IMesRoutingSnapshotProvider, HttpMesProductEngineeringRoutingSnapshotProvider>();
 builder.Services.AddScoped<LeaderDemoSeedService>();
 builder.Services.AddScoped<LeaderDemoScaleSeedService>();
-builder.Services.AddScoped<WorldHistoryProductionVersionResolver>();
+builder.Services.AddScoped<IWorldHistoryProductionVersionResolver, WorldHistoryProductionVersionResolver>();
 builder.Services.AddScoped<WorldHistorySeedService>();
 // Register the FluentValidation command validators (CancelWorkOrder/ReturnLineSideMaterial/... — 11 in total)
 // so the MediatR AddKnownExceptionValidationBehavior below can execute them. Without both lines the validators

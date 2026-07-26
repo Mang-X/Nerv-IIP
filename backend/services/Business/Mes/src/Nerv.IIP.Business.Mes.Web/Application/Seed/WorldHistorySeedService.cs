@@ -24,7 +24,7 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Seed;
 /// </summary>
 public sealed class WorldHistorySeedService(
     ApplicationDbContext dbContext,
-    WorldHistoryProductionVersionResolver productionVersionResolver)
+    IWorldHistoryProductionVersionResolver productionVersionResolver)
 {
     /// <summary>每批工单数。批内共享一次预查与一次 <c>SaveChanges</c>，批末清变更跟踪器。</summary>
     public const int BatchSize = 50;
