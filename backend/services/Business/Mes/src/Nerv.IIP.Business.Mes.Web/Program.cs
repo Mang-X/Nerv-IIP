@@ -63,6 +63,8 @@ builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProdu
 builder.Services.AddScoped<IMesRoutingSnapshotProvider, HttpMesProductEngineeringRoutingSnapshotProvider>();
 builder.Services.AddScoped<LeaderDemoSeedService>();
 builder.Services.AddScoped<LeaderDemoScaleSeedService>();
+builder.Services.AddScoped<IWorldHistoryProductionVersionResolver, WorldHistoryProductionVersionResolver>();
+builder.Services.AddScoped<WorldHistorySeedService>();
 // Register the FluentValidation command validators (CancelWorkOrder/ReturnLineSideMaterial/... — 11 in total)
 // so the MediatR AddKnownExceptionValidationBehavior below can execute them. Without both lines the validators
 // are dead code and command-level validation never runs — matching every other business service.
@@ -149,6 +151,30 @@ if (leaderDemoSeedEnabled)
         leaderDemoEnvironmentId,
         builder.Configuration.GetValue("LeaderDemo:Scale:OrderCount", 0),
         DateTimeOffset.UtcNow);
+
+    // 《工厂世界观设定集》L1 背景历史（MES 侧）。校验器 fail-closed：数量链不平就让启动失败。
+    if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
+    {
+        var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
+            leaderDemoOrganizationId,
+            leaderDemoEnvironmentId,
+            WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+            WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+        app.Logger.LogInformation(
+            "World-history MES seed completed: {OrderWorkOrders} order work orders, {ReworkWorkOrders} rework work orders; " +
+            "validator checked {WorkOrders} work orders / {Tasks} operation tasks / {Reports} production reports / " +
+            "{Receipts} finished-goods receipts.",
+            report.OrderWorkOrdersWritten,
+            report.ReworkWorkOrdersWritten,
+            report.Validation.WorkOrdersChecked,
+            report.Validation.OperationTasksChecked,
+            report.Validation.ProductionReportsChecked,
+            report.Validation.FinishedGoodsReceiptsChecked);
+        foreach (var line in report.Validation.Sample)
+        {
+            app.Logger.LogInformation("World-history sample: {Chain}", line);
+        }
+    }
 }
 
 await app.RunAsync();

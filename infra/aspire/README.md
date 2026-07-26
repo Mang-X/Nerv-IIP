@@ -160,6 +160,37 @@ connector is online is decided by real connector or simulator heartbeats, never 
 seed. Seeding costs roughly 1.1 s in MasterData and 1.9 s in ProductEngineering on a
 local Docker PostgreSQL, and repeat runs are idempotent.
 
+A third opt-in block seeds the **factory world-bible L1 background history**
+(same plan, section 7): roughly 29 weeks of ERP and MES paper trail since the
+2026-01-05 go-live — about 3283 sales orders `SO-2026-#####` with deliveries,
+receivables, cash receipts and balanced journal vouchers; about 490 purchase orders
+`PO-2026-####` with goods receipts; and about 3616 work orders `WO-2026-#####`
+(plus `WO-2026-R####` rework) with 6-8 operation tasks, kitting snapshots, material
+issue requests, production reports and posted finished-goods receipts. It requires
+the L0 block and is controlled by `LeaderDemo:History:Enabled`:
+
+```powershell
+$env:NERV_IIP_LEADER_DEMO_HISTORY = "false"        # disables the L1 history block
+$env:NERV_IIP_LEADER_DEMO_HISTORY_SCALE = "0.1"    # ~1/10 of the volume, for a fast check
+.\nerv.ps1 demo reset
+```
+
+Everything is generated from a fixed seed, so a given document is byte-identical
+whatever the scale. Timestamps are backdated into the go-live window and stay inside
+the two-shift calendar (Sundays are down days, Spring Festival 2026-02-09..02-22 is a
+trough, month ends surge). ERP and MES agree on the shared plan without talking to
+each other, so `SO-2026-#####` pairs with `WO-2026-#####` by business code only — no
+cross-schema foreign keys. The AppHost sends both services the same
+`LeaderDemo:History:AsOfDate` so a start that straddles midnight cannot split the pair.
+
+Each service runs its own **fail-closed** consistency validator before finishing the
+seed: order-to-cash and work-order-to-receipt quantity and amount chains, monotonic
+timestamps, the section 7 status mix, and 20 sampled end-to-end chains printed to the
+log. An unbalanced chain throws and the service fails to start. Full-scale seeding
+costs roughly 11 s in ERP and 28 s in MES on a local Docker PostgreSQL, and repeat runs
+are idempotent (about 0.2 s). Archived evidence:
+`scripts/verify-world-history.ps1` → `artifacts/world-history/<runId>/`.
+
 Every successful or failed `seed` and `health-check` preserves redacted evidence
 at `artifacts/leader-demo/<UTC-run-id>/evidence.json`. The manifest includes the
 session ID, commit, resource states, non-secret URLs, actual account role IDs

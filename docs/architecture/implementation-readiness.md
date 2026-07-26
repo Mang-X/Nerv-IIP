@@ -182,6 +182,69 @@ IAM 侧同时补齐了工人档案：`iam.users` 新增可空列 `DisplayName` /
 
 本变更没有新增或修改业务 HTTP endpoint，也没有改变 Gateway 公开契约；facade coverage 登记、OpenAPI 快照与 generated client 均无需刷新。IAM 内部工人目录只补充了原有 DTO 字段的取值，wire shape 不变。
 
+### 工厂世界观设定集 L1 背景历史引擎 一期（ERP / MES）
+
+在 L0 主数据之上交付《工厂世界观设定集》§7 的 **L1 背景历史**：2026-01-05 平台上线至今约 29 周的 ERP 销售/采购与 MES 工单执行痕迹。设定集 §0 的 MAN-519 基线修订条款允许 L1 号段由种子直写结果事实，前提是①历史时间戳 ②独立号段 ③一致性校验器 ④讲稿如实定位为「系统上线以来的历史数据」。
+
+开关：`LeaderDemo:History:Enabled`（AppHost 在 leader-demo profile 且 L0 已开启时默认 `true`，`NERV_IIP_LEADER_DEMO_HISTORY=false` 关闭）。缩放 `LeaderDemo:History:Scale`（`1.0` = 全量，`0.1` ≈ 十分之一快速验证，`NERV_IIP_LEADER_DEMO_HISTORY_SCALE` 覆盖）。历史截止日 `LeaderDemo:History:AsOfDate` 由 AppHost 统一下发给 ERP 与 MES。
+
+#### 引擎脚手架（ERP / MES 两侧同字面量重复声明，各有黄金向量测试防漂移）
+
+| 构件 | 职责 |
+| --- | --- |
+| `WorldHistoryRandom` | splitmix64 确定性伪随机，**按单据号取流**——同一张单的内容与生成顺序、缩放比例无关，`Scale=0.1` 跑出的第 42 单与全量的第 42 单逐字段相同 |
+| `WorldHistoryCalendar` | 工作日历：周日停产、春节 2/9–2/22 低谷（×0.35）、月末冲量（×1.35）、周均 105±30、早班/中班时刻映射（Asia/Shanghai 恒 UTC+8） |
+| `WorldHistorySpec` | 跨服务共享的订单计划表：SKU/客户/数量/单价/下单日/阶段。ERP 与 MES 用同一 `(asOfDate, scale)` 各自推导，**不通信、不跨库查询、不建跨 schema 外键**，`SO-2026-#####` ↔ `WO-2026-#####` 天然配对 |
+| `WorldHistoryTimeline` | 单张订单的时间轴：下单 ≤ 工单下达 ≤ 开工 ≤ 完工 ≤ 发货 ≤ 收款，逐节点夹到 asOfDate 以内 |
+
+#### 与设定集 §7 的形状对照（全量实测，asOfDate=2026-07-26）
+
+| 域 | 设定集目标 | 实测 |
+| --- | --- | --- |
+| 销售订单 | 约 3200 单（周均 105±30） | **3283** 单 `SO-2026-#####`，29 周 |
+| 状态分布 | 已收款结案 78% / 已发货待收款 8% / 在制 9% / 已下达 3% / 废弃 2% | 2561 / 260 / — / — / 按比例撒落；**按时间轴排布**，老单结案、近单在制 |
+| 发货 + 应收 | 结案单带发货单、应收与凭证链 | 2821 发货单、2821 应收、2561 收款单、**5382 张凭证**（收入 + 收款，逐分平衡） |
+| 采购 | 约 480 张，节奏与生产量匹配 | **490** 张 `PO-2026-####`（按销售量 15% 派生，春节/月末曲线自动传导）+ 原料收货 |
+| 工单 | 约 3600 张（含内部补产） | **3616** 张 = 3214 订单工单 + 402 补产 `WO-2026-R####` |
+| 工序任务 | 每单 6–8 道 | **26511** 道（下料/阀系预装按概率跳过，得到 6/7/8 三种形态） |
+| 报工 | 2–5 条/工单，数量 + 工时 | **11722** 条，操作员取自 L0 的 25 名班组成员，工时由工序 `Complete` 计算 |
+| 齐套 / 领料 | 齐套检查记录、领料单（部分分批） | **14464** 条齐套需求快照、**19856** 张领料单（40% 工单分两批领） |
+| 完工入库 | 已过账 | **3223** 张，全部 `Posted` |
+
+#### 一致性校验器（fail-closed）
+
+`WorldHistoryConsistencyValidator`（ERP / MES 各一份）在 seed 末尾必跑，任何一条不成立即抛 `WorldHistoryConsistencyException`，**seed 随之失败、服务启动失败**。覆盖：
+
+1. 订单–发货–应收–凭证–收款的数量与金额链逐单对账；已收款订单必有凭证且金额平；
+2. 工单–工序任务–报工–完工入库的数量链；**好品产出 == 销售订单数量**（工单投料按报废量放大）；
+3. 全链时间戳落在 `[2026-01-05, asOfDate]` 且单调；工序时刻落在早班/中班窗口内、不在周日；
+4. 状态分布落在设定集比例的抽样容差内（容差取 `max(±3%, 3σ)`，全量时生效的仍是 ±3%）；
+5. 废弃单不得留下发货/应收；工序任务数必须落在 6–8；
+6. 输出 20 单抽样全链引用供人工核对。
+
+跨服务（ERP ↔ MES）的配对由 `WorldHistorySpec` 的确定性与双侧黄金向量测试保证；端到端跨库证据由 `scripts/verify-world-history.ps1` 产出到 `artifacts/world-history/<runId>/`。
+
+#### 耗时实测（2026-07-26，Windows 10.0.26200、.NET 10、Docker PostgreSQL 18）
+
+| 观测 | 数值 |
+| --- | --- |
+| ERP 全量首次 seed（3283 订单 + 490 采购 + 发货/应收/凭证/收款全链，含校验器） | **11036 ms** |
+| ERP 幂等重跑 | 117 ms |
+| ERP `Scale=0.1`（331 单） | 5479 ms |
+| MES 全量首次 seed（3616 工单 + 26511 工序 + 11722 报工 + 19856 领料 + 3223 入库，含校验器） | **28099 ms** |
+| MES 幂等重跑 | 185 ms |
+
+两侧合计约 **39 秒**，远低于 5 分钟预算，因此 leader-demo profile 下默认全量开启；无需缩放建议。耗时证据由 `NERV_IIP_TEST_POSTGRES` 门控的 `WorldHistorySeedPostgresTests`（ERP / MES 各一）产出，默认 skip、不进 CI 门禁；形状、确定性、隔离与幂等证据由两侧 `WorldHistorySeedServiceTests` 常规门禁测试产出。
+
+#### 隔离与二期预留
+
+1. 号段 `SO-|QUO-|DO-|AR-|CR-|JV-|PO-|PR-|WO-2026-*` 与 MAN-519 固定演示事实（`*-DEMO-*`）、千单规模块（`*-SCALE-*`）完全隔离，回归测试逐个单据号断言不含这两个片段；`demo health-check` 对 `SO-DEMO-001` 等固定事实的唯一匹配计数不受影响。
+2. 引擎只**引用** L0 的 84 SKU / 46 设备 / 58 员工 / 工作中心 / BOM / 路线，不新建任何主数据；客户 `CUST-DEMO-001` 只被引用下单，其主数据仍归 L2 所有。
+3. 二期（质量 / 设备 / WMS / 标签历史）的引用点已预留：性能终检工序（seq 70）带 `RequiresQualityInspection`，报废带 `scrapReasonCode`，成品带 `producedLotNo`/批次号，完工入库刻意不写 `unitCost`（成本归集归 ERP 成本域）。
+4. 千单规模块（`*-SCALE-*`）保留原状，继续服务排程演示的在制池；本引擎不接管它。
+
+本变更没有新增或修改业务 HTTP endpoint，也没有改变 Gateway 公开契约；facade coverage 登记、OpenAPI 快照与 generated client 均无需刷新。
+
 ## 当前结论
 
 1. 平台 HTTP 服务命名已经冻结为 .Web、.Domain、.Infrastructure。
