@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## DemandPlanning 预测日分摊与数量守恒（MAN-426 / #774）
+
+DemandPlanning MRP 现在把 `ForecastInput` 的数量解释为包含 `PeriodStartDate` 和 `PeriodEndDate` 的完整期间总量。预测先转换到 planning UOM，再由完整配置消耗窗 `[periodStart - backwardDays, periodEnd + forwardDays]` 内的 active sales/sales-order 与 released MPS 事实按原有期间级规则消耗；普通需求仍只在自身交期落入当前包含端点的 MRP horizon 时输出。剩余预测先按六位小数规范化为 micro-unit，并对完整期间第 `d` 天使用累计目标 `round(totalUnits * d / inclusiveDayCount)`；相邻累计目标之差形成正数日需求，零值不输出。当前 horizon 只过滤出重叠日期，因而跨月、闰日和相邻 horizon 都复用同一稳定剩余量，各切片合并后精确守恒，不再把整个期间余量夹到 horizon 末日。
+
+provider-neutral adapter 回归覆盖完整落入、左右跨界、覆盖 horizon、完全在外、单日、闰日/月界、不可整除 micro-unit、跨相邻 horizon 的窗外消费、普通销售订单不变和重复读取顺序稳定。另有 `NERV_IIP_TEST_POSTGRES` 环境门控的 `ForecastTimePhasingPostgresTests`：由受控 PostgreSQL 18 连接创建并迁移 disposable database，持久化预测和消费需求后通过 `DemandPlanningUpstreamInputSnapshotProvider` 验证相邻切片日值、六位小数总量守恒和普通需求不变；默认不启动或管理 Docker，未注入连接时明确 skip。本次没有新增或修改业务 HTTP endpoint、公开契约、facade declaration、OpenAPI、generated client、数据库 schema 或 migration。
+
 ## DemandPlanning MRP 安全库存补货（MAN-425 / #773）
 
 DemandPlanning MRP 现在把首次适用 bucket 的安全库存缺口 `max(0, safetyStock - projectedAvailable)` 作为同一净需求路径的补货需求，公式显式记录 `gross - available - scheduled receipts + safety-stock deficit = net`；缺口在单次运行内每个 SKU/UOM/site 只补一次，后续 bucket 只规划新增需求。无需求但低于安全库存的物料同样沿既有 make/buy、提前期、批量、UOM、BOM 与 pegging 路径生成建议；计划收货先同时覆盖需求和安全库存缺口，部分收货只消费一次，完整覆盖不会产生额外新建或取消建议，晚到收货仍保留 `reschedule-in` 诊断。
