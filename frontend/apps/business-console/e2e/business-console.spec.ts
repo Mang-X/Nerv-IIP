@@ -165,9 +165,12 @@ test('工序执行：队列渲染、可报工行直显「报工」按钮且能�
   const reportBtn = page.getByRole('button', { name: '报工' }).first()
   await expect(reportBtn).toBeVisible({ timeout: 15_000 })
 
-  // 点「报工」→ 跳工单页并自动打开报工弹窗（抓"点不了"+跨页带参）。
+  // 点「报工」→ 就地打开报工弹窗（不跳页），上下文随行带出（抓"点不了"+上下文丢失）。
   await reportBtn.click()
-  await expect(page.getByRole('dialog')).toBeVisible({ timeout: 15_000 })
+  const reportDialog = page.getByRole('dialog')
+  await expect(reportDialog).toBeVisible({ timeout: 15_000 })
+  await expect(page).toHaveURL(/\/mes\/operation-tasks/)
+  await expect(reportDialog.locator('[data-slot="carried-context"]')).toContainText('WO-001')
 })
 
 test('报工记录：报工历史渲染产量、查看工单就地速览不跳页', async ({ page }) => {
