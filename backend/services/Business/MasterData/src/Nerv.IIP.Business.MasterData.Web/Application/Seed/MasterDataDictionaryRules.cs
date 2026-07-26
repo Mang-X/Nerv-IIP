@@ -77,6 +77,7 @@ public static class MasterDataDictionaryRules
         new("skill", "inspection", "质检", ReferenceDataCodeSetKind.FactoryCustom),
         new("skill", "cnc-operation", "数控操作", ReferenceDataCodeSetKind.FactoryCustom),
         new("skill", "forklift", "叉车", ReferenceDataCodeSetKind.FactoryCustom),
+        new("skill", "equipment-maintenance", "设备维护", ReferenceDataCodeSetKind.FactoryCustom),
 
         new("skill-level", "junior", "初级", ReferenceDataCodeSetKind.SystemEnum),
         new("skill-level", "intermediate", "中级", ReferenceDataCodeSetKind.SystemEnum),
