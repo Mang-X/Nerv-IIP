@@ -123,20 +123,29 @@ public sealed class SchedulingScaleBenchmarkTests(ITestOutputHelper output)
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<SchedulingInfrastructure.ApplicationDbContext>();
         var generated = SchedulePlanContractMapper.WithStatus(plan, SchedulePlanStatusContract.Generated);
+        var normalizedEngineInput = SchedulingProblemNormalizer.Normalize(problem);
+        var engineInputJson = JsonSerializer.Serialize(
+            normalizedEngineInput,
+            SchedulingJson.Options);
+        var engineInputFingerprint = CalculateFingerprint(engineInputJson);
+        Assert.Equal(plan.ProblemFingerprint, engineInputFingerprint);
         db.ScheduleProblems.Add(new ScheduleProblemSnapshot(
             problem.ProblemId,
             problem.ContractVersion,
             problem.OrganizationId,
             problem.EnvironmentId,
-            plan.ProblemFingerprint,
-            JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            engineInputFingerprint,
+            engineInputJson,
             problem.HorizonStartUtc,
             problem.HorizonEndUtc,
-            GeneratedAtUtc));
+            GeneratedAtUtc,
+            engineInputFingerprint,
+            engineInputJson));
         db.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(
             problem.OrganizationId,
             problem.EnvironmentId,
-            SchedulePlanContractMapper.ToDomainSnapshot(generated)));
+            SchedulePlanContractMapper.ToDomainSnapshot(generated),
+            CreateDirectBenchmarkTrace()));
         await db.SaveChangesAsync(cancellationToken);
         stopwatch.Stop();
         return stopwatch.ElapsedMilliseconds;
@@ -172,6 +181,25 @@ public sealed class SchedulingScaleBenchmarkTests(ITestOutputHelper output)
         };
         var json = JsonSerializer.Serialize(canonical, SchedulingJson.Options);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).ToLowerInvariant();
+    }
+
+    private static string CalculateFingerprint(string json)
+    {
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)))
+            .ToLowerInvariant();
+    }
+
+    private static SchedulePlanExecutionTraceSnapshot CreateDirectBenchmarkTrace()
+    {
+        return new SchedulePlanExecutionTraceSnapshot(
+            EngineId: "finite-capacity",
+            EngineVersion: "aps-lite-v1",
+            RuleProviderId: "direct-benchmark",
+            RuleProfileId: "aps-scale-normalized-input",
+            RuleProfileVersion: "v1",
+            ConstraintSourcesJson: """{"schemaVersion":1,"sources":[]}""",
+            TraceSchemaVersion: SchedulingExecutionTraceSchema.CurrentVersion,
+            ReplayStatus: SchedulingReplayStatuses.Available);
     }
 
     private sealed record MeasuredValue<T>(T Value, long ElapsedMilliseconds);

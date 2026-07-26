@@ -88,9 +88,26 @@ public sealed class SchedulingReleaseMesRevocationAcceptanceTests
                 $"assignment-{planId}", "WO-001", "OP-10", 10, resourceId, "WC-1",
                 startUtc, startUtc.AddHours(1), false, "scheduled")],
             [], [], [], [], []);
-        var plan = SchedulePlan.FromGeneratedPlan("org-001", "env-dev", SchedulePlanContractMapper.ToDomainSnapshot(contract));
+        var plan = SchedulePlan.FromGeneratedPlan(
+            "org-001",
+            "env-dev",
+            SchedulePlanContractMapper.ToDomainSnapshot(contract),
+            CreateAvailableExecutionTrace());
         plan.ClearDomainEvents();
         return plan;
+    }
+
+    private static SchedulePlanExecutionTraceSnapshot CreateAvailableExecutionTrace()
+    {
+        return new SchedulePlanExecutionTraceSnapshot(
+            EngineId: "finite-capacity",
+            EngineVersion: "aps-lite-v1",
+            RuleProviderId: "built-in",
+            RuleProfileId: "adr-0014-default",
+            RuleProfileVersion: "v1",
+            ConstraintSourcesJson: """{"schemaVersion":1,"sources":[]}""",
+            TraceSchemaVersion: SchedulingExecutionTraceSchema.CurrentVersion,
+            ReplayStatus: SchedulingReplayStatuses.Available);
     }
 
     private static SchedulePlanReleasedIntegrationEvent ConvertReleased(SchedulePlan plan, DateTimeOffset now) =>

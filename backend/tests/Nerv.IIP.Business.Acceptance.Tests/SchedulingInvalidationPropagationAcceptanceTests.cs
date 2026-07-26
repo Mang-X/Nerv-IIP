@@ -194,7 +194,21 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
                 Conflicts: [],
                 UnscheduledOperations: [],
                 ChangeSummary: [],
-                GanttItems: [])));
+                GanttItems: [])),
+            CreateAvailableExecutionTrace());
+    }
+
+    private static SchedulePlanExecutionTraceSnapshot CreateAvailableExecutionTrace()
+    {
+        return new SchedulePlanExecutionTraceSnapshot(
+            EngineId: "finite-capacity",
+            EngineVersion: "aps-lite-v1",
+            RuleProviderId: "built-in",
+            RuleProfileId: "adr-0014-default",
+            RuleProfileVersion: "v1",
+            ConstraintSourcesJson: """{"schemaVersion":1,"sources":[]}""",
+            TraceSchemaVersion: SchedulingExecutionTraceSchema.CurrentVersion,
+            ReplayStatus: SchedulingReplayStatuses.Available);
     }
 
     private static AssetUnavailableIntegrationEvent CreateAssetUnavailableEvent()
