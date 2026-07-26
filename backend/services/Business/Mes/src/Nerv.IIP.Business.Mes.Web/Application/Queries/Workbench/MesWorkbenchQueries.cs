@@ -558,7 +558,8 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
         string? keyword = null,
         string? workCenterId = null,
         string? shiftId = null,
-        string? deviceAssetId = null)
+        string? deviceAssetId = null,
+        string? assignedUserId = null)
     {
         var query = QueryOperationTaskEntities(
             dbContext,
@@ -569,7 +570,8 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
             keyword,
             workCenterId,
             shiftId,
-            deviceAssetId);
+            deviceAssetId,
+            assignedUserId);
 
         return query
             .OrderBy(x => x.EarliestStartUtc)
@@ -610,7 +612,8 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
         string? keyword = null,
         string? workCenterId = null,
         string? shiftId = null,
-        string? deviceAssetId = null)
+        string? deviceAssetId = null,
+        string? assignedUserId = null)
     {
         var query = dbContext.OperationTasks
             .AsNoTracking()
@@ -664,6 +667,12 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
         {
             var normalizedDeviceAssetId = deviceAssetId.Trim();
             query = query.Where(x => x.DeviceAssetId == normalizedDeviceAssetId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(assignedUserId))
+        {
+            var normalizedAssignedUserId = assignedUserId.Trim();
+            query = query.Where(x => x.AssignedUserId == normalizedAssignedUserId);
         }
 
         return query;
@@ -862,7 +871,8 @@ public sealed record ListDispatchTasksQuery(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null) : IQuery<MesDispatchTaskListResponse>;
+    string? DeviceAssetId = null,
+    string? AssignedUserId = null) : IQuery<MesDispatchTaskListResponse>;
 
 public sealed record MesDispatchTaskListResponse(
     IReadOnlyCollection<MesDispatchTaskRow> Items,
@@ -903,7 +913,8 @@ public sealed class ListDispatchTasksQueryHandler(ApplicationDbContext dbContext
                 request.Keyword,
                 request.WorkCenterId,
                 request.ShiftId,
-                request.DeviceAssetId)
+                request.DeviceAssetId,
+                request.AssignedUserId)
             .CountAsync(cancellationToken);
         var tasks = await GetMesWorkOrderDetailQueryHandler
             .QueryOperationTasks(
@@ -917,7 +928,8 @@ public sealed class ListDispatchTasksQueryHandler(ApplicationDbContext dbContext
                 request.Keyword,
                 request.WorkCenterId,
                 request.ShiftId,
-                request.DeviceAssetId)
+                request.DeviceAssetId,
+                request.AssignedUserId)
             .Select(x => new MesDispatchTaskRow(
                 x.OperationTaskId,
                 x.WorkOrderId,
