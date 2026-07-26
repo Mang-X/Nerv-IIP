@@ -93,8 +93,7 @@ public sealed class WorldHistorySeedService(
                     timeline,
                     ResolveExecution(plan.Stage),
                     plan.SalesOrderNo,
-                    plan.RequiredDate,
-                    asOfDate);
+                    plan.RequiredDate);
                 added++;
             }
 
@@ -174,7 +173,6 @@ public sealed class WorldHistorySeedService(
                     // 补产工单的来源单据是被补的工单，不是销售订单。
                     sourceDocumentId: source.WorkOrderNo,
                     dueDate: source.RequiredDate,
-                    asOfDate: asOfDate,
                     isRework: true);
                 added++;
             }
@@ -216,7 +214,6 @@ public sealed class WorldHistorySeedService(
         WorldHistoryExecution execution,
         string sourceDocumentId,
         DateOnly dueDate,
-        DateOnly asOfDate,
         bool isRework = false)
     {
         var dueUtc = new DateTimeOffset(dueDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
@@ -242,7 +239,7 @@ public sealed class WorldHistorySeedService(
         dbContext.WorkOrders.Add(workOrder);
         Backdate(workOrder, x => x.CreatedAtUtc, createdAtUtc);
 
-        var tasks = WriteOperationTasks(organizationId, environmentId, plan, timeline, execution, releasedAtUtc, asOfDate);
+        var tasks = WriteOperationTasks(organizationId, environmentId, plan, timeline, execution, releasedAtUtc);
         WriteMaterialFacts(organizationId, environmentId, plan, timeline, execution, tasks);
 
         if (execution == WorldHistoryExecution.ReleasedOnly)
@@ -251,7 +248,7 @@ public sealed class WorldHistorySeedService(
         }
 
         var finalTask = tasks[^1];
-        var completedAtUtc = WriteProductionReports(organizationId, environmentId, plan, timeline, execution, workOrder, finalTask);
+        var completedAtUtc = WriteProductionReports(organizationId, environmentId, plan, execution, workOrder, finalTask);
 
         if (execution != WorldHistoryExecution.Closed)
         {
@@ -270,8 +267,7 @@ public sealed class WorldHistorySeedService(
         WorldHistoryWorkOrderPlan plan,
         WorldHistoryTimeline timeline,
         WorldHistoryExecution execution,
-        DateTimeOffset releasedAtUtc,
-        DateOnly asOfDate)
+        DateTimeOffset releasedAtUtc)
     {
         var sequences = plan.OperationSequences;
         var windows = new List<OperationTaskWindow>(sequences.Count);
@@ -342,7 +338,6 @@ public sealed class WorldHistorySeedService(
             windows.Add(new OperationTaskWindow(task, sequence, startUtc, endUtc, assignee, isCompleted));
         }
 
-        _ = asOfDate;
         return windows;
     }
 
@@ -453,7 +448,6 @@ public sealed class WorldHistorySeedService(
         string organizationId,
         string environmentId,
         WorldHistoryWorkOrderPlan plan,
-        WorldHistoryTimeline timeline,
         WorldHistoryExecution execution,
         WorkOrder workOrder,
         OperationTaskWindow finalTask)
@@ -510,7 +504,6 @@ public sealed class WorldHistorySeedService(
             lastMoment = reportedAtUtc;
         }
 
-        _ = timeline;
         return lastMoment;
     }
 

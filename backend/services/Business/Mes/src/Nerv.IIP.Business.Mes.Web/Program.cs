@@ -153,7 +153,7 @@ if (leaderDemoSeedEnabled)
         DateTimeOffset.UtcNow);
 
     // 《工厂世界观设定集》L1 背景历史（MES 侧）。校验器 fail-closed：数量链不平就让启动失败。
-    if (builder.Configuration.GetValue("LeaderDemo:History:Enabled", false))
+    if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
     {
         var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
             leaderDemoOrganizationId,
