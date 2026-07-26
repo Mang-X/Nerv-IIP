@@ -141,14 +141,17 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         dbContext.SalesOrders.Add(salesOrder);
 
         var orderCreatedAtUtc = MomentOn(timeline.OrderDate, plan.SalesOrderNo, "order");
-        Backdate(salesOrder, x => x.CreatedAtUtc, orderCreatedAtUtc);
+        BackdateUtc(salesOrder, x => x.CreatedAtUtc, orderCreatedAtUtc);
+
+        // 订单已开出，现在才把报价单有效期改回历史值（下单当日 +30 天）。
+        BackdateValue(quotation, x => x.ExpiresOn, timeline.OrderDate.AddDays(30));
 
         if (plan.Stage == WorldHistoryOrderStage.Cancelled)
         {
             salesOrder.Cancel("客户取消订单");
             foreach (var change in salesOrder.ChangeHistory)
             {
-                Backdate(change, x => x.ChangedAtUtc, MomentOn(timeline.WorkOrderReleaseDate, plan.SalesOrderNo, "cancel"));
+                BackdateUtc(change, x => x.ChangedAtUtc, MomentOn(timeline.WorkOrderReleaseDate, plan.SalesOrderNo, "cancel"));
             }
 
             return;
@@ -192,8 +195,11 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         quotation.Approve();
         dbContext.Quotations.Add(quotation);
 
-        Backdate(quotation, x => x.CreatedAtUtc, MomentOn(timeline.OrderDate.AddDays(-1), plan.QuotationNo, "quotation"));
-        Backdate(quotation, x => x.ExpiresOn, timeline.OrderDate.AddDays(30));
+        BackdateUtc(quotation, x => x.CreatedAtUtc, MomentOn(timeline.OrderDate.AddDays(-1), plan.QuotationNo, "quotation"));
+
+        // ExpiresOn 不在这里改：变更跟踪器会把新值写回实体本身，历史有效期一旦提前生效，
+        // 紧接着的 SalesOrder.CreateFromQuotation 就会以「报价单已过期」拒绝开单。
+        // 改写延后到订单建好之后（见 WriteOrderChain）。
         return quotation;
     }
 
@@ -212,7 +218,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             [new DeliveryOrderLineDraft("10", plan.Quantity, DefaultLocationCode, $"LOT-{plan.WorkOrderNo}")]);
         deliveryOrder.ApplyShipment([new DeliveryOrderShipmentLine("10", plan.Quantity)], shippedAtUtc.UtcDateTime);
         dbContext.DeliveryOrders.Add(deliveryOrder);
-        Backdate(deliveryOrder, x => x.ReleasedAtUtc, MomentOn(timeline.ShipDate, plan.SalesOrderNo, "delivery").UtcDateTime);
+        BackdateUtc(deliveryOrder, x => x.ReleasedAtUtc, MomentOn(timeline.ShipDate, plan.SalesOrderNo, "delivery"));
 
         var receivable = AccountReceivable.Create(
             organizationId,
@@ -225,7 +231,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             invoiceDate: timeline.ShipDate,
             dueDate: timeline.ShipDate.AddDays(30));
         dbContext.AccountReceivables.Add(receivable);
-        Backdate(receivable, x => x.CreatedAtUtc, shippedAtUtc.UtcDateTime);
+        BackdateUtc(receivable, x => x.CreatedAtUtc, shippedAtUtc);
 
         // 收入确认凭证：借 应收账款 / 贷 主营业务收入，金额与订单总额逐分一致。
         var revenueVoucher = JournalVoucher.Post(
@@ -240,7 +246,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
                     WorldHistoryErpSpec.RevenueAccountCode, 0m, plan.TotalAmount, $"{plan.SalesOrderNo} 发货确认收入"),
             ]);
         dbContext.JournalVouchers.Add(revenueVoucher);
-        Backdate(revenueVoucher, x => x.PostedAtUtc, shippedAtUtc.UtcDateTime);
+        BackdateUtc(revenueVoucher, x => x.PostedAtUtc, shippedAtUtc);
 
         if (!plan.IsCollected)
         {
@@ -262,8 +268,8 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             [new CashReceiptAllocationDraft(WorldHistorySpec.ReceivableNo(plan.Index), plan.TotalAmount)]);
         cashReceipt.Match();
         dbContext.CashReceipts.Add(cashReceipt);
-        Backdate(cashReceipt, x => x.RegisteredAtUtc, collectedAtUtc.UtcDateTime);
-        Backdate(cashReceipt, x => x.MatchedAtUtc, collectedAtUtc.UtcDateTime);
+        BackdateUtc(cashReceipt, x => x.RegisteredAtUtc, collectedAtUtc);
+        BackdateNullableUtc(cashReceipt, x => x.MatchedAtUtc, collectedAtUtc);
 
         // 收款凭证：借 银行存款 / 贷 应收账款。
         var collectionVoucher = JournalVoucher.Post(
@@ -278,7 +284,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
                     WorldHistoryErpSpec.ReceivableAccountCode, 0m, plan.TotalAmount, $"{plan.SalesOrderNo} 货款回收"),
             ]);
         dbContext.JournalVouchers.Add(collectionVoucher);
-        Backdate(collectionVoucher, x => x.PostedAtUtc, collectedAtUtc.UtcDateTime);
+        BackdateUtc(collectionVoucher, x => x.PostedAtUtc, collectedAtUtc);
     }
 
     private async Task<int> SeedPurchaseHistoryAsync(
@@ -367,7 +373,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         purchaseOrder.MarkApprovalRequested(approvalChainId);
         purchaseOrder.ReleaseAfterApproval(approvalChainId);
         dbContext.PurchaseOrders.Add(purchaseOrder);
-        Backdate(purchaseOrder, x => x.CreatedAtUtc, MomentOn(plan.OrderDate, plan.PurchaseOrderNo, "purchase").UtcDateTime);
+        BackdateUtc(purchaseOrder, x => x.CreatedAtUtc, MomentOn(plan.OrderDate, plan.PurchaseOrderNo, "purchase"));
 
         if (!plan.IsReceived)
         {
@@ -387,7 +393,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
                     FinalDelivery: true)
             ]);
         dbContext.PurchaseReceipts.Add(receipt);
-        Backdate(receipt, x => x.RecordedAtUtc, MomentOn(plan.ReceiptDate, plan.PurchaseReceiptNo, "receipt").UtcDateTime);
+        BackdateUtc(receipt, x => x.RecordedAtUtc, MomentOn(plan.ReceiptDate, plan.PurchaseReceiptNo, "receipt"));
     }
 
     /// <summary>
@@ -396,12 +402,36 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
     /// ERP 的所有时间戳都是 <c>{ get; private set; }</c> 且构造函数内取 <c>UtcNow</c>，
     /// 领域 API 不提供任何回填入口。这里用 EF Core 变更跟踪器改写待插入行的列值——
     /// 是 EF 的一等公民 API，不是裸 SQL，且只作用于本 seed 新建的实体。
+    ///
+    /// 故意拆成 <see cref="BackdateUtc{TEntity}"/> / <see cref="BackdateNullableUtc{TEntity}"/> /
+    /// <see cref="BackdateValue{TEntity, TProperty}"/> 三个签名，而不是一个全泛型方法：
+    /// <c>DateTime</c> 到 <c>DateTimeOffset</c> 存在隐式转换，全泛型版本会让「把 DateTimeOffset
+    /// 塞进 DateTime 列」这类错误通过编译，直到运行时才炸成 InvalidCastException。
     /// </summary>
-    private void Backdate<TEntity, TProperty>(
+    private void BackdateUtc<TEntity>(
+        TEntity entity,
+        System.Linq.Expressions.Expression<Func<TEntity, DateTime>> property,
+        DateTimeOffset value)
+        where TEntity : class
+    {
+        dbContext.Entry(entity).Property(property).CurrentValue = value.UtcDateTime;
+    }
+
+    private void BackdateNullableUtc<TEntity>(
+        TEntity entity,
+        System.Linq.Expressions.Expression<Func<TEntity, DateTime?>> property,
+        DateTimeOffset value)
+        where TEntity : class
+    {
+        dbContext.Entry(entity).Property(property).CurrentValue = value.UtcDateTime;
+    }
+
+    private void BackdateValue<TEntity, TProperty>(
         TEntity entity,
         System.Linq.Expressions.Expression<Func<TEntity, TProperty>> property,
         TProperty value)
         where TEntity : class
+        where TProperty : struct
     {
         dbContext.Entry(entity).Property(property).CurrentValue = value;
     }

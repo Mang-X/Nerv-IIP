@@ -367,10 +367,17 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         foreach (var (stage, share, label) in expected)
         {
             var actual = (double)plans.Count(plan => plan.Stage == stage) / plans.Count;
-            if (Math.Abs(actual - share) > DistributionTolerance)
+
+            // 容差随样本量放宽：小缩放（Scale=0.02 只有几十单）下 2% 的废弃率本来就会有几个百分点的
+            // 抽样波动，用固定 ±3% 卡会误报。取「3 倍标准误」与固定 ±3% 的较大者——全量 3200 单时
+            // 3σ 只有 0.7%，实际生效的仍是那条更严的固定容差。
+            var standardError = Math.Sqrt(share * (1 - share) / plans.Count);
+            var tolerance = Math.Max(DistributionTolerance, 3 * standardError);
+            if (Math.Abs(actual - share) > tolerance)
             {
                 failures.Add(
-                    $"状态分布偏离设定集 §7：{label} 实际 {actual:P1}，期望 {share:P0}（容差 ±{DistributionTolerance:P0}）。");
+                    $"状态分布偏离设定集 §7：{label} 实际 {actual:P1}，期望 {share:P0}" +
+                    $"（{plans.Count} 单样本下容差 ±{tolerance:P1}）。");
             }
         }
     }
