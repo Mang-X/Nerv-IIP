@@ -168,15 +168,64 @@ public static class MrpCalculator
             normalizedDemands,
             planningParameters,
             productionVersions,
-            componentsByParent);
+            componentsByParent)
+            .ToDictionary();
         var pendingByLowLevel = new SortedDictionary<int, List<Requirement>>();
+        var safetyCoveredItems = new HashSet<ItemKey>();
+        var safetyOnlyRequirementsQueued = false;
         foreach (var demand in normalizedDemands)
         {
             AddPendingRequirement(pendingByLowLevel, lowLevelCodes, demand);
         }
 
-        while (pendingByLowLevel.Count > 0)
+        while (true)
         {
+            if (pendingByLowLevel.Count == 0)
+            {
+                if (safetyOnlyRequirementsQueued)
+                {
+                    break;
+                }
+
+                safetyOnlyRequirementsQueued = true;
+                var safetyOnlyRequirements = planningParameters.Values
+                    .Where(x => x.SafetyStockQuantity > 0m)
+                    .Where(x => !safetyCoveredItems.Contains(ItemKey.Create(x.SkuCode, x.UomCode, x.SiteCode)))
+                    .OrderBy(x => x.SkuCode, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(x => x.SiteCode, StringComparer.OrdinalIgnoreCase)
+                    .Select(x => new Requirement(
+                        x.SkuCode,
+                        x.UomCode,
+                        x.SiteCode,
+                        0m,
+                        input.HorizonStart,
+                        [],
+                        [Normalize(x.SkuCode)],
+                        "safety-stock",
+                        0m,
+                        1m,
+                        []))
+                    .ToArray();
+                if (safetyOnlyRequirements.Length == 0)
+                {
+                    break;
+                }
+
+                foreach (var (key, code) in CalculateLowLevelCodes(
+                    safetyOnlyRequirements,
+                    planningParameters,
+                    productionVersions,
+                    componentsByParent))
+                {
+                    lowLevelCodes[key] = Math.Max(lowLevelCodes.GetValueOrDefault(key), code);
+                }
+
+                foreach (var requirement in safetyOnlyRequirements)
+                {
+                    AddPendingRequirement(pendingByLowLevel, lowLevelCodes, requirement);
+                }
+            }
+
             var currentLevel = pendingByLowLevel.First();
             pendingByLowLevel.Remove(currentLevel.Key);
             var current = currentLevel.Value;
@@ -206,12 +255,23 @@ public static class MrpCalculator
                     group.Key.RequiredDate,
                     Math.Max(0, planningParameter?.SafetyStockQuantity ?? 0m),
                     availability,
-                    scheduledReceipts);
+                    scheduledReceipts,
+                    safetyCoveredItems);
+                var requirementPegging = demandPegging
+                    .Concat(supply.InitialSafetyDeficit > 0m
+                        ? [new DemandPegging(
+                            $"safety-stock:{key.SkuCode}:{key.SiteCode}",
+                            first.SkuCode,
+                            null,
+                            "safety-stock",
+                            supply.InitialSafetyDeficit)]
+                        : [])
+                    .ToArray();
                 suggestions.AddRange(supply.ExceptionReceipts.Select(x => BuildScheduledReceiptExceptionSuggestion(
                     x,
                     first,
                     group.Key.RequiredDate,
-                    demandPegging,
+                    requirementPegging,
                     peggingVersion: IsMakeItem(planningParameter?.ProcurementType, version) ? version : null,
                     grossRequirement,
                     supply)));
@@ -231,11 +291,13 @@ public static class MrpCalculator
                 var isMakeItem = IsMakeItem(planningParameter?.ProcurementType, version);
                 var releaseDate = group.Key.RequiredDate.AddDays(-ResolveLeadTimeDays(planningParameter, isMakeItem));
                 var suggestionType = isMakeItem ? "planned-work-order" : "planned-purchase";
-                var reasonCode = isMakeItem ? "net-requirement" : "component-net-requirement";
+                var reasonCode = grossRequirement <= 0m && supply.InitialSafetyDeficit > 0m
+                    ? "safety-stock-replenishment"
+                    : isMakeItem ? "net-requirement" : "component-net-requirement";
                 var peggingVersion = isMakeItem ? version : null;
-                var peggingLinks = demandPegging
+                var peggingLinks = requirementPegging
                     .Select(x => new CalculatedPeggingLink(
-                        "demand",
+                        x.SourceType == "safety-stock" ? "safety-stock" : "demand",
                         x.DemandSourceReference,
                         x.ParentSkuCode,
                         x.ComponentSkuCode,
@@ -244,7 +306,7 @@ public static class MrpCalculator
                         peggingVersion?.ManufacturingBomReference,
                         peggingVersion?.RoutingReference,
                         x.SourceType,
-                        x.Quantity))
+                        x.SourceType == "safety-stock" ? 0m : x.Quantity))
                     .Concat(supply.UsedReceipts.Select(x => new CalculatedPeggingLink(
                         "scheduled-receipt",
                         $"{x.SourceSystem}:{x.SourceDocumentType}:{x.SourceDocumentId}",
@@ -268,8 +330,17 @@ public static class MrpCalculator
                     plannedQuantity,
                     first.ScrapRate,
                     first.YieldRate,
-                    first.RequirementType == "component" ? "component" : demandPegging.FirstOrDefault()?.SourceType ?? "unknown",
-                    BuildFormula(grossRequirement, supply.UsedAvailableQuantity, supply.UsedScheduledReceiptQuantity, netRequirement, first.ScrapRate, first.YieldRate),
+                    group.Any(x => x.RequirementType == "component")
+                        ? "component"
+                        : requirementPegging.FirstOrDefault()?.SourceType ?? "unknown",
+                    BuildFormula(
+                        grossRequirement,
+                        supply.UsedAvailableQuantity,
+                        supply.UsedScheduledReceiptQuantity,
+                        supply.InitialSafetyDeficit,
+                        netRequirement,
+                        first.ScrapRate,
+                        first.YieldRate),
                     first.UomConversions,
                     []);
                 suggestions.AddRange(plannedQuantities.Select(quantity => new CalculatedPlanningSuggestion(
@@ -315,12 +386,15 @@ public static class MrpCalculator
                         first.SiteCode,
                         componentRequirement,
                         releaseDate,
-                        demandPegging
+                        requirementPegging
                             .Select(x => x with
                             {
                                 ParentSkuCode = first.SkuCode,
                                 ComponentSkuCode = component.ComponentSkuCode,
-                                Quantity = ApportionByGrossRequirement(componentRequirement, x.Quantity, grossRequirement),
+                                Quantity = ApportionByGrossRequirement(
+                                    componentRequirement,
+                                    x.Quantity,
+                                    grossRequirement + supply.InitialSafetyDeficit),
                             })
                             .ToArray(),
                         [.. first.Path, normalizedComponent],
@@ -331,8 +405,6 @@ public static class MrpCalculator
                 }
             }
         }
-
-        ProtectSafetyStockWithRemainingReceipts(planningParameters, availability, scheduledReceipts);
 
         suggestions.AddRange(scheduledReceipts
             .SelectMany(x => x.Value.Select(y => new { Key = x.Key, Receipt = y }))
@@ -538,13 +610,17 @@ public static class MrpCalculator
         DateOnly requiredDate,
         decimal safetyStockQuantity,
         IDictionary<ItemKey, InventoryAvailabilityState> availability,
-        IReadOnlyDictionary<ItemKey, List<ScheduledReceiptState>> scheduledReceipts)
+        IReadOnlyDictionary<ItemKey, List<ScheduledReceiptState>> scheduledReceipts,
+        ISet<ItemKey> safetyCoveredItems)
     {
-        var remainingRequirement = requiredQuantity;
         var availableState = availability.TryGetValue(key, out var state)
             ? state
             : new InventoryAvailabilityState(0m, 0m, 0m);
         var availableQuantity = availableState.AvailableQuantity;
+        var initialSafetyDeficit = safetyCoveredItems.Add(key)
+            ? Math.Max(0m, safetyStockQuantity - availableQuantity)
+            : 0m;
+        var remainingRequirement = requiredQuantity + initialSafetyDeficit;
         var availableForNetting = Math.Max(0, availableQuantity - safetyStockQuantity);
         var usedAvailable = Math.Min(availableForNetting, remainingRequirement);
         if (usedAvailable > 0)
@@ -615,6 +691,7 @@ public static class MrpCalculator
             usedAvailable,
             usedReceipts.Sum(x => x.Quantity),
             safetyStockQuantity,
+            initialSafetyDeficit,
             usedReceipts,
             usedReceipts.Where(x => x.ExceptionType is not null)
                 .Select(x => new ScheduledReceiptException(
@@ -626,51 +703,6 @@ public static class MrpCalculator
                     x.Quantity,
                     x.ReasonCode!))
                 .ToArray());
-    }
-
-    private static void ProtectSafetyStockWithRemainingReceipts(
-        IReadOnlyDictionary<SkuSiteKey, PlanningParameterSnapshot> planningParameters,
-        IDictionary<ItemKey, InventoryAvailabilityState> availability,
-        IReadOnlyDictionary<ItemKey, List<ScheduledReceiptState>> scheduledReceipts)
-    {
-        foreach (var (key, receipts) in scheduledReceipts.OrderBy(x => x.Key.SkuCode, StringComparer.OrdinalIgnoreCase))
-        {
-            if (!planningParameters.TryGetValue(SkuSiteKey.Create(key.SkuCode, key.SiteCode), out var parameter)
-                || parameter.SafetyStockQuantity <= 0m)
-            {
-                continue;
-            }
-
-            var availableQuantity = availability.TryGetValue(key, out var state)
-                ? state.AvailableQuantity
-                : 0m;
-            var safetyDeficit = Math.Max(0m, parameter.SafetyStockQuantity - availableQuantity);
-            if (safetyDeficit <= 0m)
-            {
-                continue;
-            }
-
-            foreach (var receipt in receipts
-                .Where(x => x.RemainingQuantity > 0m)
-                .OrderBy(x => x.ExpectedReceiptDate)
-                .ThenBy(x => x.SourceSystem, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(x => x.SourceDocumentType, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(x => x.SourceDocumentId, StringComparer.OrdinalIgnoreCase))
-            {
-                var protectedQuantity = Math.Min(receipt.RemainingQuantity, safetyDeficit);
-                if (protectedQuantity <= 0m)
-                {
-                    continue;
-                }
-
-                receipt.RemainingQuantity -= protectedQuantity;
-                safetyDeficit -= protectedQuantity;
-                if (safetyDeficit <= 0m)
-                {
-                    break;
-                }
-            }
-        }
     }
 
     private static IReadOnlyCollection<decimal> ApplyLotSizing(
@@ -861,11 +893,14 @@ public static class MrpCalculator
         decimal grossDemandQuantity,
         decimal availableToNetQuantity,
         decimal scheduledReceiptQuantity,
+        decimal initialSafetyDeficit,
         decimal netRequirementQuantity,
         decimal scrapRate,
         decimal yieldRate)
     {
-        var formula = $"{grossDemandQuantity:g29} - {availableToNetQuantity:g29} - {scheduledReceiptQuantity:g29} = {netRequirementQuantity:g29}";
+        var formula = initialSafetyDeficit > 0m
+            ? $"{grossDemandQuantity:g29} - {availableToNetQuantity:g29} - {scheduledReceiptQuantity:g29} + {initialSafetyDeficit:g29} safety-stock = {netRequirementQuantity:g29}"
+            : $"{grossDemandQuantity:g29} - {availableToNetQuantity:g29} - {scheduledReceiptQuantity:g29} = {netRequirementQuantity:g29}";
         return scrapRate > 0m || yieldRate != 1m
             ? $"{formula}; scrap/yield {scrapRate:g29}/{yieldRate:g29}"
             : formula;
@@ -940,6 +975,7 @@ public static class MrpCalculator
         decimal UsedAvailableQuantity,
         decimal UsedScheduledReceiptQuantity,
         decimal SafetyStockQuantity,
+        decimal InitialSafetyDeficit,
         IReadOnlyCollection<UsedScheduledReceipt> UsedReceipts,
         IReadOnlyCollection<ScheduledReceiptException> ExceptionReceipts);
 

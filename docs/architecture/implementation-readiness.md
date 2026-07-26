@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## DemandPlanning MRP 安全库存补货（MAN-425 / #773）
+
+DemandPlanning MRP 现在把首次适用 bucket 的安全库存缺口 `max(0, safetyStock - projectedAvailable)` 作为同一净需求路径的补货需求，公式显式记录 `gross - available - scheduled receipts + safety-stock deficit = net`；缺口在单次运行内每个 SKU/UOM/site 只补一次，后续 bucket 只规划新增需求。无需求但低于安全库存的物料同样沿既有 make/buy、提前期、批量、UOM、BOM 与 pegging 路径生成建议；计划收货先同时覆盖需求和安全库存缺口，部分收货只消费一次，完整覆盖不会产生额外新建或取消建议，晚到收货仍保留 `reschedule-in` 诊断。
+
+`RunMrpCommandHandler` 到 `demand_planning.planning_suggestions`/`pegging_links` 的持久化行为已由 session 自建并清理的 Docker PostgreSQL 18.4 实例验证。本次没有新增或修改业务 HTTP endpoint、公开契约、数据库 schema 或 migration；facade coverage、OpenAPI 与 generated client 无需刷新。
+
 ## Quality 复检历史与 MES hold 自动释放闭环（MAN-516 / #954）
 
 BusinessQuality 现在将首检幂等和复检历史分开建模：原有创建命令继续按来源业务键返回首条记录；新增 predecessor-targeted 复检命令只允许对非合格记录追加不可变 successor，并记录 `attempt_number` 与 `reinspection_of_inspection_record_id`。每个前置记录最多一个直接 successor，命令重放返回同一 successor；多次复检需以上一次未通过结果作为新的 predecessor。计划检验复用原方案和来源/批次/库存维度，已 superseded 的历史方案仍可用于该记录复检，但跨组织、环境、方案或合格终态均 fail closed。`AddQualityReinspectionHistory` migration 增加正数约束、自引用 Restrict 外键、前置唯一索引，并把来源唯一键扩展到 attempt。
