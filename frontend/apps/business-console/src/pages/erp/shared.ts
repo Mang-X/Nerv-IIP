@@ -29,6 +29,15 @@ export function firstQueryParam(value: unknown) {
   return value ? String(value) : undefined
 }
 
+/**
+ * 选择器（NvEntityPicker / EntityMultiPicker）的校验红框：这些控件把触发按钮包在一层
+ * 容器里，`data-invalid` 只有 NvInput 认，所以统一用同一条边框类描红，视觉与输入框一致。
+ * 传入 undefined 而不是空串，避免在未出错时留下空 class 属性。
+ */
+export function pickerInvalidClass(invalid: boolean) {
+  return invalid ? '[&>button]:border-destructive' : undefined
+}
+
 export function unwrapRef<T>(value: T | ComputedRef<T>): T {
   return typeof value === 'object' && value !== null && 'value' in value ? value.value : value
 }

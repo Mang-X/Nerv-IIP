@@ -15,7 +15,12 @@ const state = vi.hoisted(() => ({
 
 function listShape(itemsRef: () => Array<Record<string, unknown>>) {
   return {
-    filters: reactive({ status: undefined as string | undefined, keyword: undefined as string | undefined, skip: 0, take: 10 }),
+    filters: reactive({
+      status: undefined as string | undefined,
+      keyword: undefined as string | undefined,
+      skip: 0,
+      take: 10,
+    }),
     items: computed(() => itemsRef()),
     total: computed(() => itemsRef().length),
     organizationId: computed(() => 'org-001'),
@@ -53,13 +58,40 @@ vi.mock('@/composables/useBusinessErp', () => ({
   }),
 }))
 
+// 客户/供应商与来源单据改成只选：目录 composable 内部走 pinia + colada，测试整体打桩给定候选。
+vi.mock('@/composables/useErpPickerCatalog', () => ({
+  useErpPartnerCatalog: () => ({
+    customerOptions: computed(() => [{ value: 'CUST-001', label: '示例客户' }]),
+    supplierOptions: computed(() => [{ value: 'SUP-001', label: '示例供应商' }]),
+    partnersPending: shallowRef(false),
+  }),
+  useErpReceivableSourceCatalog: () => ({
+    receivableSourceOptions: computed(() => [{ value: 'SO-001', label: 'SO-001' }]),
+    receivableSourcesPending: shallowRef(false),
+  }),
+  useErpPayableSourceCatalog: () => ({
+    payableSourceOptions: computed(() => [{ value: 'PO-001', label: 'PO-001' }]),
+    payableSourcesPending: shallowRef(false),
+  }),
+}))
+
 vi.mock('@/composables/usePagedList', () => ({
-  usePagedList: () => ({ page: shallowRef(1), pageSize: shallowRef('10'), pageSizeNumber: shallowRef(10), resetPage: vi.fn() }),
+  usePagedList: () => ({
+    page: shallowRef(1),
+    pageSize: shallowRef('10'),
+    pageSizeNumber: shallowRef(10),
+    resetPage: vi.fn(),
+  }),
 }))
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const selectStubs = {
-  NvSelect: { props: ['modelValue'], emits: ['update:modelValue'], template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>' },
+  NvSelect: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+  },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
@@ -81,7 +113,9 @@ describe('ERP finance AR/AP page', () => {
     const selects = wrapper.findAll('select')
     expect(selects).toHaveLength(2)
     for (const select of selects) {
-      expect(new Set(select.findAll('option').map((o) => o.attributes('value')))).toEqual(new Set(['all', 'open', 'settled']))
+      expect(new Set(select.findAll('option').map((o) => o.attributes('value')))).toEqual(
+        new Set(['all', 'open', 'settled']),
+      )
     }
     expect(wrapper.text()).toContain('未结')
     expect(wrapper.text()).toContain('已结清')
@@ -98,11 +132,17 @@ describe('ERP finance voucher and cost pages', () => {
   })
 
   it('cost candidate list has no status select; dialog source type select is not a list filter', async () => {
-    const wrapper = mount(CostCandidatesPage, { global: { stubs: { ...layoutStub, ...selectStubs } } })
+    const wrapper = mount(CostCandidatesPage, {
+      global: { stubs: { ...layoutStub, ...selectStubs } },
+    })
     await flushPromises()
 
     expect(wrapper.find('[aria-label="成本候选关键字"]').exists()).toBe(true)
-    const allSentinelSelects = wrapper.findAll('select').filter((select) => select.findAll('option').some((option) => option.attributes('value') === 'all'))
+    const allSentinelSelects = wrapper
+      .findAll('select')
+      .filter((select) =>
+        select.findAll('option').some((option) => option.attributes('value') === 'all'),
+      )
     expect(allSentinelSelects).toHaveLength(0)
   })
 })

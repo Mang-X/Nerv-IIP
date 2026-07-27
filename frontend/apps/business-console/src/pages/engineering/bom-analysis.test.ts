@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, reactive } from 'vue'
+import { defineComponent, h, reactive, shallowRef } from 'vue'
 
 import BomAnalysisPage from './bom-analysis.vue'
 
@@ -57,6 +57,20 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
   listBusinessConsoleSkusQueryOptions: api.listBusinessConsoleSkusQueryOptions,
 }))
 
+// BOM 编码 ▸ 修订的候选目录走已发布 EBOM/MBOM 读面（colada useQuery，需要 pinia），
+// 这个页面用例只关心「表单值 → facade 入参」，所以整module 打桩给确定候选。
+vi.mock('@/composables/useProductEngineering', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/composables/useProductEngineering')>()),
+  useBomVersionPickerCatalog: () => ({
+    bomCodeOptions: () => [{ value: 'EBOM-FG', label: 'EBOM-FG' }],
+    revisionOptions: () => [
+      { value: 'A', label: 'A' },
+      { value: 'B', label: 'B' },
+    ],
+    bomVersionsPending: shallowRef(false),
+  }),
+}))
+
 vi.mock('@nerv-iip/ui', () => {
   const passthrough = (tag = 'div') => ({ template: `<${tag}><slot /></${tag}>` })
   const modelInput = {
@@ -102,6 +116,13 @@ vi.mock('@nerv-iip/ui', () => {
         'clearable',
         'ariaLabel',
       ],
+      emits: ['update:modelValue'],
+      template:
+        '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    },
+    // 修订字段是只选的搜索选择器，桩成带同名 id 的输入位，保留 `setValue` 语义。
+    NvSearchSelect: {
+      props: ['modelValue', 'id', 'options', 'placeholder', 'emptyText', 'loading', 'disabled'],
       emits: ['update:modelValue'],
       template:
         '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',

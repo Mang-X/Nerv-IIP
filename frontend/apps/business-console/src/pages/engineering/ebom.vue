@@ -7,10 +7,14 @@ import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/u
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { useBusinessSkus, useBusinessUoms } from '@/composables/useBusinessMasterData'
-import { useEngineeringEboms } from '@/composables/useProductEngineering'
+import {
+  useBomRevisionSuggestions,
+  useEngineeringEboms,
+} from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
+  NvCombobox,
   NvDataTable,
   NvDatePicker,
   NvDialog,
@@ -206,8 +210,23 @@ function parseNumber(value: string | number | null | undefined): number | undefi
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+// 修订号是本次新建的值，不能做成只读选择器；改为「已占用修订」建议 + 重复校验，
+// 让用户看得到哪些号已经用掉，又不会被目录挡住新号。
+const { takenRevisions, takenRevisionsPending, isTaken } = useBomRevisionSuggestions(
+  'engineering',
+  () => form.parentItemCode,
+)
+const revisionTaken = computed(() => isTaken(form.revision))
+// 换了父项物料，已填修订号对新物料未必可用 —— 清空下游，重新按新目录填。
+watch(
+  () => form.parentItemCode,
+  () => {
+    form.revision = ''
+  },
+)
+
 const parentValid = computed(() => form.parentItemCode.trim().length > 0)
-const revisionValid = computed(() => form.revision.trim().length > 0)
+const revisionValid = computed(() => form.revision.trim().length > 0 && !revisionTaken.value)
 const effectiveValid = computed(() => !!form.effectiveDate)
 function lineValid(line: ComponentLine) {
   return (
@@ -396,7 +415,20 @@ function uomLabel(code?: string | null) {
                   <NvFieldLabel for="ebom-rev"
                     >修订号 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput id="ebom-rev" v-model="form.revision" placeholder="如 A、B、001" />
+                  <NvCombobox
+                    id="ebom-rev"
+                    v-model="form.revision"
+                    :suggestions="takenRevisions"
+                    :disabled="!form.parentItemCode || takenRevisionsPending"
+                    :placeholder="form.parentItemCode ? '填写新修订号，如 A、B、001' : '请先选父项物料'"
+                    empty-text="该物料还没有历史修订"
+                  />
+                  <p v-if="revisionTaken" class="text-sm text-destructive" role="alert">
+                    修订号「{{ form.revision.trim() }}」已存在，请换一个新号。
+                  </p>
+                  <p v-else-if="takenRevisions.length" class="text-xs text-muted-foreground">
+                    已占用：{{ takenRevisions.map((r) => r.value).join('、') }}
+                  </p>
                 </NvField>
                 <NvField :data-invalid="showErrors && !effectiveValid">
                   <NvFieldLabel>生效日 <span class="text-destructive">*</span></NvFieldLabel>

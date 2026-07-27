@@ -5,6 +5,11 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpPayables, useErpReceivables } from '@/composables/useBusinessErp'
+import {
+  useErpPartnerCatalog,
+  useErpPayableSourceCatalog,
+  useErpReceivableSourceCatalog,
+} from '@/composables/useErpPickerCatalog'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -17,6 +22,7 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -35,7 +41,7 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
-import { formatAmount } from '../shared'
+import { formatAmount, pickerInvalidClass } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: 'AR/AP', requiredPermissions: ['business.erp.finance.read'] },
@@ -43,6 +49,10 @@ definePage({
 
 const receivables = useErpReceivables()
 const payables = useErpPayables()
+// 客户/供应商与来源单据都从既有读面里选，不再手输编码。
+const { customerOptions, supplierOptions, partnersPending } = useErpPartnerCatalog()
+const { receivableSourceOptions, receivableSourcesPending } = useErpReceivableSourceCatalog()
+const { payableSourceOptions, payableSourcesPending } = useErpPayableSourceCatalog()
 const receivablesPaged = usePagedList(receivables.filters, {
   resetOn: [() => receivables.filters.status, () => receivables.filters.keyword],
 })
@@ -340,11 +350,18 @@ async function submitPayable() {
               <NvFieldLabel for="erp-ar-source">
                 来源单据 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-ar-source"
                 v-model="receivableForm.sourceDocumentNo"
-                :data-invalid="
-                  receivableShowErrors && receivableInvalid.sourceDocumentNo ? '' : undefined
+                :options="receivableSourceOptions"
+                title="选择来源单据"
+                placeholder="选择销售订单或发货单"
+                source-text="数据来自销售订单与发货单"
+                empty-text="暂无可开票的销售订单或发货单"
+                :loading="receivableSourcesPending"
+                aria-label="来源单据"
+                :class="
+                  pickerInvalidClass(receivableShowErrors && receivableInvalid.sourceDocumentNo)
                 "
               />
             </NvField>
@@ -352,12 +369,17 @@ async function submitPayable() {
               <NvFieldLabel for="erp-ar-customer">
                 客户 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-ar-customer"
                 v-model="receivableForm.customerCode"
-                :data-invalid="
-                  receivableShowErrors && receivableInvalid.customerCode ? '' : undefined
-                "
+                :options="customerOptions"
+                title="选择客户"
+                placeholder="选择客户"
+                source-text="数据来自基础数据业务伙伴（客户角色）"
+                empty-text="暂无客户，请先在「基础数据 · 业务伙伴」维护"
+                :loading="partnersPending"
+                aria-label="客户"
+                :class="pickerInvalidClass(receivableShowErrors && receivableInvalid.customerCode)"
               />
             </NvField>
             <NvField>
@@ -379,7 +401,7 @@ async function submitPayable() {
             class="text-sm text-destructive"
             role="alert"
           >
-            请填写来源单据、客户，并给出正数金额。
+            请选择来源单据与客户，并给出正数金额。
           </p>
           <NvDialogFooter
             ><NvDialogClose as-child
@@ -409,22 +431,34 @@ async function submitPayable() {
               <NvFieldLabel for="erp-ap-source">
                 来源单据 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-ap-source"
                 v-model="payableForm.sourceDocumentNo"
-                :data-invalid="
-                  payableShowErrors && payableInvalid.sourceDocumentNo ? '' : undefined
-                "
+                :options="payableSourceOptions"
+                title="选择来源单据"
+                placeholder="选择采购订单"
+                source-text="数据来自采购订单"
+                empty-text="暂无采购订单，请先在「采购 · 采购订单」下达"
+                :loading="payableSourcesPending"
+                aria-label="来源单据"
+                :class="pickerInvalidClass(payableShowErrors && payableInvalid.sourceDocumentNo)"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="erp-ap-supplier">
                 供应商 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-ap-supplier"
                 v-model="payableForm.supplierCode"
-                :data-invalid="payableShowErrors && payableInvalid.supplierCode ? '' : undefined"
+                :options="supplierOptions"
+                title="选择供应商"
+                placeholder="选择供应商"
+                source-text="数据来自基础数据业务伙伴（供应商角色）"
+                empty-text="暂无供应商，请先在「基础数据 · 业务伙伴」维护"
+                :loading="partnersPending"
+                aria-label="供应商"
+                :class="pickerInvalidClass(payableShowErrors && payableInvalid.supplierCode)"
               />
             </NvField>
             <NvField>
@@ -446,7 +480,7 @@ async function submitPayable() {
             class="text-sm text-destructive"
             role="alert"
           >
-            请填写来源单据、供应商，并给出正数金额。
+            请选择来源单据与供应商，并给出正数金额。
           </p>
           <NvDialogFooter
             ><NvDialogClose as-child

@@ -5,7 +5,6 @@ import {
   NvField,
   NvFieldGroup,
   NvFieldLabel,
-  NvInput,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -157,7 +156,15 @@ function clearExecutionScope() {
             </NvSelectItem>
           </NvSelectContent>
         </NvSelect>
-        <NvInput v-else id="business-context-site" v-model="siteValue" placeholder="可选" />
+        <template v-else>
+          <NvSelect disabled>
+            <NvSelectTrigger id="business-context-site" aria-label="工厂">
+              <NvSelectValue placeholder="暂无工厂" />
+            </NvSelectTrigger>
+            <NvSelectContent />
+          </NvSelect>
+          <p class="text-xs text-muted-foreground">工厂主数据未就绪，请先在基础数据维护。</p>
+        </template>
       </NvField>
       <NvField v-if="showLine">
         <NvFieldLabel for="business-context-line">产线</NvFieldLabel>
@@ -171,7 +178,15 @@ function clearExecutionScope() {
             </NvSelectItem>
           </NvSelectContent>
         </NvSelect>
-        <NvInput v-else id="business-context-line" v-model="lineValue" placeholder="可选" />
+        <template v-else>
+          <NvSelect disabled>
+            <NvSelectTrigger id="business-context-line" aria-label="产线">
+              <NvSelectValue placeholder="暂无产线" />
+            </NvSelectTrigger>
+            <NvSelectContent />
+          </NvSelect>
+          <p class="text-xs text-muted-foreground">产线主数据未就绪，请先在基础数据维护。</p>
+        </template>
       </NvField>
       <NvField v-if="showWorkCenter">
         <NvFieldLabel for="business-context-work-center">工作中心</NvFieldLabel>
@@ -189,12 +204,15 @@ function clearExecutionScope() {
             </NvSelectItem>
           </NvSelectContent>
         </NvSelect>
-        <NvInput
-          v-else
-          id="business-context-work-center"
-          v-model="workCenterValue"
-          placeholder="可选"
-        />
+        <template v-else>
+          <NvSelect disabled>
+            <NvSelectTrigger id="business-context-work-center" aria-label="工作中心">
+              <NvSelectValue placeholder="暂无工作中心" />
+            </NvSelectTrigger>
+            <NvSelectContent />
+          </NvSelect>
+          <p class="text-xs text-muted-foreground">工作中心主数据未就绪，请先在基础数据维护。</p>
+        </template>
       </NvField>
       <NvField v-if="showShift">
         <NvFieldLabel for="business-context-shift">班次</NvFieldLabel>
@@ -208,7 +226,15 @@ function clearExecutionScope() {
             </NvSelectItem>
           </NvSelectContent>
         </NvSelect>
-        <NvInput v-else id="business-context-shift" v-model="shiftValue" placeholder="可选" />
+        <template v-else>
+          <NvSelect disabled>
+            <NvSelectTrigger id="business-context-shift" aria-label="班次">
+              <NvSelectValue placeholder="暂无班次" />
+            </NvSelectTrigger>
+            <NvSelectContent />
+          </NvSelect>
+          <p class="text-xs text-muted-foreground">班次主数据未就绪，请先在基础数据维护。</p>
+        </template>
       </NvField>
     </NvFieldGroup>
     <slot />

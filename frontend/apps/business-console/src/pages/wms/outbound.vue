@@ -4,7 +4,19 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { useWmsOutboundOrders } from '@/composables/useBusinessWms'
+import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
+import {
+  useWarehouseCodeCatalog,
+  WAREHOUSE_CATALOG_SOURCE_TEXT,
+  WAREHOUSE_LOCATION_EMPTY_TEXT,
+  WAREHOUSE_LOT_EMPTY_TEXT,
+} from '@/composables/useWarehouseCodeCatalog'
+import {
+  wmsOutboundOrderStatusFilterOptions,
+  WMS_OUTBOUND_SOURCE_TYPE_OPTIONS,
+  WMS_STATUS_ANY,
+} from '@/data/wmsReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
@@ -22,7 +34,9 @@ import {
   NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
+  NvEntityPicker,
   NvInput,
+  NvSearchSelect,
   NvMetricStrip,
   NvPageHeader,
   NvSelect,
@@ -59,6 +73,25 @@ const {
   createOutboundError,
 } = useWmsOutboundOrders()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+// 物料 / 单位 / 工厂走主数据目录；库位与批次后端无读面，从既有台账与作业记录派生。
+const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
+  useInventoryScopeCatalog()
+const { locationOptions, lotOptions, warehouseCatalogPending } = useWarehouseCodeCatalog()
+// 状态是后端枚举而不是目录，用哨兵值表达「全部」。
+const statusFilter = computed({
+  get: () => filters.status || WMS_STATUS_ANY,
+  set: (value: string) => {
+    filters.status = value === WMS_STATUS_ANY ? undefined : value
+  },
+})
+/**
+ * 单位不是独立选择项：出库行的单位由物料的基本单位决定，手输只会写出查不到货的组合。
+ * 选完物料就把单位带出来，行上只读展示。
+ */
+function onLineSkuChange(line: { skuCode: string; uomCode: string }, skuCode: string) {
+  line.skuCode = skuCode
+  line.uomCode = skuCode ? resolveUomCode(skuCode) : ''
+}
 
 const errorMessage = computed(() =>
   formatError(
@@ -302,10 +335,11 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
-        <NvInput
-          v-model="filters.status"
-          class="h-9 w-32"
-          placeholder="状态（可选）"
+        <NvSearchSelect
+          v-model="statusFilter"
+          class="w-36"
+          :options="wmsOutboundOrderStatusFilterOptions"
+          placeholder="全部状态"
           aria-label="出库单状态"
         />
       </template>
@@ -398,15 +432,27 @@ function formatError(error: unknown) {
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-out-site">工厂</NvFieldLabel>
-              <NvInput id="wms-out-site" v-model="createForm.siteCode" autocomplete="off" />
+              <NvEntityPicker
+                id="wms-out-site"
+                v-model="createForm.siteCode"
+                :options="siteOptions"
+                title="选择工厂"
+                placeholder="选择工厂"
+                source-text="数据来自基础数据工厂主数据"
+                empty-text="暂无工厂主数据，请先在基础数据维护工厂"
+                :loading="sitesPending"
+                clearable
+                aria-label="工厂"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-out-srctype">来源类型</NvFieldLabel>
-              <NvInput
+              <NvSearchSelect
                 id="wms-out-srctype"
                 v-model="createForm.sourceDocumentType"
-                autocomplete="off"
-                placeholder="如 销售发货"
+                :options="WMS_OUTBOUND_SOURCE_TYPE_OPTIONS"
+                placeholder="选择来源类型"
+                aria-label="来源类型"
               />
             </NvField>
             <NvField>
@@ -432,18 +478,24 @@ function formatError(error: unknown) {
               :key="index"
               class="flex flex-wrap items-end gap-2 rounded-md border p-2"
             >
-              <NvInput
-                v-model="line.skuCode"
-                class="h-9 w-28"
+              <NvEntityPicker
+                :model-value="line.skuCode"
+                class="w-44"
+                :options="skuOptions"
+                title="选择物料"
                 placeholder="物料*"
+                source-text="数据来自基础数据物料主数据"
+                empty-text="暂无物料主数据，请先在基础数据维护物料"
+                :loading="skusPending"
                 :aria-label="`第 ${index + 1} 行物料`"
+                @update:model-value="(value: string) => onLineSkuChange(line, value)"
               />
-              <NvInput
-                v-model="line.uomCode"
-                class="h-9 w-16"
-                placeholder="单位*"
+              <!-- 单位随物料的基本单位带出，不给手输：手输单位只会写出查不到货的组合。 -->
+              <span
+                class="inline-flex h-9 items-center rounded-md border border-input px-2.5 text-sm text-muted-foreground"
                 :aria-label="`第 ${index + 1} 行单位`"
-              />
+                >{{ line.uomCode || '单位' }}</span
+              >
               <NvInput
                 v-model="line.requestedQuantity"
                 class="h-9 w-24"
@@ -453,16 +505,28 @@ function formatError(error: unknown) {
                 placeholder="需求数量*"
                 :aria-label="`第 ${index + 1} 行需求数量`"
               />
-              <NvInput
+              <NvEntityPicker
                 v-model="line.pickLocationCode"
-                class="h-9 w-24"
+                class="w-36"
+                :options="locationOptions"
+                title="选择拣货库位"
                 placeholder="拣货库位*"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
                 :aria-label="`第 ${index + 1} 行拣货库位`"
               />
-              <NvInput
+              <NvEntityPicker
                 v-model="line.lotNo"
-                class="h-9 w-24"
+                class="w-36"
+                :options="lotOptions"
+                title="选择批次"
                 placeholder="批次"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
                 :aria-label="`第 ${index + 1} 行批次`"
               />
               <NvSelect v-model="line.qualityStatus">

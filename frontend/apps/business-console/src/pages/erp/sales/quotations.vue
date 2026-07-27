@@ -2,6 +2,7 @@
 import type { BusinessConsoleErpQuotationItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpQuotations } from '@/composables/useBusinessErp'
+import { useErpItemCatalog, useErpPartnerCatalog } from '@/composables/useErpPickerCatalog'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -15,6 +16,7 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvDropdownMenuItem,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -34,13 +36,16 @@ import {
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
-import { formatAmount, formatDate } from '../shared'
+import { formatAmount, formatDate, pickerInvalidClass } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: '销售报价', requiredPermissions: ['business.erp.sales.read'] },
 })
 
 const quotations = useErpQuotations()
+// 客户与物料从主数据目录里选，报价一开出就挂在真实客户与真实物料上。
+const { customerOptions, partnersPending } = useErpPartnerCatalog()
+const { skuOptions, skusPending } = useErpItemCatalog()
 const { page, pageSize } = usePagedList(quotations.filters, {
   resetOn: [() => quotations.filters.status, () => quotations.filters.keyword],
 })
@@ -262,11 +267,17 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
               <NvFieldLabel for="erp-quo-customer">
                 客户 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-quo-customer"
                 v-model="form.customerCode"
-                autocomplete="off"
-                :data-invalid="showErrors && invalid.customerCode ? '' : undefined"
+                :options="customerOptions"
+                title="选择客户"
+                placeholder="选择客户"
+                source-text="数据来自基础数据业务伙伴（客户角色）"
+                empty-text="暂无客户，请先在「基础数据 · 业务伙伴」维护"
+                :loading="partnersPending"
+                aria-label="客户"
+                :class="pickerInvalidClass(showErrors && invalid.customerCode)"
               />
             </NvField>
             <NvField>
@@ -284,11 +295,17 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
               <NvFieldLabel for="erp-quo-sku">
                 物料 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-quo-sku"
                 v-model="form.skuCode"
-                autocomplete="off"
-                :data-invalid="showErrors && invalid.skuCode ? '' : undefined"
+                :options="skuOptions"
+                title="选择物料"
+                placeholder="选择物料"
+                source-text="数据来自基础数据物料主数据"
+                empty-text="暂无物料，请先在「基础数据 · 物料」维护"
+                :loading="skusPending"
+                aria-label="物料"
+                :class="pickerInvalidClass(showErrors && invalid.skuCode)"
               />
             </NvField>
             <NvField>
@@ -330,7 +347,7 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
             </NvField>
           </NvFieldGroup>
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请填写客户、有效期、物料、需求日期，并给出正数数量与非负单价。
+            请选择客户与物料，填写有效期与需求日期，并给出正数数量与非负单价。
           </p>
           <NvDialogFooter>
             <NvDialogClose as-child

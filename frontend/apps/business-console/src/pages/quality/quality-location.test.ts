@@ -87,6 +87,34 @@ vi.mock('@/composables/usePagedList', async () => {
   }
 })
 
+// 方案 / 物料 / 单位 / 原因码一律只选不填：这些目录内部走 pinia + colada，测试整体打桩。
+vi.mock('@/composables/useQualityPickerCatalog', async () => {
+  const { computed, shallowRef } = await import('vue')
+
+  return {
+    useQualityInspectionPlanCatalog: () => ({
+      inspectionPlans: shallowRef([{ id: 'plan-1', code: 'QP-1', skuCode: 'SKU-001' }]),
+      inspectionPlansPending: shallowRef(false),
+      inspectionPlanOptions: computed(() => [{ value: 'plan-1', label: 'QP-1' }]),
+    }),
+    useQualitySkuCatalog: () => ({
+      skuOptions: computed(() => [{ value: 'SKU-001', label: '示例物料' }]),
+      skusPending: shallowRef(false),
+      skuNameByCode: computed(() => new Map([['SKU-001', '示例物料']])),
+    }),
+    useQualityUomCatalog: () => ({
+      uomOptions: computed(() => [{ value: 'EA', label: '个' }]),
+      uomsPending: shallowRef(false),
+    }),
+    useQualityReasonCatalog: () => ({
+      reasonsPending: shallowRef(false),
+      defectReasonOptions: computed(() => [{ value: 'DEF-01', label: '尺寸超差' }]),
+      dispositionReasonOptions: computed(() => [{ value: '让步接收', label: '让步接收' }]),
+      reasonGroupSuggestions: computed(() => []),
+    }),
+  }
+})
+
 vi.mock('@/composables/useBusinessQuality', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
 

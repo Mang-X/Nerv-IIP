@@ -2,6 +2,14 @@
 import type { BusinessConsolePostStockMovementRequest } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useInventoryMovement } from '@/composables/useBusinessInventory'
+import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
+import {
+  useWarehouseCodeCatalog,
+  WAREHOUSE_CATALOG_SOURCE_TEXT,
+  WAREHOUSE_LOCATION_EMPTY_TEXT,
+  WAREHOUSE_LOT_EMPTY_TEXT,
+  WAREHOUSE_SERIAL_EMPTY_TEXT,
+} from '@/composables/useWarehouseCodeCatalog'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -16,6 +24,7 @@ import {
   NvField,
   NvFieldGroup,
   NvFieldLabel,
+  NvEntityPicker,
   NvInput,
   NvPageHeader,
   NvSelect,
@@ -40,6 +49,16 @@ definePage({
 const route = useRoute()
 const businessContext = useBusinessContextStore()
 const { postMovement, postMovementPending } = useInventoryMovement()
+// 物料 / 工厂走主数据目录；库位/批次/序列号后端无读面，从既有台账与作业记录派生。
+const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
+  useInventoryScopeCatalog()
+const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
+  useWarehouseCodeCatalog()
+/** 单位随物料的基本单位带出，不给手输：单位写错这笔移动就落不到正确台账。 */
+function onSkuChange(skuCode: string) {
+  form.skuCode = skuCode
+  form.uomCode = skuCode ? resolveUomCode(skuCode) : ''
+}
 
 // 受控值：UI 说人话，下发仍是后端码值。
 const QUALITY_OPTIONS = [
@@ -263,20 +282,59 @@ function isNonEmpty(value: string) {
               <NvInput id="movement-source-line" v-model="form.sourceDocumentLineId" />
             </NvField>
             <NvField>
-              <NvFieldLabel for="movement-sku">SKU</NvFieldLabel>
-              <NvInput id="movement-sku" v-model="form.skuCode" required />
+              <NvFieldLabel for="movement-sku">物料</NvFieldLabel>
+              <NvEntityPicker
+                id="movement-sku"
+                :model-value="form.skuCode"
+                :options="skuOptions"
+                title="选择物料"
+                placeholder="选择物料"
+                source-text="数据来自基础数据物料主数据"
+                empty-text="暂无物料主数据，请先在基础数据维护物料"
+                :loading="skusPending"
+                clearable
+                aria-label="物料"
+                @update:model-value="onSkuChange"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="movement-uom">单位</NvFieldLabel>
-              <NvInput id="movement-uom" v-model="form.uomCode" required />
+              <!-- 单位随物料的基本单位带出，不给手输：单位写错这笔移动就落不到正确台账。 -->
+              <span
+                id="movement-uom"
+                class="inline-flex h-9 items-center rounded-md border border-input px-2.5 text-sm text-muted-foreground"
+                >{{ form.uomCode || '选择物料后自动带出' }}</span
+              >
             </NvField>
             <NvField>
               <NvFieldLabel for="movement-site">工厂</NvFieldLabel>
-              <NvInput id="movement-site" v-model="form.siteCode" required />
+              <NvEntityPicker
+                id="movement-site"
+                v-model="form.siteCode"
+                :options="siteOptions"
+                title="选择工厂"
+                placeholder="选择工厂"
+                source-text="数据来自基础数据工厂主数据"
+                empty-text="暂无工厂主数据，请先在基础数据维护工厂"
+                :loading="sitesPending"
+                clearable
+                aria-label="工厂"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="movement-location">库位</NvFieldLabel>
-              <NvInput id="movement-location" v-model="form.locationCode" required />
+              <NvEntityPicker
+                id="movement-location"
+                v-model="form.locationCode"
+                :options="locationOptions"
+                title="选择库位"
+                placeholder="选择库位"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
+                aria-label="库位"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="movement-quantity">数量</NvFieldLabel>
@@ -309,11 +367,33 @@ function isNonEmpty(value: string) {
             </NvField>
             <NvField>
               <NvFieldLabel for="movement-lot">批次</NvFieldLabel>
-              <NvInput id="movement-lot" v-model="form.lotNo" />
+              <NvEntityPicker
+                id="movement-lot"
+                v-model="form.lotNo"
+                :options="lotOptions"
+                title="选择批次"
+                placeholder="选择批次"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
+                aria-label="批次"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="movement-serial">序列号</NvFieldLabel>
-              <NvInput id="movement-serial" v-model="form.serialNo" />
+              <NvEntityPicker
+                id="movement-serial"
+                v-model="form.serialNo"
+                :options="serialOptions"
+                title="选择序列号"
+                placeholder="选择序列号"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_SERIAL_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
+                aria-label="序列号"
+              />
             </NvField>
           </NvFieldGroup>
 

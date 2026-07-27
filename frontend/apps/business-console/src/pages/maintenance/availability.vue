@@ -3,7 +3,9 @@ import type { EquipmentRuntimeAvailabilityWindow } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import { useMaintenanceAvailabilityWindows } from '@/composables/useBusinessMaintenance'
 import { describeEquipmentReason } from '@/composables/useBusinessEquipment'
+import { useEquipmentWorkCenterCatalog } from '@/composables/useEquipmentPickerCatalog'
 import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
+import EntityMultiPicker from '@/components/business/EntityMultiPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvBadge,
@@ -48,6 +50,7 @@ const {
 const { scope, levels, devicesInScope, scopeLabel, scopePending } = useEquipmentScopeSelection({
   device: initialDeviceAssetId,
 })
+const { workCenterOptions, workCentersPending } = useEquipmentWorkCenterCatalog()
 const MAX_SCOPE_DEVICES = 50
 const scopedDeviceCodes = computed(() =>
   devicesInScope.value.map((d) => (d.code ?? '').trim()).filter((code) => code.length > 0),
@@ -193,11 +196,17 @@ function formatError(error: unknown) {
         </NvField>
         <NvField>
           <NvFieldLabel for="avail-work-centers">工作中心</NvFieldLabel>
-          <NvInput
+          <EntityMultiPicker
             id="avail-work-centers"
             v-model="filters.workCenterIds"
-            autocomplete="off"
-            placeholder="可选，逗号分隔"
+            :options="workCenterOptions"
+            title="选择工作中心"
+            placeholder="可选，添加工作中心"
+            source-text="数据来自基础数据工作中心"
+            empty-text="暂无工作中心，请先在基础数据维护工作中心"
+            selection-empty-text="未限定工作中心（统计范围内全部设备）"
+            :loading="workCentersPending"
+            aria-label="工作中心"
           />
         </NvField>
       </NvFieldGroup>

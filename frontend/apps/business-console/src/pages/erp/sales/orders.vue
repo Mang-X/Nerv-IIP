@@ -2,6 +2,7 @@
 import type { BusinessConsoleErpSalesOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpSalesOrders } from '@/composables/useBusinessErp'
+import { useErpSiteCatalog } from '@/composables/useErpPickerCatalog'
 import { usePagedList } from '@/composables/usePagedList'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
@@ -23,6 +24,7 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -37,13 +39,15 @@ import { PlusIcon, RefreshCwIcon, RouteIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { notifyError, notifySuccess } from '@/utils/notify'
-import { firstQueryParam, formatAmount } from '../shared'
+import { firstQueryParam, formatAmount, pickerInvalidClass } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: '销售订单', requiredPermissions: ['business.erp.sales.read'] },
 })
 
 const orders = useErpSalesOrders()
+// 履约工厂从工厂主数据里选，手输编码只会在提交时才发现敲错。
+const { siteOptions, sitesPending } = useErpSiteCatalog()
 const orderUrgencies = useOrderUrgencies(
   computed(() => orders.salesOrders.value.map((order) => order.salesOrderNo)),
 )
@@ -269,11 +273,17 @@ async function submit() {
               <NvFieldLabel for="erp-so-site">
                 履约工厂 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-so-site"
                 v-model="form.siteCode"
-                autocomplete="off"
-                :data-invalid="showErrors && invalid.siteCode ? '' : undefined"
+                :options="siteOptions"
+                title="选择履约工厂"
+                placeholder="选择履约工厂"
+                source-text="数据来自基础数据工厂主数据"
+                empty-text="暂无工厂，请先在「基础数据 · 工厂」维护"
+                :loading="sitesPending"
+                aria-label="履约工厂"
+                :class="pickerInvalidClass(showErrors && invalid.siteCode)"
               />
             </NvField>
             <NvField
@@ -282,7 +292,7 @@ async function submit() {
             /></NvField>
           </NvFieldGroup>
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请填写已批准报价单号与履约工厂。
+            请填写已批准报价单号并选择履约工厂。
           </p>
           <NvDialogFooter>
             <NvDialogClose as-child

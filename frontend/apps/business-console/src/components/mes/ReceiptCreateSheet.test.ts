@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ReceiptCreateSheet from './ReceiptCreateSheet.vue'
@@ -30,7 +30,30 @@ vi.mock('@/composables/useBusinessMes', () => ({
   }),
 }))
 
+// 单位已从自由文本改成计量单位主数据选择器，目录 composable 走 pinia + colada，测试直接给定选项。
+vi.mock('@/composables/useBusinessMasterData', () => ({
+  useBusinessUoms: () => ({
+    filters: reactive({ skip: 0, take: 200 }),
+    uoms: ref([
+      { code: 'EA', displayName: '个', active: true },
+      { code: 'BOX', displayName: '箱', active: true },
+    ]),
+    uomsError: ref(undefined),
+    uomsPending: ref(false),
+    uomsTotal: ref(2),
+    refreshUoms: vi.fn(),
+  }),
+}))
+
 const stubs = {
+  CarriedContextSummary: { props: ['label', 'items'], template: '<div><slot /></div>' },
+  // 单位选择器桩成同名 id 的输入位，让下面的 setValue 仍然表达「选中了某个单位」。
+  NvSearchSelect: {
+    props: ['modelValue', 'options', 'id'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
   NvSheet: { props: ['open'], template: '<div><slot /></div>' },
   NvSheetContent: { template: '<div><slot /></div>' },
   NvSheetHeader: { template: '<div><slot /></div>' },
