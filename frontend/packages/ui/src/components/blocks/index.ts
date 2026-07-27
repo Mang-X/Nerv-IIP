@@ -2,6 +2,7 @@
 export * from './app-shell-inset'
 export * from './cascade-picker'
 export * from './entity-picker'
+export * from './group-panel'
 export * from './page-header'
 export * from './row-actions'
 export * from './section-card'
