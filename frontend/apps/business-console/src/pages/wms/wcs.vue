@@ -2,7 +2,6 @@
 import type { BusinessConsoleWmsWcsTaskItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { useWmsWcsTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -32,6 +31,7 @@ import {
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, RefreshCwIcon, SendIcon, XCircleIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
+import { RouterLink } from 'vue-router'
 
 definePage({
   meta: {
@@ -197,7 +197,6 @@ const columns: NvDataTableColumn<WcsRow>[] = [
     cellClass: 'text-muted-foreground',
     accessor: (r) => r.warehouseTaskId ?? '无',
   },
-  { key: 'inventoryContext', header: '库存上下文', width: 'w-72' },
   { key: 'status', header: '状态', width: 'w-28' },
   {
     key: 'attemptCount',
@@ -325,15 +324,23 @@ function formatError(error: unknown) {
       :loading="wcsTasksPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无 WCS 任务。派发到设备控制系统的任务会出现在这里。"
+      empty-message="暂无设备任务。"
     >
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
-      <template #cell-inventoryContext="{ row }">
-        <WmsInventoryContextPanel
-          compact
-          gap-message="本页暂不显示物料、库位与库存数量，请到对应的上架或拣货任务查看库存上下文。"
-        />
+      <template #empty>
+        <p class="text-sm font-medium">暂无设备任务</p>
+        <p class="max-w-md text-sm text-muted-foreground">
+          设备任务由上架、拣货作业下发给堆垛机、输送线等设备控制系统后产生；本仓库尚未接入设备控制系统。
+        </p>
+        <div class="flex gap-2">
+          <NvButton size="sm" type="button" variant="outline" as-child>
+            <RouterLink to="/wms/putaway">上架任务</RouterLink>
+          </NvButton>
+          <NvButton size="sm" type="button" variant="outline" as-child>
+            <RouterLink to="/wms/picking">拣货任务</RouterLink>
+          </NvButton>
+        </div>
       </template>
+      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
       <template #cell-failure="{ row }">
         <div v-if="row.failureCode || row.failureMessage" class="flex flex-col gap-0.5">
           <span class="text-sm text-destructive">{{ row.failureCode ?? '失败' }}</span>

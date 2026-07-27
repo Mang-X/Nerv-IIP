@@ -37,6 +37,23 @@ vi.mock('vue-router', () => ({
   },
 }))
 
+// 物料目录与默认工厂来自主数据 facade（需要 pinia 上下文），页面测试里给确定的目录即可。
+vi.mock('@/composables/useInventoryScope', async () => {
+  const { computed, ref } = await import('vue')
+  const catalog = {
+    siteOptions: computed(() => [{ value: 'SITE-001', label: '上海工厂' }]),
+    sitesPending: ref(false),
+    skuOptions: computed(() => [{ value: 'SKU-001', label: '前减振器总成', hint: 'pcs' }]),
+    skusPending: ref(false),
+  }
+  return {
+    FALLBACK_INVENTORY_SITE_CODE: 'SITE-001',
+    FALLBACK_INVENTORY_UOM_CODE: 'pcs',
+    useInventoryScopeCatalog: () => catalog,
+    useInventoryScopeDefaults: () => catalog,
+  }
+})
+
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: wms.permissionCodes } }),
 }))

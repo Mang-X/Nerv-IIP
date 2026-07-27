@@ -157,6 +157,49 @@ vi.mock('@/utils/notify', () => ({
   notifySuccess: inventoryState.notifySuccess,
 }))
 
+// 目录与默认值来自主数据 facade，这里给确定的目录，页面测试只关心「选择器有得选、单位自动带出」。
+vi.mock('@/composables/useInventoryScope', async () => {
+  const { computed, ref, watch } = await import('vue')
+  const baseUomBySku: Record<string, string> = { 'SKU-001': 'EA', 'RM-BAR-45-01': 'kg' }
+  const catalog = {
+    siteOptions: computed(() => [{ value: 'S1', label: '上海工厂' }]),
+    sitesPending: ref(false),
+    skuOptions: computed(() => [
+      { value: 'SKU-001', label: '前减振器总成', hint: 'EA' },
+      { value: 'RM-BAR-45-01', label: '45号钢棒料', hint: 'kg' },
+    ]),
+    skusPending: ref(false),
+  }
+  return {
+    FALLBACK_INVENTORY_SITE_CODE: 'SITE-001',
+    FALLBACK_INVENTORY_UOM_CODE: 'pcs',
+    useInventoryScopeCatalog: () => catalog,
+    // 与真实实现同构：工厂缺省填默认工厂，单位始终跟随所选物料的基本单位。
+    useInventoryScopeDefaults: (filters: { skuCode?: string; uomCode?: string; siteCode?: string }) => {
+      if (!(filters.siteCode ?? '').trim()) filters.siteCode = 'S1'
+      watch(
+        () => filters.skuCode,
+        (skuCode) => {
+          const trimmed = (skuCode ?? '').trim()
+          filters.uomCode = trimmed ? (baseUomBySku[trimmed] ?? 'pcs') : ''
+        },
+        { immediate: true },
+      )
+      return catalog
+    },
+    useInventorySiteExpiryOverview: () => ({
+      overviewError: ref(undefined),
+      overviewExpiredCount: computed(() => 8),
+      overviewNearExpiryCount: computed(() => 43),
+      overviewPending: ref(false),
+      overviewSkuCount: computed(() => 12),
+      overviewTotalCount: computed(() => 51),
+      overviewUrgentLines: computed(() => []),
+      refreshOverview: vi.fn(),
+    }),
+  }
+})
+
 const uiStubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
   PageHeader: {
@@ -207,6 +250,13 @@ const uiStubs = {
     emits: ['update:modelValue'],
     template:
       '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+  // 实体选择弹窗内部自带 DialogRoot；这里的 DialogRoot 桩会截断它的上下文，所以整件替换成 select。
+  NvEntityPicker: {
+    props: ['modelValue', 'options', 'title', 'placeholder', 'loading'],
+    emits: ['update:modelValue'],
+    template:
+      '<select data-entity-picker v-bind="$attrs" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option v-for="o in options" :key="o.value" :value="o.value">{{ o.label }}</option></select>',
   },
   NvSelect: { template: '<div><slot /></div>' },
   NvSelectContent: { template: '<div><slot /></div>' },

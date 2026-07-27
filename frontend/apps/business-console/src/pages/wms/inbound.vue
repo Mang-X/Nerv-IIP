@@ -4,6 +4,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsReceivingQualityFlow from '@/components/wms/WmsReceivingQualityFlow.vue'
 import { useWmsInboundOrders } from '@/composables/useBusinessWms'
+import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
@@ -26,6 +27,7 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
+  NvEntityPicker,
   NvField,
   NvFieldError,
   NvFieldGroup,
@@ -235,10 +237,22 @@ const errorMessage = computed(() =>
       supplierReturnsError.value,
   ),
 )
-// 库存上下文不可用时（后端未支持该维度），给出业务可读提示而非空白。
+// 工厂给默认值、单位跟随物料——收货行的库存上下文只差「选哪个物料」。
+const { skuOptions, skusPending } = useInventoryScopeDefaults(filters)
+/** 网关明确回「还没给够条件」时才引导选物料；其余情况按拿到的上下文照常呈现。 */
+const contextScopeRequired = computed(
+  () => (inventoryContext.value?.status ?? '').toLowerCase() === 'scope-required',
+)
+/**
+ * 网关的库存上下文在缺物料/单位/工厂时回 `scope-required`——那是「还没给条件」，
+ * 不是「取不到」。这里只把真正的取数失败当异常，缺条件走下面的选择引导。
+ */
 const contextUnavailable = computed(() => {
   const status = (inventoryContext.value?.status ?? '').toLowerCase()
-  return !!inventoryContext.value && status !== '' && status !== 'ok' && status !== 'available'
+  if (!inventoryContext.value || status === '' || status === 'ok' || status === 'available') {
+    return false
+  }
+  return status !== 'scope-required'
 })
 
 function refreshAll() {
@@ -308,17 +322,51 @@ function formatError(error: unknown) {
     </NvPageHeader>
 
     <p v-if="contextUnavailable" class="text-sm text-warning" role="status">
-      当前条件暂无法获取库存可用量上下文。请补充物料、工厂或库位等条件后再试。
+      没有权限或库存服务暂不可用，本页只显示入库单本身。
     </p>
 
+    <!-- 库存上下文要「物料 × 单位 × 工厂」才成立；缺物料时给选择入口，不摆技术味提示。 -->
+    <section
+      v-if="contextScopeRequired"
+      class="grid content-start justify-items-start gap-3 rounded-md border border-dashed border-border p-6"
+    >
+      <h2 class="text-sm font-semibold">选择物料，带出收货行的库存可用量</h2>
+      <p class="text-sm text-muted-foreground">
+        入库单列表不受影响；选定物料后这里显示该物料在
+        {{ filters.siteCode || '当前工厂' }} 的现存量、可用量与预留占用。
+      </p>
+      <NvEntityPicker
+        v-model="filters.skuCode"
+        class="w-64"
+        :options="skuOptions"
+        title="选择物料"
+        placeholder="选择物料"
+        source-text="数据来自基础数据物料主数据"
+        empty-text="暂无物料主数据，请先在基础数据维护物料"
+        :loading="skusPending"
+        aria-label="选择物料带出库存可用量"
+      />
+    </section>
     <WmsInventoryContextPanel
+      v-else
       :context="inventoryContext"
       gap-message="本页暂不显示该收货行的库存可用量，请到库存可用量页按物料与工厂查看。"
     />
 
     <NvToolbar :show-search="false">
       <template #filters>
-        <NvInput v-model="filters.skuCode" class="h-9 w-32" placeholder="物料" aria-label="物料" />
+        <NvEntityPicker
+          v-model="filters.skuCode"
+          class="w-56"
+          :options="skuOptions"
+          title="选择物料"
+          placeholder="选择物料"
+          source-text="数据来自基础数据物料主数据"
+          empty-text="暂无物料主数据，请先在基础数据维护物料"
+          :loading="skusPending"
+          clearable
+          aria-label="物料"
+        />
         <NvInput v-model="filters.siteCode" class="h-9 w-20" placeholder="工厂" aria-label="工厂" />
         <NvInput
           v-model="filters.locationCode"

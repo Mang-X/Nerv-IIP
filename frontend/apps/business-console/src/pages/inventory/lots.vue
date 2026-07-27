@@ -5,6 +5,7 @@ import InventoryExpiryStatusBadge from '@/components/inventory/InventoryExpirySt
 import InventoryExpirySummaryCards from '@/components/inventory/InventoryExpirySummaryCards.vue'
 import { useInventoryAvailability } from '@/composables/useBusinessInventory'
 import { useInventoryExpiryView } from '@/composables/useInventoryExpiryView'
+import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError } from '@/utils/notify'
 import {
@@ -17,6 +18,7 @@ import {
 import {
   NvButton,
   NvDataTable,
+  NvEntityPicker,
   NvInput,
   NvMetricRing,
   NvMetricStrip,
@@ -73,6 +75,10 @@ const {
   toggleNearExpiryView,
   visibleExpiryAlerts,
 } = useInventoryExpiryView(filters)
+// 工厂给默认值、单位跟随物料——用户只需要选物料这一件事。
+const { siteOptions, sitesPending, skuOptions, skusPending } = useInventoryScopeDefaults(filters)
+const hasSkuSelection = computed(() => filters.skuCode.trim().length > 0)
+const showScopePrompt = computed(() => !nearExpiryOnly.value && !hasSkuSelection.value)
 filters.qualityStatus = undefined
 
 watch(
@@ -119,6 +125,7 @@ const tablePending = computed(() =>
   nearExpiryOnly.value ? expiryAlertsPending.value : availabilityPending.value,
 )
 const pageCount = computed(() => {
+  if (showScopePrompt.value) return '请选择物料'
   if (!nearExpiryOnly.value) return `${rows.value.length} 条库存明细`
   if (!hasExpirySite.value) return '请选择工厂'
   if (!hasExpiryScope.value) return '业务上下文加载中'
@@ -133,7 +140,7 @@ const tableEmptyMessage = computed(() => {
   if (nearExpiryOnly.value && expiryAlertsError.value) return '效期预警加载失败，请稍后重试。'
   if (nearExpiryOnly.value) return '当前范围没有已过期或未来30天内到期的批次。'
   if (availabilityError.value) return '库存批次加载失败，请稍后重试。'
-  return '先填物料、单位和工厂，再查这批货的批次、序列号和预留占用。'
+  return '这个物料在当前工厂没有批次记录。换个物料、库位或质量状态再查一次。'
 })
 const onHandQuantity = computed(() => availability.value?.onHandQuantity ?? 0)
 const reservedQuantity = computed(
@@ -299,7 +306,8 @@ async function refreshCurrentView() {
     </NvPageHeader>
 
     <InventoryExpirySummaryCards v-if="nearExpiryOnly" :summary="expirySummary" />
-    <div v-else class="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+    <!-- 还没选物料时，环形卡与批次统计都只会是 0，不摆空壳指标。 -->
+    <div v-else-if="!showScopePrompt" class="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
       <NvMetricRing
         label="现存量构成"
         :value="formatQuantity(onHandQuantity)"
@@ -311,15 +319,35 @@ async function refreshCurrentView() {
 
     <NvToolbar :show-search="false">
       <template #filters>
-        <NvInput v-model="filters.skuCode" class="h-9 w-32" placeholder="SKU" aria-label="SKU" />
-        <NvInput
-          v-if="!nearExpiryOnly"
-          v-model="filters.uomCode"
-          class="h-9 w-20"
-          placeholder="单位"
-          aria-label="单位"
+        <NvEntityPicker
+          v-model="filters.skuCode"
+          class="w-56"
+          :options="skuOptions"
+          title="选择物料"
+          placeholder="选择物料"
+          source-text="数据来自基础数据物料主数据"
+          empty-text="暂无物料主数据，请先在基础数据维护物料"
+          :loading="skusPending"
+          clearable
+          aria-label="物料"
         />
-        <NvInput v-model="filters.siteCode" class="h-9 w-20" placeholder="工厂" aria-label="工厂" />
+        <!-- 单位不是独立筛选项：台账维度上由物料的基本单位决定，手输只会查不到货。 -->
+        <span
+          v-if="!nearExpiryOnly && filters.uomCode"
+          class="inline-flex h-9 items-center rounded-md border border-input px-2.5 text-sm text-muted-foreground"
+          >单位 {{ filters.uomCode }}</span
+        >
+        <NvEntityPicker
+          v-model="filters.siteCode"
+          class="w-40"
+          :options="siteOptions"
+          title="选择工厂"
+          placeholder="选择工厂"
+          source-text="数据来自基础数据工厂主数据"
+          empty-text="暂无工厂主数据，请先在基础数据维护工厂"
+          :loading="sitesPending"
+          aria-label="工厂"
+        />
         <NvInput
           v-model="filters.locationCode"
           class="h-9 w-24"
@@ -356,7 +384,35 @@ async function refreshCurrentView() {
       </template>
     </NvToolbar>
 
+    <section
+      v-if="showScopePrompt"
+      class="grid content-start justify-items-start gap-3 rounded-md border border-dashed border-border p-8"
+    >
+      <h2 class="text-base font-semibold">选择物料，查看批次、序列号与预留占用</h2>
+      <p class="text-sm text-muted-foreground">
+        批次台账按「物料 × 单位 × 工厂」查询，单位随所选物料自动带出，当前工厂
+        {{ filters.siteCode || '未选择' }}。
+      </p>
+      <div class="flex flex-wrap items-center gap-2">
+        <NvEntityPicker
+          v-model="filters.skuCode"
+          class="w-64"
+          :options="skuOptions"
+          title="选择物料"
+          placeholder="选择物料"
+          source-text="数据来自基础数据物料主数据"
+          empty-text="暂无物料主数据，请先在基础数据维护物料"
+          :loading="skusPending"
+          aria-label="选择物料查看批次"
+        />
+        <NvButton type="button" variant="outline" @click="toggleNearExpiryView">
+          查看效期预警（30天）
+        </NvButton>
+      </div>
+    </section>
+
     <NvDataTable
+      v-else
       :columns="columns"
       :rows="rows"
       :row-key="lineKey"
