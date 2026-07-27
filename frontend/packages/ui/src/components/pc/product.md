@@ -64,3 +64,55 @@
 - ✅ 空态 / 失败态 / 无权限态给出下一步动作。
 - ✅ 文案说业务的语言（`DESIGN/index.md` Copy Rule）。
 - ✅ 状态完备：default / hover / focus-visible / active / disabled / loading / selected。
+
+## 复用约定（2026-07-27 owner 二轮走查后固化）
+
+这一节是**约定**，不是建议：下面每条都有契约测试兜底
+（`src/foundation-conventions.contract.test.ts`），页面侧照着用即可，别再每页写死。
+
+### 一、选择器：默认下拉，弹窗是例外
+
+| 场景                                             | 用什么                                        |
+| ------------------------------------------------ | --------------------------------------------- |
+| 从主数据目录选一个实体（物料/SKU/设备/工厂…）    | `NvEntityPicker`（默认 `variant="dropdown"`） |
+| 同上，但要多列信息 / 上百条需分页 / 选前需读说明 | `NvEntityPicker variant="dialog"`             |
+| 选枚举字典值（技师、停机原因、维护结果）         | `NvSearchSelect`（更轻，不硬塞编码列）        |
+| 可自由录入 + 联想                                | `NvCombobox`                                  |
+
+**默认形态是「点一下直接展开下拉、下拉内自带搜索框」。** 弹窗要多花用户一次点击，
+只有在真的需要更大展示空间时才值得付这个代价 —— 筛选条上不值得。
+
+两种形态共用 `EntityPickerPanel`，行高/留白/空态/计数完全一致；浮层都走 portal，
+在 Sheet / Dialog 内不会被 `overflow` 裁剪。
+
+### 二、抽屉尺寸：用 `size`，别写 `sm:max-w-*`
+
+`NvSheetContent` 的 `size`：
+
+| 档位   | 用途                                |
+| ------ | ----------------------------------- |
+| `sm`   | 确认类 / 单列表单                   |
+| `md`   | **默认** —— 详情摘要 + 少量字段     |
+| `lg`   | 详情 + 分组信息                     |
+| `xl`   | **表格类内容默认档**，放得下 5~7 列 |
+| `2xl`  | 宽表格 / 并排双栏                   |
+| `full` | 铺满，两侧留 2rem                   |
+
+纵向滚动（`overflow-y-auto`）和 flex 列布局已经收进组件，调用点**不用再手写** ——
+此前 21 个调用点里有 17 个在重复写这些样板。窄屏一律先占满，到 `sm` 断点才收窄。
+
+### 三、空值：有标签的字段一律给 `—`
+
+`EMPTY_TEXT` / `isEmptyValue` / `displayValue` 从 `@nerv-iip/ui` 导出，别再手写 `?? '—'`。
+
+- `NvDescriptions` / `NvDataTable` / `NvRecordCard` 已内建占位，**默认就对**。
+- 判空**不吞 `0` / `false` / `NaN`** —— 它们是真实业务值（0 件库存、否、无效读数）。
+- 例外：状态类字段走 `NvStatusBadge` 的 `未知`（「状态未知」是有业务含义的状态，
+  不是「无此字段」）；纯装饰性副标题空了就整块 `v-if` 掉，别留孤零零一个 `—`。
+
+### 四、控件尺寸基线
+
+表单控件统一 `h-9` + `rounded-md` + `px-3`（`NvInput`/`NvSelectTrigger`/
+`NvSearchSelect`/`NvEntityPicker`/`NvCombobox`/`NvButton` 默认档）。
+日期/时间选择器宽度是 `w-full sm:w-*`：窄屏占满、宽屏收成固定宽度 ——
+**别再给它们写死 `w-40`/`w-48`**，否则筛选条在窄屏会出现「满宽控件 + 残桩」的错位。

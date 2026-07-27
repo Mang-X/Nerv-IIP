@@ -368,6 +368,7 @@ function formatError(error: unknown) {
           :subtitle="group.workCenter || undefined"
           :count="groupSummary(group)"
           :collapsed-summary="groupSummary(group)"
+          flush
         >
           <template #meta>
             <RouterLink

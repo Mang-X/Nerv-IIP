@@ -188,6 +188,7 @@ const NV_ALL = [
   'NvSheetDescription',
   'NvSheetFooter',
   'NvSheetHeader',
+  'NvSheetSize',
   'NvSheetTitle',
   'NvSheetTrigger',
   'NvSidebarBrand',
@@ -238,6 +239,7 @@ const NV_TYPE_ONLY = new Set([
   'NvMetricStripCell',
   'NvMetricTone',
   'NvMetricVariant',
+  'NvSheetSize',
 ])
 
 // Live derivation from the barrels — MUST equal the frozen arrays (bidirectional).
