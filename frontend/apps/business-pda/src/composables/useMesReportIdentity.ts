@@ -1,5 +1,6 @@
 import type {
   BusinessConsoleMesOperationTaskRow,
+  BusinessConsoleMesWorkOrderDetailResponse,
   BusinessConsoleMesWorkOrderItem,
 } from '@nerv-iip/api-client'
 import { computed, watch, type Ref } from 'vue'
@@ -15,6 +16,9 @@ interface TaskFilters {
 interface UseMesReportIdentityOptions {
   workOrders: Readonly<Ref<WorkOrder[]>>
   workOrdersPending: Readonly<Ref<boolean>>
+  workOrderDetail: Readonly<Ref<BusinessConsoleMesWorkOrderDetailResponse | null | undefined>>
+  workOrderDetailPending: Readonly<Ref<boolean>>
+  workOrderDetailError: Readonly<Ref<unknown>>
   operationTasks: Readonly<Ref<Task[]>>
   tasksPending: Readonly<Ref<boolean>>
   taskFilters: TaskFilters
@@ -35,9 +39,19 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
   const selectedWorkOrder = computed<WorkOrder | null>(() => {
     const workOrderId = requestedWorkOrderId.value
     if (!workOrderId) return null
-    return (
-      options.workOrders.value.find((workOrder) => workOrder.workOrderId === workOrderId) ?? null
-    )
+    if (options.workOrderDetailError.value) return null
+    const detail = options.workOrderDetail.value
+    if (detail?.workOrderId === workOrderId) {
+      return {
+        workOrderId: detail.workOrderId,
+        skuId: detail.skuId,
+        productionVersionId: detail.productionVersionId,
+        quantity: detail.quantity,
+        status: detail.status as WorkOrder['status'],
+        operationTasks: detail.operationTasks,
+      }
+    }
+    return null
   })
 
   watch(
@@ -52,14 +66,18 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
 
   const visibleOperationTasks = computed(() => {
     const workOrderId = selectedWorkOrder.value?.workOrderId
+    const detail = options.workOrderDetail.value
     if (
       !workOrderId ||
+      options.workOrderDetailPending.value ||
       options.tasksPending.value ||
       options.taskFilters.workOrderId !== workOrderId
     ) {
       return []
     }
-    return options.operationTasks.value.filter(
+    const exactTasks =
+      detail?.workOrderId === workOrderId && detail.operationTasks ? detail.operationTasks : []
+    return exactTasks.filter(
       (task) => task.workOrderId === workOrderId && Boolean(task.operationTaskId),
     )
   })
@@ -87,7 +105,10 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
     if (operationTaskId && !workOrderId) {
       return '报工链接缺少工单 ID，已阻止报工。'
     }
-    if (workOrderId && !options.workOrdersPending.value && !selectedWorkOrder.value) {
+    if (workOrderId && options.workOrderDetailError.value) {
+      return `工单 ${workOrderId} 详情加载失败，已阻止报工，请重试。`
+    }
+    if (workOrderId && !options.workOrderDetailPending.value && !selectedWorkOrder.value) {
       return `未找到工单 ${workOrderId}，已阻止报工。`
     }
     if (

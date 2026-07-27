@@ -35,6 +35,24 @@ test('工序执行：列表 → 完成（二次确认）→ 成功结果', async
 })
 
 test('报工：选工单 → 选工序 → 录良品数 → 提交 → 成功结果', async ({ page }) => {
+  let submittedReport: Record<string, unknown> | undefined
+  await page.route('**/api/business-console/v1/mes/production-reports', async (route) => {
+    if (route.request().method() !== 'POST') {
+      return routeBusinessConsoleApi(route)
+    }
+    submittedReport = route.request().postDataJSON() as Record<string, unknown>
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          productionReportId: '019f-e2e-production-report',
+          reportNo: 'RPT-E2E-0001',
+        },
+      }),
+    })
+  })
   await page.goto('/mes/report')
 
   await expect(page.getByRole('heading', { name: '报工' })).toBeVisible()
@@ -60,15 +78,42 @@ test('报工：选工单 → 选工序 → 录良品数 → 提交 → 成功结
   const result = page.locator('[data-result][data-status="success"]')
   await expect(result).toBeVisible()
   await expect(result.getByText('报工成功')).toBeVisible()
+  await expect(result).toContainText('RPT-E2E-0001')
+  await expect(result).toContainText('019f-e2e-production-report')
+  expect(submittedReport).toMatchObject({
+    workOrderId: 'WO-1',
+    operationTaskId: 'OP-1',
+    goodQuantity: 5,
+  })
 })
 
-test('报工：URL 携带工单与工序任务 pair 可直达同一实体', async ({ page }) => {
+test('报工：URL pair 直达、延迟旧请求与浏览器 back/forward 始终重绑同一实体', async ({ page }) => {
+  await page.route('**/api/business-console/v1/mes/operation-tasks**', async (route) => {
+    const requestUrl = new URL(route.request().url())
+    if (requestUrl.searchParams.get('workOrderId') === 'WO-1') {
+      await new Promise((resolve) => setTimeout(resolve, 400))
+    }
+    return routeBusinessConsoleApi(route)
+  })
+
+  await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
+  await expect(page.getByRole('heading', { name: '报工' })).toBeVisible()
   await page.goto('/mes/report?workOrderId=WO-2&operationTaskId=OP-3')
 
   await expect(page.getByText('当前工单')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'WO-2 · 工序 10', exact: true })).toBeVisible()
   await expect(page.getByTestId('good-quantity')).toBeVisible()
   await expect(page.getByTestId('report-route-issue')).toHaveCount(0)
+  await page.waitForTimeout(450)
+  await expect(page.getByText('WO-1 · 工序 10')).toHaveCount(0)
+
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toBeVisible()
+  await expect(page.getByTestId('good-quantity')).toBeVisible()
+
+  await page.goForward()
+  await expect(page.getByRole('heading', { name: 'WO-2 · 工序 10', exact: true })).toBeVisible()
+  await expect(page.getByTestId('good-quantity')).toBeVisible()
 })
 
 test('领料：列表渲染领料申请行（不退化为空态）', async ({ page }) => {

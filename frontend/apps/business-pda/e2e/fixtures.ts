@@ -459,16 +459,47 @@ export async function routeBusinessConsoleApi(route: Route) {
     return fulfillJson(route, envelope({}))
   }
   if (pathname === `${base}/operation-tasks`) {
-    return fulfillJson(
-      route,
-      envelope({ items: mesOperationTasks, total: mesOperationTasks.length }),
-    )
+    const workOrderId = requestUrl.searchParams.get('workOrderId')
+    const items = workOrderId
+      ? mesOperationTasks.filter((task) => task.workOrderId === workOrderId)
+      : mesOperationTasks
+    return fulfillJson(route, envelope({ items, total: items.length }))
   }
   if (pathname === `${base}/work-orders`) {
     return fulfillJson(route, envelope({ items: mesWorkOrders, total: mesWorkOrders.length }))
   }
+  const workOrderDetailMatch = pathname.match(
+    /^\/api\/business-console\/v1\/mes\/work-orders\/([^/]+)$/,
+  )
+  if (method === 'GET' && workOrderDetailMatch) {
+    const workOrderId = decodeURIComponent(workOrderDetailMatch[1])
+    const workOrder = mesWorkOrders.find((candidate) => candidate.workOrderId === workOrderId)
+    if (!workOrder) {
+      return fulfillJson(route, { success: false, message: '工单不存在', data: null })
+    }
+    return fulfillJson(
+      route,
+      envelope({
+        ...workOrder,
+        readinessStatus: 'ready',
+        blockingReasons: [],
+        operationTasks: mesOperationTasks.filter((task) => task.workOrderId === workOrderId),
+      }),
+    )
+  }
   if (pathname === `${base}/production-reports`) {
-    if (method === 'POST') return fulfillJson(route, envelope({}))
+    if (method === 'POST') {
+      return fulfillJson(
+        route,
+        envelope({
+          productionReportId: '019f-e2e-production-report',
+          reportNo: 'RPT-E2E-0001',
+        }),
+      )
+    }
+    return fulfillJson(route, envelope({ items: [], total: 0 }))
+  }
+  if (pathname === `${base}/telemetry-production-report-candidates`) {
     return fulfillJson(route, envelope({ items: [], total: 0 }))
   }
   if (pathname === `${base}/material-issue-requests`) {

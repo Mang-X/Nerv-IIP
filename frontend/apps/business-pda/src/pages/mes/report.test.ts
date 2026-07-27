@@ -24,7 +24,13 @@ type ReportEnvelope = {
   message?: string
   data?: { productionReportId?: string; reportNo?: string } | null
 }
-const successfulReceipt: ReportEnvelope = { success: true, data: {} }
+const successfulReceipt: ReportEnvelope = {
+  success: true,
+  data: {
+    productionReportId: '019f-report-default',
+    reportNo: 'RPT-DEFAULT',
+  },
+}
 const recordReport = vi.fn(
   async (_input: Record<string, unknown>): Promise<ReportEnvelope> => successfulReceipt,
 )
@@ -75,6 +81,14 @@ const defaultOperationTasks = [
   },
 ]
 const operationTasksRef = ref<Array<Record<string, unknown>>>(defaultOperationTasks)
+const workOrderDetailRef = ref<Record<string, unknown> | null>({
+  ...defaultWorkOrders[0],
+  operationTasks: defaultOperationTasks.filter(
+    (task) => task.workOrderId === defaultWorkOrders[0].workOrderId,
+  ),
+})
+const workOrderDetailPendingRef = ref(false)
+const workOrderDetailErrorRef = ref<unknown>(null)
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesWorkOrders: () => ({
@@ -98,6 +112,26 @@ vi.mock('@/composables/useBusinessMes', () => ({
     resumeTask: vi.fn(),
     completeTask: vi.fn(),
     actionPending: ref(false),
+  }),
+  useMesWorkOrderDetail: (workOrderId: { value: string }) => ({
+    workOrder: computed(() => {
+      if (workOrderDetailRef.value?.workOrderId === workOrderId.value) {
+        return workOrderDetailRef.value
+      }
+      const workOrder = workOrdersRef.value.find(
+        (candidate) => candidate.workOrderId === workOrderId.value,
+      )
+      return workOrder
+        ? {
+            ...workOrder,
+            operationTasks: operationTasksRef.value.filter(
+              (task) => task.workOrderId === workOrderId.value,
+            ),
+          }
+        : null
+    }),
+    pending: workOrderDetailPendingRef,
+    error: workOrderDetailErrorRef,
   }),
   useMesProductionReports: () => ({
     filters: reactive({}),
@@ -150,6 +184,14 @@ describe('PDA MES production reporting page', () => {
     tasksPendingRef.value = false
     workOrdersRef.value = defaultWorkOrders
     operationTasksRef.value = defaultOperationTasks
+    workOrderDetailRef.value = {
+      ...defaultWorkOrders[0],
+      operationTasks: defaultOperationTasks.filter(
+        (task) => task.workOrderId === defaultWorkOrders[0].workOrderId,
+      ),
+    }
+    workOrderDetailPendingRef.value = false
+    workOrderDetailErrorRef.value = null
     workOrderFilters.keyword = undefined
     taskFilters.workOrderId = undefined
     route.query = {}
@@ -188,6 +230,10 @@ describe('PDA MES production reporting page', () => {
     const wrapper = mount(ReportPage, { attachTo: document.body })
     await selectWorkOrder(wrapper, 0)
     expect(wrapper.text()).toContain('WO-2026-0001 · 工序 10')
+    const staleTaskRow = wrapper
+      .findAll('[data-row]')
+      .find((row) => row.text().includes('WO-2026-0001 · 工序 10'))
+    expect(staleTaskRow, '切换前必须真实存在旧工单任务行').toBeDefined()
 
     await wrapper.get('[data-testid="change-work-order"]').trigger('click')
     await selectWorkOrder(wrapper, 1)
@@ -195,24 +241,11 @@ describe('PDA MES production reporting page', () => {
     expect(wrapper.text()).toContain('WO-2026-0002')
 
     // 模拟 reactive query 已切 key、但旧 key 的任务行在新请求期间仍留在 data 中。
-    const staleTaskRow = wrapper
-      .findAll('[data-row]')
-      .find((row) => row.text().includes('WO-2026-0001 · 工序 10'))
-    if (staleTaskRow) {
-      await staleTaskRow.trigger('click')
-      await flushPromises()
-    }
+    await staleTaskRow!.trigger('click')
+    await flushPromises()
 
     const goodInput = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')
-    if (goodInput) {
-      goodInput.value = '8'
-      goodInput.dispatchEvent(new Event('input'))
-      await flushPromises()
-      document.body.querySelector<HTMLElement>('[data-testid="submit-report"]')?.click()
-      await flushPromises()
-    }
-
-    expect(document.body.querySelector('[data-testid="good-quantity"]')).toBeNull()
+    expect(goodInput).toBeNull()
     expect(recordReport).not.toHaveBeenCalled()
   })
 
@@ -317,6 +350,119 @@ describe('PDA MES production reporting page', () => {
     expect(wrapper.text()).not.toContain('WO-2026-0001 · OP-1')
   })
 
+  it('A pending → B → A 重新绑定同一 intent，不得铸新 key 或重复写，A 成功可恢复', async () => {
+    const firstRequest = deferred<ReportEnvelope>()
+    recordReport.mockImplementationOnce(() => firstRequest.promise)
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    input.value = '2'
+    input.dispatchEvent(new Event('input'))
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+    const firstKey = recordReport.mock.calls[0][0].idempotencyKey
+
+    route.query = { workOrderId: 'WO-2026-0002', operationTaskId: 'OP-3' }
+    await flushPromises()
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    await flushPromises()
+
+    expect(recordReport).toHaveBeenCalledTimes(1)
+    expect(
+      document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.disabled,
+    ).toBe(true)
+    firstRequest.resolve(successfulReceipt)
+    await flushPromises()
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('RPT-DEFAULT')
+    expect(recordReport.mock.calls[0][0].idempotencyKey).toBe(firstKey)
+  })
+
+  it('A pending → B → A 的 reject 恢复同一 pair 错误，并以同 key retry', async () => {
+    const firstRequest = deferred<ReportEnvelope>()
+    recordReport.mockImplementationOnce(() => firstRequest.promise)
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    input.value = '2'
+    input.dispatchEvent(new Event('input'))
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+    const firstKey = recordReport.mock.calls[0][0].idempotencyKey
+
+    route.query = { workOrderId: 'WO-2026-0002', operationTaskId: 'OP-3' }
+    await flushPromises()
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    await flushPromises()
+    firstRequest.reject(new Error('A lost response'))
+    await flushPromises()
+
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="retry-report"]').trigger('click')
+    await flushPromises()
+    expect(recordReport).toHaveBeenCalledTimes(2)
+    expect(recordReport.mock.calls[1][0].idempotencyKey).toBe(firstKey)
+  })
+
+  it('第 101+ 工单及其第 101+ 工序任务可从 URL 直达，不依赖首屏 bounded list', async () => {
+    const targetWorkOrder = {
+      workOrderId: 'WO-OUTSIDE-101',
+      skuId: 'SKU-OUTSIDE',
+      quantity: 1,
+      status: 'Released',
+    }
+    const targetTask = {
+      operationTaskId: 'OP-OUTSIDE-101',
+      workOrderId: targetWorkOrder.workOrderId,
+      status: 'Ready',
+      operationSequence: 1010,
+      workCenterId: 'WC-OUTSIDE',
+    }
+    workOrdersRef.value = Array.from({ length: 100 }, (_, index) => ({
+      workOrderId: `WO-FIRST-${index + 1}`,
+      skuId: `SKU-${index + 1}`,
+      quantity: 1,
+      status: 'Released',
+    }))
+    operationTasksRef.value = Array.from({ length: 100 }, (_, index) => ({
+      operationTaskId: `OP-FIRST-${index + 1}`,
+      workOrderId: targetWorkOrder.workOrderId,
+      status: 'Ready',
+      operationSequence: index + 1,
+      workCenterId: 'WC-FIRST',
+    }))
+    workOrderDetailRef.value = {
+      ...targetWorkOrder,
+      operationTasks: [...operationTasksRef.value, targetTask],
+    }
+    route.query = {
+      workOrderId: targetWorkOrder.workOrderId,
+      operationTaskId: targetTask.operationTaskId,
+    }
+
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    expect(wrapper.text()).toContain(targetWorkOrder.workOrderId)
+    expect(document.body.textContent).toContain('工序 1010')
+    expect(document.body.querySelector('[data-testid="good-quantity"]')).not.toBeNull()
+  })
+
+  it('工单 detail 网络或授权失败时显示加载失败并 fail closed，不误报不存在', async () => {
+    workOrderDetailErrorRef.value = new Error('403')
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain('详情加载失败')
+    expect(wrapper.text()).not.toContain('未找到工单')
+    expect(document.body.querySelector('[data-testid="good-quantity"]')).toBeNull()
+    expect(recordReport).not.toHaveBeenCalled()
+  })
+
   it('HTTP 成功但回执 envelope 失败时必须 fail closed', async () => {
     recordReport.mockResolvedValueOnce({
       success: false,
@@ -341,6 +487,28 @@ describe('PDA MES production reporting page', () => {
 
     expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('回执实体校验失败')
+    expect(wrapper.text()).not.toContain('报工成功')
+  })
+
+  it.each([
+    ['data null', null],
+    ['data empty', {}],
+    ['productionReportId missing', { reportNo: 'RPT-ONLY' }],
+    ['reportNo missing', { productionReportId: '019f-only-id' }],
+    ['productionReportId blank', { productionReportId: '   ', reportNo: 'RPT-1' }],
+    ['reportNo blank', { productionReportId: '019f-id-1', reportNo: '   ' }],
+  ])('success true 但 %s 时必须 fail closed', async (_name, data) => {
+    recordReport.mockResolvedValueOnce({ success: true, data })
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    input.value = '1'
+    input.dispatchEvent(new Event('input'))
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('报工成功')
   })
 

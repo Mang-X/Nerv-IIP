@@ -19,12 +19,13 @@ import {
   NvMobileInput,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   useMesOperationTasks,
   useMesProductionReports,
   useMesTelemetryProductionReportCandidates,
+  useMesWorkOrderDetail,
   useMesWorkOrders,
 } from '@/composables/useBusinessMes'
 import RetryableListError from '@/components/RetryableListError.vue'
@@ -42,6 +43,11 @@ type WorkOrder = BusinessConsoleMesWorkOrderItem
 type Task = BusinessConsoleMesOperationTaskRow
 
 const router = useRouter()
+const route = useRoute()
+const routeWorkOrderId = computed(() => {
+  const value = route.query.workOrderId
+  return typeof value === 'string' ? value.trim() : ''
+})
 
 const {
   filters: workOrderFilters,
@@ -60,6 +66,11 @@ const {
   refresh: refreshTasks,
   cancelPendingTasks,
 } = useMesOperationTasks()
+const {
+  workOrder: workOrderDetail,
+  pending: workOrderDetailPending,
+  error: workOrderDetailError,
+} = useMesWorkOrderDetail(routeWorkOrderId)
 
 const {
   selectedWorkOrder,
@@ -74,6 +85,9 @@ const {
 } = useMesReportIdentity({
   workOrders,
   workOrdersPending,
+  workOrderDetail,
+  workOrderDetailPending,
+  workOrderDetailError,
   operationTasks,
   tasksPending,
   taskFilters,
@@ -150,25 +164,26 @@ const sheetOpen = computed({
 
 // --- 结果反馈 ---
 type ResultState = { status: 'success' | 'error'; title: string; description?: string }
-const result = ref<ResultState | null>(null)
-interface ActiveSubmission {
-  token: symbol
+interface ReportIntent {
+  attempt: symbol
   workOrderId: string
   operationTaskId: string
   intentKey: string
+  payload: {
+    goodQuantity: number
+    scrapQuantity: number
+    completesOperation: boolean
+  }
+  status: 'pending' | 'success' | 'error'
+  result: ResultState | null
 }
-const activeSubmission = shallowRef<ActiveSubmission | null>(null)
-
-// 稳定的逐操作幂等键：在提交时铸造一次，重试复用同键；
-// 开始新报工（改选工单/工序、成功后回到起点）时清空 → 下次提交铸造新键。
-const operationKey = ref('')
-const submitting = computed(
-  () =>
-    activeSubmission.value !== null &&
-    activeSubmission.value.workOrderId === pair.value?.workOrderId &&
-    activeSubmission.value.operationTaskId === pair.value?.operationTaskId &&
-    activeSubmission.value.intentKey === operationKey.value,
+const intents = reactive(new Map<string, ReportIntent>())
+const pairKey = computed(() =>
+  pair.value ? `${pair.value.workOrderId}\u0000${pair.value.operationTaskId}` : '',
 )
+const currentIntent = computed(() => (pairKey.value ? intents.get(pairKey.value) : undefined))
+const result = computed(() => currentIntent.value?.result ?? null)
+const submitting = computed(() => currentIntent.value?.status === 'pending')
 
 watch(
   [() => selectedWorkOrder.value?.workOrderId, () => selectedTask.value?.operationTaskId],
@@ -181,12 +196,16 @@ watch(
       scrapQuantity.value = 0
       completesOperation.value = false
       ctx.quantityEntered = false
-      ctx.recorded = false
-      operationKey.value = ''
-      result.value = null
+      ctx.recorded = currentIntent.value?.status === 'success'
     }
   },
   { immediate: true },
+)
+watch(
+  () => currentIntent.value?.status,
+  (status) => {
+    ctx.recorded = status === 'success'
+  },
 )
 
 // ScanBar 仅在选工单步活跃；录数量/结果时不抢焦点
@@ -228,7 +247,6 @@ function backToWorkOrders() {
 }
 
 async function submit() {
-  if (submitting.value) return
   const identity = pair.value
   const task = selectedTask.value
   const workOrderId = identity?.workOrderId
@@ -243,84 +261,77 @@ async function submit() {
   ) {
     return
   }
-  if (!quantityValid.value) return
+  const key = `${workOrderId}\u0000${operationTaskId}`
+  let intent = intents.get(key)
+  if (intent?.status === 'pending' || intent?.status === 'success') return
+  if (!intent) {
+    if (!quantityValid.value) return
+    intent = {
+      attempt: Symbol('mes-report-attempt'),
+      workOrderId,
+      operationTaskId,
+      intentKey: makeIdempotencyKey(),
+      payload: {
+        goodQuantity: goodQuantity.value,
+        scrapQuantity: scrapQuantity.value,
+        completesOperation: completesOperation.value,
+      },
+      status: 'pending',
+      result: null,
+    }
+    intents.set(key, intent)
+    intent = intents.get(key)!
+  } else {
+    intent.attempt = Symbol('mes-report-retry')
+    intent.status = 'pending'
+    intent.result = null
+  }
   ctx.quantityEntered = true
-  // 本次报工操作的稳定幂等键：首次提交铸造，重试复用同键。
-  if (operationKey.value === '') {
-    operationKey.value = makeIdempotencyKey()
-  }
-  const intentKey = operationKey.value
-  const submission: ActiveSubmission = {
-    token: Symbol('mes-report-submission'),
-    workOrderId,
-    operationTaskId,
-    intentKey,
-  }
-  activeSubmission.value = submission
-  const good = goodQuantity.value
-  const scrap = scrapQuantity.value
-  const completes = completesOperation.value
+  const attempt = intent.attempt
   try {
     const receiptEnvelope = await recordReport({
       workOrderId,
       operationTaskId,
-      goodQuantity: good,
-      scrapQuantity: scrap,
-      completesOperation: completes,
-      idempotencyKey: intentKey,
+      ...intent.payload,
+      idempotencyKey: intent.intentKey,
     })
-    if (!isCurrentSubmission(submission)) {
-      return
-    }
+    if (intent.attempt !== attempt) return
     if (!receiptEnvelope?.success) {
       throw new Error(receiptEnvelope?.message?.trim() || '报工回执无效，请重试。')
     }
     const receipt = receiptEnvelope.data
-    const description = [`${workOrderId} · ${operationTaskId}`]
-    if (receipt?.reportNo) description.push(`报工单号 ${receipt.reportNo}`)
-    if (receipt?.productionReportId) {
-      description.push(`回执 ID ${receipt.productionReportId}`)
+    const reportNo = receipt?.reportNo?.trim()
+    const productionReportId = receipt?.productionReportId?.trim()
+    if (!reportNo || !productionReportId) {
+      throw new Error('报工回执缺少真实报工单号或回执 ID，已阻止成功确认。')
     }
-    if (completes) description.push('本工序已标记完工')
-    ctx.recorded = true
-    result.value = {
+    const description = [`${workOrderId} · ${operationTaskId}`]
+    description.push(`报工单号 ${reportNo}`)
+    description.push(`回执 ID ${productionReportId}`)
+    if (intent.payload.completesOperation) description.push('本工序已标记完工')
+    intent.status = 'success'
+    intent.result = {
       status: 'success',
       title: '报工成功',
       description: description.join('；'),
     }
   } catch (e) {
-    if (!isCurrentSubmission(submission)) {
-      return
-    }
-    result.value = {
+    if (intent.attempt !== attempt) return
+    intent.status = 'error'
+    intent.result = {
       status: 'error',
       title: '报工失败',
       description: e instanceof Error ? e.message : '请检查网络后重试。',
     }
-  } finally {
-    if (activeSubmission.value?.token === submission.token) {
-      activeSubmission.value = null
-    }
   }
 }
 
-function isCurrentSubmission(submission: ActiveSubmission) {
-  return (
-    activeSubmission.value?.token === submission.token &&
-    pair.value?.workOrderId === submission.workOrderId &&
-    pair.value.operationTaskId === submission.operationTaskId &&
-    operationKey.value === submission.intentKey
-  )
-}
-
 function continueReport() {
-  // 重置整个流程，回到选工单
-  result.value = null
+  if (pairKey.value) intents.delete(pairKey.value)
   backToWorkOrders()
 }
 
 function goBack() {
-  result.value = null
   router.push('/').catch(() => {})
 }
 

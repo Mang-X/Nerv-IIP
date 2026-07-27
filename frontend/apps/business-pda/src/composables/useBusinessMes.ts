@@ -4,6 +4,7 @@ import {
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
+  getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
@@ -35,11 +36,13 @@ import {
   type BusinessConsoleMesReceiptRequestListEnvelope,
   type BusinessConsoleMesReceiptRequestRow,
   type BusinessConsoleMesWorkOrderItem,
+  type BusinessConsoleMesWorkOrderDetailEnvelope,
+  type BusinessConsoleMesWorkOrderDetailResponse,
   type BusinessConsoleMesWorkOrderListEnvelope,
   type BusinessConsoleRecordProductionReportRequest,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive, watchEffect } from 'vue'
+import { computed, reactive, watchEffect, type Ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 
 const DEFAULT_TAKE = 100
@@ -182,6 +185,31 @@ export function useMesWorkOrders() {
     pending: workOrdersQuery.isLoading,
     error: workOrdersQuery.error,
     refresh: workOrdersQuery.refetch,
+  }
+}
+
+export function useMesWorkOrderDetail(workOrderId: Readonly<Ref<string>>) {
+  const scope = bindAuthScope(reactive({ organizationId: '', environmentId: '' }))
+  const detailQuery = useQuery(() => {
+    const requestedId = workOrderId.value.trim()
+    return {
+      ...getBusinessConsoleMesWorkOrderDetailQueryOptions({
+        path: { workOrderId: requestedId },
+        query: scopeQuery(scope),
+      }),
+      enabled: hasScope(scope) && requestedId !== '',
+    }
+  })
+
+  return {
+    workOrder: computed<BusinessConsoleMesWorkOrderDetailResponse | undefined>(() =>
+      envelopeData<
+        BusinessConsoleMesWorkOrderDetailResponse,
+        BusinessConsoleMesWorkOrderDetailEnvelope
+      >(detailQuery.data.value),
+    ),
+    pending: detailQuery.isLoading,
+    error: detailQuery.error,
   }
 }
 

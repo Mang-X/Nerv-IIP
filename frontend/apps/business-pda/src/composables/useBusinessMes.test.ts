@@ -9,6 +9,7 @@ import {
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
+  getBusinessConsoleMesWorkOrderDetailQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   recordBusinessConsoleMesProductionReportMutationOptions,
@@ -21,6 +22,7 @@ import {
   useMesOperationTasks,
   useMesProductionReports,
   useMesReceipts,
+  useMesWorkOrderDetail,
   useMesWorkOrders,
 } from './useBusinessMes'
 
@@ -50,21 +52,54 @@ function mockMutationOptions(id: string) {
 }
 
 vi.mock('@nerv-iip/api-client', () => ({
-  listBusinessConsoleMesWorkOrdersQueryOptions: mockQueryOptions('listBusinessConsoleMesWorkOrders'),
-  getBusinessConsoleMesCurrentOperationSopsQueryOptions: mockQueryOptions('getBusinessConsoleMesCurrentOperationSops'),
-  listBusinessConsoleMesOperationTasksQueryOptions: mockQueryOptions('listBusinessConsoleMesOperationTasks'),
-  listBusinessConsoleMesProductionReportsQueryOptions: mockQueryOptions('listBusinessConsoleMesProductionReports'),
-  listBusinessConsoleMesMaterialIssueRequestsQueryOptions: mockQueryOptions('listBusinessConsoleMesMaterialIssueRequests'),
-  listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions: mockQueryOptions('listBusinessConsoleMesFinishedGoodsReceiptRequests'),
-  startBusinessConsoleMesOperationTaskMutationOptions: mockMutationOptions('startBusinessConsoleMesOperationTask'),
-  pauseBusinessConsoleMesOperationTaskMutationOptions: mockMutationOptions('pauseBusinessConsoleMesOperationTask'),
-  resumeBusinessConsoleMesOperationTaskMutationOptions: mockMutationOptions('resumeBusinessConsoleMesOperationTask'),
-  completeBusinessConsoleMesOperationTaskMutationOptions: mockMutationOptions('completeBusinessConsoleMesOperationTask'),
-  recordBusinessConsoleMesProductionReportMutationOptions: mockMutationOptions('recordBusinessConsoleMesProductionReport'),
-  createBusinessConsoleMesMaterialIssueRequestMutationOptions: mockMutationOptions('createBusinessConsoleMesMaterialIssueRequest'),
-  confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions: mockMutationOptions('confirmBusinessConsoleMesLineSideMaterialReceipt'),
-  createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions: mockMutationOptions('createBusinessConsoleMesFinishedGoodsReceiptRequest'),
-  createBusinessConsoleSopFileDownloadGrantMutationOptions: mockMutationOptions('createBusinessConsoleSopFileDownloadGrant'),
+  listBusinessConsoleMesWorkOrdersQueryOptions: mockQueryOptions(
+    'listBusinessConsoleMesWorkOrders',
+  ),
+  getBusinessConsoleMesCurrentOperationSopsQueryOptions: mockQueryOptions(
+    'getBusinessConsoleMesCurrentOperationSops',
+  ),
+  getBusinessConsoleMesWorkOrderDetailQueryOptions: mockQueryOptions(
+    'getBusinessConsoleMesWorkOrderDetail',
+  ),
+  listBusinessConsoleMesOperationTasksQueryOptions: mockQueryOptions(
+    'listBusinessConsoleMesOperationTasks',
+  ),
+  listBusinessConsoleMesProductionReportsQueryOptions: mockQueryOptions(
+    'listBusinessConsoleMesProductionReports',
+  ),
+  listBusinessConsoleMesMaterialIssueRequestsQueryOptions: mockQueryOptions(
+    'listBusinessConsoleMesMaterialIssueRequests',
+  ),
+  listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions: mockQueryOptions(
+    'listBusinessConsoleMesFinishedGoodsReceiptRequests',
+  ),
+  startBusinessConsoleMesOperationTaskMutationOptions: mockMutationOptions(
+    'startBusinessConsoleMesOperationTask',
+  ),
+  pauseBusinessConsoleMesOperationTaskMutationOptions: mockMutationOptions(
+    'pauseBusinessConsoleMesOperationTask',
+  ),
+  resumeBusinessConsoleMesOperationTaskMutationOptions: mockMutationOptions(
+    'resumeBusinessConsoleMesOperationTask',
+  ),
+  completeBusinessConsoleMesOperationTaskMutationOptions: mockMutationOptions(
+    'completeBusinessConsoleMesOperationTask',
+  ),
+  recordBusinessConsoleMesProductionReportMutationOptions: mockMutationOptions(
+    'recordBusinessConsoleMesProductionReport',
+  ),
+  createBusinessConsoleMesMaterialIssueRequestMutationOptions: mockMutationOptions(
+    'createBusinessConsoleMesMaterialIssueRequest',
+  ),
+  confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions: mockMutationOptions(
+    'confirmBusinessConsoleMesLineSideMaterialReceipt',
+  ),
+  createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions: mockMutationOptions(
+    'createBusinessConsoleMesFinishedGoodsReceiptRequest',
+  ),
+  createBusinessConsoleSopFileDownloadGrantMutationOptions: mockMutationOptions(
+    'createBusinessConsoleSopFileDownloadGrant',
+  ),
 }))
 
 vi.mock('@pinia/colada', () => ({
@@ -96,6 +131,7 @@ vi.mock('@pinia/colada', () => ({
   }),
   useQueryCache: vi.fn(() => ({
     invalidateQueries: vi.fn().mockResolvedValue(undefined),
+    cancelQueries: vi.fn().mockResolvedValue(undefined),
   })),
 }))
 
@@ -128,9 +164,15 @@ describe('pda useBusinessMes composables', () => {
     expect(listBusinessConsoleMesWorkOrdersQueryOptions).toHaveBeenCalledWith({
       query: expect.objectContaining({ organizationId: '', environmentId: '' }),
     })
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleMesWorkOrders')?.enabled).toBe(false)
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleMesOperationTasks')?.enabled).toBe(false)
-    expect(coladaState.queryOptionsById.get('getBusinessConsoleMesCurrentOperationSops')?.enabled).toBe(false)
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleMesWorkOrders')?.enabled).toBe(
+      false,
+    )
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleMesOperationTasks')?.enabled).toBe(
+      false,
+    )
+    expect(
+      coladaState.queryOptionsById.get('getBusinessConsoleMesCurrentOperationSops')?.enabled,
+    ).toBe(false)
   })
 
   it('enables list queries once a principal scope is present', () => {
@@ -142,20 +184,39 @@ describe('pda useBusinessMes composables', () => {
     expect(coladaState.queryOptionsById.get('listBusinessConsoleMesWorkOrders')?.enabled).toBe(true)
   })
 
+  it('uses the exact strong-ID work-order detail query for report route identity', () => {
+    const workOrderId = shallowRef('WO-OUTSIDE-101')
+    useMesWorkOrderDetail(workOrderId)
+
+    expect(getBusinessConsoleMesWorkOrderDetailQueryOptions).toHaveBeenCalledWith({
+      path: { workOrderId: 'WO-OUTSIDE-101' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+    })
+    expect(coladaState.queryOptionsById.get('getBusinessConsoleMesWorkOrderDetail')?.enabled).toBe(
+      true,
+    )
+  })
+
   it('queries current operation SOPs only after operation code is selected', () => {
     coladaState.queryDataById.set('getBusinessConsoleMesCurrentOperationSops', {
       success: true,
       data: {
-        items: [{ documentNumber: 'SOP-10', revision: 'A', operationCode: 'OP-10', fileId: 'file-10' }],
+        items: [
+          { documentNumber: 'SOP-10', revision: 'A', operationCode: 'OP-10', fileId: 'file-10' },
+        ],
       },
     })
     const sops = useMesCurrentOperationSops()
 
-    expect(coladaState.queryOptionsById.get('getBusinessConsoleMesCurrentOperationSops')?.enabled).toBe(false)
+    expect(
+      coladaState.queryOptionsById.get('getBusinessConsoleMesCurrentOperationSops')?.enabled,
+    ).toBe(false)
 
     sops.filters.operationCode = ' OP-10 '
     sops.filters.workCenterCode = ' WC-10 '
-    const options = coladaState.queryFactoriesById.get('getBusinessConsoleMesCurrentOperationSops')?.()
+    const options = coladaState.queryFactoriesById.get(
+      'getBusinessConsoleMesCurrentOperationSops',
+    )?.()
 
     expect(getBusinessConsoleMesCurrentOperationSopsQueryOptions).toHaveBeenLastCalledWith({
       query: {
@@ -252,7 +313,9 @@ describe('pda useBusinessMes composables', () => {
     await confirmLineSideReceipt('req-2', { receivedQuantity: 4, idempotencyKey: 'op-confirm-1' })
 
     expect(confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions).toHaveBeenCalled()
-    const mutateAsync = coladaState.mutateById.get('confirmBusinessConsoleMesLineSideMaterialReceipt')
+    const mutateAsync = coladaState.mutateById.get(
+      'confirmBusinessConsoleMesLineSideMaterialReceipt',
+    )
     const payload = mutateAsync!.mock.calls[0][0]
     expect(payload.path).toEqual({ requestId: 'req-2' })
     expect(payload.body).toMatchObject({ receivedQuantity: 4 })
@@ -272,7 +335,9 @@ describe('pda useBusinessMes composables', () => {
     })
 
     expect(createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions).toHaveBeenCalled()
-    const mutateAsync = coladaState.mutateById.get('createBusinessConsoleMesFinishedGoodsReceiptRequest')
+    const mutateAsync = coladaState.mutateById.get(
+      'createBusinessConsoleMesFinishedGoodsReceiptRequest',
+    )
     const payload = mutateAsync!.mock.calls[0][0]
     expect(payload.body).toMatchObject({
       organizationId: 'org-001',
@@ -327,7 +392,9 @@ describe('pda useBusinessMes composables', () => {
       requestedAtUtc: '1999-01-01T00:00:00.000Z',
     } as never)
 
-    const mutateAsync = coladaState.mutateById.get('createBusinessConsoleMesFinishedGoodsReceiptRequest')
+    const mutateAsync = coladaState.mutateById.get(
+      'createBusinessConsoleMesFinishedGoodsReceiptRequest',
+    )
     const payload = mutateAsync!.mock.calls[0][0]
     expect(payload.body.organizationId).toBe('org-001')
     expect(payload.body.environmentId).toBe('env-dev')
