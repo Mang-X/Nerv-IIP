@@ -23,7 +23,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
      （AppShellMobile / ScanBar / ListRow / BottomSheet / Result，经 `/design-system/gallery` 画廊页载体）
      的真实交互、WMS/MES/设备运维三域业务链路 smoke，以及视觉/布局 smoke。
 
-### e2e spec 清单（5 个 spec / 27 个用例）
+### e2e spec 清单（5 个 spec / 29 个用例）
 
 - `e2e/app-flow.spec.ts`（5）：登录落地工作台；登录失败留在登录路由并透出错误；
   首页扫码条/空态/应用墙 + 无溢出 + 触控尺寸；应用墙入口跳转作业页；
@@ -34,8 +34,13 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   AppShellMobile 安全区 fallback 最小内边距；暗色 token 接线（`.dark` + body 深色背景）。
 - `e2e/wms.spec.ts`（4）：收货入库选单确认 → 成功结果；盘点录数确认 → 成功结果；
   拣货只读中文状态（无裸 code/GUID）；首页应用墙 → `/wms/inbound`。
-- `e2e/mes.spec.ts`（5）：工序执行完成（二次确认）→ 成功结果；报工全链 → 成功结果；
-  领料列表渲染；完工入库列表渲染；首页应用墙 → `/mes/operation`。
+- `e2e/mes.spec.ts`（7）：工序执行完成（二次确认）→ 成功结果；报工全链 → 成功结果并
+  核对 POST 的工单/工序 pair 与真实回执；携带 `workOrderId + operationTaskId` 的 router
+  pair 切换、延迟旧详情请求及浏览器 back/forward 重绑；详情前 500 项不含目标时，
+  以同工单分页精确解析第 501 个工序任务；领料列表渲染；完工入库列表渲染；首页应用墙
+  → `/mes/operation`。URL history 用例在单测试内部显式控制旧详情请求的启动与释放，
+  通过已挂载应用的 router 创建 A/B history entries，并在失败路径也释放拦截请求；无需降低
+  默认并行度。
 - `e2e/equipment.spec.ts`（5）：报修在 375×812 下覆盖报警路由预填 → 扫码覆盖 →
   设备 facade 服务端 keyword/分页选择稳定 ID、优先级 ActionSheet、48px 触点、无横向溢出，
   并用缩短 viewport 的 mock Chromium 证据验证 textarea 聚焦后提交动作仍可达且仅产生一次 POST
