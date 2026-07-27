@@ -65,8 +65,8 @@ describe('空值占位约定', () => {
     const wrapper = mount(NvDataTable, {
       props: {
         columns: [
-          { key: 'code', label: '编码' },
-          { key: 'status', label: '状态' },
+          { key: 'code', header: '编码' },
+          { key: 'status', header: '状态' },
         ],
         rows: [{ code: 'SC-001', status: null }],
         rowKey: 'code',
