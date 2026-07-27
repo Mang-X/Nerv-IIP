@@ -83,7 +83,8 @@ const { page, pageSize, pageSizeNumber, resetPage } = usePagedList(filters, {
 const { resources: workCenters } = useBusinessMasterDataResources('work-center')
 const { resources: shifts } = useBusinessMasterDataResources('shift')
 const { workers } = useBusinessWorkers({ employmentStatus: 'active' })
-const { resolveShiftLabel, resolveWorkCenter } = useMesDisplayNames()
+// 必须传 shifts:true，否则班次名录恒为空、resolveShiftLabel 只会把 shiftId 原样回吐到界面上。
+const { resolveShiftLabel, resolveWorkCenter } = useMesDisplayNames({ shifts: true })
 
 // 关键字打后端（facade 支持 keyword），去抖避免每敲一个字发一次请求。
 watchDebounced(

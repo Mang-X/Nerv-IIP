@@ -5,6 +5,8 @@ import {
   useBusinessWorkers,
 } from '@/composables/useBusinessMasterData'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
+import { useSkillCatalog } from '@/composables/usePromotedCatalogs'
+import { labelFor, SKILL_LEVEL_LABELS } from '@/data/businessLabels'
 import { resolveDispatchAffordance } from '@/composables/mes/useMesTaskSemantics'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
@@ -96,8 +98,25 @@ const {
 const { resources: devices, resourcesPending: devicesPending } =
   useBusinessMasterDataResources('device-asset')
 const { resources: shifts } = useBusinessMasterDataResources('shift')
-const { resources: skills } = useBusinessMasterDataResources('personnel-skill')
-const { resolveShiftLabel, resolveWorkCenter } = useMesDisplayNames()
+// 技能筛选取「技能目录」主数据（skillCode + 中文 skillName）。
+// 曾踩坑：这里取的是「人员技能矩阵」资源，其 code 是 `userId:skillCode` 复合键、
+// displayName 是熟练度等级（senior/intermediate…），既把英文等级摆上下拉，
+// 又让服务端按 SkillCode 的筛选永远命不中。
+const { skills } = useSkillCatalog()
+const { resolveWorkCenter } = useMesDisplayNames()
+
+const shiftNameByCode = computed(() => {
+  const map = new Map<string, string>()
+  for (const shift of shifts.value) {
+    if (shift.code) map.set(shift.code, shift.displayName ?? shift.code)
+  }
+  return map
+})
+/** 班次展示串：查得到就显中文班次名，查不到显原值，没值显「未排班」。 */
+function shiftLabel(value?: string | null): string {
+  if (!value) return '未排班'
+  return shiftNameByCode.value.get(value) ?? value
+}
 
 const targetWorkCenter = computed(
   () => props.target?.workCenterCode ?? props.target?.workCenterId ?? undefined,
@@ -270,8 +289,12 @@ function formatDateTime(value?: string | null) {
                 <NvSelectTrigger id="assign-skill"><NvSelectValue /></NvSelectTrigger>
                 <NvSelectContent>
                   <NvSelectItem value="all">不限技能</NvSelectItem>
-                  <NvSelectItem v-for="s in skills" :key="s.code ?? ''" :value="s.code ?? ''">
-                    {{ s.displayName ?? s.code }}
+                  <NvSelectItem
+                    v-for="s in skills"
+                    :key="s.skillCode ?? ''"
+                    :value="s.skillCode ?? ''"
+                  >
+                    {{ s.skillName ?? s.skillCode }}
                   </NvSelectItem>
                 </NvSelectContent>
               </NvSelect>
@@ -296,7 +319,8 @@ function formatDateTime(value?: string | null) {
             />
             <div v-if="selectedWorkerSkills.length" class="flex flex-wrap gap-1.5">
               <NvBadge v-for="s in selectedWorkerSkills" :key="s.skillCode ?? ''" variant="neutral">
-                {{ s.skillName }}<template v-if="s.level"> · {{ s.level }}</template>
+                {{ s.skillName
+                }}<template v-if="s.level"> · {{ labelFor(SKILL_LEVEL_LABELS, s.level) }}</template>
               </NvBadge>
             </div>
             <p
@@ -331,7 +355,7 @@ function formatDateTime(value?: string | null) {
               <NvFieldLabel for="assign-shift">班次</NvFieldLabel>
               <NvSelect v-model="shiftId">
                 <NvSelectTrigger id="assign-shift">
-                  <NvSelectValue :placeholder="resolveShiftLabel(target?.shiftId)" />
+                  <NvSelectValue :placeholder="shiftLabel(target?.shiftId)" />
                 </NvSelectTrigger>
                 <NvSelectContent>
                   <NvSelectItem v-for="s in shifts" :key="s.code ?? ''" :value="s.code ?? ''">

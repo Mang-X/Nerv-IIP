@@ -120,6 +120,16 @@ export const QUALITY_SOURCE_TYPE_LABELS: Readonly<Record<string, string>> = {
   audit: '审核抽检',
 }
 
+/** 人员技能熟练度（人员技能矩阵 level）。 */
+export const SKILL_LEVEL_LABELS: Readonly<Record<string, string>> = {
+  trainee: '实习',
+  junior: '初级',
+  intermediate: '中级',
+  senior: '高级',
+  expert: '专家',
+  certified: '持证',
+}
+
 /** 编码规则版本状态。 */
 export const CODE_RULE_VERSION_LABELS: Readonly<Record<string, string>> = {
   draft: '草稿',
