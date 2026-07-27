@@ -13,6 +13,7 @@ import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useBusinessApproval } from '@/composables/useBusinessApproval'
 import { useBusinessMasterDataResources, useBusinessWorkers } from '@/composables/useBusinessMasterData'
 import { APPROVAL_DOCUMENT_TYPE_OPTIONS } from '@/data/approvalReference'
+import { APPROVAL_DECISION_LABELS, DOCUMENT_TYPE_LABELS, labelFor } from '@/data/businessLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -226,7 +227,11 @@ const taskColumns: NvDataTableColumn<BusinessConsoleApprovalTaskItem>[] = [
     header: '当前步骤',
     accessor: (row) => row.stepName ?? `第 ${row.stepNo ?? '—'} 步`,
   },
-  { key: 'documentType', header: '单据类型', accessor: (row) => row.documentType ?? '—' },
+  {
+    key: 'documentType',
+    header: '单据类型',
+    accessor: (row) => documentTypeLabel(row.documentType, '—'),
+  },
   { key: 'dueAtUtc', header: '到期时间', accessor: (row) => formatDateTime(row.dueAtUtc) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
@@ -259,7 +264,7 @@ const delegationColumns: NvDataTableColumn<BusinessConsoleApprovalDelegationItem
   {
     key: 'documentType',
     header: '单据范围',
-    accessor: (row) => row.documentType ?? '全部业务单据',
+    accessor: (row) => documentTypeLabel(row.documentType, '全部业务单据'),
   },
   { key: 'status', header: '状态', width: 'w-24' },
   {
@@ -277,7 +282,11 @@ const templateColumns: NvDataTableColumn<BusinessConsoleApprovalTemplateItem>[] 
     cellClass: 'font-medium',
     accessor: (row) => row.templateCode ?? '—',
   },
-  { key: 'documentType', header: '单据类型', accessor: (row) => row.documentType ?? '—' },
+  {
+    key: 'documentType',
+    header: '单据类型',
+    accessor: (row) => documentTypeLabel(row.documentType, '—'),
+  },
   { key: 'version', header: '版本', width: 'w-20', accessor: (row) => String(row.version ?? '—') },
   { key: 'isActive', header: '状态', width: 'w-24' },
   { key: 'steps', header: '步骤', accessor: (row) => `${row.steps?.length ?? 0} 步` },
@@ -325,9 +334,15 @@ const decisionContextItems = computed(() => {
   ]
 })
 
+/** 单据类型码值 → 中文（`purchase-order` → 采购订单）；词表没有的原样显示，不编造。 */
+function documentTypeLabel(value?: string | null, fallback = '业务单据') {
+  return labelFor(DOCUMENT_TYPE_LABELS, value, fallback)
+}
+
 function documentLabel(row: { documentType?: string | null; documentId?: string | null }) {
   const id = row.documentId ?? ''
-  return id ? `${row.documentType ?? '业务单据'} · ${id}` : (row.documentType ?? '业务单据')
+  const type = documentTypeLabel(row.documentType)
+  return id ? `${type} · ${id}` : type
 }
 
 function rowKey(row: Record<string, unknown>) {
@@ -732,7 +747,12 @@ function toIsoFromLocalInput(value: string) {
             @update:page="decisionPager.page.value = $event"
             @update:page-size="(v) => (decisionPager.pageSize.value = String(v))"
           >
-            <template #cell-decision="{ row }"><NvStatusBadge :value="row.decision" /></template>
+            <template #cell-decision="{ row }">
+              <NvStatusBadge
+                :value="row.decision"
+                :label="labelFor(APPROVAL_DECISION_LABELS, row.decision, '—')"
+              />
+            </template>
           </NvDataTable>
         </NvTabsContent>
 
