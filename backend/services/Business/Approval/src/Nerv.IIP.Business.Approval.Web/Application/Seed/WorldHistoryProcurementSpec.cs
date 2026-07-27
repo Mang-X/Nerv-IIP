@@ -1,13 +1,21 @@
-using Nerv.IIP.Business.Erp.Domain.AggregatesModel.GLAccountAggregate;
-
-namespace Nerv.IIP.Business.Erp.Web.Application.Seed;
+namespace Nerv.IIP.Business.Approval.Web.Application.Seed;
 
 /// <summary>
-/// L1 背景历史的 **ERP 独有**形状：采购节奏（设定集 §7「约 480 张采购订单，补货节奏与生产量匹配」）
-/// 与凭证用的中文科目表。销售侧的跨服务共享形状在 <see cref="WorldHistorySpec"/>。
+/// L1 背景历史的 **采购节奏共享形状**（设定集 §7「约 480 张采购订单，补货节奏与生产量匹配」）。
+///
+/// 审批域与一期 ERP、二期质量域共用同一 <c>(asOfDate, scale)</c> 纯函数：三侧调用
+/// <see cref="BuildPurchasePlans"/> 必须逐字段得到与 ERP <c>WorldHistoryErpSpec</c> 相同的采购计划表，
+/// 于是「采购单 <c>PO-2026-####</c> → 采购订单审批链」在两个库里指向同一批事实，
+/// 而不需要任何跨服务查询或外键。
+///
+/// 与 <c>WorldHistoryCalendar</c> 一样按同一字面量重复声明，各侧有黄金向量测试防止漂移。
+/// 一期 ERP 侧的对应字面量在 <c>WorldHistoryErpSpec</c>，质量侧在 <c>WorldHistoryProcurementSpec</c>。
 /// </summary>
-public static class WorldHistoryErpSpec
+public static class WorldHistoryProcurementSpec
 {
+    /// <summary>采购单号（设定集 §9 号段 <c>PO-2026-####</c>），与 ERP <c>WorldHistorySpec.PurchaseOrderNo</c> 同字面量。</summary>
+    public static string PurchaseOrderNo(int index) => $"PO-2026-{index:D4}";
+
     /// <summary>
     /// 采购单量按销售订单量的 15% 派生——这就是「补货节奏与生产量匹配」的实现：
     /// 春节低谷、月末冲量的曲线自动传导到采购侧，无需第二套节奏参数。
@@ -50,10 +58,10 @@ public static class WorldHistoryErpSpec
     /// <summary>采购品类抽样权重：结构件用量最大，包材次之。</summary>
     public static readonly IReadOnlyList<int> PurchaseCategoryWeights = [5, 5, 4, 3, 2, 3];
 
-    /// <summary>单张历史采购单的确定性内容。</summary>
+    /// <summary>单张历史采购单的确定性内容（与 ERP <c>WorldHistoryErpSpec.BuildPurchasePlan</c> 同字面量）。</summary>
     public static WorldHistoryPurchasePlan BuildPurchasePlan(int index, DateOnly orderDate, DateOnly asOfDate)
     {
-        var purchaseOrderNo = WorldHistorySpec.PurchaseOrderNo(index);
+        var purchaseOrderNo = PurchaseOrderNo(index);
         var random = new WorldHistoryRandom(purchaseOrderNo);
         var category = random.PickWeighted(PurchaseCategories, PurchaseCategoryWeights);
         var supplierCode = random.Pick(category.SupplierCodes);
@@ -73,7 +81,6 @@ public static class WorldHistoryErpSpec
         return new WorldHistoryPurchasePlan(
             Index: index,
             PurchaseOrderNo: purchaseOrderNo,
-            PurchaseReceiptNo: WorldHistorySpec.PurchaseReceiptNo(index),
             SupplierCode: supplierCode,
             SkuCode: skuCode,
             UomCode: category.UomCode,
@@ -82,64 +89,34 @@ public static class WorldHistoryErpSpec
             OrderDate: snapped,
             PromisedDate: promisedDate,
             ReceiptDate: receiptDate,
-            // 约 12% 的采购单尚未收货（在途），其余走完「收货→检验合格」链路。
             IsReceived: !random.Chance(0.12));
     }
 
-    #region 经营对象（采购申请 / 询价 / 供应商报价 / 销售机会 / 成本候选）
-
-    /// <summary>采购申请号段：<c>PR-2026-</c> 已被收货单占用，申请单用 <c>PRQ-</c> 前缀。</summary>
-    public static string PurchaseRequisitionNo(int index) => $"PRQ-2026-{index:D4}";
-
-    public static string RfqNo(int index) => $"RFQ-2026-{index:D4}";
-
-    /// <summary>同一 RFQ 的多家报价用 -A/-B 区分（供应商按品类内顺序）。</summary>
-    public static string SupplierQuotationNo(int index, int supplierOrdinal) =>
-        $"SQ-2026-{index:D4}-{(char)('A' + supplierOrdinal)}";
-
-    public static string OpportunityNo(int index) => $"OPP-2026-{index:D4}";
-    public static string CostCandidateNo(int index) => $"COST-2026-{index:D4}";
-
-    /// <summary>采购申请的 MRP 建议引用：跨服务只靠业务编码引用 DemandPlanning 的建议流。</summary>
-    public static string MrpSuggestionId(int index) => $"MRP-SUG-2026-{index:D4}";
-
-    /// <summary>每 6 张采购单走一次询价→报价流程（框架内直采为主、周期性询比价为辅）。</summary>
-    public const int RfqEveryNthPurchase = 6;
-
-    /// <summary>每 40 张销售订单前置一个销售机会（大客户框架/新平台意向）。</summary>
-    public const int OpportunityEveryNthSalesOrder = 40;
-
-    /// <summary>每 8 张已收货采购单进入一次成本归集候选。</summary>
-    public const int CostCandidateEveryNthReceipt = 8;
-
-    /// <summary>未转化的在途采购申请条数：随规模缩放，至少 3 条（列表页的"待处理"故事）。</summary>
-    public static int OpenRequisitionCount(int totalPurchaseOrders) =>
-        Math.Max(3, (int)Math.Round(totalPurchaseOrders * 0.03, MidpointRounding.AwayFromZero));
-
-    /// <summary>按物料码回查采购品类（各品类物料码不相交）。</summary>
-    public static WorldHistoryPurchaseCategory CategoryOf(string skuCode) =>
-        PurchaseCategories.Single(category => category.MaterialSkuCodes.Contains(skuCode));
-
-    #endregion
-
-    #region 中文科目表
-
-    public const string ReceivableAccountCode = "1122";
-    public const string BankAccountCode = "1002";
-    public const string RevenueAccountCode = "6001";
-
     /// <summary>
-    /// 凭证用到的三个科目。ERP 的 <c>ApplicationDbContext</c> 会为凭证行自动补建缺失科目，
-    /// 但自动补建的科目名等于科目编码；这里预先建好中文名，避免演示页面出现「1122」当名字。
+    /// 全量采购计划表。与一期 ERP / 二期质量域同字面量：三侧必须逐字段得到同一张表，
+    /// 否则采购订单审批链会指向不存在的采购单。
     /// </summary>
-    public static readonly IReadOnlyList<WorldHistoryGlAccount> GlAccounts =
-    [
-        new(ReceivableAccountCode, "应收账款", GLAccountType.Asset),
-        new(BankAccountCode, "银行存款", GLAccountType.Asset),
-        new(RevenueAccountCode, "主营业务收入", GLAccountType.Revenue),
-    ];
+    public static IReadOnlyList<WorldHistoryPurchasePlan> BuildPurchasePlans(DateOnly asOfDate, double scale)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(scale);
+        var plans = new List<WorldHistoryPurchasePlan>();
+        var weeks = WorldHistoryCalendar.WeekCount(asOfDate);
+        var index = 0;
+        for (var week = 0; week < weeks; week++)
+        {
+            var volume = WeeklyPurchaseOrderVolume(week, scale);
+            var weekStart = WorldHistoryCalendar.WeekStart(week);
+            for (var slot = 0; slot < volume; slot++)
+            {
+                index++;
+                var candidate = weekStart.AddDays(Math.Min(slot * 6 / Math.Max(volume, 1), 5));
+                var orderDate = candidate > asOfDate ? asOfDate : candidate;
+                plans.Add(BuildPurchasePlan(index, orderDate, asOfDate));
+            }
+        }
 
-    #endregion
+        return plans;
+    }
 }
 
 public sealed record WorldHistoryPurchaseCategory(
@@ -156,7 +133,6 @@ public sealed record WorldHistoryPurchaseCategory(
 public sealed record WorldHistoryPurchasePlan(
     int Index,
     string PurchaseOrderNo,
-    string PurchaseReceiptNo,
     string SupplierCode,
     string SkuCode,
     string UomCode,
@@ -169,5 +145,3 @@ public sealed record WorldHistoryPurchasePlan(
 {
     public decimal TotalAmount => Quantity * UnitPrice;
 }
-
-public sealed record WorldHistoryGlAccount(string Code, string Name, GLAccountType Type);

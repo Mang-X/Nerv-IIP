@@ -1,4 +1,4 @@
-namespace Nerv.IIP.Business.Erp.Web.Application.Seed;
+namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Seed;
 
 /// <summary>
 /// 《工厂世界观设定集》L1 背景历史的**跨服务共享形状**（设定集 §7 / §9）。

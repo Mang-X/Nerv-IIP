@@ -1661,6 +1661,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     serialNo?: string | null;
     attemptNumber?: number | null;
     reinspectionOfInspectionRecordId?: string | null;
+    closeReason?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListRequest = {
@@ -1835,6 +1836,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     sourceInspectionRecordId?: string | null;
     dispositionType?: string | null;
     dispositionApprovalChainId?: string | null;
+    closeReason?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrDetailRequest = {

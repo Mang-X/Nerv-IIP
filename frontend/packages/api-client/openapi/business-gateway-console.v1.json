@@ -30449,6 +30449,10 @@
           "reinspectionOfInspectionRecordId": {
             "type": "string",
             "nullable": true
+          },
+          "closeReason": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -31070,6 +31074,10 @@
             "nullable": true
           },
           "dispositionApprovalChainId": {
+            "type": "string",
+            "nullable": true
+          },
+          "closeReason": {
             "type": "string",
             "nullable": true
           }

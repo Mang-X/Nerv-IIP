@@ -25,7 +25,9 @@ public sealed record NonconformanceReportResponse(
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
     // 权威业务关系：从检验开出的 NCR 回链其来源检验记录（记录 ↔ NCR 双向互查的服务端事实）。
-    string? SourceInspectionRecordId = null);
+    string? SourceInspectionRecordId = null,
+    // 关单审计事实：closed 状态必有关闭原因（界面必填），读面一并回显。
+    string? CloseReason = null);
 
 public sealed record ListNonconformanceReportsResponse(IReadOnlyCollection<NonconformanceReportResponse> Items, int Total);
 
@@ -121,6 +123,7 @@ public sealed class ListNonconformanceReportsQueryHandler(ApplicationDbContext d
             ncr.AttachmentFileIds,
             ncr.CreatedAtUtc,
             ncr.UpdatedAtUtc,
-            ncr.SourceInspectionRecordId == null ? null : ncr.SourceInspectionRecordId.ToString());
+            ncr.SourceInspectionRecordId == null ? null : ncr.SourceInspectionRecordId.ToString(),
+            ncr.CloseReason);
     }
 }

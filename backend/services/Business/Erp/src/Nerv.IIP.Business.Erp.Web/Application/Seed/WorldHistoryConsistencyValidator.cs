@@ -46,6 +46,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         CheckChainPerOrder(plansByOrderNo, orders, deliveries, receivables, cashReceipts, voucherNos, asOfDate, failures);
         CheckDistribution(plans, failures);
         CheckLedgerTotals(orders, deliveries, receivables, cashReceipts, failures);
+        await CheckBusinessObjectsAsync(organizationId, environmentId, plans, asOfDate, scale, failures, cancellationToken);
 
         if (failures.Count > 0)
         {
@@ -59,6 +60,131 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             CashReceiptsChecked: cashReceipts.Count,
             VouchersChecked: voucherNos.Count,
             Sample: BuildSample(plans, orders, deliveries, receivables, cashReceipts));
+    }
+
+    /// <summary>
+    /// 经营对象链（采购申请/询价/供应商报价/销售机会/成本候选，演示走查缺口）：
+    /// 每张历史采购单必有已转化申请且转化引用正确；询比价单必收齐品类内全部供应商报价；
+    /// 在途申请条数与公式一致；成本候选引用真实收货单；销售机会与订单计划配对。
+    /// </summary>
+    private async Task CheckBusinessObjectsAsync(
+        string organizationId,
+        string environmentId,
+        IReadOnlyList<WorldHistoryOrderPlan> salesPlans,
+        DateOnly asOfDate,
+        double scale,
+        List<string> failures,
+        CancellationToken cancellationToken)
+    {
+        var purchasePlans = WorldHistorySeedService.BuildPurchasePlans(asOfDate, scale);
+
+        var requisitionRows = await dbContext.PurchaseRequisitions
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                x.RequisitionNo.StartsWith("PRQ-2026-"))
+            .Select(x => new { x.RequisitionNo, x.Status, x.ConvertedPurchaseOrderNo })
+            .ToArrayAsync(cancellationToken);
+        foreach (var duplicated in requisitionRows
+            .GroupBy(x => x.RequisitionNo, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1))
+        {
+            failures.Add($"采购申请号 {duplicated.Key} 出现 {duplicated.Count()} 条重复（在途申请转化路径失效？）。");
+        }
+
+        var requisitions = requisitionRows
+            .GroupBy(x => x.RequisitionNo, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+
+        foreach (var plan in purchasePlans)
+        {
+            var requisitionNo = WorldHistoryErpSpec.PurchaseRequisitionNo(plan.Index);
+            if (!requisitions.TryGetValue(requisitionNo, out var requisition))
+            {
+                failures.Add($"{plan.PurchaseOrderNo} 缺少前置采购申请 {requisitionNo}。");
+                continue;
+            }
+
+            if (requisition.Status != Domain.AggregatesModel.PurchaseRequisitionAggregate.PurchaseRequisitionStatus.Converted ||
+                !string.Equals(requisition.ConvertedPurchaseOrderNo, plan.PurchaseOrderNo, StringComparison.Ordinal))
+            {
+                failures.Add($"{requisitionNo} 未正确转化到 {plan.PurchaseOrderNo}（状态 {requisition.Status}，引用 '{requisition.ConvertedPurchaseOrderNo}'）。");
+            }
+        }
+
+        var expectedOpen = WorldHistoryErpSpec.OpenRequisitionCount(purchasePlans.Count);
+        var openCount = requisitions.Values.Count(x =>
+            x.Status == Domain.AggregatesModel.PurchaseRequisitionAggregate.PurchaseRequisitionStatus.Open);
+        if (openCount != expectedOpen)
+        {
+            failures.Add($"在途采购申请 {openCount} 条，与公式期望 {expectedOpen} 条不符。");
+        }
+
+        var quotationCountsByRfq = (await dbContext.SupplierQuotations
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                x.QuotationNo.StartsWith("SQ-2026-"))
+            .GroupBy(x => x.RfqNo)
+            .Select(group => new { RfqNo = group.Key, Count = group.Count() })
+            .ToArrayAsync(cancellationToken))
+            .ToDictionary(x => x.RfqNo, x => x.Count, StringComparer.Ordinal);
+        var rfqNos = (await dbContext.RequestForQuotations
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                x.RfqNo.StartsWith("RFQ-2026-"))
+            .Select(x => x.RfqNo)
+            .ToArrayAsync(cancellationToken))
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var plan in purchasePlans.Where(x => x.Index % WorldHistoryErpSpec.RfqEveryNthPurchase == 1))
+        {
+            var rfqNo = WorldHistoryErpSpec.RfqNo(plan.Index);
+            if (!rfqNos.Contains(rfqNo))
+            {
+                failures.Add($"{plan.PurchaseOrderNo} 应有询价单 {rfqNo} 却未落库。");
+                continue;
+            }
+
+            var expectedQuotes = WorldHistoryErpSpec.CategoryOf(plan.SkuCode).SupplierCodes.Count;
+            if (!quotationCountsByRfq.TryGetValue(rfqNo, out var quotes) || quotes != expectedQuotes)
+            {
+                failures.Add($"{rfqNo} 供应商报价 {quotationCountsByRfq.GetValueOrDefault(rfqNo)} 份，应为品类内 {expectedQuotes} 家。");
+            }
+        }
+
+        var costCandidates = (await dbContext.CostCandidates
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                x.CandidateNo.StartsWith("COST-2026-"))
+            .Select(x => new { x.CandidateNo, x.SourceDocumentNo })
+            .ToArrayAsync(cancellationToken))
+            .ToDictionary(x => x.CandidateNo, x => x.SourceDocumentNo, StringComparer.Ordinal);
+        foreach (var plan in purchasePlans.Where(x =>
+            x.IsReceived && x.Index % WorldHistoryErpSpec.CostCandidateEveryNthReceipt == 0))
+        {
+            var candidateNo = WorldHistoryErpSpec.CostCandidateNo(plan.Index);
+            if (!costCandidates.TryGetValue(candidateNo, out var sourceDocumentNo) ||
+                !string.Equals(sourceDocumentNo, plan.PurchaseReceiptNo, StringComparison.Ordinal))
+            {
+                failures.Add($"{candidateNo} 缺失或未引用收货单 {plan.PurchaseReceiptNo}。");
+            }
+        }
+
+        var opportunities = (await dbContext.Opportunities
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                x.OpportunityNo.StartsWith("OPP-2026-"))
+            .Select(x => new { x.OpportunityNo, x.CustomerCode })
+            .ToArrayAsync(cancellationToken))
+            .ToDictionary(x => x.OpportunityNo, x => x.CustomerCode, StringComparer.Ordinal);
+        foreach (var plan in salesPlans.Where(x => x.Index % WorldHistoryErpSpec.OpportunityEveryNthSalesOrder == 1))
+        {
+            var opportunityNo = WorldHistoryErpSpec.OpportunityNo(plan.Index);
+            if (!opportunities.TryGetValue(opportunityNo, out var customerCode) ||
+                !string.Equals(customerCode, plan.CustomerCode, StringComparison.Ordinal))
+            {
+                failures.Add($"{opportunityNo} 缺失或客户 '{opportunities.GetValueOrDefault(opportunityNo)}' 与订单计划 {plan.CustomerCode} 不符。");
+            }
+        }
     }
 
     #region 载入紧凑投影

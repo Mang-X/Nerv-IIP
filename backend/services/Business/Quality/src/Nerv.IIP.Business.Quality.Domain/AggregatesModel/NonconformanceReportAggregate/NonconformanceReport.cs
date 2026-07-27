@@ -281,7 +281,7 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         CompleteScrapDisposition(scrapMovementId, -DefectQuantity);
     }
 
-    public void CompleteScrapDisposition(string scrapMovementId, decimal quantity)
+    public void CompleteScrapDisposition(string scrapMovementId, decimal quantity, string? reason = null, string? actor = null)
     {
         var movementId = Required(scrapMovementId);
         if (DispositionType != ScrapDisposition)
@@ -301,7 +301,7 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
             throw new InvalidOperationException("Closed NCR cannot change scrap movement id.");
         }
 
-        Close(null, movementId, null, "Inventory scrap disposition completed", "system:business-quality-inventory-consumer");
+        Close(null, movementId, null, Optional(reason) ?? "Inventory scrap disposition completed", Optional(actor) ?? "system:business-quality-inventory-consumer");
     }
 
     public void RecordScrapDispositionMovement(string scrapMovementId, decimal quantity)
@@ -338,7 +338,7 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         CompleteConditionalReleaseDisposition(DefectQuantity);
     }
 
-    public void CompleteConditionalReleaseDisposition(decimal quantity)
+    public void CompleteConditionalReleaseDisposition(decimal quantity, string? reason = null, string? actor = null)
     {
         if (DispositionType != ConditionalReleaseDisposition)
         {
@@ -352,7 +352,7 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
             return;
         }
 
-        Close(null, null, null, "Inventory conditional release completed", "system:business-quality-inventory-consumer");
+        Close(null, null, null, Optional(reason) ?? "Inventory conditional release completed", Optional(actor) ?? "system:business-quality-inventory-consumer");
     }
 
     private void EnsureClosureReferences()

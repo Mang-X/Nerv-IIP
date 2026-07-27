@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.ConnectorTagManifestAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlChannelBindingAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using System.Globalization;
@@ -50,6 +51,48 @@ public sealed class WorldBibleSeedService(ApplicationDbContext dbContext)
         {
             await SeedManifestAsync(organizationId, environmentId, connector, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        await SeedControlChannelBindingsAsync(organizationId, environmentId, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// 设备控制通道绑定（演示走查缺口：绑定页无数据 → 命令下发无路由）：46 台设备按采集
+    /// 连接器同一分组绑到 <c>connector-host-001</c>，InstanceKey 即 <c>CONN-*</c> 连接器 id
+    /// （#1149 模拟连接器按 ConnectorId 路由）。已有绑定（含被租户改过/停用的）绝不覆盖。
+    /// </summary>
+    private async Task SeedControlChannelBindingsAsync(
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        var desired = WorldBibleSpec.DeviceTags
+            .GroupBy(tag => tag.DeviceAssetId, StringComparer.Ordinal)
+            .Select(group => new { DeviceAssetId = group.Key, InstanceKey = group.First().CollectionConnectorId })
+            .ToArray();
+        var deviceAssetIds = desired.Select(x => x.DeviceAssetId).ToArray();
+        var existing = await dbContext.DeviceControlChannelBindings
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                deviceAssetIds.Contains(x.DeviceAssetId))
+            .Select(x => x.DeviceAssetId)
+            .ToArrayAsync(cancellationToken);
+        var existingSet = existing.ToHashSet(StringComparer.Ordinal);
+
+        foreach (var binding in desired)
+        {
+            if (existingSet.Contains(binding.DeviceAssetId))
+            {
+                continue;
+            }
+
+            dbContext.DeviceControlChannelBindings.Add(DeviceControlChannelBinding.Configure(
+                organizationId,
+                environmentId,
+                binding.DeviceAssetId,
+                WorldBibleSpec.ControlConnectorHostId,
+                binding.InstanceKey));
         }
     }
 
