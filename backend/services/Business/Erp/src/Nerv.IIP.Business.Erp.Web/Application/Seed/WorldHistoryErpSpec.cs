@@ -86,6 +86,42 @@ public static class WorldHistoryErpSpec
             IsReceived: !random.Chance(0.12));
     }
 
+    #region 经营对象（采购申请 / 询价 / 供应商报价 / 销售机会 / 成本候选）
+
+    /// <summary>采购申请号段：<c>PR-2026-</c> 已被收货单占用，申请单用 <c>PRQ-</c> 前缀。</summary>
+    public static string PurchaseRequisitionNo(int index) => $"PRQ-2026-{index:D4}";
+
+    public static string RfqNo(int index) => $"RFQ-2026-{index:D4}";
+
+    /// <summary>同一 RFQ 的多家报价用 -A/-B 区分（供应商按品类内顺序）。</summary>
+    public static string SupplierQuotationNo(int index, int supplierOrdinal) =>
+        $"SQ-2026-{index:D4}-{(char)('A' + supplierOrdinal)}";
+
+    public static string OpportunityNo(int index) => $"OPP-2026-{index:D4}";
+    public static string CostCandidateNo(int index) => $"COST-2026-{index:D4}";
+
+    /// <summary>采购申请的 MRP 建议引用：跨服务只靠业务编码引用 DemandPlanning 的建议流。</summary>
+    public static string MrpSuggestionId(int index) => $"MRP-SUG-2026-{index:D4}";
+
+    /// <summary>每 6 张采购单走一次询价→报价流程（框架内直采为主、周期性询比价为辅）。</summary>
+    public const int RfqEveryNthPurchase = 6;
+
+    /// <summary>每 40 张销售订单前置一个销售机会（大客户框架/新平台意向）。</summary>
+    public const int OpportunityEveryNthSalesOrder = 40;
+
+    /// <summary>每 8 张已收货采购单进入一次成本归集候选。</summary>
+    public const int CostCandidateEveryNthReceipt = 8;
+
+    /// <summary>未转化的在途采购申请条数：随规模缩放，至少 3 条（列表页的"待处理"故事）。</summary>
+    public static int OpenRequisitionCount(int totalPurchaseOrders) =>
+        Math.Max(3, (int)Math.Round(totalPurchaseOrders * 0.03, MidpointRounding.AwayFromZero));
+
+    /// <summary>按物料码回查采购品类（各品类物料码不相交）。</summary>
+    public static WorldHistoryPurchaseCategory CategoryOf(string skuCode) =>
+        PurchaseCategories.Single(category => category.MaterialSkuCodes.Contains(skuCode));
+
+    #endregion
+
     #region 中文科目表
 
     public const string ReceivableAccountCode = "1122";

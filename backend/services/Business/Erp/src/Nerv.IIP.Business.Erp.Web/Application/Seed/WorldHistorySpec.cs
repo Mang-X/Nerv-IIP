@@ -36,6 +36,7 @@ public static class WorldHistorySpec
     [
         "SO-2026-", "QUO-2026-", "WO-2026-", "DO-2026-", "AR-2026-",
         "CR-2026-", "JV-2026-", "PO-2026-", "PR-2026-",
+        "PRQ-2026-", "RFQ-2026-", "SQ-2026-", "OPP-2026-", "COST-2026-",
     ];
 
     #endregion

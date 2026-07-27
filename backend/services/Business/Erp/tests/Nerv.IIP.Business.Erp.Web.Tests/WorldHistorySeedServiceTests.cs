@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
@@ -46,6 +47,63 @@ public sealed class WorldHistorySeedServiceTests
         Assert.Equal(
             WorldHistoryErpSpec.TotalPurchaseOrders(AsOfDate, TestScale),
             report.PurchaseOrdersWritten);
+    }
+
+    /// <summary>
+    /// 经营五页（采购申请/询价/供应商报价/销售机会/成本候选，演示走查缺口）：
+    /// 历史链路必须为五个聚合落数且与采购/销售计划配对，对任意 asOfDate 成立
+    /// （含周日后首日与春节段，防 #1151 单日期盲区）。校验器 fail-closed 已在 SeedAsync 内跑过，
+    /// 这里再抽形状断言防校验器与引擎同错。
+    /// </summary>
+    [Theory]
+    [InlineData(2026, 7, 27)]
+    [InlineData(2026, 7, 26)]
+    [InlineData(2026, 8, 2)]
+    [InlineData(2026, 2, 16)]
+    [InlineData(2026, 7, 31)]
+    public async Task History_seed_writes_the_business_objects_for_any_as_of_date(int year, int month, int day)
+    {
+        await using var provider = CreateProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var asOfDate = new DateOnly(year, month, day);
+
+        await new WorldHistorySeedService(dbContext).SeedAsync("org-001", "env-dev", asOfDate, TestScale);
+
+        var purchasePlans = WorldHistorySeedService.BuildPurchasePlans(asOfDate, TestScale);
+        var salesPlans = WorldHistorySpec.BuildOrderPlans(asOfDate, TestScale);
+
+        // 采购申请：每张采购单一条已转化 + 公式化的在途条数。
+        Assert.Equal(
+            purchasePlans.Count + WorldHistoryErpSpec.OpenRequisitionCount(purchasePlans.Count),
+            await dbContext.PurchaseRequisitions.CountAsync());
+        var openRequisitions = await dbContext.PurchaseRequisitions
+            .Where(x => x.Status == PurchaseRequisitionStatus.Open)
+            .ToArrayAsync();
+        Assert.Equal(WorldHistoryErpSpec.OpenRequisitionCount(purchasePlans.Count), openRequisitions.Length);
+        Assert.All(openRequisitions, requisition => Assert.True(requisition.RequiredDate > asOfDate));
+
+        // 询比价：每 6 张采购单一单 RFQ，品类内每家供应商一份报价，中标价 == 采购单价。
+        var expectedRfqs = purchasePlans.Count(x => x.Index % WorldHistoryErpSpec.RfqEveryNthPurchase == 1);
+        Assert.Equal(expectedRfqs, await dbContext.RequestForQuotations.CountAsync());
+        var sampledPlan = purchasePlans.First(x => x.Index % WorldHistoryErpSpec.RfqEveryNthPurchase == 1);
+        var sampledQuotes = await dbContext.SupplierQuotations
+            .Include(x => x.Lines)
+            .Where(x => x.RfqNo == WorldHistoryErpSpec.RfqNo(sampledPlan.Index))
+            .ToArrayAsync();
+        Assert.Equal(WorldHistoryErpSpec.CategoryOf(sampledPlan.SkuCode).SupplierCodes.Count, sampledQuotes.Length);
+        var winning = Assert.Single(sampledQuotes, x => x.SupplierCode == sampledPlan.SupplierCode);
+        Assert.Equal(sampledPlan.UnitPrice, winning.Lines.Single().UnitPrice);
+
+        // 成本候选：每 8 张已收货采购单一条，引用真实收货单号。
+        Assert.Equal(
+            purchasePlans.Count(x => x.IsReceived && x.Index % WorldHistoryErpSpec.CostCandidateEveryNthReceipt == 0),
+            await dbContext.CostCandidates.CountAsync());
+
+        // 销售机会：每 40 单一条，客户与订单计划一致。
+        Assert.Equal(
+            salesPlans.Count(x => x.Index % WorldHistoryErpSpec.OpportunityEveryNthSalesOrder == 1),
+            await dbContext.Opportunities.CountAsync());
     }
 
     [Fact]
