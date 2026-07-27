@@ -774,7 +774,7 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var list = await client.GetAsync("/api/business-console/v1/quality/inspection-tasks?organizationId=org-001&environmentId=env-dev&status=pending&skuCode=SKU-RM-1000&skip=1&take=50");
+        var list = await client.GetAsync("/api/business-console/v1/quality/inspection-tasks?organizationId=org-001&environmentId=env-dev&status=pending&skuCode=SKU-RM-1000&skip=1&take=50&inspectionTaskId=0199aa00-0000-7000-8000-000000000004");
         var create = await client.PostAsJsonAsync("/api/business-console/v1/quality/inspection-tasks/inspection-task-001/inspection-record", new
         {
             inspectionTaskId = "ignored",
@@ -794,7 +794,14 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-test-token", quality.LastInternalToken);
         Assert.Equal(1, quality.InspectionTaskListCallCount);
         Assert.Equal(
-            new BusinessConsoleQualityInspectionTaskListRequest("org-001", "env-dev", "pending", "SKU-RM-1000", 1, 50),
+            new BusinessConsoleQualityInspectionTaskListRequest(
+                "org-001",
+                "env-dev",
+                "pending",
+                "SKU-RM-1000",
+                1,
+                50,
+                "0199aa00-0000-7000-8000-000000000004"),
             quality.LastInspectionTaskListRequest);
         Assert.Equal("inspection-task-001", quality.LastCreateInspectionRecordFromTaskTaskId);
         Assert.Equal("inspection-task-001", quality.LastCreateInspectionRecordFromTaskRequest!.InspectionTaskId);
@@ -3880,7 +3887,15 @@ public sealed class BusinessGatewayProxyTests
         await telemetry.GetRuntimeAvailabilityAsync("internal-token-001", request, CancellationToken.None);
         await telemetry.GetDeviceRuntimeAvailabilityAsync("internal-token-001", "DEV-OIL-01", request, CancellationToken.None);
         await telemetry.GetDeviceCurrentStateAsync("internal-token-001", "DEV-OIL-01", new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"), CancellationToken.None);
-        await telemetry.ListActiveAlarmsAsync("internal-token-001", new BusinessConsoleEquipmentAlarmListRequest("org-001", "env-dev", null, null), CancellationToken.None);
+        await telemetry.ListActiveAlarmsAsync(
+            "internal-token-001",
+            new BusinessConsoleEquipmentAlarmListRequest(
+                "org-001",
+                "env-dev",
+                null,
+                null,
+                AlarmEventId: "019d8a00-0000-7000-8000-000000000003"),
+            CancellationToken.None);
         await telemetry.ListAlarmRulesAsync("internal-token-001", new BusinessConsoleTelemetryAlarmRuleListRequest("org-001", "env-dev", "DEV-OIL-01", true), CancellationToken.None);
         await telemetry.CreateOrUpdateAlarmRuleAsync("internal-token-001", new BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest("org-001", "env-dev", "DEV-OIL-01", "RULE-001", "TEMP_HIGH", "warning", "temperature", ">=", 95m, "celsius", true), CancellationToken.None);
         await telemetry.QueryOeeAsync("internal-token-001", new BusinessConsoleTelemetryOeeRequest("org-001", "env-dev", "DEV-OIL-01", request.WindowStartUtc, request.WindowEndUtc), CancellationToken.None);
@@ -3894,7 +3909,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("/api/business/v1/iiot/devices/DEV-OIL-01/current-state", telemetryHandler.Requests[2].RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org-001&environmentId=env-dev", telemetryHandler.Requests[2].RequestUri!.Query.TrimStart('?'));
         Assert.Equal("/api/business/v1/iiot/alarms", telemetryHandler.Requests[3].RequestUri!.AbsolutePath);
-        Assert.Equal("organizationId=org-001&environmentId=env-dev&status=active&skip=0&take=100", telemetryHandler.Requests[3].RequestUri!.Query.TrimStart('?'));
+        Assert.Equal("organizationId=org-001&environmentId=env-dev&status=active&skip=0&take=100&alarmEventId=019d8a00-0000-7000-8000-000000000003", telemetryHandler.Requests[3].RequestUri!.Query.TrimStart('?'));
         Assert.Equal("/api/business/v1/iiot/alarm-rules", telemetryHandler.Requests[4].RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OIL-01&isEnabled=true&skip=0&take=100", telemetryHandler.Requests[4].RequestUri!.Query.TrimStart('?'));
         Assert.Equal(HttpMethod.Post, telemetryHandler.Requests[5].Method);
@@ -6128,7 +6143,14 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListInspectionTasksAsync(
             "internal-token-001",
-            new BusinessConsoleQualityInspectionTaskListRequest("org-001", "env-dev", "pending", "SKU-RM-1000", 1, 50),
+            new BusinessConsoleQualityInspectionTaskListRequest(
+                "org-001",
+                "env-dev",
+                "pending",
+                "SKU-RM-1000",
+                1,
+                50,
+                "0199aa00-0000-7000-8000-000000000004"),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -6148,7 +6170,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Null(item.InspectionRecordId);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Get, request.Method);
-        Assert.Equal("/api/business/v1/quality/inspection-tasks?organizationId=org-001&environmentId=env-dev&status=pending&skuCode=SKU-RM-1000&skip=1&take=50", request.RequestUri!.PathAndQuery);
+        Assert.Equal("/api/business/v1/quality/inspection-tasks?organizationId=org-001&environmentId=env-dev&status=pending&skuCode=SKU-RM-1000&skip=1&take=50&inspectionTaskId=0199aa00-0000-7000-8000-000000000004", request.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
     }
 

@@ -888,8 +888,8 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
 
         var tagsResponse = await client.GetAsync("/api/business-console/v1/telemetry/tags?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&skip=5&take=10");
         var rulesResponse = await client.GetAsync("/api/business-console/v1/telemetry/alarm-rules?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&isEnabled=true&skip=6&take=11");
-        var alarmsResponse = await client.GetAsync("/api/business-console/v1/telemetry/alarms?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&status=cleared&skip=7&take=12");
-        var equipmentResponse = await client.GetAsync("/api/business-console/v1/equipment/alarms?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-02&status=raised&skip=8&take=13");
+        var alarmsResponse = await client.GetAsync("/api/business-console/v1/telemetry/alarms?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&status=cleared&skip=7&take=12&alarmEventId=019d8a00-0000-7000-8000-000000000001");
+        var equipmentResponse = await client.GetAsync("/api/business-console/v1/equipment/alarms?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-02&status=raised&skip=8&take=13&alarmEventId=019d8a00-0000-7000-8000-000000000002");
 
         Assert.Equal(HttpStatusCode.OK, tagsResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, rulesResponse.StatusCode);
@@ -897,8 +897,26 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal(HttpStatusCode.OK, equipmentResponse.StatusCode);
         Assert.Equal(new BusinessConsoleTelemetryTagListRequest("org-001", "env-dev", "DEV-PRESS-01", 5, 10), telemetry.LastTagListRequest);
         Assert.Equal(new BusinessConsoleTelemetryAlarmRuleListRequest("org-001", "env-dev", "DEV-PRESS-01", true, 6, 11), telemetry.LastAlarmRuleListRequest);
-        Assert.Equal(new BusinessConsoleTelemetryAlarmListRequest("org-001", "env-dev", "DEV-PRESS-01", "cleared", 7, 12), telemetry.LastAlarmListRequest);
-        Assert.Equal(new BusinessConsoleEquipmentAlarmListRequest("org-001", "env-dev", "DEV-PRESS-02", "raised", 8, 13), telemetry.LastEquipmentAlarmListRequest);
+        Assert.Equal(
+            new BusinessConsoleTelemetryAlarmListRequest(
+                "org-001",
+                "env-dev",
+                "DEV-PRESS-01",
+                "cleared",
+                7,
+                12,
+                AlarmEventId: "019d8a00-0000-7000-8000-000000000001"),
+            telemetry.LastAlarmListRequest);
+        Assert.Equal(
+            new BusinessConsoleEquipmentAlarmListRequest(
+                "org-001",
+                "env-dev",
+                "DEV-PRESS-02",
+                "raised",
+                8,
+                13,
+                AlarmEventId: "019d8a00-0000-7000-8000-000000000002"),
+            telemetry.LastEquipmentAlarmListRequest);
 
         Assert.Equal(42, ReadTotal(await tagsResponse.Content.ReadAsStringAsync()));
         Assert.Equal(42, ReadTotal(await rulesResponse.Content.ReadAsStringAsync()));

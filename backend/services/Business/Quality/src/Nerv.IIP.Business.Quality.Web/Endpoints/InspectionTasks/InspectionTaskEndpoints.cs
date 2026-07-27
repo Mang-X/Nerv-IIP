@@ -15,7 +15,8 @@ public sealed record ListInspectionTasksRequest(
     string? Status,
     string? SkuCode,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    InspectionTaskId? InspectionTaskId = null);
 
 public sealed record ListInspectionTasksEndpointResponse(IReadOnlyCollection<InspectionTaskResponse> Items, int Total);
 
@@ -49,7 +50,8 @@ public sealed class ListInspectionTasksEndpoint(ISender sender)
             req.Status,
             req.SkuCode,
             req.Skip,
-            req.Take), ct);
+            req.Take,
+            req.InspectionTaskId), ct);
         await Send.OkAsync(new ListInspectionTasksEndpointResponse(response.Items, response.Total).AsResponseData(), cancellation: ct);
     }
 }

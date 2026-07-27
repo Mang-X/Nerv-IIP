@@ -157,7 +157,8 @@ public sealed record ListAlarmEventsRequest(
     string? Status,
     int Skip = 0,
     int Take = 100,
-    string? DeviceAssetIds = null);
+    string? DeviceAssetIds = null,
+    AlarmEventId? AlarmEventId = null);
 public sealed record QueryDeviceTimelineRequest(string DeviceAssetId, string? OrganizationId, string? EnvironmentId, DateTimeOffset? FromUtc, DateTimeOffset? ToUtc);
 public sealed record QueryOeeRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
 public sealed record QueryRuntimeHoursRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
@@ -504,7 +505,8 @@ public sealed class ListAlarmEventsEndpoint(ISender sender) : IndustrialTelemetr
             req.Status,
             req.Skip,
             req.Take,
-            req.DeviceAssetIds), ct);
+            req.DeviceAssetIds,
+            req.AlarmEventId), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }

@@ -435,6 +435,38 @@ public sealed class WmsEndpointContractTests
     }
 
     [Fact]
+    public async Task Inbound_order_exact_id_filter_precedes_paging_and_keeps_tenant_scope()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var target = CreateInboundOrder("IN-EXACT-TARGET");
+        dbContext.InboundOrders.AddRange(target, CreateInboundOrder("IN-EXACT-OTHER"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ListInboundOrdersQueryHandler(dbContext);
+
+        var exact = await handler.Handle(
+            new ListInboundOrdersQuery(
+                "org-001",
+                "env-dev",
+                Skip: 0,
+                Take: 1,
+                InboundOrderId: target.Id),
+            CancellationToken.None);
+        var crossTenant = await handler.Handle(
+            new ListInboundOrdersQuery(
+                "org-002",
+                "env-dev",
+                InboundOrderId: target.Id),
+            CancellationToken.None);
+
+        Assert.Equal(1, exact.Total);
+        Assert.Equal(target.Id, Assert.Single(exact.Items).InboundOrderId);
+        Assert.Empty(crossTenant.Items);
+        Assert.Equal(0, crossTenant.Total);
+    }
+
+    [Fact]
     public async Task Receiving_quality_gate_query_projects_line_flow_and_filters_by_gate_status_and_tenant()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();
@@ -540,6 +572,38 @@ public sealed class WmsEndpointContractTests
         var item = Assert.Single(result.Items);
         Assert.Equal("OUT-PAGE-001", item.OutboundOrderNo);
         Assert.Equal("Open", item.Status);
+    }
+
+    [Fact]
+    public async Task Outbound_order_exact_id_filter_precedes_paging_and_keeps_tenant_scope()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var target = CreateOutboundOrder("OUT-EXACT-TARGET");
+        dbContext.OutboundOrders.AddRange(target, CreateOutboundOrder("OUT-EXACT-OTHER"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ListOutboundOrdersQueryHandler(dbContext);
+
+        var exact = await handler.Handle(
+            new ListOutboundOrdersQuery(
+                "org-001",
+                "env-dev",
+                Skip: 0,
+                Take: 1,
+                OutboundOrderId: target.Id),
+            CancellationToken.None);
+        var crossTenant = await handler.Handle(
+            new ListOutboundOrdersQuery(
+                "org-002",
+                "env-dev",
+                OutboundOrderId: target.Id),
+            CancellationToken.None);
+
+        Assert.Equal(1, exact.Total);
+        Assert.Equal(target.Id, Assert.Single(exact.Items).OutboundOrderId);
+        Assert.Empty(crossTenant.Items);
+        Assert.Equal(0, crossTenant.Total);
     }
 
     [Fact]
@@ -684,6 +748,56 @@ public sealed class WmsEndpointContractTests
         Assert.Equal("Open", item.Status);
         Assert.Equal("BIN-A", item.LocationCode);
         Assert.Null(item.CountedQuantity);
+    }
+
+    [Fact]
+    public async Task Count_execution_exact_id_filter_precedes_paging_and_keeps_tenant_scope()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var target = CountExecution.Create(
+            "org-001",
+            "env-dev",
+            "COUNT-EXACT-TARGET",
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "BIN-A",
+            3m);
+        dbContext.CountExecutions.AddRange(
+            target,
+            CountExecution.Create(
+                "org-001",
+                "env-dev",
+                "COUNT-EXACT-OTHER",
+                "SKU-001",
+                "pcs",
+                "SITE-01",
+                "BIN-A",
+                3m));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ListCountExecutionsQueryHandler(dbContext);
+
+        var exact = await handler.Handle(
+            new ListCountExecutionsQuery(
+                "org-001",
+                "env-dev",
+                Skip: 0,
+                Take: 1,
+                CountExecutionId: target.Id),
+            CancellationToken.None);
+        var crossTenant = await handler.Handle(
+            new ListCountExecutionsQuery(
+                "org-002",
+                "env-dev",
+                CountExecutionId: target.Id),
+            CancellationToken.None);
+
+        Assert.Equal(1, exact.Total);
+        Assert.Equal(target.Id, Assert.Single(exact.Items).CountExecutionId);
+        Assert.Empty(crossTenant.Items);
+        Assert.Equal(0, crossTenant.Total);
     }
 
     [Fact]

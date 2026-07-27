@@ -38,7 +38,14 @@ public abstract class WmsEndpoint<TRequest, TResponse> : Endpoint<TRequest, TRes
 
 public sealed record CreateInboundOrderRequest(string OrganizationId, string EnvironmentId, string InboundOrderNo, string SourceDocumentType, string SourceDocumentId, string SiteCode, IReadOnlyCollection<WmsInboundLineInput> Lines);
 public sealed record CreateInboundOrderResponse(InboundOrderId InboundOrderId);
-public sealed record ListInboundOrdersRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
+public sealed record ListInboundOrdersRequest(
+    string? OrganizationId,
+    string? EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    string? Keyword = null,
+    InboundOrderId? InboundOrderId = null);
 public sealed record CreatePutawayTaskRequest(InboundOrderId InboundOrderId, string TaskNo, string LineNo, string FromLocationCode, string ToLocationCode, decimal Quantity);
 public sealed record ListWarehouseTasksRequest(
     string OrganizationId,
@@ -62,7 +69,14 @@ public sealed record CancelInboundOrdersForSourceRequest(string OrganizationId, 
 public sealed record CancelInboundOrdersForSourceResponse(int CancelledCount);
 public sealed record CreateOutboundOrderRequest(string OrganizationId, string EnvironmentId, string OutboundOrderNo, string SourceDocumentType, string SourceDocumentId, string SiteCode, IReadOnlyCollection<WmsOutboundLineInput> Lines);
 public sealed record CreateOutboundOrderResponse(OutboundOrderId OutboundOrderId);
-public sealed record ListOutboundOrdersRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
+public sealed record ListOutboundOrdersRequest(
+    string? OrganizationId,
+    string? EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    string? Keyword = null,
+    OutboundOrderId? OutboundOrderId = null);
 public sealed record ListBackorderOrdersRequest(string OrganizationId, string EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
 public sealed record CloseBackorderOrderRequest(BackorderOrderId BackorderOrderId, string Reason);
 public sealed record CreatePickingTaskRequest(OutboundOrderId OutboundOrderId, string TaskNo, string LineNo, string FromLocationCode, string ToLocationCode, decimal Quantity);
@@ -79,7 +93,8 @@ public sealed record ListCountExecutionsRequest(
     int Take = 100,
     string? Status = null,
     string? LocationCode = null,
-    string? Keyword = null);
+    string? Keyword = null,
+    CountExecutionId? CountExecutionId = null);
 public sealed record CompleteCountExecutionRequest(CountExecutionId CountExecutionId, decimal CountedQuantity, string IdempotencyKey);
 public sealed record DispatchWcsTaskRequest(WarehouseTaskId WarehouseTaskId, string AdapterType, string ExternalTaskId, string PayloadJson);
 public sealed record DispatchWcsTaskResponse(WcsTaskId WcsTaskId);
@@ -115,7 +130,14 @@ public sealed class ListInboundOrdersEndpoint(ISender sender) : WmsEndpoint<List
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListInboundOrdersEndpoint>());
     public override async Task HandleAsync(ListInboundOrdersRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListInboundOrdersQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take, req.Status, req.Keyword), ct);
+        var result = await sender.Send(new ListInboundOrdersQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Skip,
+            req.Take,
+            req.Status,
+            req.Keyword,
+            req.InboundOrderId), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -188,7 +210,14 @@ public sealed class ListOutboundOrdersEndpoint(ISender sender) : WmsEndpoint<Lis
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListOutboundOrdersEndpoint>());
     public override async Task HandleAsync(ListOutboundOrdersRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListOutboundOrdersQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take, req.Status, req.Keyword), ct);
+        var result = await sender.Send(new ListOutboundOrdersQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Skip,
+            req.Take,
+            req.Status,
+            req.Keyword,
+            req.OutboundOrderId), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -308,7 +337,15 @@ public sealed class ListCountExecutionsEndpoint(ISender sender) : WmsEndpoint<Li
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListCountExecutionsEndpoint>());
     public override async Task HandleAsync(ListCountExecutionsRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListCountExecutionsQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take, req.Status, req.LocationCode, req.Keyword), ct);
+        var response = await sender.Send(new ListCountExecutionsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Skip,
+            req.Take,
+            req.Status,
+            req.LocationCode,
+            req.Keyword,
+            req.CountExecutionId), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }

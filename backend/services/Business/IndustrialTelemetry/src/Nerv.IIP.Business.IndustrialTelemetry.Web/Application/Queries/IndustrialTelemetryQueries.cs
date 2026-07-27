@@ -333,7 +333,8 @@ public sealed record ListAlarmEventsQuery(
     string? Status,
     int Skip = 0,
     int Take = 100,
-    string? DeviceAssetIds = null) : IQuery<PagedListResponse<AlarmEventListItem>>;
+    string? DeviceAssetIds = null,
+    AlarmEventId? AlarmEventId = null) : IQuery<PagedListResponse<AlarmEventListItem>>;
 
 public sealed record AlarmEventListItem(
     AlarmEventId AlarmEventId,
@@ -373,7 +374,8 @@ public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
             .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
-            .Where(x => deviceAssetIds.Count == 0 || deviceAssetIds.Contains(x.DeviceAssetId));
+            .Where(x => deviceAssetIds.Count == 0 || deviceAssetIds.Contains(x.DeviceAssetId))
+            .Where(x => request.AlarmEventId == null || x.Id == request.AlarmEventId);
         query = status switch
         {
             null => query,

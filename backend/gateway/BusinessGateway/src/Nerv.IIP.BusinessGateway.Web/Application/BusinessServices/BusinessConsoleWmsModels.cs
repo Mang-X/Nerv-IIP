@@ -166,7 +166,8 @@ public sealed record BusinessConsoleWmsInboundOrderListRequest(
     int Skip = 0,
     int Take = 100,
     string? Status = null,
-    string? Keyword = null);
+    string? Keyword = null,
+    string? InboundOrderId = null);
 
 public sealed record BusinessConsoleWmsInboundOrderListResponse(
     IReadOnlyCollection<BusinessConsoleWmsInboundOrderItem> Items,
@@ -187,6 +188,15 @@ public sealed record BusinessConsoleWmsInboundOrderItem(
 public sealed record BusinessConsoleWmsOutboundOrderListResponse(
     IReadOnlyCollection<BusinessConsoleWmsOutboundOrderItem> Items,
     int Total);
+
+public sealed record BusinessConsoleWmsOutboundOrderListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    string? Keyword = null,
+    string? OutboundOrderId = null);
 
 public sealed record BusinessConsoleWmsOutboundOrderItem(
     string OutboundOrderId,
@@ -256,7 +266,8 @@ public sealed record BusinessConsoleWmsCountExecutionListRequest(
     int Skip = 0,
     int Take = 100,
     string? Status = null,
-    string? Keyword = null);
+    string? Keyword = null,
+    string? CountExecutionId = null);
 
 public sealed record BusinessConsoleWmsCountExecutionListResponse(
     IReadOnlyCollection<BusinessConsoleWmsCountExecutionItem> Items,
