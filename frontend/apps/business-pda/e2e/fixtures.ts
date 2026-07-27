@@ -192,6 +192,13 @@ export const mesOperationTasks = [
     operationSequence: 20,
     workCenterId: 'WC-B',
   },
+  {
+    operationTaskId: 'OP-3',
+    workOrderId: 'WO-2',
+    status: 'Ready',
+    operationSequence: 10,
+    workCenterId: 'WC-C',
+  },
 ]
 
 /**
@@ -227,6 +234,12 @@ export const mesWorkOrders = [
     workOrderId: 'WO-1',
     skuId: 'SKU-1',
     quantity: 100,
+    status: 'Released',
+  },
+  {
+    workOrderId: 'WO-2',
+    skuId: 'SKU-2',
+    quantity: 50,
     status: 'Released',
   },
 ]

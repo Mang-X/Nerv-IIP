@@ -73,12 +73,14 @@ function bindAuthScope<TFilters extends MesScope>(filters: TFilters): TFilters {
 }
 
 function defaultFilters(): MesListFilters {
-  return bindAuthScope(reactive({
-    organizationId: '',
-    environmentId: '',
-    skip: 0,
-    take: DEFAULT_TAKE,
-  }))
+  return bindAuthScope(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      skip: 0,
+      take: DEFAULT_TAKE,
+    }),
+  )
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -110,9 +112,10 @@ function scopeQuery(filters: MesScope) {
   }
 }
 
-function envelopeItems<TItem, TEnvelope extends { success?: boolean; data?: { items?: TItem[] } | null }>(
-  envelope: TEnvelope | undefined,
-) {
+function envelopeItems<
+  TItem,
+  TEnvelope extends { success?: boolean; data?: { items?: TItem[] } | null },
+>(envelope: TEnvelope | undefined) {
   if (!envelope?.success) {
     return []
   }
@@ -204,7 +207,9 @@ export function useMesOperationTasks() {
   }))
 
   const invalidate = () =>
-    void invalidateMesQueries(queryCache, ['listBusinessConsoleMesOperationTasks']).catch(ignoreBackgroundError)
+    void invalidateMesQueries(queryCache, ['listBusinessConsoleMesOperationTasks']).catch(
+      ignoreBackgroundError,
+    )
 
   const startMutation = useMutation({
     ...startBusinessConsoleMesOperationTaskMutationOptions(),
@@ -238,14 +243,19 @@ export function useMesOperationTasks() {
   return {
     filters,
     operationTasks: computed<BusinessConsoleMesOperationTaskRow[]>(() =>
-      envelopeItems<BusinessConsoleMesOperationTaskRow, BusinessConsoleMesOperationTaskListEnvelope>(
-        operationTasksQuery.data.value,
-      ),
+      envelopeItems<
+        BusinessConsoleMesOperationTaskRow,
+        BusinessConsoleMesOperationTaskListEnvelope
+      >(operationTasksQuery.data.value),
     ),
     total: computed(() => envelopeTotal(operationTasksQuery.data.value)),
     pending: operationTasksQuery.isLoading,
     error: operationTasksQuery.error,
     refresh: operationTasksQuery.refetch,
+    cancelPendingTasks: () =>
+      queryCache.cancelQueries({
+        predicate: isBusinessQuery('listBusinessConsoleMesOperationTasks'),
+      }),
     startTask: (operationTaskId: string, options: OperationActionOptions) =>
       startMutation.mutateAsync(actionPayload(operationTaskId, options)),
     pauseTask: (operationTaskId: string, options: OperationActionOptions) =>
@@ -254,11 +264,12 @@ export function useMesOperationTasks() {
       resumeMutation.mutateAsync(actionPayload(operationTaskId, options)),
     completeTask: (operationTaskId: string, options: OperationActionOptions) =>
       completeMutation.mutateAsync(actionPayload(operationTaskId, options)),
-    actionPending: computed(() =>
-      startMutation.isLoading.value
-      || pauseMutation.isLoading.value
-      || resumeMutation.isLoading.value
-      || completeMutation.isLoading.value,
+    actionPending: computed(
+      () =>
+        startMutation.isLoading.value ||
+        pauseMutation.isLoading.value ||
+        resumeMutation.isLoading.value ||
+        completeMutation.isLoading.value,
     ),
   }
 }
@@ -272,15 +283,17 @@ export interface CurrentOperationSopFilters extends MesScope {
 }
 
 export function useMesCurrentOperationSops() {
-  const filters = bindAuthScope(reactive<CurrentOperationSopFilters>({
-    organizationId: '',
-    environmentId: '',
-    operationCode: '',
-    workCenterCode: '',
-    routingCode: '',
-    routingRevision: '',
-    asOfDate: '',
-  }))
+  const filters = bindAuthScope(
+    reactive<CurrentOperationSopFilters>({
+      organizationId: '',
+      environmentId: '',
+      operationCode: '',
+      workCenterCode: '',
+      routingCode: '',
+      routingRevision: '',
+      asOfDate: '',
+    }),
+  )
   const enabled = computed(() => hasScope(filters) && Boolean(filters.operationCode?.trim()))
 
   const currentSopsQuery = useQuery(() => ({
@@ -297,9 +310,13 @@ export function useMesCurrentOperationSops() {
     }),
     enabled: enabled.value,
   }))
-  const downloadGrantMutation = useMutation(createBusinessConsoleSopFileDownloadGrantMutationOptions())
+  const downloadGrantMutation = useMutation(
+    createBusinessConsoleSopFileDownloadGrantMutationOptions(),
+  )
 
-  async function createSopFileDownloadGrant(fileId: string): Promise<BusinessConsoleSopFileDownloadGrantResponse | null> {
+  async function createSopFileDownloadGrant(
+    fileId: string,
+  ): Promise<BusinessConsoleSopFileDownloadGrantResponse | null> {
     const envelope = await downloadGrantMutation.mutateAsync({
       path: { fileId },
       body: {
@@ -307,17 +324,23 @@ export function useMesCurrentOperationSops() {
         environmentId: filters.environmentId,
       },
     })
-    return envelopeData<BusinessConsoleSopFileDownloadGrantResponse, BusinessConsoleSopFileDownloadGrantEnvelope>(
-      envelope as BusinessConsoleSopFileDownloadGrantEnvelope,
-    ) ?? null
+    return (
+      envelopeData<
+        BusinessConsoleSopFileDownloadGrantResponse,
+        BusinessConsoleSopFileDownloadGrantEnvelope
+      >(envelope as BusinessConsoleSopFileDownloadGrantEnvelope) ?? null
+    )
   }
 
   return {
     filters,
     currentSops: computed<BusinessConsoleCurrentSopDocumentItem[]>(
-      () => envelopeData<NonNullable<BusinessConsoleCurrentSopDocumentsEnvelope['data']>, BusinessConsoleCurrentSopDocumentsEnvelope>(
-        currentSopsQuery.data.value as BusinessConsoleCurrentSopDocumentsEnvelope | undefined,
-      )?.items ?? [],
+      () =>
+        envelopeData<
+          NonNullable<BusinessConsoleCurrentSopDocumentsEnvelope['data']>,
+          BusinessConsoleCurrentSopDocumentsEnvelope
+        >(currentSopsQuery.data.value as BusinessConsoleCurrentSopDocumentsEnvelope | undefined)
+          ?.items ?? [],
     ),
     pending: currentSopsQuery.isLoading,
     error: currentSopsQuery.error,
@@ -326,8 +349,10 @@ export function useMesCurrentOperationSops() {
   }
 }
 
-export type RecordReportInput =
-  Omit<BusinessConsoleRecordProductionReportRequest, 'organizationId' | 'environmentId' | 'reportedAtUtc'>
+export type RecordReportInput = Omit<
+  BusinessConsoleRecordProductionReportRequest,
+  'organizationId' | 'environmentId' | 'reportedAtUtc'
+>
 
 export function useMesProductionReports() {
   const filters = defaultFilters()
@@ -353,9 +378,10 @@ export function useMesProductionReports() {
   return {
     filters,
     productionReports: computed<BusinessConsoleMesProductionReportRow[]>(() =>
-      envelopeItems<BusinessConsoleMesProductionReportRow, BusinessConsoleMesProductionReportListEnvelope>(
-        reportsQuery.data.value,
-      ),
+      envelopeItems<
+        BusinessConsoleMesProductionReportRow,
+        BusinessConsoleMesProductionReportListEnvelope
+      >(reportsQuery.data.value),
     ),
     total: computed(() => envelopeTotal(reportsQuery.data.value)),
     pending: reportsQuery.isLoading,
@@ -378,21 +404,58 @@ export function useMesTelemetryProductionReportCandidates() {
   const filters = Object.assign(defaultFilters(), { status: 'pending-confirmation' })
   const queryCache = useQueryCache()
   const query = useQuery(() => ({
-    ...listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions({ query: {
-      organizationId: filters.organizationId, environmentId: filters.environmentId, status: filters.status,
-      workCenterId: filters.workCenterId, deviceAssetId: filters.deviceAssetId, skip: filters.skip, take: filters.take,
-    } }), enabled: hasScope(filters),
+    ...listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        status: filters.status,
+        workCenterId: filters.workCenterId,
+        deviceAssetId: filters.deviceAssetId,
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: hasScope(filters),
   }))
-  const promoteMutation = useMutation({ ...promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions(), onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesTelemetryProductionReportCandidates', 'listBusinessConsoleMesProductionReports']).catch(ignoreBackgroundError) })
-  const dismissMutation = useMutation({ ...dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions(), onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesTelemetryProductionReportCandidates']).catch(ignoreBackgroundError) })
-  type CandidateEnvelope = { data?: { items?: BusinessConsoleMesTelemetryCandidateRow[]; total?: number } | null }
+  const promoteMutation = useMutation({
+    ...promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions(),
+    onSuccess: () =>
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesTelemetryProductionReportCandidates',
+        'listBusinessConsoleMesProductionReports',
+      ]).catch(ignoreBackgroundError),
+  })
+  const dismissMutation = useMutation({
+    ...dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions(),
+    onSuccess: () =>
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesTelemetryProductionReportCandidates',
+      ]).catch(ignoreBackgroundError),
+  })
+  type CandidateEnvelope = {
+    data?: { items?: BusinessConsoleMesTelemetryCandidateRow[]; total?: number } | null
+  }
   return {
     filters,
-    candidates: computed(() => envelopeItems<BusinessConsoleMesTelemetryCandidateRow, CandidateEnvelope>(query.data.value as CandidateEnvelope | undefined)),
+    candidates: computed(() =>
+      envelopeItems<BusinessConsoleMesTelemetryCandidateRow, CandidateEnvelope>(
+        query.data.value as CandidateEnvelope | undefined,
+      ),
+    ),
     total: computed(() => envelopeTotal(query.data.value as CandidateEnvelope | undefined)),
     pending: query.isLoading,
-    promote: (candidateId: string, workOrderId: string, operationTaskId: string) => promoteMutation.mutateAsync({ path: { candidateId }, query: { organizationId: filters.organizationId, environmentId: filters.environmentId }, body: { workOrderId, operationTaskId } }),
-    dismiss: (candidateId: string, reason: string) => dismissMutation.mutateAsync({ path: { candidateId }, query: { organizationId: filters.organizationId, environmentId: filters.environmentId }, body: { reason } }),
+    promote: (candidateId: string, workOrderId: string, operationTaskId: string) =>
+      promoteMutation.mutateAsync({
+        path: { candidateId },
+        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        body: { workOrderId, operationTaskId },
+      }),
+    dismiss: (candidateId: string, reason: string) =>
+      dismissMutation.mutateAsync({
+        path: { candidateId },
+        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        body: { reason },
+      }),
   }
 }
 
@@ -414,23 +477,28 @@ export function useMesMaterialIssue() {
   const createMutation = useMutation({
     ...createBusinessConsoleMesMaterialIssueRequestMutationOptions(),
     onSuccess() {
-      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests']).catch(ignoreBackgroundError)
+      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests']).catch(
+        ignoreBackgroundError,
+      )
     },
   })
 
   const confirmMutation = useMutation({
     ...confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions(),
     onSuccess() {
-      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests']).catch(ignoreBackgroundError)
+      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests']).catch(
+        ignoreBackgroundError,
+      )
     },
   })
 
   return {
     filters,
     requests: computed<BusinessConsoleMesMaterialIssueRequestRow[]>(() =>
-      envelopeItems<BusinessConsoleMesMaterialIssueRequestRow, BusinessConsoleMesMaterialIssueRequestListEnvelope>(
-        requestsQuery.data.value,
-      ),
+      envelopeItems<
+        BusinessConsoleMesMaterialIssueRequestRow,
+        BusinessConsoleMesMaterialIssueRequestListEnvelope
+      >(requestsQuery.data.value),
     ),
     total: computed(() => envelopeTotal(requestsQuery.data.value)),
     pending: requestsQuery.isLoading,
@@ -451,8 +519,10 @@ export function useMesMaterialIssue() {
   }
 }
 
-export type CreateReceiptInput =
-  Omit<BusinessConsoleMesCreateReceiptRequest, 'organizationId' | 'environmentId' | 'requestedAtUtc'>
+export type CreateReceiptInput = Omit<
+  BusinessConsoleMesCreateReceiptRequest,
+  'organizationId' | 'environmentId' | 'requestedAtUtc'
+>
 
 export function useMesReceipts() {
   const filters = defaultFilters()
@@ -468,16 +538,19 @@ export function useMesReceipts() {
   const createMutation = useMutation({
     ...createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions(),
     onSuccess() {
-      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesFinishedGoodsReceiptRequests']).catch(ignoreBackgroundError)
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesFinishedGoodsReceiptRequests',
+      ]).catch(ignoreBackgroundError)
     },
   })
 
   return {
     filters,
     receipts: computed<BusinessConsoleMesReceiptRequestRow[]>(() =>
-      envelopeItems<BusinessConsoleMesReceiptRequestRow, BusinessConsoleMesReceiptRequestListEnvelope>(
-        receiptsQuery.data.value,
-      ),
+      envelopeItems<
+        BusinessConsoleMesReceiptRequestRow,
+        BusinessConsoleMesReceiptRequestListEnvelope
+      >(receiptsQuery.data.value),
     ),
     total: computed(() => envelopeTotal(receiptsQuery.data.value)),
     pending: receiptsQuery.isLoading,

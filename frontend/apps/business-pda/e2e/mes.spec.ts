@@ -62,6 +62,15 @@ test('报工：选工单 → 选工序 → 录良品数 → 提交 → 成功结
   await expect(result.getByText('报工成功')).toBeVisible()
 })
 
+test('报工：URL 携带工单与工序任务 pair 可直达同一实体', async ({ page }) => {
+  await page.goto('/mes/report?workOrderId=WO-2&operationTaskId=OP-3')
+
+  await expect(page.getByText('当前工单')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'WO-2 · 工序 10', exact: true })).toBeVisible()
+  await expect(page.getByTestId('good-quantity')).toBeVisible()
+  await expect(page.getByTestId('report-route-issue')).toHaveCount(0)
+})
+
 test('领料：列表渲染领料申请行（不退化为空态）', async ({ page }) => {
   await page.goto('/mes/issue')
 
