@@ -6,6 +6,14 @@ import InventoryExpirySummaryCards from '@/components/inventory/InventoryExpiryS
 import { useInventoryAvailability } from '@/composables/useBusinessInventory'
 import { useInventoryExpiryView } from '@/composables/useInventoryExpiryView'
 import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
+import { useInventorySiteStockOverview } from '@/composables/useInventorySiteStock'
+import {
+  useWarehouseCodeCatalog,
+  WAREHOUSE_CATALOG_SOURCE_TEXT,
+  WAREHOUSE_LOCATION_EMPTY_TEXT,
+  WAREHOUSE_LOT_EMPTY_TEXT,
+  WAREHOUSE_SERIAL_EMPTY_TEXT,
+} from '@/composables/useWarehouseCodeCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError } from '@/utils/notify'
 import {
@@ -78,7 +86,28 @@ const {
 // 工厂给默认值、单位跟随物料——用户只需要选物料这一件事。
 const { siteOptions, sitesPending, skuOptions, skusPending } = useInventoryScopeDefaults(filters)
 const hasSkuSelection = computed(() => filters.skuCode.trim().length > 0)
-const showScopePrompt = computed(() => !nearExpiryOnly.value && !hasSkuSelection.value)
+const showSiteOverview = computed(() => !nearExpiryOnly.value && !hasSkuSelection.value)
+// 首屏的全厂批次台账：库存域没有全量读面，按物料目录并发扫描后聚合，覆盖范围如实标注。
+const {
+  refreshSiteStock,
+  scanMoreSiteStock,
+  siteStockError,
+  siteStockFailedCount,
+  siteStockHasMore,
+  siteStockScannedCount,
+  siteStockScanning,
+  siteStockTotalSkuCount,
+  siteStockTrackedLines,
+} = useInventorySiteStockOverview(() => filters.siteCode)
+// 库位/批次/序列号后端无主数据读面，从台账与仓储作业记录派生可选项。
+const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
+  useWarehouseCodeCatalog(() => rows.value)
+const siteStockCoverageText = computed(() => {
+  const base = `已扫描 ${siteStockScannedCount.value}/${siteStockTotalSkuCount.value} 个物料`
+  return siteStockFailedCount.value > 0
+    ? `${base}，其中 ${siteStockFailedCount.value} 个读取失败`
+    : base
+})
 filters.qualityStatus = undefined
 
 watch(
@@ -118,14 +147,25 @@ watch(availabilityError, (error) => {
     notifyError(error, '库存批次加载失败，请稍后重试。')
   }
 })
-const rows = computed<DisplayLine[]>(() =>
-  nearExpiryOnly.value ? visibleExpiryAlerts.value : availabilityLines.value,
-)
-const tablePending = computed(() =>
-  nearExpiryOnly.value ? expiryAlertsPending.value : availabilityPending.value,
-)
+watch(siteStockError, (error) => {
+  if (error) notifyError(error, '本厂批次台账读取失败，请稍后重试。')
+})
+/**
+ * 首屏不该要求先选物料：没选物料时铺**全厂批次台账**（扫描得到的逐行结果里
+ * 挑出带批次/序列号的可追溯单元），选了物料才收窄到该物料。
+ * 两种来源的行形状一致（都带 skuCode），所以下面的列定义不用分叉。
+ */
+const rows = computed<DisplayLine[]>(() => {
+  if (nearExpiryOnly.value) return visibleExpiryAlerts.value
+  return hasSkuSelection.value ? availabilityLines.value : siteStockTrackedLines.value
+})
+const tablePending = computed(() => {
+  if (nearExpiryOnly.value) return expiryAlertsPending.value
+  if (!hasSkuSelection.value) return siteStockScanning.value && rows.value.length === 0
+  return availabilityPending.value
+})
 const pageCount = computed(() => {
-  if (showScopePrompt.value) return '请选择物料'
+  if (showSiteOverview.value) return `${rows.value.length} 条全厂批次`
   if (!nearExpiryOnly.value) return `${rows.value.length} 条库存明细`
   if (!hasExpirySite.value) return '请选择工厂'
   if (!hasExpiryScope.value) return '业务上下文加载中'
@@ -140,6 +180,11 @@ const tableEmptyMessage = computed(() => {
   if (nearExpiryOnly.value && expiryAlertsError.value) return '效期预警加载失败，请稍后重试。'
   if (nearExpiryOnly.value) return '当前范围没有已过期或未来30天内到期的批次。'
   if (availabilityError.value) return '库存批次加载失败，请稍后重试。'
+  if (showSiteOverview.value) {
+    if (siteStockScanning.value) return '正在读取本厂批次台账。'
+    if (siteStockTotalSkuCount.value === 0) return '暂无物料主数据，请先在基础数据维护物料。'
+    return '已扫描的物料在本厂没有批次或序列号记录。可继续扫描其余物料，或换一个工厂。'
+  }
   return '这个物料在当前工厂没有批次记录。换个物料、库位或质量状态再查一次。'
 })
 const onHandQuantity = computed(() => availability.value?.onHandQuantity ?? 0)
@@ -308,7 +353,7 @@ async function refreshCurrentView() {
     <InventoryExpirySummaryCards v-if="nearExpiryOnly" :summary="expirySummary" />
     <!-- 还没选物料时，环形卡与批次统计都只会是 0，不摆空壳指标。 -->
     <div
-      v-else-if="!showScopePrompt"
+      v-else-if="!showSiteOverview"
       class="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]"
     >
       <NvMetricRing
@@ -351,24 +396,43 @@ async function refreshCurrentView() {
           :loading="sitesPending"
           aria-label="工厂"
         />
-        <NvInput
+        <!-- 库位/批次/序列号后端无主数据读面，选项从真实台账与仓储作业记录派生，来源已注明。 -->
+        <NvEntityPicker
           v-model="filters.locationCode"
-          class="h-9 w-24"
+          class="w-36"
+          :options="locationOptions"
+          title="选择库位"
           placeholder="库位"
+          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+          :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
+          :loading="warehouseCatalogPending"
+          clearable
           aria-label="库位"
         />
-        <NvInput
+        <NvEntityPicker
           v-if="!nearExpiryOnly"
           v-model="filters.lotNo"
-          class="h-9 w-28"
+          class="w-36"
+          :options="lotOptions"
+          title="选择批次"
           placeholder="批次"
+          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+          :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
+          :loading="warehouseCatalogPending"
+          clearable
           aria-label="批次"
         />
-        <NvInput
+        <NvEntityPicker
           v-if="!nearExpiryOnly"
           v-model="filters.serialNo"
-          class="h-9 w-28"
+          class="w-36"
+          :options="serialOptions"
+          title="选择序列号"
           placeholder="序列号"
+          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+          :empty-text="WAREHOUSE_SERIAL_EMPTY_TEXT"
+          :loading="warehouseCatalogPending"
+          clearable
           aria-label="序列号"
         />
         <NvSelect v-if="!nearExpiryOnly" v-model="qualityStatusFilter">
@@ -387,35 +451,7 @@ async function refreshCurrentView() {
       </template>
     </NvToolbar>
 
-    <section
-      v-if="showScopePrompt"
-      class="grid content-start justify-items-start gap-3 rounded-md border border-dashed border-border p-8"
-    >
-      <h2 class="text-base font-semibold">选择物料，查看批次、序列号与预留占用</h2>
-      <p class="text-sm text-muted-foreground">
-        批次台账按「物料 × 单位 × 工厂」查询，单位随所选物料自动带出，当前工厂
-        {{ filters.siteCode || '未选择' }}。
-      </p>
-      <div class="flex flex-wrap items-center gap-2">
-        <NvEntityPicker
-          v-model="filters.skuCode"
-          class="w-64"
-          :options="skuOptions"
-          title="选择物料"
-          placeholder="选择物料"
-          source-text="数据来自基础数据物料主数据"
-          empty-text="暂无物料主数据，请先在基础数据维护物料"
-          :loading="skusPending"
-          aria-label="选择物料查看批次"
-        />
-        <NvButton type="button" variant="outline" @click="toggleNearExpiryView">
-          查看效期预警（30天）
-        </NvButton>
-      </div>
-    </section>
-
     <NvDataTable
-      v-else
       :columns="columns"
       :rows="rows"
       :row-key="lineKey"
@@ -523,6 +559,26 @@ async function refreshCurrentView() {
         </div>
       </template>
     </NvDataTable>
+    <!--
+      覆盖范围如实交代：后端没有全量库存读面，这张全厂批次表是按物料逐个查台账再汇总的，
+      所以要给出已扫描进度和继续扫描的出路，不能让人以为看到的就是全部。
+    -->
+    <div
+      v-if="showSiteOverview"
+      class="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground"
+    >
+      <span>{{ siteStockCoverageText }}</span>
+      <NvButton
+        v-if="siteStockHasMore"
+        size="sm"
+        type="button"
+        variant="outline"
+        :disabled="siteStockScanning"
+        @click="scanMoreSiteStock"
+      >
+        {{ siteStockScanning ? '扫描中…' : '继续扫描其余物料' }}
+      </NvButton>
+    </div>
     <NvPagination
       v-if="nearExpiryOnly && hasExpiryScope"
       v-model:page="expiryAlertsPage"

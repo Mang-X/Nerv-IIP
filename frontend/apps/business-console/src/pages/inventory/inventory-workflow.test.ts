@@ -18,8 +18,18 @@ const inventoryState = vi.hoisted(() => ({
   expiryFilters: undefined as Record<string, string | undefined> | undefined,
   availabilityError: undefined as { value: unknown } | undefined,
   availabilityRows: undefined as { value: Array<Record<string, unknown>> } | undefined,
+  // 未选物料 = 全厂库存总览态，选了物料 = 该物料台账明细态；测试要能切这两态。
+  initialSkuCode: 'SKU-001',
   notifyError: vi.fn(),
   notifySuccess: vi.fn(),
+}))
+
+const siteStockState = vi.hoisted(() => ({
+  scanMore: vi.fn(),
+  refresh: vi.fn(),
+  hasMore: undefined as { value: boolean } | undefined,
+  scanning: undefined as { value: boolean } | undefined,
+  rows: undefined as { value: Array<Record<string, unknown>> } | undefined,
 }))
 
 const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }))
@@ -42,7 +52,7 @@ vi.mock('@/composables/useBusinessInventory', () => ({
       qualityStatus: 'available',
       ownerType: 'owned',
       siteCode: 'S1',
-      skuCode: 'SKU-001',
+      skuCode: inventoryState.initialSkuCode,
       uomCode: 'EA',
     }
     inventoryState.availabilityFilters = filters
@@ -204,6 +214,118 @@ vi.mock('@/composables/useInventoryScope', async () => {
   }
 })
 
+// 全厂库存总览：真实实现会按物料目录并发扫台账，测试只关心「首屏有表、覆盖进度如实、能继续扫」。
+vi.mock('@/composables/useInventorySiteStock', async () => {
+  const { computed, ref } = await import('vue')
+  const rows = ref([
+    {
+      skuCode: 'SKU-001',
+      skuName: '前减振器总成',
+      uomCode: 'EA',
+      onHandQuantity: 10,
+      reservedQuantity: 2,
+      availableQuantity: 7,
+      lineCount: 3,
+      locationCount: 2,
+      earliestExpiry: '2026-07-18',
+      hasBlocked: true,
+    },
+    {
+      skuCode: 'RM-BAR-45-01',
+      skuName: '45号钢棒料',
+      uomCode: 'kg',
+      onHandQuantity: 1200,
+      reservedQuantity: 300,
+      availableQuantity: 900,
+      lineCount: 1,
+      locationCount: 1,
+      hasBlocked: false,
+    },
+  ])
+  // 批次与预留页吃的是逐行台账（带批次/序列号的可追溯单元），形状与可用量明细行一致。
+  const trackedLines = ref([
+    {
+      skuCode: 'SKU-001',
+      skuName: '前减振器总成',
+      uomCode: 'EA',
+      locationCode: 'A-01',
+      lotNo: 'LOT-001',
+      serialNo: 'SN-001',
+      qualityStatus: 'available',
+      ownerType: 'owned',
+      onHandQuantity: 10,
+      reservedQuantity: 2,
+      availableQuantity: 7,
+      expiryDate: '2026-07-18',
+      isExpired: true,
+      isBlocked: true,
+      movementAllowed: false,
+      countAllowed: false,
+    },
+    {
+      skuCode: 'RM-BAR-45-01',
+      skuName: '45号钢棒料',
+      uomCode: 'kg',
+      locationCode: 'B-02',
+      lotNo: 'LOT-2026-0714',
+      serialNo: null,
+      qualityStatus: 'available',
+      ownerType: 'owned',
+      onHandQuantity: 1200,
+      reservedQuantity: 300,
+      availableQuantity: 900,
+      isExpired: false,
+      isBlocked: false,
+      movementAllowed: true,
+      countAllowed: true,
+    },
+  ])
+  const hasMore = ref(true)
+  const scanning = ref(false)
+  siteStockState.rows = rows
+  siteStockState.hasMore = hasMore
+  siteStockState.scanning = scanning
+
+  return {
+    SITE_STOCK_SCAN_BATCH: 24,
+    useInventorySiteStockOverview: () => ({
+      refreshSiteStock: siteStockState.refresh,
+      scanMoreSiteStock: siteStockState.scanMore,
+      siteStockAllRows: computed(() => rows.value),
+      siteStockCatalogPending: ref(false),
+      siteStockError: ref(undefined),
+      siteStockFailedCount: computed(() => 0),
+      siteStockHasMore: hasMore,
+      siteStockRows: computed(() => rows.value),
+      siteStockScannedCount: computed(() => 24),
+      siteStockScanning: scanning,
+      siteStockTotalSkuCount: computed(() => 48),
+      siteStockLines: computed(() => trackedLines.value),
+      siteStockTrackedLines: computed(() => trackedLines.value),
+    }),
+  }
+})
+
+// 库位/批次/序列号后端无主数据读面，真实实现从台账与仓储作业记录派生；测试给确定目录。
+vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
+  const { computed, ref } = await import('vue')
+  return {
+    WAREHOUSE_CATALOG_SOURCE_TEXT: '数据来自现有库存与仓储作业记录（暂无库位主数据）',
+    WAREHOUSE_LOCATION_EMPTY_TEXT: '系统里还没有出现过库位，可直接录入新库位编码',
+    WAREHOUSE_LOT_EMPTY_TEXT: '系统里还没有出现过批次',
+    WAREHOUSE_SERIAL_EMPTY_TEXT: '系统里还没有出现过序列号',
+    useWarehouseCodeCatalog: () => ({
+      locationOptions: computed(() => [
+        { value: 'A-01', label: 'A-01' },
+        { value: 'B-02', label: 'B-02' },
+      ]),
+      lotOptions: computed(() => [{ value: 'LOT-001', label: 'LOT-001' }]),
+      serialOptions: computed(() => [{ value: 'SN-001', label: 'SN-001' }]),
+      warehouseCatalogPending: ref(false),
+    }),
+  }
+})
+
 const uiStubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
   PageHeader: {
@@ -295,6 +417,91 @@ describe('inventory workflow pages', () => {
     inventoryState.notifyError.mockReset()
     inventoryState.notifySuccess.mockReset()
     inventoryState.availabilityRows = undefined
+    inventoryState.initialSkuCode = 'SKU-001'
+    siteStockState.scanMore.mockReset()
+    siteStockState.refresh.mockReset()
+    if (siteStockState.hasMore) siteStockState.hasMore.value = true
+    if (siteStockState.scanning) siteStockState.scanning.value = false
+  })
+
+  describe('全厂库存首屏（不选物料也要看到库存表）', () => {
+    it('未选物料时直接渲染全厂库存表，而不是要求先填查询条件', () => {
+      inventoryState.initialSkuCode = ''
+      const wrapper = mountInventoryPage(AvailabilityPage)
+
+      const table = wrapper.find('[data-ui-table]')
+      expect(table.exists()).toBe(true)
+      // 两个物料各一行，说明进页面就有货可看。
+      expect(table.findAll('tbody tr')).toHaveLength(2)
+      expect(wrapper.text()).toContain('前减振器总成')
+      expect(wrapper.text()).toContain('45号钢棒料')
+      expect(wrapper.text()).not.toContain('请选择物料')
+    })
+
+    it('如实交代扫描覆盖范围并给出继续扫描的出路', async () => {
+      inventoryState.initialSkuCode = ''
+      const wrapper = mountInventoryPage(AvailabilityPage)
+
+      expect(wrapper.text()).toContain('已扫描 24/48 个物料')
+      const scanMore = wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('继续扫描'))
+      expect(scanMore).toBeDefined()
+      await scanMore!.trigger('click')
+      expect(siteStockState.scanMore).toHaveBeenCalledTimes(1)
+    })
+
+    it('点总览行的物料即下钻到该物料台账，无需回到筛选条重填', async () => {
+      inventoryState.initialSkuCode = ''
+      const wrapper = mountInventoryPage(AvailabilityPage)
+
+      const skuCell = wrapper.find('[data-cell="skuCode"] button')
+      expect(skuCell.exists()).toBe(true)
+      await skuCell.trigger('click')
+
+      expect(inventoryState.availabilityFilters?.skuCode).toBe('SKU-001')
+    })
+
+    it('进入明细后提供返回全厂库存的出口，并清掉下钻带上的库位/批次条件', async () => {
+      const wrapper = mountInventoryPage(AvailabilityPage)
+      inventoryState.availabilityFilters!.locationCode = 'A-01'
+
+      const back = wrapper.findAll('button').find((button) => button.text().includes('返回全厂库存'))
+      expect(back).toBeDefined()
+      await back!.trigger('click')
+
+      expect(inventoryState.availabilityFilters?.skuCode).toBe('')
+      expect(inventoryState.availabilityFilters?.locationCode).toBe('')
+    })
+
+    it('批次与预留页未选物料时铺全厂批次台账，而不是拦一个选择物料的空态', () => {
+      inventoryState.initialSkuCode = ''
+      const wrapper = mountInventoryPage(LotsPage)
+
+      const table = wrapper.find('[data-ui-table]')
+      expect(table.exists()).toBe(true)
+      expect(table.findAll('tbody tr')).toHaveLength(2)
+      expect(wrapper.text()).toContain('LOT-001')
+      expect(wrapper.text()).toContain('LOT-2026-0714')
+      expect(wrapper.text()).not.toContain('选择物料，查看批次')
+      expect(wrapper.text()).toContain('已扫描 24/48 个物料')
+    })
+
+    it('库位/批次/序列号是从既有数据派生的选择器，不再让仓管手输', () => {
+      const wrapper = mountInventoryPage(AvailabilityPage)
+
+      const pickerLabels = wrapper
+        .findAll('[data-entity-picker]')
+        .map((picker) => picker.attributes('aria-label'))
+      expect(pickerLabels).toContain('库位')
+      expect(pickerLabels).toContain('批次')
+      expect(pickerLabels).toContain('序列号')
+      // 这三项过去是自由文本框，改造后不允许再出现同名输入框。
+      const inputLabels = wrapper.findAll('input').map((input) => input.attributes('aria-label'))
+      expect(inputLabels).not.toContain('库位')
+      expect(inputLabels).not.toContain('批次')
+      expect(inputLabels).not.toContain('序列号')
+    })
   })
 
   it('uses design-system table components for local stock count queue', () => {

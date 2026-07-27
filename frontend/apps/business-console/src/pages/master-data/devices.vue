@@ -7,6 +7,8 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import {
+  useBusinessMasterDataResources,
+  useBusinessPartners,
   useBusinessWorkshops,
   useMasterDataResource,
   useMasterDataResourceActions,
@@ -23,12 +25,14 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvDialogTrigger,
+  NvEntityPicker,
   NvField,
   NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
   NvPageHeader,
+  NvSearchSelect,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -133,6 +137,66 @@ const createForm = reactive({
   criticality: DEVICE_DEFAULTS.criticality,
   maintainable: DEVICE_DEFAULTS.maintainable,
   components: [] as DeviceComponentForm[],
+})
+
+// ── 三个原本手输的编码字段，改为从真实目录里选 ─────────────────
+// 设备类别取数据字典 `asset-class` CodeSet；字典为空时给空态引导，不编造码值。
+const assetClassCatalog = useBusinessMasterDataResources('reference-data', {
+  codeSet: 'asset-class',
+})
+const assetClassOptions = computed(() => {
+  const options = assetClassCatalog.resources.value
+    .filter((row) => !!row.code && row.active !== false)
+    .map((row) => ({
+      value: row.code as string,
+      label: row.displayName || (row.code as string),
+      hint: row.code ?? undefined,
+    }))
+  const current = createForm.assetClassCode.trim()
+  if (current && !options.some((option) => option.value === current)) {
+    return [{ value: current, label: current, hint: undefined }, ...options]
+  }
+  return options
+})
+
+// 供应商只列带 supplier 角色的业务伙伴（伙伴可同时是客户与供应商，按角色包含关系筛）。
+const { partners, partnersPending } = useBusinessPartners()
+const supplierOptions = computed(() => {
+  const options = partners.value
+    .filter((row) => row.active !== false)
+    .filter((row) =>
+      [row.partnerType, ...(row.partnerRoles ?? [])]
+        .map((role) => (role ?? '').trim())
+        .includes('supplier'),
+    )
+    .filter((row) => !!row.code)
+    .map((row) => ({
+      value: row.code as string,
+      label: row.displayName || (row.code as string),
+      hint: row.code ?? undefined,
+    }))
+  const current = createForm.supplierPartnerCode.trim()
+  if (current && !options.some((option) => option.value === current)) {
+    return [{ value: current, label: current, hint: undefined }, ...options]
+  }
+  return options
+})
+
+// 父设备来自设备台账本身，且必须排除正在编辑的这台——设备不能挂在自己名下。
+const parentDeviceOptions = computed(() => {
+  const self = editingCode.value?.trim()
+  const options = devices.items.value
+    .filter((row) => !!row.code && row.code !== self)
+    .map((row) => ({
+      value: row.code as string,
+      label: row.displayName || (row.code as string),
+      hint: row.code ?? undefined,
+    }))
+  const current = createForm.parentDeviceId.trim()
+  if (current && !options.some((option) => option.value === current)) {
+    return [{ value: current, label: current, hint: undefined }, ...options]
+  }
+  return options
 })
 
 const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
@@ -552,14 +616,17 @@ async function submitDevice() {
                   <NvFieldLabel for="dev-class"
                     >设备类别 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
+                  <NvSearchSelect
                     id="dev-class"
                     v-model="createForm.assetClassCode"
-                    autocomplete="off"
-                    required
+                    :options="assetClassOptions"
+                    placeholder="选择设备类别"
+                    :loading="assetClassCatalog.resourcesPending.value"
+                    empty-text="数据字典还没有设备类别，请先在「数据字典」维护"
+                    aria-label="设备类别"
                   />
                   <!-- 取值来源（非显而易见），保留一行。 -->
-                  <NvFieldDescription>取自「数据字典」的设备类别编码。</NvFieldDescription>
+                  <NvFieldDescription>取自「数据字典」的设备类别。</NvFieldDescription>
                 </NvField>
                 <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.criticality)">
                   <NvFieldLabel for="dev-criticality"
@@ -695,16 +762,34 @@ async function submitDevice() {
                   <NvInput id="dev-warranty" v-model="createForm.warrantyExpiresOn" type="date" />
                 </NvField>
                 <NvField>
-                  <NvFieldLabel for="dev-supplier">供应商编码</NvFieldLabel>
-                  <NvInput
+                  <NvFieldLabel for="dev-supplier">供应商</NvFieldLabel>
+                  <NvEntityPicker
                     id="dev-supplier"
                     v-model="createForm.supplierPartnerCode"
-                    autocomplete="off"
+                    :options="supplierOptions"
+                    title="选择供应商"
+                    placeholder="可留空"
+                    source-text="数据来自业务伙伴（供应商角色）"
+                    empty-text="暂无供应商，请先在业务伙伴维护"
+                    :loading="partnersPending"
+                    aria-label="供应商"
+                    clearable
                   />
                 </NvField>
                 <NvField>
-                  <NvFieldLabel for="dev-parent">父设备编码</NvFieldLabel>
-                  <NvInput id="dev-parent" v-model="createForm.parentDeviceId" autocomplete="off" />
+                  <NvFieldLabel for="dev-parent">父设备</NvFieldLabel>
+                  <NvEntityPicker
+                    id="dev-parent"
+                    v-model="createForm.parentDeviceId"
+                    :options="parentDeviceOptions"
+                    title="选择父设备"
+                    placeholder="可留空"
+                    source-text="数据来自设备台账（已排除本机）"
+                    empty-text="暂无可挂靠的设备"
+                    :loading="devices.pending.value"
+                    aria-label="父设备"
+                    clearable
+                  />
                 </NvField>
                 <NvField>
                   <NvFieldLabel for="dev-retired">退役日期</NvFieldLabel>

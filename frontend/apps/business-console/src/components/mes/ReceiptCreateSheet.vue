@@ -5,6 +5,7 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvSearchSelect,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -23,6 +24,7 @@ import { computed } from 'vue'
 
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { useReceiptCreateForm } from '@/composables/mes/useReceiptCreateForm'
+import { useBusinessUoms } from '@/composables/useBusinessMasterData'
 
 // 路由页只负责编排：传入工单上下文与开合，登记表单状态/提交/产出批次全部封装在此组件（Vue best-practices §2）。
 const props = defineProps<{
@@ -42,6 +44,14 @@ const openModel = computed({
   get: () => props.open,
   set: (value: boolean) => emit('update:open', value),
 })
+
+// 单位取基础数据计量单位主数据，不再手输（敲错要到提交才报错）。
+const { uoms, uomsPending } = useBusinessUoms()
+const uomOptions = computed(() =>
+  uoms.value
+    .filter((row) => row.code && row.active !== false)
+    .map((row) => ({ value: row.code as string, label: row.displayName || (row.code as string) })),
+)
 
 const {
   form,
@@ -173,11 +183,15 @@ const contextItems = computed(() => [
           </NvField>
           <NvField>
             <NvFieldLabel for="receipt-uom">单位</NvFieldLabel>
-            <NvInput
+            <NvSearchSelect
               id="receipt-uom"
               v-model="form.uomCode"
-              required
-              :data-invalid="showErrors && invalid.uomCode ? '' : undefined"
+              :options="uomOptions"
+              placeholder="选择单位"
+              :loading="uomsPending"
+              empty-text="暂无计量单位，请先在基础数据维护"
+              aria-label="单位"
+              :class="showErrors && invalid.uomCode ? 'border-destructive' : undefined"
             />
           </NvField>
           <NvField>

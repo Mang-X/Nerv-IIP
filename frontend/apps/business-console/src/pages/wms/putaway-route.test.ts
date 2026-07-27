@@ -35,6 +35,37 @@ vi.mock('@/composables/useBusinessWms', async () => {
       createPutawayPending: shallowRef(false),
       createPutawayError: shallowRef(undefined),
     }),
+    // 入库单选择器的目录来源：上架任务必须挂在已存在的入库单下。
+    useWmsInboundOrders: () => ({
+      filters: reactive({ skip: 0, take: 200 }),
+      inboundOrders: computed(() => [
+        { inboundOrderId: 'ib-1', inboundOrderNo: 'IB-1', status: 'Open' },
+      ]),
+      inboundOrdersError: shallowRef(undefined),
+      inboundOrdersPending: shallowRef(false),
+      inboundOrdersTotal: computed(() => 1),
+      refreshInboundOrders: vi.fn(),
+    }),
+  }
+})
+
+// 库位目录后端无读面，真实实现从仓储作业记录派生；测试给确定选项。
+vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
+  const { computed, shallowRef } = await import('vue')
+  return {
+    WAREHOUSE_CATALOG_SOURCE_TEXT: '数据来自现有库存与仓储作业记录（暂无库位主数据）',
+    WAREHOUSE_LOCATION_EMPTY_TEXT: '系统里还没有出现过库位，可直接录入新库位编码',
+    WAREHOUSE_LOT_EMPTY_TEXT: '系统里还没有出现过批次',
+    WAREHOUSE_SERIAL_EMPTY_TEXT: '系统里还没有出现过序列号',
+    useWarehouseCodeCatalog: () => ({
+      locationOptions: computed(() => [
+        { value: 'STAGE-01', label: 'STAGE-01' },
+        { value: 'RACK-A-01-01', label: 'RACK-A-01-01' },
+      ]),
+      lotOptions: computed(() => [{ value: 'LOT-001', label: 'LOT-001' }]),
+      serialOptions: computed(() => [{ value: 'SN-001', label: 'SN-001' }]),
+      warehouseCatalogPending: shallowRef(false),
+    }),
   }
 })
 
@@ -57,10 +88,7 @@ describe('WMS putaway route handoff', () => {
     const wrapper = mount(PutawayPage, {
       attachTo: document.body,
       global: {
-        stubs: {
-          BusinessLayout: { template: '<main><slot /></main>' },
-          WmsInventoryContextPanel: true,
-        },
+        stubs: wmsStubs(),
       },
     })
     await flushPromises()
@@ -126,12 +154,33 @@ function mountPutaway() {
   return mount(PutawayPage, {
     attachTo: document.body,
     global: {
-      stubs: {
-        BusinessLayout: { template: '<main><slot /></main>' },
-        WmsInventoryContextPanel: true,
-      },
+      stubs: wmsStubs(),
     },
   })
+}
+
+/**
+ * 库位与入库单已从自由文本输入框改成只选的实体选择器。
+ * 这个用例关心的是「路由带参 → 提交体不变」，不是选择器自身的交互，
+ * 所以把选择器桩成一个带同名 id 的输入位，让下面的 setInput 仍然表达「选中了某个库位」。
+ */
+function wmsStubs() {
+  return {
+    BusinessLayout: { template: '<main><slot /></main>' },
+    WmsInventoryContextPanel: true,
+    NvEntityPicker: {
+      props: ['modelValue', 'options', 'id'],
+      emits: ['update:modelValue'],
+      template:
+        '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    },
+    NvSearchSelect: {
+      props: ['modelValue', 'options', 'id'],
+      emits: ['update:modelValue'],
+      template:
+        '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    },
+  }
 }
 
 async function setInput(selector: string, value: string) {

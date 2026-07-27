@@ -31,7 +31,38 @@ vi.mock('@/composables/usePagedList', async () => {
   }
 })
 
+// 库位目录后端无读面，真实实现从仓储作业记录派生；测试给确定选项。
+vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
+  const { computed, shallowRef } = await import('vue')
+  return {
+    WAREHOUSE_CATALOG_SOURCE_TEXT: '数据来自现有库存与仓储作业记录（暂无库位主数据）',
+    WAREHOUSE_LOCATION_EMPTY_TEXT: '系统里还没有出现过库位，可直接录入新库位编码',
+    WAREHOUSE_LOT_EMPTY_TEXT: '系统里还没有出现过批次',
+    WAREHOUSE_SERIAL_EMPTY_TEXT: '系统里还没有出现过序列号',
+    useWarehouseCodeCatalog: () => ({
+      locationOptions: computed(() => [
+        { value: 'A-01', label: 'A-01' },
+        { value: 'STAGE-01', label: 'STAGE-01' },
+      ]),
+      lotOptions: computed(() => [{ value: 'LOT-001', label: 'LOT-001' }]),
+      serialOptions: computed(() => [{ value: 'SN-001', label: 'SN-001' }]),
+      warehouseCatalogPending: shallowRef(false),
+    }),
+  }
+})
+
 vi.mock('@/composables/useBusinessWms', () => ({
+  // 拣货任务必须挂在已存在的出库单下：出库单选择器的目录来源。
+  useWmsOutboundOrders: () => ({
+    filters: reactive({ skip: 0, take: 200 }),
+    outboundOrders: computed(() => [
+      { outboundOrderId: 'ob-1', outboundOrderNo: 'OB-001', siteCode: 'S1' },
+    ]),
+    outboundOrdersError: shallowRef(undefined),
+    outboundOrdersPending: shallowRef(false),
+    outboundOrdersTotal: computed(() => 1),
+    refreshOutboundOrders: vi.fn(),
+  }),
   useWmsPickingTasks: () => {
     const filters = reactive({
       environmentId: 'env-dev',

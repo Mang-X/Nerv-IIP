@@ -35,6 +35,16 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessSkus: () => ({ skus: ref([]) }),
 }))
 
+// 急单表单的物料 ▸ 生产版本目录走 colada 读面（需要 pinia），本用例只看紧急度徽章，整体打桩。
+vi.mock('@/composables/useMesPickerCatalog', () => ({
+  useMesMaterialVersionCatalog: () => ({
+    skuOptions: ref([]),
+    skusPending: ref(false),
+    productionVersionOptions: () => [],
+    productionVersionsPending: ref(false),
+  }),
+}))
+
 const workOrders = vi.hoisted(() => ({ items: [] as Array<Record<string, unknown>> }))
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
@@ -42,6 +52,17 @@ vi.mock('@/composables/useBusinessMes', () => ({
     recordProductionReport: vi.fn(),
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
+  }),
+  // 急单表单的「工序任务」改成只选，列表页新引入了工序任务读面。
+  useMesOperationTasks: () => ({
+    filters: reactive({ organizationId: 'org', environmentId: 'dev', skip: 0, take: 200 }),
+    operationTasks: ref([]),
+    operationTasksError: ref(undefined),
+    operationTasksPending: ref(false),
+    operationTasksTotal: ref(0),
+    refreshOperationTasks: vi.fn(),
+    completeOperationTask: vi.fn(),
+    pauseOperationTask: vi.fn(),
   }),
   useMesWorkOrders: () => ({
     createRushWorkOrder: vi.fn(),

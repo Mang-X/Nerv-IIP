@@ -10,6 +10,10 @@ import {
   useBusinessWorkers,
   useBusinessMasterDataResources,
 } from '@/composables/useBusinessMasterData'
+import {
+  useEquipmentSkuCatalog,
+  useEquipmentUomCatalog,
+} from '@/composables/useEquipmentPickerCatalog'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
@@ -21,6 +25,7 @@ import {
   NvCombobox,
   NvDataTable,
   NvDropdownMenuItem,
+  NvEntityPicker,
   NvField,
   NvFieldError,
   NvFieldGroup,
@@ -78,6 +83,13 @@ const router = useRouter()
 const { workers, workersPending } = useBusinessWorkers()
 // 设备台账（设备编号联想建议，读自 master-data device-asset 资源）。
 const { resources: deviceResources } = useBusinessMasterDataResources('device-asset')
+// 完工登记的换件行：物料与单位从主数据选，单位默认跟随物料基本单位。
+const { skuOptions, skusPending, baseUomBySku } = useEquipmentSkuCatalog()
+const { uomOptions, uomsPending } = useEquipmentUomCatalog()
+function applySpareRowSku(row: { skuCode: string; uomCode: string }) {
+  const baseUom = baseUomBySku.value.get(row.skuCode.trim())
+  if (baseUom) row.uomCode = baseUom
+}
 // 当前登录用户（开单人默认当前用户，可改选他人，不自由输入）。
 const auth = useAuthStore()
 const { principal } = storeToRefs(auth)
@@ -158,7 +170,8 @@ interface SparePartRow {
 }
 let nextSpareRowId = 1
 function createSpareRow(): SparePartRow {
-  return { id: nextSpareRowId++, skuCode: '', quantity: '1', uomCode: 'EA', unitCost: '' }
+  // 单位留空：选完物料自动带出它的基本单位，提交时仍保留 EA 兜底（见 buildSparePartInputs）。
+  return { id: nextSpareRowId++, skuCode: '', quantity: '1', uomCode: '', unitCost: '' }
 }
 
 const completeOpen = shallowRef(false)
@@ -761,15 +774,26 @@ watch(
               v-for="row in spareRows"
               :key="row.id"
               :data-testid="`spare-row-${row.id}`"
-              class="grid items-end gap-2 rounded-md border p-3 sm:grid-cols-[1fr_5rem_4rem_6rem_auto]"
+              class="grid items-end gap-2 rounded-md border p-3 sm:grid-cols-[1fr_5rem_8rem_6rem_auto]"
             >
               <NvField>
                 <NvFieldLabel :for="`spare-sku-${row.id}`">物料</NvFieldLabel>
-                <NvInput
+                <NvEntityPicker
                   :id="`spare-sku-${row.id}`"
-                  v-model="row.skuCode"
-                  autocomplete="off"
-                  placeholder="如 主控芯片MCU"
+                  :model-value="row.skuCode"
+                  :options="skuOptions"
+                  title="选择备件物料"
+                  placeholder="选择备件物料"
+                  source-text="数据来自基础数据物料主数据"
+                  empty-text="暂无物料主数据，请先在基础数据维护物料"
+                  :loading="skusPending"
+                  aria-label="备件物料"
+                  @update:model-value="
+                    (value: string) => {
+                      row.skuCode = value
+                      applySpareRowSku(row)
+                    }
+                  "
                 />
               </NvField>
               <NvField>
@@ -784,7 +808,18 @@ watch(
               </NvField>
               <NvField>
                 <NvFieldLabel :for="`spare-uom-${row.id}`">单位</NvFieldLabel>
-                <NvInput :id="`spare-uom-${row.id}`" v-model="row.uomCode" autocomplete="off" />
+                <NvEntityPicker
+                  :id="`spare-uom-${row.id}`"
+                  v-model="row.uomCode"
+                  :options="uomOptions"
+                  title="选择单位"
+                  placeholder="跟随物料"
+                  source-text="数据来自基础数据计量单位"
+                  empty-text="暂无计量单位，请先在基础数据维护单位"
+                  :loading="uomsPending"
+                  clearable
+                  aria-label="备件单位"
+                />
               </NvField>
               <NvField>
                 <NvFieldLabel :for="`spare-cost-${row.id}`">单价</NvFieldLabel>

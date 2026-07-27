@@ -6,13 +6,14 @@ import {
   isInspectionTaskOverdue,
 } from '@/composables/useQualityInspectionTasks'
 import { usePagedList } from '@/composables/usePagedList'
+import { useQualitySkuCatalog } from '@/composables/useQualityPickerCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
   NvDataTable,
+  NvEntityPicker,
   NvField,
   NvFieldLabel,
-  NvInput,
   NvMetricCard,
   NvPageHeader,
 } from '@nerv-iip/ui'
@@ -49,6 +50,15 @@ const sourceTabs = [
   { label: '过程', value: 'operation' as const },
   { label: '终检', value: 'final' as const },
 ]
+
+// 物料筛选只选不填：待检任务按 SKU 编码过滤，敲错一个字符就是空列表。
+const skuCatalog = useQualitySkuCatalog()
+const skuModel = computed({
+  get: () => filters.skuCode ?? '',
+  set: (value: string) => {
+    filters.skuCode = value.trim() ? value : undefined
+  },
+})
 
 const listErrorMessage = computed(() => formatError(error.value))
 const today = new Date()
@@ -280,7 +290,17 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
       <div class="grid gap-3 sm:grid-cols-[minmax(0,280px)_auto] sm:items-end">
         <NvField>
           <NvFieldLabel for="inspection-task-sku">按 SKU 查找</NvFieldLabel>
-          <NvInput id="inspection-task-sku" v-model="filters.skuCode" placeholder="输入 SKU 编码" />
+          <NvEntityPicker
+            id="inspection-task-sku"
+            v-model="skuModel"
+            :options="skuCatalog.skuOptions.value"
+            title="选择 SKU"
+            placeholder="选择 SKU"
+            source-text="数据来自基础数据物料主数据"
+            :loading="skuCatalog.skusPending.value"
+            clearable
+            aria-label="按 SKU 查找"
+          />
         </NvField>
         <p class="text-sm text-muted-foreground">{{ scopeHint }}</p>
       </div>

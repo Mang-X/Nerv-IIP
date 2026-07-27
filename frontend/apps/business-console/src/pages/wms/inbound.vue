@@ -6,6 +6,17 @@ import WmsReceivingQualityFlow from '@/components/wms/WmsReceivingQualityFlow.vu
 import { useWmsInboundOrders } from '@/composables/useBusinessWms'
 import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
+import {
+  useWarehouseCodeCatalog,
+  WAREHOUSE_CATALOG_SOURCE_TEXT,
+  WAREHOUSE_LOCATION_EMPTY_TEXT,
+  WAREHOUSE_LOT_EMPTY_TEXT,
+} from '@/composables/useWarehouseCodeCatalog'
+import {
+  wmsInboundOrderStatusFilterOptions,
+  WMS_INBOUND_SOURCE_TYPE_OPTIONS,
+  WMS_STATUS_ANY,
+} from '@/data/wmsReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -27,6 +38,7 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
+  NvCombobox,
   NvEntityPicker,
   NvField,
   NvFieldError,
@@ -34,6 +46,7 @@ import {
   NvFieldLabel,
   NvInput,
   NvPageHeader,
+  NvSearchSelect,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -238,7 +251,22 @@ const errorMessage = computed(() =>
   ),
 )
 // 工厂给默认值、单位跟随物料——收货行的库存上下文只差「选哪个物料」。
-const { skuOptions, skusPending } = useInventoryScopeDefaults(filters)
+const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
+  useInventoryScopeDefaults(filters)
+// 库位与批次后端无主数据读面，从真实台账与仓储作业记录派生可选项。
+const { locationOptions, lotOptions, warehouseCatalogPending } = useWarehouseCodeCatalog()
+// 状态是后端枚举而不是目录，用哨兵值表达「全部」。
+const statusFilter = computed({
+  get: () => filters.status || WMS_STATUS_ANY,
+  set: (value: string) => {
+    filters.status = value === WMS_STATUS_ANY ? undefined : value
+  },
+})
+/** 单位随物料的基本单位带出，不给手输：手输单位只会写出查不到货的组合。 */
+function onLineSkuChange(line: { skuCode: string; uomCode: string }, skuCode: string) {
+  line.skuCode = skuCode
+  line.uomCode = skuCode ? resolveUomCode(skuCode) : ''
+}
 /** 网关明确回「还没给够条件」时才引导选物料；其余情况按拿到的上下文照常呈现。 */
 const contextScopeRequired = computed(
   () => (inventoryContext.value?.status ?? '').toLowerCase() === 'scope-required',
@@ -367,18 +395,47 @@ function formatError(error: unknown) {
           clearable
           aria-label="物料"
         />
-        <NvInput v-model="filters.siteCode" class="h-9 w-20" placeholder="工厂" aria-label="工厂" />
-        <NvInput
+        <NvEntityPicker
+          v-model="filters.siteCode"
+          class="w-36"
+          :options="siteOptions"
+          title="选择工厂"
+          placeholder="工厂"
+          source-text="数据来自基础数据工厂主数据"
+          empty-text="暂无工厂主数据，请先在基础数据维护工厂"
+          :loading="sitesPending"
+          clearable
+          aria-label="工厂"
+        />
+        <NvEntityPicker
           v-model="filters.locationCode"
-          class="h-9 w-24"
+          class="w-36"
+          :options="locationOptions"
+          title="选择库位"
           placeholder="库位"
+          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+          :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
+          :loading="warehouseCatalogPending"
+          clearable
           aria-label="库位"
         />
-        <NvInput v-model="filters.lotNo" class="h-9 w-28" placeholder="批次" aria-label="批次" />
-        <NvInput
-          v-model="filters.status"
-          class="h-9 w-28"
-          placeholder="状态（可选）"
+        <NvEntityPicker
+          v-model="filters.lotNo"
+          class="w-36"
+          :options="lotOptions"
+          title="选择批次"
+          placeholder="批次"
+          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+          :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
+          :loading="warehouseCatalogPending"
+          clearable
+          aria-label="批次"
+        />
+        <NvSearchSelect
+          v-model="statusFilter"
+          class="w-36"
+          :options="wmsInboundOrderStatusFilterOptions"
+          placeholder="全部状态"
           aria-label="入库单状态"
         />
       </template>
@@ -469,15 +526,27 @@ function formatError(error: unknown) {
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-in-site">工厂</NvFieldLabel>
-              <NvInput id="wms-in-site" v-model="createForm.siteCode" autocomplete="off" />
+              <NvEntityPicker
+                id="wms-in-site"
+                v-model="createForm.siteCode"
+                :options="siteOptions"
+                title="选择工厂"
+                placeholder="选择工厂"
+                source-text="数据来自基础数据工厂主数据"
+                empty-text="暂无工厂主数据，请先在基础数据维护工厂"
+                :loading="sitesPending"
+                clearable
+                aria-label="工厂"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-in-srctype">来源类型</NvFieldLabel>
-              <NvInput
+              <NvSearchSelect
                 id="wms-in-srctype"
                 v-model="createForm.sourceDocumentType"
-                autocomplete="off"
-                placeholder="如 采购收货"
+                :options="WMS_INBOUND_SOURCE_TYPE_OPTIONS"
+                placeholder="选择来源类型"
+                aria-label="来源类型"
               />
             </NvField>
             <NvField>
@@ -499,18 +568,24 @@ function formatError(error: unknown) {
               :key="index"
               class="flex flex-wrap items-end gap-2 rounded-md border p-2"
             >
-              <NvInput
-                v-model="line.skuCode"
-                class="h-9 w-28"
+              <NvEntityPicker
+                :model-value="line.skuCode"
+                class="w-44"
+                :options="skuOptions"
+                title="选择物料"
                 placeholder="物料*"
+                source-text="数据来自基础数据物料主数据"
+                empty-text="暂无物料主数据，请先在基础数据维护物料"
+                :loading="skusPending"
                 :aria-label="`第 ${index + 1} 行物料`"
+                @update:model-value="(value: string) => onLineSkuChange(line, value)"
               />
-              <NvInput
-                v-model="line.uomCode"
-                class="h-9 w-16"
-                placeholder="单位*"
+              <!-- 单位随物料的基本单位带出，不给手输：手输单位只会写出查不到货的组合。 -->
+              <span
+                class="inline-flex h-9 items-center rounded-md border border-input px-2.5 text-sm text-muted-foreground"
                 :aria-label="`第 ${index + 1} 行单位`"
-              />
+                >{{ line.uomCode || '单位' }}</span
+              >
               <NvInput
                 v-model="line.receivedQuantity"
                 class="h-9 w-24"
@@ -520,15 +595,23 @@ function formatError(error: unknown) {
                 placeholder="收货数量*"
                 :aria-label="`第 ${index + 1} 行收货数量`"
               />
-              <NvInput
+              <NvEntityPicker
                 v-model="line.stagingLocationCode"
-                class="h-9 w-24"
+                class="w-36"
+                :options="locationOptions"
+                title="选择暂存库位"
                 placeholder="暂存库位*"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
                 :aria-label="`第 ${index + 1} 行暂存库位`"
               />
-              <NvInput
+              <!-- 收货批次可能是本次新到货的新批次号，因此保留录入能力、只做既有批次建议。 -->
+              <NvCombobox
                 v-model="line.lotNo"
-                class="h-9 w-24"
+                class="w-36"
+                :suggestions="lotOptions"
                 placeholder="批次"
                 :aria-label="`第 ${index + 1} 行批次`"
               />

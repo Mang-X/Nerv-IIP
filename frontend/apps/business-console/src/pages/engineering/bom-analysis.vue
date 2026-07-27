@@ -6,7 +6,11 @@ import type {
   BusinessConsoleBomWhereUsedItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
-import { useBomAnalysis, useBomItemCatalog } from '@/composables/useProductEngineering'
+import {
+  useBomAnalysis,
+  useBomItemCatalog,
+  useBomVersionPickerCatalog,
+} from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { formatDate, today } from '@/utils/format'
 import {
@@ -19,6 +23,7 @@ import {
   NvInput,
   NvMetricCard,
   NvPageHeader,
+  NvSearchSelect,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -127,6 +132,61 @@ function pickerOptions(current: string) {
 }
 const rootPickerOptions = computed(() => pickerOptions(form.rootCode))
 const componentPickerOptions = computed(() => pickerOptions(form.componentCode))
+
+// ── BOM 版本选择（编码 ▸ 修订 联动）────────────────────────────
+// 修订从属于 BOM 编码：先选编码，修订只列该编码下已发布的修订；换了编码就清空下游修订。
+const { bomCodeOptions, revisionOptions, bomVersionsPending } = useBomVersionPickerCatalog()
+
+const bomVersionSourceText = computed(() =>
+  form.kind === 'engineering' ? '数据来自已发布 EBOM 版本' : '数据来自已发布 MBOM 版本',
+)
+const bomVersionEmptyText = computed(() =>
+  form.kind === 'engineering'
+    ? '暂无已发布 EBOM，请先在设计 BOM 发布版本'
+    : '暂无已发布 MBOM，请先在制造 BOM 发布版本',
+)
+
+const specifiedBomOptions = computed(() => bomCodeOptions(form.kind, form.bomCode))
+const specifiedRevisionOptions = computed(() =>
+  revisionOptions(form.kind, form.bomCode, form.revision),
+)
+const fromBomOptions = computed(() => bomCodeOptions(form.kind, form.fromBomCode))
+const fromRevisionOptions = computed(() =>
+  revisionOptions(form.kind, form.fromBomCode, form.fromRevision),
+)
+const toBomOptions = computed(() => bomCodeOptions(form.kind, form.toBomCode))
+const toRevisionOptions = computed(() => revisionOptions(form.kind, form.toBomCode, form.toRevision))
+
+function syncRevision(bomKey: 'bomCode' | 'fromBomCode' | 'toBomCode') {
+  const revisionKey = (
+    { bomCode: 'revision', fromBomCode: 'fromRevision', toBomCode: 'toRevision' } as const
+  )[bomKey]
+  const code = form[bomKey].trim()
+  if (!code) {
+    form[revisionKey] = ''
+    return
+  }
+  const options = revisionOptions(form.kind, code)
+  // 目录尚未就绪 / 深链带进来的编码不在目录里：不动已选修订，免得清掉 URL 里的真值。
+  if (!options.length) return
+  if (form[revisionKey] && !options.some((option) => option.value === form[revisionKey])) {
+    form[revisionKey] = ''
+  }
+  if (!form[revisionKey] && options.length === 1) form[revisionKey] = options[0].value
+}
+
+watch(
+  () => form.bomCode,
+  () => syncRevision('bomCode'),
+)
+watch(
+  () => form.fromBomCode,
+  () => syncRevision('fromBomCode'),
+)
+watch(
+  () => form.toBomCode,
+  () => syncRevision('toBomCode'),
+)
 
 // 物料编码 → 名称（两套目录合并），结果表格名称列用；查不到显示「—」，不留空、不编造。
 const itemNameByCode = computed(() => {
@@ -610,19 +670,59 @@ function formatError(value: unknown) {
       <div v-if="form.view === 'diff'" class="grid gap-3 md:grid-cols-[1fr_8rem_1fr_8rem_auto]">
         <NvField :data-invalid="submitted && !form.fromBomCode.trim()">
           <NvFieldLabel for="bom-from-code">来源 BOM</NvFieldLabel>
-          <NvInput id="bom-from-code" v-model="form.fromBomCode" placeholder="如 EBOM-FG" />
+          <NvEntityPicker
+            id="bom-from-code"
+            v-model="form.fromBomCode"
+            :options="fromBomOptions"
+            title="选择来源 BOM"
+            placeholder="选择来源 BOM"
+            :source-text="bomVersionSourceText"
+            :empty-text="bomVersionEmptyText"
+            :loading="bomVersionsPending"
+            aria-label="来源 BOM"
+            clearable
+          />
         </NvField>
         <NvField :data-invalid="submitted && !form.fromRevision.trim()">
           <NvFieldLabel for="bom-from-revision">来源修订</NvFieldLabel>
-          <NvInput id="bom-from-revision" v-model="form.fromRevision" placeholder="A" />
+          <NvSearchSelect
+            id="bom-from-revision"
+            v-model="form.fromRevision"
+            :options="fromRevisionOptions"
+            placeholder="选择修订"
+            :disabled="!form.fromBomCode"
+            :loading="bomVersionsPending"
+            empty-text="该 BOM 暂无已发布修订"
+            aria-label="来源修订"
+          />
         </NvField>
         <NvField :data-invalid="submitted && !form.toBomCode.trim()">
           <NvFieldLabel for="bom-to-code">目标 BOM</NvFieldLabel>
-          <NvInput id="bom-to-code" v-model="form.toBomCode" placeholder="如 EBOM-FG" />
+          <NvEntityPicker
+            id="bom-to-code"
+            v-model="form.toBomCode"
+            :options="toBomOptions"
+            title="选择目标 BOM"
+            placeholder="选择目标 BOM"
+            :source-text="bomVersionSourceText"
+            :empty-text="bomVersionEmptyText"
+            :loading="bomVersionsPending"
+            aria-label="目标 BOM"
+            clearable
+          />
         </NvField>
         <NvField :data-invalid="submitted && !form.toRevision.trim()">
           <NvFieldLabel for="bom-to-revision">目标修订</NvFieldLabel>
-          <NvInput id="bom-to-revision" v-model="form.toRevision" placeholder="B" />
+          <NvSearchSelect
+            id="bom-to-revision"
+            v-model="form.toRevision"
+            :options="toRevisionOptions"
+            placeholder="选择修订"
+            :disabled="!form.toBomCode"
+            :loading="bomVersionsPending"
+            empty-text="该 BOM 暂无已发布修订"
+            aria-label="目标修订"
+          />
         </NvField>
         <div class="flex items-end">
           <NvButton type="submit" :disabled="pending">
@@ -636,11 +736,31 @@ function formatError(value: unknown) {
       <div v-else-if="form.view !== 'where-used'" class="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
         <NvField>
           <NvFieldLabel for="bom-code">指定 BOM</NvFieldLabel>
-          <NvInput id="bom-code" v-model="form.bomCode" placeholder="留空自动选择" />
+          <NvEntityPicker
+            id="bom-code"
+            v-model="form.bomCode"
+            :options="specifiedBomOptions"
+            title="选择 BOM 版本"
+            placeholder="留空自动选择"
+            :source-text="bomVersionSourceText"
+            :empty-text="bomVersionEmptyText"
+            :loading="bomVersionsPending"
+            aria-label="指定 BOM"
+            clearable
+          />
         </NvField>
         <NvField>
           <NvFieldLabel for="bom-revision">指定修订</NvFieldLabel>
-          <NvInput id="bom-revision" v-model="form.revision" placeholder="留空自动选择" />
+          <NvSearchSelect
+            id="bom-revision"
+            v-model="form.revision"
+            :options="specifiedRevisionOptions"
+            placeholder="留空自动选择"
+            :disabled="!form.bomCode"
+            :loading="bomVersionsPending"
+            empty-text="该 BOM 暂无已发布修订"
+            aria-label="指定修订"
+          />
         </NvField>
         <div class="flex items-end">
           <NvButton type="submit" :disabled="pending">

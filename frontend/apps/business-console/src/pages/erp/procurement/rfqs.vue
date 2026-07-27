@@ -2,7 +2,9 @@
 import type { BusinessConsoleErpRequestForQuotationItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpRequestsForQuotation } from '@/composables/useBusinessErp'
+import { useErpItemCatalog, useErpPartnerCatalog } from '@/composables/useErpPickerCatalog'
 import { usePagedList } from '@/composables/usePagedList'
+import EntityMultiPicker from '@/components/business/EntityMultiPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -14,6 +16,7 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -25,9 +28,9 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
-import { formatDate, formatQuantity } from '../shared'
+import { formatDate, formatQuantity, pickerInvalidClass } from '../shared'
 
 definePage({
   meta: {
@@ -38,6 +41,9 @@ definePage({
 })
 
 const rfqs = useErpRequestsForQuotation()
+// 询价对象与物料从主数据目录里选；供应商是多选，用应用侧的多选组合件。
+const { supplierOptions, partnersPending } = useErpPartnerCatalog()
+const { skuOptions, skusPending, uomOptions, uomsPending, baseUomBySku } = useErpItemCatalog()
 const { page, pageSize } = usePagedList(rfqs.filters, { resetOn: [() => rfqs.filters.keyword] })
 
 const columns: NvDataTableColumn<BusinessConsoleErpRequestForQuotationItem>[] = [
@@ -85,10 +91,18 @@ const open = shallowRef(false)
 const form = reactive({
   suppliers: '',
   skuCode: '',
-  uomCode: 'EA',
+  uomCode: '',
   quantity: '1',
   requiredDate: '',
 })
+// 询价单位默认跟随物料的基本单位；用户仍可改成采购包装单位。
+watch(
+  () => form.skuCode,
+  (skuCode) => {
+    const baseUom = baseUomBySku.value.get(skuCode.trim())
+    if (baseUom) form.uomCode = baseUom
+  },
+)
 // 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
 const showErrors = shallowRef(false)
 const supplierCodeList = computed(() =>
@@ -109,7 +123,7 @@ const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 function openDialog() {
   form.suppliers = ''
   form.skuCode = ''
-  form.uomCode = 'EA'
+  form.uomCode = ''
   form.quantity = '1'
   form.requiredDate = ''
   showErrors.value = false
@@ -210,34 +224,52 @@ async function submit() {
               <NvFieldLabel for="erp-rfq-suppliers">
                 供应商 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <EntityMultiPicker
                 id="erp-rfq-suppliers"
                 v-model="form.suppliers"
-                autocomplete="off"
-                placeholder="多个供应商用空格或逗号分隔"
-                :data-invalid="showErrors && invalid.suppliers ? '' : undefined"
+                :options="supplierOptions"
+                title="选择供应商"
+                placeholder="添加询价供应商"
+                source-text="数据来自基础数据业务伙伴（供应商角色）"
+                empty-text="暂无供应商，请先在「基础数据 · 业务伙伴」维护"
+                :loading="partnersPending"
+                aria-label="供应商"
+                :invalid="showErrors && invalid.suppliers"
+                selection-empty-text="至少选择一家供应商"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="erp-rfq-sku">
                 物料 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-rfq-sku"
                 v-model="form.skuCode"
-                autocomplete="off"
-                :data-invalid="showErrors && invalid.skuCode ? '' : undefined"
+                :options="skuOptions"
+                title="选择物料"
+                placeholder="选择物料"
+                source-text="数据来自基础数据物料主数据"
+                empty-text="暂无物料，请先在「基础数据 · 物料」维护"
+                :loading="skusPending"
+                aria-label="物料"
+                :class="pickerInvalidClass(showErrors && invalid.skuCode)"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="erp-rfq-uom">
                 单位 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-rfq-uom"
                 v-model="form.uomCode"
-                autocomplete="off"
-                :data-invalid="showErrors && invalid.uomCode ? '' : undefined"
+                :options="uomOptions"
+                title="选择单位"
+                placeholder="选择询价单位"
+                source-text="数据来自基础数据计量单位；选定物料后默认带出基本单位"
+                empty-text="暂无计量单位，请先在「基础数据 · 计量单位」维护"
+                :loading="uomsPending"
+                aria-label="单位"
+                :class="pickerInvalidClass(showErrors && invalid.uomCode)"
               />
             </NvField>
             <NvField>
@@ -266,7 +298,7 @@ async function submit() {
             </NvField>
           </NvFieldGroup>
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请填写供应商、物料、单位、需求日期，并给出正数数量。
+            请选择供应商、物料、单位，填写需求日期，并给出正数数量。
           </p>
           <NvDialogFooter>
             <NvDialogClose as-child

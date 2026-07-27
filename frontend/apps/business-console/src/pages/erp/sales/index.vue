@@ -2,6 +2,7 @@
 import type { BusinessConsoleErpOpportunityItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpOpportunities } from '@/composables/useBusinessErp'
+import { useErpPartnerCatalog } from '@/composables/useErpPickerCatalog'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -14,6 +15,7 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -27,13 +29,15 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
-import { formatDateTime } from '../shared'
+import { formatDateTime, pickerInvalidClass } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: '销售机会', requiredPermissions: ['business.erp.sales.read'] },
 })
 
 const opportunities = useErpOpportunities()
+// 客户从业务伙伴主数据里选，机会一开立就挂在真实客户上。
+const { customerOptions, partnersPending } = useErpPartnerCatalog()
 const { page, pageSize } = usePagedList(opportunities.filters, {
   resetOn: [() => opportunities.filters.keyword],
 })
@@ -170,11 +174,17 @@ async function submit() {
               <NvFieldLabel for="erp-opp-customer">
                 客户 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-opp-customer"
                 v-model="form.customerCode"
-                autocomplete="off"
-                :data-invalid="showErrors && invalid.customerCode ? '' : undefined"
+                :options="customerOptions"
+                title="选择客户"
+                placeholder="选择客户"
+                source-text="数据来自基础数据业务伙伴（客户角色）"
+                empty-text="暂无客户，请先在「基础数据 · 业务伙伴」维护"
+                :loading="partnersPending"
+                aria-label="客户"
+                :class="pickerInvalidClass(showErrors && invalid.customerCode)"
               />
             </NvField>
             <NvField>
@@ -190,7 +200,7 @@ async function submit() {
             </NvField>
           </NvFieldGroup>
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请填写客户与机会主题。
+            请选择客户并填写机会主题。
           </p>
           <NvDialogFooter>
             <NvDialogClose as-child

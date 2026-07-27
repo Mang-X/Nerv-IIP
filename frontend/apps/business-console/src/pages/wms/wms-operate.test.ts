@@ -45,12 +45,34 @@ vi.mock('@/composables/useInventoryScope', async () => {
     sitesPending: ref(false),
     skuOptions: computed(() => [{ value: 'SKU-001', label: '前减振器总成', hint: 'pcs' }]),
     skusPending: ref(false),
+    // 收货行的单位随所选物料的基本单位带出（不再手输）。
+    resolveUomCode: () => 'EA',
   }
   return {
     FALLBACK_INVENTORY_SITE_CODE: 'SITE-001',
     FALLBACK_INVENTORY_UOM_CODE: 'pcs',
     useInventoryScopeCatalog: () => catalog,
     useInventoryScopeDefaults: () => catalog,
+  }
+})
+
+// 库位/批次目录后端无读面，真实实现从仓储作业记录派生；测试给确定选项。
+vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
+  const { computed, shallowRef } = await import('vue')
+  return {
+    WAREHOUSE_CATALOG_SOURCE_TEXT: '数据来自现有库存与仓储作业记录（暂无库位主数据）',
+    WAREHOUSE_LOCATION_EMPTY_TEXT: '系统里还没有出现过库位，可直接录入新库位编码',
+    WAREHOUSE_LOT_EMPTY_TEXT: '系统里还没有出现过批次',
+    WAREHOUSE_SERIAL_EMPTY_TEXT: '系统里还没有出现过序列号',
+    useWarehouseCodeCatalog: () => ({
+      locationOptions: computed(() => [
+        { value: 'STAGE-01', label: 'STAGE-01' },
+        { value: 'RACK-A-01', label: 'RACK-A-01' },
+      ]),
+      lotOptions: computed(() => [{ value: 'LOT-001', label: 'LOT-001' }]),
+      serialOptions: computed(() => [{ value: 'SN-001', label: 'SN-001' }]),
+      warehouseCatalogPending: shallowRef(false),
+    }),
   }
 })
 
@@ -139,7 +161,23 @@ vi.mock('@/composables/useBusinessWms', () => ({
   }),
 }))
 
-const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
+/**
+ * 库位/物料/工厂/来源类型等字段已从自由文本输入框改成只选控件。
+ * 这些用例关心的是「填表 → 提交体」，不是选择器自身的交互，
+ * 所以把选择器桩成输入位（透传 id 与 aria-label），让下面的 setInput 仍然表达「选中了某个候选」。
+ */
+const onlySelectStub = {
+  props: ['modelValue', 'options', 'id'],
+  emits: ['update:modelValue'],
+  template:
+    '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+}
+
+const layoutStub = {
+  BusinessLayout: { template: '<main><slot /></main>' },
+  NvEntityPicker: onlySelectStub,
+  NvSearchSelect: onlySelectStub,
+}
 
 describe('WMS operate actions', () => {
   beforeEach(() => {
@@ -231,8 +269,8 @@ describe('WMS operate actions', () => {
     setInput('#wms-in-site', 'S1')
     setInput('#wms-in-srctype', '采购收货')
     setInput('#wms-in-srcid', 'PO-1')
+    // 单位不再是输入位：选完物料后由该物料的基本单位带出。
     setInput('[aria-label="第 1 行物料"]', 'SKU1')
-    setInput('[aria-label="第 1 行单位"]', 'EA')
     setInput('[aria-label="第 1 行收货数量"]', '5')
     setInput('[aria-label="第 1 行暂存库位"]', 'A-01')
     await flushPromises()

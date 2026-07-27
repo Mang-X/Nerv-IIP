@@ -88,6 +88,15 @@ vi.mock('@/composables/useQualityInspectionTasks', () => ({
   },
 }))
 
+// 物料筛选改成只选：目录 composable 内部走 pinia + colada，测试整体打桩给定候选。
+vi.mock('@/composables/useQualityPickerCatalog', () => ({
+  useQualitySkuCatalog: () => ({
+    skuOptions: shallowRef([{ value: 'SKU-001', label: '示例物料' }]),
+    skusPending: shallowRef(false),
+    skuNameByCode: shallowRef(new Map([['SKU-001', '示例物料']])),
+  }),
+}))
+
 vi.mock('@/composables/usePagedList', () => ({
   usePagedList: (_filters: unknown, options: { initialPageSize?: string }) => {
     state.pagedListOptions = options
