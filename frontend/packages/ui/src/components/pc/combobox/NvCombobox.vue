@@ -124,7 +124,10 @@ function onPointerDownOutside(e: Event) {
         :aria-activedescendant="activeDescendant"
         :class="
           cn(
-            'border-input focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 h-8 w-full rounded-lg border bg-transparent px-2.5 py-1 text-base outline-none transition-colors focus-visible:ring-3 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
+            // h-9 / rounded-md / px-3 是包内表单控件的统一基线（NvInput、NvSelectTrigger、
+            // NvSearchSelect、NvButton 默认档都是它）。此前这里是 h-8 + rounded-lg + px-2.5，
+            // 跟同排的输入框、下拉框并排时会矮一截、圆角也对不上。
+            'border-input focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 h-9 w-full rounded-md border bg-transparent px-3 py-1 text-base outline-none transition-colors focus-visible:ring-3 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
             props.class,
           )
         "

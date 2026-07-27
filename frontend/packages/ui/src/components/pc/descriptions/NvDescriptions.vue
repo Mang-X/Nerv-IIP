@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
+import { EMPTY_TEXT, isEmptyValue } from '../../../lib/empty'
 import { cn } from '../../../lib/utils'
 import { NvTooltip, NvTooltipContent, NvTooltipProvider, NvTooltipTrigger } from '../tooltip'
 import type { DescriptionItem } from './types'
@@ -39,7 +40,7 @@ const props = withDefaults(
     bordered: false,
     layout: 'horizontal',
     size: 'default',
-    emptyText: '—',
+    emptyText: EMPTY_TEXT,
     ellipsis: false,
   },
 )
@@ -47,8 +48,12 @@ const props = withDefaults(
 function spanOf(item: DescriptionItem): number {
   return Math.max(1, Math.min(item.span ?? 1, props.columns))
 }
+// 只作为 `#<key>` 插槽的兜底内容参与渲染：调用点给了插槽就走插槽，压根到不了这里。
+// 旧实现多了个 `!item.key &&` 前置条件，导致**凡是带 key 的条目**（为了对上插槽名，
+// 这是绝大多数用法）永远判定为「非空」，`emptyText` 形同虚设，空值直接渲染成空白格。
+// 判空统一走 lib/empty，顺带修掉 `0` / `false` 被吞的问题。
 function isEmpty(item: DescriptionItem): boolean {
-  return !item.key && (item.value === undefined || item.value === null || item.value === '')
+  return isEmptyValue(item.value)
 }
 
 interface PlacedItem {
