@@ -3597,6 +3597,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     scheduleInvalidationReasonCode?: string | null;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchTaskListRequest = {
+    [key: string]: never;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAssignDispatchTaskRequest = {
     assignedUserId?: string | null;
     deviceAssetId?: string | null;
@@ -12588,7 +12592,7 @@ export type ListBusinessConsoleMesDispatchTasksData = {
         workCenterId?: string | null;
         shiftId?: string | null;
         deviceAssetId?: string | null;
-        workOrderId?: string | null;
+        assignedUserId?: string | null;
         skip?: number;
         take?: number;
     };

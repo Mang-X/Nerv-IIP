@@ -11,6 +11,12 @@ public sealed class IamSeedOptions
     public string AdminLoginName { get; init; } = "admin";
     public string AdminEmail { get; init; } = "admin@nerv-iip.local";
     public string AdminPassword { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 领导演示 PDA 工人账号的统一登录口令。为空 = 不开通（默认）；只允许来自当前进程
+    /// 环境变量注入（<c>Iam__Seed__DemoWorkerPassword</c>），禁止写入仓库或配置文件。
+    /// </summary>
+    public string DemoWorkerPassword { get; init; } = string.Empty;
     public string AdminRoleId { get; init; } = "role-platform-admin";
     public string ConnectorHostCredentialId { get; init; } = "credential-connector-host-001";
     public string ConnectorHostId { get; init; } = "connector-host-001";

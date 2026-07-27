@@ -10,6 +10,35 @@ export const principal = {
   organizationId: 'org-001',
   environmentId: 'env-dev',
   permissionVersion: 1,
+  // 首页按权限裁剪板块/应用墙 —— e2e 主体给全量 PDA 读写权限（等价产线+仓储+质检复合）。
+  permissionCodes: [
+    'business.mes.dispatch.read',
+    'business.mes.work-orders.read',
+    'business.mes.operations.read',
+    'business.mes.reporting.read',
+    'business.mes.materials.read',
+    'business.mes.receipts.read',
+    'business.wms.receipts.read',
+    'business.wms.shipments.read',
+    'business.quality.inspection-records.read',
+    'business.iiot.alarms.read',
+    'business.maintenance.work-orders.read',
+    'business.maintenance.plans.read',
+    'business.masterdata.resources.read',
+  ],
+  roleIds: [],
+}
+
+/** 首页身份行的员工目录档案（master-data workers 精确查 userId 命中）。 */
+export const workerProfile = {
+  userId: principal.principalId,
+  employeeNo: 'EMP-012',
+  displayName: '李秀英',
+  jobTitle: '操作工',
+  employmentStatus: 'active',
+  active: true,
+  teams: [{ teamCode: 'TEAM-WB-AS-A', teamName: '装配车间早班组' }],
+  skills: [],
 }
 
 export const session = {
@@ -94,6 +123,23 @@ const putawayTasks = [
   },
 ]
 
+// 收货单完整行投影（收货完成的 fail-closed 门禁依赖它：行数 0 → 判「不完整」禁止提交）。
+const receivingQualityGates = [
+  {
+    inboundOrderId: 'in-1',
+    inboundOrderLineId: 'in-1-l1',
+    inboundOrderNo: 'IN-1',
+    lineNo: '1',
+    skuCode: 'SKU-1',
+    uomCode: 'EA',
+    receivedQuantity: 10,
+    stagingLocationCode: 'STG-01',
+    lotNo: null,
+    qualityStatus: 'passed',
+    qualityGateStatus: 'not-required',
+  },
+]
+
 const countExecutions = [
   {
     countExecutionId: 'ce-1',
@@ -125,6 +171,34 @@ export const mesOperationTasks = [
     status: 'Ready',
     operationSequence: 20,
     workCenterId: 'WC-B',
+  },
+]
+
+/**
+ * Dispatch-task rows（首页「我的任务」）— shape mirrors `BusinessConsoleMesDispatchTaskRow`：
+ * 一条进行中 + 一条待开工，服务端按 assignedUserId 过滤后返回本人任务。
+ */
+export const mesDispatchTasks = [
+  {
+    operationTaskId: 'OT-1',
+    workOrderId: 'WO-1',
+    workOrderNo: 'WO-2026-00001',
+    status: 'InProgress',
+    operationCode: 'OP-30',
+    workCenterId: 'WC-A',
+    workCenterName: '装配一线',
+    assignedUserId: principal.principalId,
+    assignedUserName: '李秀英',
+  },
+  {
+    operationTaskId: 'OT-2',
+    workOrderId: 'WO-2',
+    workOrderNo: 'WO-2026-00002',
+    status: 'Queued',
+    operationCode: 'OP-10',
+    workCenterId: 'WC-B',
+    assignedUserId: principal.principalId,
+    assignedUserName: '李秀英',
   },
 ]
 
@@ -229,6 +303,9 @@ export async function routeBusinessConsoleApi(route: Route) {
   if (pathname.endsWith('/wms/count-executions')) {
     return fulfillJson(route, listEnvelope(countExecutions))
   }
+  if (pathname.endsWith('/wms/receiving-quality-gates')) {
+    return fulfillJson(route, listEnvelope(receivingQualityGates))
+  }
 
   // ---- 设备运维（报修/点检/报警查看） ----
   // 报修：维修工单 list / create
@@ -299,8 +376,23 @@ export async function routeBusinessConsoleApi(route: Route) {
     )
   }
 
+  // ---- 首页（员工档案 / 我的任务 / 待检任务） ----
+  if (pathname === '/api/business-console/v1/master-data/workers') {
+    return fulfillJson(
+      route,
+      envelope({ pageIndex: 1, pageSize: 1, totalCount: 1, items: [workerProfile] }),
+    )
+  }
+  if (pathname === '/api/business-console/v1/quality/inspection-tasks') {
+    return fulfillJson(route, envelope({ items: [], total: 0 }))
+  }
+
   // ---- MES（工序执行/报工/领料/完工入库） ----
   const base = '/api/business-console/v1/mes'
+
+  if (pathname === `${base}/dispatch-tasks`) {
+    return fulfillJson(route, envelope({ items: mesDispatchTasks, total: mesDispatchTasks.length }))
+  }
 
   // Operation-task actions: start/pause/resume/complete → success envelope.
   if (

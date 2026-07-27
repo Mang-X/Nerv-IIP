@@ -19,7 +19,8 @@ test('logs in and lands on the workbench home', async ({ page }) => {
   await page.getByRole('button', { name: '登录' }).click()
 
   await expect(page).toHaveURL('/')
-  await expect(page.getByRole('heading', { name: '工作台' })).toBeVisible()
+  // 首页头部呈现登录人身份（员工目录档案：姓名 + 岗位/班组）。
+  await expect(page.getByTestId('home-name')).toHaveText('李秀英')
 })
 
 test('failed login shows an error and stays on the login route', async ({ page }) => {
@@ -43,16 +44,19 @@ test('failed login shows an error and stays on the login route', async ({ page }
   await expect(page.getByRole('button', { name: '登录' })).toBeVisible()
 })
 
-test('home shows scan bar, my-tasks empty state and a gated app wall', async ({ page }) => {
+test('home shows scan bar, my dispatch tasks and a permission-gated app wall', async ({ page }) => {
   await seedStoredSession(page)
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { name: '工作台' })).toBeVisible()
+  await expect(page.getByTestId('home-name')).toHaveText('李秀英')
   // scan bar focus input present
   await expect(page.locator('input[placeholder^="扫描"]')).toBeVisible()
-  // my-tasks empty state (no fake data)
-  await expect(page.getByText('暂无分配给你的任务')).toBeVisible()
-  // 所有 PDA 域（WMS + MES + 设备运维）均已交付 → 应用墙入口全部点亮、无 disabled。
+  // 「我的任务」呈现派工到本人的工序任务（服务端 assignedUserId 过滤，中文状态标签）。
+  await expect(page.getByTestId('home-my-tasks')).toContainText('WO-2026-00001')
+  await expect(page.getByTestId('home-my-tasks')).toContainText('进行中')
+  // 仓储摘要块随 WMS 读权限出现（计数来自各 open 列表 total）。
+  await expect(page.getByTestId('home-warehouse')).toContainText('待上架')
+  // 主体带全量 PDA 权限 → 应用墙入口全部可见可点。
   await expect(page.getByRole('button', { name: '收货入库' })).toBeEnabled()
   await expect(page.getByRole('button', { name: '报工' })).toBeEnabled()
   await expect(page.getByRole('button', { name: '报修' })).toBeEnabled()

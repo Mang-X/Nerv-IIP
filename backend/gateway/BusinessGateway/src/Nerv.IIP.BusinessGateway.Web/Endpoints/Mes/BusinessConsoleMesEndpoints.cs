@@ -748,16 +748,16 @@ public sealed class ListBusinessConsoleMesDispatchTasksEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListRequest, BusinessConsoleMesDispatchTaskListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesDispatchTaskListRequest, BusinessConsoleMesDispatchTaskListResponse>(
         auth,
         BusinessGatewayPermissions.MesDispatchRead)
 {
-    protected override string OrganizationId(BusinessConsoleMesListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleMesDispatchTaskListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMesListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleMesDispatchTaskListRequest request) => request.EnvironmentId;
 
     protected override Task<BusinessConsoleMesDispatchTaskListResponse> ForwardAsync(
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesDispatchTaskListRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.ListDispatchTasksAsync(tokenProvider.BearerToken, request, cancellationToken);

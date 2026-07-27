@@ -81,6 +81,8 @@ var minioRootPassword = builder.AddParameter("minio-root-password", secret: true
 var redisPassword = builder.AddParameter("redis-password", secret: true);
 var iamSeedAdminPassword = builder.AddParameter("iam-seed-admin-password", secret: true);
 var iamSeedConnectorHostSecret = builder.AddParameter("iam-seed-connector-host-secret", secret: true);
+// 可选：PDA 演示工人统一口令（缺省为空 = 不开通演示工人账号），不建为必填 Parameter 以免阻塞常规启动。
+var iamSeedDemoWorkerPassword = builder.Configuration["Parameters:iam-seed-demo-worker-password"] ?? string.Empty;
 var connectorIngestionTokenSigningKey = builder.AddParameter("connector-ingestion-token-signing-key", secret: true);
 var messagingProvider = builder.Configuration["Messaging:Provider"] ?? "InMemory";
 var useRabbitMq = string.Equals(messagingProvider, "RabbitMQ", StringComparison.OrdinalIgnoreCase);
@@ -195,6 +197,7 @@ var iam = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProjec
     .WithEnvironment("Iam__Seed__Enabled", "true")
     .WithEnvironment("Iam__Seed__AdminPassword", iamSeedAdminPassword)
     .WithEnvironment("Iam__Seed__ConnectorHostSecret", iamSeedConnectorHostSecret)
+    .WithEnvironment("Iam__Seed__DemoWorkerPassword", iamSeedDemoWorkerPassword)
     .WithEnvironment("LeaderDemo__World__Enabled", leaderDemoWorldEnabledValue)
     .WithEnvironment("Iam__Jwt__SigningKeys__0__Kid", iamJwtSigningKeyId)
     .WithEnvironment("Iam__Jwt__SigningKeys__0__PrivateKeyPem", iamJwtPrivateKeyPem)
@@ -249,6 +252,10 @@ var notification = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
+    // 设备预警可达工作台：Notification 对 alarm-raised 的收件人默认回退 role:maintenance，
+    // 但消息面按 principalRef（user:user-admin）精确匹配、没有角色展开层——演示管理员必须显式列入。
+    .WithEnvironment("IndustrialTelemetry__AlarmNotification__RecipientRefs__0", "user:user-admin")
+    .WithEnvironment("IndustrialTelemetry__AlarmNotification__RecipientRefs__1", "role:maintenance")
     .WithEnvironment("Observability__Alerts__Enabled", "true")
     .WithEnvironment("Observability__Alerts__OrganizationId", connectorHostOrganizationId)
     .WithEnvironment("Observability__Alerts__EnvironmentId", connectorHostEnvironmentId)
@@ -507,6 +514,9 @@ var businessIndustrialTelemetry = WithNervIipTelemetry(WithLocalDevelopmentEnvir
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("LeaderDemo__World__Enabled", leaderDemoWorldEnabledValue)
+    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
+    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
+    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessIndustrialTelemetryDatabase, "PostgreSQL")
@@ -527,6 +537,9 @@ var businessMaintenance = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(b
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
+    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
+    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
+    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("Maintenance__PmGeneration__Enabled", maintenancePmGenerationEnabled ? "true" : "false")
     .WithEnvironment("Maintenance__PmGeneration__OrganizationId", maintenancePmGenerationOrganizationId ?? string.Empty)
     .WithEnvironment("Maintenance__PmGeneration__EnvironmentId", maintenancePmGenerationEnvironmentId ?? string.Empty)
