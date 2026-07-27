@@ -103,7 +103,7 @@ describe('PDA equipment alarms page', () => {
     expect(text).not.toContain('EXT-1')
   })
 
-  it('shows 确认/搁置 buttons only on unacknowledged rows; processed rows show a status tag + who/when', () => {
+  it('uses the alarm gate: acknowledged rows remain shelveable but cannot be acknowledged twice', () => {
     const wrapper = mount(AlarmsPage)
     expect(wrapper.find('[data-testid="ack-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]').exists()).toBe(
       true,
@@ -114,6 +114,9 @@ describe('PDA equipment alarms page', () => {
     expect(wrapper.find('[data-testid="ack-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]').exists()).toBe(
       false,
     )
+    expect(
+      wrapper.find('[data-testid="shelve-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]').exists(),
+    ).toBe(true)
     const tag = wrapper.find('[data-testid="status-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]')
     expect(tag.exists()).toBe(true)
     expect(tag.text()).toContain('已确认')
@@ -231,6 +234,22 @@ describe('PDA equipment alarms page', () => {
     confirmBtn!.click()
     await flushPromises()
     expect(acknowledge).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('still clears stale alarm context and shows the fixed toast when conflict refresh fails', async () => {
+    acknowledge.mockRejectedValueOnce({ success: false, message: 'lifecycle-conflict' })
+    refresh.mockRejectedValueOnce(new Error('refresh unavailable'))
+    const wrapper = mount(AlarmsPage, { attachTo: document.body })
+    await wrapper.get('[data-testid="ack-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('.nv-m-md-confirm')!.click()
+    await flushPromises()
+
+    expect(refresh).toHaveBeenCalled()
+    expect(document.body.textContent).toContain('状态已被其他操作更新')
+    expect(document.body.textContent).not.toContain('操作失败')
+    expect(document.body.querySelector('.nv-m-md-confirm')).toBeNull()
     wrapper.unmount()
   })
 

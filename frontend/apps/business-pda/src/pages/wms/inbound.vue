@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import {
   useWmsInbound,
@@ -16,6 +17,7 @@ import {
   parseGs1,
   receivingQualityGateStatusLabel,
   RECEIVING_QUALITY_GATE_STATUS,
+  statusActionGate,
   type ExpiryTone,
   type ReceivingQualityGateStatus,
 } from '@nerv-iip/business-core'
@@ -27,6 +29,7 @@ import {
   NvMobileInput,
   NvMobileResult,
   NvMobileTag,
+  NvMobileToast,
   NvNoticeBar,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
@@ -69,6 +72,7 @@ const activeLineId = ref('')
 // 每次用户发起操作（点单开抽屉）生成一次稳定幂等键，跨重试复用以防丢响应重复入库；
 // 选新单/继续后再点单才换新键。绝不在重试时重新生成。
 const operationKey = ref('')
+const operationAttempted = ref(false)
 
 // 抽屉或结果展示时停止外层扫码焦点抢夺，避免破坏浮层 focus-trap。
 const scanActive = computed(() => !sheetOpen.value && !completed.value)
@@ -139,6 +143,14 @@ const hasNearExpiry = computed(() =>
 )
 // 上架门禁：单据级派生（后端聚合含免检行）。待检/不合格 → 不出现上架引导。
 const selectedCanPutaway = computed(() => selectedOrder.value?.isReleasedForPutaway === true)
+const selectedCanComplete = computed(
+  () =>
+    statusActionGate({
+      domain: 'wms-inbound',
+      action: 'complete',
+      facts: { status: selectedOrder.value?.status },
+    }).executable,
+)
 const selectedNeedsQuality = computed(
   () => Boolean(selectedOrder.value?.qualityGateStatus) && !selectedCanPutaway.value,
 )
@@ -148,7 +160,8 @@ const submitDisabled = computed(
     completePending.value ||
     linesPending.value ||
     Boolean(linesError.value) ||
-    !linesComplete.value,
+    !linesComplete.value ||
+    !selectedCanComplete.value,
 )
 
 // 当前作业行：显式选中优先，否则单行单自动落到唯一行。
@@ -171,6 +184,7 @@ function selectOrder(order: InboundOrder) {
   selectedOrder.value = order
   // 新操作开始：换一把新幂等键。
   operationKey.value = makeIdempotencyKey()
+  operationAttempted.value = false
   submitError.value = ''
   gs1Notice.value = ''
   sheetOpen.value = true
@@ -179,6 +193,11 @@ function selectOrder(order: InboundOrder) {
 function closeSheet() {
   sheetOpen.value = false
 }
+
+const lifecycleRecovery = useLifecycleActionRecovery({
+  reset: resetFlow,
+  refresh,
+})
 
 // 扫 GS1 批次码：解析批号/效期/生产日期采集到目标行。目标优先级：
 // 当前作业行（选中/单行）> 按扫出 lotNo 匹配已有批号的行。新收货行上尚无批号时
@@ -263,21 +282,29 @@ async function confirmComplete() {
   submitError.value = ''
   try {
     // 重试复用同一 operationKey（不重新生成），#188 客户端去重可识别为同一操作。
-    await completeInbound(selectedOrderId.value, operationKey.value, buildCaptureLines())
+    await completeInbound(selectedOrderId.value, operationKey.value, buildCaptureLines(), {
+      attempt: operationAttempted.value ? 'retry' : 'initial',
+      onCommandAttempt: () => {
+        operationAttempted.value = true
+      },
+    })
     // 成功后立刻关抽屉并切到结果态，重复点击无法再触发。
     sheetOpen.value = false
     completed.value = true
     void refresh()
   } catch (e) {
+    if (await lifecycleRecovery.handle(e)) return
     submitError.value = e instanceof Error ? e.message : '完成收货入库失败'
   }
 }
 
 function resetFlow() {
+  sheetOpen.value = false
   completed.value = false
   selectedOrder.value = null
   // 清空操作键：下次点单会铸新键，保证新操作 ≠ 旧键。
   operationKey.value = ''
+  operationAttempted.value = false
   submitError.value = ''
   gs1Notice.value = ''
   capturedByLine.value = {}
@@ -508,6 +535,7 @@ function goPutaway() {
 
         <div class="space-y-2 pt-2">
           <NvMobileButton
+            v-if="selectedCanComplete"
             block
             variant="primary"
             class="min-h-touch"
@@ -538,6 +566,13 @@ function goPutaway() {
       v-model:open="expiryPickerOpen"
       v-model="expiryPickerValue"
       title="选择效期"
+    />
+
+    <NvMobileToast
+      :show="lifecycleRecovery.toast.value.show"
+      :message="lifecycleRecovery.toast.value.message"
+      :type="lifecycleRecovery.toast.value.type"
+      @update:show="lifecycleRecovery.setToastOpen"
     />
   </NvAppShellMobile>
 </template>

@@ -9,7 +9,9 @@ vi.mock('vue-router', () => ({
 
 // --- composable mock: 2 issue requests + 2 work orders + create/confirm spies ---
 const createIssue = vi.fn(async (_workOrderId: string, _body: Record<string, unknown>) => {})
-const confirmLineSideReceipt = vi.fn(async (_requestId: string, _body: Record<string, unknown>) => {})
+const confirmLineSideReceipt = vi.fn(
+  async (_requestId: string, _body: Record<string, unknown>) => {},
+)
 const refreshRequests = vi.fn(async () => {})
 const refreshWorkOrders = vi.fn(async () => {})
 
@@ -134,10 +136,14 @@ describe('PDA MES material issue page', () => {
     await flushPromises()
 
     // 录入物料与数量
-    const materialInput = document.body.querySelector<HTMLInputElement>('[data-testid="issue-material"]')!
+    const materialInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="issue-material"]',
+    )!
     materialInput.value = 'MAT-X'
     materialInput.dispatchEvent(new Event('input'))
-    const qtyInput = document.body.querySelector<HTMLInputElement>('[data-testid="issue-quantity"]')!
+    const qtyInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="issue-quantity"]',
+    )!
     qtyInput.value = '12'
     qtyInput.dispatchEvent(new Event('input'))
     await flushPromises()
@@ -169,7 +175,9 @@ describe('PDA MES material issue page', () => {
       await flushPromises()
       document.body.querySelectorAll<HTMLElement>('[data-testid="issue-work-order"]')[0].click()
       await flushPromises()
-      const materialInput = document.body.querySelector<HTMLInputElement>('[data-testid="issue-material"]')!
+      const materialInput = document.body.querySelector<HTMLInputElement>(
+        '[data-testid="issue-material"]',
+      )!
       materialInput.value = material
       materialInput.dispatchEvent(new Event('input'))
       await flushPromises()
@@ -193,7 +201,10 @@ describe('PDA MES material issue page', () => {
     expect(retryKey).toBe(firstKey)
 
     // 成功后回到起点，发起新一轮新建 → 新键
-    await wrapper.findAll('button').find((b) => b.text() === '继续')!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '继续')!
+      .trigger('click')
     await flushPromises()
     await fillCreate('MAT-Y')
 
@@ -215,7 +226,9 @@ describe('PDA MES material issue page', () => {
     woRows[0].click()
     await flushPromises()
 
-    const submitBtn = document.body.querySelector<HTMLButtonElement>('[data-testid="submit-issue"]')!
+    const submitBtn = document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="submit-issue"]',
+    )!
     submitBtn.click()
     await flushPromises()
     expect(createIssue).not.toHaveBeenCalled()
@@ -230,7 +243,9 @@ describe('PDA MES material issue page', () => {
     await receiveBtn.trigger('click')
     await flushPromises()
 
-    const qtyInput = document.body.querySelector<HTMLInputElement>('[data-testid="received-quantity"]')!
+    const qtyInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="received-quantity"]',
+    )!
     qtyInput.value = '100'
     qtyInput.dispatchEvent(new Event('input'))
     await flushPromises()
@@ -256,7 +271,9 @@ describe('PDA MES material issue page', () => {
     async function fillReceive(testid: string) {
       await wrapper.get(`[data-testid="${testid}"]`).trigger('click')
       await flushPromises()
-      const qtyInput = document.body.querySelector<HTMLInputElement>('[data-testid="received-quantity"]')!
+      const qtyInput = document.body.querySelector<HTMLInputElement>(
+        '[data-testid="received-quantity"]',
+      )!
       qtyInput.value = '100'
       qtyInput.dispatchEvent(new Event('input'))
       await flushPromises()
@@ -280,9 +297,12 @@ describe('PDA MES material issue page', () => {
     expect(retryKey).toBe(firstKey)
 
     // 成功后回到起点，发起对另一条申请的新一轮接收 → 新键
-    await wrapper.findAll('button').find((b) => b.text() === '继续')!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '继续')!
+      .trigger('click')
     await flushPromises()
-    await fillReceive('receive-REQ-2')
+    await fillReceive('receive-REQ-1')
 
     expect(confirmLineSideReceipt).toHaveBeenCalledTimes(3)
     const newKey = confirmLineSideReceipt.mock.calls[2][1].idempotencyKey

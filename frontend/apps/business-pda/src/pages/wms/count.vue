@@ -1,13 +1,19 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useWmsCount } from '@/composables/useBusinessWms'
-import { countExecutionFlow, countExecutionStatusLabel } from '@nerv-iip/business-core'
+import {
+  countExecutionFlow,
+  countExecutionStatusLabel,
+  statusActionGate,
+} from '@nerv-iip/business-core'
 import {
   NvAppShellMobile,
   NvBottomSheet,
   NvListRow,
   NvMobileResult,
+  NvMobileToast,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
@@ -67,6 +73,11 @@ const submitError = ref('')
 // 空态仅在「无盘点任务且无加载/错误」时出现，避免与错误/加载态打架。
 const showEmpty = computed(() => !pending.value && !error.value && executions.value.length === 0)
 
+function displayCountStatus(status?: string) {
+  if (status?.trim().toLowerCase() === 'open') return '待盘点'
+  return countExecutionStatusLabel(status)
+}
+
 function onScan(value: string) {
   filters.locationCode = value
 }
@@ -75,8 +86,18 @@ function selectExecution(
   countExecutionId: string | undefined,
   countNo: string | undefined,
   expected: number | undefined,
+  status?: string,
 ) {
   if (!countExecutionId) return
+  if (
+    !statusActionGate({
+      domain: 'wms-count',
+      action: 'complete',
+      facts: { status },
+    }).executable
+  ) {
+    return
+  }
   selectedExecutionId.value = countExecutionId
   selectedCountNo.value = countNo ?? ''
   expectedQuantity.value = expected ?? 0
@@ -90,6 +111,11 @@ function selectExecution(
 function closeSheet() {
   sheetOpen.value = false
 }
+
+const lifecycleRecovery = useLifecycleActionRecovery({
+  reset: resetFlow,
+  refresh,
+})
 
 async function confirmComplete() {
   // 防重：pending 中或实盘数无效直接早退（按钮也已禁用，UI 守双道）。
@@ -105,11 +131,13 @@ async function confirmComplete() {
     sheetOpen.value = false
     completed.value = true
   } catch (e) {
+    if (await lifecycleRecovery.handle(e)) return
     submitError.value = e instanceof Error ? e.message : '提交盘点失败'
   }
 }
 
 function resetFlow() {
+  sheetOpen.value = false
   completed.value = false
   selectedExecutionId.value = ''
   selectedCountNo.value = ''
@@ -186,12 +214,13 @@ function goHome() {
           v-for="execution in executions"
           :key="execution.countExecutionId"
           :title="`盘点 ${execution.countNo ?? ''}`"
-          :subtitle="`SKU ${execution.skuCode ?? ''} · 库位 ${execution.locationCode ?? ''} · 预期 ${execution.expectedQuantity ?? 0} · ${countExecutionStatusLabel(execution.status)}`"
+          :subtitle="`SKU ${execution.skuCode ?? ''} · 库位 ${execution.locationCode ?? ''} · 预期 ${execution.expectedQuantity ?? 0} · ${displayCountStatus(execution.status)}`"
           @select="
             selectExecution(
               execution.countExecutionId,
               execution.countNo,
               execution.expectedQuantity,
+              execution.status,
             )
           "
         />
@@ -256,5 +285,12 @@ function goHome() {
         </div>
       </div>
     </NvBottomSheet>
+
+    <NvMobileToast
+      :show="lifecycleRecovery.toast.value.show"
+      :message="lifecycleRecovery.toast.value.message"
+      :type="lifecycleRecovery.toast.value.type"
+      @update:show="lifecycleRecovery.setToastOpen"
+    />
   </NvAppShellMobile>
 </template>

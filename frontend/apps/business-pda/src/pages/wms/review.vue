@@ -1,13 +1,19 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useWmsOutbound } from '@/composables/useBusinessWms'
-import { outboundOrderStatusLabel, outboundReviewFlow } from '@nerv-iip/business-core'
+import {
+  outboundOrderStatusLabel,
+  outboundReviewFlow,
+  statusActionGate,
+} from '@nerv-iip/business-core'
 import {
   NvAppShellMobile,
   NvBottomSheet,
   NvListRow,
   NvMobileResult,
+  NvMobileToast,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
@@ -33,6 +39,7 @@ const completed = ref(false)
 // 每次用户发起操作（点单开抽屉）生成一次稳定幂等键，跨重试复用以防丢响应重复出库；
 // 选新单/继续后再点单才换新键。绝不在重试时重新生成。
 const operationKey = ref('')
+const operationAttempted = ref(false)
 
 // 复核录入：复核单号 + 通过/不通过开关。
 const packReviewNo = ref('')
@@ -64,14 +71,28 @@ function onScan(value: string) {
   filters.keyword = value
 }
 
-function selectOrder(outboundOrderId: string | undefined, outboundOrderNo: string | undefined) {
+function canComplete(status?: string) {
+  return statusActionGate({
+    domain: 'wms-outbound',
+    action: 'complete',
+    facts: { status },
+  }).executable
+}
+
+function selectOrder(
+  outboundOrderId: string | undefined,
+  outboundOrderNo: string | undefined,
+  status?: string,
+) {
   if (!outboundOrderId) return
+  if (!canComplete(status)) return
   selectedOrderId.value = outboundOrderId
   selectedOrderNo.value = outboundOrderNo ?? ''
   packReviewNo.value = ''
   passed.value = true
   // 新操作开始：换一把新幂等键。
   operationKey.value = makeIdempotencyKey()
+  operationAttempted.value = false
   submitError.value = ''
   sheetOpen.value = true
 }
@@ -80,26 +101,42 @@ function closeSheet() {
   sheetOpen.value = false
 }
 
+const lifecycleRecovery = useLifecycleActionRecovery({
+  reset: resetFlow,
+  refresh,
+})
+
 async function confirmComplete() {
   // 防重：pending 中或复核单号无有效内容直接早退（按钮也已禁用，UI 守双道）。
   if (completePending.value || !validPackReviewNo.value) return
   submitError.value = ''
   try {
     // 重试复用同一 operationKey（不重新生成），#188 客户端去重可识别为同一操作。
-    await completeOutbound(selectedOrderId.value, {
-      packReviewNo: packReviewNo.value.trim(),
-      passed: passed.value,
-      idempotencyKey: operationKey.value,
-    })
+    await completeOutbound(
+      selectedOrderId.value,
+      {
+        packReviewNo: packReviewNo.value.trim(),
+        passed: passed.value,
+        idempotencyKey: operationKey.value,
+      },
+      {
+        attempt: operationAttempted.value ? 'retry' : 'initial',
+        onCommandAttempt: () => {
+          operationAttempted.value = true
+        },
+      },
+    )
     // 成功后立刻关抽屉并切到结果态，重复点击无法再触发。
     sheetOpen.value = false
     completed.value = true
   } catch (e) {
+    if (await lifecycleRecovery.handle(e)) return
     submitError.value = e instanceof Error ? e.message : '完成出库复核失败'
   }
 }
 
 function resetFlow() {
+  sheetOpen.value = false
   completed.value = false
   selectedOrderId.value = ''
   selectedOrderNo.value = ''
@@ -107,6 +144,7 @@ function resetFlow() {
   passed.value = true
   // 清空操作键：下次点单会铸新键，保证新操作 ≠ 旧键。
   operationKey.value = ''
+  operationAttempted.value = false
   submitError.value = ''
 }
 
@@ -177,7 +215,7 @@ function goHome() {
           :key="order.outboundOrderId"
           :title="order.outboundOrderNo ?? ''"
           :subtitle="outboundOrderStatusLabel(order.status)"
-          @select="selectOrder(order.outboundOrderId, order.outboundOrderNo)"
+          @select="selectOrder(order.outboundOrderId, order.outboundOrderNo, order.status)"
         />
       </div>
     </div>
@@ -241,5 +279,12 @@ function goHome() {
         </div>
       </div>
     </NvBottomSheet>
+
+    <NvMobileToast
+      :show="lifecycleRecovery.toast.value.show"
+      :message="lifecycleRecovery.toast.value.message"
+      :type="lifecycleRecovery.toast.value.type"
+      @update:show="lifecycleRecovery.setToastOpen"
+    />
   </NvAppShellMobile>
 </template>

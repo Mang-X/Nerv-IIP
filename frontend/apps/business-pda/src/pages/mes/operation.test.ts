@@ -26,7 +26,7 @@ const defaultTasks = [
   {
     operationTaskId: 'OP-1',
     workOrderId: 'WO-2026-0001',
-    status: 'Running',
+    status: 'InProgress',
     operationSequence: 10,
     operationCode: 'OP-CODE-1',
     workCenterId: 'WC-A',
@@ -34,7 +34,7 @@ const defaultTasks = [
   {
     operationTaskId: 'OP-2',
     workOrderId: 'WO-2026-0002',
-    status: 'Ready',
+    status: 'Queued',
     operationSequence: 20,
     workCenterId: 'WC-B',
   },
@@ -79,6 +79,7 @@ describe('PDA MES operation execution page', () => {
     startTask.mockClear()
     pauseTask.mockClear()
     resumeTask.mockClear()
+    refresh.mockClear()
     refreshSops.mockClear()
     tasksErrorRef.value = null
     sopsErrorRef.value = null
@@ -159,8 +160,43 @@ describe('PDA MES operation execution page', () => {
     wrapper.unmount()
   })
 
+  it('refreshes and closes stale action context on a typed 409 without offering retry', async () => {
+    completeTask.mockRejectedValueOnce({ success: false, message: 'lifecycle-conflict' })
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    expect(refresh).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(false)
+    expect(document.body.textContent).toContain('状态已被其他操作更新')
+    expect(document.body.querySelector('[data-testid="confirm-complete"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('still closes stale action context and shows the fixed toast when conflict refresh fails', async () => {
+    completeTask.mockRejectedValueOnce({ success: false, message: 'lifecycle-conflict' })
+    refresh.mockRejectedValueOnce(new Error('refresh unavailable'))
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    expect(refresh).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(false)
+    expect(document.body.textContent).toContain('状态已被其他操作更新')
+    expect(document.body.querySelector('[data-testid="confirm-complete"]')).toBeNull()
+    wrapper.unmount()
+  })
+
   it('reuses the SAME idempotencyKey on action retry; a different action initiation mints a new key', async () => {
-    // 行 0 是 Running 工序，可执行「暂停」与「完成」
+    // 行 0 是 InProgress 工序，可执行「暂停」与「完成」
     completeTask.mockRejectedValueOnce(new Error('lost response'))
     const wrapper = mount(OperationPage, { attachTo: document.body })
     const rows = wrapper.findAll('[data-row]')

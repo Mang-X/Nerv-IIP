@@ -10,8 +10,10 @@ import {
   useBusinessQualityInspectionTasks,
   useInspectionPlanCharacteristics,
 } from '@/composables/useBusinessQualityInspectionTasks'
+import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
-import { NvAppShellMobile, NvMobileButton } from '@nerv-iip/ui-mobile'
+import { statusActionGate } from '@nerv-iip/business-core'
+import { NvAppShellMobile, NvMobileButton, NvMobileToast } from '@nerv-iip/ui-mobile'
 import { computed, ref, useTemplateRef } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -61,6 +63,18 @@ const inListStep = computed(() => selectedTask.value === null && result.value ==
 const stepNumber = computed(() => (result.value ? 3 : selectedTask.value ? 2 : 1))
 
 function selectTask(task: Task) {
+  if (
+    !statusActionGate({
+      domain: 'quality-inspection-task',
+      action: 'create-record',
+      facts: {
+        status: task.status,
+        inspectionRecordId: task.inspectionRecordId,
+      },
+    }).executable
+  ) {
+    return
+  }
   selectedTask.value = task
 }
 function backToList() {
@@ -68,10 +82,16 @@ function backToList() {
   result.value = null
 }
 
+const lifecycleRecovery = useLifecycleActionRecovery({
+  reset: backToList,
+  refresh,
+})
+
 function onSubmitted(authoritative: AuthoritativeInspectionResult) {
   result.value = { phase: 'submitted', authoritative }
 }
-function onFailed(message: string) {
+async function onFailed(message: string, error?: unknown) {
+  if (await lifecycleRecovery.handle(error)) return
   result.value = { phase: 'error', message }
 }
 function nextTask() {
@@ -157,5 +177,12 @@ function openNcr() {
         @open-ncr="openNcr"
       />
     </template>
+
+    <NvMobileToast
+      :show="lifecycleRecovery.toast.value.show"
+      :message="lifecycleRecovery.toast.value.message"
+      :type="lifecycleRecovery.toast.value.type"
+      @update:show="lifecycleRecovery.setToastOpen"
+    />
   </NvAppShellMobile>
 </template>

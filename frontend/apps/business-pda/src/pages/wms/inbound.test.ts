@@ -38,8 +38,16 @@ const wmsState = vi.hoisted(() => ({
       isReleasedForPutaway: true,
     },
   ] as Array<Record<string, unknown>>,
-  completeInbound: vi.fn((_inboundOrderId: string, _idempotencyKey: string, _lines?: unknown[]) =>
-    Promise.resolve(),
+  completeInbound: vi.fn(
+    (
+      _inboundOrderId: string,
+      _idempotencyKey: string,
+      _lines?: unknown[],
+      options?: { attempt: 'initial' | 'retry'; onCommandAttempt?: () => void },
+    ) => {
+      options?.onCommandAttempt?.()
+      return Promise.resolve()
+    },
   ),
   completePending: false,
   error: null as unknown,
@@ -250,6 +258,7 @@ describe('WMS 收货入库', () => {
     expect(lines).toEqual([
       { lineNo: '1', lotNo: 'LOT-A', productionDate: undefined, expiryDate: '2027-12-31' },
     ])
+    expect(wmsState.completeInbound.mock.calls[0][3]).toMatchObject({ attempt: 'initial' })
   })
 
   it('多行新批次：逐行批号手输 → 随 completeInbound 落库', async () => {
@@ -279,7 +288,17 @@ describe('WMS 收货入库', () => {
   })
 
   it('重试（不重新点单）复用同一 idempotencyKey；重新点单为新操作换新键', async () => {
-    wmsState.completeInbound.mockRejectedValueOnce(new Error('lost response'))
+    wmsState.completeInbound.mockImplementationOnce(
+      (
+        _id: string,
+        _key: string,
+        _lines?: unknown[],
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject(new Error('lost response'))
+      },
+    )
     const wrapper = mount(InboundPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
     await flushPromises()
@@ -291,11 +310,13 @@ describe('WMS 收货入库', () => {
     expect(wmsState.completeInbound).toHaveBeenCalledTimes(2)
     const firstKey = wmsState.completeInbound.mock.calls[0][1]
     expect(wmsState.completeInbound.mock.calls[1][1]).toBe(firstKey)
+    expect(wmsState.completeInbound.mock.calls[0][3]).toMatchObject({ attempt: 'initial' })
+    expect(wmsState.completeInbound.mock.calls[1][3]).toMatchObject({ attempt: 'retry' })
 
     const continueBtn = wrapper.findAll('button').find((b) => b.text() === '继续')!
     await continueBtn.trigger('click')
 
-    await wrapper.findAll('[data-row]')[1].trigger('click')
+    await wrapper.findAll('[data-row]')[0].trigger('click')
     await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
     await flushPromises()

@@ -1,18 +1,27 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
-import { openDownloadGrantBlob, operationTaskStatusLabel } from '@nerv-iip/business-core'
+import {
+  openDownloadGrantBlob,
+  operationTaskStatusLabel,
+  statusActionGate,
+} from '@nerv-iip/business-core'
 import { createTimeoutFetch, REQUEST_TIMEOUT_MS } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import {
+  isLifecycleActionUpdated,
+  LIFECYCLE_ACTION_UPDATED_MESSAGE,
+} from '@/composables/lifecycleActionRecovery'
+import {
   NvAppShellMobile,
   NvBottomSheet,
   NvListRow,
   NvMobileResult,
+  NvMobileToast,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -57,21 +66,16 @@ const statusLabel = operationTaskStatusLabel
 
 type ActionKind = 'start' | 'pause' | 'resume' | 'complete'
 
-// 按当前状态决定可用动作
+// 只消费服务端持久化 canonical status；未知/终态固定只读。
 function actionsFor(status?: string): ActionKind[] {
-  switch (status) {
-    case 'Ready':
-      return ['start']
-    case 'Running':
-    case 'Started':
-    case 'InProgress':
-      return ['pause', 'complete']
-    case 'Paused':
-    case 'Held':
-      return ['resume', 'complete']
-    default:
-      return []
-  }
+  return (['start', 'pause', 'resume', 'complete'] as const).filter(
+    (action) =>
+      statusActionGate({
+        domain: 'mes-operation-task',
+        action,
+        facts: { status },
+      }).executable,
+  )
 }
 
 const ACTION_LABELS: Record<ActionKind, string> = {
@@ -122,6 +126,7 @@ type ResultState = {
 const result = ref<ResultState | null>(null)
 const openingSopFileId = ref<string | null>(null)
 const sopFileError = ref('')
+const toast = reactive({ show: false, message: '', type: 'error' as const })
 
 const availableActions = computed(() => actionsFor(selected.value?.status))
 
@@ -156,6 +161,19 @@ function openSheet(task: Task) {
 function closeSheet() {
   selected.value = null
   confirmingComplete.value = false
+}
+
+async function recoverLifecycleUpdate() {
+  closeSheet()
+  result.value = null
+  operationKey.value = ''
+  try {
+    await refresh()
+  } catch {
+    // 刷新失败不阻断固定冲突提示，用户可随后手动刷新列表。
+  }
+  toast.message = LIFECYCLE_ACTION_UPDATED_MESSAGE
+  toast.show = true
 }
 async function openSopFile(sop: CurrentSop) {
   const fileId = sop.fileId?.trim()
@@ -196,6 +214,10 @@ async function runAction(action: ActionKind) {
     await ACTION_FNS[action](id, key)
     result.value = { status: 'success', title: SUCCESS_TITLES[action], action, taskId: id }
   } catch (e) {
+    if (isLifecycleActionUpdated(e)) {
+      await recoverLifecycleUpdate()
+      return
+    }
     result.value = {
       status: 'error',
       title: '操作失败',
@@ -217,6 +239,10 @@ async function retry() {
     await ACTION_FNS[action](taskId, key)
     result.value = { status: 'success', title: SUCCESS_TITLES[action], action, taskId }
   } catch (e) {
+    if (isLifecycleActionUpdated(e)) {
+      await recoverLifecycleUpdate()
+      return
+    }
     result.value = {
       status: 'error',
       title: '操作失败',
@@ -445,5 +471,12 @@ function formatDate(value?: string | null) {
         </div>
       </div>
     </NvBottomSheet>
+
+    <NvMobileToast
+      :show="toast.show"
+      :message="toast.message"
+      :type="toast.type"
+      @update:show="toast.show = $event"
+    />
   </NvAppShellMobile>
 </template>

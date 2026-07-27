@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { BusinessConsoleTelemetryAlarmEventItem } from '@nerv-iip/api-client'
-import { alarmLifecycleStatusLabel, alarmSeverityLabel } from '@nerv-iip/business-core'
+import {
+  alarmLifecycleStatusLabel,
+  alarmSeverityLabel,
+  statusActionGate,
+} from '@nerv-iip/business-core'
 import { describeRequestError } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
 import {
@@ -8,6 +12,10 @@ import {
   useBusinessEquipmentAlarms,
 } from '@/composables/useBusinessEquipmentAlarms'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+import {
+  isLifecycleActionUpdated,
+  LIFECYCLE_ACTION_UPDATED_MESSAGE,
+} from '@/composables/lifecycleActionRecovery'
 import {
   NvActionSheet,
   NvAppShellMobile,
@@ -54,9 +62,34 @@ function statusOf(item: Alarm) {
   return (item.status ?? '').trim().toLowerCase()
 }
 
-// 未确认（raised）才提供行内 确认/搁置；已处理行灰显 + 状态标。
-function isRaised(item: Alarm) {
-  return statusOf(item) === 'raised'
+function alarmFacts(item: Alarm) {
+  return {
+    status: item.status,
+    acknowledgedAtUtc: item.acknowledgedAtUtc,
+    shelvedAtUtc: item.shelvedAtUtc,
+    shelvedUntilUtc: item.shelvedUntilUtc,
+    evaluatedAtUtc: new Date().toISOString(),
+  }
+}
+
+function canAcknowledge(item: Alarm) {
+  return statusActionGate({
+    domain: 'iiot-alarm',
+    action: 'acknowledge',
+    facts: alarmFacts(item),
+  }).executable
+}
+
+function canShelve(item: Alarm) {
+  return statusActionGate({
+    domain: 'iiot-alarm',
+    action: 'shelve',
+    facts: alarmFacts(item),
+  }).executable
+}
+
+function isActionable(item: Alarm) {
+  return canAcknowledge(item) || canShelve(item)
 }
 
 function timeText(iso?: string | null) {
@@ -134,6 +167,20 @@ async function runPending() {
     }
     pendingAction.value = null
   } catch (e) {
+    if (isLifecycleActionUpdated(e)) {
+      pendingAction.value = null
+      actionError.value = null
+      pendingAck.value = null
+      pendingShelve.value = null
+      detail.value = null
+      try {
+        await refresh()
+      } catch {
+        // 刷新失败不阻断固定冲突提示，用户可随后手动刷新列表。
+      }
+      showToast(LIFECYCLE_ACTION_UPDATED_MESSAGE, 'error')
+      return
+    }
     const info = describeRequestError(e, '操作失败，请重试')
     if (info.indeterminate) {
       // 已发出、结果未知：不盲目重试，刷新列表引导核对。
@@ -318,15 +365,16 @@ function showToast(message: string, type: 'success' | 'error') {
             :title="alarmTitle(item)"
             :subtitle="alarmSubtitle(item)"
             :interactive="false"
-            :class="isRaised(item) ? undefined : 'opacity-60'"
+            :class="isActionable(item) ? undefined : 'opacity-60'"
           >
             <template v-if="processedMeta(item)" #meta>
               <div class="truncate text-xs text-muted-foreground">{{ processedMeta(item) }}</div>
             </template>
             <template #trailing>
               <div class="flex shrink-0 items-center gap-2">
-                <template v-if="isRaised(item)">
+                <template v-if="isActionable(item)">
                   <NvMobileButton
+                    v-if="canAcknowledge(item)"
                     :data-testid="`ack-${item.alarmEventId}`"
                     variant="primary"
                     size="sm"
@@ -336,6 +384,7 @@ function showToast(message: string, type: 'success' | 'error') {
                     确认
                   </NvMobileButton>
                   <NvMobileButton
+                    v-if="canShelve(item)"
                     :data-testid="`shelve-${item.alarmEventId}`"
                     variant="outline"
                     size="sm"
@@ -346,7 +395,7 @@ function showToast(message: string, type: 'success' | 'error') {
                   </NvMobileButton>
                 </template>
                 <NvMobileTag
-                  v-else
+                  v-if="statusOf(item) !== 'raised'"
                   :data-testid="`status-${item.alarmEventId}`"
                   :variant="tagVariant(item)"
                 >
