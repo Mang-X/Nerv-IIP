@@ -13,6 +13,7 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
+  NvEntityPicker,
   NvField,
   NvFieldError,
   NvFieldGroup,
@@ -31,6 +32,10 @@ import {
 import { computed, reactive, shallowRef, watch } from 'vue'
 
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import {
+  useEquipmentDeviceCatalog,
+  useEquipmentTeamCatalog,
+} from '@/composables/useEquipmentPickerCatalog'
 
 type TriggerMode = 'calendar' | 'runtime' | 'both'
 type DialogMode = 'create' | 'edit'
@@ -90,6 +95,9 @@ const form = reactive<PlanFormState>({
   owner: '',
 })
 const submitted = shallowRef(false)
+
+const { deviceOptions, devicesPending } = useEquipmentDeviceCatalog()
+const { teamOptions, teamsPending } = useEquipmentTeamCatalog()
 
 const intervalOptions = computed(() => {
   const originalInterval = props.mode === 'edit' ? props.plan?.interval : undefined
@@ -257,14 +265,18 @@ function submitForm() {
         <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
           <NvField v-if="!isEditMode">
             <NvFieldLabel for="plan-device">设备</NvFieldLabel>
-            <NvInput
+            <NvEntityPicker
               id="plan-device"
               v-model="form.deviceAssetId"
-              autocomplete="off"
-              placeholder="如 DEV-SMT-01"
-              :invalid="deviceInvalid"
+              :options="deviceOptions"
+              title="选择设备"
+              placeholder="选择设备"
+              source-text="数据来自基础数据设备资产"
+              empty-text="暂无设备资产，请先在基础数据登记设备"
+              :loading="devicesPending"
+              aria-label="设备"
             />
-            <NvFieldError v-if="deviceInvalid" :errors="['请选择或填写设备。']" />
+            <NvFieldError v-if="deviceInvalid" :errors="['请选择设备。']" />
           </NvField>
 
           <NvField v-if="!isEditMode">
@@ -335,14 +347,18 @@ function submitForm() {
 
           <NvField v-if="!isEditMode" class="sm:col-span-2">
             <NvFieldLabel for="plan-owner">负责班组</NvFieldLabel>
-            <NvInput
+            <NvEntityPicker
               id="plan-owner"
               v-model="form.owner"
-              autocomplete="off"
-              placeholder="如 设备保全班"
-              :invalid="ownerInvalid"
+              :options="teamOptions"
+              title="选择负责班组"
+              placeholder="选择负责班组"
+              source-text="数据来自基础数据班组"
+              empty-text="暂无班组，请先在基础数据维护班组"
+              :loading="teamsPending"
+              aria-label="负责班组"
             />
-            <NvFieldError v-if="ownerInvalid" :errors="['请填写负责班组。']" />
+            <NvFieldError v-if="ownerInvalid" :errors="['请选择负责班组。']" />
           </NvField>
         </NvFieldGroup>
 

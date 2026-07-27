@@ -11,6 +11,8 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useBusinessApproval } from '@/composables/useBusinessApproval'
+import { useBusinessMasterDataResources, useBusinessWorkers } from '@/composables/useBusinessMasterData'
+import { APPROVAL_DOCUMENT_TYPE_OPTIONS } from '@/data/approvalReference'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -24,7 +26,9 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
+  NvCombobox,
   NvDropdownMenuItem,
+  NvEntityPicker,
   NvField,
   NvFieldError,
   NvFieldGroup,
@@ -56,7 +60,7 @@ import {
   UserRoundPlusIcon,
   XCircleIcon,
 } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
@@ -122,6 +126,98 @@ const templateForm = reactive({
   dueInHours: '',
 })
 const templateError = shallowRef('')
+
+// ── 模板 / 单据类型 / 审批人 的受控取值 ──────────────────────────
+const documentTypeOptions = APPROVAL_DOCUMENT_TYPE_OPTIONS
+function documentTypeLabel(value?: string | null) {
+  const code = (value ?? '').trim()
+  if (!code) return ''
+  return documentTypeOptions.find((option) => option.value === code)?.label ?? code
+}
+
+// 委托的「单据范围」可留空代表全部单据；NvSelect 不接受空串值，用 `all` 哨兵代理。
+const delegationDocumentType = computed({
+  get: () => (delegationForm.documentType.trim() ? delegationForm.documentType : 'all'),
+  set: (value: string) => {
+    delegationForm.documentType = value === 'all' ? '' : value
+  },
+})
+
+// 审批人类型是上游：换了类型，原来的审批人取值必然作废。
+watch(
+  () => templateForm.approverType,
+  () => {
+    templateForm.approverRef = ''
+  },
+)
+
+// 模板编码既可能复用已有模板（改版本 / 改步骤），也可能是本次新建的编码——
+// 给已有模板编码做建议，同时保留录入新编码的能力。
+const templateCodeSuggestions = computed(() => {
+  const byCode = new Map<string, { value: string, label: string, hint?: string }>()
+  for (const template of approval.templates.value) {
+    const code = template.templateCode?.trim()
+    if (!code || byCode.has(code)) continue
+    byCode.set(code, {
+      value: code,
+      label: code,
+      hint: [documentTypeLabel(template.documentType), `v${template.version ?? 1}`]
+        .filter(Boolean)
+        .join(' · '),
+    })
+  }
+  return [...byCode.values()]
+})
+
+// 审批人取值随「审批人类型」切换目录：人员走员工名录，部门走部门主数据；
+// 角色目录在平台管理台（IAM）维护，业务网关无读面，暂保留手工录入（后端缺口已登记）。
+const { workers, workersPending } = useBusinessWorkers()
+const { resources: departments, resourcesPending: departmentsPending } =
+  useBusinessMasterDataResources('department')
+
+const workerOptions = computed(() =>
+  workers.value
+    .filter((row) => !!row.userId && row.active !== false)
+    .map((row) => ({
+      value: row.userId as string,
+      label: row.displayName || (row.userId as string),
+      hint: [row.employeeNo, row.departmentName ?? row.departmentCode].filter(Boolean).join(' · '),
+    })),
+)
+const departmentOptions = computed(() =>
+  departments.value
+    .filter((row) => !!row.code && row.active !== false)
+    .map((row) => ({
+      value: row.code as string,
+      label: row.displayName || (row.code as string),
+      hint: row.code ?? undefined,
+    })),
+)
+// 代理人从员工名录里选；委托人固定为当前登录人（openDelegation 已带入），不做二次挑选。
+const delegateOptions = computed(() => {
+  const current = delegationForm.delegateActorRef.trim()
+  const options = workerOptions.value.filter(
+    (option) => option.value !== delegationForm.delegatorActorRef.trim(),
+  )
+  if (current && !options.some((option) => option.value === current)) {
+    return [{ value: current, label: current, hint: undefined }, ...options]
+  }
+  return options
+})
+
+const approverOptions = computed(() => {
+  const options =
+    templateForm.approverType === 'user'
+      ? workerOptions.value
+      : templateForm.approverType === 'department'
+        ? departmentOptions.value
+        : []
+  const current = templateForm.approverRef.trim()
+  if (current && !options.some((option) => option.value === current)) {
+    return [{ value: current, label: current, hint: undefined }, ...options]
+  }
+  return options
+})
 
 const taskColumns: NvDataTableColumn<BusinessConsoleApprovalTaskItem>[] = [
   { key: 'documentId', header: '单据', cellClass: 'font-medium', accessor: documentLabel },
@@ -761,20 +857,35 @@ function toIsoFromLocalInput(value: string) {
             </NvField>
             <NvField>
               <NvFieldLabel for="approval-delegate">代理人</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="approval-delegate"
                 v-model="delegationForm.delegateActorRef"
-                autocomplete="off"
+                :options="delegateOptions"
+                title="选择代理人"
+                placeholder="选择代理人"
+                source-text="数据来自员工名录"
+                empty-text="暂无员工，请先在基础数据维护员工"
+                :loading="workersPending"
+                aria-label="代理人"
+                clearable
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="approval-delegation-doc">单据范围</NvFieldLabel>
-              <NvInput
-                id="approval-delegation-doc"
-                v-model="delegationForm.documentType"
-                autocomplete="off"
-                placeholder="可选"
-              />
+              <NvSelect v-model="delegationDocumentType">
+                <NvSelectTrigger id="approval-delegation-doc">
+                  <NvSelectValue placeholder="全部单据" />
+                </NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem value="all">全部单据</NvSelectItem>
+                  <NvSelectItem
+                    v-for="option in documentTypeOptions"
+                    :key="option.value"
+                    :value="option.value"
+                    >{{ option.label }}</NvSelectItem
+                  >
+                </NvSelectContent>
+              </NvSelect>
             </NvField>
             <NvField>
               <NvFieldLabel for="approval-delegation-from">开始时间</NvFieldLabel>
@@ -825,19 +936,29 @@ function toIsoFromLocalInput(value: string) {
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="approval-template-code">模板</NvFieldLabel>
-              <NvInput
+              <NvCombobox
                 id="approval-template-code"
                 v-model="templateForm.templateCode"
-                autocomplete="off"
+                :suggestions="templateCodeSuggestions"
+                placeholder="选择已有模板或填写新模板编码"
+                empty-text="暂无已有模板，请填写新模板编码"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="approval-template-doc">单据类型</NvFieldLabel>
-              <NvInput
-                id="approval-template-doc"
-                v-model="templateForm.documentType"
-                autocomplete="off"
-              />
+              <NvSelect v-model="templateForm.documentType">
+                <NvSelectTrigger id="approval-template-doc">
+                  <NvSelectValue placeholder="选择单据类型" />
+                </NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem
+                    v-for="option in documentTypeOptions"
+                    :key="option.value"
+                    :value="option.value"
+                    >{{ option.label }}</NvSelectItem
+                  >
+                </NvSelectContent>
+              </NvSelect>
             </NvField>
             <NvField>
               <NvFieldLabel for="approval-template-version">版本</NvFieldLabel>
@@ -892,10 +1013,32 @@ function toIsoFromLocalInput(value: string) {
             </NvField>
             <NvField>
               <NvFieldLabel for="approval-template-actor-ref">审批人</NvFieldLabel>
+              <NvEntityPicker
+                v-if="templateForm.approverType !== 'role'"
+                id="approval-template-actor-ref"
+                v-model="templateForm.approverRef"
+                :options="approverOptions"
+                :title="templateForm.approverType === 'user' ? '选择人员' : '选择部门'"
+                :placeholder="templateForm.approverType === 'user' ? '选择人员' : '选择部门'"
+                :source-text="
+                  templateForm.approverType === 'user' ? '数据来自员工名录' : '数据来自部门主数据'
+                "
+                :empty-text="
+                  templateForm.approverType === 'user'
+                    ? '暂无员工，请先在基础数据维护员工'
+                    : '暂无部门，请先在基础数据维护组织架构'
+                "
+                :loading="templateForm.approverType === 'user' ? workersPending : departmentsPending"
+                aria-label="审批人"
+                clearable
+              />
+              <!-- 角色目录在平台管理台（IAM）维护，业务网关暂无角色读面，保留手工录入。 -->
               <NvInput
+                v-else
                 id="approval-template-actor-ref"
                 v-model="templateForm.approverRef"
                 autocomplete="off"
+                placeholder="填写角色标识"
               />
             </NvField>
             <NvField>

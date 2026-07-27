@@ -23,9 +23,11 @@ const props = withDefaults(
     collapsedSummary?: string
     /** 整组置灰（如该组已全部完工）。 */
     muted?: boolean
+    /** 内容区去掉默认内边距，让整块表格 / 列表出血到面板边框。 */
+    flush?: boolean
     class?: HTMLAttributes['class']
   }>(),
-  { muted: false },
+  { muted: false, flush: false },
 )
 
 /** 展开态（`v-model:open`）；不绑定时组件自持，默认展开。 */
@@ -82,7 +84,10 @@ const contentId = useId()
         <slot name="actions" />
       </div>
     </div>
-    <div v-show="open" :id="contentId" class="border-t border-border">
+    <!-- 内容区跟表头对齐到同一条内边距（px-4 py-3）。此前内容区完全没有内边距，
+         插槽内容直接贴着面板边框，而上方表头却是内缩的，看着像没做完。
+         整块表格 / 列表这类需要出血到边框的内容，用 `flush` 关掉内边距。 -->
+    <div v-show="open" :id="contentId" :class="cn('border-t border-border', !flush && 'px-4 py-3')">
       <slot />
     </div>
   </section>

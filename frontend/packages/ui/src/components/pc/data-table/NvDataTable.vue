@@ -12,6 +12,7 @@ import {
   Settings2Icon,
   XIcon,
 } from '@lucide/vue'
+import { displayValue, isEmptyValue } from '../../../lib/empty'
 import { cn } from '../../../lib/utils'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table'
 import { Checkbox } from '../../ui/checkbox'
@@ -767,8 +768,14 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
                 :key="col.key"
                 :class="cn(rowPad, cellText, alignClass[col.align ?? 'start'], col.cellClass)"
               >
+                <!-- 兜底渲染统一走空值占位：空单元格此前渲染成完全空白的 <td>，
+                     读者分不清「没有值」还是「界面坏了」。插槽拿到的 `value`
+                     仍是原始值，调用点想自己处理空值不受影响。 -->
                 <slot :name="`cell-${col.key}`" :row="row" :value="valueOf(row, col)" :column="col">
-                  {{ valueOf(row, col) }}
+                  <span
+                    :class="isEmptyValue(valueOf(row, col)) ? 'text-muted-foreground' : undefined"
+                    >{{ displayValue(valueOf(row, col)) }}</span
+                  >
                 </slot>
               </TableCell>
             </TableRow>

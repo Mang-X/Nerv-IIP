@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type {
-  ComboboxSuggestion,
   EntityPickerOption,
   NvDataTableColumn,
   NvMetricFacet,
@@ -11,15 +10,13 @@ import { qualitySourceTypeLabel } from '@nerv-iip/business-core'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import QualityParetoPanel from '@/components/quality/QualityParetoPanel.vue'
 import QualitySpcCharts from '@/components/quality/QualitySpcCharts.vue'
+import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
+import { useQualityNcrs } from '@/composables/useBusinessQuality'
 import {
-  useBusinessMasterDataResources,
-  useBusinessSkus,
-} from '@/composables/useBusinessMasterData'
-import {
-  useQualityInspectionPlanCharacteristics,
-  useQualityInspectionPlans,
-  useQualityNcrs,
-} from '@/composables/useBusinessQuality'
+  useQualityCharacteristicCatalog,
+  useQualityInspectionPlanCatalog,
+  useQualitySkuCatalog,
+} from '@/composables/useQualityPickerCatalog'
 import {
   buildQualityAnalysisSummary,
   buildQualityBucketDetail,
@@ -32,7 +29,6 @@ import {
 import { friendlyErrorMessage } from '@/utils/notify'
 import {
   NvButton,
-  NvCombobox,
   NvDataTable,
   NvEntityPicker,
   NvInput,
@@ -57,7 +53,7 @@ import {
   RefreshCwIcon,
   ShieldAlertIcon,
 } from '@lucide/vue'
-import { computed, shallowRef } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
 definePage({
@@ -73,15 +69,8 @@ const { filters, ncrs, ncrsError, ncrsPending, ncrsTotal, refreshNcrs } = useQua
 const spc = useQualitySpcAnalysis()
 
 // SPC 范围目录：SKU 取物料主数据、工作中心取主数据资源目录，选择器只选不填。
-const skuCatalog = useBusinessSkus()
+const skuCatalog = useQualitySkuCatalog()
 const workCenterCatalog = useBusinessMasterDataResources('work-center')
-const skuOptions = computed<EntityPickerOption[]>(() =>
-  skuCatalog.skus.value.flatMap((sku) => {
-    const code = sku.code?.trim()
-    if (!code) return []
-    return [{ value: code, label: sku.displayName?.trim() || code }]
-  }),
-)
 const workCenterOptions = computed<SearchSelectOption[]>(() =>
   workCenterCatalog.resources.value.flatMap((resource) => {
     const code = resource.code?.trim()
@@ -90,27 +79,49 @@ const workCenterOptions = computed<SearchSelectOption[]>(() =>
   }),
 )
 
-// 后端目前没有「按 SKU / 工序查质量特性目录」的接口，特性因此保留自由录入；
-// 建议项取当前所选 SKU 对应检验方案（已加载方案列表中首个匹配项）的特性清单，匹配不到就不给建议。
-const { inspectionPlans } = useQualityInspectionPlans()
-const characteristicSuggestionPlanId = computed(() => {
+/*
+ * 质量特性没有全域目录读面，只能挂在检验方案下（特性清单按 inspectionPlanId 取数），
+ * 所以 SPC 范围按「物料 → 检验方案 → 特性」逐级收窄：上游一变，下游的选择立即作废清空，
+ * 免得留着一个不属于新范围的特性去查 SPC。三级都只能选、不能录入。
+ */
+const { inspectionPlans, inspectionPlansPending, inspectionPlanOptions } =
+  useQualityInspectionPlanCatalog()
+const selectedInspectionPlanId = ref('')
+const planOptions = computed<EntityPickerOption[]>(() => {
   const sku = spc.filters.skuCode.trim()
-  if (!sku) return ''
-  const matched = inspectionPlans.value.find((plan) => plan.skuCode === sku && plan.id)
-  return matched?.id ?? ''
+  if (!sku) return inspectionPlanOptions.value
+  const idsForSku = new Set(
+    inspectionPlans.value.filter((plan) => plan.skuCode === sku).flatMap((plan) => plan.id ?? []),
+  )
+  return inspectionPlanOptions.value.filter((option) => idsForSku.has(option.value))
 })
-const { planCharacteristics: suggestionPlanCharacteristics } =
-  useQualityInspectionPlanCharacteristics(() => ({
-    organizationId: spc.filters.organizationId,
-    environmentId: spc.filters.environmentId,
-    inspectionPlanId: characteristicSuggestionPlanId.value,
-  }))
-const characteristicSuggestions = computed<ComboboxSuggestion[]>(() =>
-  suggestionPlanCharacteristics.value.flatMap((characteristic) => {
-    const code = characteristic.characteristicCode?.trim()
-    if (!code) return []
-    return [{ value: code, label: characteristic.name?.trim() || code, hint: code }]
-  }),
+const skuModel = computed({
+  get: () => spc.filters.skuCode,
+  set: (value: string) => {
+    if (value === spc.filters.skuCode) return
+    spc.filters.skuCode = value
+    selectedInspectionPlanId.value = ''
+    spc.filters.characteristicCode = ''
+  },
+})
+const inspectionPlanModel = computed({
+  get: () => selectedInspectionPlanId.value,
+  set: (value: string) => {
+    if (value === selectedInspectionPlanId.value) return
+    selectedInspectionPlanId.value = value
+    spc.filters.characteristicCode = ''
+  },
+})
+const { characteristicOptions, planCharacteristicsPending } = useQualityCharacteristicCatalog(
+  () => selectedInspectionPlanId.value,
+)
+const characteristicEmptyText = computed(() =>
+  selectedInspectionPlanId.value ? '该检验方案没有特性清单' : '请先选择检验方案',
+)
+const characteristicLabel = computed(
+  () =>
+    characteristicOptions.value.find((option) => option.value === spc.filters.characteristicCode)
+      ?.label ?? spc.filters.characteristicCode.trim(),
 )
 
 const summary = computed(() => buildQualityAnalysisSummary(ncrs.value, ncrsTotal.value))
@@ -156,7 +167,7 @@ const spcScopeFacets = computed<NvMetricFacet[]>(() => [
   {
     key: 'characteristic',
     label: '特性',
-    value: spc.filters.characteristicCode.trim() || '待选择',
+    value: characteristicLabel.value || '待选择',
   },
   { key: 'workCenter', label: '工作中心', value: spc.filters.workCenterId.trim() || '待选择' },
 ])
@@ -195,15 +206,7 @@ const spcViolationEmptyMessage = computed(() =>
 )
 
 // 两张维度表各自命名表头：SKU 表 join 物料主数据补名称列，来源类型表显中文。
-const skuNameByCode = computed(() => {
-  const map = new Map<string, string>()
-  for (const sku of skuCatalog.skus.value) {
-    const code = sku.code?.trim()
-    const name = sku.displayName?.trim()
-    if (code && name) map.set(code, name)
-  }
-  return map
-})
+const skuNameByCode = skuCatalog.skuNameByCode
 function skuDisplayName(code: string) {
   return skuNameByCode.value.get(code) ?? '—'
 }
@@ -378,12 +381,12 @@ function spcViolationKey(row: QualitySpcViolation) {
     <div class="grid gap-4">
       <NvToolbar :show-search="false">
         <template #filters>
-          <div class="grid w-full gap-3 lg:grid-cols-[repeat(5,minmax(0,1fr))_auto]">
+          <div class="grid w-full gap-3 lg:grid-cols-[repeat(6,minmax(0,1fr))_auto]">
             <div class="grid gap-1 text-xs font-medium text-muted-foreground">
               SKU
               <NvEntityPicker
-                v-model="spc.filters.skuCode"
-                :options="skuOptions"
+                v-model="skuModel"
+                :options="skuCatalog.skuOptions.value"
                 title="选择 SKU"
                 source-text="数据来自基础数据物料主数据"
                 :loading="skuCatalog.skusPending.value"
@@ -391,16 +394,35 @@ function spcViolationKey(row: QualitySpcViolation) {
                 aria-label="SKU"
               />
             </div>
-            <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-              特性
-              <NvCombobox
-                v-model="spc.filters.characteristicCode"
-                class="h-9"
-                :suggestions="characteristicSuggestions"
-                placeholder="录入或选择特性编码"
-                empty-text="暂无该 SKU 的特性建议"
+            <div class="grid gap-1 text-xs font-medium text-muted-foreground">
+              检验方案
+              <NvEntityPicker
+                v-model="inspectionPlanModel"
+                :options="planOptions"
+                title="选择检验方案"
+                placeholder="选择检验方案"
+                source-text="数据来自质量检验方案"
+                empty-text="当前物料没有检验方案"
+                :loading="inspectionPlansPending"
+                clearable
+                aria-label="检验方案"
               />
-            </label>
+            </div>
+            <div class="grid gap-1 text-xs font-medium text-muted-foreground">
+              特性
+              <NvEntityPicker
+                v-model="spc.filters.characteristicCode"
+                :options="characteristicOptions"
+                title="选择质量特性"
+                placeholder="选择特性"
+                source-text="数据来自该检验方案的特性清单"
+                :empty-text="characteristicEmptyText"
+                :loading="planCharacteristicsPending"
+                :disabled="!selectedInspectionPlanId"
+                clearable
+                aria-label="质量特性"
+              />
+            </div>
             <div class="grid gap-1 text-xs font-medium text-muted-foreground">
               工作中心
               <NvSearchSelect

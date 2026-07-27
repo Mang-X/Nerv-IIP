@@ -7,6 +7,10 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMaintenanceInspections } from '@/composables/useBusinessMaintenance'
 import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
+import {
+  useEquipmentUomCatalog,
+  useMaintenanceDocumentCatalog,
+} from '@/composables/useEquipmentPickerCatalog'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -22,6 +26,7 @@ import {
 import {
   NvButton,
   NvDataTable,
+  NvEntityPicker,
   NvField,
   NvFieldError,
   NvFieldGroup,
@@ -94,6 +99,11 @@ function personLabel(userId: string) {
     userId
   )
 }
+
+// 关联单据与测量单位都从既有读面选，不手输 ID / 单位码。
+const { planOptions, plansPending, workOrderOptions, workOrdersPending } =
+  useMaintenanceDocumentCatalog()
+const { uomOptions, uomsPending } = useEquipmentUomCatalog()
 
 const resultOptions = [
   { label: '通过', value: 'passed' },
@@ -355,20 +365,32 @@ function formatError(error: unknown) {
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="insp-plan">保养计划</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="insp-plan"
                 v-model="recordForm.planId"
-                autocomplete="off"
-                placeholder="可选"
+                :options="planOptions"
+                title="选择保养计划"
+                placeholder="可选，选择保养计划"
+                source-text="数据来自保养计划"
+                empty-text="暂无保养计划，可先在保养计划登记周期保养"
+                :loading="plansPending"
+                clearable
+                aria-label="保养计划"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="insp-work-order">维修工单</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="insp-work-order"
                 v-model="recordForm.workOrderId"
-                autocomplete="off"
-                placeholder="可选"
+                :options="workOrderOptions"
+                title="选择维修工单"
+                placeholder="可选，选择维修工单"
+                source-text="数据来自维护工单"
+                empty-text="暂无维护工单"
+                :loading="workOrdersPending"
+                clearable
+                aria-label="维修工单"
               />
             </NvField>
             <NvField>
@@ -445,11 +467,17 @@ function formatError(error: unknown) {
                 </NvField>
                 <NvField>
                   <NvFieldLabel :for="`m-uom-${row.id}`">单位</NvFieldLabel>
-                  <NvInput
+                  <NvEntityPicker
                     :id="`m-uom-${row.id}`"
                     v-model="row.uomCode"
-                    autocomplete="off"
-                    placeholder="如 ℃"
+                    :options="uomOptions"
+                    title="选择单位"
+                    placeholder="选择单位"
+                    source-text="数据来自基础数据计量单位"
+                    empty-text="暂无计量单位，请先在基础数据维护单位"
+                    :loading="uomsPending"
+                    clearable
+                    aria-label="测量单位"
                   />
                 </NvField>
               </div>

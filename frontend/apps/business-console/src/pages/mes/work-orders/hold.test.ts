@@ -76,6 +76,17 @@ vi.mock('@/composables/useBusinessMes', () => ({
     refreshMaterialReadiness: vi.fn(),
     retryCancelPreview: vi.fn(),
   }),
+  // 急单表单的「工序任务」改成只选，列表页新引入了工序任务读面。
+  useMesOperationTasks: () => ({
+    filters: reactive({ organizationId: 'org', environmentId: 'dev', skip: 0, take: 200 }),
+    operationTasks: ref([]),
+    operationTasksError: ref(undefined),
+    operationTasksPending: ref(false),
+    operationTasksTotal: ref(0),
+    refreshOperationTasks: vi.fn(),
+    completeOperationTask: vi.fn(),
+    pauseOperationTask: vi.fn(),
+  }),
   useMesWorkOrders: () => ({
     createRushWorkOrder: vi.fn(),
     createRushWorkOrderError: ref(undefined),

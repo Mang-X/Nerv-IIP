@@ -7,6 +7,10 @@ const options = [
   { value: 'RM-200', label: '活塞杆毛坯', hint: '原材料' },
 ]
 
+function panelOpen(): boolean {
+  return document.body.querySelector('[role="listbox"]') !== null
+}
+
 describe('NvEntityPicker', () => {
   it('shows the placeholder when nothing is selected, and name + code when selected', () => {
     const empty = mount(NvEntityPicker, {
@@ -21,39 +25,145 @@ describe('NvEntityPicker', () => {
     expect(selected.text()).toContain('RM-200')
   })
 
-  it('is a selection-only dialog trigger (no free text input on the trigger)', () => {
+  it('is selection-only — the trigger never accepts free text', () => {
     const wrapper = mount(NvEntityPicker, { props: { options, title: '选择物料' } })
-    const trigger = wrapper.get('button[type="button"]')
-    expect(trigger.attributes('aria-haspopup')).toBe('dialog')
     expect(wrapper.find('input').exists()).toBe(false)
   })
 
-  it('opens a dialog with search + entity list and picks by click', async () => {
+  // owner 走查：「不支持直接下拉，我记得有直接下拉的内部支持搜索」。
+  // 默认形态必须是「点一下直接展开下拉、下拉内自带搜索框」，不是先弹一个对话框。
+  it('defaults to the dropdown form: one click opens an in-place listbox with a search box', async () => {
     const wrapper = mount(NvEntityPicker, {
       props: { options, title: '选择物料', sourceText: '数据来自物料主数据' },
       attachTo: document.body,
     })
-    await wrapper.get('button[type="button"]').trigger('click')
+
+    expect(wrapper.get('button[aria-haspopup]').attributes('aria-haspopup')).toBe('listbox')
+
+    await wrapper.get('button[aria-haspopup]').trigger('click')
     await flushPromises()
 
-    const search = document.body.querySelector<HTMLInputElement>('input[role="combobox"]')
-    expect(search).not.toBeNull()
-    const list = document.body.querySelector('[role="listbox"]')
-    expect(list?.textContent).toContain('前减振器总成')
+    expect(panelOpen()).toBe(true)
+    expect(document.body.querySelector('input[role="combobox"]')).not.toBeNull()
+    expect(document.body.querySelector('[role="listbox"]')?.textContent).toContain('前减振器总成')
+    // 编码与来源注脚是 NvEntityPicker 区别于 NvSearchSelect 的地方，两种形态都要有。
+    expect(document.body.textContent).toContain('SKU-FG-100')
     expect(document.body.textContent).toContain('数据来自物料主数据')
+
+    wrapper.unmount()
+  })
+
+  // owner 走查原话：「总是会先下拉出现然后马上消失」。
+  // 同一次交互产生的第二次开关必须被闸门吞掉，浮层不能自己关。
+  it('stays open after the click that opened it (no open-then-vanish flash)', async () => {
+    const wrapper = mount(NvEntityPicker, {
+      props: { options, title: '选择物料' },
+      attachTo: document.body,
+    })
+
+    // 同一轮事件循环里连发两次点击 —— 祖先 label 转发点击 / as-child 触发器重复触发 /
+    // 浮层挂载瞬间把这次点击当成层外点击，三者最终都表现成这样。
+    const btn = wrapper.get('button[aria-haspopup]').element
+    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flushPromises()
+
+    expect(panelOpen()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  // 闸门只吞「同一轮」的关闭，不能把正常的收起也焊死。
+  it('still closes on a genuine second click', async () => {
+    const wrapper = mount(NvEntityPicker, {
+      props: { options, title: '选择物料' },
+      attachTo: document.body,
+    })
+
+    await wrapper.get('button[aria-haspopup]').trigger('click')
+    await flushPromises()
+    expect(panelOpen()).toBe(true)
+
+    await wrapper.get('button[aria-haspopup]').trigger('click')
+    await flushPromises()
+    expect(panelOpen()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('an ancestor <label> re-dispatching the click does not close the dropdown', async () => {
+    const wrapper = mount(
+      {
+        components: { NvEntityPicker },
+        props: ['options', 'title'],
+        template: `<label><span>物料</span><NvEntityPicker :options="options" :title="title" /></label>`,
+      },
+      { props: { options, title: '选择物料' }, attachTo: document.body },
+    )
+
+    await wrapper.get('button[aria-haspopup]').trigger('click')
+    await flushPromises()
+    expect(panelOpen()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('picks by click and closes', async () => {
+    const wrapper = mount(NvEntityPicker, {
+      props: { options, title: '选择物料' },
+      attachTo: document.body,
+    })
+    await wrapper.get('button[aria-haspopup]').trigger('click')
+    await flushPromises()
 
     const optionButtons = [...document.body.querySelectorAll<HTMLButtonElement>('[role="option"]')]
     optionButtons.find((b) => b.textContent?.includes('RM-200'))?.click()
     await flushPromises()
+
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['RM-200'])
     wrapper.unmount()
   })
 
-  it('clears the selection via the clear affordance when clearable', async () => {
+  it('opts into the dialog form for heavy catalogues', async () => {
     const wrapper = mount(NvEntityPicker, {
-      props: { options, title: '选择物料', modelValue: 'RM-200', clearable: true, ariaLabel: '物料' },
+      props: { options, title: '选择物料', variant: 'dialog' as const },
+      attachTo: document.body,
     })
-    await wrapper.get('button[aria-label="清除物料"]').trigger('click')
+
+    expect(wrapper.get('button[aria-haspopup]').attributes('aria-haspopup')).toBe('dialog')
+
+    await wrapper.get('button[aria-haspopup]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(document.body.querySelector('input[role="combobox"]')).not.toBeNull()
+    expect(document.body.querySelector('[role="listbox"]')?.textContent).toContain('前减振器总成')
+
+    wrapper.unmount()
+  })
+
+  it('clears the selection without opening the picker', async () => {
+    const wrapper = mount(NvEntityPicker, {
+      props: {
+        options,
+        title: '选择物料',
+        modelValue: 'RM-200',
+        clearable: true,
+        ariaLabel: '物料',
+      },
+      attachTo: document.body,
+    })
+
+    const clearBtn = wrapper.get('button[aria-label="清除物料"]')
+    await clearBtn.trigger('pointerdown')
+    await clearBtn.trigger('mousedown')
+    await clearBtn.trigger('click')
+    await flushPromises()
+
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([''])
+    // 点清除叉不能顺带把浮层打开 —— 叉是压在触发器上方的。
+    expect(panelOpen()).toBe(false)
+
+    wrapper.unmount()
   })
 })

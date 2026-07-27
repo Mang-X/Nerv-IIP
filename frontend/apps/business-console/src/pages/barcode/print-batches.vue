@@ -4,7 +4,7 @@ import type {
   BusinessConsoleBarcodePrintItemDetail,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import { useBarcodePrintBatches } from '@/composables/useBusinessBarcode'
+import { useBarcodePrintBatches, useBarcodeTemplates } from '@/composables/useBusinessBarcode'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -18,6 +18,7 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvDialogTrigger,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -93,6 +94,23 @@ const form = reactive({
   sourceDocumentType: '',
   sourceDocumentId: '',
   requestedQuantity: '1',
+})
+
+// 标签模板绑定的是模板主键（GUID），没人能手输——一律从模板目录里选，展示模板名 + 编码。
+const { templates, templatesPending } = useBarcodeTemplates()
+const templateOptions = computed(() => {
+  const options = templates.value
+    .filter((template) => !!template.templateId)
+    .map((template) => ({
+      value: template.templateId as string,
+      label: template.templateName || template.templateCode || '未命名模板',
+      hint: template.templateCode ?? undefined,
+    }))
+  const current = form.labelTemplateId.trim()
+  if (current && !options.some((option) => option.value === current)) {
+    options.unshift({ value: current, label: current, hint: undefined })
+  }
+  return options
 })
 
 const batchColumns: NvDataTableColumn<BusinessConsoleBarcodePrintBatchItem>[] = [
@@ -324,10 +342,17 @@ function formatError(error: unknown) {
                   <NvFieldLabel for="barcode-print-template"
                     >标签模板 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
+                  <NvEntityPicker
                     id="barcode-print-template"
                     v-model="form.labelTemplateId"
-                    autocomplete="off"
+                    :options="templateOptions"
+                    title="选择标签模板"
+                    placeholder="选择标签模板"
+                    source-text="数据来自标签模板目录"
+                    empty-text="暂无标签模板，请先在标签模板维护"
+                    :loading="templatesPending"
+                    aria-label="标签模板"
+                    clearable
                   />
                 </NvField>
                 <NvField :data-invalid="showErrors && !(Number(form.requestedQuantity) > 0)">
@@ -345,11 +370,19 @@ function formatError(error: unknown) {
                   <NvFieldLabel for="barcode-print-source-type"
                     >业务对象类型 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
-                    id="barcode-print-source-type"
-                    v-model="form.sourceDocumentType"
-                    autocomplete="off"
-                  />
+                  <NvSelect v-model="form.sourceDocumentType">
+                    <NvSelectTrigger id="barcode-print-source-type">
+                      <NvSelectValue placeholder="选择业务对象类型" />
+                    </NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem
+                        v-for="option in SOURCE_OPTIONS"
+                        :key="option.value"
+                        :value="option.value"
+                        >{{ option.label }}</NvSelectItem
+                      >
+                    </NvSelectContent>
+                  </NvSelect>
                 </NvField>
                 <NvField :data-invalid="showErrors && !form.sourceDocumentId.trim()">
                   <NvFieldLabel for="barcode-print-source-id"

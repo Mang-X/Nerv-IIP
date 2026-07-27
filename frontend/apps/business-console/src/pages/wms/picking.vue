@@ -2,8 +2,14 @@
 import type { BusinessConsoleWmsWarehouseTaskItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
-import { useWmsPickingTasks } from '@/composables/useBusinessWms'
+import { useWmsOutboundOrders, useWmsPickingTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
+import {
+  useWarehouseCodeCatalog,
+  WAREHOUSE_CATALOG_SOURCE_TEXT,
+  WAREHOUSE_LOCATION_EMPTY_TEXT,
+} from '@/composables/useWarehouseCodeCatalog'
+import { wmsWarehouseTaskStatusFilterOptions, WMS_STATUS_ANY } from '@/data/wmsReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
@@ -20,8 +26,10 @@ import {
   NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
+  NvEntityPicker,
   NvInput,
   NvPageHeader,
+  NvSearchSelect,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -51,6 +59,50 @@ const {
 const route = useRoute()
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.locationCode, () => filters.keyword],
+})
+// 库位后端无主数据读面，从真实的上架/拣货/盘点任务与出库单行里派生可选项。
+const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog()
+// 出库单是真实读面（只要组织/环境即可列出），拣货任务必须挂在已存在的出库单下。
+const { outboundOrders, outboundOrdersPending } = useWmsOutboundOrders({ take: 200 })
+/**
+ * 选择器以**人读单号**为选中值，而不是出库单的内部 id——选择器会把 value 当编码显示出来，
+ * 直接绑 id 会把 GUID 露到界面上（UI 不暴露工程语言）。提交时再映射回 id，提交体不变。
+ */
+const outboundOrderOptions = computed(() =>
+  outboundOrders.value.flatMap((order) => {
+    const id = order.outboundOrderId?.trim()
+    const no = order.outboundOrderNo?.trim() || id
+    if (!id || !no) return []
+    return [{ value: no, label: no, hint: order.siteCode }]
+  }),
+)
+const outboundOrderIdByNo = computed(() => {
+  const map = new Map<string, string>()
+  for (const order of outboundOrders.value) {
+    const id = order.outboundOrderId?.trim()
+    const no = order.outboundOrderNo?.trim() || id
+    if (id && no) map.set(no, id)
+  }
+  return map
+})
+const outboundOrderNoById = computed(() => {
+  const map = new Map<string, string>()
+  for (const [no, id] of outboundOrderIdByNo.value) map.set(id, no)
+  return map
+})
+const outboundOrderSelection = computed({
+  // 目录还没到位时如实回落显示已有值，不让选择框看起来是空的。
+  get: () => outboundOrderNoById.value.get(createForm.outboundOrderId) ?? createForm.outboundOrderId,
+  set: (no: string) => {
+    createForm.outboundOrderId = outboundOrderIdByNo.value.get(no) ?? no
+  },
+})
+// 状态是后端枚举而不是目录，用哨兵值表达「全部」，避免空字符串和真实码值混淆。
+const statusFilter = computed({
+  get: () => filters.status || WMS_STATUS_ANY,
+  set: (value: string) => {
+    filters.status = value === WMS_STATUS_ANY ? undefined : value
+  },
 })
 
 watch(
@@ -200,16 +252,23 @@ function firstQuery(value: unknown) {
           placeholder="任务号/物料"
           aria-label="关键字"
         />
-        <NvInput
+        <NvEntityPicker
           v-model="filters.locationCode"
-          class="h-9 w-28"
+          class="w-36"
+          :options="locationOptions"
+          title="选择库位"
           placeholder="库位"
+          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+          :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
+          :loading="warehouseCatalogPending"
+          clearable
           aria-label="库位"
         />
-        <NvInput
-          v-model="filters.status"
-          class="h-9 w-28"
-          placeholder="状态（可选）"
+        <NvSearchSelect
+          v-model="statusFilter"
+          class="w-32"
+          :options="wmsWarehouseTaskStatusFilterOptions"
+          placeholder="全部状态"
           aria-label="拣货任务状态"
         />
       </template>
@@ -256,10 +315,17 @@ function firstQuery(value: unknown) {
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField class="sm:col-span-2">
               <NvFieldLabel for="wms-picking-outbound">出库单</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="wms-picking-outbound"
-                v-model="createForm.outboundOrderId"
-                autocomplete="off"
+                v-model="outboundOrderSelection"
+                :options="outboundOrderOptions"
+                title="选择出库单"
+                placeholder="选择出库单"
+                source-text="数据来自仓储出库单"
+                empty-text="暂无出库单，请先创建出库单"
+                :loading="outboundOrdersPending"
+                clearable
+                aria-label="出库单"
               />
             </NvField>
             <NvField>
@@ -272,20 +338,32 @@ function firstQuery(value: unknown) {
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-picking-from">拣货库位</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="wms-picking-from"
                 v-model="createForm.fromLocationCode"
-                autocomplete="off"
+                :options="locationOptions"
+                title="选择货架库位"
                 placeholder="货架库位"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
+                aria-label="拣货库位"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-picking-to">目标库位</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="wms-picking-to"
                 v-model="createForm.toLocationCode"
-                autocomplete="off"
+                :options="locationOptions"
+                title="选择集货库位"
                 placeholder="集货/暂存库位"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
+                aria-label="目标库位"
               />
             </NvField>
             <NvField>

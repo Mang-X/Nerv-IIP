@@ -8,7 +8,10 @@ import type {
 import type { NvDataTableColumn, NvMetricStripCell, StatusTone } from '@nerv-iip/ui'
 import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useEngineeringChanges } from '@/composables/useProductEngineering'
+import {
+  useEngineeringChanges,
+  useEngineeringProductionVersions,
+} from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -21,6 +24,7 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvDialogTrigger,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -80,6 +84,33 @@ const VERSION_KIND_OPTIONS = [
 ]
 function versionKindLabel(kind?: string | null) {
   return VERSION_KIND_OPTIONS.find((o) => o.value === kind)?.label ?? (kind || '—')
+}
+
+// 受影响版本的 versionId 是版本主键。四类对象里只有「生产版本」的读面直接暴露该主键
+// （ProductionVersionItem.productionVersionId），可以做成选择器；EBOM / MBOM / 工艺路线的
+// 列表读面只给 bomCode + revision、拿不到版本主键，暂时保留手工录入（后端缺口已登记）。
+const { productionVersions, productionVersionsPending, filters: productionVersionFilters } =
+  useEngineeringProductionVersions()
+productionVersionFilters.take = 500
+const productionVersionOptions = computed(() =>
+  productionVersions.value
+    .filter((row) => !!row.productionVersionId)
+    .map((row) => ({
+      value: row.productionVersionId as string,
+      label: row.validFrom
+        ? `${row.skuCode ?? '未知物料'} · 生效 ${row.validFrom.slice(0, 10)}`
+        : (row.skuCode ?? '未知物料'),
+      ...(row.isDefault ? { hint: '默认版本' } : {}),
+    })),
+)
+function affectedVersionOptions(kind: string, current: string) {
+  if (kind !== 'ProductionVersion') return []
+  const options = productionVersionOptions.value
+  const trimmed = current.trim()
+  if (trimmed && !options.some((option) => option.value === trimmed)) {
+    return [{ value: trimmed, label: trimmed }, ...options]
+  }
+  return options
 }
 
 // 后端是一步发布（Open→Approve→Release），变更落库即为已发布状态——不假造草稿/待审。
@@ -182,6 +213,18 @@ function blankForm(): EcoForm {
 const formOpen = shallowRef(false)
 const showErrors = ref(false)
 const form = reactive<EcoForm>(blankForm())
+
+// 对象种类是上游：换了种类，原来那条版本标识必然作废，清空重选。
+// 只在行数不变时比对，避免增删行导致的索引位移误清。
+watch(
+  () => form.affectedVersions.map((row) => row.versionKind),
+  (kinds, previousKinds) => {
+    if (!previousKinds || previousKinds.length !== kinds.length) return
+    kinds.forEach((kind, index) => {
+      if (previousKinds[index] !== kind) form.affectedVersions[index].versionId = ''
+    })
+  },
+)
 
 const reasonValid = computed(() => form.reason.trim().length > 0)
 const approvalValid = computed(() => form.approvalReferenceId.trim().length > 0)
@@ -432,9 +475,23 @@ function riskTone(severity?: string | null): StatusTone {
                   </NvField>
                   <NvField :data-invalid="showErrors && !row.versionId.trim()">
                     <NvFieldLabel :for="`eco-vid-${index}`"
-                      >版本 ID <span class="text-destructive">*</span></NvFieldLabel
+                      >受影响版本 <span class="text-destructive">*</span></NvFieldLabel
                     >
+                    <NvEntityPicker
+                      v-if="row.versionKind === 'ProductionVersion'"
+                      :id="`eco-vid-${index}`"
+                      v-model="row.versionId"
+                      :options="affectedVersionOptions(row.versionKind, row.versionId)"
+                      title="选择生产版本"
+                      placeholder="选择生产版本"
+                      source-text="数据来自工程数据生产版本"
+                      empty-text="暂无生产版本，请先在工程数据维护"
+                      :loading="productionVersionsPending"
+                      aria-label="受影响版本"
+                      clearable
+                    />
                     <NvInput
+                      v-else
                       :id="`eco-vid-${index}`"
                       v-model="row.versionId"
                       placeholder="受影响的版本标识"

@@ -5,7 +5,9 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useEngineeringDocuments } from '@/composables/useProductEngineering'
+import { useEngineeringDocuments, useEngineeringItems } from '@/composables/useProductEngineering'
+import { ENGINEERING_DOCUMENT_TYPE_OPTIONS } from '@/data/engineeringReference'
+import { refLabel } from '@/data/masterDataReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -23,6 +25,12 @@ import {
   NvInput,
   NvMetricStrip,
   NvPageHeader,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
+  NvEntityPicker,
   NvSheet,
   NvSheetContent,
   NvSheetDescription,
@@ -56,12 +64,21 @@ const {
   fetchDocumentDetail,
 } = useEngineeringDocuments()
 
-const documentTypeSearch = computed({
-  get: () => filters.documentType ?? '',
+// 文档类型是固定受控值（后端无对应 CodeSet），筛选与表单共用同一份常量，杜绝手输拼写漂移。
+const documentTypeOptions = ENGINEERING_DOCUMENT_TYPE_OPTIONS
+function documentTypeLabel(value?: string | null) {
+  return value ? refLabel(documentTypeOptions, value) : '—'
+}
+
+const documentTypeFilter = computed({
+  get: () => filters.documentType ?? 'all',
   set: (value: string) => {
-    filters.documentType = value.trim() ? value : undefined
+    filters.documentType = value === 'all' ? undefined : value
   },
 })
+
+// 关联物料从工程物料目录里选（同一 itemCode 多修订只出现一次）。
+const { items: engineeringItems, itemsPending: engineeringItemsPending } = useEngineeringItems()
 
 const itemSearch = computed({
   get: () => filters.itemCode ?? '',
@@ -135,6 +152,25 @@ function blankForm(): DocumentForm {
 const formOpen = shallowRef(false)
 const showErrors = ref(false)
 const form = reactive<DocumentForm>(blankForm())
+
+const itemPickerOptions = computed(() => {
+  const byCode = new Map<string, { value: string, label: string, hint?: string }>()
+  for (const item of engineeringItems.value) {
+    if (!item.itemCode || byCode.has(item.itemCode)) continue
+    byCode.set(item.itemCode, {
+      value: item.itemCode,
+      label: item.name ?? item.itemCode,
+      hint: item.itemCode,
+    })
+  }
+  const options = [...byCode.values()]
+  // 深链 / 目录截断时保住已填编码，避免选择器显示成未选。
+  const current = form.itemCode.trim()
+  if (current && !options.some((option) => option.value === current)) {
+    options.unshift({ value: current, label: current })
+  }
+  return options
+})
 
 const documentNumberValid = computed(() => form.documentNumber.trim().length > 0)
 const revisionValid = computed(() => form.revision.trim().length > 0)
@@ -269,11 +305,19 @@ function formatError(error: unknown) {
                   <NvFieldLabel for="doc-type"
                     >文档类型 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
-                    id="doc-type"
-                    v-model="form.documentType"
-                    placeholder="如 图纸、规格书"
-                  />
+                  <NvSelect v-model="form.documentType">
+                    <NvSelectTrigger id="doc-type">
+                      <NvSelectValue placeholder="选择文档类型" />
+                    </NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem
+                        v-for="option in documentTypeOptions"
+                        :key="option.value"
+                        :value="option.value"
+                        >{{ option.label }}</NvSelectItem
+                      >
+                    </NvSelectContent>
+                  </NvSelect>
                 </NvField>
               </NvFieldGroup>
 
@@ -313,8 +357,19 @@ function formatError(error: unknown) {
 
               <FormSectionTitle>关联（可选）</FormSectionTitle>
               <NvField>
-                <NvFieldLabel for="doc-item-code">关联物料编码</NvFieldLabel>
-                <NvInput id="doc-item-code" v-model="form.itemCode" placeholder="可留空" />
+                <NvFieldLabel for="doc-item-code">关联物料</NvFieldLabel>
+                <NvEntityPicker
+                  id="doc-item-code"
+                  v-model="form.itemCode"
+                  :options="itemPickerOptions"
+                  title="选择关联物料"
+                  placeholder="可留空"
+                  source-text="数据来自工程物料目录"
+                  empty-text="暂无工程物料，请先在工程物料维护物料修订"
+                  :loading="engineeringItemsPending"
+                  aria-label="关联物料"
+                  clearable
+                />
               </NvField>
 
               <NvDialogFooter>
@@ -334,12 +389,20 @@ function formatError(error: unknown) {
 
     <NvToolbar v-model:search="itemSearch" search-placeholder="按关联物料编码筛选">
       <template #filters>
-        <NvInput
-          v-model="documentTypeSearch"
-          class="h-9 w-40"
-          placeholder="按文档类型筛选"
-          aria-label="文档类型筛选"
-        />
+        <NvSelect v-model="documentTypeFilter">
+          <NvSelectTrigger class="h-9 w-40" aria-label="文档类型筛选">
+            <NvSelectValue placeholder="全部类型" />
+          </NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem value="all">全部类型</NvSelectItem>
+            <NvSelectItem
+              v-for="option in documentTypeOptions"
+              :key="option.value"
+              :value="option.value"
+              >{{ option.label }}</NvSelectItem
+            >
+          </NvSelectContent>
+        </NvSelect>
       </template>
     </NvToolbar>
 
@@ -362,6 +425,7 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="当前范围没有工程文档。可登记文档号 + 修订，并填写文件引用 ID 与类型。"
     >
+      <template #cell-documentType="{ row }">{{ documentTypeLabel(row.documentType) }}</template>
       <template #cell-itemCode="{ row }">{{ row.itemCode || '—' }}</template>
       <template #cell-registeredAtUtc="{ row }">{{ formatDateTime(row.registeredAtUtc) }}</template>
       <template #cell-actions="{ row }">
@@ -390,7 +454,7 @@ function formatError(error: unknown) {
           <div v-else class="grid gap-2 text-sm">
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">类型</span>
-              <span class="font-medium">{{ viewTarget.documentType || '—' }}</span>
+              <span class="font-medium">{{ documentTypeLabel(viewTarget.documentType) }}</span>
             </div>
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">文件名</span>

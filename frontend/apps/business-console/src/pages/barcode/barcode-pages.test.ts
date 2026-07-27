@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, inject, provide, reactive, shallowRef } from 'vue'
 
 import RulesPage from './rules.vue'
 import TemplatesPage from './templates.vue'
@@ -215,6 +215,18 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
   },
 }))
 
+// 扫码补录的设备/终端已改成设备资产主数据选择器；目录 composable 走 pinia + colada，测试给定选项。
+vi.mock('@/composables/useBusinessMasterData', () => ({
+  useBusinessMasterDataResources: () => ({
+    filters: reactive({ skip: 0, take: 200 }),
+    resources: computed(() => [{ code: 'PC-01', displayName: '工位一体机 PC-01', active: true }]),
+    resourcesError: shallowRef(undefined),
+    resourcesPending: shallowRef(false),
+    resourcesTotal: computed(() => 1),
+    refreshResources: vi.fn(),
+  }),
+}))
+
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const dialogStubs = {
   NvDialog: { template: '<div><slot /></div>' },
@@ -225,14 +237,46 @@ const dialogStubs = {
   NvDialogTitle: { template: '<h2><slot /></h2>' },
   NvDialogDescription: { template: '<p><slot /></p>' },
 }
+/**
+ * 表单里的「只选」字段桩：
+ * - NvEntityPicker / NvSearchSelect 本身是弹层选择器，桩成带同名 id 的输入位，
+ *   让用例继续用 `setInput('#id', ...)` 表达「选中了某个候选」。
+ * - NvSelect 的 id 挂在 NvSelectTrigger 上（真实组件是 button），桩件里把它上提到
+ *   `<select>` 元素，`#id` 选择器与 `setValue` 语义都保持不变。
+ */
+const idInputStub = {
+  props: ['modelValue', 'options', 'id'],
+  emits: ['update:modelValue'],
+  template:
+    '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+}
+
+const selectTriggerIdKey = Symbol('nv-select-stub-trigger-id')
+
 const selectStubs = {
+  NvEntityPicker: idInputStub,
+  NvSearchSelect: idInputStub,
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
+    setup() {
+      const triggerId = shallowRef<string | undefined>(undefined)
+      provide(selectTriggerIdKey, (id?: string) => {
+        triggerId.value = id
+      })
+      return { triggerId }
+    },
     template:
-      '<select v-bind="$attrs" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+      '<select v-bind="$attrs" :id="triggerId ?? $attrs.id" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  NvSelectTrigger: { template: '<slot />' },
+  NvSelectTrigger: {
+    props: ['id'],
+    setup(props: { id?: string }) {
+      const register = inject<((id?: string) => void) | undefined>(selectTriggerIdKey, undefined)
+      register?.(props.id)
+    },
+    template: '<slot />',
+  },
   NvSelectValue: { template: '<span />' },
   SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },

@@ -1,20 +1,24 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesFoundationReadiness } from '@/composables/useBusinessMes'
+import {
+  useMesMaterialVersionCatalog,
+  useProductionScopeCatalog,
+} from '@/composables/useMesPickerCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
   NvDataTable,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
-  NvInput,
   NvMetricCard,
   NvPageHeader,
   NvStatusBadge,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 
 definePage({
   meta: {
@@ -26,6 +30,49 @@ definePage({
 
 const { filters, readiness, readinessError, readinessPending, refreshReadiness } =
   useMesFoundationReadiness()
+
+// ── 检查范围（工厂 ▸ 产线 ▸ 工作中心 层级 / 物料 ▸ 生产版本 从属）────────────
+// filters 上是 `string | undefined`（留空=全部），选择器要 `string`，这里做一层空串代理。
+const {
+  siteOptions,
+  sitesPending,
+  lineOptions,
+  linesPending,
+  workCenterOptions,
+  workCentersPending,
+} = useProductionScopeCatalog()
+const { skuOptions, skusPending, productionVersionOptions, productionVersionsPending } =
+  useMesMaterialVersionCatalog()
+
+function scopeModel(field: 'siteCode' | 'lineCode' | 'workCenterCode' | 'skuId' | 'productionVersionId') {
+  return computed({
+    get: () => filters[field] ?? '',
+    set: (value: string) => {
+      filters[field] = value.trim() ? value : undefined
+    },
+  })
+}
+const siteValue = scopeModel('siteCode')
+const lineValue = scopeModel('lineCode')
+const workCenterValue = scopeModel('workCenterCode')
+const skuValue = scopeModel('skuId')
+const productionVersionValue = scopeModel('productionVersionId')
+
+const lineChoices = computed(() => lineOptions(siteValue.value))
+const workCenterChoices = computed(() => workCenterOptions(siteValue.value, lineValue.value))
+const productionVersionChoices = computed(() => productionVersionOptions(skuValue.value))
+
+// 层级规则：上游一变，下游已选值立即作废（否则会留下「A 厂 + B 厂产线」这种不存在的组合）。
+watch(siteValue, () => {
+  lineValue.value = ''
+  workCenterValue.value = ''
+})
+watch(lineValue, () => {
+  workCenterValue.value = ''
+})
+watch(skuValue, () => {
+  productionVersionValue.value = ''
+})
 
 interface ReadinessArea {
   areaCode?: string
@@ -127,30 +174,86 @@ const columns: NvDataTableColumn<ReadinessArea>[] = [
       <NvFieldGroup class="grid gap-3 md:grid-cols-3 lg:grid-cols-5">
         <NvField>
           <NvFieldLabel for="foundation-site">工厂</NvFieldLabel>
-          <NvInput id="foundation-site" v-model="filters.siteCode" placeholder="全部" />
+          <NvEntityPicker
+            id="foundation-site"
+            v-model="siteValue"
+            :options="siteOptions"
+            title="选择工厂"
+            placeholder="全部"
+            source-text="数据来自基础数据工厂主数据"
+            empty-text="暂无工厂，请先在基础数据维护"
+            :loading="sitesPending"
+            aria-label="工厂"
+            clearable
+          />
         </NvField>
         <NvField>
           <NvFieldLabel for="foundation-line">产线</NvFieldLabel>
-          <NvInput id="foundation-line" v-model="filters.lineCode" placeholder="全部" />
+          <NvEntityPicker
+            id="foundation-line"
+            v-model="lineValue"
+            :options="lineChoices"
+            title="选择产线"
+            placeholder="全部"
+            :source-text="
+              siteValue ? '仅列所选工厂下的产线' : '数据来自基础数据产线主数据'
+            "
+            :empty-text="
+              siteValue ? '所选工厂下暂无产线，请先在基础数据维护' : '暂无产线，请先在基础数据维护'
+            "
+            :loading="linesPending"
+            aria-label="产线"
+            clearable
+          />
         </NvField>
         <NvField>
           <NvFieldLabel for="foundation-work-center">工作中心</NvFieldLabel>
-          <NvInput
+          <NvEntityPicker
             id="foundation-work-center"
-            v-model="filters.workCenterCode"
+            v-model="workCenterValue"
+            :options="workCenterChoices"
+            title="选择工作中心"
             placeholder="全部"
+            :source-text="
+              lineValue || siteValue
+                ? '仅列所选范围下的工作中心'
+                : '数据来自基础数据工作中心主数据'
+            "
+            empty-text="所选范围下暂无工作中心，请先在基础数据维护"
+            :loading="workCentersPending"
+            aria-label="工作中心"
+            clearable
           />
         </NvField>
         <NvField>
           <NvFieldLabel for="foundation-sku">物料</NvFieldLabel>
-          <NvInput id="foundation-sku" v-model="filters.skuId" placeholder="全部" />
+          <NvEntityPicker
+            id="foundation-sku"
+            v-model="skuValue"
+            :options="skuOptions"
+            title="选择物料"
+            placeholder="全部"
+            source-text="数据来自基础数据物料主数据"
+            empty-text="暂无物料，请先在基础数据维护"
+            :loading="skusPending"
+            aria-label="物料"
+            clearable
+          />
         </NvField>
         <NvField>
           <NvFieldLabel for="foundation-version">生产版本</NvFieldLabel>
-          <NvInput
+          <NvEntityPicker
             id="foundation-version"
-            v-model="filters.productionVersionId"
-            placeholder="全部"
+            v-model="productionVersionValue"
+            :options="productionVersionChoices"
+            title="选择生产版本"
+            :placeholder="skuValue ? '全部' : '先选物料'"
+            :disabled="!skuValue"
+            source-text="仅列所选物料的生产版本"
+            empty-text="该物料暂无生产版本，请先在工程数据维护"
+            :loading="productionVersionsPending"
+            aria-label="生产版本"
+            clearable
           />
         </NvField>
       </NvFieldGroup>

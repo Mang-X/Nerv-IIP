@@ -138,8 +138,48 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
   }),
 }))
 
+// 设备 / 班组 / 单位 / 物料 / 单据目录都走真实读面（useQuery）；单测给确定目录，只验页面提交行为。
+vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
+  useEquipmentDeviceCatalog: () => ({
+    deviceOptions: computed(() => [
+      { value: 'DEV-SMT-01', label: '贴片机 01' },
+      { value: 'DEV-PRESS-01', label: '压装机 01' },
+    ]),
+    devicesPending: shallowRef(false),
+  }),
+  useEquipmentSkuCatalog: () => ({
+    baseUomBySku: computed(() => new Map([['BRG-6205', 'EA']])),
+    skuOptions: computed(() => [{ value: 'BRG-6205', label: '深沟球轴承 6205', hint: 'EA' }]),
+    skusPending: shallowRef(false),
+  }),
+  useEquipmentTeamCatalog: () => ({
+    teamOptions: computed(() => [{ value: '设备保全班', label: '设备保全班', hint: 'TEAM-PM' }]),
+    teamsPending: shallowRef(false),
+  }),
+  useEquipmentUomCatalog: () => ({
+    uomOptions: computed(() => [
+      { value: 'EA', label: '个' },
+      { value: 'CEL', label: '摄氏度' },
+    ]),
+    uomsPending: shallowRef(false),
+  }),
+  useMaintenanceDocumentCatalog: () => ({
+    planOptions: computed(() => [{ value: 'plan-1', label: 'PM-SMT-01-M' }]),
+    plansPending: shallowRef(false),
+    workOrderOptions: computed(() => [{ value: 'wo-1', label: 'WO-00000001' }]),
+    workOrdersPending: shallowRef(false),
+  }),
+}))
+
 const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
+  // 实体选择弹窗是 reka portal；单测只关心取值，替成同 id 的输入位。
+  NvEntityPicker: {
+    props: ['modelValue', 'id', 'options', 'loading', 'disabled'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
   // reka Tabs 的点击在 jsdom 下不更新 v-model；用 CustomEvent 冒泡的轻量 stub 驱动触发模式切换。
   // trigger 冒泡 settab 事件到 NvTabs 根节点，再 $emit update:modelValue，避开 provide/inject 的 slot 作用域问题。
   NvTabs: {

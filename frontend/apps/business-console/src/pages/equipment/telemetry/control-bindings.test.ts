@@ -51,6 +51,24 @@ vi.mock('@/composables/useBusinessDeviceControlBinding', () => ({
   }),
 }))
 
+// 设备与连接器实例目录走真实读面（useQuery）；单测只关心页面提交行为，给确定目录。
+vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
+  useConnectorInstanceCatalog: () => ({
+    connectorInstanceOptions: computed(() => [
+      { value: 'opcua-cell-01', label: '一号车间采集器' },
+      { value: 'opcua-cell-09', label: '九号车间采集器' },
+    ]),
+    connectorsPending: shallowRef(false),
+  }),
+  useEquipmentDeviceCatalog: () => ({
+    deviceOptions: computed(() => [
+      { value: 'DEV-CNC-01', label: '一号加工中心' },
+      { value: 'DEV-CNC-09', label: '九号加工中心' },
+    ]),
+    devicesPending: shallowRef(false),
+  }),
+}))
+
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     principal: { loginName: 'operator-a', permissionCodes: authState.permissionCodes },
@@ -72,6 +90,13 @@ const stubs = {
   NvDialogFooter: { template: '<div><slot /></div>' },
   NvDialogTitle: { template: '<h2><slot /></h2>' },
   NvDialogDescription: { template: '<p><slot /></p>' },
+  // 实体选择弹窗同样是 reka portal；单测只关心取值，替成同 id 的输入位。
+  NvEntityPicker: {
+    props: ['modelValue', 'id', 'options', 'loading', 'disabled'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
   RowActions: { template: '<div><slot /></div>' },
   NvDropdownMenuContent: { template: '<div><slot /></div>' },
   NvDropdownMenuItem: {

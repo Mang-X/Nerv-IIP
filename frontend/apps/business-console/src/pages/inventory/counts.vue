@@ -7,6 +7,13 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { useInventoryCounts } from '@/composables/useBusinessInventory'
 import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
+import {
+  useWarehouseCodeCatalog,
+  WAREHOUSE_CATALOG_SOURCE_TEXT,
+  WAREHOUSE_LOCATION_EMPTY_TEXT,
+  WAREHOUSE_LOT_EMPTY_TEXT,
+  WAREHOUSE_SERIAL_EMPTY_TEXT,
+} from '@/composables/useWarehouseCodeCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
@@ -120,6 +127,9 @@ watch(
 
 // 工厂给默认值、单位跟随物料，仓管只需要选物料与库位。
 const { siteOptions, sitesPending, skuOptions, skusPending } = useInventoryScopeDefaults(taskForm)
+// 库位/批次/序列号后端无主数据读面，从既有台账与仓储作业记录派生可选项。
+const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
+  useWarehouseCodeCatalog()
 
 const countTaskQueue = shallowRef<CountTaskQueueRow[]>([])
 const adjustmentTarget = shallowRef<CountTaskQueueRow>()
@@ -354,7 +364,18 @@ function isNonEmpty(value: string) {
             </NvField>
             <NvField>
               <NvFieldLabel for="count-task-location">库位</NvFieldLabel>
-              <NvInput id="count-task-location" v-model="taskForm.locationCode" required />
+              <NvEntityPicker
+                id="count-task-location"
+                v-model="taskForm.locationCode"
+                :options="locationOptions"
+                title="选择库位"
+                placeholder="选择库位"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
+                aria-label="库位"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel>质量状态</NvFieldLabel>
@@ -388,11 +409,33 @@ function isNonEmpty(value: string) {
             </NvField>
             <NvField>
               <NvFieldLabel for="count-task-lot">批次</NvFieldLabel>
-              <NvInput id="count-task-lot" v-model="taskForm.lotNo" />
+              <NvEntityPicker
+                id="count-task-lot"
+                v-model="taskForm.lotNo"
+                :options="lotOptions"
+                title="选择批次"
+                placeholder="选择批次"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
+                aria-label="批次"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="count-task-serial">序列号</NvFieldLabel>
-              <NvInput id="count-task-serial" v-model="taskForm.serialNo" />
+              <NvEntityPicker
+                id="count-task-serial"
+                v-model="taskForm.serialNo"
+                :options="serialOptions"
+                title="选择序列号"
+                placeholder="选择序列号"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_SERIAL_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
+                aria-label="序列号"
+              />
             </NvField>
           </NvFieldGroup>
           <div class="flex justify-end">

@@ -2,13 +2,14 @@
 import type { BusinessConsoleTelemetryTagItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useBusinessTelemetryTags } from '@/composables/useBusinessTelemetry'
+import { useEquipmentDeviceCatalog } from '@/composables/useEquipmentPickerCatalog'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
   NvDataTable,
   NvDropdownMenuItem,
-  NvInput,
+  NvEntityPicker,
   NvPageHeader,
   NvRowActions,
   NvToolbar,
@@ -26,7 +27,8 @@ definePage({
 })
 
 const { filters, refreshTags, tags, tagsError, tagsPending, tagsTotal } = useBusinessTelemetryTags()
-const { page, pageSize } = usePagedList(filters)
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.deviceAssetId] })
+const { deviceOptions, devicesPending } = useEquipmentDeviceCatalog()
 
 const errorMessage = computed(() => formatError(tagsError.value))
 
@@ -100,11 +102,17 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
-        <NvInput
+        <NvEntityPicker
           v-model="filters.deviceAssetId"
-          class="h-9 w-72"
-          placeholder="按设备编号筛选"
-          aria-label="设备编号"
+          class="w-72"
+          :options="deviceOptions"
+          title="选择设备"
+          placeholder="全部设备"
+          source-text="数据来自基础数据设备资产"
+          empty-text="暂无设备资产，请先在基础数据登记设备"
+          :loading="devicesPending"
+          clearable
+          aria-label="设备"
         />
       </template>
     </NvToolbar>

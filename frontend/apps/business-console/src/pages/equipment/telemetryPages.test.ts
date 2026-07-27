@@ -53,6 +53,13 @@ vi.mock('@nerv-iip/ui', () => ({
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogTitle: { template: '<h2><slot /></h2>' },
   NvDropdownMenuItem: { template: '<div><slot /></div>' },
+  // 实体选择弹窗桩件：只关心取值，替成输入位（页面里它承担原来自由输入框的位置）。
+  NvEntityPicker: {
+    props: ['modelValue', 'id', 'options', 'loading', 'disabled'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
   NvField: { template: '<div><slot /></div>' },
   NvFieldError: { props: ['errors'], template: '<div>{{ errors?.join(" ") }}</div>' },
   NvFieldGroup: { template: '<div><slot /></div>' },
@@ -183,6 +190,28 @@ vi.mock('@/composables/useEquipmentScopeSelection', () => ({
       selectedDevice: computed(() => undefined),
     }
   },
+}))
+
+// 设备 / 采集标签 / 单位目录走真实读面（useQuery）；单测给确定目录，只验页面行为。
+vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
+  telemetryTagLabel: (tagKey: string) => tagKey,
+  useEquipmentDeviceCatalog: () => ({
+    deviceOptions: computed(() => [{ value: 'DEV-CNC-01', label: '五轴加工中心' }]),
+    devicesPending: shallowRef(false),
+  }),
+  useEquipmentUomCatalog: () => ({
+    uomOptions: computed(() => [{ value: 'CEL', label: '摄氏度' }]),
+    uomsPending: shallowRef(false),
+  }),
+  useTelemetryTagCatalog: () => ({
+    tagOptions: computed(() => [
+      { value: 'temperature', label: '温度' },
+      { value: 'spindle-temperature', label: '主轴温度' },
+      { value: 'pressure', label: '压力' },
+    ]),
+    tagsPending: shallowRef(false),
+    unitByTagKey: computed(() => new Map([['temperature', 'CEL']])),
+  }),
 }))
 
 vi.mock('@/composables/useBusinessTelemetry', () => ({

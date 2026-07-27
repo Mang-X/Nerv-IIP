@@ -3,8 +3,17 @@ import type { BusinessConsoleWmsWarehouseTaskItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
-import { useWmsPutawayTasks } from '@/composables/useBusinessWms'
+import { useWmsInboundOrders, useWmsPutawayTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
+import {
+  useWarehouseCodeCatalog,
+  WAREHOUSE_CATALOG_SOURCE_TEXT,
+  WAREHOUSE_LOCATION_EMPTY_TEXT,
+} from '@/composables/useWarehouseCodeCatalog'
+import {
+  wmsWarehouseTaskStatusFilterOptions,
+  WMS_STATUS_ANY,
+} from '@/data/wmsReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -23,8 +32,10 @@ import {
   NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
+  NvEntityPicker,
   NvInput,
   NvPageHeader,
+  NvSearchSelect,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -66,6 +77,50 @@ watch(
 )
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.locationCode, () => filters.keyword],
+})
+// 库位后端无主数据读面，从真实的上架/拣货/盘点任务与出库单行里派生可选项。
+const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog()
+// 入库单是真实读面（只要组织/环境即可列出），上架任务必须挂在已存在的入库单下。
+const { inboundOrders, inboundOrdersPending } = useWmsInboundOrders({ take: 200 })
+/**
+ * 选择器以**人读单号**为选中值，而不是入库单的内部 id——选择器会把 value 当编码显示出来，
+ * 直接绑 id 会把 GUID 露到界面上（UI 不暴露工程语言）。提交时再映射回 id，提交体不变。
+ */
+const inboundOrderOptions = computed(() =>
+  inboundOrders.value.flatMap((order) => {
+    const id = order.inboundOrderId?.trim()
+    const no = order.inboundOrderNo?.trim() || id
+    if (!id || !no) return []
+    return [{ value: no, label: no, hint: order.status }]
+  }),
+)
+const inboundOrderIdByNo = computed(() => {
+  const map = new Map<string, string>()
+  for (const order of inboundOrders.value) {
+    const id = order.inboundOrderId?.trim()
+    const no = order.inboundOrderNo?.trim() || id
+    if (id && no) map.set(no, id)
+  }
+  return map
+})
+const inboundOrderNoById = computed(() => {
+  const map = new Map<string, string>()
+  for (const [no, id] of inboundOrderIdByNo.value) map.set(id, no)
+  return map
+})
+const inboundOrderSelection = computed({
+  // 目录还没到位时如实回落显示已有值，不让选择框看起来是空的。
+  get: () => inboundOrderNoById.value.get(createForm.inboundOrderId) ?? createForm.inboundOrderId,
+  set: (no: string) => {
+    createForm.inboundOrderId = inboundOrderIdByNo.value.get(no) ?? no
+  },
+})
+// 状态是后端枚举而不是目录，用哨兵值表达「全部」，避免空字符串和真实码值混淆。
+const statusFilter = computed({
+  get: () => filters.status || WMS_STATUS_ANY,
+  set: (value: string) => {
+    filters.status = value === WMS_STATUS_ANY ? undefined : value
+  },
 })
 
 // 上架任务挂在收货入库单下（完工入库 → 上架增量）。创建需绑定入库单与单行任务。
@@ -222,16 +277,23 @@ function firstQuery(value: unknown) {
           placeholder="任务号/来源单/物料"
           aria-label="关键字"
         />
-        <NvInput
+        <NvEntityPicker
           v-model="filters.locationCode"
-          class="h-9 w-28"
+          class="w-36"
+          :options="locationOptions"
+          title="选择库位"
           placeholder="库位"
+          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+          :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
+          :loading="warehouseCatalogPending"
+          clearable
           aria-label="库位"
         />
-        <NvInput
-          v-model="filters.status"
-          class="h-9 w-28"
-          placeholder="状态（可选）"
+        <NvSearchSelect
+          v-model="statusFilter"
+          class="w-32"
+          :options="wmsWarehouseTaskStatusFilterOptions"
+          placeholder="全部状态"
           aria-label="上架任务状态"
         />
       </template>
@@ -285,10 +347,17 @@ function firstQuery(value: unknown) {
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField v-if="!carriedFromInbound" class="sm:col-span-2">
               <NvFieldLabel for="wms-putaway-inbound">入库单</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="wms-putaway-inbound"
-                v-model="createForm.inboundOrderId"
-                autocomplete="off"
+                v-model="inboundOrderSelection"
+                :options="inboundOrderOptions"
+                title="选择入库单"
+                placeholder="选择入库单"
+                source-text="数据来自仓储入库单"
+                empty-text="暂无入库单，请先登记收货入库"
+                :loading="inboundOrdersPending"
+                clearable
+                aria-label="入库单"
               />
             </NvField>
             <NvField>
@@ -301,20 +370,32 @@ function firstQuery(value: unknown) {
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-putaway-from">来源库位</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="wms-putaway-from"
                 v-model="createForm.fromLocationCode"
-                autocomplete="off"
+                :options="locationOptions"
+                title="选择暂存库位"
                 placeholder="暂存库位"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
+                aria-label="来源库位"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-putaway-to">目标库位</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="wms-putaway-to"
                 v-model="createForm.toLocationCode"
-                autocomplete="off"
+                :options="locationOptions"
+                title="选择货架库位"
                 placeholder="货架库位"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
+                aria-label="目标库位"
               />
             </NvField>
             <NvField>

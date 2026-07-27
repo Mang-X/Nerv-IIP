@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, inject, provide, reactive, shallowRef } from 'vue'
 
 import DocumentsPage from './documents.vue'
 
@@ -44,6 +44,17 @@ vi.mock('@/composables/useProductEngineering', () => ({
     registerError: shallowRef(undefined),
     fetchDocumentDetail: stub.fetchDocumentDetail,
   }),
+  // 关联物料改成从工程物料目录里选，页面新引入了这个读面。
+  useEngineeringItems: () => ({
+    filters: reactive({ skip: 0, take: 200 }),
+    items: computed(() => [
+      { itemCode: 'ITEM-1', revision: 'A', name: '控制主板', status: 'Published' },
+    ]),
+    itemsError: shallowRef(undefined),
+    itemsPending: shallowRef(false),
+    itemsTotal: computed(() => 1),
+    refresh: vi.fn(),
+  }),
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -69,7 +80,56 @@ const sheetStubs = {
   NvSheetDescription: { template: '<p><slot /></p>' },
 }
 
-const allStubs = { ...layoutStub, ...dialogStubs, ...sheetStubs }
+// 关联物料是只选的实体选择器（内部自带 reka Dialog，会撞上这里的 DialogRoot 桩），
+// 桩成带同名 id 的输入位，用例继续用 `#doc-item-code` 表达「选中了某个物料」。
+const pickerStubs = {
+  NvEntityPicker: {
+    props: ['modelValue', 'options', 'id'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+}
+
+/**
+ * 文档类型已从自由文本改成受控下拉：id 挂在 NvSelectTrigger（真实组件是 button）上，
+ * 桩件把它上提到 `<select>`，`#doc-type` 选择器与 `setValue` 语义都保持不变。
+ */
+const selectTriggerIdKey = Symbol('nv-select-stub-trigger-id')
+const selectStubs = {
+  NvSelect: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    setup() {
+      const triggerId = shallowRef<string | undefined>(undefined)
+      provide(selectTriggerIdKey, (id?: string) => {
+        triggerId.value = id
+      })
+      return { triggerId }
+    },
+    template:
+      '<select v-bind="$attrs" :id="triggerId ?? $attrs.id" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+  },
+  NvSelectTrigger: {
+    props: ['id'],
+    setup(props: { id?: string }) {
+      inject<((id?: string) => void) | undefined>(selectTriggerIdKey, undefined)?.(props.id)
+    },
+    template: '<slot />',
+  },
+  NvSelectContent: { template: '<slot />' },
+  NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  NvSelectValue: { template: '<span />' },
+  SelectValue: { template: '<span />' },
+}
+
+const allStubs = {
+  ...layoutStub,
+  ...dialogStubs,
+  ...sheetStubs,
+  ...pickerStubs,
+  ...selectStubs,
+}
 
 function findButton(wrapper: ReturnType<typeof mount>, text: string) {
   return wrapper.findAll('button').find((b) => b.text().trim() === text)
@@ -116,7 +176,8 @@ describe('engineering documents page', () => {
 
     await wrapper.find('#doc-number').setValue('DOC-9')
     await wrapper.find('#doc-rev').setValue('A')
-    await wrapper.find('#doc-type').setValue('规格书')
+    // 文档类型改成受控下拉后，提交体带的是受控值（label 只用于显示）。
+    await wrapper.find('#doc-type').setValue('specification')
     await wrapper.find('#doc-file-id').setValue('file-xyz')
     await wrapper.find('#doc-file-name').setValue('spec.pdf')
     await wrapper.find('#doc-content-type').setValue('application/pdf')
@@ -129,7 +190,7 @@ describe('engineering documents page', () => {
     const body = stub.registerDocument.mock.calls[0]![0] as Record<string, unknown>
     expect(body.documentNumber).toBe('DOC-9')
     expect(body.revision).toBe('A')
-    expect(body.documentType).toBe('规格书')
+    expect(body.documentType).toBe('specification')
     expect(body.fileId).toBe('file-xyz')
     expect(body.fileName).toBe('spec.pdf')
     expect(body.contentType).toBe('application/pdf')

@@ -62,6 +62,13 @@ const STATUS_OPTIONS = [
   { value: 'disabled', label: '停用' },
 ]
 
+// 校验规则是受控枚举：后端只识别 `gs1-mod10`（GS1 类条码强制），其余一律按不校验处理，
+// 所以这里只给这两项，不编造平台并不执行的校验算法。
+const CHECKSUM_RULE_OPTIONS = [
+  { value: 'none', label: '不校验' },
+  { value: 'gs1-mod10', label: 'GS1 Mod10 校验位' },
+]
+
 const {
   filters,
   refreshRules,
@@ -372,11 +379,19 @@ async function submitRule() {
                   <NvFieldLabel for="barcode-rule-checksum"
                     >校验规则 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
-                    id="barcode-rule-checksum"
-                    v-model="form.checksumRule"
-                    autocomplete="off"
-                  />
+                  <NvSelect v-model="form.checksumRule">
+                    <NvSelectTrigger id="barcode-rule-checksum">
+                      <NvSelectValue placeholder="选择校验规则" />
+                    </NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem
+                        v-for="option in CHECKSUM_RULE_OPTIONS"
+                        :key="option.value"
+                        :value="option.value"
+                        >{{ option.label }}</NvSelectItem
+                      >
+                    </NvSelectContent>
+                  </NvSelect>
                 </NvField>
                 <NvField :data-invalid="showErrors && isGs1 && !form.gs1CompanyPrefixLength">
                   <NvFieldLabel for="barcode-rule-gs1-prefix">GS1 公司前缀长度</NvFieldLabel>
