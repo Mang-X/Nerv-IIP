@@ -35,10 +35,12 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
 - `e2e/wms.spec.ts`（4）：收货入库选单确认 → 成功结果；盘点录数确认 → 成功结果；
   拣货只读中文状态（无裸 code/GUID）；首页应用墙 → `/wms/inbound`。
 - `e2e/mes.spec.ts`（7）：工序执行完成（二次确认）→ 成功结果；报工全链 → 成功结果并
-  核对 POST 的工单/工序 pair 与真实回执；携带 `workOrderId + operationTaskId` 的 URL
-  pair 直达、延迟旧详情请求及浏览器 back/forward 重绑；详情前 500 项不含目标时，
-  以同工单分页精确解析第 501 个工序任务；领料列表渲染；完工入库列表渲染：首页应用墙
-  → `/mes/operation`。
+  核对 POST 的工单/工序 pair 与真实回执；携带 `workOrderId + operationTaskId` 的 router
+  pair 切换、延迟旧详情请求及浏览器 back/forward 重绑；详情前 500 项不含目标时，
+  以同工单分页精确解析第 501 个工序任务；领料列表渲染；完工入库列表渲染；首页应用墙
+  → `/mes/operation`。URL history 用例在单测试内部显式控制旧详情请求的启动与释放，
+  通过已挂载应用的 router 创建 A/B history entries，并在失败路径也释放拦截请求；无需降低
+  默认并行度。
 - `e2e/equipment.spec.ts`（5）：报修在 375×812 下覆盖报警路由预填 → 扫码覆盖 →
   设备 facade 服务端 keyword/分页选择稳定 ID、优先级 ActionSheet、48px 触点、无横向溢出，
   并用缩短 viewport 的 mock Chromium 证据验证 textarea 聚焦后提交动作仍可达且仅产生一次 POST

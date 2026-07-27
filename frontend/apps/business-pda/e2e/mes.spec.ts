@@ -87,15 +87,17 @@ test('报工：选工单 → 选工序 → 录良品数 → 提交 → 成功结
   })
 })
 
-test('报工：URL pair 直达、延迟旧请求与浏览器 back/forward 始终重绑同一实体', async ({ page }) => {
+test('报工：router pair 切换、延迟旧请求与浏览器 back/forward 始终重绑同一实体', async ({
+  page,
+}) => {
   let operationTaskDiscoveryCalls = 0
   let resolveFirstDetailStarted!: () => void
-  let releaseFirstDetail!: () => void
+  let resolveFirstDetailRelease!: () => void
   const firstDetailStarted = new Promise<void>((resolve) => {
     resolveFirstDetailStarted = resolve
   })
   const firstDetailRelease = new Promise<void>((resolve) => {
-    releaseFirstDetail = resolve
+    resolveFirstDetailRelease = resolve
   })
   let workOrderOneDetailCalls = 0
   await page.route('**/api/business-console/v1/mes/operation-tasks**', async (route) => {
@@ -111,26 +113,38 @@ test('报工：URL pair 直达、延迟旧请求与浏览器 back/forward 始终
     return routeBusinessConsoleApi(route)
   })
 
-  await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
-  await expect(page.getByRole('heading', { name: '报工' })).toBeVisible()
-  await firstDetailStarted
-  await page.goto('/mes/report?workOrderId=WO-2&operationTaskId=OP-3')
+  try {
+    await page.goto('/mes/report')
+    await expect(page.getByRole('heading', { name: '报工' })).toBeVisible()
+    await page.evaluate(async (target) => {
+      const { router } = await import(/* @vite-ignore */ '/src/router/index.ts')
+      await router.push(target)
+    }, '/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
+    await firstDetailStarted
+    await page.evaluate(async (target) => {
+      const { router } = await import(/* @vite-ignore */ '/src/router/index.ts')
+      await router.push(target)
+    }, '/mes/report?workOrderId=WO-2&operationTaskId=OP-3')
 
-  await expect(page.getByText('当前工单')).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'WO-2 · 工序 10', exact: true })).toBeVisible()
-  await expect(page.getByTestId('good-quantity')).toBeVisible()
-  await expect(page.getByTestId('report-route-issue')).toHaveCount(0)
-  releaseFirstDetail()
-  await expect(page.getByText('WO-1 · 工序 10')).toHaveCount(0)
-  expect(operationTaskDiscoveryCalls).toBe(0)
+    await expect(page.getByText('当前工单')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'WO-2 · 工序 10', exact: true })).toBeVisible()
+    await expect(page.getByTestId('good-quantity')).toBeVisible()
+    await expect(page.getByTestId('report-route-issue')).toHaveCount(0)
+    resolveFirstDetailRelease()
+    await expect(page.getByText('WO-1 · 工序 10')).toHaveCount(0)
+    expect(operationTaskDiscoveryCalls).toBe(0)
 
-  await page.goBack()
-  await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toBeVisible()
-  await expect(page.getByTestId('good-quantity')).toBeVisible()
+    await page.goBack()
+    await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toBeVisible()
+    await expect(page.getByTestId('good-quantity')).toBeVisible()
 
-  await page.goForward()
-  await expect(page.getByRole('heading', { name: 'WO-2 · 工序 10', exact: true })).toBeVisible()
-  await expect(page.getByTestId('good-quantity')).toBeVisible()
+    await page.goForward()
+    await expect(page.getByRole('heading', { name: 'WO-2 · 工序 10', exact: true })).toBeVisible()
+    await expect(page.getByTestId('good-quantity')).toBeVisible()
+  } finally {
+    // Never leave the intercepted route pending when an assertion or navigation fails.
+    resolveFirstDetailRelease()
+  }
 })
 
 test('报工：详情前 500 项不含目标时，完整 pair URL 分页解析第 501 项', async ({ page }) => {
