@@ -13,6 +13,7 @@ const barcode = vi.hoisted(() => ({
   createPrintBatch: vi.fn(),
   recordScan: vi.fn(),
   printBatchSourceDocumentType: 'production.report',
+  printBatchStatus: 'completed',
   route: { query: {} as Record<string, unknown> },
   ruleFilters: undefined as undefined | { keyword?: string; skip: number; take: number },
   templateFilters: undefined as undefined | { skip: number; take: number },
@@ -139,7 +140,7 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
           sourceDocumentType: barcode.printBatchSourceDocumentType,
           sourceDocumentId: 'WO-001',
           requestedQuantity: 2,
-          status: 'completed',
+          status: barcode.printBatchStatus,
           createdAtUtc: '2026-07-02T01:00:00Z',
         },
       ]),
@@ -152,7 +153,7 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
         sourceDocumentType: barcode.printBatchSourceDocumentType,
         sourceDocumentId: 'WO-001',
         requestedQuantity: 2,
-        status: 'completed',
+        status: barcode.printBatchStatus,
         items: [
           { sequenceNo: 1, labelValue: '(01)06912345678901(10)L2407', fileId: 'file-label-1' },
           { sequenceNo: 2, labelValue: '(01)06912345678901(10)L2408', fileId: null },
@@ -247,6 +248,7 @@ describe('barcode pages', () => {
     vi.clearAllMocks()
     barcode.route.query = {}
     barcode.printBatchSourceDocumentType = 'production.report'
+    barcode.printBatchStatus = 'completed'
     barcode.ruleFilters = undefined
     barcode.templateFilters = undefined
     barcode.printBatchFilters = undefined
@@ -478,11 +480,31 @@ describe('barcode pages', () => {
     expect(wrapper.text()).toContain('打印批次')
     expect(wrapper.text()).toContain('WO-001')
     expect(wrapper.text()).toContain('(01)06912345678901(10)L2407')
-    expect(wrapper.text()).toContain('file-label-1')
+    expect(wrapper.text()).toContain('已生成')
+    expect(wrapper.text()).not.toContain('file-label-1')
     expect(barcode.printBatchFilters?.sourceDocumentType).toBe('production.report')
     expect(barcode.printBatchFilters?.sourceDocumentId).toBe('WO-001')
     expect(barcode.printBatchFilters?.selectedPrintBatchId).toBe('pb-1')
     expect(barcode.printBatchFilters?.take).toBe(10)
+  })
+
+  it('uses business labels instead of internal print identifiers and raw enum values', async () => {
+    barcode.printBatchSourceDocumentType = 'purchase-receipt'
+    barcode.printBatchStatus = 'printed'
+    const wrapper = mount(PrintBatchesPage, {
+      global: {
+        stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('采购收货')
+    expect(wrapper.text()).toContain('已打印')
+    expect(wrapper.text()).not.toContain('purchase-receipt')
+    expect(wrapper.text()).not.toContain('printed')
+    expect(wrapper.text()).not.toContain('pb-1')
+    expect(wrapper.text()).not.toContain('tpl-1')
+    expect(wrapper.text()).not.toContain('file-label-1')
   })
 
   it('maps print batch source objects to scan workflow filters when drilling into scans', async () => {

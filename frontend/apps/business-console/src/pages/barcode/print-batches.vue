@@ -47,6 +47,7 @@ definePage({
 
 const SOURCE_OPTIONS = [
   { value: 'production.report', label: '生产报工' },
+  { value: 'purchase-receipt', label: '采购收货' },
   { value: 'wms.receiving', label: '仓储收货' },
   { value: 'inventory.receipt', label: '库存入库' },
   { value: 'inventory.issue', label: '库存出库' },
@@ -57,6 +58,9 @@ const SOURCE_OPTIONS = [
 
 const STATUS_OPTIONS = [
   { value: 'requested', label: '已请求' },
+  { value: 'queued', label: '待打印' },
+  { value: 'printing', label: '打印中' },
+  { value: 'printed', label: '已打印' },
   { value: 'completed', label: '已完成' },
   { value: 'failed', label: '失败' },
 ]
@@ -93,13 +97,12 @@ const form = reactive({
 
 const batchColumns: NvDataTableColumn<BusinessConsoleBarcodePrintBatchItem>[] = [
   {
-    key: 'printBatchId',
-    header: '批次',
+    key: 'sourceDocumentId',
+    header: '来源单据',
     cellClass: 'font-medium',
-    accessor: (r) => r.printBatchId ?? '无',
+    accessor: (r) => r.sourceDocumentId ?? '未关联单据',
   },
-  { key: 'source', header: '业务对象' },
-  { key: 'labelTemplateId', header: '标签模板', accessor: (r) => r.labelTemplateId ?? '无' },
+  { key: 'source', header: '业务来源' },
   {
     key: 'requestedQuantity',
     header: '数量',
@@ -125,7 +128,7 @@ const itemColumns: NvDataTableColumn<BusinessConsoleBarcodePrintItemDetail>[] = 
     cellClass: 'font-mono text-xs',
     accessor: (r) => r.labelValue ?? '无',
   },
-  { key: 'fileId', header: '标签文件', accessor: (r) => r.fileId ?? '未生成文件' },
+  { key: 'fileId', header: '标签文件', accessor: (r) => (r.fileId ? '已生成' : '未生成') },
 ]
 
 watch(
@@ -226,12 +229,37 @@ function newPrintBatchIdempotencyKey(sourceDocumentId: string) {
 
 function sourceLabel(value?: string | null) {
   if (!value) return '未标注来源'
-  return SOURCE_OPTIONS.find((option) => option.value === value)?.label ?? value
+  return SOURCE_OPTIONS.find((option) => option.value === value)?.label ?? '其他业务对象'
 }
 
 function statusLabel(value?: string | null) {
   if (!value) return '未知'
-  return STATUS_OPTIONS.find((option) => option.value === value)?.label ?? value
+  return STATUS_OPTIONS.find((option) => option.value === value)?.label ?? '其他状态'
+}
+
+function sourceDocumentRoute(batch: BusinessConsoleBarcodePrintBatchItem) {
+  const id = batch.sourceDocumentId?.trim()
+  if (!id) return undefined
+  if (batch.sourceDocumentType === 'work-order') return `/mes/work-orders/${encodeURIComponent(id)}`
+  if (batch.sourceDocumentType === 'production.report') {
+    return { path: '/mes/production-reports', query: { reportNo: id } }
+  }
+  if (batch.sourceDocumentType === 'purchase-receipt') {
+    return { path: '/erp/procurement/receipts', query: { keyword: id } }
+  }
+  if (batch.sourceDocumentType === 'wms.receiving') {
+    return { path: '/wms/inbound', query: { inboundOrderNo: id } }
+  }
+  if (batch.sourceDocumentType === 'inventory.count') {
+    return { path: '/inventory/counts', query: { countTaskId: id } }
+  }
+  if (batch.sourceDocumentType?.startsWith('inventory.')) {
+    return { path: '/inventory/movements', query: { sourceDocumentId: id } }
+  }
+  if (batch.sourceDocumentType === 'quality.inspection') {
+    return { path: '/quality/inspections', query: { sourceDocumentId: id } }
+  }
+  return undefined
 }
 
 function formatDateTime(value?: string | null) {
@@ -406,13 +434,18 @@ function formatError(error: unknown) {
         :searchable="false"
         :column-settings="false"
       >
+        <template #cell-sourceDocumentId="{ row }">
+          <RouterLink
+            v-if="sourceDocumentRoute(row)"
+            class="underline underline-offset-2"
+            :to="sourceDocumentRoute(row)!"
+          >
+            {{ row.sourceDocumentId }}
+          </RouterLink>
+          <span v-else>{{ row.sourceDocumentId ?? '未关联单据' }}</span>
+        </template>
         <template #cell-source="{ row }">
-          <div class="grid gap-1">
-            <span>{{ sourceLabel(row.sourceDocumentType) }}</span>
-            <span class="text-xs text-muted-foreground">{{
-              row.sourceDocumentId ?? '无业务对象'
-            }}</span>
-          </div>
+          {{ sourceLabel(row.sourceDocumentType) }}
         </template>
         <template #cell-status="{ row }">
           <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
@@ -436,7 +469,7 @@ function formatError(error: unknown) {
           <div>
             <h2 class="text-base font-semibold">批次详情</h2>
             <p class="text-sm text-muted-foreground">
-              {{ printBatchDetail?.printBatchId ?? '选择左侧批次查看标签明细' }}
+              {{ printBatchDetail?.sourceDocumentId ?? '选择左侧任务查看标签明细' }}
             </p>
           </div>
           <NvButton v-if="printBatchDetail?.sourceDocumentId" size="sm" variant="outline" as-child>
@@ -452,10 +485,7 @@ function formatError(error: unknown) {
             >{{ sourceLabel(printBatchDetail.sourceDocumentType) }} ·
             {{ printBatchDetail.sourceDocumentId ?? '无' }}
           </div>
-          <div>
-            <span class="text-muted-foreground">标签模板：</span
-            >{{ printBatchDetail.labelTemplateId ?? '无' }}
-          </div>
+          <div><span class="text-muted-foreground">标签模板：</span>已匹配</div>
           <div>
             <span class="text-muted-foreground">数量：</span
             >{{ formatQuantity(printBatchDetail.requestedQuantity) }}

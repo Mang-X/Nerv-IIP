@@ -210,7 +210,7 @@ const kpiItems = computed<KpiCell[]>(() => {
 
       <footer class="scr-foot">
         <RouterLink :to="backLink.to" class="scr-back">‹ {{ backLink.label }}</RouterLink>
-        <span>产线状态与设备屏同源 · 产量 / 节拍为演示推算 · 待 #570；点卡进入单线屏</span>
+        <span>产线状态与设备屏同源；产量与节拍按当前窗口推算；点卡进入单线屏</span>
         <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
       </footer>
     </div>
@@ -265,7 +265,7 @@ const kpiItems = computed<KpiCell[]>(() => {
     flex: none;
     border-radius: 2px;
     transform: skewX(-16deg);
-    background: linear-gradient(180deg, var(--nv-scr-cyan), rgba(74, 166, 238, 0.25));
+    background: var(--nv-scr-cyan);
     box-shadow: 0 0 11px rgba(74, 166, 238, 0.55);
   }
   .sec-t {
@@ -280,12 +280,7 @@ const kpiItems = computed<KpiCell[]>(() => {
     flex: 1;
     height: 1px;
     margin: 0 6px;
-    background: linear-gradient(
-      90deg,
-      rgba(135, 208, 255, 0.28),
-      rgba(255, 255, 255, 0.05) 45%,
-      transparent
-    );
+    background: rgba(135, 208, 255, 0.2);
   }
   .ls-meta {
     font-size: 13px;
@@ -328,7 +323,7 @@ const kpiItems = computed<KpiCell[]>(() => {
     flex-direction: column;
     padding: 14px 17px 12px;
     border-radius: var(--nv-scr-radius);
-    background: linear-gradient(180deg, var(--nv-scr-panel-a), var(--nv-scr-panel-b));
+    background: var(--nv-scr-panel-a);
     border: 1px solid var(--nv-scr-line);
     border-top-color: rgba(255, 255, 255, 0.09);
     transition:
@@ -370,11 +365,7 @@ const kpiItems = computed<KpiCell[]>(() => {
     padding: 2px 8px;
     border-radius: 5px;
     border: 1px dashed rgba(255, 255, 255, 0.24);
-    background: repeating-linear-gradient(
-      -45deg,
-      rgba(255, 255, 255, 0.04) 0 6px,
-      transparent 6px 12px
-    );
+    background: rgba(255, 255, 255, 0.035);
     font-size: 11.5px;
     color: var(--nv-scr-muted);
   }

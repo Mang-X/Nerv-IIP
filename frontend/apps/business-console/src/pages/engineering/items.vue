@@ -344,14 +344,30 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvMetricCard
-      class="sm:max-w-md"
-      variant="breakdown"
-      label="物料修订"
-      :value="itemsTotal"
-      unit="个"
-      :segments="itemSegments"
-    />
+    <div class="grid gap-4 sm:grid-cols-2">
+      <NvMetricCard
+        variant="breakdown"
+        label="物料修订"
+        :value="itemsTotal"
+        unit="个"
+        :segments="itemSegments"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="草稿待发布"
+        :value="draftCount"
+        unit="个"
+        :tone="draftCount > 0 ? 'warning' : 'neutral'"
+        :status="
+          draftCount > 0
+            ? { label: '待评审', tone: 'warning' }
+            : { label: '无待办', tone: 'success' }
+        "
+        :foot-start="
+          draftCount > 0 ? '确认物料属性后发布，供 BOM 与工艺引用。' : '当前没有待发布的物料修订。'
+        "
+      />
+    </div>
 
     <NvToolbar v-model:search="itemSearch" search-placeholder="按物料编码筛选">
       <template #filters>

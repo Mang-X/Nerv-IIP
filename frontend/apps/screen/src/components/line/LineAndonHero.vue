@@ -47,17 +47,17 @@ defineProps<{
     border-radius: 50%;
   }
   .lah.run .lah-core {
-    background: radial-gradient(circle at 38% 32%, #7dedb2, var(--nv-scr-green) 55%, #0b7a44);
+    background: var(--nv-scr-green);
     box-shadow: 0 0 44px rgba(69, 208, 137, 0.5);
     animation: lah-breathe 4s ease-in-out infinite;
   }
   .lah.attention .lah-core {
-    background: radial-gradient(circle at 38% 32%, #ffe29a, var(--nv-scr-amber) 55%, #8f6c14);
+    background: var(--nv-scr-amber);
     box-shadow: 0 0 44px rgba(242, 193, 78, 0.55);
     animation: lah-breathe 2.4s ease-in-out infinite;
   }
   .lah.alarm .lah-core {
-    background: radial-gradient(circle at 38% 32%, #ff9aa1, var(--nv-scr-red) 55%, #8f1b22);
+    background: var(--nv-scr-red);
     box-shadow: 0 0 54px rgba(239, 90, 99, 0.65);
     animation: lah-breathe 1.2s ease-in-out infinite;
   }
@@ -87,11 +87,7 @@ defineProps<{
     padding: 5px 12px;
     border-radius: 6px;
     border: 1px dashed rgba(255, 255, 255, 0.28);
-    background: repeating-linear-gradient(
-      -45deg,
-      rgba(255, 255, 255, 0.05) 0 8px,
-      transparent 8px 16px
-    );
+    background: rgba(255, 255, 255, 0.045);
     font-size: 13.5px;
     color: var(--nv-scr-muted);
   }

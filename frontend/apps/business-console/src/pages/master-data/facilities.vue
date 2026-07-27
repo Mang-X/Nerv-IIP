@@ -924,7 +924,7 @@ function childLabelOf(type: string): string | undefined {
         </ScrollArea>
 
         <p v-if="treeTruncated" class="text-xs text-muted-foreground">
-          节点较多，当前仅展示前 {{ TREE_TAKE }} 条，层级可能不完整；完整层级加载能力即将上线。
+          节点较多，当前仅展示前 {{ TREE_TAKE }} 条；请使用搜索缩小范围。
         </p>
       </section>
 
