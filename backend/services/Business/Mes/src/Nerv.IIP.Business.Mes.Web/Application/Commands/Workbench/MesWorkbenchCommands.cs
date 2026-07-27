@@ -19,6 +19,7 @@ using DomainWorkCenterUnavailability = Nerv.IIP.Business.Mes.Domain.AggregatesMo
 using DomainDefectRecord = Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate.DefectRecord;
 using DomainShiftHandover = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandover;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
+using Nerv.IIP.Business.Mes.Web.Application.Errors;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 
@@ -52,6 +53,13 @@ public sealed class ReleaseWorkOrderCommandHandler(
         {
             throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
         }
+
+        WorkOrderLifecycleCommandGuards.EnsureActionAllowed(
+            workOrder,
+            "release",
+            WorkOrder.CreatedStatus,
+            WorkOrder.StartedStatus,
+            WorkOrder.HoldStatus);
 
         if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))
         {
@@ -268,6 +276,13 @@ public sealed class HoldWorkOrderCommandHandler(ApplicationDbContext dbContext)
             request.WorkOrderId,
             cancellationToken);
 
+        WorkOrderLifecycleCommandGuards.EnsureActionAllowed(
+            workOrder,
+            "hold",
+            WorkOrder.CreatedStatus,
+            WorkOrder.ReleasedStatus,
+            WorkOrder.StartedStatus,
+            WorkOrder.HoldStatus);
         WorkOrderLifecycleCommandGuards.ApplyTransition(workOrder, x => x.Hold(request.Reason));
 
         return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, request.HeldAtUtc);
@@ -328,6 +343,19 @@ internal static class WorkOrderCancellationOrchestrator
             environmentId,
             workOrderId,
             cancellationToken);
+
+        if (workOrder.Status == WorkOrder.CancelledStatus)
+        {
+            return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, cancelledAtUtc);
+        }
+
+        WorkOrderLifecycleCommandGuards.EnsureActionAllowed(
+            workOrder,
+            "cancel",
+            WorkOrder.CreatedStatus,
+            WorkOrder.ReleasedStatus,
+            WorkOrder.StartedStatus,
+            WorkOrder.HoldStatus);
 
         var materialIssueRequests = await dbContext.MaterialIssueRequests
             .Where(x => x.OrganizationId == organizationId
@@ -409,6 +437,17 @@ internal static class WorkOrderLifecycleCommandGuards
     public static void ApplyTransition(WorkOrder workOrder, Action<WorkOrder> transition)
     {
         MesDomainRuleGuard.Enforce(() => transition(workOrder));
+    }
+
+    public static void EnsureActionAllowed(
+        WorkOrder workOrder,
+        string action,
+        params string[] allowedStatuses)
+    {
+        if (!allowedStatuses.Contains(workOrder.Status, StringComparer.Ordinal))
+        {
+            throw new MesLifecycleConflictException(action, workOrder.Status);
+        }
     }
 }
 
@@ -981,6 +1020,14 @@ public sealed class ConfirmLineSideMaterialReceiptCommandHandler(ApplicationDbCo
             throw new KnownException($"未找到领料申请，RequestId = {request.RequestId}");
         }
 
+        if (materialRequest.Status is not MaterialIssueRequest.RequestedStatus and
+            not MaterialIssueRequest.PartiallyReceivedStatus)
+        {
+            throw new MesLifecycleConflictException(
+                "confirm-line-side-receipt",
+                materialRequest.Status);
+        }
+
         MesDomainRuleGuard.Enforce(() =>
             materialRequest.ConfirmLineSideReceipt(request.ReceivedAtUtc, request.ReceivedQuantity, request.MaterialLotId));
         return new MesAcceptedResponse("Accepted", materialRequest.RequestNo, request.ReceivedAtUtc);
@@ -1130,6 +1177,18 @@ public sealed class ChangeOperationTaskStateCommandHandler(
                 x.OperationTaskIdValue == request.OperationTaskId,
             cancellationToken)
             ?? throw new KnownException($"未找到工序任务，OperationTaskId = {request.OperationTaskId}");
+
+        var requiredStatus = request.Action switch
+        {
+            "start" => OperationTaskLifecycleStatus.Queued,
+            "pause" or "complete" => OperationTaskLifecycleStatus.InProgress,
+            "resume" => OperationTaskLifecycleStatus.Paused,
+            _ => (OperationTaskLifecycleStatus?)null,
+        };
+        if (requiredStatus is not null && task.Status != requiredStatus)
+        {
+            throw new MesLifecycleConflictException(request.Action, task.Status.ToString());
+        }
 
         if (request.Action == "start")
         {

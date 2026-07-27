@@ -18,6 +18,7 @@ using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
@@ -27,6 +28,38 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesEndpointContractTests
 {
+    [Fact]
+    public async Task Lifecycle_conflict_endpoint_returns_409_with_safe_code()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(new LifecycleConflictSender());
+                });
+            });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/operation-tasks/OP-STATE/pause",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                changedAtUtc = "2026-07-27T10:00:00Z",
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"message\":\"lifecycle-conflict\"", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Queued", body, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task Record_production_report_endpoint_returns_strong_id_wire_shape()
     {
@@ -779,6 +812,56 @@ public sealed class MesEndpointContractTests
             CancellationToken.None));
 
         Assert.Contains("报工工序任务不存在或不属于当前工单", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(dbContext.ProductionReports);
+        Assert.Equal(0m, workOrder.CompletedQuantity);
+        Assert.Equal(0m, workOrder.ScrapQuantity);
+    }
+
+    [Fact]
+    public async Task Production_report_completion_rejects_non_running_task_before_recording_side_effects()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var reportedAt = DateTimeOffset.Parse("2026-07-27T10:00:00Z");
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-STATE",
+            "SKU-FG-1000",
+            "PV-001",
+            100m,
+            1,
+            reportedAt.AddHours(8));
+        var tasks = workOrder.Release(
+            reportedAt.AddHours(-1),
+            [
+                new RoutingStepSnapshot(
+                    "OP-10",
+                    10,
+                    "WC-MIX-01",
+                    [],
+                    TimeSpan.FromMinutes(30)),
+            ]);
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.AddRange(tasks);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
+            new RecordProductionReportCommandHandler(dbContext).Handle(
+                new RecordProductionReportCommand(
+                    "org-001",
+                    "env-dev",
+                    "WO-STATE",
+                    "OP-10",
+                    1m,
+                    0m,
+                    true,
+                    reportedAt),
+                CancellationToken.None));
+
+        Assert.Equal("report-complete", exception.Action);
+        Assert.Equal(nameof(OperationTaskLifecycleStatus.Queued), exception.CurrentStatus);
         Assert.Empty(dbContext.ProductionReports);
         Assert.Equal(0m, workOrder.CompletedQuantity);
         Assert.Equal(0m, workOrder.ScrapQuantity);
@@ -1769,6 +1852,71 @@ public sealed class MesEndpointContractTests
             throw new NotSupportedException();
 
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class LifecycleConflictSender : ISender
+    {
+        public Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            return Task.FromException<TResponse>(
+                new MesLifecycleConflictException("pause", nameof(OperationTaskLifecycleStatus.Queued)));
+        }
+
+        public Task Send<TRequest>(
+            TRequest request,
+            CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class CapturingListOperationTasksSender : ISender
+    {
+        public ListOperationTasksQuery? Query { get; private set; }
+
+        public Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+            Query = Assert.IsType<ListOperationTasksQuery>(request);
+            return Task.FromResult((TResponse)(object)new MesOperationTaskListResponse([], 0));
+        }
+
+        public Task Send<TRequest>(
+            TRequest request,
+            CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }
 

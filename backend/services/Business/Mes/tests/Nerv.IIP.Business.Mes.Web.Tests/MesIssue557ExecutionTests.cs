@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Errors;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -31,9 +32,9 @@ public sealed class MesIssue557ExecutionTests
     }
 
     [Fact]
-    public async Task Operation_pause_on_queued_task_surfaces_domain_rule_as_business_error()
+    public async Task Operation_pause_on_queued_task_surfaces_lifecycle_conflict()
     {
-        await using var dbContext = CreateDbContext(nameof(Operation_pause_on_queued_task_surfaces_domain_rule_as_business_error));
+        await using var dbContext = CreateDbContext(nameof(Operation_pause_on_queued_task_surfaces_lifecycle_conflict));
         var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
         workOrder.MarkReleased();
         dbContext.WorkOrders.Add(workOrder);
@@ -54,13 +55,117 @@ public sealed class MesIssue557ExecutionTests
 
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider());
 
-        // Pausing a queued (not in-progress) task trips OperationTask.Pause's InvalidOperationException. Before the
-        // domain-rule guard it escaped unwrapped as an unhandled HTTP 500; it must now surface as a KnownException.
-        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+        var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() => handler.Handle(
             new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-10", "pause", Utc("2026-06-30T09:00:00Z")),
             CancellationToken.None));
 
-        Assert.Contains("in-progress", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("pause", exception.Action);
+        Assert.Equal(nameof(OperationTaskLifecycleStatus.Queued), exception.CurrentStatus);
+    }
+
+    [Theory]
+    [InlineData("start", OperationTaskLifecycleStatus.Paused)]
+    [InlineData("pause", OperationTaskLifecycleStatus.Queued)]
+    [InlineData("resume", OperationTaskLifecycleStatus.InProgress)]
+    [InlineData("complete", OperationTaskLifecycleStatus.Paused)]
+    public async Task Operation_action_rejects_incompatible_persisted_status_as_lifecycle_conflict(
+        string action,
+        OperationTaskLifecycleStatus status)
+    {
+        await using var dbContext = CreateDbContext(
+            $"{nameof(Operation_action_rejects_incompatible_persisted_status_as_lifecycle_conflict)}-{action}");
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-STATE",
+            "SKU-FG",
+            "PV-001",
+            10m,
+            1,
+            Utc("2026-06-30T08:00:00Z"),
+            "PCS");
+        workOrder.MarkReleased();
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-STATE",
+            "OP-STATE",
+            status,
+            10,
+            "WC-10",
+            [],
+            Utc("2026-06-29T08:00:00Z"),
+            TimeSpan.FromHours(4),
+            null,
+            null));
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
+            new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider()).Handle(
+                new ChangeOperationTaskStateCommand(
+                    "org-001",
+                    "env-dev",
+                    "OP-STATE",
+                    action,
+                    Utc("2026-06-30T09:00:00Z")),
+                CancellationToken.None));
+
+        Assert.Equal(action, exception.Action);
+        Assert.Equal(status.ToString(), exception.CurrentStatus);
+    }
+
+    [Theory]
+    [InlineData(MaterialIssueRequest.ReceivedStatus)]
+    [InlineData(MaterialIssueRequest.CancelledStatus)]
+    [InlineData(MaterialIssueRequest.ReturnRequestedStatus)]
+    [InlineData(MaterialIssueRequest.ReservationExpiredStatus)]
+    public async Task Line_side_receipt_rejects_terminal_persisted_status_as_lifecycle_conflict(
+        string terminalStatus)
+    {
+        await using var dbContext = CreateDbContext(
+            $"{nameof(Line_side_receipt_rejects_terminal_persisted_status_as_lifecycle_conflict)}-{terminalStatus}");
+        var materialRequest = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-STATE",
+            "WO-001",
+            "OP-10",
+            "MAT-001",
+            "PCS",
+            5m,
+            Utc("2026-06-29T08:00:00Z"));
+        switch (terminalStatus)
+        {
+            case MaterialIssueRequest.ReceivedStatus:
+                materialRequest.ConfirmLineSideReceipt(Utc("2026-06-29T08:30:00Z"), 5m, "LOT-1");
+                break;
+            case MaterialIssueRequest.CancelledStatus:
+                materialRequest.CancelForWorkOrderCancellation(Utc("2026-06-29T08:30:00Z"));
+                break;
+            case MaterialIssueRequest.ReturnRequestedStatus:
+                materialRequest.ConfirmLineSideReceipt(Utc("2026-06-29T08:30:00Z"), 2m, "LOT-1");
+                materialRequest.CancelForWorkOrderCancellation(Utc("2026-06-29T08:45:00Z"));
+                break;
+            case MaterialIssueRequest.ReservationExpiredStatus:
+                materialRequest.MarkInventoryReservationExpired(Utc("2026-06-29T08:30:00Z"));
+                break;
+        }
+        dbContext.MaterialIssueRequests.Add(materialRequest);
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
+            new ConfirmLineSideMaterialReceiptCommandHandler(dbContext).Handle(
+                new ConfirmLineSideMaterialReceiptCommand(
+                    "org-001",
+                    "env-dev",
+                    "MIR-STATE",
+                    Utc("2026-06-29T09:00:00Z"),
+                    1m),
+                CancellationToken.None));
+
+        Assert.Equal("confirm-line-side-receipt", exception.Action);
+        Assert.Equal(terminalStatus, exception.CurrentStatus);
     }
 
     [Fact]
