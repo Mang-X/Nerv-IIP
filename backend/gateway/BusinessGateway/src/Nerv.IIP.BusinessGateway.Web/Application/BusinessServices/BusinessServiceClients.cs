@@ -1571,6 +1571,11 @@ public interface IBusinessMesClient
         BusinessConsoleMesRecoverDowntimeEventRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMesScheduleResultListResponse> ListScheduleResultsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesScheduleResultListRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleMesShiftHandoverListResponse> ListShiftHandoversAsync(
         string internalBearerToken,
         BusinessConsoleMesListRequest request,
@@ -7379,6 +7384,22 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             HttpMethod.Post,
             $"/api/business/v1/mes/downtime-events/{Uri.EscapeDataString(downtimeEventId)}/recover",
             request,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesScheduleResultListResponse> ListScheduleResultsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesScheduleResultListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesScheduleResultListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/schedules?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("trigger", request.Trigger),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
             cancellationToken);
 
     public Task<BusinessConsoleMesShiftHandoverListResponse> ListShiftHandoversAsync(

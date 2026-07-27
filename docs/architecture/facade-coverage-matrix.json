@@ -2969,6 +2969,19 @@
     {
       "service": "Mes",
       "method": "GET",
+      "route": "/api/business/v1/mes/schedules",
+      "operationId": "listBusinessMesScheduleResults",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesScheduleResults"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
       "route": "/api/business/v1/mes/shift-handovers",
       "operationId": "listBusinessMesShiftHandovers",
       "classification": "exposed",

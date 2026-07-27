@@ -4399,6 +4399,27 @@ public sealed record BusinessConsoleMesRecoverDowntimeEventRequest(
     DateTimeOffset RecoveredAtUtc,
     string IdempotencyKey);
 
+/// <summary>历史规则排程结果列表请求（「规则排程」页的历史读面）。</summary>
+public sealed record BusinessConsoleMesScheduleResultListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Trigger = null,
+    int Skip = 0,
+    int Take = 20);
+
+public sealed record BusinessConsoleMesScheduleResultListResponse(
+    IReadOnlyCollection<BusinessConsoleMesScheduleResultRow> Items,
+    int Total);
+
+public sealed record BusinessConsoleMesScheduleResultRow(
+    int ScheduleVersion,
+    string Trigger,
+    DateTimeOffset ScheduledAtUtc,
+    int AssignmentCount,
+    int AffectedWorkOrderCount,
+    IReadOnlyCollection<string> AffectedWorkOrderIds,
+    IReadOnlyCollection<BusinessConsoleScheduledOperation> Assignments);
+
 public sealed record BusinessConsoleMesShiftHandoverListResponse(
     IReadOnlyCollection<BusinessConsoleMesShiftHandoverRow> Items,
     int Total);

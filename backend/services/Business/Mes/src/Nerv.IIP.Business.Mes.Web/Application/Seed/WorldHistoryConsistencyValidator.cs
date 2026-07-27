@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Infrastructure.MasterData;
 using System.Globalization;
 using System.Text;
 
@@ -681,6 +682,212 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         decimal Quantity,
         decimal PostedQuantity,
         DateTimeOffset? PostedAtUtc);
+
+    #region 追溯断点（产出批次谱系 / 报工物料消耗）
+
+    /// <summary>
+    /// 追溯断点块的 fail-closed 校验：谱系与消耗必须挂在**真实报工**上、批号与领料批一致、
+    /// 谱系数量与该工单的报工好品累计相等（追溯页上的数量链就是靠这条对得起来的）。
+    /// </summary>
+    public async Task<WorldHistoryGenealogyValidationReport> ValidateGenealogyAsync(
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        var failures = new List<string>();
+
+        var reportIndex = (await dbContext.ProductionReports
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                    x.ReportNo.StartsWith(WorldHistoryGenealogySpec.ProductionReportNoPrefix))
+                .Select(x => new { x.ReportNo, x.WorkOrderId, x.GoodQuantity })
+                .ToArrayAsync(cancellationToken))
+            .ToArray();
+        var reportNos = reportIndex.Select(x => x.ReportNo).ToHashSet(StringComparer.Ordinal);
+        var goodByWorkOrder = reportIndex
+            .GroupBy(x => x.WorkOrderId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Sum(x => x.GoodQuantity), StringComparer.Ordinal);
+
+        var genealogies = await dbContext.OutputLotGenealogies
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+            .Select(x => new GenealogyProjection(x.WorkOrderId, x.ReportNo, x.ProducedLotNo, x.Quantity, x.CreatedAtUtc))
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var row in genealogies)
+        {
+            if (!reportNos.Contains(row.ReportNo))
+            {
+                failures.Add($"产出批次谱系 {row.ProducedLotNo} 引用了不存在的报工 {row.ReportNo}。");
+            }
+
+            var expectedLotNo = WorldHistoryGenealogySpec.ProducedLotNo(row.WorkOrderId);
+            if (!string.Equals(row.ProducedLotNo, expectedLotNo, StringComparison.Ordinal))
+            {
+                failures.Add($"工单 {row.WorkOrderId} 的产出批号 {row.ProducedLotNo} 与设定集号段 {expectedLotNo} 不符。");
+            }
+
+            if (goodByWorkOrder.TryGetValue(row.WorkOrderId, out var expectedQuantity) &&
+                Math.Abs(expectedQuantity - row.Quantity) > QuantityTolerance)
+            {
+                failures.Add($"工单 {row.WorkOrderId} 的谱系数量 {row.Quantity} 与报工好品累计 {expectedQuantity} 不符。");
+            }
+        }
+
+        var consumptions = await dbContext.ProductionReportMaterialConsumptions
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+            .Select(x => new ConsumptionProjection(x.ReportNo, x.WorkOrderId, x.MaterialId, x.MaterialLotId, x.ConsumedQuantity))
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var row in consumptions)
+        {
+            if (!reportNos.Contains(row.ReportNo))
+            {
+                failures.Add($"物料消耗 {row.MaterialLotId} 引用了不存在的报工 {row.ReportNo}。");
+            }
+
+            var expectedLotId = WorldHistoryGenealogySpec.MaterialLotNo(row.MaterialId, row.WorkOrderId);
+            if (!string.Equals(row.MaterialLotId, expectedLotId, StringComparison.Ordinal))
+            {
+                failures.Add($"物料消耗批次 {row.MaterialLotId} 与领料批号 {expectedLotId} 对不上（追溯断链）。");
+            }
+
+            if (row.ConsumedQuantity <= 0m)
+            {
+                failures.Add($"物料消耗 {row.MaterialLotId} 的消耗量 {row.ConsumedQuantity} 非正。");
+            }
+        }
+
+        if (failures.Count > 0)
+        {
+            throw new WorldHistoryConsistencyException(failures);
+        }
+
+        return new WorldHistoryGenealogyValidationReport(genealogies.Length, consumptions.Length);
+    }
+
+    private sealed record GenealogyProjection(
+        string WorkOrderId,
+        string ReportNo,
+        string ProducedLotNo,
+        decimal Quantity,
+        DateTimeOffset CreatedAtUtc);
+
+    private sealed record ConsumptionProjection(
+        string ReportNo,
+        string WorkOrderId,
+        string MaterialId,
+        string MaterialLotId,
+        decimal ConsumedQuantity);
+
+    #endregion
+
+    #region 生产准备底座（设备映射 / SKU 停用）
+
+    /// <summary>
+    /// 底座块的 fail-closed 校验。最关键的一条：**停用清单不得命中演示主链**——
+    /// 任何一个成品或用料被写成 disabled，该 SKU 的建单能力当场作废。
+    /// </summary>
+    public async Task<WorldHistoryFoundationValidationReport> ValidateFoundationAsync(
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        var failures = new List<string>();
+
+        var mappings = await dbContext.DeviceAssetWorkCenterMappings
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+            .Select(x => new { x.DeviceAssetId, x.WorkCenterId })
+            .ToArrayAsync(cancellationToken);
+        var workCenters = WorldHistoryFloorEventsSpec.WorkCenterIds.ToHashSet(StringComparer.Ordinal);
+
+        foreach (var mapping in mappings)
+        {
+            if (!workCenters.Contains(mapping.WorkCenterId))
+            {
+                failures.Add($"设备 {mapping.DeviceAssetId} 映射到非 L0 工作中心 {mapping.WorkCenterId}。");
+            }
+
+            if (mapping.DeviceAssetId.StartsWith(WorldHistoryFoundationSpec.UnmappedAuxiliaryDevicePrefix, StringComparison.Ordinal))
+            {
+                failures.Add($"辅助设备 {mapping.DeviceAssetId} 不应绑定工作中心（其遥测会被误记为产量）。");
+            }
+        }
+
+        if (mappings.Length != mappings.Select(x => x.DeviceAssetId).Distinct(StringComparer.Ordinal).Count())
+        {
+            failures.Add("设备 ↔ 工作中心映射存在重复设备编码。");
+        }
+
+        var disabled = await dbContext.MesSkuAvailabilities
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                x.Status == MesSkuAvailabilityStatuses.Disabled)
+            .Select(x => x.SkuCode)
+            .ToArrayAsync(cancellationToken);
+
+        var demandChainSkus = WorldHistorySpec.FinishedGoodSkus
+            .Concat(WorldHistorySpec.FinishedGoodSkus.SelectMany(sku =>
+                WorldHistoryMesSpec.Components(sku).Select(component => component.SkuCode)))
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var skuCode in disabled.Where(demandChainSkus.Contains))
+        {
+            failures.Add($"SKU {skuCode} 被停用，但它在演示主链上（成品或用料），会挡住建工单。");
+        }
+
+        if (failures.Count > 0)
+        {
+            throw new WorldHistoryConsistencyException(failures);
+        }
+
+        return new WorldHistoryFoundationValidationReport(mappings.Length, disabled.Length);
+    }
+
+    #endregion
+
+    #region 规则排程
+
+    /// <summary>排程结果的 fail-closed 校验：版本号唯一且连续、分配非空、时间窗口合法。</summary>
+    public async Task<WorldHistoryScheduleResultValidationReport> ValidateScheduleResultsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var failures = new List<string>();
+        var results = await dbContext.ScheduleResults
+            .AsNoTracking()
+            .OrderBy(x => x.ScheduleVersion)
+            .ToArrayAsync(cancellationToken);
+
+        var versions = results.Select(x => x.ScheduleVersion).ToArray();
+        if (versions.Length != versions.Distinct().Count())
+        {
+            failures.Add("排程结果的版本号存在重复。");
+        }
+
+        foreach (var result in results)
+        {
+            if (result.Assignments.Count == 0)
+            {
+                failures.Add($"排程结果 v{result.ScheduleVersion} 没有任何工序分配。");
+            }
+
+            foreach (var assignment in result.Assignments.Where(x => x.EndUtc < x.StartUtc))
+            {
+                failures.Add($"排程结果 v{result.ScheduleVersion} 的工序 {assignment.OperationTaskId} 结束早于开始。");
+            }
+        }
+
+        if (failures.Count > 0)
+        {
+            throw new WorldHistoryConsistencyException(failures);
+        }
+
+        return new WorldHistoryScheduleResultValidationReport(results.Length);
+    }
+
+    #endregion
 }
 
 /// <summary>MES 侧一致性校验器的产出摘要。</summary>
@@ -696,6 +903,19 @@ public sealed record WorldHistoryFloorEventsValidationReport(
     int DowntimeEventsChecked,
     int ShiftHandoversChecked,
     int DefectRecordsChecked);
+
+/// <summary>「追溯断点」块（产出批次谱系 / 报工物料消耗）的校验产出摘要。</summary>
+public sealed record WorldHistoryGenealogyValidationReport(
+    int OutputLotGenealogiesChecked,
+    int MaterialConsumptionsChecked);
+
+/// <summary>「生产准备底座」块（设备映射 / SKU 停用）的校验产出摘要。</summary>
+public sealed record WorldHistoryFoundationValidationReport(
+    int DeviceAssetMappingsChecked,
+    int DisabledSkusChecked);
+
+/// <summary>「规则排程」块的校验产出摘要。</summary>
+public sealed record WorldHistoryScheduleResultValidationReport(int ScheduleResultsChecked);
 
 /// <summary>一致性校验失败。抛出即代表 seed 失败（fail-closed）。</summary>
 public sealed class WorldHistoryConsistencyException : InvalidOperationException

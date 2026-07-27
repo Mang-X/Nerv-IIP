@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type {
+  BusinessConsoleMesScheduleResultRow,
   BusinessConsoleRunScheduleRequest,
   BusinessConsoleScheduledOperation,
 } from '@nerv-iip/api-client'
@@ -41,7 +42,15 @@ definePage({
   },
 })
 
-const { lastSchedule, runSchedule, runScheduleError, runSchedulePending } = useMesSchedules()
+const {
+  lastSchedule,
+  scheduleHistory,
+  scheduleHistoryTotal,
+  scheduleHistoryPending,
+  runSchedule,
+  runScheduleError,
+  runSchedulePending,
+} = useMesSchedules()
 const businessContext = useBusinessContextStore()
 
 const scheduleSheetOpen = shallowRef(false)
@@ -61,10 +70,30 @@ watch(
   { flush: 'sync', immediate: true },
 )
 
-const assignments = computed<BusinessConsoleScheduledOperation[]>(
-  () => lastSchedule.value?.assignments ?? [],
+// 选中的历史排程；未选时看最新一次。刚跑完那次会随历史重取出现在首行，
+// 重取到达前先用本次运行的即时结果兜底，页面不会闪空。
+const selectedVersion = shallowRef<number | undefined>()
+const selectedRun = computed<BusinessConsoleMesScheduleResultRow | undefined>(() => {
+  const rows = scheduleHistory.value
+  if (selectedVersion.value !== undefined) {
+    const matched = rows.find((row) => row.scheduleVersion === selectedVersion.value)
+    if (matched) return matched
+  }
+  return rows[0]
+})
+const activeVersion = computed(
+  () => selectedRun.value?.scheduleVersion ?? lastSchedule.value?.scheduleVersion,
 )
-const affectedWorkOrderIds = computed(() => lastSchedule.value?.affectedWorkOrderIds ?? [])
+const activeTrigger = computed(() => selectedRun.value?.trigger ?? lastSchedule.value?.trigger)
+const activeScheduledAtUtc = computed(
+  () => selectedRun.value?.scheduledAtUtc ?? lastSchedule.value?.scheduledAtUtc,
+)
+const assignments = computed<BusinessConsoleScheduledOperation[]>(
+  () => selectedRun.value?.assignments ?? lastSchedule.value?.assignments ?? [],
+)
+const affectedWorkOrderIds = computed(
+  () => selectedRun.value?.affectedWorkOrderIds ?? lastSchedule.value?.affectedWorkOrderIds ?? [],
+)
 const canRunSchedule = computed(
   () =>
     isNonEmpty(runForm.organizationId) &&
@@ -76,10 +105,8 @@ const scheduleCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'version',
     label: '规则版本',
-    value: lastSchedule.value?.scheduleVersion ?? '尚未运行',
-    meta: lastSchedule.value?.trigger
-      ? `${triggerLabel(lastSchedule.value.trigger)}触发`
-      : undefined,
+    value: activeVersion.value ?? '尚未运行',
+    meta: activeTrigger.value ? `${triggerLabel(activeTrigger.value)}触发` : undefined,
   },
   {
     key: 'assignments',
@@ -92,6 +119,12 @@ const scheduleCells = computed<NvMetricStripCell[]>(() => [
     label: '影响工单',
     value: affectedWorkOrderIds.value.length,
     unit: '张',
+  },
+  {
+    key: 'history',
+    label: '历史运行',
+    value: scheduleHistoryTotal.value,
+    unit: '次',
   },
 ])
 
@@ -145,6 +178,32 @@ async function submitScheduleRun() {
   }
 }
 
+const historyColumns: NvDataTableColumn<BusinessConsoleMesScheduleResultRow>[] = [
+  {
+    key: 'scheduleVersion',
+    header: '版本',
+    width: 'w-24',
+    cellClass: 'font-medium',
+    accessor: (r) => (r.scheduleVersion === undefined ? '无' : `v${r.scheduleVersion}`),
+  },
+  { key: 'trigger', header: '触发来源', width: 'w-32', accessor: (r) => triggerLabel(r.trigger) },
+  { key: 'scheduledAtUtc', header: '排程时间', width: 'w-48' },
+  { key: 'assignmentCount', header: '工序分配', accessor: (r) => `${r.assignmentCount ?? 0} 条` },
+  {
+    key: 'affectedWorkOrderCount',
+    header: '影响工单',
+    accessor: (r) => `${r.affectedWorkOrderCount ?? 0} 张`,
+  },
+]
+
+function historyRowKey(item: BusinessConsoleMesScheduleResultRow) {
+  return String(item.scheduleVersion ?? '')
+}
+function selectRun(item: BusinessConsoleMesScheduleResultRow) {
+  selectedVersion.value = item.scheduleVersion
+  page.value = 1
+}
+
 function rowKey(item: BusinessConsoleScheduledOperation) {
   return `${item.workOrderId ?? 'wo'}:${item.operationTaskId ?? ''}`
 }
@@ -182,10 +241,28 @@ function isNonEmpty(value: string) {
     <NvMetricStrip :cells="scheduleCells" />
 
     <div class="flex items-center justify-between">
-      <span class="text-sm font-semibold text-foreground">规则排程结果</span>
-      <span class="text-sm text-muted-foreground">{{
-        formatDateTime(lastSchedule?.scheduledAtUtc)
-      }}</span>
+      <span class="text-sm font-semibold text-foreground">历史排程运行</span>
+      <span class="text-sm text-muted-foreground">共 {{ scheduleHistoryTotal }} 次</span>
+    </div>
+
+    <NvDataTable
+      :columns="historyColumns"
+      :rows="scheduleHistory"
+      :row-key="historyRowKey"
+      :loading="scheduleHistoryPending"
+      :searchable="false"
+      :column-settings="false"
+      empty-message="尚无历史排程运行记录。点击右上角「运行规则排程」后，本次结果会记入历史。"
+      @row-click="selectRun"
+    >
+      <template #cell-scheduledAtUtc="{ row }">{{ formatDateTime(row.scheduledAtUtc) }}</template>
+    </NvDataTable>
+
+    <div class="flex items-center justify-between">
+      <span class="text-sm font-semibold text-foreground">
+        工序分配{{ activeVersion === undefined ? '' : `（v${activeVersion}）` }}
+      </span>
+      <span class="text-sm text-muted-foreground">{{ formatDateTime(activeScheduledAtUtc) }}</span>
     </div>
 
     <NvDataTable
@@ -201,7 +278,7 @@ function isNonEmpty(value: string) {
       :loading="runSchedulePending"
       :searchable="false"
       :column-settings="false"
-      empty-message="尚无规则排程结果。数据来自最近一次规则排程运行；点击右上角运行后查看工作中心与起止时间。"
+      empty-message="该次排程没有工序分配。在上方历史列表中选择另一次运行，或点击右上角重新运行规则排程。"
     >
       <template #cell-startUtc="{ row }">{{ formatDateTime(row.startUtc) }}</template>
       <template #cell-endUtc="{ row }">{{ formatDateTime(row.endUtc) }}</template>
