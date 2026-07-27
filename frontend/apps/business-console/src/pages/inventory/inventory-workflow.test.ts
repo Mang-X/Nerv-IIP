@@ -20,6 +20,14 @@ const inventoryState = vi.hoisted(() => ({
   availabilityRows: undefined as { value: Array<Record<string, unknown>> } | undefined,
   // 未选物料 = 全厂库存总览态，选了物料 = 该物料台账明细态；测试要能切这两态。
   initialSkuCode: 'SKU-001',
+  // 盘点 / 流水表格改为服务端读面后，页面不再持有会话内本地队列。
+  countTaskRows: [] as Array<Record<string, unknown>>,
+  countAdjustmentRows: [] as Array<Record<string, unknown>>,
+  movementRows: [] as Array<Record<string, unknown>>,
+  countTasksPage: undefined as { value: number } | undefined,
+  countTasksPageSize: undefined as { value: number } | undefined,
+  movementsPage: undefined as { value: number } | undefined,
+  movementsPageSize: undefined as { value: number } | undefined,
   notifyError: vi.fn(),
   notifySuccess: vi.fn(),
 }))
@@ -150,6 +158,23 @@ vi.mock('@/composables/useBusinessInventory', () => ({
     createCountTask: inventoryState.createCountTask,
     createCountTaskError: ref(undefined),
     createCountTaskPending: ref(false),
+    // 盘点表格来自服务端读面：页面不再持有会话内本地队列。
+    countTasks: computed(() => ({
+      items: inventoryState.countTaskRows,
+      totalCount: inventoryState.countTaskRows.length,
+    })),
+    countTaskRows: computed(() => inventoryState.countTaskRows),
+    countTasksError: ref(undefined),
+    countTasksPending: ref(false),
+    countTasksPage: (inventoryState.countTasksPage = ref(1)),
+    countTasksPageSize: (inventoryState.countTasksPageSize = ref(50)),
+    countTasksTotal: computed(() => inventoryState.countTaskRows.length),
+    countAdjustments: computed(() => ({
+      items: inventoryState.countAdjustmentRows,
+      totalCount: inventoryState.countAdjustmentRows.length,
+    })),
+    countAdjustmentRows: computed(() => inventoryState.countAdjustmentRows),
+    refreshCountTasks: vi.fn(),
     filters: {
       environmentId: 'env-dev',
       organizationId: 'org-001',
@@ -159,6 +184,22 @@ vi.mock('@/composables/useBusinessInventory', () => ({
     postMovement: inventoryState.postMovement,
     postMovementError: ref(undefined),
     postMovementPending: ref(false),
+    // 流水表格来自服务端读面：页面不再持有会话内本地队列。
+    movements: computed(() => ({
+      items: inventoryState.movementRows,
+      totalCount: inventoryState.movementRows.length,
+    })),
+    movementRows: computed(() => inventoryState.movementRows),
+    movementsError: ref(undefined),
+    movementsPending: ref(false),
+    movementsPage: (inventoryState.movementsPage = ref(1)),
+    movementsPageSize: (inventoryState.movementsPageSize = ref(50)),
+    movementsTotal: computed(() => inventoryState.movementRows.length),
+    refreshMovements: vi.fn(),
+    filters: {
+      environmentId: 'env-dev',
+      organizationId: 'org-001',
+    },
   }),
 }))
 
@@ -407,6 +448,25 @@ function mountInventoryPage(component: unknown) {
   })
 }
 
+/** 一行「待实盘」的服务端盘点任务（确认差异动作只在 open 态可用）。 */
+function openCountTaskRow(countTaskId: string) {
+  return {
+    countTaskId,
+    countTaskCode: 'CNT-2026-0001',
+    skuCode: 'SKU-001',
+    uomCode: 'EA',
+    siteCode: 'S1',
+    locationCode: 'A-01',
+    lotNo: 'LOT-OPENING-SKU-001',
+    qualityStatus: 'unrestricted',
+    ownerType: 'company',
+    expectedLedgerVersion: 3,
+    status: 'open',
+    createdAtUtc: '2026-03-02T09:00:00Z',
+    updatedAtUtc: '2026-03-02T09:00:00Z',
+  }
+}
+
 describe('inventory workflow pages', () => {
   beforeEach(() => {
     routeState.query = {}
@@ -418,6 +478,9 @@ describe('inventory workflow pages', () => {
     inventoryState.notifySuccess.mockReset()
     inventoryState.availabilityRows = undefined
     inventoryState.initialSkuCode = 'SKU-001'
+    inventoryState.countTaskRows = []
+    inventoryState.countAdjustmentRows = []
+    inventoryState.movementRows = []
     siteStockState.scanMore.mockReset()
     siteStockState.refresh.mockReset()
     if (siteStockState.hasMore) siteStockState.hasMore.value = true
@@ -504,16 +567,61 @@ describe('inventory workflow pages', () => {
     })
   })
 
-  it('uses design-system table components for local stock count queue', () => {
+  it('uses design-system table components for the stock count read face', () => {
     const wrapper = mountInventoryPage(CountsPage)
 
     expect(wrapper.find('[data-ui-table]').exists()).toBe(true)
   })
 
-  it('uses design-system table components for local movement queue', () => {
+  it('uses design-system table components for the stock movement read face', () => {
     const wrapper = mountInventoryPage(MovementsPage)
 
     expect(wrapper.find('[data-ui-table]').exists()).toBe(true)
+  })
+
+  /**
+   * 盘点与流水表格必须渲染服务端返回的行。
+   *
+   * 这两页此前只有会话内本地队列，刷新即空；#1194 补了库存域的盘点 / 流水读面之后，
+   * 页面必须真的从读面取数——否则补了后端也白补。
+   */
+  it('renders stock count tasks and stock movements from the server read face', () => {
+    inventoryState.countTaskRows = [
+      { ...openCountTaskRow('COUNT-TASK-1'), status: 'pending-approval', varianceQuantity: -3 },
+    ]
+    inventoryState.countAdjustmentRows = [
+      {
+        adjustmentId: 'ADJ-1',
+        countTaskCode: 'CNT-2026-0001',
+        status: 'pending-approval',
+        approvalChainId: 'APPR-CNT-2026-0001',
+      },
+    ]
+    inventoryState.movementRows = [
+      {
+        movementId: 'MOVE-1',
+        movementType: 'inbound',
+        sourceService: 'seed:world-history',
+        sourceDocumentId: 'PR-2026-0001',
+        skuCode: 'RM-BAR-45-01',
+        uomCode: 'kg',
+        siteCode: 'S1',
+        locationCode: 'WH-WB-RM-01',
+        lotNo: 'LOT-PR-2026-0001',
+        quantity: 120,
+        postedAtUtc: '2026-03-02T09:00:00Z',
+      },
+    ]
+
+    const counts = mountInventoryPage(CountsPage)
+    expect(counts.text()).toContain('CNT-2026-0001')
+    expect(counts.text()).toContain('待审批')
+    expect(counts.text()).toContain('APPR-CNT-2026-0001')
+
+    const movements = mountInventoryPage(MovementsPage)
+    expect(movements.text()).toContain('PR-2026-0001')
+    expect(movements.text()).toContain('入库')
+    expect(movements.text()).toContain('LOT-PR-2026-0001')
   })
 
   it('links inventory lot context to barcode scan records', async () => {
@@ -672,15 +780,12 @@ describe('inventory workflow pages', () => {
   })
 
   it('generates a fresh idempotency key each time the same count task is adjusted', async () => {
-    inventoryState.createCountTask.mockResolvedValue({ data: { countTaskId: 'COUNT-TASK-1' } })
+    // 盘点任务行来自服务端读面，不再是「本次提交后塞进本地队列」的那一行。
+    inventoryState.countTaskRows = [openCountTaskRow('COUNT-TASK-1')]
     inventoryState.confirmAdjustment.mockResolvedValue({ data: { movementId: 'MOVE-1' } })
 
     const wrapper = mountInventoryPage(CountsPage)
 
-    await wrapper.find('#count-task-sku').setValue('SKU-001')
-    await wrapper.find('#count-task-site').setValue('S1')
-    await wrapper.find('#count-task-location').setValue('A-01')
-    await wrapper.findAll('form')[0]!.trigger('submit')
     await wrapper
       .findAll('button')
       .find((button) => button.text().includes('确认差异'))!

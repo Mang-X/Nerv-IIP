@@ -584,6 +584,102 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("SKU-001", Assert.Single(items).GetProperty("skuCode").GetString());
     }
 
+    /// <summary>库存移动读面 facade：此前只有 POST 过账，页面表格没有服务端数据来源。</summary>
+    [Fact]
+    public async Task Inventory_movement_list_forwards_query_context_with_internal_service_token()
+    {
+        var inventory = new RecordingInventoryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/inventory/movements?organizationId=org-001&environmentId=env-dev&skuCode=RM-BAR-01&locationCode=WH-WB-RM-01&movementType=inbound&fromDate=2026-03-01&toDate=2026-03-31&page=2&pageSize=25");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", inventory.LastInternalToken);
+        Assert.Equal(1, inventory.MovementListCallCount);
+        Assert.Equal("RM-BAR-01", inventory.LastMovementListRequest!.SkuCode);
+        Assert.Equal("WH-WB-RM-01", inventory.LastMovementListRequest.LocationCode);
+        Assert.Equal("inbound", inventory.LastMovementListRequest.MovementType);
+        Assert.Equal(new DateOnly(2026, 3, 1), inventory.LastMovementListRequest.FromDate);
+        Assert.Equal(new DateOnly(2026, 3, 31), inventory.LastMovementListRequest.ToDate);
+        Assert.Equal(2, inventory.LastMovementListRequest.Page);
+        Assert.Equal(25, inventory.LastMovementListRequest.PageSize);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(64353, data.GetProperty("totalCount").GetInt32());
+        Assert.Equal("RM-BAR-01", Assert.Single(data.GetProperty("items").EnumerateArray()).GetProperty("skuCode").GetString());
+    }
+
+    /// <summary>盘点任务读面 facade：前端表格从会话内本地队列切到服务端数据的前提。</summary>
+    [Fact]
+    public async Task Inventory_count_task_list_forwards_query_context_with_internal_service_token()
+    {
+        var inventory = new RecordingInventoryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/inventory/count-tasks?organizationId=org-001&environmentId=env-dev&status=pending-approval&skuCode=RM-BAR-01&siteCode=SITE-001&page=2&pageSize=25");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", inventory.LastInternalToken);
+        Assert.Equal(1, inventory.CountTaskListCallCount);
+        Assert.Equal("pending-approval", inventory.LastCountTaskListRequest!.Status);
+        Assert.Equal("RM-BAR-01", inventory.LastCountTaskListRequest.SkuCode);
+        Assert.Equal("SITE-001", inventory.LastCountTaskListRequest.SiteCode);
+        Assert.Equal(2, inventory.LastCountTaskListRequest.Page);
+        Assert.Equal(25, inventory.LastCountTaskListRequest.PageSize);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(42, data.GetProperty("totalCount").GetInt32());
+        Assert.Equal(12, data.GetProperty("pendingApprovalCount").GetInt32());
+        Assert.Equal("CNT-2026-0001", Assert.Single(data.GetProperty("items").EnumerateArray()).GetProperty("countTaskCode").GetString());
+    }
+
+    /// <summary>盘点调整读面 facade：差异 → 审批 → 过账的凭据必须能被页面读到。</summary>
+    [Fact]
+    public async Task Inventory_count_adjustment_list_forwards_query_context_with_internal_service_token()
+    {
+        var inventory = new RecordingInventoryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/inventory/count-adjustments?organizationId=org-001&environmentId=env-dev&status=pending-approval&countTaskCode=CNT-2026-0007&page=1&pageSize=50");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", inventory.LastInternalToken);
+        Assert.Equal(1, inventory.CountAdjustmentListCallCount);
+        Assert.Equal("pending-approval", inventory.LastCountAdjustmentListRequest!.Status);
+        Assert.Equal("CNT-2026-0007", inventory.LastCountAdjustmentListRequest.CountTaskCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(17, data.GetProperty("totalCount").GetInt32());
+        Assert.Equal("CNT-2026-0007", Assert.Single(data.GetProperty("items").EnumerateArray()).GetProperty("countTaskCode").GetString());
+    }
+
     [Fact]
     public async Task Inventory_movement_override_permission_is_forwarded_only_after_gateway_authorization()
     {
@@ -8920,6 +9016,133 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
                 2,
                 8),
         ], 26, 8, 18, 6, request.Page, request.PageSize));
+    }
+
+    public int MovementListCallCount { get; private set; }
+
+    public BusinessConsoleInventoryMovementListRequest? LastMovementListRequest { get; private set; }
+
+    public int CountTaskListCallCount { get; private set; }
+
+    public BusinessConsoleInventoryCountTaskListRequest? LastCountTaskListRequest { get; private set; }
+
+    public int CountAdjustmentListCallCount { get; private set; }
+
+    public BusinessConsoleInventoryCountAdjustmentListRequest? LastCountAdjustmentListRequest { get; private set; }
+
+    public Task<BusinessConsoleInventoryMovementListResponse> ListMovementsAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryMovementListRequest request,
+        CancellationToken cancellationToken)
+    {
+        MovementListCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastMovementListRequest = request;
+        return Task.FromResult(new BusinessConsoleInventoryMovementListResponse(
+            [
+                new BusinessConsoleInventoryMovementLineResponse(
+                    "movement-001",
+                    "inbound",
+                    "seed:world-history",
+                    "PR-2026-0001",
+                    "10",
+                    "PR-2026-0001:receipt-in",
+                    request.SkuCode ?? "RM-BAR-01",
+                    "kg",
+                    request.SiteCode ?? "SITE-001",
+                    request.LocationCode ?? "WH-WB-RM-01",
+                    "LOT-PR-2026-0001",
+                    null,
+                    "quality",
+                    "company",
+                    null,
+                    120m,
+                    new DateTime(2026, 3, 2, 9, 0, 0, DateTimeKind.Utc)),
+            ],
+            64353,
+            2400m,
+            1800m,
+            request.Page,
+            request.PageSize));
+    }
+
+    public Task<BusinessConsoleInventoryCountTaskListResponse> ListCountTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryCountTaskListRequest request,
+        CancellationToken cancellationToken)
+    {
+        CountTaskListCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastCountTaskListRequest = request;
+        return Task.FromResult(new BusinessConsoleInventoryCountTaskListResponse(
+            [
+                new BusinessConsoleInventoryCountTaskLineResponse(
+                    "count-task-001",
+                    "CNT-2026-0001",
+                    request.SkuCode ?? "RM-BAR-01",
+                    "kg",
+                    request.SiteCode ?? "SITE-001",
+                    request.LocationCode ?? "WH-WB-RM-01",
+                    "LOT-OPENING-RM-BAR-01",
+                    null,
+                    "unrestricted",
+                    "company",
+                    null,
+                    3,
+                    118m,
+                    -2m,
+                    "pending-approval",
+                    new DateTime(2026, 3, 2, 9, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 3, 2, 10, 0, 0, DateTimeKind.Utc)),
+            ],
+            42,
+            5,
+            12,
+            20,
+            3,
+            2,
+            request.Page,
+            request.PageSize));
+    }
+
+    public Task<BusinessConsoleInventoryCountAdjustmentListResponse> ListCountAdjustmentsAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryCountAdjustmentListRequest request,
+        CancellationToken cancellationToken)
+    {
+        CountAdjustmentListCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastCountAdjustmentListRequest = request;
+        return Task.FromResult(new BusinessConsoleInventoryCountAdjustmentListResponse(
+            [
+                new BusinessConsoleInventoryCountAdjustmentLineResponse(
+                    "count-adjustment-001",
+                    request.CountTaskCode ?? "CNT-2026-0001",
+                    "CNT-2026-0001:adjustment",
+                    null,
+                    "approval-chain-001",
+                    request.SkuCode ?? "RM-BAR-01",
+                    "kg",
+                    "SITE-001",
+                    "WH-WB-RM-01",
+                    "LOT-OPENING-RM-BAR-01",
+                    null,
+                    "unrestricted",
+                    "company",
+                    null,
+                    118m,
+                    -2m,
+                    36m,
+                    "pending-approval",
+                    null),
+            ],
+            17,
+            12,
+            3,
+            2,
+            420m,
+            request.Page,
+            request.PageSize));
     }
 
     public Task<BusinessConsolePostStockMovementResponse> PostMovementAsync(

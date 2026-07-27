@@ -238,6 +238,21 @@ public interface IBusinessInventoryClient
         BusinessConsoleInventoryExpiryAlertsRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleInventoryMovementListResponse> ListMovementsAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryMovementListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleInventoryCountTaskListResponse> ListCountTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryCountTaskListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleInventoryCountAdjustmentListResponse> ListCountAdjustmentsAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryCountAdjustmentListRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsolePostStockMovementResponse> PostMovementAsync(
         string internalBearerToken,
         BusinessConsolePostStockMovementRequest request,
@@ -2611,6 +2626,68 @@ public sealed class HttpBusinessInventoryClient(
                 ("asOfDate", request.AsOfDate),
                 ("nearExpiryThresholdDays", request.NearExpiryThresholdDays),
                 ("includeZeroAvailable", TrueFlag(request.IncludeZeroAvailable)),
+                ("page", request.Page),
+                ("pageSize", request.PageSize)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleInventoryMovementListResponse> ListMovementsAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryMovementListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleInventoryMovementListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/inventory/v1/movements?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", request.SkuCode),
+                ("siteCode", request.SiteCode),
+                ("locationCode", request.LocationCode),
+                ("lotNo", request.LotNo),
+                ("movementType", request.MovementType),
+                ("sourceService", request.SourceService),
+                ("sourceDocumentId", request.SourceDocumentId),
+                ("fromDate", request.FromDate),
+                ("toDate", request.ToDate),
+                ("page", request.Page),
+                ("pageSize", request.PageSize)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleInventoryCountTaskListResponse> ListCountTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryCountTaskListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleInventoryCountTaskListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/inventory/v1/count-tasks?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("status", request.Status),
+                ("skuCode", request.SkuCode),
+                ("siteCode", request.SiteCode),
+                ("locationCode", request.LocationCode),
+                ("countTaskCode", request.CountTaskCode),
+                ("page", request.Page),
+                ("pageSize", request.PageSize)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleInventoryCountAdjustmentListResponse> ListCountAdjustmentsAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryCountAdjustmentListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleInventoryCountAdjustmentListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/inventory/v1/count-adjustments?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("status", request.Status),
+                ("countTaskCode", request.CountTaskCode),
+                ("skuCode", request.SkuCode),
                 ("page", request.Page),
                 ("pageSize", request.PageSize)),
             null,

@@ -94,7 +94,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | DemandPlanning | 15 | 15 | 0 | 0 |
 | Erp | 53 | 41 | 11 | 1 |
 | IndustrialTelemetry | 27 | 24 | 1 | 2 |
-| Inventory | 13 | 6 | 2 | 5 |
+| Inventory | 16 | 9 | 2 | 5 |
 | Maintenance | 21 | 16 | 5 | 0 |
 | MasterData | 48 | 40 | 4 | 4 |
 | Mes | 53 | 50 | 3 | 0 |
@@ -102,7 +102,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Quality | 33 | 21 | 12 | 0 |
 | Scheduling | 15 | 13 | 1 | 1 |
 | Wms | 30 | 20 | 5 | 5 |
-| **Total** | **375** | **304** | **48** | **23** |
+| **Total** | **378** | **307** | **48** | **23** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
 The `exposed` rows (302) — each with its verified facade `gatewayOperationIds` — are
