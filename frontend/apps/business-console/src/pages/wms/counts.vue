@@ -7,6 +7,13 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { useWmsCountExecutions } from '@/composables/useBusinessWms'
+import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
+import {
+  useWarehouseCodeCatalog,
+  WAREHOUSE_CATALOG_SOURCE_TEXT,
+  WAREHOUSE_LOCATION_EMPTY_TEXT,
+} from '@/composables/useWarehouseCodeCatalog'
+import { wmsWarehouseTaskStatusFilterOptions, WMS_STATUS_ANY } from '@/data/wmsReference'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -26,7 +33,9 @@ import {
   NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
+  NvEntityPicker,
   NvInput,
+  NvSearchSelect,
   NvMetricCard,
   NvMetricStrip,
   NvPageHeader,
@@ -61,6 +70,22 @@ const {
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.locationCode],
 })
+// 物料 / 单位 / 工厂走主数据目录；库位后端无读面，从既有台账与作业记录派生。
+const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
+  useInventoryScopeCatalog()
+const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog()
+// 状态是后端枚举而不是目录，用哨兵值表达「全部」。
+const statusFilter = computed({
+  get: () => filters.status || WMS_STATUS_ANY,
+  set: (value: string) => {
+    filters.status = value === WMS_STATUS_ANY ? undefined : value
+  },
+})
+/** 单位随物料的基本单位带出，不给手输：盘点单位写错就核不上账。 */
+function onCountSkuChange(skuCode: string) {
+  createForm.skuCode = skuCode
+  createForm.uomCode = skuCode ? resolveUomCode(skuCode) : ''
+}
 
 const OPEN_STATUSES = new Set([
   'pending',
@@ -307,16 +332,23 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
-        <NvInput
+        <NvEntityPicker
           v-model="filters.locationCode"
-          class="h-9 w-32"
+          class="w-36"
+          :options="locationOptions"
+          title="选择库位"
           placeholder="库位"
+          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+          :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
+          :loading="warehouseCatalogPending"
+          clearable
           aria-label="库位"
         />
-        <NvInput
-          v-model="filters.status"
-          class="h-9 w-28"
-          placeholder="状态（可选）"
+        <NvSearchSelect
+          v-model="statusFilter"
+          class="w-32"
+          :options="wmsWarehouseTaskStatusFilterOptions"
+          placeholder="全部状态"
           aria-label="盘点状态"
         />
       </template>
@@ -399,30 +431,59 @@ function formatError(error: unknown) {
               />
             </NvField>
             <NvField>
-              <NvFieldLabel for="cnt-sku">SKU</NvFieldLabel>
-              <NvInput id="cnt-sku" v-model="createForm.skuCode" autocomplete="off" />
+              <NvFieldLabel for="cnt-sku">物料</NvFieldLabel>
+              <NvEntityPicker
+                id="cnt-sku"
+                :model-value="createForm.skuCode"
+                :options="skuOptions"
+                title="选择物料"
+                placeholder="选择物料"
+                source-text="数据来自基础数据物料主数据"
+                empty-text="暂无物料主数据，请先在基础数据维护物料"
+                :loading="skusPending"
+                clearable
+                aria-label="物料"
+                @update:model-value="onCountSkuChange"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="cnt-site">工厂</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="cnt-site"
                 v-model="createForm.siteCode"
-                autocomplete="off"
-                placeholder="如 SITE-HD"
+                :options="siteOptions"
+                title="选择工厂"
+                placeholder="选择工厂"
+                source-text="数据来自基础数据工厂主数据"
+                empty-text="暂无工厂主数据，请先在基础数据维护工厂"
+                :loading="sitesPending"
+                clearable
+                aria-label="工厂"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="cnt-location">库位</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="cnt-location"
                 v-model="createForm.locationCode"
-                autocomplete="off"
-                placeholder="如 RACK-A-01-01"
+                :options="locationOptions"
+                title="选择库位"
+                placeholder="选择库位"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
+                aria-label="库位"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="cnt-uom">单位</NvFieldLabel>
-              <NvInput id="cnt-uom" v-model="createForm.uomCode" autocomplete="off" />
+              <!-- 单位随物料的基本单位带出，不给手输：盘点单位写错就核不上账。 -->
+              <span
+                id="cnt-uom"
+                class="inline-flex h-9 items-center rounded-md border border-input px-2.5 text-sm text-muted-foreground"
+                >{{ createForm.uomCode || '选择物料后自动带出' }}</span
+              >
             </NvField>
             <NvField>
               <NvFieldLabel for="cnt-expected">账面数量</NvFieldLabel>
