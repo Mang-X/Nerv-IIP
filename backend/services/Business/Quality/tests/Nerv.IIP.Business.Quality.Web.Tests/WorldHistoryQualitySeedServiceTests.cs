@@ -275,6 +275,35 @@ public sealed class WorldHistoryQualitySeedServiceTests(ITestOutputHelper output
         }
     }
 
+    /// <summary>
+    /// 演示走查缺口：历史 NCR 已关单但关闭原因为空（界面必填字段）= 假数据穿帮。
+    /// 三种处置路径的关闭原因都必须是中文且对任意 asOfDate 成立（含周日后首日与春节段）。
+    /// </summary>
+    [Theory]
+    [InlineData(2026, 7, 27)]
+    [InlineData(2026, 7, 26)]
+    [InlineData(2026, 8, 2)]
+    [InlineData(2026, 2, 16)]
+    [InlineData(2026, 7, 31)]
+    public async Task Closed_ncrs_carry_a_chinese_close_reason_for_any_as_of_date(int year, int month, int day)
+    {
+        await using var db = CreateDbContext();
+        var asOfDate = new DateOnly(year, month, day);
+        await new WorldHistorySeedService(db).SeedAsync("org-001", "env-dev", asOfDate, SmallScale);
+
+        // 小规模 + 春节段可能没有任何不合格：期望条数以 spec 事实流为准，不空断。
+        var expected = WorldHistoryQualitySpec.BuildInspectionFacts(asOfDate, SmallScale).Count(x => x.HasNonconformance);
+        var reports = await db.NonconformanceReports.ToArrayAsync();
+        Assert.Equal(expected, reports.Length);
+        Assert.All(reports, report =>
+        {
+            Assert.Equal("closed", report.Status);
+            Assert.False(string.IsNullOrWhiteSpace(report.CloseReason));
+            // 中文原因（含 CJK 字符），不是内部英文字面量。
+            Assert.Matches(@"\p{IsCJKUnifiedIdeographs}", report.CloseReason!);
+        });
+    }
+
     [Fact]
     public async Task Validator_fails_closed_when_a_completed_task_loses_its_record()
     {

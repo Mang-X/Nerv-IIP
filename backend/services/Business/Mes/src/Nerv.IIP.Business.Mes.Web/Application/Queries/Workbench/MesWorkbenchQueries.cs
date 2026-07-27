@@ -392,13 +392,173 @@ public sealed class GetMesOverviewQueryHandler(ApplicationDbContext dbContext)
             .AsNoTracking()
             .CountAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId, cancellationToken);
 
+        // 阻塞项：全部来自本服务已持久化的执行事实，不做跨服务猜测。
+        var heldWorkOrders = await dbContext.WorkOrders
+            .AsNoTracking()
+            .CountAsync(
+                x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId &&
+                    x.Status == Domain.AggregatesModel.WorkOrderAggregate.WorkOrder.HoldStatus,
+                cancellationToken);
+        var scheduleInvalidatedTasks = await dbContext.OperationTasks
+            .AsNoTracking()
+            .CountAsync(
+                x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId &&
+                    x.Status == OperationTaskLifecycleStatus.ScheduleInvalidated,
+                cancellationToken);
+        var postingFailedReceipts = await dbContext.FinishedGoodsReceiptRequests
+            .AsNoTracking()
+            .CountAsync(
+                x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId &&
+                    x.Status == Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequest.InventoryPostingFailedStatus,
+                cancellationToken);
+        var shortageWorkOrders = await CountReleasedWorkOrdersWithMaterialShortageAsync(request, cancellationToken);
+
+        var blockers = new List<MesBlockerSummary>(4);
+        if (heldWorkOrders > 0)
+        {
+            blockers.Add(new MesBlockerSummary("quality-hold", "WORK_ORDER_ON_HOLD", "工单挂起中（质量/工艺暂停），恢复前不可继续执行", heldWorkOrders));
+        }
+
+        if (scheduleInvalidatedTasks > 0)
+        {
+            blockers.Add(new MesBlockerSummary("capacity-schedule", "SCHEDULE_INVALIDATED", "排程已失效的工序任务，需重新排程后才能派工", scheduleInvalidatedTasks));
+        }
+
+        if (shortageWorkOrders > 0)
+        {
+            blockers.Add(new MesBlockerSummary("material-kitting", "MATERIAL_SHORTAGE", "已下达但按最新齐套快照仍缺料的工单", shortageWorkOrders));
+        }
+
+        if (postingFailedReceipts > 0)
+        {
+            blockers.Add(new MesBlockerSummary("material-receipt", "RECEIPT_POSTING_FAILED", "完工入库过账失败，需库存侧处理后重试", postingFailedReceipts));
+        }
+
+        // 待办：待派工（排队且未派人）、待报工（进行中）、待入库过账（已请求/部分过账）。
+        var pendingDispatch = await dbContext.OperationTasks
+            .AsNoTracking()
+            .CountAsync(
+                x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId &&
+                    x.Status == OperationTaskLifecycleStatus.Queued && x.AssignedUserId == null,
+                cancellationToken);
+        var pendingReport = await dbContext.OperationTasks
+            .AsNoTracking()
+            .CountAsync(
+                x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId &&
+                    x.Status == OperationTaskLifecycleStatus.InProgress,
+                cancellationToken);
+        var pendingReceipts = await dbContext.FinishedGoodsReceiptRequests
+            .AsNoTracking()
+            .CountAsync(
+                x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId &&
+                    (x.Status == Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequest.RequestedStatus ||
+                        x.Status == Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequest.PartiallyPostedStatus),
+                cancellationToken);
+
+        var pendingWork = new List<MesPendingWorkItem>(3);
+        if (pendingDispatch > 0)
+        {
+            pendingWork.Add(new MesPendingWorkItem("dispatcher", "dispatch-operation-tasks", pendingDispatch, "/mes/dispatch"));
+        }
+
+        if (pendingReport > 0)
+        {
+            pendingWork.Add(new MesPendingWorkItem("operator", "report-production", pendingReport, "/mes/production-reports"));
+        }
+
+        if (pendingReceipts > 0)
+        {
+            pendingWork.Add(new MesPendingWorkItem("warehouse", "post-finished-goods-receipt", pendingReceipts, "/mes/receipts"));
+        }
+
         return new MesOverviewResponse(
             [
-                new MesCockpitCount("work-orders", workOrderCount, "Ready"),
-                new MesCockpitCount("operation-tasks", operationCount, "Ready"),
+                new MesCockpitCount("work-orders", workOrderCount, heldWorkOrders > 0 ? "Attention" : "Ready"),
+                new MesCockpitCount("operation-tasks", operationCount, scheduleInvalidatedTasks > 0 ? "Attention" : "Ready"),
             ],
-            [],
-            []);
+            blockers,
+            pendingWork);
+    }
+
+    /// <summary>
+    /// 「已下达未开工」工单里按最新齐套快照仍缺料的数量。口径与放行门禁
+    /// <see cref="MaterialReadinessGuards.GetShortageReasonsAsync"/> 一致：
+    /// 同 (工序, 物料, 批次) 取最新快照，缺口 = 需求 − 可用 − 备料 − 已线边接收。
+    /// released 工单集合有限（历史形状约 3%），加载后在内存完成快照去重。
+    /// </summary>
+    private async Task<int> CountReleasedWorkOrdersWithMaterialShortageAsync(
+        GetMesOverviewQuery request,
+        CancellationToken cancellationToken)
+    {
+        var releasedWorkOrderIds = await dbContext.WorkOrders
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId &&
+                x.Status == Domain.AggregatesModel.WorkOrderAggregate.WorkOrder.ReleasedStatus)
+            .Select(x => x.WorkOrderIdValue)
+            .ToArrayAsync(cancellationToken);
+        if (releasedWorkOrderIds.Length == 0)
+        {
+            return 0;
+        }
+
+        var requirements = await dbContext.MaterialRequirements
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId &&
+                releasedWorkOrderIds.Contains(x.WorkOrderId))
+            .Select(x => new
+            {
+                x.WorkOrderId,
+                x.OperationTaskId,
+                x.MaterialId,
+                x.MaterialLotId,
+                x.RequiredQuantity,
+                x.AvailableQuantity,
+                x.StagedQuantity,
+                x.CapturedAtUtc,
+            })
+            .ToArrayAsync(cancellationToken);
+        if (requirements.Length == 0)
+        {
+            return 0;
+        }
+
+        var received = await dbContext.MaterialIssueRequests
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId &&
+                releasedWorkOrderIds.Contains(x.WorkOrderId))
+            .GroupBy(x => new { x.WorkOrderId, x.MaterialId, x.MaterialLotId })
+            .Select(group => new
+            {
+                group.Key.WorkOrderId,
+                group.Key.MaterialId,
+                group.Key.MaterialLotId,
+                Received = group.Sum(x => x.ReceivedQuantity),
+            })
+            .ToArrayAsync(cancellationToken);
+
+        return requirements
+            .GroupBy(x => new { x.WorkOrderId, x.OperationTaskId, x.MaterialId, x.MaterialLotId })
+            .Select(group => group.OrderByDescending(x => x.CapturedAtUtc).First())
+            .GroupBy(x => new { x.WorkOrderId, x.MaterialId, x.MaterialLotId })
+            .Select(group =>
+            {
+                var receivedQuantity = received
+                    .Where(y => string.Equals(y.WorkOrderId, group.Key.WorkOrderId, StringComparison.Ordinal) &&
+                        string.Equals(y.MaterialId, group.Key.MaterialId, StringComparison.OrdinalIgnoreCase) &&
+                        (group.Key.MaterialLotId is null ||
+                            string.Equals(y.MaterialLotId, group.Key.MaterialLotId, StringComparison.OrdinalIgnoreCase)))
+                    .Sum(y => y.Received);
+                return new
+                {
+                    group.Key.WorkOrderId,
+                    Shortage = Math.Max(0m, group.Sum(y => y.RequiredQuantity) - group.Sum(y => y.AvailableQuantity) -
+                        group.Sum(y => y.StagedQuantity) - receivedQuantity),
+                };
+            })
+            .Where(x => x.Shortage > 0m)
+            .Select(x => x.WorkOrderId)
+            .Distinct(StringComparer.Ordinal)
+            .Count();
     }
 }
 

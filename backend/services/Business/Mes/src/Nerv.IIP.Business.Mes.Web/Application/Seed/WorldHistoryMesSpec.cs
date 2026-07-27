@@ -99,6 +99,24 @@ public static class WorldHistoryMesSpec
 
     #region L0 §5 班组成员（报工操作员）
 
+    /// <summary>与 L0 <c>WorldBibleSpec</c> 完全同序的姓名池——派工人姓名快照必须与员工档案逐字一致。</summary>
+    private static readonly string[] Surnames =
+    [
+        "王", "李", "张", "刘", "陈", "杨", "赵", "黄", "周", "吴",
+        "徐", "孙", "胡", "朱", "高", "林", "何", "郭", "马", "罗",
+    ];
+
+    private static readonly string[] GivenNames =
+    [
+        "建国", "秀英", "志强", "桂芳", "海涛", "丽娟", "文斌", "春梅", "国庆", "晓东",
+        "淑芬", "永强", "秀兰", "俊杰", "玉兰", "小磊", "凤霞", "明辉", "雅琴", "浩然",
+        "美玲", "立新", "婷婷", "德华", "红梅", "天宇", "金花", "伟东", "雪梅", "宏伟",
+    ];
+
+    /// <summary>L0 <c>WorldBibleSpec.BuildEmployees()</c> 的同一姓名公式（0 基员工序号）。</summary>
+    public static string EmployeeName(int ordinal) =>
+        $"{Surnames[ordinal % Surnames.Length]}{GivenNames[(ordinal * 7) % GivenNames.Length]}";
+
     /// <summary>
     /// L0 的 25 名现场班组成员：6 名班组长（EMP-004..009）+ 19 名操作工（EMP-010..028）。
     /// 车间归属按 L0 <c>WorldBibleSpec.BuildEmployees()</c> 的同一轮转公式重算。
@@ -125,6 +143,7 @@ public static class WorldHistoryMesSpec
             operators.Add(new WorldHistoryOperator(
                 $"user-emp-{ordinal + 1:D3}",
                 $"EMP-{ordinal + 1:D3}",
+                EmployeeName(ordinal),
                 teamCodes[leaderIndex],
                 teamWorkshops[leaderIndex],
                 // L0 班组顺序里偶数下标是早班、奇数是中班。
@@ -139,6 +158,7 @@ public static class WorldHistoryMesSpec
             operators.Add(new WorldHistoryOperator(
                 $"user-emp-{ordinal + 1:D3}",
                 $"EMP-{ordinal + 1:D3}",
+                EmployeeName(ordinal),
                 teamCodes[teamIndex],
                 teamWorkshops[teamIndex],
                 ShiftIndex: teamIndex % 2));
@@ -215,9 +235,40 @@ public static class WorldHistoryMesSpec
     public static WorldHistoryOperation Operation(int sequence) =>
         StandardOperations.Single(x => x.Sequence == sequence);
 
+    #region L0 §3 设备（历史派工的设备绑定）
+
+    /// <summary>
+    /// 各工序可用的设备段（设定集 §3 的 46 台设备台账）：机加→CNC/磨床、装配→装配工作站、
+    /// 电泳→涂装设备、终检→试验台、包装→包装线体。下料与 CNC 精车共用 CNC 段。
+    /// </summary>
+    public static string DeviceAssetCode(int sequence, WorldHistoryRandom random)
+    {
+        ArgumentNullException.ThrowIfNull(random);
+        var (prefix, count) = sequence switch
+        {
+            10 or 20 => ("DEV-CNC", 10),
+            30 => ("DEV-GRD", 4),
+            40 or 50 => ("DEV-ASM", 12),
+            60 => ("DEV-CTG", 3),
+            70 => ("DEV-TST", 4),
+            80 => ("DEV-PKG", 2),
+            _ => throw new ArgumentOutOfRangeException(nameof(sequence), sequence, "Unknown world-bible routing sequence."),
+        };
+        return $"{prefix}-{random.NextInt(1, count + 1):D2}";
+    }
+
+    #endregion
+
     #region 号段
 
     public static string OperationTaskId(string workOrderNo, int sequence) => $"{workOrderNo}-OP-{sequence:D2}";
+
+    /// <summary>
+    /// 历史工序的排程方案号：按生产周落 <c>SP-2026-W##</c> 段——与规模排产在制块（SCALE 段）
+    /// 和 L2 演示排程互不侵占，派工看板能按周聚合出「哪一版计划派的工」。
+    /// </summary>
+    public static string SchedulePlanId(DateOnly productionDay) =>
+        $"SP-{System.Globalization.ISOWeek.GetYear(productionDay.ToDateTime(TimeOnly.MinValue)):D4}-W{System.Globalization.ISOWeek.GetWeekOfYear(productionDay.ToDateTime(TimeOnly.MinValue)):D2}";
     public static string MaterialIssueRequestNo(string workOrderNo, int ordinal) => $"MIR-{workOrderNo}-{ordinal:D2}";
     public static string ProductionReportNo(string workOrderNo, int ordinal) => $"RPT-{workOrderNo}-{ordinal:D2}";
     public static string FinishedGoodsReceiptNo(string workOrderNo) => $"FGR-{workOrderNo}";
@@ -254,6 +305,7 @@ public sealed record WorldHistoryComponent(string SkuCode, decimal QuantityPer, 
 public sealed record WorldHistoryOperator(
     string UserId,
     string EmployeeNo,
+    string Name,
     string TeamCode,
     WorldHistoryWorkshop Workshop,
     int ShiftIndex);

@@ -310,11 +310,12 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
 
             case WorldHistoryInspectionDisposition.Scrap:
                 // 报废关单引用库存报废流水 id——二期库存域会以同一 id 落一笔报废移动。
-                ncr.CompleteScrapDisposition(fact.ScrapMovementId!, fact.DefectQuantity);
+                // 关闭原因必须是界面可读的中文（NCR 详情页把 CloseReason 当必填展示）。
+                ncr.CompleteScrapDisposition(fact.ScrapMovementId!, fact.DefectQuantity, "报废处理完成，缺陷品已隔离报废出库", ClosureActor);
                 break;
 
             case WorldHistoryInspectionDisposition.ConditionalRelease:
-                ncr.CompleteConditionalReleaseDisposition(fact.DefectQuantity);
+                ncr.CompleteConditionalReleaseDisposition(fact.DefectQuantity, "让步接收放行，客户端确认可用", ClosureActor);
                 break;
 
             default:

@@ -1045,7 +1045,9 @@ public sealed record BusinessConsoleQualityItem(
     string? BatchNo,
     string? SerialNo,
     int? AttemptNumber = null,
-    string? ReinspectionOfInspectionRecordId = null);
+    string? ReinspectionOfInspectionRecordId = null,
+    // NCR 关单审计事实：closed 行必有关闭原因（界面必填字段），非 NCR 行恒为 null。
+    string? CloseReason = null);
 
 public sealed record BusinessConsoleQualityListResponse(
     IReadOnlyCollection<BusinessConsoleQualityItem> Items,
@@ -1342,7 +1344,8 @@ public sealed record BusinessConsoleQualityNcrDetailResponse(
     string? SerialNo,
     string? SourceInspectionRecordId,
     string? DispositionType = null,
-    string? DispositionApprovalChainId = null);
+    string? DispositionApprovalChainId = null,
+    string? CloseReason = null);
 
 /// <summary>
 /// 按 id 取单条检验记录详情（PDA NCR 详情「来源检验记录」→ 打开记录的互链）。代理真实详情端点，

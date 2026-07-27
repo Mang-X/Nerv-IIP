@@ -220,6 +220,11 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         {
             failures.Add($"{fact.NcrCode} 状态为 '{report.Status}'，历史 NCR 必须已关单。");
         }
+        else if (string.IsNullOrWhiteSpace(report.CloseReason))
+        {
+            // 界面把关闭原因当必填：已关单却无原因 = 假数据穿帮。
+            failures.Add($"{fact.NcrCode} 已关单却没有关闭原因。");
+        }
 
         if (!string.Equals(report.DispositionType, fact.DispositionType, StringComparison.Ordinal))
         {
@@ -475,7 +480,8 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 x.MrbReviews.Count(review => string.Equals(review.Decision, "approved", StringComparison.Ordinal)),
                 x.MrbReviews.Count == 0 ? null : x.MrbReviews.Max(review => review.ReviewedAtUtc),
                 x.CreatedAtUtc,
-                x.UpdatedAtUtc),
+                x.UpdatedAtUtc,
+                x.CloseReason),
             StringComparer.Ordinal);
     }
 
@@ -572,7 +578,8 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         int ApprovedMrbReviewCount,
         DateTimeOffset? LastMrbReviewedAtUtc,
         DateTime CreatedAtUtc,
-        DateTime UpdatedAtUtc);
+        DateTime UpdatedAtUtc,
+        string? CloseReason);
 }
 
 /// <summary>质量域侧一致性校验器的产出摘要。</summary>

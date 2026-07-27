@@ -169,6 +169,55 @@ public sealed class WorldHistorySeedServiceTests
         Assert.All(inspectionTasks, task => Assert.True(task.RequiresQualityInspection));
     }
 
+    /// <summary>
+    /// 派工看板缺口（演示走查）：历史上已开工/完工的工序不允许「已完成但未排程、无派工人」。
+    /// 排程时间/周版方案号、派工人及姓名快照（与 L0 员工档案同一姓名公式）、设备绑定必须齐全，
+    /// 且对任意 asOfDate 成立（含周日后首日与春节段，见 #1151 的单日期盲区教训）。
+    /// </summary>
+    [Theory]
+    [InlineData(2026, 7, 27)]
+    [InlineData(2026, 7, 26)]
+    [InlineData(2026, 8, 2)]
+    [InlineData(2026, 2, 16)]
+    [InlineData(2026, 7, 31)]
+    public async Task Started_or_completed_tasks_carry_schedule_and_dispatch_facts_for_any_as_of_date(
+        int year, int month, int day)
+    {
+        await using var dbContext = CreateDbContext();
+        await CreateSeed(dbContext).SeedAsync("org-001", "env-dev", new DateOnly(year, month, day), TestScale);
+
+        var operatorsById = WorldHistoryMesSpec.Operators.ToDictionary(x => x.UserId, StringComparer.Ordinal);
+        var touched = await dbContext.OperationTasks
+            .Where(x => x.Status == OperationTaskLifecycleStatus.Completed ||
+                x.Status == OperationTaskLifecycleStatus.InProgress)
+            .ToArrayAsync();
+        Assert.NotEmpty(touched);
+
+        Assert.All(touched, task =>
+        {
+            // 派工人 + 姓名快照与 L0 员工档案逐字一致。
+            Assert.NotNull(task.AssignedUserId);
+            var expected = operatorsById[task.AssignedUserId!];
+            Assert.Equal(expected.Name, task.AssignedUserName);
+
+            // 排程事实：周版方案号段 SP-2026-W##，排程时间不晚于开工。
+            Assert.NotNull(task.ScheduledAtUtc);
+            Assert.NotNull(task.SchedulePlanId);
+            Assert.Matches(@"^SP-\d{4}-W\d{2}$", task.SchedulePlanId!);
+            Assert.True(task.ScheduledAtUtc <= task.ExistingStartUtc);
+
+            // 设备绑定落在设定集 §3 对应工序的设备段内。
+            Assert.NotNull(task.DeviceAssetId);
+            Assert.Matches(@"^DEV-(CNC|GRD|ASM|CTG|TST|PKG)-\d{2}$", task.DeviceAssetId!);
+        });
+
+        // 未开工的排队工序保持未排程（真实的待排积压），不给全量伪造排程。
+        var queued = await dbContext.OperationTasks
+            .Where(x => x.Status == OperationTaskLifecycleStatus.Queued)
+            .ToArrayAsync();
+        Assert.All(queued, task => Assert.Null(task.ScheduledAtUtc));
+    }
+
     [Fact]
     public async Task History_seed_is_idempotent_and_stays_out_of_the_reserved_number_segments()
     {

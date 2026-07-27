@@ -337,8 +337,26 @@ public sealed class WorldHistorySeedService(
             var isInProgress = execution == WorldHistoryExecution.Partial && position == completedThrough;
             if (isCompleted || isInProgress)
             {
-                // deviceAssetId 留空：设备绑定属于二期设备域，这里只落人员与班次。
-                task.Assign(assignee.UserId, deviceAssetId: null, shiftId: assignee.TeamCode, assignedAtUtc: startUtc, DispatchActor);
+                // 历史上真实发生过的工序必须带完整排程与派工痕迹：
+                // 先按周版排程方案落 Scheduled 事实（SP-2026-W## 段，不侵占 SCALE/L2 排程），
+                // 再按设定集 §3 的设备段派到人 + 设备（派工看板据此显示排程状态与派工人）。
+                var deviceAssetId = WorldHistoryMesSpec.DeviceAssetCode(sequence, random);
+                task.ApplyScheduleAssignment(
+                    WorldHistoryMesSpec.WorkCenterCode(plan.SkuCode, sequence),
+                    deviceAssetId,
+                    plannedStartUtc: startUtc,
+                    plannedEndUtc: endUtc,
+                    assignedAtUtc: releasedAtUtc,
+                    operationCode: operation.OperationCode,
+                    schedulePlanId: WorldHistoryMesSpec.SchedulePlanId(workingDay),
+                    scheduleReleaseRevision: 1);
+                task.Assign(
+                    assignee.UserId,
+                    deviceAssetId,
+                    shiftId: assignee.TeamCode,
+                    assignedAtUtc: startUtc,
+                    DispatchActor,
+                    assignedUserName: assignee.Name);
                 task.Start(startUtc);
             }
 

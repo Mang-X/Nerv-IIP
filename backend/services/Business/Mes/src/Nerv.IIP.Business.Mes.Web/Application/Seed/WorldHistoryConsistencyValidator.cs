@@ -112,6 +112,11 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             failures.Add($"{workOrderId} 工序任务数 {tasks.Total} 超出设定集 §7 的 6–8 道。");
         }
 
+        if (tasks.DispatchGaps > 0)
+        {
+            failures.Add($"{workOrderId} 有 {tasks.DispatchGaps} 道已开工/完工工序缺排程或派工痕迹（排程时间/方案、派工人及姓名、设备绑定必须齐全）。");
+        }
+
         if (!kitting.TryGetValue(workOrderId, out var kittingCount) || kittingCount == 0)
         {
             failures.Add($"{workOrderId} 缺少齐套需求快照。");
@@ -264,7 +269,12 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             .Select(group => new TaskCounts(
                 group.Key,
                 group.Count(),
-                group.Count(task => task.Status == Domain.AggregatesModel.OperationTaskAggregate.OperationTaskLifecycleStatus.Completed)))
+                group.Count(task => task.Status == Domain.AggregatesModel.OperationTaskAggregate.OperationTaskLifecycleStatus.Completed),
+                group.Count(task =>
+                    (task.Status == Domain.AggregatesModel.OperationTaskAggregate.OperationTaskLifecycleStatus.Completed ||
+                        task.Status == Domain.AggregatesModel.OperationTaskAggregate.OperationTaskLifecycleStatus.InProgress) &&
+                    (task.AssignedUserId == null || task.AssignedUserName == null ||
+                        task.ScheduledAtUtc == null || task.DeviceAssetId == null || task.SchedulePlanId == null))))
             .ToArrayAsync(cancellationToken))
         .ToDictionary(x => x.WorkOrderId, StringComparer.Ordinal);
 
@@ -367,7 +377,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         DateTimeOffset CreatedAtUtc,
         DateTimeOffset? ClosedAtUtc);
 
-    private sealed record TaskCounts(string WorkOrderId, int Total, int Completed);
+    private sealed record TaskCounts(string WorkOrderId, int Total, int Completed, int DispatchGaps);
 
     private sealed record ReportTotals(
         string WorkOrderId,
