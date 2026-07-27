@@ -20,6 +20,8 @@ const api = vi.hoisted(() => ({
   getBusinessConsoleEngineeringBomWhereUsedQueryOptions: vi.fn(),
   getBusinessConsoleEngineeringManufacturingBomWhereUsed: vi.fn(),
   getBusinessConsoleEngineeringManufacturingBomWhereUsedQueryOptions: vi.fn(),
+  listBusinessConsoleEngineeringItemsQueryOptions: vi.fn(),
+  listBusinessConsoleSkusQueryOptions: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
@@ -50,6 +52,9 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
     api.getBusinessConsoleEngineeringManufacturingBomWhereUsed,
   getBusinessConsoleEngineeringManufacturingBomWhereUsedQueryOptions:
     api.getBusinessConsoleEngineeringManufacturingBomWhereUsedQueryOptions,
+  listBusinessConsoleEngineeringItemsQueryOptions:
+    api.listBusinessConsoleEngineeringItemsQueryOptions,
+  listBusinessConsoleSkusQueryOptions: api.listBusinessConsoleSkusQueryOptions,
 }))
 
 vi.mock('@nerv-iip/ui', () => {
@@ -82,6 +87,25 @@ vi.mock('@nerv-iip/ui', () => {
       },
     }),
     NvDatePicker: modelInput,
+    NvEntityPicker: {
+      props: [
+        'modelValue',
+        'id',
+        'options',
+        'title',
+        'placeholder',
+        'searchPlaceholder',
+        'emptyText',
+        'sourceText',
+        'loading',
+        'disabled',
+        'clearable',
+        'ariaLabel',
+      ],
+      emits: ['update:modelValue'],
+      template:
+        '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    },
     NvField: passthrough(),
     NvFieldLabel: passthrough('label'),
     NvInput: modelInput,
@@ -141,6 +165,31 @@ beforeEach(() => {
         (await api.getBusinessConsoleEngineeringManufacturingBomWhereUsed(options)).data,
     }),
   )
+  api.listBusinessConsoleEngineeringItemsQueryOptions.mockReset()
+  api.listBusinessConsoleEngineeringItemsQueryOptions.mockImplementation(() => ({
+    query: async () => ({
+      success: true,
+      data: {
+        items: [
+          { itemCode: 'FG-100', revision: 'A', name: '整机成品', status: 'Published' },
+          { itemCode: 'PCB-200', revision: 'B', name: '控制主板', status: 'Published' },
+        ],
+        total: 2,
+      },
+    }),
+  }))
+  api.listBusinessConsoleSkusQueryOptions.mockReset()
+  api.listBusinessConsoleSkusQueryOptions.mockImplementation(() => ({
+    query: async () => ({
+      success: true,
+      data: {
+        resources: [
+          { resourceType: 'sku', code: 'SKU-FG', displayName: '整机成品（销售件）', active: true },
+        ],
+        total: 1,
+      },
+    }),
+  }))
 })
 
 describe('engineering bom analysis page', () => {
@@ -197,6 +246,9 @@ describe('engineering bom analysis page', () => {
     )
     expect(wrapper.text()).toContain('FG-100')
     expect(wrapper.text()).toContain('PCB-200')
+    // 物料目录 join：树视图在编码旁显示物料名称
+    expect(wrapper.text()).toContain('整机成品')
+    expect(wrapper.text()).toContain('控制主板')
     expect(wrapper.text()).toContain('虚拟件')
     expect(wrapper.text()).toContain('缺少下级有效版本')
   })
@@ -251,6 +303,9 @@ describe('engineering bom analysis page', () => {
     )
     expect(wrapper.text()).toContain('RM-ALT')
     expect(wrapper.text()).toContain('R1,R2')
+    // MBOM 名称列：SKU 目录命中的显名称，查不到的编码显「—」
+    expect(wrapper.text()).toContain('整机成品（销售件）')
+    expect(wrapper.text()).toContain('—')
   })
 
   it('反查视图只调用 where-used facade 并显示父项上下文', async () => {

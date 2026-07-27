@@ -141,6 +141,43 @@ export function buildQualityAnalysisSummary(
   }
 }
 
+/** 维度下钻明细：某个 SKU / 来源类型在当前分析窗口内的缺陷构成与逐条记录。 */
+export interface QualityBucketDetail {
+  ncrCount: number
+  defectQuantity: number
+  openNcrCount: number
+  defectReasons: QualityAnalysisBucket[]
+  records: BusinessConsoleQualityItem[]
+}
+
+/**
+ * 从当前窗口的 NCR 记录里切出某个维度桶的明细。数据只做既有记录的交叉汇总
+ * （缺陷原因分布 + 逐条记录），不引入窗口之外的字段。
+ */
+export function buildQualityBucketDetail(
+  ncrs: ReadonlyArray<BusinessConsoleQualityItem>,
+  dimension: 'sku' | 'sourceType',
+  label: string,
+): QualityBucketDetail {
+  const getLabel =
+    dimension === 'sku'
+      ? (item: BusinessConsoleQualityItem) => item.skuCode
+      : (item: BusinessConsoleQualityItem) => item.sourceType
+  const records = ncrs.filter((item) => displayLabel(getLabel(item)) === label)
+
+  return {
+    ncrCount: records.length,
+    defectQuantity: records.reduce((total, item) => total + toNumber(item.defectQuantity), 0),
+    openNcrCount: countByStatus(records, 'open'),
+    defectReasons: summarizeBy(records, (item) => item.defectReason, {
+      shareMetric: 'defectQuantity',
+      sortMetric: 'defectQuantity',
+      unknownLast: false,
+    }),
+    records,
+  }
+}
+
 export function buildSpcChartPresentation(
   chart: BusinessConsoleQualitySpcControlChartResponse,
 ): QualitySpcChartPresentation {
