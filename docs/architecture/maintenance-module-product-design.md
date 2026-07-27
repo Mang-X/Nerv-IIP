@@ -14,7 +14,7 @@
 ## 2. 信息架构(IA)
 
 - `/maintenance/plans` 保养计划:列表(触发模式 / 保养周期 / 下次到期)+ 新建/编辑计划 + 生成到期工单。
-- `/maintenance/work-orders`、`/inspections`、`/spare-parts`、`/reliability`、`/availability`:维护闭环各正式页面。
+- `/maintenance/work-orders`、`/inspections`、`/spare-parts`、`/reliability`、`/availability`:维护闭环各正式页面。`/reliability` 与 `/availability` 顶部用车间→产线→设备级联范围选择(共用 `useEquipmentScopeSelection`,主数据目录驱动):可靠性指标按单台设备计算,未下钻时默认显示范围设备总览引导下钻;可用窗口接口天然吃设备编号集合,未下钻时直接以范围内设备全集(上限 50 台,超出如实提示截断)做真实范围聚合。
 - `/equipment/{deviceAssetId}` 设备详情「维护与可靠性上下文」:按当前设备收敛的工单/计划/点检/备件/可用窗口 + **运行小时指标卡**(累计运行小时、距下次保养还需 X 小时)。
 
 导航不因本次变更改动(同页面),故 `frontend-navigation-map.md` 无需更新。

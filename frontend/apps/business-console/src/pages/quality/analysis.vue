@@ -1,11 +1,28 @@
 <script setup lang="ts">
-import type { NvDataTableColumn, NvMetricFacet, NvMetricSegment } from '@nerv-iip/ui'
+import type {
+  ComboboxSuggestion,
+  EntityPickerOption,
+  NvDataTableColumn,
+  NvMetricFacet,
+  NvMetricSegment,
+  SearchSelectOption,
+} from '@nerv-iip/ui'
+import { qualitySourceTypeLabel } from '@nerv-iip/business-core'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import QualityParetoPanel from '@/components/quality/QualityParetoPanel.vue'
 import QualitySpcCharts from '@/components/quality/QualitySpcCharts.vue'
-import { useQualityNcrs } from '@/composables/useBusinessQuality'
+import {
+  useBusinessMasterDataResources,
+  useBusinessSkus,
+} from '@/composables/useBusinessMasterData'
+import {
+  useQualityInspectionPlanCharacteristics,
+  useQualityInspectionPlans,
+  useQualityNcrs,
+} from '@/composables/useBusinessQuality'
 import {
   buildQualityAnalysisSummary,
+  buildQualityBucketDetail,
   formatQualityQuantity,
   spcViolationTargetId,
   useQualitySpcAnalysis,
@@ -15,11 +32,20 @@ import {
 import { friendlyErrorMessage } from '@/utils/notify'
 import {
   NvButton,
+  NvCombobox,
   NvDataTable,
+  NvEntityPicker,
   NvInput,
   NvMetricCard,
   NvMetricRing,
   NvPageHeader,
+  NvSearchSelect,
+  NvSheet,
+  NvSheetContent,
+  NvSheetDescription,
+  NvSheetHeader,
+  NvSheetTitle,
+  NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
 import {
@@ -31,7 +57,7 @@ import {
   RefreshCwIcon,
   ShieldAlertIcon,
 } from '@lucide/vue'
-import { computed } from 'vue'
+import { computed, shallowRef } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
 definePage({
@@ -45,6 +71,47 @@ definePage({
 const router = useRouter()
 const { filters, ncrs, ncrsError, ncrsPending, ncrsTotal, refreshNcrs } = useQualityNcrs()
 const spc = useQualitySpcAnalysis()
+
+// SPC 范围目录：SKU 取物料主数据、工作中心取主数据资源目录，选择器只选不填。
+const skuCatalog = useBusinessSkus()
+const workCenterCatalog = useBusinessMasterDataResources('work-center')
+const skuOptions = computed<EntityPickerOption[]>(() =>
+  skuCatalog.skus.value.flatMap((sku) => {
+    const code = sku.code?.trim()
+    if (!code) return []
+    return [{ value: code, label: sku.displayName?.trim() || code }]
+  }),
+)
+const workCenterOptions = computed<SearchSelectOption[]>(() =>
+  workCenterCatalog.resources.value.flatMap((resource) => {
+    const code = resource.code?.trim()
+    if (!code) return []
+    return [{ value: code, label: resource.displayName?.trim() || code, hint: code }]
+  }),
+)
+
+// 后端目前没有「按 SKU / 工序查质量特性目录」的接口，特性因此保留自由录入；
+// 建议项取当前所选 SKU 对应检验方案（已加载方案列表中首个匹配项）的特性清单，匹配不到就不给建议。
+const { inspectionPlans } = useQualityInspectionPlans()
+const characteristicSuggestionPlanId = computed(() => {
+  const sku = spc.filters.skuCode.trim()
+  if (!sku) return ''
+  const matched = inspectionPlans.value.find((plan) => plan.skuCode === sku && plan.id)
+  return matched?.id ?? ''
+})
+const { planCharacteristics: suggestionPlanCharacteristics } =
+  useQualityInspectionPlanCharacteristics(() => ({
+    organizationId: spc.filters.organizationId,
+    environmentId: spc.filters.environmentId,
+    inspectionPlanId: characteristicSuggestionPlanId.value,
+  }))
+const characteristicSuggestions = computed<ComboboxSuggestion[]>(() =>
+  suggestionPlanCharacteristics.value.flatMap((characteristic) => {
+    const code = characteristic.characteristicCode?.trim()
+    if (!code) return []
+    return [{ value: code, label: characteristic.name?.trim() || code, hint: code }]
+  }),
+)
 
 const summary = computed(() => buildQualityAnalysisSummary(ncrs.value, ncrsTotal.value))
 const listErrorMessage = computed(() => formatError(ncrsError.value))
@@ -83,8 +150,7 @@ const defectBars = computed(() => {
     leader: top[0],
   }
 })
-// 上方三个输入框带的是示例占位（SKU-001 / DIAMETER / WC-01），灰字看着像"已填"，
-// 于是这张卡说「未填」就显得自相矛盾。改说「待选择」，把"还没给条件"讲成一句人话。
+// 这张卡回显当前生效的 SPC 范围；还没给条件的维度如实标「待选择」。
 const spcScopeFacets = computed<NvMetricFacet[]>(() => [
   { key: 'sku', label: '物料', value: spc.filters.skuCode.trim() || '待选择' },
   {
@@ -128,10 +194,88 @@ const spcViolationEmptyMessage = computed(() =>
     : '当前 SPC 范围没有判异。',
 )
 
-const dimensionColumns: NvDataTableColumn<QualityAnalysisBucket>[] = [
-  { key: 'label', header: '对象', cellClass: 'font-medium' },
+// 两张维度表各自命名表头：SKU 表 join 物料主数据补名称列，来源类型表显中文。
+const skuNameByCode = computed(() => {
+  const map = new Map<string, string>()
+  for (const sku of skuCatalog.skus.value) {
+    const code = sku.code?.trim()
+    const name = sku.displayName?.trim()
+    if (code && name) map.set(code, name)
+  }
+  return map
+})
+function skuDisplayName(code: string) {
+  return skuNameByCode.value.get(code) ?? '—'
+}
+const skuDimensionColumns: NvDataTableColumn<QualityAnalysisBucket>[] = [
+  { key: 'label', header: 'SKU', cellClass: 'font-medium' },
+  { key: 'skuName', header: '名称', accessor: (row) => skuDisplayName(row.label) },
+  { key: 'count', header: 'NCR 数', align: 'end', width: 'w-20' },
+  { key: 'defectQuantity', header: '缺陷数量', align: 'end', width: 'w-24' },
+]
+const sourceTypeDimensionColumns: NvDataTableColumn<QualityAnalysisBucket>[] = [
+  {
+    key: 'label',
+    header: '来源类型',
+    cellClass: 'font-medium',
+    accessor: (row) => qualitySourceTypeLabel(row.label),
+  },
   { key: 'count', header: 'NCR 数', align: 'end', width: 'w-24' },
   { key: 'defectQuantity', header: '缺陷数量', align: 'end', width: 'w-28' },
+]
+
+// 维度行下钻：点击 SKU / 来源类型行，用抽屉展示当前分析窗口内该对象的缺陷构成与逐条记录。
+const bucketDetailOpen = shallowRef(false)
+const bucketDetailTarget = shallowRef<{ kind: 'sku' | 'sourceType'; label: string } | null>(null)
+const bucketDetail = computed(() =>
+  bucketDetailTarget.value
+    ? buildQualityBucketDetail(
+        ncrs.value,
+        bucketDetailTarget.value.kind,
+        bucketDetailTarget.value.label,
+      )
+    : null,
+)
+const bucketDetailTitle = computed(() => {
+  const target = bucketDetailTarget.value
+  if (!target) return ''
+  if (target.kind === 'sku') {
+    const name = skuNameByCode.value.get(target.label)
+    return name ? `SKU ${target.label} · ${name}` : `SKU ${target.label}`
+  }
+  return `来源类型 ${qualitySourceTypeLabel(target.label)}`
+})
+function openBucketDetail(kind: 'sku' | 'sourceType', bucket: QualityAnalysisBucket) {
+  bucketDetailTarget.value = { kind, label: bucket.label }
+  bucketDetailOpen.value = true
+}
+const bucketDetailReasonColumns: NvDataTableColumn<QualityAnalysisBucket>[] = [
+  { key: 'label', header: '缺陷原因', cellClass: 'font-medium' },
+  { key: 'count', header: 'NCR 数', align: 'end', width: 'w-20' },
+  { key: 'defectQuantity', header: '缺陷数量', align: 'end', width: 'w-24' },
+  { key: 'sharePercent', header: '占比', align: 'end', width: 'w-20' },
+]
+type BucketDetailRecord = NonNullable<typeof bucketDetail.value>['records'][number]
+const bucketDetailRecordColumns: NvDataTableColumn<BucketDetailRecord>[] = [
+  { key: 'code', header: '编号', cellClass: 'font-medium', accessor: (row) => row.code ?? '未知' },
+  { key: 'status', header: '状态', width: 'w-24' },
+  {
+    key: 'defectReason',
+    header: '缺陷原因',
+    accessor: (row) => row.defectReason?.trim() || '未填',
+  },
+  {
+    key: 'defectQuantity',
+    header: '缺陷数量',
+    align: 'end',
+    width: 'w-24',
+    accessor: (row) =>
+      formatQualityQuantity(
+        typeof row.defectQuantity === 'number' && Number.isFinite(row.defectQuantity)
+          ? row.defectQuantity
+          : 0,
+      ),
+  },
 ]
 const spcViolationColumns: NvDataTableColumn<QualitySpcViolation>[] = [
   { key: 'rule', header: '判异规则', cellClass: 'font-medium' },
@@ -235,18 +379,37 @@ function spcViolationKey(row: QualitySpcViolation) {
       <NvToolbar :show-search="false">
         <template #filters>
           <div class="grid w-full gap-3 lg:grid-cols-[repeat(5,minmax(0,1fr))_auto]">
-            <label class="grid gap-1 text-xs font-medium text-muted-foreground">
+            <div class="grid gap-1 text-xs font-medium text-muted-foreground">
               SKU
-              <NvInput v-model="spc.filters.skuCode" placeholder="SKU-001" />
-            </label>
+              <NvEntityPicker
+                v-model="spc.filters.skuCode"
+                :options="skuOptions"
+                title="选择 SKU"
+                source-text="数据来自基础数据物料主数据"
+                :loading="skuCatalog.skusPending.value"
+                clearable
+                aria-label="SKU"
+              />
+            </div>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               特性
-              <NvInput v-model="spc.filters.characteristicCode" placeholder="DIAMETER" />
+              <NvCombobox
+                v-model="spc.filters.characteristicCode"
+                class="h-9"
+                :suggestions="characteristicSuggestions"
+                placeholder="录入或选择特性编码"
+                empty-text="暂无该 SKU 的特性建议"
+              />
             </label>
-            <label class="grid gap-1 text-xs font-medium text-muted-foreground">
+            <div class="grid gap-1 text-xs font-medium text-muted-foreground">
               工作中心
-              <NvInput v-model="spc.filters.workCenterId" placeholder="WC-01" />
-            </label>
+              <NvSearchSelect
+                v-model="spc.filters.workCenterId"
+                :options="workCenterOptions"
+                :loading="workCenterCatalog.resourcesPending.value"
+                aria-label="工作中心"
+              />
+            </div>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               子组
               <NvInput v-model="spc.filters.subgroupSize" type="number" min="2" max="10" />
@@ -341,15 +504,17 @@ function spcViolationKey(row: QualitySpcViolation) {
     >
       <QualityParetoPanel :rows="summary.defectPareto" :pending="ncrsPending" />
 
-      <div class="grid gap-4">
+      <div class="grid content-start gap-4">
         <NvDataTable
-          :columns="dimensionColumns"
+          :columns="skuDimensionColumns"
           :rows="summary.bySku"
           row-key="label"
           :loading="ncrsPending"
           :searchable="false"
           :column-settings="false"
+          row-class="cursor-pointer"
           empty-message="当前分析时间范围内没有物料维度。"
+          @row-click="openBucketDetail('sku', $event)"
         >
           <template #cell-defectQuantity="{ row }">{{
             formatQualityQuantity(row.defectQuantity)
@@ -357,13 +522,15 @@ function spcViolationKey(row: QualitySpcViolation) {
         </NvDataTable>
 
         <NvDataTable
-          :columns="dimensionColumns"
+          :columns="sourceTypeDimensionColumns"
           :rows="summary.bySourceType"
           row-key="label"
           :loading="ncrsPending"
           :searchable="false"
           :column-settings="false"
+          row-class="cursor-pointer"
           empty-message="当前分析时间范围内没有来源维度。"
+          @row-click="openBucketDetail('sourceType', $event)"
         >
           <template #cell-defectQuantity="{ row }">{{
             formatQualityQuantity(row.defectQuantity)
@@ -371,6 +538,72 @@ function spcViolationKey(row: QualitySpcViolation) {
         </NvDataTable>
       </div>
     </div>
+
+    <!-- 维度行下钻抽屉：当前分析窗口内该对象的缺陷构成交叉呈现（不引入窗口外数据）。 -->
+    <NvSheet v-model:open="bucketDetailOpen">
+      <NvSheetContent class="gap-0 overflow-y-auto sm:max-w-xl">
+        <NvSheetHeader>
+          <NvSheetTitle>{{ bucketDetailTitle }}</NvSheetTitle>
+          <NvSheetDescription>
+            明细来自当前分析时间范围内的不合格品记录，是窗口口径、不是全量历史。
+          </NvSheetDescription>
+        </NvSheetHeader>
+        <div v-if="bucketDetail" class="grid content-start gap-4 px-4 pb-4">
+          <dl class="grid grid-cols-3 gap-3">
+            <div class="rounded-lg border bg-card p-3">
+              <dt class="text-xs text-muted-foreground">NCR 数</dt>
+              <dd class="text-lg font-semibold">{{ bucketDetail.ncrCount }}</dd>
+            </div>
+            <div class="rounded-lg border bg-card p-3">
+              <dt class="text-xs text-muted-foreground">缺陷数量</dt>
+              <dd class="text-lg font-semibold">
+                {{ formatQualityQuantity(bucketDetail.defectQuantity) }}
+              </dd>
+            </div>
+            <div class="rounded-lg border bg-card p-3">
+              <dt class="text-xs text-muted-foreground">尚未处置</dt>
+              <dd
+                class="text-lg font-semibold"
+                :class="bucketDetail.openNcrCount > 0 ? 'text-destructive' : ''"
+              >
+                {{ bucketDetail.openNcrCount }}
+              </dd>
+            </div>
+          </dl>
+
+          <section class="grid gap-2">
+            <h3 class="text-sm font-semibold">缺陷原因分布</h3>
+            <NvDataTable
+              :columns="bucketDetailReasonColumns"
+              :rows="bucketDetail.defectReasons"
+              row-key="label"
+              :searchable="false"
+              :column-settings="false"
+              empty-message="当前分析时间范围内该对象没有缺陷原因记录。"
+            >
+              <template #cell-defectQuantity="{ row }">{{
+                formatQualityQuantity(row.defectQuantity)
+              }}</template>
+              <template #cell-sharePercent="{ row }">{{ row.sharePercent }}%</template>
+            </NvDataTable>
+          </section>
+
+          <section class="grid gap-2">
+            <h3 class="text-sm font-semibold">不合格品记录</h3>
+            <NvDataTable
+              :columns="bucketDetailRecordColumns"
+              :rows="bucketDetail.records"
+              :row-key="(row) => row.id ?? row.code ?? '未知'"
+              :searchable="false"
+              :column-settings="false"
+              empty-message="当前分析时间范围内没有该对象的不合格品记录。"
+            >
+              <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+            </NvDataTable>
+          </section>
+        </div>
+      </NvSheetContent>
+    </NvSheet>
 
     <div class="grid gap-3">
       <div class="flex flex-wrap gap-2">

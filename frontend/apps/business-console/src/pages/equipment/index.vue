@@ -1,18 +1,21 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
+import DeviceQuickViewSheet from '@/components/equipment/DeviceQuickViewSheet.vue'
 import {
   describeEquipmentReason,
   equipmentStatusTone,
   useBusinessEquipmentOverview,
   type EquipmentTone,
 } from '@/composables/useBusinessEquipment'
+import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { equipmentStateLabel } from '@nerv-iip/business-core'
 import {
   NvBadge,
   NvButton,
+  NvCascadePicker,
   NvDataTable,
   NvDropdownMenuItem,
-  NvInput,
   NvMetricCard,
   NvMetricRing,
   NvPageHeader,
@@ -28,7 +31,7 @@ import {
   RefreshCwIcon,
   WrenchIcon,
 } from '@lucide/vue'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
 definePage({
@@ -43,20 +46,43 @@ const router = useRouter()
 const { activeBlocks, devices, filters, overviewError, overviewPending, refreshOverview } =
   useBusinessEquipmentOverview()
 
+// 车间 → 产线 → 设备 级联范围：选择结果映射为 overview 接口吃的设备编号集合。
+const { scope, levels, devicesInScope, scopePending } = useEquipmentScopeSelection()
+const scopeNarrowed = computed(() =>
+  Boolean(scope.value.workshop || scope.value.line || scope.value.device),
+)
+const scopedDeviceCodes = computed(() =>
+  devicesInScope.value.map((d) => (d.code ?? '').trim()).filter((code) => code.length > 0),
+)
+watch(
+  [scopeNarrowed, scopedDeviceCodes],
+  ([narrowed, codes]) => {
+    // 全厂（未收窄）留空串，composable 会回退到全部设备；收窄后按范围编号查询（后端上限 50 台）。
+    filters.deviceAssetIds = narrowed ? codes.slice(0, 50).join(',') : ''
+  },
+  { immediate: true },
+)
+// 收窄后的范围里一台设备都没有时，编号集合为空串会被误读成「全部」，
+// 此处直接以空列表呈现，不让查询悄悄回退到全厂。
+const scopeEmpty = computed(() => scopeNarrowed.value && scopedDeviceCodes.value.length === 0)
+const visibleDevices = computed(() => (scopeEmpty.value ? [] : devices.value))
+const visibleBlocks = computed(() => (scopeEmpty.value ? [] : activeBlocks.value))
+
 const errorMessage = computed(() => formatError(overviewError.value))
 const runningCount = computed(
-  () => devices.value.filter((d) => equipmentStatusTone(d.currentState) === 'success').length,
+  () =>
+    visibleDevices.value.filter((d) => equipmentStatusTone(d.currentState) === 'success').length,
 )
 const faultCount = computed(
-  () => devices.value.filter((d) => equipmentStatusTone(d.currentState) === 'danger').length,
+  () => visibleDevices.value.filter((d) => equipmentStatusTone(d.currentState) === 'danger').length,
 )
 const alarmCount = computed(() =>
-  devices.value.reduce((total, d) => total + (d.activeAlarmCount ?? 0), 0),
+  visibleDevices.value.reduce((total, d) => total + (d.activeAlarmCount ?? 0), 0),
 )
 // 设备状态构成：三段互斥且相加等于在册设备数，满足 NvMetricRing 的「部分之和 = 整体」前提。
 // 报警数 / 阻塞窗口数与设备台数不同量纲，另用独立的告警卡表达，不混入同一个环。
 const otherStateCount = computed(() =>
-  Math.max(0, devices.value.length - runningCount.value - faultCount.value),
+  Math.max(0, visibleDevices.value.length - runningCount.value - faultCount.value),
 )
 const stateSegments = computed<NvMetricSegment[]>(() => [
   { key: 'running', label: '运行就绪', value: runningCount.value, tone: 'success' },
@@ -84,19 +110,27 @@ function badgeVariant(tone: EquipmentTone) {
   if (tone === 'danger') return 'danger'
   return 'neutral'
 }
-function statusLabel(status?: string | null) {
-  const labels: Record<string, string> = {
-    down: '停机',
-    faulted: '故障',
-    idle: '空闲',
-    offline: '离线',
-    ready: '就绪',
-    running: '运行中',
-    stopped: '停止',
-  }
-  // 设备没上报状态不是"未知状态"，而是这台设备当前没有实时数据可读——照实说。
-  return status ? (labels[status.toLowerCase()] ?? status) : '暂无实时数据'
+function stateText(status?: string | null) {
+  // 设备没上报状态不是"未知状态"，而是这台设备当前没有实时数据可读——照实说；
+  // 非空的未知码走 business-core 共用映射（与 PDA 同一口径），兜底「未知状态」。
+  return status?.trim() ? equipmentStateLabel(status) : '暂无实时数据'
 }
+
+// 行内速览抽屉：不离开看板即可核对设备状态 / 报警 / 可用性窗口。
+const quickViewDeviceId = ref('')
+const quickViewOpen = ref(false)
+function openQuickView(deviceAssetId?: string | null) {
+  if (!deviceAssetId) return
+  quickViewDeviceId.value = deviceAssetId
+  quickViewOpen.value = true
+}
+
+// 「当前阻塞」默认收敛为前几条，高度受控；其余折叠在「展开全部」后面。
+const BLOCK_PREVIEW_COUNT = 4
+const blocksExpanded = ref(false)
+const visibleBlockCards = computed(() =>
+  blocksExpanded.value ? visibleBlocks.value : visibleBlocks.value.slice(0, BLOCK_PREVIEW_COUNT),
+)
 function recordDowntime(deviceAssetId?: string | null) {
   void router.push({ path: '/mes/downtime', query: { deviceAssetId: deviceAssetId ?? undefined } })
 }
@@ -115,7 +149,7 @@ function formatError(error: unknown) {
     <NvPageHeader
       title="设备运行看板"
       :breadcrumbs="[{ label: '设备监控（IoT）' }]"
-      :count="`${devices.length} 台设备`"
+      :count="`${visibleDevices.length} 台设备`"
     >
       <template #actions>
         <NvButton size="sm" type="button" variant="outline" as-child>
@@ -144,7 +178,7 @@ function formatError(error: unknown) {
     <NvSectionCards :columns="3">
       <NvMetricRing
         label="设备状态构成"
-        :value="devices.length"
+        :value="visibleDevices.length"
         center-caption="台设备"
         :segments="stateSegments"
       />
@@ -159,20 +193,20 @@ function formatError(error: unknown) {
       <NvMetricCard
         variant="alert"
         label="阻塞中"
-        :value="activeBlocks.length"
-        :tone="activeBlocks.length > 0 ? 'warning' : 'neutral'"
-        :status="activeBlocks.length > 0 ? { label: '影响排程', tone: 'warning' } : undefined"
+        :value="visibleBlocks.length"
+        :tone="visibleBlocks.length > 0 ? 'warning' : 'neutral'"
+        :status="visibleBlocks.length > 0 ? { label: '影响排程', tone: 'warning' } : undefined"
         foot-start="阻塞窗口会占用排程与执行时段"
       />
     </NvSectionCards>
 
     <NvToolbar :show-search="false">
       <template #filters>
-        <NvInput
-          v-model="filters.deviceAssetIds"
-          class="h-9 w-72"
-          placeholder="默认全部设备；逗号分隔设备号可缩小范围"
-          aria-label="设备范围（留空显示全部）"
+        <NvCascadePicker
+          v-model="scope"
+          :levels="levels"
+          class="min-w-0 flex-1"
+          :aria-busy="scopePending"
         />
       </template>
     </NvToolbar>
@@ -182,12 +216,16 @@ function formatError(error: unknown) {
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.75fr)]">
       <NvDataTable
         :columns="columns"
-        :rows="devices"
+        :rows="visibleDevices"
         :row-key="(r) => r.deviceAssetId ?? '无'"
         :loading="overviewPending"
         :searchable="false"
         :column-settings="false"
-        empty-message="暂无设备运行记录。请先在基础数据登记设备资产，或调整上方设备范围后再试。"
+        :empty-message="
+          scopeEmpty
+            ? '当前范围内暂无设备主数据。请调整上方范围，或先在基础数据登记设备资产。'
+            : '暂无设备运行记录。请先在基础数据登记设备资产，或调整上方设备范围后再试。'
+        "
       >
         <template #cell-deviceAssetId="{ row }">
           <RouterLink
@@ -201,7 +239,7 @@ function formatError(error: unknown) {
           <NvBadge
             class="rounded-sm"
             :variant="badgeVariant(equipmentStatusTone(row.currentState))"
-            >{{ statusLabel(row.currentState) }}</NvBadge
+            >{{ stateText(row.currentState) }}</NvBadge
           >
         </template>
         <!-- 「过期」是采集口径，现场关心的是"这行数还能不能信"：不新鲜＝没有实时数据。 -->
@@ -218,10 +256,9 @@ function formatError(error: unknown) {
         >
         <template #cell-actions="{ row }">
           <NvRowActions :label="`设备操作 ${row.deviceAssetId ?? ''}`">
-            <NvDropdownMenuItem as-child>
-              <RouterLink :to="`/equipment/${row.deviceAssetId}`"
-                ><EyeIcon aria-hidden="true" />查看详情</RouterLink
-              >
+            <NvDropdownMenuItem @click="openQuickView(row.deviceAssetId)">
+              <EyeIcon aria-hidden="true" />
+              查看详情
             </NvDropdownMenuItem>
             <NvDropdownMenuItem as-child>
               <RouterLink
@@ -253,14 +290,14 @@ function formatError(error: unknown) {
         </template>
       </NvDataTable>
 
-      <div class="rounded-lg border bg-card">
+      <div class="self-start rounded-lg border bg-card">
         <div class="flex items-center justify-between border-b px-4 py-3">
           <h2 class="text-sm font-semibold text-foreground">当前阻塞</h2>
-          <NvBadge class="rounded-sm" variant="neutral">{{ activeBlocks.length }}</NvBadge>
+          <NvBadge class="rounded-sm" variant="neutral">{{ visibleBlocks.length }}</NvBadge>
         </div>
         <div class="grid gap-3 p-4">
           <div
-            v-for="block in activeBlocks"
+            v-for="block in visibleBlockCards"
             :key="`${block.deviceAssetId}-${block.reasonCode}-${block.startUtc}`"
             class="grid gap-2 rounded-lg border p-3"
           >
@@ -313,13 +350,29 @@ function formatError(error: unknown) {
             </NvButton>
           </div>
           <div
-            v-if="!activeBlocks.length"
+            v-if="!visibleBlocks.length"
             class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
           >
             当前没有设备阻塞窗口。
           </div>
+          <NvButton
+            v-if="visibleBlocks.length > BLOCK_PREVIEW_COUNT"
+            size="sm"
+            type="button"
+            variant="ghost"
+            class="justify-self-center"
+            @click="blocksExpanded = !blocksExpanded"
+          >
+            {{ blocksExpanded ? '收起' : `展开全部 (${visibleBlocks.length})` }}
+          </NvButton>
         </div>
       </div>
     </div>
+
+    <DeviceQuickViewSheet
+      v-if="quickViewDeviceId"
+      v-model:open="quickViewOpen"
+      :device-asset-id="quickViewDeviceId"
+    />
   </BusinessLayout>
 </template>

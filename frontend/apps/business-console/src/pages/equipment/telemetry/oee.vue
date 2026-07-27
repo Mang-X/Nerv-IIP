@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { EquipmentRuntimeAvailabilityWindow } from '@nerv-iip/api-client'
 import type { DateRange, NvDataTableColumn, NvMetricFacet, NvMetricStripCell } from '@nerv-iip/ui'
+import EquipmentScopeOverviewCard from '@/components/equipment/EquipmentScopeOverviewCard.vue'
 import { describeEquipmentReason } from '@/composables/useBusinessEquipment'
+import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
 import {
   describeTelemetryOeeDegradation,
   describeTelemetryOeeLimitations,
@@ -13,9 +15,9 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvBadge,
   NvButton,
+  NvCascadePicker,
   NvDataTable,
   NvDateRangePicker,
-  NvInput,
   NvMetricCard,
   NvMetricStrip,
   NvPageHeader,
@@ -27,7 +29,7 @@ import {
   NvTooltipTrigger,
 } from '@nerv-iip/ui'
 import { InfoIcon, LineChartIcon, RefreshCwIcon, Settings2Icon } from '@lucide/vue'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 definePage({
@@ -61,6 +63,18 @@ const {
   windowEndUtc: routeQuery('windowEndUtc') || defaultWindow.endUtc,
   windowStartUtc: routeQuery('windowStartUtc') || defaultWindow.startUtc,
 })
+
+// 车间 → 产线 → 设备 级联范围：OEE 后端按单台设备计算，未下钻时展示范围设备总览
+// 引导下钻，不为每台设备并发打接口伪造「全厂 OEE」。深链 query 初始化下钻设备。
+const { scope, levels, devicesInScope, scopeLabel, scopePending } = useEquipmentScopeSelection({
+  device: routeQuery('deviceAssetId'),
+})
+watch(
+  () => scope.value.device,
+  (device) => {
+    if (filters.deviceAssetId !== device) filters.deviceAssetId = device
+  },
+)
 
 const errorMessage = computed(() => formatError(oeeError.value || runtimeAvailabilityError.value))
 // 口径说明收进页头的问号 tooltip；它解释指标怎么算，不是每次都要读的正文。
@@ -193,7 +207,7 @@ function formatError(error: unknown) {
     <NvPageHeader
       title="OEE 与可用性"
       :breadcrumbs="[{ label: '设备监控（IoT）' }]"
-      :count="filters.deviceAssetId || '选择设备'"
+      :count="hasDeviceScope ? filters.deviceAssetId : scopeLabel"
     >
       <template #actions>
         <NvTooltipProvider>
@@ -244,11 +258,11 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
-        <NvInput
-          v-model="filters.deviceAssetId"
-          class="h-9 w-56"
-          placeholder="设备编号"
-          aria-label="设备编号"
+        <NvCascadePicker
+          v-model="scope"
+          :levels="levels"
+          class="min-w-0 flex-1"
+          :aria-busy="scopePending"
         />
         <NvDateRangePicker v-model="windowRange" placeholder="选择统计窗口" />
       </template>
@@ -256,12 +270,15 @@ function formatError(error: unknown) {
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <div
+    <EquipmentScopeOverviewCard
       v-if="!hasDeviceScope"
-      class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
-    >
-      请先在上方填入设备编号，或从设备运行看板选择一台设备，再查看它的 OEE 与可用性。
-    </div>
+      :devices="devicesInScope"
+      :scope-label="scopeLabel"
+      :pending="scopePending"
+      action-label="查看 OEE"
+      description="OEE 按单台设备的运行状态与报工事实计算：选中一台设备即可查看它的 OEE 各率与可用性窗口。"
+      @select="(code) => (scope = { ...scope, device: code })"
+    />
 
     <template v-else>
       <NvSectionCards :columns="3">
