@@ -65,6 +65,7 @@ builder.Services.AddScoped<LeaderDemoSeedService>();
 builder.Services.AddScoped<LeaderDemoScaleSeedService>();
 builder.Services.AddScoped<IWorldHistoryProductionVersionResolver, WorldHistoryProductionVersionResolver>();
 builder.Services.AddScoped<WorldHistorySeedService>();
+builder.Services.AddScoped<WorldHistoryFloorEventsSeedService>();
 // Register the FluentValidation command validators (CancelWorkOrder/ReturnLineSideMaterial/... — 11 in total)
 // so the MediatR AddKnownExceptionValidationBehavior below can execute them. Without both lines the validators
 // are dead code and command-level validation never runs — matching every other business service.
@@ -174,6 +175,23 @@ if (leaderDemoSeedEnabled)
         {
             app.Logger.LogInformation("World-history sample: {Chain}", line);
         }
+
+        // L1「异常与协同」块：停机事件 / 班次交接 / 车间不良。必须在工单链之后跑——
+        // 不良只挂在已落库的真实工单与工序任务上。
+        var floorEvents = await scope.ServiceProvider.GetRequiredService<WorldHistoryFloorEventsSeedService>().SeedAsync(
+            leaderDemoOrganizationId,
+            leaderDemoEnvironmentId,
+            WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+            WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+        app.Logger.LogInformation(
+            "World-history MES floor-event seed completed: {Downtime} downtime events, {Handovers} shift handovers, " +
+            "{Defects} defect records; validator checked {CheckedDowntime}/{CheckedHandovers}/{CheckedDefects}.",
+            floorEvents.DowntimeEventsWritten,
+            floorEvents.ShiftHandoversWritten,
+            floorEvents.DefectRecordsWritten,
+            floorEvents.Validation.DowntimeEventsChecked,
+            floorEvents.Validation.ShiftHandoversChecked,
+            floorEvents.Validation.DefectRecordsChecked);
     }
 }
 
