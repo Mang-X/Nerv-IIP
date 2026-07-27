@@ -49,6 +49,9 @@ public sealed class WorldHistoryEngineeringSeedServiceTests(ITestOutputHelper ou
         Assert.InRange(changes.Count, 40, 80);
         Assert.InRange(documents.Count, 80, 150);
 
+        // 四档状态都必须在场——独立抽签会在几十张的样本上抽空「已取消」，配额分层不会。
+        Assert.Equal(4, changes.Select(x => x.State).Distinct().Count());
+
         // 状态分布落在设定集目标的容差内。
         AssertStateShare(changes, WorldHistoryEngineeringChangeState.Published, WorldHistoryEngineeringSpec.PublishedShare);
         AssertStateShare(changes, WorldHistoryEngineeringChangeState.Scheduled, WorldHistoryEngineeringSpec.ScheduledShare);

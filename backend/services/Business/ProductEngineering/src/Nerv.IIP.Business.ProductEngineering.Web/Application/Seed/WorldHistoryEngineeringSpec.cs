@@ -222,15 +222,7 @@ public static class WorldHistoryEngineeringSpec
         var random = new WorldHistoryRandom(changeNumber);
         var product = PickProduct(random);
         var reasonCategory = random.PickWeighted(ReasonCategories, ReasonWeights);
-        var state = random.PickWeighted<WorldHistoryEngineeringChangeState>(
-            [
-                WorldHistoryEngineeringChangeState.Published,
-                WorldHistoryEngineeringChangeState.Scheduled,
-                WorldHistoryEngineeringChangeState.Draft,
-                WorldHistoryEngineeringChangeState.Cancelled,
-            ],
-            [60, 20, 15, 5]);
-
+        var state = StateFor(index);
         var affectedVersions = BuildAffectedVersions(random, product);
         var openedAtUtc = SlotMoment($"{changeNumber}:opened", openedOn);
 
@@ -279,6 +271,55 @@ public static class WorldHistoryEngineeringSpec
             OpenedAtUtc: openedAtUtc,
             DecidedAtUtc: decidedAtUtc,
             AffectedVersions: affectedVersions);
+    }
+
+    /// <summary>
+    /// 状态按 **20 张一个配额块** 分层，而不是逐张独立抽签：
+    /// 每块固定 12 已发布 / 4 已排期 / 3 草稿 / 1 已取消（正好 60/20/15/5），块内顺序按块号确定性洗牌。
+    /// 独立抽签在几十张的样本量上很容易抽出「一张已取消都没有」的历史（0.95^57 ≈ 5%），
+    /// 演示页面上就少掉一整档状态；配额分层保证任何纵深下四档都在场，且前缀比例稳定。
+    /// </summary>
+    public static WorldHistoryEngineeringChangeState StateFor(int index)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(index);
+        var block = (index - 1) / StateQuotaBlockSize;
+        var position = (index - 1) % StateQuotaBlockSize;
+        return BuildStateBlock(block)[position];
+    }
+
+    /// <summary>配额块大小：20 = 12 + 4 + 3 + 1，与设定集的 60/20/15/5 精确对齐。</summary>
+    public const int StateQuotaBlockSize = 20;
+
+    private static WorldHistoryEngineeringChangeState[] BuildStateBlock(int block)
+    {
+        var slots = new WorldHistoryEngineeringChangeState[StateQuotaBlockSize];
+        var cursor = 0;
+        Fill(slots, ref cursor, WorldHistoryEngineeringChangeState.Published, 12);
+        Fill(slots, ref cursor, WorldHistoryEngineeringChangeState.Scheduled, 4);
+        Fill(slots, ref cursor, WorldHistoryEngineeringChangeState.Draft, 3);
+        Fill(slots, ref cursor, WorldHistoryEngineeringChangeState.Cancelled, 1);
+
+        // Fisher–Yates，随机源只由块号决定——同一块在任何 asOfDate / scale 下顺序相同。
+        var random = new WorldHistoryRandom($"eco:state-block:{block:D4}");
+        for (var i = slots.Length - 1; i > 0; i--)
+        {
+            var j = random.NextInt(0, i + 1);
+            (slots[i], slots[j]) = (slots[j], slots[i]);
+        }
+
+        return slots;
+    }
+
+    private static void Fill(
+        WorldHistoryEngineeringChangeState[] slots,
+        ref int cursor,
+        WorldHistoryEngineeringChangeState state,
+        int count)
+    {
+        for (var offset = 0; offset < count; offset++)
+        {
+            slots[cursor++] = state;
+        }
     }
 
     private static DateOnly ClampToWindow(DateOnly candidate, DateOnly openedOn, DateOnly asOfDate) =>
