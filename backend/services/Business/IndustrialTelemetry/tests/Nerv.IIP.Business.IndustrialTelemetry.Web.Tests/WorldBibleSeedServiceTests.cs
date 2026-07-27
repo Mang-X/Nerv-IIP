@@ -81,6 +81,40 @@ public sealed class WorldBibleSeedServiceTests
         Assert.Equal("sample-2s", cncTag.SamplingPolicy);
     }
 
+    /// <summary>
+    /// 演示走查缺口：设备控制通道绑定页无数据 → 命令下发无路由。46 台设备按采集连接器
+    /// 同一分组绑到 connector-host-001，InstanceKey 即 CONN-*（#1149 模拟连接器按 ConnectorId 路由）。
+    /// </summary>
+    [Fact]
+    public async Task Seed_binds_all_devices_to_control_channels_idempotently_and_never_overwrites()
+    {
+        await using var db = CreateDbContext();
+        var seed = new WorldBibleSeedService(db);
+
+        // 先模拟租户已手工改过一台设备的绑定：种子绝不覆盖。
+        db.DeviceControlChannelBindings.Add(
+            Domain.AggregatesModel.DeviceControlChannelBindingAggregate.DeviceControlChannelBinding.Configure(
+                "org-001", "env-dev", "DEV-CNC-01", "connector-host-002", "CONN-CUSTOM-9"));
+        await db.SaveChangesAsync();
+
+        await seed.SeedAsync("org-001", "env-dev");
+        await seed.SeedAsync("org-001", "env-dev");
+
+        var bindings = await db.DeviceControlChannelBindings.ToArrayAsync();
+        Assert.Equal(46, bindings.Length);
+        Assert.All(bindings, binding => Assert.True(binding.IsActive));
+
+        var custom = Assert.Single(bindings, x => x.DeviceAssetId == "DEV-CNC-01");
+        Assert.Equal("connector-host-002", custom.ConnectorHostId);
+        Assert.Equal("CONN-CUSTOM-9", custom.InstanceKey);
+
+        Assert.All(bindings.Where(x => x.DeviceAssetId != "DEV-CNC-01"), binding =>
+            Assert.Equal(WorldBibleSpec.ControlConnectorHostId, binding.ConnectorHostId));
+        Assert.Equal(WorldBibleSpec.OpcUaConnectorId, bindings.Single(x => x.DeviceAssetId == "DEV-GRD-01").InstanceKey);
+        Assert.Equal(WorldBibleSpec.MqttConnectorId, bindings.Single(x => x.DeviceAssetId == "DEV-ASM-05").InstanceKey);
+        Assert.Equal(WorldBibleSpec.ModbusConnectorId, bindings.Single(x => x.DeviceAssetId == "DEV-AUX-08").InstanceKey);
+    }
+
     [Fact]
     public async Task Seed_leaves_the_frozen_demo_telemetry_facts_untouched()
     {
