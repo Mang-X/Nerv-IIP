@@ -69,6 +69,8 @@ function mountList() {
   return mount(WorkOrdersListPage, {
     global: {
       stubs: {
+        // 行内工单抽屉自带一整套 MES 查询，本用例只看紧急度徽章，整体桩掉。
+        WorkOrderDetailSheet: true,
         BusinessLayout: { template: '<main><slot /></main>' },
         NvPageHeader: { template: '<header><slot name="actions" /></header>' },
         NvToolbar: { template: '<div><slot name="filters" /><slot name="actions" /></div>' },

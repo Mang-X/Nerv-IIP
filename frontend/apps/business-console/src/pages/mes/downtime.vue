@@ -3,6 +3,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesDowntimeEvents } from '@/composables/useBusinessMes'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { mesDowntimeStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -38,7 +39,10 @@ const {
   filters,
   refreshDowntimeEvents,
 } = useMesDowntimeEvents()
-const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+const { keyword } = useMesKeywordFilter(filters)
+const { page, pageSize } = usePagedList(filters, {
+  resetOn: [() => filters.status, () => filters.keyword],
+})
 const statusFilter = shallowRef('all')
 
 const openCount = computed(
@@ -147,6 +151,12 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
+        <NvInput
+          v-model="keyword"
+          class="h-9 w-56"
+          placeholder="工单 / 工序 / 设备"
+          aria-label="搜索停机事件"
+        />
         <NvSelect v-model="statusFilter">
           <NvSelectTrigger class="h-9 w-32" aria-label="停机状态"
             ><NvSelectValue

@@ -19,6 +19,7 @@ import {
   type UrgencyDisplayMode,
 } from '@/composables/useUrgencyDisplayMode'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
+import WorkOrderDetailSheet from '@/components/mes/WorkOrderDetailSheet.vue'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
@@ -55,13 +56,11 @@ import {
   CalendarCheckIcon,
   CalendarCogIcon,
   ClipboardCheckIcon,
+  ExternalLinkIcon,
   EyeIcon,
   FactoryIcon,
   LockIcon,
-  PackageCheckIcon,
   RefreshCwIcon,
-  RouteIcon,
-  WrenchIcon,
 } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -103,6 +102,7 @@ const { resources: workCenterResources } = useBusinessMasterDataResources('work-
 
 const rushSheetOpen = shallowRef(false)
 const reportSheetOpen = shallowRef(false)
+const sheetWorkOrderId = ref<string | null>(null)
 
 // --- Filters (live) ---
 const keyword = ref('')
@@ -270,11 +270,29 @@ function openOrderDetail(order: Row) {
   if (!order.workOrderId) return
   void router.push({ path: `/mes/work-orders/${encodeURIComponent(order.workOrderId)}` })
 }
-function openRelatedPage(path: string, order: Row) {
-  void router.push({
-    path,
-    query: { workOrderId: order.workOrderId ?? undefined, skuId: order.skuId ?? undefined },
-  })
+// 行内抽屉：工单详情 / 工序 / 齐套 / 派工 / 状态流转一次看全，不跳页。
+function openOrderSheet(order: Row) {
+  if (!order.workOrderId) return
+  sheetWorkOrderId.value = order.workOrderId
+}
+// 抽屉里点「报工」把工序 id 抛回来，由本页共用的报工弹窗承接（抽屉不自己再开一个）。
+function openReportFromSheet(operationTaskId: string) {
+  const order = workOrders.value.find((item) => item.workOrderId === sheetWorkOrderId.value)
+  const task = (order?.operationTasks ?? []).find((t) => t.operationTaskId === operationTaskId)
+  if (!order?.workOrderId || !task?.operationTaskId) return
+  reportContext.value = {
+    workOrderId: order.workOrderId,
+    workOrderNo: order.workOrderNo,
+    operationTaskId: task.operationTaskId,
+    operationTaskNo: task.operationTaskNo,
+    operationSequence: task.operationSequence,
+    workCenterLabel:
+      task.workCenterName ?? resolveWorkCenter(task.workCenterCode ?? task.workCenterId),
+    skuLabel: resolveSku(order.skuCode ?? order.skuId),
+    plannedQuantity: order.quantity,
+  }
+  sheetWorkOrderId.value = null
+  reportSheetOpen.value = true
 }
 
 async function submitRushWorkOrder() {
@@ -533,26 +551,19 @@ function isNonEmpty(value: string) {
       </template>
       <template #cell-actions="{ row }">
         <NvRowActions :label="`工单操作 ${row.workOrderId ?? ''}`">
-          <NvDropdownMenuItem @click="openOrderDetail(row)">
+          <!-- 详情 / 工序 / 齐套 / 派工 / 状态流转全部收进行内抽屉，不再逐个跳页丢上下文。 -->
+          <NvDropdownMenuItem :disabled="!row.workOrderId" @click="openOrderSheet(row)">
             <EyeIcon aria-hidden="true" />
-            查看详情
+            工单详情与工序
           </NvDropdownMenuItem>
-          <NvDropdownMenuItem @click="openRelatedPage('/mes/materials', row)">
-            <PackageCheckIcon aria-hidden="true" />
-            齐套检查
-          </NvDropdownMenuItem>
-          <NvDropdownMenuItem @click="openRelatedPage('/mes/operation-tasks', row)">
-            <RouteIcon aria-hidden="true" />
-            查看工序
-          </NvDropdownMenuItem>
-          <NvDropdownMenuSeparator />
           <NvDropdownMenuItem :disabled="!canReportOrder(row)" @click="openReport(row)">
             <ClipboardCheckIcon aria-hidden="true" />
             {{ canReportOrder(row) ? '生产报工' : '暂无工序，不能报工' }}
           </NvDropdownMenuItem>
-          <NvDropdownMenuItem @click="openRelatedPage('/mes/capacity', row)">
-            <WrenchIcon aria-hidden="true" />
-            异常与产能
+          <NvDropdownMenuSeparator />
+          <NvDropdownMenuItem :disabled="!row.workOrderId" @click="openOrderDetail(row)">
+            <ExternalLinkIcon aria-hidden="true" />
+            打开完整详情页
           </NvDropdownMenuItem>
         </NvRowActions>
       </template>
@@ -682,5 +693,7 @@ function isNonEmpty(value: string) {
       :context="reportContext"
       @reported="refreshWorkOrders"
     />
+
+    <WorkOrderDetailSheet v-model:work-order-id="sheetWorkOrderId" @report="openReportFromSheet" />
   </BusinessLayout>
 </template>

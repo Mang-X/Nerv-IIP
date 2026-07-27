@@ -18,7 +18,6 @@ import {
   PackageCheckIcon,
   RefreshCwIcon,
   ShieldAlertIcon,
-  WrenchIcon,
 } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -35,8 +34,11 @@ const { blockers, counts, overviewError, overviewPending, pendingWork, refreshOv
   useMesOverview()
 
 const errorMessage = computed(() => formatError(overviewError.value))
-const workOrderCount = computed(() => countValue('WorkOrders'))
-const operationTaskCount = computed(() => countValue('OperationTasks'))
+// facade 回的 count key 是 kebab-case（work-orders / operation-tasks）。
+// 曾按 PascalCase 取值，于是两个总量恒为 0、整个驾驶舱看着像没数据——
+// 这里按「去分隔符 + 小写」归一化匹配，两种写法都认。
+const workOrderCount = computed(() => countValue('work-orders'))
+const operationTaskCount = computed(() => countValue('operation-tasks'))
 const blockerCount = computed(() =>
   blockers.value.reduce((total, item) => total + (item.count ?? 0), 0),
 )
@@ -125,6 +127,31 @@ const roleLanes = computed(() => [
   },
 ])
 
+// 角色码 → 一线称呼；facade 未来加新角色码时按原样显示，不吞掉。
+const PENDING_ROLE_LABELS: Record<string, string> = {
+  dispatcher: '调度员',
+  planner: '计划员',
+  supervisor: '班组长',
+  operator: '操作员',
+  material: '物料员',
+  quality: '质检员',
+  maintenance: '设备员',
+}
+// facade 的 routeHint 是相对路径提示；只接受站内 /mes 路径，其余回落到工序执行。
+function resolvePendingRoute(routeHint?: string | null) {
+  const hint = (routeHint ?? '').trim()
+  return hint.startsWith('/mes') ? hint : '/mes/operation-tasks'
+}
+const pendingWorkItems = computed(() =>
+  pendingWork.value.map((item, index) => ({
+    key: `${item.roleCode ?? 'role'}-${item.workType ?? 'work'}-${index}`,
+    role: PENDING_ROLE_LABELS[(item.roleCode ?? '').toLowerCase()] ?? item.roleCode ?? '未指定角色',
+    workType: item.workType ?? '待办',
+    count: item.count ?? 0,
+    route: resolvePendingRoute(item.routeHint),
+  })),
+)
+
 type BlockerRow = (typeof blockers)['value'][number]
 const blockerColumns: NvDataTableColumn<BlockerRow>[] = [
   { key: 'areaCode', header: '区域', width: 'w-28', accessor: (r) => r.areaCode ?? '未知' },
@@ -133,8 +160,12 @@ const blockerColumns: NvDataTableColumn<BlockerRow>[] = [
   { key: 'count', header: '数量', align: 'end', width: 'w-20' },
 ]
 
+function normalizeCountKey(key?: string | null) {
+  return (key ?? '').replace(/[-_\s]/g, '').toLowerCase()
+}
 function countValue(key: string) {
-  return counts.value.find((item) => item.key === key)?.count ?? 0
+  const wanted = normalizeCountKey(key)
+  return counts.value.find((item) => normalizeCountKey(item.key) === wanted)?.count ?? 0
 }
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
@@ -194,8 +225,10 @@ function formatError(error: unknown) {
 
     <NvMetricStrip :cells="overviewCells" />
 
-    <div class="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-      <div class="grid gap-2">
+    <!-- 两栏各自按内容定高：默认 stretch 会把矮的一栏拉到高的一栏那么高，
+         留出整片空边框（阻塞表为空时尤其明显）。 -->
+    <div class="grid items-start gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+      <div class="grid min-w-0 content-start gap-2">
         <div class="flex items-center justify-between">
           <span class="text-sm font-semibold text-foreground">现场阻塞</span>
           <RouterLink
@@ -211,7 +244,8 @@ function formatError(error: unknown) {
           :loading="overviewPending"
           :searchable="false"
           :column-settings="false"
-          empty-message="当前没有生产阻塞。可进入工单与派工继续安排今日任务。"
+          max-body-height="20rem"
+          empty-message="暂无阻塞记录。物料、质量、设备或产能出现卡点时会汇总到这里。"
         >
           <template #cell-count="{ row }"
             ><span class="tabular-nums">{{ row.count ?? 0 }}</span></template
@@ -247,28 +281,31 @@ function formatError(error: unknown) {
         </NvCard>
 
         <NvCard>
-          <NvCardContent class="grid gap-3">
-            <div class="flex items-center gap-2">
+          <NvCardContent class="p-0">
+            <div class="flex items-center gap-2 border-b px-4 py-3">
               <PackageCheckIcon class="size-4 text-primary" aria-hidden="true" />
-              <h2 class="text-sm font-semibold text-foreground">下一步建议</h2>
+              <h2 class="text-sm font-semibold text-foreground">待办工作</h2>
             </div>
-            <div class="flex flex-wrap gap-2">
-              <NvButton size="sm" type="button" as-child>
-                <RouterLink :to="{ path: '/mes/work-orders' }"
-                  ><FactoryIcon aria-hidden="true" />工单与派工</RouterLink
-                >
-              </NvButton>
-              <NvButton size="sm" type="button" variant="outline" as-child>
-                <RouterLink :to="{ path: '/mes/operation-tasks' }"
-                  ><ClipboardCheckIcon aria-hidden="true" />工序执行</RouterLink
-                >
-              </NvButton>
-              <NvButton size="sm" type="button" variant="outline" as-child>
-                <RouterLink :to="{ path: '/mes/capacity' }"
-                  ><WrenchIcon aria-hidden="true" />异常与产能</RouterLink
-                >
-              </NvButton>
+            <div v-if="pendingWorkItems.length" class="divide-y">
+              <RouterLink
+                v-for="item in pendingWorkItems"
+                :key="item.key"
+                class="flex items-center justify-between gap-3 p-4 transition-colors hover:bg-muted/50"
+                :to="{ path: item.route }"
+              >
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-foreground">{{ item.workType }}</p>
+                  <p class="mt-1 truncate text-sm text-muted-foreground">{{ item.role }}</p>
+                </div>
+                <div class="flex items-center gap-3">
+                  <span class="text-lg font-semibold tabular-nums">{{ item.count }}</span>
+                  <ArrowRightIcon class="size-4 text-muted-foreground" aria-hidden="true" />
+                </div>
+              </RouterLink>
             </div>
+            <p v-else class="px-4 py-6 text-sm text-muted-foreground">
+              暂无按角色汇总的待办。各角色可从上方工作台直接进入自己的队列。
+            </p>
           </NvCardContent>
         </NvCard>
       </div>

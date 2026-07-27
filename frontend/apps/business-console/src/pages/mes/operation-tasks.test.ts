@@ -15,7 +15,16 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
   useMesDisplayNames: () => ({ resolveWorkCenter: (v?: string | null) => v ?? '无' }),
 }))
 vi.mock('@/composables/useBusinessMasterData', () => ({
-  useBusinessMasterDataResources: () => ({ resources: computed(() => []) }),
+  useBusinessMasterDataResources: () => ({
+    resources: computed(() => []),
+    resourcesPending: shallowRef(false),
+  }),
+  useBusinessSkus: () => ({ skus: computed(() => []) }),
+  useBusinessWorkers: () => ({
+    workers: computed(() => []),
+    workersPending: shallowRef(false),
+    filters: reactive({}),
+  }),
 }))
 vi.mock('@/composables/useBusinessMes', async () => {
   state.filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev' })
@@ -34,6 +43,14 @@ vi.mock('@/composables/useBusinessMes', async () => {
       operationTasksPending: shallowRef(false),
       operationTasksTotal: computed(() => 0),
       refreshOperationTasks: vi.fn(),
+      startOperationTask: vi.fn(),
+      pauseOperationTask: vi.fn(),
+      resumeOperationTask: vi.fn(),
+      completeOperationTask: vi.fn(),
+    }),
+    useMesDispatchTasks: () => ({
+      assignDispatchTask: vi.fn(),
+      assignDispatchTaskPending: shallowRef(false),
     }),
     useMesCurrentOperationSops: () => ({
       filters: reactive({}),

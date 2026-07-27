@@ -195,6 +195,8 @@ export interface MesListFilters {
   workCenterId?: string
   shiftId?: string
   deviceAssetId?: string
+  /** 受派工人（派工看板按人筛选负荷用；facade 侧仅派工列表支持）。 */
+  assignedUserId?: string
   source?: string
   readinessStatus?: string
   skip: number
@@ -1097,7 +1099,11 @@ export function useMesDispatchTasks() {
   const dispatchQuery = useQuery(() =>
     withBusinessContextEnabled(
       listBusinessConsoleMesDispatchTasksQueryOptions({
-        query: toListQuery(filters),
+        // 派工列表是唯一支持按受派工人过滤的 MES 列表，所以不走通用 toListQuery。
+        query: {
+          ...toListQuery(filters),
+          ...optionalQuery('assignedUserId', filters.assignedUserId),
+        },
       }),
       filters,
     ),
