@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleTelemetryHistoryItem } from '@nerv-iip/api-client'
 import type { DateRange, NvDataTableColumn } from '@nerv-iip/ui'
+import EquipmentScopeOverviewCard from '@/components/equipment/EquipmentScopeOverviewCard.vue'
 import TelemetryEventTimeline from '@/components/equipment/TelemetryEventTimeline.vue'
 import TelemetryTrendPanel from '@/components/equipment/TelemetryTrendPanel.vue'
 import {
@@ -8,10 +9,12 @@ import {
   projectTelemetryHistory,
 } from '@/components/equipment/telemetryHistoryPresentation'
 import { useBusinessTelemetryHistory } from '@/composables/useBusinessTelemetry'
+import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { friendlyErrorMessage } from '@/utils/notify'
 import {
   NvButton,
+  NvCascadePicker,
   NvDataTable,
   NvDateRangePicker,
   NvField,
@@ -45,6 +48,26 @@ const { filters, historyError, historyPending, refreshHistory, visibleHistoryIte
   })
 const defaultWindowStartUtc = filters.windowStartUtc
 const defaultWindowEndUtc = filters.windowEndUtc
+
+// 车间 → 产线 → 设备 级联范围：设备层是查询范围的唯一事实源；
+// 深链 query 里带了设备号时以它初始化下钻。
+const { scope, levels, devicesInScope, scopeLabel, scopePending } = useEquipmentScopeSelection({
+  device: routeQuery('deviceAssetId'),
+})
+watch(
+  () => scope.value.device,
+  (device) => {
+    if (filters.deviceAssetId !== device) filters.deviceAssetId = device
+  },
+)
+// 浏览器历史回退等路由驱动的设备变化，反向同步回级联选择。
+watch(
+  () => filters.deviceAssetId,
+  (deviceAssetId) => {
+    const normalized = deviceAssetId.trim()
+    if (scope.value.device !== normalized) scope.value = { ...scope.value, device: normalized }
+  },
+)
 
 const errorMessage = computed(() =>
   historyError.value
@@ -170,7 +193,7 @@ function fromDateInput(value: string, dayOffset: number) {
     <NvPageHeader
       title="历史趋势"
       :breadcrumbs="[{ label: '设备监控（IoT）' }]"
-      :count="`${visibleHistoryItems.length} 条记录`"
+      :count="hasDeviceScope ? `${visibleHistoryItems.length} 条记录` : scopeLabel"
     >
       <template #actions>
         <NvButton size="sm" type="button" variant="outline" as-child>
@@ -206,44 +229,41 @@ function fromDateInput(value: string, dayOffset: number) {
       </template>
     </NvPageHeader>
 
-    <NvFieldGroup
-      class="grid gap-3 rounded-lg border bg-card p-4 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_minmax(200px,1fr)_minmax(240px,1fr)]"
-    >
-      <NvField>
-        <NvFieldLabel for="history-device">设备</NvFieldLabel>
-        <NvInput
-          id="history-device"
-          v-model="filters.deviceAssetId"
-          placeholder="设备编号"
-          aria-label="设备编号"
-        />
-      </NvField>
-      <NvField>
-        <NvFieldLabel for="history-tag">采集标签</NvFieldLabel>
-        <NvInput
-          id="history-tag"
-          v-model="filters.tagKey"
-          placeholder="采集标签"
-          aria-label="采集标签"
-        />
-      </NvField>
-      <NvField>
-        <NvFieldLabel for="history-window">时间范围</NvFieldLabel>
-        <NvDateRangePicker
-          id="history-window"
-          v-model="windowRange"
-          placeholder="选择时间范围"
-          class="w-full"
-        />
-      </NvField>
-    </NvFieldGroup>
-
-    <div
-      v-if="!hasDeviceScope"
-      class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
-    >
-      请选择设备并确认时间范围后查询历史遥测。
+    <div class="grid gap-3 rounded-lg border bg-card p-4">
+      <NvCascadePicker v-model="scope" :levels="levels" :aria-busy="scopePending" />
+      <NvFieldGroup
+        class="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(200px,1fr)_minmax(240px,1fr)]"
+      >
+        <NvField>
+          <NvFieldLabel for="history-tag">采集标签</NvFieldLabel>
+          <NvInput
+            id="history-tag"
+            v-model="filters.tagKey"
+            placeholder="采集标签"
+            aria-label="采集标签"
+          />
+        </NvField>
+        <NvField>
+          <NvFieldLabel for="history-window">时间范围</NvFieldLabel>
+          <NvDateRangePicker
+            id="history-window"
+            v-model="windowRange"
+            placeholder="选择时间范围"
+            class="w-full"
+          />
+        </NvField>
+      </NvFieldGroup>
     </div>
+
+    <EquipmentScopeOverviewCard
+      v-if="!hasDeviceScope"
+      :devices="devicesInScope"
+      :scope-label="scopeLabel"
+      :pending="scopePending"
+      action-label="查看趋势"
+      description="选中一台设备即可查看它在当前时间范围内的历史遥测趋势与原始明细。"
+      @select="(code) => (scope = { ...scope, device: code })"
+    />
     <div
       v-else-if="errorMessage"
       class="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4"
