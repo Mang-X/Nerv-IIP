@@ -4,7 +4,7 @@ import type {
   BusinessConsoleInspectionCharacteristicResult,
   BusinessConsoleQualityItem,
 } from '@nerv-iip/api-client'
-import type { ComboboxSuggestion, NvDataTableColumn } from '@nerv-iip/ui'
+import type { ComboboxSuggestion, NvDataTableColumn, SearchSelectOption } from '@nerv-iip/ui'
 import { qualitySourceTypeLabel } from '@nerv-iip/business-core'
 import {
   useQualityInspectionPlanCharacteristics,
@@ -27,6 +27,7 @@ import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDe
 import {
   NvButton,
   NvCombobox,
+  NvSearchSelect,
   NvDataTable,
   NvDialog,
   NvDialogContent,
@@ -140,13 +141,22 @@ const {
   environmentId: filters.environmentId,
   inspectionPlanId: characteristicsPlanId.value,
 }))
-// 特性编码建议 = 该检验方案的特性清单（label 显名称、hint 显编码）；仍允许录入计划外特性。
+// 特性建议 = 该检验方案的特性清单（label 显中文名称、hint 显编码）；仍允许录入计划外特性。
 const characteristicSuggestions = computed<ComboboxSuggestion[]>(() =>
   planCharacteristics.value.flatMap((characteristic) => {
     const code = characteristic.characteristicCode?.trim()
     if (!code) return []
     return [{ value: code, label: characteristic.name?.trim() || code, hint: code }]
   }),
+)
+// 同一份清单给「只能选」的选择器用：它按 value 反查 label，选中后框里显示的是中文特性名，
+// 而不是 `dimension` / `damping-force` 这种提交用的英文码值。
+const characteristicOptions = computed<SearchSelectOption[]>(() =>
+  characteristicSuggestions.value.map((item) => ({
+    value: item.value,
+    label: item.label ?? item.value,
+    hint: item.hint,
+  })),
 )
 
 // 来源检验记录定位：hold 时间线「来源检验记录」互链带 ?inspectionRecordId= 进来，打开只读记录详情。
@@ -757,17 +767,31 @@ function isPresent(value: string | undefined | null): value is string {
                 class="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_140px_1fr_110px_auto]"
               >
                 <NvField>
-                  <NvFieldLabel :for="`characteristic-code-${index}`">特性编码</NvFieldLabel>
+                  <NvFieldLabel :for="`characteristic-code-${index}`">检验特性</NvFieldLabel>
+                  <!-- 方案有特性清单时用「只能选」的选择器：框里显中文特性名，英文编码只作副信息；
+                       清单为空（计划外特性）才退回自由录入的编码输入框。 -->
+                  <NvSearchSelect
+                    v-if="characteristicOptions.length"
+                    :id="`characteristic-code-${index}`"
+                    :model-value="line.characteristicCode"
+                    :options="characteristicOptions"
+                    placeholder="选择检验特性"
+                    search-placeholder="搜索特性名称 / 编码…"
+                    empty-text="特性清单中无匹配项"
+                    :aria-label="`第 ${index + 1} 个检验特性`"
+                    @update:model-value="(value) => onCharacteristicCodeChange(line, value)"
+                  />
                   <NvCombobox
+                    v-else
                     :id="`characteristic-code-${index}`"
                     :model-value="line.characteristicCode"
                     :suggestions="characteristicSuggestions"
-                    placeholder="选择或录入特性编码"
+                    placeholder="录入特性编码"
                     empty-text="特性清单中无匹配项"
                     @update:model-value="(value) => onCharacteristicCodeChange(line, value)"
                   />
-                  <NvFieldDescription v-if="line.characteristicName">
-                    {{ line.characteristicName }}
+                  <NvFieldDescription v-if="line.characteristicCode">
+                    编码：{{ line.characteristicCode }}
                   </NvFieldDescription>
                 </NvField>
                 <NvField>
