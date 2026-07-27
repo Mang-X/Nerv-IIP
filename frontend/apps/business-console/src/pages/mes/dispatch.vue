@@ -2,7 +2,10 @@
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import type { DispatchAssignTarget } from '@/components/mes/DispatchAssignDialog.vue'
 import DispatchAssignDialog from '@/components/mes/DispatchAssignDialog.vue'
-import { useBusinessMasterDataResources, useBusinessWorkers } from '@/composables/useBusinessMasterData'
+import {
+  useBusinessMasterDataResources,
+  useBusinessWorkers,
+} from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesDispatchTasks } from '@/composables/useBusinessMes'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
@@ -121,7 +124,9 @@ const workerFilterOptions = computed(() => [
     .filter((w) => w.userId)
     .map((w) => ({
       value: w.userId as string,
-      label: w.employeeNo ? `${w.displayName ?? w.employeeNo} · ${w.employeeNo}` : (w.displayName ?? ''),
+      label: w.employeeNo
+        ? `${w.displayName ?? w.employeeNo} · ${w.employeeNo}`
+        : (w.displayName ?? ''),
     })),
 ])
 
@@ -135,7 +140,9 @@ const pendingCount = computed(
 const assignedCount = computed(
   () => dispatchTasks.value.filter((r) => resolveDispatchState(r).key === 'assigned').length,
 )
-const settledCount = computed(() => dispatchTasks.value.filter((r) => isSettledTask(r.status)).length)
+const settledCount = computed(
+  () => dispatchTasks.value.filter((r) => isSettledTask(r.status)).length,
+)
 const dispatchSegments = computed(() =>
   pagedBreakdownSegments(dispatchTasksTotal.value, [
     { key: 'pending', label: '待派工', value: pendingCount.value, tone: 'warning' },
@@ -180,7 +187,9 @@ const groups = computed<DispatchGroup[]>(() => {
     if (hasBlockingReasons(row)) group.blocked += 1
   }
   // 待派工多的工单排前面——班组长先处理还没派人的活。
-  return [...map.values()].sort((a, b) => b.pending - a.pending || a.workOrderNo.localeCompare(b.workOrderNo))
+  return [...map.values()].sort(
+    (a, b) => b.pending - a.pending || a.workOrderNo.localeCompare(b.workOrderNo),
+  )
 })
 
 function groupSummary(group: DispatchGroup) {
@@ -224,7 +233,8 @@ const flatColumns: NvDataTableColumn<DispatchRow>[] = [
   {
     key: 'workCenterId',
     header: '工作中心',
-    accessor: (r) => r.workCenterName ?? resolveWorkCenter(r.workCenterCode ?? r.workCenterId) ?? '无',
+    accessor: (r) =>
+      r.workCenterName ?? resolveWorkCenter(r.workCenterCode ?? r.workCenterId) ?? '无',
   },
   {
     key: 'deviceAssetId',
@@ -301,7 +311,9 @@ function formatError(error: unknown) {
           aria-label="搜索工序"
         />
         <NvSelect v-model="statusFilter">
-          <NvSelectTrigger class="h-9 w-32" aria-label="执行状态"><NvSelectValue /></NvSelectTrigger>
+          <NvSelectTrigger class="h-9 w-32" aria-label="执行状态"
+            ><NvSelectValue
+          /></NvSelectTrigger>
           <NvSelectContent>
             <NvSelectItem
               v-for="option in mesOperationTaskStatusOptions"
@@ -312,7 +324,9 @@ function formatError(error: unknown) {
           </NvSelectContent>
         </NvSelect>
         <NvSelect v-model="workCenterFilter">
-          <NvSelectTrigger class="h-9 w-40" aria-label="工作中心"><NvSelectValue /></NvSelectTrigger>
+          <NvSelectTrigger class="h-9 w-40" aria-label="工作中心"
+            ><NvSelectValue
+          /></NvSelectTrigger>
           <NvSelectContent>
             <NvSelectItem value="all">全部工作中心</NvSelectItem>
             <NvSelectItem v-for="wc in workCenters" :key="wc.code ?? ''" :value="wc.code ?? ''">
@@ -484,7 +498,10 @@ function formatError(error: unknown) {
             : '暂无工序。工单下达后，它的工序会出现在这里等待派工。'
         }}
       </p>
-      <p v-else class="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+      <p
+        v-else
+        class="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground"
+      >
         正在加载工序…
       </p>
     </template>

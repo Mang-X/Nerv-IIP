@@ -294,7 +294,11 @@ function isReportableStatus(status?: string | null) {
 const lifecyclePending = ref<string | null>(null)
 const LIFECYCLE_RUNNERS: Record<
   MesLifecycleActionKey,
-  (id: string, context: { organizationId: string; environmentId: string }, body: { idempotencyKey: string }) => Promise<unknown>
+  (
+    id: string,
+    context: { organizationId: string; environmentId: string },
+    body: { idempotencyKey: string },
+  ) => Promise<unknown>
 > = {
   start: startOperationTask,
   pause: pauseOperationTask,

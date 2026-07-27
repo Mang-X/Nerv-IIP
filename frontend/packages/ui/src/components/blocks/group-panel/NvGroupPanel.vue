@@ -54,7 +54,9 @@ const contentId = useId()
         @click="open = !open"
       >
         <ChevronRightIcon
-          :class="cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')"
+          :class="
+            cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')
+          "
           aria-hidden="true"
         />
         <span class="min-w-0">

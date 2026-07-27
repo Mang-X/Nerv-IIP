@@ -156,7 +156,11 @@ export function resolveDispatchAffordance(row: MesOperationTaskLike): MesDispatc
     }
   }
   if (row.blockingReasons?.length) {
-    return { label: '派工', blockedReason: '存在开工阻塞，先按阻塞项处理后再派工。', enabled: false }
+    return {
+      label: '派工',
+      blockedReason: '存在开工阻塞，先按阻塞项处理后再派工。',
+      enabled: false,
+    }
   }
   const worker = row.assignedUserName?.trim()
   if (row.assignedUserId?.trim()) {

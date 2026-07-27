@@ -45,9 +45,9 @@ describe('resolveScheduleState', () => {
   })
 
   it('separates 已排程 / 未排程 / 人工派工 for live operations', () => {
-    expect(resolveScheduleState({ status: 'queued', scheduledAtUtc: '2026-07-27T02:00:00Z' }).label).toBe(
-      '已排程',
-    )
+    expect(
+      resolveScheduleState({ status: 'queued', scheduledAtUtc: '2026-07-27T02:00:00Z' }).label,
+    ).toBe('已排程')
     expect(resolveScheduleState({ status: 'queued' }).label).toBe('未排程')
     expect(resolveScheduleState({ status: 'queued', assignedUserId: 'u-1' }).label).toBe(
       '人工派工，未排产',
@@ -56,21 +56,29 @@ describe('resolveScheduleState', () => {
 
   it('lets schedule invalidation win over everything else', () => {
     expect(
-      resolveScheduleState({ status: 'scheduleInvalidated', scheduledAtUtc: '2026-07-27T02:00:00Z' })
-        .label,
+      resolveScheduleState({
+        status: 'scheduleInvalidated',
+        scheduledAtUtc: '2026-07-27T02:00:00Z',
+      }).label,
     ).toBe('排程已失效')
   })
 })
 
 describe('resolveDispatchState', () => {
   it('shows the worker name when the operation is dispatched', () => {
-    expect(resolveDispatchState({ status: 'inProgress', assignedUserId: 'u-1', assignedUserName: '陈立国' }).label).toBe(
-      '已派 陈立国',
-    )
+    expect(
+      resolveDispatchState({
+        status: 'inProgress',
+        assignedUserId: 'u-1',
+        assignedUserName: '陈立国',
+      }).label,
+    ).toBe('已派 陈立国')
   })
 
   it('says 已派工 when the id is present but the name was not backfilled', () => {
-    expect(resolveDispatchState({ status: 'inProgress', assignedUserId: 'u-1' }).label).toBe('已派工')
+    expect(resolveDispatchState({ status: 'inProgress', assignedUserId: 'u-1' }).label).toBe(
+      '已派工',
+    )
   })
 
   it('never reports a finished operation as 待派工', () => {
@@ -145,9 +153,9 @@ describe('resolveLifecycleActions', () => {
   })
 
   it('marks 完工 as needing confirmation', () => {
-    expect(resolveLifecycleActions({ status: 'InProgress' }).find((a) => a.key === 'complete')?.confirm).toBe(
-      true,
-    )
+    expect(
+      resolveLifecycleActions({ status: 'InProgress' }).find((a) => a.key === 'complete')?.confirm,
+    ).toBe(true)
   })
 })
 

@@ -121,7 +121,8 @@ const operationColumns: NvDataTableColumn<OperationRow>[] = [
   {
     key: 'workCenterId',
     header: '工作中心',
-    accessor: (r) => r.workCenterName ?? resolveWorkCenter(r.workCenterCode ?? r.workCenterId) ?? '—',
+    accessor: (r) =>
+      r.workCenterName ?? resolveWorkCenter(r.workCenterCode ?? r.workCenterId) ?? '—',
   },
   { key: 'shiftId', header: '班次', width: 'w-24', accessor: (r) => resolveShiftLabel(r.shiftId) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
@@ -375,7 +376,9 @@ function formatQuantity(value?: number | null) {
             打开完整详情
           </RouterLink>
         </NvButton>
-        <NvButton size="sm" type="button" variant="ghost" @click="workOrderId = null">关闭</NvButton>
+        <NvButton size="sm" type="button" variant="ghost" @click="workOrderId = null"
+          >关闭</NvButton
+        >
       </NvSheetFooter>
     </NvSheetContent>
 

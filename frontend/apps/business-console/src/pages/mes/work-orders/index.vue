@@ -694,9 +694,6 @@ function isNonEmpty(value: string) {
       @reported="refreshWorkOrders"
     />
 
-    <WorkOrderDetailSheet
-      v-model:work-order-id="sheetWorkOrderId"
-      @report="openReportFromSheet"
-    />
+    <WorkOrderDetailSheet v-model:work-order-id="sheetWorkOrderId" @report="openReportFromSheet" />
   </BusinessLayout>
 </template>

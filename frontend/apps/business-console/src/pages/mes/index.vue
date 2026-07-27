@@ -145,7 +145,7 @@ function resolvePendingRoute(routeHint?: string | null) {
 const pendingWorkItems = computed(() =>
   pendingWork.value.map((item, index) => ({
     key: `${item.roleCode ?? 'role'}-${item.workType ?? 'work'}-${index}`,
-    role: PENDING_ROLE_LABELS[(item.roleCode ?? '').toLowerCase()] ?? (item.roleCode ?? '未指定角色'),
+    role: PENDING_ROLE_LABELS[(item.roleCode ?? '').toLowerCase()] ?? item.roleCode ?? '未指定角色',
     workType: item.workType ?? '待办',
     count: item.count ?? 0,
     route: resolvePendingRoute(item.routeHint),

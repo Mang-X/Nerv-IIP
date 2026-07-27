@@ -111,8 +111,7 @@ watch(
     const active = open.value
     workerFilters.workCenterCode =
       active && candidateScope.value === 'work-center' ? targetWorkCenter.value : undefined
-    workerFilters.skillCode =
-      active && skillFilter.value !== 'all' ? skillFilter.value : undefined
+    workerFilters.skillCode = active && skillFilter.value !== 'all' ? skillFilter.value : undefined
   },
   { immediate: true },
 )
@@ -127,15 +126,15 @@ const workerOptions = computed(() =>
       const skillNames = (w.skills ?? []).map((s) => s.skillName).filter(Boolean)
       return {
         value: w.userId as string,
-        label: w.employeeNo ? `${w.displayName ?? w.employeeNo} · ${w.employeeNo}` : (w.displayName ?? ''),
+        label: w.employeeNo
+          ? `${w.displayName ?? w.employeeNo} · ${w.employeeNo}`
+          : (w.displayName ?? ''),
         hint: skillNames.length > 0 ? skillNames.join('、') : '未登记技能',
       }
     }),
 )
 
-const selectedWorker = computed(() =>
-  workers.value.find((w) => w.userId === assignedUserId.value),
-)
+const selectedWorker = computed(() => workers.value.find((w) => w.userId === assignedUserId.value))
 const selectedWorkerSkills = computed(() =>
   (selectedWorker.value?.skills ?? []).filter((s) => s.skillName),
 )
@@ -234,11 +233,15 @@ function formatDateTime(value?: string | null) {
         <NvDialogTitle>{{ target?.assignedUserId ? '改派工序' : '派工' }}</NvDialogTitle>
         <!-- 派工对象已在下方只读区完整呈现；此处仅供读屏播报。 -->
         <NvDialogDescription class="sr-only">
-          为工序任务 {{ target?.operationTaskNo ?? target?.operationTaskId }} 指派操作员、设备与班次。
+          为工序任务
+          {{ target?.operationTaskNo ?? target?.operationTaskId }} 指派操作员、设备与班次。
         </NvDialogDescription>
       </NvDialogHeader>
 
-      <form class="grid max-h-[70vh] content-start gap-4 overflow-y-auto px-1" @submit.prevent="submit">
+      <form
+        class="grid max-h-[70vh] content-start gap-4 overflow-y-auto px-1"
+        @submit.prevent="submit"
+      >
         <CarriedContextSummary label="派工对象" :items="contextItems" />
 
         <p
