@@ -5,10 +5,12 @@ import {
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
+  getBusinessConsoleMesWorkOrderDetailQueryKey,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
+  listBusinessConsoleMesOperationTasks,
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions,
   promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
@@ -42,7 +44,7 @@ import {
   type BusinessConsoleRecordProductionReportRequest,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive, watchEffect, type Ref } from 'vue'
+import { computed, reactive, watch, watchEffect, type Ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 
 const DEFAULT_TAKE = 100
@@ -190,6 +192,22 @@ export function useMesWorkOrders() {
 
 export function useMesWorkOrderDetail(workOrderId: Readonly<Ref<string>>) {
   const scope = bindAuthScope(reactive({ organizationId: '', environmentId: '' }))
+  const queryCache = useQueryCache()
+  watch(
+    () => [workOrderId.value.trim(), scope.organizationId, scope.environmentId] as const,
+    (_current, previous) => {
+      const [previousWorkOrderId, organizationId, environmentId] = previous ?? []
+      if (!previousWorkOrderId || !organizationId || !environmentId) return
+      void queryCache.cancelQueries({
+        key: getBusinessConsoleMesWorkOrderDetailQueryKey({
+          path: { workOrderId: previousWorkOrderId },
+          query: { organizationId, environmentId },
+        }),
+        exact: true,
+      })
+    },
+    { flush: 'sync' },
+  )
   const detailQuery = useQuery(() => {
     const requestedId = workOrderId.value.trim()
     return {
@@ -210,6 +228,121 @@ export function useMesWorkOrderDetail(workOrderId: Readonly<Ref<string>>) {
     ),
     pending: detailQuery.isLoading,
     error: detailQuery.error,
+  }
+}
+
+const EXACT_TASK_PAGE_SIZE = 100
+
+function exactOperationTaskQueryKey(
+  organizationId: string,
+  environmentId: string,
+  workOrderId: string,
+  operationTaskId: string,
+) {
+  return [
+    'mes-report-exact-operation-task',
+    organizationId,
+    environmentId,
+    workOrderId,
+    operationTaskId,
+  ] as const
+}
+
+export function useMesExactOperationTask(
+  workOrderId: Readonly<Ref<string>>,
+  operationTaskId: Readonly<Ref<string>>,
+  detail: Readonly<Ref<BusinessConsoleMesWorkOrderDetailResponse | null | undefined>>,
+) {
+  const scope = bindAuthScope(reactive({ organizationId: '', environmentId: '' }))
+  const queryCache = useQueryCache()
+  watch(
+    () =>
+      [
+        scope.organizationId,
+        scope.environmentId,
+        workOrderId.value.trim(),
+        operationTaskId.value.trim(),
+      ] as const,
+    (_current, previous) => {
+      const [organizationId, environmentId, requestedWorkOrderId, requestedTaskId] = previous ?? []
+      if (!organizationId || !environmentId || !requestedWorkOrderId || !requestedTaskId) return
+      void queryCache.cancelQueries({
+        key: exactOperationTaskQueryKey(
+          organizationId,
+          environmentId,
+          requestedWorkOrderId,
+          requestedTaskId,
+        ),
+        exact: true,
+      })
+    },
+    { flush: 'sync' },
+  )
+  const enabled = computed(() => {
+    const requestedWorkOrderId = workOrderId.value.trim()
+    const requestedTaskId = operationTaskId.value.trim()
+    return (
+      hasScope(scope) &&
+      requestedWorkOrderId !== '' &&
+      requestedTaskId !== '' &&
+      detail.value?.workOrderId === requestedWorkOrderId &&
+      !detail.value.operationTasks?.some(
+        (task) =>
+          task.workOrderId === requestedWorkOrderId && task.operationTaskId === requestedTaskId,
+      )
+    )
+  })
+  const query = useQuery(() => ({
+    key: exactOperationTaskQueryKey(
+      scope.organizationId,
+      scope.environmentId,
+      workOrderId.value.trim(),
+      operationTaskId.value.trim(),
+    ),
+    enabled: enabled.value,
+    query: async ({ signal }) => {
+      const organizationId = scope.organizationId
+      const environmentId = scope.environmentId
+      const requestedWorkOrderId = workOrderId.value.trim()
+      const requestedTaskId = operationTaskId.value.trim()
+      let skip = 0
+      while (true) {
+        const response = await listBusinessConsoleMesOperationTasks({
+          query: {
+            organizationId,
+            environmentId,
+            workOrderId: requestedWorkOrderId,
+            skip,
+            take: EXACT_TASK_PAGE_SIZE,
+          },
+          signal,
+        })
+        const envelope = response.data
+        if (!envelope?.success || !envelope.data) {
+          throw new Error(envelope?.message?.trim() || '工序任务精确查询失败。')
+        }
+        const items = envelope.data.items ?? []
+        const match = items.find(
+          (task) =>
+            task.workOrderId === requestedWorkOrderId && task.operationTaskId === requestedTaskId,
+        )
+        if (match) return match
+        skip += items.length
+        if (
+          items.length < EXACT_TASK_PAGE_SIZE ||
+          (envelope.data.total !== undefined && skip >= envelope.data.total)
+        ) {
+          break
+        }
+      }
+      return null
+    },
+  }))
+
+  return {
+    task: query.data,
+    pending: query.isLoading,
+    error: query.error,
   }
 }
 

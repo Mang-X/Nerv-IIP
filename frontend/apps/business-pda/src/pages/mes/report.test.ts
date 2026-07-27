@@ -41,6 +41,7 @@ const workOrdersErrorRef = ref<unknown>(null)
 const tasksErrorRef = ref<unknown>(null)
 const workOrdersPendingRef = ref(false)
 const tasksPendingRef = ref(false)
+let operationTaskDiscoveryCalls = 0
 
 const workOrderFilters = reactive({
   keyword: undefined as string | undefined,
@@ -89,6 +90,9 @@ const workOrderDetailRef = ref<Record<string, unknown> | null>({
 })
 const workOrderDetailPendingRef = ref(false)
 const workOrderDetailErrorRef = ref<unknown>(null)
+const exactTaskRef = ref<Record<string, unknown> | null | undefined>(undefined)
+const exactTaskPendingRef = ref(false)
+const exactTaskErrorRef = ref<unknown>(null)
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesWorkOrders: () => ({
@@ -99,20 +103,23 @@ vi.mock('@/composables/useBusinessMes', () => ({
     error: workOrdersErrorRef,
     refresh: refreshWorkOrders,
   }),
-  useMesOperationTasks: () => ({
-    filters: taskFilters,
-    operationTasks: computed(() => operationTasksRef.value),
-    total: computed(() => operationTasksRef.value.length),
-    pending: tasksPendingRef,
-    error: tasksErrorRef,
-    refresh: refreshTasks,
-    cancelPendingTasks,
-    startTask: vi.fn(),
-    pauseTask: vi.fn(),
-    resumeTask: vi.fn(),
-    completeTask: vi.fn(),
-    actionPending: ref(false),
-  }),
+  useMesOperationTasks: () => {
+    operationTaskDiscoveryCalls += 1
+    return {
+      filters: taskFilters,
+      operationTasks: computed(() => operationTasksRef.value),
+      total: computed(() => operationTasksRef.value.length),
+      pending: tasksPendingRef,
+      error: tasksErrorRef,
+      refresh: refreshTasks,
+      cancelPendingTasks,
+      startTask: vi.fn(),
+      pauseTask: vi.fn(),
+      resumeTask: vi.fn(),
+      completeTask: vi.fn(),
+      actionPending: ref(false),
+    }
+  },
   useMesWorkOrderDetail: (workOrderId: { value: string }) => ({
     workOrder: computed(() => {
       if (workOrderDetailRef.value?.workOrderId === workOrderId.value) {
@@ -132,6 +139,27 @@ vi.mock('@/composables/useBusinessMes', () => ({
     }),
     pending: workOrderDetailPendingRef,
     error: workOrderDetailErrorRef,
+  }),
+  useMesExactOperationTask: (
+    workOrderId: { value: string },
+    operationTaskId: { value: string },
+    detail: { value?: Record<string, unknown> | null },
+  ) => ({
+    task: computed(() => {
+      if (exactTaskRef.value !== undefined) return exactTaskRef.value
+      if (workOrderDetailPendingRef.value || detail.value?.workOrderId !== workOrderId.value) {
+        return null
+      }
+      return (
+        operationTasksRef.value.find(
+          (task) =>
+            task.workOrderId === workOrderId.value &&
+            task.operationTaskId === operationTaskId.value,
+        ) ?? null
+      )
+    }),
+    pending: exactTaskPendingRef,
+    error: exactTaskErrorRef,
   }),
   useMesProductionReports: () => ({
     filters: reactive({}),
@@ -192,6 +220,10 @@ describe('PDA MES production reporting page', () => {
     }
     workOrderDetailPendingRef.value = false
     workOrderDetailErrorRef.value = null
+    exactTaskRef.value = undefined
+    exactTaskPendingRef.value = false
+    exactTaskErrorRef.value = null
+    operationTaskDiscoveryCalls = 0
     workOrderFilters.keyword = undefined
     taskFilters.workOrderId = undefined
     route.query = {}
@@ -216,14 +248,25 @@ describe('PDA MES production reporting page', () => {
     expect(workOrderFilters.keyword).toBe('WO-2026-0002')
   })
 
-  it('shows operations after a work order is selected and filters tasks by it', async () => {
+  it('shows detail operations after a work order is selected without list discovery', async () => {
     const wrapper = mount(ReportPage)
     await selectWorkOrder(wrapper, 0)
     // 选工序步出现工序序号
     expect(wrapper.text()).toContain('工序 10')
     expect(wrapper.text()).toContain('工序 20')
-    // 工序查询按选中工单过滤
-    expect(taskFilters.workOrderId).toBe('WO-2026-0001')
+    expect(operationTaskDiscoveryCalls).toBe(0)
+  })
+
+  it('detail 已成功时立即展示任务且 report 页面不创建旧 operation-task list discovery', async () => {
+    tasksPendingRef.value = true
+    tasksErrorRef.value = new Error('non-authority list failed')
+    route.query = { workOrderId: 'WO-2026-0001' }
+    const wrapper = mount(ReportPage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('WO-2026-0001 · 工序 10')
+    expect(wrapper.text()).not.toContain('加载工序失败')
+    expect(operationTaskDiscoveryCalls).toBe(0)
   })
 
   it('切换工单后旧工序行不能打开或提交', async () => {
@@ -273,25 +316,31 @@ describe('PDA MES production reporting page', () => {
     await flushPromises()
     expect(document.body.querySelector('[data-testid="good-quantity"]')).not.toBeNull()
 
-    tasksPendingRef.value = true
+    workOrderDetailPendingRef.value = true
     route.query = {
       workOrderId: 'WO-2026-0002',
       operationTaskId: 'OP-3',
     }
     await flushPromises()
 
-    expect(cancelPendingTasks).toHaveBeenCalled()
     expect(wrapper.text()).not.toContain('WO-2026-0001 · 工序 10')
+    expect(wrapper.text()).not.toContain('该工单暂无工序')
     expect(document.body.querySelector('[data-testid="good-quantity"]')).toBeNull()
 
     // 旧请求迟到时仍处于新 key 的 pending 阶段，不得重新启用任何实体。
-    operationTasksRef.value = [defaultOperationTasks[0]]
+    workOrderDetailRef.value = {
+      ...defaultWorkOrders[0],
+      operationTasks: [defaultOperationTasks[0]],
+    }
     await flushPromises()
     expect(document.body.querySelector('[data-testid="good-quantity"]')).toBeNull()
 
     // 只有新 key 的响应完成后，才绑定 URL 请求的精确 pair。
-    operationTasksRef.value = [defaultOperationTasks[2]]
-    tasksPendingRef.value = false
+    workOrderDetailRef.value = {
+      ...defaultWorkOrders[1],
+      operationTasks: [defaultOperationTasks[2]],
+    }
+    workOrderDetailPendingRef.value = false
     await flushPromises()
     expect(document.body.textContent).toContain('WO-2026-0002 · 工序 10')
     expect(document.body.querySelector('[data-testid="good-quantity"]')).not.toBeNull()
@@ -452,6 +501,37 @@ describe('PDA MES production reporting page', () => {
     expect(document.body.querySelector('[data-testid="good-quantity"]')).not.toBeNull()
   })
 
+  it('完整 pair 的第 501+ 工序任务通过窄 exact resolver 直达', async () => {
+    const workOrderId = 'WO-MANY-TASKS'
+    const operationTaskId = 'OP-501'
+    workOrderDetailRef.value = {
+      workOrderId,
+      skuId: 'SKU-MANY',
+      quantity: 1,
+      status: 'Released',
+      operationTasks: Array.from({ length: 500 }, (_, index) => ({
+        operationTaskId: `OP-${index + 1}`,
+        workOrderId,
+        status: 'Ready',
+        operationSequence: index + 1,
+        workCenterId: 'WC-MANY',
+      })),
+    }
+    exactTaskRef.value = {
+      operationTaskId,
+      workOrderId,
+      status: 'Ready',
+      operationSequence: 501,
+      workCenterId: 'WC-MANY',
+    }
+    route.query = { workOrderId, operationTaskId }
+
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    expect(document.body.textContent).toContain('工序 501')
+    expect(document.body.querySelector('[data-testid="good-quantity"]')).not.toBeNull()
+  })
+
   it('工单 detail 网络或授权失败时显示加载失败并 fail closed，不误报不存在', async () => {
     workOrderDetailErrorRef.value = new Error('403')
     route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
@@ -550,7 +630,7 @@ describe('PDA MES production reporting page', () => {
       document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!.value,
     ).toBe('0')
     expect(recordReport).not.toHaveBeenCalled()
-    expect(cancelPendingTasks.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(operationTaskDiscoveryCalls).toBe(0)
   })
 
   it.each([
@@ -568,7 +648,7 @@ describe('PDA MES production reporting page', () => {
     [
       'pair 不匹配',
       { workOrderId: 'WO-2026-0002', operationTaskId: 'OP-1' },
-      '工序任务 OP-1 不属于工单 WO-2026-0002',
+      '未找到工单 WO-2026-0002 下的工序任务 OP-1',
     ],
   ])('%s 时显示明确安全状态且不写入', async (_name, query, message) => {
     route.query = query
@@ -738,14 +818,5 @@ describe('PDA MES production reporting page', () => {
     const wrapper = mount(ReportPage)
     expect(wrapper.find('[data-testid="work-orders-error"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('暂无可报工的工单')
-  })
-
-  it('工序加载失败时不显示"该工单暂无工序"空态', async () => {
-    operationTasksRef.value = []
-    tasksErrorRef.value = new RequestTimeoutError()
-    const wrapper = mount(ReportPage)
-    await selectWorkOrder(wrapper, 0) // 进入选工序步
-    expect(wrapper.find('[data-testid="tasks-error"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('该工单暂无工序')
   })
 })

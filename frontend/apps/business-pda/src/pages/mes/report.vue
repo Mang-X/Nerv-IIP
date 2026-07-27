@@ -22,7 +22,7 @@ import {
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  useMesOperationTasks,
+  useMesExactOperationTask,
   useMesProductionReports,
   useMesTelemetryProductionReportCandidates,
   useMesWorkOrderDetail,
@@ -59,18 +59,19 @@ const {
 } = useMesWorkOrders()
 
 const {
-  filters: taskFilters,
-  operationTasks,
-  pending: tasksPending,
-  error: tasksError,
-  refresh: refreshTasks,
-  cancelPendingTasks,
-} = useMesOperationTasks()
-const {
   workOrder: workOrderDetail,
   pending: workOrderDetailPending,
   error: workOrderDetailError,
 } = useMesWorkOrderDetail(routeWorkOrderId)
+const routeOperationTaskId = computed(() => {
+  const value = route.query.operationTaskId
+  return typeof value === 'string' ? value.trim() : ''
+})
+const {
+  task: exactOperationTask,
+  pending: exactOperationTaskPending,
+  error: exactOperationTaskError,
+} = useMesExactOperationTask(routeWorkOrderId, routeOperationTaskId, workOrderDetail)
 
 const {
   selectedWorkOrder,
@@ -83,15 +84,12 @@ const {
   clearTask,
   clearIdentity,
 } = useMesReportIdentity({
-  workOrders,
-  workOrdersPending,
   workOrderDetail,
   workOrderDetailPending,
   workOrderDetailError,
-  operationTasks,
-  tasksPending,
-  taskFilters,
-  cancelPendingTasks,
+  exactOperationTask,
+  exactOperationTaskPending,
+  exactOperationTaskError,
 })
 
 const { recordReport } = useMesProductionReports()
@@ -509,16 +507,8 @@ function onScanWorkOrder(value: string) {
         <p class="text-sm text-muted-foreground">
           选择要报工的工序（共 {{ visibleOperationTasks.length }} 道）
         </p>
-        <RetryableListError
-          v-if="tasksError"
-          :error="tasksError"
-          :pending="tasksPending"
-          fallback="加载工序失败，请下拉刷新或重试。"
-          test-id="tasks-error"
-          @retry="() => refreshTasks()"
-        />
         <div
-          v-else-if="!tasksPending && visibleOperationTasks.length === 0"
+          v-if="!workOrderDetailPending && visibleOperationTasks.length === 0"
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
         >
           该工单暂无工序

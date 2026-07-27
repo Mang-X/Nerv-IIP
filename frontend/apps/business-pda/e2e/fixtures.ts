@@ -201,6 +201,14 @@ export const mesOperationTasks = [
   },
 ]
 
+const mesManyOperationTasks = Array.from({ length: 501 }, (_, index) => ({
+  operationTaskId: `OP-${index + 1}`,
+  workOrderId: 'WO-501',
+  status: 'Ready',
+  operationSequence: index + 1,
+  workCenterId: 'WC-MANY',
+}))
+
 /**
  * Dispatch-task rows（首页「我的任务」）— shape mirrors `BusinessConsoleMesDispatchTaskRow`：
  * 一条进行中 + 一条待开工，服务端按 assignedUserId 过滤后返回本人任务。
@@ -240,6 +248,12 @@ export const mesWorkOrders = [
     workOrderId: 'WO-2',
     skuId: 'SKU-2',
     quantity: 50,
+    status: 'Released',
+  },
+  {
+    workOrderId: 'WO-501',
+    skuId: 'SKU-501',
+    quantity: 1,
     status: 'Released',
   },
 ]
@@ -460,10 +474,16 @@ export async function routeBusinessConsoleApi(route: Route) {
   }
   if (pathname === `${base}/operation-tasks`) {
     const workOrderId = requestUrl.searchParams.get('workOrderId')
-    const items = workOrderId
-      ? mesOperationTasks.filter((task) => task.workOrderId === workOrderId)
-      : mesOperationTasks
-    return fulfillJson(route, envelope({ items, total: items.length }))
+    const scopedItems =
+      workOrderId === 'WO-501'
+        ? mesManyOperationTasks
+        : workOrderId
+          ? mesOperationTasks.filter((task) => task.workOrderId === workOrderId)
+          : mesOperationTasks
+    const skip = Number(requestUrl.searchParams.get('skip') ?? 0)
+    const take = Number(requestUrl.searchParams.get('take') ?? 100)
+    const items = scopedItems.slice(skip, skip + take)
+    return fulfillJson(route, envelope({ items, total: scopedItems.length }))
   }
   if (pathname === `${base}/work-orders`) {
     return fulfillJson(route, envelope({ items: mesWorkOrders, total: mesWorkOrders.length }))
@@ -483,7 +503,10 @@ export async function routeBusinessConsoleApi(route: Route) {
         ...workOrder,
         readinessStatus: 'ready',
         blockingReasons: [],
-        operationTasks: mesOperationTasks.filter((task) => task.workOrderId === workOrderId),
+        operationTasks: (workOrderId === 'WO-501'
+          ? mesManyOperationTasks
+          : mesOperationTasks.filter((task) => task.workOrderId === workOrderId)
+        ).slice(0, 500),
       }),
     )
   }

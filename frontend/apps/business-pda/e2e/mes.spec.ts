@@ -88,24 +88,41 @@ test('报工：选工单 → 选工序 → 录良品数 → 提交 → 成功结
 })
 
 test('报工：URL pair 直达、延迟旧请求与浏览器 back/forward 始终重绑同一实体', async ({ page }) => {
+  let operationTaskDiscoveryCalls = 0
+  let resolveFirstDetailStarted!: () => void
+  let releaseFirstDetail!: () => void
+  const firstDetailStarted = new Promise<void>((resolve) => {
+    resolveFirstDetailStarted = resolve
+  })
+  const firstDetailRelease = new Promise<void>((resolve) => {
+    releaseFirstDetail = resolve
+  })
+  let workOrderOneDetailCalls = 0
   await page.route('**/api/business-console/v1/mes/operation-tasks**', async (route) => {
-    const requestUrl = new URL(route.request().url())
-    if (requestUrl.searchParams.get('workOrderId') === 'WO-1') {
-      await new Promise((resolve) => setTimeout(resolve, 400))
+    operationTaskDiscoveryCalls += 1
+    return routeBusinessConsoleApi(route)
+  })
+  await page.route('**/api/business-console/v1/mes/work-orders/WO-1**', async (route) => {
+    workOrderOneDetailCalls += 1
+    if (workOrderOneDetailCalls === 1) {
+      resolveFirstDetailStarted()
+      await firstDetailRelease
     }
     return routeBusinessConsoleApi(route)
   })
 
   await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
   await expect(page.getByRole('heading', { name: '报工' })).toBeVisible()
+  await firstDetailStarted
   await page.goto('/mes/report?workOrderId=WO-2&operationTaskId=OP-3')
 
   await expect(page.getByText('当前工单')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'WO-2 · 工序 10', exact: true })).toBeVisible()
   await expect(page.getByTestId('good-quantity')).toBeVisible()
   await expect(page.getByTestId('report-route-issue')).toHaveCount(0)
-  await page.waitForTimeout(450)
+  releaseFirstDetail()
   await expect(page.getByText('WO-1 · 工序 10')).toHaveCount(0)
+  expect(operationTaskDiscoveryCalls).toBe(0)
 
   await page.goBack()
   await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toBeVisible()
@@ -114,6 +131,15 @@ test('报工：URL pair 直达、延迟旧请求与浏览器 back/forward 始终
   await page.goForward()
   await expect(page.getByRole('heading', { name: 'WO-2 · 工序 10', exact: true })).toBeVisible()
   await expect(page.getByTestId('good-quantity')).toBeVisible()
+})
+
+test('报工：详情前 500 项不含目标时，完整 pair URL 分页解析第 501 项', async ({ page }) => {
+  await page.goto('/mes/report?workOrderId=WO-501&operationTaskId=OP-501')
+
+  await expect(page.getByText('当前工单')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'WO-501 · 工序 501', exact: true })).toBeVisible()
+  await expect(page.getByTestId('good-quantity')).toBeVisible()
+  await expect(page.getByTestId('report-route-issue')).toHaveCount(0)
 })
 
 test('领料：列表渲染领料申请行（不退化为空态）', async ({ page }) => {

@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { shallowRef } from 'vue'
+import { nextTick, reactive, shallowRef } from 'vue'
 
 import {
   completeBusinessConsoleMesOperationTaskMutationOptions,
@@ -9,7 +9,9 @@ import {
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
+  getBusinessConsoleMesWorkOrderDetailQueryKey,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
+  listBusinessConsoleMesOperationTasks,
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   recordBusinessConsoleMesProductionReportMutationOptions,
@@ -19,6 +21,7 @@ import {
 import {
   useMesMaterialIssue,
   useMesCurrentOperationSops,
+  useMesExactOperationTask,
   useMesOperationTasks,
   useMesProductionReports,
   useMesReceipts,
@@ -28,14 +31,28 @@ import {
 
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
-  queryOptionsById: new Map<string, { enabled?: boolean }>(),
-  queryFactoriesById: new Map<string, () => { enabled?: boolean }>(),
+  queryOptionsById: new Map<
+    string,
+    {
+      enabled?: boolean
+      query?: (context: { signal: AbortSignal }) => unknown
+    }
+  >(),
+  queryFactoriesById: new Map<
+    string,
+    () => {
+      enabled?: boolean
+      query?: (context: { signal: AbortSignal }) => unknown
+    }
+  >(),
   mutateById: new Map<string, ReturnType<typeof vi.fn>>(),
+  cancelQueries: vi.fn().mockResolvedValue(undefined),
 }))
 
 const authState = vi.hoisted(() => ({
   principal: undefined as { organizationId?: string; environmentId?: string } | undefined,
 }))
+const reactiveAuthState = reactive(authState)
 
 function mockQueryOptions(id: string) {
   return vi.fn(() => ({
@@ -61,6 +78,15 @@ vi.mock('@nerv-iip/api-client', () => ({
   getBusinessConsoleMesWorkOrderDetailQueryOptions: mockQueryOptions(
     'getBusinessConsoleMesWorkOrderDetail',
   ),
+  getBusinessConsoleMesWorkOrderDetailQueryKey: vi.fn(({ path, query }) => [
+    {
+      _id: 'getBusinessConsoleMesWorkOrderDetail',
+      workOrderId: path.workOrderId,
+      organizationId: query.organizationId,
+      environmentId: query.environmentId,
+    },
+  ]),
+  listBusinessConsoleMesOperationTasks: vi.fn(),
   listBusinessConsoleMesOperationTasksQueryOptions: mockQueryOptions(
     'listBusinessConsoleMesOperationTasks',
   ),
@@ -106,7 +132,12 @@ vi.mock('@pinia/colada', () => ({
   useQuery: vi.fn((optionsFactory) => {
     const options = optionsFactory()
     const key = Array.isArray(options.key) ? options.key[0] : undefined
-    const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
+    const id =
+      key && typeof key === 'object' && '_id' in key
+        ? String(key._id)
+        : typeof key === 'string'
+          ? key
+          : ''
     coladaState.queryOptionsById.set(id, options)
     coladaState.queryFactoriesById.set(id, optionsFactory)
 
@@ -131,14 +162,14 @@ vi.mock('@pinia/colada', () => ({
   }),
   useQueryCache: vi.fn(() => ({
     invalidateQueries: vi.fn().mockResolvedValue(undefined),
-    cancelQueries: vi.fn().mockResolvedValue(undefined),
+    cancelQueries: coladaState.cancelQueries,
   })),
 }))
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: vi.fn(() => ({
     get principal() {
-      return authState.principal
+      return reactiveAuthState.principal
     },
   })),
 }))
@@ -151,6 +182,7 @@ describe('pda useBusinessMes composables', () => {
     coladaState.queryOptionsById.clear()
     coladaState.queryFactoriesById.clear()
     coladaState.mutateById.clear()
+    coladaState.cancelQueries.mockClear()
     authState.principal = { organizationId: 'org-001', environmentId: 'env-dev' }
   })
 
@@ -194,6 +226,99 @@ describe('pda useBusinessMes composables', () => {
     })
     expect(coladaState.queryOptionsById.get('getBusinessConsoleMesWorkOrderDetail')?.enabled).toBe(
       true,
+    )
+  })
+
+  it('continues exact task pagination across a full page when total is omitted', async () => {
+    vi.mocked(listBusinessConsoleMesOperationTasks)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: Array.from({ length: 100 }, (_, index) => ({
+              operationTaskId: `OP-${index + 1}`,
+              workOrderId: 'WO-501',
+            })),
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [{ operationTaskId: 'OP-101', workOrderId: 'WO-501' }],
+          },
+        },
+      } as never)
+    const detail = shallowRef({
+      workOrderId: 'WO-501',
+      operationTasks: [],
+    })
+
+    useMesExactOperationTask(shallowRef('WO-501'), shallowRef('OP-101'), detail as never)
+    const options = coladaState.queryFactoriesById.get('mes-report-exact-operation-task')?.()
+    const result = await options?.query?.({ signal: new AbortController().signal })
+
+    expect(result).toMatchObject({ operationTaskId: 'OP-101', workOrderId: 'WO-501' })
+    expect(listBusinessConsoleMesOperationTasks).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        query: expect.objectContaining({ skip: 100, take: 100, workOrderId: 'WO-501' }),
+      }),
+    )
+  })
+
+  it('freezes exact task scope for every page of one query execution', async () => {
+    let resolveFirstPage!: (value: unknown) => void
+    vi.mocked(listBusinessConsoleMesOperationTasks)
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirstPage = resolve
+        }) as never,
+      )
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [{ operationTaskId: 'OP-101', workOrderId: 'WO-501' }],
+          },
+        },
+      } as never)
+    const detail = shallowRef({
+      workOrderId: 'WO-501',
+      operationTasks: [],
+    })
+
+    useMesExactOperationTask(shallowRef('WO-501'), shallowRef('OP-101'), detail as never)
+    const options = coladaState.queryFactoriesById.get('mes-report-exact-operation-task')?.()
+    const resultPromise = options?.query?.({ signal: new AbortController().signal })
+    reactiveAuthState.principal = {
+      organizationId: 'org-002',
+      environmentId: 'env-prod',
+    }
+    await nextTick()
+    resolveFirstPage({
+      data: {
+        success: true,
+        data: {
+          items: Array.from({ length: 100 }, (_, index) => ({
+            operationTaskId: `OP-${index + 1}`,
+            workOrderId: 'WO-501',
+          })),
+        },
+      },
+    })
+    await resultPromise
+
+    expect(listBusinessConsoleMesOperationTasks).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        query: expect.objectContaining({
+          organizationId: 'org-001',
+          environmentId: 'env-dev',
+          skip: 100,
+        }),
+      }),
     )
   })
 

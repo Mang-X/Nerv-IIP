@@ -1,154 +1,281 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { PiniaColada, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { createPinia } from 'pinia'
-import { describe, expect, it } from 'vitest'
-import { computed, defineComponent, h, reactive, ref, watchEffect } from 'vue'
+import { PiniaColada } from '@pinia/colada'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { computed, defineComponent, h } from 'vue'
 import { createMemoryHistory, createRouter, useRoute } from 'vue-router'
 
+import { useMesExactOperationTask, useMesWorkOrderDetail } from './useBusinessMes'
 import { useMesReportIdentity } from './useMesReportIdentity'
+import { useAuthStore } from '@/stores/auth'
+
+type DetailEnvelope = {
+  success: boolean
+  data: {
+    workOrderId: string
+    skuId: string
+    quantity: number
+    status: string
+    operationTasks: Task[]
+  }
+}
 
 type Task = {
   operationTaskId: string
   workOrderId: string
-  status: 'ready'
+  status: 'Ready'
   operationSequence: number
   workCenterId: string
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise
+const sdkState = vi.hoisted(() => ({
+  detailRequests: [] as Array<{
+    options: {
+      path: { workOrderId: string }
+      query: { organizationId: string; environmentId: string }
+    }
+    signal: AbortSignal
+    resolve: (value: DetailEnvelope) => void
+  }>,
+  exactRequests: [] as Array<{
+    options: {
+      query: {
+        organizationId: string
+        environmentId: string
+        workOrderId: string
+        skip: number
+        take: number
+      }
+      signal: AbortSignal
+    }
+    resolve: (value: unknown) => void
+  }>,
+}))
+
+vi.mock('@nerv-iip/api-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@nerv-iip/api-client')>()
+  const detailKey = (options: {
+    path: { workOrderId: string }
+    query: { organizationId: string; environmentId: string }
+  }) => [
+    'integration-work-order-detail',
+    options.query.organizationId,
+    options.query.environmentId,
+    options.path.workOrderId,
+  ]
+
+  return {
+    ...actual,
+    getBusinessConsoleMesWorkOrderDetailQueryKey: vi.fn(detailKey),
+    getBusinessConsoleMesWorkOrderDetailQueryOptions: vi.fn((options) => ({
+      key: detailKey(options),
+      query: ({ signal }: { signal: AbortSignal }) =>
+        new Promise<DetailEnvelope>((resolve) => {
+          sdkState.detailRequests.push({ options, signal, resolve })
+        }),
+    })),
+    listBusinessConsoleMesOperationTasks: vi.fn(
+      (options: {
+        query: {
+          organizationId: string
+          environmentId: string
+          workOrderId: string
+          skip: number
+          take: number
+        }
+        signal: AbortSignal
+      }) =>
+        new Promise((resolve) => {
+          sdkState.exactRequests.push({ options, resolve })
+        }),
+    ),
+  }
+})
+
+function task(workOrderId: string, sequence: number): Task {
+  return {
+    operationTaskId: `OP-${sequence}`,
+    workOrderId,
+    status: 'Ready',
+    operationSequence: sequence,
+    workCenterId: 'WC-1',
+  }
+}
+
+function detail(workOrderId: string, tasks: Task[]): DetailEnvelope {
+  return {
+    success: true,
+    data: {
+      workOrderId,
+      skuId: `SKU-${workOrderId}`,
+      quantity: 1,
+      status: 'Released',
+      operationTasks: tasks,
+    },
+  }
+}
+
+async function createHarness(initialUrl: string) {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/mes/report', component: { render: () => h('div') } }],
   })
-  return { promise, resolve }
+  await router.push(initialUrl)
+  await router.isReady()
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const auth = useAuthStore(pinia)
+  auth.$patch({
+    principal: {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    },
+  } as never)
+
+  const Harness = defineComponent({
+    setup() {
+      const route = useRoute()
+      const workOrderId = computed(() => String(route.query.workOrderId ?? '').trim())
+      const operationTaskId = computed(() => String(route.query.operationTaskId ?? '').trim())
+      const detailAuthority = useMesWorkOrderDetail(workOrderId)
+      const exactAuthority = useMesExactOperationTask(
+        workOrderId,
+        operationTaskId,
+        detailAuthority.workOrder,
+      )
+      const identity = useMesReportIdentity({
+        workOrderDetail: detailAuthority.workOrder,
+        workOrderDetailPending: detailAuthority.pending,
+        workOrderDetailError: detailAuthority.error,
+        exactOperationTask: exactAuthority.task,
+        exactOperationTaskPending: exactAuthority.pending,
+        exactOperationTaskError: exactAuthority.error,
+      })
+      return () =>
+        h(
+          'div',
+          identity.pair.value
+            ? `${identity.pair.value.workOrderId}/${identity.pair.value.operationTaskId}`
+            : (identity.routeIssue.value ?? 'pending'),
+        )
+    },
+  })
+
+  const wrapper = mount(Harness, {
+    global: {
+      plugins: [pinia, [PiniaColada, { queryOptions: { gcTime: 300_000 } }], router],
+    },
+  })
+  await flushPromises()
+  return { auth, router, wrapper }
 }
 
 describe('MES report identity real router + Colada integration', () => {
-  it('cancels the old keyed query, ignores its late response, and rebinds on back/forward', async () => {
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [{ path: '/mes/report', component: { render: () => h('div') } }],
-    })
-    await router.push('/mes/report?workOrderId=WO-A&operationTaskId=OP-A')
-    await router.isReady()
+  beforeEach(() => {
+    sdkState.detailRequests.length = 0
+    sdkState.exactRequests.length = 0
+    localStorage.clear()
+  })
 
-    const requests: Array<{
-      workOrderId: string
-      signal: AbortSignal
-      resolve: (tasks: Task[]) => void
-    }> = []
-    const observedQueryWorkOrderId = ref('')
+  it('uses the production detail key/signal, cancels the old route, and ignores its late response', async () => {
+    const { router, wrapper } = await createHarness(
+      '/mes/report?workOrderId=WO-A&operationTaskId=OP-1',
+    )
+    expect(sdkState.detailRequests).toHaveLength(1)
+    const requestA = sdkState.detailRequests[0]
 
-    const Harness = defineComponent({
-      setup() {
-        const route = useRoute()
-        const taskFilters = reactive<{ workOrderId?: string }>({})
-        const detail = computed(() => {
-          const workOrderId = String(route.query.workOrderId ?? '')
-          const operationTaskId = String(route.query.operationTaskId ?? '')
-          return {
-            workOrderId,
-            skuId: `SKU-${workOrderId}`,
-            quantity: 1,
-            status: 'released',
-            operationTasks: [
-              {
-                operationTaskId,
-                workOrderId,
-                status: 'ready' as const,
-                operationSequence: workOrderId === 'WO-A' ? 10 : 20,
-                workCenterId: 'WC-1',
-              },
-            ],
-          }
-        })
-        const query = useQuery(() => ({
-          key: ['integration-operation-tasks', taskFilters.workOrderId ?? 'none'],
-          enabled: Boolean(taskFilters.workOrderId),
-          query: ({ signal }) => {
-            const pending = deferred<Task[]>()
-            requests.push({
-              workOrderId: taskFilters.workOrderId!,
-              signal,
-              resolve: pending.resolve,
-            })
-            return pending.promise
-          },
-        }))
-        const queryCache = useQueryCache()
-        watchEffect(() => {
-          observedQueryWorkOrderId.value = query.data.value?.[0]?.workOrderId ?? ''
-        })
-        const identity = useMesReportIdentity({
-          workOrders: ref([]),
-          workOrdersPending: ref(false),
-          workOrderDetail: detail,
-          workOrderDetailPending: ref(false),
-          workOrderDetailError: ref(null),
-          operationTasks: computed(() => query.data.value ?? []),
-          tasksPending: query.isLoading,
-          taskFilters,
-          cancelPendingTasks: () =>
-            queryCache.cancelQueries({
-              predicate: (entry: UseQueryEntry) =>
-                Array.isArray(entry.key) && entry.key.includes('integration-operation-tasks'),
-            }),
-        })
-        return () => h('div', identity.pair.value?.operationTaskId ?? 'none')
-      },
-    })
-
-    const wrapper = mount(Harness, {
-      global: {
-        plugins: [createPinia(), [PiniaColada, { queryOptions: { gcTime: 300_000 } }], router],
-      },
-    })
-    await flushPromises()
-    expect(requests.at(-1)?.workOrderId).toBe('WO-A')
-    const requestA = requests.at(-1)!
-
-    await router.push('/mes/report?workOrderId=WO-B&operationTaskId=OP-B')
+    await router.push('/mes/report?workOrderId=WO-B&operationTaskId=OP-2')
     await flushPromises()
     expect(requestA.signal.aborted).toBe(true)
-    expect(requests.at(-1)?.workOrderId).toBe('WO-B')
-    const requestB = requests.at(-1)!
-    requestB.resolve([
-      {
-        operationTaskId: 'OP-B',
-        workOrderId: 'WO-B',
-        status: 'ready',
-        operationSequence: 20,
-        workCenterId: 'WC-1',
-      },
-    ])
+    const requestB = sdkState.detailRequests.find(
+      (request) => request.options.path.workOrderId === 'WO-B',
+    )!
+    requestB.resolve(detail('WO-B', [task('WO-B', 2)]))
     await flushPromises()
-    expect(wrapper.text()).toBe('OP-B')
-    expect(observedQueryWorkOrderId.value).toBe('WO-B')
+    expect(wrapper.text()).toBe('WO-B/OP-2')
 
-    requestA.resolve([
-      {
-        operationTaskId: 'OP-A',
-        workOrderId: 'WO-A',
-        status: 'ready',
-        operationSequence: 10,
-        workCenterId: 'WC-1',
-      },
-    ])
+    requestA.resolve(detail('WO-A', [task('WO-A', 1)]))
     await flushPromises()
-    expect(wrapper.text()).toBe('OP-B')
-    expect(observedQueryWorkOrderId.value).toBe('WO-B')
+    expect(wrapper.text()).toBe('WO-B/OP-2')
 
     router.back()
     await flushPromises()
     expect(router.currentRoute.value.query).toMatchObject({
       workOrderId: 'WO-A',
-      operationTaskId: 'OP-A',
+      operationTaskId: 'OP-1',
     })
     router.forward()
     await flushPromises()
     expect(router.currentRoute.value.query).toMatchObject({
       workOrderId: 'WO-B',
-      operationTaskId: 'OP-B',
+      operationTaskId: 'OP-2',
+    })
+  })
+
+  it('resolves task 501 with bounded pages and cancels old exact keys on route/scope changes', async () => {
+    const { auth, router, wrapper } = await createHarness(
+      '/mes/report?workOrderId=WO-501&operationTaskId=OP-501',
+    )
+    sdkState.detailRequests[0].resolve(
+      detail(
+        'WO-501',
+        Array.from({ length: 500 }, (_, index) => task('WO-501', index + 1)),
+      ),
+    )
+    await flushPromises()
+
+    for (let page = 0; page < 6; page += 1) {
+      const request = sdkState.exactRequests[page]
+      expect(request).toBeDefined()
+      expect(request.options.query).toMatchObject({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        workOrderId: 'WO-501',
+        skip: page * 100,
+        take: 100,
+      })
+      const items =
+        page === 5
+          ? [task('WO-501', 501)]
+          : Array.from({ length: 100 }, (_, index) => task('WO-501', page * 100 + index + 1))
+      request.resolve({ data: { success: true, data: { items } } })
+      await flushPromises()
+    }
+    expect(wrapper.text()).toBe('WO-501/OP-501')
+
+    await router.push('/mes/report?workOrderId=WO-501&operationTaskId=OP-999')
+    await flushPromises()
+    const oldRouteRequest = sdkState.exactRequests.at(-1)!
+    expect(oldRouteRequest.options.signal.aborted).toBe(false)
+    await router.push('/mes/report?workOrderId=WO-501&operationTaskId=OP-998')
+    await flushPromises()
+    expect(oldRouteRequest.options.signal.aborted).toBe(true)
+
+    const oldScopeRequest = sdkState.exactRequests.at(-1)!
+    expect(oldScopeRequest).not.toBe(oldRouteRequest)
+    expect(oldScopeRequest.options.signal.aborted).toBe(false)
+    auth.principal = {
+      organizationId: 'org-002',
+      environmentId: 'env-prod',
+    } as never
+    await flushPromises()
+    expect(oldScopeRequest.options.signal.aborted).toBe(true)
+    const newScopeDetail = sdkState.detailRequests.find(
+      (request) => request.options.query.organizationId === 'org-002',
+    )!
+    expect(newScopeDetail).toBeDefined()
+    newScopeDetail.resolve(
+      detail(
+        'WO-501',
+        Array.from({ length: 500 }, (_, index) => task('WO-501', index + 1)),
+      ),
+    )
+    await flushPromises()
+    expect(sdkState.exactRequests.at(-1)?.options.query).toMatchObject({
+      organizationId: 'org-002',
+      environmentId: 'env-prod',
+      workOrderId: 'WO-501',
+      take: 100,
     })
   })
 })

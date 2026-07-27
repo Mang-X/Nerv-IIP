@@ -3,26 +3,19 @@ import type {
   BusinessConsoleMesWorkOrderDetailResponse,
   BusinessConsoleMesWorkOrderItem,
 } from '@nerv-iip/api-client'
-import { computed, watch, type Ref } from 'vue'
+import { computed, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 type WorkOrder = BusinessConsoleMesWorkOrderItem
 type Task = BusinessConsoleMesOperationTaskRow
 
-interface TaskFilters {
-  workOrderId?: string
-}
-
 interface UseMesReportIdentityOptions {
-  workOrders: Readonly<Ref<WorkOrder[]>>
-  workOrdersPending: Readonly<Ref<boolean>>
   workOrderDetail: Readonly<Ref<BusinessConsoleMesWorkOrderDetailResponse | null | undefined>>
   workOrderDetailPending: Readonly<Ref<boolean>>
   workOrderDetailError: Readonly<Ref<unknown>>
-  operationTasks: Readonly<Ref<Task[]>>
-  tasksPending: Readonly<Ref<boolean>>
-  taskFilters: TaskFilters
-  cancelPendingTasks: () => void
+  exactOperationTask: Readonly<Ref<Task | null | undefined>>
+  exactOperationTaskPending: Readonly<Ref<boolean>>
+  exactOperationTaskError: Readonly<Ref<unknown>>
 }
 
 function queryId(value: unknown) {
@@ -54,25 +47,10 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
     return null
   })
 
-  watch(
-    () => selectedWorkOrder.value?.workOrderId,
-    (workOrderId) => {
-      if (options.taskFilters.workOrderId === workOrderId) return
-      options.cancelPendingTasks()
-      options.taskFilters.workOrderId = workOrderId
-    },
-    { immediate: true },
-  )
-
   const visibleOperationTasks = computed(() => {
     const workOrderId = selectedWorkOrder.value?.workOrderId
     const detail = options.workOrderDetail.value
-    if (
-      !workOrderId ||
-      options.workOrderDetailPending.value ||
-      options.tasksPending.value ||
-      options.taskFilters.workOrderId !== workOrderId
-    ) {
+    if (!workOrderId || options.workOrderDetailPending.value) {
       return []
     }
     const exactTasks =
@@ -84,10 +62,16 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
 
   const selectedTask = computed<Task | null>(() => {
     const operationTaskId = requestedOperationTaskId.value
-    if (!operationTaskId) return null
-    return (
-      visibleOperationTasks.value.find((task) => task.operationTaskId === operationTaskId) ?? null
+    const workOrderId = selectedWorkOrder.value?.workOrderId
+    if (!operationTaskId || !workOrderId) return null
+    const detailTask = visibleOperationTasks.value.find(
+      (task) => task.operationTaskId === operationTaskId,
     )
+    if (detailTask) return detailTask
+    const exactTask = options.exactOperationTask.value
+    return exactTask?.workOrderId === workOrderId && exactTask.operationTaskId === operationTaskId
+      ? exactTask
+      : null
   })
 
   const pair = computed(() => {
@@ -111,19 +95,11 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
     if (workOrderId && !options.workOrderDetailPending.value && !selectedWorkOrder.value) {
       return `未找到工单 ${workOrderId}，已阻止报工。`
     }
-    if (
-      workOrderId &&
-      operationTaskId &&
-      selectedWorkOrder.value &&
-      !options.tasksPending.value &&
-      !selectedTask.value
-    ) {
-      const taskWithSameId = options.operationTasks.value.find(
-        (task) => task.operationTaskId === operationTaskId,
-      )
-      if (taskWithSameId?.workOrderId && taskWithSameId.workOrderId !== workOrderId) {
-        return `工序任务 ${operationTaskId} 不属于工单 ${workOrderId}，已阻止报工。`
+    if (workOrderId && operationTaskId && selectedWorkOrder.value && !selectedTask.value) {
+      if (options.exactOperationTaskError.value) {
+        return `工单 ${workOrderId} 下的工序任务 ${operationTaskId} 精确查询失败，已阻止报工，请重试。`
       }
+      if (options.exactOperationTaskPending.value) return null
       return `未找到工单 ${workOrderId} 下的工序任务 ${operationTaskId}，已阻止报工。`
     }
     return null
