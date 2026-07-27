@@ -377,6 +377,17 @@ design-system 站是唯一"宿主自带 unlayered 敌意样式"的环境，其�
 > `*-pro`/`.ds-*`/`.sb-*`，`data-slot` 用 `nv-` 前缀。已并入
 > `nvui-naming.contract.test.ts` 冻结 canonical 集合。
 
+> **收口后新增（无旧名，完全 Pro-free）。** 演示走查整改（MES 前端批）在 `blocks/` 再增一件：
+> - `NvGroupPanel`（可折叠分组面板：把长列表按业务父级——工单 / 客户 / 设备 / 批次——
+>   切成若干组，每组常驻标题行 + 可折叠内容区；只管呈现与展开态，不承担取数与分页）
+>
+> 判定依据同上（§1.2 尾「新组件归属判定」→ §1.1(2)）：PC 指针紧凑表面的页面级复用区块，
+> 故落 `blocks/`；定名走 §1.1(2) PC 层取素名：`Nv` + 素名（`GroupPanel`），R1–R5 不适用。
+> 未取 `NvCollapsible` 是为避让 shadcn 原版同名件的语义——本件不是原版 Collapsible 的重建版，
+> 而是「分组容器」这一业务语义的区块件。文件名即 `NvGroupPanel.vue`，`data-slot` 为
+> `nv-group-panel`。已并入 `nvui-naming.contract.test.ts` 冻结 canonical 集合，
+> 文档站页 `components/desktop/group-panel`。
+
 ### A1. PC 素名层 — `pc/`（35 目录，116 个组件导出）
 
 | 目录 | 旧名 | 新名 |

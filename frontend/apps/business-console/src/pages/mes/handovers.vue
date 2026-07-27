@@ -2,12 +2,14 @@
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { mesHandoverStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { useMesShiftHandovers } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
   NvDataTable,
+  NvInput,
   NvMetricCard,
   NvPageHeader,
   NvSelect,
@@ -31,7 +33,10 @@ definePage({
 
 const { filters, handovers, handoversError, handoversPending, handoversTotal, refreshHandovers } =
   useMesShiftHandovers()
-const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+const { keyword } = useMesKeywordFilter(filters)
+const { page, pageSize } = usePagedList(filters, {
+  resetOn: [() => filters.status, () => filters.keyword],
+})
 
 const statusFilter = computed({
   get: () => filters.status || 'all',
@@ -134,6 +139,12 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
+        <NvInput
+          v-model="keyword"
+          class="h-9 w-56"
+          placeholder="交接单 / 班次 / 班组"
+          aria-label="搜索班次交接"
+        />
         <NvSelect v-model="statusFilter">
           <NvSelectTrigger class="h-9 w-32" aria-label="交接状态"
             ><NvSelectValue

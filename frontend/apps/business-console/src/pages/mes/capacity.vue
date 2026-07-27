@@ -3,6 +3,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesCapacityImpacts } from '@/composables/useBusinessMes'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { mesCapacityStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -38,7 +39,10 @@ const {
   filters,
   refreshCapacityImpacts,
 } = useMesCapacityImpacts()
-const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+const { keyword } = useMesKeywordFilter(filters)
+const { page, pageSize } = usePagedList(filters, {
+  resetOn: [() => filters.status, () => filters.keyword],
+})
 const statusFilter = shallowRef('all')
 
 const openCount = computed(
@@ -143,6 +147,12 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
+        <NvInput
+          v-model="keyword"
+          class="h-9 w-56"
+          placeholder="工作中心 / 设备 / 原因"
+          aria-label="搜索产能影响"
+        />
         <NvSelect v-model="statusFilter">
           <NvSelectTrigger class="h-9 w-32" aria-label="影响状态"
             ><NvSelectValue

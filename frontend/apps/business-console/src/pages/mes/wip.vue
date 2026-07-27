@@ -4,11 +4,13 @@ import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { describeMesReadinessReason, useMesWipSummary } from '@/composables/useBusinessMes'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
+import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
   NvDataTable,
+  NvInput,
   NvPageHeader,
   NvSelect,
   NvSelectContent,
@@ -31,7 +33,10 @@ definePage({
 
 const { filters, refreshWip, wipError, wipPending, wipRows, wipTotal } = useMesWipSummary()
 const { resolveWorkCenter } = useMesDisplayNames()
-const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+const { keyword } = useMesKeywordFilter(filters)
+const { page, pageSize } = usePagedList(filters, {
+  resetOn: [() => filters.status, () => filters.keyword],
+})
 const statusFilter = shallowRef('all')
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
@@ -109,6 +114,12 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
+        <NvInput
+          v-model="keyword"
+          class="h-9 w-56"
+          placeholder="工单 / 工序 / 工作中心"
+          aria-label="搜索在制行"
+        />
         <NvSelect v-model="statusFilter">
           <NvSelectTrigger class="h-9 w-32" aria-label="在制状态"
             ><NvSelectValue

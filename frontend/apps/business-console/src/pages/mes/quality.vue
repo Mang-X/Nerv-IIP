@@ -2,12 +2,14 @@
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { mesQualityStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { useMesRelatedQualityItems } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
   NvDataTable,
+  NvInput,
   NvMetricCard,
   NvPageHeader,
   NvSelect,
@@ -40,7 +42,10 @@ const {
   qualityItemsTotal,
   refreshQualityItems,
 } = useMesRelatedQualityItems()
-const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+const { keyword } = useMesKeywordFilter(filters)
+const { page, pageSize } = usePagedList(filters, {
+  resetOn: [() => filters.status, () => filters.keyword],
+})
 
 const statusFilter = computed({
   get: () => filters.status || 'all',
@@ -150,6 +155,12 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
+        <NvInput
+          v-model="keyword"
+          class="h-9 w-56"
+          placeholder="质量项 / 来源单据 / 缺陷代码"
+          aria-label="搜索质量项"
+        />
         <NvSelect v-model="statusFilter">
           <NvSelectTrigger class="h-9 w-32" aria-label="质量状态"
             ><NvSelectValue
