@@ -13,6 +13,7 @@ import {
   useMasterDataResource,
   useMasterDataResourceActions,
 } from '@/composables/useBusinessMasterData'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -80,6 +81,7 @@ const workshops = useBusinessWorkshops()
 const lines = useMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('production-line')
 const workCenters = useMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('work-center')
 const deviceActions = useMasterDataResourceActions('device-asset')
+const { resolvePartnerLabel } = useBusinessPartnerNames()
 
 // 列表回传的是 lineCode/workCenterCode（编码）；解析成名称显示（取自产线/工作中心实体，找不到回退编码）。
 const siteNameByCode = computed(
@@ -103,6 +105,10 @@ function workshopName(code?: string | null) {
 }
 function lineName(code?: string | null) {
   return code ? (lineNameByCode.value.get(code) ?? code) : '无'
+}
+/** 供应商列同样显中文名（本页其它编码列都已解名，这一列此前漏了）。 */
+function supplierName(code?: string | null) {
+  return code ? resolvePartnerLabel(code, '无') : '无'
 }
 function wcName(code?: string | null) {
   return code ? (wcNameByCode.value.get(code) ?? code) : '无'
@@ -221,7 +227,7 @@ const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
     key: 'supplierPartnerCode',
     header: '供应商',
     width: 'w-28',
-    accessor: (r) => r.supplierPartnerCode ?? '无',
+    accessor: (r) => supplierName(r.supplierPartnerCode),
   },
   { key: 'active', header: '状态', width: 'w-24' },
   {
