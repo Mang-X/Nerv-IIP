@@ -283,7 +283,7 @@ const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
     key: 'category',
     header: '产品分类',
     width: 'w-28',
-    accessor: (r) => labelOf(productCategoryOptions.value, r.category) || '无',
+    accessor: (r) => categoryLabel(r.category) || '无',
   },
   {
     key: 'materialType',
@@ -311,11 +311,25 @@ function labelOf(options: ReadonlyArray<{ value: string; label: string }>, value
   if (!value) return ''
   return options.find((o) => o.value === value)?.label ?? value
 }
+/**
+ * 产品分类显示名。
+ *
+ * 现存数据里有一批物料的 category 存的不是分类主数据的 `PCAT-*`，而是 `raw-material`
+ * 这类**物料类型** slug（后端 `Sku.Create` 六参重载把 category 同时赋给了 materialType，
+ * 种子又只传了物料类型，已作为后端种子缺陷单独移交）。分类目录里查不到时再用物料类型
+ * 常量兜一层中文，避免把英文码值印到界面上；两个词表都没有才原样显示。
+ */
+function categoryLabel(value?: string | null) {
+  if (!value) return ''
+  const fromCatalog = productCategoryOptions.value.find((o) => o.value === value)?.label
+  if (fromCatalog) return fromCatalog
+  return MATERIAL_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value
+}
 function skuDetailFields(row: BusinessConsoleResourceItem) {
   return [
     { label: '物料编码', value: row.code ?? '' },
     { label: '物料名称', value: row.displayName ?? '' },
-    { label: '产品分类', value: labelOf(productCategoryOptions.value, row.category) },
+    { label: '产品分类', value: categoryLabel(row.category) },
     { label: '物料类型', value: labelOf(materialTypeOptions.value, row.materialType) },
     { label: '基本单位', value: labelOf(baseUomOptions.value, row.baseUomCode) },
   ]
