@@ -81,6 +81,8 @@ export {
   inspectionTaskSourceTypeLabels,
   inspectionTaskStatusLabel,
   inspectionTaskStatusLabels,
+  qualitySourceTypeLabel,
+  qualitySourceTypeLabels,
 } from './labels/qualityLabels'
 export {
   EXPIRY_CRITICAL_THRESHOLD_DAYS,

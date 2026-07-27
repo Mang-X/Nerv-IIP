@@ -160,6 +160,35 @@ connector is online is decided by real connector or simulator heartbeats, never 
 seed. Seeding costs roughly 1.1 s in MasterData and 1.9 s in ProductEngineering on a
 local Docker PostgreSQL, and repeat runs are idempotent.
 
+When that same `LeaderDemo:World:Enabled` switch is true, AppHost also enables the
+first-class simulated Connector Host adapter. It waits for IndustrialTelemetry,
+injects the existing internal-service token and service endpoint through Aspire,
+sets collection to 2 seconds and Ops polling to 1 second, and leaves the adapter
+disabled for every non-world profile. The three AppHub instance and collection
+connector identities are exactly `CONN-OPCUA-01`, `CONN-MQTT-01`, and
+`CONN-MODBUS-01`; their compact checked-in profile expands to the same 46 devices
+and 96 tags as the L0 seed (44 OPC UA, 28 MQTT, 24 Modbus bindings).
+
+The default repeating profile is 45 minutes: 15 minutes normal, then 10 minutes
+each degrading, alarm, and recovered. `DEV-CNC-03/vibration`,
+`DEV-CTG-02/bath-temperature`, and `DEV-AUX-04/air-pressure` have staggered phase
+offsets. Values are derived from the configured seed plus stable point identity and
+cycle, so restart/replay under the same controlled time is repeatable and adding or
+reordering a device does not perturb another stream. The profile contains units,
+ranges, writable limits and protocol-shaped addresses only; it contains no
+credential, customer key, token, or password.
+
+Operationally, AppHub heartbeat proves Host liveness; simulated field connection,
+collector counters/last sample, and tag sample presence remain separate health
+facts. Failed telemetry keeps the identical source sequence for bounded exponential
+retry. Pending samples and operation receipts have configured hard capacities.
+Supported demo controls are `write-tag`, `parameter-set`, and `start-stop`;
+`OperationTaskId` provides in-process idempotency and every terminal result carries a
+correlated `Good`, `BadNotFound`, `BadNotSupported`, or `BadOutOfRange` device
+receipt. Stop the session through `.\nerv.ps1 demo stop` or the exact-session
+`fullstack stop` workflow above; Connector Host cancellation stops polling/retry
+loops and does not require broad process cleanup.
+
 A third opt-in block seeds the **factory world-bible L1 background history**
 (same plan, section 7): roughly 29 weeks of ERP and MES paper trail since the
 2026-01-05 go-live — about 3283 sales orders `SO-2026-#####` with deliveries,

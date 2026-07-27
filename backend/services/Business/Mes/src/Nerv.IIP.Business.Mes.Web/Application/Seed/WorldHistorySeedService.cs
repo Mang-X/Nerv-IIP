@@ -220,6 +220,20 @@ public sealed class WorldHistorySeedService(
         var createdAtUtc = MomentOn(timeline.OrderDate, plan.WorkOrderNo, "workorder-created");
         var releasedAtUtc = MomentOn(timeline.WorkOrderReleaseDate, plan.WorkOrderNo, "workorder-released");
 
+        // 时间线贴近 asOfDate 时（尾部单），OrderDate/ReleaseDate/ProductionStartDate 被压到同一天，
+        // 班次内随机时刻可能倒挂出「报工早于工单创建」（asOfDate=2026-07-27 实翻车，校验器
+        // fail-closed 拦停 MES 启动）。夹取保证 创建 ≤ 下达 ≤ 首个工序窗口开始。
+        var productionFloorUtc = WorldHistoryCalendar.ShiftMoment(timeline.ProductionStartDate, 0, 0);
+        if (releasedAtUtc >= productionFloorUtc)
+        {
+            releasedAtUtc = productionFloorUtc.AddHours(-1);
+        }
+
+        if (createdAtUtc >= releasedAtUtc)
+        {
+            createdAtUtc = releasedAtUtc.AddHours(-1);
+        }
+
         var workOrder = WorkOrder.Create(
             organizationId,
             environmentId,

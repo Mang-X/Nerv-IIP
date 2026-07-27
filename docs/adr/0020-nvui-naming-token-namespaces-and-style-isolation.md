@@ -363,6 +363,20 @@ design-system 站是唯一"宿主自带 unlayered 敌意样式"的环境，其�
 > `NvMetric*Part`（`NvMetricTipPart` 等 7 件）：保持品牌层 `Nv` 前缀统一语义，但
 > **不导出、不入 barrel、不入冻结集合**——`*Part` 后缀即「某公开件的私有组成部分」。
 
+> **收口后新增（无旧名，完全 Pro-free）。** 演示走查整改（前端批 1）在 `blocks/` 新增两个
+> 跨模块复用的选择类区块件，直接以 `Nv*` canonical 名落地：
+> - `NvEntityPicker`（实体选择弹窗：可搜索的实体选择对话框，仅选不填；名称 + 编码 +
+>   辅助信息三列展示，底部注明数据来源，适合上百条的主数据目录）
+> - `NvCascadePicker`（级联选择器：一行多级依赖选择，如 车间→产线→设备；每级为可搜索
+>   弹出单选，选上级自动清空下游，选项过滤由调用方组装）
+>
+> 判定依据（§1.2 尾「新组件归属判定」→ §1.1(2)）：二者是 **PC 指针紧凑表面**的
+> 页面级复用区块（组合 `pc/` 的 `NvDialogContent` / `NvSearchSelect` 而成），故落
+> `blocks/`；定名走 **§1.1(2) PC 层取素名**：`Nv` + 素名（`EntityPicker`/`CascadePicker`），
+> R1–R5 不适用。文件名即 `NvEntityPicker.vue`/`NvCascadePicker.vue`，内部无
+> `*-pro`/`.ds-*`/`.sb-*`，`data-slot` 用 `nv-` 前缀。已并入
+> `nvui-naming.contract.test.ts` 冻结 canonical 集合。
+
 ### A1. PC 素名层 — `pc/`（35 目录，116 个组件导出）
 
 | 目录 | 旧名 | 新名 |

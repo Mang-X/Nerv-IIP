@@ -166,6 +166,10 @@ export default defineConfig({
             { text: 'FileUpload 文件上传', link: '/components/desktop/file-upload' },
             { text: 'Select 选择器', link: '/components/desktop/select' },
             { text: 'Combobox 联想 / 搜索选择', link: '/components/desktop/combobox' },
+            {
+              text: 'EntityPicker 实体选择 / 级联',
+              link: '/components/desktop/entity-picker',
+            },
             { text: 'Checkbox 复选框', link: '/components/desktop/checkbox' },
             { text: 'Radio 单选框', link: '/components/desktop/radio' },
             { text: 'Switch 开关', link: '/components/desktop/switch' },

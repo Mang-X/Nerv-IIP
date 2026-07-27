@@ -20,6 +20,8 @@ const transitionalScreenIdentifier = /(?:^|[\s"'`.])sb-/m
 // (NvCombobox / NvSearchSelect added post-freeze by MAN-439 — new components, see ADR 0020 Appendix A.)
 // (NvMetricRing / NvMetricStrip added post-freeze — distinct PC components named per ADR 0020
 //  §1.1(2) PC 素名规则 [R1–R5 是 screen/touch/mobile 专用，PC 不适用]; see Appendix A 收口后新增块.)
+// (NvEntityPicker / NvCascadePicker added post-freeze — blocks 层实体选择弹窗 / 级联选择器，
+//  named per ADR 0020 §1.1(2) PC 素名规则; see Appendix A 收口后新增块.)
 const NV_ALL = [
   'NvAlarmTable',
   'NvAlertDialog',
@@ -49,6 +51,7 @@ const NV_ALL = [
   'NvCardHeader',
   'NvCardTitle',
   'NvCarousel',
+  'NvCascadePicker',
   'NvCheckbox',
   'NvCombobox',
   'NvCommand',
@@ -90,6 +93,7 @@ const NV_ALL = [
   'NvDropdownMenuSubContent',
   'NvDropdownMenuSubTrigger',
   'NvDropdownMenuTrigger',
+  'NvEntityPicker',
   'NvField',
   'NvFieldContent',
   'NvFieldDescription',

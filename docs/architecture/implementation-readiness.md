@@ -361,15 +361,32 @@ Notification 对 `alarm-raised` 的收件人默认回退 `role:maintenance`，�
 `IndustrialTelemetry:AlarmNotification:RecipientRefs = ["user:user-admin", "role:maintenance"]`。
 工作台设备预警卡只查 `status=raised`。
 
-#### L3 常驻模拟的衔接（MAN-603 / #1088 承接）
+#### L3 常驻模拟连接器（MAN-603 / #1088，已交付）
 
-历史回填的上界是截止日 00:00 UTC；常驻模拟连接器（MAN-603 在 connector-hosts 内实现，以
-`CONN-OPCUA-01` / `CONN-MQTT-01` / `CONN-MODBUS-01` 身份注册 AppHub、心跳并上报 CollectionHealth）
-从当日起以实时样本续写。三期已为全部 96 个点位配好 `WH-*` 报警规则（阈值=形状参数上界），
-模拟器只要按设备档案让 2–3 台设备错峰越限即可获得真实 raised 报警并流到工作台。推荐滚动档案
-（阈值取自 `WorldHistoryDeviceSpec`）：`DEV-CNC-03` vibration（>6.5 mm/s，critical）、`DEV-CTG-02`
+历史回填的上界是截止日 00:00 UTC；常驻模拟连接器已在 `connector-hosts` 内作为一等 adapter 交付，以
+`CONN-OPCUA-01` / `CONN-MQTT-01` / `CONN-MODBUS-01` 身份注册 AppHub、心跳并上报 CollectionHealth，
+从当日起以实时样本续写。AppHost 只在 `LeaderDemo:World:Enabled` 时开启它，使用 2 秒采集周期、
+1 秒 Ops poll，并引用/等待 IndustrialTelemetry；普通 dev/full-stack 保持 `Simulated:Enabled=false`。
+三期已为全部 96 个点位配好 `WH-*` 报警规则（阈值=形状参数上界），默认 45 分钟 profile 让 3 台设备
+错峰越限以获得真实 raised 报警并流到工作台。滚动档案（阈值取自 `WorldHistoryDeviceSpec`）为
+`DEV-CNC-03` vibration（>6.5 mm/s，critical）、`DEV-CTG-02`
 bath-temperature（>34 degC，critical）、`DEV-AUX-04` air-pressure（<6.0 bar，warning），周期约
-45 分钟错峰（劣化→越限→恢复），保证任意时刻约 2 台处于 raised；健康页要显示 Fresh 需上报间隔 ≤2 分钟。
+45 分钟错峰（劣化→越限→恢复），让三类来源滚动覆盖 raised 窗口；只有这三个 override tag 显式启用
+alarm scenario，完整周期按实际规则阈值的越限集合严格等于三者、最大同时越限数为 2，其余 93 个点保持
+normal baseline；健康页要显示 Fresh 需上报间隔 ≤2 分钟。
+
+确定性、边界与运行证据均已固化：受控 `TimeProvider` 的 1,000 周期测试跨 250 个完整 phase period，
+对两次 96,000-sample stream digest、三连接器 44,000/28,000/24,000 独立 counters、有界
+outbox/receipt cache 和 cancellation 做断言；同 cycle 的完整 request（含 bucket/state occurrence）在
+sub-cycle 重启后保持一致；命令改变 value/state 时完整 request 内容地址也随之改变，进程重启丢失命令态
+不会复用同一 source sequence。1,000 周期只上报 46 条初始设备状态，后续实际 transition 进入每设备
+256 项有界 FIFO、按队首成功投递后再推进；队满命令以 `BadResourceUnavailable` 拒绝且不改变状态。
+真实 build Host 进程对 loopback 平台证明三个 canonical
+registration、每实例至少两次 heartbeat、CollectionHealth、44/28/24 replace manifest、三源 telemetry
+和 correlated `Good` control result，并在 Unix-like 的 SIGTERM 后五秒内退出且未走 force-kill；
+Windows 运行 `.exe` AppHost 解析/存在性契约，SIGTERM 真实进程证据显式跳过而不会意外调用 `/bin/kill`。
+实现没有改动 #1086
+脚本、公开 DTO、业务 endpoint、facade matrix、OpenAPI、generated client、数据库 schema 或产品页面。
 
 #### 与设定集 §7 的形状对照与耗时实测（2026-07-26，Windows 10.0.26200、.NET 10、Docker PostgreSQL）
 

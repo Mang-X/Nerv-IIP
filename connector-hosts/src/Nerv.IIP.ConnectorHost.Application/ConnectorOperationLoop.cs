@@ -8,10 +8,12 @@ namespace Nerv.IIP.ConnectorHost.Application;
 public sealed class ConnectorOperationLoop(
     IReadOnlyList<IConnectorOperationExecutor> executors,
     IOpsClient opsClient,
-    ConnectorHostRuntimeContext runtimeContext)
+    ConnectorHostRuntimeContext runtimeContext,
+    TimeProvider? timeProvider = null)
 {
     private readonly object _gate = new();
     private readonly List<OperationResult> _unsentResults = [];
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     public async Task RunCycleAsync(CancellationToken cancellationToken)
     {
@@ -29,9 +31,9 @@ public sealed class ConnectorOperationLoop(
             cancellationToken);
         foreach (var task in pending.Items)
         {
-            var startedAt = DateTimeOffset.UtcNow;
+            var startedAt = _timeProvider.GetUtcNow();
             var execution = await ExecuteAsync(task, cancellationToken);
-            var finishedAt = DateTimeOffset.UtcNow;
+            var finishedAt = _timeProvider.GetUtcNow();
             var context = new ConnectorRequestContext(runtimeContext.ProtocolVersion, runtimeContext.SdkVersion, task.CorrelationId, finishedAt, task.OrganizationId, task.EnvironmentId, runtimeContext.ConnectorHostId);
             var failure = execution.Succeeded ? null : new FailureReason(execution.FailureCode ?? "operation.failed", execution.FailureMessage ?? "Operation failed.", execution.FailureCategory ?? "runtime", execution.Retryable, new Dictionary<string, string>());
             var result = new OperationResult(context, task.OperationTaskId, task.AttemptId, task.InstanceKey, task.OperationCode, startedAt, finishedAt, execution.Succeeded ? "succeeded" : "failed", failure, execution.Output);

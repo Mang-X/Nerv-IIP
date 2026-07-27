@@ -43,6 +43,27 @@ public sealed class WorldHistorySeedServiceTests
         Assert.Contains(taskCounts, count => count == 8);
     }
 
+    /// <summary>
+    /// 生成必须对任意 asOfDate 成立，不能只在固定测试日期上绿：2026-07-27（周日后首个工作日）
+    /// 曾让尾部单的 OrderDate/ReleaseDate/ProductionStartDate 压到同一天，班次随机时刻倒挂出
+    /// 「首次报工早于工单创建」，校验器 fail-closed 拦停 MES 启动（demo 栈三连败的根因）。
+    /// 周日与春节内的 asOfDate 一并覆盖日历吸附边界。
+    /// </summary>
+    [Theory]
+    [InlineData(2026, 7, 27)]
+    [InlineData(2026, 7, 26)]
+    [InlineData(2026, 8, 2)]
+    [InlineData(2026, 2, 16)]
+    [InlineData(2026, 7, 31)]
+    public async Task History_seed_passes_its_validator_for_any_as_of_date(int year, int month, int day)
+    {
+        await using var dbContext = CreateDbContext();
+
+        var report = await CreateSeed(dbContext).SeedAsync("org-001", "env-dev", new DateOnly(year, month, day), TestScale);
+
+        Assert.NotEmpty(report.Validation.Sample);
+    }
+
     [Fact]
     public async Task Closed_work_orders_balance_reports_receipts_and_the_sales_order_quantity()
     {

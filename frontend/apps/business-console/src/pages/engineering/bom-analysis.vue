@@ -6,13 +6,14 @@ import type {
   BusinessConsoleBomWhereUsedItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
-import { useBomAnalysis } from '@/composables/useProductEngineering'
+import { useBomAnalysis, useBomItemCatalog } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { formatDate, today } from '@/utils/format'
 import {
   NvButton,
   NvDataTable,
   NvDatePicker,
+  NvEntityPicker,
   NvField,
   NvFieldLabel,
   NvInput,
@@ -90,10 +91,60 @@ const kindOptions = [
   { value: 'manufacturing', label: 'MBOM' },
 ]
 
+const {
+  engineeringEntries,
+  skuEntries,
+  pending: catalogPending,
+  load: loadCatalog,
+} = useBomItemCatalog()
+
 const codeLabel = computed(() => (form.kind === 'engineering' ? '父项物料' : '产出物料'))
-const codePlaceholder = computed(() =>
-  form.kind === 'engineering' ? '如 FG-100' : '如 SKU-FG-100',
+// EBOM 分析吃工程物料 itemCode，MBOM 分析吃基础数据 skuCode —— 目录按 BOM 类型切换。
+const catalogEntries = computed(() =>
+  form.kind === 'engineering' ? engineeringEntries.value : skuEntries.value,
 )
+const catalogSourceText = computed(() =>
+  form.kind === 'engineering' ? '数据来自工程物料目录' : '数据来自基础数据物料主数据',
+)
+const catalogEmptyText = computed(() =>
+  form.kind === 'engineering'
+    ? '暂无工程物料，请先在工程数据维护物料修订'
+    : '暂无物料主数据，请先在基础数据维护物料',
+)
+
+function pickerOptions(current: string) {
+  const options = catalogEntries.value.map((entry) => ({
+    value: entry.code,
+    label: entry.name,
+    hint: entry.hint,
+  }))
+  // 深链 / 目录截断时，保住 URL 带进来的当前编码，避免选择器显示成未选。
+  const trimmed = current.trim()
+  if (trimmed && !options.some((option) => option.value === trimmed)) {
+    options.unshift({ value: trimmed, label: trimmed, hint: undefined })
+  }
+  return options
+}
+const rootPickerOptions = computed(() => pickerOptions(form.rootCode))
+const componentPickerOptions = computed(() => pickerOptions(form.componentCode))
+
+// 物料编码 → 名称（两套目录合并），结果表格名称列用；查不到显示「—」，不留空、不编造。
+const itemNameByCode = computed(() => {
+  const map = new Map<string, string>()
+  for (const entry of skuEntries.value) map.set(entry.code, entry.name)
+  for (const entry of engineeringEntries.value) map.set(entry.code, entry.name)
+  return map
+})
+function itemName(code?: string | null) {
+  if (!code) return '—'
+  return itemNameByCode.value.get(code) ?? '—'
+}
+function diffItemName(row: BusinessConsoleBomDiffLineItem) {
+  if (row.changeType?.toLowerCase() === 'replaced') {
+    return `${itemName(row.oldItemCode)} -> ${itemName(row.newItemCode)}`
+  }
+  return itemName(row.newItemCode || row.oldItemCode)
+}
 const canSubmit = computed(() => {
   if (form.view === 'diff') {
     return (
@@ -157,6 +208,7 @@ const treeColumns: NvDataTableColumn<TreeRow>[] = [
 ]
 const explosionColumns: NvDataTableColumn<TreeRow>[] = [
   { key: 'itemCode', header: '物料', cellClass: 'font-medium' },
+  { key: 'itemName', header: '名称' },
   { key: 'level', header: '层级', align: 'end', width: 'w-20' },
   { key: 'lineQuantity', header: '行数量', align: 'end', width: 'w-24' },
   { key: 'requiredQuantity', header: '滚算需求', align: 'end', width: 'w-28' },
@@ -165,6 +217,7 @@ const explosionColumns: NvDataTableColumn<TreeRow>[] = [
 ]
 const whereUsedColumns: NvDataTableColumn<BusinessConsoleBomWhereUsedItem>[] = [
   { key: 'parentItemCode', header: '父项', cellClass: 'font-medium' },
+  { key: 'parentItemName', header: '名称' },
   { key: 'bomCode', header: 'BOM 版本' },
   { key: 'lineQuantity', header: '用量', align: 'end', width: 'w-24' },
   { key: 'unitOfMeasureCode', header: '单位', width: 'w-24' },
@@ -174,6 +227,7 @@ const whereUsedColumns: NvDataTableColumn<BusinessConsoleBomWhereUsedItem>[] = [
 const diffColumns: NvDataTableColumn<BusinessConsoleBomDiffLineItem>[] = [
   { key: 'changeType', header: '变化', width: 'w-24' },
   { key: 'itemCode', header: '物料', cellClass: 'font-medium' },
+  { key: 'itemName', header: '名称' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-32' },
   { key: 'uom', header: '单位', width: 'w-28' },
   { key: 'rates', header: '损耗/得率', align: 'end', width: 'w-40' },
@@ -201,6 +255,7 @@ watch(
 )
 
 onMounted(() => {
+  void loadCatalog()
   applyRouteQuery()
   if (canSubmit.value) {
     void submit()
@@ -505,14 +560,36 @@ function formatError(value: unknown) {
           :data-invalid="submitted && !form.rootCode.trim()"
         >
           <NvFieldLabel for="bom-root">{{ codeLabel }}</NvFieldLabel>
-          <NvInput id="bom-root" v-model="form.rootCode" :placeholder="codePlaceholder" />
+          <NvEntityPicker
+            id="bom-root"
+            v-model="form.rootCode"
+            :options="rootPickerOptions"
+            title="选择物料"
+            placeholder="选择物料"
+            :source-text="catalogSourceText"
+            :empty-text="catalogEmptyText"
+            :loading="catalogPending"
+            :aria-label="codeLabel"
+            clearable
+          />
         </NvField>
         <NvField
           v-else-if="form.view === 'where-used'"
           :data-invalid="submitted && !form.componentCode.trim()"
         >
           <NvFieldLabel for="bom-component">组件物料</NvFieldLabel>
-          <NvInput id="bom-component" v-model="form.componentCode" placeholder="如 RM-200" />
+          <NvEntityPicker
+            id="bom-component"
+            v-model="form.componentCode"
+            :options="componentPickerOptions"
+            title="选择物料"
+            placeholder="选择物料"
+            :source-text="catalogSourceText"
+            :empty-text="catalogEmptyText"
+            :loading="catalogPending"
+            aria-label="组件物料"
+            clearable
+          />
         </NvField>
         <NvField v-else>
           <NvFieldLabel>对比对象</NvFieldLabel>
@@ -602,9 +679,10 @@ function formatError(value: unknown) {
           <span class="text-muted-foreground">{{ row.hasChildren ? '▾' : '•' }}</span>
           <div class="flex flex-col gap-0.5">
             <span class="inline-flex items-center gap-2">
-              {{ row.itemCode || '无' }}
+              {{ itemName(row.itemCode) }}
               <NvStatusBadge v-if="isContextNode(row)" label="追溯节点" tone="info" />
             </span>
+            <span class="font-mono text-xs text-muted-foreground">{{ row.itemCode || '无' }}</span>
             <span v-if="row.parentItemCode" class="text-xs text-muted-foreground"
               >上级 {{ row.parentItemCode }}</span
             >
@@ -640,6 +718,7 @@ function formatError(value: unknown) {
           <NvStatusBadge v-if="isContextNode(row)" label="追溯节点" tone="info" />
         </span>
       </template>
+      <template #cell-itemName="{ row }">{{ itemName(row.itemCode) }}</template>
       <template #cell-lineQuantity="{ row }">{{ formatQty(row.lineQuantity) }}</template>
       <template #cell-requiredQuantity="{ row }">{{ formatQty(row.requiredQuantity) }}</template>
       <template #cell-yield="{ row }">
@@ -670,6 +749,7 @@ function formatError(value: unknown) {
         />
       </template>
       <template #cell-itemCode="{ row }">{{ diffItemLabel(row) }}</template>
+      <template #cell-itemName="{ row }">{{ diffItemName(row) }}</template>
       <template #cell-quantity="{ row }">
         {{ formatQuantityDiff(row) }}
       </template>
@@ -700,6 +780,7 @@ function formatError(value: unknown) {
       :loading="pending"
       empty-message="当前条件没有反查结果。"
     >
+      <template #cell-parentItemName="{ row }">{{ itemName(row.parentItemCode) }}</template>
       <template #cell-bomCode="{ row }">{{ row.bomCode }} / {{ row.revision }}</template>
       <template #cell-lineQuantity="{ row }">{{ formatQty(row.lineQuantity) }}</template>
       <template #cell-effectiveDate="{ row }">{{ formatDate(row.effectiveDate) }}</template>

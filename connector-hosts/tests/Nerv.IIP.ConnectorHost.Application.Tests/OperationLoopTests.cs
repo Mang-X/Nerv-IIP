@@ -1,6 +1,7 @@
 using Nerv.IIP.ConnectorHost.Application;
 using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 using Nerv.IIP.ConnectorHost.Connectors.Docker;
+using Nerv.IIP.ConnectorHost.TestUtilities;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Sdk.Ops;
@@ -88,6 +89,27 @@ public sealed class OperationLoopTests
         Assert.Equal(1, ops.PendingCalls);
     }
 
+    [Fact]
+    public async Task Operation_loop_uses_controlled_time_for_result_and_context_timestamps()
+    {
+        var clock = new ControllableTimeProvider();
+        var ops = new RecordingOpsClient([
+            CreateTask("op-controlled-time", "controlled-instance", "lifecycle.restart")
+        ]);
+        var loop = new ConnectorOperationLoop(
+            [new AdvancingExecutor(clock)],
+            ops,
+            ConnectorHostRuntimeContext.DefaultLocal,
+            clock);
+
+        await loop.RunCycleAsync(CancellationToken.None);
+
+        var result = Assert.Single(ops.Results);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-17T00:00:00Z"), result.StartedAtUtc);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-17T00:00:02Z"), result.FinishedAtUtc);
+        Assert.Equal(result.FinishedAtUtc, result.Context.OccurredAtUtc);
+    }
+
     private static OperationTaskDispatchItem CreateTask(string operationTaskId, string instanceKey, string operationCode)
     {
         return new OperationTaskDispatchItem(
@@ -143,6 +165,21 @@ public sealed class OperationLoopTests
             }
 
             return Task.FromResult(ConnectorOperationExecution.Success(new Dictionary<string, string>()));
+        }
+    }
+
+    private sealed class AdvancingExecutor(ControllableTimeProvider clock)
+        : IConnectorOperationExecutor
+    {
+        public bool CanExecute(OperationTaskDispatchItem task) => true;
+
+        public Task<ConnectorOperationExecution> ExecuteAsync(
+            OperationTaskDispatchItem task,
+            CancellationToken cancellationToken)
+        {
+            clock.Advance(TimeSpan.FromSeconds(2));
+            return Task.FromResult(
+                ConnectorOperationExecution.Success(new Dictionary<string, string>()));
         }
     }
 
