@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggre
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
+using Nerv.IIP.Business.Quality.Web.Application.Errors;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 
@@ -57,6 +58,11 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
             return await EnsureNcrAndBuildResultAsync(task.InspectionRecordId, completed, cancellationToken);
         }
 
+        if (task.Status is not InspectionTaskStatuses.Pending and not InspectionTaskStatuses.InProgress)
+        {
+            throw new QualityLifecycleConflictException("create-inspection-record-from-task", task.Status);
+        }
+
         var existing = await inspectionRecordRepository.FindBySourceDocumentAsync(
             task.OrganizationId,
             task.EnvironmentId,
@@ -74,6 +80,11 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
 
             task.Complete(existing.Id, DateTimeOffset.UtcNow);
             return await EnsureNcrAndBuildResultAsync(existing.Id, existing, cancellationToken);
+        }
+
+        if (task.Status == InspectionTaskStatuses.InProgress)
+        {
+            throw new QualityLifecycleConflictException("create-inspection-record-from-task", task.Status);
         }
 
         var plan = await inspectionPlanRepository.GetWithCharacteristicsAsync(

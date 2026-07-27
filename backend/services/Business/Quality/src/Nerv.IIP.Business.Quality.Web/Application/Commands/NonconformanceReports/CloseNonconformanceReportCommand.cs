@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
+using Nerv.IIP.Business.Quality.Web.Application.Errors;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
@@ -33,6 +34,12 @@ public sealed class CloseNonconformanceReportCommandHandler(
     {
         var ncr = await repository.GetAsync(request.NcrId, cancellationToken)
             ?? throw new KnownException($"NCR '{request.NcrId}' was not found.");
+        if (ncr.Status != "disposition-in-progress"
+            || string.IsNullOrWhiteSpace(ncr.DispositionType))
+        {
+            throw new QualityLifecycleConflictException("close-ncr", ncr.Status);
+        }
+
         if (NonconformanceReport.RequiresEffectiveCapa(ncr.SourceType, ncr.DispositionType)
             && !await correctiveActionRepository.HasEffectiveCapaForNcrAsync(
                 ncr.OrganizationId,
@@ -43,11 +50,22 @@ public sealed class CloseNonconformanceReportCommandHandler(
             throw new KnownException("NCR requires a linked effective CAPA before closure.");
         }
 
-        ncr.Close(
-            request.ReworkWorkOrderId,
-            request.ScrapMovementId,
-            request.ReturnDocumentId,
-            request.Reason,
-            integrationEventContextAccessor.GetContext().Actor);
+        try
+        {
+            ncr.Close(
+                request.ReworkWorkOrderId,
+                request.ScrapMovementId,
+                request.ReturnDocumentId,
+                request.Reason,
+                integrationEventContextAccessor.GetContext().Actor);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new KnownException(exception.Message);
+        }
     }
 }
