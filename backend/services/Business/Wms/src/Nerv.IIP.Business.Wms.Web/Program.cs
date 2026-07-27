@@ -67,6 +67,7 @@ try
 
     builder.Services.AddWmsPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<WorldHistorySeedService>();
+    builder.Services.AddScoped<WorldHistoryWarehouseOpsSeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
@@ -155,6 +156,31 @@ try
         {
             app.Logger.LogInformation("World-history sample: {Document}", line);
         }
+
+        // 仓储自动化 / 盘点执行 / 来料退货块必须排在单据块之后：
+        // WCS 任务要绑真实落库的仓储作业任务，退货要挂真实落库的收货入库单。
+        var opsReport = await scope.ServiceProvider.GetRequiredService<WorldHistoryWarehouseOpsSeedService>().SeedAsync(
+            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev",
+            WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+            WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+        app.Logger.LogInformation(
+            "World-history WMS operations seed completed: {Counts} count executions, {Returns} supplier returns, " +
+            "{WcsTasks} WCS tasks, {Circuits} dispatch circuits; validator checked {CheckedCounts} counts " +
+            "({CompletedCounts} completed, {VarianceCounts} with variance) / {CheckedWcs} WCS tasks " +
+            "({CompletedWcs} completed, {FailedWcs} failed) / {CheckedCircuits} circuits / {CheckedReturns} returns.",
+            opsReport.CountExecutionsWritten,
+            opsReport.SupplierReturnRequestsWritten,
+            opsReport.WcsTasksWritten,
+            opsReport.WcsDispatchCircuitsWritten,
+            opsReport.Validation.CountExecutionsChecked,
+            opsReport.Validation.CompletedCountExecutionsChecked,
+            opsReport.Validation.VarianceCountExecutionsChecked,
+            opsReport.Validation.WcsTasksChecked,
+            opsReport.Validation.CompletedWcsTasksChecked,
+            opsReport.Validation.FailedWcsTasksChecked,
+            opsReport.Validation.WcsDispatchCircuitsChecked,
+            opsReport.Validation.SupplierReturnRequestsChecked);
     }
 
     app.UseNervIipRequestLocalization();
