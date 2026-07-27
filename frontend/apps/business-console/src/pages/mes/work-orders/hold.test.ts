@@ -274,6 +274,8 @@ describe('work-order list — quality hold lock icon', () => {
       global: {
         plugins: [patchPermissions(['business.mes.work-orders.read'])],
         stubs: {
+          // 行内工单抽屉自带一整套 MES 查询，本用例只看质量冻结锁标记，整体桩掉。
+          WorkOrderDetailSheet: true,
           BusinessLayout: { template: '<main><slot /></main>' },
           NvPageHeader: { template: '<header><slot name="actions" /></header>' },
           NvToolbar: { template: '<div><slot name="filters" /></div>' },
