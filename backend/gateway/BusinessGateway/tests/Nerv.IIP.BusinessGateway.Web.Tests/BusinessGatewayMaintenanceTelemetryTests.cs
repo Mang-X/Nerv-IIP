@@ -487,6 +487,39 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public async Task Maintenance_lifecycle_conflict_preserves_status_and_safe_code()
+    {
+        var maintenance = new RecordingMaintenanceFacadeClient
+        {
+            CompleteWorkOrderFailure = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.Conflict,
+                "lifecycle-conflict"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/maintenance/work-orders/wo-maint-001/complete",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                result = "restored",
+                downtimeReasonCode = "mechanical",
+                downtimeMinutes = 35,
+            });
+
+        await AssertLifecycleConflictAsync(response);
+    }
+
+    [Fact]
     public async Task Maintenance_plan_and_inspection_write_facades_use_plan_manage_permission_and_forward_payloads()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -873,6 +906,38 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public async Task Industrial_telemetry_lifecycle_conflict_preserves_status_and_safe_code()
+    {
+        var telemetry = new RecordingTelemetryFacadeClient
+        {
+            AcknowledgeAlarmFailure = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.Conflict,
+                "lifecycle-conflict"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/equipment/alarms/alarm-001/acknowledge",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                acknowledgedAtUtc = "2026-07-06T08:05:00Z",
+                acknowledgedBy = "operator-001",
+            });
+
+        await AssertLifecycleConflictAsync(response);
+    }
+
+    [Fact]
     public async Task Telemetry_and_equipment_alarm_lists_forward_paging_and_filters()
     {
         var telemetry = new RecordingTelemetryFacadeClient();
@@ -888,8 +953,8 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
 
         var tagsResponse = await client.GetAsync("/api/business-console/v1/telemetry/tags?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&skip=5&take=10");
         var rulesResponse = await client.GetAsync("/api/business-console/v1/telemetry/alarm-rules?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&isEnabled=true&skip=6&take=11");
-        var alarmsResponse = await client.GetAsync("/api/business-console/v1/telemetry/alarms?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&status=cleared&skip=7&take=12");
-        var equipmentResponse = await client.GetAsync("/api/business-console/v1/equipment/alarms?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-02&status=raised&skip=8&take=13");
+        var alarmsResponse = await client.GetAsync("/api/business-console/v1/telemetry/alarms?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&status=cleared&skip=7&take=12&alarmEventId=019d8a00-0000-7000-8000-000000000001");
+        var equipmentResponse = await client.GetAsync("/api/business-console/v1/equipment/alarms?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-02&status=raised&skip=8&take=13&alarmEventId=019d8a00-0000-7000-8000-000000000002");
 
         Assert.Equal(HttpStatusCode.OK, tagsResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, rulesResponse.StatusCode);
@@ -897,13 +962,39 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal(HttpStatusCode.OK, equipmentResponse.StatusCode);
         Assert.Equal(new BusinessConsoleTelemetryTagListRequest("org-001", "env-dev", "DEV-PRESS-01", 5, 10), telemetry.LastTagListRequest);
         Assert.Equal(new BusinessConsoleTelemetryAlarmRuleListRequest("org-001", "env-dev", "DEV-PRESS-01", true, 6, 11), telemetry.LastAlarmRuleListRequest);
-        Assert.Equal(new BusinessConsoleTelemetryAlarmListRequest("org-001", "env-dev", "DEV-PRESS-01", "cleared", 7, 12), telemetry.LastAlarmListRequest);
-        Assert.Equal(new BusinessConsoleEquipmentAlarmListRequest("org-001", "env-dev", "DEV-PRESS-02", "raised", 8, 13), telemetry.LastEquipmentAlarmListRequest);
+        Assert.Equal(
+            new BusinessConsoleTelemetryAlarmListRequest(
+                "org-001",
+                "env-dev",
+                "DEV-PRESS-01",
+                "cleared",
+                7,
+                12,
+                AlarmEventId: "019d8a00-0000-7000-8000-000000000001"),
+            telemetry.LastAlarmListRequest);
+        Assert.Equal(
+            new BusinessConsoleEquipmentAlarmListRequest(
+                "org-001",
+                "env-dev",
+                "DEV-PRESS-02",
+                "raised",
+                8,
+                13,
+                AlarmEventId: "019d8a00-0000-7000-8000-000000000002"),
+            telemetry.LastEquipmentAlarmListRequest);
 
         Assert.Equal(42, ReadTotal(await tagsResponse.Content.ReadAsStringAsync()));
         Assert.Equal(42, ReadTotal(await rulesResponse.Content.ReadAsStringAsync()));
         Assert.Equal(42, ReadTotal(await alarmsResponse.Content.ReadAsStringAsync()));
         Assert.Equal(42, ReadTotal(await equipmentResponse.Content.ReadAsStringAsync()));
+    }
+
+    private static async Task AssertLifecycleConflictAsync(HttpResponseMessage response)
+    {
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(document.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal("lifecycle-conflict", document.RootElement.GetProperty("message").GetString());
     }
 
     private static WebApplicationFactory<Program> CreateFactory(
@@ -1057,6 +1148,8 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public IReadOnlyCollection<BusinessConsoleMaintenanceWorkOrderItem>? WorkOrderItems { get; init; }
 
+    public BusinessServiceProxyException? CompleteWorkOrderFailure { get; init; }
+
     public Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> CreateWorkOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateMaintenanceWorkOrderRequest request,
@@ -1076,6 +1169,11 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
         LastInternalToken = internalBearerToken;
         LastCompleteWorkOrderId = workOrderId;
         LastCompleteWorkOrderRequest = JsonSerializer.SerializeToElement(request, JsonOptions);
+        if (CompleteWorkOrderFailure is not null)
+        {
+            throw CompleteWorkOrderFailure;
+        }
+
         return Task.FromResult(new BusinessConsoleCompleteMaintenanceWorkOrderResponse(true));
     }
 
@@ -1363,6 +1461,8 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
 
     public object? LastAlarmLifecycleRequest { get; private set; }
 
+    public BusinessServiceProxyException? AcknowledgeAlarmFailure { get; init; }
+
     public string? LastHistoryDeviceAssetId { get; private set; }
 
     public BusinessConsoleTelemetryHistoryRequest? LastHistoryRequest { get; private set; }
@@ -1574,6 +1674,11 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
         LastInternalToken = internalBearerToken;
         LastAlarmLifecycleId = alarmEventId;
         LastAlarmLifecycleRequest = request;
+        if (AcknowledgeAlarmFailure is not null)
+        {
+            throw AcknowledgeAlarmFailure;
+        }
+
         return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
     }
 

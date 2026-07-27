@@ -112,3 +112,10 @@ export { PDA_TASK_KINDS, getPdaTaskKind } from './tasks/pdaTaskKinds'
 export type { PdaTaskKind } from './tasks/pdaTaskKinds'
 export { openDownloadGrantBlob } from './files/downloadGrant'
 export type { DownloadGrantLike } from './files/downloadGrant'
+export { statusActionGate } from './actions/statusActionGate'
+export type {
+  LifecycleActionRequest,
+  LifecycleDomain,
+  LifecycleFacts,
+  StatusActionGate,
+} from './actions/statusActionGate'

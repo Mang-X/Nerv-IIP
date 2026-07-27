@@ -18,7 +18,9 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
 public abstract class IndustrialTelemetryEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>
     where TRequest : notnull
 {
-    protected void ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContract contract)
+    protected void ConfigureIndustrialTelemetryContract(
+        IndustrialTelemetryEndpointContract contract,
+        params int[] responseStatusCodes)
     {
         switch (contract.HttpMethod)
         {
@@ -34,6 +36,25 @@ public abstract class IndustrialTelemetryEndpoint<TRequest, TResponse> : Endpoin
 
         Tags("Business IndustrialTelemetry");
         Policies(contract.AuthorizationPolicy);
+        if (responseStatusCodes.Length > 0)
+        {
+            Description(builder =>
+            {
+                foreach (var statusCode in responseStatusCodes)
+                {
+                    if (statusCode == StatusCodes.Status409Conflict)
+                    {
+                        builder.Produces<
+                            Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Errors.IndustrialTelemetryLifecycleConflictResponse>(
+                            statusCode);
+                    }
+                    else
+                    {
+                        builder.Produces(statusCode);
+                    }
+                }
+            });
+        }
     }
 }
 
@@ -157,7 +178,8 @@ public sealed record ListAlarmEventsRequest(
     string? Status,
     int Skip = 0,
     int Take = 100,
-    string? DeviceAssetIds = null);
+    string? DeviceAssetIds = null,
+    AlarmEventId? AlarmEventId = null);
 public sealed record QueryDeviceTimelineRequest(string DeviceAssetId, string? OrganizationId, string? EnvironmentId, DateTimeOffset? FromUtc, DateTimeOffset? ToUtc);
 public sealed record QueryOeeRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
 public sealed record QueryRuntimeHoursRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
@@ -397,7 +419,9 @@ public sealed class PostAlarmEventEndpoint(ISender sender) : IndustrialTelemetry
 
 public sealed class AcknowledgeAlarmEndpoint(ISender sender) : IndustrialTelemetryEndpoint<AcknowledgeAlarmRequest, ResponseData<AlarmLifecycleResponse>>
 {
-    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<AcknowledgeAlarmEndpoint>());
+    public override void Configure() => ConfigureIndustrialTelemetryContract(
+        IndustrialTelemetryEndpointContracts.Get<AcknowledgeAlarmEndpoint>(),
+        StatusCodes.Status409Conflict);
 
     public override async Task HandleAsync(AcknowledgeAlarmRequest req, CancellationToken ct)
     {
@@ -408,7 +432,9 @@ public sealed class AcknowledgeAlarmEndpoint(ISender sender) : IndustrialTelemet
 
 public sealed class ShelveAlarmEndpoint(ISender sender) : IndustrialTelemetryEndpoint<ShelveAlarmRequest, ResponseData<AlarmLifecycleResponse>>
 {
-    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<ShelveAlarmEndpoint>());
+    public override void Configure() => ConfigureIndustrialTelemetryContract(
+        IndustrialTelemetryEndpointContracts.Get<ShelveAlarmEndpoint>(),
+        StatusCodes.Status409Conflict);
 
     public override async Task HandleAsync(ShelveAlarmRequest req, CancellationToken ct)
     {
@@ -504,7 +530,8 @@ public sealed class ListAlarmEventsEndpoint(ISender sender) : IndustrialTelemetr
             req.Status,
             req.Skip,
             req.Take,
-            req.DeviceAssetIds), ct);
+            req.DeviceAssetIds,
+            req.AlarmEventId), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }

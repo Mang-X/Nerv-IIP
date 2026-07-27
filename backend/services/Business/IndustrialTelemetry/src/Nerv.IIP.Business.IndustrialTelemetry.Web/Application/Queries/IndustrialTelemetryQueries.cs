@@ -333,7 +333,8 @@ public sealed record ListAlarmEventsQuery(
     string? Status,
     int Skip = 0,
     int Take = 100,
-    string? DeviceAssetIds = null) : IQuery<PagedListResponse<AlarmEventListItem>>;
+    string? DeviceAssetIds = null,
+    AlarmEventId? AlarmEventId = null) : IQuery<PagedListResponse<AlarmEventListItem>>;
 
 public sealed record AlarmEventListItem(
     AlarmEventId AlarmEventId,
@@ -373,7 +374,8 @@ public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
             .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
-            .Where(x => deviceAssetIds.Count == 0 || deviceAssetIds.Contains(x.DeviceAssetId));
+            .Where(x => deviceAssetIds.Count == 0 || deviceAssetIds.Contains(x.DeviceAssetId))
+            .Where(x => request.AlarmEventId == null || x.Id == request.AlarmEventId);
         query = status switch
         {
             null => query,
@@ -1019,8 +1021,25 @@ public sealed class GetRuntimeCurrentStateQueryHandler(ApplicationDbContext dbCo
                 x.ExternalAlarmId))
             .ToArray();
 
-        var isSourceFresh = latestState is not null
-            && latestState.OccurredAtUtc >= request.AsOfUtc.AddMinutes(-request.FreshnessMaxAgeMinutes);
+        // 采集新鲜度必须以「采集证据」为准，而不是以「状态快照」为准。
+        // device_state_snapshots 只在设备状态**发生变化**时才写一行：连接器上线时入队一条初始
+        // "running" 观测，此后只有控制命令/场景切换才会再产生状态观测。而 telemetry_raw_samples
+        // 是秒级持续入库的。若只看状态快照的 OccurredAtUtc，任何连续运行超过
+        // FreshnessMaxAgeMinutes 的设备都会被判成「不新鲜」——设备页因此恒显示「暂无实时数据」，
+        // 尽管采集链路完全正常。这里改为取两者中较新的一个作为采集证据时刻。
+        //
+        // 注意这不是「在没有证据时假装新鲜」：原始样本本身就是采集仍在进行的真实证据，
+        // 没有任何证据时 latestSourceObservedAtUtc 为 null，isSourceFresh 仍然为 false。
+        var latestSampleAtUtc = await dbContext.TelemetryRawSamples
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.BucketEndUtc <= request.AsOfUtc)
+            .MaxAsync(x => (DateTimeOffset?)x.BucketEndUtc, cancellationToken);
+
+        var latestSourceObservedAtUtc = Later(latestState?.OccurredAtUtc, latestSampleAtUtc);
+        var isSourceFresh = latestSourceObservedAtUtc is not null
+            && latestSourceObservedAtUtc.Value >= request.AsOfUtc.AddMinutes(-request.FreshnessMaxAgeMinutes);
 
         return new EquipmentRuntimeCurrentStateResponse(
             ContractVersion: 1,
@@ -1031,6 +1050,17 @@ public sealed class GetRuntimeCurrentStateQueryHandler(ApplicationDbContext dbCo
             StateOccurredAtUtc: latestState?.OccurredAtUtc,
             IsSourceFresh: isSourceFresh,
             ActiveAlarms: alarms);
+    }
+
+    /// <summary>取两个可空时刻中较新的一个；两个都为 null 时返回 null（== 没有任何采集证据）。</summary>
+    private static DateTimeOffset? Later(DateTimeOffset? left, DateTimeOffset? right)
+    {
+        if (left is null)
+        {
+            return right;
+        }
+
+        return right is null || left.Value >= right.Value ? left : right;
     }
 }
 
@@ -1145,10 +1175,35 @@ public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext db
             }
         }
 
+        // 采集过期窗口同样要以「采集证据」为准，并且以窗口**起点**（= 评估时刻 now）为参照。
+        //
+        // 原实现有两处问题，叠加后使每台设备必然产生一条 equipment.sourceStale 阻塞窗口：
+        //   1) 只看 device_state_snapshots，而状态快照只在状态变化时才写（见上面 current-state 的注释）；
+        //   2) 判据是 `lastState + freshness < WindowEndUtc`，而 overview facade 传入的窗口是
+        //      [now, now+8h]，`lastState + 60min < now + 8h` 对任何现实数据恒真。
+        // 结果是「当前阻塞」面板被 sourceStale 塞满、activeBlockCount 恒 ≥ 1。
+        //
+        // 正确语义：sourceStale 描述的是「采集源现在确实已经过期」，而不是「再过几小时可能会过期」。
+        var latestSampleByDevice = await dbContext.TelemetryRawSamples
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.BucketEndUtc <= request.WindowStartUtc)
+            .Where(x => deviceAssetIds.Contains(x.DeviceAssetId))
+            .GroupBy(x => x.DeviceAssetId)
+            .Select(g => new { DeviceAssetId = g.Key, LatestBucketEndUtc = g.Max(x => x.BucketEndUtc) })
+            .ToDictionaryAsync(x => x.DeviceAssetId, x => x.LatestBucketEndUtc, StringComparer.OrdinalIgnoreCase, cancellationToken);
+
         foreach (var state in latestStates)
         {
-            var staleStartUtc = state.OccurredAtUtc.AddMinutes(request.FreshnessMaxAgeMinutes);
-            if (staleStartUtc < request.WindowEndUtc)
+            var observedAtUtc = state.OccurredAtUtc;
+            if (latestSampleByDevice.TryGetValue(state.DeviceAssetId, out var latestSampleAtUtc) &&
+                latestSampleAtUtc > observedAtUtc)
+            {
+                observedAtUtc = latestSampleAtUtc;
+            }
+
+            var staleStartUtc = observedAtUtc.AddMinutes(request.FreshnessMaxAgeMinutes);
+            if (staleStartUtc <= request.WindowStartUtc)
             {
                 windows.Add(new EquipmentRuntimeAvailabilityWindowContract(
                     DeviceAssetId: state.DeviceAssetId,

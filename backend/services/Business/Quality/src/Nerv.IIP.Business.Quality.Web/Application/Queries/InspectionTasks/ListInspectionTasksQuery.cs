@@ -28,7 +28,9 @@ public sealed record ListInspectionTasksQuery(
     string? Status,
     string? SkuCode,
     int Skip = 0,
-    int Take = 100) : IQuery<ListInspectionTasksResponse>;
+    int Take = 100,
+    Domain.AggregatesModel.InspectionTaskAggregate.InspectionTaskId? InspectionTaskId = null)
+    : IQuery<ListInspectionTasksResponse>;
 
 public sealed class ListInspectionTasksQueryValidator : AbstractValidator<ListInspectionTasksQuery>
 {
@@ -48,7 +50,8 @@ public sealed class ListInspectionTasksQueryHandler(ApplicationDbContext dbConte
     {
         var query = dbContext.InspectionTasks
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => request.InspectionTaskId == null || x.Id == request.InspectionTaskId);
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
             var status = request.Status.Trim().ToLowerInvariant();

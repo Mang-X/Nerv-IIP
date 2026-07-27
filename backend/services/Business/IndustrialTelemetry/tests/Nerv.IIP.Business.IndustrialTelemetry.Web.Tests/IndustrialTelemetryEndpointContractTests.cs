@@ -1043,6 +1043,44 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
+    public async Task List_alarm_events_exact_id_filter_precedes_paging_and_keeps_tenant_scope()
+    {
+        await using var dbContext = CreateDbContext(nameof(List_alarm_events_exact_id_filter_precedes_paging_and_keeps_tenant_scope));
+        var raisedAtUtc = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var target = AlarmEvent.Raise("org-001", "env-dev", "DEV-OIL-01", "OIL_TEMP_HIGH", "warning", raisedAtUtc, "alarm-oil-target");
+        var newer = AlarmEvent.Raise("org-001", "env-dev", "DEV-OIL-02", "OIL_TEMP_HIGH", "warning", raisedAtUtc.AddMinutes(1), "alarm-oil-newer");
+        dbContext.AlarmEvents.AddRange(target, newer);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ListAlarmEventsQueryHandler(dbContext);
+        var response = await handler.Handle(
+            new ListAlarmEventsQuery(
+                "org-001",
+                "env-dev",
+                null,
+                null,
+                Skip: 0,
+                Take: 1,
+                AlarmEventId: target.Id),
+            CancellationToken.None);
+        var wrongOrganization = await handler.Handle(
+            new ListAlarmEventsQuery(
+                "org-002",
+                "env-dev",
+                null,
+                null,
+                Skip: 0,
+                Take: 1,
+                AlarmEventId: target.Id),
+            CancellationToken.None);
+
+        Assert.Equal(1, response.Total);
+        Assert.Equal(target.Id, Assert.Single(response.Items).AlarmEventId);
+        Assert.Equal(0, wrongOrganization.Total);
+        Assert.Empty(wrongOrganization.Items);
+    }
+
+    [Fact]
     public async Task List_alarm_events_orders_unacknowledged_before_handled_and_keeps_priority_across_pagination()
     {
         await using var dbContext = CreateDbContext(nameof(List_alarm_events_orders_unacknowledged_before_handled_and_keeps_priority_across_pagination));

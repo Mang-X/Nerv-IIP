@@ -131,7 +131,9 @@ public sealed class MaintenanceEndpointContractTests
 
         Assert.True(valid.IsValid);
         Assert.Contains(missingTrigger.Errors, x => x.ErrorMessage == "Maintenance plan must have a calendar interval, a runtime-hour interval, or both.");
-        Assert.Contains(invalidRuntimeInterval.Errors, x => x.PropertyName == nameof(UpdateMaintenancePlanCommand.RuntimeHourInterval));
+        Assert.Contains(
+            invalidRuntimeInterval.Errors,
+            x => string.Equals(x.PropertyName, nameof(UpdateMaintenancePlanCommand.RuntimeHourInterval), StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -184,7 +186,9 @@ public sealed class MaintenanceEndpointContractTests
                 [],
                 ActualTechnicianUserId: new string('x', 151)));
 
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(CompleteMaintenanceWorkOrderCommand.ActualTechnicianUserId));
+        Assert.Contains(
+            result.Errors,
+            x => string.Equals(x.PropertyName, nameof(CompleteMaintenanceWorkOrderCommand.ActualTechnicianUserId), StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

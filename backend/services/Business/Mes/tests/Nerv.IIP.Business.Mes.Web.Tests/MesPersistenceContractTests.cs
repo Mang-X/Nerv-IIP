@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
@@ -1787,15 +1788,15 @@ public sealed class MesPersistenceContractTests
 
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 
-        // Invalid lifecycle transitions are domain-rule violations and must surface as a clean KnownException
-        // business error, not an unhandled InvalidOperationException (which would become an HTTP 500).
-        await Assert.ThrowsAsync<KnownException>(() =>
+        // Invalid lifecycle transitions are typed conflicts so the Gateway/PDA can
+        // refresh the authoritative state instead of treating them as generic 400s.
+        await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
             handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-LIFE-10", "complete", now.AddMinutes(1)), CancellationToken.None));
 
         await handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-LIFE-10", "start", now.AddMinutes(2)), CancellationToken.None);
         await handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-LIFE-10", "complete", now.AddMinutes(45)), CancellationToken.None);
 
-        await Assert.ThrowsAsync<KnownException>(() =>
+        await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
             handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-LIFE-10", "pause", now.AddMinutes(46)), CancellationToken.None));
     }
 

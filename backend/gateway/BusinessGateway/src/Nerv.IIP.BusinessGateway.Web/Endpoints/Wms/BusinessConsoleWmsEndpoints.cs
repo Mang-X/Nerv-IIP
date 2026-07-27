@@ -71,6 +71,7 @@ public sealed class ListBusinessConsoleWmsInboundOrdersEndpoint
                 request.Take,
                 request.Status,
                 request.Keyword),
+            request.InboundOrderId,
             cancellationToken);
         var inventoryContext = await TryGetInventoryContextAsync(request, bearerToken, cancellationToken);
         return response with
@@ -275,6 +276,7 @@ public sealed class ListBusinessConsoleWmsPutawayTasksEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/complete")]
 [BusinessGatewayOperationId("completeBusinessConsoleWmsInboundOrder")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class CompleteBusinessConsoleWmsInboundOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
@@ -330,19 +332,29 @@ public sealed class ListBusinessConsoleWmsOutboundOrdersEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsListRequest, BusinessConsoleWmsOutboundOrderListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsOutboundOrderListRequest, BusinessConsoleWmsOutboundOrderListResponse>(
         auth,
         BusinessGatewayPermissions.WmsShipmentsRead)
 {
-    protected override string OrganizationId(BusinessConsoleWmsListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleWmsOutboundOrderListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleWmsListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleWmsOutboundOrderListRequest request) => request.EnvironmentId;
 
     protected override Task<BusinessConsoleWmsOutboundOrderListResponse> ForwardAsync(
-        BusinessConsoleWmsListRequest request,
+        BusinessConsoleWmsOutboundOrderListRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        wms.ListOutboundOrdersAsync(tokenProvider.BearerToken, request, cancellationToken);
+        wms.ListOutboundOrdersAsync(
+            tokenProvider.BearerToken,
+            new BusinessConsoleWmsListRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.Skip,
+                request.Take,
+                request.Status,
+                request.Keyword),
+            request.OutboundOrderId,
+            cancellationToken);
 }
 
 [Tags("Business Console WMS")]
@@ -399,6 +411,7 @@ public sealed class ListBusinessConsoleWmsPickingTasksEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/complete")]
 [BusinessGatewayOperationId("completeBusinessConsoleWmsOutboundOrder")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class CompleteBusinessConsoleWmsOutboundOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
@@ -501,6 +514,7 @@ public sealed class ListBusinessConsoleWmsCountExecutionsEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/count-executions/{countExecutionId}/complete")]
 [BusinessGatewayOperationId("completeBusinessConsoleWmsCountExecution")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class CompleteBusinessConsoleWmsCountExecutionEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
@@ -906,6 +920,23 @@ public sealed class BusinessConsoleWmsListRequestValidator : Validator<BusinessC
         RuleFor(x => x.Take).InclusiveBetween(1, 500);
         RuleFor(x => x.Status).MaximumLength(50);
         RuleFor(x => x.Keyword).MaximumLength(150);
+    }
+}
+
+public sealed class BusinessConsoleWmsOutboundOrderListRequestValidator
+    : Validator<BusinessConsoleWmsOutboundOrderListRequest>
+{
+    public BusinessConsoleWmsOutboundOrderListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        RuleFor(x => x.Status).MaximumLength(50);
+        RuleFor(x => x.Keyword).MaximumLength(150);
+        RuleFor(x => x.OutboundOrderId)
+            .Must(value => value is null || (Guid.TryParse(value, out var parsed) && parsed != Guid.Empty))
+            .WithMessage("OutboundOrderId must be a non-empty GUID.");
     }
 }
 

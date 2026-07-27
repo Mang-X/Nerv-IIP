@@ -79,7 +79,8 @@ public sealed record ListInboundOrdersQuery(
     int Skip = 0,
     int Take = 100,
     string? Status = null,
-    string? Keyword = null) : IQuery<ListInboundOrdersResponse>;
+    string? Keyword = null,
+    InboundOrderId? InboundOrderId = null) : IQuery<ListInboundOrdersResponse>;
 
 public sealed record ListInboundOrdersResponse(IReadOnlyCollection<InboundOrderListItem> Items, int Total);
 
@@ -121,7 +122,8 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
         var query = dbContext.InboundOrders
             .AsNoTracking()
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => request.InboundOrderId == null || x.Id == request.InboundOrderId);
         if (WmsListQueryFilters.TryParseStatus<InboundOrderStatus>(request.Status, out var status))
         {
             query = query.Where(x => x.Status == status);
@@ -175,7 +177,8 @@ public sealed record ListOutboundOrdersQuery(
     int Skip = 0,
     int Take = 100,
     string? Status = null,
-    string? Keyword = null) : IQuery<ListOutboundOrdersResponse>;
+    string? Keyword = null,
+    OutboundOrderId? OutboundOrderId = null) : IQuery<ListOutboundOrdersResponse>;
 
 public sealed record ListOutboundOrdersResponse(IReadOnlyCollection<OutboundOrderListItem> Items, int Total);
 
@@ -217,7 +220,8 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
         var query = dbContext.OutboundOrders
             .AsNoTracking()
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => request.OutboundOrderId == null || x.Id == request.OutboundOrderId);
         if (WmsListQueryFilters.TryParseStatus<OutboundOrderStatus>(request.Status, out var status))
         {
             query = query.Where(x => x.Status == status);
@@ -470,7 +474,8 @@ public sealed record ListCountExecutionsQuery(
     int Take = 100,
     string? Status = null,
     string? LocationCode = null,
-    string? Keyword = null) : IQuery<ListCountExecutionsResponse>;
+    string? Keyword = null,
+    CountExecutionId? CountExecutionId = null) : IQuery<ListCountExecutionsResponse>;
 
 public sealed record ListCountExecutionsResponse(IReadOnlyCollection<CountExecutionFact> Items, int Total);
 
@@ -498,7 +503,8 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
         var query = dbContext.CountExecutions
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId)
-            .Where(x => x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => request.CountExecutionId == null || x.Id == request.CountExecutionId);
 
         if (WmsListQueryFilters.TryParseStatus<CountExecutionStatus>(request.Status, out var status))
         {

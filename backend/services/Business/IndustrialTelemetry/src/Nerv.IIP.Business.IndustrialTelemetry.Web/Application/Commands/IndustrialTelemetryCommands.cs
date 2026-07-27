@@ -16,6 +16,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSn
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Errors;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Sdk.Ops;
 
@@ -1622,6 +1623,11 @@ public sealed class AcknowledgeAlarmCommandHandler(ApplicationDbContext dbContex
     public async Task<AlarmEventId> Handle(AcknowledgeAlarmCommand request, CancellationToken cancellationToken)
     {
         var alarm = await LoadAlarmAsync(dbContext, request.AlarmEventId, request.OrganizationId, request.EnvironmentId, cancellationToken);
+        if (alarm.Status == "cleared")
+        {
+            throw new IndustrialTelemetryLifecycleConflictException("acknowledge", alarm.Status);
+        }
+
         try
         {
             alarm.Acknowledge(request.AcknowledgedAtUtc, request.AcknowledgedBy);
@@ -1710,13 +1716,21 @@ public sealed class ShelveAlarmCommandHandler(ApplicationDbContext dbContext)
                 // Same key + same payload → replay the prior result, apply nothing.
                 return alarm.Id;
             }
+        }
 
+        if (alarm.Status == "cleared")
+        {
+            throw new IndustrialTelemetryLifecycleConflictException("shelve", alarm.Status);
+        }
+
+        if (idempotencyKey is not null)
+        {
             dbContext.AlarmShelveIdempotencies.Add(new AlarmShelveIdempotency(
                 request.OrganizationId,
                 request.EnvironmentId,
-                alarmEventId,
+                request.AlarmEventId.Id.ToString(),
                 idempotencyKey,
-                fingerprint));
+                ComputeShelveFingerprint(request)));
         }
 
         try

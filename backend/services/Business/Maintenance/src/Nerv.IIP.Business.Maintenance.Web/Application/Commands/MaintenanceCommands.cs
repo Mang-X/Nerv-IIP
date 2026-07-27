@@ -8,6 +8,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggreg
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Domain;
 using Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Business.Maintenance.Web.Application.Errors;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Application.Commands;
@@ -178,6 +179,11 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
     {
         var workOrder = await dbContext.MaintenanceWorkOrders.Include(x => x.SparePartLines).SingleOrDefaultAsync(x => x.Id == request.WorkOrderId, cancellationToken)
             ?? throw new KnownException($"Maintenance work order was not found: {request.WorkOrderId}");
+        if (workOrder.Status != MaintenanceWorkOrderStatus.Open)
+        {
+            throw new MaintenanceLifecycleConflictException("complete", workOrder.Status.ToString());
+        }
+
         var downtimeReasonCode = MaintenanceText.Required(request.DowntimeReasonCode, nameof(request.DowntimeReasonCode));
         var downtimeReasonExists = await dbContext.DowntimeReasons.AnyAsync(
             x => x.OrganizationId == workOrder.OrganizationId

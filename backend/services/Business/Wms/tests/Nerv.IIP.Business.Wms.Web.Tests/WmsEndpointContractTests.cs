@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
+using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
@@ -22,6 +23,7 @@ using InboundOrder = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAg
 using InboundOrderId = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderId;
 using InboundOrderLineCapture = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderLineCapture;
 using InboundOrderLineDraft = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderLineDraft;
+using InboundOrderStatus = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderStatus;
 using OutboundOrder = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder;
 using OutboundOrderLineDraft = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrderLineDraft;
 using CountExecution = Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate.CountExecution;
@@ -35,6 +37,39 @@ namespace Nerv.IIP.Business.Wms.Web.Tests;
 
 public sealed class WmsEndpointContractTests
 {
+    [Fact]
+    public async Task Lifecycle_conflict_endpoint_returns_409_with_safe_code()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(new LifecycleConflictSender());
+                });
+            });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", "test-internal-service-token");
+        var inboundOrderId = Guid.CreateVersion7();
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete",
+            new
+            {
+                inboundOrderId,
+                idempotencyKey = "wms-conflict",
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"message\":\"lifecycle-conflict\"", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Completed", body, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void Wms_endpoints_expose_issue_136_routes_permissions_policies_and_operation_ids()
     {
@@ -400,6 +435,38 @@ public sealed class WmsEndpointContractTests
     }
 
     [Fact]
+    public async Task Inbound_order_exact_id_filter_precedes_paging_and_keeps_tenant_scope()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var target = CreateInboundOrder("IN-EXACT-TARGET");
+        dbContext.InboundOrders.AddRange(target, CreateInboundOrder("IN-EXACT-OTHER"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ListInboundOrdersQueryHandler(dbContext);
+
+        var exact = await handler.Handle(
+            new ListInboundOrdersQuery(
+                "org-001",
+                "env-dev",
+                Skip: 0,
+                Take: 1,
+                InboundOrderId: target.Id),
+            CancellationToken.None);
+        var crossTenant = await handler.Handle(
+            new ListInboundOrdersQuery(
+                "org-002",
+                "env-dev",
+                InboundOrderId: target.Id),
+            CancellationToken.None);
+
+        Assert.Equal(1, exact.Total);
+        Assert.Equal(target.Id, Assert.Single(exact.Items).InboundOrderId);
+        Assert.Empty(crossTenant.Items);
+        Assert.Equal(0, crossTenant.Total);
+    }
+
+    [Fact]
     public async Task Receiving_quality_gate_query_projects_line_flow_and_filters_by_gate_status_and_tenant()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();
@@ -505,6 +572,38 @@ public sealed class WmsEndpointContractTests
         var item = Assert.Single(result.Items);
         Assert.Equal("OUT-PAGE-001", item.OutboundOrderNo);
         Assert.Equal("Open", item.Status);
+    }
+
+    [Fact]
+    public async Task Outbound_order_exact_id_filter_precedes_paging_and_keeps_tenant_scope()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var target = CreateOutboundOrder("OUT-EXACT-TARGET");
+        dbContext.OutboundOrders.AddRange(target, CreateOutboundOrder("OUT-EXACT-OTHER"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ListOutboundOrdersQueryHandler(dbContext);
+
+        var exact = await handler.Handle(
+            new ListOutboundOrdersQuery(
+                "org-001",
+                "env-dev",
+                Skip: 0,
+                Take: 1,
+                OutboundOrderId: target.Id),
+            CancellationToken.None);
+        var crossTenant = await handler.Handle(
+            new ListOutboundOrdersQuery(
+                "org-002",
+                "env-dev",
+                OutboundOrderId: target.Id),
+            CancellationToken.None);
+
+        Assert.Equal(1, exact.Total);
+        Assert.Equal(target.Id, Assert.Single(exact.Items).OutboundOrderId);
+        Assert.Empty(crossTenant.Items);
+        Assert.Equal(0, crossTenant.Total);
     }
 
     [Fact]
@@ -652,6 +751,56 @@ public sealed class WmsEndpointContractTests
     }
 
     [Fact]
+    public async Task Count_execution_exact_id_filter_precedes_paging_and_keeps_tenant_scope()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var target = CountExecution.Create(
+            "org-001",
+            "env-dev",
+            "COUNT-EXACT-TARGET",
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "BIN-A",
+            3m);
+        dbContext.CountExecutions.AddRange(
+            target,
+            CountExecution.Create(
+                "org-001",
+                "env-dev",
+                "COUNT-EXACT-OTHER",
+                "SKU-001",
+                "pcs",
+                "SITE-01",
+                "BIN-A",
+                3m));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ListCountExecutionsQueryHandler(dbContext);
+
+        var exact = await handler.Handle(
+            new ListCountExecutionsQuery(
+                "org-001",
+                "env-dev",
+                Skip: 0,
+                Take: 1,
+                CountExecutionId: target.Id),
+            CancellationToken.None);
+        var crossTenant = await handler.Handle(
+            new ListCountExecutionsQuery(
+                "org-002",
+                "env-dev",
+                CountExecutionId: target.Id),
+            CancellationToken.None);
+
+        Assert.Equal(1, exact.Total);
+        Assert.Equal(target.Id, Assert.Single(exact.Items).CountExecutionId);
+        Assert.Empty(crossTenant.Items);
+        Assert.Equal(0, crossTenant.Total);
+    }
+
+    [Fact]
     public async Task Wms_list_queries_reject_numeric_status_filters()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();
@@ -753,6 +902,40 @@ public sealed class WmsEndpointContractTests
                 efServices.Dispose();
             }
         }
+    }
+
+    private sealed class LifecycleConflictSender : ISender
+    {
+        public Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            return Task.FromException<TResponse>(
+                new WmsLifecycleConflictException(
+                    "complete-inbound",
+                    nameof(InboundOrderStatus.Completed)));
+        }
+
+        public Task Send<TRequest>(
+            TRequest request,
+            CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher

@@ -542,6 +542,44 @@ public sealed class QualityInspectionTaskWorkflowTests
     }
 
     [Fact]
+    public async Task List_workbench_exact_task_id_precedes_paging_and_keeps_tenant_scope()
+    {
+        await using var dbContext = CreateDbContext(nameof(List_workbench_exact_task_id_precedes_paging_and_keeps_tenant_scope));
+        var target = NewTask("IN-EXACT-TARGET", "LINE-001", "SKU-RM-1000", DateTimeOffset.Parse("2026-07-06T08:00:00Z"));
+        dbContext.InspectionTasks.AddRange(
+            target,
+            NewTask("IN-EXACT-OTHER", "LINE-001", "SKU-RM-1000", DateTimeOffset.Parse("2026-07-05T08:00:00Z")));
+        await dbContext.SaveChangesAsync();
+        var handler = new ListInspectionTasksQueryHandler(dbContext);
+
+        var exact = await handler.Handle(
+            new ListInspectionTasksQuery(
+                "org-001",
+                "env-dev",
+                null,
+                null,
+                0,
+                1,
+                target.Id),
+            CancellationToken.None);
+        var crossTenant = await handler.Handle(
+            new ListInspectionTasksQuery(
+                "org-002",
+                "env-dev",
+                null,
+                null,
+                0,
+                100,
+                target.Id),
+            CancellationToken.None);
+
+        Assert.Equal(1, exact.Total);
+        Assert.Equal(target.Id, Assert.Single(exact.Items).InspectionTaskId);
+        Assert.Empty(crossTenant.Items);
+        Assert.Equal(0, crossTenant.Total);
+    }
+
+    [Fact]
     public async Task Erp_purchase_receipt_recorded_creates_receiving_tasks_for_receipt_lines()
     {
         await using var dbContext = CreateDbContext(nameof(Erp_purchase_receipt_recorded_creates_receiving_tasks_for_receipt_lines));

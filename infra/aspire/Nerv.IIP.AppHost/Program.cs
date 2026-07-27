@@ -329,6 +329,12 @@ var businessProductEngineering = WithNervIipTelemetry(WithLocalDevelopmentEnviro
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("LeaderDemo__World__Enabled", leaderDemoWorldEnabledValue)
     .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
+    // 工程变更 / 工程文档的 L1 背景历史引擎。ProductEngineering 此前只有 L0 主数据 seed
+    // （门控 LeaderDemo__World__Enabled），History 三件套从未注入，engineering_changes 与
+    // engineering_documents 一直是 0 行——二轮走查里「工程变更、工程文档空页」的直接原因。
+    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
+    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
+    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessProductEngineeringDatabase, "PostgreSQL")
@@ -624,6 +630,12 @@ var businessScheduling = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(bu
     .WithEnvironment("Maintenance__BaseUrl", businessMaintenance.GetEndpoint("http"))
     .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
+    // 排产工作台的 L1 背景历史引擎（排程方案 / 资源负荷 / 冲突 / 订单紧急度）。
+    // 缺了这三行，Scheduling 侧的 WorldHistorySeedService 永远不激活，schedule_plans 保持 0 行，
+    // 工作台三个 Tab 全空——这正是二轮走查里「排产工作台空」的直接原因。
+    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
+    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
+    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithReference(businessSchedulingDatabase, "PostgreSQL")
     .WithReference(businessMes)
     .WithReference(businessIndustrialTelemetry)

@@ -15,7 +15,7 @@ namespace Nerv.IIP.Business.Maintenance.Web.Endpoints.Maintenance;
 public abstract class MaintenanceEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>
     where TRequest : notnull
 {
-    protected void ConfigureMaintenanceContract(MaintenanceEndpointContract contract)
+    protected void ConfigureMaintenanceContract(MaintenanceEndpointContract contract, params int[] responseStatusCodes)
     {
         switch (contract.HttpMethod)
         {
@@ -37,6 +37,25 @@ public abstract class MaintenanceEndpoint<TRequest, TResponse> : Endpoint<TReque
 
         Tags("Business Maintenance");
         Policies(contract.AuthorizationPolicy);
+        if (responseStatusCodes.Length > 0)
+        {
+            Description(builder =>
+            {
+                foreach (var statusCode in responseStatusCodes)
+                {
+                    if (statusCode == StatusCodes.Status409Conflict)
+                    {
+                        builder.Produces<
+                            Nerv.IIP.Business.Maintenance.Web.Application.Errors.MaintenanceLifecycleConflictResponse>(
+                            statusCode);
+                    }
+                    else
+                    {
+                        builder.Produces(statusCode);
+                    }
+                }
+            });
+        }
     }
 }
 
@@ -213,7 +232,9 @@ public sealed class CreateMaintenanceWorkOrderEndpoint(ISender sender)
 public sealed class CompleteMaintenanceWorkOrderEndpoint(ISender sender)
     : MaintenanceEndpoint<CompleteMaintenanceWorkOrderRequest, ResponseData<object>>
 {
-    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<CompleteMaintenanceWorkOrderEndpoint>());
+    public override void Configure() => ConfigureMaintenanceContract(
+        MaintenanceEndpointContracts.Get<CompleteMaintenanceWorkOrderEndpoint>(),
+        StatusCodes.Status409Conflict);
 
     public override async Task HandleAsync(CompleteMaintenanceWorkOrderRequest req, CancellationToken ct)
     {

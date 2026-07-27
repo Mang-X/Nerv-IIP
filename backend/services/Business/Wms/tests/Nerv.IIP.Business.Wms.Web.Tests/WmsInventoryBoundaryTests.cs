@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
+using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 
@@ -124,6 +125,94 @@ public sealed class WmsInventoryBoundaryTests
 
         Assert.Equal(first.RequestId, replay.RequestId);
         Assert.Equal(1, await dbContext.InventoryMovementRequests.CountAsync());
+    }
+
+    [Theory]
+    [InlineData(InboundOrderStatus.PendingQualityCheck)]
+    [InlineData(InboundOrderStatus.InventoryPostingFailed)]
+    public async Task Complete_inbound_preserves_matching_replay_after_post_completion_status(
+        InboundOrderStatus status)
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            $"IN-REPLAY-{status}",
+            "purchase-order",
+            $"PO-REPLAY-{status}",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 10m, "LINE-SIDE", "LOT-001", null, "qualified", "company", null)]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var command = new CompleteInboundOrderCommand(inbound.Id, $"replay-{status}");
+        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        SetStatus(inbound, status);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var replay = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(first.RequestId, replay.RequestId);
+        Assert.Equal(1, await dbContext.InventoryMovementRequests.CountAsync());
+    }
+
+    [Theory]
+    [InlineData(InboundOrderStatus.Completed)]
+    [InlineData(InboundOrderStatus.PendingQualityCheck)]
+    [InlineData(InboundOrderStatus.InventoryPostingFailed)]
+    [InlineData(InboundOrderStatus.Cancelled)]
+    public async Task Complete_inbound_rejects_non_open_status_without_matching_replay(
+        InboundOrderStatus status)
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            $"IN-CONFLICT-{status}",
+            "purchase-order",
+            $"PO-CONFLICT-{status}",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 10m, "LINE-SIDE", "LOT-001", null, "qualified", "company", null)]);
+        SetStatus(inbound, status);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
+            new CompleteInboundOrderCommandHandler(dbContext).Handle(
+                new CompleteInboundOrderCommand(inbound.Id, $"conflict-{status}"),
+                CancellationToken.None));
+
+        Assert.Equal("complete-inbound", exception.Action);
+        Assert.Equal(status.ToString(), exception.CurrentStatus);
+    }
+
+    [Fact]
+    public async Task Complete_inbound_cancelled_status_rejects_even_matching_replay()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-CANCELLED-REPLAY",
+            "purchase-order",
+            "PO-CANCELLED-REPLAY",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 10m, "LINE-SIDE", "LOT-001", null, "qualified", "company", null)]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        const string idempotencyKey = "cancelled-replay";
+        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            new CompleteInboundOrderCommand(inbound.Id, idempotencyKey),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        SetStatus(inbound, InboundOrderStatus.Cancelled);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
+            new CompleteInboundOrderCommandHandler(dbContext).Handle(
+                new CompleteInboundOrderCommand(inbound.Id, idempotencyKey),
+                CancellationToken.None));
     }
 
     [Fact]
@@ -456,6 +545,79 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal("idem-out-001", movementRequest.IdempotencyKey);
         Assert.DoesNotContain(':', movementRequest.IdempotencyKey);
         Assert.Equal(4m, movementRequest.Quantity);
+    }
+
+    [Theory]
+    [InlineData(OutboundOrderStatus.InventoryPostingFailed)]
+    [InlineData(OutboundOrderStatus.Cancelled)]
+    public async Task Complete_outbound_rejects_terminal_non_replay_status(
+        OutboundOrderStatus status)
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            $"OUT-CONFLICT-{status}",
+            "sales-delivery",
+            $"SO-CONFLICT-{status}",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        SetStatus(outbound, status);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
+            new CompleteOutboundOrderCommandHandler(dbContext).Handle(
+                new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "out-conflict"),
+                CancellationToken.None));
+
+        Assert.Equal("complete-outbound", exception.Action);
+        Assert.Equal(status.ToString(), exception.CurrentStatus);
+    }
+
+    [Theory]
+    [InlineData(OutboundOrderStatus.Completed)]
+    [InlineData(OutboundOrderStatus.InventoryPostingPending)]
+    public async Task Complete_outbound_preserves_same_key_replay_and_rejects_different_key(
+        OutboundOrderStatus status)
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            $"OUT-REPLAY-{status}",
+            "sales-delivery",
+            $"SO-REPLAY-{status}",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        const string idempotencyKey = "outbound-replay";
+        var first = await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
+            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, idempotencyKey),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        SetStatus(outbound, status);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventory = new FakeWmsInventoryReservationClient("res-unused");
+        var replayHandler = new CompleteOutboundOrderCommandHandler(dbContext, inventory);
+
+        var replay = await replayHandler.Handle(
+            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, idempotencyKey),
+            CancellationToken.None);
+        var differentKey = await Assert.ThrowsAsync<KnownException>(() =>
+            replayHandler.Handle(
+                new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "different-key"),
+                CancellationToken.None));
+
+        Assert.Equal(first.RequestId, replay.RequestId);
+        Assert.Equal(1, await dbContext.InventoryMovementRequests.CountAsync());
+        Assert.Contains("idempotency key", differentKey.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(inventory.Requests);
+        Assert.Empty(inventory.FefoRequests);
+        Assert.Empty(inventory.ReleaseRequests);
+        Assert.Empty(inventory.CountTaskRequests);
+        Assert.Empty(inventory.CountAdjustmentRequests);
     }
 
     [Fact]
@@ -1013,6 +1175,35 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
+    public async Task Complete_count_rejects_completed_status_before_inventory_side_effects()
+    {
+        await using var dbContext = CreateContext();
+        var count = CountExecution.Create(
+            "org-001",
+            "env-dev",
+            "COUNT-CONFLICT",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            10m);
+        count.Complete(10m);
+        dbContext.CountExecutions.Add(count);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventory = new FakeWmsInventoryReservationClient("res-unused");
+
+        var exception = await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
+            new CompleteCountExecutionCommandHandler(dbContext, inventory).Handle(
+                new CompleteCountExecutionCommand(count.Id, 10m, "count-conflict"),
+                CancellationToken.None));
+
+        Assert.Equal("complete-count", exception.Action);
+        Assert.Equal(nameof(CountExecutionStatus.Completed), exception.CurrentStatus);
+        Assert.Empty(inventory.CountTaskRequests);
+        Assert.Empty(inventory.CountAdjustmentRequests);
+    }
+
+    [Fact]
     public async Task Complete_wcs_task_records_actual_progress_on_linked_warehouse_task()
     {
         await using var dbContext = CreateContext();
@@ -1219,6 +1410,20 @@ public sealed class WmsInventoryBoundaryTests
             .UseInMemoryDatabase($"wms-boundary-{Guid.NewGuid():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static void SetStatus(InboundOrder inbound, InboundOrderStatus status)
+    {
+        typeof(InboundOrder)
+            .GetProperty(nameof(InboundOrder.Status))!
+            .SetValue(inbound, status);
+    }
+
+    private static void SetStatus(OutboundOrder outbound, OutboundOrderStatus status)
+    {
+        typeof(OutboundOrder)
+            .GetProperty(nameof(OutboundOrder.Status))!
+            .SetValue(outbound, status);
     }
 
     private sealed class FakeWmsInventoryReservationClient(params string[] reservationIds) : IWmsInventoryReservationClient

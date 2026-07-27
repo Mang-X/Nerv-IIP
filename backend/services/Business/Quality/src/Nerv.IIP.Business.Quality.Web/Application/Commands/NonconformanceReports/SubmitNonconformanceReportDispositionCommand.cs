@@ -2,6 +2,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggre
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 using Nerv.IIP.Business.Quality.Web.Application.Approvals;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
+using Nerv.IIP.Business.Quality.Web.Application.Errors;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 
@@ -34,6 +35,11 @@ public sealed class SubmitNonconformanceReportDispositionCommandHandler(
     {
         var ncr = await repository.GetAsync(request.NcrId, cancellationToken)
             ?? throw new KnownException($"NCR '{request.NcrId}' was not found.");
+        if (ncr.Status != "open")
+        {
+            throw new QualityLifecycleConflictException("submit-ncr-disposition", ncr.Status);
+        }
+
         if (NonconformanceReport.RequiresCentralApproval(request.DispositionType))
         {
             if (string.IsNullOrWhiteSpace(request.DispositionApprovalChainId))
@@ -53,11 +59,23 @@ public sealed class SubmitNonconformanceReportDispositionCommandHandler(
             }
         }
 
-        ncr.SubmitDisposition(
-            request.DispositionType,
-            request.DispositionApprovalChainId,
-            request.AttachmentFileIds,
-            request.MrbReviews);
+        try
+        {
+            ncr.SubmitDisposition(
+                request.DispositionType,
+                request.DispositionApprovalChainId,
+                request.AttachmentFileIds,
+                request.MrbReviews);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new KnownException(exception.Message);
+        }
+
         await capaAutomationService.OpenForDispositionIfRequiredAsync(ncr, cancellationToken);
     }
 }
