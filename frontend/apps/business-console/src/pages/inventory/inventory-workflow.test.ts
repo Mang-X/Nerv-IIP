@@ -175,7 +175,11 @@ vi.mock('@/composables/useInventoryScope', async () => {
     FALLBACK_INVENTORY_UOM_CODE: 'pcs',
     useInventoryScopeCatalog: () => catalog,
     // 与真实实现同构：工厂缺省填默认工厂，单位始终跟随所选物料的基本单位。
-    useInventoryScopeDefaults: (filters: { skuCode?: string; uomCode?: string; siteCode?: string }) => {
+    useInventoryScopeDefaults: (filters: {
+      skuCode?: string
+      uomCode?: string
+      siteCode?: string
+    }) => {
       if (!(filters.siteCode ?? '').trim()) filters.siteCode = 'S1'
       watch(
         () => filters.skuCode,

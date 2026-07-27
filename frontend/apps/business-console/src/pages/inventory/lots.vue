@@ -307,7 +307,10 @@ async function refreshCurrentView() {
 
     <InventoryExpirySummaryCards v-if="nearExpiryOnly" :summary="expirySummary" />
     <!-- 还没选物料时，环形卡与批次统计都只会是 0，不摆空壳指标。 -->
-    <div v-else-if="!showScopePrompt" class="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+    <div
+      v-else-if="!showScopePrompt"
+      class="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]"
+    >
       <NvMetricRing
         label="现存量构成"
         :value="formatQuantity(onHandQuantity)"

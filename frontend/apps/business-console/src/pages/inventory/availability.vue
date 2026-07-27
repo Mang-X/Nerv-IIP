@@ -299,7 +299,10 @@ async function refreshCurrentView() {
 
     <InventoryExpirySummaryCards v-if="nearExpiryOnly" :summary="expirySummary" />
     <!-- 还没选物料时，环形卡只会画出一圈 0；改用只需工厂就能出数的全厂效期风险。 -->
-    <div v-else-if="showScopePrompt" class="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+    <div
+      v-else-if="showScopePrompt"
+      class="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]"
+    >
       <NvMetricCard
         variant="facets"
         label="全厂效期风险批次"
@@ -326,7 +329,9 @@ async function refreshCurrentView() {
           </li>
         </ul>
         <p v-else class="text-sm text-muted-foreground">
-          {{ overviewPending ? '正在读取全厂效期批次。' : '本厂没有已过期或未来30天内到期的批次。' }}
+          {{
+            overviewPending ? '正在读取全厂效期批次。' : '本厂没有已过期或未来30天内到期的批次。'
+          }}
         </p>
       </section>
     </div>
