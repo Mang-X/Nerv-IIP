@@ -339,8 +339,18 @@ function formatError(error: unknown) {
       :loading="countExecutionsPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无盘点单。按库位 × SKU 新建盘点单，实盘后完成以触发库存调整。"
+      empty-message="暂无盘点单。"
     >
+      <template #empty>
+        <p class="text-sm font-medium">暂无盘点单</p>
+        <p class="max-w-md text-sm text-muted-foreground">
+          盘点单由仓管按库位 × 物料发起；日常收发货不会自动产生盘点单。
+        </p>
+        <NvButton size="sm" type="button" @click="openCreate">
+          <PlusIcon aria-hidden="true" />
+          新建盘点单
+        </NvButton>
+      </template>
       <template #cell-varianceQuantity="{ row }">
         <span :class="hasVariance(row) ? 'font-medium text-warning' : 'text-muted-foreground'">{{
           varianceLabel(row.varianceQuantity)

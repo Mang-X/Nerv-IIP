@@ -6,6 +6,7 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { useInventoryCounts } from '@/composables/useBusinessInventory'
+import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
@@ -17,6 +18,7 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvDropdownMenuItem,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -72,7 +74,8 @@ let adjustmentKeySequence = 0
 const taskForm = reactive({
   countTaskCode: '',
   skuCode: '',
-  uomCode: 'EA',
+  // 单位不手填：盘点任务必须落在与库存台账完全一致的维度上，单位跟随所选物料的基本单位。
+  uomCode: '',
   siteCode: '',
   locationCode: '',
   lotNo: '',
@@ -114,6 +117,9 @@ watch(
   },
   { immediate: true },
 )
+
+// 工厂给默认值、单位跟随物料，仓管只需要选物料与库位。
+const { siteOptions, sitesPending, skuOptions, skusPending } = useInventoryScopeDefaults(taskForm)
 
 const countTaskQueue = shallowRef<CountTaskQueueRow[]>([])
 const adjustmentTarget = shallowRef<CountTaskQueueRow>()
@@ -275,8 +281,24 @@ function isNonEmpty(value: string) {
       row-key="countTaskId"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无盘点任务。先创建盘点任务，再从任务行进入差异确认。"
+      empty-message="暂无盘点任务。"
     >
+      <template #empty>
+        <p class="text-sm font-medium">暂无盘点任务</p>
+        <p class="max-w-md text-sm text-muted-foreground">
+          这里显示本次创建的盘点任务与差异确认入口；已下发到仓库执行的盘点单在「仓储作业 ·
+          盘点执行」跟进。
+        </p>
+        <div class="flex gap-2">
+          <NvButton size="sm" type="button" @click="taskSheetOpen = true">
+            <ClipboardPlusIcon aria-hidden="true" />
+            创建盘点任务
+          </NvButton>
+          <NvButton size="sm" type="button" variant="outline" as-child>
+            <RouterLink to="/wms/counts">盘点执行</RouterLink>
+          </NvButton>
+        </div>
+      </template>
       <template #cell-actions="{ row }">
         <NvRowActions :label="`盘点操作 ${row.countTaskId}`">
           <NvDropdownMenuItem @click="openAdjustment(row)">
@@ -299,16 +321,36 @@ function isNonEmpty(value: string) {
         <form class="grid gap-4" @submit.prevent="submitTask">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
-              <NvFieldLabel for="count-task-sku">SKU</NvFieldLabel>
-              <NvInput id="count-task-sku" v-model="taskForm.skuCode" required />
+              <NvFieldLabel for="count-task-sku">物料</NvFieldLabel>
+              <NvEntityPicker
+                id="count-task-sku"
+                v-model="taskForm.skuCode"
+                :options="skuOptions"
+                title="选择物料"
+                placeholder="选择物料"
+                source-text="数据来自基础数据物料主数据"
+                empty-text="暂无物料主数据，请先在基础数据维护物料"
+                :loading="skusPending"
+                aria-label="物料"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="count-task-uom">单位</NvFieldLabel>
-              <NvInput id="count-task-uom" v-model="taskForm.uomCode" required />
+              <NvInput id="count-task-uom" v-model="taskForm.uomCode" disabled />
             </NvField>
             <NvField>
               <NvFieldLabel for="count-task-site">工厂</NvFieldLabel>
-              <NvInput id="count-task-site" v-model="taskForm.siteCode" required />
+              <NvEntityPicker
+                id="count-task-site"
+                v-model="taskForm.siteCode"
+                :options="siteOptions"
+                title="选择工厂"
+                placeholder="选择工厂"
+                source-text="数据来自基础数据工厂主数据"
+                empty-text="暂无工厂主数据，请先在基础数据维护工厂"
+                :loading="sitesPending"
+                aria-label="工厂"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="count-task-location">库位</NvFieldLabel>
