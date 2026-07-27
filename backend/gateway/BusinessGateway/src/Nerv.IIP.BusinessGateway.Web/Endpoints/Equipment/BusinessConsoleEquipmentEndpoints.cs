@@ -262,7 +262,7 @@ public sealed class ListBusinessConsoleEquipmentAlarmsEndpoint(
 [Tags("Business Console Equipment")]
 [HttpPost("/api/business-console/v1/equipment/alarms/{alarmEventId}/acknowledge")]
 [BusinessGatewayOperationId("acknowledgeBusinessConsoleEquipmentAlarm")]
-[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class AcknowledgeBusinessConsoleEquipmentAlarmEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessIndustrialTelemetryClient industrialTelemetry,
@@ -291,7 +291,7 @@ public sealed class AcknowledgeBusinessConsoleEquipmentAlarmEndpoint(
 [Tags("Business Console Equipment")]
 [HttpPost("/api/business-console/v1/equipment/alarms/{alarmEventId}/shelve")]
 [BusinessGatewayOperationId("shelveBusinessConsoleEquipmentAlarm")]
-[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class ShelveBusinessConsoleEquipmentAlarmEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessIndustrialTelemetryClient industrialTelemetry,

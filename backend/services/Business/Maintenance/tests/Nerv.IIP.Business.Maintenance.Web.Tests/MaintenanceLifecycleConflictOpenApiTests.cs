@@ -22,6 +22,15 @@ public sealed class MaintenanceLifecycleConflictOpenApiTests
             .GetProperty("post")
             .GetProperty("responses");
 
-        Assert.True(responses.TryGetProperty("409", out _));
+        var schemaReference = responses.GetProperty("409")
+            .GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("schema")
+            .GetProperty("$ref")
+            .GetString();
+
+        Assert.Equal(
+            "#/components/schemas/NervIIPBusinessMaintenanceWebApplicationErrorsMaintenanceLifecycleConflictResponse",
+            schemaReference);
     }
 }

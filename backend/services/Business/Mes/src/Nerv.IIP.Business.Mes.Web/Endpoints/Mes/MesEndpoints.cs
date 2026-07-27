@@ -451,7 +451,16 @@ public abstract class MesEndpoint<TRequest, TResponse> : Endpoint<TRequest, TRes
             {
                 foreach (var statusCode in responseStatusCodes)
                 {
-                    builder.Produces(statusCode);
+                    if (statusCode == StatusCodes.Status409Conflict)
+                    {
+                        builder.Produces<
+                            Nerv.IIP.Business.Mes.Web.Application.Errors.MesLifecycleConflictResponse>(
+                            statusCode);
+                    }
+                    else
+                    {
+                        builder.Produces(statusCode);
+                    }
                 }
             });
         }

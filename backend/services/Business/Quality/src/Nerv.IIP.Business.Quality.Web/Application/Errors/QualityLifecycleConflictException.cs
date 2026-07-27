@@ -12,6 +12,8 @@ public sealed class QualityLifecycleConflictException(string action, string curr
     public string CurrentStatus { get; } = currentStatus;
 }
 
+public sealed record QualityLifecycleConflictResponse(bool Success, string Message);
+
 public sealed class QualityLifecycleConflictMiddleware(
     RequestDelegate next,
     ILogger<QualityLifecycleConflictMiddleware> logger)
@@ -30,10 +32,8 @@ public sealed class QualityLifecycleConflictMiddleware(
                 exception.CurrentStatus);
             context.Response.StatusCode = (int)HttpStatusCode.Conflict;
             await context.Response.WriteAsJsonAsync(
-                new LifecycleConflictResponse(false, QualityLifecycleConflictException.SafeCode),
+                new QualityLifecycleConflictResponse(false, QualityLifecycleConflictException.SafeCode),
                 context.RequestAborted);
         }
     }
-
-    private sealed record LifecycleConflictResponse(bool Success, string Message);
 }

@@ -19,15 +19,37 @@ public sealed class IndustrialTelemetryLifecycleConflictOpenApiTests
         using var document = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
         var paths = document.RootElement.GetProperty("paths");
 
-        AssertResponse(paths, "/api/business/v1/iiot/alarms/{alarmEventId}/acknowledge", "409");
-        AssertResponse(paths, "/api/business/v1/iiot/alarms/{alarmEventId}/shelve", "409");
+        AssertResponseSchema(
+            paths,
+            "/api/business/v1/iiot/alarms/{alarmEventId}/acknowledge",
+            "409",
+            "#/components/schemas/NervIIPBusinessIndustrialTelemetryWebApplicationErrorsIndustrialTelemetryLifecycleConflictResponse");
+        AssertResponseSchema(
+            paths,
+            "/api/business/v1/iiot/alarms/{alarmEventId}/shelve",
+            "409",
+            "#/components/schemas/NervIIPBusinessIndustrialTelemetryWebApplicationErrorsIndustrialTelemetryLifecycleConflictResponse");
         AssertNoResponse(paths, "/api/business/v1/iiot/alarms/{alarmEventId}/unshelve", "409");
     }
 
-    private static void AssertResponse(JsonElement paths, string route, string statusCode) =>
-        Assert.True(
-            paths.GetProperty(route).GetProperty("post").GetProperty("responses").TryGetProperty(statusCode, out _),
-            $"POST {route} must declare {statusCode}.");
+    private static void AssertResponseSchema(
+        JsonElement paths,
+        string route,
+        string statusCode,
+        string expectedSchemaReference)
+    {
+        var schemaReference = paths.GetProperty(route)
+            .GetProperty("post")
+            .GetProperty("responses")
+            .GetProperty(statusCode)
+            .GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("schema")
+            .GetProperty("$ref")
+            .GetString();
+
+        Assert.Equal(expectedSchemaReference, schemaReference);
+    }
 
     private static void AssertNoResponse(JsonElement paths, string route, string statusCode) =>
         Assert.False(

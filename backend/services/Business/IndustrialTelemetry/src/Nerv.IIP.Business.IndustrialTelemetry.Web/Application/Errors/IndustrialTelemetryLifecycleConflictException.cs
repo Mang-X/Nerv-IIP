@@ -12,6 +12,8 @@ public sealed class IndustrialTelemetryLifecycleConflictException(string action,
     public string CurrentStatus { get; } = currentStatus;
 }
 
+public sealed record IndustrialTelemetryLifecycleConflictResponse(bool Success, string Message);
+
 public sealed class IndustrialTelemetryLifecycleConflictMiddleware(
     RequestDelegate next,
     ILogger<IndustrialTelemetryLifecycleConflictMiddleware> logger)
@@ -30,10 +32,10 @@ public sealed class IndustrialTelemetryLifecycleConflictMiddleware(
                 exception.CurrentStatus);
             context.Response.StatusCode = (int)HttpStatusCode.Conflict;
             await context.Response.WriteAsJsonAsync(
-                new LifecycleConflictResponse(false, IndustrialTelemetryLifecycleConflictException.SafeCode),
+                new IndustrialTelemetryLifecycleConflictResponse(
+                    false,
+                    IndustrialTelemetryLifecycleConflictException.SafeCode),
                 context.RequestAborted);
         }
     }
-
-    private sealed record LifecycleConflictResponse(bool Success, string Message);
 }

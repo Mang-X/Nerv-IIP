@@ -26,14 +26,45 @@ public sealed class QualityLifecycleConflictOpenApiTests
         using var document = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
         var paths = document.RootElement.GetProperty("paths");
 
-        AssertResponse(paths, "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", "409");
-        AssertResponse(paths, "/api/business/v1/quality/ncrs/{ncrId}/disposition", "400");
-        AssertResponse(paths, "/api/business/v1/quality/ncrs/{ncrId}/disposition", "409");
-        AssertResponse(paths, "/api/business/v1/quality/ncrs/{ncrId}/close", "400");
-        AssertResponse(paths, "/api/business/v1/quality/ncrs/{ncrId}/close", "409");
+        AssertResponseSchema(
+            paths,
+            "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record",
+            "409",
+            "#/components/schemas/NervIIPBusinessQualityWebApplicationErrorsQualityLifecycleConflictResponse");
+        AssertResponseDeclared(paths, "/api/business/v1/quality/ncrs/{ncrId}/disposition", "400");
+        AssertResponseSchema(
+            paths,
+            "/api/business/v1/quality/ncrs/{ncrId}/disposition",
+            "409",
+            "#/components/schemas/NervIIPBusinessQualityWebApplicationErrorsQualityLifecycleConflictResponse");
+        AssertResponseDeclared(paths, "/api/business/v1/quality/ncrs/{ncrId}/close", "400");
+        AssertResponseSchema(
+            paths,
+            "/api/business/v1/quality/ncrs/{ncrId}/close",
+            "409",
+            "#/components/schemas/NervIIPBusinessQualityWebApplicationErrorsQualityLifecycleConflictResponse");
     }
 
-    private static void AssertResponse(JsonElement paths, string route, string statusCode) =>
+    private static void AssertResponseSchema(
+        JsonElement paths,
+        string route,
+        string statusCode,
+        string expectedSchemaReference)
+    {
+        var schemaReference = paths.GetProperty(route)
+            .GetProperty("post")
+            .GetProperty("responses")
+            .GetProperty(statusCode)
+            .GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("schema")
+            .GetProperty("$ref")
+            .GetString();
+
+        Assert.Equal(expectedSchemaReference, schemaReference);
+    }
+
+    private static void AssertResponseDeclared(JsonElement paths, string route, string statusCode) =>
         Assert.True(
             paths.GetProperty(route).GetProperty("post").GetProperty("responses").TryGetProperty(statusCode, out _),
             $"POST {route} must declare {statusCode}.");

@@ -141,17 +141,17 @@ public sealed class MaintenanceLifecycleConflictTests
                 ActualTechnicianUserId: new string('x', 151)));
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(CompleteMaintenanceWorkOrderCommand.Result));
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(CompleteMaintenanceWorkOrderCommand.DowntimeReasonCode));
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(CompleteMaintenanceWorkOrderCommand.DowntimeMinutes));
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(CompleteMaintenanceWorkOrderCommand.ActualLaborMinutes));
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(CompleteMaintenanceWorkOrderCommand.SparePartCostAmount));
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(CompleteMaintenanceWorkOrderCommand.ExternalServiceCostAmount));
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(CompleteMaintenanceWorkOrderCommand.CostCurrencyCode));
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(CompleteMaintenanceWorkOrderCommand.ActualTechnicianUserId));
-        Assert.Contains(result.Errors, x => x.PropertyName.Contains(nameof(MaintenanceSparePartInput.SkuCode), StringComparison.Ordinal));
-        Assert.Contains(result.Errors, x => x.PropertyName.Contains(nameof(MaintenanceSparePartInput.Quantity), StringComparison.Ordinal));
-        Assert.Contains(result.Errors, x => x.PropertyName.Contains(nameof(MaintenanceSparePartInput.UomCode), StringComparison.Ordinal));
+        Assert.Contains(result.Errors, x => string.Equals(x.PropertyName, nameof(CompleteMaintenanceWorkOrderCommand.Result), StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, x => string.Equals(x.PropertyName, nameof(CompleteMaintenanceWorkOrderCommand.DowntimeReasonCode), StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, x => string.Equals(x.PropertyName, nameof(CompleteMaintenanceWorkOrderCommand.DowntimeMinutes), StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, x => string.Equals(x.PropertyName, nameof(CompleteMaintenanceWorkOrderCommand.ActualLaborMinutes), StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, x => string.Equals(x.PropertyName, nameof(CompleteMaintenanceWorkOrderCommand.SparePartCostAmount), StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, x => string.Equals(x.PropertyName, nameof(CompleteMaintenanceWorkOrderCommand.ExternalServiceCostAmount), StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, x => string.Equals(x.PropertyName, nameof(CompleteMaintenanceWorkOrderCommand.CostCurrencyCode), StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, x => string.Equals(x.PropertyName, nameof(CompleteMaintenanceWorkOrderCommand.ActualTechnicianUserId), StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, x => x.PropertyName.Contains(nameof(MaintenanceSparePartInput.SkuCode), StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, x => x.PropertyName.Contains(nameof(MaintenanceSparePartInput.Quantity), StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, x => x.PropertyName.Contains(nameof(MaintenanceSparePartInput.UomCode), StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

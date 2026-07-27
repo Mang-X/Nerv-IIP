@@ -21,11 +21,19 @@ public sealed class BusinessGatewayLifecycleConflictOpenApiTests
 
         foreach (var route in ConflictRoutes)
         {
-            AssertResponse(paths, route, "409");
+            AssertResponseSchema(paths, route, "409", "#/components/schemas/NetCorePalExtensionsDtoResponseData");
         }
 
-        AssertResponse(paths, "/api/business-console/v1/quality/ncrs/{ncrId}/disposition", "400");
-        AssertResponse(paths, "/api/business-console/v1/quality/ncrs/{ncrId}/close", "400");
+        AssertResponseSchema(
+            paths,
+            "/api/business-console/v1/quality/ncrs/{ncrId}/disposition",
+            "400",
+            "#/components/schemas/NetCorePalExtensionsDtoResponseData");
+        AssertResponseSchema(
+            paths,
+            "/api/business-console/v1/quality/ncrs/{ncrId}/close",
+            "400",
+            "#/components/schemas/NetCorePalExtensionsDtoResponseData");
         AssertNoResponse(paths, "/api/business-console/v1/equipment/alarms/{alarmEventId}/unshelve", "409");
     }
 
@@ -51,10 +59,24 @@ public sealed class BusinessGatewayLifecycleConflictOpenApiTests
         "/api/business-console/v1/equipment/alarms/{alarmEventId}/shelve",
     ];
 
-    private static void AssertResponse(JsonElement paths, string route, string statusCode) =>
-        Assert.True(
-            paths.GetProperty(route).GetProperty("post").GetProperty("responses").TryGetProperty(statusCode, out _),
-            $"POST {route} must declare {statusCode}.");
+    private static void AssertResponseSchema(
+        JsonElement paths,
+        string route,
+        string statusCode,
+        string expectedSchemaReference)
+    {
+        var response = paths.GetProperty(route)
+            .GetProperty("post")
+            .GetProperty("responses")
+            .GetProperty(statusCode);
+        var schemaReference = response.GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("schema")
+            .GetProperty("$ref")
+            .GetString();
+
+        Assert.Equal(expectedSchemaReference, schemaReference);
+    }
 
     private static void AssertNoResponse(JsonElement paths, string route, string statusCode) =>
         Assert.False(

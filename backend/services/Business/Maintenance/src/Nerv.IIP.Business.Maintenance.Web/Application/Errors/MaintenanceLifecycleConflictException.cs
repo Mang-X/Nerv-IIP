@@ -12,6 +12,8 @@ public sealed class MaintenanceLifecycleConflictException(string action, string 
     public string CurrentStatus { get; } = currentStatus;
 }
 
+public sealed record MaintenanceLifecycleConflictResponse(bool Success, string Message);
+
 public sealed class MaintenanceLifecycleConflictMiddleware(
     RequestDelegate next,
     ILogger<MaintenanceLifecycleConflictMiddleware> logger)
@@ -30,10 +32,8 @@ public sealed class MaintenanceLifecycleConflictMiddleware(
                 exception.CurrentStatus);
             context.Response.StatusCode = (int)HttpStatusCode.Conflict;
             await context.Response.WriteAsJsonAsync(
-                new LifecycleConflictResponse(false, MaintenanceLifecycleConflictException.SafeCode),
+                new MaintenanceLifecycleConflictResponse(false, MaintenanceLifecycleConflictException.SafeCode),
                 context.RequestAborted);
         }
     }
-
-    private sealed record LifecycleConflictResponse(bool Success, string Message);
 }

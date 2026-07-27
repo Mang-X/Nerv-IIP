@@ -42,7 +42,16 @@ public abstract class IndustrialTelemetryEndpoint<TRequest, TResponse> : Endpoin
             {
                 foreach (var statusCode in responseStatusCodes)
                 {
-                    builder.Produces(statusCode);
+                    if (statusCode == StatusCodes.Status409Conflict)
+                    {
+                        builder.Produces<
+                            Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Errors.IndustrialTelemetryLifecycleConflictResponse>(
+                            statusCode);
+                    }
+                    else
+                    {
+                        builder.Produces(statusCode);
+                    }
                 }
             });
         }

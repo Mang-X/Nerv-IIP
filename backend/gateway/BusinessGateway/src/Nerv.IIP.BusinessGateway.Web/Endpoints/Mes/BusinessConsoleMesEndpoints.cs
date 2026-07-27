@@ -417,7 +417,7 @@ public sealed class GetBusinessConsoleMesWorkOrderDetailEndpoint(
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/work-orders/{workOrderId}/release")]
 [BusinessGatewayOperationId("releaseBusinessConsoleMesWorkOrder")]
-[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class ReleaseBusinessConsoleMesWorkOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
@@ -463,7 +463,7 @@ public abstract class BusinessConsoleMesWorkOrderReasonActionEndpoint(
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/work-orders/{workOrderId}/hold")]
 [BusinessGatewayOperationId("holdBusinessConsoleMesWorkOrder")]
-[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class HoldBusinessConsoleMesWorkOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
@@ -480,7 +480,7 @@ public sealed class HoldBusinessConsoleMesWorkOrderEndpoint(
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/work-orders/{workOrderId}/cancel")]
 [BusinessGatewayOperationId("cancelBusinessConsoleMesWorkOrder")]
-[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class CancelBusinessConsoleMesWorkOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
@@ -725,7 +725,7 @@ public sealed class ListBusinessConsoleMesMaterialIssueRequestsEndpoint(
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts")]
 [BusinessGatewayOperationId("confirmBusinessConsoleMesLineSideMaterialReceipt")]
-[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class ConfirmBusinessConsoleMesLineSideMaterialReceiptEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
@@ -904,7 +904,7 @@ public abstract class BusinessConsoleMesOperationTaskActionEndpoint(
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/operation-tasks/{operationTaskId}/start")]
 [BusinessGatewayOperationId("startBusinessConsoleMesOperationTask")]
-[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class StartBusinessConsoleMesOperationTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
@@ -921,7 +921,7 @@ public sealed class StartBusinessConsoleMesOperationTaskEndpoint(
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/operation-tasks/{operationTaskId}/pause")]
 [BusinessGatewayOperationId("pauseBusinessConsoleMesOperationTask")]
-[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class PauseBusinessConsoleMesOperationTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
@@ -938,7 +938,7 @@ public sealed class PauseBusinessConsoleMesOperationTaskEndpoint(
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/operation-tasks/{operationTaskId}/resume")]
 [BusinessGatewayOperationId("resumeBusinessConsoleMesOperationTask")]
-[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class ResumeBusinessConsoleMesOperationTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
@@ -955,7 +955,7 @@ public sealed class ResumeBusinessConsoleMesOperationTaskEndpoint(
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/operation-tasks/{operationTaskId}/complete")]
 [BusinessGatewayOperationId("completeBusinessConsoleMesOperationTask")]
-[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class CompleteBusinessConsoleMesOperationTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
@@ -1042,7 +1042,7 @@ public sealed class GetBusinessConsoleMesProductionReportEndpoint(
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/production-reports")]
 [BusinessGatewayOperationId("recordBusinessConsoleMesProductionReport")]
-[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class RecordBusinessConsoleMesProductionReportEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,

@@ -39,7 +39,16 @@ public abstract class WmsEndpoint<TRequest, TResponse> : Endpoint<TRequest, TRes
             {
                 foreach (var statusCode in responseStatusCodes)
                 {
-                    builder.Produces(statusCode);
+                    if (statusCode == StatusCodes.Status409Conflict)
+                    {
+                        builder.Produces<
+                            Nerv.IIP.Business.Wms.Web.Application.Errors.WmsLifecycleConflictResponse>(
+                            statusCode);
+                    }
+                    else
+                    {
+                        builder.Produces(statusCode);
+                    }
                 }
             });
         }

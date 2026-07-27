@@ -69,7 +69,16 @@ public abstract class QualityEndpoint<TRequest, TResponse> : Endpoint<TRequest, 
             {
                 foreach (var statusCode in responseStatusCodes)
                 {
-                    builder.Produces(statusCode);
+                    if (statusCode == StatusCodes.Status409Conflict)
+                    {
+                        builder.Produces<
+                            Nerv.IIP.Business.Quality.Web.Application.Errors.QualityLifecycleConflictResponse>(
+                            statusCode);
+                    }
+                    else
+                    {
+                        builder.Produces(statusCode);
+                    }
                 }
             });
         }

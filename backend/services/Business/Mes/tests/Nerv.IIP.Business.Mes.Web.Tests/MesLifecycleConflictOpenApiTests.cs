@@ -18,9 +18,19 @@ public sealed class MesLifecycleConflictOpenApiTests
 
         foreach (var route in ConflictRoutes)
         {
-            Assert.True(
-                paths.GetProperty(route).GetProperty("post").GetProperty("responses").TryGetProperty("409", out _),
-                $"POST {route} must declare 409.");
+            var schemaReference = paths.GetProperty(route)
+                .GetProperty("post")
+                .GetProperty("responses")
+                .GetProperty("409")
+                .GetProperty("content")
+                .GetProperty("application/json")
+                .GetProperty("schema")
+                .GetProperty("$ref")
+                .GetString();
+
+            Assert.Equal(
+                "#/components/schemas/NervIIPBusinessMesWebApplicationErrorsMesLifecycleConflictResponse",
+                schemaReference);
         }
     }
 

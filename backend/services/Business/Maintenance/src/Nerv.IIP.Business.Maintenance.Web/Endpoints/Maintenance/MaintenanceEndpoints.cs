@@ -43,7 +43,16 @@ public abstract class MaintenanceEndpoint<TRequest, TResponse> : Endpoint<TReque
             {
                 foreach (var statusCode in responseStatusCodes)
                 {
-                    builder.Produces(statusCode);
+                    if (statusCode == StatusCodes.Status409Conflict)
+                    {
+                        builder.Produces<
+                            Nerv.IIP.Business.Maintenance.Web.Application.Errors.MaintenanceLifecycleConflictResponse>(
+                            statusCode);
+                    }
+                    else
+                    {
+                        builder.Produces(statusCode);
+                    }
                 }
             });
         }

@@ -12,6 +12,8 @@ public sealed class WmsLifecycleConflictException(string action, string currentS
     public string CurrentStatus { get; } = currentStatus;
 }
 
+public sealed record WmsLifecycleConflictResponse(bool Success, string Message);
+
 public sealed class WmsLifecycleConflictMiddleware(
     RequestDelegate next,
     ILogger<WmsLifecycleConflictMiddleware> logger)
@@ -30,10 +32,8 @@ public sealed class WmsLifecycleConflictMiddleware(
                 exception.CurrentStatus);
             context.Response.StatusCode = (int)HttpStatusCode.Conflict;
             await context.Response.WriteAsJsonAsync(
-                new LifecycleConflictResponse(false, WmsLifecycleConflictException.SafeCode),
+                new WmsLifecycleConflictResponse(false, WmsLifecycleConflictException.SafeCode),
                 context.RequestAborted);
         }
     }
-
-    private sealed record LifecycleConflictResponse(bool Success, string Message);
 }
