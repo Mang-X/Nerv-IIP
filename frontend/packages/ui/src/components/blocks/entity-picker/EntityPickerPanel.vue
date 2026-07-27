@@ -123,7 +123,9 @@ defineExpose({ focus: () => inputEl.value?.focus() })
           @mousemove="activeIndex = index"
         >
           <CheckIcon
-            :class="cn('size-4 shrink-0', option.value === modelValue ? 'opacity-100' : 'opacity-0')"
+            :class="
+              cn('size-4 shrink-0', option.value === modelValue ? 'opacity-100' : 'opacity-0')
+            "
             aria-hidden="true"
           />
           <span class="min-w-0 flex-1">

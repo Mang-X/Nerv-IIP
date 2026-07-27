@@ -87,11 +87,7 @@ const contentId = useId()
     <!-- 内容区跟表头对齐到同一条内边距（px-4 py-3）。此前内容区完全没有内边距，
          插槽内容直接贴着面板边框，而上方表头却是内缩的，看着像没做完。
          整块表格 / 列表这类需要出血到边框的内容，用 `flush` 关掉内边距。 -->
-    <div
-      v-show="open"
-      :id="contentId"
-      :class="cn('border-t border-border', !flush && 'px-4 py-3')"
-    >
+    <div v-show="open" :id="contentId" :class="cn('border-t border-border', !flush && 'px-4 py-3')">
       <slot />
     </div>
   </section>

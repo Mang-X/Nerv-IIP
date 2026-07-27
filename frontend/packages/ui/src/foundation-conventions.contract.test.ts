@@ -149,7 +149,9 @@ describe('状态词表', () => {
   it('kebab-case 与 PascalCase 归一到同一条词条', () => {
     expect(resolveStatus('partially-received').label).toBe(resolveStatus('PartiallyReceived').label)
     expect(resolveStatus('in-progress').label).toBe(resolveStatus('InProgress').label)
-    expect(resolveStatus('conditional-release').label).toBe(resolveStatus('ConditionalRelease').label)
+    expect(resolveStatus('conditional-release').label).toBe(
+      resolveStatus('ConditionalRelease').label,
+    )
   })
 
   it('空值给「未知」，未登记的码原样回吐（便于发现漏登记）', () => {
