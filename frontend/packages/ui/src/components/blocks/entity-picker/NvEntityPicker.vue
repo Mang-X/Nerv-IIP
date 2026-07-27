@@ -129,7 +129,8 @@ function clear() {
             cn(
               'flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30',
               // 有清除叉时给右侧让位，否则长文案会钻到叉底下。
-              clearable && selected && !disabled && 'pr-13',
+              // 叉在 right-8（2rem）起、size-5（1.25rem）宽，收边到 3.25rem，再留一点余量。
+              clearable && selected && !disabled && 'pr-14',
             )
           "
         >
