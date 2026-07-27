@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator } from '@playwright/test'
 import {
   expectNoHorizontalOverflow,
   routeBusinessConsoleApi,
@@ -13,27 +13,124 @@ test.beforeEach(async ({ page }) => {
   await seedStoredSession(page)
 })
 
-test('报修：选设备 → 选优先级 → 填故障描述 → 提交 → 成功 Result', async ({ page }) => {
-  await page.goto('/equipment/repair')
+test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态单次提交', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.setViewportSize({ width: 375, height: 812 })
+  const postBodies: unknown[] = []
+  page.on('request', (request) => {
+    const { pathname } = new URL(request.url())
+    if (
+      request.method() === 'POST' &&
+      pathname === '/api/business-console/v1/maintenance/work-orders'
+    ) {
+      postBodies.push(request.postDataJSON())
+    }
+  })
+
+  const expect48 = async (locator: Locator) => {
+    const box = await locator.boundingBox()
+    expect(
+      box,
+      `missing box for ${await locator.evaluate((element) => element.outerHTML)}`,
+    ).not.toBeNull()
+    expect(box!.height).toBeGreaterThanOrEqual(48)
+    expect(box!.width).toBeGreaterThanOrEqual(48)
+  }
+
+  await page.goto('/equipment/repair?deviceAssetId=DEV-ROUTE&sourceAlarmId=ALM-9')
   await expect(page.getByRole('heading', { name: '故障报修' })).toBeVisible()
+  await expect(page.getByTestId('device-trigger')).toContainText('DEV-ROUTE')
+  await expect(page.getByTestId('device-trigger')).toContainText('报警上下文 · ALM-9')
+  await expect(page.getByTestId('device-input')).toHaveCount(0)
+  await expect(page.locator('select')).toHaveCount(0)
+  await expectNoHorizontalOverflow(page)
 
-  // 提供设备：扫描设备码（keyboard-wedge：type + Enter → @scan 写入 deviceAssetId）。
-  // 走扫码而非直填 device-input，避免 ScanBar 的 active 抢焦把值吞进扫码框。
+  // 首屏当前可见交互均为 ≥48px 命中盒；扫码以组件容器作为完整命中区域。
   const scan = page.locator('input[placeholder="扫描设备码"]')
-  await scan.click()
-  await scan.type('DEV-A')
-  await scan.press('Enter')
-  await expect(page.getByTestId('device-input')).toHaveValue('DEV-A')
-  // 选优先级（中文选项「高」← high）
-  await page.getByTestId('priority-select').selectOption('high')
-  // 填故障描述
+  await expect48(scan.locator('..'))
+  await expect48(page.getByTestId('device-trigger'))
+  await expect48(page.getByTestId('priority-trigger'))
+  await expect48(page.getByTestId('reason-input'))
+  await expect48(page.getByTestId('submit'))
+
+  // ActionSheet 三项及取消均为 48px；取消保持已选值。
+  await page.getByTestId('priority-trigger').click()
+  const prioritySheet = page.locator('[data-slot="mobile-sheet-content"]')
+  await expect(prioritySheet).toBeVisible()
+  for (const label of ['高', '中', '低', '取消']) {
+    await expect48(prioritySheet.getByRole('button', { name: label, exact: true }))
+  }
+  await prioritySheet.getByRole('button', { name: '高', exact: true }).click()
+  await expect(prioritySheet).toBeHidden()
+  await page.getByTestId('priority-trigger').click()
+  await prioritySheet.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(page.getByTestId('priority-trigger')).toContainText('高')
+
+  // 报警路由设备可被扫码替换；已有优先级与自由文本描述保持不变。
   await page.getByTestId('reason-input').fill('主轴异响，无法运转')
+  await scan.click()
+  await scan.pressSequentially('DEV-SCAN')
+  await scan.press('Enter')
+  await expect(page.getByTestId('device-trigger')).toContainText('DEV-SCAN')
+  await expect(page.getByTestId('priority-trigger')).toContainText('高')
+  await expect(page.getByTestId('reason-input')).toHaveValue('主轴异响，无法运转')
 
-  await page.getByTestId('submit').click()
+  // 再用现有 facade 的服务端 keyword 选择稳定 ID；请求保持 principal scope + 有界分页。
+  await page.getByTestId('device-trigger').click()
+  const deviceSheet = page.locator('[data-slot="mobile-sheet-content"]')
+  const searchInput = deviceSheet.locator('input[type="search"]')
+  await searchInput.fill('数控')
+  await expect48(searchInput)
+  await expect48(deviceSheet.getByRole('button', { name: '清除' }))
+  await expect48(deviceSheet.getByRole('button', { name: '取消', exact: true }))
+  const keywordRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url())
+    return (
+      url.pathname === '/api/business-console/v1/master-data/device-assets' &&
+      url.searchParams.get('keyword') === '数控'
+    )
+  })
+  await searchInput.press('Enter')
+  const requestUrl = new URL((await keywordRequest).url())
+  expect(requestUrl.searchParams.get('organizationId')).toBe('org-001')
+  expect(requestUrl.searchParams.get('environmentId')).toBe('env-dev')
+  expect(requestUrl.searchParams.get('includeDisabled')).toBe('false')
+  expect(requestUrl.searchParams.get('skip')).toBe('0')
+  expect(requestUrl.searchParams.get('take')).toBe('20')
+  const deviceOption = deviceSheet.getByRole('button', { name: /一号数控机床/ })
+  await expect(deviceOption).toContainText('CNC-01')
+  await expect(deviceOption).toContainText('WS-1 · LINE-A · ST-9')
+  await expect48(deviceOption)
+  await deviceOption.click()
+  await expect(page.getByTestId('device-trigger')).toContainText('一号数控机床')
+  await expect(page.getByTestId('device-trigger')).toContainText('CNC-01')
 
-  // 成功离场态：Result success（POST work-orders → { workOrderId: 'WO-M-new' }）
+  // 仅属 mock Chromium 证据：缩短 viewport 模拟软键盘占位，不能代表 Android/iOS 真 IME。
+  await page.setViewportSize({ width: 375, height: 520 })
+  const reason = page.getByTestId('reason-input')
+  await reason.focus()
+  await reason.fill('主轴异响，无法运转')
+  const submit = page.getByTestId('submit')
+  await submit.scrollIntoViewIfNeeded()
+  const submitBox = await submit.boundingBox()
+  expect(submitBox).not.toBeNull()
+  expect(submitBox!.y + submitBox!.height).toBeLessThanOrEqual(520)
+  await submit.click()
+
+  // 单击只产生一次 create；设备 ID 必须是 facade 返回的强 ID，报警 ID 保持 route-only。
   await expect(page.locator('[data-result][data-status="success"]')).toBeVisible()
   await expect(page.getByText('报修已提交')).toBeVisible()
+  expect(postBodies).toEqual([
+    {
+      deviceAssetId: 'device-asset-cnc-01',
+      priority: 'high',
+      assetUnavailableReason: '主轴异响，无法运转',
+      sourceAlarmId: 'ALM-9',
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      openedBy: 'operator01',
+    },
+  ])
 })
 
 test('点检：选保养计划 → 选「通过」→ 提交 → 成功 Result', async ({ page }) => {
@@ -154,7 +251,8 @@ test('报警 → 报修穿透：行详情「去报修」带 deviceAssetId + sour
   expect(url.searchParams.get('sourceAlarmId')).toBe('ALM-1')
 
   // 穿透后报修页设备已预填
-  await expect(page.getByTestId('device-input')).toHaveValue('DEV-A')
+  await expect(page.getByTestId('device-trigger')).toContainText('DEV-A')
+  await expect(page.getByTestId('device-trigger')).toContainText('报警上下文 · ALM-1')
 })
 
 test('首页 → 报修：点应用墙「报修」跳 /equipment/repair', async ({ page }) => {

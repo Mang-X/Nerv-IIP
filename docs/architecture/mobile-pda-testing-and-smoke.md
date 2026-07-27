@@ -14,7 +14,8 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
    - 跑在 jsdom，无真实浏览器。覆盖：组件标记/行为/事件、store 逻辑、登录/首页页面的渲染与守卫断言。
    - 快、确定性高；但**测不到真实布局/计算样式、触控尺寸、安全区、暗色渲染、跨页导航**。
 
-2. **Playwright e2e**（`playwright test`，真实 Chromium，移动视口 390×844 / Pixel 5）
+2. **Playwright e2e**（`playwright test`，真实 Chromium，默认移动视口 390×844 / Pixel 5；
+   报修高频输入专项显式覆盖 375×812）
    - 全程 `page.route` Mock BusinessGateway/console 网关（见 `e2e/fixtures.ts`），**无需后端**。
    - `seedStoredSession` 注入 `localStorage`（auth key `nerv-iip.business-pda.auth` + 可选
      `nerv-iip-color-mode`）跳过登录表单，直达受保护路由。
@@ -35,7 +36,10 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   拣货只读中文状态（无裸 code/GUID）；首页应用墙 → `/wms/inbound`。
 - `e2e/mes.spec.ts`（5）：工序执行完成（二次确认）→ 成功结果；报工全链 → 成功结果；
   领料列表渲染；完工入库列表渲染；首页应用墙 → `/mes/operation`。
-- `e2e/equipment.spec.ts`（5）：报修提交 → 成功结果；点检提交 → 成功结果；
+- `e2e/equipment.spec.ts`（5）：报修在 375×812 下覆盖报警路由预填 → 扫码覆盖 →
+  设备 facade 服务端 keyword/分页选择稳定 ID、优先级 ActionSheet、48px 触点、无横向溢出，
+  并用缩短 viewport 的 mock Chromium 证据验证 textarea 聚焦后提交动作仍可达且仅产生一次 POST
+  （不等同 Android/iOS 真 IME）；点检提交 → 成功结果；
   报警行详情「去报修」带参穿透报修页；首页应用墙 → `/equipment/repair`；
   点检数字键盘录入（MAN-458 #812）——特性/单位**真实 tap + fill**（ScanBar 编辑期
   opt-out 回焦，非原生 setter）、`±` 负号录 -80、超差即时红警示、提交前「N 项超差」确认、
@@ -50,9 +54,9 @@ pnpm -C frontend --filter @nerv-iip/business-pda exec playwright install chromiu
 # 全量 e2e（mobile project，自动起 vp dev webServer，端口 5176）
 pnpm -C frontend --filter @nerv-iip/business-pda e2e
 
-# 单文件
-pnpm -C frontend --filter @nerv-iip/business-pda e2e -- app-flow.spec.ts
-pnpm -C frontend --filter @nerv-iip/business-pda e2e -- ui-mobile.spec.ts
+# 单文件（直接调用包内 Playwright，避免把 `--` 误传成测试路径）
+pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test app-flow.spec.ts
+pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test ui-mobile.spec.ts
 
 # 不启浏览器，仅发现/解析 spec（浏览器不可用时的最低验证）
 pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test --list

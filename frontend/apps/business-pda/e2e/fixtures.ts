@@ -41,6 +41,26 @@ export const workerProfile = {
   skills: [],
 }
 
+const deviceAssets = [
+  {
+    deviceAssetId: 'device-asset-cnc-01',
+    code: 'CNC-01',
+    displayName: '一号数控机床',
+    active: true,
+    workshopCode: 'WS-1',
+    lineCode: 'LINE-A',
+    stationCode: 'ST-9',
+  },
+  {
+    deviceAssetId: 'device-asset-lathe-02',
+    code: 'LATHE-02',
+    displayName: '二号车床',
+    active: true,
+    workshopCode: 'WS-2',
+    lineCode: 'LINE-B',
+  },
+]
+
 export const session = {
   accessToken: 'access-token',
   refreshToken: 'refresh-token',
@@ -271,7 +291,8 @@ export const mesReceiptRequests = [
  * with routeConsoleApi). Every endpoint a spec hits must be explicitly mocked here.
  */
 export async function routeBusinessConsoleApi(route: Route) {
-  const { pathname } = new URL(route.request().url())
+  const requestUrl = new URL(route.request().url())
+  const { pathname } = requestUrl
   const method = route.request().method()
   const isPost = method === 'POST'
 
@@ -308,6 +329,29 @@ export async function routeBusinessConsoleApi(route: Route) {
   }
 
   // ---- 设备运维（报修/点检/报警查看） ----
+  // 报修设备选择器：principal scope + 服务端 keyword/skip/take，有界返回。
+  if (pathname === '/api/business-console/v1/master-data/device-assets') {
+    const keyword = (requestUrl.searchParams.get('keyword') ?? '').trim().toLowerCase()
+    const skip = Math.max(0, Number(requestUrl.searchParams.get('skip') ?? 0))
+    const take = Math.max(1, Number(requestUrl.searchParams.get('take') ?? 20))
+    const matched = keyword
+      ? deviceAssets.filter(
+          (item) =>
+            item.displayName.toLowerCase().includes(keyword) ||
+            item.code.toLowerCase().includes(keyword),
+        )
+      : deviceAssets
+    return fulfillJson(
+      route,
+      envelope({
+        resources: matched.slice(skip, skip + take),
+        total: matched.length,
+        truncated: skip + take < matched.length,
+        limit: take,
+      }),
+    )
+  }
+
   // 报修：维修工单 list / create
   if (pathname === '/api/business-console/v1/maintenance/work-orders') {
     if (method === 'POST') {
