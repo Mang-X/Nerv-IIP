@@ -344,18 +344,17 @@ internal static class WorkOrderCancellationOrchestrator
             workOrderId,
             cancellationToken);
 
-        if (workOrder.Status == WorkOrder.CancelledStatus)
+        var workOrderAlreadyCancelled = workOrder.Status == WorkOrder.CancelledStatus;
+        if (!workOrderAlreadyCancelled)
         {
-            return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, cancelledAtUtc);
+            WorkOrderLifecycleCommandGuards.EnsureActionAllowed(
+                workOrder,
+                "cancel",
+                WorkOrder.CreatedStatus,
+                WorkOrder.ReleasedStatus,
+                WorkOrder.StartedStatus,
+                WorkOrder.HoldStatus);
         }
-
-        WorkOrderLifecycleCommandGuards.EnsureActionAllowed(
-            workOrder,
-            "cancel",
-            WorkOrder.CreatedStatus,
-            WorkOrder.ReleasedStatus,
-            WorkOrder.StartedStatus,
-            WorkOrder.HoldStatus);
 
         var materialIssueRequests = await dbContext.MaterialIssueRequests
             .Where(x => x.OrganizationId == organizationId
@@ -373,10 +372,13 @@ internal static class WorkOrderCancellationOrchestrator
                 && x.WorkOrderId == workOrderId)
             .ToListAsync(cancellationToken);
 
-        WorkOrderLifecycleCommandGuards.ApplyTransition(workOrder, x => x.Cancel(
-            reason,
-            cancelledAtUtc,
-            materialIssueRequests.Select(materialIssueRequest => materialIssueRequest.RequestNo).ToArray()));
+        if (!workOrderAlreadyCancelled)
+        {
+            WorkOrderLifecycleCommandGuards.ApplyTransition(workOrder, x => x.Cancel(
+                reason,
+                cancelledAtUtc,
+                materialIssueRequests.Select(materialIssueRequest => materialIssueRequest.RequestNo).ToArray()));
+        }
 
         foreach (var materialIssueRequest in materialIssueRequests)
         {
