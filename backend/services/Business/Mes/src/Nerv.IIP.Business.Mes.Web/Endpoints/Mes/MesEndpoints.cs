@@ -892,12 +892,24 @@ public sealed class ReturnLineSideMaterialEndpoint(ISender sender, TimeProvider 
     }
 }
 
+public sealed record ListMesDispatchTasksRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status,
+    int Skip = 0,
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? AssignedUserId = null);
+
 public sealed class ListDispatchTasksEndpoint(ISender sender)
-    : MesEndpoint<ListMesWorkOrdersRequest, MesDispatchTaskListResponse>
+    : MesEndpoint<ListMesDispatchTasksRequest, MesDispatchTaskListResponse>
 {
     public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ListDispatchTasksEndpoint>());
 
-    public override async Task HandleAsync(ListMesWorkOrdersRequest req, CancellationToken ct)
+    public override async Task HandleAsync(ListMesDispatchTasksRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new ListDispatchTasksQuery(
             req.OrganizationId,
@@ -908,7 +920,8 @@ public sealed class ListDispatchTasksEndpoint(ISender sender)
             req.Keyword,
             req.WorkCenterId,
             req.ShiftId,
-            req.DeviceAssetId), ct);
+            req.DeviceAssetId,
+            req.AssignedUserId), ct);
         await Send.OkAsync(response, ct);
     }
 }

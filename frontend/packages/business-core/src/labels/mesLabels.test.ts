@@ -29,6 +29,7 @@ describe('workOrderStatusLabel', () => {
 
 describe('operationTaskStatusLabel', () => {
   it('maps known operation-task statuses to Chinese labels', () => {
+    expect(operationTaskStatusLabel('Queued')).toBe('待开工')
     expect(operationTaskStatusLabel('Ready')).toBe('可开工')
     expect(operationTaskStatusLabel('Running')).toBe('执行中')
     expect(operationTaskStatusLabel('Started')).toBe('执行中')
@@ -37,6 +38,7 @@ describe('operationTaskStatusLabel', () => {
     expect(operationTaskStatusLabel('Held')).toBe('已暂停')
     expect(operationTaskStatusLabel('ScheduleInvalidated')).toBe('排程已失效')
     expect(operationTaskStatusLabel('Completed')).toBe('已完成')
+    expect(operationTaskStatusLabel('Cancelled')).toBe('已取消')
     expect(operationTaskStatusLabel('Blocked')).toBe('受阻')
   })
 

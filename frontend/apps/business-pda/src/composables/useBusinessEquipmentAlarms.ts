@@ -8,7 +8,7 @@ import {
 import { alarmLifecycleSortWeight } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 
 const DEFAULT_TAKE = 100
 
@@ -73,7 +73,7 @@ function authScope() {
  * 全量口径，不受列表首页 take 上限影响（>100 时也不会把角标算成 0）。`take:1` 只为省流量，
  * `total` 仍是符合条件的全部条数。
  */
-export function useUnacknowledgedAlarmCount() {
+export function useUnacknowledgedAlarmCount(enabled: MaybeRefOrGetter<boolean> = true) {
   const { organizationId, environmentId, scopeReady } = authScope()
   const raisedQuery = useQuery(() => ({
     ...listBusinessConsoleEquipmentAlarmsQueryOptions({
@@ -85,7 +85,8 @@ export function useUnacknowledgedAlarmCount() {
         take: 1,
       },
     }),
-    enabled: scopeReady.value,
+    // 调用方可再按权限门（如首页仅报警读权限主体才查询）。
+    enabled: scopeReady.value && toValue(enabled),
   }))
 
   return {

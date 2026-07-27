@@ -25,7 +25,7 @@ test('收货入库: select order IN-1, confirm in sheet, see success result', as
 
   // Success Result.
   await expect(page.locator('[data-result][data-status="success"]')).toBeVisible()
-  await expect(page.getByText('入库已完成')).toBeVisible()
+  await expect(page.getByText('入库完成，待质检')).toBeVisible()
 })
 
 test('盘点: select CN-1, enter counted quantity, confirm, see success result', async ({ page }) => {
@@ -65,7 +65,7 @@ test('拣货 read-only: task PK-1 shows Chinese status (no raw code / GUID)', as
 test('home wall → 收货入库 navigates to /wms/inbound', async ({ page }) => {
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { name: '工作台' })).toBeVisible()
+  await expect(page.getByTestId('home-name')).toBeVisible()
   const entry = page.getByRole('button', { name: '收货入库' })
   await expect(entry).toBeEnabled()
   await entry.click()

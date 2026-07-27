@@ -1,8 +1,8 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
-// 真实 router.push 返回 Promise（index.vue 的 openTask 会 `.catch`）；mock 同此契约。
+// 真实 router.push 返回 Promise（index.vue 的导航会 `.catch`）；mock 同此契约。
 const push = vi.fn(() => Promise.resolve())
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
@@ -15,12 +15,114 @@ vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
   useUnacknowledgedAlarmCount: () => ({ unacknowledgedCount }),
 }))
 
+// 工作台各板块数据源：mock 掉网络层，页面只消费 refs。
+const permissions = ref(new Set<string>())
+const worker = ref<
+  | {
+      displayName?: string
+      employeeNo?: string
+      jobTitle?: string
+      teams?: Array<{ teamName?: string }>
+    }
+  | undefined
+>(undefined)
+const openTasks = ref<
+  Array<{
+    operationTaskId?: string
+    workOrderNo?: string
+    workOrderId?: string
+    status?: string
+    operationCode?: string | null
+    workCenterName?: string | null
+    workCenterCode?: string | null
+    workCenterId?: string
+    deviceAssetName?: string | null
+    deviceAssetCode?: string | null
+  }>
+>([])
+const myTasksPending = ref(false)
+const warehouseEntries = ref<Array<{ key: string; label: string; route: string; count: number }>>(
+  [],
+)
+const inspectionTasks = ref<
+  Array<{
+    inspectionTaskId?: string
+    skuCode?: string
+    batchNo?: string | null
+    quantity?: number
+    uomCode?: string
+  }>
+>([])
+
+vi.mock('@/composables/useWorkbenchHome', () => {
+  const HOME_PERMISSIONS = {
+    myTasks: 'business.mes.dispatch.read',
+    workerProfile: 'business.masterdata.resources.read',
+    wmsReceipts: 'business.wms.receipts.read',
+    wmsShipments: 'business.wms.shipments.read',
+    quality: 'business.quality.inspection-records.read',
+    alarms: 'business.iiot.alarms.read',
+  }
+  return {
+    HOME_PERMISSIONS,
+    usePdaIdentity: () => ({
+      principalId: ref('user-emp-010'),
+      loginName: ref('emp010'),
+      hasScope: ref(true),
+      can: (code: string) => permissions.value.has(code),
+      worker,
+      displayName: computed(() => worker.value?.displayName || 'emp010'),
+    }),
+    useMyDispatchTasks: () => ({
+      enabled: computed(() => permissions.value.has(HOME_PERMISSIONS.myTasks)),
+      openTasks,
+      queuedCount: computed(() => openTasks.value.filter((t) => t.status === 'Queued').length),
+      inProgressCount: computed(
+        () => openTasks.value.filter((t) => t.status === 'InProgress').length,
+      ),
+      pending: myTasksPending,
+      error: ref(null),
+      refresh: vi.fn(),
+    }),
+    useWarehouseSummary: () => ({
+      enabled: computed(
+        () =>
+          permissions.value.has(HOME_PERMISSIONS.wmsReceipts) ||
+          permissions.value.has(HOME_PERMISSIONS.wmsShipments),
+      ),
+      entries: warehouseEntries,
+      pending: ref(false),
+    }),
+    usePendingInspectionSummary: () => ({
+      enabled: computed(() => permissions.value.has(HOME_PERMISSIONS.quality)),
+      tasks: inspectionTasks,
+      total: computed(() => inspectionTasks.value.length),
+      pending: ref(false),
+    }),
+  }
+})
+
 import HomePage from './index.vue'
 
-/** Find an app-wall button by its visible label. */
-function buttonByLabel(wrapper: ReturnType<typeof mount>, label: string) {
-  const btn = wrapper.findAll('button').find((b) => b.text() === label)
-  if (!btn) throw new Error(`app-wall button "${label}" not found`)
+const ALL_PERMISSIONS = [
+  'business.mes.dispatch.read',
+  'business.masterdata.resources.read',
+  'business.wms.receipts.read',
+  'business.wms.shipments.read',
+  'business.quality.inspection-records.read',
+  'business.iiot.alarms.read',
+  'business.mes.reporting.read',
+  'business.mes.materials.read',
+  'business.mes.receipts.read',
+  'business.mes.operations.read',
+  'business.maintenance.work-orders.read',
+  'business.maintenance.plans.read',
+]
+
+/** Find an app-wall grid tile by its visible label. */
+function tileByLabel(wrapper: ReturnType<typeof mount>, label: string) {
+  const btn = wrapper.findAll('button').find((b) => b.text().includes(label))
+  if (!btn) throw new Error(`app-wall tile "${label}" not found`)
   return btn
 }
 
@@ -28,21 +130,24 @@ describe('PDA home', () => {
   beforeEach(() => {
     push.mockReset()
     unacknowledgedCount.value = 0
+    permissions.value = new Set(ALL_PERMISSIONS)
+    worker.value = undefined
+    openTasks.value = []
+    myTasksPending.value = false
+    warehouseEntries.value = []
+    inspectionTasks.value = []
   })
 
   it('shows the unacknowledged-alarm count badge on the 查看报警 tile, and hides it at zero', async () => {
     const wrapper = mount(HomePage)
-    expect(wrapper.find('[data-testid="alarm-badge"]').exists()).toBe(false)
+    expect(wrapper.find('.nv-m-grid-badge').exists()).toBe(false)
 
     unacknowledgedCount.value = 3
     await wrapper.vm.$nextTick()
-    const badge = wrapper.find('[data-testid="alarm-badge"]')
+    const alarmTile = tileByLabel(wrapper, '查看报警')
+    const badge = alarmTile.find('.nv-m-grid-badge')
     expect(badge.exists()).toBe(true)
     expect(badge.text()).toContain('3')
-
-    // 角标挂在「查看报警」入口上，而非其它快捷应用
-    const alarmTile = wrapper.findAll('button').find((b) => b.text().includes('查看报警'))
-    expect(alarmTile?.find('[data-testid="alarm-badge"]').exists()).toBe(true)
   })
 
   it('renders the scan bar and the app wall from the task dictionary', () => {
@@ -57,9 +162,54 @@ describe('PDA home', () => {
     expect(wrapper.text()).toContain('查看报警')
   })
 
-  it('shows an empty-state for "我的任务" until the backend personal-task facade lands', () => {
+  it('tailors the app wall and sections to the principal permissions（仓储角色不见 MES 入口）', () => {
+    permissions.value = new Set(['business.wms.receipts.read', 'business.wms.shipments.read'])
+    warehouseEntries.value = [{ key: 'putaway', label: '待上架', route: '/wms/putaway', count: 4 }]
     const wrapper = mount(HomePage)
-    expect(wrapper.text()).toContain('暂无分配给你的任务')
+
+    // 仓储板块可见，「我的任务」「待检任务」按权限隐藏
+    expect(wrapper.find('[data-testid="home-warehouse"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-my-tasks"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-inspection"]').exists()).toBe(false)
+
+    // 应用墙只留 WMS 入口
+    expect(wrapper.text()).toContain('收货入库')
+    expect(wrapper.text()).not.toContain('报工')
+    expect(wrapper.text()).not.toContain('查看报警')
+  })
+
+  it('renders my dispatch tasks with status tags, and an empty state without tasks', async () => {
+    openTasks.value = [
+      {
+        operationTaskId: 'OT-001',
+        workOrderNo: 'WO-2026-00001',
+        status: 'InProgress',
+        operationCode: 'OP-30',
+        workCenterName: '装配一线',
+      },
+      { operationTaskId: 'OT-002', workOrderNo: 'WO-2026-00002', status: 'Queued' },
+    ]
+    const wrapper = mount(HomePage)
+    expect(wrapper.text()).toContain('WO-2026-00001')
+    expect(wrapper.text()).toContain('进行中')
+    expect(wrapper.text()).toContain('工序 OP-30')
+
+    openTasks.value = []
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('暂无派给我的任务')
+  })
+
+  it('shows the worker identity in the header when the directory profile is available', () => {
+    worker.value = {
+      displayName: '吴桂芳',
+      employeeNo: 'EMP-010',
+      jobTitle: '操作工',
+      teams: [{ teamName: '机加车间早班组' }],
+    }
+    const wrapper = mount(HomePage)
+    expect(wrapper.get('[data-testid="home-name"]').text()).toBe('吴桂芳')
+    expect(wrapper.text()).toContain('EMP-010')
+    expect(wrapper.text()).toContain('操作工 · 机加车间早班组')
   })
 
   const ENTRIES: Array<[label: string, route: string]> = [
@@ -80,11 +230,9 @@ describe('PDA home', () => {
     ['查看报警', '/equipment/alarms'],
   ]
 
-  it.each(ENTRIES)('enables the %s entry and navigates to %s on click', async (label, route) => {
+  it.each(ENTRIES)('navigates to %s → %s on tile click', async (label, route) => {
     const wrapper = mount(HomePage)
-    const btn = buttonByLabel(wrapper, label)
-    // 合并后全部域已交付（routeReady=true）→ 入口均不再 disabled
-    expect(btn.attributes('disabled')).toBeUndefined()
+    const btn = tileByLabel(wrapper, label)
     push.mockClear()
     await btn.trigger('click')
     expect(push).toHaveBeenCalledWith(route)
