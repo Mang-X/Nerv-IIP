@@ -8,6 +8,9 @@ import { useMaintenanceSpareParts } from '@/composables/useBusinessMaintenance'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
+  Empty,
+  EmptyDescription,
+  EmptyTitle,
   NvButton,
   NvDataTable,
   NvDialog,
@@ -61,7 +64,9 @@ const createForm = reactive({
 })
 const createError = shallowRef('')
 
-const listErrorMessage = computed(() => formatError(sparePartsError.value))
+const listErrorMessage = computed(() =>
+  sparePartsError.value ? '备件需求暂时无法加载，请稍后重试。' : '',
+)
 // 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
 const createErrorMessage = computed(() => createError.value)
 
@@ -128,10 +133,6 @@ async function submitCreate() {
     notifyError(error, '备件需求创建失败，请稍后重试。')
   }
 }
-
-function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
-}
 </script>
 
 <template>
@@ -164,11 +165,22 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
-      {{ listErrorMessage }}
-    </p>
+    <Empty v-if="listErrorMessage" class="min-h-72 rounded-xl border" role="alert">
+      <EmptyTitle>备件需求暂时无法加载</EmptyTitle>
+      <EmptyDescription> 数据来自维修工单的备件需求。当前请求失败，请稍后重试。 </EmptyDescription>
+      <NvButton
+        type="button"
+        variant="outline"
+        :disabled="sparePartsPending"
+        @click="refreshSpareParts"
+      >
+        <RefreshCwIcon aria-hidden="true" />
+        重新加载
+      </NvButton>
+    </Empty>
 
     <NvDataTable
+      v-if="!listErrorMessage"
       manual
       :page="page"
       :page-size="pageSize"

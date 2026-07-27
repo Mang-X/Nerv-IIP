@@ -566,21 +566,22 @@ describe('equipment pages', () => {
     expect(equipmentHealthState.refreshHealth).toHaveBeenCalledTimes(1)
   })
 
-  it('renders telemetry and maintenance context with source wording on equipment detail', () => {
+  it('renders equipment indicators and maintenance facts without implementation-stage copy', () => {
     const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
 
-    expect(wrapper.text()).toContain('遥测深层上下文')
+    expect(wrapper.text()).toContain('设备运行指标')
     expect(wrapper.text()).toContain('OEE = 可用率 × 性能率 × 质量率')
     expect(wrapper.text()).toContain('82.0%')
     expect(wrapper.text()).toContain('历史事件6')
     expect(wrapper.text()).toContain('temperature')
-    expect(wrapper.text()).toContain('维护与可靠性上下文')
+    expect(wrapper.text()).toContain('维护与可靠性')
     expect(wrapper.text()).toContain('mwo-1')
     expect(wrapper.text()).toContain('PM-CNC-MONTHLY')
     expect(wrapper.text()).toContain('insp-6')
     expect(wrapper.text()).toContain('BEARING-6205')
     expect(wrapper.text()).toContain('MTBF')
-    expect(wrapper.text()).toContain('正式页面')
+    expect(wrapper.text()).not.toContain('正式页面')
+    expect(wrapper.text()).not.toContain('Ops')
   })
 
   it('renders each OEE factor as a gap-to-target bar and OEE itself as multiplied facets', () => {
@@ -709,7 +710,7 @@ describe('equipment pages', () => {
     const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
 
     expect(wrapper.text()).toContain('设备控制')
-    expect(wrapper.text()).toContain('控制命令历史')
+    expect(wrapper.text()).toContain('控制命令记录')
     expect(wrapper.text()).toContain('spindle.speed')
     expect(wrapper.find('[data-testid="device-control-sheet"]').exists()).toBe(true)
   })
@@ -724,7 +725,7 @@ describe('equipment pages', () => {
     const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
 
     // The control-command history section still renders (read-scoped), but the dispatch action does not.
-    expect(wrapper.text()).toContain('控制命令历史')
+    expect(wrapper.text()).toContain('控制命令记录')
     expect(wrapper.findAll('button').some((b) => b.text().includes('设备控制'))).toBe(false)
   })
 })

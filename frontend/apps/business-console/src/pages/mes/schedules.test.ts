@@ -44,7 +44,8 @@ const stubs = {
   },
   NvDataTable: {
     props: ['rows', 'columns', 'emptyMessage'],
-    template: '<section>{{ emptyMessage }}<div v-for="row in rows" :key="row.operationTaskId">{{ row.workOrderId }} {{ row.workCenterId }}</div></section>',
+    template:
+      '<section>{{ emptyMessage }}<div v-for="row in rows" :key="row.operationTaskId">{{ row.workOrderId }} {{ row.workCenterId }}</div></section>',
   },
   NvDialog: {
     props: ['open'],
@@ -114,14 +115,15 @@ const stubs = {
 }
 
 describe('MES rule scheduling page IA copy', () => {
-  it('states the transition boundary and links formal APS/Gantt work to Scheduling', () => {
+  it('uses business-facing source copy and links to the scheduling workbench', () => {
     const wrapper = mount(SchedulesPage, { global: { stubs } })
     const text = wrapper.text()
 
-    expect(text).toContain('规则排程（过渡）')
-    expect(text).toContain('正式 APS / 甘特')
+    expect(text).toContain('规则排程')
+    expect(text).toContain('数据来自最近一次规则排程运行')
     expect(text).toContain('排产工作台')
-    expect(text).not.toContain('APS 权威')
+    expect(text).not.toContain('过渡')
+    expect(text).not.toContain('正式 APS')
 
     const schedulingLink = wrapper
       .findAll('[data-router-link]')

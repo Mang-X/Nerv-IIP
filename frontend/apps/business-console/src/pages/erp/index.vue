@@ -288,14 +288,28 @@ async function submitRfq() {
       </template>
     </NvPageHeader>
 
-    <NvMetricCard
-      class="sm:max-w-md"
-      variant="breakdown"
-      label="采购申请"
-      :value="requisitions.total.value"
-      unit="张"
-      :segments="requisitionSegments"
-    />
+    <div class="grid gap-4 sm:grid-cols-2">
+      <NvMetricCard
+        variant="breakdown"
+        label="采购申请"
+        :value="requisitions.total.value"
+        unit="张"
+        :segments="requisitionSegments"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="待转采购订单"
+        :value="openCount"
+        unit="张"
+        :tone="openCount > 0 ? 'warning' : 'neutral'"
+        :status="
+          openCount > 0
+            ? { label: '待采购处理', tone: 'warning' }
+            : { label: '无待办', tone: 'success' }
+        "
+        :foot-start="openCount > 0 ? '确认供应策略后转为采购订单。' : '当前采购申请均已完成流转。'"
+      />
+    </div>
 
     <NvToolbar :show-search="false">
       <template #filters>
