@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
+using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
@@ -22,6 +23,7 @@ using InboundOrder = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAg
 using InboundOrderId = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderId;
 using InboundOrderLineCapture = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderLineCapture;
 using InboundOrderLineDraft = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderLineDraft;
+using InboundOrderStatus = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderStatus;
 using OutboundOrder = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder;
 using OutboundOrderLineDraft = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrderLineDraft;
 using CountExecution = Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate.CountExecution;
@@ -35,6 +37,39 @@ namespace Nerv.IIP.Business.Wms.Web.Tests;
 
 public sealed class WmsEndpointContractTests
 {
+    [Fact]
+    public async Task Lifecycle_conflict_endpoint_returns_409_with_safe_code()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(new LifecycleConflictSender());
+                });
+            });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", "test-internal-service-token");
+        var inboundOrderId = Guid.CreateVersion7();
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete",
+            new
+            {
+                inboundOrderId,
+                idempotencyKey = "wms-conflict",
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"message\":\"lifecycle-conflict\"", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Completed", body, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void Wms_endpoints_expose_issue_136_routes_permissions_policies_and_operation_ids()
     {
@@ -753,6 +788,40 @@ public sealed class WmsEndpointContractTests
                 efServices.Dispose();
             }
         }
+    }
+
+    private sealed class LifecycleConflictSender : ISender
+    {
+        public Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            return Task.FromException<TResponse>(
+                new WmsLifecycleConflictException(
+                    "complete-inbound",
+                    nameof(InboundOrderStatus.Completed)));
+        }
+
+        public Task Send<TRequest>(
+            TRequest request,
+            CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher

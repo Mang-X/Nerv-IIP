@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Seed;
+using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Web.Application.WcsAdapters;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.Localization;
@@ -158,6 +159,7 @@ try
 
     app.UseNervIipRequestLocalization();
     app.UseKnownExceptionHandler();
+    app.UseMiddleware<WmsLifecycleConflictMiddleware>();
     app.UseStaticFiles();
     app.UseRouting();
     app.UseAuthentication();
