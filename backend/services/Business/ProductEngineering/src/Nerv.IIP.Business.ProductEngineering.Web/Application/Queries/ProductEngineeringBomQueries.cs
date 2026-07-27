@@ -136,7 +136,7 @@ public sealed class GetEngineeringBomExplosionQueryHandler(ApplicationDbContext 
                     "cycle-detected",
                     "error",
                     childLine.ChildItemCode,
-                    $"BOM cycle detected at '{childLine.ChildItemCode}'.",
+                    $"BOM 存在循环引用：物料 {childLine.ChildItemCode} 在自身展开路径中再次出现，该分支已停止展开。",
                     childPath));
                 children.Add(ToEngineeringLineNode(childLine, itemCode, childPath, level + 1, childRequired, []));
                 continue;
@@ -149,7 +149,7 @@ public sealed class GetEngineeringBomExplosionQueryHandler(ApplicationDbContext 
                     "missing-child-bom",
                     "warning",
                     childLine.ChildItemCode,
-                    $"No published child engineering BOM resolved for '{childLine.ChildItemCode}' on {effectiveDate:yyyy-MM-dd}.",
+                    $"物料 {childLine.ChildItemCode} 在 {effectiveDate:yyyy-MM-dd} 没有已发布的设计 BOM，按最底层件处理。",
                     childPath));
                 children.Add(ToEngineeringLineNode(childLine, itemCode, childPath, level + 1, childRequired, []));
                 continue;
@@ -335,7 +335,7 @@ public sealed class GetManufacturingBomExplosionQueryHandler(ApplicationDbContex
                     "production-version-unresolved",
                     "warning",
                     request.SkuCode,
-                    $"Production version references MBOM '{productionVersion}', but no matching published manufacturing BOM resolved on {request.EffectiveDate:yyyy-MM-dd}. Falling back to effective BOM selection.",
+                    $"生产版本指定的制造 BOM {productionVersion} 在 {request.EffectiveDate:yyyy-MM-dd} 没有已发布版本，已改用当期生效的制造 BOM 展开。",
                     request.SkuCode));
             }
             else
@@ -344,7 +344,7 @@ public sealed class GetManufacturingBomExplosionQueryHandler(ApplicationDbContex
                     "production-version-unresolved",
                     "warning",
                     request.SkuCode,
-                    $"Production version references MBOM '{productionVersion}' in an unsupported format. Expected 'bomCode:revision'; falling back to effective BOM selection.",
+                    $"生产版本 {productionVersion} 格式不正确（应为「BOM编码:版次」），已改用当期生效的制造 BOM 展开。",
                     request.SkuCode));
             }
         }
@@ -379,7 +379,7 @@ public sealed class GetManufacturingBomExplosionQueryHandler(ApplicationDbContex
                     "cycle-detected",
                     "error",
                     materialLine.SkuCode,
-                    $"BOM cycle detected at '{materialLine.SkuCode}'.",
+                    $"BOM 存在循环引用：物料 {materialLine.SkuCode} 在自身展开路径中再次出现，该分支已停止展开。",
                     childPath));
                 children.Add(ToManufacturingLineNode(materialLine, itemCode, childPath, level + 1, childRequired, []));
                 continue;
@@ -392,7 +392,7 @@ public sealed class GetManufacturingBomExplosionQueryHandler(ApplicationDbContex
                     "missing-child-bom",
                     "warning",
                     materialLine.SkuCode,
-                    $"No published child manufacturing BOM resolved for '{materialLine.SkuCode}' on {effectiveDate:yyyy-MM-dd}.",
+                    $"物料 {materialLine.SkuCode} 在 {effectiveDate:yyyy-MM-dd} 没有已发布的制造 BOM，按最底层件处理。",
                     childPath));
                 children.Add(ToManufacturingLineNode(materialLine, itemCode, childPath, level + 1, childRequired, []));
                 continue;

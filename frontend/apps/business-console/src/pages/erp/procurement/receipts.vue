@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpPurchaseReceipts } from '@/composables/useBusinessErp'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
+import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -38,6 +41,9 @@ definePage({
 })
 
 const receipts = useErpPurchaseReceipts()
+// 供应商 / 物料列显名称：读面只回编码，中文名在主数据里，前端按编码 join。
+const { resolvePartner } = useBusinessPartnerNames()
+const { resolveSkuName } = useSkuNames()
 const { page, pageSize } = usePagedList(receipts.filters, {
   resetOn: [() => receipts.filters.keyword],
 })
@@ -47,10 +53,12 @@ const rows = computed(() =>
     (order.lines ?? []).map((line) => ({
       purchaseOrderNo: order.purchaseOrderNo ?? '-',
       supplierCode: order.supplierCode ?? '-',
+      supplierName: resolvePartner(order.supplierCode),
       status: order.status ?? '-',
       receiptReadiness: order.receiptReadiness ?? '-',
       lineNo: line.lineNo ?? '-',
       skuCode: line.skuCode ?? '-',
+      skuName: resolveSkuName(line.skuCode),
       orderedQuantity: line.orderedQuantity ?? 0,
       receivedQuantity: line.receivedQuantity ?? 0,
       openQuantity: Math.max((line.orderedQuantity ?? 0) - (line.receivedQuantity ?? 0), 0),
@@ -99,8 +107,8 @@ const receiptContextItems = computed(() => {
   return [
     { label: '采购单', value: row.purchaseOrderNo },
     { label: '采购行', value: row.lineNo },
-    { label: '供应商', value: row.supplierCode },
-    { label: '物料', value: row.skuCode },
+    { label: '供应商', value: row.supplierName ? `${row.supplierName}（${row.supplierCode}）` : row.supplierCode },
+    { label: '物料', value: row.skuName ? `${row.skuName}（${row.skuCode}）` : row.skuCode },
     { label: '订单数量', value: formatQuantity(row.orderedQuantity) },
     { label: '已收数量', value: formatQuantity(row.receivedQuantity) },
     { label: '待收数量', value: formatQuantity(row.openQuantity) },
@@ -185,6 +193,12 @@ async function submit() {
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >
+      <template #cell-supplierCode="{ row }">
+        <CodeWithNameCell :code="row.supplierCode" :name="row.supplierName" />
+      </template>
+      <template #cell-skuCode="{ row }">
+        <CodeWithNameCell :code="row.skuCode" :name="row.skuName" fallback="未指定物料" />
+      </template>
       <template #cell-orderedQuantity="{ row }"
         ><span class="tabular-nums">{{ formatQuantity(row.orderedQuantity) }}</span></template
       >

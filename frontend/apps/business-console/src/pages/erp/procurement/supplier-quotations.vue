@@ -2,6 +2,7 @@
 import type { BusinessConsoleErpRequestForQuotationItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpSupplierQuotations } from '@/composables/useBusinessErp'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -44,6 +45,8 @@ definePage({
 })
 
 const quotes = useErpSupplierQuotations()
+// 供应商列/下拉显名称：读面只回编码，中文名在主数据业务伙伴里，前端按编码 join。
+const { resolvePartnerLabel } = useBusinessPartnerNames()
 const { page, pageSize } = usePagedList(quotes.filters, { resetOn: [() => quotes.filters.keyword] })
 
 const columns: NvDataTableColumn<BusinessConsoleErpRequestForQuotationItem>[] = [
@@ -51,7 +54,8 @@ const columns: NvDataTableColumn<BusinessConsoleErpRequestForQuotationItem>[] = 
   {
     key: 'supplierCodes',
     header: '询价供应商',
-    accessor: (r) => (r.supplierCodes ?? []).join(' / ') || '-',
+    accessor: (r) =>
+      (r.supplierCodes ?? []).map((code) => resolvePartnerLabel(code, '')).join(' / ') || '-',
   },
   {
     key: 'lineCount',
@@ -258,9 +262,9 @@ async function submit() {
                   <NvSelectValue placeholder="选择供应商" />
                 </NvSelectTrigger>
                 <NvSelectContent>
-                  <NvSelectItem v-for="code in supplierOptions" :key="code" :value="code">{{
-                    code
-                  }}</NvSelectItem>
+                  <NvSelectItem v-for="code in supplierOptions" :key="code" :value="code">
+                    {{ resolvePartnerLabel(code) }}
+                  </NvSelectItem>
                 </NvSelectContent>
               </NvSelect>
             </NvField>

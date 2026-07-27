@@ -3,6 +3,7 @@ import type { BusinessConsoleErpRequestForQuotationItem } from '@nerv-iip/api-cl
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpRequestsForQuotation } from '@/composables/useBusinessErp'
 import { useErpItemCatalog, useErpPartnerCatalog } from '@/composables/useErpPickerCatalog'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
 import EntityMultiPicker from '@/components/business/EntityMultiPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -44,6 +45,8 @@ const rfqs = useErpRequestsForQuotation()
 // 询价对象与物料从主数据目录里选；供应商是多选，用应用侧的多选组合件。
 const { supplierOptions, partnersPending } = useErpPartnerCatalog()
 const { skuOptions, skusPending, uomOptions, uomsPending, baseUomBySku } = useErpItemCatalog()
+// 列表侧另需 code→name 反查（目录只给下拉选项，不做反查）；底层同一份查询，不会重复请求。
+const { resolvePartnerLabel } = useBusinessPartnerNames()
 const { page, pageSize } = usePagedList(rfqs.filters, { resetOn: [() => rfqs.filters.keyword] })
 
 const columns: NvDataTableColumn<BusinessConsoleErpRequestForQuotationItem>[] = [
@@ -51,7 +54,8 @@ const columns: NvDataTableColumn<BusinessConsoleErpRequestForQuotationItem>[] = 
   {
     key: 'supplierCodes',
     header: '供应商',
-    accessor: (r) => (r.supplierCodes ?? []).join(' / ') || '-',
+    accessor: (r) =>
+      (r.supplierCodes ?? []).map((code) => resolvePartnerLabel(code, '')).join(' / ') || '-',
   },
   {
     key: 'lineCount',
