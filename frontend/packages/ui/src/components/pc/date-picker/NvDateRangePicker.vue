@@ -127,7 +127,7 @@ const label = computed(() =>
         :disabled="disabled"
         :class="
           cn(
-            'w-64 justify-between font-normal',
+            'w-full justify-between font-normal sm:w-64',
             !(start && end) && 'text-muted-foreground',
             props.class,
           )

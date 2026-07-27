@@ -73,7 +73,7 @@ watch(open, (isOpen) => {
         :disabled="disabled"
         :class="
           cn(
-            'w-40 justify-between font-normal',
+            'w-full justify-between font-normal sm:w-40',
             !modelValue && 'text-muted-foreground',
             props.class,
           )
