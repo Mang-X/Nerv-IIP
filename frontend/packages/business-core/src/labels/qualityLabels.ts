@@ -56,6 +56,7 @@ export const INSPECTION_TASK_SOURCE_TYPES: readonly string[] = ['receiving', 'op
  */
 export const qualitySourceTypeLabels: Record<string, string> = {
   operation: '工序',
+  'in-process': '过程检验',
   receiving: '收货',
   final: '终检',
   maintenance: '维修',

@@ -35,6 +35,7 @@ describe('inspectionTaskSourceTypeLabel', () => {
 describe('qualitySourceTypeLabel', () => {
   it('maps the inspection-record/NCR source types to Chinese', () => {
     expect(qualitySourceTypeLabel('operation')).toBe('工序')
+    expect(qualitySourceTypeLabel('in-process')).toBe('过程检验')
     expect(qualitySourceTypeLabel('receiving')).toBe('收货')
     expect(qualitySourceTypeLabel('final')).toBe('终检')
     expect(qualitySourceTypeLabel('maintenance')).toBe('维修')

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { computed, nextTick, ref, useId, watch } from 'vue'
-import { DialogRoot, DialogTitle, DialogTrigger } from 'reka-ui'
+import { DialogDescription, DialogRoot, DialogTitle, DialogTrigger } from 'reka-ui'
 import { CheckIcon, ChevronsUpDownIcon, SearchIcon, XIcon } from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 import NvDialogContent from '../../pc/dialog/NvDialogContent.vue'
@@ -146,6 +146,9 @@ function onKeydown(e: KeyboardEvent) {
     <NvDialogContent class="max-w-lg gap-0 p-0" @open-auto-focus.prevent="inputEl?.focus()">
       <div class="border-b border-border px-6 py-4">
         <DialogTitle class="text-base leading-none font-semibold">{{ title }}</DialogTitle>
+        <DialogDescription class="sr-only">
+          {{ sourceText ?? `搜索并选择${title.replace(/^选择/, '')}` }}
+        </DialogDescription>
       </div>
       <div class="flex items-center gap-2 border-b border-border px-6">
         <SearchIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
