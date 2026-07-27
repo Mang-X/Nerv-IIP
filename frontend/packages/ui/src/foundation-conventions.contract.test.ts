@@ -121,6 +121,7 @@ describe('状态词表', () => {
     'requested',
     'accepted',
     'unrestricted',
+    'restricted',
     'quarantine',
     'scrapped',
     'hold',
@@ -158,6 +159,17 @@ describe('状态词表', () => {
     expect(resolveStatus(null).label).toBe('未知')
     expect(resolveStatus('').label).toBe('未知')
     expect(resolveStatus('brand-new-code').label).toBe('brand-new-code')
+  })
+
+  // 后端 StockQualityStatus.cs 里库存质量状态只有四个规范值（写入时 Normalize，
+  // 读面回的一定是这四个之一）。这四个必须有中文，且措辞对齐领域口径。
+  it('库存质量状态的四个规范值措辞对齐后端领域模型', () => {
+    expect(resolveStatus('unrestricted').label).toBe('非限制使用')
+    expect(resolveStatus('quality').label).toBe('待检')
+    expect(resolveStatus('restricted').label).toBe('受限使用')
+    // `blocked` 在 MES 工序语境是「阻塞」，库存语境是「冻结」—— 同一码值撞了两个语境。
+    // 包内不为一个码值开语境分支，保留 MES 口径（用得更多），库存侧由页面自行映射。
+    expect(resolveStatus('blocked').label).toBe('阻塞')
   })
 
   it('语义色调跟标签一致', () => {

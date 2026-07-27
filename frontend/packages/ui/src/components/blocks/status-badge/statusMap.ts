@@ -58,8 +58,16 @@ const STATUS_LABELS: Record<string, string> = {
   planned: '已计划',
   posted: '已过账',
   published: '已发布',
-  quality: '质检中',
-  quarantine: '检验隔离',
+  // 库存质量状态的四个规范值见后端 StockQualityStatus.cs：
+  // unrestricted / quality / restricted / blocked（写入时 Normalize，读面必是这四个之一）。
+  // `quality` 的别名是 inspection / quality-inspection，语义是「已收但未放行、等质检结论」，
+  // 工厂里叫「待检库存」，所以用「待检」而不是「质检中」。
+  quality: '待检',
+  // 注意：`quarantine` 不在库存那四个规范值里，它来自质量域 —— Quality 的
+  // StockReleaseDimension 用它表示「进了质量冻结库位、等判定」（WorldHistorySeedService）。
+  // 所以留着词条，但别理解成库存质量状态。
+  quarantine: '隔离',
+  restricted: '受限使用',
   queued: '排队中',
   ready: '可开工',
   received: '已收货',
@@ -142,6 +150,7 @@ const TONE_BY_STATUS: Record<StatusTone, string[]> = {
     'quality',
     'quarantine',
     'queued',
+    'restricted',
     'requested',
     'returnrequested',
     'reworkpending',
