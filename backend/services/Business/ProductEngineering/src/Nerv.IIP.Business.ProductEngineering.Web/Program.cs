@@ -93,6 +93,7 @@ try
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<LeaderDemoScaleSeedService>();
     builder.Services.AddScoped<WorldBibleSeedService>();
+    builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddScoped<ProductEngineeringCodingService>();
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddSingleton<IProductEngineeringBusinessDateProvider, ConfigurationProductEngineeringBusinessDateProvider>();
@@ -172,6 +173,33 @@ try
         if (builder.Configuration.GetValue("LeaderDemo:World:Enabled", false))
         {
             await scope.ServiceProvider.GetRequiredService<WorldBibleSeedService>().SeedAsync(organizationId, environmentId);
+        }
+
+        // 《工厂世界观设定集》L1 背景历史（工程域侧）：ECO-2026-#### 工程变更 + DOC-2026-#### 工程文档。
+        // 校验器 fail-closed：号段、状态分布、受影响版本引用对不上就让启动失败。
+        if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
+        {
+            var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
+                organizationId,
+                environmentId,
+                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+            app.Logger.LogInformation(
+                "World-history ProductEngineering seed completed: {Changes} engineering changes ({AffectedVersions} affected versions), " +
+                "{Documents} engineering documents; validator checked {CheckedChanges} changes " +
+                "(published {Published} / scheduled {Scheduled} / draft {Draft} / cancelled {Cancelled}) and " +
+                "{CheckedDocuments} documents ({Sop} SOP, {Archived} archived).",
+                report.EngineeringChangesWritten,
+                report.AffectedVersionsWritten,
+                report.EngineeringDocumentsWritten,
+                report.Validation.EngineeringChangesChecked,
+                report.Validation.PublishedChanges,
+                report.Validation.ScheduledChanges,
+                report.Validation.DraftChanges,
+                report.Validation.CancelledChanges,
+                report.Validation.EngineeringDocumentsChecked,
+                report.Validation.SopDocumentsChecked,
+                report.Validation.ArchivedDocumentsChecked);
         }
     }
 
