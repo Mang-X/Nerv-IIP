@@ -3,6 +3,7 @@ import {
   INSPECTION_TASK_SOURCE_TYPES,
   inspectionTaskSourceTypeLabel,
   inspectionTaskStatusLabel,
+  qualitySourceTypeLabel,
 } from './qualityLabels'
 
 describe('inspectionTaskStatusLabel', () => {
@@ -28,6 +29,23 @@ describe('inspectionTaskSourceTypeLabel', () => {
 
   it('falls back for unknown source', () => {
     expect(inspectionTaskSourceTypeLabel('mystery')).toBe('其他来源')
+  })
+})
+
+describe('qualitySourceTypeLabel', () => {
+  it('maps the inspection-record/NCR source types to Chinese', () => {
+    expect(qualitySourceTypeLabel('operation')).toBe('工序')
+    expect(qualitySourceTypeLabel('receiving')).toBe('收货')
+    expect(qualitySourceTypeLabel('final')).toBe('终检')
+    expect(qualitySourceTypeLabel('maintenance')).toBe('维修')
+    expect(qualitySourceTypeLabel('customer-return')).toBe('客户退货')
+  })
+
+  it('is case-insensitive and keeps unknown codes verbatim', () => {
+    expect(qualitySourceTypeLabel('OPERATION')).toBe('工序')
+    expect(qualitySourceTypeLabel('未填')).toBe('未填')
+    expect(qualitySourceTypeLabel('')).toBe('')
+    expect(qualitySourceTypeLabel(undefined)).toBe('')
   })
 })
 
