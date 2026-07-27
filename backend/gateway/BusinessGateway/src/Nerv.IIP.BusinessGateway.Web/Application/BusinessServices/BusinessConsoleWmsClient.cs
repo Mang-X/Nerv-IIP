@@ -10,6 +10,7 @@ public interface IBusinessWmsClient
     Task<BusinessConsoleWmsInboundOrderListResponse> ListInboundOrdersAsync(
         string internalBearerToken,
         BusinessConsoleWmsListRequest request,
+        string? inboundOrderId,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleCreateWmsWarehouseTaskResponse> CreatePutawayTaskAsync(
@@ -37,6 +38,7 @@ public interface IBusinessWmsClient
     Task<BusinessConsoleWmsOutboundOrderListResponse> ListOutboundOrdersAsync(
         string internalBearerToken,
         BusinessConsoleWmsListRequest request,
+        string? outboundOrderId,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleCreateWmsWarehouseTaskResponse> CreatePickingTaskAsync(
@@ -128,12 +130,15 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
     public async Task<BusinessConsoleWmsInboundOrderListResponse> ListInboundOrdersAsync(
         string internalBearerToken,
         BusinessConsoleWmsListRequest request,
+        string? inboundOrderId,
         CancellationToken cancellationToken)
     {
         var page = await SendAsync<BusinessConsoleWmsInboundOrderDownstreamListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/wms/inbound-orders?" + WmsListQuery(request),
+            "/api/business/v1/wms/inbound-orders?" + WmsListQuery(
+                request,
+                ("inboundOrderId", inboundOrderId)),
             null,
             cancellationToken);
         return new BusinessConsoleWmsInboundOrderListResponse(page.Items, page.Total, null, "unsupported");
@@ -188,12 +193,15 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
     public async Task<BusinessConsoleWmsOutboundOrderListResponse> ListOutboundOrdersAsync(
         string internalBearerToken,
         BusinessConsoleWmsListRequest request,
+        string? outboundOrderId,
         CancellationToken cancellationToken)
     {
         return await SendAsync<BusinessConsoleWmsOutboundOrderListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/wms/outbound-orders?" + WmsListQuery(request),
+            "/api/business/v1/wms/outbound-orders?" + WmsListQuery(
+                request,
+                ("outboundOrderId", outboundOrderId)),
             null,
             cancellationToken);
     }
@@ -380,6 +388,18 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             ("status", request.Status),
             ("keyword", request.Keyword));
 
+    private static string WmsListQuery(
+        BusinessConsoleWmsListRequest request,
+        (string Name, object? Value) exactId) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("skip", request.Skip),
+            ("take", request.Take),
+            ("status", request.Status),
+            ("keyword", request.Keyword),
+            exactId);
+
     private static string WmsWarehouseTaskListQuery(BusinessConsoleWmsWarehouseTaskListRequest request) =>
         Query(
             ("organizationId", request.OrganizationId),
@@ -399,7 +419,8 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             ("skip", request.Skip),
             ("take", request.Take),
             ("status", request.Status),
-            ("keyword", request.Keyword));
+            ("keyword", request.Keyword),
+            ("countExecutionId", request.CountExecutionId));
 
     private sealed record BusinessConsoleWmsInboundOrderDownstreamListResponse(
         IReadOnlyCollection<BusinessConsoleWmsInboundOrderItem> Items,

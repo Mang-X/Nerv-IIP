@@ -1273,7 +1273,8 @@ public sealed record BusinessConsoleQualityInspectionTaskListRequest(
     string? Status = null,
     string? SkuCode = null,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? InspectionTaskId = null);
 
 public sealed record BusinessConsoleQualityInspectionTaskItem(
     string InspectionTaskId,

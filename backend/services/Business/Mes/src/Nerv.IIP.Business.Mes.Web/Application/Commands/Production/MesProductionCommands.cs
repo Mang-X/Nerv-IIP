@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using NetCorePal.Extensions.Repository;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
@@ -120,6 +121,14 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
         if (operationTask is null)
         {
             throw new KnownException($"报工工序任务不存在或不属于当前工单，WorkOrderId = {request.WorkOrderId}, OperationTaskId = {request.OperationTaskId}");
+        }
+
+        if (request.CompletesOperation &&
+            operationTask.Status != OperationTaskLifecycleStatus.InProgress)
+        {
+            throw new MesLifecycleConflictException(
+                "report-complete",
+                operationTask.Status.ToString());
         }
 
         var outputOperationSequence = await dbContext.OperationTasks

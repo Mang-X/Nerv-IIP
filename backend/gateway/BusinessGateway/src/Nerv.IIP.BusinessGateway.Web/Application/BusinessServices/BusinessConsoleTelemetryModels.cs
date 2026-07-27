@@ -236,7 +236,8 @@ public sealed record BusinessConsoleTelemetryAlarmListRequest(
     string? Status,
     int Skip = 0,
     int Take = 100,
-    string? DeviceAssetIds = null);
+    string? DeviceAssetIds = null,
+    string? AlarmEventId = null);
 
 public sealed record BusinessConsoleTelemetryAlarmEventListResponse(
     IReadOnlyCollection<BusinessConsoleTelemetryAlarmEventItem> Items,
@@ -270,7 +271,8 @@ public sealed record BusinessConsoleEquipmentAlarmListRequest(
     string? Status,
     int Skip = 0,
     int Take = 100,
-    string? DeviceAssetIds = null);
+    string? DeviceAssetIds = null,
+    string? AlarmEventId = null);
 
 public sealed record BusinessConsoleEquipmentAlarmListPageResponse(
     IReadOnlyCollection<BusinessConsoleTelemetryAlarmEventItem> Items,

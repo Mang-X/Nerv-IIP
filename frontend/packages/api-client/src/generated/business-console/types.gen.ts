@@ -341,7 +341,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     failureMessage?: string | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsListRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundOrderListRequest = {
     [key: string]: never;
 };
 
@@ -549,6 +549,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     dispositionReason?: string | null;
     status?: string;
     createdAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsListRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConnectorCollectionHealthResponse = NetCorePalExtensionsDtoResponseData & {
@@ -6977,6 +6981,7 @@ export type ListBusinessConsoleWmsInboundOrdersData = {
         take?: number;
         status?: string | null;
         keyword?: string | null;
+        inboundOrderId?: string | null;
     };
     url: '/api/business-console/v1/wms/inbound-orders';
 };
@@ -7148,6 +7153,7 @@ export type CompleteBusinessConsoleWmsInboundOrderErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
 
 export type CompleteBusinessConsoleWmsInboundOrderError = CompleteBusinessConsoleWmsInboundOrderErrors[keyof CompleteBusinessConsoleWmsInboundOrderErrors];
@@ -7171,6 +7177,7 @@ export type ListBusinessConsoleWmsOutboundOrdersData = {
         take?: number;
         status?: string | null;
         keyword?: string | null;
+        outboundOrderId?: string | null;
     };
     url: '/api/business-console/v1/wms/outbound-orders';
 };
@@ -7342,6 +7349,7 @@ export type CompleteBusinessConsoleWmsOutboundOrderErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
 
 export type CompleteBusinessConsoleWmsOutboundOrderError = CompleteBusinessConsoleWmsOutboundOrderErrors[keyof CompleteBusinessConsoleWmsOutboundOrderErrors];
@@ -7398,6 +7406,7 @@ export type ListBusinessConsoleWmsCountExecutionsData = {
         take?: number;
         status?: string | null;
         keyword?: string | null;
+        countExecutionId?: string | null;
     };
     url: '/api/business-console/v1/wms/count-executions';
 };
@@ -7486,6 +7495,7 @@ export type CompleteBusinessConsoleWmsCountExecutionErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
 
 export type CompleteBusinessConsoleWmsCountExecutionError = CompleteBusinessConsoleWmsCountExecutionErrors[keyof CompleteBusinessConsoleWmsCountExecutionErrors];
@@ -8254,6 +8264,7 @@ export type ListBusinessConsoleTelemetryAlarmsData = {
         skip?: number;
         take?: number;
         deviceAssetIds?: string | null;
+        alarmEventId?: string | null;
     };
     url: '/api/business-console/v1/telemetry/alarms';
 };
@@ -9231,6 +9242,7 @@ export type ListBusinessConsoleQualityInspectionTasksData = {
         skuCode?: string | null;
         skip?: number;
         take?: number;
+        inspectionTaskId?: string | null;
     };
     url: '/api/business-console/v1/quality/inspection-tasks';
 };
@@ -9286,6 +9298,7 @@ export type CreateBusinessConsoleQualityInspectionRecordFromTaskErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
 
 export type CreateBusinessConsoleQualityInspectionRecordFromTaskError = CreateBusinessConsoleQualityInspectionRecordFromTaskErrors[keyof CreateBusinessConsoleQualityInspectionRecordFromTaskErrors];
@@ -9731,6 +9744,10 @@ export type SubmitBusinessConsoleQualityNcrDispositionData = {
 
 export type SubmitBusinessConsoleQualityNcrDispositionErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -9738,7 +9755,10 @@ export type SubmitBusinessConsoleQualityNcrDispositionErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
+
+export type SubmitBusinessConsoleQualityNcrDispositionError = SubmitBusinessConsoleQualityNcrDispositionErrors[keyof SubmitBusinessConsoleQualityNcrDispositionErrors];
 
 export type SubmitBusinessConsoleQualityNcrDispositionResponses = {
     /**
@@ -9763,6 +9783,10 @@ export type CloseBusinessConsoleQualityNcrData = {
 
 export type CloseBusinessConsoleQualityNcrErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -9770,7 +9794,10 @@ export type CloseBusinessConsoleQualityNcrErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
+
+export type CloseBusinessConsoleQualityNcrError = CloseBusinessConsoleQualityNcrErrors[keyof CloseBusinessConsoleQualityNcrErrors];
 
 export type CloseBusinessConsoleQualityNcrResponses = {
     /**
@@ -12186,7 +12213,10 @@ export type ReleaseBusinessConsoleMesWorkOrderErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
+
+export type ReleaseBusinessConsoleMesWorkOrderError = ReleaseBusinessConsoleMesWorkOrderErrors[keyof ReleaseBusinessConsoleMesWorkOrderErrors];
 
 export type ReleaseBusinessConsoleMesWorkOrderResponses = {
     /**
@@ -12218,7 +12248,10 @@ export type HoldBusinessConsoleMesWorkOrderErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
+
+export type HoldBusinessConsoleMesWorkOrderError = HoldBusinessConsoleMesWorkOrderErrors[keyof HoldBusinessConsoleMesWorkOrderErrors];
 
 export type HoldBusinessConsoleMesWorkOrderResponses = {
     /**
@@ -12250,7 +12283,10 @@ export type CancelBusinessConsoleMesWorkOrderErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
+
+export type CancelBusinessConsoleMesWorkOrderError = CancelBusinessConsoleMesWorkOrderErrors[keyof CancelBusinessConsoleMesWorkOrderErrors];
 
 export type CancelBusinessConsoleMesWorkOrderResponses = {
     /**
@@ -12572,7 +12608,10 @@ export type ConfirmBusinessConsoleMesLineSideMaterialReceiptErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
+
+export type ConfirmBusinessConsoleMesLineSideMaterialReceiptError = ConfirmBusinessConsoleMesLineSideMaterialReceiptErrors[keyof ConfirmBusinessConsoleMesLineSideMaterialReceiptErrors];
 
 export type ConfirmBusinessConsoleMesLineSideMaterialReceiptResponses = {
     /**
@@ -12747,7 +12786,10 @@ export type StartBusinessConsoleMesOperationTaskErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
+
+export type StartBusinessConsoleMesOperationTaskError = StartBusinessConsoleMesOperationTaskErrors[keyof StartBusinessConsoleMesOperationTaskErrors];
 
 export type StartBusinessConsoleMesOperationTaskResponses = {
     /**
@@ -12779,7 +12821,10 @@ export type PauseBusinessConsoleMesOperationTaskErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
+
+export type PauseBusinessConsoleMesOperationTaskError = PauseBusinessConsoleMesOperationTaskErrors[keyof PauseBusinessConsoleMesOperationTaskErrors];
 
 export type PauseBusinessConsoleMesOperationTaskResponses = {
     /**
@@ -12811,7 +12856,10 @@ export type ResumeBusinessConsoleMesOperationTaskErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
+
+export type ResumeBusinessConsoleMesOperationTaskError = ResumeBusinessConsoleMesOperationTaskErrors[keyof ResumeBusinessConsoleMesOperationTaskErrors];
 
 export type ResumeBusinessConsoleMesOperationTaskResponses = {
     /**
@@ -12843,7 +12891,10 @@ export type CompleteBusinessConsoleMesOperationTaskErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
+
+export type CompleteBusinessConsoleMesOperationTaskError = CompleteBusinessConsoleMesOperationTaskErrors[keyof CompleteBusinessConsoleMesOperationTaskErrors];
 
 export type CompleteBusinessConsoleMesOperationTaskResponses = {
     /**
@@ -12944,7 +12995,10 @@ export type RecordBusinessConsoleMesProductionReportErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
+
+export type RecordBusinessConsoleMesProductionReportError = RecordBusinessConsoleMesProductionReportErrors[keyof RecordBusinessConsoleMesProductionReportErrors];
 
 export type RecordBusinessConsoleMesProductionReportResponses = {
     /**
@@ -15274,6 +15328,7 @@ export type CompleteBusinessConsoleMaintenanceWorkOrderErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
 
 export type CompleteBusinessConsoleMaintenanceWorkOrderError = CompleteBusinessConsoleMaintenanceWorkOrderErrors[keyof CompleteBusinessConsoleMaintenanceWorkOrderErrors];
@@ -17500,6 +17555,7 @@ export type ListBusinessConsoleEquipmentAlarmsData = {
         skip?: number;
         take?: number;
         deviceAssetIds?: string | null;
+        alarmEventId?: string | null;
     };
     url: '/api/business-console/v1/equipment/alarms';
 };
@@ -17552,6 +17608,7 @@ export type AcknowledgeBusinessConsoleEquipmentAlarmErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
 
 export type AcknowledgeBusinessConsoleEquipmentAlarmError = AcknowledgeBusinessConsoleEquipmentAlarmErrors[keyof AcknowledgeBusinessConsoleEquipmentAlarmErrors];
@@ -17587,6 +17644,7 @@ export type ShelveBusinessConsoleEquipmentAlarmErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
 
 export type ShelveBusinessConsoleEquipmentAlarmError = ShelveBusinessConsoleEquipmentAlarmErrors[keyof ShelveBusinessConsoleEquipmentAlarmErrors];

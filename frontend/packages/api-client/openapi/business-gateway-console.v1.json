@@ -265,6 +265,14 @@
               "type": "string",
               "nullable": true
             }
+          },
+          {
+            "name": "inboundOrderId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -568,6 +576,16 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -684,6 +702,14 @@
           },
           {
             "name": "keyword",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "outboundOrderId",
             "in": "query",
             "schema": {
               "type": "string",
@@ -992,6 +1018,16 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1192,6 +1228,14 @@
               "type": "string",
               "nullable": true
             }
+          },
+          {
+            "name": "countExecutionId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -1301,6 +1345,16 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2998,6 +3052,14 @@
           },
           {
             "name": "deviceAssetIds",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "alarmEventId",
             "in": "query",
             "schema": {
               "type": "string",
@@ -4868,6 +4930,14 @@
               "default": 100,
               "nullable": false
             }
+          },
+          {
+            "name": "inspectionTaskId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -4977,6 +5047,16 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5903,6 +5983,26 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -5974,6 +6074,26 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -11241,6 +11361,16 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -11312,6 +11442,16 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -11383,6 +11523,16 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -12114,6 +12264,16 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -12645,6 +12805,16 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -12716,6 +12886,16 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -12787,6 +12967,16 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -12858,6 +13048,16 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -13152,6 +13352,16 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -18208,6 +18418,16 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -22689,6 +22909,14 @@
               "type": "string",
               "nullable": true
             }
+          },
+          {
+            "name": "alarmEventId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -22782,6 +23010,16 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -22847,6 +23085,16 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -25646,7 +25894,7 @@
           }
         }
       },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsListRequest": {
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundOrderListRequest": {
         "type": "object",
         "additionalProperties": false
       },
@@ -26399,6 +26647,10 @@
             "format": "date-time"
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsListRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConnectorCollectionHealthResponse": {
         "allOf": [

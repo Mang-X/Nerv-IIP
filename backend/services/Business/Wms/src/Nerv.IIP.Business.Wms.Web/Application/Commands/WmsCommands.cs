@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
+using Nerv.IIP.Business.Wms.Web.Application.Errors;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Commands;
 
@@ -179,6 +180,11 @@ public sealed class CompleteInboundOrderCommandHandler(ApplicationDbContext dbCo
     {
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.InboundOrderId, cancellationToken)
             ?? throw new KnownException($"Inbound order was not found: {request.InboundOrderId}");
+        if (inbound.Status == InboundOrderStatus.Cancelled)
+        {
+            throw new WmsLifecycleConflictException("complete-inbound", inbound.Status.ToString());
+        }
+
         var baseIdempotencyKey = WmsText.Required(request.IdempotencyKey, nameof(request.IdempotencyKey));
         var singleLine = inbound.Lines.Count == 1;
         var expectedKeysByLine = inbound.Lines.ToDictionary(
@@ -201,6 +207,11 @@ public sealed class CompleteInboundOrderCommandHandler(ApplicationDbContext dbCo
 
             var replayRequest = CanonicalRequest(replayRequests);
             return new CompleteWmsMovementResult(replayRequest.Id, replayRequest.InventoryMovementId);
+        }
+
+        if (inbound.Status != InboundOrderStatus.Open)
+        {
+            throw new WmsLifecycleConflictException("complete-inbound", inbound.Status.ToString());
         }
 
         var movementRequests = inbound.Complete(baseIdempotencyKey, request.Lines);
@@ -592,6 +603,11 @@ public sealed class CompleteOutboundOrderCommandHandler(
             return new CompleteWmsMovementResult(existingRequest.Id, null);
         }
 
+        if (outbound.Status != OutboundOrderStatus.Open)
+        {
+            throw new WmsLifecycleConflictException("complete-outbound", outbound.Status.ToString());
+        }
+
         var executedQuantitiesByLine = await GetExecutedPickingQuantitiesAsync(outbound, cancellationToken);
         EnsureInventoryClientAvailableForShortPickRelease(outbound, executedQuantitiesByLine);
         var movementRequests = outbound.CompletePackReview(request.PackReviewNo, request.Passed, request.IdempotencyKey, executedQuantitiesByLine);
@@ -920,6 +936,11 @@ public sealed class CompleteCountExecutionCommandHandler(
     {
         var count = await dbContext.CountExecutions.SingleOrDefaultAsync(x => x.Id == request.CountExecutionId, cancellationToken)
             ?? throw new KnownException($"Count execution was not found: {request.CountExecutionId}");
+        if (count.Status != CountExecutionStatus.Open)
+        {
+            throw new WmsLifecycleConflictException("complete-count", count.Status.ToString());
+        }
+
         if (inventoryReservationClient is not null)
         {
             if (count.InventoryCountTaskId is null)

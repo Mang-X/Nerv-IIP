@@ -429,7 +429,7 @@ public sealed record GetQualityHoldTimelineRequest(
 public abstract class MesEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>
     where TRequest : notnull
 {
-    protected void ConfigureMesContract(MesEndpointContract contract)
+    protected void ConfigureMesContract(MesEndpointContract contract, params int[] responseStatusCodes)
     {
         switch (contract.HttpMethod)
         {
@@ -445,6 +445,25 @@ public abstract class MesEndpoint<TRequest, TResponse> : Endpoint<TRequest, TRes
 
         Tags("Business MES");
         Policies(InternalServiceAuthorizationPolicy.Name);
+        if (responseStatusCodes.Length > 0)
+        {
+            Description(builder =>
+            {
+                foreach (var statusCode in responseStatusCodes)
+                {
+                    if (statusCode == StatusCodes.Status409Conflict)
+                    {
+                        builder.Produces<
+                            Nerv.IIP.Business.Mes.Web.Application.Errors.MesLifecycleConflictResponse>(
+                            statusCode);
+                    }
+                    else
+                    {
+                        builder.Produces(statusCode);
+                    }
+                }
+            });
+        }
     }
 }
 
@@ -650,7 +669,9 @@ public sealed class GetMesWorkOrderDetailEndpoint(ISender sender)
 public sealed class ReleaseWorkOrderEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<ReleaseWorkOrderRequest, MesAcceptedResponse>
 {
-    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ReleaseWorkOrderEndpoint>());
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<ReleaseWorkOrderEndpoint>(),
+        StatusCodes.Status409Conflict);
 
     public override async Task HandleAsync(ReleaseWorkOrderRequest req, CancellationToken ct)
     {
@@ -751,7 +772,9 @@ public sealed class CloseWorkOrderEndpoint(ISender sender, TimeProvider timeProv
 public sealed class HoldWorkOrderEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<WorkOrderReasonRequest, MesAcceptedResponse>
 {
-    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<HoldWorkOrderEndpoint>());
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<HoldWorkOrderEndpoint>(),
+        StatusCodes.Status409Conflict);
 
     public override async Task HandleAsync(WorkOrderReasonRequest req, CancellationToken ct)
     {
@@ -768,7 +791,9 @@ public sealed class HoldWorkOrderEndpoint(ISender sender, TimeProvider timeProvi
 public sealed class CancelWorkOrderEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<WorkOrderReasonRequest, MesAcceptedResponse>
 {
-    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<CancelWorkOrderEndpoint>());
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<CancelWorkOrderEndpoint>(),
+        StatusCodes.Status409Conflict);
 
     public override async Task HandleAsync(WorkOrderReasonRequest req, CancellationToken ct)
     {
@@ -860,7 +885,9 @@ public sealed class ListMaterialIssueRequestsEndpoint(ISender sender)
 public sealed class ConfirmLineSideMaterialReceiptEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<LineSideMaterialReceiptRequest, MesAcceptedResponse>
 {
-    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ConfirmLineSideMaterialReceiptEndpoint>());
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<ConfirmLineSideMaterialReceiptEndpoint>(),
+        StatusCodes.Status409Conflict);
 
     public override async Task HandleAsync(LineSideMaterialReceiptRequest req, CancellationToken ct)
     {
@@ -986,25 +1013,33 @@ public abstract class OperationTaskActionEndpoint(string action, ISender sender,
 public sealed class StartOperationTaskEndpoint(ISender sender, TimeProvider timeProvider)
     : OperationTaskActionEndpoint("start", sender, timeProvider)
 {
-    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<StartOperationTaskEndpoint>());
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<StartOperationTaskEndpoint>(),
+        StatusCodes.Status409Conflict);
 }
 
 public sealed class PauseOperationTaskEndpoint(ISender sender, TimeProvider timeProvider)
     : OperationTaskActionEndpoint("pause", sender, timeProvider)
 {
-    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<PauseOperationTaskEndpoint>());
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<PauseOperationTaskEndpoint>(),
+        StatusCodes.Status409Conflict);
 }
 
 public sealed class ResumeOperationTaskEndpoint(ISender sender, TimeProvider timeProvider)
     : OperationTaskActionEndpoint("resume", sender, timeProvider)
 {
-    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ResumeOperationTaskEndpoint>());
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<ResumeOperationTaskEndpoint>(),
+        StatusCodes.Status409Conflict);
 }
 
 public sealed class CompleteOperationTaskEndpoint(ISender sender, TimeProvider timeProvider)
     : OperationTaskActionEndpoint("complete", sender, timeProvider)
 {
-    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<CompleteOperationTaskEndpoint>());
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<CompleteOperationTaskEndpoint>(),
+        StatusCodes.Status409Conflict);
 }
 
 public sealed class GetWipSummaryEndpoint(ISender sender)
@@ -1031,7 +1066,9 @@ public sealed class GetWipSummaryEndpoint(ISender sender)
 public sealed class RecordProductionReportEndpoint(ISender sender)
     : MesEndpoint<RecordProductionReportRequest, RecordProductionReportResponse>
 {
-    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<RecordProductionReportEndpoint>());
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<RecordProductionReportEndpoint>(),
+        StatusCodes.Status409Conflict);
 
     public override async Task HandleAsync(RecordProductionReportRequest req, CancellationToken ct)
     {

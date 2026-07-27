@@ -2812,7 +2812,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ("status", request.Status),
                 ("skuCode", request.SkuCode),
                 ("skip", request.Skip),
-                ("take", request.Take)),
+                ("take", request.Take),
+                ("inspectionTaskId", request.InspectionTaskId)),
             null,
             cancellationToken);
         return new BusinessConsoleQualityInspectionTaskListResponse(
@@ -5045,7 +5046,8 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 ("deviceAssetIds", request.DeviceAssetIds),
                 ("status", request.Status),
                 ("skip", request.Skip),
-                ("take", request.Take)),
+                ("take", request.Take),
+                ("alarmEventId", request.AlarmEventId)),
             null,
             cancellationToken);
         return new BusinessConsoleTelemetryAlarmEventListResponse(page.Items.Select(alarm =>
@@ -5396,7 +5398,8 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 request.Status ?? "active",
                 request.Skip,
                 request.Take,
-                request.DeviceAssetIds),
+                request.DeviceAssetIds,
+                request.AlarmEventId),
             cancellationToken);
         return new BusinessConsoleEquipmentAlarmListPageResponse(
             alarms.Items,

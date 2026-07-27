@@ -321,9 +321,14 @@ export {
 export {
   acceptBusinessConsoleMesShiftHandover,
   acceptBusinessConsolePlanningSuggestion,
+  acknowledgeBusinessConsoleEquipmentAlarm,
   assignBusinessConsoleMesDispatchTask,
   closeBusinessConsoleQualityNcr,
+  completeBusinessConsoleMaintenanceWorkOrder,
   completeBusinessConsoleMesOperationTask,
+  completeBusinessConsoleWmsCountExecution,
+  completeBusinessConsoleWmsInboundOrder,
+  completeBusinessConsoleWmsOutboundOrder,
   confirmBusinessConsoleInventoryCountAdjustment,
   confirmBusinessConsoleMesDowntimeRecovery,
   confirmBusinessConsoleMesLineSideMaterialReceipt,
@@ -539,6 +544,7 @@ export {
   reviewBusinessConsolePlanningMpsBucket,
   runBusinessConsoleMesSchedule,
   runBusinessConsolePlanningMrp,
+  shelveBusinessConsoleEquipmentAlarm,
   startBusinessConsoleMesOperationTask,
   submitBusinessConsoleQualityNcrDisposition,
   updateBusinessConsolePlanningMpsBucket,
@@ -571,6 +577,7 @@ export {
   createOrUpdateBusinessConsoleTelemetryDeviceControlBinding,
   disableBusinessConsoleTelemetryDeviceControlBinding,
   getBusinessConsoleTelemetryTagCurrentValue,
+  unshelveBusinessConsoleEquipmentAlarm,
 } from './generated/business-console/sdk.gen'
 
 import type {

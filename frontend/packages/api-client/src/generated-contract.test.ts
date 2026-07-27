@@ -315,6 +315,40 @@ describe('generated API client contract', () => {
     expect(listBusinessConsoleWmsWcsTasksQueryOptions).toBeTypeOf('function')
   })
 
+  it('exports lifecycle-conflict SDK operations and mutation options through the stable boundary', () => {
+    const operations = [
+      'startBusinessConsoleMesOperationTask',
+      'pauseBusinessConsoleMesOperationTask',
+      'resumeBusinessConsoleMesOperationTask',
+      'completeBusinessConsoleMesOperationTask',
+      'releaseBusinessConsoleMesWorkOrder',
+      'holdBusinessConsoleMesWorkOrder',
+      'cancelBusinessConsoleMesWorkOrder',
+      'recordBusinessConsoleMesProductionReport',
+      'confirmBusinessConsoleMesLineSideMaterialReceipt',
+      'completeBusinessConsoleWmsInboundOrder',
+      'completeBusinessConsoleWmsOutboundOrder',
+      'completeBusinessConsoleWmsCountExecution',
+      'createBusinessConsoleQualityInspectionRecordFromTask',
+      'submitBusinessConsoleQualityNcrDisposition',
+      'closeBusinessConsoleQualityNcr',
+      'completeBusinessConsoleMaintenanceWorkOrder',
+      'acknowledgeBusinessConsoleEquipmentAlarm',
+      'shelveBusinessConsoleEquipmentAlarm',
+      'unshelveBusinessConsoleEquipmentAlarm',
+    ] as const
+
+    for (const operation of operations) {
+      expect((businessConsoleClient as Record<string, unknown>)[operation], operation).toBeTypeOf(
+        'function',
+      )
+      expect(
+        (businessConsoleClient as Record<string, unknown>)[`${operation}MutationOptions`],
+        `${operation}MutationOptions`,
+      ).toBeTypeOf('function')
+    }
+  })
+
   it('exposes the MAN-528 exact MES to Inventory link through the stable boundary', () => {
     expect(businessConsoleClient.getBusinessConsoleMesFinishedGoodsReceiptInventoryLink).toBeTypeOf(
       'function',

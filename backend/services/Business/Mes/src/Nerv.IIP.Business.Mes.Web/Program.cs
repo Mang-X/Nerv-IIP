@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Seed;
+using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 using Nerv.IIP.Business.Mes.Web;
 using Nerv.IIP.Business.Mes.Infrastructure;
@@ -120,6 +121,7 @@ if (autoMigrate)
 }
 
 app.UseKnownExceptionHandler();
+app.UseMiddleware<MesLifecycleConflictMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseFastEndpoints(c =>

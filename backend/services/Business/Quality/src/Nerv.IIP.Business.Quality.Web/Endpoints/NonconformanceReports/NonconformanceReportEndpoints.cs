@@ -44,7 +44,7 @@ internal static class NonconformanceReportEndpointMapping
 public abstract class QualityEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>
     where TRequest : notnull
 {
-    protected void ConfigureQualityContract(QualityEndpointContract contract)
+    protected void ConfigureQualityContract(QualityEndpointContract contract, params int[] responseStatusCodes)
     {
         switch (contract.HttpMethod)
         {
@@ -63,6 +63,25 @@ public abstract class QualityEndpoint<TRequest, TResponse> : Endpoint<TRequest, 
 
         Tags("Business Quality");
         Policies(InternalServiceAuthorizationPolicy.Name);
+        if (responseStatusCodes.Length > 0)
+        {
+            Description(builder =>
+            {
+                foreach (var statusCode in responseStatusCodes)
+                {
+                    if (statusCode == StatusCodes.Status409Conflict)
+                    {
+                        builder.Produces<
+                            Nerv.IIP.Business.Quality.Web.Application.Errors.QualityLifecycleConflictResponse>(
+                            statusCode);
+                    }
+                    else
+                    {
+                        builder.Produces(statusCode);
+                    }
+                }
+            });
+        }
     }
 }
 
@@ -209,7 +228,10 @@ public sealed class SubmitNonconformanceReportDispositionEndpoint(ISender sender
 {
     public override void Configure()
     {
-        ConfigureQualityContract(QualityEndpointContracts.Get<SubmitNonconformanceReportDispositionEndpoint>());
+        ConfigureQualityContract(
+            QualityEndpointContracts.Get<SubmitNonconformanceReportDispositionEndpoint>(),
+            StatusCodes.Status400BadRequest,
+            StatusCodes.Status409Conflict);
     }
 
     public override async Task HandleAsync(SubmitNonconformanceReportDispositionRequest req, CancellationToken ct)
@@ -229,7 +251,10 @@ public sealed class CloseNonconformanceReportEndpoint(ISender sender)
 {
     public override void Configure()
     {
-        ConfigureQualityContract(QualityEndpointContracts.Get<CloseNonconformanceReportEndpoint>());
+        ConfigureQualityContract(
+            QualityEndpointContracts.Get<CloseNonconformanceReportEndpoint>(),
+            StatusCodes.Status400BadRequest,
+            StatusCodes.Status409Conflict);
     }
 
     public override async Task HandleAsync(CloseNonconformanceReportRequest req, CancellationToken ct)
