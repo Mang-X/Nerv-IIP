@@ -291,6 +291,7 @@ function openReport(order: Row) {
     operationTaskId: task.operationTaskId,
     operationTaskNo: task.operationTaskNo,
     operationSequence: task.operationSequence,
+    operationStatus: task.status,
     workCenterLabel:
       task.workCenterName ?? resolveWorkCenter(task.workCenterCode ?? task.workCenterId),
     skuLabel: resolveSku(order.skuCode ?? order.skuId),
@@ -321,6 +322,7 @@ function openReportFromSheet(operationTaskId: string) {
     operationTaskId: task.operationTaskId,
     operationTaskNo: task.operationTaskNo,
     operationSequence: task.operationSequence,
+    operationStatus: task.status,
     workCenterLabel:
       task.workCenterName ?? resolveWorkCenter(task.workCenterCode ?? task.workCenterId),
     skuLabel: resolveSku(order.skuCode ?? order.skuId),

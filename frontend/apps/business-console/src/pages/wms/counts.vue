@@ -3,13 +3,15 @@ import type {
   BusinessConsoleCreateWmsCountExecutionRequest,
   BusinessConsoleWmsCountExecutionItem,
 } from '@nerv-iip/api-client'
+import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
-import { useWmsCountExecutions } from '@/composables/useBusinessWms'
+import { recoverLifecycleAction } from '@/composables/lifecycleAction'
+import { createWmsIdempotencyKey, useWmsCountExecutions } from '@/composables/useBusinessWms'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import {
@@ -96,16 +98,12 @@ function onCountSkuChange(skuCode: string) {
   createForm.uomCode = skuCode ? resolveUomCode(skuCode) : ''
 }
 
-const OPEN_STATUSES = new Set([
-  'pending',
-  'open',
-  'created',
-  'counting',
-  'inprogress',
-  'in-progress',
-])
 function isOpen(row: BusinessConsoleWmsCountExecutionItem) {
-  return OPEN_STATUSES.has((row.status ?? '').toLowerCase())
+  return statusActionGate({
+    domain: 'wms-count',
+    action: 'complete',
+    facts: { status: row.status },
+  }).executable
 }
 function hasVariance(row: BusinessConsoleWmsCountExecutionItem) {
   return typeof row.varianceQuantity === 'number' && row.varianceQuantity !== 0
@@ -153,6 +151,7 @@ const completeOpen = shallowRef(false)
 const completeTarget = shallowRef<BusinessConsoleWmsCountExecutionItem>()
 const completeForm = reactive({ countedQuantity: '' })
 const completeError = shallowRef('')
+const completeIntentKey = shallowRef('')
 
 const listErrorMessage = computed(() => formatError(countExecutionsError.value))
 // 弹窗内只留字段级校验汇总；提交失败一律 toast，不留常驻错误条。
@@ -281,6 +280,7 @@ async function submitCreate() {
 
 function openComplete(row: CountRow) {
   completeTarget.value = row
+  completeIntentKey.value = createWmsIdempotencyKey()
   // 缺省值：已录实盘 → 沿用；否则用账面数量打底，仓管只需改差异行。
   const defaultQuantity = row.countedQuantity ?? row.expectedQuantity
   completeForm.countedQuantity = defaultQuantity != null ? String(defaultQuantity) : ''
@@ -318,10 +318,26 @@ async function submitComplete() {
     return
   }
   try {
-    await completeCountExecution(target.countExecutionId, counted)
+    await completeCountExecution(target.countExecutionId, counted, completeIntentKey.value)
     completeOpen.value = false
+    completeIntentKey.value = ''
     notifySuccess(`盘点单 ${target.countNo ?? MISSING_COUNT_NO} 已完成`)
   } catch (error) {
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          completeOpen.value = false
+          completeTarget.value = undefined
+          completeForm.countedQuantity = ''
+          completeError.value = ''
+          completeIntentKey.value = ''
+        },
+        refresh: refreshCountExecutions,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
     notifyError(error, '完成盘点失败，请稍后重试。')
   }
 }

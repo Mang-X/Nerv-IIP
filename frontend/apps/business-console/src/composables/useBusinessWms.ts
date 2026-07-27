@@ -1,7 +1,7 @@
 import {
-  completeBusinessConsoleWmsCountExecutionMutationOptions,
-  completeBusinessConsoleWmsInboundOrderMutationOptions,
-  completeBusinessConsoleWmsOutboundOrderMutationOptions,
+  completeBusinessConsoleWmsCountExecution,
+  completeBusinessConsoleWmsInboundOrder,
+  completeBusinessConsoleWmsOutboundOrder,
   completeBusinessConsoleWmsWcsTaskMutationOptions,
   createBusinessConsoleWmsCountExecutionMutationOptions,
   createBusinessConsoleWmsInboundOrderMutationOptions,
@@ -11,12 +11,15 @@ import {
   dispatchBusinessConsoleWmsWcsTaskMutationOptions,
   failBusinessConsoleWmsWcsTaskMutationOptions,
   listBusinessConsoleWmsCountExecutionsQueryOptions,
+  listBusinessConsoleWmsCountExecutions,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
+  listBusinessConsoleWmsInboundOrders,
   listBusinessConsoleWmsReceivingQualityGatesQueryOptions,
   listBusinessConsoleWmsSupplierReturnRequestsQueryOptions,
   listBusinessConsoleWmsReceivingQualityGates,
   listBusinessConsoleWmsSupplierReturnRequests,
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
+  listBusinessConsoleWmsOutboundOrders,
   listBusinessConsoleWmsPickingTasksQueryOptions,
   listBusinessConsoleWmsPutawayTasksQueryOptions,
   listBusinessConsoleWmsWcsTasksQueryOptions,
@@ -42,12 +45,13 @@ import {
   type BusinessConsoleWmsWcsTaskListEnvelope,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, shallowRef } from 'vue'
 import {
   bindBusinessContext,
   refetchWithBusinessContext,
   withBusinessContextEnabled,
 } from './businessContextBinding'
+import { executeLifecycleAction } from './lifecycleAction'
 
 const DEFAULT_TAKE = 100
 const RECEIVING_QUALITY_POLL_INTERVAL_MS = 10_000
@@ -122,6 +126,11 @@ export interface WmsListFilters {
   keyword?: string
 }
 
+export type WmsCompletionAttemptOptions = Readonly<{
+  attempt: 'initial' | 'retry'
+  onCommandAttempt?: () => void
+}>
+
 export interface WmsInboundListFilters extends WmsListFilters {
   skuCode?: string
   uomCode?: string
@@ -190,10 +199,21 @@ function listTotal(envelope: { success?: boolean; data?: { total?: number } | nu
 }
 
 // 写操作需要幂等键以防重复提交；浏览器原生 UUID，测试环境（jsdom）亦可用。
-function makeIdempotencyKey(): string {
+export function createWmsIdempotencyKey(): string {
   const c = globalThis.crypto
   if (c && typeof c.randomUUID === 'function') return c.randomUUID()
   return `idem-${Date.now()}-${Math.round(Math.random() * 1e9)}`
+}
+
+function requireSuccessfulList<TItem>(
+  result: Readonly<{
+    data?: { success?: boolean; data?: { items?: TItem[] } | null }
+    error?: unknown
+  }>,
+): TItem[] {
+  if (result.error !== undefined) throw result.error
+  if (!result.data?.success) throw result.data ?? new Error('读取最新状态失败')
+  return result.data.data?.items ?? []
 }
 
 export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilters> = {}) {
@@ -269,18 +289,68 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
     void refetchWithBusinessContext(filters, supplierReturnsQuery)
   }
 
-  const completeMutation = useMutation({
-    ...completeBusinessConsoleWmsInboundOrderMutationOptions(),
-    onSuccess() {
-      refreshAll()
-    },
-  })
+  const completeInboundPending = shallowRef(false)
+  const completeInboundError = shallowRef<unknown>()
   const createMutation = useMutation({
     ...createBusinessConsoleWmsInboundOrderMutationOptions(),
     onSuccess() {
       refreshAll()
     },
   })
+
+  async function completeInboundOrder(
+    inboundOrderId: string,
+    idempotencyKey = createWmsIdempotencyKey(),
+    options: WmsCompletionAttemptOptions = { attempt: 'initial' },
+  ) {
+    completeInboundPending.value = true
+    completeInboundError.value = undefined
+    try {
+      const result = await executeLifecycleAction({
+        readLatest: async () => {
+          const response = await listBusinessConsoleWmsInboundOrders({
+            query: {
+              organizationId: filters.organizationId,
+              environmentId: filters.environmentId,
+              inboundOrderId,
+              skip: 0,
+              take: 1,
+            },
+            throwOnError: false,
+          })
+          const item = requireSuccessfulList<BusinessConsoleWmsInboundOrderItem>(response).find(
+            (candidate) => candidate.inboundOrderId === inboundOrderId,
+          )
+          return item
+            ? {
+                domain: 'wms-inbound' as const,
+                action: 'complete' as const,
+                facts: {
+                  status: item.status,
+                  idempotentReplay: options.attempt === 'retry',
+                },
+              }
+            : undefined
+        },
+        command: () => {
+          options.onCommandAttempt?.()
+          return completeBusinessConsoleWmsInboundOrder({
+            path: { inboundOrderId },
+            query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+            body: { idempotencyKey },
+            throwOnError: false,
+          })
+        },
+      })
+      refreshAll()
+      return result
+    } catch (error) {
+      completeInboundError.value = error
+      throw error
+    } finally {
+      completeInboundPending.value = false
+    }
+  }
 
   return {
     filters,
@@ -324,14 +394,9 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
         refetchWithBusinessContext(filters, receivingQualityGatesQuery),
         refetchWithBusinessContext(filters, supplierReturnsQuery),
       ]),
-    completeInbound: (inboundOrderId: string) =>
-      completeMutation.mutateAsync({
-        path: { inboundOrderId },
-        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-        body: { idempotencyKey: makeIdempotencyKey() },
-      }),
-    completeInboundPending: completeMutation.isLoading,
-    completeInboundError: completeMutation.error,
+    completeInbound: completeInboundOrder,
+    completeInboundPending,
+    completeInboundError,
     createInbound: (body: BusinessConsoleCreateWmsInboundOrderRequest) =>
       createMutation.mutateAsync({ body }),
     createInboundPending: createMutation.isLoading,
@@ -350,18 +415,69 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
     ),
   )
 
-  const completeMutation = useMutation({
-    ...completeBusinessConsoleWmsOutboundOrderMutationOptions(),
-    onSuccess() {
-      void refetchWithBusinessContext(filters, outboundOrdersQuery)
-    },
-  })
+  const completeOutboundPending = shallowRef(false)
+  const completeOutboundError = shallowRef<unknown>()
   const createMutation = useMutation({
     ...createBusinessConsoleWmsOutboundOrderMutationOptions(),
     onSuccess() {
       void refetchWithBusinessContext(filters, outboundOrdersQuery)
     },
   })
+
+  async function completeOutboundOrder(
+    outboundOrderId: string,
+    payload: { packReviewNo: string; passed: boolean },
+    idempotencyKey = createWmsIdempotencyKey(),
+    options: WmsCompletionAttemptOptions = { attempt: 'initial' },
+  ) {
+    completeOutboundPending.value = true
+    completeOutboundError.value = undefined
+    try {
+      const result = await executeLifecycleAction({
+        readLatest: async () => {
+          const response = await listBusinessConsoleWmsOutboundOrders({
+            query: {
+              organizationId: filters.organizationId,
+              environmentId: filters.environmentId,
+              outboundOrderId,
+              skip: 0,
+              take: 1,
+            },
+            throwOnError: false,
+          })
+          const item = requireSuccessfulList<BusinessConsoleWmsOutboundOrderItem>(response).find(
+            (candidate) => candidate.outboundOrderId === outboundOrderId,
+          )
+          return item
+            ? {
+                domain: 'wms-outbound' as const,
+                action: 'complete' as const,
+                facts: {
+                  status: item.status,
+                  idempotentReplay: options.attempt === 'retry',
+                },
+              }
+            : undefined
+        },
+        command: () => {
+          options.onCommandAttempt?.()
+          return completeBusinessConsoleWmsOutboundOrder({
+            path: { outboundOrderId },
+            query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+            body: { ...payload, idempotencyKey },
+            throwOnError: false,
+          })
+        },
+      })
+      await refetchWithBusinessContext(filters, outboundOrdersQuery)
+      return result
+    } catch (error) {
+      completeOutboundError.value = error
+      throw error
+    } finally {
+      completeOutboundPending.value = false
+    }
+  }
 
   return {
     filters,
@@ -378,17 +494,9 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
       ),
     ),
     refreshOutboundOrders: () => refetchWithBusinessContext(filters, outboundOrdersQuery),
-    completeOutbound: (
-      outboundOrderId: string,
-      payload: { packReviewNo: string; passed: boolean },
-    ) =>
-      completeMutation.mutateAsync({
-        path: { outboundOrderId },
-        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-        body: { ...payload, idempotencyKey: makeIdempotencyKey() },
-      }),
-    completeOutboundPending: completeMutation.isLoading,
-    completeOutboundError: completeMutation.error,
+    completeOutbound: completeOutboundOrder,
+    completeOutboundPending,
+    completeOutboundError,
     createOutbound: (body: BusinessConsoleCreateWmsOutboundOrderRequest) =>
       createMutation.mutateAsync({ body }),
     createOutboundPending: createMutation.isLoading,
@@ -587,12 +695,57 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
       void refetchWithBusinessContext(filters, countExecutionsQuery)
     },
   })
-  const completeMutation = useMutation({
-    ...completeBusinessConsoleWmsCountExecutionMutationOptions(),
-    onSuccess() {
-      void refetchWithBusinessContext(filters, countExecutionsQuery)
-    },
-  })
+  const completeCountExecutionPending = shallowRef(false)
+  const completeCountExecutionError = shallowRef<unknown>()
+
+  async function completeCountExecution(
+    countExecutionId: string,
+    countedQuantity: number,
+    idempotencyKey = createWmsIdempotencyKey(),
+  ) {
+    completeCountExecutionPending.value = true
+    completeCountExecutionError.value = undefined
+    try {
+      const result = await executeLifecycleAction({
+        readLatest: async () => {
+          const response = await listBusinessConsoleWmsCountExecutions({
+            query: {
+              organizationId: filters.organizationId,
+              environmentId: filters.environmentId,
+              countExecutionId,
+              skip: 0,
+              take: 1,
+            },
+            throwOnError: false,
+          })
+          const item = requireSuccessfulList<BusinessConsoleWmsCountExecutionItem>(response).find(
+            (candidate) => candidate.countExecutionId === countExecutionId,
+          )
+          return item
+            ? {
+                domain: 'wms-count' as const,
+                action: 'complete' as const,
+                facts: { status: item.status },
+              }
+            : undefined
+        },
+        command: () =>
+          completeBusinessConsoleWmsCountExecution({
+            path: { countExecutionId },
+            query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+            body: { countedQuantity, idempotencyKey },
+            throwOnError: false,
+          }),
+      })
+      await refetchWithBusinessContext(filters, countExecutionsQuery)
+      return result
+    } catch (error) {
+      completeCountExecutionError.value = error
+      throw error
+    } finally {
+      completeCountExecutionPending.value = false
+    }
+  }
 
   return {
     filters,
@@ -613,13 +766,8 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
       createMutation.mutateAsync({ body }),
     createCountExecutionPending: createMutation.isLoading,
     createCountExecutionError: createMutation.error,
-    completeCountExecution: (countExecutionId: string, countedQuantity: number) =>
-      completeMutation.mutateAsync({
-        path: { countExecutionId },
-        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-        body: { countedQuantity, idempotencyKey: makeIdempotencyKey() },
-      }),
-    completeCountExecutionPending: completeMutation.isLoading,
-    completeCountExecutionError: completeMutation.error,
+    completeCountExecution,
+    completeCountExecutionPending,
+    completeCountExecutionError,
   }
 }

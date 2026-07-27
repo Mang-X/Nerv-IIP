@@ -25,6 +25,7 @@ import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
 import {
   NvButton,
@@ -409,6 +410,47 @@ function removeCharacteristicRow(index: number) {
   recordForm.resultLines.splice(index, 1)
 }
 
+const INSPECTION_TASK_CONTEXT_QUERY_KEYS = [
+  'inspectionTaskId',
+  'inspectionPlanId',
+  'sourceDocumentId',
+  'sourceDocumentNo',
+  'workOrderId',
+  'operationTaskId',
+  'sourceType',
+  'sourceService',
+  'skuCode',
+  'quantity',
+  'batchNo',
+  'materialLotId',
+  'serialNo',
+  'action',
+] as const
+
+async function resetInspectionTaskContext() {
+  recordSheetOpen.value = false
+  recordCreatedFromLocatedPlanId.value = ''
+  characteristicsAppliedPlanId.value = ''
+  filters.keyword = undefined
+  Object.assign(recordForm, {
+    inspectionPlanId: '',
+    sourceType: 'operation',
+    sourceService: 'mes-operation',
+    sourceDocumentId: '',
+    skuCode: '',
+    inspectedQuantity: '1',
+    batchNo: '',
+    serialNo: '',
+    dispositionReason: '',
+    dispositionAttachmentFileIds: '',
+    resultLines: [emptyLine()],
+  })
+
+  const query = { ...route.query }
+  for (const key of INSPECTION_TASK_CONTEXT_QUERY_KEYS) delete query[key]
+  await router.replace({ query })
+}
+
 async function submitInspectionRecord() {
   if (!hasBusinessContext(filters)) {
     notifyError('业务范围尚未就绪，请稍后重试。')
@@ -431,6 +473,15 @@ async function submitInspectionRecord() {
         dispositionAttachmentFileIds: splitCsv(recordForm.dispositionAttachmentFileIds),
       })
     } catch (error) {
+      if (
+        await recoverLifecycleAction(error, {
+          reset: resetInspectionTaskContext,
+          refresh: taskActions.refreshInspectionTasks,
+          notify: (message) => notifyError(message),
+        })
+      ) {
+        return
+      }
       notifyError(error, '检验记录提交失败，请稍后重试。')
       return
     }

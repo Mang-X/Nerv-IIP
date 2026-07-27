@@ -48,8 +48,18 @@ const openModel = computed({
   set: (value: boolean) => emit('update:open', value),
 })
 
-const { form, invalid, showErrors, canSubmit, recordProductionReportPending, submit } =
-  useProductionReportForm(() => props.context, { onReported: () => emit('reported') })
+const {
+  form,
+  invalid,
+  showErrors,
+  canSubmit,
+  canCompleteOperation,
+  recordProductionReportPending,
+  submit,
+} = useProductionReportForm(() => props.context, {
+  onReported: () => emit('reported'),
+  onStateChanged: () => emit('update:open', false),
+})
 
 const operationLabel = computed(() => {
   const ctx = props.context
@@ -134,7 +144,11 @@ async function onSubmit() {
             class="items-center justify-between rounded-lg border p-3 sm:col-span-2"
           >
             <NvFieldLabel for="report-complete">本工序已完成</NvFieldLabel>
-            <NvCheckbox id="report-complete" v-model:checked="form.completesOperation" />
+            <NvCheckbox
+              id="report-complete"
+              v-model:checked="form.completesOperation"
+              :disabled="!canCompleteOperation"
+            />
           </NvField>
         </NvFieldGroup>
 

@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsInboundOrderItem } from '@nerv-iip/api-client'
+import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsReceivingQualityFlow from '@/components/wms/WmsReceivingQualityFlow.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
-import { useWmsInboundOrders } from '@/composables/useBusinessWms'
+import { recoverLifecycleAction } from '@/composables/lifecycleAction'
+import { createWmsIdempotencyKey, useWmsInboundOrders } from '@/composables/useBusinessWms'
 import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
 import {
@@ -108,6 +110,8 @@ const { page, pageSize } = usePagedList(filters, {
 
 const completeOpen = shallowRef(false)
 const pendingOrder = shallowRef<InboundRow>()
+const completeIntentKey = shallowRef('')
+const completeIntentAttempted = shallowRef(false)
 
 // 后端 WMS InboundOrderLine 要求 uomCode/正数 receivedQuantity/stagingLocationCode/qualityStatus/ownerType 均非空。
 const QUALITY_OPTIONS = [
@@ -223,21 +227,48 @@ async function submitCreate() {
   }
 }
 
-function isCompleted(row: InboundRow) {
-  return (row.status ?? '').toLowerCase() === 'completed'
+function canComplete(row: InboundRow) {
+  return statusActionGate({
+    domain: 'wms-inbound',
+    action: 'complete',
+    facts: { status: row.status },
+  }).executable
 }
 function openComplete(row: InboundRow) {
   pendingOrder.value = row
+  completeIntentKey.value = createWmsIdempotencyKey()
+  completeIntentAttempted.value = false
   completeOpen.value = true
 }
 async function confirmComplete() {
   const id = pendingOrder.value?.inboundOrderId
   if (!id) return
   try {
-    await completeInbound(id)
+    await completeInbound(id, completeIntentKey.value, {
+      attempt: completeIntentAttempted.value ? 'retry' : 'initial',
+      onCommandAttempt: () => {
+        completeIntentAttempted.value = true
+      },
+    })
     completeOpen.value = false
+    completeIntentKey.value = ''
+    completeIntentAttempted.value = false
     notifySuccess('入库单已完成')
   } catch (error) {
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          completeOpen.value = false
+          pendingOrder.value = undefined
+          completeIntentKey.value = ''
+          completeIntentAttempted.value = false
+        },
+        refresh: refreshInboundOrders,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
     notifyError(error, '完成入库失败，请稍后重试。')
   }
 }
@@ -512,7 +543,7 @@ function formatError(error: unknown) {
             type="button"
             variant="outline"
             :aria-label="`完成入库 ${row.inboundOrderNo ?? ''}`"
-            :disabled="isCompleted(row) || !row.inboundOrderId"
+            :disabled="!canComplete(row) || !row.inboundOrderId"
             @click="openComplete(row)"
           >
             完成入库

@@ -1,7 +1,9 @@
 import type { BusinessConsoleRecordProductionReportRequest } from '@nerv-iip/api-client'
+import { statusActionGate } from '@nerv-iip/business-core'
 import { computed, reactive, ref, watch } from 'vue'
 
 import { makeIdempotencyKey, useMesProductionReporting } from '@/composables/useBusinessMes'
+import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
 /**
@@ -14,6 +16,7 @@ export interface ProductionReportContext {
   operationTaskId: string
   operationTaskNo?: string | null
   operationSequence?: number | null
+  operationStatus?: string | null
   /** 工作中心显示名（已解析为人读名称，不是 ID）。 */
   workCenterLabel?: string | null
   /** 物料显示名（已解析为人读名称，不是 ID）。 */
@@ -37,15 +40,31 @@ function toOptionalNumber(value: string) {
  */
 export function useProductionReportForm(
   context: () => ProductionReportContext | null,
-  options: { onReported?: () => void } = {},
+  options: { onReported?: () => void; onStateChanged?: () => void } = {},
 ) {
-  const { recordProductionReport, recordProductionReportError, recordProductionReportPending } =
-    useMesProductionReporting()
+  const {
+    recordProductionReport,
+    recordProductionReportError,
+    recordProductionReportPending,
+    refreshProductionReportState,
+  } = useMesProductionReporting()
+
+  const canCompleteOperation = computed(() => {
+    const ctx = context()
+    return (
+      ctx !== null &&
+      statusActionGate({
+        domain: 'mes-operation-task',
+        action: 'report-complete',
+        facts: { status: ctx.operationStatus },
+      }).executable
+    )
+  })
 
   const form = reactive({
     goodQuantity: '1',
     scrapQuantity: '0',
-    completesOperation: true,
+    completesOperation: canCompleteOperation.value,
     idempotencyKey: makeIdempotencyKey('production-report'),
   })
 
@@ -54,7 +73,7 @@ export function useProductionReportForm(
   function resetForm() {
     form.goodQuantity = '1'
     form.scrapQuantity = '0'
-    form.completesOperation = true
+    form.completesOperation = canCompleteOperation.value
     form.idempotencyKey = makeIdempotencyKey('production-report')
     showErrors.value = false
   }
@@ -63,7 +82,7 @@ export function useProductionReportForm(
   watch(
     () => {
       const ctx = context()
-      return ctx ? `${ctx.workOrderId}|${ctx.operationTaskId}` : ''
+      return ctx ? `${ctx.workOrderId}|${ctx.operationTaskId}|${ctx.operationStatus ?? ''}` : ''
     },
     () => resetForm(),
   )
@@ -84,6 +103,16 @@ export function useProductionReportForm(
   const canSubmit = computed(() => {
     const ctx = context()
     if (!ctx?.workOrderId?.trim() || !ctx.operationTaskId?.trim()) return false
+    if (
+      form.completesOperation &&
+      !statusActionGate({
+        domain: 'mes-operation-task',
+        action: 'report-complete',
+        facts: { status: ctx.operationStatus },
+      }).executable
+    ) {
+      return false
+    }
     return !invalid.value.goodQuantity && !invalid.value.scrapQuantity
   })
 
@@ -110,6 +139,18 @@ export function useProductionReportForm(
       options.onReported?.()
       return true
     } catch (error) {
+      if (
+        await recoverLifecycleAction(error, {
+          reset: () => {
+            resetForm()
+            options.onStateChanged?.()
+          },
+          refresh: refreshProductionReportState,
+          notify: (message) => notifyError(message),
+        })
+      ) {
+        return false
+      }
       notifyError(recordProductionReportError.value ?? error, '报工提交失败，请稍后重试。')
       return false
     }
@@ -120,6 +161,7 @@ export function useProductionReportForm(
     invalid,
     showErrors,
     canSubmit,
+    canCompleteOperation,
     recordProductionReportPending,
     resetForm,
     submit,

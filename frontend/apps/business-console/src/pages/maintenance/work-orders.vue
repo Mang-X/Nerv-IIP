@@ -4,7 +4,9 @@ import type {
   BusinessConsoleMaintenanceSparePartInput,
   BusinessConsoleMaintenanceWorkOrderItem,
 } from '@nerv-iip/api-client'
+import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import { useMaintenanceWorkOrders } from '@/composables/useBusinessMaintenance'
 import {
   useBusinessWorkers,
@@ -404,6 +406,13 @@ function openComplete(row: WorkOrderRow) {
   completeError.value = ''
   completeOpen.value = true
 }
+function canComplete(row: WorkOrderRow) {
+  return statusActionGate({
+    domain: 'maintenance-work-order',
+    action: 'complete',
+    facts: { status: row.status },
+  }).executable
+}
 function addSpareRow() {
   spareRows.push(createSpareRow())
 }
@@ -484,6 +493,19 @@ async function submitComplete() {
     completeOpen.value = false
     notifySuccess(`维护工单 ${workOrderNo(target)} 已完成`)
   } catch (error) {
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          completeOpen.value = false
+          completeTarget.value = undefined
+          completeError.value = ''
+        },
+        refresh: refreshWorkOrders,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
     notifyError(error, '维护工单完成失败，请稍后重试。')
   }
 }
@@ -626,7 +648,7 @@ watch(
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
       <template #cell-actions="{ row }">
         <NvRowActions :label="`维护工单操作 ${workOrderNo(row)}`">
-          <NvDropdownMenuItem @click="openComplete(row)">
+          <NvDropdownMenuItem :disabled="!canComplete(row)" @click="openComplete(row)">
             <CheckCircle2Icon aria-hidden="true" />
             完成工单
           </NvDropdownMenuItem>

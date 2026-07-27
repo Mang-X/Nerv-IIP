@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsOutboundOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
+import { statusActionGate } from '@nerv-iip/business-core'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
-import { useWmsOutboundOrders } from '@/composables/useBusinessWms'
+import { createWmsIdempotencyKey, useWmsOutboundOrders } from '@/composables/useBusinessWms'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
 import {
@@ -219,14 +221,22 @@ async function submitCreate() {
 
 const reviewOpen = shallowRef(false)
 const pendingOrder = shallowRef<OutboundRow>()
+const reviewIntentKey = shallowRef('')
+const reviewIntentAttempted = shallowRef(false)
 const form = reactive({ packReviewNo: '', passed: true })
 const formError = shallowRef('')
 
-function isCompleted(row: OutboundRow) {
-  return (row.status ?? '').toLowerCase() === 'completed'
+function canComplete(row: OutboundRow) {
+  return statusActionGate({
+    domain: 'wms-outbound',
+    action: 'complete',
+    facts: { status: row.status },
+  }).executable
 }
 function openReview(row: OutboundRow) {
   pendingOrder.value = row
+  reviewIntentKey.value = createWmsIdempotencyKey()
+  reviewIntentAttempted.value = false
   form.packReviewNo = ''
   form.passed = true
   formError.value = ''
@@ -240,10 +250,37 @@ async function submitReview() {
     return
   }
   try {
-    await completeOutbound(id, { packReviewNo: form.packReviewNo.trim(), passed: form.passed })
+    await completeOutbound(
+      id,
+      { packReviewNo: form.packReviewNo.trim(), passed: form.passed },
+      reviewIntentKey.value,
+      {
+        attempt: reviewIntentAttempted.value ? 'retry' : 'initial',
+        onCommandAttempt: () => {
+          reviewIntentAttempted.value = true
+        },
+      },
+    )
     reviewOpen.value = false
+    reviewIntentKey.value = ''
+    reviewIntentAttempted.value = false
     notifySuccess('出库复核已提交')
   } catch (error) {
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          reviewOpen.value = false
+          pendingOrder.value = undefined
+          form.packReviewNo = ''
+          reviewIntentKey.value = ''
+          reviewIntentAttempted.value = false
+        },
+        refresh: refreshOutboundOrders,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
     notifyError(error, '提交出库复核失败，请稍后重试。')
   }
 }
@@ -411,7 +448,7 @@ function formatError(error: unknown) {
           type="button"
           variant="outline"
           :aria-label="`完成复核 ${row.outboundOrderNo ?? ''}`"
-          :disabled="isCompleted(row) || !row.outboundOrderId"
+          :disabled="!canComplete(row) || !row.outboundOrderId"
           @click="openReview(row)"
         >
           完成复核

@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import type { DispatchAssignTarget } from '@/components/mes/DispatchAssignDialog.vue'
 import DispatchAssignDialog from '@/components/mes/DispatchAssignDialog.vue'
+import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import type { MesLifecycleActionKey } from '@/composables/mes/useMesTaskSemantics'
 import {
@@ -146,7 +148,7 @@ const LIFECYCLE_RUNNERS: Record<
   MesLifecycleActionKey,
   (
     id: string,
-    context: { organizationId: string; environmentId: string },
+    context: { organizationId: string; environmentId: string; workOrderId?: string },
     body: { idempotencyKey: string },
   ) => Promise<unknown>
 > = {
@@ -161,6 +163,13 @@ const LIFECYCLE_DONE_MESSAGES: Record<MesLifecycleActionKey, string> = {
   resume: '已恢复加工。',
   complete: '该工序已完工。',
 }
+function lifecycleActionEnabled(task: OperationRow, action: MesLifecycleActionKey) {
+  return statusActionGate({
+    domain: 'mes-operation-task',
+    action,
+    facts: { status: task.status },
+  }).executable
+}
 
 async function runLifecycleAction(task: OperationRow, action: MesLifecycleActionKey) {
   const operationTaskId = task.operationTaskId
@@ -172,6 +181,7 @@ async function runLifecycleAction(task: OperationRow, action: MesLifecycleAction
       {
         organizationId: operationFilters.organizationId,
         environmentId: operationFilters.environmentId,
+        workOrderId: task.workOrderId ?? workOrderId.value ?? undefined,
       },
       {
         idempotencyKey: `op-${action}-${operationTaskId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -180,6 +190,17 @@ async function runLifecycleAction(task: OperationRow, action: MesLifecycleAction
     notifySuccess(LIFECYCLE_DONE_MESSAGES[action])
     void refreshDetail()
   } catch (error) {
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          lifecyclePending.value = null
+        },
+        refresh: refreshDetail,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
     notifyError(error)
   } finally {
     lifecyclePending.value = null
@@ -304,7 +325,11 @@ function formatQuantity(value?: number | null) {
                   <NvDropdownMenuItem
                     v-for="action in resolveLifecycleActions(row)"
                     :key="action.key"
-                    :disabled="!action.enabled || lifecyclePending === row.operationTaskId"
+                    :disabled="
+                      !action.enabled ||
+                      !lifecycleActionEnabled(row, action.key) ||
+                      lifecyclePending === row.operationTaskId
+                    "
                     :title="action.blockedReason"
                     @click="runLifecycleAction(row, action.key)"
                   >

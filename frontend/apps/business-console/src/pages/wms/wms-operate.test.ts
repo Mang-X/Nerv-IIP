@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
+import { LifecycleStateChangedError } from '@/composables/lifecycleAction'
 import InboundPage from './inbound.vue'
 import OutboundPage from './outbound.vue'
 import WcsPage from './wcs.vue'
@@ -56,6 +57,7 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
 })
 
 const wms = vi.hoisted(() => ({
+  createIdempotencyKey: vi.fn(() => 'wms-intent-1'),
   completeInbound: vi.fn(),
   completeOutbound: vi.fn(),
   failWcs: vi.fn(),
@@ -72,6 +74,7 @@ const wms = vi.hoisted(() => ({
     'business.quality.inspection-records.read',
   ] as string[],
   refreshReceivingQuality: vi.fn(),
+  refreshInboundOrders: vi.fn(async () => undefined),
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -130,13 +133,14 @@ vi.mock('@/stores/auth', () => ({
 }))
 
 vi.mock('@/composables/useBusinessWms', () => ({
+  createWmsIdempotencyKey: wms.createIdempotencyKey,
   useWmsInboundOrders: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
     inboundOrders: computed(() => [
       {
         inboundOrderId: 'ib-1',
         inboundOrderNo: 'IB-1',
-        status: 'created',
+        status: 'open',
         createdAtUtc: '2026-06-01T00:00:00Z',
         qualityGateStatus: wms.qualityGateStatus,
         isReleasedForPutaway: wms.isReleasedForPutaway,
@@ -146,7 +150,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
     inboundOrdersError: shallowRef(undefined),
     inboundOrdersPending: shallowRef(false),
     inboundOrdersTotal: computed(() => 1),
-    refreshInboundOrders: vi.fn(),
+    refreshInboundOrders: wms.refreshInboundOrders,
     completeInbound: wms.completeInbound,
     completeInboundPending: shallowRef(false),
     completeInboundError: shallowRef(undefined),
@@ -167,7 +171,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
       {
         outboundOrderId: 'ob-1',
         outboundOrderNo: 'OB-1',
-        status: 'created',
+        status: 'open',
         createdAtUtc: '2026-06-01T00:00:00Z',
       },
     ]),
@@ -232,8 +236,24 @@ describe('WMS operate actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     document.body.innerHTML = ''
-    wms.completeInbound.mockResolvedValue(undefined)
-    wms.completeOutbound.mockResolvedValue(undefined)
+    wms.completeInbound.mockImplementation(
+      (_id: string, _key: string, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        return Promise.resolve(undefined)
+      },
+    )
+    wms.refreshInboundOrders.mockClear()
+    wms.completeOutbound.mockImplementation(
+      (
+        _id: string,
+        _payload: unknown,
+        _key: string,
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.resolve(undefined)
+      },
+    )
     wms.failWcs.mockResolvedValue(undefined)
     wms.createInbound.mockResolvedValue(undefined)
     wms.createOutbound.mockResolvedValue(undefined)
@@ -271,7 +291,65 @@ describe('WMS operate actions', () => {
     confirm?.click()
     await flushPromises()
 
-    expect(wms.completeInbound).toHaveBeenCalledWith('ib-1')
+    expect(wms.completeInbound).toHaveBeenCalledWith(
+      'ib-1',
+      'wms-intent-1',
+      expect.objectContaining({ attempt: 'initial' }),
+    )
+  })
+
+  it('closes and clears a stale completion dialog after a typed lifecycle conflict', async () => {
+    wms.completeInbound.mockRejectedValueOnce(new LifecycleStateChangedError('conflict'))
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="完成入库 IB-1"]').trigger('click')
+    await flushPromises()
+    const confirm = [...document.body.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === '完成入库',
+    )
+    confirm?.click()
+    await flushPromises()
+
+    expect(wms.refreshInboundOrders).toHaveBeenCalledOnce()
+    expect(document.body.textContent).not.toContain('确认完成入库单 IB-1')
+  })
+
+  it('reuses the same idempotency key when an inbound completion is retried', async () => {
+    wms.completeInbound.mockImplementationOnce(
+      (_id: string, _key: string, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject(new Error('network interrupted'))
+      },
+    )
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="完成入库 IB-1"]').trigger('click')
+    await flushPromises()
+    const submit = () =>
+      [...document.body.querySelectorAll('button')]
+        .find((button) => button.textContent?.trim() === '完成入库')
+        ?.click()
+
+    submit()
+    await flushPromises()
+    submit()
+    await flushPromises()
+
+    expect(wms.createIdempotencyKey).toHaveBeenCalledOnce()
+    expect(wms.completeInbound).toHaveBeenNthCalledWith(
+      1,
+      'ib-1',
+      'wms-intent-1',
+      expect.objectContaining({ attempt: 'initial' }),
+    )
+    expect(wms.completeInbound).toHaveBeenNthCalledWith(
+      2,
+      'ib-1',
+      'wms-intent-1',
+      expect.objectContaining({ attempt: 'retry' }),
+    )
   })
 
   it('requires a pack review number before completing outbound review', async () => {
@@ -298,10 +376,62 @@ describe('WMS operate actions', () => {
       .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
 
-    expect(wms.completeOutbound).toHaveBeenCalledWith('ob-1', {
-      packReviewNo: 'PR-1',
-      passed: true,
-    })
+    expect(wms.completeOutbound).toHaveBeenCalledWith(
+      'ob-1',
+      {
+        packReviewNo: 'PR-1',
+        passed: true,
+      },
+      'wms-intent-1',
+      expect.objectContaining({ attempt: 'initial' }),
+    )
+  })
+
+  it('marks only the second same-key outbound submission as a retry', async () => {
+    wms.completeOutbound.mockImplementationOnce(
+      (
+        _id: string,
+        _payload: unknown,
+        _key: string,
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject(new Error('network interrupted'))
+      },
+    )
+    const wrapper = mount(OutboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="完成复核 OB-1"]').trigger('click')
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('#wms-pack-review-no')!
+    input.value = 'PR-1'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const submit = () =>
+      document.body
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+
+    submit()
+    await flushPromises()
+    submit()
+    await flushPromises()
+
+    expect(wms.completeOutbound).toHaveBeenNthCalledWith(
+      1,
+      'ob-1',
+      { packReviewNo: 'PR-1', passed: true },
+      'wms-intent-1',
+      expect.objectContaining({ attempt: 'initial' }),
+    )
+    expect(wms.completeOutbound).toHaveBeenNthCalledWith(
+      2,
+      'ob-1',
+      { packReviewNo: 'PR-1', passed: true },
+      'wms-intent-1',
+      expect.objectContaining({ attempt: 'retry' }),
+    )
   })
 
   it('creates an inbound order with a line item', async () => {

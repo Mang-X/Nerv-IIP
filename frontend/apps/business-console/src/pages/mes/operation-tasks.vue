@@ -4,8 +4,9 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
-import { openDownloadGrantBlob } from '@nerv-iip/business-core'
+import { openDownloadGrantBlob, statusActionGate } from '@nerv-iip/business-core'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
+import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
@@ -299,6 +300,7 @@ function openReport(task: Row) {
     operationTaskId: task.operationTaskId!,
     operationTaskNo: task.operationTaskNo,
     operationSequence: task.operationSequence,
+    operationStatus: task.status,
     workCenterLabel:
       task.workCenterName ?? resolveWorkCenter(task.workCenterCode ?? task.workCenterId),
   }
@@ -316,7 +318,7 @@ const LIFECYCLE_RUNNERS: Record<
   MesLifecycleActionKey,
   (
     id: string,
-    context: { organizationId: string; environmentId: string },
+    context: { organizationId: string; environmentId: string; workOrderId?: string },
     body: { idempotencyKey: string },
   ) => Promise<unknown>
 > = {
@@ -331,6 +333,13 @@ const LIFECYCLE_DONE_MESSAGES: Record<MesLifecycleActionKey, string> = {
   resume: '已恢复加工。',
   complete: '该工序已完工。',
 }
+function lifecycleActionEnabled(task: Row, action: MesLifecycleActionKey) {
+  return statusActionGate({
+    domain: 'mes-operation-task',
+    action,
+    facts: { status: task.status },
+  }).executable
+}
 
 async function runLifecycleAction(task: Row, action: MesLifecycleActionKey) {
   const operationTaskId = task.operationTaskId
@@ -339,7 +348,11 @@ async function runLifecycleAction(task: Row, action: MesLifecycleActionKey) {
   try {
     await LIFECYCLE_RUNNERS[action](
       operationTaskId,
-      { organizationId: filters.organizationId, environmentId: filters.environmentId },
+      {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        workOrderId: task.workOrderId ?? undefined,
+      },
       {
         idempotencyKey: `op-${action}-${operationTaskId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       },
@@ -347,6 +360,17 @@ async function runLifecycleAction(task: Row, action: MesLifecycleActionKey) {
     notifySuccess(LIFECYCLE_DONE_MESSAGES[action])
     void refreshOperationTasks()
   } catch (error) {
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          lifecyclePending.value = null
+        },
+        refresh: refreshOperationTasks,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
     notifyError(error)
   } finally {
     lifecyclePending.value = null
@@ -599,7 +623,11 @@ function formatError(error: unknown) {
             <NvDropdownMenuItem
               v-for="action in resolveLifecycleActions(row)"
               :key="action.key"
-              :disabled="!action.enabled || lifecyclePending === row.operationTaskId"
+              :disabled="
+                !action.enabled ||
+                !lifecycleActionEnabled(row, action.key) ||
+                lifecyclePending === row.operationTaskId
+              "
               :title="action.blockedReason"
               @click="runLifecycleAction(row, action.key)"
             >

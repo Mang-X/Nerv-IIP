@@ -2,6 +2,8 @@ import { mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
+
 import ProductionReportDialog from './ProductionReportDialog.vue'
 
 const spies = vi.hoisted(() => ({
@@ -18,6 +20,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     recordProductionReport: spies.recordProductionReport,
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
+    refreshProductionReportState: vi.fn(async () => undefined),
   }),
 }))
 
@@ -34,7 +37,10 @@ const stubs = {
   NvDialogDescription: { template: '<p><slot /></p>' },
   NvDialogFooter: { template: '<div><slot /></div>' },
   NvButton: { template: '<button v-bind="$attrs"><slot /></button>' },
-  NvCheckbox: { template: '<input type="checkbox" />' },
+  NvCheckbox: {
+    props: ['disabled'],
+    template: '<input type="checkbox" :disabled="disabled" />',
+  },
   Field: { template: '<div><slot /></div>' },
   FieldGroup: { template: '<div><slot /></div>' },
   FieldLabel: { template: '<label><slot /></label>' },
@@ -47,18 +53,19 @@ const stubs = {
   Spinner: true,
 }
 
-const context = {
+const context: ProductionReportContext = {
   workOrderId: 'WO-2026-0007',
   workOrderNo: 'WO-2026-0007',
   operationTaskId: 'WO-2026-0007-OP-20',
   operationTaskNo: 'WO-2026-0007-OP-20',
   operationSequence: 20,
+  operationStatus: 'InProgress',
   workCenterLabel: '精加工一线',
   skuLabel: '减速机壳体',
   plannedQuantity: 200,
 }
 
-function mountDialog(ctx: typeof context | null = context) {
+function mountDialog(ctx: ProductionReportContext | null = context) {
   return mount(ProductionReportDialog, {
     props: { open: true, context: ctx },
     global: { stubs },
@@ -118,6 +125,18 @@ describe('ProductionReportDialog — 带出式录入', () => {
     expect(spies.notifySuccess).toHaveBeenCalledOnce()
     expect(wrapper.emitted('update:open')?.at(-1)).toEqual([false])
     expect(wrapper.emitted('reported')).toHaveLength(1)
+  })
+
+  it('重新报工缺少工序实时状态时默认普通报工，并禁用再次完工', async () => {
+    const wrapper = mountDialog({ ...context, operationStatus: undefined })
+
+    expect(wrapper.get('#report-complete').attributes('disabled')).toBeDefined()
+    await wrapper.find('#report-good').setValue('6')
+    await wrapper.find('form').trigger('submit')
+    await wrapper.vm.$nextTick()
+
+    expect(spies.recordProductionReport).toHaveBeenCalledOnce()
+    expect(spies.recordProductionReport.mock.calls[0]![0].completesOperation).toBe(false)
   })
 
   it('合计数量为 0 时点提交只标红、不发请求', async () => {
