@@ -18,7 +18,7 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { ArrowUpRightIcon, RefreshCwIcon } from '@lucide/vue'
+import { ArrowUpRightIcon, ClipboardListIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, shallowRef, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
@@ -119,26 +119,34 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvMetricCard
-      class="sm:max-w-md"
-      variant="alert"
-      label="待收料的领料申请"
-      :value="awaitingReceiptCount"
-      unit="单"
-      :tone="awaitingReceiptCount > 0 ? 'warning' : 'neutral'"
-      :status="
-        awaitingReceiptCount > 0
-          ? { label: '缺料风险', tone: 'warning' }
-          : { label: '已收齐', tone: 'success' }
-      "
-      :foot-start="
-        awaitingReceiptCount > 0
-          ? '已发起但仓库尚未发齐，缺料会直接卡开工。'
-          : '所有已发起的领料都已收齐，可按计划开工。'
-      "
-      :action="awaitingReceiptCount > 0 ? { label: '去仓库跟催' } : undefined"
-      @action="router.push({ path: '/wms/outbound' })"
-    />
+    <div class="grid gap-4 sm:grid-cols-2">
+      <NvMetricCard
+        variant="icon"
+        label="领料申请"
+        :value="materialIssueRequestsTotal"
+        unit="条"
+        :icon="ClipboardListIcon"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="待收料的领料申请"
+        :value="awaitingReceiptCount"
+        unit="单"
+        :tone="awaitingReceiptCount > 0 ? 'warning' : 'neutral'"
+        :status="
+          awaitingReceiptCount > 0
+            ? { label: '缺料风险', tone: 'warning' }
+            : { label: '已收齐', tone: 'success' }
+        "
+        :foot-start="
+          awaitingReceiptCount > 0
+            ? '已发起但仓库尚未发齐，缺料会直接卡开工。'
+            : '所有已发起的领料都已收齐，可按计划开工。'
+        "
+        :action="awaitingReceiptCount > 0 ? { label: '去仓库跟催' } : undefined"
+        @action="router.push({ path: '/wms/outbound' })"
+      />
+    </div>
 
     <NvToolbar :show-search="false">
       <template #filters>

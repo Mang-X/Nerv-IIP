@@ -600,14 +600,28 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvMetricCard
-      class="sm:max-w-md"
-      variant="breakdown"
-      label="工艺路线版本"
-      :value="routingsTotal"
-      unit="个"
-      :segments="routingSegments"
-    />
+    <div class="grid gap-4 sm:grid-cols-2">
+      <NvMetricCard
+        variant="breakdown"
+        label="工艺路线版本"
+        :value="routingsTotal"
+        unit="个"
+        :segments="routingSegments"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="草稿待发布"
+        :value="draftCount"
+        unit="个"
+        :tone="draftCount > 0 ? 'warning' : 'neutral'"
+        :status="
+          draftCount > 0
+            ? { label: '待评审', tone: 'warning' }
+            : { label: '无待办', tone: 'success' }
+        "
+        :foot-start="draftCount > 0 ? '确认工序顺序与工时后发布。' : '当前没有待发布的工艺路线。'"
+      />
+    </div>
 
     <NvToolbar v-model:search="skuSearch" search-placeholder="按产出物料编码筛选">
       <template #filters>

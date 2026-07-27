@@ -272,14 +272,28 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvMetricCard
-      class="sm:max-w-md"
-      variant="breakdown"
-      label="待派工序"
-      :value="dispatchTasksTotal"
-      unit="个"
-      :segments="dispatchSegments"
-    />
+    <div class="grid gap-4 sm:grid-cols-2">
+      <NvMetricCard
+        variant="breakdown"
+        label="待派工序"
+        :value="dispatchTasksTotal"
+        unit="个"
+        :segments="dispatchSegments"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="派工阻塞"
+        :value="blockedCount"
+        unit="个"
+        :tone="blockedCount > 0 ? 'danger' : 'neutral'"
+        :status="
+          blockedCount > 0
+            ? { label: '需先解锁', tone: 'danger' }
+            : { label: '可继续派工', tone: 'success' }
+        "
+        :foot-start="blockedCount > 0 ? '先处理资源、物料或质量阻塞。' : '当前待派工序没有阻塞。'"
+      />
+    </div>
 
     <NvToolbar :show-search="false">
       <template #filters>

@@ -862,7 +862,7 @@ function formatError(error: unknown) {
       <section class="grid gap-4">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 class="text-base font-semibold text-foreground">遥测深层上下文</h2>
+            <h2 class="text-base font-semibold text-foreground">设备运行指标</h2>
             <p class="mt-1 text-sm text-muted-foreground">
               {{ describeTelemetryOeeLimitations() }}
             </p>
@@ -880,7 +880,7 @@ function formatError(error: unknown) {
                 }"
               >
                 <LineChartIcon aria-hidden="true" />
-                历史趋势正式页面
+                历史趋势
               </RouterLink>
             </NvButton>
             <NvButton size="sm" type="button" variant="outline" as-child>
@@ -891,7 +891,7 @@ function formatError(error: unknown) {
                 }"
               >
                 <GaugeIcon aria-hidden="true" />
-                OEE 正式页面
+                OEE 与可用性
               </RouterLink>
             </NvButton>
             <NvButton size="sm" type="button" variant="outline" as-child>
@@ -899,7 +899,7 @@ function formatError(error: unknown) {
                 :to="{ path: '/equipment/alarms', query: { deviceAssetId: filters.deviceAssetId } }"
               >
                 <Settings2Icon aria-hidden="true" />
-                报警列表正式页面
+                设备报警
               </RouterLink>
             </NvButton>
           </div>
@@ -1079,12 +1079,7 @@ function formatError(error: unknown) {
 
       <section class="grid gap-4">
         <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 class="text-base font-semibold text-foreground">维护与可靠性上下文</h2>
-            <p class="mt-1 text-sm text-muted-foreground">
-              汇总本设备的维修工单、保养计划、点检、备件与可用窗口；若记录未标注设备，将不在此处显示。
-            </p>
-          </div>
+          <h2 class="text-base font-semibold text-foreground">维护与可靠性</h2>
           <div class="flex flex-wrap gap-2">
             <NvButton size="sm" type="button" variant="outline" as-child>
               <RouterLink
@@ -1094,7 +1089,7 @@ function formatError(error: unknown) {
                 }"
               >
                 <WrenchIcon aria-hidden="true" />
-                维护工单正式页面
+                维护工单
               </RouterLink>
             </NvButton>
             <NvButton size="sm" type="button" variant="outline" as-child>
@@ -1105,7 +1100,7 @@ function formatError(error: unknown) {
                 }"
               >
                 <CalendarRangeIcon aria-hidden="true" />
-                保养计划正式页面
+                保养计划
               </RouterLink>
             </NvButton>
             <NvButton size="sm" type="button" variant="outline" as-child>
@@ -1116,7 +1111,7 @@ function formatError(error: unknown) {
                 }"
               >
                 <PackageSearchIcon aria-hidden="true" />
-                备件正式页面
+                备件需求
               </RouterLink>
             </NvButton>
           </div>
@@ -1171,8 +1166,7 @@ function formatError(error: unknown) {
                 v-if="!maintenancePending && !currentDeviceWorkOrders.length"
                 class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
               >
-                当前返回窗口未包含该设备的 Maintenance
-                工单记录；如需确认全量或开单，请进入维护工单正式页面。
+                当前数据窗口没有该设备的维修工单。可前往维护工单查看完整记录或新建工单。
               </div>
             </div>
           </div>
@@ -1242,7 +1236,7 @@ function formatError(error: unknown) {
                 v-if="!maintenancePending && !currentDeviceSpareParts.length"
                 class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
               >
-                当前设备没有备件需求；库存可用量以库存管理正式页面为准。
+                当前设备没有备件需求。可前往库存可用量核对备件库存。
               </div>
             </div>
           </div>
@@ -1288,11 +1282,7 @@ function formatError(error: unknown) {
       <section class="grid gap-4">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 class="text-base font-semibold text-foreground">控制命令历史</h2>
-            <p class="mt-1 text-sm text-muted-foreground">
-              来源：设备控制命令台账（含 Ops 审批状态与执行回执）；倒序分页。命令下发需 Ops
-              审批门禁·全程审计。
-            </p>
+            <h2 class="text-base font-semibold text-foreground">控制命令记录</h2>
           </div>
           <NvButton
             v-if="canControlDevice"
