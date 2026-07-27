@@ -126,6 +126,8 @@ const ncrContextItems = computed(() => {
     { label: '批次', value: ncr.batchNo },
     { label: '序列号', value: ncr.serialNo },
     { label: '返工工单', value: closeForm.reworkWorkOrderId },
+    // 关闭原因是必填的关单审计事实，已关闭的单必须回显，否则看起来像"关了但没写原因"。
+    ...(ncr.closeReason ? [{ label: '关闭原因', value: ncr.closeReason }] : []),
   ]
 })
 const canSubmitDisposition = computed(
@@ -150,6 +152,8 @@ const columns: NvDataTableColumn<NcrRow>[] = [
   { key: 'code', header: 'NCR', cellClass: 'font-medium', accessor: (r) => r.code ?? r.id ?? '无' },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'summary', header: '摘要', accessor: (r) => qualityItemSummary(r) },
+  // 已关闭的单在列表上直接给出关单理由，不必逐条点开。
+  { key: 'closeReason', header: '关闭原因', accessor: (r) => r.closeReason ?? '—' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
