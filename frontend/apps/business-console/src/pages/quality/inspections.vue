@@ -4,7 +4,8 @@ import type {
   BusinessConsoleInspectionCharacteristicResult,
   BusinessConsoleQualityItem,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { ComboboxSuggestion, NvDataTableColumn } from '@nerv-iip/ui'
+import { qualitySourceTypeLabel } from '@nerv-iip/business-core'
 import {
   useQualityInspectionPlanCharacteristics,
   useQualityInspectionPlans,
@@ -19,6 +20,7 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
 import {
   NvButton,
+  NvCombobox,
   NvDataTable,
   NvDialog,
   NvDialogContent,
@@ -111,6 +113,15 @@ const targetInspectionPlanMissing = computed(
   () =>
     !!targetInspectionPlanId.value && !inspectionPlansPending.value && !targetInspectionPlan.value,
 )
+// 特性清单取数的方案：路由定位的方案优先；手动/方案行流程里，表单方案号能对上
+// 已加载方案列表（id 或 code）时也取其清单——不对上就不发请求，避免逐键敲号打请求。
+const characteristicsPlanId = computed(() => {
+  if (targetInspectionPlanId.value) return targetInspectionPlanId.value
+  const manual = recordForm.inspectionPlanId.trim()
+  if (!manual) return ''
+  const matched = inspectionPlans.value.find((plan) => plan.id === manual || plan.code === manual)
+  return matched?.id ?? ''
+})
 const {
   planCharacteristics,
   planCharacteristicsError,
@@ -119,8 +130,16 @@ const {
 } = useQualityInspectionPlanCharacteristics(() => ({
   organizationId: filters.organizationId,
   environmentId: filters.environmentId,
-  inspectionPlanId: targetInspectionPlanId.value,
+  inspectionPlanId: characteristicsPlanId.value,
 }))
+// 特性编码建议 = 该检验方案的特性清单（label 显名称、hint 显编码）；仍允许录入计划外特性。
+const characteristicSuggestions = computed<ComboboxSuggestion[]>(() =>
+  planCharacteristics.value.flatMap((characteristic) => {
+    const code = characteristic.characteristicCode?.trim()
+    if (!code) return []
+    return [{ value: code, label: characteristic.name?.trim() || code, hint: code }]
+  }),
+)
 
 // 来源检验记录定位：hold 时间线「来源检验记录」互链带 ?inspectionRecordId= 进来，打开只读记录详情。
 // 详情查询/错误副作用/重试封装在 InspectionRecordDetailSheet，路由页只负责按 query 编排开合（Vue best-practices §2）。
@@ -325,6 +344,19 @@ function useInspectionPlan(plan: BusinessConsoleQualityItem) {
 function addCharacteristicRow() {
   recordForm.resultLines.push(emptyLine())
 }
+// 选中（或敲全）一个计划特性编码时，带出名称 / 单位 / 规格；计划外编码不动其它字段。
+function onCharacteristicCodeChange(line: ReturnType<typeof emptyLine>, value: string) {
+  line.characteristicCode = value
+  const code = value.trim().toLowerCase()
+  if (!code) return
+  const characteristic = planCharacteristics.value.find(
+    (item) => (item.characteristicCode ?? '').trim().toLowerCase() === code,
+  )
+  if (!characteristic) return
+  line.characteristicName = characteristic.name ?? ''
+  if (characteristic.unitCode) line.unitCode = characteristic.unitCode
+  line.specification = formatSpecification(characteristic)
+}
 function removeCharacteristicRow(index: number) {
   if (recordForm.resultLines.length === 1) {
     recordForm.resultLines[0] = emptyLine()
@@ -436,18 +468,9 @@ const CATEGORY_LABELS: Record<string, string> = {
   outgoing: '出货检',
   rework: '返工检',
 }
-// 来源类型是英文码，只读带出区要显示中文。
-const SOURCE_TYPE_LABELS: Record<string, string> = {
-  operation: '工序',
-  receiving: '收货',
-  final: '终检',
-  maintenance: '维修',
-  'customer-return': '客户退货',
-}
+// 来源类型是英文码，只读带出区要显示中文（映射来自 business-core qualityLabels，PC/PDA 同源）。
 function sourceTypeLabel(value?: string | null) {
-  const code = (value ?? '').trim()
-  if (!code) return ''
-  return SOURCE_TYPE_LABELS[code.toLowerCase()] ?? code
+  return qualitySourceTypeLabel(value)
 }
 function categoryLabel(value?: string | null) {
   const code = (value ?? '').trim()
@@ -672,6 +695,15 @@ function isPresent(value: string | undefined | null): value is string {
             >
               正在加载检验特性与规格…
             </p>
+            <p
+              v-else-if="characteristicsPlanId && characteristicSuggestions.length"
+              class="text-sm text-muted-foreground"
+            >
+              特性编码建议来自该检验方案的特性清单，也可直接录入计划外特性。
+            </p>
+            <p v-else-if="characteristicsPlanId" class="text-sm text-muted-foreground">
+              该检验方案暂无特性清单，请直接录入特性编码。
+            </p>
             <div class="grid gap-2">
               <div
                 v-for="(line, index) in recordForm.resultLines"
@@ -680,10 +712,13 @@ function isPresent(value: string | undefined | null): value is string {
               >
                 <NvField>
                   <NvFieldLabel :for="`characteristic-code-${index}`">特性编码</NvFieldLabel>
-                  <NvInput
+                  <NvCombobox
                     :id="`characteristic-code-${index}`"
-                    v-model="line.characteristicCode"
-                    required
+                    :model-value="line.characteristicCode"
+                    :suggestions="characteristicSuggestions"
+                    placeholder="选择或录入特性编码"
+                    empty-text="特性清单中无匹配项"
+                    @update:model-value="(value) => onCharacteristicCodeChange(line, value)"
                   />
                   <NvFieldDescription v-if="line.characteristicName">
                     {{ line.characteristicName }}

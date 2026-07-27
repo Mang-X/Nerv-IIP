@@ -7,7 +7,7 @@ import type {
   BusinessConsoleTelemetryHistoryItem,
 } from '@nerv-iip/api-client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, nextTick, reactive, shallowRef, type Ref } from 'vue'
+import { computed, nextTick, reactive, ref, shallowRef, type Ref } from 'vue'
 
 import EquipmentAlarmsPage from './alarms.vue'
 import EquipmentDetailPage from './[deviceAssetId].vue'
@@ -266,6 +266,25 @@ vi.mock('@/composables/useBusinessEquipment', () => ({
     overviewPending: shallowRef(false),
     refreshOverview: vi.fn(),
   }),
+}))
+
+// 级联范围选择 composable：真实实现依赖主数据 facade（pinia + query），页面测试给可控桩。
+vi.mock('@/composables/useEquipmentScopeSelection', () => ({
+  useEquipmentScopeSelection: (initial?: { workshop?: string; line?: string; device?: string }) => {
+    const scope = ref({
+      workshop: initial?.workshop ?? '',
+      line: initial?.line ?? '',
+      device: initial?.device ?? '',
+    })
+    return {
+      scope,
+      levels: computed(() => []),
+      devicesInScope: computed(() => []),
+      scopeLabel: computed(() => '全厂'),
+      scopePending: shallowRef(false),
+      selectedDevice: computed(() => undefined),
+    }
+  },
 }))
 
 vi.mock('@/stores/auth', () => ({

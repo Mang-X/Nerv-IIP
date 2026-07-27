@@ -29,8 +29,10 @@ const columns: NvDataTableColumn<QualityAnalysisBucket>[] = [
 </script>
 
 <template>
-  <section aria-labelledby="quality-pareto-title" class="grid gap-3">
-    <div>
+  <!-- content-start：本面板与右侧两张维度表同处一行网格，会被拉伸到较高一侧的高度；
+       不加 content-start 时多余高度会摊进标题行与图表之间，标题下方出现一大段空白。 -->
+  <section aria-labelledby="quality-pareto-title" class="grid content-start gap-3">
+    <div class="space-y-0.5">
       <h2 id="quality-pareto-title" class="text-base font-semibold">当前分析时间范围缺陷 Pareto</h2>
       <p class="text-sm text-muted-foreground">
         按缺陷数量降序展示；数据仅覆盖当前分析时间范围，不是全量历史趋势。
