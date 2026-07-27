@@ -8,13 +8,11 @@ import {
 } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesDispatchTasks } from '@/composables/useBusinessMes'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
-import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   hasBlockingReasons,
   isScheduleInvalidatedTask,
-  isSettledTask,
   resolveDispatchAffordance,
   resolveDispatchState,
   resolveExecutionState,
@@ -28,7 +26,6 @@ import {
   NvDropdownMenuItem,
   NvGroupPanel,
   NvInput,
-  NvMetricCard,
   NvPageHeader,
   NvPagination,
   NvRowActions,
@@ -131,25 +128,6 @@ const workerFilterOptions = computed(() => [
 ])
 
 type DispatchRow = (typeof dispatchTasks)['value'][number]
-
-// 三个决策口径：还有多少要派、已经派出去多少、这一页里多少已经完工。
-// 只统计当前页（facade 不给全量分状态计数），所以文案说的是「本页」而不是总量。
-const pendingCount = computed(
-  () => dispatchTasks.value.filter((r) => resolveDispatchState(r).key === 'unassigned').length,
-)
-const assignedCount = computed(
-  () => dispatchTasks.value.filter((r) => resolveDispatchState(r).key === 'assigned').length,
-)
-const settledCount = computed(
-  () => dispatchTasks.value.filter((r) => isSettledTask(r.status)).length,
-)
-const dispatchSegments = computed(() =>
-  pagedBreakdownSegments(dispatchTasksTotal.value, [
-    { key: 'pending', label: '待派工', value: pendingCount.value, tone: 'warning' },
-    { key: 'assigned', label: '已派工', value: assignedCount.value, tone: 'success' },
-    { key: 'settled', label: '已完工', value: settledCount.value, tone: 'neutral' },
-  ]),
-)
 
 const errorMessage = computed(() => formatError(dispatchTasksError.value))
 
@@ -290,18 +268,10 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <!-- 只留一张构成卡。曾并排放过一张「派工阻塞」告警卡，但它由 blockingReasons 驱动，
-         而该字段在派工 facade 里恒为空数组，于是那张卡永远显示「当前待派工序没有阻塞」——
-         一个后端根本没检查过的断言。阻塞回填后再按真数据加卡。 -->
-    <NvMetricCard
-      class="sm:max-w-md"
-      variant="breakdown"
-      label="工序"
-      :value="dispatchTasksTotal"
-      unit="道"
-      :segments="dispatchSegments"
-    />
-
+    <!-- 本页不放概览卡：工序总量已在页头，而「还有几道没派人」按工单看才有用——
+         那个数字在每个分组的组头上，正是班组长要动手的粒度，页内聚合数反而不驱动决策。
+         （曾有一张「派工阻塞」告警卡，由 facade 里恒为空的 blockingReasons 驱动，
+         永远显示「当前待派工序没有阻塞」——后端根本没检查过的断言，已一并去掉。） -->
     <NvToolbar :show-search="false">
       <template #filters>
         <NvInput
