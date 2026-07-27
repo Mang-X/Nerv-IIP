@@ -380,16 +380,19 @@ public sealed class SchedulingInputChangeEventHandlerTests
                 [],
                 [],
                 []);
+            var problemJson = JsonSerializer.Serialize(problem, SchedulingJson.Options);
             seedDbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(
                 problem.ProblemId,
                 problem.ContractVersion,
                 problem.OrganizationId,
                 problem.EnvironmentId,
                 "fingerprint-unused-calendar",
-                JsonSerializer.Serialize(problem, SchedulingJson.Options),
+                problemJson,
                 horizonStart,
                 horizonEnd,
-                FixedNow));
+                FixedNow,
+                SchedulingPersistenceTestData.UnchangedEffectiveInputFingerprint(problemJson),
+                problemJson));
             await seedDbContext.SaveChangesAsync();
         }
 
@@ -651,16 +654,19 @@ public sealed class SchedulingInputChangeEventHandlerTests
             [],
             [],
             []);
+        var problemJson = JsonSerializer.Serialize(problem, SchedulingJson.Options);
         return new ScheduleProblemSnapshot(
             problemId,
             1,
             "org-001",
             "env-dev",
             $"fingerprint-{problemId}",
-            JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            problemJson,
             horizonStart,
             horizonEnd,
-            FixedNow);
+            FixedNow,
+            SchedulingPersistenceTestData.UnchangedEffectiveInputFingerprint(problemJson),
+            problemJson);
     }
 
     private static async Task SeedPlansAsync(ServiceProvider provider)
@@ -749,7 +755,8 @@ public sealed class SchedulingInputChangeEventHandlerTests
                 Conflicts: [],
                 UnscheduledOperations: [],
                 ChangeSummary: [],
-                GanttItems: [])));
+                GanttItems: [])),
+            SchedulingPersistenceTestData.CurrentAvailableTrace);
     }
 
     private static ServiceProvider CreateInMemoryProvider()

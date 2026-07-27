@@ -25,22 +25,22 @@ public sealed class PreviewSchedulePlanCommandValidator : AbstractValidator<Prev
 }
 
 public sealed class PreviewSchedulePlanCommandHandler(
-    FiniteCapacityScheduler scheduler,
-    TimeProvider timeProvider,
-    ISchedulingEquipmentAvailabilityProvider equipmentAvailabilityProvider,
-    ISchedulingMaterialReadinessProvider materialReadinessProvider,
-    ISchedulingOperationOverrideOverlay overrideOverlay)
+    SchedulingPlanGenerator generator,
+    TimeProvider timeProvider)
     : ICommandHandler<PreviewSchedulePlanCommand, SchedulePlanContract>
 {
     public async Task<SchedulePlanContract> Handle(PreviewSchedulePlanCommand request, CancellationToken cancellationToken)
     {
-        var overlaidProblem = await overrideOverlay.ApplyAsync(request.Problem, cancellationToken);
-        var availability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
-        var materialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
-        var schedulingProblem = MaterialReadinessSchedulingAdapter.Apply(
-            EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability),
-            materialReadiness);
-        var plan = scheduler.Schedule(schedulingProblem, $"preview-{request.Problem.ProblemId}", timeProvider.GetUtcNow());
-        return SchedulePlanContractMapper.WithStatus(plan, SchedulePlanStatusContract.Preview);
+        var generation = await generator.GenerateAsync(
+            request.Problem,
+            $"preview-{request.Problem.ProblemId}",
+            timeProvider.GetUtcNow(),
+            cancellationToken);
+        return SchedulePlanContractMapper.WithProvenance(
+            SchedulePlanContractMapper.WithStatus(
+                generation.Plan,
+                SchedulePlanStatusContract.Preview),
+            generation,
+            generation.Plan.ProblemFingerprint);
     }
 }

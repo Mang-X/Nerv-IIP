@@ -111,11 +111,8 @@ public sealed class SchedulingEndpointContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var handler = new PreviewSchedulePlanCommandHandler(
-            new FiniteCapacityScheduler(),
-            new FixedTimeProvider(FixedNow),
-            new NoopSchedulingEquipmentAvailabilityProvider(),
-            new NoopSchedulingMaterialReadinessProvider(),
-            new PassthroughSchedulingOperationOverrideOverlay());
+            CreateGenerator(),
+            new FixedTimeProvider(FixedNow));
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
 
         var first = await handler.Handle(new PreviewSchedulePlanCommand(problem), CancellationToken.None);
@@ -124,6 +121,10 @@ public sealed class SchedulingEndpointContractTests
         Assert.Equal(SchedulePlanStatusContract.Preview, first.Status);
         Assert.Equal(first.Assignments.Select(x => (x.OperationId, x.ResourceId, x.StartUtc, x.EndUtc)), second.Assignments.Select(x => (x.OperationId, x.ResourceId, x.StartUtc, x.EndUtc)));
         Assert.NotEmpty(first.GanttItems);
+        AssertAvailableProvenance(first);
+        Assert.Equal(
+            JsonSerializer.Serialize(first.Provenance, SchedulingJson.Options),
+            JsonSerializer.Serialize(second.Provenance, SchedulingJson.Options));
         Assert.False(await dbContext.SchedulePlans.AnyAsync(CancellationToken.None));
     }
 
@@ -153,11 +154,8 @@ public sealed class SchedulingEndpointContractTests
                         [])
                 ]));
         var handler = new PreviewSchedulePlanCommandHandler(
-            new FiniteCapacityScheduler(),
-            new FixedTimeProvider(FixedNow),
-            availabilityProvider,
-            new NoopSchedulingMaterialReadinessProvider(),
-            new PassthroughSchedulingOperationOverrideOverlay());
+            CreateGenerator(equipmentAvailabilityProvider: availabilityProvider),
+            new FixedTimeProvider(FixedNow));
 
         var plan = await handler.Handle(new PreviewSchedulePlanCommand(problem), CancellationToken.None);
 
@@ -181,11 +179,8 @@ public sealed class SchedulingEndpointContractTests
                     ReasonCodes: ["MAT-A shortage 2"])
             ]);
         var handler = new PreviewSchedulePlanCommandHandler(
-            new FiniteCapacityScheduler(),
-            new FixedTimeProvider(FixedNow),
-            new NoopSchedulingEquipmentAvailabilityProvider(),
-            materialReadinessProvider,
-            new PassthroughSchedulingOperationOverrideOverlay());
+            CreateGenerator(materialReadinessProvider: materialReadinessProvider),
+            new FixedTimeProvider(FixedNow));
 
         var plan = await handler.Handle(new PreviewSchedulePlanCommand(problem), CancellationToken.None);
 
@@ -213,6 +208,10 @@ public sealed class SchedulingEndpointContractTests
 
         Assert.Equal(SchedulePlanStatusContract.Generated, created.Status);
         Assert.Equal(created.PlanId, detail.PlanId);
+        AssertAvailableProvenance(created);
+        Assert.Equal(
+            JsonSerializer.Serialize(created.Provenance, SchedulingJson.Options),
+            JsonSerializer.Serialize(detail.Provenance, SchedulingJson.Options));
         Assert.NotEmpty(detail.Assignments);
         Assert.NotEmpty(detail.Conflicts);
         Assert.NotEmpty(detail.UnscheduledOperations);
@@ -224,6 +223,48 @@ public sealed class SchedulingEndpointContractTests
         Assert.NotEmpty(detail.GanttItems);
         Assert.True(await dbContext.ScheduleProblems.AnyAsync(x => x.ProblemId == created.ProblemId, CancellationToken.None));
         Assert.True(await dbContext.SchedulePlans.AnyAsync(x => x.PlanId == created.PlanId, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Detail_marks_legacy_plan_provenance_unavailable_when_exact_input_is_missing()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var problemJson = JsonSerializer.Serialize(problem, SchedulingJson.Options);
+        dbContext.SchedulePlans.Add(CreatePersistedPlan(
+            "plan-legacy-provenance",
+            problem.ProblemId,
+            FixedNow));
+        var snapshot = new ScheduleProblemSnapshot(
+            problem.ProblemId,
+            problem.ContractVersion,
+            problem.OrganizationId,
+            problem.EnvironmentId,
+            "legacy-problem-fingerprint",
+            problemJson,
+            problem.HorizonStartUtc,
+            problem.HorizonEndUtc,
+            FixedNow,
+            SchedulingPersistenceTestData.UnchangedEffectiveInputFingerprint(problemJson),
+            problemJson);
+        dbContext.ScheduleProblems.Add(snapshot);
+        dbContext.Entry(snapshot).Property(x => x.EngineInputFingerprint).CurrentValue = null;
+        dbContext.Entry(snapshot).Property(x => x.EngineInputJson).CurrentValue = null;
+        await dbContext.SaveChangesAsync();
+        var handler = new GetSchedulePlanDetailQueryHandler(dbContext);
+
+        var detail = await handler.Handle(
+            new GetSchedulePlanDetailQuery(
+                "plan-legacy-provenance",
+                problem.OrganizationId,
+                problem.EnvironmentId),
+            CancellationToken.None);
+
+        var provenance = Assert.IsType<SchedulePlanProvenanceContract>(detail.Provenance);
+        Assert.Null(provenance.EngineInputFingerprint);
+        Assert.Equal(SchedulingReplayStatuses.LegacyUnavailable, provenance.ReplayStatus);
     }
 
     [Fact]
@@ -317,6 +358,63 @@ public sealed class SchedulingEndpointContractTests
         Assert.Equal(command.Problem.Orders.Count, await dbContext.OrderUrgencySnapshots.CountAsync());
         Assert.Equal(1, await dbContext.ScheduleProblems.CountAsync(x => x.ProblemId == command.Problem.ProblemId, CancellationToken.None));
         Assert.Equal(1, await dbContext.SchedulePlans.CountAsync(x => x.ProblemId == command.Problem.ProblemId, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Create_idempotency_uses_post_override_base_fingerprint_and_returns_the_historical_plan_when_runtime_facts_change()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var command = new CreateSchedulePlanCommand(problem);
+        var firstHandler = CreatePlanHandler(
+            dbContext,
+            new FixedSchedulingOperationOverrideOverlay(problem),
+            new NoopSchedulingMaterialReadinessProvider());
+        var first = await firstHandler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var runtimeBlockedHandler = CreatePlanHandler(
+            dbContext,
+            new FixedSchedulingOperationOverrideOverlay(problem),
+            new StubSchedulingMaterialReadinessProvider(
+                [
+                    new SchedulingMaterialReadinessContract(
+                        "order",
+                        problem.Orders.First().OrderId,
+                        null,
+                        false,
+                        ["material.runtime-change"])
+                ]));
+
+        var retried = await runtimeBlockedHandler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(first.PlanId, retried.PlanId);
+        Assert.Equal(first.ProblemFingerprint, retried.ProblemFingerprint);
+        Assert.Equal(first.Assignments, retried.Assignments);
+        Assert.Equal(first.UnscheduledOperations, retried.UnscheduledOperations);
+        Assert.Contains(
+            dbContext.OrderUrgencySnapshots.Local,
+            snapshot => snapshot.ResultJson.Contains("material.runtime-change", StringComparison.Ordinal));
+
+        var changedBaseProblem = problem with
+        {
+            Orders =
+            [
+                problem.Orders.First() with
+                {
+                    Quantity = problem.Orders.First().Quantity + 1
+                },
+                ..problem.Orders.Skip(1)
+            ]
+        };
+        var changedBaseHandler = CreatePlanHandler(
+            dbContext,
+            new FixedSchedulingOperationOverrideOverlay(changedBaseProblem),
+            new NoopSchedulingMaterialReadinessProvider());
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            changedBaseHandler.Handle(command, CancellationToken.None));
     }
 
     [Fact]
@@ -685,17 +783,50 @@ public sealed class SchedulingEndpointContractTests
         yield return [new HttpRequestMessage(HttpMethod.Post, "/api/business/v1/scheduling/plans/plan-missing/release")];
     }
 
-    private static CreateSchedulePlanCommandHandler CreatePlanHandler(ApplicationDbContext dbContext)
+    private static CreateSchedulePlanCommandHandler CreatePlanHandler(
+        ApplicationDbContext dbContext,
+        ISchedulingOperationOverrideOverlay? overrideOverlay = null,
+        ISchedulingMaterialReadinessProvider? materialReadinessProvider = null)
     {
         var clock = new FixedTimeProvider(FixedNow);
         return new CreateSchedulePlanCommandHandler(
             dbContext,
-            new FiniteCapacityScheduler(),
+            CreateGenerator(
+                materialReadinessProvider: materialReadinessProvider,
+                overrideOverlay: overrideOverlay ?? new SchedulingOperationOverrideOverlay(dbContext)),
             clock,
-            new NoopSchedulingEquipmentAvailabilityProvider(),
-            new NoopSchedulingMaterialReadinessProvider(),
-            new SchedulingOperationOverrideOverlay(dbContext),
             new OrderUrgencyService(dbContext, clock));
+    }
+
+    private static void AssertAvailableProvenance(SchedulePlanContract plan)
+    {
+        var provenance = Assert.IsType<SchedulePlanProvenanceContract>(plan.Provenance);
+        Assert.Equal("finite-capacity", provenance.EngineId);
+        Assert.Equal("built-in", provenance.RuleProviderId);
+        Assert.Equal("adr-0014-default", provenance.RuleProfileId);
+        Assert.Equal("v1", provenance.RuleProfileVersion);
+        Assert.Equal(SchedulingExecutionTraceSchema.CurrentVersion, provenance.TraceSchemaVersion);
+        Assert.Equal(SchedulingReplayStatuses.Available, provenance.ReplayStatus);
+        Assert.Equal(3, provenance.ConstraintSources.Count);
+        Assert.All(provenance.ConstraintSources, source =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(source.FactsFingerprint));
+            Assert.NotEmpty(source.ReasonCodes);
+        });
+    }
+
+    private static SchedulingPlanGenerator CreateGenerator(
+        ISchedulingEquipmentAvailabilityProvider? equipmentAvailabilityProvider = null,
+        ISchedulingMaterialReadinessProvider? materialReadinessProvider = null,
+        ISchedulingOperationOverrideOverlay? overrideOverlay = null)
+    {
+        return new SchedulingPlanGenerator(
+            new DefaultSchedulingRuleProvider(),
+            new DefaultSchedulingConstraintProvider(
+                overrideOverlay ?? new PassthroughSchedulingOperationOverrideOverlay(),
+                equipmentAvailabilityProvider ?? new NoopSchedulingEquipmentAvailabilityProvider(),
+                materialReadinessProvider ?? new NoopSchedulingMaterialReadinessProvider()),
+            new FiniteCapacityScheduler());
     }
 
     private static ServiceProvider CreateInMemoryProvider()
@@ -815,7 +946,8 @@ public sealed class SchedulingEndpointContractTests
             ],
             UnscheduledOperations: unscheduledOperations,
             ChangeSummary: [],
-            GanttItems: [])));
+            GanttItems: [])),
+            SchedulingPersistenceTestData.CurrentAvailableTrace);
     }
 
     private static HttpRequestMessage JsonRequest<T>(HttpMethod method, string requestUri, T body)
@@ -949,6 +1081,14 @@ public sealed class SchedulingEndpointContractTests
         public Task<SchedulingProblemContract> ApplyAsync(
             SchedulingProblemContract problem,
             CancellationToken cancellationToken) => Task.FromResult(problem);
+    }
+
+    private sealed class FixedSchedulingOperationOverrideOverlay(SchedulingProblemContract result)
+        : ISchedulingOperationOverrideOverlay
+    {
+        public Task<SchedulingProblemContract> ApplyAsync(
+            SchedulingProblemContract problem,
+            CancellationToken cancellationToken) => Task.FromResult(result);
     }
 
     private sealed class SchedulingLiveHttpTestFactory : WebApplicationFactory<Program>

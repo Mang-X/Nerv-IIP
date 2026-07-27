@@ -1173,6 +1173,7 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
     unscheduledOperations?: Array<NervIipContractsSchedulingUnscheduledOperationContract>;
     changeSummary?: Array<NervIipContractsSchedulingScheduleChangeContract>;
     ganttItems?: Array<NervIipContractsSchedulingGanttScheduleItemContract>;
+    provenance?: NervIipContractsSchedulingSchedulePlanProvenanceContract | null;
 };
 
 export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released' | 'superseded' | 'revoked';
@@ -1255,6 +1256,26 @@ export type NervIipContractsSchedulingGanttScheduleItemContract = {
     status?: NervIipContractsSchedulingSchedulePlanStatusContract;
     hasConflict?: boolean;
     conflictReasonCode?: NervIipContractsSchedulingScheduleConflictReasonCodeContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulePlanProvenanceContract = {
+    engineId?: string;
+    ruleProviderId?: string;
+    ruleProfileId?: string;
+    ruleProfileVersion?: string;
+    engineInputFingerprint?: string | null;
+    traceSchemaVersion?: number;
+    replayStatus?: string;
+    constraintSources?: Array<NervIipContractsSchedulingSchedulePlanConstraintSourceContract>;
+};
+
+export type NervIipContractsSchedulingSchedulePlanConstraintSourceContract = {
+    sourceId?: string;
+    sourceVersion?: string;
+    outcome?: string;
+    factCount?: number;
+    factsFingerprint?: string;
+    reasonCodes?: Array<string>;
 };
 
 export type NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest = {

@@ -14,7 +14,14 @@ public sealed class SchedulePlanEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.PlanId).HasColumnName("plan_id").HasMaxLength(96).IsRequired().HasComment("Public schedule plan id.");
         builder.Property(x => x.ProblemId).HasColumnName("problem_id").HasMaxLength(96).IsRequired().HasComment("Public scheduling problem id used to generate this plan.");
         builder.Property(x => x.ProblemFingerprint).HasColumnName("problem_fingerprint").HasMaxLength(128).IsRequired().HasComment("Deterministic fingerprint of the scheduling problem input.");
-        builder.Property(x => x.AlgorithmVersion).HasColumnName("algorithm_version").HasMaxLength(64).IsRequired().HasComment("APS lite algorithm version used to generate the plan.");
+        builder.Property(x => x.AlgorithmVersion).HasColumnName("algorithm_version").HasMaxLength(64).IsRequired().HasComment("Scheduling engine version used to generate the plan; this remains the sole engine version column.");
+        builder.Property(x => x.EngineId).HasColumnName("engine_id").HasMaxLength(64).IsRequired().HasComment("Stable scheduling engine adapter identifier.");
+        builder.Property(x => x.RuleProviderId).HasColumnName("rule_provider_id").HasMaxLength(96).IsRequired().HasComment("Stable scheduling rule provider identifier.");
+        builder.Property(x => x.RuleProfileId).HasColumnName("rule_profile_id").HasMaxLength(96).IsRequired().HasComment("Stable rule profile identifier applied before scheduling.");
+        builder.Property(x => x.RuleProfileVersion).HasColumnName("rule_profile_version").HasMaxLength(64).IsRequired().HasComment("Version of the applied rule profile.");
+        builder.Property(x => x.ConstraintSourcesJson).HasColumnName("constraint_sources_json").HasColumnType("jsonb").IsRequired().HasComment("Versioned deterministic JSON constraint source summaries produced by Scheduling and consumed by replay diagnostics; additive fields are backward compatible.");
+        builder.Property(x => x.TraceSchemaVersion).HasColumnName("trace_schema_version").IsRequired().HasComment("Schema version for persisted scheduling execution provenance.");
+        builder.Property(x => x.ReplayStatus).HasColumnName("replay_status").HasMaxLength(32).IsRequired().HasComment("Replay availability status; legacy-unavailable explicitly marks plans without exact historical engine input.");
         builder.Property(x => x.ContractVersion).HasColumnName("contract_version").HasComment("Schedule plan contract version.");
         builder.Property(x => x.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(32).HasComment("Persisted plan lifecycle status.");
         builder.Property(x => x.GeneratedAtUtc).HasColumnName("generated_at_utc").HasComment("UTC timestamp when the plan was generated.");

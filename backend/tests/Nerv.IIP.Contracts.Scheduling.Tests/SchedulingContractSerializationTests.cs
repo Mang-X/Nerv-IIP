@@ -55,6 +55,52 @@ public class SchedulingContractSerializationTests
     }
 
     [Fact]
+    public void Schedule_plan_contract_exposes_optional_trailing_provenance()
+    {
+        var provenance = typeof(SchedulePlanContract).GetProperty("Provenance");
+
+        Assert.NotNull(provenance);
+        Assert.Equal("SchedulePlanProvenanceContract", provenance!.PropertyType.Name);
+    }
+
+    [Fact]
+    public void Schedule_plan_provenance_uses_camel_case_round_trips_and_has_no_engine_version_alias()
+    {
+        var plan = SchedulingContractSamples.CreateExpectedShockAbsorberPlan() with
+        {
+            Provenance = new SchedulePlanProvenanceContract(
+                EngineId: "finite-capacity",
+                RuleProviderId: "built-in",
+                RuleProfileId: "adr-0014-default",
+                RuleProfileVersion: "v1",
+                EngineInputFingerprint: "input-fingerprint-001",
+                TraceSchemaVersion: 1,
+                ReplayStatus: "available",
+                ConstraintSources:
+                [
+                    new SchedulePlanConstraintSourceContract(
+                        SourceId: "material-readiness",
+                        SourceVersion: "v1",
+                        Outcome: "noData",
+                        FactCount: 0,
+                        FactsFingerprint: "facts-fingerprint-001",
+                        ReasonCodes: ["no-data"])
+                ])
+        };
+
+        var json = JsonSerializer.Serialize(plan, SchedulingJson.Options);
+        var roundTrip = JsonSerializer.Deserialize<SchedulePlanContract>(json, SchedulingJson.Options);
+
+        Assert.NotNull(roundTrip?.Provenance);
+        Assert.Equivalent(plan.Provenance, roundTrip.Provenance, strict: true);
+        Assert.Contains("\"algorithmVersion\":\"aps-lite-v1\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"engineId\":\"finite-capacity\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"ruleProviderId\":\"built-in\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"constraintSources\":[", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"engineVersion\"", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Schedule_plan_invalidated_event_round_trips_reason_resources_and_operations()
     {
         var integrationEvent = new SchedulePlanInvalidatedIntegrationEvent(

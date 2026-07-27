@@ -43,6 +43,16 @@ ADR 0014 已冻结 APS lite 的 P0 边界：`BusinessScheduling` 拥有排程事
 14. **性能预算以 #1050 基准为基线**（2026-07-22 证据：stress 档 1000 单/4000 工序/24 资源全量重算中位约 36 秒，见 `docs/architecture/implementation-readiness.md` MAN-581 节）。L3 局部重排必须满足首版量化门槛：**同一基准脚本、同一档位下，受影响子集重排的中位耗时 ≤ 对等全量重算中位耗时的 50%**（该阈值随基准扩展局部重排档位——受影响子集规模 × 候选数——时可修订，但修订须更新本条）；无基准证据的"局部"实现不接受。
 15. 新增 HTTP 端点全部遵守 facade coverage 两跳 DoD（`exposed`/`deferred`/`internal` 声明 + 门禁）；跨服务共享的新契约放 `Nerv.IIP.Contracts.Scheduling`，enum 维持 camel-case string（ADR 0014 §11/§16）。
 
+## Implementation Evidence（MAN-422，2026-07-27）
+
+1. A 组抽象已经落地在 `BusinessScheduling`：`ISchedulingRuleProvider`、`ISchedulingConstraintProvider` 和 `ISchedulingEngine` 由 `SchedulingPlanGenerator` 依次组合；默认实现是 `DefaultSchedulingRuleProvider`、`DefaultSchedulingConstraintProvider` 与 `FiniteCapacityScheduler`。默认 engine identity 固定为 `finite-capacity / aps-lite-v1`，没有引入 solver、优化器或 Connector Host 依赖。
+2. 新生成方案在同一持久化边界记录 engine、rule profile 与 constraint source provenance。`algorithm_version` 继续是唯一 engine version 列；`schedule_plans` 新增 `engine_id`、`rule_provider_id`、`rule_profile_id`、`rule_profile_version`、`constraint_sources_json`、`trace_schema_version` 和 `replay_status`。约束摘要只保存稳定 source/version、outcome、fact count、fact fingerprint 与 reason codes，不复制上游完整事实。
+3. `schedule_problems.problem_json / problem_fingerprint` 继续保存 post-override base input，维持既有 problem 幂等与修订语义；`engine_input_json / engine_input_fingerprint` 保存 provider/constraint 处理后实际送入 engine 的 normalized effective input。精确回放从该 effective input 按持久化 `engine_id + algorithm_version` 选择已注册 engine，并比较 canonical plan digest；不会重新查询当前 provider，也不会把“当前事实重算”冒充历史回放。
+4. 迁移 `20260726163627_AddSchedulingEngineProviderTrace` 落地上述列。历史方案只回填可知的默认 engine/rule identity；其 constraint trace 与 exact engine input 不可恢复，明确返回 `legacy-unavailable`，不伪造可回放证据。
+5. 现有 `SchedulePlan` response schema 以 nullable `provenance` 扩展返回上述证据；没有新增 route，既有 exposed BusinessGateway facade 继续沿用。公开契约、OpenAPI snapshot 与 generated client 的机械刷新由同一 MAN-422 后续任务完成，本实现证据不改变 facade declaration。
+6. MES 的 canonical APS 链只通过 `Nerv.IIP.Contracts.Scheduling` 消费 released/revoked plan events，并由程序集边界测试冻结：MES Web 可以引用公共 Scheduling contract，不得引用 `Nerv.IIP.Business.Scheduling.Web`、`.Domain` 或 `.Infrastructure`，也不得依赖 provider、engine 或 solver implementation assembly。
+7. MES-local `RuleScheduler` 尚未删除：`POST /api/business/v1/mes/schedules/run` 及其现有 exposed facade/UI 仍在运行，急单、MES plan-to-work-order/workbench conversion、Planning suggestion consumption 与 Maintenance availability handlers 仍有调用。它是 documented deprecated exception，只允许维持现状、禁止新增依赖；API/UI/caller/table 的迁移与删除必须由独立 follow-up 完成。本次不添加 `Obsolete`，避免在 warnings-as-errors 下把“已记录遗留”误报成“已迁移完成”。
+
 ## Rationale
 
 1. #763 的核心洞察成立：把规则来源和排产引擎拆开，未来换引擎（solver）不动规则，改规则不动引擎；不拆则每次演进都是全域改动。
@@ -56,6 +66,6 @@ ADR 0014 已冻结 APS lite 的 P0 边界：`BusinessScheduling` 拥有排程事
 1. #1058 实现范围收敛为本 ADR §7–§9（引擎核心 + 影响分析 + 候选生成 + KPI 对比），其 issue 中"输入事件"清单降级为 §10 流程层的偏差投影来源，不在引擎内直接消费集成事件。
 2. #1051 实现范围收敛为 §10 流程层，依赖 §7 影响分析；可先交付影响分析与提醒段。
 3. #1052 保持 backlog，启动前置条件为 L3 交付且基准扩展完成。
-4. #763 的**决策部分由本 ADR 承接**（issue 本身保持开启，直至 §2 抽象 + §4 追溯字段的代码落地 issue 拆出并交付后再关闭）。
+4. #763 的**决策部分由本 ADR 承接**；§2 抽象与 §4 追溯字段已由 MAN-422 落地，tracker 的关闭状态与后续治理仍以对应 issue 为准，不由本文档代替。
 5. `docs/architecture/business-platform-domain-architecture.md` 与 Scheduling 相关模块文档需在首个实现 PR 中补引本 ADR；MES `RuleScheduler` 的 deprecated 状态写入 MES 模块文档。
 6. 后续引入任何 solver、多目标优化、自动发布或仿真能力，必须新增 ADR 并重审 §9 的"计划员确认"门槛。

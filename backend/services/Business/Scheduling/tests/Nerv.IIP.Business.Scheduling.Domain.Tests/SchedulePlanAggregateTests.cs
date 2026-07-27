@@ -6,6 +6,77 @@ namespace Nerv.IIP.Business.Scheduling.Domain.Tests;
 public sealed class SchedulePlanAggregateTests
 {
     [Fact]
+    public void New_problem_snapshot_rejects_missing_exact_engine_input()
+    {
+        Assert.Throws<ArgumentException>(() => new ScheduleProblemSnapshot(
+            problemId: "problem-001",
+            contractVersion: 1,
+            organizationId: "org-001",
+            environmentId: "env-dev",
+            problemFingerprint: "base-fingerprint",
+            problemJson: """{"problemId":"base"}""",
+            horizonStartUtc: new DateTimeOffset(2026, 7, 27, 0, 0, 0, TimeSpan.Zero),
+            horizonEndUtc: new DateTimeOffset(2026, 7, 28, 0, 0, 0, TimeSpan.Zero),
+            capturedAtUtc: new DateTimeOffset(2026, 7, 26, 23, 0, 0, TimeSpan.Zero),
+            engineInputFingerprint: null!,
+            engineInputJson: null!));
+    }
+
+    [Fact]
+    public void New_problem_snapshot_constructor_requires_explicit_engine_input_arguments()
+    {
+        var constructor = Assert.Single(typeof(ScheduleProblemSnapshot).GetConstructors());
+        var engineInputParameters = constructor.GetParameters()
+            .Where(parameter => parameter.Name is "engineInputFingerprint" or "engineInputJson")
+            .ToArray();
+
+        Assert.Equal(2, engineInputParameters.Length);
+        Assert.All(engineInputParameters, parameter => Assert.False(parameter.HasDefaultValue));
+    }
+
+    [Fact]
+    public void Generated_plan_factory_requires_explicit_execution_trace()
+    {
+        var factories = typeof(SchedulePlan).GetMethods(
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(method => method.Name == nameof(SchedulePlan.FromGeneratedPlan))
+            .ToArray();
+
+        var factory = Assert.Single(factories);
+        Assert.Equal(
+            typeof(SchedulePlanExecutionTraceSnapshot),
+            factory.GetParameters().Last().ParameterType);
+    }
+
+    [Fact]
+    public void Generated_plan_replacement_requires_explicit_matching_trace()
+    {
+        var replacements = typeof(SchedulePlan).GetMethods(
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+            .Where(method => method.Name == nameof(SchedulePlan.ReplaceGeneratedPlan))
+            .ToArray();
+
+        var replacement = Assert.Single(replacements);
+        Assert.Equal(
+            typeof(SchedulePlanExecutionTraceSnapshot),
+            replacement.GetParameters().Last().ParameterType);
+    }
+
+    [Fact]
+    public void Execution_trace_requires_explicit_engine_version_for_invariant_validation()
+    {
+        var engineVersionProperty = typeof(SchedulePlanExecutionTraceSnapshot)
+            .GetProperty("EngineVersion");
+
+        Assert.NotNull(engineVersionProperty);
+        var constructor = Assert.Single(typeof(SchedulePlanExecutionTraceSnapshot).GetConstructors());
+        var engineVersionParameter = Assert.Single(
+            constructor.GetParameters(),
+            parameter => parameter.Name == "EngineVersion");
+        Assert.False(engineVersionParameter.HasDefaultValue);
+    }
+
+    [Fact]
     public void Release_RequiresExplicitReleaseRevision()
     {
         var releaseRevision = typeof(SchedulePlan)
@@ -25,10 +96,58 @@ public sealed class SchedulePlanAggregateTests
         Assert.Equal("problem-001", plan.ProblemId);
         Assert.Equal("fingerprint-001", plan.ProblemFingerprint);
         Assert.Equal("aps-lite-v1", plan.AlgorithmVersion);
+        Assert.Equal("finite-capacity", plan.EngineId);
+        Assert.Equal("built-in", plan.RuleProviderId);
+        Assert.Equal("adr-0014-default", plan.RuleProfileId);
+        Assert.Equal("v1", plan.RuleProfileVersion);
+        Assert.Equal(1, plan.TraceSchemaVersion);
+        Assert.Equal(SchedulingReplayStatuses.Available, plan.ReplayStatus);
         Assert.Equal(1, plan.ContractVersion);
         Assert.Equal(SchedulePlanLifecycleStatus.Generated, plan.Status);
         Assert.Contains(plan.GetDomainEvents(), x => x is SchedulePlanGeneratedDomainEvent);
         Assert.Contains(plan.GetDomainEvents(), x => x is ScheduleConflictDetectedDomainEvent);
+    }
+
+    [Theory]
+    [InlineData("", "built-in", "adr-0014-default", "v1")]
+    [InlineData("finite-capacity", "", "adr-0014-default", "v1")]
+    [InlineData("finite-capacity", "built-in", "", "v1")]
+    [InlineData("finite-capacity", "built-in", "adr-0014-default", "")]
+    public void Generated_plan_requires_stable_engine_and_rule_trace_identifiers(
+        string engineId,
+        string ruleProviderId,
+        string ruleProfileId,
+        string ruleProfileVersion)
+    {
+        var trace = CreateTrace() with
+        {
+            EngineId = engineId,
+            RuleProviderId = ruleProviderId,
+            RuleProfileId = ruleProfileId,
+            RuleProfileVersion = ruleProfileVersion,
+        };
+
+        Assert.Throws<ArgumentException>(() => SchedulePlan.FromGeneratedPlan(
+            "org-001",
+            "env-dev",
+            CreateContract("plan-001", "fingerprint-001"),
+            trace));
+    }
+
+    [Fact]
+    public void Generated_plan_rejects_engine_version_that_does_not_match_snapshot()
+    {
+        var trace = CreateTrace() with { EngineVersion = "engine-trace-v2" };
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            SchedulePlan.FromGeneratedPlan(
+                "org-001",
+                "env-dev",
+                CreateContract("plan-001", "fingerprint-001"),
+                trace));
+
+        Assert.Contains("AlgorithmVersion", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("EngineVersion", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -104,7 +223,9 @@ public sealed class SchedulePlanAggregateTests
         plan.Release(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero), 1);
 
         Assert.Throws<InvalidOperationException>(() => plan.AddAssignment(CreateAssignment("assign-002", "op-002")));
-        Assert.Throws<InvalidOperationException>(() => plan.ReplaceGeneratedPlan(CreateContract("plan-001", "fingerprint-002")));
+        Assert.Throws<InvalidOperationException>(() => plan.ReplaceGeneratedPlan(
+            CreateContract("plan-001", "fingerprint-002"),
+            CreateTrace()));
     }
 
     [Fact]
@@ -145,8 +266,17 @@ public sealed class SchedulePlanAggregateTests
                     Message: "material unavailable")
             ]
         };
+        var replacementTrace = new SchedulePlanExecutionTraceSnapshot(
+            EngineId: "solver-adapter",
+            EngineVersion: "aps-lite-v1",
+            RuleProviderId: "plant-rules",
+            RuleProfileId: "weekday-profile",
+            RuleProfileVersion: "v7",
+            ConstraintSourcesJson: """{"schemaVersion":1,"sources":[]}""",
+            TraceSchemaVersion: 1,
+            ReplayStatus: SchedulingReplayStatuses.Available);
 
-        plan.ReplaceGeneratedPlan(replacement);
+        plan.ReplaceGeneratedPlan(replacement, replacementTrace);
 
         Assert.DoesNotContain(plan.Assignments, x => x.AssignmentId == "assign-001");
         Assert.Contains(plan.Assignments, x => x.AssignmentId == "assign-002" && x.OperationId == "op-002");
@@ -156,6 +286,12 @@ public sealed class SchedulePlanAggregateTests
         Assert.Contains(plan.Conflicts, x => x.ConflictPublicId == "conflict-002" && x.ReasonCode == ScheduleConflictReasonCode.Material);
         Assert.DoesNotContain(plan.UnscheduledOperations, x => x.WorkOrderId == "wo-002");
         Assert.Contains(plan.UnscheduledOperations, x => x.WorkOrderId == "wo-003" && x.OperationId == "op-030");
+        Assert.Equal("solver-adapter", plan.EngineId);
+        Assert.Equal("aps-lite-v1", plan.AlgorithmVersion);
+        Assert.Equal("plant-rules", plan.RuleProviderId);
+        Assert.Equal("weekday-profile", plan.RuleProfileId);
+        Assert.Equal("v7", plan.RuleProfileVersion);
+        Assert.Equal("""{"schemaVersion":1,"sources":[]}""", plan.ConstraintSourcesJson);
         Assert.Contains(plan.GetDomainEvents(), x => x is SchedulePlanGeneratedDomainEvent);
         Assert.Contains(plan.GetDomainEvents(), x => x is ScheduleConflictDetectedDomainEvent);
     }
@@ -169,7 +305,7 @@ public sealed class SchedulePlanAggregateTests
             Status = SchedulePlanInputStatus.Released,
         };
 
-        Assert.Throws<InvalidOperationException>(() => plan.ReplaceGeneratedPlan(replacement));
+        Assert.Throws<InvalidOperationException>(() => plan.ReplaceGeneratedPlan(replacement, CreateTrace()));
     }
 
     [Fact]
@@ -178,8 +314,34 @@ public sealed class SchedulePlanAggregateTests
         var plan = CreatePlan();
         var replacement = CreateContract("plan-other", "fingerprint-002");
 
-        Assert.Throws<InvalidOperationException>(() => plan.ReplaceGeneratedPlan(replacement));
+        Assert.Throws<InvalidOperationException>(() => plan.ReplaceGeneratedPlan(replacement, CreateTrace()));
         Assert.Equal("plan-001", plan.PlanId);
+    }
+
+    [Fact]
+    public void Replace_generated_plan_rejects_engine_version_mismatch_without_partial_mutation()
+    {
+        var plan = CreatePlan();
+        var replacement = CreateContract("plan-001", "fingerprint-replacement") with
+        {
+            ProblemId = "problem-replacement",
+            AlgorithmVersion = "engine-output-v2",
+        };
+        var replacementTrace = CreateTrace() with
+        {
+            EngineId = "replacement-engine",
+            EngineVersion = "engine-trace-v1",
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            plan.ReplaceGeneratedPlan(replacement, replacementTrace));
+
+        Assert.Contains("AlgorithmVersion", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("EngineVersion", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("problem-001", plan.ProblemId);
+        Assert.Equal("fingerprint-001", plan.ProblemFingerprint);
+        Assert.Equal("aps-lite-v1", plan.AlgorithmVersion);
+        Assert.Equal("finite-capacity", plan.EngineId);
     }
 
     private static SchedulePlan CreatePlan()
@@ -187,7 +349,21 @@ public sealed class SchedulePlanAggregateTests
         return SchedulePlan.FromGeneratedPlan(
             organizationId: "org-001",
             environmentId: "env-dev",
-            plan: CreateContract("plan-001", "fingerprint-001"));
+            plan: CreateContract("plan-001", "fingerprint-001"),
+            trace: CreateTrace());
+    }
+
+    private static SchedulePlanExecutionTraceSnapshot CreateTrace()
+    {
+        return new SchedulePlanExecutionTraceSnapshot(
+            EngineId: "finite-capacity",
+            EngineVersion: "aps-lite-v1",
+            RuleProviderId: "built-in",
+            RuleProfileId: "adr-0014-default",
+            RuleProfileVersion: "v1",
+            ConstraintSourcesJson: """{"schemaVersion":1,"sources":[]}""",
+            TraceSchemaVersion: 1,
+            ReplayStatus: SchedulingReplayStatuses.Available);
     }
 
     private static GeneratedSchedulePlanSnapshot CreateContract(string planId, string fingerprint)

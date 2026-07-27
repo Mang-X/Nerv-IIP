@@ -125,7 +125,26 @@ public sealed record SchedulePlanContract(
     IReadOnlyCollection<ScheduleConflictContract> Conflicts,
     IReadOnlyCollection<UnscheduledOperationContract> UnscheduledOperations,
     IReadOnlyCollection<ScheduleChangeContract> ChangeSummary,
-    IReadOnlyCollection<GanttScheduleItemContract> GanttItems);
+    IReadOnlyCollection<GanttScheduleItemContract> GanttItems,
+    SchedulePlanProvenanceContract? Provenance = null);
+
+public sealed record SchedulePlanProvenanceContract(
+    string EngineId,
+    string RuleProviderId,
+    string RuleProfileId,
+    string RuleProfileVersion,
+    string? EngineInputFingerprint,
+    int TraceSchemaVersion,
+    string ReplayStatus,
+    IReadOnlyCollection<SchedulePlanConstraintSourceContract> ConstraintSources);
+
+public sealed record SchedulePlanConstraintSourceContract(
+    string SourceId,
+    string SourceVersion,
+    string Outcome,
+    int FactCount,
+    string FactsFingerprint,
+    IReadOnlyCollection<string> ReasonCodes);
 
 public sealed record SchedulePlanImpactContract(
     bool IsInvalidated,

@@ -15,6 +15,8 @@ public sealed class ScheduleProblemSnapshotEntityTypeConfiguration : IEntityType
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").HasMaxLength(64).IsRequired().HasComment("Business environment id.");
         builder.Property(x => x.ProblemFingerprint).HasColumnName("problem_fingerprint").HasMaxLength(128).IsRequired().HasComment("Deterministic fingerprint of the scheduling problem input.");
         builder.Property(x => x.ProblemJson).HasColumnName("problem_json").HasColumnType("jsonb").IsRequired().HasComment("Normalized scheduling problem payload used to validate later operation locks and overrides.");
+        builder.Property(x => x.EngineInputFingerprint).HasColumnName("engine_input_fingerprint").HasMaxLength(128).HasComment("Deterministic fingerprint of the exact effective scheduling engine input; null when unavailable for legacy snapshots.");
+        builder.Property(x => x.EngineInputJson).HasColumnName("engine_input_json").HasColumnType("jsonb").HasComment("Versioned normalized JSON effective engine input produced by Scheduling and consumed for exact replay; null for legacy snapshots and additive fields are backward compatible.");
         builder.Property(x => x.HorizonStartUtc).HasColumnName("horizon_start_utc").HasComment("Scheduling horizon start timestamp in UTC.");
         builder.Property(x => x.HorizonEndUtc).HasColumnName("horizon_end_utc").HasComment("Scheduling horizon end timestamp in UTC.");
         builder.Property(x => x.CapturedAtUtc).HasColumnName("captured_at_utc").HasComment("UTC timestamp when the problem snapshot was captured.");

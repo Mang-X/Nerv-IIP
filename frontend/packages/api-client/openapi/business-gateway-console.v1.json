@@ -28684,6 +28684,14 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPContractsSchedulingGanttScheduleItemContract"
             }
+          },
+          "provenance": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanProvenanceContract"
+              }
+            ]
           }
         }
       },
@@ -28963,6 +28971,69 @@
                 "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleConflictReasonCodeContract"
               }
             ]
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanProvenanceContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "engineId": {
+            "type": "string"
+          },
+          "ruleProviderId": {
+            "type": "string"
+          },
+          "ruleProfileId": {
+            "type": "string"
+          },
+          "ruleProfileVersion": {
+            "type": "string"
+          },
+          "engineInputFingerprint": {
+            "type": "string",
+            "nullable": true
+          },
+          "traceSchemaVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "replayStatus": {
+            "type": "string"
+          },
+          "constraintSources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanConstraintSourceContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanConstraintSourceContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sourceId": {
+            "type": "string"
+          },
+          "sourceVersion": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "factCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "factsFingerprint": {
+            "type": "string"
+          },
+          "reasonCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
