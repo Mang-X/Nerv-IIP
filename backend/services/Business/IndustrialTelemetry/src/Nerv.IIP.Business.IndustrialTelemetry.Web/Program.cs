@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Errors;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Historian;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Seed;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
@@ -201,6 +202,7 @@ try
 
     app.UseNervIipRequestLocalization();
     app.UseKnownExceptionHandler(_ => new() { KnownExceptionStatusCode = System.Net.HttpStatusCode.BadRequest });
+    app.UseMiddleware<IndustrialTelemetryLifecycleConflictMiddleware>();
     app.UseStaticFiles();
     app.UseRouting();
     app.UseAuthentication();
