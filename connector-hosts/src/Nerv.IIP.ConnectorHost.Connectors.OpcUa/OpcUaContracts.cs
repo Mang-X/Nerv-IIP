@@ -55,26 +55,6 @@ public sealed record OpcUaWriteRequest(string NodeId, string Value);
 
 public sealed record OpcUaWriteReceipt(string Status, string ReceiptCode, string Message);
 
-public sealed record RecordIndustrialTelemetrySampleRequest(
-    string OrganizationId,
-    string EnvironmentId,
-    string DeviceAssetId,
-    string TagKey,
-    DateTimeOffset BucketStartUtc,
-    DateTimeOffset BucketEndUtc,
-    int SampleCount,
-    decimal MinValue,
-    decimal MaxValue,
-    decimal AverageValue,
-    string SourceSequence,
-    string? SourceSystem,
-    string? SourceConnector,
-    string? DeviceState = null,
-    DateTimeOffset? StateOccurredAtUtc = null,
-    decimal? FirstValue = null,
-    decimal? LastValue = null,
-    string? CollectionConnectorId = null);
-
 public sealed record OpcUaConnectorState(
     string ReportedStatus,
     string HealthStatus,
@@ -132,11 +112,6 @@ public interface IOpcUaClient
 public interface IOpcUaCredentialResolver
 {
     ValueTask<OpcUaUserCredential?> ResolveAsync(string? credentialReference, CancellationToken cancellationToken);
-}
-
-public interface IIndustrialTelemetrySamplesClient
-{
-    Task RecordSampleAsync(RecordIndustrialTelemetrySampleRequest request, CancellationToken cancellationToken);
 }
 
 public sealed class OpcUaConnectionLostException(string message, Exception? innerException = null)

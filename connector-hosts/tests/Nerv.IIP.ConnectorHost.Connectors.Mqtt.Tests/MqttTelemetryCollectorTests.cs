@@ -1,5 +1,5 @@
+using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 using Nerv.IIP.ConnectorHost.Connectors.Mqtt;
-using Nerv.IIP.ConnectorHost.Connectors.OpcUa;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.Mqtt.Tests;
 
