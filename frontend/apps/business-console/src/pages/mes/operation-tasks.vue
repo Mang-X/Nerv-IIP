@@ -16,10 +16,20 @@ import {
   useMesCurrentOperationSops,
   useMesOperationTasks,
 } from '@/composables/useBusinessMes'
+import { scheduleInvalidationHint } from '@/composables/useScheduleInvalidation'
+import type { MesLifecycleActionKey } from '@/composables/mes/useMesTaskSemantics'
 import {
-  resolveScheduleStatus,
-  scheduleInvalidationHint,
-} from '@/composables/useScheduleInvalidation'
+  isScheduleInvalidatedTask,
+  resolveDispatchAffordance,
+  resolveDispatchState,
+  resolveExecutionState,
+  resolveLifecycleActions,
+  resolveScheduleState,
+} from '@/composables/mes/useMesTaskSemantics'
+import type { DispatchAssignTarget } from '@/components/mes/DispatchAssignDialog.vue'
+import DispatchAssignDialog from '@/components/mes/DispatchAssignDialog.vue'
+import { useMesDispatchTasks } from '@/composables/useBusinessMes'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -39,12 +49,17 @@ import {
 } from '@nerv-iip/ui'
 import { watchDebounced } from '@vueuse/core'
 import {
+  CheckCheckIcon,
   ClipboardCheckIcon,
   EyeIcon,
   FileTextIcon,
+  PauseIcon,
+  PlayIcon,
   RefreshCwIcon,
+  RotateCwIcon,
   ShieldCheckIcon,
   TriangleAlertIcon,
+  UserCheckIcon,
   WrenchIcon,
 } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
@@ -62,16 +77,22 @@ type Row = BusinessConsoleMesOperationTaskRow
 type CurrentSop = { fileId?: string | null; fileName?: string | null }
 
 const {
+  completeOperationTask,
   filters,
   operationTasks,
   operationTasksError,
   operationTasksPending,
   operationTasksTotal,
+  pauseOperationTask,
   refreshOperationTasks,
+  resumeOperationTask,
+  startOperationTask,
 } = useMesOperationTasks()
+// 派工在本页行内直接完成：一线看着工序表就能把没人的活派出去，不必先跳派工看板。
+const { assignDispatchTask, assignDispatchTaskPending } = useMesDispatchTasks()
 
 const router = useRouter()
-const { resolveWorkCenter } = useMesDisplayNames()
+const { resolveShiftLabel, resolveWorkCenter } = useMesDisplayNames({ shifts: true })
 const { resources: workCenterResources } = useBusinessMasterDataResources('work-center')
 const { resources: shiftResources } = useBusinessMasterDataResources('shift')
 
@@ -156,8 +177,8 @@ const columns: NvDataTableColumn<Row>[] = [
     accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无编号',
   },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
-  { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'scheduleStatus', header: '排程状态', width: 'w-28' },
+  { key: 'status', header: '执行状态', width: 'w-24' },
+  { key: 'scheduleStatus', header: '排程', width: 'w-40' },
   {
     key: 'operationSequence',
     header: '序号',
@@ -176,13 +197,8 @@ const columns: NvDataTableColumn<Row>[] = [
     header: '设备',
     accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定',
   },
-  { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
-  {
-    key: 'assignedUserName',
-    header: '受派工人',
-    width: 'w-32',
-    accessor: (r) => r.assignedUserName ?? (r.assignedUserId ? '未知工人' : '未派工'),
-  },
+  { key: 'shiftId', header: '班次', width: 'w-28', accessor: (r) => resolveShiftLabel(r.shiftId) },
+  { key: 'assignedUserName', header: '派工', width: 'w-40' },
   {
     key: 'plannedStartUtc',
     header: '计划开始',
@@ -269,8 +285,57 @@ function openReport(task: Row) {
   reportOpen.value = true
 }
 // 可开工 / 执行中的工序才是一线现在能动手报工的；据此把行尾报工入口直接显出来，不必再翻下拉。
+// 状态口径统一走执行状态语义，不再硬编码后端大小写（运行时是 PascalCase，TS 声明是 camelCase）。
 function isReportableStatus(status?: string | null) {
-  return ['Ready', 'Running', 'Started', 'InProgress'].includes(status ?? '')
+  return ['ready', 'running'].includes(resolveExecutionState(status).key)
+}
+
+// ── 工序生命周期动作（开工 / 暂停 / 恢复 / 完工）──────────────────
+const lifecyclePending = ref<string | null>(null)
+const LIFECYCLE_RUNNERS: Record<
+  MesLifecycleActionKey,
+  (id: string, context: { organizationId: string; environmentId: string }, body: { idempotencyKey: string }) => Promise<unknown>
+> = {
+  start: startOperationTask,
+  pause: pauseOperationTask,
+  resume: resumeOperationTask,
+  complete: completeOperationTask,
+}
+const LIFECYCLE_DONE_MESSAGES: Record<MesLifecycleActionKey, string> = {
+  start: '已开工。',
+  pause: '已暂停，恢复后可继续加工。',
+  resume: '已恢复加工。',
+  complete: '该工序已完工。',
+}
+
+async function runLifecycleAction(task: Row, action: MesLifecycleActionKey) {
+  const operationTaskId = task.operationTaskId
+  if (!operationTaskId) return
+  lifecyclePending.value = operationTaskId
+  try {
+    await LIFECYCLE_RUNNERS[action](
+      operationTaskId,
+      { organizationId: filters.organizationId, environmentId: filters.environmentId },
+      {
+        idempotencyKey: `op-${action}-${operationTaskId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      },
+    )
+    notifySuccess(LIFECYCLE_DONE_MESSAGES[action])
+    void refreshOperationTasks()
+  } catch (error) {
+    notifyError(error)
+  } finally {
+    lifecyclePending.value = null
+  }
+}
+
+// ── 行内派工 ────────────────────────────────────────────────────
+const assignOpen = ref(false)
+const assignTarget = ref<DispatchAssignTarget | null>(null)
+function openAssign(task: Row) {
+  if (!resolveDispatchAffordance(task).enabled) return
+  assignTarget.value = task
+  assignOpen.value = true
 }
 // 行尾是否直显「报工」按钮：状态能报工 且 工单/工序上下文齐全（跳转报工表单要带这两个 id）。
 function showReportButton(task: Row) {
@@ -443,20 +508,30 @@ function formatError(error: unknown) {
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-status="{ row }">
-        <NvStatusBadge :value="row.status" />
+        <NvStatusBadge
+          :label="resolveExecutionState(row.status).label"
+          :tone="resolveExecutionState(row.status).tone"
+        />
       </template>
       <template #cell-scheduleStatus="{ row }">
         <span
-          v-if="resolveScheduleStatus(row).key === 'invalidated'"
           class="inline-flex"
-          :title="scheduleInvalidationHint(row.scheduleInvalidationReasonCode)"
+          :title="
+            isScheduleInvalidatedTask(row.status)
+              ? scheduleInvalidationHint(row.scheduleInvalidationReasonCode)
+              : undefined
+          "
         >
-          <NvStatusBadge label="已失效" tone="warning" />
+          <NvStatusBadge
+            :label="resolveScheduleState(row).label"
+            :tone="resolveScheduleState(row).tone"
+          />
         </span>
+      </template>
+      <template #cell-assignedUserName="{ row }">
         <NvStatusBadge
-          v-else
-          :label="resolveScheduleStatus(row).label"
-          :tone="resolveScheduleStatus(row).tone"
+          :label="resolveDispatchState(row).label"
+          :tone="resolveDispatchState(row).tone"
         />
       </template>
       <template #cell-plannedStartUtc="{ row }">
@@ -493,6 +568,29 @@ function formatError(error: unknown) {
             报工
           </NvButton>
           <NvRowActions :label="`工序任务操作 工序 ${row.operationSequence ?? ''}`">
+            <!-- 状态流转：可用性对齐后端 OperationTask 状态机，禁用时给出为什么。 -->
+            <NvDropdownMenuItem
+              v-for="action in resolveLifecycleActions(row)"
+              :key="action.key"
+              :disabled="!action.enabled || lifecyclePending === row.operationTaskId"
+              :title="action.blockedReason"
+              @click="runLifecycleAction(row, action.key)"
+            >
+              <PlayIcon v-if="action.key === 'start'" aria-hidden="true" />
+              <PauseIcon v-else-if="action.key === 'pause'" aria-hidden="true" />
+              <RotateCwIcon v-else-if="action.key === 'resume'" aria-hidden="true" />
+              <CheckCheckIcon v-else aria-hidden="true" />
+              {{ action.label }}
+            </NvDropdownMenuItem>
+            <NvDropdownMenuSeparator />
+            <NvDropdownMenuItem
+              :disabled="!resolveDispatchAffordance(row).enabled"
+              :title="resolveDispatchAffordance(row).blockedReason"
+              @click="openAssign(row)"
+            >
+              <UserCheckIcon aria-hidden="true" />
+              {{ resolveDispatchAffordance(row).label }}
+            </NvDropdownMenuItem>
             <NvDropdownMenuItem :disabled="!canOpenSops(row)" @click="openSops(row)">
               <FileTextIcon aria-hidden="true" />
               {{ canOpenSops(row) ? '查看当前SOP' : '未绑定标准工序' }}
@@ -598,5 +696,20 @@ function formatError(error: unknown) {
     />
 
     <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
+
+    <DispatchAssignDialog
+      v-model:open="assignOpen"
+      :target="assignTarget"
+      :assign="
+        (operationTaskId, body) =>
+          assignDispatchTask(operationTaskId, {
+            organizationId: filters.organizationId,
+            environmentId: filters.environmentId,
+            ...body,
+          })
+      "
+      :pending="assignDispatchTaskPending"
+      @assigned="refreshOperationTasks"
+    />
   </BusinessLayout>
 </template>

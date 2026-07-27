@@ -169,3 +169,65 @@ export function resolveDispatchAffordance(row: MesOperationTaskLike): MesDispatc
 export function hasBlockingReasons(row: MesOperationTaskLike): boolean {
   return Boolean(row.blockingReasons?.length)
 }
+
+export type MesLifecycleActionKey = 'start' | 'pause' | 'resume' | 'complete'
+
+export interface MesLifecycleAction {
+  key: MesLifecycleActionKey
+  label: string
+  enabled: boolean
+  /** 不可用的原因；可用时为空。 */
+  blockedReason?: string
+  /** 需要二次确认（完工不可轻易回退）。 */
+  confirm?: boolean
+}
+
+/**
+ * 工序生命周期动作的可用性，严格对齐后端 OperationTask 聚合的状态机：
+ * start 仅 Queued → InProgress；pause 仅 InProgress → Paused；
+ * resume 仅 Paused → InProgress；complete 仅 InProgress → Completed。
+ * 前端按同一套规则禁用，避免点下去才被后端 409/400 顶回来。
+ */
+export function resolveLifecycleActions(row: MesOperationTaskLike): MesLifecycleAction[] {
+  const key = EXECUTION_BY_STATUS[normalize(row.status)]
+  const queued = key === 'queued' || key === 'ready'
+  const running = key === 'running'
+  const paused = key === 'paused'
+  const settled = key ? SETTLED_STATES.has(key) : false
+  const invalidated = key === 'scheduleInvalidated'
+
+  function reason(available: boolean, need: string): string | undefined {
+    if (available) return undefined
+    if (settled) return '该工序已结束。'
+    if (invalidated) return '排程已失效，等重新排程后再操作。'
+    return need
+  }
+
+  return [
+    {
+      key: 'start',
+      label: '开工',
+      enabled: queued,
+      blockedReason: reason(queued, '只有待开工的工序可以开工。'),
+    },
+    {
+      key: 'pause',
+      label: '暂停',
+      enabled: running,
+      blockedReason: reason(running, '只有加工中的工序可以暂停。'),
+    },
+    {
+      key: 'resume',
+      label: '恢复加工',
+      enabled: paused,
+      blockedReason: reason(paused, '只有已暂停的工序可以恢复。'),
+    },
+    {
+      key: 'complete',
+      label: '完工',
+      enabled: running,
+      blockedReason: reason(running, '先开工才能完工。'),
+      confirm: true,
+    },
+  ]
+}

@@ -40,8 +40,9 @@ vi.mock('vue-router', () => ({
 vi.mock('@/utils/notify', () => ({ notifySuccess: vi.fn(), notifyError: vi.fn() }))
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
-  useBusinessMasterDataResources: () => ({ resources: ref([]) }),
+  useBusinessMasterDataResources: () => ({ resources: ref([]), resourcesPending: ref(false) }),
   useBusinessSkus: () => ({ skus: ref([]) }),
+  useBusinessWorkers: () => ({ workers: ref([]), workersPending: ref(false), filters: reactive({}) }),
 }))
 
 vi.mock('@/composables/useBusinessMes', () => ({
@@ -103,6 +104,14 @@ vi.mock('@/composables/useBusinessMes', () => ({
     operationTasksPending: ref(false),
     operationTasksTotal: ref(1),
     refreshOperationTasks: vi.fn(),
+    startOperationTask: vi.fn(),
+    pauseOperationTask: vi.fn(),
+    resumeOperationTask: vi.fn(),
+    completeOperationTask: vi.fn(),
+  }),
+  useMesDispatchTasks: () => ({
+    assignDispatchTask: vi.fn(),
+    assignDispatchTaskPending: ref(false),
   }),
   useMesCurrentOperationSops: () => ({
     filters: {
@@ -199,6 +208,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
 }))
 
 const businessStubs = {
+  // 派工弹窗内部用 reka 的 DialogRoot/DialogTrigger（实体选择器），
+  // 与本文件的 UI passthrough stub 不兼容；本用例只看工序行的文案，整体桩掉。
+  DispatchAssignDialog: true,
   BusinessActionSheet: {
     props: ['open', 'title', 'description'],
     template: '<section><h2>{{ title }}</h2><p>{{ description }}</p><slot /></section>',

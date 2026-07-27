@@ -1,12 +1,20 @@
 import { describe, expect, it } from 'vitest'
+import type { MesLifecycleActionKey } from './useMesTaskSemantics'
 import {
   hasBlockingReasons,
   isSettledTask,
   resolveDispatchAffordance,
   resolveDispatchState,
   resolveExecutionState,
+  resolveLifecycleActions,
   resolveScheduleState,
 } from './useMesTaskSemantics'
+
+function enabledActions(status: string): MesLifecycleActionKey[] {
+  return resolveLifecycleActions({ status })
+    .filter((a) => a.enabled)
+    .map((a) => a.key)
+}
 
 describe('resolveExecutionState', () => {
   it('speaks shop-floor Chinese for every backend lifecycle status', () => {
@@ -102,6 +110,44 @@ describe('resolveDispatchAffordance', () => {
     })
     expect(reassign.label).toBe('改派（当前 陈立国）')
     expect(reassign.enabled).toBe(true)
+  })
+})
+
+describe('resolveLifecycleActions', () => {
+  // 对齐后端 OperationTask 聚合的状态机，避免点下去才被后端顶回来。
+  it('only offers 开工 from the queued state', () => {
+    expect(enabledActions('Queued')).toEqual(['start'])
+  })
+
+  it('offers 暂停 and 完工 while running, and nothing else', () => {
+    expect(enabledActions('InProgress')).toEqual(['pause', 'complete'])
+  })
+
+  it('offers only 恢复加工 while paused', () => {
+    expect(enabledActions('Paused')).toEqual(['resume'])
+  })
+
+  it('offers nothing for settled or invalidated operations', () => {
+    expect(enabledActions('Completed')).toEqual([])
+    expect(enabledActions('Cancelled')).toEqual([])
+    expect(enabledActions('ScheduleInvalidated')).toEqual([])
+  })
+
+  it('explains why a disabled action is disabled, per state', () => {
+    const settled = resolveLifecycleActions({ status: 'Completed' })
+    expect(settled.every((a) => a.blockedReason?.includes('已结束'))).toBe(true)
+
+    const invalidated = resolveLifecycleActions({ status: 'ScheduleInvalidated' })
+    expect(invalidated.every((a) => a.blockedReason?.includes('重新排程'))).toBe(true)
+
+    const queued = resolveLifecycleActions({ status: 'Queued' })
+    expect(queued.find((a) => a.key === 'complete')?.blockedReason).toContain('先开工')
+  })
+
+  it('marks 完工 as needing confirmation', () => {
+    expect(resolveLifecycleActions({ status: 'InProgress' }).find((a) => a.key === 'complete')?.confirm).toBe(
+      true,
+    )
   })
 })
 
