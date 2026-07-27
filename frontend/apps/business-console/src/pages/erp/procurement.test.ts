@@ -17,14 +17,19 @@ const state = vi.hoisted(() => ({
   supplierPartners: [] as Array<Record<string, unknown>>,
 }))
 
-const purchaseOrderFilters = reactive<{ status?: string, keyword?: string, skip: number, take: number }>({
+const purchaseOrderFilters = reactive<{
+  status?: string
+  keyword?: string
+  skip: number
+  take: number
+}>({
   status: undefined,
   keyword: undefined,
   skip: 0,
   take: 10,
 })
 
-const receiptFilters = reactive<{ status?: string, keyword?: string, skip: number, take: number }>({
+const receiptFilters = reactive<{ status?: string; keyword?: string; skip: number; take: number }>({
   status: undefined,
   keyword: undefined,
   skip: 0,
@@ -75,17 +80,58 @@ vi.mock('@/composables/useBusinessErp', () => ({
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessPartners: () => ({
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', resourceType: 'business-partner', includeDisabled: false, skip: 0, take: 100 }),
+    filters: reactive({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      resourceType: 'business-partner',
+      includeDisabled: false,
+      skip: 0,
+      take: 100,
+    }),
     partners: computed(() => state.supplierPartners),
     partnersTotal: computed(() => state.supplierPartners.length),
     partnersPending: shallowRef(false),
     partnersError: shallowRef(undefined),
     refreshPartners: vi.fn(),
   }),
+  // 采购订单的工厂 / 物料 / 单位改成只选，`useErpPickerCatalog` 会来取这几份主数据目录。
+  useBusinessMasterDataResources: () => ({
+    filters: reactive({ skip: 0, take: 500 }),
+    resources: computed(() => [
+      { resourceType: 'site', code: 'SITE-01', displayName: '一号工厂', active: true },
+    ]),
+    resourcesTotal: computed(() => 1),
+    resourcesPending: shallowRef(false),
+    resourcesError: shallowRef(undefined),
+    refreshResources: vi.fn(),
+  }),
+  useBusinessSkus: () => ({
+    filters: reactive({ skip: 0, take: 500 }),
+    skus: computed(() => [
+      { code: 'SKU-RM-001', displayName: '原材料一', baseUomCode: 'EA', active: true },
+    ]),
+    skusTotal: computed(() => 1),
+    skusPending: shallowRef(false),
+    skusError: shallowRef(undefined),
+    refreshSkus: vi.fn(),
+  }),
+  useBusinessUoms: () => ({
+    filters: reactive({ skip: 0, take: 500 }),
+    uoms: computed(() => [{ code: 'EA', displayName: '个', active: true }]),
+    uomsTotal: computed(() => 1),
+    uomsPending: shallowRef(false),
+    uomsError: shallowRef(undefined),
+    refreshUoms: vi.fn(),
+  }),
 }))
 
 vi.mock('@/composables/usePagedList', () => ({
-  usePagedList: () => ({ page: shallowRef(1), pageSize: shallowRef('10'), pageSizeNumber: shallowRef(10), resetPage: vi.fn() }),
+  usePagedList: () => ({
+    page: shallowRef(1),
+    pageSize: shallowRef('10'),
+    pageSizeNumber: shallowRef(10),
+    resetPage: vi.fn(),
+  }),
 }))
 
 vi.mock('vue-router', () => ({
@@ -94,7 +140,12 @@ vi.mock('vue-router', () => ({
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const selectStubs = {
-  NvSelect: { props: ['modelValue'], emits: ['update:modelValue'], template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>' },
+  NvSelect: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+  },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
   SelectValue: { template: '<span />' },
@@ -102,7 +153,11 @@ const selectStubs = {
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 const dialogStubs = {
-  NvDialog: { props: ['open'], emits: ['update:open'], template: '<section v-if="open" class="dialog"><slot /></section>' },
+  NvDialog: {
+    props: ['open'],
+    emits: ['update:open'],
+    template: '<section v-if="open" class="dialog"><slot /></section>',
+  },
   NvDialogClose: { template: '<span><slot /></span>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogDescription: { template: '<p><slot /></p>' },
@@ -114,7 +169,8 @@ const checkboxStubs = {
   NvCheckbox: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<input type="checkbox" :checked="modelValue" @change="$emit(\'update:modelValue\', $event.target.checked)" />',
+    template:
+      '<input type="checkbox" :checked="modelValue" @change="$emit(\'update:modelValue\', $event.target.checked)" />',
   },
 }
 const tableStub = {
@@ -134,7 +190,13 @@ const tableStub = {
   },
 }
 
-const globalStubs = { ...layoutStub, ...selectStubs, ...dialogStubs, ...checkboxStubs, ...tableStub }
+const globalStubs = {
+  ...layoutStub,
+  ...selectStubs,
+  ...dialogStubs,
+  ...checkboxStubs,
+  ...tableStub,
+}
 
 beforeEach(() => {
   vi.restoreAllMocks()
@@ -150,11 +212,32 @@ beforeEach(() => {
   state.purchaseRequisitionsTotal = 9
   state.receiptsTotal = 7
   state.convertPurchaseRequisition.mockReset()
-  state.convertPurchaseRequisition.mockResolvedValue({ success: true, data: { status: 'PurchaseOrderCreated', purchaseOrderNo: 'PO-REQ-001' } })
+  state.convertPurchaseRequisition.mockResolvedValue({
+    success: true,
+    data: { status: 'PurchaseOrderCreated', purchaseOrderNo: 'PO-REQ-001' },
+  })
   state.supplierPartners = [
-    { resourceType: 'business-partner', code: 'SUP-001', displayName: '第一供应商', active: true, partnerType: 'supplier' },
-    { resourceType: 'business-partner', code: 'SUP-002', displayName: '第二供应商', active: true, partnerType: 'supplier' },
-    { resourceType: 'business-partner', code: 'CUS-001', displayName: '客户一号', active: true, partnerType: 'customer' },
+    {
+      resourceType: 'business-partner',
+      code: 'SUP-001',
+      displayName: '第一供应商',
+      active: true,
+      partnerType: 'supplier',
+    },
+    {
+      resourceType: 'business-partner',
+      code: 'SUP-002',
+      displayName: '第二供应商',
+      active: true,
+      partnerType: 'supplier',
+    },
+    {
+      resourceType: 'business-partner',
+      code: 'CUS-001',
+      displayName: '客户一号',
+      active: true,
+      partnerType: 'customer',
+    },
   ]
   state.purchaseRequisitions = [
     {
@@ -187,8 +270,20 @@ beforeEach(() => {
       status: 'Released',
       receiptReadiness: 'Partial',
       lines: [
-        { lineNo: '10', skuCode: 'SKU-RM-001', orderedQuantity: 5, receivedQuantity: 2, unitPrice: 10 },
-        { lineNo: '20', skuCode: 'SKU-RM-002', orderedQuantity: 2, receivedQuantity: 5, unitPrice: 6 },
+        {
+          lineNo: '10',
+          skuCode: 'SKU-RM-001',
+          orderedQuantity: 5,
+          receivedQuantity: 2,
+          unitPrice: 10,
+        },
+        {
+          lineNo: '20',
+          skuCode: 'SKU-RM-002',
+          orderedQuantity: 2,
+          receivedQuantity: 5,
+          unitPrice: 6,
+        },
       ],
     },
   ]
@@ -214,7 +309,9 @@ describe('ERP procurement purchase requisition page', () => {
     expect(wrapper.get('.data-table').attributes('data-total')).toBe('9')
     expect(wrapper.text()).toContain('PR-001')
     expect(wrapper.text()).toContain('PR-002')
-    const convertButtons = wrapper.findAll('button').filter((button) => button.text().includes('转采购订单'))
+    const convertButtons = wrapper
+      .findAll('button')
+      .filter((button) => button.text().includes('转采购订单'))
     expect(convertButtons).toHaveLength(1)
 
     await convertButtons[0]!.trigger('click')
@@ -225,7 +322,10 @@ describe('ERP procurement purchase requisition page', () => {
 
   it('starts RFQ conversion from selected supplier candidates', async () => {
     const promptSpy = vi.spyOn(window, 'prompt')
-    state.convertPurchaseRequisition.mockResolvedValue({ success: true, data: { status: 'RfqCreated', rfqNo: 'RFQ-REQ-001' } })
+    state.convertPurchaseRequisition.mockResolvedValue({
+      success: true,
+      data: { status: 'RfqCreated', rfqNo: 'RFQ-REQ-001' },
+    })
     const wrapper = mount(PurchaseRequisitionsPage, { global: { stubs: globalStubs } })
     await flushPromises()
 
@@ -243,10 +343,15 @@ describe('ERP procurement purchase requisition page', () => {
     const supplierCheckboxes = wrapper.findAll('input[type="checkbox"]')
     await supplierCheckboxes[0]!.setValue(true)
     await supplierCheckboxes[1]!.setValue(true)
-    await wrapper.findAll('button').find((button) => button.text().includes('生成 RFQ'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('生成 RFQ'))!
+      .trigger('click')
     await flushPromises()
 
-    expect(state.convertPurchaseRequisition).toHaveBeenCalledWith(['PR-001'], { rfqSupplierCodes: ['SUP-001', 'SUP-002'] })
+    expect(state.convertPurchaseRequisition).toHaveBeenCalledWith(['PR-001'], {
+      rfqSupplierCodes: ['SUP-001', 'SUP-002'],
+    })
   })
 })
 
@@ -256,7 +361,9 @@ describe('ERP procurement purchase order page', () => {
     await flushPromises()
 
     const select = wrapper.get('select')
-    expect(new Set(select.findAll('option').map((o) => o.attributes('value')))).toEqual(new Set(['all', 'Released', 'Closed', 'Cancelled']))
+    expect(new Set(select.findAll('option').map((o) => o.attributes('value')))).toEqual(
+      new Set(['all', 'Released', 'Closed', 'Cancelled']),
+    )
 
     await select.setValue('Released')
     expect(purchaseOrderFilters.status).toBe('Released')

@@ -146,6 +146,33 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
   useMasterDataResource: (resourceType: string) => stubResource(resourceType),
   useMasterDataResourceActions: () => stubActions(),
   useBusinessWorkshops: () => stubWorkshops(),
+  // 设备类别改成取 `asset-class` 数据字典、供应商改成取业务伙伴目录（都不再手输编码）。
+  useBusinessMasterDataResources: () => ({
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 200 }),
+    resources: computed(() => [
+      { resourceType: 'reference-data', code: 'CNC', displayName: '数控机床', active: true },
+    ]),
+    resourcesTotal: computed(() => 1),
+    resourcesError: shallowRef(undefined),
+    resourcesPending: shallowRef(false),
+    refreshResources: vi.fn(),
+  }),
+  useBusinessPartners: () => ({
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 200 }),
+    partners: computed(() => [
+      {
+        resourceType: 'business-partner',
+        code: 'SUP-001',
+        displayName: '第一供应商',
+        active: true,
+        partnerType: 'supplier',
+      },
+    ]),
+    partnersTotal: computed(() => 1),
+    partnersError: shallowRef(undefined),
+    partnersPending: shallowRef(false),
+    refreshPartners: vi.fn(),
+  }),
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -196,6 +223,22 @@ const dialogStubs = {
   NvAlertDialogAction: {
     emits: ['click'],
     template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
+}
+// 设备类别/供应商/父设备已从自由文本改成只选控件（内部自带 reka Dialog，会撞上上面的
+// DialogRoot 桩）。桩成带同名 id 的输入位，用例继续用 `#dev-*` 表达「选中了某个候选」。
+const pickerStubs = {
+  NvEntityPicker: {
+    props: ['modelValue', 'options', 'id'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+  NvSearchSelect: {
+    props: ['modelValue', 'options', 'id'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
 }
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue 完成"填表→提交"。
@@ -316,7 +359,7 @@ describe('master-data devices page', () => {
     stub.toastSuccess.mockClear()
     stub.toastError.mockClear()
     const wrapper = mount(DevicesPage, {
-      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...pickerStubs, ...selectStubs } },
     })
     await flushPromises()
     await openAndFillValid(wrapper)
@@ -366,7 +409,7 @@ describe('master-data devices page', () => {
     stub.toastSuccess.mockClear()
     stub.toastError.mockClear()
     const wrapper = mount(DevicesPage, {
-      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...pickerStubs, ...selectStubs } },
     })
     await flushPromises()
     await openAndFillValid(wrapper)
@@ -405,7 +448,7 @@ describe('master-data devices page', () => {
     stub.toastError.mockClear()
     stub.create.mockRejectedValueOnce(new Error('downstream-invalid-response'))
     const wrapper = mount(DevicesPage, {
-      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...pickerStubs, ...selectStubs } },
     })
     await flushPromises()
     await openAndFillValid(wrapper)

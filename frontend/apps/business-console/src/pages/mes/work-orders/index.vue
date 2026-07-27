@@ -11,7 +11,8 @@ import {
   useBusinessMasterDataResources,
   useBusinessSkus,
 } from '@/composables/useBusinessMasterData'
-import { useMesWorkOrders } from '@/composables/useBusinessMes'
+import { useMesOperationTasks, useMesWorkOrders } from '@/composables/useBusinessMes'
+import { useMesMaterialVersionCatalog } from '@/composables/useMesPickerCatalog'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,
@@ -36,6 +37,7 @@ import {
   NvDialogTitle,
   NvDropdownMenuItem,
   NvDropdownMenuSeparator,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -145,6 +147,39 @@ const listErrorMessage = computed(() => formatError(workOrdersError.value))
 
 const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
 const skuOptions = computed(() => toResourceOptions(skus.value))
+
+// ── 急单表单的四个选择器 ────────────────────────────────────────
+// 物料 ▸ 生产版本 从属，工作中心 ▸ 工序任务 从属：上游变了清空下游。
+const { productionVersionOptions, productionVersionsPending } = useMesMaterialVersionCatalog()
+const { operationTasks, operationTasksPending } = useMesOperationTasks()
+
+const rushVersionOptions = computed(() => productionVersionOptions(rushForm.skuId))
+const rushOperationTaskOptions = computed(() => {
+  const workCenter = rushForm.workCenterId.trim()
+  return operationTasks.value
+    .filter((task) => !!task.operationTaskId)
+    .filter((task) => !workCenter || task.workCenterCode === workCenter)
+    .map((task) => ({
+      value: task.operationTaskId as string,
+      label: task.operationTaskNo || task.operationCode || '未编号工序任务',
+      hint: [task.workOrderNo, task.workCenterName ?? task.workCenterCode]
+        .filter(Boolean)
+        .join(' · '),
+    }))
+})
+
+watch(
+  () => rushForm.skuId,
+  () => {
+    rushForm.productionVersionId = ''
+  },
+)
+watch(
+  () => rushForm.workCenterId,
+  () => {
+    rushForm.operationTaskId = ''
+  },
+)
 
 const visibleWorkOrders = computed(() => workOrders.value)
 
@@ -583,24 +618,33 @@ function isNonEmpty(value: string) {
               <NvFieldLabel for="rush-sku"
                 >物料 <span class="text-destructive">*</span></NvFieldLabel
               >
-              <NvSelect v-if="skuOptions.length" v-model="rushForm.skuId">
-                <NvSelectTrigger id="rush-sku"
-                  ><NvSelectValue placeholder="选择物料"
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem
-                    v-for="option in skuOptions"
-                    :key="option.value"
-                    :value="option.value"
-                    >{{ option.label }}</NvSelectItem
-                  >
-                </NvSelectContent>
-              </NvSelect>
-              <NvInput v-else id="rush-sku" v-model="rushForm.skuId" required />
+              <NvEntityPicker
+                id="rush-sku"
+                v-model="rushForm.skuId"
+                :options="skuOptions"
+                title="选择物料"
+                placeholder="选择物料"
+                source-text="数据来自基础数据物料主数据"
+                empty-text="暂无物料，请先在基础数据维护"
+                aria-label="物料"
+                clearable
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="rush-version">生产版本</NvFieldLabel>
-              <NvInput id="rush-version" v-model="rushForm.productionVersionId" />
+              <NvEntityPicker
+                id="rush-version"
+                v-model="rushForm.productionVersionId"
+                :options="rushVersionOptions"
+                title="选择生产版本"
+                :placeholder="rushForm.skuId ? '可留空，按生效日自动解析' : '先选物料'"
+                :disabled="!rushForm.skuId"
+                source-text="仅列所选物料的生产版本"
+                empty-text="该物料暂无生产版本，请先在工程数据维护"
+                :loading="productionVersionsPending"
+                aria-label="生产版本"
+                clearable
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="rush-quantity"
@@ -624,24 +668,33 @@ function isNonEmpty(value: string) {
               <NvFieldLabel for="rush-work-center"
                 >工作中心 <span class="text-destructive">*</span></NvFieldLabel
               >
-              <NvSelect v-if="workCenterOptions.length" v-model="rushForm.workCenterId">
-                <NvSelectTrigger id="rush-work-center"
-                  ><NvSelectValue placeholder="选择工作中心"
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem
-                    v-for="option in workCenterOptions"
-                    :key="option.value"
-                    :value="option.value"
-                    >{{ option.label }}</NvSelectItem
-                  >
-                </NvSelectContent>
-              </NvSelect>
-              <NvInput v-else id="rush-work-center" v-model="rushForm.workCenterId" required />
+              <NvEntityPicker
+                id="rush-work-center"
+                v-model="rushForm.workCenterId"
+                :options="workCenterOptions"
+                title="选择工作中心"
+                placeholder="选择工作中心"
+                source-text="数据来自基础数据工作中心主数据"
+                empty-text="暂无工作中心，请先在基础数据维护"
+                aria-label="工作中心"
+                clearable
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="rush-operation-task">工序任务</NvFieldLabel>
-              <NvInput id="rush-operation-task" v-model="rushForm.operationTaskId" />
+              <NvEntityPicker
+                id="rush-operation-task"
+                v-model="rushForm.operationTaskId"
+                :options="rushOperationTaskOptions"
+                title="选择工序任务"
+                :placeholder="rushForm.workCenterId ? '可留空' : '先选工作中心'"
+                :disabled="!rushForm.workCenterId"
+                source-text="仅列所选工作中心的在办工序任务"
+                empty-text="该工作中心暂无在办工序任务"
+                :loading="operationTasksPending"
+                aria-label="工序任务"
+                clearable
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="rush-operation-sequence">工序序号</NvFieldLabel>

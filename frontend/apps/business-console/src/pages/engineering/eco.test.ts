@@ -21,7 +21,13 @@ const changeRow = {
   affectedVersions: [{ versionKind: 'EngineeringBom', versionId: 'VER-1' }],
 }
 
-const filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev', status: undefined as string | undefined, skip: 0, take: 10 })
+const filters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
+  status: undefined as string | undefined,
+  skip: 0,
+  take: 10,
+})
 const impactPreview = shallowRef()
 
 vi.mock('@/composables/useProductEngineering', () => ({
@@ -43,6 +49,22 @@ vi.mock('@/composables/useProductEngineering', () => ({
       impactPreview.value = undefined
     },
     fetchChangeDetail: stub.fetchChangeDetail,
+  }),
+  // 受影响版本里「生产版本」改成只选，页面新引入了生产版本目录读面。
+  useEngineeringProductionVersions: () => ({
+    filters: reactive({ skip: 0, take: 500 }),
+    productionVersions: computed(() => [
+      {
+        productionVersionId: 'PV-1',
+        skuCode: 'SKU-1',
+        validFrom: '2026-01-01T00:00:00Z',
+        isDefault: true,
+      },
+    ]),
+    productionVersionsError: shallowRef(undefined),
+    productionVersionsPending: shallowRef(false),
+    productionVersionsTotal: computed(() => 1),
+    refresh: vi.fn(),
   }),
 }))
 
@@ -72,14 +94,16 @@ const datePickerStub = {
   NvDatePicker: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
+    template:
+      '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
   },
 }
 const formSelectStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   SelectValue: { template: '<span />' },
@@ -94,11 +118,20 @@ const approvalPanelStub = {
   BusinessDocumentApprovalPanel: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<section data-testid="approval-panel"><button type="button" @click="$emit(\'update:modelValue\', \'APR-9\')">关联审批链</button><span>{{ modelValue }}</span></section>',
+    template:
+      '<section data-testid="approval-panel"><button type="button" @click="$emit(\'update:modelValue\', \'APR-9\')">关联审批链</button><span>{{ modelValue }}</span></section>',
   },
 }
 
-const allStubs = { ...layoutStub, ...dialogStubs, ...sheetStubs, ...datePickerStub, ...formSelectStubs, ...routerLinkStubs, ...approvalPanelStub }
+const allStubs = {
+  ...layoutStub,
+  ...dialogStubs,
+  ...sheetStubs,
+  ...datePickerStub,
+  ...formSelectStubs,
+  ...routerLinkStubs,
+  ...approvalPanelStub,
+}
 
 function findButton(wrapper: ReturnType<typeof mount>, text: string) {
   return wrapper.findAll('button').find((b) => b.text().trim() === text)
@@ -219,12 +252,14 @@ describe('engineering eco page', () => {
     await findButton(wrapper, '预览影响')!.trigger('click')
     await flushPromises()
 
-    expect(stub.previewImpact).toHaveBeenCalledWith(expect.objectContaining({
-      organizationId: 'org-001',
-      environmentId: 'env-dev',
-      effectiveDate: '2026-03-01',
-      affectedVersions: [{ versionKind: 'EngineeringBom', versionId: 'EBOM-FG:A' }],
-    }))
+    expect(stub.previewImpact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        effectiveDate: '2026-03-01',
+        affectedVersions: [{ versionKind: 'EngineeringBom', versionId: 'EBOM-FG:A' }],
+      }),
+    )
     expect(stub.releaseChange).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('MBOM MBOM-1 / B')
     expect(wrapper.text()).toContain('MRP 候选')
@@ -264,9 +299,7 @@ describe('engineering eco page', () => {
       changeNumber: 'ECO-1',
       reason: '更换供应商物料',
       status: 'Released',
-      affectedVersions: [
-        { versionKind: 'ManufacturingBom', versionId: 'MBOM-VER-9' },
-      ],
+      affectedVersions: [{ versionKind: 'ManufacturingBom', versionId: 'MBOM-VER-9' }],
     })
     const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
     await flushPromises()

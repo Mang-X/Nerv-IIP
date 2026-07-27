@@ -5,6 +5,11 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMaintenanceSpareParts } from '@/composables/useBusinessMaintenance'
+import {
+  useEquipmentSkuCatalog,
+  useEquipmentUomCatalog,
+  useMaintenanceDocumentCatalog,
+} from '@/composables/useEquipmentPickerCatalog'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -21,6 +26,7 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvDropdownMenuItem,
+  NvEntityPicker,
   NvField,
   NvFieldError,
   NvFieldGroup,
@@ -31,7 +37,7 @@ import {
   Spinner,
 } from '@nerv-iip/ui'
 import { PackageSearchIcon, PlusIcon, RefreshCwIcon, WrenchIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
@@ -60,9 +66,22 @@ const createForm = reactive({
   workOrderId: '',
   skuCode: '',
   quantity: '1',
-  uomCode: 'EA',
+  uomCode: '',
 })
 const createError = shallowRef('')
+
+// 工单 / 物料 / 单位都从既有读面选，不手输编码。
+const { workOrderOptions, workOrdersPending } = useMaintenanceDocumentCatalog()
+const { skuOptions, skusPending, baseUomBySku } = useEquipmentSkuCatalog()
+const { uomOptions, uomsPending } = useEquipmentUomCatalog()
+// 备件领用单位默认跟随物料的基本单位，避免手选错单位对不上库存台账。
+watch(
+  () => createForm.skuCode,
+  (skuCode) => {
+    const baseUom = baseUomBySku.value.get(skuCode.trim())
+    if (baseUom) createForm.uomCode = baseUom
+  },
+)
 
 const listErrorMessage = computed(() =>
   sparePartsError.value ? '备件需求暂时无法加载，请稍后重试。' : '',
@@ -101,7 +120,7 @@ function openCreate() {
   createForm.workOrderId = ''
   createForm.skuCode = ''
   createForm.quantity = '1'
-  createForm.uomCode = 'EA'
+  createForm.uomCode = ''
   createError.value = ''
   createOpen.value = true
 }
@@ -241,20 +260,30 @@ async function submitCreate() {
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="sp-work-order">维修工单</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="sp-work-order"
                 v-model="createForm.workOrderId"
-                autocomplete="off"
-                placeholder="如 WO-..."
+                :options="workOrderOptions"
+                title="选择维修工单"
+                placeholder="选择维修工单"
+                source-text="数据来自维护工单"
+                empty-text="暂无维护工单，请先建单再登记备件需求"
+                :loading="workOrdersPending"
+                aria-label="维修工单"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="sp-sku">备件物料</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="sp-sku"
                 v-model="createForm.skuCode"
-                autocomplete="off"
-                placeholder="如 BRG-6205"
+                :options="skuOptions"
+                title="选择备件物料"
+                placeholder="选择备件物料"
+                source-text="数据来自基础数据物料主数据"
+                empty-text="暂无物料主数据，请先在基础数据维护物料"
+                :loading="skusPending"
+                aria-label="备件物料"
               />
             </NvField>
             <NvField>
@@ -269,11 +298,17 @@ async function submitCreate() {
             </NvField>
             <NvField>
               <NvFieldLabel for="sp-uom">单位</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="sp-uom"
                 v-model="createForm.uomCode"
-                autocomplete="off"
-                placeholder="EA"
+                :options="uomOptions"
+                title="选择单位"
+                placeholder="跟随物料基本单位"
+                source-text="数据来自基础数据计量单位"
+                empty-text="暂无计量单位，请先在基础数据维护单位"
+                :loading="uomsPending"
+                clearable
+                aria-label="单位"
               />
             </NvField>
           </NvFieldGroup>

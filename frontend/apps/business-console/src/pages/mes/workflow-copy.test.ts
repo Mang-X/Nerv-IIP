@@ -40,9 +40,33 @@ vi.mock('vue-router', () => ({
 vi.mock('@/utils/notify', () => ({ notifySuccess: vi.fn(), notifyError: vi.fn() }))
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
-  useBusinessMasterDataResources: () => ({ resources: ref([]), resourcesPending: ref(false) }),
-  useBusinessSkus: () => ({ skus: ref([]) }),
-  useBusinessWorkers: () => ({ workers: ref([]), workersPending: ref(false), filters: reactive({}) }),
+  useBusinessMasterDataResources: () => ({
+    resources: ref([]),
+    resourcesPending: ref(false),
+    filters: reactive({}),
+  }),
+  useBusinessSkus: () => ({ skus: ref([]), skusPending: ref(false), filters: reactive({}) }),
+  // 完工入库的单位改成从计量单位主数据里选。
+  useBusinessUoms: () => ({
+    uoms: ref([{ code: 'EA', displayName: '个', active: true }]),
+    uomsPending: ref(false),
+    filters: reactive({}),
+  }),
+  useBusinessWorkers: () => ({
+    workers: ref([]),
+    workersPending: ref(false),
+    filters: reactive({}),
+  }),
+}))
+
+// 急单表单的物料 ▸ 生产版本目录走 colada 读面，本文件只看文案与提交体，整体打桩。
+vi.mock('@/composables/useMesPickerCatalog', () => ({
+  useMesMaterialVersionCatalog: () => ({
+    skuOptions: ref([]),
+    skusPending: ref(false),
+    productionVersionOptions: () => [],
+    productionVersionsPending: ref(false),
+  }),
 }))
 
 vi.mock('@/composables/useBusinessMes', () => ({
@@ -358,6 +382,20 @@ const uiStubs = {
   SelectValue: {
     props: ['placeholder'],
     template: '<span>{{ placeholder }}</span>',
+  },
+  // 只选控件内部自带 reka Dialog/Popover，与本文件的 DialogRoot 桩不兼容；
+  // 桩成带同名 id 的输入位，保留「选中某个候选」的语义。
+  NvEntityPicker: {
+    props: ['modelValue', 'options', 'id'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+  NvSearchSelect: {
+    props: ['modelValue', 'options', 'id'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
   Spinner: true,
   Table: {

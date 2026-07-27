@@ -64,13 +64,39 @@ const { page, pageSize } = usePagedList(filters, {
 const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog()
 // 出库单是真实读面（只要组织/环境即可列出），拣货任务必须挂在已存在的出库单下。
 const { outboundOrders, outboundOrdersPending } = useWmsOutboundOrders({ take: 200 })
+/**
+ * 选择器以**人读单号**为选中值，而不是出库单的内部 id——选择器会把 value 当编码显示出来，
+ * 直接绑 id 会把 GUID 露到界面上（UI 不暴露工程语言）。提交时再映射回 id，提交体不变。
+ */
 const outboundOrderOptions = computed(() =>
   outboundOrders.value.flatMap((order) => {
-    const value = order.outboundOrderId?.trim()
-    if (!value) return []
-    return [{ value, label: order.outboundOrderNo?.trim() || value, hint: order.siteCode }]
+    const id = order.outboundOrderId?.trim()
+    const no = order.outboundOrderNo?.trim() || id
+    if (!id || !no) return []
+    return [{ value: no, label: no, hint: order.siteCode }]
   }),
 )
+const outboundOrderIdByNo = computed(() => {
+  const map = new Map<string, string>()
+  for (const order of outboundOrders.value) {
+    const id = order.outboundOrderId?.trim()
+    const no = order.outboundOrderNo?.trim() || id
+    if (id && no) map.set(no, id)
+  }
+  return map
+})
+const outboundOrderNoById = computed(() => {
+  const map = new Map<string, string>()
+  for (const [no, id] of outboundOrderIdByNo.value) map.set(id, no)
+  return map
+})
+const outboundOrderSelection = computed({
+  // 目录还没到位时如实回落显示已有值，不让选择框看起来是空的。
+  get: () => outboundOrderNoById.value.get(createForm.outboundOrderId) ?? createForm.outboundOrderId,
+  set: (no: string) => {
+    createForm.outboundOrderId = outboundOrderIdByNo.value.get(no) ?? no
+  },
+})
 // 状态是后端枚举而不是目录，用哨兵值表达「全部」，避免空字符串和真实码值混淆。
 const statusFilter = computed({
   get: () => filters.status || WMS_STATUS_ANY,
@@ -291,7 +317,7 @@ function firstQuery(value: unknown) {
               <NvFieldLabel for="wms-picking-outbound">出库单</NvFieldLabel>
               <NvEntityPicker
                 id="wms-picking-outbound"
-                v-model="createForm.outboundOrderId"
+                v-model="outboundOrderSelection"
                 :options="outboundOrderOptions"
                 title="选择出库单"
                 placeholder="选择出库单"

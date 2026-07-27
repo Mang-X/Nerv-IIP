@@ -11,6 +11,12 @@ import {
   useQualityInspectionPlans,
 } from '@/composables/useBusinessQuality'
 import { useQualityInspectionTaskActions } from '@/composables/useQualityInspectionTasks'
+import {
+  useQualityInspectionPlanCatalog,
+  useQualityReasonCatalog,
+  useQualitySkuCatalog,
+  useQualityUomCatalog,
+} from '@/composables/useQualityPickerCatalog'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
@@ -33,9 +39,11 @@ import {
   NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
+  NvEntityPicker,
   NvInput,
   NvPageHeader,
   NvRowActions,
+  NvSearchSelect,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -242,6 +250,24 @@ watch(
   },
   { immediate: true },
 )
+
+// 创建检验记录的码值一律只选不填：方案、物料、单位取主数据目录，缺陷/处置原因取原因码目录。
+const planCatalog = useQualityInspectionPlanCatalog()
+const skuCatalog = useQualitySkuCatalog()
+const uomCatalog = useQualityUomCatalog()
+const reasonCatalog = useQualityReasonCatalog()
+// 换检验方案等于换了检验对象：方案自带的物料要跟着走，已填的特性行不再属于新方案，重置回一行空行。
+const recordPlanModel = computed({
+  get: () => recordForm.inspectionPlanId,
+  set: (value: string) => {
+    if (value === recordForm.inspectionPlanId) return
+    recordForm.inspectionPlanId = value
+    characteristicsAppliedPlanId.value = ''
+    recordForm.resultLines = [emptyLine()]
+    const plan = planCatalog.inspectionPlans.value.find((item) => item.id === value)
+    if (plan?.skuCode) recordForm.skuCode = plan.skuCode
+  },
+})
 
 const listErrorMessage = computed(() => formatError(inspectionPlansError.value))
 const inspectedQuantity = computed(() => toOptionalNumber(recordForm.inspectedQuantity))
@@ -604,7 +630,18 @@ function isPresent(value: string | undefined | null): value is string {
           <NvFieldGroup v-else class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="record-plan">检验方案</NvFieldLabel>
-              <NvInput id="record-plan" v-model="recordForm.inspectionPlanId" />
+              <NvEntityPicker
+                id="record-plan"
+                v-model="recordPlanModel"
+                :options="planCatalog.inspectionPlanOptions.value"
+                title="选择检验方案"
+                placeholder="选择检验方案"
+                source-text="数据来自质量检验方案"
+                empty-text="当前范围内没有检验方案"
+                :loading="planCatalog.inspectionPlansPending.value"
+                clearable
+                aria-label="检验方案"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel>来源类型</NvFieldLabel>
@@ -641,7 +678,16 @@ function isPresent(value: string | undefined | null): value is string {
             </NvField>
             <NvField>
               <NvFieldLabel for="record-sku">SKU</NvFieldLabel>
-              <NvInput id="record-sku" v-model="recordForm.skuCode" required />
+              <NvEntityPicker
+                id="record-sku"
+                v-model="recordForm.skuCode"
+                :options="skuCatalog.skuOptions.value"
+                title="选择 SKU"
+                placeholder="选择 SKU"
+                source-text="数据来自基础数据物料主数据"
+                :loading="skuCatalog.skusPending.value"
+                aria-label="SKU"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="record-quantity">检验数量</NvFieldLabel>
@@ -746,11 +792,29 @@ function isPresent(value: string | undefined | null): value is string {
                 </NvField>
                 <NvField>
                   <NvFieldLabel :for="`unit-code-${index}`">单位</NvFieldLabel>
-                  <NvInput :id="`unit-code-${index}`" v-model="line.unitCode" />
+                  <NvEntityPicker
+                    :id="`unit-code-${index}`"
+                    v-model="line.unitCode"
+                    :options="uomCatalog.uomOptions.value"
+                    title="选择计量单位"
+                    placeholder="选择单位"
+                    source-text="数据来自基础数据计量单位"
+                    :loading="uomCatalog.uomsPending.value"
+                    clearable
+                    :aria-label="`第 ${index + 1} 个特性单位`"
+                  />
                 </NvField>
                 <NvField class="md:col-span-2">
                   <NvFieldLabel :for="`defect-reason-${index}`">缺陷原因</NvFieldLabel>
-                  <NvInput :id="`defect-reason-${index}`" v-model="line.defectReason" />
+                  <NvSearchSelect
+                    :id="`defect-reason-${index}`"
+                    v-model="line.defectReason"
+                    :options="reasonCatalog.defectReasonOptions.value"
+                    placeholder="选择缺陷原因"
+                    empty-text="原因码目录里没有匹配项"
+                    :loading="reasonCatalog.reasonsPending.value"
+                    :aria-label="`第 ${index + 1} 个特性缺陷原因`"
+                  />
                 </NvField>
                 <NvField>
                   <NvFieldLabel :for="`defect-quantity-${index}`">缺陷数量</NvFieldLabel>
@@ -782,10 +846,15 @@ function isPresent(value: string | undefined | null): value is string {
                 处置原因
                 <span v-if="requiresDispositionReason" class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <!-- 处置原因是记录详情直接展示的处置结论，所以存人读原因名称、不是原因编码。 -->
+              <NvSearchSelect
                 id="record-disposition"
                 v-model="recordForm.dispositionReason"
-                :required="requiresDispositionReason"
+                :options="reasonCatalog.dispositionReasonOptions.value"
+                placeholder="选择处置原因"
+                empty-text="原因码目录里没有匹配项"
+                :loading="reasonCatalog.reasonsPending.value"
+                aria-label="处置原因"
               />
             </NvField>
             <NvField>

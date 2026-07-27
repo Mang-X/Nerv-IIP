@@ -19,7 +19,14 @@ const ebomRow = {
   effectiveDate: '2026-01-01',
 }
 
-const filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev', parentItemCode: undefined as string | undefined, status: undefined as string | undefined, skip: 0, take: 10 })
+const filters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
+  parentItemCode: undefined as string | undefined,
+  status: undefined as string | undefined,
+  skip: 0,
+  take: 10,
+})
 
 vi.mock('@/composables/useProductEngineering', () => ({
   useEngineeringEboms: () => ({
@@ -34,6 +41,12 @@ vi.mock('@/composables/useProductEngineering', () => ({
     releaseError: shallowRef(undefined),
     fetchEbomDetail: stub.fetchEbomDetail,
   }),
+  // 修订号输入框旁新增「已占用修订」建议（读面走 colada，需要 pinia），测试给空建议。
+  useBomRevisionSuggestions: () => ({
+    takenRevisions: computed(() => []),
+    takenRevisionsPending: shallowRef(false),
+    isTaken: () => false,
+  }),
 }))
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
@@ -44,7 +57,10 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     ]),
   }),
   useBusinessUoms: () => ({
-    uoms: computed(() => [{ code: 'PCS', displayName: '个' }, { code: 'SET', displayName: '套' }]),
+    uoms: computed(() => [
+      { code: 'PCS', displayName: '个' },
+      { code: 'SET', displayName: '套' },
+    ]),
   }),
 }))
 
@@ -74,14 +90,16 @@ const datePickerStub = {
   NvDatePicker: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
+    template:
+      '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
   },
 }
 const formSelectStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   SelectValue: { template: '<span />' },
@@ -89,7 +107,13 @@ const formSelectStubs = {
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
-const allStubs = { ...layoutStub, ...dialogStubs, ...sheetStubs, ...datePickerStub, ...formSelectStubs }
+const allStubs = {
+  ...layoutStub,
+  ...dialogStubs,
+  ...sheetStubs,
+  ...datePickerStub,
+  ...formSelectStubs,
+}
 
 function findButton(wrapper: ReturnType<typeof mount>, text: string) {
   return wrapper.findAll('button').find((b) => b.text().trim() === text)
@@ -230,9 +254,7 @@ describe('engineering ebom page', () => {
       revision: 'A',
       parentItemCode: 'SKU-1',
       status: 'Published',
-      lines: [
-        { childItemCode: 'SKU-2', quantity: 3, unitOfMeasureCode: 'PCS' },
-      ],
+      lines: [{ childItemCode: 'SKU-2', quantity: 3, unitOfMeasureCode: 'PCS' }],
     })
     const wrapper = mount(EbomPage, { global: { stubs: allStubs } })
     await flushPromises()

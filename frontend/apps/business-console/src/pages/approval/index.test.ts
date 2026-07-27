@@ -15,24 +15,73 @@ vi.mock('@/composables/useBusinessApproval', () => ({
   useBusinessApproval: () => ({
     chainDetail: computed(() => undefined),
     chainDetailSelection: reactive({ chainId: '' }),
-    chains: computed(() => [{ chainId: 'chain-1', status: 'Running', documentType: '采购订单', documentId: 'PO-260701-001', templateCode: 'purchase-order' }]),
+    chains: computed(() => [
+      {
+        chainId: 'chain-1',
+        status: 'Running',
+        documentType: '采购订单',
+        documentId: 'PO-260701-001',
+        templateCode: 'purchase-order',
+      },
+    ]),
     chainsPending: shallowRef(false),
     chainsTotal: computed(() => 1),
     chainsError: shallowRef(undefined),
-    chainFilters: reactive({ status: undefined, startedBy: undefined, sourceService: undefined, documentType: undefined, documentId: undefined, skip: 0, take: 10 }),
+    chainFilters: reactive({
+      status: undefined,
+      startedBy: undefined,
+      sourceService: undefined,
+      documentType: undefined,
+      documentId: undefined,
+      skip: 0,
+      take: 10,
+    }),
     createDelegation: approvalState.createDelegation,
     createDelegationError: shallowRef(undefined),
     createDelegationPending: shallowRef(false),
-    decisions: computed(() => [{ decisionId: 'decision-1', chainId: 'chain-1', decision: 'Approve', actorRef: 'manager-a', documentType: '采购订单', documentId: 'PO-260701-001' }]),
+    decisions: computed(() => [
+      {
+        decisionId: 'decision-1',
+        chainId: 'chain-1',
+        decision: 'Approve',
+        actorRef: 'manager-a',
+        documentType: '采购订单',
+        documentId: 'PO-260701-001',
+      },
+    ]),
     decisionsPending: shallowRef(false),
     decisionsTotal: computed(() => 1),
     decisionsError: shallowRef(undefined),
-    decisionFilters: reactive({ chainId: undefined, actorType: undefined, actorRef: undefined, decision: undefined, documentType: undefined, documentId: undefined, skip: 0, take: 10 }),
-    delegations: computed(() => [{ delegationId: 'delegation-1', status: 'Active', delegatorActorRef: 'manager-a', delegateActorRef: 'manager-b', documentType: '采购订单' }]),
+    decisionFilters: reactive({
+      chainId: undefined,
+      actorType: undefined,
+      actorRef: undefined,
+      decision: undefined,
+      documentType: undefined,
+      documentId: undefined,
+      skip: 0,
+      take: 10,
+    }),
+    delegations: computed(() => [
+      {
+        delegationId: 'delegation-1',
+        status: 'Active',
+        delegatorActorRef: 'manager-a',
+        delegateActorRef: 'manager-b',
+        documentType: '采购订单',
+      },
+    ]),
     delegationsPending: shallowRef(false),
     delegationsTotal: computed(() => 1),
     delegationsError: shallowRef(undefined),
-    delegationFilters: reactive({ status: undefined, delegatorActorRef: undefined, delegateActorRef: undefined, documentType: undefined, skip: 0, take: 10 }),
+    delegationFilters: reactive({
+      status: undefined,
+      delegatorActorRef: undefined,
+      delegateActorRef: undefined,
+      documentType: undefined,
+      skip: 0,
+      take: 10,
+    }),
     refreshAll: vi.fn(),
     resolveTask: approvalState.resolveTask,
     resolveTaskError: shallowRef(undefined),
@@ -43,12 +92,29 @@ vi.mock('@/composables/useBusinessApproval', () => ({
     saveTemplate: vi.fn(),
     saveTemplateError: shallowRef(undefined),
     saveTemplatePending: shallowRef(false),
-    tasks: computed(() => [{ chainId: 'chain-1', stepNo: 10, stepName: '采购经理审批', documentType: '采购订单', documentId: 'PO-260701-001' }]),
+    tasks: computed(() => [
+      {
+        chainId: 'chain-1',
+        stepNo: 10,
+        stepName: '采购经理审批',
+        documentType: '采购订单',
+        documentId: 'PO-260701-001',
+      },
+    ]),
     tasksPending: shallowRef(false),
     tasksTotal: computed(() => 1),
     tasksError: shallowRef(undefined),
     taskFilters: reactive({ skip: 0, take: 10 }),
-    templates: computed(() => [{ templateId: 'template-1', templateCode: 'purchase-order', documentType: '采购订单', version: 1, isActive: true, steps: [] }]),
+    templates: computed(() => [
+      {
+        templateId: 'template-1',
+        templateCode: 'purchase-order',
+        documentType: '采购订单',
+        version: 1,
+        isActive: true,
+        steps: [],
+      },
+    ]),
     templatesPending: shallowRef(false),
     templatesTotal: computed(() => 1),
     templatesError: shallowRef(undefined),
@@ -66,6 +132,14 @@ const tableStub = {
       </div>
     </section>
   `,
+}
+
+/** 只选选择器桩成带同名 id 的输入位，保留用例原有的 `setValue` 语义。 */
+const entityPickerStub = {
+  props: ['modelValue', 'options', 'id'],
+  emits: ['update:modelValue'],
+  template:
+    '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
 }
 
 const tabsStubs = {
@@ -95,6 +169,10 @@ function mountApproval(permissionCodes: string[]) {
       stubs: {
         BusinessLayout: { template: '<main><slot /></main>' },
         NvDataTable: tableStub,
+        // 代理人已从自由文本改成只选的实体选择器；这个用例关心的是「提交体的时区换算」，
+        // 所以把选择器桩成带同名 id 的输入位，让 setValue 仍然表达「选中了某个代理人」。
+        NvEntityPicker: entityPickerStub,
+        NvSearchSelect: entityPickerStub,
         NvDialog: { props: ['open'], template: '<section v-if="open"><slot /></section>' },
         NvDialogClose: { template: '<span><slot /></span>' },
         NvDialogContent: { template: '<section><slot /></section>' },
@@ -103,8 +181,14 @@ function mountApproval(permissionCodes: string[]) {
         NvDialogHeader: { template: '<header><slot /></header>' },
         NvDialogTitle: { template: '<h2><slot /></h2>' },
         RowActions: { template: '<div data-testid="row-actions"><slot /></div>' },
-        NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
-        PageHeader: { props: ['title'], template: '<header><h1>{{ title }}</h1><slot /><slot name="actions" /></header>' },
+        NvDropdownMenuItem: {
+          emits: ['click'],
+          template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+        },
+        PageHeader: {
+          props: ['title'],
+          template: '<header><h1>{{ title }}</h1><slot /><slot name="actions" /></header>',
+        },
         SectionCard: true,
         SectionCards: { template: '<section><slot /></section>' },
         NvStatusBadge: { props: ['value'], template: '<span>{{ value }}</span>' },
@@ -157,19 +241,25 @@ describe('approval center page permissions and actions', () => {
     const wrapper = mountApproval(['business.approvals.read', 'business.approvals.manage'])
     await flushPromises()
 
-    const newDelegation = wrapper.findAll('button').find((button) => button.text().includes('新建委托'))!
+    const newDelegation = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('新建委托'))!
     await newDelegation.trigger('click')
     await wrapper.find('#approval-delegate').setValue('manager-c')
     await wrapper.find('#approval-delegation-from').setValue('2026-07-01T09:30')
     await wrapper.find('#approval-delegation-to').setValue('2026-07-03T18:45')
-    const delegationForm = wrapper.findAll('form').find((form) => form.find('#approval-delegate').exists())!
+    const delegationForm = wrapper
+      .findAll('form')
+      .find((form) => form.find('#approval-delegate').exists())!
     await delegationForm.trigger('submit')
 
-    expect(approvalState.createDelegation).toHaveBeenCalledWith(expect.objectContaining({
-      delegatorActorRef: 'manager-a',
-      delegateActorRef: 'manager-c',
-      effectiveFromUtc: new Date('2026-07-01T09:30').toISOString(),
-      effectiveToUtc: new Date('2026-07-03T18:45').toISOString(),
-    }))
+    expect(approvalState.createDelegation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        delegatorActorRef: 'manager-a',
+        delegateActorRef: 'manager-c',
+        effectiveFromUtc: new Date('2026-07-01T09:30').toISOString(),
+        effectiveToUtc: new Date('2026-07-03T18:45').toISOString(),
+      }),
+    )
   })
 })

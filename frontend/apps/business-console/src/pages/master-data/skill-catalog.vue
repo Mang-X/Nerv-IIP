@@ -16,6 +16,7 @@ import {
   NvAlertDialogTitle,
   NvButton,
   NvCheckbox,
+  NvCombobox,
   NvDataTable,
   NvDialog,
   NvDialogContent,
@@ -83,6 +84,17 @@ watch(
 const listErrorMessage = computed(() =>
   skillsError.value instanceof Error ? skillsError.value.message : '',
 )
+
+// 技能组没有独立目录端点，组名就是本表已有值的去重集合；这里是技能目录自身的维护页，
+// 允许新建组名，所以给「已有组」建议而不是只读选择器。
+const groupSuggestions = computed(() => {
+  const names = new Set<string>()
+  for (const skill of skills.value) {
+    const group = skill.groupName?.trim()
+    if (group) names.add(group)
+  }
+  return [...names].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')).map((name) => ({ value: name }))
+})
 
 const columns: NvDataTableColumn<SkillCatalogItem>[] = [
   { key: 'skillCode', header: '编码', width: 'w-32' },
@@ -264,7 +276,13 @@ async function confirmArchive() {
                   <NvFieldLabel for="skill-group"
                     >技能组 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput id="skill-group" v-model="form.groupName" placeholder="例如：机加工" />
+                  <NvCombobox
+                    id="skill-group"
+                    v-model="form.groupName"
+                    :suggestions="groupSuggestions"
+                    placeholder="选择已有技能组或新建，例如：机加工"
+                    empty-text="还没有技能组，填写即新建"
+                  />
                 </NvField>
               </NvFieldGroup>
 

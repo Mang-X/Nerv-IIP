@@ -77,6 +77,26 @@ vi.mock('@/composables/useBusinessErp', () => ({
   }),
 }))
 
+// 客户 / 物料 / 工厂改成只选：目录 composable 内部走 pinia + colada，测试整体打桩给定候选。
+vi.mock('@/composables/useErpPickerCatalog', () => ({
+  useErpPartnerCatalog: () => ({
+    customerOptions: computed(() => [{ value: 'CUST-001', label: '示例客户' }]),
+    supplierOptions: computed(() => []),
+    partnersPending: shallowRef(false),
+  }),
+  useErpItemCatalog: () => ({
+    skuOptions: computed(() => [{ value: 'SKU-001', label: '示例物料' }]),
+    skusPending: shallowRef(false),
+    uomOptions: computed(() => [{ value: 'EA', label: '个' }]),
+    uomsPending: shallowRef(false),
+    baseUomBySku: computed(() => new Map([['SKU-001', 'EA']])),
+  }),
+  useErpSiteCatalog: () => ({
+    siteOptions: computed(() => [{ value: 'SITE-01', label: '一号工厂' }]),
+    sitesPending: shallowRef(false),
+  }),
+}))
+
 vi.mock('@/composables/usePagedList', () => ({
   usePagedList: () => ({
     page: shallowRef(1),
