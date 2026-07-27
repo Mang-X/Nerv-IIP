@@ -18,7 +18,9 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
 public abstract class IndustrialTelemetryEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>
     where TRequest : notnull
 {
-    protected void ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContract contract)
+    protected void ConfigureIndustrialTelemetryContract(
+        IndustrialTelemetryEndpointContract contract,
+        params int[] responseStatusCodes)
     {
         switch (contract.HttpMethod)
         {
@@ -34,6 +36,16 @@ public abstract class IndustrialTelemetryEndpoint<TRequest, TResponse> : Endpoin
 
         Tags("Business IndustrialTelemetry");
         Policies(contract.AuthorizationPolicy);
+        if (responseStatusCodes.Length > 0)
+        {
+            Description(builder =>
+            {
+                foreach (var statusCode in responseStatusCodes)
+                {
+                    builder.Produces(statusCode);
+                }
+            });
+        }
     }
 }
 
@@ -398,7 +410,9 @@ public sealed class PostAlarmEventEndpoint(ISender sender) : IndustrialTelemetry
 
 public sealed class AcknowledgeAlarmEndpoint(ISender sender) : IndustrialTelemetryEndpoint<AcknowledgeAlarmRequest, ResponseData<AlarmLifecycleResponse>>
 {
-    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<AcknowledgeAlarmEndpoint>());
+    public override void Configure() => ConfigureIndustrialTelemetryContract(
+        IndustrialTelemetryEndpointContracts.Get<AcknowledgeAlarmEndpoint>(),
+        StatusCodes.Status409Conflict);
 
     public override async Task HandleAsync(AcknowledgeAlarmRequest req, CancellationToken ct)
     {
@@ -409,7 +423,9 @@ public sealed class AcknowledgeAlarmEndpoint(ISender sender) : IndustrialTelemet
 
 public sealed class ShelveAlarmEndpoint(ISender sender) : IndustrialTelemetryEndpoint<ShelveAlarmRequest, ResponseData<AlarmLifecycleResponse>>
 {
-    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<ShelveAlarmEndpoint>());
+    public override void Configure() => ConfigureIndustrialTelemetryContract(
+        IndustrialTelemetryEndpointContracts.Get<ShelveAlarmEndpoint>(),
+        StatusCodes.Status409Conflict);
 
     public override async Task HandleAsync(ShelveAlarmRequest req, CancellationToken ct)
     {

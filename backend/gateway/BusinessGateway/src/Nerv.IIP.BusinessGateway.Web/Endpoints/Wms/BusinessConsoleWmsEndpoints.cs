@@ -276,6 +276,7 @@ public sealed class ListBusinessConsoleWmsPutawayTasksEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/complete")]
 [BusinessGatewayOperationId("completeBusinessConsoleWmsInboundOrder")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
 public sealed class CompleteBusinessConsoleWmsInboundOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
@@ -410,6 +411,7 @@ public sealed class ListBusinessConsoleWmsPickingTasksEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/complete")]
 [BusinessGatewayOperationId("completeBusinessConsoleWmsOutboundOrder")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
 public sealed class CompleteBusinessConsoleWmsOutboundOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
@@ -512,6 +514,7 @@ public sealed class ListBusinessConsoleWmsCountExecutionsEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/count-executions/{countExecutionId}/complete")]
 [BusinessGatewayOperationId("completeBusinessConsoleWmsCountExecution")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
 public sealed class CompleteBusinessConsoleWmsCountExecutionEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,

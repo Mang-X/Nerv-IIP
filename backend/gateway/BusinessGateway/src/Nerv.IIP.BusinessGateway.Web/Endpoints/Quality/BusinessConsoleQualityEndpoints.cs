@@ -488,6 +488,7 @@ public sealed class ListBusinessConsoleQualityInspectionTasksEndpoint(
 [Tags("Business Console Quality")]
 [HttpPost("/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record")]
 [BusinessGatewayOperationId("createBusinessConsoleQualityInspectionRecordFromTask")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
 public sealed class CreateBusinessConsoleQualityInspectionRecordFromTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessQualityClient quality,
@@ -808,6 +809,8 @@ public sealed class ArchiveBusinessConsoleQualityReasonCodeEndpoint(
 [Tags("Business Console Quality")]
 [HttpPost("/api/business-console/v1/quality/ncrs/{ncrId}/disposition")]
 [BusinessGatewayOperationId("submitBusinessConsoleQualityNcrDisposition")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status400BadRequest)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
 public sealed class SubmitBusinessConsoleQualityNcrDispositionEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessQualityClient quality,
@@ -845,6 +848,8 @@ public sealed class SubmitBusinessConsoleQualityNcrDispositionEndpoint(
 [Tags("Business Console Quality")]
 [HttpPost("/api/business-console/v1/quality/ncrs/{ncrId}/close")]
 [BusinessGatewayOperationId("closeBusinessConsoleQualityNcr")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status400BadRequest)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
 public sealed class CloseBusinessConsoleQualityNcrEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessQualityClient quality,

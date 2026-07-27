@@ -830,6 +830,45 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Quality_lifecycle_conflict_preserves_status_and_safe_code()
+    {
+        var quality = new RecordingQualityClient
+        {
+            CreateInspectionRecordFromTaskFailure = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.Conflict,
+                "lifecycle-conflict"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/quality/inspection-tasks/inspection-task-001/inspection-record",
+            new
+            {
+                inspectionTaskId = "inspection-task-001",
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                inspectorUserId = "inspector-007",
+                resultLines = new[]
+                {
+                    new { characteristicCode = "DIM-1", observedValue = "10.2", result = "pass" },
+                },
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(document.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal("lifecycle-conflict", document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
     public async Task Quality_reason_catalog_facade_uses_internal_service_token_for_downstream_business_service()
     {
         var quality = new RecordingQualityClient();
@@ -1127,6 +1166,66 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("QUALITY_PLAN_MISSING", document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task Mes_lifecycle_conflict_preserves_status_and_safe_code()
+    {
+        var mes = new RecordingMesClient
+        {
+            ReleaseFailure = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.Conflict,
+                "lifecycle-conflict"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/work-orders/WO-001/release?organizationId=org-001&environmentId=env-dev",
+            new { confirmWarnings = false, idempotencyKey = "release-conflict-001" });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(document.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal("lifecycle-conflict", document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task Lifecycle_conflict_does_not_leak_unsafe_downstream_message()
+    {
+        var mes = new RecordingMesClient
+        {
+            ReleaseFailure = new BusinessServiceProxyException(
+                HttpStatusCode.Conflict,
+                "<html>secret lifecycle stack trace</html>"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/work-orders/WO-001/release?organizationId=org-001&environmentId=env-dev",
+            new { confirmWarnings = false, idempotencyKey = "release-unsafe-001" });
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal("downstream-request-failed", document.RootElement.GetProperty("message").GetString());
+        Assert.DoesNotContain("secret lifecycle stack trace", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<html>", body, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -8888,6 +8987,8 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
 
     public int? NcrTotal { get; init; }
 
+    public BusinessServiceProxyException? CreateInspectionRecordFromTaskFailure { get; init; }
+
     public Task<BusinessConsoleCreateInspectionPlanResponse> CreateInspectionPlanAsync(
         string internalBearerToken,
         BusinessConsoleCreateInspectionPlanRequest request,
@@ -8999,6 +9100,11 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         LastInternalToken = internalBearerToken;
         LastCreateInspectionRecordFromTaskTaskId = inspectionTaskId;
         LastCreateInspectionRecordFromTaskRequest = request;
+        if (CreateInspectionRecordFromTaskFailure is not null)
+        {
+            throw CreateInspectionRecordFromTaskFailure;
+        }
+
         return Task.FromResult(new BusinessConsoleCreateInspectionRecordFromTaskResponse(
             "inspection-from-task-001", "rejected", "ncr-from-task-001", "NCR-2026-0001"));
     }

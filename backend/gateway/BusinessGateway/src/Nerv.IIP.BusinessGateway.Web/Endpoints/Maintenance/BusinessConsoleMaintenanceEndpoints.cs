@@ -47,6 +47,7 @@ public sealed class CreateBusinessConsoleMaintenanceWorkOrderEndpoint(
 [Tags("Business Console Maintenance")]
 [HttpPost("/api/business-console/v1/maintenance/work-orders/{workOrderId}/complete")]
 [BusinessGatewayOperationId("completeBusinessConsoleMaintenanceWorkOrder")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(StatusCodes.Status409Conflict)]
 public sealed class CompleteBusinessConsoleMaintenanceWorkOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMaintenanceClient maintenance,

@@ -782,6 +782,35 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("Open", returnItem.GetProperty("status").GetString());
     }
 
+    [Fact]
+    public async Task Wms_lifecycle_conflict_preserves_status_and_safe_code()
+    {
+        var wms = new RecordingWmsClient
+        {
+            CompleteInboundFailure = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.Conflict,
+                "lifecycle-conflict"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/inbound-orders/inbound-order-001/complete?organizationId=org-001&environmentId=env-dev",
+            new { idempotencyKey = "complete-conflict-001" });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(document.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal("lifecycle-conflict", document.RootElement.GetProperty("message").GetString());
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(
         FakeBusinessGatewayAuthorizationClient auth,
         Action<IServiceCollection>? configureServices = null) =>
@@ -909,6 +938,8 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
 
     public BusinessConsoleCompleteWmsInboundOrderRequest? LastCompleteInboundRequest { get; private set; }
 
+    public BusinessServiceProxyException? CompleteInboundFailure { get; init; }
+
     public BusinessConsoleCreateWmsOutboundOrderRequest? LastCreateOutboundRequest { get; private set; }
 
     public BusinessConsoleCreateWmsPickingTaskRequest? LastCreatePickingRequest { get; private set; }
@@ -959,6 +990,11 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
         LastInternalToken = internalBearerToken;
         LastCompleteInboundRequest = request;
         Calls.Add("complete-inbound");
+        if (CompleteInboundFailure is not null)
+        {
+            throw CompleteInboundFailure;
+        }
+
         return Task.FromResult(new BusinessConsoleCompleteWmsMovementResponse("request-in-001", "movement-in-001"));
     }
 

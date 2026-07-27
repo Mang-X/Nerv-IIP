@@ -265,6 +265,14 @@
               "type": "string",
               "nullable": true
             }
+          },
+          {
+            "name": "inboundOrderId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -568,6 +576,9 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": ""
           }
         },
         "security": [
@@ -684,6 +695,14 @@
           },
           {
             "name": "keyword",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "outboundOrderId",
             "in": "query",
             "schema": {
               "type": "string",
@@ -992,6 +1011,9 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": ""
           }
         },
         "security": [
@@ -1192,6 +1214,14 @@
               "type": "string",
               "nullable": true
             }
+          },
+          {
+            "name": "countExecutionId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -1301,6 +1331,9 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": ""
           }
         },
         "security": [
@@ -2998,6 +3031,14 @@
           },
           {
             "name": "deviceAssetIds",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "alarmEventId",
             "in": "query",
             "schema": {
               "type": "string",
@@ -4868,6 +4909,14 @@
               "default": 100,
               "nullable": false
             }
+          },
+          {
+            "name": "inspectionTaskId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -4977,6 +5026,9 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": ""
           }
         },
         "security": [
@@ -5903,6 +5955,12 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": ""
+          },
+          "400": {
+            "description": "Bad Request"
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -5974,6 +6032,12 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": ""
+          },
+          "400": {
+            "description": "Bad Request"
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -11241,6 +11305,9 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": ""
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -11312,6 +11379,9 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": ""
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -11383,6 +11453,9 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": ""
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -12114,6 +12187,9 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": ""
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -12645,6 +12721,9 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": ""
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -12716,6 +12795,9 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": ""
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -12787,6 +12869,9 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": ""
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -12858,6 +12943,9 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": ""
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -13152,6 +13240,9 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": ""
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -18208,6 +18299,9 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": ""
           }
         },
         "security": [
@@ -22689,6 +22783,14 @@
               "type": "string",
               "nullable": true
             }
+          },
+          {
+            "name": "alarmEventId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -22782,6 +22884,9 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": ""
           }
         },
         "security": [
@@ -22847,6 +22952,9 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": ""
           }
         },
         "security": [
@@ -25646,7 +25754,7 @@
           }
         }
       },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsListRequest": {
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundOrderListRequest": {
         "type": "object",
         "additionalProperties": false
       },
@@ -26399,6 +26507,10 @@
             "format": "date-time"
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsListRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConnectorCollectionHealthResponse": {
         "allOf": [

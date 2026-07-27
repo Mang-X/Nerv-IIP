@@ -17,7 +17,7 @@ namespace Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 public abstract class WmsEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>
     where TRequest : notnull
 {
-    protected void ConfigureWmsContract(WmsEndpointContract contract)
+    protected void ConfigureWmsContract(WmsEndpointContract contract, params int[] responseStatusCodes)
     {
         switch (contract.HttpMethod)
         {
@@ -33,6 +33,16 @@ public abstract class WmsEndpoint<TRequest, TResponse> : Endpoint<TRequest, TRes
 
         Tags("Business WMS");
         Policies(contract.AuthorizationPolicy);
+        if (responseStatusCodes.Length > 0)
+        {
+            Description(builder =>
+            {
+                foreach (var statusCode in responseStatusCodes)
+                {
+                    builder.Produces(statusCode);
+                }
+            });
+        }
     }
 }
 
@@ -164,7 +174,9 @@ public sealed class ListPutawayTasksEndpoint(ISender sender) : WmsEndpoint<ListW
 
 public sealed class CompleteInboundOrderEndpoint(ISender sender) : WmsEndpoint<CompleteInboundOrderRequest, ResponseData<CompleteMovementResponse>>
 {
-    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CompleteInboundOrderEndpoint>());
+    public override void Configure() => ConfigureWmsContract(
+        WmsEndpointContracts.Get<CompleteInboundOrderEndpoint>(),
+        StatusCodes.Status409Conflict);
     public override async Task HandleAsync(CompleteInboundOrderRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new CompleteInboundOrderCommand(req.InboundOrderId, req.IdempotencyKey, req.Lines), ct);
@@ -274,7 +286,9 @@ public sealed class CompleteWarehouseTaskEndpoint(ISender sender) : WmsEndpoint<
 
 public sealed class CompleteOutboundOrderEndpoint(ISender sender) : WmsEndpoint<CompleteOutboundOrderRequest, ResponseData<CompleteMovementResponse>>
 {
-    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CompleteOutboundOrderEndpoint>());
+    public override void Configure() => ConfigureWmsContract(
+        WmsEndpointContracts.Get<CompleteOutboundOrderEndpoint>(),
+        StatusCodes.Status409Conflict);
     public override async Task HandleAsync(CompleteOutboundOrderRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new CompleteOutboundOrderCommand(req.OutboundOrderId, req.PackReviewNo, req.Passed, req.IdempotencyKey), ct);
@@ -352,7 +366,9 @@ public sealed class ListCountExecutionsEndpoint(ISender sender) : WmsEndpoint<Li
 
 public sealed class CompleteCountExecutionEndpoint(ISender sender) : WmsEndpoint<CompleteCountExecutionRequest, ResponseData<CompleteMovementResponse>>
 {
-    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CompleteCountExecutionEndpoint>());
+    public override void Configure() => ConfigureWmsContract(
+        WmsEndpointContracts.Get<CompleteCountExecutionEndpoint>(),
+        StatusCodes.Status409Conflict);
     public override async Task HandleAsync(CompleteCountExecutionRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new CompleteCountExecutionCommand(req.CountExecutionId, req.CountedQuantity, req.IdempotencyKey), ct);

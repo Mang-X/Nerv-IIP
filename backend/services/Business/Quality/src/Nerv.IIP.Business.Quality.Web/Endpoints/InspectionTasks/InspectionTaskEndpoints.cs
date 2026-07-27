@@ -61,7 +61,9 @@ public sealed class CreateInspectionRecordFromTaskEndpoint(ISender sender)
 {
     public override void Configure()
     {
-        ConfigureQualityContract(QualityInspectionEndpointContracts.Get<CreateInspectionRecordFromTaskEndpoint>());
+        ConfigureQualityContract(
+            QualityInspectionEndpointContracts.Get<CreateInspectionRecordFromTaskEndpoint>(),
+            StatusCodes.Status409Conflict);
     }
 
     public override async Task HandleAsync(CreateInspectionRecordFromTaskRequest req, CancellationToken ct)
