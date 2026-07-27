@@ -36,7 +36,8 @@ internal static class NonconformanceReportEndpointMapping
             response.AttachmentFileIds,
             response.CreatedAtUtc,
             response.UpdatedAtUtc,
-            response.SourceInspectionRecordId);
+            response.SourceInspectionRecordId,
+            response.CloseReason);
     }
 }
 
@@ -133,7 +134,10 @@ public sealed record NonconformanceReportDto(
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
     // 权威业务关系：从检验开出的 NCR 回链其来源检验记录。
-    string? SourceInspectionRecordId = null);
+    string? SourceInspectionRecordId = null,
+    // 关单审计事实：closed 必有关闭原因（界面必填）。查询响应与网关都带这个字段，
+    // 端点 DTO 漏掉会让它在中间一跳静默变 null——真机上表现为「已关闭但没有原因」。
+    string? CloseReason = null);
 
 public sealed record ListNonconformanceReportsEndpointResponse(IReadOnlyCollection<NonconformanceReportDto> Items, int Total);
 
