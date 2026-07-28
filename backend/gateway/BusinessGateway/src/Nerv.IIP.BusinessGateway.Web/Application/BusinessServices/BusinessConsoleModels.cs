@@ -1292,6 +1292,168 @@ public sealed record BusinessConsoleQualityProcessCapabilityResponse(
     decimal? Cp,
     decimal? Cpk);
 
+// ── 计量器具台账 / 校准记录（三期读面）───────────────────────────────────────────────
+public sealed record BusinessConsoleQualityMeasuringDeviceListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DeviceType = null,
+    string? Status = null,
+    string? CalibrationState = null,
+    string? Keyword = null,
+    int WarningDays = 7,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleQualityMeasuringDeviceItem(
+    string MeasuringDeviceId,
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceCode,
+    string DeviceType,
+    string Accuracy,
+    int CalibrationIntervalDays,
+    string Status,
+    DateTimeOffset? LastCalibratedAtUtc,
+    DateTimeOffset CalibrationDueAtUtc,
+    string CalibrationState,
+    int DaysUntilDue,
+    int CalibrationRecordCount,
+    string? LatestCalibrationNo,
+    string? LatestCalibrationProvider);
+
+public sealed record BusinessConsoleQualityMeasuringDeviceListResponse(
+    IReadOnlyCollection<BusinessConsoleQualityMeasuringDeviceItem> Items,
+    int Total,
+    int CurrentCount,
+    int WarningCount,
+    int OverdueCount,
+    int UnavailableCount);
+
+public sealed record BusinessConsoleQualityCalibrationRecordListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? MeasuringDeviceId = null,
+    string? Keyword = null,
+    DateTimeOffset? CalibratedFromUtc = null,
+    DateTimeOffset? CalibratedToUtc = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleQualityCalibrationRecordItem(
+    string CalibrationRecordId,
+    string MeasuringDeviceId,
+    string DeviceCode,
+    string DeviceType,
+    string CalibrationNo,
+    DateTimeOffset CalibratedAtUtc,
+    string CalibrationProvider,
+    string? CertificateFileId,
+    int CalibrationIntervalDays,
+    DateTimeOffset NextCalibrationDueAtUtc);
+
+public sealed record BusinessConsoleQualityCalibrationRecordListResponse(
+    IReadOnlyCollection<BusinessConsoleQualityCalibrationRecordItem> Items,
+    int Total);
+
+// ── CAPA 台账（三期读面）─────────────────────────────────────────────────────────────
+public sealed record BusinessConsoleQualityCapaListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? OwnerUserId = null,
+    string? SourceNcrId = null,
+    bool? OverdueOnly = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleQualityCapaDetailRequest(
+    [property: RouteParam] string CorrectiveActionId,
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record BusinessConsoleQualityCapaActionItem(
+    string CorrectiveActionItemId,
+    string ActionType,
+    string Description,
+    string OwnerUserId,
+    DateTimeOffset DueAtUtc,
+    string Status,
+    string? CompletedByUserId,
+    DateTimeOffset? CompletedAtUtc,
+    DateTimeOffset CreatedAtUtc,
+    bool Overdue);
+
+public sealed record BusinessConsoleQualityCapaItem(
+    string CorrectiveActionId,
+    string OrganizationId,
+    string EnvironmentId,
+    string CapaCode,
+    string? SourceNcrId,
+    string RootCause,
+    string ContainmentAction,
+    string OwnerUserId,
+    DateTimeOffset DueAtUtc,
+    string Status,
+    string? EffectivenessVerifiedByUserId,
+    string? EffectivenessResult,
+    DateTimeOffset? EffectivenessVerifiedAtUtc,
+    string? EffectivenessInspectionRecordId,
+    string? CloseApprovalChainId,
+    string? ClosedByUserId,
+    DateTimeOffset? ClosedAtUtc,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc,
+    int ActionCount,
+    int CompletedActionCount,
+    bool Overdue,
+    IReadOnlyCollection<BusinessConsoleQualityCapaActionItem> Actions);
+
+public sealed record BusinessConsoleQualityCapaListResponse(
+    IReadOnlyCollection<BusinessConsoleQualityCapaItem> Items,
+    int Total,
+    int OpenCount,
+    int EffectivenessVerifiedCount,
+    int ClosedCount,
+    int OverdueCount);
+
+// ── SPC 控制图台账（三期读面）────────────────────────────────────────────────────────
+public sealed record BusinessConsoleQualitySpcControlChartListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode = null,
+    string? CharacteristicCode = null,
+    string? WorkCenterId = null,
+    bool? Locked = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleQualitySpcControlChartItem(
+    string SpcControlChartId,
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string CharacteristicCode,
+    string WorkCenterId,
+    int SubgroupSize,
+    decimal CenterLine,
+    decimal AverageRange,
+    decimal XbarUpperControlLimit,
+    decimal XbarLowerControlLimit,
+    decimal RangeUpperControlLimit,
+    decimal RangeLowerControlLimit,
+    bool Locked,
+    DateTime? LimitsCalculatedAtUtc,
+    DateTime? LockedAtUtc,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc);
+
+public sealed record BusinessConsoleQualitySpcControlChartListResponse(
+    IReadOnlyCollection<BusinessConsoleQualitySpcControlChartItem> Items,
+    int Total,
+    int LockedCount);
+
 public sealed record BusinessConsoleQualityReasonListRequest(
     string OrganizationId,
     string EnvironmentId,

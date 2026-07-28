@@ -47,11 +47,25 @@ public sealed class QualityInspectionEndpointContractTests
     {
         var contracts = QualityInspectionEndpointContracts.All;
 
-        Assert.Equal(18, contracts.Count);
+        Assert.Equal(21, contracts.Count);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/quality/measuring-devices"
             && x.PermissionCode == BusinessPermissionCodes.QualityMeasuringDevicesManage
             && x.OperationId == "createBusinessQualityMeasuringDevice");
+
+        // 三期读面：计量器具台账 / 校准记录流水 / SPC 控制图台账。
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/measuring-devices"
+            && x.PermissionCode == BusinessPermissionCodes.QualityMeasuringDevicesRead
+            && x.OperationId == "listBusinessQualityMeasuringDevices");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/calibration-records"
+            && x.PermissionCode == BusinessPermissionCodes.QualityMeasuringDevicesRead
+            && x.OperationId == "listBusinessQualityCalibrationRecords");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/spc/control-charts"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
+            && x.OperationId == "listBusinessQualitySpcControlCharts");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/quality/measuring-devices/calibration-dashboard"
             && x.PermissionCode == BusinessPermissionCodes.QualityMeasuringDevicesRead

@@ -10,7 +10,12 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Seed;
 /// 2. 遥测日级聚合的行数与「工作日历 × 班次覆盖」的期望完全一致（周日/春节无生产遥测，辅助设备 7×24）；
 /// 3. 每起带停机的报警在设备状态史里有对应的 <c>faulted</c> 段（OEE 可用率的输入）；
 /// 4. OEE 产量事实按设备唯一理论节拍、数量为正；
-/// 5. 抽样 20 起报警的全链（报警 → 状态 → 遥测越限窗口）人工可追，写入日志样本。
+/// 5. 抽样 20 起报警的全链（报警 → 状态 → 遥测越限窗口）人工可追，写入日志样本；
+/// 6.（四期）设备控制指令台账与 <see cref="WorldHistoryControlCommandSpec"/> 逐条一致，
+///    且**没有一条处于会触发下发的待执行态**（queued / approval-pending / dispatched）——
+///    历史指令一律是 completed / failed / rejected 且带 FinishedAtUtc，
+///    审批态不得停在 pending。这是安全条款：留一条待执行的历史指令，就等于在演示环境里
+///    埋了一次真实写点的引信（理由见 <see cref="WorldHistoryControlCommandSpec"/>）。
 /// 校验只认本引擎号段（<c>seed:world-history</c> / <c>WH-*</c>），与 L3 实时流互不干扰。
 /// 任何一条不满足直接抛 <see cref="InvalidOperationException"/>，宁可启动失败也不放账不平的历史进演示环境。
 /// </summary>
@@ -30,6 +35,8 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         var dailyRollupsChecked = await ValidateDailyRollupsAsync(organizationId, environmentId, asOfDate, cancellationToken);
         var statesChecked = await ValidateFaultedStatesAsync(organizationId, environmentId, alarmPlans, cancellationToken);
         var oeeFactsChecked = await ValidateOeeFactsAsync(organizationId, environmentId, cancellationToken);
+        var controlCommandsChecked = await ValidateControlCommandsAsync(
+            organizationId, environmentId, asOfDate, scale, cancellationToken);
         var sample = BuildSample(alarmPlans);
 
         return new WorldHistoryDeviceValidationReport(
@@ -38,7 +45,100 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             dailyRollupsChecked,
             statesChecked,
             oeeFactsChecked,
+            controlCommandsChecked,
             sample);
+    }
+
+    /// <summary>
+    /// 6) 控制指令台账逐条对账 + **终态硬条款**。
+    ///
+    /// 「没有会触发下发的待执行指令」在这里 fail-closed，而不是靠生成端自觉：生成端的配额将来
+    /// 若被改坏，也必须在启动时就炸掉，绝不能把一条待审批的历史指令放进演示环境。
+    /// </summary>
+    private async Task<int> ValidateControlCommandsAsync(
+        string organizationId,
+        string environmentId,
+        DateOnly asOfDate,
+        double scale,
+        CancellationToken cancellationToken)
+    {
+        var plans = WorldHistoryControlCommandSpec.BuildCommandPlans(asOfDate, scale);
+        var seeded = await dbContext.DeviceControlCommands
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+            .Where(x => x.OperationTaskId.StartsWith(WorldHistoryControlCommandSpec.OperationTaskPrefix))
+            .Select(x => new
+            {
+                x.OperationTaskId,
+                x.DeviceAssetId,
+                x.CommandType,
+                x.Status,
+                x.ApprovalStatus,
+                x.RequestedAtUtc,
+                x.FinishedAtUtc,
+            })
+            .ToArrayAsync(cancellationToken);
+        if (seeded.Length != plans.Count)
+        {
+            throw Fail($"device control command count mismatch: expected {plans.Count} but found {seeded.Length}.");
+        }
+
+        var lowerBound = new DateTimeOffset(WorldHistoryCalendar.GoLiveDate, TimeOnly.MinValue, TimeSpan.Zero);
+        var upperBound = new DateTimeOffset(asOfDate, TimeOnly.MaxValue, TimeSpan.Zero);
+        var byTaskId = seeded.ToDictionary(x => x.OperationTaskId, StringComparer.Ordinal);
+        foreach (var plan in plans)
+        {
+            if (!byTaskId.TryGetValue(plan.OperationTaskId, out var command))
+            {
+                throw Fail($"device control command '{plan.OperationTaskId}' is missing.");
+            }
+
+            if (command.DeviceAssetId != plan.DeviceAssetId || command.CommandType != plan.CommandType)
+            {
+                throw Fail($"device control command '{plan.OperationTaskId}' does not match the deterministic spec.");
+            }
+
+            if (command.Status != plan.TerminalStatus || command.ApprovalStatus != plan.ExpectedApprovalStatus)
+            {
+                throw Fail($"device control command '{plan.OperationTaskId}' has status "
+                    + $"'{command.Status}'/'{command.ApprovalStatus}' but the plan expects "
+                    + $"'{plan.TerminalStatus}'/'{plan.ExpectedApprovalStatus}'.");
+            }
+
+            if (command.RequestedAtUtc < lowerBound || command.RequestedAtUtc > upperBound)
+            {
+                throw Fail($"device control command '{plan.OperationTaskId}' was requested at "
+                    + $"{command.RequestedAtUtc:O}, outside the history window.");
+            }
+        }
+
+        // 安全条款：终态齐全、无待执行态残留。
+        foreach (var command in seeded)
+        {
+            if (WorldHistoryControlCommandSpec.PendingDispatchStatuses.Contains(command.Status, StringComparer.Ordinal))
+            {
+                throw Fail($"device control command '{command.OperationTaskId}' is still pending dispatch "
+                    + $"(status '{command.Status}'); history must never leave a command that could actually fire.");
+            }
+
+            if (!WorldHistoryControlCommandSpec.TerminalStatuses.Contains(command.Status, StringComparer.Ordinal))
+            {
+                throw Fail($"device control command '{command.OperationTaskId}' has non-terminal status '{command.Status}'.");
+            }
+
+            if (command.FinishedAtUtc is null || command.FinishedAtUtc < command.RequestedAtUtc)
+            {
+                throw Fail($"device control command '{command.OperationTaskId}' has no monotonic finish time.");
+            }
+
+            if (string.Equals(command.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase))
+            {
+                throw Fail($"device control command '{command.OperationTaskId}' still awaits approval; "
+                    + "an approval decision on it would dispatch to the device.");
+            }
+        }
+
+        return seeded.Length;
     }
 
     private async Task<int> ValidateAlarmsAsync(
@@ -236,4 +336,5 @@ public sealed record WorldHistoryDeviceValidationReport(
     int DailyRollupsChecked,
     int FaultedStatesChecked,
     int OeeFactsChecked,
+    int DeviceControlCommandsChecked,
     IReadOnlyList<string> Sample);

@@ -3694,6 +3694,45 @@
     },
     {
       "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/calibration-records",
+      "operationId": "listBusinessQualityCalibrationRecords",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleQualityCalibrationRecords"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/capas",
+      "operationId": "listBusinessQualityCapas",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleQualityCapas"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/capas/{correctiveActionId}",
+      "operationId": "getBusinessQualityCapa",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleQualityCapa"
+      ]
+    },
+    {
+      "service": "Quality",
       "method": "POST",
       "route": "/api/business/v1/quality/capas",
       "operationId": "openBusinessQualityCapa",
@@ -3861,6 +3900,19 @@
       ],
       "gatewayOperationIds": [
         "createBusinessConsoleQualityInspectionRecordFromTask"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/measuring-devices",
+      "operationId": "listBusinessQualityMeasuringDevices",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleQualityMeasuringDevices"
       ]
     },
     {
@@ -4048,6 +4100,19 @@
       "operationId": "lockBusinessQualitySpcControlChart",
       "classification": "deferred",
       "followUp": "BusinessGateway facade pending; SPC control-limit lock (write) follows the SPC analysis menu phase (#725)."
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/spc/control-charts",
+      "operationId": "listBusinessQualitySpcControlCharts",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleQualitySpcControlCharts"
+      ]
     },
     {
       "service": "Quality",

@@ -12,6 +12,7 @@ import QualityParetoPanel from '@/components/quality/QualityParetoPanel.vue'
 import QualitySpcCharts from '@/components/quality/QualitySpcCharts.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { useQualityNcrs } from '@/composables/useBusinessQuality'
+import { usePagedList } from '@/composables/usePagedList'
 import {
   useQualityCharacteristicCatalog,
   useQualityInspectionPlanCatalog,
@@ -26,6 +27,11 @@ import {
   type QualityAnalysisBucket,
   type QualitySpcViolation,
 } from '@/composables/useBusinessQualityAnalysis'
+import {
+  useQualitySpcControlCharts,
+  type QualitySpcControlChartItem,
+} from '@/composables/useBusinessQualityLedgers'
+import { formatDateTime } from '@/utils/format'
 import { friendlyErrorMessage } from '@/utils/notify'
 import {
   NvButton,
@@ -36,6 +42,11 @@ import {
   NvMetricRing,
   NvPageHeader,
   NvSearchSelect,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   NvSheet,
   NvSheetContent,
   NvSheetDescription,
@@ -67,6 +78,112 @@ definePage({
 const router = useRouter()
 const { filters, ncrs, ncrsError, ncrsPending, ncrsTotal, refreshNcrs } = useQualityNcrs()
 const spc = useQualitySpcAnalysis()
+
+/*
+ * 控制图台账：本页上方的 SPC 图是「按当前范围现算」，台账则是已登记的控制限本身
+ * （中心线、X-bar 上下控制限、平均极差、R 图上限、是否锁定、控制限计算时间）。
+ * 两块口径不同，所以台账独立取数、独立筛选，不跟随上面的范围选择。
+ */
+const {
+  filters: controlChartFilters,
+  spcControlCharts,
+  spcControlChartsError,
+  spcControlChartsPending,
+  spcControlChartsTotal,
+  spcControlChartsLockedCount,
+} = useQualitySpcControlCharts()
+const controlChartPaging = usePagedList(controlChartFilters, {
+  initialPageSize: '20',
+  resetOn: [() => controlChartFilters.locked, () => controlChartFilters.keyword],
+})
+const controlChartLockedOptions = [
+  { label: '全部控制图', value: 'all' },
+  { label: '已锁定', value: 'locked' },
+  { label: '未锁定', value: 'unlocked' },
+]
+const controlChartLockedFilter = computed({
+  get: () =>
+    controlChartFilters.locked === undefined
+      ? 'all'
+      : controlChartFilters.locked
+        ? 'locked'
+        : 'unlocked',
+  set: (value: string) => {
+    controlChartFilters.locked = value === 'all' ? undefined : value === 'locked'
+  },
+})
+const controlChartKeyword = computed({
+  get: () => controlChartFilters.keyword ?? '',
+  set: (value: string) => {
+    controlChartFilters.keyword = value.trim() ? value : undefined
+  },
+})
+const controlChartErrorMessage = computed(() =>
+  spcControlChartsError.value
+    ? friendlyErrorMessage(spcControlChartsError.value, '控制图台账加载失败，请稍后重试。')
+    : '',
+)
+const controlChartColumns: NvDataTableColumn<QualitySpcControlChartItem>[] = [
+  { key: 'skuCode', header: 'SKU', cellClass: 'font-medium' },
+  {
+    key: 'characteristicCode',
+    header: '特性',
+    accessor: (row) => row.characteristicCode?.trim() || '未登记',
+  },
+  {
+    key: 'workCenterId',
+    header: '工作中心',
+    accessor: (row) => row.workCenterId?.trim() || '未登记',
+  },
+  { key: 'subgroupSize', header: '子组容量', align: 'end', width: 'w-24' },
+  {
+    key: 'centerLine',
+    header: '中心线',
+    align: 'end',
+    width: 'w-24',
+    accessor: (row) => formatMetric(row.centerLine),
+  },
+  {
+    key: 'xbarUpperControlLimit',
+    header: 'X-bar UCL',
+    align: 'end',
+    width: 'w-28',
+    accessor: (row) => formatMetric(row.xbarUpperControlLimit),
+  },
+  {
+    key: 'xbarLowerControlLimit',
+    header: 'X-bar LCL',
+    align: 'end',
+    width: 'w-28',
+    accessor: (row) => formatMetric(row.xbarLowerControlLimit),
+  },
+  {
+    key: 'averageRange',
+    header: '平均极差',
+    align: 'end',
+    width: 'w-24',
+    accessor: (row) => formatMetric(row.averageRange),
+  },
+  {
+    key: 'rangeUpperControlLimit',
+    header: 'R UCL',
+    align: 'end',
+    width: 'w-24',
+    accessor: (row) => formatMetric(row.rangeUpperControlLimit),
+  },
+  { key: 'locked', header: '锁定', width: 'w-24' },
+  {
+    key: 'limitsCalculatedAtUtc',
+    header: '控制限计算时间',
+    accessor: (row) => formatDateTime(row.limitsCalculatedAtUtc),
+  },
+]
+function controlChartRowKey(row: QualitySpcControlChartItem) {
+  return (
+    row.spcControlChartId ??
+    `${row.skuCode ?? ''}-${row.characteristicCode ?? ''}-${row.workCenterId ?? ''}`
+  )
+}
 
 // SPC 范围目录：SKU 取物料主数据、工作中心取主数据资源目录，选择器只选不填。
 const skuCatalog = useQualitySkuCatalog()
@@ -519,6 +636,71 @@ function spcViolationKey(row: QualitySpcViolation) {
         </template>
       </NvDataTable>
     </div>
+
+    <section class="grid gap-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h2 class="text-base font-semibold text-foreground">控制图台账</h2>
+        <p class="text-sm text-muted-foreground">
+          已登记 {{ spcControlChartsTotal }} 张控制图，其中
+          {{ spcControlChartsLockedCount }} 张已锁定控制限。
+        </p>
+      </div>
+
+      <NvToolbar
+        v-model:search="controlChartKeyword"
+        search-placeholder="搜索 SKU / 特性 / 工作中心"
+        search-label="搜索控制图台账"
+      >
+        <template #filters>
+          <NvSelect v-model="controlChartLockedFilter">
+            <NvSelectTrigger class="h-9 w-36" aria-label="控制限锁定状态">
+              <NvSelectValue />
+            </NvSelectTrigger>
+            <NvSelectContent>
+              <NvSelectItem
+                v-for="option in controlChartLockedOptions"
+                :key="option.value"
+                :value="option.value"
+                >{{ option.label }}</NvSelectItem
+              >
+            </NvSelectContent>
+          </NvSelect>
+        </template>
+      </NvToolbar>
+
+      <p
+        v-if="controlChartErrorMessage"
+        class="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive"
+        role="alert"
+      >
+        {{ controlChartErrorMessage }}
+      </p>
+
+      <NvDataTable
+        v-else
+        manual
+        :page="controlChartPaging.page.value"
+        :page-size="controlChartPaging.pageSize.value"
+        :total-items="spcControlChartsTotal"
+        :columns="controlChartColumns"
+        :rows="spcControlCharts"
+        :row-key="controlChartRowKey"
+        :loading="spcControlChartsPending"
+        :searchable="false"
+        :column-settings="false"
+        empty-message="当前范围内还没有登记控制图。首次计算控制限后会在这里留下台账。"
+        @update:page="controlChartPaging.page.value = $event"
+        @update:page-size="(value) => (controlChartPaging.pageSize.value = String(value))"
+      >
+        <template #cell-locked="{ row }">
+          <NvStatusBadge
+            :value="row.locked ? 'locked' : 'unlocked'"
+            :label="row.locked ? '已锁定' : '未锁定'"
+            :tone="row.locked ? 'success' : 'neutral'"
+          />
+        </template>
+      </NvDataTable>
+    </section>
 
     <div
       v-if="!listErrorMessage"

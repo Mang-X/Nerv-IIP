@@ -145,6 +145,68 @@
 | `mes.mes_sku_availabilities` | L0 既有 SKU 编码 | **黑名单表**，只记停用事实；清单只能挑非成品、非用料、非二供弹簧的原材料 |
 | `mes.schedule_results` | `SP-2026-W##`（周计划号） | 每周一次基线排程 + 周内 0–3 次重排；`schedule_version` 自 1 起连续，与运行时「已有条数 + 1」衔接 |
 
+四期补登记（设备维修备件 / 设备状态投影）：
+
+| 号段 | 用途 | 归属服务 |
+|---|---|---|
+| `MRO-{类}-##` | **维修备件目录**（轴承 / 油封 / 密封圈 / 同步带 / 滤芯 / 接触器 / 气缸 / 砂轮 / 刀具 / 液压油 / 传感器 / 电极…），挂在 `maintenance.maintenance_work_order_spare_part_lines.sku_code` 上 | Maintenance |
+
+`MRO-` 与 L0 §4 的 `RM-/PK-` 显式分段：`RM-/PK-` 是**减振器的用料**（进 BOM、进领料、进成品成本），
+`MRO-` 是**维修物耗**（与产品 BOM 无关）。把「机床主轴轴承」记成 `RM-SEL-01 油封` 会让物料主数据、
+BOM 与库存三处同时失真。因此 `MRO-` 备件**只存在于 Maintenance 侧的确定性 Spec**，
+**不写入 MasterData SKU 主数据、不进库存台账、不产生库存流水**——历史备件消耗若真去扣库存，
+会打破库存域「现存量 = 世界观流水代数和」的恒等式（WMS 那批已踩过），扣的还是不存在的账。
+`maintenance_work_order_spare_part_lines` 的表注释本就写明 “not inventory balances”。
+备件行本身没有独立单号（主键为 GUID，前端按 `SP-{id 后 8 位}` 呈现）。
+
+四期补登记（设备控制指令 / 库存预留）：
+
+| 号段 | 用途 | 归属服务 |
+|---|---|---|
+| `OPS-WH-*` | **设备控制指令台账**（`industrial_telemetry.device_control_commands.operation_task_id`）。两个家族：报警处置停机指令直接派生自报警号（`OPS-WH-{设备}-{点位}:{周}{槽}`），工艺参数下发按设备 × 周（`OPS-WH-SET-{设备}-{周}`） | IndustrialTelemetry |
+
+`device_control_commands` **不是执行记录，是 Ops operation task 的投影**——真正的执行权威在 Ops，
+台账存的是「下发那一刻，谁对哪台设备的哪个点位下了什么值、为什么下」的业务快照。因此历史回填
+**只写台账、绝不调用 Ops 客户端**，物理上不可能产生一次下发。
+
+**历史控制指令一律是终态（completed / failed / rejected）且带 `finished_at_utc`**，这是安全条款
+不是风格：`queued` / `approval-pending` / `dispatched` 在读面上意味着「这条命令还在路上」——
+详情页会持续轮询 Ops、审批面会把它列成待办，演示时任何一次「通过」都可能变成对真实设备
+（或 L3 模拟连接器）的一次真实写点。终态配额每 20 条为 成功 17 / 失败 2 / 驳回 1，
+按任务号的 FNV 折叠分档（不用全局序号，避免截止日推进导致位置漂移）。
+「按下按钮真的动一次设备」留给演示当场走真实路径（L2）。
+停机指令写的是控制通道的运行命令位 `run-command`，不是采集清单里的只读过程量；
+参数指令只落在**可写设定点**（主轴转速 / 砂轮转速 / 焊接电流 / 压装力 / 阻尼力 / 槽液温度 /
+槽液 PH / 气源压力）上，且设定值恒不越过报警阈值——历史参数下发不该自己制造一起报警。
+
+`inventory.stock_reservations` **本批不新增号段**，两个家族都复用既有单号：
+
+| 家族 | 复用的号段 | 幂等键 | 状态 |
+|---|---|---|---|
+| 发货拣货预留 | `OB-DO-2026-#####`（WMS 发货出库单号） | `{出库单}:pick-reserve` | `released`（发货过账时释放） |
+| 齐套待领预留 | `WO-2026-#####`（已下达待开工工单） | `{工单}:kit-reserve:{物料}` | `open`（尚未领料，仍占着期初批） |
+
+**预留只动 `reserved_quantity` 与 `ledger_version`**，绝不改 `on_hand_quantity`、
+绝不写新的库存流水——库存一致性校验器按「现存量 = 世界观流水代数和（只认 `seed:world-history`）」
+重算，动一下现存量或多写一笔流水当场失衡（WMS 那批已踩过，见提交 `e4deae3`）。三条都做成了
+校验器条款（`ValidateReservationsAsync`）。已释放的历史预留**不回放到台账**：净效应为零，
+且成品批此刻已归零，回放 `Reserve` 会被「预留超过可用量」拒绝——那是对**今天**的库存状态做的
+检查，用它复核**当时**成立的占用毫无意义。未释放预留的失效时刻取 **截止日 + 180 天**：
+`ExpiredStockReservationService` 会自动释放已过期的 open 预留，回填成历史时刻会让
+「库存可用量」页的「已占用」列在演示途中悄悄归零。齐套预留只在库存真的够时才落
+（不齐套就预留不上，这是齐套检查的本义，不是绕开异常）。
+
+**没有「未发货的出库单」可挂**：WMS 侧的世界观出库单一律被推到 `Completed`，
+且所有走到完工入库的工单其销售订单必然已发货，成品批发完即归零。硬造要么改 WMS 黄金向量、
+要么在成品库凭空建账，都比「按已下达工单的齐套需求预留原料」更假——齐套预留是同一条业务链的
+上游一跳（下达 → 齐套预留 → 拣货 → 领料出库），既真实又有物理库存可占。
+
+`maintenance.maintenance_device_states` **不占号段也不是业务台账**：它是
+`DeviceAssetChangedIntegrationEvent` 的最新投影（只有一个 `disabled` 布尔位），唯一用途是
+给保养计划生成做闸门。「设备在跑还是在修」的视图在 IndustrialTelemetry 的
+`device_state_snapshots`；维修态由工单 `Status=Open` + `AssetUnavailable` 表达。
+种子按 §3 的 46 台设备镜像 MasterData 启用态（全部 `disabled=false`，变更时刻 = 上线日）。
+
 `NCR-2026-D####` 单独分段的理由：MES 的车间不良记录需要在 `DispositionType`/`NcrCode`
 上引用一张 NCR，但 MES 不能跨库向 Quality 取号，两个服务各自按序号生成会直接抢占
 同一号段并在演示里出现「两张不同的 NCR-2026-0007」。用 `D` 前缀把 MES 引用侧的号
