@@ -84,6 +84,7 @@ try
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddScoped<WorldHistoryCountSeedService>();
+    builder.Services.AddScoped<WorldHistoryReservationSeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
@@ -202,6 +203,32 @@ try
                 countReport.Validation.OpenTasksChecked,
                 countReport.Validation.StockCountAdjustmentsChecked,
                 countReport.Validation.VarianceAmountTotal);
+
+            // 预留块同样排在流水块之后：预留的维度取自真实落库的台账。
+            // 它只动 ReservedQuantity / LedgerVersion，绝不改现存量、绝不写流水（校验器 fail-closed）。
+            var reservationReport = await scope.ServiceProvider.GetRequiredService<WorldHistoryReservationSeedService>().SeedAsync(
+                leaderDemoOrganizationId,
+                leaderDemoEnvironmentId,
+                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+            app.Logger.LogInformation(
+                "World-history inventory reservation seed completed: {Reservations} reservations ({Open} still committing stock), " +
+                "{Skipped} plans skipped for a missing ledger dimension, {NotKitted} skipped as not kitted; " +
+                "validator checked {CheckedReservations} reservations " +
+                "({CheckedOpen} open) across {LedgersWithReservation} committed ledgers: reserved {Reserved}, available {Available}.",
+                reservationReport.StockReservationsWritten,
+                reservationReport.OpenReservationsWritten,
+                reservationReport.PlansSkippedWithoutLedger,
+                reservationReport.PlansSkippedNotKitted,
+                reservationReport.Validation.StockReservationsChecked,
+                reservationReport.Validation.OpenReservationsChecked,
+                reservationReport.Validation.LedgersWithReservationChecked,
+                reservationReport.Validation.ReservedQuantityTotal,
+                reservationReport.Validation.AvailableQuantityTotal);
+            foreach (var line in reservationReport.Validation.Sample)
+            {
+                app.Logger.LogInformation("World-history reservation sample: {Reservation}", line);
+            }
         }
     }
 
