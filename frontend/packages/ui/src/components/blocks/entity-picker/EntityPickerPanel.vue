@@ -21,14 +21,22 @@ const props = withDefaults(
     searchAriaLabel?: string
     /** 弹窗形态给更大的搜索框（h-11），下拉形态跟控件基线一致（h-9）。 */
     dense?: boolean
+    /** 是否显示编码行。`value` 是内部标识（GUID）且没有 `code` 时必须关掉。 */
+    showCode?: boolean
   }>(),
   {
     searchPlaceholder: '搜索名称 / 编码…',
     emptyText: '无匹配实体',
     loading: false,
     dense: true,
+    showCode: true,
   },
 )
+
+/** 选项上要显示的编码：优先 `code`，否则回落到 `value`。 */
+function codeOf(option: EntityPickerOption): string {
+  return option.code ?? option.value
+}
 
 const emit = defineEmits<{ (e: 'pick', option: EntityPickerOption): void }>()
 
@@ -39,8 +47,10 @@ const inputEl = ref<HTMLInputElement>()
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return props.options
+  // 搜人读编码走 `code`（没有才回落 `value`）。`value` 是 GUID 时用户不会去搜它，
+  // 把 GUID 塞进匹配串只会制造误命中。
   return props.options.filter((o) =>
-    `${o.label} ${o.hint ?? ''} ${o.value}`.toLowerCase().includes(q),
+    `${o.label} ${o.hint ?? ''} ${codeOf(o)}`.toLowerCase().includes(q),
   )
 })
 
@@ -130,8 +140,8 @@ defineExpose({ focus: () => inputEl.value?.focus() })
           />
           <span class="min-w-0 flex-1">
             <span class="block truncate text-sm">{{ option.label }}</span>
-            <span class="block truncate font-mono text-xs text-muted-foreground">
-              {{ option.value }}
+            <span v-if="showCode" class="block truncate font-mono text-xs text-muted-foreground">
+              {{ codeOf(option) }}
             </span>
           </span>
           <span v-if="option.hint" class="shrink-0 text-xs text-muted-foreground">

@@ -51,6 +51,14 @@ const props = withDefaults(
     disabled?: boolean
     /** 允许清除已选值（触发按钮右侧出现清除叉）。 */
     clearable?: boolean
+    /**
+     * 是否显示编码行（选项行的第二行 + 触发器上的括号编码）。
+     *
+     * **当 `value` 是内部标识（GUID / 自增 id）而不是人读编码时必须关掉**，
+     * 否则界面上会直接印出一串 GUID。更好的做法是给每个 option 传 `code`
+     * ——这样既能显示真正的人读编码，`value` 又仍然回传内部 id。
+     */
+    showCode?: boolean
     id?: string
     ariaLabel?: string
     class?: HTMLAttributes['class']
@@ -63,6 +71,7 @@ const props = withDefaults(
     loading: false,
     disabled: false,
     clearable: false,
+    showCode: true,
   },
 )
 
@@ -72,6 +81,17 @@ const open = ref(false)
 
 const selected = computed(() => props.options.find((o) => o.value === props.modelValue))
 const searchAriaLabel = computed(() => `搜索${props.ariaLabel ?? props.title}`)
+
+/** 选中项要显示的编码：优先 `code`，否则回落 `value`；关掉编码行时为空。 */
+const selectedCode = computed(() =>
+  props.showCode ? (selected.value?.code ?? selected.value?.value) : undefined,
+)
+const selectedTitle = computed(() => {
+  if (!selected.value) return undefined
+  return selectedCode.value
+    ? `${selected.value.label}（${selectedCode.value}）`
+    : selected.value.label
+})
 
 /**
  * 开关闸门 —— 修「下拉一闪就没」。
@@ -136,11 +156,13 @@ function clear() {
         >
           <span
             :class="cn('line-clamp-1 text-left', !selected && 'text-muted-foreground')"
-            :title="selected ? `${selected.label}（${selected.value}）` : undefined"
+            :title="selectedTitle"
           >
             <template v-if="selected">
               {{ selected.label }}
-              <span class="text-muted-foreground">（{{ selected.value }}）</span>
+              <span v-if="showCode && selectedCode" class="text-muted-foreground">
+                （{{ selectedCode }}）
+              </span>
             </template>
             <template v-else>{{ loading ? '加载中…' : placeholder }}</template>
           </span>
@@ -178,6 +200,7 @@ function clear() {
           :source-text="sourceText"
           :loading="loading"
           :search-aria-label="searchAriaLabel"
+          :show-code="showCode"
           dense
           @pick="pick"
         />
@@ -200,6 +223,7 @@ function clear() {
         :source-text="sourceText"
         :loading="loading"
         :search-aria-label="searchAriaLabel"
+        :show-code="showCode"
         :dense="false"
         @pick="pick"
       />
