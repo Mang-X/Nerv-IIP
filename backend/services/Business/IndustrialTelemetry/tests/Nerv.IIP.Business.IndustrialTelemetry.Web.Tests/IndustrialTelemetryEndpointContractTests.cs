@@ -159,6 +159,24 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Contains(response.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.ActiveAlarm && x.SourceType == EquipmentRuntimeSourceType.Alarm);
         Assert.Contains(response.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable && x.SourceType == EquipmentRuntimeSourceType.DeviceState);
         Assert.Contains(response.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.SourceStale && x.SourceType == EquipmentRuntimeSourceType.StaleSource);
+
+        // 「来源引用」必须给人读标识：报警回外部报警号，设备状态/采集过期回设备编码。
+        // 此前这三路都只回 AlarmEventId / DeviceStateSnapshotId 这类 GUID，界面只能把 GUID 原样上屏。
+        var alarmWindow = Assert.Single(response.Data.Items, x => x.SourceType == EquipmentRuntimeSourceType.Alarm);
+        Assert.Equal("alarm-oil-001", alarmWindow.SourceReferenceLabel);
+
+        var stateWindow = Assert.Single(response.Data.Items, x => x.SourceType == EquipmentRuntimeSourceType.DeviceState);
+        Assert.Equal("DEV-OIL-01", stateWindow.SourceReferenceLabel);
+
+        var staleWindow = Assert.Single(response.Data.Items, x => x.SourceType == EquipmentRuntimeSourceType.StaleSource);
+        Assert.Equal("DEV-OIL-01", staleWindow.SourceReferenceLabel);
+
+        // 没有任何一条窗口应把 GUID 当作人读标识。
+        Assert.All(
+            response.Data.Items,
+            x => Assert.False(
+                x.SourceReferenceLabel is not null && Guid.TryParse(x.SourceReferenceLabel, out _),
+                $"来源引用标签仍是 GUID：reasonCode={x.ReasonCode}, label={x.SourceReferenceLabel}"));
     }
 
     [Fact]

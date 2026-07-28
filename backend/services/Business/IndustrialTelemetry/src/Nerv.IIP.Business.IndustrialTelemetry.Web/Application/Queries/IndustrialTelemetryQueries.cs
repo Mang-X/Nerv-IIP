@@ -1153,7 +1153,12 @@ public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext db
                 SourceType: EquipmentRuntimeSourceType.Alarm,
                 SourceReferenceId: alarm.AlarmEventId.ToString(),
                 MessageKey: EquipmentRuntimeReasonCodes.ActiveAlarm,
-                SubstituteDeviceAssetIds: []));
+                SubstituteDeviceAssetIds: [],
+                // 报警事件的人读标识：优先外部系统报警号，回落到报警码。两者都在投影里本就取到了，
+                // 此前只是没往契约上带，界面便只能显示 AlarmEventId 这个 GUID。
+                SourceReferenceLabel: string.IsNullOrWhiteSpace(alarm.ExternalAlarmId)
+                    ? alarm.AlarmCode
+                    : alarm.ExternalAlarmId));
         }
 
         foreach (var state in latestStates)
@@ -1171,7 +1176,10 @@ public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext db
                     SourceType: EquipmentRuntimeSourceType.DeviceState,
                     SourceReferenceId: state.DeviceStateSnapshotId.ToString(),
                     MessageKey: EquipmentRuntimeReasonCodes.StateUnavailable,
-                    SubstituteDeviceAssetIds: []));
+                    SubstituteDeviceAssetIds: [],
+                    // 状态快照没有业务单号，它描述的就是这台设备本身：人读标识取设备编码
+                    // （DEV-CNC-01），而不是快照的 GUID 主键。
+                    SourceReferenceLabel: state.DeviceAssetId));
             }
         }
 
@@ -1216,7 +1224,9 @@ public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext db
                     SourceType: EquipmentRuntimeSourceType.StaleSource,
                     SourceReferenceId: state.DeviceStateSnapshotId.ToString(),
                     MessageKey: EquipmentRuntimeReasonCodes.SourceStale,
-                    SubstituteDeviceAssetIds: []));
+                    SubstituteDeviceAssetIds: [],
+                    // 同上：采集过期说的是这台设备的采集源，人读标识取设备编码。
+                    SourceReferenceLabel: state.DeviceAssetId));
             }
         }
 
@@ -1233,7 +1243,9 @@ public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext db
                 SourceType: EquipmentRuntimeSourceType.StaleSource,
                 SourceReferenceId: deviceAssetId,
                 MessageKey: EquipmentRuntimeReasonCodes.SourceStale,
-                SubstituteDeviceAssetIds: []));
+                SubstituteDeviceAssetIds: [],
+                // 这一路的 SourceReferenceId 本就是设备编码（人读），标签同值即可。
+                SourceReferenceLabel: deviceAssetId));
         }
 
         return new EquipmentRuntimeAvailabilityResponse(
