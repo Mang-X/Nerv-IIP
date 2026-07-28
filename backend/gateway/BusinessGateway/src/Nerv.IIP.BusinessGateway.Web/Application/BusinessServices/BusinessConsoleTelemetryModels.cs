@@ -282,7 +282,8 @@ public sealed record BusinessConsoleAcknowledgeAlarmRequest(
     string OrganizationId,
     string EnvironmentId,
     DateTimeOffset AcknowledgedAtUtc,
-    string AcknowledgedBy);
+    string AcknowledgedBy,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleShelveAlarmRequest(
     string OrganizationId,
@@ -296,9 +297,12 @@ public sealed record BusinessConsoleShelveAlarmRequest(
 public sealed record BusinessConsoleUnshelveAlarmRequest(
     string OrganizationId,
     string EnvironmentId,
-    DateTimeOffset? UnshelvedAtUtc);
+    DateTimeOffset? UnshelvedAtUtc,
+    string? IdempotencyKey = null);
 
-public sealed record BusinessConsoleAlarmLifecycleResponse(string AlarmEventId);
+public sealed record BusinessConsoleAlarmLifecycleResponse(
+    string AlarmEventId,
+    BusinessConsoleOperationReceipt? OperationReceipt = null);
 
 public sealed record BusinessConsoleTelemetryHistoryRequest(
     string OrganizationId,

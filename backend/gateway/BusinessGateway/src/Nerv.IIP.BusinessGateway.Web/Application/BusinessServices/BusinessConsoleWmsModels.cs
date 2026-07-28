@@ -64,7 +64,10 @@ public sealed record BusinessConsoleWmsInboundLineCaptureInput(
     DateOnly? ProductionDate,
     DateOnly? ExpiryDate);
 
-public sealed record BusinessConsoleCompleteWmsMovementResponse(string? RequestId, string? InventoryMovementId);
+public sealed record BusinessConsoleCompleteWmsMovementResponse(
+    string? RequestId,
+    string? InventoryMovementId,
+    BusinessConsoleOperationReceipt? OperationReceipt = null);
 
 public sealed record BusinessConsoleCreateWmsOutboundOrderRequest(
     string OrganizationId,
@@ -287,7 +290,11 @@ public sealed record BusinessConsoleWmsCountExecutionItem(
     decimal? VarianceQuantity,
     string Status,
     DateTime CreatedAtUtc,
-    DateTime? CompletedAtUtc);
+    DateTime? CompletedAtUtc,
+    string? InventoryPostingStatus = null,
+    string? InventoryPostingFailureCode = null,
+    string? InventoryPostingFailureMessage = null,
+    string? InventoryMovementId = null);
 
 public sealed record BusinessConsoleWmsWcsTaskListRequest(
     string OrganizationId,

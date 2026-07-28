@@ -1,4 +1,5 @@
 using FastEndpoints;
+using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
@@ -1070,6 +1071,20 @@ public sealed class RecordBusinessConsoleMesProductionReportEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.RecordProductionReportAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+public sealed class BusinessConsoleRecordProductionReportRequestValidator
+    : Validator<BusinessConsoleRecordProductionReportRequest>
+{
+    public BusinessConsoleRecordProductionReportRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
+public sealed class BusinessConsoleMesOperationTaskActionRequestValidator
+    : Validator<BusinessConsoleMesOperationTaskActionRequest>
+{
+    public BusinessConsoleMesOperationTaskActionRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
 }
 
 [Tags("Business Console MES")]

@@ -1594,13 +1594,15 @@ public sealed record BusinessConsoleCreateInspectionRecordFromTaskRequest(
     string InspectorUserId,
     IReadOnlyCollection<BusinessConsoleInspectionCharacteristicResult>? ResultLines,
     string? DispositionReason,
-    IReadOnlyCollection<string>? DispositionAttachmentFileIds);
+    IReadOnlyCollection<string>? DispositionAttachmentFileIds,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateInspectionRecordFromTaskResponse(
     string InspectionRecordId,
     string Result,
     string? NonconformanceReportId,
-    string? NonconformanceReportCode);
+    string? NonconformanceReportCode,
+    BusinessConsoleOperationReceipt? OperationReceipt = null);
 
 public sealed record BusinessConsoleQualityInspectionPlanCharacteristicsRequest(
     [property: RouteParam] string InspectionPlanId,
@@ -1729,7 +1731,8 @@ public sealed record BusinessConsoleAcceptedResponse(
     bool Accepted,
     string? DownstreamService = null,
     string? DownstreamDocumentType = null,
-    string? DownstreamDocumentId = null);
+    string? DownstreamDocumentId = null,
+    BusinessConsoleOperationReceipt? OperationReceipt = null);
 
 public sealed record BusinessConsoleEngineeringContextRequest(
     string OrganizationId,
@@ -3945,7 +3948,10 @@ public sealed record BusinessConsoleConsumedMaterialLotInput(
     decimal ConsumedQuantity,
     string MaterialIssueRequestNo);
 
-public sealed record BusinessConsoleRecordProductionReportResponse(string ProductionReportId, string ReportNo);
+public sealed record BusinessConsoleRecordProductionReportResponse(
+    string ProductionReportId,
+    string ReportNo,
+    BusinessConsoleOperationReceipt? OperationReceipt = null);
 
 public sealed record BusinessConsoleMesContextRequest(
     string OrganizationId,
@@ -4320,12 +4326,13 @@ public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     string? ReasonCode,
-    string IdempotencyKey);
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionResponse(
     string OperationTaskId,
     string Status,
-    DateTimeOffset ChangedAtUtc);
+    DateTimeOffset ChangedAtUtc,
+    BusinessConsoleOperationReceipt? OperationReceipt = null);
 
 public sealed record BusinessConsoleMesWipSummaryResponse(
     IReadOnlyCollection<BusinessConsoleMesWipSummaryRow> Items,

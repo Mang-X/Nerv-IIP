@@ -41,6 +41,7 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
 
         try
         {
+            req = BusinessGatewayIdempotencyKey.Resolve(HttpContext, req);
             var response = await ForwardAsync(req, bearerToken, ct);
             await ResponseDataEndpointResults.WriteDataAsync(HttpContext, StatusCode, response, ct, ResponseJsonOptions);
         }

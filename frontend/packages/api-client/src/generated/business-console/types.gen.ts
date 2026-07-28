@@ -257,7 +257,14 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCompleteWmsMovem
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsMovementResponse = {
     requestId?: string | null;
     inventoryMovementId?: string | null;
+    operationReceipt?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt | null;
 };
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt = ({
+    outcome: 'confirmed';
+} & BusinessConsoleConfirmedOperationReceipt) | ({
+    outcome: 'accepted';
+} & BusinessConsoleAcceptedOperationReceipt);
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsInboundOrderRequest = {
     idempotencyKey: string;
@@ -406,6 +413,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     status?: string;
     createdAtUtc?: string;
     completedAtUtc?: string | null;
+    inventoryPostingStatus?: string | null;
+    inventoryPostingFailureCode?: string | null;
+    inventoryPostingFailureMessage?: string | null;
+    inventoryMovementId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsCountExecutionListRequest = {
@@ -440,6 +451,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
     downstreamService?: string | null;
     downstreamDocumentType?: string | null;
     downstreamDocumentId?: string | null;
+    operationReceipt?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleFailWmsWcsTaskRequest = {
@@ -1787,6 +1799,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     result?: string;
     nonconformanceReportId?: string | null;
     nonconformanceReportCode?: string | null;
+    operationReceipt?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionRecordFromTaskRequest = {
@@ -1794,6 +1807,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     resultLines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionCharacteristicResult> | null;
     dispositionReason?: string | null;
     dispositionAttachmentFileIds?: Array<string> | null;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityInspectionPlanCharacteristicListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -3809,11 +3823,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     operationTaskId?: string;
     status?: string;
     changedAtUtc?: string;
+    operationReceipt?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskActionRequest = {
     reasonCode?: string | null;
-    idempotencyKey?: string;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWipSummaryResponse = NetCorePalExtensionsDtoResponseData & {
@@ -3924,6 +3939,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordProduction
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordProductionReportResponse = {
     productionReportId?: string;
     reportNo?: string;
+    operationReceipt?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordProductionReportRequest = {
@@ -5143,6 +5159,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanc
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderResponse = {
     workOrderId?: string;
+    operationReceipt?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderRequest = {
@@ -5151,7 +5168,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     deviceAssetId: string;
     priority: string;
     sourceAlarmId?: string | null;
-    openedBy: string;
+    openedBy?: string;
+    idempotencyKey?: string | null;
     assetUnavailableReason?: string | null;
     assignedTechnicianUserId?: string | null;
     estimatedLaborMinutes?: number | null;
@@ -5163,6 +5181,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCompleteMaintena
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteMaintenanceWorkOrderResponse = {
     accepted?: boolean;
+    operationReceipt?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteMaintenanceWorkOrderRequest = {
@@ -5172,6 +5191,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     downtimeReasonCode: string;
     downtimeMinutes?: number;
     spareParts?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceSparePartInput>;
+    idempotencyKey?: string | null;
     actualLaborMinutes?: number | null;
     sparePartCostAmount?: number | null;
     externalServiceCostAmount?: number | null;
@@ -6767,6 +6787,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAlarmLifecycleRe
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAlarmLifecycleResponse = {
     alarmEventId?: string;
+    operationReceipt?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAcknowledgeAlarmRequest = {
@@ -6774,6 +6795,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
     environmentId: string;
     acknowledgedAtUtc?: string;
     acknowledgedBy?: string;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleShelveAlarmRequest = {
@@ -6790,6 +6812,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
     organizationId: string;
     environmentId: string;
     unshelvedAtUtc?: string | null;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeRuleListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -7280,6 +7303,33 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     revokedBy: string;
 };
 
+export type BusinessConsoleConfirmedOperationReceipt = {
+    operationType: string;
+    authority: string;
+    resourceType: string;
+    resourceId: string;
+    outcome: 'confirmed';
+    stateConfirmed: true;
+    readbackRequired: false;
+    idempotencyKey: string;
+    changedAtUtc: string;
+    resourceStatus: string;
+};
+
+export type BusinessConsoleAcceptedOperationReceipt = {
+    operationType: string;
+    authority: string;
+    resourceType: string;
+    resourceId: string;
+    outcome: 'accepted';
+    stateConfirmed: false;
+    readbackRequired: true;
+    idempotencyKey: string;
+    readbackMethod: 'GET';
+    readbackPath: string;
+    changedAtUtc?: unknown;
+};
+
 export type GetBusinessConsoleWorkbenchSummaryData = {
     body?: never;
     path?: never;
@@ -7485,6 +7535,12 @@ export type ListBusinessConsoleWmsPutawayTasksResponse = ListBusinessConsoleWmsP
 
 export type CompleteBusinessConsoleWmsInboundOrderData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsInboundOrderRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path: {
         inboundOrderId: string;
     };
@@ -7681,6 +7737,12 @@ export type ListBusinessConsoleWmsPickingTasksResponse = ListBusinessConsoleWmsP
 
 export type CompleteBusinessConsoleWmsOutboundOrderData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsOutboundOrderRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path: {
         outboundOrderId: string;
     };
@@ -7827,6 +7889,12 @@ export type CreateBusinessConsoleWmsCountExecutionResponse = CreateBusinessConso
 
 export type CompleteBusinessConsoleWmsCountExecutionData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsCountExecutionRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path: {
         countExecutionId: string;
     };
@@ -9630,6 +9698,12 @@ export type ListBusinessConsoleQualityInspectionTasksResponse = ListBusinessCons
 
 export type CreateBusinessConsoleQualityInspectionRecordFromTaskData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionRecordFromTaskRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path: {
         inspectionTaskId: string;
     };
@@ -13340,6 +13414,12 @@ export type GetBusinessConsoleMesCurrentOperationSopsResponse = GetBusinessConso
 
 export type StartBusinessConsoleMesOperationTaskData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskActionRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path: {
         operationTaskId: string;
     };
@@ -13351,6 +13431,10 @@ export type StartBusinessConsoleMesOperationTaskData = {
 };
 
 export type StartBusinessConsoleMesOperationTaskErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
     /**
      * Unauthorized
      */
@@ -13375,6 +13459,12 @@ export type StartBusinessConsoleMesOperationTaskResponse = StartBusinessConsoleM
 
 export type PauseBusinessConsoleMesOperationTaskData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskActionRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path: {
         operationTaskId: string;
     };
@@ -13386,6 +13476,10 @@ export type PauseBusinessConsoleMesOperationTaskData = {
 };
 
 export type PauseBusinessConsoleMesOperationTaskErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
     /**
      * Unauthorized
      */
@@ -13410,6 +13504,12 @@ export type PauseBusinessConsoleMesOperationTaskResponse = PauseBusinessConsoleM
 
 export type ResumeBusinessConsoleMesOperationTaskData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskActionRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path: {
         operationTaskId: string;
     };
@@ -13421,6 +13521,10 @@ export type ResumeBusinessConsoleMesOperationTaskData = {
 };
 
 export type ResumeBusinessConsoleMesOperationTaskErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
     /**
      * Unauthorized
      */
@@ -13445,6 +13549,12 @@ export type ResumeBusinessConsoleMesOperationTaskResponse = ResumeBusinessConsol
 
 export type CompleteBusinessConsoleMesOperationTaskData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskActionRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path: {
         operationTaskId: string;
     };
@@ -13456,6 +13566,10 @@ export type CompleteBusinessConsoleMesOperationTaskData = {
 };
 
 export type CompleteBusinessConsoleMesOperationTaskErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
     /**
      * Unauthorized
      */
@@ -13554,12 +13668,22 @@ export type ListBusinessConsoleMesProductionReportsResponse = ListBusinessConsol
 
 export type RecordBusinessConsoleMesProductionReportData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordProductionReportRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path?: never;
     query?: never;
     url: '/api/business-console/v1/mes/production-reports';
 };
 
 export type RecordBusinessConsoleMesProductionReportErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
     /**
      * Unauthorized
      */
@@ -15881,6 +16005,12 @@ export type ListBusinessConsoleMaintenanceWorkOrdersResponse = ListBusinessConso
 
 export type CreateBusinessConsoleMaintenanceWorkOrderData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path?: never;
     query?: never;
     url: '/api/business-console/v1/maintenance/work-orders';
@@ -15914,6 +16044,12 @@ export type CreateBusinessConsoleMaintenanceWorkOrderResponse = CreateBusinessCo
 
 export type CompleteBusinessConsoleMaintenanceWorkOrderData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteMaintenanceWorkOrderRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path: {
         workOrderId: string;
     };
@@ -18342,6 +18478,12 @@ export type ListBusinessConsoleEquipmentAlarmsResponse = ListBusinessConsoleEqui
 
 export type AcknowledgeBusinessConsoleEquipmentAlarmData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAcknowledgeAlarmRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path: {
         alarmEventId: string;
     };
@@ -18378,6 +18520,12 @@ export type AcknowledgeBusinessConsoleEquipmentAlarmResponse = AcknowledgeBusine
 
 export type ShelveBusinessConsoleEquipmentAlarmData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleShelveAlarmRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path: {
         alarmEventId: string;
     };
@@ -18414,6 +18562,12 @@ export type ShelveBusinessConsoleEquipmentAlarmResponse = ShelveBusinessConsoleE
 
 export type UnshelveBusinessConsoleEquipmentAlarmData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUnshelveAlarmRequest;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path: {
         alarmEventId: string;
     };

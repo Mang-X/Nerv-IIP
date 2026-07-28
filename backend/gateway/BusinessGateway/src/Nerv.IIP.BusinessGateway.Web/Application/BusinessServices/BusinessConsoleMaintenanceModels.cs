@@ -36,11 +36,14 @@ public sealed record BusinessConsoleCreateMaintenanceWorkOrderRequest(
     string Priority,
     string? SourceAlarmId,
     string OpenedBy,
-    string? AssetUnavailableReason,
+    string? IdempotencyKey = null,
+    string? AssetUnavailableReason = null,
     string? AssignedTechnicianUserId = null,
     int? EstimatedLaborMinutes = null);
 
-public sealed record BusinessConsoleCreateMaintenanceWorkOrderResponse(string WorkOrderId);
+public sealed record BusinessConsoleCreateMaintenanceWorkOrderResponse(
+    string WorkOrderId,
+    BusinessConsoleOperationReceipt? OperationReceipt = null);
 
 public sealed record BusinessConsoleCompleteMaintenanceWorkOrderRequest(
     string OrganizationId,
@@ -49,13 +52,16 @@ public sealed record BusinessConsoleCompleteMaintenanceWorkOrderRequest(
     string DowntimeReasonCode,
     int DowntimeMinutes,
     IReadOnlyCollection<BusinessConsoleMaintenanceSparePartInput> SpareParts,
+    string? IdempotencyKey = null,
     int? ActualLaborMinutes = null,
     decimal? SparePartCostAmount = null,
     decimal? ExternalServiceCostAmount = null,
     string? CostCurrencyCode = null,
     string? ActualTechnicianUserId = null);
 
-public sealed record BusinessConsoleCompleteMaintenanceWorkOrderResponse(bool Accepted);
+public sealed record BusinessConsoleCompleteMaintenanceWorkOrderResponse(
+    bool Accepted,
+    BusinessConsoleOperationReceipt? OperationReceipt = null);
 
 public sealed record BusinessConsoleCreateMaintenancePlanRequest(
     string OrganizationId,

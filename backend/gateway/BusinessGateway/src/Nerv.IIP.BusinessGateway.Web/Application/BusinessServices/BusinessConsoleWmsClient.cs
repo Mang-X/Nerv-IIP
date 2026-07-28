@@ -172,11 +172,15 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
         string inboundOrderId,
         BusinessConsoleCompleteWmsInboundOrderRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleCompleteWmsMovementResponse>(
+        CompleteMovementAsync(
             internalBearerToken,
-            HttpMethod.Post,
             $"/api/business/v1/wms/inbound-orders/{Uri.EscapeDataString(inboundOrderId)}/complete",
             request,
+            "wms.inbound-order.complete",
+            "inbound-order",
+            inboundOrderId,
+            request.IdempotencyKey,
+            $"/api/business-console/v1/wms/inbound-orders?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}&inboundOrderId={Uri.EscapeDataString(inboundOrderId)}",
             cancellationToken);
 
     public Task<BusinessConsoleCreateWmsOutboundOrderResponse> CreateOutboundOrderAsync(
@@ -234,11 +238,15 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
         string outboundOrderId,
         BusinessConsoleCompleteWmsOutboundOrderRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleCompleteWmsMovementResponse>(
+        CompleteMovementAsync(
             internalBearerToken,
-            HttpMethod.Post,
             $"/api/business/v1/wms/outbound-orders/{Uri.EscapeDataString(outboundOrderId)}/complete",
             request,
+            "wms.outbound-order.complete",
+            "outbound-order",
+            outboundOrderId,
+            request.IdempotencyKey,
+            $"/api/business-console/v1/wms/outbound-orders?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}&outboundOrderId={Uri.EscapeDataString(outboundOrderId)}",
             cancellationToken);
 
     public Task<BusinessConsoleCompleteWmsMovementResponse> RetryOutboundInventoryPostingAsync(
@@ -280,12 +288,45 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
         string countExecutionId,
         BusinessConsoleCompleteWmsCountExecutionRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleCompleteWmsMovementResponse>(
+        CompleteMovementAsync(
             internalBearerToken,
-            HttpMethod.Post,
             $"/api/business/v1/wms/count-executions/{Uri.EscapeDataString(countExecutionId)}/complete",
             request,
+            "wms.count-execution.complete",
+            "count-execution",
+            countExecutionId,
+            request.IdempotencyKey,
+            $"/api/business-console/v1/wms/count-executions?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}&countExecutionId={Uri.EscapeDataString(countExecutionId)}",
             cancellationToken);
+
+    private async Task<BusinessConsoleCompleteWmsMovementResponse> CompleteMovementAsync(
+        string internalBearerToken,
+        string requestUri,
+        object request,
+        string operationType,
+        string resourceType,
+        string resourceId,
+        string idempotencyKey,
+        string readbackPath,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<BusinessConsoleCompleteWmsMovementResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            requestUri,
+            request,
+            cancellationToken);
+        return response with
+        {
+            OperationReceipt = BusinessConsoleOperationReceipts.Accepted(
+                operationType,
+                "wms",
+                resourceType,
+                resourceId,
+                readbackPath,
+                idempotencyKey),
+        };
+    }
 
     public Task<BusinessConsoleDispatchWmsWcsTaskResponse> DispatchWcsTaskAsync(
         string internalBearerToken,

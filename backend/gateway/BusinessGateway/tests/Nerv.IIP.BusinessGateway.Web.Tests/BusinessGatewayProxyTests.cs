@@ -945,6 +945,7 @@ public sealed class BusinessGatewayProxyTests
             },
             dispositionReason = "within tolerance",
             dispositionAttachmentFileIds = new[] { "file-cert-001" },
+            idempotencyKey = "quality-submit-test",
         });
 
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
@@ -965,7 +966,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("inspection-task-001", quality.LastCreateInspectionRecordFromTaskRequest!.InspectionTaskId);
         Assert.Equal("org-001", quality.LastCreateInspectionRecordFromTaskRequest.OrganizationId);
         Assert.Equal("env-dev", quality.LastCreateInspectionRecordFromTaskRequest.EnvironmentId);
-        Assert.Equal("inspector-007", quality.LastCreateInspectionRecordFromTaskRequest.InspectorUserId);
+        Assert.Equal("user:user-admin", quality.LastCreateInspectionRecordFromTaskRequest.InspectorUserId);
         Assert.Equal("within tolerance", quality.LastCreateInspectionRecordFromTaskRequest.DispositionReason);
         Assert.Equal(["file-cert-001"], quality.LastCreateInspectionRecordFromTaskRequest.DispositionAttachmentFileIds);
         var resultLine = Assert.Single(quality.LastCreateInspectionRecordFromTaskRequest.ResultLines!);
@@ -1018,6 +1019,7 @@ public sealed class BusinessGatewayProxyTests
                 {
                     new { characteristicCode = "DIM-1", observedValue = "10.2", result = "pass" },
                 },
+                idempotencyKey = "quality-conflict-test",
             });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -4430,7 +4432,7 @@ public sealed class BusinessGatewayProxyTests
                 {
                     new
                     {
-                        workOrderId = "wo-maint-001",
+                        workOrderId = "019f0000-0000-7000-8000-000000000111",
                         deviceAssetId = "DEV-PRESS-01",
                         priority = "high",
                         status = "Open",
@@ -4463,8 +4465,26 @@ public sealed class BusinessGatewayProxyTests
     {
         var handler = new RecordingHandler(request => request.RequestUri!.AbsolutePath switch
         {
-            "/api/business/v1/maintenance/work-orders" => JsonResponse(HttpStatusCode.OK, new { data = new { workOrderId = "wo-maint-001" } }),
-            "/api/business/v1/maintenance/work-orders/wo-maint-001/complete" => JsonResponse(HttpStatusCode.OK, new { data = new { accepted = true } }),
+            "/api/business/v1/maintenance/work-orders" => JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    workOrderId = "019f0000-0000-7000-8000-000000000111",
+                    status = "Open",
+                    changedAtUtc = "2026-06-01T08:30:00Z",
+                },
+            }),
+            "/api/business/v1/maintenance/work-orders/019f0000-0000-7000-8000-000000000111/complete" => JsonResponse(
+                HttpStatusCode.OK,
+                new
+                {
+                    data = new
+                    {
+                        workOrderId = "019f0000-0000-7000-8000-000000000111",
+                        status = "Completed",
+                        changedAtUtc = "2026-06-01T09:30:00Z",
+                    },
+                }),
             "/api/business/v1/maintenance/plans" => JsonResponse(HttpStatusCode.OK, new { data = new { planId = "plan-001" } }),
             "/api/business/v1/maintenance/plans/plan-001" => JsonResponse(HttpStatusCode.OK, new { data = new { planId = "plan-001" } }),
             "/api/business/v1/maintenance/plans/generate-due" => JsonResponse(HttpStatusCode.OK, new { data = new { generatedCount = 1, workOrderIds = new[] { "wo-pm-001" } } }),
@@ -4544,13 +4564,21 @@ public sealed class BusinessGatewayProxyTests
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
         var client = new HttpBusinessMaintenanceClient(httpClient);
 
-        await client.CreateWorkOrderAsync(
+        var createdWorkOrder = await client.CreateWorkOrderAsync(
             "internal-token-001",
-            new BusinessConsoleCreateMaintenanceWorkOrderRequest("org-001", "env-dev", "DEV-PRESS-01", "high", "alarm-001", "operator-001", null),
+            new BusinessConsoleCreateMaintenanceWorkOrderRequest(
+                "org-001",
+                "env-dev",
+                "DEV-PRESS-01",
+                "high",
+                "alarm-001",
+                "operator-001",
+                "repair-intent-001",
+                AssetUnavailableReason: null),
             CancellationToken.None);
-        await client.CompleteWorkOrderAsync(
+        var completedWorkOrder = await client.CompleteWorkOrderAsync(
             "internal-token-001",
-            "wo-maint-001",
+            "019f0000-0000-7000-8000-000000000111",
             new BusinessConsoleCompleteMaintenanceWorkOrderRequest(
                 "org-001",
                 "env-dev",
@@ -4558,6 +4586,7 @@ public sealed class BusinessGatewayProxyTests
                 "planned-maintenance",
                 30,
                 [new BusinessConsoleMaintenanceSparePartInput("SPARE-001", 1, "EA")],
+                "complete-intent-001",
                 ActualTechnicianUserId: "worker-actual"),
             CancellationToken.None);
         await client.CreatePlanAsync(
@@ -4621,20 +4650,26 @@ public sealed class BusinessGatewayProxyTests
                 "org-001",
                 "env-dev",
                 "plan-001",
-                "wo-maint-001",
+                "019f0000-0000-7000-8000-000000000111",
                 "inspector-001",
                 "pass",
                 DateTimeOffset.Parse("2026-06-01T09:00:00Z", CultureInfo.InvariantCulture)),
             CancellationToken.None);
         await client.CreateSparePartAsync(
             "internal-token-001",
-            new BusinessConsoleCreateMaintenanceSparePartRequest("org-001", "env-dev", "wo-maint-001", "SPARE-001", 1, "EA"),
+            new BusinessConsoleCreateMaintenanceSparePartRequest("org-001", "env-dev", "019f0000-0000-7000-8000-000000000111", "SPARE-001", 1, "EA"),
             CancellationToken.None);
 
         Assert.All(handler.Requests, sent => Assert.Equal("internal-token-001", sent.Headers.Authorization?.Parameter));
+        Assert.Equal("repair-intent-001", createdWorkOrder.OperationReceipt?.IdempotencyKey);
+        Assert.True(createdWorkOrder.OperationReceipt?.StateConfirmed);
+        Assert.True(completedWorkOrder.OperationReceipt?.StateConfirmed);
+        Assert.Equal("complete-intent-001", completedWorkOrder.OperationReceipt?.IdempotencyKey);
         AssertRequest(handler.Requests[0], HttpMethod.Post, "/api/business/v1/maintenance/work-orders");
-        AssertRequest(handler.Requests[1], HttpMethod.Post, "/api/business/v1/maintenance/work-orders/wo-maint-001/complete");
+        Assert.Contains("\"idempotencyKey\":\"repair-intent-001\"", handler.RequestBodies[0]);
+        AssertRequest(handler.Requests[1], HttpMethod.Post, "/api/business/v1/maintenance/work-orders/019f0000-0000-7000-8000-000000000111/complete");
         Assert.Contains("\"actualTechnicianUserId\":\"worker-actual\"", handler.RequestBodies[1]);
+        Assert.Contains("\"idempotencyKey\":\"complete-intent-001\"", handler.RequestBodies[1]);
         AssertRequest(handler.Requests[2], HttpMethod.Post, "/api/business/v1/maintenance/plans");
         AssertRequest(handler.Requests[3], HttpMethod.Put, "/api/business/v1/maintenance/plans/plan-001");
         Assert.Contains("\"runtimeHourInterval\":500", handler.RequestBodies[3]);
@@ -6453,10 +6488,11 @@ public sealed class BusinessGatewayProxyTests
             {
                 data = new
                 {
-                    inspectionRecordId = "inspection-from-task-001",
+                    inspectionRecordId = "019f0000-0000-7000-8000-000000000222",
                     result = "rejected",
                     nonconformanceReportId = "ncr-from-task-001",
                     nonconformanceReportCode = "NCR-2026-0001",
+                    changedAtUtc = "2026-07-28T08:00:00Z",
                 },
                 success = true,
                 message = string.Empty,
@@ -6485,13 +6521,17 @@ public sealed class BusinessGatewayProxyTests
                         ["file-line-001"]),
                 ],
                 "within tolerance",
-                ["file-cert-001"]),
+                ["file-cert-001"],
+                "quality-http-submit-001"),
             CancellationToken.None);
 
-        Assert.Equal("inspection-from-task-001", response.InspectionRecordId);
+        Assert.Equal("019f0000-0000-7000-8000-000000000222", response.InspectionRecordId);
         Assert.Equal("rejected", response.Result);
         Assert.Equal("ncr-from-task-001", response.NonconformanceReportId);
         Assert.Equal("NCR-2026-0001", response.NonconformanceReportCode);
+        Assert.Equal("quality.inspection-task.submit", response.OperationReceipt?.OperationType);
+        Assert.True(response.OperationReceipt?.StateConfirmed);
+        Assert.False(response.OperationReceipt?.ReadbackRequired);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal("/api/business/v1/quality/inspection-tasks/inspection-task-001/inspection-record", request.RequestUri!.PathAndQuery);
