@@ -622,7 +622,7 @@ export function useMesProductionReports() {
           domain: 'mes-operation-task',
           action: 'report-complete',
           facts: {
-            status: authoritative?.workOrderId === workOrderId ? authoritative.status : undefined,
+            status: authoritative?.workOrderId === workOrderId ? authoritative?.status : undefined,
           },
         })
       }

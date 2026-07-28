@@ -189,7 +189,7 @@ describe('pda useBusinessMes composables', () => {
     vi.mocked(listBusinessConsoleMesOperationTasks)
       .mockReset()
       .mockImplementation(
-        async ({ query }: { query: { keyword?: string; workOrderId?: string } }) =>
+        async ({ query }: { query: { keyword?: string | null; workOrderId?: string | null } }) =>
           ({
             data: {
               success: true,
@@ -209,7 +209,7 @@ describe('pda useBusinessMes composables', () => {
     vi.mocked(listBusinessConsoleMesMaterialIssueRequests)
       .mockReset()
       .mockImplementation(
-        async ({ query }: { query: { keyword?: string } }) =>
+        async ({ query }: { query: { keyword?: string | null } }) =>
           ({
             data: {
               success: true,
