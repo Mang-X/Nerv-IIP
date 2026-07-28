@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
+using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalDelegationAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
 
 namespace Nerv.IIP.Business.Approval.Web.Application.Seed;
@@ -65,6 +66,8 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
             dbContext.ChangeTracker.Clear();
         }
 
+        var delegationsWritten = await SeedDelegationsAsync(organizationId, environmentId, asOfDate, cancellationToken);
+
         // fail-closed：待办数量 / 终态完整性 / 时间窗与号段隔离对不上就让 seed 失败。
         var validation = await new WorldHistoryApprovalConsistencyValidator(dbContext)
             .ValidateAsync(organizationId, environmentId, asOfDate, scale, cancellationToken);
@@ -72,6 +75,7 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
         return new WorldHistoryApprovalSeedReport(
             TemplatesWritten: templatesWritten,
             ChainsWritten: counters.Chains,
+            DelegationsWritten: delegationsWritten,
             PurchaseChainsWritten: counters.PurchaseChains,
             NcrChainsWritten: counters.NcrChains,
             PendingChainsWritten: counters.PendingChains,
@@ -182,6 +186,72 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
 
     #endregion
 
+    #region 审批委托
+
+    /// <summary>
+    /// 按自然键（委托人 → 受托人 + 生效起点）幂等补齐历史审批委托。
+    ///
+    /// 委托是低频事件（全量历史十几条），一次预查一次写入即可，无需分批。
+    /// <see cref="ApprovalDelegation"/> 不发领域事件，也没有跨服务消费者，因此不必 <c>ClearDomainEvents</c>。
+    /// </summary>
+    private async Task<int> SeedDelegationsAsync(
+        string organizationId,
+        string environmentId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken)
+    {
+        var facts = WorldHistoryApprovalSpec.BuildDelegationFacts(asOfDate);
+        var existing = (await dbContext.ApprovalDelegations
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+                .Select(x => new { x.DelegatorActorRef, x.DelegateActorRef, x.EffectiveFromUtc })
+                .ToArrayAsync(cancellationToken))
+            .Select(x => WorldHistoryDelegationFact.NaturalKeyOf(x.DelegatorActorRef, x.DelegateActorRef, x.EffectiveFromUtc))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var written = 0;
+        foreach (var fact in facts.Where(fact => !existing.Contains(fact.NaturalKey)))
+        {
+            var delegation = ApprovalDelegation.Create(
+                organizationId,
+                environmentId,
+                WorldHistoryApprovalSpec.ActorTypeUser,
+                fact.DelegatorActorRef,
+                WorldHistoryApprovalSpec.ActorTypeUser,
+                fact.DelegateActorRef,
+                fact.DocumentType,
+                fact.EffectiveFromUtc,
+                fact.EffectiveToUtc,
+                fact.Reason,
+                fact.CreatedBy);
+            if (fact.IsRevoked)
+            {
+                delegation.Revoke(fact.CreatedBy);
+            }
+
+            dbContext.ApprovalDelegations.Add(delegation);
+
+            // 领域方法一律取 UtcNow；创建 / 撤销时刻靠 Entry().Property() 回填到历史窗内。
+            Backdate(delegation, x => x.CreatedAtUtc, fact.CreatedAtUtc);
+            if (fact.RevokedAtUtc is { } revokedAtUtc)
+            {
+                Backdate(delegation, x => x.RevokedAtUtc, (DateTimeOffset?)revokedAtUtc);
+            }
+
+            written++;
+        }
+
+        if (written > 0)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        dbContext.ChangeTracker.Clear();
+        return written;
+    }
+
+    #endregion
+
     private static string DocumentKey(string templateCode, string documentId) => $"{templateCode}:{documentId}";
 
     private async Task<HashSet<string>> LoadExistingDocumentKeysAsync(
@@ -283,6 +353,7 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
 public sealed record WorldHistoryApprovalSeedReport(
     int TemplatesWritten,
     int ChainsWritten,
+    int DelegationsWritten,
     int PurchaseChainsWritten,
     int NcrChainsWritten,
     int PendingChainsWritten,

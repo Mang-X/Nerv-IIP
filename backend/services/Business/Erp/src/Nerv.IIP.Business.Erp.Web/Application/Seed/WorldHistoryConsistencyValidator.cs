@@ -169,6 +169,8 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             }
         }
 
+        await CheckPayablesAsync(organizationId, environmentId, purchasePlans, asOfDate, failures, cancellationToken);
+
         var opportunities = (await dbContext.Opportunities
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
@@ -184,6 +186,122 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             {
                 failures.Add($"{opportunityNo} 缺失或客户 '{opportunities.GetValueOrDefault(opportunityNo)}' 与订单计划 {plan.CustomerCode} 不符。");
             }
+        }
+    }
+
+    /// <summary>
+    /// 应付账款对账（<c>AP-2026-####</c>）：
+    /// 每张已收货采购单必有且只有一条应付，来源单据号 = 收货单号、供应商与金额逐字对上；
+    /// 未收货采购单一条应付都不能有；已付不得超过应付；发票日 / 到期日不得倒挂或越出历史窗。
+    ///
+    /// 与销售侧同样的口径纪律：**只断言与 asOfDate 无关的量**。
+    /// 发票日 / 到期日 / 已付进度都随 asOfDate 前移而变，而库内老行不会被重写，
+    /// 逐字复算它们会在「同一个库换更晚日期重跑」时误杀。
+    /// </summary>
+    private async Task CheckPayablesAsync(
+        string organizationId,
+        string environmentId,
+        IReadOnlyList<WorldHistoryPurchasePlan> purchasePlans,
+        DateOnly asOfDate,
+        List<string> failures,
+        CancellationToken cancellationToken)
+    {
+        var payables = (await dbContext.AccountPayables
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                x.PayableNo.StartsWith("AP-2026-"))
+            .Select(x => new PayableProjection(
+                x.PayableNo,
+                x.SourceDocumentNo,
+                x.SupplierCode,
+                x.Amount,
+                x.PaidAmount,
+                x.InvoiceDate,
+                x.DueDate,
+                x.CreatedAtUtc))
+            .ToArrayAsync(cancellationToken))
+            .ToArray();
+        var payableByNo = payables
+            .GroupBy(x => x.PayableNo, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+
+        var lowerBound = WorldHistoryCalendar.GoLiveDate.ToDateTime(TimeOnly.MinValue).AddDays(-1);
+        var receivedAmountTotal = 0m;
+
+        foreach (var plan in purchasePlans)
+        {
+            var payableNo = WorldHistoryErpSpec.PayableNo(plan.Index);
+            if (!plan.IsReceived)
+            {
+                if (payableByNo.ContainsKey(payableNo))
+                {
+                    failures.Add($"{plan.PurchaseOrderNo} 尚未收货却存在应付 {payableNo}。");
+                }
+
+                continue;
+            }
+
+            receivedAmountTotal += decimal.Round(plan.TotalAmount, 2);
+            if (!payableByNo.TryGetValue(payableNo, out var rows))
+            {
+                failures.Add($"{plan.PurchaseOrderNo} 已收货却缺少应付 {payableNo}。");
+                continue;
+            }
+
+            if (rows.Length > 1)
+            {
+                failures.Add($"应付 {payableNo} 出现 {rows.Length} 条重复。");
+            }
+
+            var payable = rows[0];
+            if (!string.Equals(payable.SourceDocumentNo, plan.PurchaseReceiptNo, StringComparison.Ordinal))
+            {
+                failures.Add($"{payableNo} 来源单据 '{payable.SourceDocumentNo}' 与收货单 {plan.PurchaseReceiptNo} 不符。");
+            }
+
+            if (!string.Equals(payable.SupplierCode, plan.SupplierCode, StringComparison.Ordinal))
+            {
+                failures.Add($"{payableNo} 供应商 '{payable.SupplierCode}' 与采购单 {plan.SupplierCode} 不符。");
+            }
+
+            if (Math.Abs(payable.Amount - decimal.Round(plan.TotalAmount, 2)) > AmountTolerance)
+            {
+                failures.Add($"{payableNo} 应付金额 {payable.Amount} 与采购单金额 {plan.TotalAmount} 不符。");
+            }
+
+            if (payable.PaidAmount < 0m || payable.PaidAmount - payable.Amount > AmountTolerance)
+            {
+                failures.Add($"{payableNo} 已付 {payable.PaidAmount} 越出 [0, {payable.Amount}]。");
+            }
+
+            if (payable.DueDate < payable.InvoiceDate)
+            {
+                failures.Add($"{payableNo} 到期日早于发票日。");
+            }
+
+            if (payable.InvoiceDate < WorldHistoryCalendar.GoLiveDate || payable.InvoiceDate > asOfDate)
+            {
+                failures.Add($"{payableNo} 发票日 {payable.InvoiceDate:d} 落在 [{WorldHistoryCalendar.GoLiveDate:d}, {asOfDate:d}] 之外。");
+            }
+
+            if (payable.CreatedAtUtc < lowerBound)
+            {
+                failures.Add($"{payableNo} 创建时间越界：{payable.CreatedAtUtc:O}。");
+            }
+        }
+
+        // 总账层面：应付合计 = 已收货采购单金额合计（只统计本次计划覆盖到的号，
+        // 换更晚日期重跑时留在库里的更大序号不参与本次对账）。
+        var plannedPayableNos = purchasePlans
+            .Where(plan => plan.IsReceived)
+            .Select(plan => WorldHistoryErpSpec.PayableNo(plan.Index))
+            .ToHashSet(StringComparer.Ordinal);
+        var actualPayableTotal = plannedPayableNos
+            .Where(payableByNo.ContainsKey)
+            .Sum(payableNo => payableByNo[payableNo][0].Amount);
+        if (payables.Length > 0 && Math.Abs(receivedAmountTotal - actualPayableTotal) > AmountTolerance)
+        {
+            failures.Add($"应付总额不平：已收货采购单合计 {receivedAmountTotal}，应付合计 {actualPayableTotal}。");
         }
     }
 
@@ -618,6 +736,16 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         string SourceDocumentNo,
         decimal Amount,
         decimal CollectedAmount,
+        DateOnly InvoiceDate,
+        DateOnly DueDate,
+        DateTime CreatedAtUtc);
+
+    private sealed record PayableProjection(
+        string PayableNo,
+        string SourceDocumentNo,
+        string SupplierCode,
+        decimal Amount,
+        decimal PaidAmount,
         DateOnly InvoiceDate,
         DateOnly DueDate,
         DateTime CreatedAtUtc);

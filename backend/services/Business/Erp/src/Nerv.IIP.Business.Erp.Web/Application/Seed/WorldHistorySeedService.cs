@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CashReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CostCandidateAggregate;
@@ -55,12 +56,13 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         await SeedGlAccountsAsync(organizationId, environmentId, cancellationToken);
         var salesOrdersWritten = await SeedSalesHistoryAsync(organizationId, environmentId, asOfDate, scale, cancellationToken);
         var purchaseOrdersWritten = await SeedPurchaseHistoryAsync(organizationId, environmentId, asOfDate, scale, cancellationToken);
+        var payablesWritten = await SeedPayablesAsync(organizationId, environmentId, asOfDate, scale, cancellationToken);
 
         // fail-closed：对账不过 seed 就失败，绝不放一份账不平的历史进演示环境。
         var validation = await new WorldHistoryConsistencyValidator(dbContext)
             .ValidateAsync(organizationId, environmentId, asOfDate, scale, cancellationToken);
 
-        return new WorldHistorySeedReport(salesOrdersWritten, purchaseOrdersWritten, validation);
+        return new WorldHistorySeedReport(salesOrdersWritten, purchaseOrdersWritten, payablesWritten, validation);
     }
 
     private async Task SeedGlAccountsAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
@@ -415,6 +417,85 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         dbContext.ChangeTracker.Clear();
     }
 
+    /// <summary>
+    /// 应付账款：每张**已收货**的采购单派生一条 <c>AP-2026-####</c>，
+    /// 来源单据号 = 该采购单的收货单号，金额 / 供应商与采购单逐字对上——
+    /// 应收应付页的两栏因此对称（AR 走销售发货、AP 走采购收货），不再一边有数一边空白。
+    ///
+    /// 刻意做成**独立一遍**（而不是塞进 <see cref="WritePurchaseChain"/>）：
+    /// 早先版本落库的采购单不会被重写，独立遍能把缺失的应付补齐，不受采购单是否新写影响。
+    ///
+    /// 不写应付凭证：<c>JV-2026-*</c> 号段与销售侧收入 / 收款凭证的对账恒等式绑定，
+    /// 往里塞采购侧凭证会打破 <see cref="WorldHistoryConsistencyValidator"/> 的凭证配对口径。
+    /// 应付的账在应付表内部自洽（金额 = 已付 + 未付），与收货单可逐单追溯。
+    /// </summary>
+    private async Task<int> SeedPayablesAsync(
+        string organizationId,
+        string environmentId,
+        DateOnly asOfDate,
+        double scale,
+        CancellationToken cancellationToken)
+    {
+        var payablePlans = BuildPayablePlans(asOfDate, scale);
+        var written = 0;
+
+        for (var batchStart = 0; batchStart < payablePlans.Count; batchStart += BatchSize)
+        {
+            var batch = payablePlans.Skip(batchStart).Take(BatchSize).ToArray();
+            var payableNos = batch.Select(x => x.PayableNo).ToArray();
+            var existing = (await dbContext.AccountPayables
+                    .AsNoTracking()
+                    .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                        payableNos.Contains(x.PayableNo))
+                    .Select(x => x.PayableNo)
+                    .ToArrayAsync(cancellationToken))
+                .ToHashSet(StringComparer.Ordinal);
+
+            var added = 0;
+            foreach (var plan in batch.Where(plan => !existing.Contains(plan.PayableNo)))
+            {
+                var payable = AccountPayable.Create(
+                    organizationId,
+                    environmentId,
+                    plan.PayableNo,
+                    plan.SourceDocumentNo,
+                    plan.SupplierCode,
+                    plan.Amount,
+                    WorldHistorySpec.CurrencyCode,
+                    plan.InvoiceDate,
+                    plan.DueDate,
+                    plan.PaymentTermCode);
+                if (plan.PaidAmount > 0m)
+                {
+                    payable.RegisterPayment(plan.PaidAmount);
+                }
+
+                // 历史事实不驱动下游：AccountPayableCreatedDomainEvent 有跨服务集成事件转换器，
+                // 历史应付一旦派发会让下游把 7 个月前的账当成刚发生的事。
+                payable.ClearDomainEvents();
+                dbContext.AccountPayables.Add(payable);
+                BackdateUtc(payable, x => x.CreatedAtUtc, MomentOn(plan.InvoiceDate, plan.PayableNo, "payable"));
+                added++;
+            }
+
+            if (added > 0)
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+                written += added;
+            }
+
+            dbContext.ChangeTracker.Clear();
+        }
+
+        return written;
+    }
+
+    /// <summary>确定性应付计划流（校验器与测试按同一公式复算，公开为纯函数）。</summary>
+    public static IReadOnlyList<WorldHistoryPayablePlan> BuildPayablePlans(DateOnly asOfDate, double scale) =>
+        [.. BuildPurchasePlans(asOfDate, scale)
+            .Where(plan => plan.IsReceived)
+            .Select(plan => WorldHistoryErpSpec.BuildPayablePlan(plan, asOfDate))];
+
     /// <summary>确定性采购计划流（校验器与测试按同一公式复算，公开为纯函数）。</summary>
     public static IReadOnlyList<WorldHistoryPurchasePlan> BuildPurchasePlans(DateOnly asOfDate, double scale)
     {
@@ -655,4 +736,5 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
 public sealed record WorldHistorySeedReport(
     int SalesOrdersWritten,
     int PurchaseOrdersWritten,
+    int PayablesWritten,
     WorldHistoryValidationReport Validation);

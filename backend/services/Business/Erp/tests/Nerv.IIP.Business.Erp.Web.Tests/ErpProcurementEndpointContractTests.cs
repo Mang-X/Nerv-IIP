@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Infrastructure.MasterData;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
@@ -24,7 +25,7 @@ public sealed class ErpProcurementEndpointContractTests
     {
         var contracts = ErpProcurementEndpointContracts.All.ToArray();
 
-        Assert.Equal(16, contracts.Length);
+        Assert.Equal(17, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/purchase-requisitions/from-suggestion"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
@@ -93,6 +94,11 @@ public sealed class ErpProcurementEndpointContractTests
             && x.PermissionCode == ErpPermissionCodes.ProcurementRead
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "listErpPurchaseOrders");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/erp/supplier-quotations"
+            && x.PermissionCode == ErpPermissionCodes.ProcurementRead
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "listErpSupplierQuotations");
     }
 
     [Theory]
@@ -102,6 +108,7 @@ public sealed class ErpProcurementEndpointContractTests
     [InlineData(typeof(CreateRequestForQuotationEndpoint))]
     [InlineData(typeof(ReceiveSupplierQuotationEndpoint))]
     [InlineData(typeof(ListRequestsForQuotationEndpoint))]
+    [InlineData(typeof(ListSupplierQuotationsEndpoint))]
     [InlineData(typeof(CreatePurchaseOrderEndpoint))]
     [InlineData(typeof(RecordPurchaseReceiptEndpoint))]
     [InlineData(typeof(GetPurchaseReceiptSourceDocumentEndpoint))]
@@ -216,6 +223,76 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.Contains("SUP-003", item.SupplierCodes);
         Assert.Equal("SKU-RM-2000", Assert.Single(item.Lines).SkuCode);
     }
+
+    /// <summary>
+    /// 供应商报价读面：按询价单 / 供应商 / 关键字过滤 + 服务端分页 + 租户隔离，
+    /// 且行金额与总额自洽（数量 × 单价）——报价页据此渲染真正的报价列表，不再借用 RFQ 列表。
+    /// </summary>
+    [Fact]
+    public async Task List_supplier_quotations_query_applies_rfq_supplier_keyword_and_server_paging()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        AddSupplierQuotation(dbContext, "org-001", "SQ-001", "RFQ-001", "SUP-001", "SKU-RM-1000", 10m, 6.5m);
+        AddSupplierQuotation(dbContext, "org-001", "SQ-002", "RFQ-001", "SUP-002", "SKU-RM-1000", 10m, 7.25m);
+        AddSupplierQuotation(dbContext, "org-001", "SQ-003", "RFQ-002", "SUP-001", "SKU-RM-2000", 4m, 12m);
+        AddSupplierQuotation(dbContext, "org-other", "SQ-004", "RFQ-001", "SUP-001", "SKU-RM-1000", 1m, 1m);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ListSupplierQuotationsQueryHandler(dbContext);
+
+        var byRfq = await handler.Handle(
+            new ListSupplierQuotationsQuery("org-001", "env-dev", RfqNo: "RFQ-001"),
+            CancellationToken.None);
+        Assert.Equal(2, byRfq.Total);
+        Assert.All(byRfq.Items, item => Assert.Equal("RFQ-001", item.RfqNo));
+
+        var bySupplier = await handler.Handle(
+            new ListSupplierQuotationsQuery("org-001", "env-dev", SupplierCode: "SUP-001"),
+            CancellationToken.None);
+        Assert.Equal(2, bySupplier.Total);
+        Assert.All(bySupplier.Items, item => Assert.Equal("SUP-001", item.SupplierCode));
+
+        var byKeyword = await handler.Handle(
+            new ListSupplierQuotationsQuery("org-001", "env-dev", Keyword: "SKU-RM-2000"),
+            CancellationToken.None);
+        var quoted = Assert.Single(byKeyword.Items);
+        Assert.Equal("SQ-003", quoted.QuotationNo);
+        Assert.Equal(48m, quoted.TotalAmount);
+        var line = Assert.Single(quoted.Lines);
+        Assert.Equal(4m, line.Quantity);
+        Assert.Equal(12m, line.UnitPrice);
+        Assert.Equal(48m, line.LineAmount);
+
+        // 服务端分页：库内 3 条，取 1 条时 total 仍是 3。
+        var paged = await handler.Handle(
+            new ListSupplierQuotationsQuery("org-001", "env-dev", Skip: 0, Take: 1),
+            CancellationToken.None);
+        Assert.Equal(3, paged.Total);
+        Assert.Single(paged.Items);
+
+        // 租户隔离：另一个 organization 的报价不得串过来。
+        Assert.DoesNotContain(paged.Items, item => item.QuotationNo == "SQ-004");
+    }
+
+    private static void AddSupplierQuotation(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string quotationNo,
+        string rfqNo,
+        string supplierCode,
+        string skuCode,
+        decimal quantity,
+        decimal unitPrice) =>
+        dbContext.SupplierQuotations.Add(SupplierQuotation.Receive(
+            organizationId,
+            "env-dev",
+            quotationNo,
+            rfqNo,
+            supplierCode,
+            [new SupplierQuotationLineDraft("10", skuCode, "kg", quantity, unitPrice, new DateOnly(2026, 6, 5))]));
 
     [Fact]
     public async Task List_requests_for_quotation_query_rejects_unknown_status_and_caps_take()
