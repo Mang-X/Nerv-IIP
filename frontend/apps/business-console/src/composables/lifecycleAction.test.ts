@@ -3,6 +3,7 @@ import {
   LIFECYCLE_STATE_CHANGED_MESSAGE,
   LifecycleStateChangedError,
   executeLifecycleAction,
+  isIndeterminateLifecycleWriteError,
   recoverLifecycleAction,
 } from './lifecycleAction'
 
@@ -76,6 +77,33 @@ describe('executeLifecycleAction', () => {
         }),
       }),
     ).rejects.toBe(validationError)
+  })
+
+  it.each([400, 422])('keeps HTTP %s as a determinate validation failure', (statusCode) => {
+    expect(isIndeterminateLifecycleWriteError({ statusCode })).toBe(false)
+  })
+
+  it('classifies a generated statusCode 500 error as indeterminate', () => {
+    expect(isIndeterminateLifecycleWriteError({ statusCode: 500 })).toBe(true)
+  })
+
+  it('preserves an otherwise untyped response 5xx for indeterminate classification', async () => {
+    const serviceError = { success: false, message: 'service unavailable' }
+
+    const caught = await executeLifecycleAction({
+      readLatest: async () => ({
+        domain: 'wms-outbound',
+        action: 'complete',
+        facts: { status: 'Open' },
+      }),
+      command: async () => ({
+        error: serviceError,
+        response: { status: 503 },
+      }),
+    }).catch((error: unknown) => error)
+
+    expect(caught).toBe(serviceError)
+    expect(isIndeterminateLifecycleWriteError(caught)).toBe(true)
   })
 
   it('returns successful command data without replaying the command', async () => {

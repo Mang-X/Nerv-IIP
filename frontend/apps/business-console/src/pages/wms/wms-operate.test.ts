@@ -1,8 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
+import { NvDialog } from '@nerv-iip/ui'
 
 import { LifecycleStateChangedError } from '@/composables/lifecycleAction'
+import CountsPage from './counts.vue'
 import InboundPage from './inbound.vue'
 import OutboundPage from './outbound.vue'
 import WcsPage from './wcs.vue'
@@ -60,6 +62,7 @@ const wms = vi.hoisted(() => ({
   createIdempotencyKey: vi.fn(() => 'wms-intent-1'),
   completeInbound: vi.fn(),
   completeOutbound: vi.fn(),
+  completeCountExecution: vi.fn(),
   failWcs: vi.fn(),
   createInbound: vi.fn(),
   createOutbound: vi.fn(),
@@ -75,6 +78,7 @@ const wms = vi.hoisted(() => ({
   ] as string[],
   refreshReceivingQuality: vi.fn(),
   refreshInboundOrders: vi.fn(async () => undefined),
+  refreshCountExecutions: vi.fn(async () => undefined),
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -186,6 +190,36 @@ vi.mock('@/composables/useBusinessWms', () => ({
     createOutboundPending: shallowRef(false),
     createOutboundError: shallowRef(undefined),
   }),
+  useWmsCountExecutions: () => ({
+    filters: reactive({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      locationCode: undefined,
+      status: undefined,
+      skip: 0,
+      take: 100,
+    }),
+    countExecutions: computed(() => [
+      {
+        countExecutionId: 'count-1',
+        countNo: 'CNT-1',
+        skuCode: 'SKU-001',
+        uomCode: 'EA',
+        siteCode: 'SITE-001',
+        locationCode: 'RACK-A-01',
+        expectedQuantity: 7,
+        status: 'open',
+      },
+    ]),
+    countExecutionsError: shallowRef(undefined),
+    countExecutionsPending: shallowRef(false),
+    countExecutionsTotal: computed(() => 1),
+    refreshCountExecutions: wms.refreshCountExecutions,
+    createCountExecution: vi.fn(),
+    createCountExecutionPending: shallowRef(false),
+    completeCountExecution: wms.completeCountExecution,
+    completeCountExecutionPending: shallowRef(false),
+  }),
   useWmsWcsTasks: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
     wcsTasks: computed(() => [
@@ -249,6 +283,17 @@ describe('WMS operate actions', () => {
       (
         _id: string,
         _payload: unknown,
+        _key: string,
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.resolve(undefined)
+      },
+    )
+    wms.completeCountExecution.mockImplementation(
+      (
+        _id: string,
+        _countedQuantity: number,
         _key: string,
         options?: { onCommandAttempt?: () => void },
       ) => {
@@ -417,6 +462,15 @@ describe('WMS operate actions', () => {
 
     submit()
     await flushPromises()
+    const reviewDialog = wrapper.findAllComponents(NvDialog).find((dialog) => dialog.props('open'))
+    expect(reviewDialog).toBeTruthy()
+    reviewDialog!.vm.$emit('update:open', false)
+    await flushPromises()
+    expect(reviewDialog!.props('open')).toBe(true)
+    const cancel = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === '取消',
+    )
+    expect(cancel?.disabled).toBe(true)
     submit()
     await flushPromises()
 
@@ -431,6 +485,64 @@ describe('WMS operate actions', () => {
       2,
       'ob-1',
       { packReviewNo: 'PR-1', passed: true },
+      'wms-intent-1',
+      expect.objectContaining({ attempt: 'retry' }),
+    )
+  })
+
+  it('keeps an indeterminate count intent frozen when the dialog requests close', async () => {
+    wms.completeCountExecution.mockImplementationOnce(
+      (
+        _id: string,
+        _countedQuantity: number,
+        _key: string,
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject(new Error('network interrupted'))
+      },
+    )
+    const wrapper = mount(CountsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="盘点操作 CNT-1"]').trigger('click')
+    await flushPromises()
+    const completeItem = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent?.includes('完成盘点'),
+    )
+    expect(completeItem).toBeTruthy()
+    completeItem!.click()
+    await flushPromises()
+
+    const input = document.body.querySelector<HTMLInputElement>('#cnt-counted')!
+    input.value = '8'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const form = [...document.body.querySelectorAll<HTMLFormElement>('form')].find((candidate) =>
+      candidate.querySelector('#cnt-counted'),
+    )!
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    const completeDialog = wrapper
+      .findAllComponents(NvDialog)
+      .find((dialog) => dialog.props('open'))
+    expect(completeDialog).toBeTruthy()
+    completeDialog!.vm.$emit('update:open', false)
+    await flushPromises()
+    expect(completeDialog!.props('open')).toBe(true)
+    const cancel = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === '取消',
+    )
+    expect(cancel?.disabled).toBe(true)
+    expect(input.disabled).toBe(true)
+
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(wms.completeCountExecution).toHaveBeenNthCalledWith(
+      2,
+      'count-1',
+      8,
       'wms-intent-1',
       expect.objectContaining({ attempt: 'retry' }),
     )

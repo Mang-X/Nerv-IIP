@@ -1,5 +1,6 @@
 import { OfflineError, RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
+import { NvBottomSheet } from '@nerv-iip/ui-mobile'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 
@@ -385,6 +386,14 @@ describe('WMS 收货入库', () => {
     const first = wmsState.completeInbound.mock.calls[0]
     expect(document.querySelector<HTMLInputElement>('[data-batch-input]')!.disabled).toBe(true)
     expect(document.body.textContent).toContain('原内容重试')
+    const sheet = wrapper.findComponent(NvBottomSheet)
+    sheet.vm.$emit('update:open', false)
+    await wrapper.vm.$nextTick()
+    expect(sheet.props('open')).toBe(true)
+    const cancel = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === '取消',
+    )
+    expect(cancel?.disabled).toBe(true)
     confirm.click()
     await flushPromises()
 

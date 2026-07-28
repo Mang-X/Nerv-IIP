@@ -118,7 +118,13 @@ function selectExecution(
 }
 
 function closeSheet() {
+  if (intentLocked.value) return
   sheetOpen.value = false
+}
+
+function onSheetOpenChange(open: boolean) {
+  if (!open && intentLocked.value) return
+  sheetOpen.value = open
 }
 
 const lifecycleRecovery = useLifecycleActionRecovery({
@@ -244,7 +250,7 @@ function goHome() {
     </div>
 
     <!-- 完成盘点确认抽屉 -->
-    <NvBottomSheet :open="sheetOpen" title="完成盘点" @update:open="(v) => (sheetOpen = v)">
+    <NvBottomSheet :open="sheetOpen" title="完成盘点" @update:open="onSheetOpenChange">
       <div class="space-y-4">
         <p v-if="selectedCountNo" class="text-sm text-muted-foreground">
           盘点 {{ selectedCountNo }}
@@ -294,7 +300,8 @@ function goHome() {
           </button>
           <button
             type="button"
-            class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground"
+            :disabled="intentLocked"
+            class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground disabled:opacity-60"
             @click="closeSheet"
           >
             取消

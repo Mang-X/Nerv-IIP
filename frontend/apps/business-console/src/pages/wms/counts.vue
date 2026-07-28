@@ -306,6 +306,10 @@ function openComplete(row: CountRow) {
   completeError.value = ''
   completeOpen.value = true
 }
+function onCompleteOpenChange(open: boolean) {
+  if (!open && completeIntentLocked.value) return
+  completeOpen.value = open
+}
 
 // 盘点对象由所选行带出，只读展示，不做成输入框。
 const completeContextItems = computed(() => {
@@ -633,7 +637,7 @@ function formatError(error: unknown) {
       </NvDialogContent>
     </NvDialog>
 
-    <NvDialog v-model:open="completeOpen">
+    <NvDialog :open="completeOpen" @update:open="onCompleteOpenChange">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>完成盘点</NvDialogTitle>
@@ -657,6 +661,7 @@ function formatError(error: unknown) {
                 type="number"
                 min="0"
                 step="any"
+                :disabled="completeIntentLocked"
               />
             </NvField>
           </NvFieldGroup>
@@ -665,7 +670,9 @@ function formatError(error: unknown) {
 
           <NvDialogFooter>
             <NvDialogClose as-child>
-              <NvButton type="button" variant="outline">取消</NvButton>
+              <NvButton type="button" variant="outline" :disabled="completeIntentLocked">
+                取消
+              </NvButton>
             </NvDialogClose>
             <NvButton type="submit" :disabled="completeCountExecutionPending">
               <Spinner v-if="completeCountExecutionPending" aria-hidden="true" />

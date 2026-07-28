@@ -195,7 +195,13 @@ function selectOrder(order: InboundOrder) {
 }
 
 function closeSheet() {
+  if (intentLocked.value) return
   sheetOpen.value = false
+}
+
+function onSheetOpenChange(open: boolean) {
+  if (!open && intentLocked.value) return
+  sheetOpen.value = open
 }
 
 const lifecycleRecovery = useLifecycleActionRecovery({
@@ -418,7 +424,7 @@ function goPutaway() {
     </div>
 
     <!-- 完成入库确认抽屉 -->
-    <NvBottomSheet :open="sheetOpen" title="完成收货入库" @update:open="(v) => (sheetOpen = v)">
+    <NvBottomSheet :open="sheetOpen" title="完成收货入库" @update:open="onSheetOpenChange">
       <div class="space-y-4">
         <p v-if="selectedOrderNo" class="text-sm text-muted-foreground">
           收货单 {{ selectedOrderNo }}
@@ -577,7 +583,13 @@ function goPutaway() {
           >
             去上架
           </NvMobileButton>
-          <NvMobileButton block variant="outline" class="min-h-touch" @click="closeSheet">
+          <NvMobileButton
+            block
+            variant="outline"
+            class="min-h-touch"
+            :disabled="intentLocked"
+            @click="closeSheet"
+          >
             取消
           </NvMobileButton>
         </div>

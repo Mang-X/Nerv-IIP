@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { NvBottomSheet } from '@nerv-iip/ui-mobile'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed } from 'vue'
 import { RequestTimeoutError } from '@/api/request-timeout'
@@ -263,6 +264,14 @@ describe('WMS 复核发货', () => {
     const first = wmsState.completeOutbound.mock.calls[0]
     expect(reviewInput.disabled).toBe(true)
     expect(document.body.textContent).toContain('原内容重试')
+    const sheet = wrapper.findComponent(NvBottomSheet)
+    sheet.vm.$emit('update:open', false)
+    await wrapper.vm.$nextTick()
+    expect(sheet.props('open')).toBe(true)
+    const cancel = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === '取消',
+    )
+    expect(cancel?.disabled).toBe(true)
     confirm.click()
     await flushPromises()
 

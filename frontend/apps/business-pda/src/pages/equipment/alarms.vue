@@ -190,7 +190,7 @@ async function runPending() {
       // 已发出、结果未知：先刷新供核对，同时保留冻结 payload/key，只允许原样重放。
       void refresh()
       actionError.value = {
-        message: `${info.message}。已为你刷新列表，请先核对；如需重试，只会按原内容和同一幂等键重放。`,
+        message: `${info.message}。已为你刷新列表，请先核对；如需重试，系统会按原内容安全处理，不会重复执行。`,
         canRetry: true,
         indeterminate: true,
       }

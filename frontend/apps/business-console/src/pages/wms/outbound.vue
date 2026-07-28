@@ -259,6 +259,10 @@ function openReview(row: OutboundRow) {
   formError.value = ''
   reviewOpen.value = true
 }
+function onReviewOpenChange(open: boolean) {
+  if (!open && reviewIntentLocked.value) return
+  reviewOpen.value = open
+}
 async function submitReview() {
   const id = pendingOrder.value?.outboundOrderId
   if (!id) return
@@ -482,7 +486,7 @@ function formatError(error: unknown) {
       </template>
     </NvDataTable>
 
-    <NvDialog v-model:open="reviewOpen">
+    <NvDialog :open="reviewOpen" @update:open="onReviewOpenChange">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>出库复核</NvDialogTitle>
@@ -519,7 +523,9 @@ function formatError(error: unknown) {
           </NvFieldGroup>
           <NvDialogFooter>
             <NvDialogClose as-child>
-              <NvButton type="button" variant="outline">取消</NvButton>
+              <NvButton type="button" variant="outline" :disabled="reviewIntentLocked">
+                取消
+              </NvButton>
             </NvDialogClose>
             <NvButton type="submit" :disabled="completeOutboundPending">
               {{ reviewIntentLocked ? '按原内容重试' : '提交复核' }}

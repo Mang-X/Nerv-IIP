@@ -1,6 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { NvBottomSheet } from '@nerv-iip/ui-mobile'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed } from 'vue'
+import { RequestTimeoutError } from '@/api/request-timeout'
 
 const push = vi.fn()
 vi.mock('vue-router', () => ({
@@ -248,6 +250,34 @@ describe('WMS 盘点', () => {
       .idempotencyKey
     expect(secondKey).not.toBe(firstKey)
     expect(wmsState.completeCount.mock.calls[1][2]).toMatchObject({ attempt: 'initial' })
+    wrapper.unmount()
+  })
+
+  it('结果未知时所有关闭入口都保留冻结盘点意图', async () => {
+    wmsState.completeCount.mockImplementationOnce(
+      (_id: string, _input: unknown, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject(new RequestTimeoutError())
+      },
+    )
+    const wrapper = mount(CountPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    const countInput = document.querySelector<HTMLInputElement>('[data-testid="counted-quantity"]')!
+    countInput.value = '8'
+    countInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+    document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    const sheet = wrapper.findComponent(NvBottomSheet)
+    sheet.vm.$emit('update:open', false)
+    await wrapper.vm.$nextTick()
+    expect(sheet.props('open')).toBe(true)
+    const cancel = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === '取消',
+    )
+    expect(cancel?.disabled).toBe(true)
+    expect(countInput.disabled).toBe(true)
     wrapper.unmount()
   })
 

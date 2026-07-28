@@ -230,6 +230,8 @@ describe('PDA equipment alarms page', () => {
     const dialogText = document.body.textContent ?? ''
     expect(dialogText).toContain('提交结果未知')
     expect(dialogText).toContain('原内容')
+    expect(dialogText).not.toContain('幂等键')
+    expect(dialogText).not.toContain('重放')
     const confirmBtn = document.body.querySelector<HTMLElement>('.nv-m-md-confirm')
     expect(confirmBtn?.textContent).toContain('重试')
     expect(refresh).toHaveBeenCalled()

@@ -14,7 +14,36 @@ export class LifecycleStateChangedError extends Error {
   }
 }
 
+const lifecycleWriteResponseStatuses = new WeakMap<object, number>()
+
+function getLifecycleWriteErrorStatus(error: unknown) {
+  if (!error || (typeof error !== 'object' && typeof error !== 'function')) return undefined
+
+  const candidate = error as {
+    status?: unknown
+    statusCode?: unknown
+    response?: { status?: unknown }
+  }
+  const status = candidate.statusCode ?? candidate.status ?? candidate.response?.status
+  if (typeof status === 'number' && Number.isFinite(status)) return status
+  return lifecycleWriteResponseStatuses.get(error)
+}
+
+function preserveLifecycleWriteResponseStatus(error: unknown, status?: number) {
+  if (
+    status === undefined ||
+    !Number.isFinite(status) ||
+    !error ||
+    (typeof error !== 'object' && typeof error !== 'function')
+  ) {
+    return
+  }
+  lifecycleWriteResponseStatuses.set(error, status)
+}
+
 export function isIndeterminateLifecycleWriteError(error: unknown) {
+  const status = getLifecycleWriteErrorStatus(error)
+  if (status !== undefined) return status >= 500
   if (error instanceof TypeError) return true
   if (typeof DOMException !== 'undefined' && error instanceof DOMException) {
     return error.name === 'AbortError' || error.name === 'TimeoutError'
@@ -58,7 +87,9 @@ export async function executeLifecycleAction<TData>({
       ? result.data
       : undefined
   if (result.error !== undefined || envelopeError !== undefined) {
-    throw result.error ?? envelopeError
+    const error = result.error ?? envelopeError
+    preserveLifecycleWriteResponseStatus(error, result.response?.status)
+    throw error
   }
 
   return result.data
