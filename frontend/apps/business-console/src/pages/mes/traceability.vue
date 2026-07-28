@@ -5,6 +5,8 @@ import {
   useMesWorkOrders,
   useMesWorkOrderProducedLots,
 } from '@/composables/useBusinessMes'
+import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
+import { labelFor, TRACE_NODE_TYPE_LABELS } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -18,6 +20,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
+  NvStatusBadge,
   NvToolbar,
   resolveStatus,
 } from '@nerv-iip/ui'
@@ -35,6 +38,7 @@ definePage({
 
 const { filters, refreshTraceability, traceability, traceabilityError, traceabilityPending } =
   useMesTraceability()
+const { statusLabel } = useMesReferenceLabels()
 const route = useRoute()
 
 watch(
@@ -121,7 +125,13 @@ const traceCells = computed<NvMetricStripCell[]>(() => [
 type NodeRow = (typeof nodes)['value'][number]
 const columns: NvDataTableColumn<NodeRow>[] = [
   { key: 'nodeId', header: '节点', cellClass: 'font-medium' },
-  { key: 'nodeType', header: '类型', width: 'w-32' },
+  {
+    key: 'nodeType',
+    header: '类型',
+    width: 'w-32',
+    // 后端回 work-order / material-lot 这类码值，词表缺项时只显原码，不编造中文。
+    accessor: (r) => labelFor(TRACE_NODE_TYPE_LABELS, r.nodeType) || '未标注',
+  },
   { key: 'displayName', header: '名称' },
   { key: 'status', header: '状态', width: 'w-28' },
 ]
@@ -214,6 +224,10 @@ function firstQuery(value: unknown) {
       :searchable="false"
       :column-settings="false"
       empty-message="暂无追溯数据。先选择查询类型并填入工单、批次/序列号或物料批，再查询它经过的工序、用料与检验记录。"
-    />
+    >
+      <template #cell-status="{ row }">
+        <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+      </template>
+    </NvDataTable>
   </BusinessLayout>
 </template>

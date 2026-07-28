@@ -6,6 +6,8 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useMesSchedules } from '@/composables/useBusinessMes'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
+import { labelFor, RULE_SCHEDULE_REASON_LABELS } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -52,6 +54,9 @@ const {
   runSchedulePending,
 } = useMesSchedules()
 const businessContext = useBusinessContextStore()
+// 排程结果里的工作中心是编码（后端 WorkCenterUnavailability.WorkCenterId 即编码口径），
+// 名称在主数据里，前端 join；工单 / 工序两列后端只回内部标识，暂无编码或名称可用。
+const { resolveWorkCenter } = useMesDisplayNames()
 
 const scheduleSheetOpen = shallowRef(false)
 
@@ -147,10 +152,18 @@ const columns: NvDataTableColumn<BusinessConsoleScheduledOperation>[] = [
     accessor: (r) => r.workOrderId ?? '无',
   },
   { key: 'operationTaskId', header: '工序', accessor: (r) => r.operationTaskId ?? '无' },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '无' },
+  {
+    key: 'workCenterId',
+    header: '工作中心',
+    accessor: (r) => resolveWorkCenter(r.workCenterId) ?? r.workCenterId ?? '无',
+  },
   { key: 'startUtc', header: '开始', width: 'w-44' },
   { key: 'endUtc', header: '结束', width: 'w-44' },
-  { key: 'reason', header: '原因', accessor: (r) => r.reason ?? '无' },
+  {
+    key: 'reason',
+    header: '分配依据',
+    accessor: (r) => labelFor(RULE_SCHEDULE_REASON_LABELS, r.reason) || '无',
+  },
 ]
 
 function triggerLabel(value?: string | null) {

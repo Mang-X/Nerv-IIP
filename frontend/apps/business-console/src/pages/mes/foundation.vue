@@ -5,6 +5,7 @@ import {
   useMesMaterialVersionCatalog,
   useProductionScopeCatalog,
 } from '@/composables/useMesPickerCatalog'
+import { labelFor, MES_READINESS_AREA_LABELS } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -87,20 +88,10 @@ const errorMessage = computed(() =>
 )
 
 // 区域码 → 中文（开工前各就绪来源）；未知码回退原值，不暴露裸码占位。
-const AREA_LABELS: Record<string, string> = {
-  masterdata: '主数据',
-  'master-data': '主数据',
-  engineering: '工程',
-  inventory: '库存',
-  material: '物料',
-  quality: '质量',
-  capacity: '产能',
-  routing: '工艺路线',
-  bom: '物料清单',
-}
+// 词表与生产驾驶舱共用一份（`@/data/businessLabels`），两页说法不会漂移。
 function areaLabel(code?: string) {
   if (!code) return '未知区域'
-  return AREA_LABELS[code.toLowerCase()] ?? code
+  return labelFor(MES_READINESS_AREA_LABELS, code)
 }
 
 function statusMeta(status?: string): {

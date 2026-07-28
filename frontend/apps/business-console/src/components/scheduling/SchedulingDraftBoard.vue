@@ -6,6 +6,7 @@ import {
   type TaskDragPayload,
 } from '@nerv-iip/scheduling'
 import type { WorkingSchedulePendingOperation } from '@/composables/useWorkingScheduleDraft'
+import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
 import { NvButton, NvInput, NvTabs, NvTabsContent, NvTabsList, NvTabsTrigger } from '@nerv-iip/ui'
 import { shallowRef } from 'vue'
 
@@ -60,7 +61,11 @@ const view = shallowRef('gantt')
                     ? '失效影响'
                     : '求解未排'
               }}
-              · {{ item.message || item.reasonCode || '待重新排程' }}
+              ·
+              {{
+                item.message ||
+                (item.reasonCode ? describeScheduleInvalidationReason(item.reasonCode) : '待重新排程')
+              }}
             </p>
           </div>
           <NvButton

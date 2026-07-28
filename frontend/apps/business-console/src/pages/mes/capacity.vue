@@ -2,7 +2,11 @@
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesCapacityImpacts } from '@/composables/useBusinessMes'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
-import { mesCapacityStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import {
+  mesCapacityStatusOptions,
+  useMesReferenceLabels,
+} from '@/composables/mes/useMesReferenceLabels'
+import { describeEquipmentReason } from '@/composables/useBusinessEquipment'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -40,6 +44,7 @@ const {
   refreshCapacityImpacts,
 } = useMesCapacityImpacts()
 const { keyword } = useMesKeywordFilter(filters)
+const { statusLabel } = useMesReferenceLabels()
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.keyword],
 })
@@ -86,7 +91,13 @@ const columns: NvDataTableColumn<ImpactRow>[] = [
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'effectiveFromUtc', header: '开始', width: 'w-44' },
   { key: 'effectiveToUtc', header: '结束', width: 'w-44' },
-  { key: 'reasonCode', header: '原因', accessor: (r) => r.reasonCode ?? '无' },
+  {
+    key: 'reasonCode',
+    header: '原因',
+    // 产能影响的原因来自设备不可用/停机口径（equipment.*），与设备页同一份说法；
+    // 非标准码（工厂自定义文本）原样显示。
+    accessor: (r) => (r.reasonCode ? describeEquipmentReason(r.reasonCode).label : '无'),
+  },
 ]
 
 function formatDateTime(value?: string | null) {
@@ -186,7 +197,9 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="暂无产能影响。先在设备与停机登记异常或维护占用，再回到这里跟踪对产线产能的影响。"
     >
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }">
+        <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+      </template>
       <template #cell-effectiveFromUtc="{ row }">{{
         formatDateTime(row.effectiveFromUtc)
       }}</template>

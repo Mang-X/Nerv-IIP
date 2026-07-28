@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import { useMesOverview } from '@/composables/useBusinessMes'
+import { describeMesReadinessReason, useMesOverview } from '@/composables/useBusinessMes'
+import { labelFor, MES_READINESS_AREA_LABELS } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -154,8 +155,19 @@ const pendingWorkItems = computed(() =>
 
 type BlockerRow = (typeof blockers)['value'][number]
 const blockerColumns: NvDataTableColumn<BlockerRow>[] = [
-  { key: 'areaCode', header: '区域', width: 'w-28', accessor: (r) => r.areaCode ?? '未知' },
-  { key: 'code', header: '代码', cellClass: 'font-medium', accessor: (r) => r.code ?? '未知' },
+  // 区域码词表与生产准备检查页共用；阻塞代码走 MES 就绪原因目录，取它的中文说法。
+  {
+    key: 'areaCode',
+    header: '区域',
+    width: 'w-28',
+    accessor: (r) => labelFor(MES_READINESS_AREA_LABELS, r.areaCode) || '未知',
+  },
+  {
+    key: 'code',
+    header: '阻塞原因',
+    cellClass: 'font-medium',
+    accessor: (r) => (r.code ? describeMesReadinessReason(r.code).label : '未知'),
+  },
   { key: 'message', header: '说明', accessor: (r) => r.message ?? '无说明' },
   { key: 'count', header: '数量', align: 'end', width: 'w-20' },
 ]

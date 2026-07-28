@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesMaterialIssueRequests } from '@/composables/useBusinessMes'
-import { mesMaterialIssueStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import {
+  mesMaterialIssueStatusOptions,
+  useMesReferenceLabels,
+} from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -40,6 +43,7 @@ const {
 } = useMesMaterialIssueRequests()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 const { resolveSku } = useMesDisplayNames()
+const { statusLabel } = useMesReferenceLabels()
 const router = useRouter()
 const statusFilter = shallowRef('all')
 
@@ -198,7 +202,9 @@ function formatError(error: unknown) {
           </div>
         </div>
       </template>
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }">
+        <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+      </template>
       <template #cell-wmsRequestId="{ row }">
         <RouterLink
           v-if="row.wmsRequestId"

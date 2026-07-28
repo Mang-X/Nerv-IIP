@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricFacet } from '@nerv-iip/ui'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import {
   useQualityInspectionTasks,
   isInspectionTaskOverdue,
 } from '@/composables/useQualityInspectionTasks'
+import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useQualitySkuCatalog } from '@/composables/useQualityPickerCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -39,6 +41,8 @@ const { filters, hasLocator, tasks, total, pending, error, refreshTasks } =
     ...(initialSourceDocumentNo ? { sourceDocumentNo: initialSourceDocumentNo } : {}),
     ...(initialInspectionTaskId ? { inspectionTaskId: initialInspectionTaskId } : {}),
   })
+// 待检任务只回 SKU 编码，物料名在主数据里；查不到就只显编码，不编造物料名。
+const { resolveSkuName } = useSkuNames()
 const { page, pageSize } = usePagedList(filters, {
   initialPageSize: '200',
   resetOn: [() => filters.sourceType, () => filters.skuCode],
@@ -122,7 +126,7 @@ const columns: NvDataTableColumn<BusinessConsoleQualityInspectionTaskItem>[] = [
     width: 'w-24',
     accessor: (row) => sourceLabel(row.sourceType),
   },
-  { key: 'skuCode', header: 'SKU', width: 'w-36', accessor: (row) => row.skuCode ?? '—' },
+  { key: 'skuCode', header: '物料', width: 'w-44' },
   {
     key: 'createdAtUtc',
     header: '生成时间',
@@ -344,6 +348,9 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
         <span v-else>{{ row.sourceDocumentId ?? '—' }}</span>
       </template>
       <template #cell-sourceType="{ row }">{{ sourceLabel(row.sourceType) }}</template>
+      <template #cell-skuCode="{ row }">
+        <CodeWithNameCell :code="row.skuCode" :name="resolveSkuName(row.skuCode)" />
+      </template>
       <template #cell-dueAtUtc="{ row }">
         <span
           v-if="isInspectionTaskOverdue(row)"

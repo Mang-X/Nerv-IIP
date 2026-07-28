@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesWorkOrderItem } from '@nerv-iip/api-client'
 import type { WorkingScheduleOrder } from '@/composables/useWorkingScheduleDraft'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
+import { useSkuNames } from '@/composables/useSkuNames'
 import { NvButton, NvCheckbox, NvInput, Spinner } from '@nerv-iip/ui'
 import { computed } from 'vue'
 
@@ -15,6 +17,9 @@ const emit = defineEmits<{
   include: [workOrderIds: string[], included: boolean]
   update: [workOrderId: string, patch: { priority?: number; isRush?: boolean }]
 }>()
+
+// 工单池只回 SKU 编码，物料名在主数据里；查不到就只显编码，不编造物料名。
+const { resolveSkuName } = useSkuNames()
 
 const byId = computed(() => new Map(props.draftOrders.map((order) => [order.workOrderId, order])))
 const candidateIds = computed(
@@ -66,7 +71,7 @@ function setPriority(workOrderId: string, value: string | number) {
           <tr>
             <th class="p-2">加入</th>
             <th class="p-2">工单</th>
-            <th class="p-2">SKU</th>
+            <th class="p-2">物料</th>
             <th class="p-2">交期</th>
             <th class="p-2">优先级</th>
             <th class="p-2">急单</th>
@@ -83,7 +88,12 @@ function setPriority(workOrderId: string, value: string | number) {
               />
             </td>
             <td class="p-2 font-medium">{{ candidate.workOrderNo || candidate.workOrderId }}</td>
-            <td class="p-2">{{ candidate.skuCode || candidate.skuId }}</td>
+            <td class="p-2">
+              <CodeWithNameCell
+                :code="candidate.skuCode || candidate.skuId"
+                :name="resolveSkuName(candidate.skuCode)"
+              />
+            </td>
             <td class="p-2">
               {{ candidate.dueUtc ? new Date(candidate.dueUtc).toLocaleString() : '—' }}
             </td>

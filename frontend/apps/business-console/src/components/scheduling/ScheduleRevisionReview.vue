@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleSchedulingPlanRevision } from '@nerv-iip/api-client'
+import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
 import { NvStatusBadge } from '@nerv-iip/ui'
 
 defineProps<{ revision?: BusinessConsoleSchedulingPlanRevision }>()
@@ -21,7 +22,7 @@ function percent(value?: number) {
       <NvStatusBadge v-else label="基线有效" tone="success" />
     </header>
     <p v-if="revision.impact?.isInvalidated" class="text-sm text-muted-foreground">
-      {{ revision.impact.reasonCode }} · 影响
+      {{ describeScheduleInvalidationReason(revision.impact.reasonCode) }} · 影响
       {{ revision.impact.affectedWorkOrderIds?.length ?? 0 }} 个工单、{{
         revision.impact.affectedOperationIds?.length ?? 0
       }}

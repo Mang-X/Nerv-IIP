@@ -9,6 +9,7 @@ import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumen
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useQualityNcrs } from '@/composables/useBusinessQuality'
+import { labelFor, NCR_STATUS_LABELS, QUALITY_SOURCE_TYPE_LABELS } from '@/data/businessLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -78,10 +79,11 @@ const { page, pageSize } = usePagedList(filters, {
 
 const selectedNcr = shallowRef<BusinessConsoleQualityItem>()
 const detailOpen = shallowRef(false)
+// 值必须与后端 NonconformanceReport 的状态字完全一致（读面按 Status 精确匹配过滤）。
 const statusOptions = [
   { label: '全部状态', value: 'all' },
-  { label: '待处理', value: 'open' },
-  { label: '处置中', value: 'dispositioned' },
+  { label: '待处置', value: 'open' },
+  { label: '处置中', value: 'disposition-in-progress' },
   { label: '已关闭', value: 'closed' },
 ]
 
@@ -119,7 +121,7 @@ const ncrContextItems = computed(() => {
   if (!ncr) return []
   return [
     { label: '来源单据', value: ncr.sourceDocumentId },
-    { label: '来源类型', value: ncr.sourceType },
+    { label: '来源类型', value: labelFor(QUALITY_SOURCE_TYPE_LABELS, ncr.sourceType) },
     { label: '物料', value: ncr.skuCode },
     { label: '不合格数量', value: ncr.defectQuantity },
     { label: '不合格原因', value: ncr.defectReason },
@@ -156,6 +158,11 @@ const columns: NvDataTableColumn<NcrRow>[] = [
   { key: 'closeReason', header: '关闭原因', accessor: (r) => r.closeReason ?? '—' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
+
+/** NCR 状态中文名；词表没有的状态字原样显示，不编造说法。 */
+function ncrStatusLabel(status?: string | null) {
+  return labelFor(NCR_STATUS_LABELS, status) || '未知'
+}
 
 function openNcr(ncr: BusinessConsoleQualityItem) {
   selectedNcr.value = ncr
@@ -224,7 +231,7 @@ function splitCsv(value: string) {
 }
 function qualityItemSummary(item: BusinessConsoleQualityItem) {
   const values = [
-    item.sourceType,
+    labelFor(QUALITY_SOURCE_TYPE_LABELS, item.sourceType) || undefined,
     item.sourceDocumentId,
     item.skuCode,
     item.defectQuantity === undefined || item.defectQuantity === null
@@ -350,7 +357,9 @@ watch(
       <template #cell-code="{ row }">
         <span class="font-medium">{{ row.code ?? '无' }}</span>
       </template>
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }">
+        <NvStatusBadge :value="row.status" :label="ncrStatusLabel(row.status)" />
+      </template>
       <template #cell-actions="{ row }">
         <NvRowActions :label="`NCR 操作 ${row.code ?? ''}`">
           <NvDropdownMenuItem @click="openNcr(row)">打开处置</NvDropdownMenuItem>
@@ -371,7 +380,10 @@ watch(
         <div class="grid gap-4 px-1">
           <div class="flex items-center justify-between gap-2 rounded-lg border p-3">
             <span class="text-sm font-medium text-foreground">状态</span>
-            <NvStatusBadge :value="selectedNcr?.status" />
+            <NvStatusBadge
+              :value="selectedNcr?.status"
+              :label="ncrStatusLabel(selectedNcr?.status)"
+            />
           </div>
 
           <CarriedContextSummary label="不合格品信息" :items="ncrContextItems" />

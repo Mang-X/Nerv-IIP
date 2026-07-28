@@ -23,6 +23,7 @@ import { PackageCheckIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
 
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useReceiptCreateForm } from '@/composables/mes/useReceiptCreateForm'
 import { useBusinessUoms } from '@/composables/useBusinessMasterData'
 
@@ -81,10 +82,13 @@ function formatQuantity(value?: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
 }
 
+// 成品只带出物料标识，成品名在 SKU 主数据里；查不到只显编码，不编造物料名。
+const { resolveSkuLabel } = useMesDisplayNames()
+
 // 由所选工单行/工单详情带出的只读上下文（不可编辑，不做输入位）。
 const contextItems = computed(() => [
   { label: '工单', value: props.workOrderId },
-  { label: '成品', value: props.skuId },
+  { label: '成品', value: resolveSkuLabel(props.skuId) },
 ])
 </script>
 
@@ -95,7 +99,7 @@ const contextItems = computed(() => [
         <NvSheetTitle>登记完工入库</NvSheetTitle>
         <!-- 入库对象已在下方只读区完整呈现；此处仅供读屏播报，不在界面上再写一遍说明。 -->
         <NvSheetDescription class="sr-only">
-          入库对象：工单 {{ workOrderId }}，成品 {{ skuId }}。
+          入库对象：工单 {{ workOrderId }}，成品 {{ resolveSkuLabel(skuId) }}。
         </NvSheetDescription>
       </NvSheetHeader>
 

@@ -4,6 +4,8 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import QualityHoldPanel from '@/components/mes/QualityHoldPanel.vue'
 import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
+import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
+import { labelFor, QUALITY_STATUS_LABELS } from '@/data/businessLabels'
 import {
   resolveScheduleStatus,
   scheduleInvalidationHint,
@@ -89,7 +91,9 @@ watch(
   { immediate: true },
 )
 
-const { resolveSkuLabel } = useMesDisplayNames()
+// 工序行的班次只有标识，班次名在主数据里（shifts: true 才会拉这份名录）。
+const { resolveShiftLabel, resolveSkuLabel } = useMesDisplayNames({ shifts: true })
+const { statusLabel } = useMesReferenceLabels()
 const auth = useAuthStore()
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 // 人工强制释放质量保留需 business.mes.quality.write（网关 MesQualityWrite），无权则只读时间线。
@@ -174,11 +178,25 @@ const taskColumns: NvDataTableColumn<TaskRow>[] = [
     width: 'w-16',
     accessor: (r) => r.operationSequence ?? 0,
   },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '无' },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '未指定' },
-  { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
+  // 读面已回 *Name / *Code（见 MesOperationTaskRow），按「名称 → 编码 → 标识」三级回退，
+  // 与产能影响 / 停机页同一范式，不把内部标识摆到界面上。
+  {
+    key: 'workCenterId',
+    header: '工作中心',
+    accessor: (r) => r.workCenterName ?? r.workCenterCode ?? r.workCenterId ?? '无',
+  },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定',
+  },
+  { key: 'shiftId', header: '班次', accessor: (r) => resolveShiftLabel(r.shiftId) },
   { key: 'startedAtUtc', header: '开始', width: 'w-44' },
-  { key: 'qualityStatus', header: '质量', accessor: (r) => r.qualityStatus ?? '未检' },
+  {
+    key: 'qualityStatus',
+    header: '质量',
+    accessor: (r) => labelFor(QUALITY_STATUS_LABELS, r.qualityStatus) || '未检',
+  },
 ]
 
 type MaterialRow = (typeof materialRows)['value'][number]
@@ -187,7 +205,8 @@ const materialColumns: NvDataTableColumn<MaterialRow>[] = [
     key: 'materialId',
     header: '物料',
     cellClass: 'font-medium',
-    accessor: (r) => r.materialId ?? '无',
+    // 齐套读面只回物料标识，物料名在 SKU 主数据里；主数据缺就显编码，是 GUID 则不上屏。
+    accessor: (r) => resolveSkuLabel(r.materialId),
   },
   { key: 'materialLotId', header: '批次', accessor: (r) => r.materialLotId ?? '未指定' },
   { key: 'requiredQuantity', header: '需求', align: 'end', width: 'w-20' },
@@ -570,7 +589,9 @@ function formatError(error: unknown) {
         :searchable="false"
         :column-settings="false"
       >
-        <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+        <template #cell-status="{ row }">
+          <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+        </template>
         <template #cell-scheduleStatus="{ row }">
           <span
             v-if="resolveScheduleStatus(row).key === 'invalidated'"
@@ -617,7 +638,9 @@ function formatError(error: unknown) {
         <template #cell-shortageQuantity="{ row }"
           ><span class="tabular-nums">{{ formatQuantity(row.shortageQuantity) }}</span></template
         >
-        <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+        <template #cell-status="{ row }">
+          <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+        </template>
       </NvDataTable>
     </div>
 
@@ -700,7 +723,9 @@ function formatError(error: unknown) {
                   :key="`nolot-${row.requestId}`"
                   class="flex items-center justify-between gap-2 px-2 py-1"
                 >
-                  <span class="truncate">{{ row.materialCode ?? row.materialId }}</span>
+                  <span class="truncate">{{
+                    resolveSkuLabel(row.materialCode ?? row.materialId)
+                  }}</span>
                   <span class="shrink-0 tabular-nums">{{
                     formatQuantity(returnableQuantityOf(row))
                   }}</span>
@@ -717,7 +742,7 @@ function formatError(error: unknown) {
                   class="flex items-center justify-between gap-2 px-2 py-1"
                 >
                   <span class="truncate"
-                    >{{ row.materialCode ?? row.materialId
+                    >{{ resolveSkuLabel(row.materialCode ?? row.materialId)
                     }}<span v-if="row.materialLotId" class="text-muted-foreground">
                       · {{ row.materialLotId }}</span
                     ></span
@@ -738,7 +763,7 @@ function formatError(error: unknown) {
                   class="flex items-center justify-between gap-2 px-2 py-1"
                 >
                   <span class="truncate"
-                    >{{ row.materialCode ?? row.materialId
+                    >{{ resolveSkuLabel(row.materialCode ?? row.materialId)
                     }}<span v-if="row.materialLotId" class="text-muted-foreground">
                       · {{ row.materialLotId }}</span
                     ></span
