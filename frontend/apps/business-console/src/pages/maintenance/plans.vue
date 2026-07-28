@@ -9,7 +9,9 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import MaintenancePlanFormDialog from '@/components/maintenance/MaintenancePlanFormDialog.vue'
 import { useMaintenancePlans } from '@/composables/useBusinessMaintenance'
 import { useMaintenancePlanRuntimeRemaining } from '@/composables/useBusinessTelemetry'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
+import { formatIsoInterval } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -110,28 +112,41 @@ const generateErrorMessage = computed(() => generateError.value)
 const currentActor = computed(() => auth.principal?.loginName ?? auth.principal?.principalId ?? '')
 const generateContextItems = computed(() => [{ label: '发起人', value: generateForm.requestedBy }])
 
+/**
+ * 计划编号缺失时的说法。以前拿 planId（GUID）尾 8 位拼 `PM-XXXXXXXX` 冒充编号——
+ * 那是编造出来的、系统里查不到的号，改为如实说明缺号。
+ */
+const MISSING_PLAN_CODE = '无计划编号'
+
+// 计划读面只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
+const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
+
 type PlanRow = BusinessConsoleMaintenancePlanItem
 const columns: NvDataTableColumn<PlanRow>[] = [
   {
     key: 'planCode',
     header: '计划编号',
     cellClass: 'font-medium',
-    accessor: (r) => r.planCode ?? planNo(r),
+    accessor: (r) => r.planCode ?? MISSING_PLAN_CODE,
   },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '—' },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    accessor: (r) =>
+      resolveDevice(r.deviceAssetId)
+        ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
+        : (r.deviceAssetId ?? '—'),
+  },
   { key: 'triggerMode', header: '触发模式', accessor: (r) => triggerModeLabel(r) },
   { key: 'interval', header: '保养周期', accessor: (r) => intervalLabel(r.interval) },
   { key: 'nextDue', header: '下次到期', accessor: (r) => nextDueLabel(r) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
-function planNo(row: PlanRow) {
-  const id = row.planId ?? ''
-  return id ? `PM-${id.slice(-8).toUpperCase()}` : '保养计划'
-}
+/** 保养周期：先查预置选项，其余按 ISO 8601 周期翻译（P7D → 每 7 天），不回吐原串。 */
 function intervalLabel(value?: string | null) {
   if (!value) return '—'
-  return intervalOptions.find((o) => o.value === value)?.label ?? value
+  return intervalOptions.find((o) => o.value === value)?.label ?? formatIsoInterval(value, '—')
 }
 // 三态由存储事实区分：无日历 interval = 运行小时；无 runtimeHourInterval = 日历周期；两者皆有 = 两者组合。
 function triggerModeLabel(row: PlanRow) {
@@ -290,7 +305,7 @@ function formatError(error: unknown) {
       empty-message="暂无保养计划。为关键设备登记周期保养，再用「生成到期工单」批量开单。"
     >
       <template #cell-actions="{ row }">
-        <NvRowActions v-if="canManagePlans" :label="`保养计划操作 ${row.planCode ?? planNo(row)}`">
+        <NvRowActions v-if="canManagePlans" :label="`保养计划操作 ${row.planCode ?? MISSING_PLAN_CODE}`">
           <NvDropdownMenuItem :disabled="!row.planId" @click="openEdit(row)">
             <PencilIcon aria-hidden="true" />
             编辑触发条件

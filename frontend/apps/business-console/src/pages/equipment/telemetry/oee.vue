@@ -170,7 +170,8 @@ function availabilityLabel(value?: string | null) {
     unavailable: '不可用',
     unknown: '未知',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「未知」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '未知') : '未知'
 }
 function availabilityVariant(value?: string | null) {
   if (value === 'available') return 'success'
@@ -183,8 +184,11 @@ function severityLabel(value?: string | null) {
     critical: '严重',
     info: '信息',
     warning: '预警',
+    major: '重要',
+    minor: '次要',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「未知级别」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '未知级别') : '未知'
 }
 function severityVariant(value?: string | null) {
   const severity = value?.toLowerCase()

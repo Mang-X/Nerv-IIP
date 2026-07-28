@@ -8,6 +8,7 @@ import {
   type EquipmentTone,
 } from '@/composables/useBusinessEquipment'
 import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { equipmentStateLabel } from '@nerv-iip/business-core'
 import {
@@ -90,13 +91,27 @@ const stateSegments = computed<NvMetricSegment[]>(() => [
   { key: 'other', label: '其他状态', value: otherStateCount.value, tone: 'neutral' },
 ])
 
+// 遥测读面只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
+const { resolveDevice, resolveWorkCenter } = useMasterDataDisplayNames({
+  devices: true,
+  workCenters: true,
+})
+/** 设备展示串：名称优先，名录查不到就只显编号，不编名字。 */
+function deviceLabel(code?: string | null, fallback = '无编号') {
+  if (!code) return fallback
+  return resolveDevice(code) ?? code
+}
+
 type Device = (typeof devices)['value'][number]
 const columns: NvDataTableColumn<Device>[] = [
   {
     key: 'deviceAssetId',
     header: '设备',
     cellClass: 'font-medium',
-    accessor: (r) => r.deviceAssetId ?? '无编号',
+    accessor: (r) =>
+      resolveDevice(r.deviceAssetId)
+        ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
+        : (r.deviceAssetId ?? '无编号'),
   },
   { key: 'currentState', header: '状态', width: 'w-32' },
   { key: 'isSourceFresh', header: '实时数据', width: 'w-32' },
@@ -230,9 +245,14 @@ function formatError(error: unknown) {
         <template #cell-deviceAssetId="{ row }">
           <RouterLink
             :to="`/equipment/${row.deviceAssetId}`"
-            class="font-medium text-brand underline-offset-4 hover:underline"
+            class="grid leading-tight text-brand underline-offset-4 hover:underline"
           >
-            {{ row.deviceAssetId ?? '无编号' }}
+            <span class="font-medium">{{ deviceLabel(row.deviceAssetId) }}</span>
+            <span
+              v-if="resolveDevice(row.deviceAssetId)"
+              class="text-xs text-muted-foreground"
+              >{{ row.deviceAssetId }}</span
+            >
           </RouterLink>
         </template>
         <template #cell-currentState="{ row }">
@@ -304,10 +324,14 @@ function formatError(error: unknown) {
             <div class="flex min-w-0 items-center justify-between gap-2">
               <div class="min-w-0">
                 <p class="truncate text-sm font-semibold text-foreground">
-                  {{ block.deviceAssetId ?? '无设备' }}
+                  {{ deviceLabel(block.deviceAssetId, '无设备') }}
                 </p>
                 <p class="truncate text-xs text-muted-foreground">
-                  {{ block.workCenterId ?? '未绑定工作中心' }}
+                  {{
+                    block.workCenterId
+                      ? (resolveWorkCenter(block.workCenterId) ?? block.workCenterId)
+                      : '未绑定工作中心'
+                  }}
                 </p>
               </div>
               <NvBadge class="rounded-sm" variant="danger">{{
@@ -324,7 +348,8 @@ function formatError(error: unknown) {
               <span>{{ formatDateTime(block.endUtc) }}</span>
               <span v-if="block.sourceReferenceId">关联单据 {{ block.sourceReferenceId }}</span>
               <span v-if="block.substituteDeviceAssetIds?.length"
-                >替代设备 {{ block.substituteDeviceAssetIds.join(', ') }}</span
+                >替代设备
+                {{ block.substituteDeviceAssetIds.map((id) => deviceLabel(id)).join('、') }}</span
               >
             </div>
             <NvButton

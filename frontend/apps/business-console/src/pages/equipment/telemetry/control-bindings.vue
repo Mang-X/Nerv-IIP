@@ -7,6 +7,7 @@ import {
   useConnectorInstanceCatalog,
   useEquipmentDeviceCatalog,
 } from '@/composables/useEquipmentPickerCatalog'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
@@ -83,12 +84,18 @@ const disableOpen = ref(false)
 const disableTarget = ref<BusinessConsoleTelemetryDeviceControlBindingItem | null>(null)
 const disableReason = ref('')
 
+// 绑定读面只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
+const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
+
 const columns: NvDataTableColumn<BusinessConsoleTelemetryDeviceControlBindingItem>[] = [
   {
     key: 'deviceAssetId',
     header: '设备',
     cellClass: 'font-medium',
-    accessor: (r) => r.deviceAssetId ?? '无',
+    accessor: (r) =>
+      resolveDevice(r.deviceAssetId)
+        ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
+        : (r.deviceAssetId ?? '无'),
   },
   { key: 'connectorHostId', header: '连接主机', accessor: (r) => r.connectorHostId ?? '无' },
   { key: 'instanceKey', header: '实例标识', accessor: (r) => r.instanceKey ?? '无' },
@@ -346,6 +353,14 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="还没有设备控制通道绑定，点击「新建绑定」为设备配置下发通道。"
     >
+      <template #cell-deviceAssetId="{ row }">
+        <span class="grid leading-tight">
+          <span>{{ resolveDevice(row.deviceAssetId) ?? row.deviceAssetId ?? '无' }}</span>
+          <span v-if="resolveDevice(row.deviceAssetId)" class="text-xs text-muted-foreground">{{
+            row.deviceAssetId
+          }}</span>
+        </span>
+      </template>
       <template #cell-isActive="{ row }">
         <NvStatusBadge :value="row.isActive === false ? 'disabled' : 'active'" />
       </template>

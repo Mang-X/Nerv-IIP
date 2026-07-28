@@ -6,8 +6,11 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import { useInventoryCounts } from '@/composables/useBusinessInventory'
 import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useSkuNames } from '@/composables/useSkuNames'
 import {
   useWarehouseCodeCatalog,
   WAREHOUSE_CATALOG_SOURCE_TEXT,
@@ -72,11 +75,13 @@ const QUALITY_OPTIONS = [
   { label: '冻结', value: 'blocked' },
   { label: '不合格', value: 'rejected' },
 ]
+// 取值须落在 Inventory 服务认得的货主类型上（含别名），否则提交直接 400。
 const OWNER_OPTIONS = [
-  { label: '自有', value: 'owned' },
-  { label: '客户', value: 'customer' },
-  { label: '供应商', value: 'supplier' },
-  { label: '寄售', value: 'consignment' },
+  { label: '本公司', value: 'owned' },
+  { label: '客户寄售', value: 'customer' },
+  { label: '供应商寄售', value: 'supplier' },
+  { label: '生产领用', value: 'production' },
+  { label: '维修备件', value: 'maintenance' },
 ]
 
 const taskSheetOpen = shallowRef(false)
@@ -134,6 +139,20 @@ const { siteOptions, sitesPending, skuOptions, skusPending } = useInventoryScope
 // 库位/批次/序列号后端无主数据读面，从既有台账与仓储作业记录派生可选项。
 const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
   useWarehouseCodeCatalog()
+// 物料 / 工厂 / 库位读面只回编码，名称在主数据里，按编码 join 出中文名。
+const { resolveSkuName } = useSkuNames()
+const { resolveLocation } = useMasterDataDisplayNames({ locations: true })
+
+/** 「名称 编码」串，供排序与导出用；名录查不到就只有编码，不编名字。 */
+function skuText(code?: string | null, fallback = '未记录') {
+  const name = resolveSkuName(code)
+  return name ? `${name} ${code}` : (code ?? fallback)
+}
+/** 「工厂 / 库位」串：库位优先显中文名，查不到就只显编码。 */
+function locationLabel(siteCode?: string | null, locationCode?: string | null) {
+  const location = locationCode ? (resolveLocation(locationCode) ?? locationCode) : ''
+  return [siteCode, location].filter(Boolean).join(' / ') || '—'
+}
 
 const adjustmentTarget = shallowRef<BusinessConsoleInventoryCountTaskLineResponse>()
 // 差异确认对象由所选任务行带出，只读展示，不做成（只读）输入框。
@@ -142,8 +161,8 @@ const adjustmentContextItems = computed(() => {
   if (!row) return []
   return [
     { label: '盘点任务', value: row.countTaskCode || row.countTaskId },
-    { label: '物料', value: row.skuCode },
-    { label: '库位', value: [row.siteCode, row.locationCode].filter(Boolean).join(' / ') },
+    { label: '物料', value: skuText(row.skuCode) },
+    { label: '库位', value: locationLabel(row.siteCode, row.locationCode) },
     { label: '批次', value: row.lotNo || '—' },
     { label: '状态', value: statusLabel(row.status) },
   ]
@@ -177,8 +196,13 @@ const canConfirmAdjustment = computed(
 type CountTaskRow = BusinessConsoleInventoryCountTaskLineResponse
 const columns: NvDataTableColumn<CountTaskRow>[] = [
   { key: 'countTaskCode', header: '任务号', cellClass: 'font-medium' },
-  { key: 'skuCode', header: '物料' },
-  { key: 'location', header: '库位', accessor: (r) => `${r.siteCode} / ${r.locationCode}` },
+  // 物料 / 库位读面只回编码，名称在主数据里，按编码 join 出中文名。
+  { key: 'skuCode', header: '物料', accessor: (r) => skuText(r.skuCode) },
+  {
+    key: 'location',
+    header: '库位',
+    accessor: (r) => locationLabel(r.siteCode, r.locationCode),
+  },
   { key: 'lotNo', header: '批次', accessor: (r) => r.lotNo || '—' },
   {
     key: 'countedQuantity',
@@ -331,6 +355,9 @@ function isNonEmpty(value: string) {
             <RouterLink to="/wms/counts">盘点执行</RouterLink>
           </NvButton>
         </div>
+      </template>
+      <template #cell-skuCode="{ row }">
+        <CodeWithNameCell :code="row.skuCode" :name="resolveSkuName(row.skuCode)" />
       </template>
       <template #cell-actions="{ row }">
         <NvRowActions :label="`盘点操作 ${row.countTaskCode}`">

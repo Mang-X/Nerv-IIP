@@ -194,11 +194,14 @@ export const STOCK_LEDGER_OWNER_TYPE_LABELS: Readonly<Record<string, string>> = 
 }
 
 /**
- * WMS 单据 / 任务状态。后端一律 `Status.ToString()`，即 PascalCase（`InventoryPostingFailed`），
- * 而 UI 包的通用状态表只按小写整串查，多词状态一律查不到、直接把英文印到界面上。
- * 这里补齐 WMS 侧全部枚举（入库单 / 出库单 / 仓库任务 / 盘点执行 / WCS 任务 / 补发 / 退供 / 移动请求）。
+ * WCS 任务状态。后端一律 `Status.ToString()`（PascalCase，如 `InventoryPostingFailed`），
+ * UI 包通用状态表按小写整串查，多词状态查不到就把英文印上屏，所以这里补一份。
+ *
+ * **只给 WCS 用**：入库单 / 出库单 / 仓库任务（上架·拣货·补货·盘点）的状态词表在
+ * `@/data/wmsReference`，那份是按单据分域的——同一个 `Open` 在任务是「待执行」、
+ * 入库是「待收货」、出库是「待出库」，比扁平表准。别拿本表去覆盖那三类。
  */
-export const WMS_STATUS_LABELS: Readonly<Record<string, string>> = {
+export const WCS_TASK_STATUS_LABELS: Readonly<Record<string, string>> = {
   open: '待处理',
   completed: '已完成',
   cancelled: '已取消',
@@ -212,7 +215,7 @@ export const WMS_STATUS_LABELS: Readonly<Record<string, string>> = {
   'inventory-posting-failed': '库存过账失败',
 }
 
-/** WMS 状态的语义色调（UI 包通用表覆盖不到的多词状态）。 */
+/** WMS/WCS 多词状态的语义色调（UI 包通用表覆盖不到的部分）。 */
 export const WMS_STATUS_TONES: Readonly<Record<string, BusinessStatusTone>> = {
   'pending-quality-check': 'warning',
   'inventory-posting-pending': 'warning',

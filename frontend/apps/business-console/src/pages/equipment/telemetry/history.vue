@@ -14,6 +14,7 @@ import {
   useTelemetryTagCatalog,
 } from '@/composables/useEquipmentPickerCatalog'
 import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { friendlyErrorMessage } from '@/utils/notify'
 import {
@@ -160,9 +161,24 @@ watch(
   { immediate: true },
 )
 
+// 历史读面只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
+const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
+/** 设备展示串：名称优先，名录查不到就只显编号，不编名字。 */
+function deviceLabel(code?: string | null, fallback = '无设备') {
+  if (!code) return fallback
+  return resolveDevice(code) ?? code
+}
+
 const columns: NvDataTableColumn<BusinessConsoleTelemetryHistoryItem>[] = [
   { key: 'occurredAtUtc', header: '时间', width: 'w-44' },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '无设备' },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    accessor: (r) =>
+      resolveDevice(r.deviceAssetId)
+        ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
+        : (r.deviceAssetId ?? '无设备'),
+  },
   { key: 'tagKey', header: '采集标签', accessor: (r) => r.tagKey ?? '设备状态' },
   { key: 'value', header: '值', cellClass: 'font-medium', accessor: (r) => r.value ?? '无' },
   { key: 'itemType', header: '类型', width: 'w-24', accessor: (r) => itemTypeLabel(r.itemType) },
@@ -180,7 +196,8 @@ function itemTypeLabel(value?: string | null) {
     sample: '采样',
     state: '状态',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「其他记录」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '其他记录') : '未知'
 }
 function rowKey(row: BusinessConsoleTelemetryHistoryItem) {
   return `${row.deviceAssetId}-${row.tagKey ?? 'state'}-${row.occurredAtUtc}-${row.value}`
@@ -341,9 +358,12 @@ function fromDateInput(value: string, dayOffset: number) {
           <template #cell-deviceAssetId="{ row }">
             <RouterLink
               :to="`/equipment/${row.deviceAssetId}`"
-              class="text-brand underline-offset-4 hover:underline"
+              class="grid leading-tight text-brand underline-offset-4 hover:underline"
             >
-              {{ row.deviceAssetId ?? '无设备' }}
+              <span>{{ deviceLabel(row.deviceAssetId) }}</span>
+              <span v-if="resolveDevice(row.deviceAssetId)" class="text-xs text-muted-foreground">{{
+                row.deviceAssetId
+              }}</span>
             </RouterLink>
           </template>
         </NvDataTable>

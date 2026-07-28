@@ -14,6 +14,7 @@ import {
   useEquipmentSkuCatalog,
   useEquipmentUomCatalog,
 } from '@/composables/useEquipmentPickerCatalog'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
@@ -81,7 +82,7 @@ const router = useRouter()
 
 // 技师目录（人员选择器数据源，读自 /master-data/workers）。
 const { workers, workersPending } = useBusinessWorkers()
-// 设备台账（设备编号联想建议，读自 master-data device-asset 资源）。
+// 设备台账（设备编号联想建议 + 列表里把编号解析成设备名，读自 master-data device-asset 资源）。
 const { resources: deviceResources } = useBusinessMasterDataResources('device-asset')
 // 完工登记的换件行：物料与单位从主数据选，单位默认跟随物料基本单位。
 const { skuOptions, skusPending, baseUomBySku } = useEquipmentSkuCatalog()
@@ -90,6 +91,20 @@ function applySpareRowSku(row: { skuCode: string; uomCode: string }) {
   const baseUom = baseUomBySku.value.get(row.skuCode.trim())
   if (baseUom) row.uomCode = baseUom
 }
+const deviceNameByCode = computed(() => {
+  const map = new Map<string, string>()
+  for (const r of deviceResources.value) {
+    if (r.code) map.set(r.code, r.displayName ?? r.code)
+  }
+  return map
+})
+/** 设备展示串：名称优先，台账查不到就只显编号，不编名字。 */
+function deviceLabel(code?: string | null, fallback = '—') {
+  if (!code) return fallback
+  return deviceNameByCode.value.get(code) ?? code
+}
+// 外部维修供应商只回编码（SUP-…），客户/供应商中文名在主数据业务伙伴里。
+const { resolvePartner } = useBusinessPartnerNames()
 // 当前登录用户（开单人默认当前用户，可改选他人，不自由输入）。
 const auth = useAuthStore()
 const { principal } = storeToRefs(auth)
@@ -222,7 +237,7 @@ const queryPrefilled = shallowRef(false)
 // 从报警行「创建维修工单」带入时：设备与来源报警是既定事实，只读呈现，不再给输入位。
 const createCarried = shallowRef(false)
 const createCarriedItems = computed(() => [
-  { label: '设备', value: createForm.deviceAssetId },
+  { label: '设备', value: deviceLabel(createForm.deviceAssetId) },
   { label: '来源报警', value: createForm.sourceAlarmId },
 ])
 const completeCarriedItems = computed(() => {
@@ -232,10 +247,15 @@ const completeCarriedItems = computed(() => {
   const omitPlaceholder = (value: string) => (value === '—' ? undefined : value)
   return [
     { label: '工单号', value: workOrderNo(target) },
-    { label: '设备', value: target.deviceAssetId },
+    { label: '设备', value: deviceLabel(target.deviceAssetId) },
     { label: '优先级', value: omitPlaceholder(priorityLabel(target.priority)) },
     { label: '保修', value: omitPlaceholder(warrantyStatusLabel(target.warrantyStatus)) },
-    { label: '供应商', value: target.supplierPartnerCode },
+    {
+      label: '供应商',
+      value: target.supplierPartnerCode
+        ? (resolvePartner(target.supplierPartnerCode) ?? target.supplierPartnerCode)
+        : undefined,
+    },
     { label: '开单时间', value: omitPlaceholder(formatDateTime(target.openedAtUtc)) },
   ]
 })
@@ -248,7 +268,14 @@ const columns: NvDataTableColumn<WorkOrderRow>[] = [
     cellClass: 'font-medium',
     accessor: (r) => workOrderNo(r),
   },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '—' },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    accessor: (r) =>
+      r.deviceAssetId && deviceNameByCode.value.has(r.deviceAssetId)
+        ? `${deviceLabel(r.deviceAssetId)} ${r.deviceAssetId}`
+        : (r.deviceAssetId ?? '—'),
+  },
   { key: 'warrantyStatus', header: '保修', width: 'w-24' },
   {
     key: 'warrantyExpiresOn',
@@ -259,8 +286,11 @@ const columns: NvDataTableColumn<WorkOrderRow>[] = [
   {
     key: 'supplierPartnerCode',
     header: '供应商',
-    width: 'w-28',
-    accessor: (r) => r.supplierPartnerCode ?? '—',
+    width: 'w-32',
+    accessor: (r) =>
+      r.supplierPartnerCode
+        ? (resolvePartner(r.supplierPartnerCode) ?? r.supplierPartnerCode)
+        : '—',
   },
   { key: 'priority', header: '优先级', width: 'w-20' },
   { key: 'status', header: '状态', width: 'w-24' },
@@ -273,10 +303,13 @@ const columns: NvDataTableColumn<WorkOrderRow>[] = [
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
+/**
+ * 人读工单号。以前拿 workOrderId（GUID）末 8 位拼 `WO-XXXXXXXX` 冒充单号——
+ * 那是编造出来的、系统里查不到的号。真实单号（`MWO-2026-####`）现在落在
+ * `sourceReferenceId` 上；读面还没有专门的 workOrderNo 字段，已登记为后端缺口。
+ */
 function workOrderNo(row: WorkOrderRow) {
-  const id = row.workOrderId ?? ''
-  // 人读单号：取 GUID 末段大写，GUID 自身仅作内部点击目标。
-  return id ? `WO-${id.slice(-8).toUpperCase()}` : '维护工单'
+  return row.sourceReferenceId ?? '无工单号'
 }
 // 建单只开放高/中/低三档，但报警自动开单等来源会带 critical/urgent 等更高档位，
 // 只查建单选项会把它们原样漏成英文码，所以显示走一张覆盖全部来源的映射表。

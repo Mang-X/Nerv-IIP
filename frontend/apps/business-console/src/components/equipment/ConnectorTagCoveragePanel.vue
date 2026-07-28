@@ -5,6 +5,7 @@ import { RefreshCwIcon, TriangleAlertIcon } from '@lucide/vue'
 import { computed } from 'vue'
 
 import { useBusinessTelemetryConnectorCoverage } from '@/composables/useBusinessTelemetry'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 
 const props = defineProps<{
   collectionConnectorId: string
@@ -15,6 +16,14 @@ const { coverage, coverageError, coveragePending, refreshCoverage } =
   useBusinessTelemetryConnectorCoverage(connectorId)
 
 const items = computed(() => coverage.value?.items ?? [])
+// 覆盖清单只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
+const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
+/** 设备展示串：名称优先，名录查不到就只显编号，不编名字。 */
+function deviceLabel(code?: string | null) {
+  if (!code) return '未关联'
+  const name = resolveDevice(code)
+  return name ? `${name}（${code}）` : code
+}
 const manifestUnavailable = computed(() => coverage.value?.manifestStatus === 'unavailable')
 const currentManifestEmpty = computed(
   () =>
@@ -135,7 +144,7 @@ function sampleDescription(item: BusinessConsoleConnectorTagCoverageItem) {
           <div class="min-w-0">
             <p class="truncate font-medium text-foreground">{{ item.tagKey || '未命名标签' }}</p>
             <p class="mt-0.5 truncate text-[11px] text-muted-foreground">
-              设备 {{ item.deviceAssetId || '未关联' }}
+              设备 {{ deviceLabel(item.deviceAssetId) }}
             </p>
           </div>
           <div class="flex shrink-0 flex-wrap justify-end gap-1">

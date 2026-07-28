@@ -10,7 +10,9 @@ import {
   useEquipmentUomCatalog,
   useMaintenanceDocumentCatalog,
 } from '@/composables/useEquipmentPickerCatalog'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
+import { useSkuNames } from '@/composables/useSkuNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Empty,
@@ -89,31 +91,45 @@ const listErrorMessage = computed(() =>
 // 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
 const createErrorMessage = computed(() => createError.value)
 
+// 备件读面只回编码（DEV-… / SKU-… / EA），名称在主数据里，按编码 join 出中文名。
+const { resolveSkuName } = useSkuNames()
+const { formatUom, resolveDevice } = useMasterDataDisplayNames({ devices: true, uoms: true })
+/** 「名称 编码」串，供排序与导出用；名录查不到就只有编码，不编名字。 */
+function skuText(code?: string | null, fallback = '未记录') {
+  const name = resolveSkuName(code)
+  return name ? `${name} ${code}` : (code ?? fallback)
+}
+function deviceText(code?: string | null, fallback = '未记录') {
+  const name = resolveDevice(code)
+  return name ? `${name} ${code}` : (code ?? fallback)
+}
+
 type SparePartRow = BusinessConsoleMaintenanceSparePartItem
 const columns: NvDataTableColumn<SparePartRow>[] = [
+  // 备件需求行没有人读单号（sparePartLineId 是 GUID），以「备件物料」作主列。
   {
-    key: 'sparePartLineId',
-    header: '备件需求',
+    key: 'skuCode',
+    header: '备件物料',
     cellClass: 'font-medium',
-    accessor: (r) => sparePartNo(r),
+    accessor: (r) => skuText(r.skuCode),
   },
-  { key: 'workOrderId', header: '维修工单', accessor: (r) => r.workOrderId ?? '未关联' },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '未记录' },
-  { key: 'skuCode', header: '备件物料', accessor: (r) => r.skuCode ?? '未记录' },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    accessor: (r) => deviceText(r.deviceAssetId),
+  },
+  // 读面只给 workOrderId（GUID），没有人读工单号——GUID 不上屏，先如实留白（后端缺口）。
+  { key: 'workOrderId', header: '维修工单', accessor: () => '—' },
   { key: 'quantity', header: '需求数量', align: 'end', accessor: (r) => quantityLabel(r) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
-function sparePartNo(row: SparePartRow) {
-  const id = row.sparePartLineId ?? ''
-  return id ? `SP-${id.slice(-8).toUpperCase()}` : '备件需求'
-}
 function rowKey(row: SparePartRow) {
   return row.sparePartLineId ?? `${row.workOrderId ?? ''}-${row.skuCode ?? ''}`
 }
 function quantityLabel(row: SparePartRow) {
   const quantity = row.quantity ?? 0
-  return `${quantity} ${row.uomCode ?? ''}`.trim()
+  return `${quantity} ${formatUom(row.uomCode, '')}`.trim()
 }
 
 function openCreate() {
@@ -214,24 +230,38 @@ async function submitCreate() {
       :column-settings="false"
       empty-message="暂无备件需求。维修工单需要更换物料时在此登记需求。"
     >
+      <!-- 读面没有人读工单号，只有 GUID；GUID 不上屏，用「打开工单」承载跳转。 -->
       <template #cell-workOrderId="{ row }">
         <RouterLink
+          v-if="row.workOrderId"
           :to="{ path: '/maintenance/work-orders', query: { workOrderId: row.workOrderId } }"
           class="text-brand underline-offset-4 hover:underline"
         >
-          {{ row.workOrderId ?? '未关联' }}
+          打开工单
         </RouterLink>
+        <span v-else class="text-muted-foreground">未关联</span>
       </template>
       <template #cell-skuCode="{ row }">
         <RouterLink
           :to="{ path: '/inventory/availability', query: { skuCode: row.skuCode } }"
-          class="text-brand underline-offset-4 hover:underline"
+          class="grid leading-tight text-brand underline-offset-4 hover:underline"
         >
-          {{ row.skuCode ?? '未记录' }}
+          <span>{{ resolveSkuName(row.skuCode) ?? row.skuCode ?? '未记录' }}</span>
+          <span v-if="resolveSkuName(row.skuCode)" class="text-xs text-muted-foreground">{{
+            row.skuCode
+          }}</span>
         </RouterLink>
       </template>
+      <template #cell-deviceAssetId="{ row }">
+        <span class="grid leading-tight">
+          <span>{{ resolveDevice(row.deviceAssetId) ?? row.deviceAssetId ?? '未记录' }}</span>
+          <span v-if="resolveDevice(row.deviceAssetId)" class="text-xs text-muted-foreground">{{
+            row.deviceAssetId
+          }}</span>
+        </span>
+      </template>
       <template #cell-actions="{ row }">
-        <NvRowActions :label="`备件需求操作 ${sparePartNo(row)}`">
+        <NvRowActions :label="`备件需求操作 ${row.skuCode ?? ''}`">
           <NvDropdownMenuItem as-child>
             <RouterLink
               :to="{ path: '/maintenance/work-orders', query: { workOrderId: row.workOrderId } }"

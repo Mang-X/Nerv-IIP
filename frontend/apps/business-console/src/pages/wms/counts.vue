@@ -5,16 +5,24 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
+import { wmsStatusTone } from '@/data/businessLabels'
 import { useWmsCountExecutions } from '@/composables/useBusinessWms'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import {
   useWarehouseCodeCatalog,
   WAREHOUSE_CATALOG_SOURCE_TEXT,
   WAREHOUSE_LOCATION_EMPTY_TEXT,
 } from '@/composables/useWarehouseCodeCatalog'
-import { wmsWarehouseTaskStatusFilterOptions, WMS_STATUS_ANY } from '@/data/wmsReference'
+import {
+  wmsWarehouseTaskStatusFilterOptions,
+  wmsWarehouseTaskStatusLabel,
+  WMS_STATUS_ANY,
+} from '@/data/wmsReference'
 import { usePagedList } from '@/composables/usePagedList'
+import { useSkuNames } from '@/composables/useSkuNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
@@ -127,20 +135,48 @@ const listErrorMessage = computed(() => formatError(countExecutionsError.value))
 const createErrorMessage = computed(() => createError.value)
 const completeErrorMessage = computed(() => completeError.value)
 
+/**
+ * 盘点单号缺失时的说法。以前拿 countExecutionId（GUID）尾 8 位拼一个 `CNT-XXXXXXXX`
+ * 冒充单号——那是编造出来的、系统里查不到的号，改为如实说明缺号。
+ */
+const MISSING_COUNT_NO = '无盘点单号'
+
+// 盘点单读面只回编码（SKU-… / WH-…），名称在主数据里，按编码 join 出中文名。
+const { resolveSkuName } = useSkuNames()
+const { resolveLocation } = useMasterDataDisplayNames({ locations: true })
+
+/** 「名称 编码」串，供排序与导出用；名录查不到就只有编码，不编名字。 */
+function skuText(code?: string | null, fallback = '—') {
+  const name = resolveSkuName(code)
+  return name ? `${name} ${code}` : (code ?? fallback)
+}
+/** 「工厂 / 库位」串：库位优先显中文名，查不到就只显编码。 */
+function locationLabel(row: { siteCode?: string | null; locationCode?: string | null }) {
+  const location = row.locationCode ? (resolveLocation(row.locationCode) ?? row.locationCode) : ''
+  return [row.siteCode, location].filter(Boolean).join(' / ') || '—'
+}
+function statusLabel(value?: string | null) {
+  return wmsWarehouseTaskStatusLabel(value)
+}
+
 type CountRow = BusinessConsoleWmsCountExecutionItem
 const columns: NvDataTableColumn<CountRow>[] = [
   {
     key: 'countNo',
     header: '盘点单号',
     cellClass: 'font-medium',
-    accessor: (r) => r.countNo ?? countNo(r),
+    accessor: (r) => r.countNo ?? MISSING_COUNT_NO,
   },
   {
     key: 'location',
     header: '库位',
-    accessor: (r) => `${r.siteCode ?? '—'} / ${r.locationCode ?? '—'}`,
+    accessor: (r) => locationLabel(r),
   },
-  { key: 'skuCode', header: 'SKU', accessor: (r) => r.skuCode ?? '—' },
+  {
+    key: 'skuCode',
+    header: '物料',
+    accessor: (r) => skuText(r.skuCode),
+  },
   { key: 'inventoryContext', header: '库存上下文', width: 'w-72' },
   {
     key: 'expectedQuantity',
@@ -159,10 +195,6 @@ const columns: NvDataTableColumn<CountRow>[] = [
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
-function countNo(row: CountRow) {
-  const id = row.countExecutionId ?? ''
-  return id ? `CNT-${id.slice(-8).toUpperCase()}` : '盘点执行'
-}
 function rowKey(row: CountRow) {
   return row.countExecutionId ?? row.countNo ?? '盘点执行'
 }
@@ -195,7 +227,7 @@ async function submitCreate() {
     !createForm.siteCode.trim() ||
     !createForm.locationCode.trim()
   ) {
-    createError.value = '请填写盘点单号、SKU、工厂与库位。'
+    createError.value = '请填写盘点单号、物料、工厂与库位。'
     return
   }
   const expected =
@@ -237,9 +269,12 @@ const completeContextItems = computed(() => {
   const row = completeTarget.value
   if (!row) return []
   return [
-    { label: '盘点单号', value: row.countNo ?? countNo(row) },
-    { label: '库位', value: [row.siteCode, row.locationCode].filter(Boolean).join(' / ') },
-    { label: 'SKU', value: row.skuCode },
+    { label: '盘点单号', value: row.countNo ?? MISSING_COUNT_NO },
+    { label: '库位', value: locationLabel(row) },
+    {
+      label: '物料',
+      value: skuText(row.skuCode),
+    },
     {
       label: '账面数量',
       value: row.expectedQuantity == null ? undefined : formatQuantity(row.expectedQuantity),
@@ -261,7 +296,7 @@ async function submitComplete() {
   try {
     await completeCountExecution(target.countExecutionId, counted)
     completeOpen.value = false
-    notifySuccess(`盘点单 ${target.countNo ?? countNo(target)} 已完成`)
+    notifySuccess(`盘点单 ${target.countNo ?? MISSING_COUNT_NO} 已完成`)
   } catch (error) {
     notifyError(error, '完成盘点失败，请稍后重试。')
   }
@@ -401,9 +436,17 @@ function formatError(error: unknown) {
           gap-message="本页暂不显示冻结、预留与批次序列号明细，请到库存批次与预留页按盘点范围查看账面数据。"
         />
       </template>
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-skuCode="{ row }">
+        <CodeWithNameCell :code="row.skuCode" :name="resolveSkuName(row.skuCode)" fallback="—" />
+      </template>
+      <template #cell-status="{ row }"
+        ><NvStatusBadge
+          :value="row.status"
+          :label="statusLabel(row.status)"
+          :tone="wmsStatusTone(row.status)"
+      /></template>
       <template #cell-actions="{ row }">
-        <NvRowActions :label="`盘点操作 ${row.countNo ?? countNo(row)}`">
+        <NvRowActions :label="`盘点操作 ${row.countNo ?? MISSING_COUNT_NO}`">
           <NvDropdownMenuItem :disabled="!isOpen(row)" @click="openComplete(row)">
             <CheckCircle2Icon aria-hidden="true" />
             完成盘点
@@ -417,7 +460,7 @@ function formatError(error: unknown) {
         <NvDialogHeader>
           <NvDialogTitle>新建盘点单</NvDialogTitle>
           <!-- 界面上不再写说明书；仅供读屏播报对象范围。 -->
-          <NvDialogDescription class="sr-only">按库位与 SKU 登记盘点单。</NvDialogDescription>
+          <NvDialogDescription class="sr-only">按库位与物料登记盘点单。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
@@ -522,7 +565,7 @@ function formatError(error: unknown) {
           <NvDialogDescription class="sr-only">
             {{
               completeTarget
-                ? `盘点单 ${completeTarget.countNo ?? countNo(completeTarget)} 的实盘录入。`
+                ? `盘点单 ${completeTarget.countNo ?? MISSING_COUNT_NO} 的实盘录入。`
                 : '实盘数量录入。'
             }}
           </NvDialogDescription>

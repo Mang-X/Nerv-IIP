@@ -2,9 +2,12 @@
 import type { BusinessConsoleWmsWarehouseTaskItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { useWmsInboundOrders, useWmsPutawayTasks } from '@/composables/useBusinessWms'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
+import { useSkuNames } from '@/composables/useSkuNames'
 import {
   useWarehouseCodeCatalog,
   WAREHOUSE_CATALOG_SOURCE_TEXT,
@@ -12,6 +15,7 @@ import {
 } from '@/composables/useWarehouseCodeCatalog'
 import {
   wmsWarehouseTaskStatusFilterOptions,
+  wmsWarehouseTaskStatusLabel,
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -199,22 +203,52 @@ const errorMessage = computed(() =>
   formatError(putawayTasksError.value ?? createPutawayError.value),
 )
 
+// 任务读面只回编码（SKU-… / WH-…），名称在主数据里，按编码 join 出中文名。
+const { resolveSkuName } = useSkuNames()
+const { resolveLocation } = useMasterDataDisplayNames({ locations: true })
+
+/** 库位展示串：优先中文名，名录查不到就只显编码。 */
+function locationLabel(code?: string | null) {
+  if (!code) return '—'
+  return resolveLocation(code) ?? code
+}
+interface TaskLocations {
+  fromLocationCode?: string | null
+  toLocationCode?: string | null
+}
+function hasLocationName(row: TaskLocations) {
+  return Boolean(resolveLocation(row.fromLocationCode) || resolveLocation(row.toLocationCode))
+}
+/** 「名称 编码」串，供排序与导出用；名录查不到就只有编码，不编名字。 */
+function skuText(code?: string | null, fallback = '—') {
+  const name = resolveSkuName(code)
+  return name ? `${name} ${code}` : (code ?? fallback)
+}
+function statusLabel(value?: string | null) {
+  return wmsWarehouseTaskStatusLabel(value)
+}
+
 type PutawayRow = BusinessConsoleWmsWarehouseTaskItem
 const columns: NvDataTableColumn<PutawayRow>[] = [
   {
     key: 'taskNo',
     header: '任务号',
     cellClass: 'font-medium',
-    accessor: (r) => r.taskNo ?? r.warehouseTaskId ?? '无',
+    // warehouseTaskId 是系统 GUID，不上屏；没有人读任务号就如实留空。
+    accessor: (r) => r.taskNo ?? '无任务号',
   },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'sourceOrderNo', header: '来源单据', accessor: (r) => r.sourceOrderNo ?? '—' },
-  { key: 'skuCode', header: '物料', accessor: (r) => r.skuCode ?? '—' },
+  {
+    key: 'skuCode',
+    header: '物料',
+    accessor: (r) => skuText(r.skuCode),
+  },
   { key: 'inventoryContext', header: '库存上下文', width: 'w-72' },
   {
     key: 'location',
     header: '起讫库位',
-    accessor: (r) => `${r.fromLocationCode ?? '—'} → ${r.toLocationCode ?? '—'}`,
+    accessor: (r) => `${locationLabel(r.fromLocationCode)} → ${locationLabel(r.toLocationCode)}`,
   },
   {
     key: 'quantity',
@@ -316,7 +350,26 @@ function firstQuery(value: unknown) {
       :column-settings="false"
       empty-message="暂无上架任务。完工入库后由系统派生，或在此手工登记。"
     >
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }"
+        ><NvStatusBadge
+          :value="row.status"
+          :label="statusLabel(row.status)"
+          :tone="wmsStatusTone(row.status)"
+      /></template>
+      <template #cell-skuCode="{ row }">
+        <CodeWithNameCell :code="row.skuCode" :name="resolveSkuName(row.skuCode)" fallback="—" />
+      </template>
+      <template #cell-location="{ row }">
+        <span class="grid leading-tight">
+          <span>
+            {{ locationLabel(row.fromLocationCode) }} → {{ locationLabel(row.toLocationCode) }}
+          </span>
+          <!-- 名称解析出来了才补编码副行，否则两行都是编码，纯属噪音。 -->
+          <span v-if="hasLocationName(row)" class="text-xs text-muted-foreground"
+            >{{ row.fromLocationCode ?? '—' }} → {{ row.toLocationCode ?? '—' }}</span
+          >
+        </span>
+      </template>
       <template #cell-inventoryContext="{ row }">
         <WmsInventoryContextPanel
           compact
