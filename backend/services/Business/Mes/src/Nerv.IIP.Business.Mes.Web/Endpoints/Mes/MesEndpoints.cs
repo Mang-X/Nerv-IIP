@@ -339,7 +339,20 @@ public sealed record OperationTaskActionRequest(
     string OrganizationId,
     string EnvironmentId,
     [property: RouteParam] string OperationTaskId,
-    DateTimeOffset? ChangedAtUtc);
+    DateTimeOffset? ChangedAtUtc,
+    string? IdempotencyKey = null);
+
+public sealed class OperationTaskActionRequestValidator : Validator<OperationTaskActionRequest>
+{
+    public OperationTaskActionRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
+public sealed class RecordProductionReportRequestValidator : Validator<RecordProductionReportRequest>
+{
+    public RecordProductionReportRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
 
 public sealed record RecordDefectRequest(
     string OrganizationId,
@@ -1028,12 +1041,22 @@ public abstract class OperationTaskActionEndpoint(string action, ISender sender,
 {
     public override async Task HandleAsync(OperationTaskActionRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ChangeOperationTaskStateCommand(
-            req.OrganizationId,
-            req.EnvironmentId,
-            req.OperationTaskId,
-            action,
-            req.ChangedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        var changedAtUtc = req.ChangedAtUtc ?? timeProvider.GetUtcNow();
+        var command = string.IsNullOrWhiteSpace(req.IdempotencyKey)
+            ? new ChangeOperationTaskStateCommand(
+                req.OrganizationId,
+                req.EnvironmentId,
+                req.OperationTaskId,
+                action,
+                changedAtUtc)
+            : new ChangeOperationTaskStateCommand(
+                req.OrganizationId,
+                req.EnvironmentId,
+                req.OperationTaskId,
+                action,
+                changedAtUtc,
+                req.IdempotencyKey);
+        var response = await sender.Send(command, ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1100,22 +1123,39 @@ public sealed class RecordProductionReportEndpoint(ISender sender)
 
     public override async Task HandleAsync(RecordProductionReportRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new RecordProductionReportCommand(
-            req.OrganizationId,
-            req.EnvironmentId,
-            req.WorkOrderId,
-            req.OperationTaskId,
-            req.GoodQuantity,
-            req.ScrapQuantity,
-            req.CompletesOperation,
-            req.ReportedAtUtc,
-            req.IdempotencyKey,
-            req.ConsumedMaterialLots,
-            req.ReworkQuantity,
-            req.ScrapReasonCode,
-            req.DefectRecordNo,
-            req.ProducedLotNo,
-            req.SerialNo), ct);
+        var command = string.IsNullOrWhiteSpace(req.IdempotencyKey)
+            ? new RecordProductionReportCommand(
+                req.OrganizationId,
+                req.EnvironmentId,
+                req.WorkOrderId,
+                req.OperationTaskId,
+                req.GoodQuantity,
+                req.ScrapQuantity,
+                req.CompletesOperation,
+                req.ReportedAtUtc,
+                req.ConsumedMaterialLots,
+                req.ReworkQuantity,
+                req.ScrapReasonCode,
+                req.DefectRecordNo,
+                req.ProducedLotNo,
+                req.SerialNo)
+            : new RecordProductionReportCommand(
+                req.OrganizationId,
+                req.EnvironmentId,
+                req.WorkOrderId,
+                req.OperationTaskId,
+                req.GoodQuantity,
+                req.ScrapQuantity,
+                req.CompletesOperation,
+                req.ReportedAtUtc,
+                req.IdempotencyKey,
+                req.ConsumedMaterialLots,
+                req.ReworkQuantity,
+                req.ScrapReasonCode,
+                req.DefectRecordNo,
+                req.ProducedLotNo,
+                req.SerialNo);
+        var result = await sender.Send(command, ct);
         await Send.OkAsync(new RecordProductionReportResponse(result.Id, result.ReportNo), ct);
     }
 }

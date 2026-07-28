@@ -14,6 +14,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Approvals;
 using Nerv.IIP.Business.Quality.Web.Application.Commands;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
+using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.Errors;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
@@ -24,6 +25,7 @@ using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Endpoints.QualityReasons;
 using Nerv.IIP.Caching;
+using Nerv.IIP.DistributedLocking;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
@@ -112,7 +114,11 @@ try
     }
 
     builder.Services.AddQualityPostgreSqlPersistence(qualityConnectionString, builder.Environment.IsDevelopment());
-    builder.Services.AddInMemoryDistributedLock();
+    builder.Services.AddNervIipCommandLocking(
+        builder.Configuration,
+        builder.Environment,
+        isTesting,
+        QualityFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddHttpContextAccessor();
@@ -161,10 +167,13 @@ try
 
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
-            .AddCommandLockBehavior()
+            .AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))
             .AddKnownExceptionValidationBehavior()
             .AddBehavior<CreateReinspectionUniqueConflictBehavior>()
             .AddUnitOfWorkBehaviors());
+    builder.Services.AddScoped<
+        ICommandLock<CreateInspectionRecordFromTaskCommand>,
+        CreateInspectionRecordFromTaskCommandLock>();
     builder.Services.AddScoped<
         IQualityPersistenceConflictClassifier,
         QualityPersistenceConflictClassifier>();

@@ -26,6 +26,19 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 public sealed class QualityLifecycleConflictTests
 {
     [Fact]
+    public void Persistence_backstop_only_classifies_the_quality_idempotency_constraint()
+    {
+        using var dbContext = CreateDbContext();
+
+        Assert.True(QualityIdempotencyPersistenceConflicts.IsTargetConflict(
+            UniqueConflict("ux_code_idempotency_keys_scope"),
+            dbContext));
+        Assert.False(QualityIdempotencyPersistenceConflicts.IsTargetConflict(
+            UniqueConflict("ux_unrelated_quality_constraint"),
+            dbContext));
+    }
+
+    [Fact]
     public async Task Create_record_from_in_progress_task_without_source_record_is_a_lifecycle_conflict()
     {
         await using var dbContext = CreateDbContext();
@@ -36,7 +49,7 @@ public sealed class QualityLifecycleConflictTests
 
         var exception = await Assert.ThrowsAsync<QualityLifecycleConflictException>(() =>
             CreateTaskHandler(dbContext).Handle(
-                new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, []),
+                new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-1"),
                 CancellationToken.None));
 
         Assert.Equal("create-inspection-record-from-task", exception.Action);
@@ -62,7 +75,7 @@ public sealed class QualityLifecycleConflictTests
         await dbContext.SaveChangesAsync();
 
         var result = await CreateTaskHandler(dbContext).Handle(
-            new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, []),
+            new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-2"),
             CancellationToken.None);
 
         Assert.Equal(record.Id, result.InspectionRecordId);
@@ -84,7 +97,7 @@ public sealed class QualityLifecycleConflictTests
         await dbContext.SaveChangesAsync();
 
         var result = await CreateTaskHandler(dbContext).Handle(
-            new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, []),
+            new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-3"),
             CancellationToken.None);
 
         Assert.Equal(record.Id, result.InspectionRecordId);
@@ -109,7 +122,7 @@ public sealed class QualityLifecycleConflictTests
 
         var exception = await Assert.ThrowsAsync<QualityLifecycleConflictException>(() =>
             CreateTaskHandler(dbContext).Handle(
-                new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, []),
+                new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-4"),
                 CancellationToken.None));
 
         Assert.Equal("create-inspection-record-from-task", exception.Action);
@@ -130,11 +143,37 @@ public sealed class QualityLifecycleConflictTests
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             CreateTaskHandler(dbContext).Handle(
-                new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, []),
+                new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-5"),
                 CancellationToken.None));
 
         Assert.Contains("plan", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.IsNotType<QualityLifecycleConflictException>(exception);
+    }
+
+    [Fact]
+    public async Task Submit_rejects_an_inspection_task_owned_by_another_business_scope_without_mutation()
+    {
+        await using var dbContext = CreateDbContext();
+        var task = NewPendingTask("DOC-TENANT-B");
+        dbContext.InspectionTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            CreateTaskHandler(dbContext).Handle(
+                new CreateInspectionRecordFromTaskCommand(
+                    task.Id,
+                    "inspector-a",
+                    [],
+                    null,
+                    [],
+                    "tenant-a-attempt",
+                    "org-a",
+                    "env-a"),
+                CancellationToken.None));
+
+        Assert.Equal(InspectionTaskStatuses.Pending, task.Status);
+        Assert.Null(task.InspectionRecordId);
+        Assert.Empty(dbContext.InspectionRecords);
     }
 
     [Theory]
@@ -315,8 +354,11 @@ public sealed class QualityLifecycleConflictTests
             new
             {
                 inspectionTaskId = taskId,
+                organizationId = "org-001",
+                environmentId = "env-dev",
                 inspectorUserId = "inspector-001",
                 resultLines = Array.Empty<object>(),
+                idempotencyKey = "quality-lifecycle-http",
             });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -405,6 +447,16 @@ public sealed class QualityLifecycleConflictTests
             .UseInMemoryDatabase($"quality-lifecycle-{Guid.NewGuid():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static DbUpdateException UniqueConflict(string constraintName) =>
+        new("unique conflict", new FakePostgresException("23505", constraintName));
+
+    private sealed class FakePostgresException(string sqlState, string constraintName) : Exception
+    {
+        public string SqlState { get; } = sqlState;
+
+        public string ConstraintName { get; } = constraintName;
     }
 
     private sealed class RecordingApprovalClient : IApprovalChainStatusClient

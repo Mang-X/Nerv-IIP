@@ -125,6 +125,36 @@ public sealed class MaintenanceLifecycleConflictTests
     }
 
     [Fact]
+    public async Task Complete_rejects_a_work_order_owned_by_another_business_scope_without_mutation()
+    {
+        await using var dbContext = MaintenanceEndpointContractTests.CreateTestDbContext();
+        var workOrder = MaintenanceWorkOrder.OpenManual(
+            "org-b",
+            "env-b",
+            "DEV-TENANT-B",
+            "medium",
+            "operator-b");
+        dbContext.MaintenanceWorkOrders.Add(workOrder);
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            new CompleteMaintenanceWorkOrderCommandHandler(dbContext).Handle(
+                new CompleteMaintenanceWorkOrderCommand(
+                    workOrder.Id,
+                    "fixed",
+                    "equipment-failure",
+                    10,
+                    [],
+                    OrganizationId: "org-a",
+                    EnvironmentId: "env-a"),
+                CancellationToken.None));
+
+        Assert.Equal(MaintenanceWorkOrderStatus.Open, workOrder.Status);
+        Assert.Null(workOrder.CompletionResult);
+        Assert.Empty(workOrder.SparePartLines);
+    }
+
+    [Fact]
     public void Complete_validator_keeps_field_and_cost_failures_in_the_validation_path()
     {
         var result = new CompleteMaintenanceWorkOrderCommandValidator().Validate(
@@ -169,10 +199,13 @@ public sealed class MaintenanceLifecycleConflictTests
             new
             {
                 workOrderId,
+                organizationId = "org-001",
+                environmentId = "env-dev",
                 result = "fixed",
                 downtimeReasonCode = "equipment-failure",
                 downtimeMinutes = 10,
                 spareParts = Array.Empty<object>(),
+                idempotencyKey = "complete-lifecycle-conflict",
             });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -194,6 +227,8 @@ public sealed class MaintenanceLifecycleConflictTests
             new
             {
                 workOrderId,
+                organizationId = "org-001",
+                environmentId = "env-dev",
                 result = "fixed",
                 downtimeReasonCode = "missing-reason",
                 downtimeMinutes = 10,

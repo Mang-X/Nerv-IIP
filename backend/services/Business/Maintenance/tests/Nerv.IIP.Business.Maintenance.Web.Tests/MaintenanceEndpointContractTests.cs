@@ -1117,10 +1117,18 @@ public sealed class MaintenanceEndpointContractTests
         var handler = new CompleteMaintenanceWorkOrderCommandHandler(dbContext);
 
         await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new CompleteMaintenanceWorkOrderCommand(workOrder.Id, "fixed", "unknown-reason", 10, []),
+            new CompleteMaintenanceWorkOrderCommand(workOrder.Id, "fixed", "unknown-reason", 10, [], IdempotencyKey: "complete-missing-reason"),
             CancellationToken.None));
 
-        await handler.Handle(new CompleteMaintenanceWorkOrderCommand(workOrder.Id, "fixed", " equipment-failure ", 10, []), CancellationToken.None);
+        await handler.Handle(
+            new CompleteMaintenanceWorkOrderCommand(
+                workOrder.Id,
+                "fixed",
+                " equipment-failure ",
+                10,
+                [],
+                IdempotencyKey: "complete-existing-reason"),
+            CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         var reason = await dbContext.DowntimeReasons.SingleAsync();
@@ -1142,7 +1150,13 @@ public sealed class MaintenanceEndpointContractTests
             Options.Create(new MaintenanceCompletionOptions { RequireActualLaborMinutes = true }));
 
         await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new CompleteMaintenanceWorkOrderCommand(workOrder.Id, "fixed", "equipment-failure", 10, []),
+            new CompleteMaintenanceWorkOrderCommand(
+                workOrder.Id,
+                "fixed",
+                "equipment-failure",
+                10,
+                [],
+                IdempotencyKey: "complete-missing-labor"),
             CancellationToken.None));
 
         await handler.Handle(
@@ -1155,7 +1169,8 @@ public sealed class MaintenanceEndpointContractTests
                 ActualLaborMinutes: 75,
                 SparePartCostAmount: 120.50m,
                 ExternalServiceCostAmount: 35m,
-                CostCurrencyCode: "CNY"),
+                CostCurrencyCode: "CNY",
+                IdempotencyKey: "complete-with-labor"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -1195,7 +1210,15 @@ public sealed class MaintenanceEndpointContractTests
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         await dbContext.SaveChangesAsync();
 
-        await completeHandler.Handle(new CompleteMaintenanceWorkOrderCommand(workOrder.Id, "fixed", "equipment-failure", 10, []), CancellationToken.None);
+        await completeHandler.Handle(
+            new CompleteMaintenanceWorkOrderCommand(
+                workOrder.Id,
+                "fixed",
+                "equipment-failure",
+                10,
+                [],
+                IdempotencyKey: "complete-referenced-reason"),
+            CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         await Assert.ThrowsAsync<KnownException>(() => deleteHandler.Handle(new DeleteDowntimeReasonCommand("org-001", "env-dev", "equipment-failure"), CancellationToken.None));

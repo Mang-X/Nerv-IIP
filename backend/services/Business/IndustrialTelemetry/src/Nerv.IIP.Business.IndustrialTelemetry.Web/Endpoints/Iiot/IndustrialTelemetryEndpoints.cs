@@ -158,9 +158,15 @@ public sealed record PostAlarmEventRequest(
     decimal? ThresholdValue = null,
     string? UnitCode = null);
 public sealed record PostAlarmEventResponse(AlarmEventId AlarmEventId);
-public sealed record AcknowledgeAlarmRequest(string OrganizationId, string EnvironmentId, DateTimeOffset AcknowledgedAtUtc, string AcknowledgedBy);
+public sealed record AcknowledgeAlarmRequest(string OrganizationId, string EnvironmentId, DateTimeOffset AcknowledgedAtUtc, string AcknowledgedBy, string? IdempotencyKey = null);
 public sealed record ShelveAlarmRequest(string OrganizationId, string EnvironmentId, DateTimeOffset ShelvedAtUtc, int DurationMinutes, string ShelvedBy, string? Reason, string? IdempotencyKey = null);
-public sealed record UnshelveAlarmRequest(string OrganizationId, string EnvironmentId, DateTimeOffset? UnshelvedAtUtc);
+
+public sealed class ShelveAlarmRequestValidator : Validator<ShelveAlarmRequest>
+{
+    public ShelveAlarmRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+public sealed record UnshelveAlarmRequest(string OrganizationId, string EnvironmentId, DateTimeOffset? UnshelvedAtUtc, string? IdempotencyKey = null);
 public sealed record RunAlarmEscalationsRequest(
     string OrganizationId,
     string EnvironmentId,

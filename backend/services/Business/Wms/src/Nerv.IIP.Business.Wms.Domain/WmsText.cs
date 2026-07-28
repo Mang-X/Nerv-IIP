@@ -39,6 +39,32 @@ public static class WmsText
         return $"wms-line:{hash}";
     }
 
+    public static string IdempotencyKey(string idempotencyKey)
+    {
+        var normalized = Required(idempotencyKey, nameof(idempotencyKey));
+        var hash = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(normalized))).ToLowerInvariant();
+        return $"wms-key-v2:{hash}";
+    }
+
+    public static IReadOnlyList<string> ReplayIdempotencyKeys(string idempotencyKey)
+    {
+        var normalized = Required(idempotencyKey, nameof(idempotencyKey));
+        var current = IdempotencyKey(normalized);
+        return string.Equals(current, normalized, StringComparison.Ordinal)
+            ? [current]
+            : [current, normalized];
+    }
+
+    public static IReadOnlyList<string> ReplayLineIdempotencyKeys(string idempotencyKey, string lineNo)
+    {
+        return ReplayIdempotencyKeys(idempotencyKey)
+            .Select(key => LineIdempotencyKey(key, lineNo))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
     public static string StableOperationalCode(string prefix, params string[] parts)
     {
         var normalizedPrefix = Required(prefix, nameof(prefix)).ToUpperInvariant();

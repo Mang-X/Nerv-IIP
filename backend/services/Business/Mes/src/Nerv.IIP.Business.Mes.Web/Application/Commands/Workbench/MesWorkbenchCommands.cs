@@ -20,6 +20,7 @@ using DomainDefectRecord = Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityA
 using DomainShiftHandover = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandover;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
+using Nerv.IIP.Coding;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 
@@ -1176,13 +1177,56 @@ public sealed record ChangeOperationTaskStateCommand(
     string EnvironmentId,
     string OperationTaskId,
     string Action,
-    DateTimeOffset ChangedAtUtc) : ICommand<MesOperationActionResponse>, IOperationTaskConcurrencyRetryCommand;
+    DateTimeOffset ChangedAtUtc,
+    string IdempotencyKey) : ICommand<MesOperationActionResponse>, IOperationTaskConcurrencyRetryCommand
+{
+    internal bool PersistsCallerIntentReceipt { get; private init; } = true;
+
+    // Governed internal path for schedulers/tests that do not originate from a
+    // frontline request. The same business facts derive the same validation key,
+    // but this compatibility path preserves the pre-frontline behavior and does
+    // not mint a caller-intent receipt. HTTP DTOs cannot select this constructor.
+    public ChangeOperationTaskStateCommand(
+        string OrganizationId,
+        string EnvironmentId,
+        string OperationTaskId,
+        string Action,
+        DateTimeOffset ChangedAtUtc)
+        : this(
+            OrganizationId,
+            EnvironmentId,
+            OperationTaskId,
+            Action,
+            ChangedAtUtc,
+            $"internal:{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(
+                    $"{OrganizationId}|{EnvironmentId}|{OperationTaskId}|{Action}|{ChangedAtUtc:O}")))}")
+    {
+        PersistsCallerIntentReceipt = false;
+    }
+}
+
+public sealed class ChangeOperationTaskStateCommandLock
+    : NetCorePal.Extensions.Primitives.ICommandLock<ChangeOperationTaskStateCommand>
+{
+    public Task<NetCorePal.Extensions.Primitives.CommandLockSettings> GetLockKeysAsync(
+        ChangeOperationTaskStateCommand command,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new NetCorePal.Extensions.Primitives.CommandLockSettings(
+            $"business-mes:operation-task-action:{command.OrganizationId.Trim()}:{command.EnvironmentId.Trim()}:{command.OperationTaskId.Trim()}",
+            30));
+    }
+}
 
 public sealed class ChangeOperationTaskStateCommandHandler(
     ApplicationDbContext dbContext,
     IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null)
     : ICommandHandler<ChangeOperationTaskStateCommand, MesOperationActionResponse>
 {
+    private const string OperationActionRuleKey = "operation-task-action";
+
     public async Task<MesOperationActionResponse> Handle(ChangeOperationTaskStateCommand request, CancellationToken cancellationToken)
     {
         var task = await dbContext.OperationTasks.SingleOrDefaultAsync(
@@ -1191,6 +1235,12 @@ public sealed class ChangeOperationTaskStateCommandHandler(
                 x.OperationTaskIdValue == request.OperationTaskId,
             cancellationToken)
             ?? throw new KnownException($"未找到工序任务，OperationTaskId = {request.OperationTaskId}");
+
+        var replay = await TryGetReplayAsync(request, cancellationToken);
+        if (replay is not null)
+        {
+            return replay;
+        }
 
         var requiredStatus = request.Action switch
         {
@@ -1269,7 +1319,12 @@ public sealed class ChangeOperationTaskStateCommandHandler(
                 }
             });
 
-            return new MesOperationActionResponse(task.OperationTaskIdValue, task.Status.ToString(), request.ChangedAtUtc);
+            var startResult = new MesOperationActionResponse(
+                task.OperationTaskIdValue,
+                task.Status.ToString(),
+                request.ChangedAtUtc);
+            AddIdempotencyRecord(request, startResult);
+            return startResult;
         }
 
         switch (request.Action)
@@ -1288,8 +1343,94 @@ public sealed class ChangeOperationTaskStateCommandHandler(
                 throw new KnownException($"不支持的工序动作：{request.Action}");
         }
 
-        return new MesOperationActionResponse(task.OperationTaskIdValue, task.Status.ToString(), request.ChangedAtUtc);
+        var result = new MesOperationActionResponse(
+            task.OperationTaskIdValue,
+            task.Status.ToString(),
+            request.ChangedAtUtc);
+        AddIdempotencyRecord(request, result);
+        return result;
     }
+
+    private async Task<MesOperationActionResponse?> TryGetReplayAsync(
+        ChangeOperationTaskStateCommand request,
+        CancellationToken cancellationToken)
+    {
+        if (!request.PersistsCallerIntentReceipt)
+        {
+            return null;
+        }
+
+        var idempotencyKey = NormalizeIdempotencyKey(request.IdempotencyKey);
+
+        var existing = dbContext.CodeIdempotencyKeys.Local.FirstOrDefault(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.RuleKey == OperationActionRuleKey &&
+                x.IdempotencyKey == idempotencyKey)
+            ?? await dbContext.CodeIdempotencyKeys.AsNoTracking().SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.RuleKey == OperationActionRuleKey &&
+                x.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+        if (existing is null)
+        {
+            return null;
+        }
+
+        var fingerprint = Fingerprint(request);
+        if (!string.Equals(existing.PayloadFingerprint, fingerprint, StringComparison.Ordinal))
+        {
+            throw new MesIdempotencyConflictException();
+        }
+
+        var parts = existing.Code.Split('|', 2, StringSplitOptions.TrimEntries);
+        if (parts.Length != 2 ||
+            !DateTimeOffset.TryParseExact(
+                parts[1],
+                "O",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind,
+                out var changedAtUtc))
+        {
+            throw new KnownException(
+                $"Stored idempotency receipt for MES operation-task action '{idempotencyKey}' is invalid.");
+        }
+
+        return new MesOperationActionResponse(
+            request.OperationTaskId,
+            parts[0],
+            changedAtUtc);
+    }
+
+    private void AddIdempotencyRecord(
+        ChangeOperationTaskStateCommand request,
+        MesOperationActionResponse result)
+    {
+        if (!request.PersistsCallerIntentReceipt)
+        {
+            return;
+        }
+
+        var idempotencyKey = NormalizeIdempotencyKey(request.IdempotencyKey);
+
+        dbContext.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
+            request.OrganizationId,
+            request.EnvironmentId,
+            OperationActionRuleKey,
+            idempotencyKey,
+            $"{result.Status}|{result.ChangedAtUtc:O}",
+            Fingerprint(request),
+            result.ChangedAtUtc));
+    }
+
+    private static string Fingerprint(ChangeOperationTaskStateCommand request) =>
+        string.Join(
+            '|',
+            request.OperationTaskId.Trim().ToUpperInvariant(),
+            request.Action.Trim().ToLowerInvariant());
+
+    private static string NormalizeIdempotencyKey(string value) => value.Trim();
 
     internal static async Task EnsurePreviousOperationsCompletedAsync(
         ApplicationDbContext dbContext,

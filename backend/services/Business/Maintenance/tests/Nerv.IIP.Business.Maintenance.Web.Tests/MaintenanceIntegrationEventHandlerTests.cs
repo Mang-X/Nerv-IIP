@@ -7,12 +7,13 @@ using Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
-using Nerv.IIP.Business.Maintenance.Web.Infrastructure;
+using Nerv.IIP.DistributedLocking;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.Messaging.CAP;
 using Npgsql;
+using RedisMaintenanceDistributedLock = Nerv.IIP.DistributedLocking.RedisCommandDistributedLock;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 

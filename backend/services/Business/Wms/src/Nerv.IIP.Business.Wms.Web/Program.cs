@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Wms.Web.Application.Seed;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Web.Application.WcsAdapters;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
+using Nerv.IIP.DistributedLocking;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
@@ -68,7 +69,11 @@ try
     builder.Services.AddWmsPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddScoped<WorldHistoryWarehouseOpsSeedService>();
-    builder.Services.AddInMemoryDistributedLock();
+    builder.Services.AddNervIipCommandLocking(
+        builder.Configuration,
+        builder.Environment,
+        isTesting,
+        WmsFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddHttpClient<IWcsCancellationAdapter, HttpWcsCancellationAdapter>().UseHttpClientMetrics();
@@ -99,9 +104,12 @@ try
 
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
-            .AddCommandLockBehavior()
+            .AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))
             .AddKnownExceptionValidationBehavior()
             .AddUnitOfWorkBehaviors());
+    builder.Services.AddScoped<ICommandLock<CompleteInboundOrderCommand>, CompleteInboundOrderCommandLock>();
+    builder.Services.AddScoped<ICommandLock<CompleteOutboundOrderCommand>, CompleteOutboundOrderCommandLock>();
+    builder.Services.AddScoped<ICommandLock<CompleteCountExecutionCommand>, CompleteCountExecutionCommandLock>();
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = WmsFacts.ServiceName)
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();

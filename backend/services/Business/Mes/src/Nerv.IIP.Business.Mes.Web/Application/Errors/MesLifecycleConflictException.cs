@@ -2,6 +2,11 @@ using System.Net;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Errors;
 
+public sealed class MesIdempotencyConflictException : Exception
+{
+    public const string SafeCode = "idempotency-conflict";
+}
+
 public sealed class MesLifecycleConflictException(string action, string currentStatus)
     : Exception($"MES lifecycle conflict for action '{action}' at status '{currentStatus}'.")
 {
@@ -23,6 +28,13 @@ public sealed class MesLifecycleConflictMiddleware(
         try
         {
             await next(context);
+        }
+        catch (MesIdempotencyConflictException)
+        {
+            context.Response.StatusCode = (int)HttpStatusCode.Conflict;
+            await context.Response.WriteAsJsonAsync(
+                new MesLifecycleConflictResponse(false, MesIdempotencyConflictException.SafeCode),
+                context.RequestAborted);
         }
         catch (MesLifecycleConflictException exception)
         {

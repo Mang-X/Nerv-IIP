@@ -15,6 +15,7 @@ public enum MaintenanceWorkOrderStatus
 
 public static class MaintenanceWorkOrderSourceTypes
 {
+    public const string Manual = "manual";
     public const string Alarm = "alarm";
     public const string Plan = "plan";
     public const string Inspection = "inspection";
@@ -120,6 +121,8 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
             priority,
             null,
             openedBy,
+            sourceType: MaintenanceWorkOrderSourceTypes.Manual,
+            sourceReferenceId: null,
             assignedTechnicianUserId: assignedTechnicianUserId,
             estimatedLaborMinutes: estimatedLaborMinutes);
     }

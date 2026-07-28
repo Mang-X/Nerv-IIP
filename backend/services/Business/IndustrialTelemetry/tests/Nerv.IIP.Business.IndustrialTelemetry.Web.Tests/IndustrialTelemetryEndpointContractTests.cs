@@ -21,6 +21,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.OeeProduction
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Auth;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Errors;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
@@ -285,6 +286,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
             durationMinutes = 20,
             shelvedBy = "operator-001",
             reason = "maintenance check",
+            idempotencyKey = "shelve-life-alarm-001",
         });
         await PostLifecycleAsync(client, "/api/business/v1/iiot/alarms/escalations/run", new
         {
@@ -1207,12 +1209,11 @@ public sealed class IndustrialTelemetryEndpointContractTests
         await dbContext.SaveChangesAsync();
 
         // same key, different duration => different fingerprint => conflicting reuse, rejected
-        var ex = await Assert.ThrowsAsync<KnownException>(async () =>
+        await Assert.ThrowsAsync<IndustrialTelemetryIdempotencyConflictException>(async () =>
         {
             await handler.Handle(new ShelveAlarmCommand(alarm.Id, "org-001", "env-dev", t0.AddMinutes(2), 60, "op", null, "key-X"), CancellationToken.None);
             await dbContext.SaveChangesAsync();
         });
-        Assert.Contains("different payload", ex.Message);
     }
 
     [Fact]
@@ -1231,12 +1232,11 @@ public sealed class IndustrialTelemetryEndpointContractTests
         await handler.Handle(new ShelveAlarmCommand(alarm.Id, "org-001", "env-dev", t0.AddMinutes(2), 30, "a|b", "c", "key-sep"), CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
-        var ex = await Assert.ThrowsAsync<KnownException>(async () =>
+        await Assert.ThrowsAsync<IndustrialTelemetryIdempotencyConflictException>(async () =>
         {
             await handler.Handle(new ShelveAlarmCommand(alarm.Id, "org-001", "env-dev", t0.AddMinutes(2), 30, "a", "b|c", "key-sep"), CancellationToken.None);
             await dbContext.SaveChangesAsync();
         });
-        Assert.Contains("different payload", ex.Message);
     }
 
     [Fact]

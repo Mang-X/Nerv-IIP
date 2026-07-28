@@ -1,6 +1,14 @@
 using System.Net;
+using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Quality.Infrastructure;
+using Nerv.IIP.Coding;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Errors;
+
+public sealed class QualityIdempotencyConflictException : Exception
+{
+    public const string SafeCode = "idempotency-conflict";
+}
 
 public sealed class QualityLifecycleConflictException(string action, string currentStatus)
     : Exception($"Quality lifecycle conflict for action '{action}' at status '{currentStatus}'.")
@@ -18,11 +26,26 @@ public sealed class QualityLifecycleConflictMiddleware(
     RequestDelegate next,
     ILogger<QualityLifecycleConflictMiddleware> logger)
 {
-    public async Task InvokeAsync(HttpContext context)
+    public async Task InvokeAsync(HttpContext context, ApplicationDbContext dbContext)
     {
         try
         {
             await next(context);
+        }
+        catch (QualityIdempotencyConflictException)
+        {
+            context.Response.StatusCode = (int)HttpStatusCode.Conflict;
+            await context.Response.WriteAsJsonAsync(
+                new QualityLifecycleConflictResponse(false, QualityIdempotencyConflictException.SafeCode),
+                context.RequestAborted);
+        }
+        catch (DbUpdateException exception) when (
+            QualityIdempotencyPersistenceConflicts.IsTargetConflict(exception, dbContext))
+        {
+            context.Response.StatusCode = (int)HttpStatusCode.Conflict;
+            await context.Response.WriteAsJsonAsync(
+                new QualityLifecycleConflictResponse(false, QualityIdempotencyConflictException.SafeCode),
+                context.RequestAborted);
         }
         catch (QualityLifecycleConflictException exception)
         {
@@ -35,5 +58,41 @@ public sealed class QualityLifecycleConflictMiddleware(
                 new QualityLifecycleConflictResponse(false, QualityLifecycleConflictException.SafeCode),
                 context.RequestAborted);
         }
+    }
+}
+
+public static class QualityIdempotencyPersistenceConflicts
+{
+    public static bool IsTargetConflict(DbUpdateException exception, ApplicationDbContext dbContext)
+    {
+        var expectedConstraint = dbContext.Model.FindEntityType(typeof(CodeIdempotencyKey))
+            ?.GetIndexes()
+            .Single(index => index.Properties.Select(property => property.Name).SequenceEqual(
+                [
+                    nameof(CodeIdempotencyKey.OrganizationId),
+                    nameof(CodeIdempotencyKey.EnvironmentId),
+                    nameof(CodeIdempotencyKey.RuleKey),
+                    nameof(CodeIdempotencyKey.IdempotencyKey),
+                ]))
+            .GetDatabaseName();
+        return MatchesPostgreSqlUniqueConstraint(exception, expectedConstraint);
+    }
+
+    private static bool MatchesPostgreSqlUniqueConstraint(
+        DbUpdateException exception,
+        string? expectedConstraint)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            var sqlState = current.GetType().GetProperty("SqlState")?.GetValue(current) as string;
+            var constraintName = current.GetType().GetProperty("ConstraintName")?.GetValue(current) as string;
+            if (string.Equals(sqlState, "23505", StringComparison.Ordinal)
+                && string.Equals(constraintName, expectedConstraint, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

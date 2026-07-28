@@ -241,14 +241,12 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         dbContext.ChangeTracker.Clear();
 
-        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+        await Assert.ThrowsAsync<WmsIdempotencyConflictException>(() => handler.Handle(
             new CompleteInboundOrderCommand(
                 inbound.Id,
                 idempotencyKey,
                 [new InboundOrderLineCapture("LINE-001", "LOT-CONFLICT", null, null)]),
             CancellationToken.None));
-
-        Assert.Contains("different completion facts", exception.Message, StringComparison.Ordinal);
         Assert.Equal(1, await dbContext.InventoryMovementRequests.CountAsync());
         Assert.Equal("LOT-FIRST", await dbContext.InventoryMovementRequests.Select(x => x.LotNo).SingleAsync());
     }
@@ -519,6 +517,18 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
+    public async Task Complete_inbound_has_a_per_order_distributed_lock()
+    {
+        var inboundOrderId = new InboundOrderId(Guid.CreateVersion7());
+        var settings = await new CompleteInboundOrderCommandLock().GetLockKeysAsync(
+            new CompleteInboundOrderCommand(inboundOrderId, "inbound-complete-lock"),
+            CancellationToken.None);
+
+        Assert.Equal($"business-wms:inbound-order-complete:{inboundOrderId}", settings.LockKey);
+        Assert.Equal(TimeSpan.FromSeconds(30), settings.AcquireTimeout);
+    }
+
+    [Fact]
     public async Task Complete_outbound_creates_pending_inventory_movement_request()
     {
         await using var dbContext = CreateContext();
@@ -545,6 +555,22 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal("idem-out-001", movementRequest.IdempotencyKey);
         Assert.DoesNotContain(':', movementRequest.IdempotencyKey);
         Assert.Equal(4m, movementRequest.Quantity);
+    }
+
+    [Fact]
+    public async Task Complete_outbound_has_a_per_order_distributed_lock()
+    {
+        var outboundOrderId = new OutboundOrderId(Guid.CreateVersion7());
+        var settings = await new CompleteOutboundOrderCommandLock().GetLockKeysAsync(
+            new CompleteOutboundOrderCommand(
+                outboundOrderId,
+                "PACK-LOCK",
+                true,
+                "outbound-complete-lock"),
+            CancellationToken.None);
+
+        Assert.Equal($"business-wms:outbound-order-complete:{outboundOrderId}", settings.LockKey);
+        Assert.Equal(TimeSpan.FromSeconds(30), settings.AcquireTimeout);
     }
 
     [Theory]
@@ -605,14 +631,21 @@ public sealed class WmsInventoryBoundaryTests
         var replay = await replayHandler.Handle(
             new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, idempotencyKey),
             CancellationToken.None);
-        var differentKey = await Assert.ThrowsAsync<KnownException>(() =>
+        await Assert.ThrowsAsync<WmsIdempotencyConflictException>(() =>
             replayHandler.Handle(
                 new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "different-key"),
+                CancellationToken.None));
+        await Assert.ThrowsAsync<WmsIdempotencyConflictException>(() =>
+            replayHandler.Handle(
+                new CompleteOutboundOrderCommand(outbound.Id, "PACK-OTHER", true, idempotencyKey),
+                CancellationToken.None));
+        await Assert.ThrowsAsync<WmsIdempotencyConflictException>(() =>
+            replayHandler.Handle(
+                new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", false, idempotencyKey),
                 CancellationToken.None));
 
         Assert.Equal(first.RequestId, replay.RequestId);
         Assert.Equal(1, await dbContext.InventoryMovementRequests.CountAsync());
-        Assert.Contains("idempotency key", differentKey.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(inventory.Requests);
         Assert.Empty(inventory.FefoRequests);
         Assert.Empty(inventory.ReleaseRequests);
@@ -653,6 +686,42 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(movementRequests[0].Id, result.RequestId);
         Assert.All(movementRequests, x => Assert.StartsWith("idem-out-001:", x.IdempotencyKey, StringComparison.Ordinal));
         Assert.Equal(2, movementRequests.Select(x => x.IdempotencyKey).Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Fact]
+    public async Task Complete_outbound_replay_resolves_normalized_hashed_line_idempotency_keys()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-LONG-REPLAY-001",
+            "sales-delivery",
+            "SO-LONG-REPLAY-001",
+            "SITE-01",
+            [
+                new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001"),
+                new OutboundOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 2m, "LOC-A-02", "LOT-002", null, "qualified", "company", "owner-001")
+            ]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var idempotencyKey = new string('k', 128);
+        var handler = new CompleteOutboundOrderCommandHandler(dbContext);
+
+        var first = await handler.Handle(
+            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, $"  {idempotencyKey}  "),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var replay = await handler.Handle(
+            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, idempotencyKey),
+            CancellationToken.None);
+
+        Assert.Equal(first.RequestId, replay.RequestId);
+        Assert.All(
+            await dbContext.InventoryMovementRequests.Select(x => x.IdempotencyKey).ToArrayAsync(),
+            key => Assert.StartsWith("wms-line:", key, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1138,6 +1207,16 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal("count-adjustment", movementRequest.MovementType);
         Assert.Equal(-2.5m, movementRequest.Quantity);
         Assert.Equal("idem-count-001", movementRequest.IdempotencyKey);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var replay = await new CompleteCountExecutionCommandHandler(dbContext).Handle(
+            new CompleteCountExecutionCommand(count.Id, 7.5m, "  idem-count-001  "),
+            CancellationToken.None);
+        Assert.Equal(result, replay);
+        await Assert.ThrowsAsync<WmsIdempotencyConflictException>(() =>
+            new CompleteCountExecutionCommandHandler(dbContext).Handle(
+                new CompleteCountExecutionCommand(count.Id, 8m, "idem-count-001"),
+                CancellationToken.None));
     }
 
     [Fact]
@@ -1158,7 +1237,9 @@ public sealed class WmsInventoryBoundaryTests
             new CompleteCountExecutionCommand(countId, 7.5m, "idem-count-freeze-001"),
             CancellationToken.None);
 
-        Assert.Empty(dbContext.InventoryMovementRequests.Local);
+        var receipt = Assert.Single(dbContext.InventoryMovementRequests.Local);
+        Assert.Equal(InventoryMovementRequestStatus.Posted, receipt.Status);
+        Assert.Equal(result.RequestId, receipt.Id);
         Assert.Equal("22222222-2222-7222-8222-222222222222", result.InventoryMovementId);
         Assert.Collection(inventory.CountTaskRequests, request =>
         {
@@ -1172,6 +1253,13 @@ public sealed class WmsInventoryBoundaryTests
             Assert.Equal(7.5m, request.CountedQuantity);
             Assert.Equal("idem-count-freeze-001", request.IdempotencyKey);
         });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var replay = await new CompleteCountExecutionCommandHandler(dbContext, inventory).Handle(
+            new CompleteCountExecutionCommand(countId, 7.5m, "idem-count-freeze-001"),
+            CancellationToken.None);
+        Assert.Equal(result, replay);
+        Assert.Single(inventory.CountAdjustmentRequests);
     }
 
     [Fact]
@@ -1402,6 +1490,94 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(LogLevel.Warning, entry.Level);
         Assert.Contains("WCS-DIAG-001", entry.Message, StringComparison.Ordinal);
         Assert.Contains("executed quantity", entry.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Complete_inbound_rejects_an_order_owned_by_another_business_scope_without_mutation()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-b",
+            "env-b",
+            "IN-TENANT-B",
+            "purchase-order",
+            "PO-TENANT-B",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-001", "EA", 1m, "RECEIVING", null, null, "qualified", "company", null)]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            new CompleteInboundOrderCommandHandler(dbContext).Handle(
+                new CompleteInboundOrderCommand(
+                    inbound.Id,
+                    "tenant-a-attempt",
+                    OrganizationId: "org-a",
+                    EnvironmentId: "env-a"),
+                CancellationToken.None));
+
+        Assert.Equal(InboundOrderStatus.Open, inbound.Status);
+        Assert.Empty(dbContext.InventoryMovementRequests.Local);
+    }
+
+    [Fact]
+    public async Task Complete_outbound_rejects_an_order_owned_by_another_business_scope_without_mutation()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-b",
+            "env-b",
+            "OUT-TENANT-B",
+            "sales-delivery",
+            "SO-TENANT-B",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-001", "EA", 1m, "LOC-01", null, null, "qualified", "company", null)]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            new CompleteOutboundOrderCommandHandler(dbContext).Handle(
+                new CompleteOutboundOrderCommand(
+                    outbound.Id,
+                    "PACK-A",
+                    true,
+                    "tenant-a-attempt",
+                    "org-a",
+                    "env-a"),
+                CancellationToken.None));
+
+        Assert.Equal(OutboundOrderStatus.Open, outbound.Status);
+        Assert.Empty(dbContext.InventoryMovementRequests.Local);
+    }
+
+    [Fact]
+    public async Task Complete_count_rejects_an_execution_owned_by_another_business_scope_without_mutation()
+    {
+        await using var dbContext = CreateContext();
+        var count = CountExecution.Create(
+            "org-b",
+            "env-b",
+            "COUNT-TENANT-B",
+            "SKU-001",
+            "EA",
+            "SITE-01",
+            "LOC-01",
+            1m);
+        dbContext.CountExecutions.Add(count);
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            new CompleteCountExecutionCommandHandler(dbContext).Handle(
+                new CompleteCountExecutionCommand(
+                    count.Id,
+                    1m,
+                    "tenant-a-attempt",
+                    "org-a",
+                    "env-a"),
+                CancellationToken.None));
+
+        Assert.Equal(CountExecutionStatus.Open, count.Status);
+        Assert.Empty(dbContext.InventoryMovementRequests.Local);
     }
 
     private static ApplicationDbContext CreateContext()

@@ -42,6 +42,7 @@
     <PackageVersion Include="NetCorePal.Extensions.MultiEnv" Version="3.3.0" />
     <PackageVersion Include="NetCorePal.Extensions.NewtonsoftJson" Version="3.3.0" />
     <PackageVersion Include="NetCorePal.Extensions.Primitives" Version="3.3.0" />
+    <PackageVersion Include="NetCorePal.Extensions.DistributedLocks.Abstractions" Version="3.3.0" />
     <PackageVersion Include="NetCorePal.Extensions.Repository.EntityFrameworkCore" Version="3.3.0" />
     <PackageVersion Include="NetCorePal.Extensions.Repository.EntityFrameworkCore.Snowflake" Version="3.3.0" />
     <PackageVersion Include="Npgsql" Version="10.0.2" />
