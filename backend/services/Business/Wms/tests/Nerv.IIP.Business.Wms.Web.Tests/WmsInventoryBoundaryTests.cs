@@ -8,8 +8,10 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Domain.DomainEvents;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
+using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
@@ -19,6 +21,19 @@ namespace Nerv.IIP.Business.Wms.Web.Tests;
 
 public sealed class WmsInventoryBoundaryTests
 {
+    // SHA-256 fixed vectors precomputed from the UTF-8 raw idempotency keys named below.
+    private const string Inbound001V2Key = "wms-key-v2:08d773bb55685499d937ab64e6dae3e70850278413695eafd3916e73c58a2ac4"; // raw: idem-in-001
+    private const string Inbound001Line001V2Key = "wms-key-v2:08d773bb55685499d937ab64e6dae3e70850278413695eafd3916e73c58a2ac4:LINE-001"; // raw: idem-in-001, line: LINE-001
+    private const string Inbound001Line002V2Key = "wms-key-v2:08d773bb55685499d937ab64e6dae3e70850278413695eafd3916e73c58a2ac4:LINE-002"; // raw: idem-in-001, line: LINE-002
+    private const string Outbound001V2Key = "wms-key-v2:fe8d88b0845a04a31b242980e44ca6635c156c5969020e2b7e4038e8a24d92d6"; // raw: idem-out-001
+    private const string Outbound001Line001V2Key = "wms-key-v2:fe8d88b0845a04a31b242980e44ca6635c156c5969020e2b7e4038e8a24d92d6:LINE-001"; // raw: idem-out-001, line: LINE-001
+    private const string Outbound001Line002V2Key = "wms-key-v2:fe8d88b0845a04a31b242980e44ca6635c156c5969020e2b7e4038e8a24d92d6:LINE-002"; // raw: idem-out-001, line: LINE-002
+    private const string LongK128Line001V2Key = "wms-key-v2:69cd344d20fee04179a672ea3b2929da884e03975100369c926dedc642b5a364:LINE-001"; // raw: 128 × 'k', line: LINE-001
+    private const string LongK128Line002V2Key = "wms-key-v2:69cd344d20fee04179a672ea3b2929da884e03975100369c926dedc642b5a364:LINE-002"; // raw: 128 × 'k', line: LINE-002
+    private const string OutboundRetry001V2Key = "wms-key-v2:9cd58ab5a96906645cf3f8ddbee4ac65ff207728f81328664c57efa553b810e4"; // raw: idem-out-retry-001
+    private const string Count001V2Key = "wms-key-v2:092d9e661bbf5be88a050af9432174bbc4ba38ebfb75290b7d9d3b14a6cc74c6"; // raw: idem-count-001
+    private const string CountFreeze001V2Key = "wms-key-v2:2446092ac46b9e9993ac999f727e57c9a938ff5a2c596ad68d1747654c1244a5"; // raw: idem-count-freeze-001
+
     [Fact]
     public async Task Create_inbound_replay_returns_existing_order_without_duplicate()
     {
@@ -252,7 +267,7 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
-    public async Task Complete_inbound_replay_resolves_hashed_line_idempotency_keys()
+    public async Task Complete_inbound_replay_resolves_v2_line_idempotency_keys()
     {
         await using var dbContext = CreateContext();
         var inbound = InboundOrder.Create(
@@ -279,9 +294,15 @@ public sealed class WmsInventoryBoundaryTests
 
         Assert.Equal(first.RequestId, replay.RequestId);
         Assert.Equal(2, await dbContext.InventoryMovementRequests.CountAsync());
-        Assert.All(
-            await dbContext.InventoryMovementRequests.Select(x => x.IdempotencyKey).ToArrayAsync(),
-            key => Assert.StartsWith("wms-line:", key, StringComparison.Ordinal));
+        Assert.Equal(
+            [
+                LongK128Line001V2Key,
+                LongK128Line002V2Key,
+            ],
+            await dbContext.InventoryMovementRequests
+                .OrderBy(x => x.SourceDocumentLineId)
+                .Select(x => x.IdempotencyKey)
+                .ToArrayAsync());
     }
 
     [Fact]
@@ -449,8 +470,7 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(result.RequestId, movementRequest.Id);
         Assert.Equal(InventoryMovementRequestStatus.Pending, movementRequest.Status);
         Assert.Equal("inbound", movementRequest.MovementType);
-        Assert.Equal("idem-in-001", movementRequest.IdempotencyKey);
-        Assert.DoesNotContain(':', movementRequest.IdempotencyKey);
+        Assert.Equal(Inbound001V2Key, movementRequest.IdempotencyKey);
         Assert.Equal("SKU-FG-1000", movementRequest.SkuCode);
     }
 
@@ -485,7 +505,12 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(["SKU-FG-1000", "SKU-RM-2000"], movementRequests.Select(x => x.SkuCode).ToArray());
         Assert.Equal([5m, 3m], movementRequests.Select(x => x.Quantity).ToArray());
         Assert.Equal(movementRequests[0].Id, result.RequestId);
-        Assert.All(movementRequests, x => Assert.StartsWith("idem-in-001:", x.IdempotencyKey, StringComparison.Ordinal));
+        Assert.Equal(
+            [
+                Inbound001Line001V2Key,
+                Inbound001Line002V2Key,
+            ],
+            movementRequests.Select(x => x.IdempotencyKey).ToArray());
         Assert.Equal(2, movementRequests.Select(x => x.IdempotencyKey).Distinct(StringComparer.Ordinal).Count());
     }
 
@@ -552,8 +577,7 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(result.RequestId, movementRequest.Id);
         Assert.Equal(InventoryMovementRequestStatus.Pending, movementRequest.Status);
         Assert.Equal("outbound", movementRequest.MovementType);
-        Assert.Equal("idem-out-001", movementRequest.IdempotencyKey);
-        Assert.DoesNotContain(':', movementRequest.IdempotencyKey);
+        Assert.Equal(Outbound001V2Key, movementRequest.IdempotencyKey);
         Assert.Equal(4m, movementRequest.Quantity);
     }
 
@@ -684,12 +708,17 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(["SKU-FG-1000", "SKU-RM-2000"], movementRequests.Select(x => x.SkuCode).ToArray());
         Assert.Equal([4m, 2m], movementRequests.Select(x => x.Quantity).ToArray());
         Assert.Equal(movementRequests[0].Id, result.RequestId);
-        Assert.All(movementRequests, x => Assert.StartsWith("idem-out-001:", x.IdempotencyKey, StringComparison.Ordinal));
+        Assert.Equal(
+            [
+                Outbound001Line001V2Key,
+                Outbound001Line002V2Key,
+            ],
+            movementRequests.Select(x => x.IdempotencyKey).ToArray());
         Assert.Equal(2, movementRequests.Select(x => x.IdempotencyKey).Distinct(StringComparer.Ordinal).Count());
     }
 
     [Fact]
-    public async Task Complete_outbound_replay_resolves_normalized_hashed_line_idempotency_keys()
+    public async Task Complete_outbound_replay_resolves_v2_line_idempotency_keys()
     {
         await using var dbContext = CreateContext();
         var outbound = OutboundOrder.Create(
@@ -719,9 +748,15 @@ public sealed class WmsInventoryBoundaryTests
             CancellationToken.None);
 
         Assert.Equal(first.RequestId, replay.RequestId);
-        Assert.All(
-            await dbContext.InventoryMovementRequests.Select(x => x.IdempotencyKey).ToArrayAsync(),
-            key => Assert.StartsWith("wms-line:", key, StringComparison.Ordinal));
+        Assert.Equal(
+            [
+                LongK128Line001V2Key,
+                LongK128Line002V2Key,
+            ],
+            await dbContext.InventoryMovementRequests
+                .OrderBy(x => x.SourceDocumentLineId)
+                .Select(x => x.IdempotencyKey)
+                .ToArrayAsync());
     }
 
     [Fact]
@@ -929,9 +964,21 @@ public sealed class WmsInventoryBoundaryTests
             new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        var persistedRequest = await dbContext.InventoryMovementRequests.SingleAsync();
+        var movementRequestedEvent = new InventoryMovementRequestCreatedIntegrationEventConverter()
+            .Convert(new InventoryMovementRequestCreatedDomainEvent(persistedRequest));
+        Assert.Equal(persistedRequest.IdempotencyKey, movementRequestedEvent.Payload.IdempotencyKey);
 
         await new MarkInventoryMovementRequestFailedCommandHandler(dbContext, inventory).Handle(
-            new MarkInventoryMovementRequestFailedCommand("org-001", "env-dev", "outbound", "OUT-001", "LINE-001", "idem-out-001", "NEGATIVE_ON_HAND", "negative stock"),
+            new MarkInventoryMovementRequestFailedCommand(
+                "org-001",
+                "env-dev",
+                "outbound",
+                "OUT-001",
+                "LINE-001",
+                movementRequestedEvent.Payload.IdempotencyKey,
+                "NEGATIVE_ON_HAND",
+                "negative stock"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new RetryOutboundInventoryPostingCommandHandler(dbContext, inventory).Handle(
@@ -946,7 +993,7 @@ public sealed class WmsInventoryBoundaryTests
             retried =>
             {
                 Assert.Equal(InventoryMovementRequestStatus.Pending, retried.Status);
-                Assert.Equal("idem-out-retry-001", retried.IdempotencyKey);
+                Assert.Equal(OutboundRetry001V2Key, retried.IdempotencyKey);
                 Assert.Equal("res-002", retried.InventoryReservationId);
             });
         Assert.Equal("res-001", Assert.Single(inventory.ReleaseRequests).ReservationId);
@@ -981,12 +1028,40 @@ public sealed class WmsInventoryBoundaryTests
             new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        var movementRequestedEventsByLine = (await dbContext.InventoryMovementRequests
+                .OrderBy(x => x.SourceDocumentLineId)
+                .ToArrayAsync())
+            .ToDictionary(
+                request => request.SourceDocumentLineId!,
+                request =>
+                {
+                    var integrationEvent = new InventoryMovementRequestCreatedIntegrationEventConverter()
+                        .Convert(new InventoryMovementRequestCreatedDomainEvent(request));
+                    Assert.Equal(request.IdempotencyKey, integrationEvent.Payload.IdempotencyKey);
+                    return integrationEvent;
+                },
+                StringComparer.Ordinal);
 
         await new MarkInventoryMovementRequestPostedCommandHandler(dbContext).Handle(
-            new MarkInventoryMovementRequestPostedCommand("org-001", "env-dev", "outbound", "OUT-001", "LINE-001", "idem-out-001:LINE-001", "move-001"),
+            new MarkInventoryMovementRequestPostedCommand(
+                "org-001",
+                "env-dev",
+                "outbound",
+                "OUT-001",
+                "LINE-001",
+                movementRequestedEventsByLine["LINE-001"].Payload.IdempotencyKey,
+                "move-001"),
             CancellationToken.None);
         await new MarkInventoryMovementRequestFailedCommandHandler(dbContext, inventory).Handle(
-            new MarkInventoryMovementRequestFailedCommand("org-001", "env-dev", "outbound", "OUT-001", "LINE-002", "idem-out-001:LINE-002", "NEGATIVE_ON_HAND", "negative stock"),
+            new MarkInventoryMovementRequestFailedCommand(
+                "org-001",
+                "env-dev",
+                "outbound",
+                "OUT-001",
+                "LINE-002",
+                movementRequestedEventsByLine["LINE-002"].Payload.IdempotencyKey,
+                "NEGATIVE_ON_HAND",
+                "negative stock"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -1000,7 +1075,7 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(["res-line-1", "res-line-2", "res-line-2-retry"], inventory.ReservationResults);
         var retryRequest = dbContext.InventoryMovementRequests.Local.Single(x => x.Id == result.RequestId);
         Assert.Equal("LINE-002", retryRequest.SourceDocumentLineId);
-        Assert.Equal("idem-out-retry-001", retryRequest.IdempotencyKey);
+        Assert.Equal(OutboundRetry001V2Key, retryRequest.IdempotencyKey);
         Assert.Equal("res-line-2-retry", retryRequest.InventoryReservationId);
         Assert.Equal(3, dbContext.InventoryMovementRequests.Local.Count);
     }
@@ -1206,7 +1281,7 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(InventoryMovementRequestStatus.Pending, movementRequest.Status);
         Assert.Equal("count-adjustment", movementRequest.MovementType);
         Assert.Equal(-2.5m, movementRequest.Quantity);
-        Assert.Equal("idem-count-001", movementRequest.IdempotencyKey);
+        Assert.Equal(Count001V2Key, movementRequest.IdempotencyKey);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var replay = await new CompleteCountExecutionCommandHandler(dbContext).Handle(
@@ -1251,7 +1326,7 @@ public sealed class WmsInventoryBoundaryTests
         {
             Assert.Equal("11111111-1111-7111-8111-111111111111", request.CountTaskId);
             Assert.Equal(7.5m, request.CountedQuantity);
-            Assert.Equal("idem-count-freeze-001", request.IdempotencyKey);
+            Assert.Equal(CountFreeze001V2Key, request.IdempotencyKey);
         });
         await dbContext.SaveChangesAsync(CancellationToken.None);
 

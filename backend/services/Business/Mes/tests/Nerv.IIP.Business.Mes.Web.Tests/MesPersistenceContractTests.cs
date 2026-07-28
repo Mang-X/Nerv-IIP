@@ -2526,7 +2526,7 @@ public sealed class MesPersistenceContractTests
     // 跨边界事实(MAN-444/#798 review):冲销 handler fingerprint = ReportNo + Reason + ReversedAtUtc,
     // ReverseProductionReportEndpoint 对缺失 reversedAtUtc 每次补新的 TimeProvider.GetUtcNow()。故幂等重放
     // 要求前端**同时冻结** idempotencyKey 与 reversedAtUtc:同 key + 同 reversedAtUtc 才走 IsIdempotentReplay;
-    // 同 key + 不同 reversedAtUtc 会因 fingerprint 变被 CodeAllocator 判为冲突(KnownException),而非重放。
+    // 同 key + 不同 reversedAtUtc 会因 fingerprint 变被 CodeAllocator 判为类型化幂等冲突,而非重放。
     [Fact]
     public async Task Reverse_production_report_idempotent_replay_requires_stable_reversed_at()
     {
@@ -2586,19 +2586,19 @@ public sealed class MesPersistenceContractTests
         var workOrderAfterReplay = await dbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-REV-IDEM");
         Assert.Equal(0m, workOrderAfterReplay.CompletedQuantity);
 
-        // 同 key + **不同** reversedAtUtc → fingerprint 变 → CodeAllocator 判冲突(KnownException),不会误重放
-        await Assert.ThrowsAsync<KnownException>(() =>
+        // 同 key + **不同** reversedAtUtc → fingerprint 变 → 类型化幂等冲突,不会误重放
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() =>
             new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
                 new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt.AddSeconds(1), "operator-1", "reverse-idem-key"),
                 CancellationToken.None));
 
         // 同 key + 同 reversedAtUtc + **不同 reason** → fingerprint 同样变 → 冲突。故前端必须把 reason 也冻结进意图。
-        await Assert.ThrowsAsync<KnownException>(() =>
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() =>
             new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
                 new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "wrong-quantity", reversedAt, "operator-1", "reverse-idem-key"),
                 CancellationToken.None));
 
-        await Assert.ThrowsAsync<KnownException>(() =>
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() =>
             new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
                 new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt, "operator-2", "reverse-idem-key"),
                 CancellationToken.None));
