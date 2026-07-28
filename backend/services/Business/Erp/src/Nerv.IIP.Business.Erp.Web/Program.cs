@@ -174,11 +174,13 @@ try
                 WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
                 WorldHistoryConfiguration.ResolveScale(builder.Configuration));
             app.Logger.LogInformation(
-                "World-history ERP seed completed: {SalesOrders} sales orders, {PurchaseOrders} purchase orders; " +
+                "World-history ERP seed completed: {SalesOrders} sales orders, {PurchaseOrders} purchase orders, " +
+                "{Payables} account payables; " +
                 "validator checked {Orders} orders / {Deliveries} deliveries / {Receivables} receivables / " +
                 "{CashReceipts} cash receipts / {Vouchers} vouchers.",
                 report.SalesOrdersWritten,
                 report.PurchaseOrdersWritten,
+                report.PayablesWritten,
                 report.Validation.OrdersChecked,
                 report.Validation.DeliveriesChecked,
                 report.Validation.ReceivablesChecked,

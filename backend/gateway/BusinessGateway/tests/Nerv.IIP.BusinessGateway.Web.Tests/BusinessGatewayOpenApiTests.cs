@@ -280,6 +280,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-requisitions/convert-to-purchase-order", "post", "convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrder");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/rfqs", "post", "createBusinessConsoleErpRequestForQuotation");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/supplier-quotations", "post", "receiveBusinessConsoleErpSupplierQuotation");
+        AssertOperationId(paths, "/api/business-console/v1/erp/procurement/supplier-quotations", "get", "listBusinessConsoleErpSupplierQuotations");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-orders", "post", "createBusinessConsoleErpPurchaseOrder");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-receipts", "post", "recordBusinessConsoleErpPurchaseReceipt");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/sales-orders", "get", "listBusinessConsoleErpSalesOrders");
@@ -345,6 +346,20 @@ public sealed class BusinessGatewayOpenApiTests
                 "skip",
                 "take");
         }
+
+        // 供应商报价读面不带 status：SupplierQuotation 聚合上没有状态字段，
+        // 过滤维度是「按询价单 / 按供应商 / 关键字」。
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/erp/procurement/supplier-quotations",
+            "get",
+            "organizationId",
+            "environmentId",
+            "rfqNo",
+            "supplierCode",
+            "keyword",
+            "skip",
+            "take");
         AssertOperationId(paths, "/api/business-console/v1/approval/templates", "get", "listBusinessConsoleApprovalTemplates");
         AssertOperationId(paths, "/api/business-console/v1/approval/templates", "post", "createOrUpdateBusinessConsoleApprovalTemplate");
         AssertOperationId(paths, "/api/business-console/v1/approval/chains", "get", "listBusinessConsoleApprovalChains");

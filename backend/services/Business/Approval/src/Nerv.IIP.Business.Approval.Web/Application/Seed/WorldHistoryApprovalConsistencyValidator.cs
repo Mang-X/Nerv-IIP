@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
+using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalDelegationAggregate;
 using System.Text;
 
 namespace Nerv.IIP.Business.Approval.Web.Application.Seed;
@@ -60,6 +61,12 @@ public sealed class WorldHistoryApprovalConsistencyValidator(ApplicationDbContex
         CheckPendingAssignment(facts, chains, failures);
         CheckIsolation(chains, failures);
 
+        var delegations = await dbContext.ApprovalDelegations
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+            .ToListAsync(cancellationToken);
+        CheckDelegations(asOfDate, delegations, lowerBound, failures);
+
         if (failures.Count > 0)
         {
             throw new WorldHistoryApprovalConsistencyException(failures);
@@ -72,6 +79,9 @@ public sealed class WorldHistoryApprovalConsistencyValidator(ApplicationDbContex
             PendingChainsChecked: pending,
             ApprovedChainsChecked: chains.Count - pending - rejected,
             RejectedChainsChecked: rejected,
+            DelegationsChecked: delegations.Count,
+            ActiveDelegationsChecked: delegations.Count(x =>
+                string.Equals(x.Status, ApprovalDelegationStatuses.Active, StringComparison.Ordinal)),
             Sample: BuildSample(chains));
     }
 
@@ -215,6 +225,119 @@ public sealed class WorldHistoryApprovalConsistencyValidator(ApplicationDbContex
         }
     }
 
+    /// <summary>
+    /// 审批委托：计划中的每条都必须落库且逐字段对上；状态与撤销痕迹配对；
+    /// 委托人 / 受托人只能是世界观既有审批人；至少留一条 <c>active</c>（页面委托区块不能全是历史撤销件）。
+    /// </summary>
+    private static void CheckDelegations(
+        DateOnly asOfDate,
+        IReadOnlyList<ApprovalDelegation> delegations,
+        DateTimeOffset lowerBound,
+        List<string> failures)
+    {
+        var facts = WorldHistoryApprovalSpec.BuildDelegationFacts(asOfDate);
+        var factByKey = facts.ToDictionary(fact => fact.NaturalKey, StringComparer.Ordinal);
+        var byKey = delegations
+            .GroupBy(
+                x => WorldHistoryDelegationFact.NaturalKeyOf(x.DelegatorActorRef, x.DelegateActorRef, x.EffectiveFromUtc),
+                StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+
+        var knownActors = new[]
+        {
+            WorldHistoryApprovalSpec.AdminUserId,
+            WorldHistoryApprovalSpec.QualitySupervisorUserId,
+            WorldHistoryApprovalSpec.PlanningSupervisorUserId,
+        }
+            .Concat(WorldHistoryApprovalSpec.QualityEngineers.Select(x => x.UserId))
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var (key, fact) in factByKey)
+        {
+            if (!byKey.TryGetValue(key, out var rows))
+            {
+                failures.Add($"计划中的审批委托 {key} 未落库。");
+                continue;
+            }
+
+            if (rows.Length > 1)
+            {
+                failures.Add($"审批委托 {key} 出现 {rows.Length} 条重复（幂等预查失效？）。");
+            }
+
+            var row = rows[0];
+            var expectedStatus = fact.IsRevoked ? ApprovalDelegationStatuses.Revoked : ApprovalDelegationStatuses.Active;
+            if (!string.Equals(row.Status, expectedStatus, StringComparison.Ordinal))
+            {
+                failures.Add($"审批委托 {key} 状态应为 {expectedStatus}，实际 {row.Status}。");
+            }
+
+            if (row.EffectiveToUtc != fact.EffectiveToUtc)
+            {
+                failures.Add($"审批委托 {key} 失效时间与计划不符。");
+            }
+
+            if (!string.Equals(row.DocumentType, fact.DocumentType, StringComparison.Ordinal))
+            {
+                failures.Add($"审批委托 {key} 单据范围应为 '{fact.DocumentType ?? "(全部)"}'，实际 '{row.DocumentType ?? "(全部)"}'。");
+            }
+
+            if (row.EffectiveToUtc <= row.EffectiveFromUtc)
+            {
+                failures.Add($"审批委托 {key} 起止时间倒挂。");
+            }
+
+            if (row.CreatedAtUtc < lowerBound || row.CreatedAtUtc > row.EffectiveFromUtc)
+            {
+                failures.Add($"审批委托 {key} 创建时间 {row.CreatedAtUtc:O} 不在 [上线日, 生效起点] 内。");
+            }
+
+            if (string.IsNullOrWhiteSpace(row.Reason))
+            {
+                failures.Add($"审批委托 {key} 缺少中文委托事由（界面展示必填）。");
+            }
+
+            if (fact.IsRevoked)
+            {
+                if (row.RevokedAtUtc is not { } revokedAtUtc)
+                {
+                    failures.Add($"审批委托 {key} 已撤销却没有撤销时间。");
+                }
+                else if (revokedAtUtc < row.EffectiveFromUtc || revokedAtUtc > row.EffectiveToUtc)
+                {
+                    failures.Add($"审批委托 {key} 的撤销时间 {revokedAtUtc:O} 落在委托期之外。");
+                }
+
+                if (string.IsNullOrWhiteSpace(row.RevokedBy))
+                {
+                    failures.Add($"审批委托 {key} 已撤销却没有撤销人。");
+                }
+            }
+            else if (row.RevokedAtUtc is not null || row.RevokedBy is not null)
+            {
+                failures.Add($"审批委托 {key} 仍生效却带有撤销痕迹。");
+            }
+        }
+
+        // 只校验本引擎计划内的委托：演示当场创建的委托（L2）是租户事实，不该被 fail-closed 误杀。
+        var seeded = factByKey.Keys
+            .Where(byKey.ContainsKey)
+            .Select(key => byKey[key][0])
+            .ToArray();
+
+        foreach (var row in seeded.Where(x =>
+            !knownActors.Contains(x.DelegatorActorRef) || !knownActors.Contains(x.DelegateActorRef)))
+        {
+            failures.Add($"审批委托 {row.DelegatorActorRef}→{row.DelegateActorRef} 的委托人 / 受托人不是世界观既有审批人。");
+        }
+
+        if (facts.Count > 0 &&
+            !seeded.Any(x => string.Equals(x.Status, ApprovalDelegationStatuses.Active, StringComparison.Ordinal)))
+        {
+            failures.Add("审批委托全部处于 revoked，委托区块缺少至少一条生效中的委托。");
+        }
+    }
+
     private static void CheckIsolation(IReadOnlyList<ApprovalChain> chains, List<string> failures)
     {
         foreach (var chain in chains)
@@ -251,6 +374,8 @@ public sealed record WorldHistoryApprovalValidationReport(
     int PendingChainsChecked,
     int ApprovedChainsChecked,
     int RejectedChainsChecked,
+    int DelegationsChecked,
+    int ActiveDelegationsChecked,
     IReadOnlyList<string> Sample);
 
 /// <summary>审批域 L1 历史一致性校验失败（fail-closed），失败明细全部中文累积后一次抛出。</summary>

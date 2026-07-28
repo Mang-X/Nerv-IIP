@@ -122,6 +122,81 @@ public static class WorldHistoryErpSpec
 
     #endregion
 
+    #region 应付账款（erp.account_payables）
+
+    /// <summary>
+    /// 应付号段（ERP 独有，设定集 §9 二期补登记）。
+    /// 与销售侧 <c>AR-2026-#####</c> 显式分段：应付按采购单序号（4 位）编号，一张已收货采购单一条应付。
+    /// </summary>
+    public const string PayableNumberPrefix = "AP-2026-";
+
+    public static string PayableNo(int index) => $"{PayableNumberPrefix}{index:D4}";
+
+    /// <summary>账期候选（自然日）：与 <c>NET30/NET45/NET60</c> 付款条件一一对应。</summary>
+    public static readonly IReadOnlyList<int> PayableTermDays = [30, 45, 60];
+
+    /// <summary>到期后多久算「本该早已付掉」——早于此线的应付默认已付清。</summary>
+    public const int PayableSettleGraceDays = 5;
+
+    /// <summary>已过账期仍未付的比例（与供应商对账争议 / 质量索赔挂账）——应付账龄表上的逾期样本。</summary>
+    public const double PayableOverdueUnpaidProbability = 0.06;
+
+    /// <summary>刚到期那一档的已付比例（财务按周批量付款，到期当周有先有后）。</summary>
+    public const double PayableJustDueSettledProbability = 0.6;
+
+    /// <summary>未到期应付里提前部分付款（预付 30%）的比例。</summary>
+    public const double PayablePartialPrepayProbability = 0.15;
+
+    /// <summary>提前部分付款的比例（预付款 30%）。</summary>
+    public const decimal PayablePrepayRatio = 0.3m;
+
+    /// <summary>
+    /// 单条历史应付的确定性内容：只从**已收货**的采购单派生，
+    /// 金额 / 供应商 / 来源单据号逐字取自该采购单的收货事实，因此应付页能一路追到收货单与采购单。
+    ///
+    /// 注意：<paramref name="asOfDate"/> 只影响付款进度（越老的账越可能已付清），
+    /// 不影响号码与金额——所以在更晚的日期重跑时，已落库的应付不会与本函数冲突（幂等按号跳过）。
+    /// </summary>
+    public static WorldHistoryPayablePlan BuildPayablePlan(WorldHistoryPurchasePlan purchase, DateOnly asOfDate)
+    {
+        ArgumentNullException.ThrowIfNull(purchase);
+        var payableNo = PayableNo(purchase.Index);
+        var random = new WorldHistoryRandom($"payable:{payableNo}");
+        var termDays = random.Pick(PayableTermDays);
+        var invoiceDate = purchase.ReceiptDate;
+        var dueDate = invoiceDate.AddDays(termDays);
+        var amount = decimal.Round(purchase.TotalAmount, 2);
+
+        decimal paidAmount;
+        if (dueDate.AddDays(PayableSettleGraceDays) <= asOfDate)
+        {
+            paidAmount = random.Chance(PayableOverdueUnpaidProbability) ? 0m : amount;
+        }
+        else if (dueDate <= asOfDate)
+        {
+            paidAmount = random.Chance(PayableJustDueSettledProbability) ? amount : 0m;
+        }
+        else
+        {
+            paidAmount = random.Chance(PayablePartialPrepayProbability)
+                ? decimal.Round(amount * PayablePrepayRatio, 2)
+                : 0m;
+        }
+
+        return new WorldHistoryPayablePlan(
+            Index: purchase.Index,
+            PayableNo: payableNo,
+            SourceDocumentNo: purchase.PurchaseReceiptNo,
+            SupplierCode: purchase.SupplierCode,
+            Amount: amount,
+            PaidAmount: paidAmount,
+            InvoiceDate: invoiceDate,
+            DueDate: dueDate,
+            PaymentTermCode: FormattableString.Invariant($"NET{termDays}"));
+    }
+
+    #endregion
+
     #region 中文科目表
 
     public const string ReceivableAccountCode = "1122";
@@ -171,3 +246,22 @@ public sealed record WorldHistoryPurchasePlan(
 }
 
 public sealed record WorldHistoryGlAccount(string Code, string Name, GLAccountType Type);
+
+/// <summary>单条历史应付账款（派生自一张已收货采购单）。</summary>
+public sealed record WorldHistoryPayablePlan(
+    int Index,
+    string PayableNo,
+    string SourceDocumentNo,
+    string SupplierCode,
+    decimal Amount,
+    decimal PaidAmount,
+    DateOnly InvoiceDate,
+    DateOnly DueDate,
+    string PaymentTermCode)
+{
+    public decimal OpenAmount => Amount - PaidAmount;
+
+    public bool IsSettled => PaidAmount >= Amount;
+
+    public bool IsPartiallyPaid => PaidAmount > 0m && PaidAmount < Amount;
+}

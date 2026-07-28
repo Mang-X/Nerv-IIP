@@ -20,6 +20,7 @@ import {
   listBusinessConsoleErpReceivablesQueryOptions,
   listBusinessConsoleErpRequestsForQuotationQueryOptions,
   listBusinessConsoleErpSalesOrdersQueryOptions,
+  listBusinessConsoleErpSupplierQuotationsQueryOptions,
   openBusinessConsoleErpOpportunityMutationOptions,
   postBusinessConsoleErpJournalVoucherMutationOptions,
   receiveBusinessConsoleErpSupplierQuotationMutationOptions,
@@ -49,6 +50,8 @@ import {
   type BusinessConsoleErpRequestForQuotationListEnvelope,
   type BusinessConsoleErpSalesOrderItem,
   type BusinessConsoleErpSalesOrderListEnvelope,
+  type BusinessConsoleErpSupplierQuotationItem,
+  type BusinessConsoleErpSupplierQuotationListEnvelope,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
@@ -295,17 +298,67 @@ export function useErpRequestsForQuotation(initialFilters: Partial<BusinessErpLi
   }
 }
 
-export function useErpSupplierQuotations(initialFilters: Partial<BusinessErpListFilters> = {}) {
-  const rfqs = useErpRequestsForQuotation(initialFilters)
+export interface BusinessErpSupplierQuotationFilters {
+  rfqNo?: string
+  supplierCode?: string
+  keyword?: string
+  skip: number
+  take: number
+}
+
+/**
+ * 供应商报价读面。
+ *
+ * 这里查的是**真正的报价单**（`erp.supplier_quotations`），不是询价单列表——
+ * 早先本 composable 直接复用 `useErpRequestsForQuotation`，导致「提交一条报价、刷新页面报价就消失」。
+ * 过滤维度按服务端读面：询价单 / 供应商 / 关键字；报价聚合上没有状态字段，故不提供 status。
+ */
+export function useErpSupplierQuotations(
+  initialFilters: Partial<BusinessErpSupplierQuotationFilters> = {},
+) {
+  const businessContext = useBusinessContextStore()
+  const filters = reactive<BusinessErpSupplierQuotationFilters>({
+    skip: 0,
+    take: DEFAULT_TAKE,
+    ...initialFilters,
+  })
+  const query = useQuery(() => ({
+    ...listBusinessConsoleErpSupplierQuotationsQueryOptions({
+      query: {
+        organizationId: businessContext.organizationId,
+        environmentId: businessContext.environmentId,
+        rfqNo: filters.rfqNo,
+        supplierCode: filters.supplierCode,
+        keyword: filters.keyword,
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: hasBusinessContext(businessContext),
+  }))
+  const refresh = () => refetchWithBusinessContext(businessContext, query)
   const receiveMutation = useMutation({
     ...receiveBusinessConsoleErpSupplierQuotationMutationOptions(),
     onSuccess() {
-      void rfqs.refresh()
+      void refresh()
     },
   })
+  const organizationId = computed(() => businessContext.organizationId)
+  const environmentId = computed(() => businessContext.environmentId)
 
   return {
-    ...rfqs,
+    filters,
+    organizationId,
+    environmentId,
+    items: computed<BusinessConsoleErpSupplierQuotationItem[]>(() =>
+      unwrapItems(query.data.value as BusinessConsoleErpSupplierQuotationListEnvelope | undefined),
+    ),
+    total: computed(() =>
+      unwrapTotal(query.data.value as BusinessConsoleErpSupplierQuotationListEnvelope | undefined),
+    ),
+    error: query.error,
+    pending: query.isLoading,
+    refresh,
     receiveSupplierQuotation: (payload: {
       rfqNo: string
       supplierCode: string
@@ -321,8 +374,8 @@ export function useErpSupplierQuotations(initialFilters: Partial<BusinessErpList
     }) =>
       receiveMutation.mutateAsync({
         body: {
-          organizationId: rfqs.organizationId.value,
-          environmentId: rfqs.environmentId.value,
+          organizationId: organizationId.value,
+          environmentId: environmentId.value,
           quotationNo: payload.quotationNo || null,
           rfqNo: payload.rfqNo,
           supplierCode: payload.supplierCode,

@@ -132,18 +132,23 @@ try
             WorldHistoryConfiguration.ResolveScale(builder.Configuration));
         app.Logger.LogInformation(
             "World-history approval seed completed: {Templates} templates, {Chains} approval chains " +
-            "({Purchase} purchase-order / {Ncr} ncr-disposition), {Pending} pending todos, {Rejected} rejected; " +
-            "validator checked {Checked} chains ({CheckedPending} pending / {CheckedApproved} approved / {CheckedRejected} rejected).",
+            "({Purchase} purchase-order / {Ncr} ncr-disposition), {Pending} pending todos, {Rejected} rejected, " +
+            "{Delegations} delegations; " +
+            "validator checked {Checked} chains ({CheckedPending} pending / {CheckedApproved} approved / {CheckedRejected} rejected) " +
+            "and {CheckedDelegations} delegations ({CheckedActive} active).",
             report.TemplatesWritten,
             report.ChainsWritten,
             report.PurchaseChainsWritten,
             report.NcrChainsWritten,
             report.PendingChainsWritten,
             report.RejectedChainsWritten,
+            report.DelegationsWritten,
             report.Validation.ChainsChecked,
             report.Validation.PendingChainsChecked,
             report.Validation.ApprovedChainsChecked,
-            report.Validation.RejectedChainsChecked);
+            report.Validation.RejectedChainsChecked,
+            report.Validation.DelegationsChecked,
+            report.Validation.ActiveDelegationsChecked);
         foreach (var line in report.Validation.Sample)
         {
             app.Logger.LogInformation("World-history approval sample: {Chain}", line);

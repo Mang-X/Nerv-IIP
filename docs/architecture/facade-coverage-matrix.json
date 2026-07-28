@@ -1066,6 +1066,19 @@
     },
     {
       "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/supplier-quotations",
+      "operationId": "listErpSupplierQuotations",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpSupplierQuotations"
+      ]
+    },
+    {
+      "service": "Erp",
       "method": "POST",
       "route": "/api/business/v1/erp/rfqs",
       "operationId": "createErpRequestForQuotation",
