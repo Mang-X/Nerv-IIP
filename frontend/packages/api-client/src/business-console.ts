@@ -106,6 +106,7 @@ export {
   getBusinessConsoleMesQualityReadinessQueryOptions,
   getBusinessConsoleMesSupplyReadinessQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
+  getBusinessConsoleMesWorkOrderDetailQueryKey,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
   getBusinessConsoleMesFinishedGoodsReceiptInventoryLinkQueryOptions,

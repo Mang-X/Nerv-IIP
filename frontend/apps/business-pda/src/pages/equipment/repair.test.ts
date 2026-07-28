@@ -2,6 +2,7 @@ import { OfflineError, RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref } from 'vue'
+import { NvScanBar } from '@nerv-iip/ui-mobile'
 
 // ---- vue-router mock（默认无 query；个别用例覆写 useRoute）---------------------
 const push = vi.fn()
@@ -47,7 +48,27 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
   }),
 }))
 
+vi.mock('@/components/equipment/DeviceAssetPicker.vue', () => ({
+  default: {
+    name: 'DeviceAssetPicker',
+    props: ['open'],
+    emits: ['update:open', 'select'],
+    template: '<div v-if="open" data-testid="device-picker-stub" />',
+  },
+}))
+
 import RepairPage from './repair.vue'
+
+async function selectPriority(wrapper: ReturnType<typeof mount>, label: '高' | '中' | '低') {
+  await wrapper.get('[data-testid="priority-trigger"]').trigger('click')
+  await flushPromises()
+  const option = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+    (button) => button.textContent?.trim() === label,
+  )
+  expect(option).toBeTruthy()
+  option!.click()
+  await flushPromises()
+}
 
 beforeEach(() => {
   push.mockClear()
@@ -61,6 +82,118 @@ beforeEach(() => {
 })
 
 describe('PDA equipment repair page', () => {
+  it.each([
+    ['high', '高'],
+    ['medium', '中'],
+    ['low', '低'],
+  ])('uses ActionSheet and round-trips priority %s', async (priority, label) => {
+    route.query = { deviceAssetId: 'DEV-ROUTE-1' }
+    const wrapper = mount(RepairPage, { attachTo: document.body })
+
+    expect(wrapper.find('[data-testid="priority-select"]').exists()).toBe(false)
+    await selectPriority(wrapper, label as '高' | '中' | '低')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(createWorkOrder).toHaveBeenCalledWith({
+      deviceAssetId: 'DEV-ROUTE-1',
+      priority,
+      assetUnavailableReason: '',
+    })
+  })
+
+  it('keeps the selected priority when the ActionSheet is cancelled', async () => {
+    route.query = { deviceAssetId: 'DEV-ROUTE-1' }
+    const wrapper = mount(RepairPage, { attachTo: document.body })
+
+    await selectPriority(wrapper, '中')
+
+    await wrapper.get('[data-testid="priority-trigger"]').trigger('click')
+    await flushPromises()
+    ;[...document.body.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.trim() === '取消')!
+      .click()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="priority-trigger"]').text()).toContain('中')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+    expect(createWorkOrder.mock.calls.at(-1)?.[0]).toMatchObject({ priority: 'medium' })
+  })
+
+  it('keeps route alarm context read-only and submits the exact route IDs', async () => {
+    route.query = { deviceAssetId: 'DEV-1', sourceAlarmId: 'ALM-9' }
+    const wrapper = mount(RepairPage, { attachTo: document.body })
+
+    expect(wrapper.find('[data-testid="device-input"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="device-trigger"]').text()).toContain('DEV-1')
+    expect(wrapper.text()).toContain('报警上下文')
+    expect(wrapper.find('input[name="sourceAlarmId"]').exists()).toBe(false)
+    expect(wrapper.find('input[name="openedBy"]').exists()).toBe(false)
+    expect(wrapper.find('input[name="assignedTechnicianUserId"]').exists()).toBe(false)
+
+    await selectPriority(wrapper, '高')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(createWorkOrder).toHaveBeenCalledWith({
+      deviceAssetId: 'DEV-1',
+      priority: 'high',
+      assetUnavailableReason: '',
+      sourceAlarmId: 'ALM-9',
+    })
+  })
+
+  it('lets scan replace the selected device without clearing priority or reason', async () => {
+    route.query = { deviceAssetId: 'DEV-ROUTE-1' }
+    const wrapper = mount(RepairPage, { attachTo: document.body })
+    await selectPriority(wrapper, '低')
+    await wrapper.get('[data-testid="reason-input"]').setValue('液压压力异常')
+
+    const scanInput = wrapper.find('input[placeholder*="扫描"]')
+    await scanInput.setValue('DEV-SCAN-9')
+    await scanInput.trigger('keydown.enter')
+
+    expect(wrapper.get('[data-testid="device-trigger"]').text()).toContain('DEV-SCAN-9')
+    expect(wrapper.get('[data-testid="priority-trigger"]').text()).toContain('低')
+    expect((wrapper.get('[data-testid="reason-input"]').element as HTMLTextAreaElement).value).toBe(
+      '液压压力异常',
+    )
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+    expect(createWorkOrder.mock.calls.at(-1)?.[0]).toMatchObject({
+      deviceAssetId: 'DEV-SCAN-9',
+      priority: 'low',
+      assetUnavailableReason: '液压压力异常',
+    })
+  })
+
+  it('pauses ScanBar focus reclaim while the reason textarea is focused', async () => {
+    const wrapper = mount(RepairPage)
+    const reason = wrapper.get('[data-testid="reason-input"]')
+
+    await reason.trigger('focus')
+    expect(wrapper.findComponent(NvScanBar).props('active')).toBe(false)
+
+    await reason.trigger('blur')
+    expect(wrapper.findComponent(NvScanBar).props('active')).toBe(true)
+  })
+
+  it('opens both mobile selectors from keyboard Enter', async () => {
+    const wrapper = mount(RepairPage)
+
+    await wrapper.get('[data-testid="device-trigger"]').trigger('keydown.enter')
+    expect(wrapper.find('[data-testid="device-picker-stub"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="priority-trigger"]').trigger('keydown.enter')
+    await flushPromises()
+    expect(
+      [...document.body.querySelectorAll<HTMLButtonElement>('button')].some(
+        (button) => button.textContent?.trim() === '高',
+      ),
+    ).toBe(true)
+  })
+
   it('renders recent maintenance work orders with Chinese priority + status', () => {
     const wrapper = mount(RepairPage)
     const text = wrapper.text()
@@ -86,9 +219,9 @@ describe('PDA equipment repair page', () => {
   })
 
   it('submits a new repair via createWorkOrder WITHOUT org/env/openedBy', async () => {
+    route.query = { deviceAssetId: 'DEV-9' }
     const wrapper = mount(RepairPage)
-    await wrapper.get('[data-testid="device-input"]').setValue('DEV-9')
-    await wrapper.get('[data-testid="priority-select"]').setValue('high')
+    await selectPriority(wrapper, '高')
     await wrapper.get('[data-testid="reason-input"]').setValue('主轴异响')
     await wrapper.get('[data-testid="submit"]').trigger('click')
     await flushPromises()
@@ -111,32 +244,32 @@ describe('PDA equipment repair page', () => {
     await scanInput.setValue('DEV-SCAN-7')
     await scanInput.trigger('keydown.enter')
 
-    expect((wrapper.get('[data-testid="device-input"]').element as HTMLInputElement).value).toBe(
-      'DEV-SCAN-7',
-    )
+    expect(wrapper.get('[data-testid="device-trigger"]').text()).toContain('DEV-SCAN-7')
   })
 
   it('disables submit while createPending (double-submit guard)', async () => {
     createPending.value = true
+    route.query = { deviceAssetId: 'DEV-9' }
     const wrapper = mount(RepairPage)
-    await wrapper.get('[data-testid="device-input"]').setValue('DEV-9')
-    await wrapper.get('[data-testid="priority-select"]').setValue('high')
+    await selectPriority(wrapper, '高')
     expect(wrapper.get('[data-testid="submit"]').attributes('disabled')).toBeDefined()
   })
 
   it('disables submit until deviceAssetId + priority present', async () => {
     const wrapper = mount(RepairPage)
     expect(wrapper.get('[data-testid="submit"]').attributes('disabled')).toBeDefined()
-    await wrapper.get('[data-testid="device-input"]').setValue('DEV-9')
+    const scanInput = wrapper.find('input[placeholder*="扫描"]')
+    await scanInput.setValue('DEV-9')
+    await scanInput.trigger('keydown.enter')
     expect(wrapper.get('[data-testid="submit"]').attributes('disabled')).toBeDefined()
-    await wrapper.get('[data-testid="priority-select"]').setValue('medium')
+    await selectPriority(wrapper, '中')
     expect(wrapper.get('[data-testid="submit"]').attributes('disabled')).toBeUndefined()
   })
 
   it('shows a success Result after a successful submit', async () => {
+    route.query = { deviceAssetId: 'DEV-9' }
     const wrapper = mount(RepairPage)
-    await wrapper.get('[data-testid="device-input"]').setValue('DEV-9')
-    await wrapper.get('[data-testid="priority-select"]').setValue('high')
+    await selectPriority(wrapper, '高')
     await wrapper.get('[data-testid="submit"]').trigger('click')
     await flushPromises()
 
@@ -147,9 +280,9 @@ describe('PDA equipment repair page', () => {
 
   it('shows an error Result with retry when submit fails', async () => {
     createWorkOrder.mockRejectedValueOnce(new Error('网络错误'))
+    route.query = { deviceAssetId: 'DEV-9' }
     const wrapper = mount(RepairPage)
-    await wrapper.get('[data-testid="device-input"]').setValue('DEV-9')
-    await wrapper.get('[data-testid="priority-select"]').setValue('high')
+    await selectPriority(wrapper, '高')
     await wrapper.get('[data-testid="submit"]').trigger('click')
     await flushPromises()
 
@@ -160,9 +293,9 @@ describe('PDA equipment repair page', () => {
   // 盲目重试会重复报修 → 不给"重试"，改引导去列表核实。
   it('超时（结果不确定）时不给危险重试，改引导核实且绝不自动重提', async () => {
     createWorkOrder.mockRejectedValueOnce(new RequestTimeoutError())
+    route.query = { deviceAssetId: 'DEV-9' }
     const wrapper = mount(RepairPage)
-    await wrapper.get('[data-testid="device-input"]').setValue('DEV-9')
-    await wrapper.get('[data-testid="priority-select"]').setValue('high')
+    await selectPriority(wrapper, '高')
     await wrapper.get('[data-testid="submit"]').trigger('click')
     await flushPromises()
 
@@ -179,9 +312,9 @@ describe('PDA equipment repair page', () => {
 
   it('确定业务失败（服务端已响应、无副作用）时仍可安全重试', async () => {
     createWorkOrder.mockRejectedValueOnce({ success: false, message: '设备不存在' })
+    route.query = { deviceAssetId: 'DEV-9' }
     const wrapper = mount(RepairPage)
-    await wrapper.get('[data-testid="device-input"]').setValue('DEV-9')
-    await wrapper.get('[data-testid="priority-select"]').setValue('high')
+    await selectPriority(wrapper, '高')
     await wrapper.get('[data-testid="submit"]').trigger('click')
     await flushPromises()
 
@@ -195,9 +328,9 @@ describe('PDA equipment repair page', () => {
   // 离线预检在请求发出前抛出 → 服务端从未收到 → 安全重试（不逼用户绕路核实，#814 离线可操作）。
   it('离线（请求未发出）时给安全重试而非核实', async () => {
     createWorkOrder.mockRejectedValueOnce(new OfflineError())
+    route.query = { deviceAssetId: 'DEV-9' }
     const wrapper = mount(RepairPage)
-    await wrapper.get('[data-testid="device-input"]').setValue('DEV-9')
-    await wrapper.get('[data-testid="priority-select"]').setValue('high')
+    await selectPriority(wrapper, '高')
     await wrapper.get('[data-testid="submit"]').trigger('click')
     await flushPromises()
 
@@ -210,11 +343,9 @@ describe('PDA equipment repair page', () => {
   it('prefills deviceAssetId + sourceAlarmId from the route query (from alarms page)', async () => {
     route.query = { deviceAssetId: 'DEV-1', sourceAlarmId: 'ALM-9' }
     const wrapper = mount(RepairPage)
-    expect((wrapper.get('[data-testid="device-input"]').element as HTMLInputElement).value).toBe(
-      'DEV-1',
-    )
+    expect(wrapper.get('[data-testid="device-trigger"]').text()).toContain('DEV-1')
     // sourceAlarmId is carried through to the submit body
-    await wrapper.get('[data-testid="priority-select"]').setValue('high')
+    await selectPriority(wrapper, '高')
     await wrapper.get('[data-testid="submit"]').trigger('click')
     await flushPromises()
 

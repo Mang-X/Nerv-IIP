@@ -51,6 +51,18 @@ public sealed record ListMesWorkOrdersRequest(
     string? WorkCenterIds = null,
     string? DeviceAssetIds = null);
 
+public sealed record ListOperationTasksRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status,
+    int Skip = 0,
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null);
+
 public sealed record ListProductionPlansRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -983,22 +995,23 @@ public sealed class AssignDispatchTaskEndpoint(ISender sender, TimeProvider time
 }
 
 public sealed class ListOperationTasksEndpoint(ISender sender)
-    : MesEndpoint<ListMesWorkOrdersRequest, MesOperationTaskListResponse>
+    : MesEndpoint<ListOperationTasksRequest, MesOperationTaskListResponse>
 {
     public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ListOperationTasksEndpoint>());
 
-    public override async Task HandleAsync(ListMesWorkOrdersRequest req, CancellationToken ct)
+    public override async Task HandleAsync(ListOperationTasksRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new ListOperationTasksQuery(
-            req.OrganizationId,
-            req.EnvironmentId,
-            req.Status,
-            req.Skip,
-            req.Take,
-            req.Keyword,
-            req.WorkCenterId,
-            req.ShiftId,
-            req.DeviceAssetId), ct);
+            OrganizationId: req.OrganizationId,
+            EnvironmentId: req.EnvironmentId,
+            Status: req.Status,
+            Skip: req.Skip,
+            Take: req.Take,
+            Keyword: req.Keyword,
+            WorkCenterId: req.WorkCenterId,
+            ShiftId: req.ShiftId,
+            DeviceAssetId: req.DeviceAssetId,
+            WorkOrderId: req.WorkOrderId), ct);
         await Send.OkAsync(response, ct);
     }
 }
