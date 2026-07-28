@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
+using ScheduleTrigger = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduleTrigger;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 
@@ -1622,6 +1623,94 @@ public sealed class ListShiftHandoversQueryHandler(ApplicationDbContext dbContex
                 x.CreatedAtUtc))
             .ToArrayAsync(cancellationToken);
         return new MesShiftHandoverListResponse(items, total);
+    }
+}
+
+/// <summary>
+/// 历史规则排程结果列表。
+///
+/// 「规则排程」页此前只能显示本次会话刚跑的那一次结果（前端把结果存在内存里），
+/// 刷新即空、别人跑的看不到——服务端只有 POST 跑一次的写端点，没有任何读面。本查询补上读面。
+///
+/// 注意 <c>schedule_results</c> 表**没有 organization_id / environment_id 列**（既有模型如此），
+/// 因此 scope 参数在这里只做入参一致性，不参与过滤；跨租户隔离需要先给表补 scope 列
+/// （另行跟踪，不在读面补齐的范围内）。
+/// </summary>
+public sealed record ListScheduleResultsQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Trigger = null,
+    int Skip = 0,
+    int Take = 20) : IQuery<MesScheduleResultListResponse>;
+
+public sealed record MesScheduleResultListResponse(
+    IReadOnlyCollection<MesScheduleResultRow> Items,
+    int Total);
+
+public sealed record MesScheduleResultRow(
+    int ScheduleVersion,
+    string Trigger,
+    DateTimeOffset ScheduledAtUtc,
+    int AssignmentCount,
+    int AffectedWorkOrderCount,
+    IReadOnlyCollection<string> AffectedWorkOrderIds,
+    IReadOnlyCollection<MesScheduledOperationRow> Assignments);
+
+public sealed record MesScheduledOperationRow(
+    string WorkOrderId,
+    string OperationTaskId,
+    string WorkCenterId,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    string Reason);
+
+public sealed class ListScheduleResultsQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListScheduleResultsQuery, MesScheduleResultListResponse>
+{
+    public async Task<MesScheduleResultListResponse> Handle(
+        ListScheduleResultsQuery request,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.ScheduleResults.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(request.Trigger) &&
+            Enum.TryParse<ScheduleTrigger>(request.Trigger.Trim(), ignoreCase: true, out var trigger))
+        {
+            query = query.Where(x => x.Trigger == trigger);
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+
+        // 分配明细存的是 JSON，条数与内容都只能在内存里展开——因此先按版本号倒序分页取实体，
+        // 再投影，页大小上限 100 让展开量可控。排序键用业务版本号，不用强类型 id
+        // （强类型 id 在 InMemory provider 上不可比较，会当场抛 IComparable）。
+        var rows = await query
+            .OrderByDescending(x => x.ScheduledAtUtc)
+            .ThenByDescending(x => x.ScheduleVersion)
+            .Skip(Math.Max(0, request.Skip))
+            .Take(Math.Clamp(request.Take, 1, 100))
+            .ToArrayAsync(cancellationToken);
+
+        var items = rows
+            .Select(x => new MesScheduleResultRow(
+                x.ScheduleVersion,
+                x.Trigger.ToString(),
+                x.ScheduledAtUtc,
+                x.Assignments.Count,
+                x.AffectedWorkOrderIds.Count,
+                [.. x.AffectedWorkOrderIds],
+                [
+                    .. x.Assignments.Select(assignment => new MesScheduledOperationRow(
+                        assignment.WorkOrderId,
+                        assignment.OperationTaskId,
+                        assignment.WorkCenterId,
+                        assignment.StartUtc,
+                        assignment.EndUtc,
+                        assignment.Reason)),
+                ]))
+            .ToArray();
+
+        return new MesScheduleResultListResponse(items, total);
     }
 }
 

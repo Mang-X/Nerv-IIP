@@ -44,6 +44,18 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleInventoryExpiryAlerts' }],
     query: vi.fn(),
   })),
+  listBusinessConsoleInventoryMovementsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleInventoryMovements' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleInventoryCountTasksQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleInventoryCountTasks' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleInventoryCountAdjustmentsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleInventoryCountAdjustments' }],
+    query: vi.fn(),
+  })),
   postBusinessConsoleInventoryMovementMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
@@ -274,7 +286,8 @@ describe('business inventory composables', () => {
       ownerType: 'owned',
     })
 
-    expect(coladaState.invalidateQueries).not.toHaveBeenCalled()
+    // 建任务成功后必须失效盘点读面，否则新建的任务要等下次手动刷新才出现在表格里。
+    expect(coladaState.invalidateQueries).toHaveBeenCalled()
 
     await confirmAdjustment('count-1', {
       countedQuantity: 9,

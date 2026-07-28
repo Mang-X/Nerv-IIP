@@ -2,6 +2,7 @@
 import type {
   BusinessConsoleConfirmStockCountAdjustmentRequest,
   BusinessConsoleCreateStockCountTaskRequest,
+  BusinessConsoleInventoryCountTaskLineResponse,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
@@ -55,6 +56,10 @@ const route = useRoute()
 const {
   confirmAdjustment,
   confirmAdjustmentPending,
+  countAdjustmentRows,
+  countTaskRows,
+  countTasksPending,
+  countTasksTotal,
   createCountTask,
   createCountTaskPending,
   filters,
@@ -97,14 +102,13 @@ const adjustmentForm = reactive({
   idempotencyKey: '',
 })
 
-interface CountTaskQueueRow {
-  countTaskId: string
-  countTaskCode: string
-  skuCode: string
-  siteCode: string
-  locationCode: string
-  status: string
-  countedQuantity?: number
+// 状态码值 → 中文标签：界面说人话，下发与过滤仍用后端码值。
+const STATUS_LABELS: Record<string, string> = {
+  open: '待实盘',
+  'pending-approval': '待审批',
+  confirmed: '已确认',
+  'recount-required': '需复盘',
+  cancelled: '已作废',
 }
 
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
@@ -131,8 +135,7 @@ const { siteOptions, sitesPending, skuOptions, skusPending } = useInventoryScope
 const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
   useWarehouseCodeCatalog()
 
-const countTaskQueue = shallowRef<CountTaskQueueRow[]>([])
-const adjustmentTarget = shallowRef<CountTaskQueueRow>()
+const adjustmentTarget = shallowRef<BusinessConsoleInventoryCountTaskLineResponse>()
 // 差异确认对象由所选任务行带出，只读展示，不做成（只读）输入框。
 const adjustmentContextItems = computed(() => {
   const row = adjustmentTarget.value
@@ -141,9 +144,18 @@ const adjustmentContextItems = computed(() => {
     { label: '盘点任务', value: row.countTaskCode || row.countTaskId },
     { label: '物料', value: row.skuCode },
     { label: '库位', value: [row.siteCode, row.locationCode].filter(Boolean).join(' / ') },
-    { label: '状态', value: row.status },
+    { label: '批次', value: row.lotNo || '—' },
+    { label: '状态', value: statusLabel(row.status) },
   ]
 })
+// 有待审批差异的任务上标注审批链，仓管才知道「在等谁」。
+const approvalChainByCountTaskCode = computed(() =>
+  Object.fromEntries(
+    countAdjustmentRows.value
+      .filter((row) => row.status === 'pending-approval' && row.approvalChainId)
+      .map((row) => [row.countTaskCode, row.approvalChainId as string]),
+  ),
+)
 const canCreateTask = computed(
   () =>
     isNonEmpty(filters.organizationId) &&
@@ -162,12 +174,30 @@ const canConfirmAdjustment = computed(
     toOptionalNumber(adjustmentForm.countedQuantity) !== undefined,
 )
 
-type QueueRow = CountTaskQueueRow
-const columns: NvDataTableColumn<QueueRow>[] = [
-  { key: 'countTaskId', header: '任务号', cellClass: 'font-medium' },
+type CountTaskRow = BusinessConsoleInventoryCountTaskLineResponse
+const columns: NvDataTableColumn<CountTaskRow>[] = [
+  { key: 'countTaskCode', header: '任务号', cellClass: 'font-medium' },
   { key: 'skuCode', header: '物料' },
   { key: 'location', header: '库位', accessor: (r) => `${r.siteCode} / ${r.locationCode}` },
-  { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'lotNo', header: '批次', accessor: (r) => r.lotNo || '—' },
+  {
+    key: 'countedQuantity',
+    header: '实盘',
+    align: 'end',
+    accessor: (r) => formatQuantity(r.countedQuantity),
+  },
+  {
+    key: 'varianceQuantity',
+    header: '差异',
+    align: 'end',
+    accessor: (r) => formatSignedQuantity(r.varianceQuantity),
+  },
+  {
+    key: 'approvalChainId',
+    header: '审批链',
+    accessor: (r) => approvalChainByCountTaskCode.value[r.countTaskCode ?? ''] ?? '—',
+  },
+  { key: 'status', header: '状态', width: 'w-24', accessor: (r) => statusLabel(r.status) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
@@ -194,20 +224,10 @@ async function submitTask() {
     notifyError(error, '创建盘点任务失败，请稍后重试。')
     return
   }
+  // 列表来自服务端读面：mutation 成功后失效查询即可，新建的任务刷新之后仍然在。
   const taskId = response?.data?.countTaskId
-  countTaskQueue.value = [
-    {
-      countTaskId: taskId ?? body.countTaskCode ?? '待返回',
-      countTaskCode: body.countTaskCode ?? '',
-      skuCode: body.skuCode ?? '',
-      siteCode: body.siteCode ?? '',
-      locationCode: body.locationCode ?? '',
-      status: '待实盘',
-    },
-    ...countTaskQueue.value,
-  ]
   taskSheetOpen.value = false
-  notifySuccess(`盘点任务 ${taskId ?? body.countTaskCode} 已创建`)
+  notifySuccess(`盘点任务 ${body.countTaskCode || taskId} 已创建`)
 }
 
 async function submitAdjustment() {
@@ -224,25 +244,28 @@ async function submitAdjustment() {
     return
   }
   const approvalPending = response?.data?.status === 'pending-approval'
-  countTaskQueue.value = countTaskQueue.value.map((row) =>
-    row.countTaskId === adjustmentForm.countTaskId
-      ? {
-          ...row,
-          countedQuantity: body.countedQuantity,
-          status: approvalPending ? '待审批' : '已确认',
-        }
-      : row,
-  )
   adjustmentSheetOpen.value = false
   notifySuccess(approvalPending ? '库存调整已进入审批' : '库存调整已确认')
 }
 
-function openAdjustment(row: CountTaskQueueRow) {
+function openAdjustment(row: CountTaskRow) {
+  const countTaskId = row.countTaskId ?? ''
   adjustmentTarget.value = row
-  adjustmentForm.countTaskId = row.countTaskId
+  adjustmentForm.countTaskId = countTaskId
   adjustmentForm.countedQuantity = String(row.countedQuantity ?? 0)
-  adjustmentForm.idempotencyKey = createAdjustmentIdempotencyKey(row.countTaskId)
+  adjustmentForm.idempotencyKey = createAdjustmentIdempotencyKey(countTaskId)
   adjustmentSheetOpen.value = true
+}
+function statusLabel(status: string | undefined) {
+  return status ? (STATUS_LABELS[status] ?? status) : '—'
+}
+function formatQuantity(value: number | null | undefined) {
+  if (value === null || value === undefined) return '—'
+  return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value)
+}
+function formatSignedQuantity(value: number | null | undefined) {
+  if (value === null || value === undefined) return '—'
+  return `${value > 0 ? '+' : ''}${formatQuantity(value)}`
 }
 function createAdjustmentIdempotencyKey(countTaskId: string) {
   adjustmentKeySequence += 1
@@ -270,7 +293,7 @@ function isNonEmpty(value: string) {
     <NvPageHeader
       title="库存盘点"
       :breadcrumbs="[{ label: '库存' }]"
-      :count="`${countTaskQueue.length} 个本次任务`"
+      :count="`${countTasksTotal} 个盘点任务`"
     >
       <template #actions>
         <NvButton v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
@@ -287,7 +310,8 @@ function isNonEmpty(value: string) {
 
     <NvDataTable
       :columns="columns"
-      :rows="countTaskQueue"
+      :rows="countTaskRows"
+      :loading="countTasksPending"
       row-key="countTaskId"
       :searchable="false"
       :column-settings="false"
@@ -296,8 +320,7 @@ function isNonEmpty(value: string) {
       <template #empty>
         <p class="text-sm font-medium">暂无盘点任务</p>
         <p class="max-w-md text-sm text-muted-foreground">
-          这里显示本次创建的盘点任务与差异确认入口；已下发到仓库执行的盘点单在「仓储作业 ·
-          盘点执行」跟进。
+          这里显示盘点任务与差异确认入口；已下发到仓库执行的盘点单在「仓储作业 · 盘点执行」跟进。
         </p>
         <div class="flex gap-2">
           <NvButton size="sm" type="button" @click="taskSheetOpen = true">
@@ -310,8 +333,8 @@ function isNonEmpty(value: string) {
         </div>
       </template>
       <template #cell-actions="{ row }">
-        <NvRowActions :label="`盘点操作 ${row.countTaskId}`">
-          <NvDropdownMenuItem @click="openAdjustment(row)">
+        <NvRowActions :label="`盘点操作 ${row.countTaskCode}`">
+          <NvDropdownMenuItem :disabled="row.status !== 'open'" @click="openAdjustment(row)">
             <CheckCircle2Icon aria-hidden="true" />
             确认差异
           </NvDropdownMenuItem>

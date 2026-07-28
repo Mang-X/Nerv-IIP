@@ -1548,6 +1548,34 @@
     },
     {
       "service": "Inventory",
+      "method": "GET",
+      "route": "/api/inventory/v1/count-tasks",
+      "operationId": "listInventoryCountTasks",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "库存盘点页此前只有写端点，表格数据挂在会话内本地队列上、刷新即空；本读面按组织/环境收敛并服务端分页，回传不受状态过滤影响的状态分布计数。",
+      "gatewayOperationIds": [
+        "listBusinessConsoleInventoryCountTasks"
+      ]
+    },
+    {
+      "service": "Inventory",
+      "method": "GET",
+      "route": "/api/inventory/v1/count-adjustments",
+      "operationId": "listInventoryCountAdjustments",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "盘点调整读面，与盘点任务成对，展示差异→审批→过账的落地凭据（movementId / approvalChainId）。",
+      "gatewayOperationIds": [
+        "listBusinessConsoleInventoryCountAdjustments"
+      ]
+    },
+    {
+      "service": "Inventory",
       "method": "POST",
       "route": "/api/inventory/v1/count-tasks/{countTaskId}/adjustments",
       "operationId": "confirmInventoryCountAdjustment",
@@ -1588,6 +1616,20 @@
       "operationId": "createOrUpdateInventoryLocation",
       "classification": "deferred",
       "followUp": "BusinessGateway facade pending; inventory location master-setup UI is a later menu phase."
+    },
+    {
+      "service": "Inventory",
+      "method": "GET",
+      "route": "/api/inventory/v1/movements",
+      "operationId": "listInventoryMovements",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "库存移动页此前只能按单张源单据下钻（getInventoryStockBySource），列表只有会话内本地队列；本读面补上按物料/库位/批次/类型/日期区间过滤的历史流水分页。",
+      "gatewayOperationIds": [
+        "listBusinessConsoleInventoryMovements"
+      ]
     },
     {
       "service": "Inventory",
@@ -2922,6 +2964,19 @@
       ],
       "gatewayOperationIds": [
         "runBusinessConsoleMesSchedule"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/schedules",
+      "operationId": "listBusinessMesScheduleResults",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesScheduleResults"
       ]
     },
     {

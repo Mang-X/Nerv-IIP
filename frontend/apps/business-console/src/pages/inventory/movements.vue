@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import type { BusinessConsolePostStockMovementRequest } from '@nerv-iip/api-client'
+import type {
+  BusinessConsoleInventoryMovementLineResponse,
+  BusinessConsolePostStockMovementRequest,
+} from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useInventoryMovement } from '@/composables/useBusinessInventory'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
@@ -48,7 +51,8 @@ definePage({
 
 const route = useRoute()
 const businessContext = useBusinessContextStore()
-const { postMovement, postMovementPending } = useInventoryMovement()
+const { movementRows, movementsPending, movementsTotal, postMovement, postMovementPending } =
+  useInventoryMovement()
 // 物料 / 工厂走主数据目录；库位/批次/序列号后端无读面，从既有台账与作业记录派生。
 const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
   useInventoryScopeCatalog()
@@ -86,19 +90,20 @@ const form = reactive({
   quantity: '1',
 })
 
-interface MovementQueueRow {
-  movementId: string
-  movementType: string
-  skuCode: string
-  siteCode: string
-  locationCode: string
-  quantity: number
-  status: string
-  sourceDocumentId: string
+// 移动类型码值 → 中文标签：界面说人话，下发仍是后端码值。
+const MOVEMENT_TYPE_LABELS: Record<string, string> = {
+  inbound: '入库',
+  outbound: '出库',
+  transfer: '移库',
+  adjustment: '调整',
+  'status-transfer-out': '状态转出',
+  'status-transfer-in': '状态转入',
+  'count-adjustment': '盘点调整',
+  receipt: '入库',
+  issue: '出库',
 }
 
 const movementSheetOpen = shallowRef(false)
-const movementQueue = shallowRef<MovementQueueRow[]>([])
 
 // 上下文穿透：从来源单据（收货/完工入库/领料/盘点）带入 SKU/库位/批次。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
@@ -147,15 +152,33 @@ const canSubmit = computed(
     toOptionalNumber(form.quantity) !== undefined,
 )
 
-type QueueRow = MovementQueueRow
-const columns: NvDataTableColumn<QueueRow>[] = [
-  { key: 'movementId', header: '移动号', cellClass: 'font-medium' },
-  { key: 'movementType', header: '类型' },
+type MovementRow = BusinessConsoleInventoryMovementLineResponse
+const columns: NvDataTableColumn<MovementRow>[] = [
+  { key: 'sourceDocumentId', header: '来源单据', cellClass: 'font-medium' },
+  {
+    key: 'movementType',
+    header: '类型',
+    accessor: (r) =>
+      r.movementType ? (MOVEMENT_TYPE_LABELS[r.movementType] ?? r.movementType) : '—',
+  },
   { key: 'skuCode', header: '物料' },
   { key: 'location', header: '库位', accessor: (r) => `${r.siteCode} / ${r.locationCode}` },
-  { key: 'quantity', header: '数量', align: 'end', width: 'w-24' },
-  { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'lotNo', header: '批次', accessor: (r) => r.lotNo || '—' },
+  { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
+  { key: 'postedAtUtc', header: '过账时间', accessor: (r) => formatDateTime(r.postedAtUtc) },
 ]
+
+function formatQuantity(value: number | null | undefined) {
+  if (value === null || value === undefined) return '—'
+  return `${value > 0 ? '+' : ''}${new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value)}`
+}
+function formatDateTime(value: string | undefined) {
+  if (!value) return '—'
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime())
+    ? value
+    : new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'short' }).format(parsed)
+}
 
 async function submitMovement() {
   if (!canSubmit.value) return
@@ -185,19 +208,7 @@ async function submitMovement() {
     notifyError(error, '提交库存移动失败，请稍后重试。')
     return
   }
-  movementQueue.value = [
-    {
-      movementId: response?.data?.movementId ?? body.sourceDocumentId ?? '待返回',
-      movementType: body.movementType ?? '',
-      skuCode: body.skuCode ?? '',
-      siteCode: body.siteCode ?? '',
-      locationCode: body.locationCode ?? '',
-      quantity: body.quantity ?? 0,
-      status: '已受理',
-      sourceDocumentId: body.sourceDocumentId ?? '',
-    },
-    ...movementQueue.value,
-  ]
+  // 列表来自服务端读面：过账成功后失效查询即可，新过账的流水刷新之后仍然在。
   movementSheetOpen.value = false
   notifySuccess(`库存移动 ${response?.data?.movementId ?? body.idempotencyKey} 已受理`)
 }
@@ -224,7 +235,7 @@ function isNonEmpty(value: string) {
     <NvPageHeader
       title="库存移动过账"
       :breadcrumbs="[{ label: '库存' }]"
-      :count="`${movementQueue.length} 条本次受理`"
+      :count="`${movementsTotal} 条库存流水`"
     >
       <template #actions>
         <NvButton v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
@@ -241,14 +252,21 @@ function isNonEmpty(value: string) {
 
     <NvDataTable
       :columns="columns"
-      :rows="movementQueue"
+      :rows="movementRows"
+      :loading="movementsPending"
       row-key="movementId"
       :searchable="false"
       :column-settings="false"
-      empty-message="当前没有待确认库存移动。建议从收货、完工入库、领料或盘点任务发起；确需补录时点右上角新建移动。"
+      empty-message="当前范围内没有库存流水。库存移动一般由收货、完工入库、领料或盘点自动产生；确需补录时点右上角新建移动。"
     >
       <template #cell-quantity="{ row }"
-        ><span class="tabular-nums">{{ row.quantity }}</span></template
+        ><span
+          class="tabular-nums"
+          :class="
+            (row.quantity ?? 0) < 0 ? 'text-destructive' : 'text-emerald-600 dark:text-emerald-400'
+          "
+          >{{ formatQuantity(row.quantity) }}</span
+        ></template
       >
     </NvDataTable>
 

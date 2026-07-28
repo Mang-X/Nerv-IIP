@@ -403,6 +403,14 @@ public sealed record ListShiftHandoversRequest(
     string? DeviceAssetId = null,
     string? Status = null);
 
+/// <summary>历史规则排程结果列表请求（「规则排程」页的历史读面）。</summary>
+public sealed record ListScheduleResultsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Trigger = null,
+    int Skip = 0,
+    int Take = 20);
+
 public sealed record CreateShiftHandoverRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1377,6 +1385,23 @@ public sealed class ConfirmDowntimeRecoveryEndpoint(ISender sender, TimeProvider
     }
 }
 
+public sealed class ListScheduleResultsEndpoint(ISender sender)
+    : MesEndpoint<ListScheduleResultsRequest, MesScheduleResultListResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ListScheduleResultsEndpoint>());
+
+    public override async Task HandleAsync(ListScheduleResultsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListScheduleResultsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Trigger,
+            req.Skip,
+            req.Take), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class ListShiftHandoversEndpoint(ISender sender)
     : MesEndpoint<ListShiftHandoversRequest, MesShiftHandoverListResponse>
 {
@@ -1506,6 +1531,7 @@ public static class MesEndpointContracts
         new(typeof(GetProductionPlanReadinessEndpoint), "GET", "/api/business/v1/mes/production-plans/{productionPlanId}/readiness", MesPermissionCodes.PlansRead, "getBusinessMesProductionPlanReadiness"),
         new(typeof(ConvertPlanToWorkOrderEndpoint), "POST", "/api/business/v1/mes/production-plans/{productionPlanId}/work-orders", MesPermissionCodes.WorkOrdersManage, "convertBusinessMesPlanToWorkOrder"),
         new(typeof(RunScheduleEndpoint), "POST", "/api/business/v1/mes/schedules/run", MesPermissionCodes.SchedulesManage, "runBusinessMesSchedule"),
+        new(typeof(ListScheduleResultsEndpoint), "GET", "/api/business/v1/mes/schedules", MesPermissionCodes.SchedulesRead, "listBusinessMesScheduleResults"),
         new(typeof(CreateRushWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/rush", MesPermissionCodes.WorkOrdersManage, "createBusinessMesRushWorkOrder"),
         new(typeof(ListMesWorkOrdersEndpoint), "GET", "/api/business/v1/mes/work-orders", MesPermissionCodes.WorkOrdersRead, "listBusinessMesWorkOrders"),
         new(typeof(GetMesWorkOrderDetailEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}", MesPermissionCodes.WorkOrdersRead, "getBusinessMesWorkOrderDetail"),

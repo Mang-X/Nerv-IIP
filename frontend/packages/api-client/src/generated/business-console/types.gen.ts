@@ -4023,6 +4023,29 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     idempotencyKey?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesScheduleResultListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResultListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResultListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResultRow>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResultRow = {
+    scheduleVersion?: number;
+    trigger?: string;
+    scheduledAtUtc?: string;
+    assignmentCount?: number;
+    affectedWorkOrderCount?: number;
+    affectedWorkOrderIds?: Array<string>;
+    assignments?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduledOperation>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResultListRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesShiftHandoverListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverListResponse | null;
 };
@@ -5357,6 +5380,126 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleI
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryExpiryAlertsRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryMovementListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryMovementListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryMovementListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryMovementLineResponse>;
+    totalCount?: number;
+    inboundQuantityTotal?: number;
+    outboundQuantityTotal?: number;
+    page?: number;
+    pageSize?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryMovementLineResponse = {
+    movementId?: string;
+    movementType?: string;
+    sourceService?: string;
+    sourceDocumentId?: string;
+    sourceDocumentLineId?: string | null;
+    idempotencyKey?: string;
+    skuCode?: string;
+    uomCode?: string;
+    siteCode?: string;
+    locationCode?: string;
+    lotNo?: string | null;
+    serialNo?: string | null;
+    qualityStatus?: string;
+    ownerType?: string;
+    ownerId?: string | null;
+    quantity?: number;
+    postedAtUtc?: string;
+    unitCost?: number | null;
+    movementAmount?: number | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryMovementListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryCountTaskListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryCountTaskListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryCountTaskListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryCountTaskLineResponse>;
+    totalCount?: number;
+    openCount?: number;
+    pendingApprovalCount?: number;
+    confirmedCount?: number;
+    recountRequiredCount?: number;
+    cancelledCount?: number;
+    page?: number;
+    pageSize?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryCountTaskLineResponse = {
+    countTaskId?: string;
+    countTaskCode?: string;
+    skuCode?: string;
+    uomCode?: string;
+    siteCode?: string;
+    locationCode?: string;
+    lotNo?: string | null;
+    serialNo?: string | null;
+    qualityStatus?: string;
+    ownerType?: string;
+    ownerId?: string | null;
+    expectedLedgerVersion?: number;
+    countedQuantity?: number | null;
+    varianceQuantity?: number | null;
+    status?: string;
+    createdAtUtc?: string;
+    updatedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryCountTaskListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryCountAdjustmentListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryCountAdjustmentListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryCountAdjustmentListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryCountAdjustmentLineResponse>;
+    totalCount?: number;
+    pendingApprovalCount?: number;
+    postedCount?: number;
+    voidedCount?: number;
+    varianceAmountTotal?: number;
+    page?: number;
+    pageSize?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryCountAdjustmentLineResponse = {
+    adjustmentId?: string;
+    countTaskCode?: string;
+    idempotencyKey?: string;
+    movementId?: string | null;
+    approvalChainId?: string | null;
+    skuCode?: string;
+    uomCode?: string;
+    siteCode?: string;
+    locationCode?: string;
+    lotNo?: string | null;
+    serialNo?: string | null;
+    qualityStatus?: string;
+    ownerType?: string;
+    ownerId?: string | null;
+    countedQuantity?: number;
+    varianceQuantity?: number;
+    varianceAmount?: number;
+    status?: string;
+    confirmedAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryCountAdjustmentListRequest = {
     [key: string]: never;
 };
 
@@ -13434,6 +13577,39 @@ export type ConfirmBusinessConsoleMesDowntimeRecoveryResponses = {
 
 export type ConfirmBusinessConsoleMesDowntimeRecoveryResponse = ConfirmBusinessConsoleMesDowntimeRecoveryResponses[keyof ConfirmBusinessConsoleMesDowntimeRecoveryResponses];
 
+export type ListBusinessConsoleMesScheduleResultsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        trigger?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/mes/schedules';
+};
+
+export type ListBusinessConsoleMesScheduleResultsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleMesScheduleResultsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesScheduleResultListResponse;
+};
+
+export type ListBusinessConsoleMesScheduleResultsResponse = ListBusinessConsoleMesScheduleResultsResponses[keyof ListBusinessConsoleMesScheduleResultsResponses];
+
 export type ListBusinessConsoleMesShiftHandoversData = {
     body?: never;
     path?: never;
@@ -15900,6 +16076,47 @@ export type ListBusinessConsoleInventoryExpiryAlertsResponses = {
 
 export type ListBusinessConsoleInventoryExpiryAlertsResponse = ListBusinessConsoleInventoryExpiryAlertsResponses[keyof ListBusinessConsoleInventoryExpiryAlertsResponses];
 
+export type ListBusinessConsoleInventoryMovementsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        skuCode?: string | null;
+        siteCode?: string | null;
+        locationCode?: string | null;
+        lotNo?: string | null;
+        movementType?: string | null;
+        sourceService?: string | null;
+        sourceDocumentId?: string | null;
+        fromDate?: string | null;
+        toDate?: string | null;
+        page?: number;
+        pageSize?: number;
+    };
+    url: '/api/business-console/v1/inventory/movements';
+};
+
+export type ListBusinessConsoleInventoryMovementsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleInventoryMovementsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryMovementListResponse;
+};
+
+export type ListBusinessConsoleInventoryMovementsResponse = ListBusinessConsoleInventoryMovementsResponses[keyof ListBusinessConsoleInventoryMovementsResponses];
+
 export type PostBusinessConsoleInventoryMovementData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePostStockMovementRequest;
     path?: never;
@@ -15927,6 +16144,43 @@ export type PostBusinessConsoleInventoryMovementResponses = {
 
 export type PostBusinessConsoleInventoryMovementResponse = PostBusinessConsoleInventoryMovementResponses[keyof PostBusinessConsoleInventoryMovementResponses];
 
+export type ListBusinessConsoleInventoryCountTasksData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        status?: string | null;
+        skuCode?: string | null;
+        siteCode?: string | null;
+        locationCode?: string | null;
+        countTaskCode?: string | null;
+        page?: number;
+        pageSize?: number;
+    };
+    url: '/api/business-console/v1/inventory/count-tasks';
+};
+
+export type ListBusinessConsoleInventoryCountTasksErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleInventoryCountTasksResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryCountTaskListResponse;
+};
+
+export type ListBusinessConsoleInventoryCountTasksResponse = ListBusinessConsoleInventoryCountTasksResponses[keyof ListBusinessConsoleInventoryCountTasksResponses];
+
 export type CreateBusinessConsoleInventoryCountTaskData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStockCountTaskRequest;
     path?: never;
@@ -15953,6 +16207,41 @@ export type CreateBusinessConsoleInventoryCountTaskResponses = {
 };
 
 export type CreateBusinessConsoleInventoryCountTaskResponse = CreateBusinessConsoleInventoryCountTaskResponses[keyof CreateBusinessConsoleInventoryCountTaskResponses];
+
+export type ListBusinessConsoleInventoryCountAdjustmentsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        status?: string | null;
+        countTaskCode?: string | null;
+        skuCode?: string | null;
+        page?: number;
+        pageSize?: number;
+    };
+    url: '/api/business-console/v1/inventory/count-adjustments';
+};
+
+export type ListBusinessConsoleInventoryCountAdjustmentsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleInventoryCountAdjustmentsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryCountAdjustmentListResponse;
+};
+
+export type ListBusinessConsoleInventoryCountAdjustmentsResponse = ListBusinessConsoleInventoryCountAdjustmentsResponses[keyof ListBusinessConsoleInventoryCountAdjustmentsResponses];
 
 export type ConfirmBusinessConsoleInventoryCountAdjustmentData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfirmStockCountAdjustmentRequest;

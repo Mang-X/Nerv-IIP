@@ -83,6 +83,7 @@ try
     builder.Services.AddInventoryPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<WorldHistorySeedService>();
+    builder.Services.AddScoped<WorldHistoryCountSeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
@@ -179,6 +180,28 @@ try
             {
                 app.Logger.LogInformation("World-history sample: {Movement}", line);
             }
+
+            // 盘点块必须排在流水块之后：盘点任务的维度与期望台账版本都取自真实落库的台账。
+            var countReport = await scope.ServiceProvider.GetRequiredService<WorldHistoryCountSeedService>().SeedAsync(
+                leaderDemoOrganizationId,
+                leaderDemoEnvironmentId,
+                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+            app.Logger.LogInformation(
+                "World-history inventory count seed completed: {Tasks} count tasks, {Adjustments} count adjustments, " +
+                "{Skipped} plans skipped for a missing ledger dimension; validator checked {CheckedTasks} tasks " +
+                "({PendingApproval} pending approval, {Recount} recount required, {Cancelled} cancelled, {Open} open) " +
+                "and {CheckedAdjustments} adjustments totalling {VarianceAmount} in variance value.",
+                countReport.StockCountTasksWritten,
+                countReport.StockCountAdjustmentsWritten,
+                countReport.PlansSkippedWithoutLedger,
+                countReport.Validation.StockCountTasksChecked,
+                countReport.Validation.PendingApprovalTasksChecked,
+                countReport.Validation.RecountRequiredTasksChecked,
+                countReport.Validation.CancelledTasksChecked,
+                countReport.Validation.OpenTasksChecked,
+                countReport.Validation.StockCountAdjustmentsChecked,
+                countReport.Validation.VarianceAmountTotal);
         }
     }
 

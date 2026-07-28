@@ -34,7 +34,23 @@ public sealed class InventoryEndpointContractTests
     {
         var contracts = InventoryEndpointContracts.All.ToArray();
 
-        Assert.Equal(13, contracts.Length);
+        Assert.Equal(16, contracts.Length);
+        // 盘点 / 流水读面（此前完全缺失，业务前端只能挂会话内本地队列）。
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/inventory/v1/count-tasks"
+            && x.PermissionCode == InventoryPermissionCodes.CountsManage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "listInventoryCountTasks");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/inventory/v1/count-adjustments"
+            && x.PermissionCode == InventoryPermissionCodes.CountsManage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "listInventoryCountAdjustments");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/inventory/v1/movements"
+            && x.PermissionCode == InventoryPermissionCodes.LedgerRead
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "listInventoryMovements");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/inventory/v1/locations"
             && x.PermissionCode == InventoryPermissionCodes.LocationsManage

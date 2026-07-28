@@ -963,6 +963,131 @@ public sealed record BusinessConsoleInventoryExpiryAlertLineResponse(
     string? CountBlockReasonCode = null,
     string? CountBlockReason = null);
 
+public sealed record BusinessConsoleInventoryMovementListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode = null,
+    string? SiteCode = null,
+    string? LocationCode = null,
+    string? LotNo = null,
+    string? MovementType = null,
+    string? SourceService = null,
+    string? SourceDocumentId = null,
+    DateOnly? FromDate = null,
+    DateOnly? ToDate = null,
+    int Page = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleInventoryMovementListResponse(
+    IReadOnlyCollection<BusinessConsoleInventoryMovementLineResponse> Items,
+    int TotalCount = 0,
+    decimal InboundQuantityTotal = 0m,
+    decimal OutboundQuantityTotal = 0m,
+    int Page = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleInventoryMovementLineResponse(
+    string MovementId,
+    string MovementType,
+    string SourceService,
+    string SourceDocumentId,
+    string? SourceDocumentLineId,
+    string IdempotencyKey,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId,
+    decimal Quantity,
+    DateTime PostedAtUtc,
+    decimal? UnitCost = null,
+    decimal? MovementAmount = null);
+
+public sealed record BusinessConsoleInventoryCountTaskListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? SkuCode = null,
+    string? SiteCode = null,
+    string? LocationCode = null,
+    string? CountTaskCode = null,
+    int Page = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleInventoryCountTaskListResponse(
+    IReadOnlyCollection<BusinessConsoleInventoryCountTaskLineResponse> Items,
+    int TotalCount = 0,
+    int OpenCount = 0,
+    int PendingApprovalCount = 0,
+    int ConfirmedCount = 0,
+    int RecountRequiredCount = 0,
+    int CancelledCount = 0,
+    int Page = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleInventoryCountTaskLineResponse(
+    string CountTaskId,
+    string CountTaskCode,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId,
+    long ExpectedLedgerVersion,
+    decimal? CountedQuantity,
+    decimal? VarianceQuantity,
+    string Status,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc);
+
+public sealed record BusinessConsoleInventoryCountAdjustmentListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? CountTaskCode = null,
+    string? SkuCode = null,
+    int Page = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleInventoryCountAdjustmentListResponse(
+    IReadOnlyCollection<BusinessConsoleInventoryCountAdjustmentLineResponse> Items,
+    int TotalCount = 0,
+    int PendingApprovalCount = 0,
+    int PostedCount = 0,
+    int VoidedCount = 0,
+    decimal VarianceAmountTotal = 0m,
+    int Page = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleInventoryCountAdjustmentLineResponse(
+    string AdjustmentId,
+    string CountTaskCode,
+    string IdempotencyKey,
+    string? MovementId,
+    string? ApprovalChainId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId,
+    decimal CountedQuantity,
+    decimal VarianceQuantity,
+    decimal VarianceAmount,
+    string Status,
+    DateTime? ConfirmedAtUtc);
+
 public sealed record BusinessConsolePostStockMovementRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -4273,6 +4398,27 @@ public sealed record BusinessConsoleMesRecoverDowntimeEventRequest(
     [property: QueryParam] string EnvironmentId,
     DateTimeOffset RecoveredAtUtc,
     string IdempotencyKey);
+
+/// <summary>历史规则排程结果列表请求（「规则排程」页的历史读面）。</summary>
+public sealed record BusinessConsoleMesScheduleResultListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Trigger = null,
+    int Skip = 0,
+    int Take = 20);
+
+public sealed record BusinessConsoleMesScheduleResultListResponse(
+    IReadOnlyCollection<BusinessConsoleMesScheduleResultRow> Items,
+    int Total);
+
+public sealed record BusinessConsoleMesScheduleResultRow(
+    int ScheduleVersion,
+    string Trigger,
+    DateTimeOffset ScheduledAtUtc,
+    int AssignmentCount,
+    int AffectedWorkOrderCount,
+    IReadOnlyCollection<string> AffectedWorkOrderIds,
+    IReadOnlyCollection<BusinessConsoleScheduledOperation> Assignments);
 
 public sealed record BusinessConsoleMesShiftHandoverListResponse(
     IReadOnlyCollection<BusinessConsoleMesShiftHandoverRow> Items,

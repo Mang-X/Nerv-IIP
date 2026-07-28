@@ -238,6 +238,21 @@ public interface IBusinessInventoryClient
         BusinessConsoleInventoryExpiryAlertsRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleInventoryMovementListResponse> ListMovementsAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryMovementListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleInventoryCountTaskListResponse> ListCountTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryCountTaskListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleInventoryCountAdjustmentListResponse> ListCountAdjustmentsAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryCountAdjustmentListRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsolePostStockMovementResponse> PostMovementAsync(
         string internalBearerToken,
         BusinessConsolePostStockMovementRequest request,
@@ -1556,6 +1571,11 @@ public interface IBusinessMesClient
         BusinessConsoleMesRecoverDowntimeEventRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMesScheduleResultListResponse> ListScheduleResultsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesScheduleResultListRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleMesShiftHandoverListResponse> ListShiftHandoversAsync(
         string internalBearerToken,
         BusinessConsoleMesListRequest request,
@@ -2611,6 +2631,68 @@ public sealed class HttpBusinessInventoryClient(
                 ("asOfDate", request.AsOfDate),
                 ("nearExpiryThresholdDays", request.NearExpiryThresholdDays),
                 ("includeZeroAvailable", TrueFlag(request.IncludeZeroAvailable)),
+                ("page", request.Page),
+                ("pageSize", request.PageSize)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleInventoryMovementListResponse> ListMovementsAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryMovementListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleInventoryMovementListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/inventory/v1/movements?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", request.SkuCode),
+                ("siteCode", request.SiteCode),
+                ("locationCode", request.LocationCode),
+                ("lotNo", request.LotNo),
+                ("movementType", request.MovementType),
+                ("sourceService", request.SourceService),
+                ("sourceDocumentId", request.SourceDocumentId),
+                ("fromDate", request.FromDate),
+                ("toDate", request.ToDate),
+                ("page", request.Page),
+                ("pageSize", request.PageSize)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleInventoryCountTaskListResponse> ListCountTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryCountTaskListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleInventoryCountTaskListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/inventory/v1/count-tasks?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("status", request.Status),
+                ("skuCode", request.SkuCode),
+                ("siteCode", request.SiteCode),
+                ("locationCode", request.LocationCode),
+                ("countTaskCode", request.CountTaskCode),
+                ("page", request.Page),
+                ("pageSize", request.PageSize)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleInventoryCountAdjustmentListResponse> ListCountAdjustmentsAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryCountAdjustmentListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleInventoryCountAdjustmentListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/inventory/v1/count-adjustments?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("status", request.Status),
+                ("countTaskCode", request.CountTaskCode),
+                ("skuCode", request.SkuCode),
                 ("page", request.Page),
                 ("pageSize", request.PageSize)),
             null,
@@ -7302,6 +7384,22 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             HttpMethod.Post,
             $"/api/business/v1/mes/downtime-events/{Uri.EscapeDataString(downtimeEventId)}/recover",
             request,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesScheduleResultListResponse> ListScheduleResultsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesScheduleResultListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesScheduleResultListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/schedules?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("trigger", request.Trigger),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
             cancellationToken);
 
     public Task<BusinessConsoleMesShiftHandoverListResponse> ListShiftHandoversAsync(

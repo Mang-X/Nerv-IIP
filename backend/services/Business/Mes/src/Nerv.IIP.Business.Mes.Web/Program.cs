@@ -67,6 +67,9 @@ builder.Services.AddScoped<LeaderDemoScaleSeedService>();
 builder.Services.AddScoped<IWorldHistoryProductionVersionResolver, WorldHistoryProductionVersionResolver>();
 builder.Services.AddScoped<WorldHistorySeedService>();
 builder.Services.AddScoped<WorldHistoryFloorEventsSeedService>();
+builder.Services.AddScoped<WorldHistoryGenealogySeedService>();
+builder.Services.AddScoped<WorldHistoryFoundationSeedService>();
+builder.Services.AddScoped<WorldHistoryScheduleResultSeedService>();
 // Register the FluentValidation command validators (CancelWorkOrder/ReturnLineSideMaterial/... — 11 in total)
 // so the MediatR AddKnownExceptionValidationBehavior below can execute them. Without both lines the validators
 // are dead code and command-level validation never runs — matching every other business service.
@@ -194,6 +197,41 @@ if (leaderDemoSeedEnabled)
             floorEvents.Validation.DowntimeEventsChecked,
             floorEvents.Validation.ShiftHandoversChecked,
             floorEvents.Validation.DefectRecordsChecked);
+
+        // L1「追溯断点」块：产出批次谱系 / 报工物料消耗。同样必须在工单链之后跑——
+        // 两张表都有指向 production_reports / work_orders / operation_tasks 的真实外键。
+        var genealogy = await scope.ServiceProvider.GetRequiredService<WorldHistoryGenealogySeedService>().SeedAsync(
+            leaderDemoOrganizationId,
+            leaderDemoEnvironmentId);
+        app.Logger.LogInformation(
+            "World-history MES genealogy seed completed: {Genealogies} output lot genealogies, " +
+            "{Consumptions} material consumptions; validator checked {CheckedGenealogies}/{CheckedConsumptions}.",
+            genealogy.OutputLotGenealogiesWritten,
+            genealogy.MaterialConsumptionsWritten,
+            genealogy.Validation.OutputLotGenealogiesChecked,
+            genealogy.Validation.MaterialConsumptionsChecked);
+
+        // L1「生产准备底座」块：设备 ↔ 工作中心映射 / SKU 停用投影（主数据投影，与工单链无先后依赖）。
+        var foundation = await scope.ServiceProvider.GetRequiredService<WorldHistoryFoundationSeedService>().SeedAsync(
+            leaderDemoOrganizationId,
+            leaderDemoEnvironmentId);
+        app.Logger.LogInformation(
+            "World-history MES foundation seed completed: {Mappings} device-asset mappings, {DisabledSkus} disabled SKUs; " +
+            "validator checked {CheckedMappings}/{CheckedDisabled}.",
+            foundation.DeviceAssetMappingsWritten,
+            foundation.DisabledSkusWritten,
+            foundation.Validation.DeviceAssetMappingsChecked,
+            foundation.Validation.DisabledSkusChecked);
+
+        // L1「规则排程」块：历次排程运行。分配只引用已落库的工序任务，故排在工单链之后。
+        var scheduleResults = await scope.ServiceProvider.GetRequiredService<WorldHistoryScheduleResultSeedService>().SeedAsync(
+            leaderDemoOrganizationId,
+            leaderDemoEnvironmentId,
+            WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+        app.Logger.LogInformation(
+            "World-history MES schedule-result seed completed: {ScheduleResults} schedule runs; validator checked {Checked}.",
+            scheduleResults.ScheduleResultsWritten,
+            scheduleResults.Validation.ScheduleResultsChecked);
     }
 }
 

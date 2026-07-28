@@ -146,6 +146,41 @@ public sealed record ConfirmStockCountAdjustmentResponse(
     string Status,
     string? ApprovalChainId);
 
+public sealed record ListStockMovementsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode = null,
+    string? SiteCode = null,
+    string? LocationCode = null,
+    string? LotNo = null,
+    string? MovementType = null,
+    string? SourceService = null,
+    string? SourceDocumentId = null,
+    DateOnly? FromDate = null,
+    DateOnly? ToDate = null,
+    int Page = 1,
+    int PageSize = 50);
+
+public sealed record ListStockCountTasksRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? SkuCode = null,
+    string? SiteCode = null,
+    string? LocationCode = null,
+    string? CountTaskCode = null,
+    int Page = 1,
+    int PageSize = 50);
+
+public sealed record ListStockCountAdjustmentsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? CountTaskCode = null,
+    string? SkuCode = null,
+    int Page = 1,
+    int PageSize = 50);
+
 public sealed record CancelStockCountTaskRequest(StockCountTaskId CountTaskId, string Reason);
 
 public sealed record CancelStockCountTaskResponse(string CountTaskId, string Status);
@@ -589,6 +624,80 @@ public sealed class CancelStockCountTaskEndpoint(ISender sender)
     }
 }
 
+public sealed class ListStockMovementsEndpoint(ISender sender)
+    : InventoryEndpoint<ListStockMovementsRequest, ResponseData<StockMovementListResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureInventoryContract(InventoryEndpointContracts.Get<ListStockMovementsEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListStockMovementsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListStockMovementsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.SkuCode,
+            req.SiteCode,
+            req.LocationCode,
+            req.LotNo,
+            req.MovementType,
+            req.SourceService,
+            req.SourceDocumentId,
+            req.FromDate,
+            req.ToDate,
+            req.Page,
+            req.PageSize), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListStockCountTasksEndpoint(ISender sender)
+    : InventoryEndpoint<ListStockCountTasksRequest, ResponseData<StockCountTaskListResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureInventoryContract(InventoryEndpointContracts.Get<ListStockCountTasksEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListStockCountTasksRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListStockCountTasksQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Status,
+            req.SkuCode,
+            req.SiteCode,
+            req.LocationCode,
+            req.CountTaskCode,
+            req.Page,
+            req.PageSize), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListStockCountAdjustmentsEndpoint(ISender sender)
+    : InventoryEndpoint<ListStockCountAdjustmentsRequest, ResponseData<StockCountAdjustmentListResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureInventoryContract(InventoryEndpointContracts.Get<ListStockCountAdjustmentsEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListStockCountAdjustmentsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListStockCountAdjustmentsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Status,
+            req.CountTaskCode,
+            req.SkuCode,
+            req.Page,
+            req.PageSize), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed record InventoryEndpointContract(
     Type EndpointType,
     string HttpMethod,
@@ -603,9 +712,12 @@ public static class InventoryEndpointContracts
     [
         new(typeof(CreateOrUpdateStockLocationEndpoint), "POST", "/api/inventory/v1/locations", InventoryPermissionCodes.LocationsManage, InternalServiceAuthorizationPolicy.Name, "createOrUpdateInventoryLocation"),
         new(typeof(PostStockMovementEndpoint), "POST", "/api/inventory/v1/movements", InventoryPermissionCodes.MovementsCreate, InternalServiceAuthorizationPolicy.Name, "postInventoryMovement"),
+        new(typeof(ListStockMovementsEndpoint), "GET", "/api/inventory/v1/movements", InventoryPermissionCodes.LedgerRead, InternalServiceAuthorizationPolicy.Name, "listInventoryMovements"),
         new(typeof(GetStockAvailabilityEndpoint), "GET", "/api/inventory/v1/availability", InventoryPermissionCodes.LedgerRead, InternalServiceAuthorizationPolicy.Name, "getInventoryAvailability"),
         new(typeof(GetStockBySourceEndpoint), "GET", "/api/inventory/v1/movements/by-source", InventoryPermissionCodes.LedgerRead, InternalServiceAuthorizationPolicy.Name, "getInventoryStockBySource"),
         new(typeof(CreateStockCountTaskEndpoint), "POST", "/api/inventory/v1/count-tasks", InventoryPermissionCodes.CountsManage, InternalServiceAuthorizationPolicy.Name, "createInventoryCountTask"),
+        new(typeof(ListStockCountTasksEndpoint), "GET", "/api/inventory/v1/count-tasks", InventoryPermissionCodes.CountsManage, InternalServiceAuthorizationPolicy.Name, "listInventoryCountTasks"),
+        new(typeof(ListStockCountAdjustmentsEndpoint), "GET", "/api/inventory/v1/count-adjustments", InventoryPermissionCodes.CountsManage, InternalServiceAuthorizationPolicy.Name, "listInventoryCountAdjustments"),
         new(typeof(ConfirmStockCountAdjustmentEndpoint), "POST", "/api/inventory/v1/count-tasks/{countTaskId}/adjustments", InventoryPermissionCodes.CountsManage, InternalServiceAuthorizationPolicy.Name, "confirmInventoryCountAdjustment"),
         new(typeof(CancelStockCountTaskEndpoint), "POST", "/api/inventory/v1/count-tasks/{countTaskId}/cancel", InventoryPermissionCodes.CountsManage, InternalServiceAuthorizationPolicy.Name, "cancelInventoryCountTask"),
         new(typeof(ReserveStockEndpoint), "POST", "/api/inventory/v1/reservations", InventoryPermissionCodes.ReservationsManage, InternalServiceAuthorizationPolicy.Name, "reserveInventoryStock"),

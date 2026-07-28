@@ -1106,7 +1106,10 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/code-rules/master-data.sku/preview", BusinessGatewayPermissions.MasterDataResourcesRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/availability", BusinessGatewayPermissions.InventoryLedgerRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/movements", BusinessGatewayPermissions.InventoryMovementsCreate);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/movements", BusinessGatewayPermissions.InventoryLedgerRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks", BusinessGatewayPermissions.InventoryCountsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/count-tasks", BusinessGatewayPermissions.InventoryCountsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/count-adjustments", BusinessGatewayPermissions.InventoryCountsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks/count-001/adjustments", BusinessGatewayPermissions.InventoryCountsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/inspection-plans", BusinessGatewayPermissions.QualityInspectionRecordsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-plans", BusinessGatewayPermissions.QualityInspectionPlansManage);
@@ -1293,6 +1296,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/work-orders/rush", BusinessGatewayPermissions.MesWorkOrdersManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/operation-sops/current?operationCode=STD-MIX", BusinessGatewayPermissions.MesOperationsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/schedules/run", BusinessGatewayPermissions.MesSchedulesManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/schedules", BusinessGatewayPermissions.MesSchedulesRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/production-reports", BusinessGatewayPermissions.MesReportingWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/production-reports/PR-001", BusinessGatewayPermissions.MesReportingRead);
         // 工单可入库产出批次读面与完工入库同域：受 receipts.read 门控（非 reporting.read），入库操作员无需报工权限即可选批次。
