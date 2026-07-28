@@ -177,8 +177,9 @@ try
             app.Logger.LogInformation(
                 "World-history device seed completed in {ElapsedSeconds:F1}s: {Rules} alarm rules, {Alarms} alarm events, " +
                 "{Daily} daily rollups, {Hourly} hourly rollups, {Raw} raw samples, {Summaries} summaries, " +
-                "{States} device states, {OeeFacts} OEE facts; validator checked {AlarmsChecked} alarms / " +
-                "{DailyChecked} daily rollups / {FaultedChecked} faulted states / {OeeChecked} OEE facts ({OpenAlarms} open-tail alarms).",
+                "{States} device states, {OeeFacts} OEE facts, {ControlCommands} device control commands; " +
+                "validator checked {AlarmsChecked} alarms / {DailyChecked} daily rollups / {FaultedChecked} faulted states / " +
+                "{OeeChecked} OEE facts / {ControlChecked} control commands (all terminal) ({OpenAlarms} open-tail alarms).",
                 historyStopwatch.Elapsed.TotalSeconds,
                 report.AlarmRulesWritten,
                 report.AlarmEventsWritten,
@@ -188,10 +189,12 @@ try
                 report.SummariesWritten,
                 report.DeviceStateSnapshotsWritten,
                 report.OeeFactsWritten,
+                report.DeviceControlCommandsWritten,
                 report.Validation.AlarmsChecked,
                 report.Validation.DailyRollupsChecked,
                 report.Validation.FaultedStatesChecked,
                 report.Validation.OeeFactsChecked,
+                report.Validation.DeviceControlCommandsChecked,
                 report.Validation.OpenAlarms);
             foreach (var line in report.Validation.Sample)
             {

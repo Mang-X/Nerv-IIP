@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlCommandAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.OeeProductionFactAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
@@ -56,6 +57,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         var telemetryWritten = await SeedTelemetryAsync(organizationId, environmentId, asOfDate, alarmPlans, cancellationToken);
         var statesWritten = await SeedDeviceStatesAsync(organizationId, environmentId, asOfDate, alarmPlans, cancellationToken);
         var oeeFactsWritten = await SeedOeeFactsAsync(organizationId, environmentId, asOfDate, alarmPlans, cancellationToken);
+        var controlCommandsWritten = await SeedDeviceControlCommandsAsync(organizationId, environmentId, asOfDate, scale, cancellationToken);
 
         var validation = await new WorldHistoryConsistencyValidator(dbContext)
             .ValidateAsync(organizationId, environmentId, asOfDate, scale, cancellationToken);
@@ -69,7 +71,76 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             telemetryWritten.Summaries,
             statesWritten,
             oeeFactsWritten,
+            controlCommandsWritten,
             validation);
+    }
+
+    /// <summary>
+    /// 设备控制指令台账（<c>OPS-WH-*</c>，设定集 §9 四期补登记）。
+    ///
+    /// <para><b>只写台账，绝不下发</b>：真实链路是「命令 → Ops operation task → 连接器写点」，
+    /// 本表只是那条链的投影。历史回填不碰 <c>IDeviceControlOpsClient</c>，因此没有任何 Ops 任务
+    /// 被创建，物理上不可能产生一次下发。</para>
+    ///
+    /// <para><b>每条都推到终态</b>：写完 <c>Record</c>（下发时快照）后立刻
+    /// <c>ApplyOpsOutcome</c> 落 completed / failed / rejected。留下 <c>queued</c> /
+    /// <c>approval-pending</c> / <c>dispatched</c> 的历史行等于在演示环境里埋了引信——
+    /// 详情页会一直轮询 Ops，审批面会把它列成待办，一次「通过」就可能变成对设备的真实写点。
+    /// 校验器对此 fail-closed（见 <see cref="WorldHistoryControlCommandSpec"/> 类注释）。</para>
+    /// </summary>
+    private async Task<int> SeedDeviceControlCommandsAsync(
+        string organizationId,
+        string environmentId,
+        DateOnly asOfDate,
+        double scale,
+        CancellationToken cancellationToken)
+    {
+        var plans = WorldHistoryControlCommandSpec.BuildCommandPlans(asOfDate, scale);
+        var existing = await dbContext.DeviceControlCommands
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+            .Where(x => x.OperationTaskId.StartsWith(WorldHistoryControlCommandSpec.OperationTaskPrefix))
+            .Select(x => x.OperationTaskId)
+            .ToArrayAsync(cancellationToken);
+        var existingSet = existing.ToHashSet(StringComparer.Ordinal);
+
+        var written = 0;
+        foreach (var plan in plans.Where(x => !existingSet.Contains(x.OperationTaskId)))
+        {
+            var command = DeviceControlCommand.Record(
+                plan.OperationTaskId,
+                organizationId,
+                environmentId,
+                WorldBibleSpec.ControlConnectorHostId,
+                plan.InstanceKey,
+                plan.DeviceAssetId,
+                plan.CommandType,
+                plan.TagKey,
+                plan.Value,
+                plan.ParametersJson,
+                plan.RequestedByUserId,
+                plan.Reason,
+                plan.IdempotencyKey,
+                plan.CorrelationId,
+                plan.DispatchStatus,
+                plan.DispatchApprovalStatus,
+                plan.RequestedAtUtc);
+            command.ApplyOpsOutcome(
+                plan.TerminalStatus,
+                plan.FinishedAtUtc,
+                plan.FailureCode,
+                plan.DeviceReceiptCode,
+                plan.DeviceReceiptMessage);
+            dbContext.DeviceControlCommands.Add(command);
+
+            // 台账登记时刻取下发时刻，否则历史指令会显示成「今天刚下的」。
+            BackdateOffset(command, x => x.RecordedAtUtc, plan.RequestedAtUtc);
+            written++;
+            await FlushAsync(cancellationToken);
+        }
+
+        await FlushAsync(cancellationToken, force: true);
+        return written;
     }
 
     private async Task<int> SeedAlarmRulesAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
@@ -658,4 +729,5 @@ public sealed record WorldHistoryDeviceSeedReport(
     int SummariesWritten,
     int DeviceStateSnapshotsWritten,
     int OeeFactsWritten,
+    int DeviceControlCommandsWritten,
     WorldHistoryDeviceValidationReport Validation);
