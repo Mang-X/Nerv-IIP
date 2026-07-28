@@ -79,6 +79,9 @@ const listScope = computed(() =>
     ? '当前登录组织 / 当前业务环境'
     : '组织/环境范围未就绪',
 )
+const scopeReady = computed(() => Boolean(filters.organizationId && filters.environmentId))
+const scopedReceipts = computed(() => (scopeReady.value ? receipts.value : []))
+const scopedTotal = computed(() => (scopeReady.value ? total.value : 0))
 const emptyExplanation = computed(() =>
   !filters.organizationId || !filters.environmentId
     ? '缺少组织或环境范围，未发起查询。'
@@ -328,10 +331,13 @@ function onScanWorkOrder(value: string) {
       <ListScopeMeta
         :scope="listScope"
         source="生产完工入库申请服务（组织/环境范围）"
-        :loaded="receipts.length"
-        :total="total"
+        :loaded="scopedReceipts.length"
+        :total="scopedTotal"
         :updated-at="lastUpdatedAt"
-        :empty="!pending && !error && hasSuccessfulResponse && receipts.length === 0"
+        :empty="
+          !scopeReady ||
+          (!pending && !error && hasSuccessfulResponse && scopedReceipts.length === 0)
+        "
         :empty-explanation="emptyExplanation"
       />
 
@@ -346,21 +352,19 @@ function onScanWorkOrder(value: string) {
 
       <div
         v-if="
-          filters.organizationId &&
-          filters.environmentId &&
-          !pending &&
-          !error &&
-          hasSuccessfulResponse &&
-          receipts.length === 0
+          scopeReady && !pending && !error && hasSuccessfulResponse && scopedReceipts.length === 0
         "
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
       >
         当前组织/环境范围暂无完工入库申请
       </div>
 
-      <div v-else class="overflow-hidden rounded-lg border border-border">
+      <div
+        v-else-if="scopeReady && scopedReceipts.length > 0"
+        class="overflow-hidden rounded-lg border border-border"
+      >
         <NvListRow
-          v-for="req in receipts"
+          v-for="req in scopedReceipts"
           :key="req.receiptRequestId ?? `${req.workOrderId}-${req.skuId}`"
           :title="receiptTitle(req)"
           :subtitle="receiptSubtitle(req)"

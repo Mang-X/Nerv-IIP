@@ -97,6 +97,7 @@ describe('PDA MES finished-goods receipt page', () => {
     receiptRows.value = receipts
     receiptsHasSuccessfulResponse.value = true
     receiptsHasFailedResponse.value = false
+    refreshReceipts.mockClear()
   })
 
   it('renders the receipt list with readable Chinese status and work order numbers', () => {
@@ -149,6 +150,20 @@ describe('PDA MES finished-goods receipt page', () => {
     expect(wrapper.text()).not.toContain('当前组织/环境范围暂无完工入库申请')
     await wrapper.get('[data-testid="retry-list"]').trigger('click')
     expect(refreshReceipts).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not render cached receipt rows or totals after the organization scope is lost', async () => {
+    const wrapper = mount(ReceiptPage)
+    expect(wrapper.text()).toContain('FGR-2026-0001')
+
+    receiptFilters.organizationId = ''
+    receiptFilters.environmentId = ''
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('缺少组织或环境范围，未发起查询')
+    expect(wrapper.text()).toContain('已加载 0 / 共 0')
+    expect(wrapper.text()).not.toContain('FGR-2026-0001')
+    expect(wrapper.text()).not.toContain('SKU-A')
   })
 
   it('scanning sets the receipt keyword filter', async () => {

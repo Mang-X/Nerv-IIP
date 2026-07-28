@@ -309,7 +309,7 @@ describe('pda useBusinessMes composables', () => {
   })
 
   it('keeps list queries disabled when the principal has no org/env scope', () => {
-    authState.principal = undefined
+    reactiveAuthState.principal = undefined
 
     useMesWorkOrders()
     useMesOperationTasks()
@@ -416,6 +416,92 @@ describe('pda useBusinessMes composables', () => {
     expect(materialIssue.hasFailedResponse.value).toBe(false)
     expect(receipts.hasSuccessfulResponse.value).toBe(false)
     expect(receipts.hasFailedResponse.value).toBe(false)
+  })
+
+  it('removes cached issue and receipt rows outside scope and waits for the restored scope response', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
+      success: true,
+      data: {
+        items: [{ requestId: 'OLD-ISSUE', workOrderId: 'OLD-WO' }],
+        total: 9,
+      },
+    })
+    coladaState.queryDataById.set('listBusinessConsoleMesFinishedGoodsReceiptRequests', {
+      success: true,
+      data: {
+        items: [{ receiptRequestId: 'OLD-RECEIPT', workOrderId: 'OLD-WO' }],
+        total: 8,
+      },
+    })
+
+    const materialIssue = useMesMaterialIssue()
+    const receipts = useMesReceipts()
+    expect(materialIssue.requests.value).toHaveLength(1)
+    expect(materialIssue.total.value).toBe(9)
+    expect(receipts.receipts.value).toHaveLength(1)
+    expect(receipts.total.value).toBe(8)
+
+    reactiveAuthState.principal = undefined
+    await nextTick()
+    await Promise.all([materialIssue.refresh(), receipts.refresh()])
+
+    expect(materialIssue.requests.value).toEqual([])
+    expect(materialIssue.total.value).toBe(0)
+    expect(receipts.receipts.value).toEqual([])
+    expect(receipts.total.value).toBe(0)
+    expect(
+      coladaState.refetchById.get('listBusinessConsoleMesMaterialIssueRequests'),
+    ).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('listBusinessConsoleMesFinishedGoodsReceiptRequests'),
+    ).not.toHaveBeenCalled()
+
+    reactiveAuthState.principal = { organizationId: 'org-002', environmentId: 'env-prod' }
+    await nextTick()
+
+    expect(materialIssue.requests.value).toEqual([])
+    expect(materialIssue.total.value).toBe(0)
+    expect(materialIssue.hasSuccessfulResponse.value).toBe(false)
+    expect(receipts.receipts.value).toEqual([])
+    expect(receipts.total.value).toBe(0)
+    expect(receipts.hasSuccessfulResponse.value).toBe(false)
+
+    coladaState.queryDataRefById.get('listBusinessConsoleMesMaterialIssueRequests')!.value = {
+      success: true,
+      data: {
+        items: [{ requestId: 'NEW-ISSUE', workOrderId: 'NEW-WO' }],
+        total: 1,
+      },
+    }
+    coladaState.queryDataRefById.get('listBusinessConsoleMesFinishedGoodsReceiptRequests')!.value =
+      {
+        success: true,
+        data: {
+          items: [{ receiptRequestId: 'NEW-RECEIPT', workOrderId: 'NEW-WO' }],
+          total: 1,
+        },
+      }
+    await nextTick()
+
+    expect(materialIssue.requests.value).toEqual([
+      expect.objectContaining({ requestId: 'NEW-ISSUE' }),
+    ])
+    expect(materialIssue.total.value).toBe(1)
+    expect(receipts.receipts.value).toEqual([
+      expect.objectContaining({ receiptRequestId: 'NEW-RECEIPT' }),
+    ])
+    expect(receipts.total.value).toBe(1)
+
+    coladaState.loadingById.get('listBusinessConsoleMesMaterialIssueRequests')!.value = true
+    coladaState.loadingById.get('listBusinessConsoleMesFinishedGoodsReceiptRequests')!.value = true
+    await nextTick()
+
+    expect(materialIssue.requests.value).toEqual([
+      expect.objectContaining({ requestId: 'NEW-ISSUE' }),
+    ])
+    expect(receipts.receipts.value).toEqual([
+      expect.objectContaining({ receiptRequestId: 'NEW-RECEIPT' }),
+    ])
   })
 
   it('enables list queries once a principal scope is present', () => {

@@ -53,7 +53,11 @@ import {
   peekPendingBusinessIntent,
 } from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { useListFreshness, useListResponseState } from '@/composables/useListFreshness'
+import {
+  useListFreshness,
+  useListResponseState,
+  useScopeBoundListResponse,
+} from '@/composables/useListFreshness'
 import { computed, reactive, watch, watchEffect, type Ref } from 'vue'
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
@@ -868,20 +872,26 @@ export type ConfirmLineSideReceiptInput = BusinessConsoleMesConfirmLineSideRecei
 export function useMesMaterialIssue() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()
+  const scopeReady = computed(() => hasScope(filters))
+  const scopeKey = computed(() =>
+    scopeReady.value ? `${filters.organizationId}:${filters.environmentId}` : '',
+  )
 
   const requestsQuery = useQuery(() => ({
     ...listBusinessConsoleMesMaterialIssueRequestsQueryOptions({
       query: toListQuery(filters),
     }),
-    enabled: hasScope(filters),
+    enabled: scopeReady.value,
   }))
-  const lastUpdatedAt = useListFreshness(
+  const currentResponse = useScopeBoundListResponse(
     () => requestsQuery.data.value,
-    () => hasScope(filters),
+    scopeKey,
+    scopeReady,
   )
+  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
-    () => requestsQuery.data.value,
-    () => hasScope(filters),
+    currentResponse,
+    scopeReady,
     requestsQuery.isLoading,
   )
 
@@ -905,13 +915,14 @@ export function useMesMaterialIssue() {
 
   return {
     filters,
+    scopeReady,
     requests: computed<BusinessConsoleMesMaterialIssueRequestRow[]>(() =>
       envelopeItems<
         BusinessConsoleMesMaterialIssueRequestRow,
         BusinessConsoleMesMaterialIssueRequestListEnvelope
-      >(requestsQuery.data.value),
+      >(currentResponse.value),
     ),
-    total: computed(() => envelopeTotal(requestsQuery.data.value)),
+    total: computed(() => envelopeTotal(currentResponse.value)),
     pending: requestsQuery.isLoading,
     error: requestsQuery.error,
     lastUpdatedAt,
@@ -974,20 +985,26 @@ export type CreateReceiptInput = Omit<
 export function useMesReceipts() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()
+  const scopeReady = computed(() => hasScope(filters))
+  const scopeKey = computed(() =>
+    scopeReady.value ? `${filters.organizationId}:${filters.environmentId}` : '',
+  )
 
   const receiptsQuery = useQuery(() => ({
     ...listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions({
       query: toListQuery(filters),
     }),
-    enabled: hasScope(filters),
+    enabled: scopeReady.value,
   }))
-  const lastUpdatedAt = useListFreshness(
+  const currentResponse = useScopeBoundListResponse(
     () => receiptsQuery.data.value,
-    () => hasScope(filters),
+    scopeKey,
+    scopeReady,
   )
+  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
-    () => receiptsQuery.data.value,
-    () => hasScope(filters),
+    currentResponse,
+    scopeReady,
     receiptsQuery.isLoading,
   )
 
@@ -1002,13 +1019,14 @@ export function useMesReceipts() {
 
   return {
     filters,
+    scopeReady,
     receipts: computed<BusinessConsoleMesReceiptRequestRow[]>(() =>
       envelopeItems<
         BusinessConsoleMesReceiptRequestRow,
         BusinessConsoleMesReceiptRequestListEnvelope
-      >(receiptsQuery.data.value),
+      >(currentResponse.value),
     ),
-    total: computed(() => envelopeTotal(receiptsQuery.data.value)),
+    total: computed(() => envelopeTotal(currentResponse.value)),
     pending: receiptsQuery.isLoading,
     error: receiptsQuery.error,
     lastUpdatedAt,

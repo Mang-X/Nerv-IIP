@@ -100,6 +100,7 @@ describe('PDA MES material issue page', () => {
     issueRequests.value = requests
     issueHasSuccessfulResponse.value = true
     issueHasFailedResponse.value = false
+    refreshRequests.mockClear()
   })
 
   it('lists material issue requests with readable info', () => {
@@ -151,6 +152,20 @@ describe('PDA MES material issue page', () => {
     expect(wrapper.text()).not.toContain('当前组织/环境范围暂无领料申请')
     await wrapper.get('[data-testid="retry-list"]').trigger('click')
     expect(refreshRequests).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not render cached issue rows or totals after the organization scope is lost', async () => {
+    const wrapper = mount(IssuePage)
+    expect(wrapper.text()).toContain('WO-2026-0001')
+
+    issueFilters.organizationId = ''
+    issueFilters.environmentId = ''
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('缺少组织或环境范围，未发起查询')
+    expect(wrapper.text()).toContain('已加载 0 / 共 0')
+    expect(wrapper.text()).not.toContain('WO-2026-0001')
+    expect(wrapper.text()).not.toContain('MAT-A')
   })
 
   it('scanning sets the issue keyword filter', async () => {

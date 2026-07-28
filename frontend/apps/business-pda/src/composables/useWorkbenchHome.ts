@@ -14,7 +14,11 @@ import { useQuery } from '@pinia/colada'
 import { computed } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
-import { useListFreshness, useListResponseState } from '@/composables/useListFreshness'
+import {
+  useListFreshness,
+  useListResponseState,
+  useScopeBoundListResponse,
+} from '@/composables/useListFreshness'
 
 /**
  * 工作台首页数据封装：按登录人权限裁剪各域摘要。
@@ -281,9 +285,13 @@ export function usePendingInspectionSummary() {
     }),
     enabled: enabled.value,
   }))
-  const lastUpdatedAt = useListFreshness(() => tasksQuery.data.value, enabled)
+  const scopeKey = computed(() =>
+    scopeReady.value ? `${identity.organizationId.value}:${identity.environmentId.value}` : '',
+  )
+  const currentResponse = useScopeBoundListResponse(() => tasksQuery.data.value, scopeKey, enabled)
+  const lastUpdatedAt = useListFreshness(currentResponse, enabled)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
-    () => tasksQuery.data.value,
+    currentResponse,
     enabled,
     tasksQuery.isLoading,
   )
@@ -293,9 +301,9 @@ export function usePendingInspectionSummary() {
     scopeReady,
     enabled,
     tasks: computed<BusinessConsoleQualityInspectionTaskItem[]>(() =>
-      listItems<BusinessConsoleQualityInspectionTaskItem>(tasksQuery.data.value),
+      listItems<BusinessConsoleQualityInspectionTaskItem>(currentResponse.value),
     ),
-    total: computed(() => listTotal(tasksQuery.data.value)),
+    total: computed(() => listTotal(currentResponse.value)),
     pending: tasksQuery.isLoading,
     error: tasksQuery.error,
     lastUpdatedAt,

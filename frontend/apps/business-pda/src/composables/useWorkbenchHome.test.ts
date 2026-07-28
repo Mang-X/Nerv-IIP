@@ -86,7 +86,7 @@ describe('usePendingInspectionSummary', () => {
   })
 
   it('keeps the permitted section visible but suppresses query and manual refresh without scope', async () => {
-    authState.principal = {
+    reactiveAuthState.principal = {
       organizationId: '',
       environmentId: '',
       permissionCodes: [HOME_PERMISSIONS.quality],
@@ -128,5 +128,67 @@ describe('usePendingInspectionSummary', () => {
 
     expect(inspection.hasSuccessfulResponse.value).toBe(false)
     expect(inspection.hasFailedResponse.value).toBe(false)
+  })
+
+  it('hides cached inspection data when scope is lost and waits for the restored scope response', async () => {
+    coladaState.dataById.set('inspection', {
+      success: true,
+      data: {
+        items: [{ inspectionTaskId: 'OLD-INSPECTION', skuCode: 'OLD-SKU' }],
+        total: 7,
+      },
+    })
+
+    const inspection = usePendingInspectionSummary()
+    expect(inspection.tasks.value).toHaveLength(1)
+    expect(inspection.total.value).toBe(7)
+
+    reactiveAuthState.principal = {
+      organizationId: '',
+      environmentId: '',
+      permissionCodes: [HOME_PERMISSIONS.quality],
+    }
+    await nextTick()
+    await inspection.refresh()
+
+    expect(inspection.scopeReady.value).toBe(false)
+    expect(inspection.tasks.value).toEqual([])
+    expect(inspection.total.value).toBe(0)
+    expect(coladaState.refetchById.get('inspection')).not.toHaveBeenCalled()
+
+    reactiveAuthState.principal = {
+      organizationId: 'org-002',
+      environmentId: 'env-prod',
+      permissionCodes: [HOME_PERMISSIONS.quality],
+    }
+    await nextTick()
+
+    expect(inspection.scopeReady.value).toBe(true)
+    expect(inspection.tasks.value).toEqual([])
+    expect(inspection.total.value).toBe(0)
+    expect(inspection.hasSuccessfulResponse.value).toBe(false)
+
+    coladaState.dataRefById.get('inspection')!.value = {
+      success: true,
+      data: {
+        items: [{ inspectionTaskId: 'NEW-INSPECTION', skuCode: 'NEW-SKU' }],
+        total: 1,
+      },
+    }
+    await nextTick()
+
+    expect(inspection.tasks.value).toEqual([
+      expect.objectContaining({ inspectionTaskId: 'NEW-INSPECTION' }),
+    ])
+    expect(inspection.total.value).toBe(1)
+    expect(inspection.hasSuccessfulResponse.value).toBe(true)
+
+    coladaState.loadingById.get('inspection')!.value = true
+    await nextTick()
+
+    expect(inspection.tasks.value).toEqual([
+      expect.objectContaining({ inspectionTaskId: 'NEW-INSPECTION' }),
+    ])
+    expect(inspection.total.value).toBe(1)
   })
 })

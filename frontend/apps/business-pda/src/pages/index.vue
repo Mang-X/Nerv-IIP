@@ -99,7 +99,13 @@ function taskNote(task: (typeof myTasksPreview.value)[number]) {
 }
 
 const INSPECTION_PREVIEW = 3
-const inspectionPreview = computed(() => inspection.tasks.value.slice(0, INSPECTION_PREVIEW))
+const scopedInspectionTasks = computed(() =>
+  inspection.scopeReady.value ? inspection.tasks.value : [],
+)
+const scopedInspectionTotal = computed(() =>
+  inspection.scopeReady.value ? inspection.total.value : 0,
+)
+const inspectionPreview = computed(() => scopedInspectionTasks.value.slice(0, INSPECTION_PREVIEW))
 const inspectionEmptyExplanation = computed(() =>
   inspection.scopeReady.value
     ? '当前组织/环境范围暂无待检任务；此列表不是个人待检。'
@@ -289,15 +295,15 @@ function openRoute(route: string) {
               : '组织/环境范围未就绪'
           "
           source="质检待检任务服务（组织/环境范围，状态：待检）"
-          :loaded="inspection.tasks.value.length"
-          :total="inspection.total.value"
+          :loaded="scopedInspectionTasks.length"
+          :total="scopedInspectionTotal"
           :updated-at="inspection.lastUpdatedAt.value"
           :empty="
             !inspection.scopeReady.value ||
             (!inspection.pending.value &&
               !inspection.error.value &&
               inspection.hasSuccessfulResponse.value &&
-              inspection.tasks.value.length === 0)
+              scopedInspectionTasks.length === 0)
           "
           :empty-explanation="inspectionEmptyExplanation"
         />

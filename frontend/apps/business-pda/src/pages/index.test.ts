@@ -216,6 +216,29 @@ describe('PDA home', () => {
     expect(wrapper.text()).not.toContain('当前组织/环境范围暂无待检任务')
   })
 
+  it('does not render cached inspection rows after the organization scope is lost', async () => {
+    inspectionTasks.value = [
+      {
+        inspectionTaskId: 'OLD-INSPECTION',
+        skuCode: 'OLD-SKU',
+        batchNo: 'OLD-BATCH',
+        quantity: 12,
+        uomCode: 'PCS',
+      },
+    ]
+    const wrapper = mount(HomePage)
+    expect(wrapper.text()).toContain('OLD-SKU')
+
+    organizationId.value = ''
+    environmentId.value = ''
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('缺少组织或环境范围，未发起查询')
+    expect(wrapper.text()).toContain('已加载 0 / 共 0')
+    expect(wrapper.text()).not.toContain('OLD-SKU')
+    expect(wrapper.text()).not.toContain('OLD-BATCH')
+  })
+
   it('shows a retryable inspection error without presenting a business empty set', async () => {
     inspectionError.value = new Error('待检任务加载失败')
     const wrapper = mount(HomePage)
