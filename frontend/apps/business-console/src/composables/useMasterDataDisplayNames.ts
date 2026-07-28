@@ -24,14 +24,25 @@ export interface MasterDataDisplayNameOptions {
  * 用法：`const { resolveDevice } = useMasterDataDisplayNames({ devices: true })`
  * 然后 `r.deviceAssetName ?? resolveDevice(r.deviceAssetId) ?? r.deviceAssetId`。
  */
+/**
+ * 名录取数上限，与 `useErpPickerCatalog` / `useEquipmentPickerCatalog` 的 CATALOG_TAKE 一致。
+ * 默认 100 条时，设备或库位数过百就会有一批查不到名字、界面上悄悄退回显编码。
+ */
+const CATALOG_TAKE = 500
+
 export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions = {}) {
-  const deviceSource = options.devices ? useBusinessMasterDataResources('device-asset') : undefined
-  const locationSource = options.locations ? useBusinessMasterDataResources('location') : undefined
-  const workCenterSource = options.workCenters
-    ? useBusinessMasterDataResources('work-center')
-    : undefined
-  const teamSource = options.teams ? useBusinessMasterDataResources('team') : undefined
-  const uomSource = options.uoms ? useBusinessMasterDataResources('unit-of-measure') : undefined
+  function source(enabled: boolean | undefined, resourceType: string) {
+    if (!enabled) return undefined
+    const catalog = useBusinessMasterDataResources(resourceType)
+    catalog.filters.take = CATALOG_TAKE
+    return catalog
+  }
+
+  const deviceSource = source(options.devices, 'device-asset')
+  const locationSource = source(options.locations, 'location')
+  const workCenterSource = source(options.workCenters, 'work-center')
+  const teamSource = source(options.teams, 'team')
+  const uomSource = source(options.uoms, 'unit-of-measure')
 
   function indexOf(items: { code?: string | null; displayName?: string | null }[] | undefined) {
     const map = new Map<string, string>()

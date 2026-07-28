@@ -12,8 +12,11 @@ import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterD
  * 后端读面补上 *Name 后应优先用之，本兜底可随之移除。
  */
 export function useBusinessPartnerNames() {
-  const { resources: partners, resourcesPending: partnersPending } =
-    useBusinessMasterDataResources('business-partner')
+  const partnerSource = useBusinessMasterDataResources('business-partner')
+  // 与 `useErpPickerCatalog` 的目录口径对齐（CATALOG_TAKE=500）：默认 100 条时，
+  // 伙伴数过百就会有一批查不到名字、界面上退回显编码，且没有任何报错提示。
+  partnerSource.filters.take = 500
+  const { resources: partners, resourcesPending: partnersPending } = partnerSource
 
   const partnerByCode = computed(() => {
     const map = new Map<string, string>()

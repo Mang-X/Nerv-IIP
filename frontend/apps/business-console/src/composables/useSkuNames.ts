@@ -11,7 +11,11 @@ import { useBusinessSkus } from '@/composables/useBusinessMasterData'
  * 这里只解析物料名，供非 MES 页面按需引用，不额外拉无关名录。
  */
 export function useSkuNames() {
-  const { skus, skusPending } = useBusinessSkus()
+  const skuSource = useBusinessSkus()
+  // 与 `useErpPickerCatalog` 的目录口径对齐（CATALOG_TAKE=500）：默认 100 条时，
+  // 物料数过百就会有一批查不到名字、界面上退回显编码，且没有任何报错提示。
+  skuSource.filters.take = 500
+  const { skus, skusPending } = skuSource
 
   const skuByCode = computed(() => {
     const map = new Map<string, string>()
