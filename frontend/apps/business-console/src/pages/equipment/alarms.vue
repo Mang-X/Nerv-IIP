@@ -80,6 +80,8 @@ const {
   alarmsOrganizationId,
   alarmsEnvironmentId,
   alarmsLastUpdatedAt,
+  alarmsHasSuccessfulResponse,
+  alarmsHasFailedResponse,
   refreshAlarms,
   shelveAlarm,
   unshelveAlarm,
@@ -763,7 +765,9 @@ function formatError(error: unknown) {
       :loaded="alarms.length"
       :total="alarmsTotal"
       :updated-at="alarmsLastUpdatedAt"
-      :empty="!alarmsPending && !alarmsError && alarms.length === 0"
+      :empty="alarmsHasSuccessfulResponse && alarms.length === 0"
+      :failed="alarmsHasFailedResponse"
+      failure-explanation="设备报警服务未成功返回，请重试。"
       :empty-explanation="alarmEmptyExplanation"
     />
 

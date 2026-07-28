@@ -66,6 +66,8 @@ const {
   createPickingPending,
   createPickingError,
   pickingTasksLastUpdatedAt,
+  pickingTasksHasSuccessfulResponse,
+  pickingTasksHasFailedResponse,
 } = useWmsPickingTasks()
 const pickingScopeReady = computed(
   () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
@@ -313,7 +315,9 @@ function firstQuery(value: unknown) {
       :loaded="pickingTasks.length"
       :total="pickingTasksTotal"
       :updated-at="pickingTasksLastUpdatedAt"
-      :empty="!pickingTasksPending && !pickingTasksError && pickingTasks.length === 0"
+      :empty="pickingTasksHasSuccessfulResponse && pickingTasks.length === 0"
+      :failed="pickingTasksHasFailedResponse"
+      failure-explanation="拣货任务服务未成功返回，请重试。"
       :empty-explanation="
         pickingScopeReady
           ? '当前组织/环境范围没有拣货任务；后端未提供操作员归属过滤，空态不代表个人任务。'

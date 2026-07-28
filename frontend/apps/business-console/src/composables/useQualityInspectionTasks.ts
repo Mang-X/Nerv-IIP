@@ -21,7 +21,11 @@ import {
   type BusinessContextFields,
 } from './businessContextBinding'
 import { executeLifecycleAction } from './lifecycleAction'
-import { useListFreshness } from './useListFreshness'
+import {
+  useListFreshness,
+  useListResponseState,
+  useScopeBoundListResponse,
+} from './useListFreshness'
 
 const DEFAULT_TAKE = 200
 
@@ -206,14 +210,22 @@ export function useQualityInspectionTasks(initialFilters: Partial<InspectionTask
       enabled: hasBusinessContext(filters),
     }
   })
-  const lastUpdatedAt = useListFreshness(
+  const scopeReady = computed(() => hasBusinessContext(filters))
+  const currentResponse = useScopeBoundListResponse(
     () => tasksQuery.data.value,
-    () => hasBusinessContext(filters),
+    () => `${filters.organizationId.trim()}:${filters.environmentId.trim()}`,
+    scopeReady,
+  )
+  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    currentResponse,
+    scopeReady,
+    () => tasksQuery.isLoading.value,
   )
   const taskActions = useQualityInspectionTaskActions(filters)
 
   const rawTasks = computed<BusinessConsoleQualityInspectionTaskItem[]>(() => {
-    const data = tasksQuery.data.value
+    const data = currentResponse.value
     return data?.success ? (data.data?.items ?? []) : []
   })
   const tasks = computed(() => {
@@ -229,11 +241,13 @@ export function useQualityInspectionTasks(initialFilters: Partial<InspectionTask
     hasLocator,
     tasks,
     total: computed(() =>
-      tasksQuery.data.value?.success ? (tasksQuery.data.value.data?.total ?? 0) : 0,
+      currentResponse.value?.success ? (currentResponse.value.data?.total ?? 0) : 0,
     ),
     pending: tasksQuery.isLoading,
     error: tasksQuery.error,
     lastUpdatedAt,
+    hasSuccessfulResponse,
+    hasFailedResponse,
     startInspection: taskActions.startInspection,
     startInspectionError: taskActions.startInspectionError,
     startInspectionPending: taskActions.startInspectionPending,

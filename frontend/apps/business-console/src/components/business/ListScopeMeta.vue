@@ -10,8 +10,16 @@ const props = withDefaults(
     updatedAt?: string | null
     empty?: boolean
     emptyExplanation?: string
+    failed?: boolean
+    failureExplanation?: string
   }>(),
-  { updatedAt: null, empty: false, emptyExplanation: '' },
+  {
+    updatedAt: null,
+    empty: false,
+    emptyExplanation: '',
+    failed: false,
+    failureExplanation: '',
+  },
 )
 
 const updatedText = computed(() => {
@@ -39,7 +47,10 @@ const updatedText = computed(() => {
       <span>已加载 {{ loaded }} / 共 {{ total }}</span>
       <span>更新时间（最近成功响应）：{{ updatedText }}</span>
     </div>
-    <p v-if="empty && emptyExplanation" data-testid="list-empty-explanation">
+    <p v-if="failed && failureExplanation" data-testid="list-failure-explanation">
+      查询失败：{{ failureExplanation }}
+    </p>
+    <p v-else-if="empty && emptyExplanation" data-testid="list-empty-explanation">
       空态说明：{{ emptyExplanation }}
     </p>
   </div>

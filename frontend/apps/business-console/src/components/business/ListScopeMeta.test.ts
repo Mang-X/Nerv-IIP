@@ -36,4 +36,22 @@ describe('ListScopeMeta', () => {
     expect(wrapper.text()).toContain('空态说明：暂不支持按维修人员归属筛选')
     expect(wrapper.text()).not.toContain('我的维修工单')
   })
+
+  it('shows a retryable business-response failure instead of an empty explanation', () => {
+    const wrapper = mount(ListScopeMeta, {
+      props: {
+        scope: '当前登录组织 / 当前业务环境',
+        source: '维修工单服务（组织/环境范围）',
+        loaded: 0,
+        total: 0,
+        failed: true,
+        failureExplanation: '维修工单服务未成功返回，请重试。',
+        empty: true,
+        emptyExplanation: '当前组织/环境范围没有维修工单。',
+      },
+    })
+
+    expect(wrapper.text()).toContain('查询失败：维修工单服务未成功返回，请重试。')
+    expect(wrapper.text()).not.toContain('空态说明')
+  })
 })

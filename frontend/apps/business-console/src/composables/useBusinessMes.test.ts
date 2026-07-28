@@ -876,6 +876,15 @@ describe('business MES composables', () => {
     expect(wip.wipTotal.value).toBe(23)
   })
 
+  it('exposes an unsuccessful operation-task envelope as a business-response failure', () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesOperationTasks', { success: false })
+
+    const tasks = useMesOperationTasks()
+
+    expect(tasks.operationTasksHasSuccessfulResponse.value).toBe(false)
+    expect(tasks.operationTasksHasFailedResponse.value).toBe(true)
+  })
+
   it('queries current SOP documents by operation and work center context', () => {
     coladaState.queryDataById.set('getBusinessConsoleMesCurrentOperationSops', {
       success: true,

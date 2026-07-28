@@ -90,6 +90,8 @@ const {
   operationScopeMessage,
   operationScopeReady,
   operationTasksLastUpdatedAt,
+  operationTasksHasSuccessfulResponse,
+  operationTasksHasFailedResponse,
   pauseOperationTask,
   refreshOperationTasks,
   resumeOperationTask,
@@ -500,7 +502,9 @@ function formatError(error: unknown) {
       :loaded="operationTasks.length"
       :total="operationTasksTotal"
       :updated-at="operationTasksLastUpdatedAt"
-      :empty="!operationTasksPending && !operationTasksError && operationTasks.length === 0"
+      :empty="operationTasksHasSuccessfulResponse && operationTasks.length === 0"
+      :failed="operationTasksHasFailedResponse"
+      failure-explanation="工序任务服务未成功返回，请重试。"
       :empty-explanation="mesEmptyExplanation"
     />
 

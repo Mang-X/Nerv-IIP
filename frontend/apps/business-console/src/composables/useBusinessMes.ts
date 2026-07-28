@@ -128,7 +128,11 @@ import {
 } from './businessContextBinding'
 import { businessReadState } from './businessReadState'
 import { executeLifecycleAction } from './lifecycleAction'
-import { useListFreshness } from './useListFreshness'
+import {
+  useListFreshness,
+  useListResponseState,
+  useScopeBoundListResponse,
+} from './useListFreshness'
 
 const DEFAULT_TAKE = 100
 const MES_OPERATIONS_MANAGE_PERMISSION = 'business.mes.operations.manage'
@@ -1169,9 +1173,23 @@ export function useMesOperationTasks() {
       filters,
     ),
   )
-  const operationTasksLastUpdatedAt = useListFreshness(
+  const operationTasksScopeReady = computed(() => hasBusinessContext(filters))
+  const operationTasksResponse = useScopeBoundListResponse(
     () => operationTasksQuery.data.value,
-    () => hasBusinessContext(filters),
+    () => `${filters.organizationId.trim()}:${filters.environmentId.trim()}`,
+    operationTasksScopeReady,
+  )
+  const operationTasksLastUpdatedAt = useListFreshness(
+    operationTasksResponse,
+    operationTasksScopeReady,
+  )
+  const {
+    hasSuccessfulResponse: operationTasksHasSuccessfulResponse,
+    hasFailedResponse: operationTasksHasFailedResponse,
+  } = useListResponseState(
+    operationTasksResponse,
+    operationTasksScopeReady,
+    () => operationTasksQuery.isLoading.value,
   )
   const completeMutation = useMutation(completeBusinessConsoleMesOperationTaskMutationOptions())
   const pauseMutation = useMutation(pauseBusinessConsoleMesOperationTaskMutationOptions())
@@ -1266,16 +1284,18 @@ export function useMesOperationTasks() {
       envelopeItems<
         BusinessConsoleMesOperationTaskRow,
         BusinessConsoleMesOperationTaskListEnvelope
-      >(operationTasksQuery.data.value),
+      >(operationTasksResponse.value),
     ),
     operationTasksError: operationTasksQuery.error,
     operationTasksPending: operationTasksQuery.isLoading,
     operationTasksState: businessReadState(operationTasksQuery, () => hasBusinessContext(filters)),
-    operationTasksTotal: computed(() => envelopeTotal(operationTasksQuery.data.value)),
+    operationTasksTotal: computed(() => envelopeTotal(operationTasksResponse.value)),
     operationScopeMessage: operationScope.scopeMessage,
     operationScopePending: operationScope.scopePending,
     operationScopeReady: operationScope.scopeReady,
     operationTasksLastUpdatedAt,
+    operationTasksHasSuccessfulResponse,
+    operationTasksHasFailedResponse,
     pauseOperationTask: async (
       operationTaskId: string,
       context: MesContextFilters,

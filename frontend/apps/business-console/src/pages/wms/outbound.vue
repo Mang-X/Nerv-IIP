@@ -81,6 +81,8 @@ const {
   createOutboundPending,
   createOutboundError,
   outboundOrdersLastUpdatedAt,
+  outboundOrdersHasSuccessfulResponse,
+  outboundOrdersHasFailedResponse,
 } = useWmsOutboundOrders()
 const outboundScopeReady = computed(
   () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
@@ -443,7 +445,9 @@ function formatError(error: unknown) {
       :loaded="outboundOrders.length"
       :total="outboundOrdersTotal"
       :updated-at="outboundOrdersLastUpdatedAt"
-      :empty="!outboundOrdersPending && !outboundOrdersError && outboundOrders.length === 0"
+      :empty="outboundOrdersHasSuccessfulResponse && outboundOrders.length === 0"
+      :failed="outboundOrdersHasFailedResponse"
+      failure-explanation="出库发货服务未成功返回，请重试。"
       :empty-explanation="
         outboundScopeReady ? '当前组织/环境范围没有出库单。' : '缺少组织或环境范围，未发起查询。'
       "

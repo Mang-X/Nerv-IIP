@@ -78,6 +78,8 @@ const {
   completeWorkOrderPending,
   filters,
   workOrdersLastUpdatedAt,
+  workOrdersHasSuccessfulResponse,
+  workOrdersHasFailedResponse,
 } = useMaintenanceWorkOrders()
 const maintenanceScope = computed(() =>
   filters.organizationId && filters.environmentId
@@ -595,7 +597,9 @@ watch(
       :loaded="workOrders.length"
       :total="workOrdersTotal"
       :updated-at="workOrdersLastUpdatedAt"
-      :empty="!workOrdersPending && !workOrdersError && workOrders.length === 0"
+      :empty="workOrdersHasSuccessfulResponse && workOrders.length === 0"
+      :failed="workOrdersHasFailedResponse"
+      failure-explanation="维修工单服务未成功返回，请重试。"
       :empty-explanation="maintenanceEmptyExplanation"
     />
 

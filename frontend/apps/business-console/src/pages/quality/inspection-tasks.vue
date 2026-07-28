@@ -36,12 +36,22 @@ const route = useRoute()
 const router = useRouter()
 const initialSourceDocumentNo = firstQuery(route.query.sourceDocumentNo)
 const initialInspectionTaskId = firstQuery(route.query.inspectionTaskId)
-const { filters, hasLocator, tasks, total, pending, error, refreshTasks, lastUpdatedAt } =
-  useQualityInspectionTasks({
-    status: 'pending',
-    ...(initialSourceDocumentNo ? { sourceDocumentNo: initialSourceDocumentNo } : {}),
-    ...(initialInspectionTaskId ? { inspectionTaskId: initialInspectionTaskId } : {}),
-  })
+const {
+  filters,
+  hasLocator,
+  tasks,
+  total,
+  pending,
+  error,
+  refreshTasks,
+  lastUpdatedAt,
+  hasSuccessfulResponse: tasksHasSuccessfulResponse,
+  hasFailedResponse: tasksHasFailedResponse,
+} = useQualityInspectionTasks({
+  status: 'pending',
+  ...(initialSourceDocumentNo ? { sourceDocumentNo: initialSourceDocumentNo } : {}),
+  ...(initialInspectionTaskId ? { inspectionTaskId: initialInspectionTaskId } : {}),
+})
 // 待检任务只回 SKU 编码，物料名在主数据里；查不到就只显编码，不编造物料名。
 const { resolveSkuName } = useSkuNames()
 const { page, pageSize } = usePagedList(filters, {
@@ -336,7 +346,9 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
         :loaded="tasks.length"
         :total="total"
         :updated-at="lastUpdatedAt"
-        :empty="!pending && !error && tasks.length === 0"
+        :empty="tasksHasSuccessfulResponse && tasks.length === 0"
+        :failed="tasksHasFailedResponse"
+        failure-explanation="质检待检任务服务未成功返回，请重试。"
         :empty-explanation="emptyExplanation"
       />
     </div>

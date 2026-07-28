@@ -71,6 +71,8 @@ const {
   createPutawayPending,
   createPutawayError,
   putawayTasksLastUpdatedAt,
+  putawayTasksHasSuccessfulResponse,
+  putawayTasksHasFailedResponse,
 } = useWmsPutawayTasks()
 const putawayScopeReady = computed(
   () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
@@ -334,7 +336,9 @@ function firstQuery(value: unknown) {
       :loaded="putawayTasks.length"
       :total="putawayTasksTotal"
       :updated-at="putawayTasksLastUpdatedAt"
-      :empty="!putawayTasksPending && !putawayTasksError && putawayTasks.length === 0"
+      :empty="putawayTasksHasSuccessfulResponse && putawayTasks.length === 0"
+      :failed="putawayTasksHasFailedResponse"
+      failure-explanation="上架任务服务未成功返回，请重试。"
       :empty-explanation="
         putawayScopeReady
           ? '当前组织/环境范围没有上架任务；后端未提供操作员归属过滤，空态不代表个人任务。'

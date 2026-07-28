@@ -97,6 +97,8 @@ const {
   supplierReturnsError,
   refreshReceivingQuality,
   inboundOrdersLastUpdatedAt,
+  inboundOrdersHasSuccessfulResponse,
+  inboundOrdersHasFailedResponse,
 } = useWmsInboundOrders()
 const inboundScopeReady = computed(
   () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
@@ -429,7 +431,9 @@ function formatError(error: unknown) {
       :loaded="inboundOrders.length"
       :total="inboundOrdersTotal"
       :updated-at="inboundOrdersLastUpdatedAt"
-      :empty="!inboundOrdersPending && !inboundOrdersError && inboundOrders.length === 0"
+      :empty="inboundOrdersHasSuccessfulResponse && inboundOrders.length === 0"
+      :failed="inboundOrdersHasFailedResponse"
+      failure-explanation="收货入库服务未成功返回，请重试。"
       :empty-explanation="
         inboundScopeReady ? '当前组织/环境范围没有收货单。' : '缺少组织或环境范围，未发起查询。'
       "

@@ -83,6 +83,8 @@ const {
   completeCountExecutionPending,
   filters,
   countExecutionsLastUpdatedAt,
+  countExecutionsHasSuccessfulResponse,
+  countExecutionsHasFailedResponse,
 } = useWmsCountExecutions()
 const countScopeReady = computed(
   () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
@@ -434,7 +436,9 @@ function formatError(error: unknown) {
       :loaded="countExecutions.length"
       :total="countExecutionsTotal"
       :updated-at="countExecutionsLastUpdatedAt"
-      :empty="!countExecutionsPending && !countExecutionsError && countExecutions.length === 0"
+      :empty="countExecutionsHasSuccessfulResponse && countExecutions.length === 0"
+      :failed="countExecutionsHasFailedResponse"
+      failure-explanation="仓储盘点任务服务未成功返回，请重试。"
       :empty-explanation="
         countScopeReady
           ? '当前组织/环境范围没有盘点任务；后端未提供操作员归属过滤，空态不代表个人任务。'
