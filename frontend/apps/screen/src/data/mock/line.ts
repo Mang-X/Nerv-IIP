@@ -1,56 +1,28 @@
 // 产线监控 mock 聚合（MAN-316）：真实业务画像前置 ——
-// ① 产线状态从设备画像**真实归并**（buildEquipmentOverview 同源：设备屏卷绕机
-//    报警 ⇔ 产线屏电芯线红灯），断线设备计入失联角标（防假绿）；
-// ② 当班产量按**标准节拍反推**（非拍数字），良品/报废/返修与计划勾稽；
-// ③ 班次剩余按真实时钟推算；④ 横幅只在有事时存在（异常是例外）。
+// ① 产线状态从设备画像**真实归并**（buildEquipmentOverview 同源：设备屏 DEV-CNC-03
+//    振动超限 ⇔ 产线屏活塞杆一线红灯），断线设备计入失联角标（防假绿）；
+// ② 当班产量按**标准节拍反推**（节拍表见 mock/world.ts，附完整规模推导）；
+// ③ 班次剩余按真实时钟推算（早班 08:00–16:00 / 中班 16:00–24:00，设定集 §1 双班制）；
+// ④ 横幅只在有事时存在（异常是例外）。
 // 🟠 产量/节拍/达成待 #570 真实端点，接入后由 fetchers/line.ts 单点切换。
 import type { DeviceCell } from '@/data/contracts/equipment'
-import type { AndonCall, CurrentWo, LineBoard, LineState, LineSummaryCard } from '@/data/contracts/line'
+import type {
+  AndonCall,
+  CurrentWo,
+  LineBoard,
+  LineState,
+  LineSummaryCard,
+} from '@/data/contracts/line'
 import { buildEquipmentOverview, paramSeriesFor } from './equipment'
-import { clock, jitter, seq } from './fixtures'
-import { LINES, WORKSHOPS } from './masterdata'
+import { clock, jitter } from './fixtures'
+import { DEFAULT_FACTORY_ID, LINES, WORKSHOPS } from './masterdata'
+import { lineProfileOf, shiftNow, teamOf, woOf } from './world'
 
-// 线长名池（按产线序稳定取名） 🟡
-const LINE_LEADERS = ['王强', '李敏', '周斌', '刘洋', '陈静', '赵磊', '杨帆', '徐娜', '孙鹏', '高翔', '马丽']
+export { shiftNow }
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n))
 }
-
-// —— 线型工艺档案：标准节拍（s/件）+ 工序路线 + 在制产品（真实业务画像）——
-// keyIdx = 关键工序位：报警线为停摆工序、关注线为节拍瓶颈工序（流水线上
-// 各工序同时在产，不存在「当前工序」）
-interface LineProfile {
-  taktSec: number
-  steps: string[]
-  product: string
-  keyIdx: number
-}
-const LINE_PROFILES: Record<string, LineProfile> = {
-  'LN-STAMP-1': { taktSec: 9, steps: ['上料', '冲压成形', '在线检测', '码垛'], product: 'Model C 左侧围外板', keyIdx: 1 },
-  'LN-STAMP-2': { taktSec: 11, steps: ['上料', '冲压成形', '在线检测', '码垛'], product: '发动机舱盖内板', keyIdx: 1 },
-  'LN-STAMP-3': { taktSec: 8, steps: ['落料', '冲压成形', '在线检测', '码垛'], product: '车门内板', keyIdx: 1 },
-  'LN-WELD-1': { taktSec: 66, steps: ['装夹定位', '机器人焊接', '涂胶', '下件检测'], product: 'Model C 白车身总成', keyIdx: 1 },
-  'LN-WELD-2': { taktSec: 72, steps: ['装夹定位', '激光焊接', '下件检测'], product: '后地板总成', keyIdx: 1 },
-  'LN-WELD-3': { taktSec: 69, steps: ['装夹定位', '螺柱焊', '机器人焊接', '视觉检测'], product: '前纵梁总成', keyIdx: 2 },
-  'LN-PAINT-1': { taktSec: 95, steps: ['前处理', '电泳', '中涂', '面漆', '流平烘干'], product: 'Model C 车身涂装', keyIdx: 2 },
-  'LN-PAINT-2': { taktSec: 102, steps: ['遮蔽', '面漆喷涂', '烘干', '抛光'], product: '双色车顶面漆', keyIdx: 1 },
-  'LN-ASSY-1': { taktSec: 78, steps: ['内饰装配', '底盘合装', '油液加注', '下线检测'], product: 'Model C 整车装配', keyIdx: 1 },
-  'LN-ASSY-2': { taktSec: 84, steps: ['内饰装配', '风挡涂胶', '四轮定位', '下线检测'], product: 'Model C 整车装配', keyIdx: 0 },
-  'LN-ASSY-3': { taktSec: 80, steps: ['内饰装配', '玻璃安装', '注油', '路试'], product: 'Model D 整车装配', keyIdx: 1 },
-  'LN-BAT-1': { taktSec: 13, steps: ['极片上料', '卷绕', '注液', '化成', '分容'], product: 'LFP-280Ah 电芯', keyIdx: 1 },
-  'LN-BAT-2': { taktSec: 48, steps: ['模组上件', '堆叠', '气密检测', 'EOL 测试'], product: '标准电池包 PACK-96s', keyIdx: 1 },
-  'LN-INJ-1': { taktSec: 35, steps: ['原料干燥', '注塑成形', '取件', '去毛边'], product: '前保险杠骨架', keyIdx: 1 },
-  'LN-INJ-2': { taktSec: 40, steps: ['混料', '注塑成形', '取件', '检验'], product: '仪表板本体', keyIdx: 1 },
-  'LN-MACH-1': { taktSec: 210, steps: ['粗加工', '精加工', '清洗', '三坐标检测'], product: '电机壳体 EM-3', keyIdx: 1 },
-  // M2 扩容线（电池 5 线 / 焊装 4 线 / 机加 2 线；健康画像 —— 异常仍是例外）
-  'LN-WELD-4': { taktSec: 75, steps: ['装夹定位', '弧焊', '机器人焊接', '下件检测'], product: '副车架总成', keyIdx: 1 },
-  'LN-BAT-3': { taktSec: 14, steps: ['极片上料', '卷绕', '注液', '化成', '分容'], product: 'LFP-230Ah 电芯', keyIdx: 1 },
-  'LN-BAT-4': { taktSec: 55, steps: ['电芯配组', '堆叠焊接', 'BMS 装配', '下线测试'], product: '电池模组 M3', keyIdx: 1 },
-  'LN-BAT-5': { taktSec: 52, steps: ['模组入箱', '线束安装', '气密检测', 'EOL 测试'], product: '长续航电池包 PACK-120s', keyIdx: 1 },
-  'LN-MACH-2': { taktSec: 195, steps: ['粗加工', '精加工', '钻攻', '终检'], product: '变速箱壳体 GB-7', keyIdx: 1 },
-}
-const DEFAULT_LINE_PROFILE: LineProfile = { taktSec: 60, steps: ['上料', '加工', '检测'], product: '通用件', keyIdx: 1 }
 
 const STATE_LABELS: Record<LineState, string> = {
   run: '正常作业',
@@ -65,27 +37,9 @@ export function composeLineState(devices: Pick<DeviceCell, 'state'>[]): LineStat
   return 'run'
 }
 
-/** 当班（早班 08:00–20:00 / 夜班 20:00–08:00），按真实时钟推算已过/剩余。 */
-export function shiftNow(now = new Date()): {
-  name: string
-  range: string
-  remainingMin: number
-  elapsedMin: number
-} {
-  const minOfDay = now.getHours() * 60 + now.getMinutes()
-  const day = minOfDay >= 480 && minOfDay < 1200
-  const elapsed = day ? minOfDay - 480 : minOfDay >= 1200 ? minOfDay - 1200 : minOfDay + 240
-  return {
-    name: day ? '早班' : '夜班',
-    range: day ? '08:00–20:00' : '20:00–08:00',
-    remainingMin: 720 - elapsed,
-    elapsedMin: elapsed,
-  }
-}
-
 /** 单线核心指标（选择器卡与单线屏共用，保证两处数字一致的口径） */
 function lineMetrics(lineId: string, state: LineState, elapsedMin: number) {
-  const p = LINE_PROFILES[lineId] ?? DEFAULT_LINE_PROFILE
+  const p = lineProfileOf(lineId)
   // 达成率：报警线明显掉、关注线小掉（🟠 待 #570）
   const achievement =
     state === 'alarm'
@@ -104,8 +58,10 @@ function lineMetrics(lineId: string, state: LineState, elapsedMin: number) {
   // 当班计划按标准节拍反推（单流简化）
   const plan = Math.max(1, Math.floor((elapsedMin * 60) / p.taktSec))
   const total = Math.round((plan * achievement) / 100)
-  const scrap = clamp(Math.round(total * 0.008) + clamp(jitter(1, 2), 0, 2), 0, total)
-  const rework = clamp(clamp(jitter(2, 3), 0, 4), 0, total - scrap)
+  // 报废率：设定集 §7 全厂不合格 2.3%，其中报废处置占 15% → 件报废率 ≈0.35%
+  const scrap = clamp(Math.round(total * 0.0035) + clamp(jitter(0, 2), 0, 1), 0, total)
+  // 返工占不合格 60% → ≈1.4%
+  const rework = clamp(Math.round(total * 0.014), 0, total - scrap)
   const good = total - scrap - rework
   return { profile: p, achievement, deviationPct, actualSec, plan, good, scrap, rework }
 }
@@ -122,7 +78,10 @@ function hourlyOf(taktSec: number, state: LineState): number[] {
 /** 近 12 小时的整点标签（趋势图悬停用） */
 function hourLabelsNow(now = new Date()): string[] {
   const h = now.getHours()
-  return Array.from({ length: 12 }, (_, i) => `${String((h - 11 + i + 24) % 24).padStart(2, '0')}:00`)
+  return Array.from(
+    { length: 12 },
+    (_, i) => `${String((h - 11 + i + 24) % 24).padStart(2, '0')}:00`,
+  )
 }
 
 /** 该线一句话异常（卡片用；有事才有） */
@@ -141,7 +100,7 @@ function lineAlert(devices: DeviceCell[]): string | undefined {
  *  仅**小时趋势序列**（渲染才用的流式数据）对视野内产线生成 —— 视野外停止
  *  产生趋势数据，对齐真实端点按可见行订阅时序序列。 */
 export function buildLineCards(
-  factoryId = 'F01',
+  factoryId = DEFAULT_FACTORY_ID,
   workshopIds: string[] | 'all' = 'all',
   visibleIds?: string[],
 ): LineSummaryCard[] {
@@ -163,7 +122,7 @@ export function buildLineCards(
     cards.push({
       id: line.id,
       name: line.name,
-      workshopName: WORKSHOPS.find((w) => w.id === line.workshopId)?.name ?? line.workshopId,
+      workshopName: WORKSHOPS.find((w) => w.id === line.workshopId)?.shortName ?? line.workshopId,
       state,
       stateLabel: STATE_LABELS[state],
       offlineDevices: devices.filter((d) => d.state === 'offline').length,
@@ -173,7 +132,7 @@ export function buildLineCards(
       deviceDots: devices.map((d) => d.state),
       // 视野外不生成趋势序列（渲染才需要），空数组
       hourly: want && !want.has(line.id) ? [] : hourlyOf(m.profile.taktSec, state),
-      currentWo: seq('WO', 1940 + LINES.indexOf(line)),
+      currentWo: woOf(line.id),
       alert: lineAlert(devices),
     })
   }
@@ -184,7 +143,7 @@ export function buildLineCards(
 /** /line/[id] 单线大屏；scope 外或不存在的线返回 null。 */
 export function buildLineBoard(
   lineId: string,
-  factoryId = 'F01',
+  factoryId = DEFAULT_FACTORY_ID,
   workshopIds: string[] | 'all' = 'all',
 ): LineBoard | null {
   const line = LINES.find((l) => l.id === lineId)
@@ -202,17 +161,25 @@ export function buildLineBoard(
   const alarmDev = devices.find((d) => d.state === 'alarm')
   const downDev = devices.find((d) => d.state === 'down')
   const banner = alarmDev
-    ? { level: 'alarm' as const, text: `${alarmDev.name} ${alarmDev.block ?? '设备报警'}`, since: clock(jitter(26, 6)) }
+    ? {
+        level: 'alarm' as const,
+        text: `${alarmDev.name} ${alarmDev.block ?? '设备报警'}`,
+        since: clock(jitter(26, 6)),
+      }
     : downDev
-      ? { level: 'downtime' as const, text: `${downDev.name} ${downDev.block ?? '停机'}`, since: clock(jitter(48, 8)) }
+      ? {
+          level: 'downtime' as const,
+          text: `${downDev.name} ${downDev.block ?? '停机'}`,
+          since: clock(jitter(96, 8)),
+        }
       : undefined
 
   const hourly = hourlyOf(m.profile.taktSec, state)
   const planPerHour = Math.round(3600 / m.profile.taktSec)
 
-  // 近 30 天日产量（两班 20h 产能为基准；周日排产低谷 —— 真实工厂节奏）🟡
+  // 近 30 天日产量（双班 16h 产能为基准；周日停产 —— 设定集 §1 标准日历）
   const daily30 = (() => {
-    const dayCap = planPerHour * 20
+    const dayCap = planPerHour * 16
     const output: number[] = []
     const plan: number[] = []
     const labels: string[] = []
@@ -220,10 +187,11 @@ export function buildLineBoard(
     for (let i = 29; i >= 0; i--) {
       const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i)
       labels.push(`${d.getMonth() + 1}/${d.getDate()}`)
+      // 周日停产保养：不排产，只留少量保养工时（设定集 §1）
       const sunday = d.getDay() === 0
-      const dayPlan = Math.round(sunday ? dayCap * 0.3 : dayCap)
+      const dayPlan = sunday ? 0 : dayCap
       plan.push(dayPlan)
-      output.push(Math.max(0, Math.round(dayPlan * (0.86 + Math.random() * 0.12))))
+      output.push(sunday ? 0 : Math.max(0, Math.round(dayPlan * (0.86 + Math.random() * 0.12))))
     }
     return { output, plan, labels }
   })()
@@ -240,10 +208,14 @@ export function buildLineBoard(
         ? { count: 1, totalMin: clamp(jitter(14, 6), 6, 25) }
         : { count: 0, totalMin: 0 }
 
-  // 当班班组：线长（名池稳定取）+ 在岗人数
+  // 当班班组（设定集 §5：**班组是车间级**，6 班组 = 3 车间 × 早/中班；线长这个岗位
+  // 在宁沪减振并不存在，所以这里给的是该车间当班班组长）。
+  // 在岗人数：全厂 19 名操作工分 6 组，小厂本就一人多机 —— 线级数字是「巡检覆盖」
+  // 口径（同一人可覆盖同车间多条自动线），故 Σ 线级 ≥ 车间在册，不做强制配平。
+  const team = teamOf(line.workshopId, shift.name)
   const crew = {
-    leader: LINE_LEADERS[LINES.indexOf(line) % LINE_LEADERS.length],
-    operators: clamp(jitter(devices.length + 2, 3), 4, 14),
+    leader: team?.leader ?? WORKSHOPS.find((w) => w.id === line.workshopId)?.managerName ?? '—',
+    operators: clamp(Math.ceil(devices.length / 3), 1, 4),
   }
 
   // 产线 OEE（班内推算 🟡 待 #570 校准）：可用率=停机推 / 性能率=节拍推 / 良品率=FPY
@@ -264,12 +236,28 @@ export function buildLineBoard(
     return clamp(jitter(86, 8), 72, 96)
   })
 
-  // 安灯呼叫：报警/停机线才有记录（闭环 待 MAN-322）
+  // 安灯呼叫：报警/停机线才有记录（闭环 待 MAN-322）；响应人取 L0 §5 维修技师
   const doingStation = `${m.profile.steps[m.profile.keyIdx]}工位`
   const andon: AndonCall[] = alarmDev
-    ? [{ time: clock(jitter(26, 6)), station: doingStation, type: '设备类', response: '张建国', state: '响应中' }]
+    ? [
+        {
+          time: clock(jitter(26, 6)),
+          station: doingStation,
+          type: '设备类',
+          response: '张红梅',
+          state: '响应中',
+        },
+      ]
     : downDev
-      ? [{ time: clock(jitter(48, 8)), station: doingStation, type: '维修类', response: '刘志远', state: '响应中' }]
+      ? [
+          {
+            time: clock(jitter(96, 8)),
+            station: doingStation,
+            type: '维修类',
+            response: '刘秀英',
+            state: '响应中',
+          },
+        ]
       : []
 
   // 工序流分布（流水线语义）：各工序同时在产，累计完成沿流向递减 ——
@@ -293,13 +281,13 @@ export function buildLineBoard(
             : 'run',
       })
       // 段间在制：约 1%–2.5% 的量滞留在工序间
-      acc += Math.max(2, Math.round(m.good * (0.01 + (jitter(8, 6) / 1000))))
+      acc += Math.max(2, Math.round(m.good * (0.01 + jitter(8, 6) / 1000)))
     }
     return out
   })()
 
   const wo: CurrentWo = {
-    code: seq('WO', 1940 + LINES.indexOf(line)),
+    code: woOf(line.id),
     product: m.profile.product,
     qtyPlan: Math.ceil(m.plan / 100) * 100,
     qtyDone: m.good,
@@ -307,20 +295,27 @@ export function buildLineBoard(
     wip: stations[0].done - m.good,
     dueInMin: clamp(jitter(300, 150), 60, 600),
     stations,
-    kitting: lineId === 'LN-ASSY-2' ? 'short' : 'ok', // 🟡 线边齐套（单工单）
+    // 🟡 线边齐套（单工单）：前减装配二线弹簧二供切换期缺料，与车间屏同口径
+    kitting: lineId === 'LINE-WB-FA-02' ? 'short' : 'ok',
   }
 
   return {
     lineId,
     lineName: line.name,
-    workshopName: WORKSHOPS.find((w) => w.id === line.workshopId)?.name ?? line.workshopId,
+    workshopName: WORKSHOPS.find((w) => w.id === line.workshopId)?.shortName ?? line.workshopId,
     state,
     stateLabel: STATE_LABELS[state],
     offlineDevices: devices.filter((d) => d.state === 'offline').length,
     banner,
     shift,
     crew,
-    output: { good: m.good, scrap: m.scrap, rework: m.rework, plan: m.plan, achievement: m.achievement },
+    output: {
+      good: m.good,
+      scrap: m.scrap,
+      rework: m.rework,
+      plan: m.plan,
+      achievement: m.achievement,
+    },
     fpy,
     downtime,
     takt: { standardSec: m.profile.taktSec, actualSec: m.actualSec, deviationPct: m.deviationPct },
@@ -338,7 +333,7 @@ export function buildLineBoard(
       state: d.state,
       stateLabel: d.stateLabel,
       param: d.params[0] ? `${d.params[0].label} ${d.params[0].value}` : undefined,
-      params: paramSeriesFor(d.name, d.state),
+      params: paramSeriesFor(d.code, d.state),
     })),
   }
 }

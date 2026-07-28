@@ -2,9 +2,10 @@
 // （lineCode→workCenter/device 聚合、当班产量、节拍），页面与契约均不动。
 import type { LineBoard, LineSummaryCard } from '@/data/contracts/line'
 import { buildLineBoard, buildLineCards } from '@/data/mock/line'
+import { DEFAULT_FACTORY_ID } from '@/data/mock/masterdata'
 
 export async function fetchLineCards(
-  factoryId = 'F01',
+  factoryId = DEFAULT_FACTORY_ID,
   workshopIds: string[] | 'all' = 'all',
   visibleIds?: string[],
 ): Promise<LineSummaryCard[]> {
@@ -14,7 +15,7 @@ export async function fetchLineCards(
 
 export async function fetchLineBoard(
   lineId: string,
-  factoryId = 'F01',
+  factoryId = DEFAULT_FACTORY_ID,
   workshopIds: string[] | 'all' = 'all',
 ): Promise<LineBoard | null> {
   await new Promise((r) => setTimeout(r, 260))

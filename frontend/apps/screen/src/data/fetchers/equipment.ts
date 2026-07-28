@@ -4,6 +4,7 @@
 import { IS_REAL_DATA } from '@/data/config'
 import type { DeviceDetail, DeviceParamsTick, EquipmentOverview } from '@/data/contracts/equipment'
 import { buildDeviceDetail, buildEquipmentOverview, buildParamsTick } from '@/data/mock/equipment'
+import { DEFAULT_FACTORY_ID } from '@/data/mock/masterdata'
 import {
   fetchRealDeviceDetail,
   fetchRealDeviceParamsTick,
@@ -15,7 +16,7 @@ function delay(ms: number): Promise<void> {
 }
 
 export async function fetchEquipmentOverview(
-  factoryId = 'F01',
+  factoryId = DEFAULT_FACTORY_ID,
   workshopIds: string[] | 'all' = 'all',
 ): Promise<EquipmentOverview> {
   if (IS_REAL_DATA) return fetchRealEquipmentOverview(factoryId)
@@ -26,7 +27,7 @@ export async function fetchEquipmentOverview(
 /** 参数快刷（高频轮询，只刷格上参数）；deviceIds = 当前视野内设备集。
  *  真实模式无 historian（#570/#689），返回空集（不产出演示参数）。 */
 export async function fetchDeviceParamsTick(
-  factoryId = 'F01',
+  factoryId = DEFAULT_FACTORY_ID,
   workshopIds: string[] | 'all' = 'all',
   deviceIds?: string[],
 ): Promise<DeviceParamsTick> {
@@ -38,7 +39,7 @@ export async function fetchDeviceParamsTick(
 /** 设备详情按需取（点击设备格触发）。 */
 export async function fetchDeviceDetail(
   deviceId: string,
-  factoryId = 'F01',
+  factoryId = DEFAULT_FACTORY_ID,
   workshopIds: string[] | 'all' = 'all',
 ): Promise<DeviceDetail | null> {
   if (IS_REAL_DATA) return fetchRealDeviceDetail(deviceId)
