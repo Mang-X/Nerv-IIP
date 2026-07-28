@@ -3,6 +3,7 @@ import RetryableListError from '@/components/RetryableListError.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import { useWmsOutbound } from '@/composables/useBusinessWms'
 import {
   outboundOrderStatusLabel,
@@ -45,6 +46,7 @@ const intent = useIdempotentWriteIntent<{
   idempotencyKey: string
 }>(makeIdempotencyKey)
 const intentLocked = intent.locked
+usePendingWriteLeaveGuard(intentLocked)
 
 // 复核录入：复核单号 + 通过/不通过开关。
 const packReviewNo = ref('')

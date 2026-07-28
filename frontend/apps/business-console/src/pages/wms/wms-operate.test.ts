@@ -80,6 +80,9 @@ const wms = vi.hoisted(() => ({
   refreshInboundOrders: vi.fn(async () => undefined),
   refreshCountExecutions: vi.fn(async () => undefined),
 }))
+const routeGuardState = vi.hoisted(() => ({
+  guard: undefined as (() => boolean) | undefined,
+}))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
   ...(await orig<typeof import('@nerv-iip/ui')>()),
@@ -87,6 +90,9 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 }))
 
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
+    routeGuardState.guard = guard
+  }),
   RouterLink: {
     props: ['to'],
     template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
@@ -471,6 +477,7 @@ describe('WMS operate actions', () => {
       (button) => button.textContent?.trim() === '取消',
     )
     expect(cancel?.disabled).toBe(true)
+    expect(routeGuardState.guard?.()).toBe(false)
     submit()
     await flushPromises()
 
@@ -536,6 +543,7 @@ describe('WMS operate actions', () => {
     )
     expect(cancel?.disabled).toBe(true)
     expect(input.disabled).toBe(true)
+    expect(routeGuardState.guard?.()).toBe(false)
 
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()

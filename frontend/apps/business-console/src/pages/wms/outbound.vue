@@ -7,6 +7,7 @@ import {
   isIndeterminateLifecycleWriteError,
   recoverLifecycleAction,
 } from '@/composables/lifecycleAction'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
@@ -227,6 +228,7 @@ const pendingOrder = shallowRef<OutboundRow>()
 const reviewIntentKey = shallowRef('')
 const reviewIntentAttempted = shallowRef(false)
 const reviewIntentLocked = shallowRef(false)
+usePendingWriteLeaveGuard(reviewIntentLocked)
 const reviewFrozenPayload = shallowRef<{ packReviewNo: string; passed: boolean }>()
 const form = reactive({ packReviewNo: '', passed: true })
 const formError = shallowRef('')

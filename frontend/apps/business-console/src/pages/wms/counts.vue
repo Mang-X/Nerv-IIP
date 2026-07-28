@@ -14,6 +14,7 @@ import {
   isIndeterminateLifecycleWriteError,
   recoverLifecycleAction,
 } from '@/composables/lifecycleAction'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import { createWmsIdempotencyKey, useWmsCountExecutions } from '@/composables/useBusinessWms'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
@@ -157,6 +158,7 @@ const completeError = shallowRef('')
 const completeIntentKey = shallowRef('')
 const completeIntentAttempted = shallowRef(false)
 const completeIntentLocked = shallowRef(false)
+usePendingWriteLeaveGuard(completeIntentLocked)
 const completeFrozenPayload = shallowRef<{ countedQuantity: number }>()
 watch(
   () => completeForm.countedQuantity,

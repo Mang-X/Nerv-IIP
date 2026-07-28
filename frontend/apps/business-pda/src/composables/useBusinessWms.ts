@@ -387,7 +387,10 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
       assertLifecycleActionExecutable({
         domain: 'wms-count',
         action: 'complete',
-        facts: { status: authoritative?.status },
+        facts: {
+          status: authoritative?.status,
+          idempotentReplay: options.attempt === 'retry',
+        },
       })
       // 页面提供 countedQuantity/idempotencyKey（幂等键跨重试复用）；
       // org/env 不取自 input，恒由登录主体注入 query，敌意 org/env 永远落空。

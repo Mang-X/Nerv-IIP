@@ -726,7 +726,10 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
             ? {
                 domain: 'wms-count' as const,
                 action: 'complete' as const,
-                facts: { status: item.status },
+                facts: {
+                  status: item.status,
+                  idempotentReplay: options.attempt === 'retry',
+                },
               }
             : undefined
         },

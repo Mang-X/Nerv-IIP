@@ -3,13 +3,21 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
+  completeBusinessConsoleWmsCountExecution,
+  listBusinessConsoleWmsCountExecutions,
+  listBusinessConsoleWmsCountExecutionsQueryOptions,
   listBusinessConsoleWmsReceivingQualityGates,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
   listBusinessConsoleWmsSupplierReturnRequests,
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
   listBusinessConsoleWmsWcsTasksQueryOptions,
 } from '@nerv-iip/api-client'
-import { useWmsInboundOrders, useWmsOutboundOrders, useWmsWcsTasks } from './useBusinessWms'
+import {
+  useWmsCountExecutions,
+  useWmsInboundOrders,
+  useWmsOutboundOrders,
+  useWmsWcsTasks,
+} from './useBusinessWms'
 import { useBusinessContextStore } from '@/stores/businessContext'
 
 const coladaState = vi.hoisted(() => ({
@@ -20,6 +28,12 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  completeBusinessConsoleWmsCountExecution: vi.fn(),
+  listBusinessConsoleWmsCountExecutions: vi.fn(),
+  listBusinessConsoleWmsCountExecutionsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleWmsCountExecutions' }],
+    query: vi.fn(),
+  })),
   listBusinessConsoleWmsInboundOrdersQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleWmsInboundOrders' }],
     query: vi.fn(),
@@ -45,6 +59,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   completeBusinessConsoleWmsInboundOrderMutationOptions: vi.fn(() => ({})),
   completeBusinessConsoleWmsOutboundOrderMutationOptions: vi.fn(() => ({})),
   completeBusinessConsoleWmsWcsTaskMutationOptions: vi.fn(() => ({})),
+  createBusinessConsoleWmsCountExecutionMutationOptions: vi.fn(() => ({})),
   createBusinessConsoleWmsInboundOrderMutationOptions: vi.fn(() => ({})),
   createBusinessConsoleWmsOutboundOrderMutationOptions: vi.fn(() => ({})),
   dispatchBusinessConsoleWmsWcsTaskMutationOptions: vi.fn(() => ({})),
@@ -365,6 +380,37 @@ describe('business WMS composables', () => {
         organizationId: 'org-b',
         environmentId: 'env-b',
       }),
+    })
+  })
+
+  it('allows a completed count retry with the frozen key and returns the authoritative receipt', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    vi.mocked(listBusinessConsoleWmsCountExecutions).mockResolvedValue({
+      data: {
+        success: true,
+        data: { items: [{ countExecutionId: 'count-1', status: 'Completed' }], total: 1 },
+      },
+    } as never)
+    const receipt = {
+      success: true,
+      data: { countExecutionId: 'count-1', status: 'Completed', countedQuantity: 5 },
+    }
+    vi.mocked(completeBusinessConsoleWmsCountExecution).mockResolvedValue({
+      data: receipt,
+      response: new Response(null, { status: 200 }),
+    } as never)
+    const { completeCountExecution } = useWmsCountExecutions()
+
+    await expect(
+      completeCountExecution('count-1', 5, 'KEY-CNT-FROZEN', { attempt: 'retry' }),
+    ).resolves.toBe(receipt)
+
+    expect(completeBusinessConsoleWmsCountExecution).toHaveBeenCalledWith({
+      path: { countExecutionId: 'count-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: { countedQuantity: 5, idempotencyKey: 'KEY-CNT-FROZEN' },
+      throwOnError: false,
     })
   })
 })

@@ -5,7 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 
 const push = vi.fn(() => Promise.resolve())
+const routeGuardState = vi.hoisted(() => ({
+  guard: undefined as (() => boolean) | undefined,
+}))
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
+    routeGuardState.guard = guard
+  }),
   useRouter: () => ({ push }),
   RouterView: { template: '<div />' },
 }))
@@ -394,6 +400,7 @@ describe('WMS 收货入库', () => {
       (button) => button.textContent?.trim() === '取消',
     )
     expect(cancel?.disabled).toBe(true)
+    expect(routeGuardState.guard?.()).toBe(false)
     confirm.click()
     await flushPromises()
 

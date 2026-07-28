@@ -173,6 +173,28 @@ describe('describeRequestError', () => {
     expect(describeRequestError({ title: '请求无效' }).message).toBe('请求无效')
   })
 
+  it.each([
+    [{ statusCode: 503, message: '服务暂不可用' }],
+    [{ response: { status: 503 }, message: '服务暂不可用' }],
+  ])('treats a structured HTTP 5xx as indeterminate', (error) => {
+    expect(describeRequestError(error)).toMatchObject({
+      indeterminate: true,
+      message: '服务暂不可用',
+    })
+  })
+
+  it.each([{ statusCode: 400 }, { statusCode: 422 }, { response: { status: 422 } }])(
+    'keeps a structured HTTP 4xx determinate',
+    (error) => {
+      expect(describeRequestError(error).indeterminate).toBe(false)
+    },
+  )
+
+  it('classifies a Response 5xx as indeterminate and a Response 4xx as determinate', () => {
+    expect(isIndeterminateError(new Response(null, { status: 503 }))).toBe(true)
+    expect(isIndeterminateError(new Response(null, { status: 422 }))).toBe(false)
+  })
+
   it('uses the caller fallback for a business error without a usable message', () => {
     expect(describeRequestError({}, '提交失败').message).toBe('提交失败')
     expect(describeRequestError({}, '提交失败').indeterminate).toBe(false)

@@ -204,7 +204,7 @@ describe('statusActionGate', () => {
     })
   })
 
-  it('does not invent a count replay when idempotentReplay is present', () => {
+  it('preserves a completed count retry as a legal idempotent replay', () => {
     expect(
       gate({
         domain: 'wms-count',
@@ -214,8 +214,8 @@ describe('statusActionGate', () => {
     ).toMatchObject({
       terminal: true,
       executable: false,
-      legalNoop: false,
-      reason: 'terminal-status',
+      legalNoop: true,
+      reason: 'already-applied-noop',
     })
   })
 

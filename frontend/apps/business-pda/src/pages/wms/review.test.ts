@@ -5,7 +5,13 @@ import { computed } from 'vue'
 import { RequestTimeoutError } from '@/api/request-timeout'
 
 const push = vi.fn()
+const routeGuardState = vi.hoisted(() => ({
+  guard: undefined as (() => boolean) | undefined,
+}))
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
+    routeGuardState.guard = guard
+  }),
   useRouter: () => ({ push }),
   RouterView: { template: '<div />' },
 }))
@@ -272,6 +278,7 @@ describe('WMS 复核发货', () => {
       (button) => button.textContent?.trim() === '取消',
     )
     expect(cancel?.disabled).toBe(true)
+    expect(routeGuardState.guard?.()).toBe(false)
     confirm.click()
     await flushPromises()
 

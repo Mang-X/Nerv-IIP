@@ -3,6 +3,7 @@ import RetryableListError from '@/components/RetryableListError.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import { useWmsCount } from '@/composables/useBusinessWms'
 import {
   countExecutionFlow,
@@ -45,6 +46,7 @@ const intent = useIdempotentWriteIntent<{
   idempotencyKey: string
 }>(makeIdempotencyKey)
 const intentLocked = intent.locked
+usePendingWriteLeaveGuard(intentLocked)
 
 // 实盘数量录入。type=number 下 v-model 解包可能是 number 或 ''，统一按字符串校验。
 const countedQuantityText = ref<string | number>('')

@@ -22,8 +22,8 @@
  *    pre-check is NOT indeterminate — the request never left the device, so those
  *    pages keep a safe retry (the #814 offline actionable-error requirement).
  *
- * Business errors thrown by the gateway are plain objects/strings (not `Error`) → a
- * determinate failure the server actually responded to, so retrying them is safe.
+ * Structured HTTP failures retain their status: 4xx is determinate, while 5xx leaves
+ * the write outcome unknown and must keep an idempotent intent frozen.
  */
 
 /** Hard ceiling for any single facade request. 车间 WiFi hangs must not block forever. */
@@ -272,6 +272,17 @@ function extractServerMessage(error: unknown): string | undefined {
   return undefined
 }
 
+function extractHttpStatus(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null) return undefined
+  const record = error as Record<string, unknown>
+  const response =
+    typeof record.response === 'object' && record.response !== null
+      ? (record.response as Record<string, unknown>)
+      : undefined
+  const status = record.statusCode ?? record.status ?? response?.status
+  return typeof status === 'number' && Number.isFinite(status) ? status : undefined
+}
+
 /**
  * Classify any error thrown by a facade call into a display message + a retry-safety
  * verdict. This is what lets pages tell timeout/offline (indeterminate — a
@@ -298,13 +309,21 @@ export function describeRequestError(
   if (error instanceof TypeError) {
     return { kind: 'network', message: '网络连接失败，请检查网络后重试', indeterminate: true }
   }
+  const httpStatus = extractHttpStatus(error)
+  if (httpStatus !== undefined) {
+    return {
+      kind: 'business',
+      message: extractServerMessage(error) ?? fallback,
+      indeterminate: httpStatus >= 500,
+    }
+  }
   // Any other Error: unknown shape, but it carries a stack → the request reached code,
   // not a transport hang; treat as a determinate failure.
   if (error instanceof Error) {
     return { kind: 'unknown', message: error.message || fallback, indeterminate: false }
   }
-  // Non-Error thrown value = the gateway's business/HTTP error body (object or string).
-  // The server responded, so no side effect is pending — safe to retry.
+  // Remaining non-Error values are business error bodies without a usable HTTP status.
+  // They are determinate because the gateway returned an application-level failure.
   return {
     kind: 'business',
     message: extractServerMessage(error) ?? fallback,

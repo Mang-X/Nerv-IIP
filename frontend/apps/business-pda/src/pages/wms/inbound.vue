@@ -3,6 +3,7 @@ import RetryableListError from '@/components/RetryableListError.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import {
   useWmsInbound,
   useWmsReceivingLines,
@@ -77,6 +78,7 @@ const intent = useIdempotentWriteIntent<{
   lines: InboundLineCapture[]
 }>(makeIdempotencyKey)
 const intentLocked = intent.locked
+usePendingWriteLeaveGuard(intentLocked)
 
 // 抽屉或结果展示时停止外层扫码焦点抢夺，避免破坏浮层 focus-trap。
 const scanActive = computed(() => !sheetOpen.value && !completed.value)
