@@ -467,7 +467,16 @@ public sealed class InventoryBatchExpiryFefoTests
             new ListStockExpiryAlertsQuery("org-001", "env-dev", "SITE-01", Page: int.MaxValue, PageSize: 200));
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, error => error.PropertyName == nameof(ListStockExpiryAlertsQuery.Page));
+        // 属性名大小写取决于 FluentValidation 的**全局**解析器：Web 宿主启动时会把它改成
+        // camelCase（`page`），而全量跑 sln 时该全局状态会跨程序集泄漏，导致本用例
+        // 顺序相关地时红时绿（#1201 多次误判为「抖动」）。断言与命名约定解耦：
+        // 要守的是「Page 这个字段被拒绝」，不是它在消息里拼成大写还是小写。
+        Assert.Contains(
+            result.Errors,
+            error => string.Equals(
+                error.PropertyName,
+                nameof(ListStockExpiryAlertsQuery.Page),
+                StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
