@@ -5,6 +5,7 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
+import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useWmsInboundOrders, useWmsPutawayTasks } from '@/composables/useBusinessWms'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
@@ -67,7 +68,6 @@ const {
   refreshPutawayTasks,
   createPutaway,
   createPutawayPending,
-  createPutawayError,
 } = useWmsPutawayTasks()
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManageReceipts = computed(() => permissionCodes.value.includes(P.wmsReceiptsManage))
@@ -200,9 +200,28 @@ const carriedContextItems = computed(() => [
   { label: '入库单', value: inboundOrderNo.value || inboundOrderId.value },
 ])
 
-const errorMessage = computed(() =>
-  formatError(putawayTasksError.value ?? createPutawayError.value),
+/**
+ * 读错误只归列表区域。创建上架任务的失败一律走 toast，不并进这一条：
+ * 两者共用一个变量时，「创建失败」会伪装成「列表加载失败」。
+ */
+const listErrorMessage = computed(() =>
+  putawayTasksError.value
+    ? `取不到上架任务列表，当前上架进度无法判断：${formatError(putawayTasksError.value)}`
+    : '',
 )
+/**
+ * 页头计数一律用服务端总数；上下文未就绪 / 读取中 / 读失败时显文字而不是 0——
+ * 表格骨架还在转就断言「0 个上架任务」，等于把加载中说成没有任务。
+ */
+// 业务范围是否选定走全站唯一判定，不在页面里另写一份——判定分叉了，
+// 「还没查」和「真的 0 条」很快又会混回同一个渲染。
+const contextReady = computed(() => hasBusinessContext(filters))
+const headerCount = computed(() => {
+  if (!contextReady.value) return '未选择组织与环境'
+  if (putawayTasksError.value) return '任务数取不到'
+  if (putawayTasksPending.value) return '加载中'
+  return `${putawayTasksTotal.value} 个上架任务`
+})
 
 // 任务读面只回编码（SKU-… / WH-…），名称在主数据里，按编码 join 出中文名。
 const { resolveSkuName } = useSkuNames()
@@ -281,11 +300,7 @@ function firstQuery(value: unknown) {
 
 <template>
   <BusinessLayout>
-    <NvPageHeader
-      title="上架任务"
-      :breadcrumbs="[{ label: '仓储作业' }]"
-      :count="`${putawayTasksTotal} 个上架任务`"
-    >
+    <NvPageHeader title="上架任务" :breadcrumbs="[{ label: '仓储作业' }]" :count="headerCount">
       <template #actions>
         <NvButton
           size="sm"
@@ -334,8 +349,7 @@ function firstQuery(value: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
+    <!-- 读失败 / 未选组织环境都由表格自己的三态呈现，绝不退化成「暂无上架任务」。 -->
     <NvDataTable
       manual
       :page="page"
@@ -347,9 +361,14 @@ function firstQuery(value: unknown) {
       :rows="putawayTasks"
       :row-key="rowKey"
       :loading="putawayTasksPending"
+      :error="putawayTasksError"
+      :error-message="listErrorMessage"
+      :awaiting-scope="!contextReady"
+      awaiting-scope-message="请先在顶部选择组织与环境，再查看上架任务。"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无上架任务。完工入库后由系统派生，或在此手工登记。"
+      @retry="refreshPutawayTasks"
     >
       <template #cell-status="{ row }"
         ><NvStatusBadge

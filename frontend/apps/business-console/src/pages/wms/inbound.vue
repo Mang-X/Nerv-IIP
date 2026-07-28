@@ -4,6 +4,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsReceivingQualityFlow from '@/components/wms/WmsReceivingQualityFlow.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
+import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useWmsInboundOrders } from '@/composables/useBusinessWms'
 import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
@@ -79,10 +80,8 @@ const {
   refreshInboundOrders,
   completeInbound,
   completeInboundPending,
-  completeInboundError,
   createInbound,
   createInboundPending,
-  createInboundError,
   receivingQualityGates,
   receivingQualityGatesPending,
   receivingQualityGatesError,
@@ -243,15 +242,29 @@ async function confirmComplete() {
   }
 }
 
-const errorMessage = computed(() =>
-  formatError(
-    inboundOrdersError.value ??
-      completeInboundError.value ??
-      createInboundError.value ??
-      receivingQualityGatesError.value ??
-      supplierReturnsError.value,
-  ),
+/**
+ * 读错误只归列表区域。创建 / 完成入库的失败一律走 toast；质检门禁与退货的读错误由
+ * 行内的 WmsReceivingQualityFlow 自己呈现。共用一个变量时，「提交失败」会伪装成
+ * 「列表加载失败」，旁路取数失败也会把整张列表说成坏的。
+ */
+const listErrorMessage = computed(() =>
+  inboundOrdersError.value
+    ? `取不到入库单列表，当前收货情况无法判断：${formatError(inboundOrdersError.value)}`
+    : '',
 )
+/**
+ * 页头计数一律用服务端总数；上下文未就绪 / 读取中 / 读失败时显文字而不是 0——
+ * 骨架还在转就断言「0 张入库单」，等于把加载中说成没有单据。
+ */
+// 业务范围是否选定走全站唯一判定，不在页面里另写一份——判定分叉了，
+// 「还没查」和「真的 0 条」很快又会混回同一个渲染。
+const contextReady = computed(() => hasBusinessContext(filters))
+const headerCount = computed(() => {
+  if (!contextReady.value) return '未选择组织与环境'
+  if (inboundOrdersError.value) return '入库单数取不到'
+  if (inboundOrdersPending.value) return '加载中'
+  return `${inboundOrdersTotal.value} 张入库单`
+})
 // 工厂给默认值、单位跟随物料——收货行的库存上下文只差「选哪个物料」。
 const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
   useInventoryScopeDefaults(filters)
@@ -336,11 +349,7 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <NvPageHeader
-      title="收货入库"
-      :breadcrumbs="[{ label: '仓储作业' }]"
-      :count="`${inboundOrdersTotal} 张入库单`"
-    >
+    <NvPageHeader title="收货入库" :breadcrumbs="[{ label: '仓储作业' }]" :count="headerCount">
       <template #actions>
         <NvButton
           size="sm"
@@ -451,8 +460,7 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
+    <!-- 读失败 / 未选组织环境都由表格自己的三态呈现，绝不退化成「暂无入库单」。 -->
     <NvDataTable
       manual
       :page="page"
@@ -464,9 +472,14 @@ function formatError(error: unknown) {
       :rows="inboundOrders"
       :row-key="rowKey"
       :loading="inboundOrdersPending"
+      :error="inboundOrdersError"
+      :error-message="listErrorMessage"
+      :awaiting-scope="!contextReady"
+      awaiting-scope-message="请先在顶部选择组织与环境，再查看入库单。"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无入库单。收货作业产生入库单后会出现在这里。"
+      @retry="refreshAll"
     >
       <template #cell-status="{ row }"
         ><NvStatusBadge
