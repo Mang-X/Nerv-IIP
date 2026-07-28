@@ -2,6 +2,7 @@
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
 import { useWmsOutbound } from '@/composables/useBusinessWms'
 import {
   outboundOrderStatusLabel,
@@ -16,7 +17,7 @@ import {
   NvMobileToast,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -38,14 +39,22 @@ const completed = ref(false)
 
 // 每次用户发起操作（点单开抽屉）生成一次稳定幂等键，跨重试复用以防丢响应重复出库；
 // 选新单/继续后再点单才换新键。绝不在重试时重新生成。
-const operationKey = ref('')
-const operationAttempted = ref(false)
+const intent = useIdempotentWriteIntent<{
+  packReviewNo: string
+  passed: boolean
+  idempotencyKey: string
+}>(makeIdempotencyKey)
+const intentLocked = intent.locked
 
 // 复核录入：复核单号 + 通过/不通过开关。
 const packReviewNo = ref('')
 const passed = ref(true)
 // 复核单号需有非空白内容才算有效（纯空格 "   " 不可提交）。
 const validPackReviewNo = computed(() => packReviewNo.value.trim().length > 0)
+watch([packReviewNo, passed], () => {
+  intent.inputChanged()
+  submitError.value = ''
+})
 
 // outboundReviewFlow 驱动进度：selectOrder→enterReviewNo→complete。
 const flowCtx = computed(() => ({
@@ -91,8 +100,7 @@ function selectOrder(
   packReviewNo.value = ''
   passed.value = true
   // 新操作开始：换一把新幂等键。
-  operationKey.value = makeIdempotencyKey()
-  operationAttempted.value = false
+  intent.start()
   submitError.value = ''
   sheetOpen.value = true
 }
@@ -111,27 +119,25 @@ async function confirmComplete() {
   if (completePending.value || !validPackReviewNo.value) return
   submitError.value = ''
   try {
+    const payload = intent.payload((idempotencyKey) => ({
+      packReviewNo: packReviewNo.value.trim(),
+      passed: passed.value,
+      idempotencyKey,
+    }))
     // 重试复用同一 operationKey（不重新生成），#188 客户端去重可识别为同一操作。
-    await completeOutbound(
-      selectedOrderId.value,
-      {
-        packReviewNo: packReviewNo.value.trim(),
-        passed: passed.value,
-        idempotencyKey: operationKey.value,
-      },
-      {
-        attempt: operationAttempted.value ? 'retry' : 'initial',
-        onCommandAttempt: () => {
-          operationAttempted.value = true
-        },
-      },
-    )
+    await completeOutbound(selectedOrderId.value, payload, {
+      attempt: intent.attempt.value,
+      onCommandAttempt: intent.markCommandAttempt,
+    })
     // 成功后立刻关抽屉并切到结果态，重复点击无法再触发。
     sheetOpen.value = false
     completed.value = true
   } catch (e) {
     if (await lifecycleRecovery.handle(e)) return
-    submitError.value = e instanceof Error ? e.message : '完成出库复核失败'
+    const info = intent.recordFailure(e, '完成出库复核失败')
+    submitError.value = intentLocked.value
+      ? `${info.message}。提交结果未知，仅可按原内容重试。`
+      : info.message
   }
 }
 
@@ -143,8 +149,7 @@ function resetFlow() {
   packReviewNo.value = ''
   passed.value = true
   // 清空操作键：下次点单会铸新键，保证新操作 ≠ 旧键。
-  operationKey.value = ''
-  operationAttempted.value = false
+  intent.reset()
   submitError.value = ''
 }
 
@@ -234,6 +239,7 @@ function goHome() {
             v-model="packReviewNo"
             data-testid="pack-review-no"
             type="text"
+            :disabled="intentLocked"
             inputmode="text"
             placeholder="请输入复核单号"
             class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base text-foreground"
@@ -245,6 +251,7 @@ function goHome() {
           <button
             type="button"
             data-testid="toggle-passed"
+            :disabled="intentLocked"
             class="min-h-touch rounded-lg border px-4 text-base font-medium"
             :class="
               passed
@@ -267,7 +274,7 @@ function goHome() {
             class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
             @click="confirmComplete"
           >
-            {{ completePending ? '提交中…' : '确认完成' }}
+            {{ completePending ? '提交中…' : intentLocked ? '按原内容重试' : '确认完成' }}
           </button>
           <button
             type="button"

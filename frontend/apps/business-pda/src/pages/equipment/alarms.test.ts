@@ -212,28 +212,35 @@ describe('PDA equipment alarms page', () => {
     wrapper.unmount()
   })
 
-  // P1 幂等：已发出但结果未知（超时）不盲目重试——刷新列表引导核对。
-  it('does NOT offer blind retry on an indeterminate failure; steers to verify + refreshes', async () => {
-    acknowledge.mockRejectedValue(new RequestTimeoutError())
+  // P1 幂等：已发出但结果未知（超时）保留冻结 payload/key，只允许原样重放。
+  it('replays an indeterminate shelve with the SAME frozen payload + persistent key', async () => {
+    shelve.mockRejectedValueOnce(new RequestTimeoutError())
     const wrapper = mount(AlarmsPage, { attachTo: document.body })
-    await wrapper.get('[data-testid="ack-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]').trigger('click')
+    await wrapper
+      .get('[data-testid="shelve-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]')
+      .trigger('click')
     await flushPromises()
-    document.body.querySelector<HTMLElement>('.nv-m-md-confirm')!.click() // 确认弹层
+    document.body
+      .querySelectorAll<HTMLButtonElement>('button')
+      .forEach((button) => button.textContent?.includes('2 小时') && button.click())
     await flushPromises()
 
-    expect(acknowledge).toHaveBeenCalledTimes(1)
+    expect(shelve).toHaveBeenCalledTimes(1)
+    const first = shelve.mock.calls[0]
     const dialogText = document.body.textContent ?? ''
     expect(dialogText).toContain('提交结果未知')
-    expect(dialogText).toContain('核对')
-    // 无「重试」按钮，只有「我知道了」
+    expect(dialogText).toContain('原内容')
     const confirmBtn = document.body.querySelector<HTMLElement>('.nv-m-md-confirm')
-    expect(confirmBtn?.textContent).toContain('我知道了')
+    expect(confirmBtn?.textContent).toContain('重试')
     expect(refresh).toHaveBeenCalled()
 
-    // 点「我知道了」不会再次发起确认
     confirmBtn!.click()
     await flushPromises()
-    expect(acknowledge).toHaveBeenCalledTimes(1)
+    expect(shelve).toHaveBeenCalledTimes(2)
+    const second = shelve.mock.calls[1]
+    expect(second[1]).toBe(first[1])
+    expect(second[2]).toBe(first[2])
+    expect(second[3]).toBe(first[3])
     wrapper.unmount()
   })
 

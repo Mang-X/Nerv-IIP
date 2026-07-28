@@ -2,6 +2,7 @@
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
 import {
   useWmsInbound,
   useWmsReceivingLines,
@@ -33,7 +34,7 @@ import {
   NvNoticeBar,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -71,8 +72,11 @@ const activeLineId = ref('')
 
 // 每次用户发起操作（点单开抽屉）生成一次稳定幂等键，跨重试复用以防丢响应重复入库；
 // 选新单/继续后再点单才换新键。绝不在重试时重新生成。
-const operationKey = ref('')
-const operationAttempted = ref(false)
+const intent = useIdempotentWriteIntent<{
+  idempotencyKey: string
+  lines: InboundLineCapture[]
+}>(makeIdempotencyKey)
+const intentLocked = intent.locked
 
 // 抽屉或结果展示时停止外层扫码焦点抢夺，避免破坏浮层 focus-trap。
 const scanActive = computed(() => !sheetOpen.value && !completed.value)
@@ -171,6 +175,7 @@ const activeLine = computed<ReceivingQualityGateLine | undefined>(() => {
   return selectedLines.value.length === 1 ? selectedLines.value[0] : undefined
 })
 function selectLine(line: ReceivingQualityGateLine) {
+  if (intentLocked.value) return
   activeLineId.value = line.inboundOrderLineId ?? ''
 }
 
@@ -183,8 +188,7 @@ function selectOrder(order: InboundOrder) {
   if (!order.inboundOrderId) return
   selectedOrder.value = order
   // 新操作开始：换一把新幂等键。
-  operationKey.value = makeIdempotencyKey()
-  operationAttempted.value = false
+  intent.start()
   submitError.value = ''
   gs1Notice.value = ''
   sheetOpen.value = true
@@ -203,6 +207,7 @@ const lifecycleRecovery = useLifecycleActionRecovery({
 // 当前作业行（选中/单行）> 按扫出 lotNo 匹配已有批号的行。新收货行上尚无批号时
 // 靠先选行绑定，满足多行单的「扫码自动带出批号效期」。采集随 completeInbound 落库。
 function onGs1Scan(value: string) {
+  if (intentLocked.value) return
   gs1Notice.value = ''
   const parsed = parseGs1(value)
   if (!parsed || (!parsed.lotNo && !parsed.expiryDate)) {
@@ -235,6 +240,7 @@ function onGs1Scan(value: string) {
 
 // 逐行批号手输兜底（多行新收货行上无批号时定位采集）。
 function onBatchInput(line: ReceivingQualityGateLine, value: string | number) {
+  if (intentLocked.value) return
   if (!line.inboundOrderLineId) return
   captureLine(line.inboundOrderLineId, { lotNo: String(value).trim() })
 }
@@ -255,6 +261,7 @@ const expiryPickerValue = computed<string>({
   },
 })
 function openExpiryPicker(line: ReceivingQualityGateLine) {
+  if (intentLocked.value) return
   if (!line.inboundOrderLineId) return
   expiryPickerLineId.value = line.inboundOrderLineId
   expiryPickerOpen.value = true
@@ -276,17 +283,27 @@ function buildCaptureLines(): InboundLineCapture[] {
   return out
 }
 
+watch(
+  () => JSON.stringify(buildCaptureLines()),
+  () => {
+    intent.inputChanged()
+    submitError.value = ''
+  },
+)
+
 async function confirmComplete() {
   // 防重 + #3：pending / 行数据未加载或失败时禁止提交（不以空 lines 完成丢采集）。
   if (submitDisabled.value) return
   submitError.value = ''
   try {
+    const payload = intent.payload((idempotencyKey) => ({
+      idempotencyKey,
+      lines: buildCaptureLines(),
+    }))
     // 重试复用同一 operationKey（不重新生成），#188 客户端去重可识别为同一操作。
-    await completeInbound(selectedOrderId.value, operationKey.value, buildCaptureLines(), {
-      attempt: operationAttempted.value ? 'retry' : 'initial',
-      onCommandAttempt: () => {
-        operationAttempted.value = true
-      },
+    await completeInbound(selectedOrderId.value, payload.idempotencyKey, payload.lines, {
+      attempt: intent.attempt.value,
+      onCommandAttempt: intent.markCommandAttempt,
     })
     // 成功后立刻关抽屉并切到结果态，重复点击无法再触发。
     sheetOpen.value = false
@@ -294,7 +311,10 @@ async function confirmComplete() {
     void refresh()
   } catch (e) {
     if (await lifecycleRecovery.handle(e)) return
-    submitError.value = e instanceof Error ? e.message : '完成收货入库失败'
+    const info = intent.recordFailure(e, '完成收货入库失败')
+    submitError.value = intentLocked.value
+      ? `${info.message}。提交结果未知，仅可按原内容重试。`
+      : info.message
   }
 }
 
@@ -303,8 +323,7 @@ function resetFlow() {
   completed.value = false
   selectedOrder.value = null
   // 清空操作键：下次点单会铸新键，保证新操作 ≠ 旧键。
-  operationKey.value = ''
-  operationAttempted.value = false
+  intent.reset()
   submitError.value = ''
   gs1Notice.value = ''
   capturedByLine.value = {}
@@ -474,6 +493,7 @@ function goPutaway() {
                   activeLine?.inboundOrderLineId === line.inboundOrderLineId ? 'primary' : 'outline'
                 "
                 data-select-line
+                :disabled="intentLocked"
                 @click="selectLine(line)"
               >
                 {{
@@ -483,6 +503,7 @@ function goPutaway() {
               <NvMobileInput
                 :model-value="lineBatch(line)"
                 placeholder="批号"
+                :disabled="intentLocked"
                 class="flex-1"
                 data-batch-input
                 @update:model-value="(v) => onBatchInput(line, v)"
@@ -491,6 +512,7 @@ function goPutaway() {
                 variant="outline"
                 class="min-h-touch"
                 data-expiry-input
+                :disabled="intentLocked"
                 @click="openExpiryPicker(line)"
               >
                 {{ lineExpiry(line) ? '改效期' : '录效期' }}
@@ -514,7 +536,7 @@ function goPutaway() {
         <NvScanBar
           v-if="linesComplete && selectedLines.length"
           placeholder="扫描 GS1 批次码带出效期"
-          :active="sheetOpen && !completed"
+          :active="sheetOpen && !completed && !intentLocked"
           @scan="onGs1Scan"
         />
         <p v-if="gs1Notice" class="text-sm text-warning-strong" data-gs1-notice>{{ gs1Notice }}</p>
@@ -543,7 +565,7 @@ function goPutaway() {
             :disabled="submitDisabled"
             @click="confirmComplete"
           >
-            {{ completePending ? '提交中…' : '确认完成' }}
+            {{ completePending ? '提交中…' : intentLocked ? '按原内容重试' : '确认完成' }}
           </NvMobileButton>
           <NvMobileButton
             v-if="selectedCanPutaway"

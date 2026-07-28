@@ -10,7 +10,10 @@ import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
-import { recoverLifecycleAction } from '@/composables/lifecycleAction'
+import {
+  isIndeterminateLifecycleWriteError,
+  recoverLifecycleAction,
+} from '@/composables/lifecycleAction'
 import { createWmsIdempotencyKey, useWmsCountExecutions } from '@/composables/useBusinessWms'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
@@ -56,7 +59,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 
 definePage({
   meta: {
@@ -152,6 +155,19 @@ const completeTarget = shallowRef<BusinessConsoleWmsCountExecutionItem>()
 const completeForm = reactive({ countedQuantity: '' })
 const completeError = shallowRef('')
 const completeIntentKey = shallowRef('')
+const completeIntentAttempted = shallowRef(false)
+const completeIntentLocked = shallowRef(false)
+const completeFrozenPayload = shallowRef<{ countedQuantity: number }>()
+watch(
+  () => completeForm.countedQuantity,
+  () => {
+    if (!completeIntentAttempted.value || completeIntentLocked.value) return
+    completeIntentKey.value = createWmsIdempotencyKey()
+    completeIntentAttempted.value = false
+    completeFrozenPayload.value = undefined
+    completeError.value = ''
+  },
+)
 
 const listErrorMessage = computed(() => formatError(countExecutionsError.value))
 // 弹窗内只留字段级校验汇总；提交失败一律 toast，不留常驻错误条。
@@ -281,6 +297,9 @@ async function submitCreate() {
 function openComplete(row: CountRow) {
   completeTarget.value = row
   completeIntentKey.value = createWmsIdempotencyKey()
+  completeIntentAttempted.value = false
+  completeIntentLocked.value = false
+  completeFrozenPayload.value = undefined
   // 缺省值：已录实盘 → 沿用；否则用账面数量打底，仓管只需改差异行。
   const defaultQuantity = row.countedQuantity ?? row.expectedQuantity
   completeForm.countedQuantity = defaultQuantity != null ? String(defaultQuantity) : ''
@@ -318,9 +337,24 @@ async function submitComplete() {
     return
   }
   try {
-    await completeCountExecution(target.countExecutionId, counted, completeIntentKey.value)
+    const payload = completeFrozenPayload.value ?? { countedQuantity: counted }
+    completeFrozenPayload.value = payload
+    await completeCountExecution(
+      target.countExecutionId,
+      payload.countedQuantity,
+      completeIntentKey.value,
+      {
+        attempt: completeIntentAttempted.value ? 'retry' : 'initial',
+        onCommandAttempt: () => {
+          completeIntentAttempted.value = true
+        },
+      },
+    )
     completeOpen.value = false
     completeIntentKey.value = ''
+    completeIntentAttempted.value = false
+    completeIntentLocked.value = false
+    completeFrozenPayload.value = undefined
     notifySuccess(`盘点单 ${target.countNo ?? MISSING_COUNT_NO} 已完成`)
   } catch (error) {
     if (
@@ -331,6 +365,9 @@ async function submitComplete() {
           completeForm.countedQuantity = ''
           completeError.value = ''
           completeIntentKey.value = ''
+          completeIntentAttempted.value = false
+          completeIntentLocked.value = false
+          completeFrozenPayload.value = undefined
         },
         refresh: refreshCountExecutions,
         notify: (message) => notifyError(message),
@@ -338,6 +375,11 @@ async function submitComplete() {
     ) {
       return
     }
+    completeIntentLocked.value =
+      completeIntentAttempted.value && isIndeterminateLifecycleWriteError(error)
+    completeError.value = completeIntentLocked.value
+      ? '提交结果未知，当前内容已锁定；仅可按原内容重试。'
+      : ''
     notifyError(error, '完成盘点失败，请稍后重试。')
   }
 }
@@ -569,6 +611,7 @@ function formatError(error: unknown) {
                 type="number"
                 min="0"
                 step="any"
+                :disabled="completeIntentLocked"
               />
               <!-- 非显而易见的业务口径：留空的取值来源。 -->
               <NvFieldDescription>留空则按库存台账取账面数量。</NvFieldDescription>
@@ -627,7 +670,7 @@ function formatError(error: unknown) {
             <NvButton type="submit" :disabled="completeCountExecutionPending">
               <Spinner v-if="completeCountExecutionPending" aria-hidden="true" />
               <CheckCircle2Icon v-else aria-hidden="true" />
-              完成盘点
+              {{ completeIntentLocked ? '按原内容重试' : '完成盘点' }}
             </NvButton>
           </NvDialogFooter>
         </form>

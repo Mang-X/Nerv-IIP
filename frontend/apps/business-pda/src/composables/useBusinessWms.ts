@@ -371,7 +371,11 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     pending: executionsQuery.isLoading,
     error: executionsQuery.error,
     refresh: executionsQuery.refetch,
-    completeCount: async (countExecutionId: string, input: CompleteCountInput) => {
+    completeCount: async (
+      countExecutionId: string,
+      input: CompleteCountInput,
+      options: WmsCompletionAttemptOptions = { attempt: 'initial' },
+    ) => {
       const { data } = await listBusinessConsoleWmsCountExecutions({
         query: { ...scope.scopeQuery(), countExecutionId, skip: 0, take: 2 },
         throwOnError: true,
@@ -388,6 +392,7 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
       // 页面提供 countedQuantity/idempotencyKey（幂等键跨重试复用）；
       // org/env 不取自 input，恒由登录主体注入 query，敌意 org/env 永远落空。
       const body = { ...input } satisfies BusinessConsoleCompleteWmsCountExecutionRequest
+      options.onCommandAttempt?.()
       return completeMutation.mutateAsync({
         path: { countExecutionId },
         query: scope.scopeQuery(),

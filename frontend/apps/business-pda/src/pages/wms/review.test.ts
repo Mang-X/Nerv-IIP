@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed } from 'vue'
+import { RequestTimeoutError } from '@/api/request-timeout'
 
 const push = vi.fn()
 vi.mock('vue-router', () => ({
@@ -207,6 +208,70 @@ describe('WMS 复核发货', () => {
     const newOpKey = (wmsState.completeOutbound.mock.calls[2][1] as { idempotencyKey: string })
       .idempotencyKey
     expect(newOpKey).not.toBe(firstKey)
+    wrapper.unmount()
+  })
+
+  it('确定性 422 后编辑复核字段会轮换 key，并按 initial 新意图提交', async () => {
+    wmsState.completeOutbound.mockImplementationOnce(
+      (_id: string, _input: unknown, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject({ success: false, statusCode: 422, message: '复核单号无效' })
+      },
+    )
+    const wrapper = mount(ReviewPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    const reviewInput = document.querySelector<HTMLInputElement>('[data-testid="pack-review-no"]')!
+    reviewInput.value = 'PR-1'
+    reviewInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
+    confirm.click()
+    await flushPromises()
+
+    const firstKey = (wmsState.completeOutbound.mock.calls[0][1] as { idempotencyKey: string })
+      .idempotencyKey
+    reviewInput.value = 'PR-2'
+    reviewInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+    confirm.click()
+    await flushPromises()
+
+    const secondKey = (wmsState.completeOutbound.mock.calls[1][1] as { idempotencyKey: string })
+      .idempotencyKey
+    expect(secondKey).not.toBe(firstKey)
+    expect(wmsState.completeOutbound.mock.calls[1][2]).toMatchObject({ attempt: 'initial' })
+    wrapper.unmount()
+  })
+
+  it('结果未知时锁定复核字段，只按冻结 payload/key 原样重放', async () => {
+    wmsState.completeOutbound.mockImplementationOnce(
+      (_id: string, _input: unknown, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject(new RequestTimeoutError())
+      },
+    )
+    const wrapper = mount(ReviewPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    const reviewInput = document.querySelector<HTMLInputElement>('[data-testid="pack-review-no"]')!
+    reviewInput.value = 'PR-1'
+    reviewInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
+    confirm.click()
+    await flushPromises()
+
+    const first = wmsState.completeOutbound.mock.calls[0]
+    expect(reviewInput.disabled).toBe(true)
+    expect(document.body.textContent).toContain('原内容重试')
+    confirm.click()
+    await flushPromises()
+
+    const second = wmsState.completeOutbound.mock.calls[1]
+    expect(second[1]).toEqual(first[1])
+    expect((second[1] as { idempotencyKey: string }).idempotencyKey).toBe(
+      (first[1] as { idempotencyKey: string }).idempotencyKey,
+    )
+    expect(second[2]).toMatchObject({ attempt: 'retry' })
     wrapper.unmount()
   })
 

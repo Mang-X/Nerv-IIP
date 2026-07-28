@@ -220,10 +220,16 @@ async function submitReceive() {
   submitting.value = true
   receiving.value = null
   const doSubmit = () =>
-    confirmLineSideReceipt(requestId, {
-      ...(quantity === null ? {} : { receivedQuantity: quantity }),
-      idempotencyKey: operationKey.value,
-    })
+    confirmLineSideReceipt(
+      requestId,
+      {
+        ...(quantity === null ? {} : { receivedQuantity: quantity }),
+        idempotencyKey: operationKey.value,
+      },
+      {
+        workOrderId: req?.workOrderId,
+      },
+    )
   try {
     await doSubmit()
     result.value = {

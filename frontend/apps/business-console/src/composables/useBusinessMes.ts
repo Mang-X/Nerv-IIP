@@ -497,7 +497,10 @@ export function useMesProductionReporting() {
       'listBusinessConsoleMesOperationTasks',
     ])
 
-  async function recordProductionReportAction(body: BusinessConsoleRecordProductionReportRequest) {
+  async function recordProductionReportAction(
+    body: BusinessConsoleRecordProductionReportRequest,
+    options: { onCommandAttempt?: () => void } = {},
+  ) {
     recordProductionReportPending.value = true
     recordProductionReportError.value = undefined
     try {
@@ -512,6 +515,7 @@ export function useMesProductionReporting() {
         reportCompleteIntent !== undefined && issuedReportCompleteIntents.has(reportCompleteIntent)
       const command = () => {
         if (reportCompleteIntent) issuedReportCompleteIntents.add(reportCompleteIntent)
+        options.onCommandAttempt?.()
         return recordBusinessConsoleMesProductionReport({
           body: {
             organizationId: context.organizationId,

@@ -702,6 +702,7 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
     countExecutionId: string,
     countedQuantity: number,
     idempotencyKey = createWmsIdempotencyKey(),
+    options: WmsCompletionAttemptOptions = { attempt: 'initial' },
   ) {
     completeCountExecutionPending.value = true
     completeCountExecutionError.value = undefined
@@ -729,13 +730,15 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
               }
             : undefined
         },
-        command: () =>
-          completeBusinessConsoleWmsCountExecution({
+        command: () => {
+          options.onCommandAttempt?.()
+          return completeBusinessConsoleWmsCountExecution({
             path: { countExecutionId },
             query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
             body: { countedQuantity, idempotencyKey },
             throwOnError: false,
-          }),
+          })
+        },
       })
       await refetchWithBusinessContext(filters, countExecutionsQuery)
       return result

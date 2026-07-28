@@ -151,7 +151,11 @@ const pendingAction = ref<PendingAction | null>(null)
 
 // 失败结果：确定性失败（无副作用）可复用同键重试；已发出但结果未知（超时/断网）不盲目重试，
 // 交给 verify（刷新列表核对是否已处理）。
-const actionError = ref<{ message: string; canRetry: boolean } | null>(null)
+const actionError = ref<{
+  message: string
+  canRetry: boolean
+  indeterminate?: boolean
+} | null>(null)
 
 async function runPending() {
   const p = pendingAction.value
@@ -183,11 +187,12 @@ async function runPending() {
     }
     const info = describeRequestError(e, '操作失败，请重试')
     if (info.indeterminate) {
-      // 已发出、结果未知：不盲目重试，刷新列表引导核对。
+      // 已发出、结果未知：先刷新供核对，同时保留冻结 payload/key，只允许原样重放。
       void refresh()
       actionError.value = {
-        message: `${info.message}。已为你刷新列表，请核对该报警是否已处理，勿重复提交。`,
-        canRetry: false,
+        message: `${info.message}。已为你刷新列表，请先核对；如需重试，只会按原内容和同一幂等键重放。`,
+        canRetry: true,
+        indeterminate: true,
       }
     } else {
       // 确定性失败：服务端已应答、无挂起副作用 → 复用同一 atUtc 安全重试。
@@ -441,9 +446,9 @@ function showToast(message: string, type: 'success' | 'error') {
     <!-- 失败对话框：确定性失败可重试（复用同键）；结果未知只提示核对 -->
     <NvMobileDialog
       :open="actionError !== null"
-      :title="actionError?.canRetry ? '操作失败' : '提交结果未知'"
+      :title="actionError?.indeterminate ? '提交结果未知' : '操作失败'"
       :description="actionError?.message ?? ''"
-      :confirm-text="actionError?.canRetry ? '重试' : '我知道了'"
+      :confirm-text="actionError?.indeterminate ? '按原内容重试' : '重试'"
       :show-cancel="actionError?.canRetry ?? false"
       cancel-text="取消"
       @update:open="

@@ -209,12 +209,18 @@ describe('pda useBusinessMes composables', () => {
     vi.mocked(listBusinessConsoleMesMaterialIssueRequests)
       .mockReset()
       .mockImplementation(
-        async ({ query }: { query: { keyword?: string | null } }) =>
+        async ({ query }: { query: { workOrderId?: string | null } }) =>
           ({
             data: {
               success: true,
               data: {
-                items: [{ requestId: query.keyword, status: 'Requested' }],
+                items: [
+                  {
+                    requestId: 'req-2',
+                    workOrderId: query.workOrderId ?? 'wo-2',
+                    status: 'Requested',
+                  },
+                ],
                 total: 1,
               },
             },
@@ -492,13 +498,20 @@ describe('pda useBusinessMes composables', () => {
   it('forwards the caller-supplied key when confirming a line-side material receipt', async () => {
     const { confirmLineSideReceipt } = useMesMaterialIssue()
 
-    await confirmLineSideReceipt('req-2', { receivedQuantity: 4, idempotencyKey: 'op-confirm-1' })
+    await confirmLineSideReceipt(
+      'req-2',
+      { receivedQuantity: 4, idempotencyKey: 'op-confirm-1' },
+      { workOrderId: 'wo-2' },
+    )
 
     expect(confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions).toHaveBeenCalled()
     expect(listBusinessConsoleMesMaterialIssueRequests).toHaveBeenCalledWith({
-      query: expect.objectContaining({ keyword: 'req-2', skip: 0, take: 2 }),
+      query: expect.objectContaining({ workOrderId: 'wo-2', skip: 0, take: 100 }),
       throwOnError: true,
     })
+    expect(
+      vi.mocked(listBusinessConsoleMesMaterialIssueRequests).mock.calls[0]?.[0].query,
+    ).not.toHaveProperty('keyword')
     const mutateAsync = coladaState.mutateById.get(
       'confirmBusinessConsoleMesLineSideMaterialReceipt',
     )

@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -7,15 +7,19 @@ import type { ProductionReportContext } from '@/composables/mes/useProductionRep
 import ProductionReportDialog from './ProductionReportDialog.vue'
 
 const spies = vi.hoisted(() => ({
-  recordProductionReport: vi.fn(async (_body: Record<string, unknown>) => ({
-    data: { reportNo: 'PRPT-2026-0001' },
-  })),
+  recordProductionReport: vi.fn(
+    async (_body: Record<string, unknown>, options?: { onCommandAttempt?: () => void }) => {
+      options?.onCommandAttempt?.()
+      return { data: { reportNo: 'PRPT-2026-0001' } }
+    },
+  ),
+  makeIdempotencyKey: vi.fn(),
   notifySuccess: vi.fn(),
   notifyError: vi.fn(),
 }))
 
 vi.mock('@/composables/useBusinessMes', () => ({
-  makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
+  makeIdempotencyKey: spies.makeIdempotencyKey,
   useMesProductionReporting: () => ({
     recordProductionReport: spies.recordProductionReport,
     recordProductionReportError: ref(undefined),
@@ -75,6 +79,15 @@ function mountDialog(ctx: ProductionReportContext | null = context) {
 describe('ProductionReportDialog — 带出式录入', () => {
   beforeEach(() => {
     spies.recordProductionReport.mockClear()
+    spies.recordProductionReport.mockImplementation(
+      async (_body: Record<string, unknown>, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        return { data: { reportNo: 'PRPT-2026-0001' } }
+      },
+    )
+    let keyIndex = 0
+    spies.makeIdempotencyKey.mockReset()
+    spies.makeIdempotencyKey.mockImplementation((prefix: string) => `${prefix}-test-${++keyIndex}`)
     spies.notifySuccess.mockClear()
     spies.notifyError.mockClear()
   })
@@ -155,5 +168,53 @@ describe('ProductionReportDialog — 带出式录入', () => {
     const wrapper = mountDialog(null)
 
     expect(wrapper.find('form').exists()).toBe(false)
+  })
+
+  it('确定性拒绝后编辑业务输入会换新键并按 initial 意图重新提交', async () => {
+    spies.recordProductionReport.mockImplementationOnce(
+      async (_body, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        throw { success: false, code: 422, message: '报工数量不符合规则' }
+      },
+    )
+    const wrapper = mountDialog()
+
+    await wrapper.find('#report-good').setValue('5')
+    await wrapper.find('#report-scrap').setValue('1')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const first = spies.recordProductionReport.mock.calls[0]![0]
+    await wrapper.find('#report-good').setValue('6')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const second = spies.recordProductionReport.mock.calls[1]![0]
+    expect(second.goodQuantity).toBe(6)
+    expect(second.idempotencyKey).not.toBe(first.idempotencyKey)
+  })
+
+  it('结果未知后锁定录入项，并只按冻结 payload/key 原样重放', async () => {
+    spies.recordProductionReport.mockImplementationOnce(
+      async (_body, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        throw new TypeError('Failed to fetch')
+      },
+    )
+    const wrapper = mountDialog()
+
+    await wrapper.find('#report-good').setValue('5')
+    await wrapper.find('#report-scrap').setValue('1')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const first = spies.recordProductionReport.mock.calls[0]![0]
+    expect(wrapper.get<HTMLInputElement>('#report-good').element.disabled).toBe(true)
+    expect(wrapper.text()).toContain('原内容重试')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const second = spies.recordProductionReport.mock.calls[1]![0]
+    expect(second).toEqual(first)
   })
 })

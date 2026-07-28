@@ -324,6 +324,76 @@ describe('WMS 收货入库', () => {
     expect(wmsState.completeInbound.mock.calls[2][1]).not.toBe(firstKey)
   })
 
+  it('确定性 422 后编辑采集批号会轮换 key，并按 initial 新意图提交', async () => {
+    wmsState.completeInbound.mockImplementationOnce(
+      (
+        _id: string,
+        _key: string,
+        _lines?: unknown[],
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject({ success: false, statusCode: 422, message: '批号无效' })
+      },
+    )
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
+    confirm.click()
+    await flushPromises()
+
+    const firstKey = wmsState.completeInbound.mock.calls[0][1]
+    const batch = document.querySelector<HTMLInputElement>('[data-batch-input]')!
+    batch.value = 'LOT-CORRECTED'
+    batch.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    confirm.click()
+    await flushPromises()
+
+    expect(wmsState.completeInbound.mock.calls[1][1]).not.toBe(firstKey)
+    expect(wmsState.completeInbound.mock.calls[1][2]).toEqual([
+      {
+        lineNo: '1',
+        lotNo: 'LOT-CORRECTED',
+        productionDate: undefined,
+        expiryDate: '2027-12-31',
+      },
+    ])
+    expect(wmsState.completeInbound.mock.calls[1][3]).toMatchObject({ attempt: 'initial' })
+  })
+
+  it('结果未知时锁定采集字段，只按冻结 lines/key 原样重放', async () => {
+    wmsState.completeInbound.mockImplementationOnce(
+      (
+        _id: string,
+        _key: string,
+        _lines?: unknown[],
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject(new RequestTimeoutError())
+      },
+    )
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
+    confirm.click()
+    await flushPromises()
+
+    const first = wmsState.completeInbound.mock.calls[0]
+    expect(document.querySelector<HTMLInputElement>('[data-batch-input]')!.disabled).toBe(true)
+    expect(document.body.textContent).toContain('原内容重试')
+    confirm.click()
+    await flushPromises()
+
+    const second = wmsState.completeInbound.mock.calls[1]
+    expect(second[1]).toBe(first[1])
+    expect(second[2]).toEqual(first[2])
+    expect(second[3]).toMatchObject({ attempt: 'retry' })
+  })
+
   it('completePending 时确认按钮禁用（防重）', async () => {
     wmsState.completePending = true
     const wrapper = mount(InboundPage, { attachTo: document.body })

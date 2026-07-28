@@ -14,6 +14,17 @@ export class LifecycleStateChangedError extends Error {
   }
 }
 
+export function isIndeterminateLifecycleWriteError(error: unknown) {
+  if (error instanceof TypeError) return true
+  if (typeof DOMException !== 'undefined' && error instanceof DOMException) {
+    return error.name === 'AbortError' || error.name === 'TimeoutError'
+  }
+  if (!(error instanceof Error)) return false
+  return /failed to fetch|network\s?error|network interrupted|timeout|timed out|econn|connection reset/i.test(
+    error.message,
+  )
+}
+
 type CommandResult<TData> = Readonly<{
   data?: TData
   error?: unknown

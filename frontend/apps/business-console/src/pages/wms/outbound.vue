@@ -3,7 +3,10 @@ import type { BusinessConsoleWmsOutboundOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { statusActionGate } from '@nerv-iip/business-core'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import { recoverLifecycleAction } from '@/composables/lifecycleAction'
+import {
+  isIndeterminateLifecycleWriteError,
+  recoverLifecycleAction,
+} from '@/composables/lifecycleAction'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
@@ -53,7 +56,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 
 definePage({
   meta: {
@@ -223,8 +226,20 @@ const reviewOpen = shallowRef(false)
 const pendingOrder = shallowRef<OutboundRow>()
 const reviewIntentKey = shallowRef('')
 const reviewIntentAttempted = shallowRef(false)
+const reviewIntentLocked = shallowRef(false)
+const reviewFrozenPayload = shallowRef<{ packReviewNo: string; passed: boolean }>()
 const form = reactive({ packReviewNo: '', passed: true })
 const formError = shallowRef('')
+watch(
+  () => `${form.packReviewNo}\u0000${form.passed}`,
+  () => {
+    if (!reviewIntentAttempted.value || reviewIntentLocked.value) return
+    reviewIntentKey.value = createWmsIdempotencyKey()
+    reviewIntentAttempted.value = false
+    reviewFrozenPayload.value = undefined
+    formError.value = ''
+  },
+)
 
 function canComplete(row: OutboundRow) {
   return statusActionGate({
@@ -237,6 +252,8 @@ function openReview(row: OutboundRow) {
   pendingOrder.value = row
   reviewIntentKey.value = createWmsIdempotencyKey()
   reviewIntentAttempted.value = false
+  reviewIntentLocked.value = false
+  reviewFrozenPayload.value = undefined
   form.packReviewNo = ''
   form.passed = true
   formError.value = ''
@@ -250,20 +267,22 @@ async function submitReview() {
     return
   }
   try {
-    await completeOutbound(
-      id,
-      { packReviewNo: form.packReviewNo.trim(), passed: form.passed },
-      reviewIntentKey.value,
-      {
-        attempt: reviewIntentAttempted.value ? 'retry' : 'initial',
-        onCommandAttempt: () => {
-          reviewIntentAttempted.value = true
-        },
+    const payload = reviewFrozenPayload.value ?? {
+      packReviewNo: form.packReviewNo.trim(),
+      passed: form.passed,
+    }
+    reviewFrozenPayload.value = payload
+    await completeOutbound(id, payload, reviewIntentKey.value, {
+      attempt: reviewIntentAttempted.value ? 'retry' : 'initial',
+      onCommandAttempt: () => {
+        reviewIntentAttempted.value = true
       },
-    )
+    })
     reviewOpen.value = false
     reviewIntentKey.value = ''
     reviewIntentAttempted.value = false
+    reviewIntentLocked.value = false
+    reviewFrozenPayload.value = undefined
     notifySuccess('出库复核已提交')
   } catch (error) {
     if (
@@ -274,6 +293,8 @@ async function submitReview() {
           form.packReviewNo = ''
           reviewIntentKey.value = ''
           reviewIntentAttempted.value = false
+          reviewIntentLocked.value = false
+          reviewFrozenPayload.value = undefined
         },
         refresh: refreshOutboundOrders,
         notify: (message) => notifyError(message),
@@ -281,6 +302,11 @@ async function submitReview() {
     ) {
       return
     }
+    reviewIntentLocked.value =
+      reviewIntentAttempted.value && isIndeterminateLifecycleWriteError(error)
+    formError.value = reviewIntentLocked.value
+      ? '提交结果未知，当前内容已锁定；仅可按原内容重试。'
+      : ''
     notifyError(error, '提交出库复核失败，请稍后重试。')
   }
 }
@@ -473,6 +499,7 @@ function formatError(error: unknown) {
               <NvInput
                 id="wms-pack-review-no"
                 v-model="form.packReviewNo"
+                :disabled="reviewIntentLocked"
                 :aria-invalid="Boolean(formError)"
                 autocomplete="off"
               />
@@ -483,14 +510,20 @@ function formatError(error: unknown) {
               class="items-center justify-between rounded-lg border p-3"
             >
               <NvFieldLabel for="wms-pack-passed">复核通过</NvFieldLabel>
-              <NvCheckbox id="wms-pack-passed" v-model:checked="form.passed" />
+              <NvCheckbox
+                id="wms-pack-passed"
+                v-model:checked="form.passed"
+                :disabled="reviewIntentLocked"
+              />
             </NvField>
           </NvFieldGroup>
           <NvDialogFooter>
             <NvDialogClose as-child>
               <NvButton type="button" variant="outline">取消</NvButton>
             </NvDialogClose>
-            <NvButton type="submit" :disabled="completeOutboundPending">提交复核</NvButton>
+            <NvButton type="submit" :disabled="completeOutboundPending">
+              {{ reviewIntentLocked ? '按原内容重试' : '提交复核' }}
+            </NvButton>
           </NvDialogFooter>
         </form>
       </NvDialogContent>

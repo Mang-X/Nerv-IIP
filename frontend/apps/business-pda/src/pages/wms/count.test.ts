@@ -42,8 +42,14 @@ const wmsState = vi.hoisted(() => ({
     },
   ],
   completeCount: vi.fn(
-    (_countExecutionId: string, _input: { countedQuantity: number; idempotencyKey: string }) =>
-      Promise.resolve(),
+    (
+      _countExecutionId: string,
+      _input: { countedQuantity: number; idempotencyKey: string },
+      options?: { attempt: 'initial' | 'retry'; onCommandAttempt?: () => void },
+    ) => {
+      options?.onCommandAttempt?.()
+      return Promise.resolve()
+    },
   ),
   completePending: false,
   error: null as unknown,
@@ -166,7 +172,12 @@ describe('WMS 盘点', () => {
   })
 
   it('重试（不重新点任务）复用同一 idempotencyKey；重新点任务为新操作换新键', async () => {
-    wmsState.completeCount.mockRejectedValueOnce(new Error('lost response'))
+    wmsState.completeCount.mockImplementationOnce(
+      (_id: string, _input: unknown, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject(new Error('lost response'))
+      },
+    )
     const wrapper = mount(CountPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
     const countInput = document.querySelector<HTMLInputElement>('[data-testid="counted-quantity"]')!
@@ -205,6 +216,38 @@ describe('WMS 盘点', () => {
     const newOpKey = (wmsState.completeCount.mock.calls[2][1] as { idempotencyKey: string })
       .idempotencyKey
     expect(newOpKey).not.toBe(firstKey)
+    wrapper.unmount()
+  })
+
+  it('确定性 422 后编辑实盘数会轮换 key，并按 initial 新意图提交', async () => {
+    wmsState.completeCount.mockImplementationOnce(
+      (_id: string, _input: unknown, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject({ success: false, statusCode: 422, message: '实盘数无效' })
+      },
+    )
+    const wrapper = mount(CountPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    const countInput = document.querySelector<HTMLInputElement>('[data-testid="counted-quantity"]')!
+    countInput.value = '8'
+    countInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
+    confirm.click()
+    await flushPromises()
+
+    const firstKey = (wmsState.completeCount.mock.calls[0][1] as { idempotencyKey: string })
+      .idempotencyKey
+    countInput.value = '9'
+    countInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+    confirm.click()
+    await flushPromises()
+
+    const secondKey = (wmsState.completeCount.mock.calls[1][1] as { idempotencyKey: string })
+      .idempotencyKey
+    expect(secondKey).not.toBe(firstKey)
+    expect(wmsState.completeCount.mock.calls[1][2]).toMatchObject({ attempt: 'initial' })
     wrapper.unmount()
   })
 

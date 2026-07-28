@@ -236,6 +236,8 @@ describe('WMS operate actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     document.body.innerHTML = ''
+    let keyIndex = 0
+    wms.createIdempotencyKey.mockImplementation(() => `wms-intent-${++keyIndex}`)
     wms.completeInbound.mockImplementation(
       (_id: string, _key: string, options?: { onCommandAttempt?: () => void }) => {
         options?.onCommandAttempt?.()
@@ -431,6 +433,49 @@ describe('WMS operate actions', () => {
       { packReviewNo: 'PR-1', passed: true },
       'wms-intent-1',
       expect.objectContaining({ attempt: 'retry' }),
+    )
+  })
+
+  it('rotates the outbound key and resets to initial after a determinate 422 input correction', async () => {
+    wms.completeOutbound.mockImplementationOnce(
+      (
+        _id: string,
+        _payload: unknown,
+        _key: string,
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject({ success: false, statusCode: 422, message: '复核单号无效' })
+      },
+    )
+    const wrapper = mount(OutboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="完成复核 OB-1"]').trigger('click')
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('#wms-pack-review-no')!
+    input.value = 'PR-1'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const submit = () =>
+      document.body
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    submit()
+    await flushPromises()
+
+    input.value = 'PR-2'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    submit()
+    await flushPromises()
+
+    expect(wms.completeOutbound).toHaveBeenNthCalledWith(
+      2,
+      'ob-1',
+      { packReviewNo: 'PR-2', passed: true },
+      'wms-intent-2',
+      expect.objectContaining({ attempt: 'initial' }),
     )
   })
 

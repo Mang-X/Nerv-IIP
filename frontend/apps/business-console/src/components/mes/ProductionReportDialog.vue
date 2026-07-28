@@ -54,6 +54,7 @@ const {
   showErrors,
   canSubmit,
   canCompleteOperation,
+  intentLocked,
   recordProductionReportPending,
   submit,
 } = useProductionReportForm(() => props.context, {
@@ -124,6 +125,7 @@ async function onSubmit() {
               step="any"
               type="number"
               autofocus
+              :disabled="intentLocked"
               :data-invalid="showErrors && invalid.goodQuantity ? '' : undefined"
             />
           </NvField>
@@ -136,6 +138,7 @@ async function onSubmit() {
               min="0"
               step="any"
               type="number"
+              :disabled="intentLocked"
               :data-invalid="showErrors && invalid.scrapQuantity ? '' : undefined"
             />
           </NvField>
@@ -147,7 +150,7 @@ async function onSubmit() {
             <NvCheckbox
               id="report-complete"
               v-model:checked="form.completesOperation"
-              :disabled="!canCompleteOperation"
+              :disabled="!canCompleteOperation || intentLocked"
             />
           </NvField>
         </NvFieldGroup>
@@ -155,6 +158,9 @@ async function onSubmit() {
         <!-- 点提交才标红；未通过不发请求。 -->
         <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
           请填写数量：合格与不合格均不可为负，且合计需大于 0。
+        </p>
+        <p v-if="intentLocked" class="text-sm text-warning-strong">
+          提交结果未知，当前内容已锁定；仅可按原内容重试。
         </p>
 
         <NvDialogFooter>
