@@ -58,14 +58,18 @@ public sealed class MaintenanceCommandLockTests
     public async Task Redis_distributed_lock_renews_lease_until_disposed()
     {
         var store = new InMemoryRedisCommandLockStore();
+        // 时间边界要留给 CI 负载：租约 100ms + 续租 20ms 时，续租线程被饿一次超过 100ms
+        // 租约就真过期，`blocked` 会拿到锁而断言失败（CI 上反复红，见 #1201）。
+        // 契约是「续租能让持有超过一个租约周期」，用 1s 租约 / 100ms 续租 / 1.5s 观察，
+        // 结论不变但对调度抖动有 10 倍余量。
         var distributedLock = new RedisMaintenanceDistributedLock(
             store,
             TimeProvider.System,
-            TimeSpan.FromMilliseconds(100),
-            TimeSpan.FromMilliseconds(20));
-        await using var held = await distributedLock.AcquireAsync("pm-renewing-lock", TimeSpan.FromSeconds(1), CancellationToken.None);
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(100));
+        await using var held = await distributedLock.AcquireAsync("pm-renewing-lock", TimeSpan.FromSeconds(5), CancellationToken.None);
 
-        await Task.Delay(250);
+        await Task.Delay(1500);
         await using var blocked = await distributedLock.TryAcquireAsync("pm-renewing-lock", TimeSpan.Zero, CancellationToken.None);
 
         Assert.Null(blocked);
@@ -106,11 +110,17 @@ public sealed class MaintenanceCommandLockTests
         var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var registration = held.HandleLostToken.Register(lostSignal.SetResult);
 
-        await lostSignal.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        await lostSignal.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        var warning = Assert.Single(logger.Messages, message => message.LogLevel == LogLevel.Warning);
-        Assert.Contains("pm-rejected-renewal", warning.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("token", warning.Message, StringComparison.OrdinalIgnoreCase);
+        // 契约是「续租被拒时写出带锁键、且不泄漏 token 的告警」——**写几条不是契约**。
+        // 续租每 20ms 触发一次，CI 负载下失败续租常在断言前跑到两次，
+        // 原来的 Assert.Single 因此必然抖动（见 #1201）。改为：至少一条命中锁键，
+        // 且所有告警都不含 token——这才是真正要守的两条。
+        var warnings = logger.Messages.Where(message => message.LogLevel == LogLevel.Warning).ToArray();
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, message => message.Message.Contains("pm-rejected-renewal", StringComparison.Ordinal));
+        Assert.All(warnings, message =>
+            Assert.DoesNotContain("token", message.Message, StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
