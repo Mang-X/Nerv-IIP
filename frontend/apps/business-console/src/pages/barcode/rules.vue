@@ -42,13 +42,38 @@ definePage({
   },
 })
 
+/**
+ * 适用场景（`BarcodeRule.AllowedSourceDocumentTypes`）。
+ *
+ * 后端存自由字符串、没有枚举，实际落库的是**源单据类型**——权威清单是
+ * `WorldHistoryLabelSpec` 的六个常量（purchase-receipt / material-issue /
+ * finished-goods-receipt / work-order / work-center / delivery-order）。
+ * 下面前四条 `xxx.yyy` 形态是早期前端自定的扫码动作口径，存量规则里仍在用，一并保留。
+ */
 const SOURCE_DOCUMENT_OPTIONS = [
+  { value: 'purchase-receipt', label: '采购收货' },
+  { value: 'material-issue', label: '生产领料' },
+  { value: 'finished-goods-receipt', label: '完工入库' },
+  { value: 'work-order', label: '生产工单' },
+  { value: 'work-center', label: '工位挂牌' },
+  { value: 'delivery-order', label: '发货装箱' },
   { value: 'inventory.receipt', label: '收货入库' },
   { value: 'production.report', label: '生产报工' },
   { value: 'quality.inspection', label: '质量检验' },
   { value: 'inventory.count', label: '库存盘点' },
   { value: 'wms.receiving', label: '仓储收货' },
 ]
+
+/**
+ * 不上屏的技术标识。
+ *
+ * 只收**查证过的**值：`facade` 在全后端源码里零命中（源单据类型常量只有六个业务值），
+ * 是历史联调时绕过界面直接写进开发库的残留，现场看到它只会困惑，所以展示时滤掉。
+ * 这里刻意不塞一堆猜测性的技术词——滤掉一个真实存在的业务场景，
+ * 比多显示一个陌生标识危险得多。查不到词表的值一律照原样显示并在开发期告警。
+ * 只影响展示：编辑时仍原样带出，保存不丢数据。
+ */
+const NON_BUSINESS_SOURCE_TYPES = new Set(['facade'])
 
 const BARCODE_TYPE_OPTIONS = [
   { value: 'code128', label: 'Code 128' },
@@ -184,9 +209,16 @@ function typeLabel(value?: string | null) {
 
 function sourceLabels(values?: readonly string[] | null) {
   if (!values?.length) return '暂未限定'
-  return values
-    .map((value) => SOURCE_DOCUMENT_OPTIONS.find((o) => o.value === value)?.label ?? value)
-    .join('、')
+  const labels = values.flatMap((value) => {
+    const raw = value.trim()
+    if (!raw || NON_BUSINESS_SOURCE_TYPES.has(raw.toLowerCase())) return []
+    const label = SOURCE_DOCUMENT_OPTIONS.find((o) => o.value === raw)?.label
+    if (label === undefined && import.meta.env.DEV) {
+      console.warn(`[条码规则] 词表缺失: ${raw}，请补 SOURCE_DOCUMENT_OPTIONS`)
+    }
+    return [label ?? raw]
+  })
+  return labels.length ? labels.join('、') : '暂未限定'
 }
 
 function statusLabel(value?: string | null) {

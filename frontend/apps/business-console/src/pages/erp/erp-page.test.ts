@@ -87,6 +87,7 @@ vi.mock('@/composables/useBusinessErp', () => ({
     total: computed(() => 1),
     error: shallowRef(undefined),
     pending: shallowRef(false),
+    ready: computed(() => true),
     refresh: vi.fn(),
     convertToPurchaseOrder: vi.fn(),
     convertToPurchaseOrderError: shallowRef(undefined),

@@ -718,13 +718,50 @@ describe('NvMetricRing / NvMetricStrip', () => {
     const wrapper = mount(NvMetricRing, {
       props: { label: '在制工单', value: 35, centerCaption: '总计', segments: ringSegments },
     })
-    await wrapper.findAll('.nv-ring-seg')[0].trigger('mouseenter')
+    // 指针事件由命中层承担，可见弧只负责好看（见下一条用例）。
+    await wrapper.findAll('.nv-ring-hit')[0].trigger('mouseenter')
     expect(wrapper.findAll('.nv-ring-dim').length).toBe(4)
     // 中心只留占比：段的身份由亮起的弧 + 未淡出的图例行表达，环内也放不下标签
     const arcCentre = wrapper.find('.nv-ring-center').text()
     expect(arcCentre).toContain('24')
     expect(arcCentre).toContain('68.6%')
     expect(arcCentre).not.toContain('进行中')
+  })
+
+  /**
+   * 回归：hover 过去直接把可见弧从 8 加粗到 11，而 SVG 描边的命中区域**就是描边本身**，
+   * 于是「指到」会改变「什么算指到」——指针停在两个宽度的差值带上时，加粗与复原互为因果，
+   * enter/leave 来回自激抽搐。修法是把命中交给一条恒定宽度的透明弧，可见弧不再收事件。
+   * 只要这条不变量还在，自激在结构上就不可能重现。
+   */
+  it('ring 命中几何与视觉状态解耦：可见弧不收指针事件，命中层宽度恒定', async () => {
+    const wrapper = mount(NvMetricRing, {
+      props: { label: '在制工单', value: 35, centerCaption: '总计', segments: ringSegments },
+    })
+    const hits = wrapper.findAll('.nv-ring-hit')
+    expect(hits.length).toBe(ringSegments.length)
+    // 每段一条命中弧，宽度恒为最大视觉宽度，且必须按描边命中（透明描边收不到 visiblePainted）
+    for (const hit of hits) {
+      expect(hit.attributes('stroke-width')).toBe('11')
+      expect(hit.attributes('stroke')).toBe('transparent')
+    }
+    // 可见弧交出全部指针事件
+    for (const seg of wrapper.findAll('.nv-ring-seg')) {
+      expect(seg.classes()).not.toContain('nv-ring-hit')
+    }
+
+    await hits[0].trigger('mouseenter')
+    expect(wrapper.findAll('.nv-ring-seg-active').length).toBe(1)
+    // 关键不变量：高亮之后命中几何**一点没变**
+    for (const hit of wrapper.findAll('.nv-ring-hit')) {
+      expect(hit.attributes('stroke-width')).toBe('11')
+    }
+
+    await hits[0].trigger('mouseleave')
+    expect(wrapper.findAll('.nv-ring-seg-active').length).toBe(0)
+    for (const hit of wrapper.findAll('.nv-ring-hit')) {
+      expect(hit.attributes('stroke-width')).toBe('11')
+    }
   })
 
   it('ring 悬浮图例项：其余分段淡出，中心切到该段读数', async () => {

@@ -195,7 +195,7 @@ const listErrorMessage = computed(() =>
 // 「还没查」和「真的 0 条」很快又会混回同一个渲染。
 const contextReady = computed(() => hasBusinessContext(filters))
 const headerCount = computed(() => {
-  if (!contextReady.value) return '未选择组织与环境'
+  if (!contextReady.value) return '未选择业务范围'
   if (pickingTasksError.value) return '任务数取不到'
   if (pickingTasksPending.value) return '加载中'
   return `${pickingTasksTotal.value} 个拣货任务`
@@ -343,7 +343,7 @@ function firstQuery(value: unknown) {
       :error="pickingTasksError"
       :error-message="listErrorMessage"
       :awaiting-scope="!contextReady"
-      awaiting-scope-message="请先在顶部选择组织与环境，再查看拣货任务。"
+      awaiting-scope-message="请先在顶部选择业务范围，再查看拣货任务。"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无拣货任务。领料齐套或出库拣货时由系统派生，或在此手工登记。"

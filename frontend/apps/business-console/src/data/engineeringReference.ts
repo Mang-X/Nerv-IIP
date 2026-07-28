@@ -18,3 +18,18 @@ export const ENGINEERING_DOCUMENT_TYPE_OPTIONS: RefOption[] = [
   { value: 'test-report', label: '试验报告' },
   { value: 'material-certificate', label: '材质证明' },
 ]
+
+/**
+ * 存量文档里的既有类型码 → 中文（**只用于显示，不进新建/筛选下拉**）。
+ *
+ * 后端 `EngineeringDocument.DocumentType` 是自由字符串，没有白名单：现场既有数据与
+ * 世界史种子写的是 `sop` / `inspection-spec` / `process-card`
+ * （`WorldHistoryEngineeringSpec.DocumentType*`），与上面这份前端受控值并不同源。
+ * 不收这三条，「类型」列就会直接印出英文码；收进下拉又会和「作业指导书 / 检验标准 /
+ * 工艺卡」语义重叠、让新建时二选一犯难，所以单独放一张只读别名表。
+ */
+export const ENGINEERING_DOCUMENT_TYPE_ALIASES: Readonly<Record<string, string>> = {
+  sop: '标准作业指导书',
+  'inspection-spec': '检验规范',
+  'process-card': '过程卡',
+}

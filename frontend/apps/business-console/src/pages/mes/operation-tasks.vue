@@ -8,6 +8,7 @@ import { openDownloadGrantBlob } from '@nerv-iip/business-core'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
@@ -92,7 +93,26 @@ const {
 const { assignDispatchTask, assignDispatchTaskPending } = useMesDispatchTasks()
 
 const router = useRouter()
-const { resolveShiftLabel, resolveWorkCenter } = useMesDisplayNames({ shifts: true })
+// devices:true：工序读面只回设备编码，中文设备名要靠设备台账名录在前端补。
+const { resolveDevice, resolveShiftLabel, resolveWorkCenter } = useMesDisplayNames({
+  shifts: true,
+  devices: true,
+})
+
+/** 设备列的编码与名称：读面优先，其次设备台账名录；名录查不到就只显编码。 */
+function deviceCode(row: Row) {
+  return row.deviceAssetCode ?? row.deviceAssetId ?? ''
+}
+function deviceName(row: Row) {
+  return row.deviceAssetName ?? resolveDevice(deviceCode(row))
+}
+/** 排序 / 导出用的纯文本形态，与单元格呈现同一口径。 */
+function deviceText(row: Row) {
+  const code = deviceCode(row)
+  if (!code) return '未指定'
+  const name = deviceName(row)
+  return name ? `${name} ${code}` : code
+}
 const { resources: workCenterResources } = useBusinessMasterDataResources('work-center')
 const { resources: shiftResources } = useBusinessMasterDataResources('shift')
 
@@ -195,7 +215,7 @@ const columns: NvDataTableColumn<Row>[] = [
   {
     key: 'deviceAssetId',
     header: '设备',
-    accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定',
+    accessor: (r) => deviceText(r),
   },
   { key: 'shiftId', header: '班次', width: 'w-28', accessor: (r) => resolveShiftLabel(r.shiftId) },
   { key: 'assignedUserName', header: '派工', width: 'w-40' },
@@ -531,6 +551,9 @@ function formatError(error: unknown) {
             :tone="resolveScheduleState(row).tone"
           />
         </span>
+      </template>
+      <template #cell-deviceAssetId="{ row }">
+        <CodeWithNameCell :code="deviceCode(row)" :name="deviceName(row)" fallback="未指定" />
       </template>
       <template #cell-assignedUserName="{ row }">
         <NvStatusBadge

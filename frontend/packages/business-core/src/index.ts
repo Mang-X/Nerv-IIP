@@ -81,6 +81,8 @@ export {
   inspectionTaskSourceTypeLabels,
   inspectionTaskStatusLabel,
   inspectionTaskStatusLabels,
+  qualityCharacteristicLabel,
+  qualityCharacteristicLabels,
   qualitySourceTypeLabel,
   qualitySourceTypeLabels,
 } from './labels/qualityLabels'

@@ -7,6 +7,7 @@ import {
   CheckCheckIcon,
   FactoryIcon,
   ListChecksIcon,
+  MinusIcon,
   RefreshCwIcon,
   ShieldAlertIcon,
 } from '@lucide/vue'
@@ -29,6 +30,7 @@ import { BUSINESS_DOMAINS, DOMAIN_SIDE_NAV, WORKBENCH_DOMAIN_ID, permittedBy } f
 import { BUSINESS_DOMAIN_PERMISSIONS } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useBusinessWorkbenchSummary } from '@/composables/useBusinessWorkbench'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import type {
   BusinessConsoleWorkbenchAlertItem,
   BusinessConsoleWorkbenchMessageItem,
@@ -63,6 +65,7 @@ const auth = useAuthStore()
 const {
   alertItems,
   availableKpis,
+  contextReady,
   messageItems,
   refreshWorkbenchSummary,
   summary,
@@ -70,6 +73,9 @@ const {
   summaryPending,
   todoItems,
 } = useBusinessWorkbenchSummary()
+
+// 工作台读面只回设备编码，中文设备名在设备台账里，按编码 join 出来。
+const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
 
 interface HeroMetric {
   key: string
@@ -98,8 +104,77 @@ const alertCritical = computed(() =>
   alertsAvailable.value ? (summary.value?.alerts?.critical ?? 0) : 0,
 )
 
-/** 首屏总量：三路待处理之和，供页头一眼给出"今天有多少事"。 */
-const pendingTotal = computed(() => todoTotal.value + messageUnread.value + alertTotal.value)
+/**
+ * 三路来源各自的读面状态。**「取不到」「没接入」「真的是 0」是三件事**，页面必须分开表达：
+ * 曾踩坑——`isAvailable` 把「未接入 / 无权限 / 暂不可用」一律折成 0 计入合计，页头与环图
+ * 于是给出假读数，行动卡还照样写着「设备当前运行正常」。
+ *
+ * 另外注意：业务上下文未就绪时 `enabled: false`，pinia-colada 的 `asyncStatus` 停在
+ * `idle`，`isLoading` 为 **false**——「压根没查」不会被 `summaryPending` 兜住，必须靠
+ * `contextReady` 单独识别，否则会被当成「查过了、是 0」。
+ */
+// 只有「没就绪 **且** 手上确实没有摘要」才算未查询；已拿到结果就按实际数据走。
+const summaryUnscoped = computed(() => !contextReady.value && summary.value === undefined)
+const summaryFailed = computed(() => !summaryPending.value && summaryError.value != null)
+
+const UNSCOPED_HINT = '尚未选择业务范围，工作台还没有发起查询——请先在顶部选择。'
+
+function focusSourceState(available: boolean, name: string) {
+  if (summaryFailed.value) {
+    return { error: summaryError.value, unavailable: false, unavailableHint: undefined }
+  }
+  if (summaryUnscoped.value) {
+    return { error: undefined, unavailable: true, unavailableHint: UNSCOPED_HINT }
+  }
+  return {
+    error: undefined,
+    unavailable: !available,
+    unavailableHint: `${name}来源未接入或当前账号无权查看，工作台无法统计这一路，请联系管理员确认接入状态。`,
+  }
+}
+
+const todoCardState = computed(() => focusSourceState(todosAvailable.value, '待办'))
+const messageCardState = computed(() => focusSourceState(messagesAvailable.value, '消息'))
+const alertCardState = computed(() => focusSourceState(alertsAvailable.value, '设备预警'))
+
+/**
+ * 首屏总量：只累加**当前可用**的来源；不可用的一路记 `null` 并被排除，绝不折成 0 进合计。
+ * 一路可用来源都没有时整体为 `null`，页头与环图一律显 `—`。
+ */
+const pendingContributions = computed<(number | null)[]>(() =>
+  summaryFailed.value || summaryUnscoped.value
+    ? [null, null, null]
+    : [
+        todosAvailable.value ? todoTotal.value : null,
+        messagesAvailable.value ? messageUnread.value : null,
+        alertsAvailable.value ? alertTotal.value : null,
+      ],
+)
+
+const pendingTotal = computed<number | null>(() => {
+  const values = pendingContributions.value.filter((value): value is number => value !== null)
+  return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) : null
+})
+
+/** 有多少路"没算进来"——大于 0 时任何合计读数都只是部分事实，必须在文案里注明。 */
+const missingSourceCount = computed(
+  () => pendingContributions.value.filter((value) => value === null).length,
+)
+
+/** 页头读数：加载中不出数，取不到就直说取不到，部分缺失就注明是部分。 */
+const pendingHeadline = computed(() => {
+  if (summaryPending.value) return undefined
+  if (summaryFailed.value) return '待处理数量取不到'
+  if (pendingTotal.value === null) return '待处理数量暂不可用'
+  return missingSourceCount.value > 0
+    ? `${pendingTotal.value} 项待处理（另有 ${missingSourceCount.value} 路取不到）`
+    : `${pendingTotal.value} 项待处理`
+})
+
+/** 环图标题同样要如实说明份额只覆盖可用来源，不让部分事实冒充全貌。 */
+const workloadLabel = computed(() =>
+  missingSourceCount.value > 0 ? '今日待处理构成（部分来源不可用）' : '今日待处理构成',
+)
 
 /**
  * 英雄区指标：facade KPI（当前口径为已下达工单 / 未关闭质量异常）+ 待办 + 设备预警。
@@ -340,7 +415,11 @@ function messageMeta(item: BusinessConsoleWorkbenchMessageItem) {
 }
 
 function alertLabel(item: BusinessConsoleWorkbenchAlertItem) {
-  const device = normalize(item.deviceAssetId) || '设备'
+  const deviceCode = normalize(item.deviceAssetId)
+  const deviceName = resolveDevice(deviceCode)
+  // 设备名在设备台账里，按编码 join 出中文名；名录查不到就只显编码，不编造名字。
+  const device = deviceCode ? (deviceName ? `${deviceName} ${deviceCode}` : deviceCode) : '设备'
+  // 报警码的中文描述要由遥测读面下发（前端没有报警码名录），这里如实显示原码。
   const code = normalize(item.alarmCode) || '报警'
   return `${device} · ${code}`
 }
@@ -384,7 +463,7 @@ function formatDateTime(value: string) {
     <NvPageHeader
       title="业务工作台"
       :breadcrumbs="[{ label: '数字化工作台' }]"
-      :count="summaryPending ? undefined : `${pendingTotal} 项待处理`"
+      :count="pendingHeadline"
     >
       <template #actions>
         <NvButton
@@ -406,9 +485,10 @@ function formatDateTime(value: string) {
       role="alert"
     >
       <div>
-        <p class="text-sm font-medium text-destructive-strong">工作台摘要暂不可用</p>
+        <p class="text-sm font-medium text-destructive-strong">工作台摘要读取失败</p>
         <p class="mt-1 text-sm text-muted-foreground">
-          跨域汇总接口没有返回结果，下面展示的是最近一次成功获取的内容。
+          跨域汇总接口没有返回结果，现在无法判断今天是否有待处理事项，下面各卡的读数一律显
+          「—」。请重试，或稍后再看。
         </p>
       </div>
       <NvButton size="sm" type="button" variant="outline" @click="refreshWorkbenchSummary">
@@ -457,11 +537,30 @@ function formatDateTime(value: string) {
           />
         </template>
 
+        <!-- 取不到数时不能说"暂无指标"——那等于断言"查过了、确实没有" -->
+        <NvCard
+          v-else-if="summaryFailed || summaryUnscoped"
+          class="col-span-full grid place-items-center p-6 text-center"
+        >
+          <div>
+            <p class="text-sm font-medium text-foreground">
+              {{ summaryFailed ? '跨域指标读取失败' : '尚未发起查询' }}
+            </p>
+            <p class="mt-1 text-sm text-muted-foreground">
+              {{
+                summaryFailed
+                  ? '没有取到跨域汇总数据，当前无法判断各项指标的实际数值。'
+                  : UNSCOPED_HINT
+              }}
+            </p>
+          </div>
+        </NvCard>
+
         <NvCard v-else class="col-span-full grid place-items-center p-6 text-center">
           <div>
-            <p class="text-sm font-medium text-foreground">暂无可显示指标</p>
+            <p class="text-sm font-medium text-foreground">当前角色没有可汇总的跨域指标</p>
             <p class="mt-1 text-sm text-muted-foreground">
-              当前角色没有可汇总的跨域指标，或来源暂不可用。
+              指标来源均未接入或不在你的权限范围内，接入后会自动出现在这里。
             </p>
           </div>
         </NvCard>
@@ -482,16 +581,73 @@ function formatDateTime(value: string) {
         </div>
       </NvCard>
 
+      <!--
+        取不到数（失败 / 未查询 / 三路全不可用）时既不画环也不显 0——环图中心的读数一旦写成
+        0，就等于向使用者断言"今天没事"，而事实是"根本不知道"。
+      -->
+      <NvCard v-else-if="pendingTotal === null" class="flex flex-col p-5" role="alert">
+        <p class="truncate text-sm text-muted-foreground">今日待处理构成</p>
+        <div class="grid flex-1 place-items-center py-2 text-center">
+          <div class="grid justify-items-center gap-3">
+            <span class="grid size-12 place-items-center rounded-full bg-muted">
+              <MinusIcon class="size-6 text-muted-foreground" aria-hidden="true" />
+            </span>
+            <div>
+              <p class="text-sm font-medium text-foreground">
+                {{ summaryFailed ? '取不到数据，无法判断' : '尚未发起查询' }}
+              </p>
+              <p class="mt-1 text-sm leading-6 text-muted-foreground">
+                {{
+                  summaryFailed
+                    ? '跨域汇总没有返回结果，现在不能确认今天是否有待处理事项。'
+                    : summaryUnscoped
+                      ? UNSCOPED_HINT
+                      : '待办、消息与设备预警三路来源当前都无法统计，请联系管理员确认接入状态。'
+                }}
+              </p>
+            </div>
+            <NvButton
+              v-if="summaryFailed"
+              size="sm"
+              type="button"
+              variant="outline"
+              @click="refreshWorkbenchSummary"
+            >
+              <RefreshCwIcon aria-hidden="true" />
+              重试
+            </NvButton>
+          </div>
+        </div>
+      </NvCard>
+
       <NvMetricRing
-        v-else-if="pendingTotal > 0"
+        v-else-if="(pendingTotal ?? 0) > 0"
         class="flex flex-col justify-center"
-        label="今日待处理构成"
-        :value="pendingTotal"
+        :label="workloadLabel"
+        :value="pendingTotal ?? 0"
         center-caption="项待处理"
         :segments="workloadSegments"
       />
 
-      <!-- 空态沿用 NvMetricRing 的标签排布（同样的 label 行），三态之间标题位不跳。 -->
+      <!-- 还有来源没算进来时，"全部清空"这句话就不成立，只能说已接入的这几路是 0。 -->
+      <NvCard v-else-if="missingSourceCount > 0" class="flex flex-col p-5">
+        <p class="truncate text-sm text-muted-foreground">{{ workloadLabel }}</p>
+        <div class="grid flex-1 place-items-center py-2 text-center">
+          <div class="grid justify-items-center gap-3">
+            <span class="grid size-12 place-items-center rounded-full bg-muted">
+              <MinusIcon class="size-6 text-muted-foreground" aria-hidden="true" />
+            </span>
+            <div>
+              <p class="text-sm font-medium text-foreground">已接入的来源都是 0</p>
+              <p class="mt-1 text-sm leading-6 text-muted-foreground">
+                另有 {{ missingSourceCount }} 路来源取不到数据，还不能断定今天全部清空。
+              </p>
+            </div>
+          </div>
+        </div>
+      </NvCard>
+
+      <!-- 空态沿用 NvMetricRing 的标签排布（同样的 label 行），各态之间标题位不跳。 -->
       <NvCard v-else class="flex flex-col p-5">
         <p class="truncate text-sm text-muted-foreground">今日待处理构成</p>
         <div class="grid flex-1 place-items-center py-2 text-center">
@@ -525,10 +681,14 @@ function formatDateTime(value: string) {
         unit="项"
         :items="todoFocusItems"
         :pending="summaryPending"
+        :error="todoCardState.error"
+        :unavailable="todoCardState.unavailable"
+        :unavailable-hint="todoCardState.unavailableHint"
         empty-title="待办已清空"
         empty-hint="新的审批与任务到达后会自动出现在这里。"
         to="/approval"
         action-label="去审批中心"
+        @retry="refreshWorkbenchSummary"
       />
 
       <WorkbenchFocusCard
@@ -541,8 +701,12 @@ function formatDateTime(value: string) {
         :badge="messageTotal > 0 ? `共 ${messageTotal} 条` : undefined"
         :items="messageFocusItems"
         :pending="summaryPending"
-        empty-title="暂无未读消息"
+        :error="messageCardState.error"
+        :unavailable="messageCardState.unavailable"
+        :unavailable-hint="messageCardState.unavailableHint"
+        empty-title="没有未读消息"
         empty-hint="有新的业务通知时会第一时间出现在这里。"
+        @retry="refreshWorkbenchSummary"
       />
 
       <WorkbenchFocusCard
@@ -555,10 +719,14 @@ function formatDateTime(value: string) {
         :badge="alertCritical > 0 ? `紧急 ${alertCritical}` : undefined"
         :items="alertFocusItems"
         :pending="summaryPending"
-        empty-title="设备当前运行正常"
+        :error="alertCardState.error"
+        :unavailable="alertCardState.unavailable"
+        :unavailable-hint="alertCardState.unavailableHint"
+        empty-title="没有未解除的设备预警"
         empty-hint="一旦有设备报出异常就会立刻出现在这里。"
         to="/equipment/alarms"
         action-label="查看设备报警"
+        @retry="refreshWorkbenchSummary"
       />
     </section>
 

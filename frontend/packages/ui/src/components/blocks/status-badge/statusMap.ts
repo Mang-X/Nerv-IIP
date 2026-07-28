@@ -24,6 +24,9 @@ const STATUS_LABELS: Record<string, string> = {
   active: '启用',
   approved: '已批准',
   available: '可用',
+  // 采购订单 / 收货单的「收货状态」由网关按行项目收货量派生，四个取值见
+  // BusinessServiceClients.ReceiptReadiness：no-lines / received / partially-received / awaiting-arrival。
+  awaitingarrival: '待到货',
   blocked: '阻塞',
   cancelled: '已取消',
   closed: '已关闭',
@@ -47,6 +50,7 @@ const STATUS_LABELS: Record<string, string> = {
   inventorypostingfailed: '库存过账失败',
   issued: '已下发',
   manual: '手工处理',
+  nolines: '无行项目',
   open: '待处理',
   partiallyposted: '部分过账',
   partiallyreceived: '部分收货',
@@ -135,6 +139,7 @@ const TONE_BY_STATUS: Record<StatusTone, string[]> = {
     'unavailable',
   ],
   warning: [
+    'awaitingarrival',
     'conditionalrelease',
     'created',
     'degraded',
@@ -157,7 +162,7 @@ const TONE_BY_STATUS: Record<StatusTone, string[]> = {
     'scheduleinvalidated',
     'submitted',
   ],
-  neutral: ['dismissed', 'superseded'],
+  neutral: ['dismissed', 'nolines', 'superseded'],
 }
 
 const STATUS_TO_TONE = new Map<string, StatusTone>()
@@ -170,12 +175,30 @@ export interface ResolvedStatus {
   tone: StatusTone
 }
 
+/**
+ * 词表漏词只在开发期告警一次，生产构建里整段被摇树掉。
+ *
+ * 仍然回吐原值（宁可上屏英文码，也不让状态列空白），但开发期必须有声音——
+ * 否则新状态码只会在真机走查时才被人眼发现。同一个 key 只报一次，避免表格逐行刷屏。
+ */
+const warnedStatusKeys = new Set<string>()
+function warnMissingStatusLabel(key: string, raw: string) {
+  if (!import.meta.env?.DEV) return
+  if (warnedStatusKeys.has(key)) return
+  warnedStatusKeys.add(key)
+  console.warn(
+    `[NvStatusBadge] 词表缺失: ${raw}（归一键 ${key}），请补 statusMap.ts 的 STATUS_LABELS`,
+  )
+}
+
 /** Resolve a raw status value to a localized label + semantic tone. */
 export function resolveStatus(value?: string | null): ResolvedStatus {
   const raw = (value ?? '').trim()
   const key = normalizeStatusKey(raw)
+  const label = STATUS_LABELS[key]
+  if (label === undefined && raw) warnMissingStatusLabel(key, raw)
   return {
-    label: STATUS_LABELS[key] ?? (raw || '未知'),
+    label: label ?? (raw || '未知'),
     tone: STATUS_TO_TONE.get(key) ?? 'neutral',
   }
 }

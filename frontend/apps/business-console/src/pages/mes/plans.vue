@@ -274,17 +274,30 @@ function formatDateTime(value?: string | null) {
 function formatQuantity(value?: number | null) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(value ?? 0)
 }
+// 来源计划词表。注意后端同一列既放「需求性质」（sales / forecast / safety / stock），
+// 也放「来源系统」（erp / mrp / aps / manual）——两类都要收，缺词就把英文码印到列上。
+const PLAN_SOURCE_LABELS: Record<string, string> = {
+  forecast: '预测需求',
+  sales: '正常订单',
+  'sales-order': '正常订单',
+  safety: '安全库存补充',
+  'safety-stock': '安全库存补充',
+  stock: '备货生产',
+  'stock-build': '备货生产',
+  erp: 'ERP 下达',
+  mrp: 'MRP 运算',
+  aps: 'APS 排程',
+  mes: 'MES 自建',
+  manual: '手工新建',
+}
 function formatPlanSource(value?: string | null) {
-  const map: Record<string, string> = {
-    forecast: '预测需求',
-    sales: '正常订单',
-    'sales-order': '正常订单',
-    safety: '安全库存补充',
-    'safety-stock': '安全库存补充',
-    stock: '备货生产',
-    'stock-build': '备货生产',
+  const raw = (value ?? '').trim()
+  if (!raw) return '未指定'
+  const label = PLAN_SOURCE_LABELS[raw.toLowerCase()]
+  if (label === undefined && import.meta.env.DEV) {
+    console.warn(`[生产计划] 词表缺失: ${raw}，请补 PLAN_SOURCE_LABELS`)
   }
-  return value ? (map[value] ?? value) : '未指定'
+  return label ?? raw
 }
 function normalizeSourceQuery(value: unknown): string {
   const text = Array.isArray(value) ? value[0] : value

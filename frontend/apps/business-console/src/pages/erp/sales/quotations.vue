@@ -38,7 +38,14 @@ import {
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
-import { formatAmount, formatDate, pickerInvalidClass } from '../shared'
+import {
+  UNAVAILABLE_TEXT,
+  erpReadState,
+  formatAmount,
+  formatDate,
+  pickerInvalidClass,
+  readCount,
+} from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: '销售报价', requiredPermissions: ['business.erp.sales.read'] },
@@ -90,19 +97,36 @@ const pendingApproval = computed(
 const amount = computed(() =>
   quotations.items.value.reduce((sum, q) => sum + (q.totalAmount ?? 0), 0),
 )
+const readState = computed(() =>
+  erpReadState({
+    noun: '报价单',
+    unit: '张',
+    ready: quotations.ready.value,
+    pending: quotations.pending.value,
+    error: quotations.error.value,
+    total: quotations.total.value,
+    filtered: Boolean(quotations.filters.keyword || quotations.filters.status),
+    emptyHint: '还没有报价单。可从销售机会或客户需求创建报价。',
+  }),
+)
+
 const quotationCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'pending',
     label: '待审报价',
-    value: pendingApproval.value,
-    unit: '单',
-    meta: '草稿报价，审批后可转销售订单',
+    value: readCount(readState.value, pendingApproval.value),
+    unit: readState.value.trustworthy ? '单' : '',
+    meta: readState.value.trustworthy
+      ? '草稿报价，审批后可转销售订单'
+      : readState.value.emptyMessage,
   },
   {
     key: 'amount',
     label: '报价金额',
-    value: formatAmount(amount.value),
-    meta: `当前列表 ${quotations.items.value.length} 张报价合计`,
+    value: readState.value.trustworthy ? formatAmount(amount.value) : UNAVAILABLE_TEXT,
+    meta: readState.value.trustworthy
+      ? `当前列表 ${quotations.items.value.length} 张报价合计`
+      : readState.value.emptyMessage,
   },
 ])
 
@@ -185,7 +209,7 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
     <NvPageHeader
       title="销售报价"
       :breadcrumbs="[{ label: '经营管理' }, { label: '销售' }]"
-      :count="`${quotations.total.value} 张报价`"
+      :count="readState.count"
     >
       <template #actions>
         <NvButton
@@ -241,7 +265,12 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
       :loading="quotations.pending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无报价。可从销售机会或客户需求创建报价。"
+      :empty-message="readState.emptyMessage"
+      :error="readState.error"
+      :error-message="readState.errorMessage"
+      :awaiting-scope="readState.awaitingScope"
+      :awaiting-scope-message="readState.awaitingScopeMessage"
+      @retry="quotations.refresh"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >

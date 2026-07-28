@@ -260,7 +260,7 @@ const listErrorMessage = computed(() =>
 // 「还没查」和「真的 0 条」很快又会混回同一个渲染。
 const contextReady = computed(() => hasBusinessContext(filters))
 const headerCount = computed(() => {
-  if (!contextReady.value) return '未选择组织与环境'
+  if (!contextReady.value) return '未选择业务范围'
   if (inboundOrdersError.value) return '入库单数取不到'
   if (inboundOrdersPending.value) return '加载中'
   return `${inboundOrdersTotal.value} 张入库单`
@@ -475,7 +475,7 @@ function formatError(error: unknown) {
       :error="inboundOrdersError"
       :error-message="listErrorMessage"
       :awaiting-scope="!contextReady"
-      awaiting-scope-message="请先在顶部选择组织与环境，再查看入库单。"
+      awaiting-scope-message="请先在顶部选择业务范围，再查看入库单。"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无入库单。收货作业产生入库单后会出现在这里。"

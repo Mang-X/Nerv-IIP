@@ -89,8 +89,11 @@ function versionKindLabel(kind?: string | null) {
 // 受影响版本的 versionId 是版本主键。四类对象里只有「生产版本」的读面直接暴露该主键
 // （ProductionVersionItem.productionVersionId），可以做成选择器；EBOM / MBOM / 工艺路线的
 // 列表读面只给 bomCode + revision、拿不到版本主键，暂时保留手工录入（后端缺口已登记）。
-const { productionVersions, productionVersionsPending, filters: productionVersionFilters } =
-  useEngineeringProductionVersions()
+const {
+  productionVersions,
+  productionVersionsPending,
+  filters: productionVersionFilters,
+} = useEngineeringProductionVersions()
 productionVersionFilters.take = 500
 const productionVersionOptions = computed(() =>
   productionVersions.value
@@ -135,11 +138,29 @@ watch(
   { immediate: true },
 )
 
+// 工程变更状态词表：后端主链是一步发布（Open→Approve→Release），但历史/导入数据里
+// 仍会出现 Draft / Scheduled 这类生命周期取值，缺词就会把英文码印到「状态」列上。
+const ECO_STATUS_DISPLAY: Record<string, { label: string; tone: StatusTone }> = {
+  draft: { label: '草稿', tone: 'warning' },
+  open: { label: '待处理', tone: 'warning' },
+  submitted: { label: '已提交', tone: 'warning' },
+  approved: { label: '已批准', tone: 'info' },
+  scheduled: { label: '待生效', tone: 'info' },
+  released: { label: '已发布', tone: 'success' },
+  published: { label: '已发布', tone: 'success' },
+  effective: { label: '已生效', tone: 'success' },
+  archived: { label: '已归档', tone: 'neutral' },
+  cancelled: { label: '已取消', tone: 'neutral' },
+  rejected: { label: '已驳回', tone: 'danger' },
+}
+
 function ecoStatus(status?: string | null): { label: string; tone: StatusTone } {
-  const s = (status ?? '').toLowerCase()
-  if (s === 'released' || s === 'published') return { label: '已发布', tone: 'success' }
-  if (s === 'archived') return { label: '已归档', tone: 'neutral' }
-  return { label: status || '已发布', tone: 'success' }
+  const raw = (status ?? '').trim()
+  if (!raw) return { label: '已发布', tone: 'success' }
+  const hit = ECO_STATUS_DISPLAY[raw.toLowerCase().replace(/[-_\s]/g, '')]
+  if (hit) return hit
+  if (import.meta.env.DEV) console.warn(`[工程变更] 词表缺失: ${raw}，请补 ECO_STATUS_DISPLAY`)
+  return { label: raw, tone: 'neutral' }
 }
 
 const releasedCount = computed(() => changes.value.length)

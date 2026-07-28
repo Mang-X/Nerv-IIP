@@ -217,7 +217,7 @@ const listErrorMessage = computed(() =>
 // 「还没查」和「真的 0 条」很快又会混回同一个渲染。
 const contextReady = computed(() => hasBusinessContext(filters))
 const headerCount = computed(() => {
-  if (!contextReady.value) return '未选择组织与环境'
+  if (!contextReady.value) return '未选择业务范围'
   if (putawayTasksError.value) return '任务数取不到'
   if (putawayTasksPending.value) return '加载中'
   return `${putawayTasksTotal.value} 个上架任务`
@@ -364,7 +364,7 @@ function firstQuery(value: unknown) {
       :error="putawayTasksError"
       :error-message="listErrorMessage"
       :awaiting-scope="!contextReady"
-      awaiting-scope-message="请先在顶部选择组织与环境，再查看上架任务。"
+      awaiting-scope-message="请先在顶部选择业务范围，再查看上架任务。"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无上架任务。完工入库后由系统派生，或在此手工登记。"

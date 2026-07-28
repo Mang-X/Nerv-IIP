@@ -36,7 +36,15 @@ import {
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
-import { formatAmount, formatDate, formatDateTime, formatQuantity } from '../shared'
+import {
+  UNAVAILABLE_TEXT,
+  erpReadState,
+  formatAmount,
+  formatDate,
+  formatDateTime,
+  formatQuantity,
+  readCount,
+} from '../shared'
 
 definePage({
   meta: {
@@ -112,26 +120,50 @@ const quotedAmount = computed(() =>
 const quotedSupplierCount = computed(
   () => new Set(quotes.items.value.map((r) => r.supplierCode).filter(Boolean)).size,
 )
+const readState = computed(() =>
+  erpReadState({
+    noun: '供应商报价',
+    unit: '份',
+    ready: quotes.ready.value,
+    pending: quotes.pending.value,
+    error: quotes.error.value,
+    total: quotes.total.value,
+    filtered: Boolean(
+      quotes.filters.keyword || quotes.filters.rfqNo || quotes.filters.supplierCode,
+    ),
+    emptyHint: '还没有供应商报价。先在询价单页面发起询价，供应商回价后在此汇总比价。',
+  }),
+)
+
+/** 询价单是另一条查询，可能单独失败——「尚有 N 张可回价」不能拿失败的 0 去说。 */
+const rfqCountText = computed(() =>
+  rfqs.ready.value && rfqs.error.value == null
+    ? `尚有 ${rfqs.total.value} 张询价单可回价`
+    : '询价单数量取不到，无法判断还有多少可回价',
+)
+
 const quoteCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'quoted',
     label: '已收报价',
-    value: quotes.total.value,
-    unit: '份',
-    meta: '按收到时间倒序',
+    value: readCount(readState.value, quotes.total.value),
+    unit: readState.value.trustworthy ? '份' : '',
+    meta: readState.value.trustworthy ? '按收到时间倒序' : readState.value.emptyMessage,
   },
   {
     key: 'amount',
     label: '报价金额',
-    value: formatAmount(quotedAmount.value),
-    meta: `当前列表 ${quotes.items.value.length} 份报价合计`,
+    value: readState.value.trustworthy ? formatAmount(quotedAmount.value) : UNAVAILABLE_TEXT,
+    meta: readState.value.trustworthy
+      ? `当前列表 ${quotes.items.value.length} 份报价合计`
+      : readState.value.emptyMessage,
   },
   {
     key: 'suppliers',
     label: '回价供应商',
-    value: quotedSupplierCount.value,
-    unit: '家',
-    meta: `尚有 ${rfqs.total.value} 张询价单可回价`,
+    value: readCount(readState.value, quotedSupplierCount.value),
+    unit: readState.value.trustworthy ? '家' : '',
+    meta: rfqCountText.value,
   },
 ])
 
@@ -236,7 +268,7 @@ async function submit() {
     <NvPageHeader
       title="供应商报价"
       :breadcrumbs="[{ label: '经营管理' }, { label: '采购' }]"
-      :count="`${quotes.total.value} 份报价`"
+      :count="readState.count"
     >
       <template #actions>
         <NvButton
@@ -279,7 +311,12 @@ async function submit() {
       :loading="quotes.pending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无供应商报价。先在询价单页面发起询价，供应商回价后在此汇总比价。"
+      :empty-message="readState.emptyMessage"
+      :error="readState.error"
+      :error-message="readState.errorMessage"
+      :awaiting-scope="readState.awaitingScope"
+      :awaiting-scope-message="readState.awaitingScopeMessage"
+      @retry="quotes.refresh"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     />

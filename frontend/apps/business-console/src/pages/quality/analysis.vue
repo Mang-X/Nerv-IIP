@@ -6,7 +6,7 @@ import type {
   NvMetricSegment,
   SearchSelectOption,
 } from '@nerv-iip/ui'
-import { qualitySourceTypeLabel } from '@nerv-iip/business-core'
+import { qualityCharacteristicLabel, qualitySourceTypeLabel } from '@nerv-iip/business-core'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import QualityParetoPanel from '@/components/quality/QualityParetoPanel.vue'
 import QualitySpcCharts from '@/components/quality/QualitySpcCharts.vue'
@@ -128,7 +128,8 @@ const controlChartColumns: NvDataTableColumn<QualitySpcControlChartItem>[] = [
   {
     key: 'characteristicCode',
     header: '特性',
-    accessor: (row) => row.characteristicCode?.trim() || '未登记',
+    // SPC 读面只带特性码不带 name，靠 business-core 的特性词表说人话；未收录才回吐原码。
+    accessor: (row) => qualityCharacteristicLabel(row.characteristicCode) || '未登记',
   },
   {
     key: 'workCenterId',
@@ -238,7 +239,7 @@ const characteristicEmptyText = computed(() =>
 const characteristicLabel = computed(
   () =>
     characteristicOptions.value.find((option) => option.value === spc.filters.characteristicCode)
-      ?.label ?? spc.filters.characteristicCode.trim(),
+      ?.label ?? qualityCharacteristicLabel(spc.filters.characteristicCode),
 )
 
 const summary = computed(() => buildQualityAnalysisSummary(ncrs.value, ncrsTotal.value))

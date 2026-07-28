@@ -13,6 +13,7 @@ const approvalState = vi.hoisted(() => ({
 
 vi.mock('@/composables/useBusinessApproval', () => ({
   useBusinessApproval: () => ({
+    contextReady: computed(() => true),
     chainDetail: computed(() => undefined),
     chainDetailSelection: reactive({ chainId: '' }),
     chains: computed(() => [

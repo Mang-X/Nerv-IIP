@@ -421,7 +421,7 @@ function formatError(error: unknown) {
       :error="countExecutionsError"
       :error-message="listErrorMessage"
       :awaiting-scope="!contextReady"
-      awaiting-scope-message="请先在顶部选择组织与环境，再查看盘点单。"
+      awaiting-scope-message="请先在顶部选择业务范围，再查看盘点单。"
       empty-message="暂无盘点单。"
       @retry="refreshCountExecutions"
     >

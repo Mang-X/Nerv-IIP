@@ -196,7 +196,7 @@ const listReady = computed(
   () => contextReady.value && !wcsTasksError.value && !wcsTasksPending.value,
 )
 const headerCount = computed(() => {
-  if (!contextReady.value) return '未选择组织与环境'
+  if (!contextReady.value) return '未选择业务范围'
   if (wcsTasksError.value) return '任务数取不到'
   if (wcsTasksPending.value) return '加载中'
   return `${wcsTasksTotal.value} 个任务`
@@ -371,7 +371,7 @@ function formatError(error: unknown) {
       :error="wcsTasksError"
       :error-message="listErrorMessage"
       :awaiting-scope="!contextReady"
-      awaiting-scope-message="请先在顶部选择组织与环境，再查看设备任务。"
+      awaiting-scope-message="请先在顶部选择业务范围，再查看设备任务。"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无设备任务。"

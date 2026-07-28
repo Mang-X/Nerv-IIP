@@ -270,7 +270,7 @@ const listReady = computed(
   () => contextReady.value && !outboundOrdersError.value && !outboundOrdersPending.value,
 )
 const headerCount = computed(() => {
-  if (!contextReady.value) return '未选择组织与环境'
+  if (!contextReady.value) return '未选择业务范围'
   if (outboundOrdersError.value) return '出库单数取不到'
   if (outboundOrdersPending.value) return '加载中'
   return `${outboundOrdersTotal.value} 张出库单`
@@ -393,7 +393,7 @@ function formatError(error: unknown) {
       :error="outboundOrdersError"
       :error-message="listErrorMessage"
       :awaiting-scope="!contextReady"
-      awaiting-scope-message="请先在顶部选择组织与环境，再查看出库单。"
+      awaiting-scope-message="请先在顶部选择业务范围，再查看出库单。"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无出库单。发货作业产生出库单后会出现在这里。"
