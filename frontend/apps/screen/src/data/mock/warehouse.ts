@@ -134,6 +134,11 @@ const STORAGE_LOCS = [
 const PICK_FACES = ['P-A-07', 'P-B-03', 'P-C-12', 'P-A-11']
 const RCV_LOCS = ['RCV-01', 'RCV-02', 'RCV-03']
 const SHIP_LOCS = ['SHIP-01', 'SHIP-02', 'SHIP-03']
+/** 可发运物料：成品 + 成品包材（发运出库只会出这些）。 */
+const SHIPPABLE_SKUS = SKUS.filter((x) => /^(FG|PK)-/.test(x.code))
+/** 可配送到线边的物料：原料 + 半成品（线边领料只会领这些）。 */
+const LINESIDE_SKUS = SKUS.filter((x) => /^(RM|SF)-/.test(x.code))
+
 const LINESIDE_LOCS = [
   '线边-前减装配一线',
   '线边-后减装配一线',
@@ -182,7 +187,11 @@ function taskRows(kind: WhTaskKind, n: number, s: number, now: Date): WhTaskRow[
   const slots =
     kind === 'pick' ? PICK_AGE_SLOTS : kind === 'putaway' ? PUTAWAY_AGE_SLOTS : COUNT_AGE_SLOTS
   return Array.from({ length: n }, (_, i) => {
-    const sku = SKUS[(s + i * 7) % SKUS.length]
+    // 拣货物料按去向选池：发运只可能拣成品/包材，线边配送只可能拣原料/半成品。
+    // 把「S2 平台后减振器总成」拣去阀系预装线边是物流上不可能的事，一眼假。
+    const toShipPick = kind === 'pick' && (s + i) % 5 < 3
+    const pool = kind !== 'pick' ? SKUS : toShipPick ? SHIPPABLE_SKUS : LINESIDE_SKUS
+    const sku = pool[(s + i * 7) % pool.length]
     const age = ageOf(now, slots[i] ?? 0)
     let id: string
     let from: string
@@ -191,7 +200,7 @@ function taskRows(kind: WhTaskKind, n: number, s: number, now: Date): WhTaskRow[
     let qty: number
     if (kind === 'pick') {
       id = seq('PK', 880 + (s % 40) + i)
-      const toShip = (s + i) % 5 < 3 // 60% 发运拣货 / 40% 线边配送（关联 MES 工单）
+      const toShip = toShipPick // 60% 发运拣货 / 40% 线边配送（关联 MES 工单）
       const fromPool = (s + i) % 3 === 0 ? PICK_FACES : STORAGE_LOCS
       from = fromPool[(s + i * 3) % fromPool.length]
       to = toShip

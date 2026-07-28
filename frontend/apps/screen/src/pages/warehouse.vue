@@ -305,7 +305,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
       <div class="wb-main">
         <!-- 左：出入库双进度（大数字 + 发丝进度条 + 12h 流量） -->
         <section class="wb-flows">
-          <NvScreenPanel title="当日入库 · ASN" class="wb-flow">
+          <NvScreenPanel title="当日入库 · 收货" class="wb-flow">
             <template #extra>
               <span class="wb-flow-docs"
                 >收货单 {{ board.inbound.docsDone }}/{{ board.inbound.docsTotal }}</span
@@ -352,7 +352,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
             </div>
           </NvScreenPanel>
 
-          <NvScreenPanel title="当日出库 · SO" class="wb-flow out">
+          <NvScreenPanel title="当日出库 · 发货" class="wb-flow out">
             <template #extra>
               <span class="wb-flow-docs"
                 >发运 {{ board.outbound.docsDone }}/{{ board.outbound.docsTotal }} 单</span

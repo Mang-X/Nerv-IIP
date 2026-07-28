@@ -201,11 +201,17 @@ export function buildLineBoard(
   const fpy = total > 0 ? Math.round((m.good / total) * 1000) / 10 : 100
 
   // 当班停机统计：报警线多、关注线少、正常线偶发（异常是例外）
+  // 停机时长必须封顶在**已过班时长**内：班初（如 16:10）报警时，26 min 的未恢复
+  // 时长里有一部分落在上一班，算进当班会让可用率跌到个位数（看着像坏了）。
+  const dtCap = Math.max(1, Math.floor(elapsed * 0.6))
   const downtime =
     state === 'alarm'
-      ? { count: clamp(jitter(2, 1), 1, 3), totalMin: clamp(jitter(32, 10), 18, 55) }
+      ? {
+          count: clamp(jitter(2, 1), 1, 3),
+          totalMin: Math.min(dtCap, clamp(jitter(32, 10), 18, 55)),
+        }
       : state === 'attention'
-        ? { count: 1, totalMin: clamp(jitter(14, 6), 6, 25) }
+        ? { count: 1, totalMin: Math.min(dtCap, clamp(jitter(14, 6), 6, 25)) }
         : { count: 0, totalMin: 0 }
 
   // 当班班组（设定集 §5：**班组是车间级**，6 班组 = 3 车间 × 早/中班；线长这个岗位

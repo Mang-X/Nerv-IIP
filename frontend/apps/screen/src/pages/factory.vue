@@ -66,8 +66,11 @@ const bandCells = computed<BandCell[]>(() => {
   const k = ov.value?.kpis
   if (!k) return []
   return [
-    { label: '今日产量（件）', value: nf.format(k.todayOutput), icon: PackageCheck },
-    { label: '计划产量（件）', value: nf.format(k.todayPlan), icon: Target },
+    // 全厂口径 = 末道包装线的成品下线数。车间卡上的数字是各车间**向下游交付**的
+    // 件数（机加交付活塞杆+缸筒，一台成品要用好几个），所以车间数会大于全厂数 ——
+    // 加总三个车间会把同一个物件数三遍，见 data/mock/world.ts 的口径警告。
+    { label: '今日成品下线（件）', value: nf.format(k.todayOutput), icon: PackageCheck },
+    { label: '成品计划（件）', value: nf.format(k.todayPlan), icon: Target },
     { label: '在产工单', value: String(k.wipOrders), icon: ClipboardList },
     {
       label: '超期 / 风险工单',
@@ -203,7 +206,10 @@ const bandCells = computed<BandCell[]>(() => {
 
       <footer class="scr-foot">
         <RouterLink :to="backLink.to" class="scr-back">‹ {{ backLink.label }}</RouterLink>
-        <span>车间归并与达成按当前窗口汇总；点车间卡进入车间总览</span>
+        <span
+          >车间卡为该车间向下游交付的工序件数，全厂成品下线取末道包装线口径，
+          两者不可相加；点车间卡进入车间总览</span
+        >
         <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
       </footer>
     </div>

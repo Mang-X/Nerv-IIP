@@ -152,7 +152,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
             :offline-devices="board.offlineDevices"
           />
 
-          <!-- 当班四格：一次合格率 / 停机 / 线长 / 在岗 -->
+          <!-- 当班四格：一次合格率 / 停机 / 班组长 / 在岗（设定集 §5：班组是车间级，无线长岗位） -->
           <dl class="lb-stats">
             <div>
               <dt><CircleCheck :size="13" class="lb-stat-ic" />一次合格率</dt>
@@ -165,7 +165,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
               </dd>
             </div>
             <div>
-              <dt><UserRound :size="13" class="lb-stat-ic" />线长</dt>
+              <dt><UserRound :size="13" class="lb-stat-ic" />班组长</dt>
               <dd class="lb-stat-txt">{{ board.crew.leader }}</dd>
             </div>
             <div>

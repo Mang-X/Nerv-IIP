@@ -51,10 +51,11 @@ export function buildLauncherSummary(
   const achievement = fo.kpis.achievement
   const openAlarms = fo.kpis.openAlarms
 
-  // —— 成员导航层：报警/离线设备按序落到前几台（mock 确定性分配，够真实即可）——
-  const devices = workshops.flatMap((w) => devicesByWorkshop(w.id))
-  const alarmedDevices = devices.slice(0, alarmDevices)
-  const offlinedDevices = devices.slice(alarmDevices, alarmDevices + offlineDevices)
+  // —— 成员导航层：异常设备**取设备屏真正报警/断线的那几台**（含设备编码）——
+  // 曾经按数组位置切前 N 台，结果门厅指着 DEV-CNC-01 说它离线、进屏一看断的是
+  // DEV-AUX-06，同屏两处自相矛盾。跨屏同一事实同一数据源。
+  const alarmedDevices = eq.devices.filter((d) => d.state === 'alarm')
+  const offlinedDevices = eq.devices.filter((d) => d.state === 'offline')
   const abnormalChips: GlanceChip[] = [
     ...alarmedDevices.map((d) => ({ label: `${d.name} 报警`, tone: 'alarm' as const })),
     ...offlinedDevices.map((d) => ({ label: `${d.name} 离线`, tone: 'off' as const })),
