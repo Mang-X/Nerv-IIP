@@ -247,24 +247,19 @@ public sealed record DeleteDowntimeReasonRequest(string OrganizationId, string E
 
 public sealed record ListDowntimeReasonsRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100);
 
-public sealed class CreateMaintenanceWorkOrderEndpoint(ISender sender, ApplicationDbContext dbContext)
+public sealed class CreateMaintenanceWorkOrderEndpoint(ISender sender)
     : MaintenanceEndpoint<CreateMaintenanceWorkOrderRequest, ResponseData<CreateMaintenanceWorkOrderResponse>>
 {
     public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<CreateMaintenanceWorkOrderEndpoint>());
 
     public override async Task HandleAsync(CreateMaintenanceWorkOrderRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateMaintenanceWorkOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Priority, req.SourceAlarmId, req.OpenedBy, req.AssetUnavailableReason, AssignedTechnicianUserId: req.AssignedTechnicianUserId, EstimatedLaborMinutes: req.EstimatedLaborMinutes, IdempotencyKey: req.IdempotencyKey), ct);
-        var workOrder = await dbContext.MaintenanceWorkOrders.AsNoTracking().SingleAsync(
-            x => x.Id == id
-                && x.OrganizationId == req.OrganizationId
-                && x.EnvironmentId == req.EnvironmentId,
-            ct);
+        var result = await sender.Send(new CreateMaintenanceWorkOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Priority, req.SourceAlarmId, req.OpenedBy, req.AssetUnavailableReason, AssignedTechnicianUserId: req.AssignedTechnicianUserId, EstimatedLaborMinutes: req.EstimatedLaborMinutes, IdempotencyKey: req.IdempotencyKey), ct);
         await Send.OkAsync(
             new CreateMaintenanceWorkOrderResponse(
-                id,
-                workOrder.Status.ToString(),
-                workOrder.OpenedAtUtc).AsResponseData(),
+                result.WorkOrderId,
+                result.Status.ToString(),
+                result.ChangedAtUtc).AsResponseData(),
             cancellation: ct);
     }
 }

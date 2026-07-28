@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -59,7 +60,7 @@ public sealed record CreateMaintenanceWorkOrderCommand(
     string? FailureCauseCode = null,
     string? AssignedTechnicianUserId = null,
     int? EstimatedLaborMinutes = null,
-    string? IdempotencyKey = null) : ICommand<MaintenanceWorkOrderId>;
+    string? IdempotencyKey = null) : ICommand<MaintenanceWorkOrderCommandResult>;
 
 public sealed class CreateMaintenanceWorkOrderCommandValidator : AbstractValidator<CreateMaintenanceWorkOrderCommand>
 {
@@ -82,11 +83,14 @@ public sealed class CreateMaintenanceWorkOrderCommandValidator : AbstractValidat
 }
 
 public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContext dbContext)
-    : ICommandHandler<CreateMaintenanceWorkOrderCommand, MaintenanceWorkOrderId>
+    : ICommandHandler<CreateMaintenanceWorkOrderCommand, MaintenanceWorkOrderCommandResult>
 {
     private const string CreateRuleKey = "maintenance-work-order-create";
+    private const string CreateReceiptVersion = "v1";
 
-    public async Task<MaintenanceWorkOrderId> Handle(CreateMaintenanceWorkOrderCommand request, CancellationToken cancellationToken)
+    public async Task<MaintenanceWorkOrderCommandResult> Handle(
+        CreateMaintenanceWorkOrderCommand request,
+        CancellationToken cancellationToken)
     {
         var idempotencyKey = NormalizeIdempotencyKey(request.IdempotencyKey);
         var fingerprint = CreateFingerprint(request);
@@ -101,16 +105,21 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
         if (receipt is not null)
         {
             if (!string.Equals(receipt.PayloadFingerprint, fingerprint, StringComparison.Ordinal) ||
-                !Guid.TryParse(receipt.Code, out var receiptId))
+                !TryParseCreateReceipt(receipt.Code, out var parsedReceipt))
             {
                 throw new MaintenanceIdempotencyConflictException();
             }
 
             var replayed = await dbContext.MaintenanceWorkOrders.SingleOrDefaultAsync(
-                x => x.Id == new MaintenanceWorkOrderId(receiptId),
+                x => x.Id == parsedReceipt.WorkOrderId
+                    && x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId,
                 cancellationToken)
                 ?? throw new KnownException("stored-maintenance-work-order-receipt-is-invalid");
-            return replayed.Id;
+            return new MaintenanceWorkOrderCommandResult(
+                replayed.Id,
+                parsedReceipt.Status,
+                parsedReceipt.OpenedAtUtc ?? replayed.OpenedAtUtc);
         }
 
         if (!string.IsNullOrWhiteSpace(request.SourceAlarmId))
@@ -161,11 +170,11 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
                 request.EnvironmentId,
                 CreateRuleKey,
                 idempotencyKey,
-                workOrder.Id.ToString(),
+                CreateReceiptCode(workOrder),
                 fingerprint,
                 DateTimeOffset.UtcNow));
         }
-        return workOrder.Id;
+        return new MaintenanceWorkOrderCommandResult(workOrder.Id, workOrder.Status, workOrder.OpenedAtUtc);
     }
 
     private static string CreateFingerprint(CreateMaintenanceWorkOrderCommand request) =>
@@ -185,6 +194,48 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
 
     private static string? NormalizeIdempotencyKey(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string CreateReceiptCode(MaintenanceWorkOrder workOrder) =>
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"{CreateReceiptVersion}|{workOrder.Id}|{workOrder.Status}|{workOrder.OpenedAtUtc:O}");
+
+    private static bool TryParseCreateReceipt(string code, out CreateWorkOrderReceipt receipt)
+    {
+        if (Guid.TryParse(code, out var legacyWorkOrderId))
+        {
+            receipt = new CreateWorkOrderReceipt(
+                new MaintenanceWorkOrderId(legacyWorkOrderId),
+                MaintenanceWorkOrderStatus.Open,
+                null);
+            return true;
+        }
+
+        var parts = code.Split('|');
+        if (parts.Length == 4
+            && string.Equals(parts[0], CreateReceiptVersion, StringComparison.Ordinal)
+            && Guid.TryParse(parts[1], out var workOrderId)
+            && Enum.TryParse<MaintenanceWorkOrderStatus>(parts[2], out var status)
+            && status == MaintenanceWorkOrderStatus.Open
+            && DateTimeOffset.TryParseExact(
+                parts[3],
+                "O",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var openedAtUtc))
+        {
+            receipt = new CreateWorkOrderReceipt(new MaintenanceWorkOrderId(workOrderId), status, openedAtUtc);
+            return true;
+        }
+
+        receipt = default!;
+        return false;
+    }
+
+    private sealed record CreateWorkOrderReceipt(
+        MaintenanceWorkOrderId WorkOrderId,
+        MaintenanceWorkOrderStatus Status,
+        DateTimeOffset? OpenedAtUtc);
 }
 
 public sealed class CreateMaintenanceWorkOrderCommandLock : ICommandLock<CreateMaintenanceWorkOrderCommand>

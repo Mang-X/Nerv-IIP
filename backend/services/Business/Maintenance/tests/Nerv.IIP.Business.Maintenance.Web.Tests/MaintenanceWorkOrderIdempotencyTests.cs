@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggrega
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.Errors;
+using Nerv.IIP.Coding;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
@@ -11,24 +12,105 @@ namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 public sealed class MaintenanceWorkOrderIdempotencyTests
 {
     [Fact]
-    public async Task Manual_work_order_replay_returns_the_authoritative_existing_id()
+    public async Task Manual_work_order_replay_returns_the_same_authoritative_receipt()
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var handler = new CreateMaintenanceWorkOrderCommandHandler(db);
         var command = CreateCommand("repair-intent-001");
 
-        var firstId = await handler.Handle(command, CancellationToken.None);
+        var first = await handler.Handle(command, CancellationToken.None);
+        await db.SaveChangesAsync();
+        var receipt = await db.CodeIdempotencyKeys.AsNoTracking().SingleAsync();
+        Assert.InRange(receipt.Code.Length, 1, 128);
+        Assert.False(Guid.TryParse(receipt.Code, out _));
+        var persisted = await db.MaintenanceWorkOrders.SingleAsync();
+        persisted.Complete("fixed", "equipment-failure", 10, []);
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
 
-        var replayedId = await handler.Handle(command, CancellationToken.None);
-        var persisted = await db.MaintenanceWorkOrders.AsNoTracking().SingleAsync();
+        var replayed = await handler.Handle(command, CancellationToken.None);
+        var completed = await db.MaintenanceWorkOrders.AsNoTracking().SingleAsync();
 
-        Assert.Equal(firstId, replayedId);
+        Assert.Equal(first.WorkOrderId, replayed.WorkOrderId);
+        Assert.Equal(MaintenanceWorkOrderStatus.Open, first.Status);
+        Assert.Equal(first.Status, replayed.Status);
+        Assert.Equal(first.ChangedAtUtc, replayed.ChangedAtUtc);
+        Assert.Equal(completed.OpenedAtUtc, first.ChangedAtUtc);
+        Assert.Equal(MaintenanceWorkOrderStatus.Completed, completed.Status);
         Assert.Equal(1, await db.MaintenanceWorkOrders.CountAsync());
-        Assert.Equal(MaintenanceWorkOrderSourceTypes.Manual, persisted.SourceType);
-        Assert.Null(persisted.SourceReferenceId);
-        Assert.DoesNotContain(command.IdempotencyKey!, persisted.SourceReferenceId ?? string.Empty, StringComparison.Ordinal);
+        Assert.Equal(MaintenanceWorkOrderSourceTypes.Manual, completed.SourceType);
+        Assert.Null(completed.SourceReferenceId);
+        Assert.DoesNotContain(command.IdempotencyKey!, completed.SourceReferenceId ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Manual_work_order_replay_accepts_the_legacy_raw_id_receipt_without_status_drift()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        var handler = new CreateMaintenanceWorkOrderCommandHandler(db);
+        var command = CreateCommand("repair-intent-legacy-001");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await db.SaveChangesAsync();
+        var structuredReceipt = await db.CodeIdempotencyKeys.SingleAsync();
+        db.CodeIdempotencyKeys.Remove(structuredReceipt);
+        await db.SaveChangesAsync();
+        db.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
+            structuredReceipt.OrganizationId,
+            structuredReceipt.EnvironmentId,
+            structuredReceipt.RuleKey,
+            structuredReceipt.IdempotencyKey,
+            first.WorkOrderId.ToString(),
+            structuredReceipt.PayloadFingerprint,
+            structuredReceipt.CreatedAtUtc));
+        var persisted = await db.MaintenanceWorkOrders.SingleAsync();
+        persisted.Complete("fixed", "equipment-failure", 10, []);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var replayed = await handler.Handle(command, CancellationToken.None);
+        var completed = await db.MaintenanceWorkOrders.AsNoTracking().SingleAsync();
+
+        Assert.Equal(first.WorkOrderId, replayed.WorkOrderId);
+        Assert.Equal(MaintenanceWorkOrderStatus.Open, replayed.Status);
+        Assert.Equal(first.ChangedAtUtc, replayed.ChangedAtUtc);
+        Assert.Equal(MaintenanceWorkOrderStatus.Completed, completed.Status);
+    }
+
+    [Fact]
+    public async Task Manual_work_order_replay_rejects_a_receipt_pointing_to_another_scope()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        var handler = new CreateMaintenanceWorkOrderCommandHandler(db);
+        var command = CreateCommand("repair-intent-cross-scope-001");
+
+        await handler.Handle(command, CancellationToken.None);
+        await db.SaveChangesAsync();
+        var originalReceipt = await db.CodeIdempotencyKeys.SingleAsync();
+        db.CodeIdempotencyKeys.Remove(originalReceipt);
+        await db.SaveChangesAsync();
+        var otherScopeWorkOrder = MaintenanceWorkOrder.OpenManual(
+            "org-other",
+            "env-other",
+            "DEV-CNC-OTHER",
+            "high",
+            "emp-other");
+        db.MaintenanceWorkOrders.Add(otherScopeWorkOrder);
+        db.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
+            originalReceipt.OrganizationId,
+            originalReceipt.EnvironmentId,
+            originalReceipt.RuleKey,
+            originalReceipt.IdempotencyKey,
+            $"v1|{otherScopeWorkOrder.Id}|Open|{otherScopeWorkOrder.OpenedAtUtc:O}",
+            originalReceipt.PayloadFingerprint,
+            originalReceipt.CreatedAtUtc));
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(command, CancellationToken.None));
+
+        Assert.Equal("stored-maintenance-work-order-receipt-is-invalid", exception.Message);
     }
 
     [Fact]
