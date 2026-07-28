@@ -40,6 +40,7 @@ const refreshWorkOrderDetail = vi.fn(async () => {})
 const refreshExactTask = vi.fn(async () => {})
 const cancelPendingTasks = vi.fn()
 const workOrdersErrorRef = ref<unknown>(null)
+const workOrdersLastUpdatedAtRef = ref<string | null>('2026-07-28T10:20:30Z')
 const tasksErrorRef = ref<unknown>(null)
 const workOrdersPendingRef = ref(false)
 const tasksPendingRef = ref(false)
@@ -49,6 +50,8 @@ const reportScopeReadyRef = ref(true)
 let operationTaskDiscoveryCalls = 0
 
 const workOrderFilters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
   keyword: undefined as string | undefined,
   workOrderId: undefined as string | undefined,
 })
@@ -95,6 +98,7 @@ const workOrderDetailRef = ref<Record<string, unknown> | null>({
 })
 const workOrderDetailPendingRef = ref(false)
 const workOrderDetailErrorRef = ref<unknown>(null)
+const workOrderDetailLastUpdatedAtRef = ref<string | null>('2026-07-28T10:20:31Z')
 const exactTaskRef = ref<Record<string, unknown> | null | undefined>(undefined)
 const exactTaskPendingRef = ref(false)
 const exactTaskErrorRef = ref<unknown>(null)
@@ -107,6 +111,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     pending: workOrdersPendingRef,
     error: workOrdersErrorRef,
     refresh: refreshWorkOrders,
+    lastUpdatedAt: workOrdersLastUpdatedAtRef,
   }),
   useMesOperationTasks: () => {
     operationTaskDiscoveryCalls += 1
@@ -145,6 +150,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     pending: workOrderDetailPendingRef,
     error: workOrderDetailErrorRef,
     refresh: refreshWorkOrderDetail,
+    lastUpdatedAt: workOrderDetailLastUpdatedAtRef,
   }),
   useMesExactOperationTask: (
     workOrderId: { value: string },
@@ -275,6 +281,31 @@ describe('PDA MES production reporting page', () => {
     await flushPromises()
     expect(recordReport).not.toHaveBeenCalled()
     wrapper.unmount()
+  })
+
+  it('shows scope, source, count, and successful-response time for both report lists', async () => {
+    const wrapper = mount(ReportPage)
+
+    expect(wrapper.text()).toContain('范围：当前登录组织 / 当前业务环境')
+    expect(wrapper.text()).toContain('来源：生产工单服务（组织/环境范围')
+    expect(wrapper.text()).toContain('已加载 2 / 共 2')
+    expect(wrapper.text()).toContain('最近成功响应')
+
+    await selectWorkOrder(wrapper, 0)
+
+    expect(wrapper.text()).toContain('来源：生产工序服务（当前工单返回集合')
+    expect(wrapper.text()).toContain('已加载 2 / 共 2')
+  })
+
+  it('explains that an empty operation collection is not a personal-task empty state', async () => {
+    workOrderDetailRef.value = {
+      ...defaultWorkOrders[0],
+      operationTasks: [],
+    }
+    const wrapper = mount(ReportPage)
+    await selectWorkOrder(wrapper, 0)
+
+    expect(wrapper.text()).toContain('接口未提供工序总数，不代表个人任务')
   })
 
   it('scanning sets the work-order keyword filter', async () => {

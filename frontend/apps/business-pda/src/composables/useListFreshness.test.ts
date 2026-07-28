@@ -17,4 +17,18 @@ describe('useListFreshness', () => {
     await nextTick()
     expect(updatedAt.value).not.toBeNull()
   })
+
+  it.each([
+    ['null', null],
+    ['a primitive', 'success'],
+    ['an array', []],
+    ['an object without success', { data: { items: [] } }],
+  ])('does not timestamp %s as a successful response', async (_label, value) => {
+    const data = ref<unknown>(value)
+    const enabled = ref(true)
+    const updatedAt = useListFreshness(data, enabled)
+
+    await nextTick()
+    expect(updatedAt.value).toBeNull()
+  })
 })

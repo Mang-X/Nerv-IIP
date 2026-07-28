@@ -34,6 +34,7 @@ import {
 
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
+  refetchById: new Map<string, ReturnType<typeof vi.fn>>(),
   queryOptionsById: new Map<
     string,
     {
@@ -153,11 +154,13 @@ vi.mock('@pinia/colada', () => ({
     coladaState.queryOptionsById.set(id, options)
     coladaState.queryFactoriesById.set(id, optionsFactory)
 
+    const refetch = vi.fn()
+    coladaState.refetchById.set(id, refetch)
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
       error: shallowRef(),
       isLoading: shallowRef(false),
-      refetch: vi.fn(),
+      refetch,
     }
   }),
   useMutation: vi.fn((options) => {
@@ -193,6 +196,7 @@ describe('pda useBusinessMes composables', () => {
     sessionStorage.clear()
     receiptState.confirm.mockImplementation(async (value) => value)
     coladaState.queryDataById.clear()
+    coladaState.refetchById.clear()
     coladaState.queryOptionsById.clear()
     coladaState.queryFactoriesById.clear()
     coladaState.mutateById.clear()
@@ -315,6 +319,19 @@ describe('pda useBusinessMes composables', () => {
     expect(
       coladaState.queryOptionsById.get('getBusinessConsoleMesCurrentOperationSops')?.enabled,
     ).toBe(false)
+  })
+
+  it('does not manually refresh work-order or operation lists without org/env scope', async () => {
+    authState.principal = undefined
+
+    const workOrders = useMesWorkOrders()
+    const operationTasks = useMesOperationTasks()
+    await Promise.all([workOrders.refresh(), operationTasks.refresh()])
+
+    expect(coladaState.refetchById.get('listBusinessConsoleMesWorkOrders')).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('listBusinessConsoleMesOperationTasks'),
+    ).not.toHaveBeenCalled()
   })
 
   it('enables list queries once a principal scope is present', () => {

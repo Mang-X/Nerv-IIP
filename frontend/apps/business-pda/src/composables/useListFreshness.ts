@@ -11,9 +11,10 @@ export function useListFreshness(
     [() => toValue(data), () => toValue(enabled)],
     ([value, ready]) => {
       const hasSuccessfulEnvelope =
-        typeof value !== 'object' ||
-        value === null ||
-        !('success' in value) ||
+        typeof value === 'object' &&
+        value !== null &&
+        !Array.isArray(value) &&
+        'success' in value &&
         value.success === true
       if (ready && value !== undefined && hasSuccessfulEnvelope) {
         lastUpdatedAt.value = new Date().toISOString()

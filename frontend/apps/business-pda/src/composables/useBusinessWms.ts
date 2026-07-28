@@ -149,7 +149,7 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     pending: ordersQuery.isLoading,
     error: ordersQuery.error,
     lastUpdatedAt,
-    refresh: ordersQuery.refetch,
+    refresh: () => (scope.hasScope.value ? ordersQuery.refetch() : Promise.resolve()),
     completeInbound: async (
       inboundOrderId: string,
       idempotencyKey: string,
@@ -257,7 +257,7 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     pending: ordersQuery.isLoading,
     error: ordersQuery.error,
     lastUpdatedAt,
-    refresh: ordersQuery.refetch,
+    refresh: () => (scope.hasScope.value ? ordersQuery.refetch() : Promise.resolve()),
     completeOutbound: async (
       outboundOrderId: string,
       input: CompleteOutboundInput,
@@ -359,7 +359,7 @@ function useWmsWarehouseTasks(
     pending: tasksQuery.isLoading,
     error: tasksQuery.error,
     lastUpdatedAt,
-    refresh: tasksQuery.refetch,
+    refresh: () => (scope.hasScope.value ? tasksQuery.refetch() : Promise.resolve()),
   }
 }
 
@@ -414,7 +414,8 @@ export function useWmsReceivingLines(inboundOrderNo: MaybeRefOrGetter<string>) {
     complete,
     pending: linesQuery.isLoading,
     error: linesQuery.error,
-    refresh: linesQuery.refetch,
+    refresh: () =>
+      scope.hasScope.value && orderNo.value.length > 0 ? linesQuery.refetch() : Promise.resolve(),
   }
 }
 
@@ -462,7 +463,7 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     pending: executionsQuery.isLoading,
     error: executionsQuery.error,
     lastUpdatedAt,
-    refresh: executionsQuery.refetch,
+    refresh: () => (scope.hasScope.value ? executionsQuery.refetch() : Promise.resolve()),
     completeCount: async (
       countExecutionId: string,
       input: CompleteCountInput,

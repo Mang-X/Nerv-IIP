@@ -253,6 +253,10 @@ export function useMesWorkOrders() {
     }),
     enabled: hasScope(filters),
   }))
+  const lastUpdatedAt = useListFreshness(
+    () => workOrdersQuery.data.value,
+    () => hasScope(filters),
+  )
 
   return {
     filters,
@@ -264,13 +268,15 @@ export function useMesWorkOrders() {
     total: computed(() => envelopeTotal(workOrdersQuery.data.value)),
     pending: workOrdersQuery.isLoading,
     error: workOrdersQuery.error,
-    refresh: workOrdersQuery.refetch,
+    lastUpdatedAt,
+    refresh: () => (hasScope(filters) ? workOrdersQuery.refetch() : Promise.resolve()),
   }
 }
 
 export function useMesWorkOrderDetail(workOrderId: Readonly<Ref<string>>) {
   const scope = bindAuthScope(reactive({ organizationId: '', environmentId: '' }))
   const queryCache = useQueryCache()
+  const detailEnabled = computed(() => hasScope(scope) && workOrderId.value.trim() !== '')
   watch(
     () => [workOrderId.value.trim(), scope.organizationId, scope.environmentId] as const,
     (_current, previous) => {
@@ -293,9 +299,10 @@ export function useMesWorkOrderDetail(workOrderId: Readonly<Ref<string>>) {
         path: { workOrderId: requestedId },
         query: scopeQuery(scope),
       }),
-      enabled: hasScope(scope) && requestedId !== '',
+      enabled: detailEnabled.value,
     }
   })
+  const lastUpdatedAt = useListFreshness(() => detailQuery.data.value, detailEnabled)
 
   return {
     workOrder: computed<BusinessConsoleMesWorkOrderDetailResponse | undefined>(() =>
@@ -306,6 +313,7 @@ export function useMesWorkOrderDetail(workOrderId: Readonly<Ref<string>>) {
     ),
     pending: detailQuery.isLoading,
     error: detailQuery.error,
+    lastUpdatedAt,
     refresh: detailQuery.refetch,
   }
 }
@@ -579,7 +587,7 @@ export function useMesOperationTasks() {
     operationScopePending: operationScope.scopePending,
     operationScopeReady: operationScope.scopeReady,
     lastUpdatedAt,
-    refresh: operationTasksQuery.refetch,
+    refresh: () => (hasScope(filters) ? operationTasksQuery.refetch() : Promise.resolve()),
     cancelPendingTasks: () =>
       queryCache.cancelQueries({
         predicate: isBusinessQuery('listBusinessConsoleMesOperationTasks'),

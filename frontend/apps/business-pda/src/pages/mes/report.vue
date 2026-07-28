@@ -33,6 +33,7 @@ import {
 } from '@/composables/useBusinessMes'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useMesReportIdentity } from '@/composables/useMesReportIdentity'
 
@@ -60,6 +61,7 @@ const {
   pending: workOrdersPending,
   error: workOrdersError,
   refresh: refreshWorkOrders,
+  lastUpdatedAt: workOrdersLastUpdatedAt,
 } = useMesWorkOrders()
 
 const {
@@ -67,6 +69,7 @@ const {
   pending: workOrderDetailPending,
   error: workOrderDetailError,
   refresh: refreshWorkOrderDetail,
+  lastUpdatedAt: workOrderDetailLastUpdatedAt,
 } = useMesWorkOrderDetail(routeWorkOrderId)
 const routeOperationTaskId = computed(() => {
   const value = route.query.operationTaskId
@@ -244,6 +247,27 @@ function taskSubtitle(task: Task) {
   if (task.workCenterId) parts.push(`工作中心 ${task.workCenterId}`)
   return parts.join(' · ')
 }
+
+const workOrderScope = computed(() =>
+  workOrderFilters.organizationId && workOrderFilters.environmentId
+    ? '当前登录组织 / 当前业务环境'
+    : '组织/环境范围未就绪',
+)
+const workOrderEmptyExplanation = computed(() =>
+  !workOrderFilters.organizationId || !workOrderFilters.environmentId
+    ? '缺少组织或环境范围，未发起查询。'
+    : '当前列表按组织/环境范围查询，暂不支持按当前人员归属筛选；空态不代表个人工单。',
+)
+const operationTaskScope = computed(() =>
+  workOrderFilters.organizationId && workOrderFilters.environmentId
+    ? '当前登录组织 / 当前业务环境'
+    : '组织/环境范围未就绪',
+)
+const operationTaskEmptyExplanation = computed(() =>
+  !workOrderFilters.organizationId || !workOrderFilters.environmentId
+    ? '缺少组织或环境范围，未发起查询。'
+    : '当前空态只代表所选工单返回的工序集合为空；接口未提供工序总数，不代表个人任务。',
+)
 
 // --- 步骤操作 ---
 function chooseWorkOrder(wo: WorkOrder) {
@@ -503,6 +527,15 @@ function onScanWorkOrder(value: string) {
       <template v-if="currentStep === 'selectWorkOrder'">
         <NvScanBar placeholder="扫描工单号" :active="scanActive" @scan="onScanWorkOrder" />
         <p class="text-sm text-muted-foreground">选择报工的工单（共 {{ workOrderTotal }} 张）</p>
+        <ListScopeMeta
+          :scope="workOrderScope"
+          source="生产工单服务（组织/环境范围，暂不支持按当前人员归属筛选）"
+          :loaded="workOrders.length"
+          :total="workOrderTotal"
+          :updated-at="workOrdersLastUpdatedAt"
+          :empty="!workOrdersPending && !workOrdersError && workOrders.length === 0"
+          :empty-explanation="workOrderEmptyExplanation"
+        />
         <RetryableListError
           v-if="workOrdersError"
           :error="workOrdersError"
@@ -549,6 +582,20 @@ function onScanWorkOrder(value: string) {
           </button>
         </div>
 
+        <ListScopeMeta
+          :scope="operationTaskScope"
+          source="生产工序服务（当前工单返回集合，接口未提供服务总数）"
+          :loaded="visibleOperationTasks.length"
+          :total="visibleOperationTasks.length"
+          :updated-at="workOrderDetailLastUpdatedAt"
+          :empty="
+            !workOrderDetailPending &&
+            !workOrderDetailError &&
+            selectedWorkOrder !== null &&
+            visibleOperationTasks.length === 0
+          "
+          :empty-explanation="operationTaskEmptyExplanation"
+        />
         <p class="text-sm text-muted-foreground">
           选择要报工的工序（共 {{ visibleOperationTasks.length }} 道）
         </p>

@@ -25,6 +25,7 @@ import {
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
+  refetchById: new Map<string, ReturnType<typeof vi.fn>>(),
   lastMutationVars: new Map<string, unknown>(),
   mutationResultById: new Map<string, unknown>(),
   mutationFailureById: new Map<string, unknown>(),
@@ -95,11 +96,13 @@ vi.mock('@pinia/colada', () => ({
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
     coladaState.queryOptionsById.set(id, options)
 
+    const refetch = vi.fn()
+    coladaState.refetchById.set(id, refetch)
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
       error: shallowRef(),
       isLoading: shallowRef(false),
-      refetch: vi.fn(),
+      refetch,
     }
   }),
   useMutation: vi.fn((mutationOptions: { _mutationId?: string }) => ({
@@ -124,6 +127,7 @@ describe('PDA WMS composables', () => {
     sessionStorage.clear()
     coladaState.queryDataById.clear()
     coladaState.queryOptionsById.clear()
+    coladaState.refetchById.clear()
     coladaState.lastMutationVars.clear()
     coladaState.mutationResultById.clear()
     coladaState.mutationFailureById.clear()
@@ -166,6 +170,29 @@ describe('PDA WMS composables', () => {
       'listBusinessConsoleWmsCountExecutions',
     ]) {
       expect(coladaState.queryOptionsById.get(id)?.enabled).toBe(false)
+    }
+  })
+
+  it('does not manually refresh any list when the principal has no org/env scope', async () => {
+    authState.principal = undefined
+
+    const results = [
+      useWmsInbound(),
+      useWmsOutbound(),
+      useWmsPicking(),
+      useWmsPutaway(),
+      useWmsCount(),
+    ]
+    await Promise.all(results.map((result) => result.refresh()))
+
+    for (const id of [
+      'listBusinessConsoleWmsInboundOrders',
+      'listBusinessConsoleWmsOutboundOrders',
+      'listBusinessConsoleWmsPickingTasks',
+      'listBusinessConsoleWmsPutawayTasks',
+      'listBusinessConsoleWmsCountExecutions',
+    ]) {
+      expect(coladaState.refetchById.get(id)).not.toHaveBeenCalled()
     }
   })
 
