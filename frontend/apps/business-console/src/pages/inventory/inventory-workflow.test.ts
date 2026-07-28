@@ -381,13 +381,38 @@ const uiStubs = {
   },
   Toolbar: { props: ['showSearch'], template: '<div><slot name="filters" /></div>' },
   // NvDataTable stub renders rows + the cell-actions slot, exposing a design-system table marker.
+  // 三态入参一并暴露：页面把「读失败」「还没查」「真 0 条」交给组件区分之后，
+  // 断言必须能分别看到三者，否则测试会退回「全都长成空态」的旧契约。
   NvDataTable: {
-    props: ['rows', 'columns', 'rowKey', 'pagination', 'emptyMessage'],
-    template: `<table data-ui-table :data-pagination="String(pagination)" :data-empty-message="emptyMessage"><tbody><tr v-for="(row, i) in rows" :key="i">
+    props: [
+      'rows',
+      'columns',
+      'rowKey',
+      'pagination',
+      'emptyMessage',
+      'error',
+      'errorMessage',
+      'awaitingScope',
+      'awaitingScopeMessage',
+      'manual',
+      'page',
+      'pageSize',
+      'totalItems',
+    ],
+    emits: ['update:page', 'update:pageSize', 'retry'],
+    // 页脚按钮**放在表格外面**：行数断言按 `tr` / `[data-cell]` 数，多塞一行会把它们打歪。
+    template: `<div><table data-ui-table :data-pagination="String(pagination)" :data-empty-message="emptyMessage"
+      :data-has-error="String(Boolean(error))" :data-error-message="errorMessage"
+      :data-awaiting-scope="String(Boolean(awaitingScope))" :data-awaiting-scope-message="awaitingScopeMessage"
+      :data-manual="String(Boolean(manual))" :data-total-items="totalItems"><tbody><tr v-for="(row, i) in rows" :key="i">
       <td v-for="column in columns" :key="column.key" :data-cell="column.key">
         <slot :name="'cell-' + column.key" :row="row">{{ column.accessor ? column.accessor(row) : row[column.key] }}</slot>
       </td>
-    </tr></tbody></table>`,
+    </tr></tbody></table>
+    <div data-table-pager>
+      <button data-next-page @click="$emit('update:page', page + 1)">下一页</button>
+      <button data-page-size @click="$emit('update:pageSize', 100); $emit('update:page', 1)">100/页</button>
+    </div></div>`,
   },
   DataTablePagination: true,
   NvPagination: {
@@ -529,7 +554,9 @@ describe('inventory workflow pages', () => {
       const wrapper = mountInventoryPage(AvailabilityPage)
       inventoryState.availabilityFilters!.locationCode = 'A-01'
 
-      const back = wrapper.findAll('button').find((button) => button.text().includes('返回全厂库存'))
+      const back = wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('返回全厂库存'))
       expect(back).toBeDefined()
       await back!.trigger('click')
 
@@ -649,7 +676,10 @@ describe('inventory workflow pages', () => {
         ?.attributes(),
     ).toHaveProperty('disabled')
     expect(wrapper.text()).not.toContain('facade 未提供 total')
-    expect(wrapper.get('[data-ui-table]').attributes('data-pagination')).toBe('false')
+    // 台账首屏有三四千行（11 列 × 每行数个 RouterLink），关掉分页会把主线程钉死。
+    // 非效期视图走前端切页，因此绝不能再是 manual。
+    expect(wrapper.get('[data-ui-table]').attributes('data-pagination')).not.toBe('false')
+    expect(wrapper.get('[data-ui-table]').attributes('data-manual')).toBe('false')
 
     await wrapper
       .findAll('button')
@@ -658,9 +688,9 @@ describe('inventory workflow pages', () => {
     const nearExpiryCell = wrapper.get('[data-cell="expiryDate"]').text()
     expect(nearExpiryCell).toContain('2026-07-25')
     expect(nearExpiryCell).toContain('2026-06-15')
-    expect(wrapper.get('[data-pagination-total]').text()).toContain('51')
-    expect(wrapper.get('[data-pagination-total]').attributes('data-show-edges')).toBe('false')
-    expect(wrapper.get('[data-pagination-total]').attributes('data-sibling-count')).toBe('0')
+    // 效期预警是服务端分页：交给表格自己出页脚，页数与总数都由调用点喂。
+    expect(wrapper.get('[data-ui-table]').attributes('data-manual')).toBe('true')
+    expect(wrapper.get('[data-ui-table]').attributes('data-total-items')).toBe('51')
     await wrapper.get('[data-next-page]').trigger('click')
     expect(inventoryState.expiryPage?.value).toBe(2)
     await wrapper.get('[data-page-size]').trigger('click')
@@ -679,9 +709,13 @@ describe('inventory workflow pages', () => {
       error,
       '库存可用量加载失败，请稍后重试。',
     )
-    expect(wrapper.get('[data-ui-table]').attributes('data-empty-message')).toBe(
-      '库存可用量加载失败，请稍后重试。',
+    // 读失败必须走错误态，而不是折进空态文案——一个 500 不能长得跟「真的没有货」一样。
+    const table = wrapper.get('[data-ui-table]')
+    expect(table.attributes('data-has-error')).toBe('true')
+    expect(table.attributes('data-error-message')).toBe(
+      '库存可用量读取失败，现在无法判断这个物料有多少货。',
     )
+    expect(table.attributes('data-empty-message')).not.toContain('失败')
     expect(wrapper.text()).not.toContain('downstream stack trace')
   })
 
@@ -696,9 +730,13 @@ describe('inventory workflow pages', () => {
     await nextTick()
 
     expect(wrapper.get('[data-page-count]').text()).toBe('业务上下文加载中')
-    expect(wrapper.get('[data-ui-table]').attributes('data-empty-message')).toBe(
+    // 「还没查」是中性态，不是空态：不能渲染成「当前范围没有临期批次」那种结论。
+    const contextTable = wrapper.get('[data-ui-table]')
+    expect(contextTable.attributes('data-awaiting-scope')).toBe('true')
+    expect(contextTable.attributes('data-awaiting-scope-message')).toBe(
       '业务上下文加载中，请稍候。',
     )
+    expect(contextTable.attributes('data-has-error')).toBe('false')
     expect(wrapper.text()).not.toContain('请选择工厂')
   })
 
@@ -758,7 +796,9 @@ describe('inventory workflow pages', () => {
     const nearExpiryCell = wrapper.get('[data-cell="expiryDate"]').text()
     expect(nearExpiryCell).toContain('2026-07-25')
     expect(nearExpiryCell).toContain('2026-06-15')
-    expect(wrapper.get('[data-pagination-total]').text()).toContain('51')
+    // 效期预警走服务端分页，总数由调用点喂给表格，页脚不再是页面自己那条独立的分页器。
+    expect(wrapper.get('[data-ui-table]').attributes('data-manual')).toBe('true')
+    expect(wrapper.get('[data-ui-table]').attributes('data-total-items')).toBe('51')
     const nearExpiryLinks = wrapper
       .findAll('[data-router-link]')
       .map((link) => link.attributes('data-to') ?? '')

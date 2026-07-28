@@ -29589,6 +29589,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "sourceReferenceLabel": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

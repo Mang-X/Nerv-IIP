@@ -165,7 +165,12 @@ public sealed record EquipmentRuntimeAvailabilityWindowContract(
     EquipmentRuntimeSourceType SourceType,
     string SourceReferenceId,
     string MessageKey,
-    IReadOnlyCollection<string> SubstituteDeviceAssetIds);
+    IReadOnlyCollection<string> SubstituteDeviceAssetIds,
+    // SourceReferenceLabel：来源单据的**人读标识**（工单号 / 点检计划编码 / 报警外部编号 / 设备编码）。
+    // SourceReferenceId 多数情况下是聚合 GUID，整个窗口对象里再无第二个可读字段，界面「来源引用」
+    // 列只能把 GUID 原样上屏，前端无从兜底。各 provider 必须回带本域的业务标识；确实没有业务编号
+    // 可回时留 null，由界面显示占位而不是显示 GUID。
+    string? SourceReferenceLabel = null);
 
 public sealed record EquipmentRuntimeCurrentStateResponse(
     int ContractVersion,

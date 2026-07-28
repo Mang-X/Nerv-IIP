@@ -4,11 +4,13 @@ import DeviceQuickViewSheet from '@/components/equipment/DeviceQuickViewSheet.vu
 import {
   describeEquipmentReason,
   equipmentStatusTone,
+  MAX_DEVICE_ASSET_IDS,
   useBusinessEquipmentOverview,
   type EquipmentTone,
 } from '@/composables/useBusinessEquipment'
 import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { friendlyErrorMessage } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { equipmentStateLabel } from '@nerv-iip/business-core'
 import {
@@ -30,6 +32,7 @@ import {
   EyeIcon,
   GaugeIcon,
   RefreshCwIcon,
+  TriangleAlertIcon,
   WrenchIcon,
 } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
@@ -44,8 +47,19 @@ definePage({
 })
 
 const router = useRouter()
-const { activeBlocks, devices, filters, overviewError, overviewPending, refreshOverview } =
-  useBusinessEquipmentOverview()
+const {
+  activeBlocks,
+  deviceRosterError,
+  deviceRosterTotal,
+  devices,
+  effectiveDeviceAssetIdCount,
+  filters,
+  overviewError,
+  overviewPending,
+  overviewState,
+  refreshDeviceRoster,
+  refreshOverview,
+} = useBusinessEquipmentOverview()
 
 // 车间 → 产线 → 设备 级联范围：选择结果映射为 overview 接口吃的设备编号集合。
 const { scope, levels, devicesInScope, scopePending } = useEquipmentScopeSelection()
@@ -59,7 +73,7 @@ watch(
   [scopeNarrowed, scopedDeviceCodes],
   ([narrowed, codes]) => {
     // 全厂（未收窄）留空串，composable 会回退到全部设备；收窄后按范围编号查询（后端上限 50 台）。
-    filters.deviceAssetIds = narrowed ? codes.slice(0, 50).join(',') : ''
+    filters.deviceAssetIds = narrowed ? codes.slice(0, MAX_DEVICE_ASSET_IDS).join(',') : ''
   },
   { immediate: true },
 )
@@ -69,7 +83,37 @@ const scopeEmpty = computed(() => scopeNarrowed.value && scopedDeviceCodes.value
 const visibleDevices = computed(() => (scopeEmpty.value ? [] : devices.value))
 const visibleBlocks = computed(() => (scopeEmpty.value ? [] : activeBlocks.value))
 
-const errorMessage = computed(() => formatError(overviewError.value))
+// 「取不到」与「真的 0 条」必须可区分：非 ready 态一律不给数字，计数显 —，且不出现
+// 「暂无 / 正常」这类安慰性措辞——把故障说成现场没设备是最危险的伪装。
+const isReady = computed(() => overviewState.value === 'ready')
+const headerCount = computed(() => (isReady.value ? `${visibleDevices.value.length} 台设备` : '—'))
+const errorHeadline = computed(() => {
+  if (deviceRosterError.value && overviewError.value) {
+    return '设备台账与运行状态都取不到，当前无法判断现场情况。'
+  }
+  if (deviceRosterError.value) return '设备台账取不到，当前无法判断在册设备与运行情况。'
+  return '设备运行状态取不到，当前无法判断现场情况。'
+})
+const errorDetail = computed(() =>
+  friendlyErrorMessage(deviceRosterError.value ?? overviewError.value, '请稍后重试。'),
+)
+function retryOverview() {
+  void refreshDeviceRoster()
+  void refreshOverview()
+}
+
+// 看板一次最多带 50 台设备编号进查询：截断必须写在页面上，否则「共 71 台只看了 50 台」
+// 会被读成全厂事实。范围收窄时分母是范围内设备数，未收窄时是台账在册总数。
+const scopeDeviceTotal = computed(() =>
+  scopeNarrowed.value ? scopedDeviceCodes.value.length : deviceRosterTotal.value,
+)
+const truncationNotice = computed(() => {
+  if (!isReady.value) return ''
+  const shown = effectiveDeviceAssetIdCount.value
+  if (shown <= 0 || scopeDeviceTotal.value <= shown) return ''
+  return `范围内共 ${scopeDeviceTotal.value} 台设备，当前看板展示前 ${shown} 台。收窄上方范围可查看其余设备。`
+})
+
 const runningCount = computed(
   () =>
     visibleDevices.value.filter((d) => equipmentStatusTone(d.currentState) === 'success').length,
@@ -154,9 +198,6 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
-function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
-}
 </script>
 
 <template>
@@ -164,7 +205,7 @@ function formatError(error: unknown) {
     <NvPageHeader
       title="设备运行看板"
       :breadcrumbs="[{ label: '设备监控（IoT）' }]"
-      :count="`${visibleDevices.length} 台设备`"
+      :count="headerCount"
     >
       <template #actions>
         <NvButton size="sm" type="button" variant="outline" as-child>
@@ -182,7 +223,7 @@ function formatError(error: unknown) {
           type="button"
           variant="outline"
           :disabled="overviewPending"
-          @click="refreshOverview"
+          @click="retryOverview"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
@@ -190,7 +231,36 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="3">
+    <!-- 非 ready 态不渲染任何环形/计数卡：0 是一个断言，取不到时我们没有资格做这个断言。 -->
+    <div
+      v-if="overviewState === 'idle'"
+      class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
+    >
+      业务上下文未就绪，设备运行数据尚未查询。
+    </div>
+    <div
+      v-else-if="overviewState === 'loading'"
+      class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
+    >
+      正在读取设备台账与运行状态…
+    </div>
+    <div v-else-if="overviewState === 'error'" class="rounded-lg border border-destructive/40 p-4">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <p class="inline-flex items-center gap-1.5 font-medium text-destructive" role="alert">
+            <TriangleAlertIcon class="size-4 shrink-0" aria-hidden="true" />
+            {{ errorHeadline }}
+          </p>
+          <p class="mt-1 text-sm text-muted-foreground">{{ errorDetail }}</p>
+        </div>
+        <NvButton size="sm" type="button" variant="outline" @click="retryOverview">
+          <RefreshCwIcon aria-hidden="true" />
+          重试
+        </NvButton>
+      </div>
+    </div>
+
+    <NvSectionCards v-else :columns="3">
       <NvMetricRing
         label="设备状态构成"
         :value="visibleDevices.length"
@@ -226,10 +296,33 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+    <!-- 静默截断会让「50 台」被读成全厂事实，这里把实际口径写明。 -->
+    <p v-if="truncationNotice" class="text-sm text-muted-foreground" role="status">
+      {{ truncationNotice }}
+    </p>
 
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.75fr)]">
+      <div
+        v-if="overviewState === 'idle'"
+        class="self-start rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
+      >
+        业务上下文未就绪，设备清单尚未查询。
+      </div>
+      <div
+        v-else-if="overviewState === 'error'"
+        class="self-start rounded-lg border border-destructive/40 p-4"
+      >
+        <p class="inline-flex items-center gap-1.5 font-medium text-destructive" role="alert">
+          <TriangleAlertIcon class="size-4 shrink-0" aria-hidden="true" />
+          设备清单取不到，无法判断有哪些设备、各自什么状态。
+        </p>
+        <NvButton size="sm" type="button" variant="outline" class="mt-3" @click="retryOverview">
+          <RefreshCwIcon aria-hidden="true" />
+          重试
+        </NvButton>
+      </div>
       <NvDataTable
+        v-else
         :columns="columns"
         :rows="visibleDevices"
         :row-key="(r) => r.deviceAssetId ?? '无'"
@@ -311,7 +404,9 @@ function formatError(error: unknown) {
       <div class="self-start rounded-lg border bg-card">
         <div class="flex items-center justify-between border-b px-4 py-3">
           <h2 class="text-sm font-semibold text-foreground">当前阻塞</h2>
-          <NvBadge class="rounded-sm" variant="neutral">{{ visibleBlocks.length }}</NvBadge>
+          <NvBadge class="rounded-sm" variant="neutral">{{
+            isReady ? visibleBlocks.length : '—'
+          }}</NvBadge>
         </div>
         <div class="grid gap-3 p-4">
           <div
@@ -373,7 +468,35 @@ function formatError(error: unknown) {
             </NvButton>
           </div>
           <div
-            v-if="!visibleBlocks.length"
+            v-if="overviewState === 'idle'"
+            class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
+          >
+            业务上下文未就绪，阻塞窗口尚未查询。
+          </div>
+          <div
+            v-else-if="overviewState === 'loading'"
+            class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
+          >
+            正在读取设备阻塞窗口…
+          </div>
+          <div
+            v-else-if="overviewState === 'error'"
+            class="rounded-lg border border-destructive/40 p-4"
+          >
+            <p
+              class="inline-flex items-center gap-1.5 text-sm font-medium text-destructive"
+              role="alert"
+            >
+              <TriangleAlertIcon class="size-4 shrink-0" aria-hidden="true" />
+              阻塞窗口取不到，无法判断当前是否有设备被阻塞。
+            </p>
+            <NvButton size="sm" type="button" variant="outline" class="mt-3" @click="retryOverview">
+              <RefreshCwIcon aria-hidden="true" />
+              重试
+            </NvButton>
+          </div>
+          <div
+            v-else-if="!visibleBlocks.length"
             class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
           >
             当前没有设备阻塞窗口。

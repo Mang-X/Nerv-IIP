@@ -387,6 +387,13 @@ export const MES_READINESS_AREA_LABELS: Readonly<Record<string, string>> = {
   masterdata: '主数据',
   'master-data': '主数据',
   engineering: '工程',
+  // 后端就绪检查按**来源服务**分区，区域码即服务名。权威清单是网关
+  // BusinessConsoleMesEndpoints.AreaCodes 的 7 条：master-data / product-engineering /
+  // supply / quality / equipment / barcode-coding / iam-context。缺词就把服务名印到「检查区域」列上。
+  'product-engineering': '产品工程',
+  supply: '供应与齐套',
+  'barcode-coding': '条码与编码',
+  'iam-context': '账号与权限',
   inventory: '库存',
   material: '物料',
   quality: '质量',

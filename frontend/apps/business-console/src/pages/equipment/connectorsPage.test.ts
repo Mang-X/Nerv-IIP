@@ -59,6 +59,8 @@ const connectorMocks = vi.hoisted(() => ({
   refreshConnectors: vi.fn(),
   coverageConnectorIds: [] as string[],
   errorRef: null as { value: unknown } | null,
+  pendingRef: null as { value: boolean } | null,
+  listRef: null as { value: unknown[] } | null,
   connectors: [
     {
       connectorId: 'modbus-main',
@@ -219,20 +221,34 @@ const connectorMocks = vi.hoisted(() => ({
   ],
 }))
 
-const notifyMock = vi.hoisted(() => ({ notifyError: vi.fn(), notifySuccess: vi.fn() }))
+const notifyMock = vi.hoisted(() => ({
+  friendlyErrorMessage: (_error: unknown, fallback = '操作失败，请稍后重试。') => fallback,
+  notifyError: vi.fn(),
+  notifySuccess: vi.fn(),
+}))
 vi.mock('@/utils/notify', () => notifyMock)
+
+// 业务上下文 store：页面用它区分「上下文未就绪」与「真的 0 个连接器」；
+// 这些用例不装 Pinia，给可控桩（默认已就绪）。
+const contextMock = vi.hoisted(() => ({ organizationId: 'org-001', environmentId: 'env-dev' }))
+vi.mock('@/stores/businessContext', () => ({
+  useBusinessContextStore: () => contextMock,
+}))
 
 vi.mock('@/composables/useBusinessTelemetry', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/composables/useBusinessTelemetry')>()
   const vue = await import('vue')
   connectorMocks.errorRef = vue.shallowRef<unknown>(undefined)
+  connectorMocks.pendingRef = vue.shallowRef(false)
+  connectorMocks.listRef = vue.shallowRef<unknown[]>(connectorMocks.connectors)
+  const visibleConnectors = vue.computed(() => connectorMocks.listRef!.value)
   return {
     ...original,
     useBusinessTelemetryConnectors: () => ({
-      connectors: vue.computed(() => connectorMocks.connectors),
+      connectors: visibleConnectors,
       connectorsError: connectorMocks.errorRef,
-      connectorsPending: vue.shallowRef(false),
-      connectorsTotal: vue.computed(() => connectorMocks.connectors.length),
+      connectorsPending: connectorMocks.pendingRef,
+      connectorsTotal: vue.computed(() => visibleConnectors.value.length),
       refreshConnectors: connectorMocks.refreshConnectors,
       sampleRateByConnector: vue.ref<Record<string, number | null>>({ 'opcua-main': 12.5 }),
     }),
@@ -255,6 +271,12 @@ vi.mock('@/composables/useBusinessTelemetry', async (importOriginal) => {
 
 function setError(error: unknown) {
   connectorMocks.errorRef!.value = error
+}
+function setPending(pending: boolean) {
+  connectorMocks.pendingRef!.value = pending
+}
+function hideConnectors() {
+  connectorMocks.listRef!.value = []
 }
 
 const stubs = {
@@ -280,7 +302,12 @@ describe('equipment telemetry connectors page', () => {
     vi.setSystemTime(new Date('2026-07-13T01:10:00.000Z'))
     notifyMock.notifyError.mockClear()
     connectorMocks.coverageConnectorIds = []
+    connectorMocks.listRef!.value = connectorMocks.connectors
+    connectorMocks.refreshConnectors.mockClear()
+    contextMock.organizationId = 'org-001'
+    contextMock.environmentId = 'env-dev'
     setError(undefined)
+    setPending(false)
   })
 
   afterEach(() => {
@@ -459,6 +486,53 @@ describe('equipment telemetry connectors page', () => {
     await wrapper.findAll('button[aria-expanded]')[1].trigger('click')
     await wrapper.findAll('button[aria-expanded]')[1].trigger('click')
     expect(connectorMocks.coverageConnectorIds).toEqual(['modbus-main', 'mqtt-main', 'mqtt-main'])
+  })
+
+  it('renders load failure as a persistent error block with retry, never as an empty state', async () => {
+    hideConnectors()
+    setError(new Error('boom'))
+    const wrapper = mount(ConnectorsPage, { global: { stubs } })
+    await nextTick()
+
+    expect(wrapper.text()).toContain('采集健康取不到，无法判断现场采集是否正常。')
+    expect(wrapper.text()).not.toContain('暂无现场采集连接')
+    expect(wrapper.find('.nv-ring-card').exists()).toBe(false)
+    // 计数不许在取不到时显 0
+    expect(wrapper.text()).not.toContain('0 个采集连接器')
+
+    const retry = wrapper.findAll('button').find((button) => button.text().trim() === '重试')
+    expect(retry).toBeDefined()
+    await retry!.trigger('click')
+    expect(connectorMocks.refreshConnectors).toHaveBeenCalled()
+  })
+
+  it('keeps stale readings visible but marks them as not current after a failed refresh', async () => {
+    const wrapper = mount(ConnectorsPage, { global: { stubs } })
+    setError(new Error('boom'))
+    await nextTick()
+
+    expect(wrapper.text()).toContain(
+      '采集健康刷新失败，下方为上一次成功读取的结果，不代表现场此刻的状态。',
+    )
+    expect(wrapper.text()).toContain('OPC UA Main')
+  })
+
+  it('separates not-yet-queried and loading from a genuine zero-connector site', async () => {
+    hideConnectors()
+    contextMock.organizationId = ''
+    const idle = mount(ConnectorsPage, { global: { stubs } })
+    expect(idle.text()).toContain('业务上下文未就绪，采集健康尚未查询。')
+    expect(idle.text()).not.toContain('暂无现场采集连接')
+
+    contextMock.organizationId = 'org-001'
+    setPending(true)
+    const loading = mount(ConnectorsPage, { global: { stubs } })
+    expect(loading.text()).toContain('正在加载采集连接器…')
+    expect(loading.text()).not.toContain('暂无现场采集连接')
+
+    setPending(false)
+    const empty = mount(ConnectorsPage, { global: { stubs } })
+    expect(empty.text()).toContain('暂无现场采集连接')
   })
 
   it('does not spam toast on repeated auto-refetch failures, but re-notifies after recovery', async () => {

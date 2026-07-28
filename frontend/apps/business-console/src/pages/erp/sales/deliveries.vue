@@ -18,7 +18,7 @@ import {
 } from '@nerv-iip/ui'
 import { RefreshCwIcon, TruckIcon } from '@lucide/vue'
 import { computed } from 'vue'
-import { formatDateTime, formatError } from '../shared'
+import { erpReadState, formatDateTime, formatError, readCount } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: '销售发货', requiredPermissions: ['business.erp.sales.read'] },
@@ -60,9 +60,34 @@ const releasedCount = computed(
 const customerCount = computed(
   () => new Set(deliveries.items.value.map((d) => d.customerCode).filter(Boolean)).size,
 )
+const readState = computed(() =>
+  erpReadState({
+    noun: '发货单',
+    unit: '张',
+    ready: deliveries.ready.value,
+    pending: deliveries.pending.value,
+    error: deliveries.error.value,
+    total: deliveries.total.value,
+    filtered: Boolean(deliveries.filters.keyword || deliveries.filters.status),
+    emptyHint: '还没有发货单。销售订单履约出货后会在这里生成。',
+  }),
+)
+
 const deliveryCells = computed<NvMetricStripCell[]>(() => [
-  { key: 'released', label: '已释放发货', value: releasedCount.value, unit: '单' },
-  { key: 'customers', label: '涉及客户', value: customerCount.value, unit: '家' },
+  {
+    key: 'released',
+    label: '已释放发货',
+    value: readCount(readState.value, releasedCount.value),
+    unit: readState.value.trustworthy ? '单' : '',
+    meta: readState.value.trustworthy ? undefined : readState.value.emptyMessage,
+  },
+  {
+    key: 'customers',
+    label: '涉及客户',
+    value: readCount(readState.value, customerCount.value),
+    unit: readState.value.trustworthy ? '家' : '',
+    meta: readState.value.trustworthy ? undefined : readState.value.emptyMessage,
+  },
 ])
 
 function isReleasable(row: BusinessConsoleErpDeliveryOrderItem) {
@@ -85,7 +110,7 @@ async function release(row: BusinessConsoleErpDeliveryOrderItem) {
     <NvPageHeader
       title="销售发货"
       :breadcrumbs="[{ label: '经营管理' }, { label: '销售' }]"
-      :count="`${deliveries.total.value} 张发货单`"
+      :count="readState.count"
     >
       <template #actions>
         <NvButton
@@ -125,7 +150,12 @@ async function release(row: BusinessConsoleErpDeliveryOrderItem) {
       :loading="deliveries.pending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无发货单。销售订单履约出货后会在这里生成。"
+      :empty-message="readState.emptyMessage"
+      :error="readState.error"
+      :error-message="readState.errorMessage"
+      :awaiting-scope="readState.awaitingScope"
+      :awaiting-scope-message="readState.awaitingScopeMessage"
+      @retry="deliveries.refresh"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >

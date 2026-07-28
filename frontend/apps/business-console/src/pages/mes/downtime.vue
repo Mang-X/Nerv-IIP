@@ -6,9 +6,11 @@ import {
   mesDowntimeStatusOptions,
   useMesReferenceLabels,
 } from '@/composables/mes/useMesReferenceLabels'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import {
   NvButton,
   NvDataTable,
@@ -69,7 +71,25 @@ watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
 
+// 停机读面只回设备编码，中文设备名在设备台账里，按编码 join 出来。
+const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
+
 type DowntimeRow = (typeof downtimeEvents)['value'][number]
+
+function deviceCode(row: DowntimeRow) {
+  return row.deviceAssetCode ?? row.deviceAssetId ?? ''
+}
+function deviceName(row: DowntimeRow) {
+  return row.deviceAssetName ?? resolveDevice(deviceCode(row))
+}
+/** 「名称 编码」纯文本，供排序 / 导出用；名录查不到就只有编码，不编名字。 */
+function deviceText(row: DowntimeRow) {
+  const code = deviceCode(row)
+  if (!code) return '未指定'
+  const name = deviceName(row)
+  return name ? `${name} ${code}` : code
+}
+
 const columns: NvDataTableColumn<DowntimeRow>[] = [
   {
     key: 'downtimeEventId',
@@ -90,7 +110,7 @@ const columns: NvDataTableColumn<DowntimeRow>[] = [
   {
     key: 'deviceAssetId',
     header: '设备',
-    accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定',
+    accessor: (r) => deviceText(r),
   },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'startedAtUtc', header: '开始', width: 'w-44' },
@@ -194,6 +214,9 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="暂无停机事件。先在工序执行登记设备异常，再回到这里跟进恢复与影响范围。"
     >
+      <template #cell-deviceAssetId="{ row }">
+        <CodeWithNameCell :code="deviceCode(row)" :name="deviceName(row)" fallback="未指定" />
+      </template>
       <template #cell-status="{ row }">
         <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
       </template>

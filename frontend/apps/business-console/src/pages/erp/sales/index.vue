@@ -31,7 +31,7 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
-import { formatDateTime, pickerInvalidClass } from '../shared'
+import { erpReadState, formatDateTime, pickerInvalidClass, readCount } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: '销售机会', requiredPermissions: ['business.erp.sales.read'] },
@@ -76,9 +76,34 @@ const customerCount = computed(
 )
 // 机会页的两个数字是同一句话的两半（还在谈几单 / 覆盖几个客户），通栏一条即可，
 // 不必占满两张大卡把表格挤到首屏之外。
+const readState = computed(() =>
+  erpReadState({
+    noun: '销售机会',
+    unit: '个',
+    ready: opportunities.ready.value,
+    pending: opportunities.pending.value,
+    error: opportunities.error.value,
+    total: opportunities.total.value,
+    filtered: Boolean(opportunities.filters.keyword || opportunities.filters.status),
+    emptyHint: '还没有销售机会。先登记客户意向，再推进报价和销售订单。',
+  }),
+)
+
 const opportunityCells = computed<NvMetricStripCell[]>(() => [
-  { key: 'active', label: '跟进中机会', value: activeCount.value, unit: '个' },
-  { key: 'customers', label: '涉及客户', value: customerCount.value, unit: '家' },
+  {
+    key: 'active',
+    label: '跟进中机会',
+    value: readCount(readState.value, activeCount.value),
+    unit: readState.value.trustworthy ? '个' : '',
+    meta: readState.value.trustworthy ? undefined : readState.value.emptyMessage,
+  },
+  {
+    key: 'customers',
+    label: '涉及客户',
+    value: readCount(readState.value, customerCount.value),
+    unit: readState.value.trustworthy ? '家' : '',
+    meta: readState.value.trustworthy ? undefined : readState.value.emptyMessage,
+  },
 ])
 
 const open = shallowRef(false)
@@ -119,7 +144,7 @@ async function submit() {
     <NvPageHeader
       title="销售机会"
       :breadcrumbs="[{ label: '经营管理' }, { label: '销售' }]"
-      :count="`${opportunities.total.value} 个机会`"
+      :count="readState.count"
     >
       <template #actions>
         <NvButton
@@ -163,7 +188,12 @@ async function submit() {
       :loading="opportunities.pending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无销售机会。先登记客户意向，再推进报价和销售订单。"
+      :empty-message="readState.emptyMessage"
+      :error="readState.error"
+      :error-message="readState.errorMessage"
+      :awaiting-scope="readState.awaitingScope"
+      :awaiting-scope-message="readState.awaitingScopeMessage"
+      @retry="opportunities.refresh"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >

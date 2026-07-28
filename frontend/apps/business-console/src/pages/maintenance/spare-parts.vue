@@ -14,6 +14,7 @@ import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNam
 import { usePagedList } from '@/composables/usePagedList'
 import { useSkuNames } from '@/composables/useSkuNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import {
   Empty,
   EmptyDescription,
@@ -253,12 +254,11 @@ async function submitCreate() {
         </RouterLink>
       </template>
       <template #cell-deviceAssetId="{ row }">
-        <span class="grid leading-tight">
-          <span>{{ resolveDevice(row.deviceAssetId) ?? row.deviceAssetId ?? '未记录' }}</span>
-          <span v-if="resolveDevice(row.deviceAssetId)" class="text-xs text-muted-foreground">{{
-            row.deviceAssetId
-          }}</span>
-        </span>
+        <CodeWithNameCell
+          :code="row.deviceAssetId"
+          :name="resolveDevice(row.deviceAssetId)"
+          fallback="未记录"
+        />
       </template>
       <template #cell-actions="{ row }">
         <NvRowActions :label="`备件需求操作 ${row.skuCode ?? ''}`">

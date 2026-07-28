@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsOutboundOrderItem } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
+import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useWmsOutboundOrders } from '@/composables/useBusinessWms'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
@@ -69,10 +70,8 @@ const {
   refreshOutboundOrders,
   completeOutbound,
   completeOutboundPending,
-  completeOutboundError,
   createOutbound,
   createOutboundPending,
-  createOutboundError,
 } = useWmsOutboundOrders()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 // 物料 / 单位 / 工厂走主数据目录；库位与批次后端无读面，从既有台账与作业记录派生。
@@ -95,10 +94,14 @@ function onLineSkuChange(line: { skuCode: string; uomCode: string }, skuCode: st
   line.uomCode = skuCode ? resolveUomCode(skuCode) : ''
 }
 
-const errorMessage = computed(() =>
-  formatError(
-    outboundOrdersError.value ?? completeOutboundError.value ?? createOutboundError.value,
-  ),
+/**
+ * 读错误只归列表区域。提交（创建 / 复核）失败一律走 toast，不并进这一条：
+ * 两者共用一个变量时，「提交失败」会伪装成「列表加载失败」。
+ */
+const listErrorMessage = computed(() =>
+  outboundOrdersError.value
+    ? `取不到出库单列表，当前出库情况无法判断：${formatError(outboundOrdersError.value)}`
+    : '',
 )
 
 // 后端 WMS OutboundOrderLine 要求 uomCode/正数 requestedQuantity/pickLocationCode/qualityStatus/ownerType 均非空。
@@ -255,9 +258,52 @@ const reviewContextItems = computed(() => [
       : undefined,
   },
 ])
-const openCount = computed(
+/**
+ * 数字口径：页头与「出库单」KPI 一律用**服务端总数**；按状态分档只有当前页能算，
+ * 因此一律带「本页」前缀，绝不和总数混在同一口径里。
+ * 读不到数（上下文未就绪 / 读取中 / 读失败）时显 `—`，不断言 0——0 是结论，不是缺省值。
+ */
+// 业务范围是否选定走全站唯一判定，不在页面里另写一份——判定分叉了，
+// 「还没查」和「真的 0 条」很快又会混回同一个渲染。
+const contextReady = computed(() => hasBusinessContext(filters))
+const listReady = computed(
+  () => contextReady.value && !outboundOrdersError.value && !outboundOrdersPending.value,
+)
+const headerCount = computed(() => {
+  if (!contextReady.value) return '未选择业务范围'
+  if (outboundOrdersError.value) return '出库单数取不到'
+  if (outboundOrdersPending.value) return '加载中'
+  return `${outboundOrdersTotal.value} 张出库单`
+})
+const pageOpenCount = computed(
   () => outboundOrders.value.filter((r) => (r.status ?? '').toLowerCase() !== 'completed').length,
 )
+const metricCells = computed<NvMetricStripCell[]>(() => {
+  if (!listReady.value) {
+    return [
+      { key: 'total', label: '出库单', value: '—' },
+      { key: 'open', label: '本页待拣货复核发运', value: '—' },
+      { key: 'completed', label: '本页已完成', value: '—' },
+    ]
+  }
+  return [
+    { key: 'total', label: '出库单', value: outboundOrdersTotal.value, unit: '张' },
+    {
+      key: 'open',
+      label: '本页待拣货复核发运',
+      value: pageOpenCount.value,
+      unit: '张',
+      valueTone: pageOpenCount.value > 0 ? 'warning' : undefined,
+    },
+    {
+      key: 'completed',
+      label: '本页已完成',
+      value: outboundOrders.value.length - pageOpenCount.value,
+      unit: '张',
+      valueTone: 'success',
+    },
+  ]
+})
 
 type OutboundRow = BusinessConsoleWmsOutboundOrderItem
 const columns: NvDataTableColumn<OutboundRow>[] = [
@@ -294,11 +340,7 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <NvPageHeader
-      title="出库发货"
-      :breadcrumbs="[{ label: '仓储作业' }]"
-      :count="`${outboundOrders.length} 张出库单`"
-    >
+    <NvPageHeader title="出库发货" :breadcrumbs="[{ label: '仓储作业' }]" :count="headerCount">
       <template #actions>
         <NvButton
           size="sm"
@@ -317,25 +359,7 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvMetricStrip
-      :cells="[
-        { key: 'total', label: '出库单', value: outboundOrdersTotal, unit: '张' },
-        {
-          key: 'open',
-          label: '待拣货复核发运',
-          value: openCount,
-          unit: '张',
-          valueTone: openCount > 0 ? 'warning' : undefined,
-        },
-        {
-          key: 'completed',
-          label: '已完成',
-          value: outboundOrders.length - openCount,
-          unit: '张',
-          valueTone: 'success',
-        },
-      ]"
-    />
+    <NvMetricStrip :cells="metricCells" />
 
     <WmsInventoryContextPanel
       title="库存明细"
@@ -354,8 +378,7 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
+    <!-- 读失败 / 未选组织环境都由表格自己的三态呈现，绝不退化成「暂无出库单」。 -->
     <NvDataTable
       manual
       :page="page"
@@ -367,9 +390,14 @@ function formatError(error: unknown) {
       :rows="outboundOrders"
       :row-key="rowKey"
       :loading="outboundOrdersPending"
+      :error="outboundOrdersError"
+      :error-message="listErrorMessage"
+      :awaiting-scope="!contextReady"
+      awaiting-scope-message="请先在顶部选择业务范围，再查看出库单。"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无出库单。发货作业产生出库单后会出现在这里。"
+      @retry="refreshOutboundOrders"
     >
       <template #cell-status="{ row }"
         ><NvStatusBadge

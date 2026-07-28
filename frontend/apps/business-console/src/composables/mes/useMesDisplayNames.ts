@@ -4,6 +4,7 @@ import {
   useBusinessMasterDataResources,
   useBusinessWorkers,
 } from '@/composables/useBusinessMasterData'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 
 export interface MesDisplayNameOptions {
   /**
@@ -17,6 +18,11 @@ export interface MesDisplayNameOptions {
    * 控制台派出去的工序拿不到姓名，只能靠名录在前端补齐。
    */
   workers?: boolean
+  /**
+   * 额外加载设备台账（把 deviceAssetCode / deviceAssetId 解析成设备名）。
+   * 默认关闭：只有展示设备列的页面才付这次请求。
+   */
+  devices?: boolean
 }
 
 /**
@@ -31,6 +37,9 @@ export function useMesDisplayNames(options: MesDisplayNameOptions = {}) {
   const workerSource = options.workers
     ? useBusinessWorkers({ employmentStatus: 'active' })
     : undefined
+  // 设备名录复用主数据解析器（同一份 device-asset 名录、同一份查询缓存），
+  // 不在这里另建一张 Map，也不会因为多页共用而重复取数。
+  const { resolveDevice } = useMasterDataDisplayNames({ devices: options.devices })
 
   const skuByCode = computed(() => {
     const m = new Map<string, string>()
@@ -94,6 +103,8 @@ export function useMesDisplayNames(options: MesDisplayNameOptions = {}) {
   }
 
   return {
+    /** 设备名；名录查不到返回 undefined（只显编码，不编造名字）。 */
+    resolveDevice,
     resolveShiftLabel,
     resolveSku,
     resolveSkuLabel,

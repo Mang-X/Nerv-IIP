@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
+import { readStateNote, readStateValue } from '@/composables/businessReadState'
 import { describeMesReadinessReason, useMesOverview } from '@/composables/useBusinessMes'
 import { labelFor, MES_READINESS_AREA_LABELS } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -31,10 +32,42 @@ definePage({
   },
 })
 
-const { blockers, counts, overviewError, overviewPending, pendingWork, refreshOverview } =
-  useMesOverview()
+const {
+  blockers,
+  counts,
+  overviewError,
+  overviewPending,
+  overviewState,
+  pendingWork,
+  refreshOverview,
+} = useMesOverview()
 
+// 这一页的结论（有没有阻塞、能不能放行）只有在真的读到数据时才成立。
+// 读面失败 / 未读取时，`blockers` 是空数组、各项计数是 0——若照直渲染，屏幕就会对着车间管理者
+// 断言「现场无阻塞」。所以本页所有数字与结论一律以 overviewState 为准，非 ready 一律显式说「取不到」。
+const isReady = computed(() => overviewState.value === 'ready')
+const stateNote = computed(() => readStateNote(overviewState.value))
 const errorMessage = computed(() => formatError(overviewError.value))
+// 顶部状态条：只在「没读到」时出现，且必须说清楚原因 + 给重试出路，不含任何「正常 / 无阻塞」措辞。
+const readNotice = computed(() => {
+  if (overviewState.value === 'idle') {
+    return {
+      text: '尚未选择业务范围（组织与环境），现场数据未读取，暂时无法判断产线状态。',
+      class: 'border-border bg-muted/40 text-muted-foreground',
+      retry: false,
+    }
+  }
+  if (overviewState.value === 'error') {
+    return {
+      text: errorMessage.value
+        ? `现场数据获取失败，无法判断当前是否存在阻塞：${errorMessage.value}`
+        : '现场数据获取失败，无法判断当前是否存在阻塞。',
+      class: 'border-destructive/40 bg-destructive/5 text-destructive',
+      retry: true,
+    }
+  }
+  return null
+})
 // facade 回的 count key 是 kebab-case（work-orders / operation-tasks）。
 // 曾按 PascalCase 取值，于是两个总量恒为 0、整个驾驶舱看着像没数据——
 // 这里按「去分隔符 + 小写」归一化匹配，两种写法都认。
@@ -48,39 +81,95 @@ const pendingWorkCount = computed(() =>
 )
 
 // 指挥卡已经承担「先看什么、去哪里」；这一条只压缩成一行现场总量，不再重复副标题。
+// 没读到数据时给 `—` 而不是 0，并在副行写明原因——0 是结论，`—` 才是「不知道」。
+function metricCell(
+  key: string,
+  label: string,
+  value: number,
+  unit: string,
+  tone?: NvMetricStripCell['valueTone'],
+): NvMetricStripCell {
+  return {
+    key,
+    label,
+    value: readStateValue(overviewState.value, value),
+    unit: isReady.value ? unit : undefined,
+    valueTone: isReady.value ? tone : undefined,
+    meta: stateNote.value || undefined,
+    metaTone: 'neutral',
+  }
+}
 const overviewCells = computed<NvMetricStripCell[]>(() => [
-  { key: 'work-orders', label: '在制工单', value: workOrderCount.value, unit: '张' },
-  { key: 'operation-tasks', label: '工序任务', value: operationTaskCount.value, unit: '个' },
-  {
-    key: 'blockers',
-    label: '阻塞项',
-    value: blockerCount.value,
-    unit: '项',
-    valueTone: blockerCount.value > 0 ? 'danger' : undefined,
-  },
-  { key: 'pending', label: '待办', value: pendingWorkCount.value, unit: '项' },
+  metricCell('work-orders', '在制工单', workOrderCount.value, '张'),
+  metricCell('operation-tasks', '工序任务', operationTaskCount.value, '个'),
+  metricCell(
+    'blockers',
+    '阻塞项',
+    blockerCount.value,
+    '项',
+    blockerCount.value > 0 ? 'danger' : undefined,
+  ),
+  metricCell('pending', '待办', pendingWorkCount.value, '项'),
 ])
+
+// 阻塞指挥卡的措辞完全由读面状态决定：
+// 只有确实读到了数据、且结果为空，才允许说「没有阻塞、可以继续推进」。
+const blockerCard = computed(() => {
+  if (overviewState.value === 'idle') {
+    return {
+      title: '现场状态未知',
+      description: '尚未选择业务范围，没有读取现场阻塞，无法判断能否放行。',
+      action: '查看异常与产能',
+      route: '/mes/capacity',
+      tone: 'border-border bg-muted/40',
+    }
+  }
+  if (overviewState.value === 'loading') {
+    return {
+      title: '现场状态读取中',
+      description: '正在读取物料、质量、设备与产能的阻塞汇总，请稍候。',
+      action: '查看异常与产能',
+      route: '/mes/capacity',
+      tone: 'border-border bg-muted/40',
+    }
+  }
+  if (overviewState.value === 'error') {
+    return {
+      title: '现场状态未知',
+      description: '阻塞数据获取失败，无法判断现场是否存在阻塞，请重试后再决定是否放行。',
+      action: '查看异常与产能',
+      route: '/mes/capacity',
+      tone: 'border-warning/40 bg-warning/10',
+    }
+  }
+  if (blockerCount.value > 0) {
+    return {
+      title: '先处理阻塞',
+      description: '物料、质量、设备或产能存在阻塞，先排除再放行。',
+      action: '查看异常与产能',
+      route: '/mes/capacity',
+      tone: 'border-destructive/30 bg-destructive/5',
+    }
+  }
+  return {
+    title: '先处理阻塞',
+    description: '本次读取的汇总里没有阻塞，可进入工单与派工继续推进。',
+    action: '进入工单与派工',
+    route: '/mes/work-orders',
+    tone: 'border-success/30 bg-success/5',
+  }
+})
 
 const commandCards = computed(() => [
   {
-    title: '先处理阻塞',
-    description:
-      blockerCount.value > 0
-        ? '物料、质量、设备或产能存在阻塞，先排除再放行。'
-        : '当前没有汇总阻塞，可进入工单与派工继续推进。',
-    value: blockerCount.value,
-    route: blockerCount.value > 0 ? '/mes/capacity' : '/mes/work-orders',
-    action: blockerCount.value > 0 ? '查看异常与产能' : '进入工单与派工',
+    ...blockerCard.value,
+    value: readStateValue(overviewState.value, blockerCount.value),
     icon: ShieldAlertIcon,
-    tone:
-      blockerCount.value > 0
-        ? 'border-destructive/30 bg-destructive/5'
-        : 'border-success/30 bg-success/5',
   },
   {
     title: '安排今日工单',
     description: '查看待下达、待派工和急单影响，围绕工单推进生产节奏。',
-    value: workOrderCount.value,
+    value: readStateValue(overviewState.value, workOrderCount.value),
     route: '/mes/work-orders',
     action: '打开工单队列',
     icon: FactoryIcon,
@@ -89,42 +178,45 @@ const commandCards = computed(() => [
   {
     title: '盯紧工序现场',
     description: '从工序任务进入报工、质检和异常记录，减少跨页面手工查找。',
-    value: operationTaskCount.value,
+    value: readStateValue(overviewState.value, operationTaskCount.value),
     route: '/mes/operation-tasks',
     action: '查看工序执行',
     icon: ClipboardCheckIcon,
     tone: 'border-brand/30 bg-brand/5',
   },
 ])
+function blockerCountByArea(keywords: string[]) {
+  return blockers.value.filter((i) =>
+    keywords.some((k) => (i.areaCode ?? '').toLowerCase().includes(k)),
+  ).length
+}
 const roleLanes = computed(() => [
   {
     role: '调度员',
     focus: '工单释放、插单影响、派工顺序',
     route: '/mes/work-orders',
-    count: workOrderCount.value,
+    count: readStateValue(overviewState.value, workOrderCount.value),
   },
   {
     role: '班组长',
     focus: '可开工任务、报工进度、班次遗留',
     route: '/mes/operation-tasks',
-    count: operationTaskCount.value,
+    count: readStateValue(overviewState.value, operationTaskCount.value),
   },
   {
     role: '物料员',
     focus: '齐套、领料、补料和退料线索',
     route: '/mes/materials',
-    count: blockers.value.filter((i) => (i.areaCode ?? '').toLowerCase().includes('material'))
-      .length,
+    count: readStateValue(overviewState.value, blockerCountByArea(['material'])),
   },
   {
     role: '质检/设备',
     focus: '质量阻塞、停机、产能影响',
     route: '/mes/capacity',
-    count: blockers.value.filter((i) =>
-      ['quality', 'equipment', 'capacity'].some((k) =>
-        (i.areaCode ?? '').toLowerCase().includes(k),
-      ),
-    ).length,
+    count: readStateValue(
+      overviewState.value,
+      blockerCountByArea(['quality', 'equipment', 'capacity']),
+    ),
   },
 ])
 
@@ -152,6 +244,23 @@ const pendingWorkItems = computed(() =>
     route: resolvePendingRoute(item.routeHint),
   })),
 )
+
+// 空态文案分四档：没读取 / 读取中 / 读取失败 / 确实读到了且为空。
+// 只有最后一档才可以说「没有阻塞」。
+const blockerEmptyMessage = computed(() => {
+  if (overviewState.value === 'idle') return '尚未选择业务范围，未读取现场阻塞。'
+  if (overviewState.value === 'loading') return '正在读取现场阻塞。'
+  if (overviewState.value === 'error')
+    return '现场阻塞获取失败，无法判断现场是否存在阻塞。请点右上角「刷新」重试。'
+  return '本次读取的范围内没有阻塞记录。物料、质量、设备或产能出现卡点时会汇总到这里。'
+})
+const pendingEmptyMessage = computed(() => {
+  if (overviewState.value === 'idle') return '尚未选择业务范围，未读取待办。'
+  if (overviewState.value === 'loading') return '正在读取按角色汇总的待办。'
+  if (overviewState.value === 'error')
+    return '待办获取失败，无法判断各角色是否有待办。请点右上角「刷新」重试。'
+  return '本次读取没有按角色汇总的待办。各角色可从上方工作台直接进入自己的队列。'
+})
 
 type BlockerRow = (typeof blockers)['value'][number]
 const blockerColumns: NvDataTableColumn<BlockerRow>[] = [
@@ -201,7 +310,29 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+    <div
+      v-if="readNotice"
+      :class="
+        cn(
+          'flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3',
+          readNotice.class,
+        )
+      "
+      role="alert"
+    >
+      <p class="text-sm">{{ readNotice.text }}</p>
+      <NvButton
+        v-if="readNotice.retry"
+        size="sm"
+        type="button"
+        variant="outline"
+        :disabled="overviewPending"
+        @click="refreshOverview"
+      >
+        <RefreshCwIcon aria-hidden="true" />
+        重试
+      </NvButton>
+    </div>
 
     <div class="grid gap-4 xl:grid-cols-3">
       <RouterLink
@@ -251,13 +382,13 @@ function formatError(error: unknown) {
         </div>
         <NvDataTable
           :columns="blockerColumns"
-          :rows="blockers"
+          :rows="isReady ? blockers : []"
           :row-key="(r) => `${r.areaCode}-${r.code}`"
           :loading="overviewPending"
           :searchable="false"
           :column-settings="false"
           max-body-height="20rem"
-          empty-message="暂无阻塞记录。物料、质量、设备或产能出现卡点时会汇总到这里。"
+          :empty-message="blockerEmptyMessage"
         >
           <template #cell-count="{ row }"
             ><span class="tabular-nums">{{ row.count ?? 0 }}</span></template
@@ -298,7 +429,7 @@ function formatError(error: unknown) {
               <PackageCheckIcon class="size-4 text-primary" aria-hidden="true" />
               <h2 class="text-sm font-semibold text-foreground">待办工作</h2>
             </div>
-            <div v-if="pendingWorkItems.length" class="divide-y">
+            <div v-if="isReady && pendingWorkItems.length" class="divide-y">
               <RouterLink
                 v-for="item in pendingWorkItems"
                 :key="item.key"
@@ -315,9 +446,7 @@ function formatError(error: unknown) {
                 </div>
               </RouterLink>
             </div>
-            <p v-else class="px-4 py-6 text-sm text-muted-foreground">
-              暂无按角色汇总的待办。各角色可从上方工作台直接进入自己的队列。
-            </p>
+            <p v-else class="px-4 py-6 text-sm text-muted-foreground">{{ pendingEmptyMessage }}</p>
           </NvCardContent>
         </NvCard>
       </div>

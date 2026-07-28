@@ -1076,6 +1076,7 @@ export type NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityWindowCo
     sourceReferenceId?: string;
     messageKey?: string;
     substituteDeviceAssetIds?: Array<string>;
+    sourceReferenceLabel?: string | null;
 };
 
 export type NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityStatus = 'available' | 'unavailable' | 'unknown';

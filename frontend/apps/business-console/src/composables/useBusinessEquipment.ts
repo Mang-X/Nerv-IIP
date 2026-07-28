@@ -26,9 +26,15 @@ const DEFAULT_DEVICE_ASSET_IDS = ''
 
 // 看板默认范围 = 全部设备。后端 overview/availability 要求 deviceAssetIds 非空（最多 50 个），
 // 故未手动指定范围时，自动取设备资源列表（device-asset）的全部编号带入。
-const MAX_DEVICE_ASSET_IDS = 50
+export const MAX_DEVICE_ASSET_IDS = 50
 
 export type EquipmentTone = 'success' | 'danger' | 'muted'
+
+/**
+ * 读面四态：区分「上下文未就绪 / 加载中 / 取不到 / 已取到」。
+ * 页面必须按这四态分别呈现——把失败和未查询都渲染成「0 + 暂无数据」会把故障伪装成现场正常。
+ */
+export type BusinessEquipmentQueryState = 'idle' | 'loading' | 'error' | 'ready'
 
 export interface EquipmentReasonDisplay {
   code: string
@@ -207,17 +213,27 @@ function listItems<
 /**
  * 看板默认范围解析：用户手动输入了设备号则按输入过滤；未输入时回退到「全部设备」——
  * 取设备资源列表（device-asset）的全部编号（后端最多 50 个，超出截断）。返回逗号分隔串。
+ *
+ * 台账读面的 error 必须透出：台账 4xx/5xx 时「在册几台」本身就是未知，
+ * 页面不能把它渲染成「0 台设备」——那是把故障伪装成现场没有设备。
  */
 function useEffectiveDeviceAssetIds(filters: BusinessEquipmentOverviewFilters) {
-  const { resources: deviceResources, resourcesPending: deviceResourcesPending } =
-    useBusinessMasterDataResources('device-asset')
+  const {
+    resources: deviceResources,
+    resourcesError: deviceRosterError,
+    resourcesPending: deviceResourcesPending,
+    resourcesTotal: deviceRosterTotal,
+    refreshResources: refreshDeviceRoster,
+  } = useBusinessMasterDataResources('device-asset')
 
-  const allDeviceAssetIds = computed(() =>
+  const rosterDeviceCodes = computed(() =>
     deviceResources.value
       .map((device) => device.code?.trim())
-      .filter((code): code is string => Boolean(code))
-      .slice(0, MAX_DEVICE_ASSET_IDS)
-      .join(','),
+      .filter((code): code is string => Boolean(code)),
+  )
+
+  const allDeviceAssetIds = computed(() =>
+    rosterDeviceCodes.value.slice(0, MAX_DEVICE_ASSET_IDS).join(','),
   )
 
   const effectiveDeviceAssetIds = computed(() => {
@@ -225,15 +241,37 @@ function useEffectiveDeviceAssetIds(filters: BusinessEquipmentOverviewFilters) {
     return manual.length > 0 ? manual : allDeviceAssetIds.value
   })
 
-  return { effectiveDeviceAssetIds, deviceResourcesPending }
+  return {
+    deviceResourcesPending,
+    deviceRosterError,
+    // 台账在册总数（后端 total，含未加载到本页的记录）；台账取不到时回 0，调用方须先看 error。
+    deviceRosterTotal: computed(() =>
+      Math.max(deviceRosterTotal.value, rosterDeviceCodes.value.length),
+    ),
+    effectiveDeviceAssetIds,
+    // 本次实际带入查询的设备台数——与在册总数不等时说明发生了截断，页面必须如实说明。
+    effectiveDeviceAssetIdCount: computed(
+      () =>
+        normalizeDeviceAssetIds(effectiveDeviceAssetIds.value).split(',').filter(Boolean).length,
+    ),
+    refreshDeviceRoster,
+  }
 }
 
 export function useBusinessEquipmentOverview() {
   const businessContext = useBusinessContextStore()
   const filters = defaultOverviewFilters()
-  const { effectiveDeviceAssetIds, deviceResourcesPending } = useEffectiveDeviceAssetIds(filters)
+  const {
+    deviceResourcesPending,
+    deviceRosterError,
+    deviceRosterTotal,
+    effectiveDeviceAssetIds,
+    effectiveDeviceAssetIdCount,
+    refreshDeviceRoster,
+  } = useEffectiveDeviceAssetIds(filters)
+  const contextReady = computed(() => hasBusinessContext(businessContext))
   const overviewEnabled = computed(
-    () => hasBusinessContext(businessContext) && effectiveDeviceAssetIds.value.length > 0,
+    () => contextReady.value && effectiveDeviceAssetIds.value.length > 0,
   )
   const overviewQuery = useQuery(() => ({
     ...getBusinessConsoleEquipmentOverviewQueryOptions({
@@ -251,14 +289,32 @@ export function useBusinessEquipmentOverview() {
     ),
   )
 
+  const overviewPending = computed(
+    () => deviceResourcesPending.value || overviewQuery.isLoading.value,
+  )
+  // 四态判定顺序：上下文未就绪 → 在查（含重试）→ 任一读面失败 → 已取到。
+  // 台账失败与 overview 失败都算 error：两者任一取不到，「在册几台/几台在跑」就都是未知。
+  const overviewState = computed<BusinessEquipmentQueryState>(() => {
+    if (!contextReady.value) return 'idle'
+    if (overviewPending.value) return 'loading'
+    if (deviceRosterError.value || overviewQuery.error.value) return 'error'
+    return 'ready'
+  })
+
   return {
     activeBlocks: computed(() => overview.value?.activeBlocks ?? []),
+    contextReady,
+    deviceRosterError,
+    deviceRosterTotal,
     devices: computed(() => overview.value?.devices ?? []),
+    effectiveDeviceAssetIdCount,
     filters,
     overview,
     overviewError: overviewQuery.error,
-    overviewPending: computed(() => deviceResourcesPending.value || overviewQuery.isLoading.value),
+    overviewPending,
+    overviewState,
     refreshOverview: () => (overviewEnabled.value ? overviewQuery.refetch() : Promise.resolve()),
+    refreshDeviceRoster,
   }
 }
 

@@ -7,9 +7,11 @@ import {
   useMesReferenceLabels,
 } from '@/composables/mes/useMesReferenceLabels'
 import { describeEquipmentReason } from '@/composables/useBusinessEquipment'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import {
   NvButton,
   NvDataTable,
@@ -70,7 +72,32 @@ watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
 
+// 产能影响读面只回工作中心 / 设备编码，中文名在主数据里，按编码 join 出来。
+const { resolveDevice, resolveWorkCenter } = useMasterDataDisplayNames({
+  devices: true,
+  workCenters: true,
+})
+
 type ImpactRow = (typeof capacityImpacts)['value'][number]
+
+function workCenterCode(row: ImpactRow) {
+  return row.workCenterCode ?? row.workCenterId ?? ''
+}
+function workCenterName(row: ImpactRow) {
+  return row.workCenterName ?? resolveWorkCenter(workCenterCode(row))
+}
+function deviceCode(row: ImpactRow) {
+  return row.deviceAssetCode ?? row.deviceAssetId ?? ''
+}
+function deviceName(row: ImpactRow) {
+  return row.deviceAssetName ?? resolveDevice(deviceCode(row))
+}
+/** 「名称 编码」纯文本，供排序 / 导出用；名录查不到就只有编码，不编名字。 */
+function codeText(code: string, name: string | undefined, fallback: string) {
+  if (!code) return fallback
+  return name ? `${name} ${code}` : code
+}
+
 const columns: NvDataTableColumn<ImpactRow>[] = [
   {
     key: 'impactId',
@@ -81,12 +108,12 @@ const columns: NvDataTableColumn<ImpactRow>[] = [
   {
     key: 'workCenterId',
     header: '工作中心',
-    accessor: (r) => r.workCenterName ?? r.workCenterCode ?? r.workCenterId ?? '无',
+    accessor: (r) => codeText(workCenterCode(r), workCenterName(r), '无'),
   },
   {
     key: 'deviceAssetId',
     header: '设备',
-    accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定',
+    accessor: (r) => codeText(deviceCode(r), deviceName(r), '未指定'),
   },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'effectiveFromUtc', header: '开始', width: 'w-44' },
@@ -197,6 +224,12 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="暂无产能影响。先在设备与停机登记异常或维护占用，再回到这里跟踪对产线产能的影响。"
     >
+      <template #cell-workCenterId="{ row }">
+        <CodeWithNameCell :code="workCenterCode(row)" :name="workCenterName(row)" fallback="无" />
+      </template>
+      <template #cell-deviceAssetId="{ row }">
+        <CodeWithNameCell :code="deviceCode(row)" :name="deviceName(row)" fallback="未指定" />
+      </template>
       <template #cell-status="{ row }">
         <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
       </template>

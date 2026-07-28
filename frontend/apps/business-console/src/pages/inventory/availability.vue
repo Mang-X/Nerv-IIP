@@ -48,7 +48,6 @@ import {
   NvMetricCard,
   NvMetricRing,
   NvPageHeader,
-  NvPagination,
   NvRowActions,
   NvSelect,
   NvSelectContent,
@@ -204,24 +203,56 @@ const overviewFacets = computed(() => [
   },
   { key: 'sku', label: '涉及物料', value: overviewSkuCount.value },
 ])
+const siteSelected = computed(() => (filters.siteCode ?? '').trim().length > 0)
+/**
+ * 计数三态：数不出来就别说「0 条」——0 是一个结论，只有真的查成功才配下。
+ * 未选范围 / 加载中 / 失败各说各的，别让一次 500 长得跟「本厂真没有库存」一样。
+ */
 const pageCount = computed(() => {
-  if (showSiteOverview.value) return `${siteStockRows.value.length} 个物料有库存`
-  if (!nearExpiryOnly.value) return `${rows.value.length} 条明细`
-  if (!hasExpirySite.value) return '请选择工厂'
-  if (!hasExpiryScope.value) return '业务上下文加载中'
-  if (expiryAlertsPending.value) return '加载中'
-  if (expiryAlertsError.value) return '加载失败'
-  if (!expiryAlertsSuccessful.value) return '等待查询'
-  return `${expiryAlertsTotal.value} 条预警明细`
+  if (nearExpiryOnly.value) {
+    if (!hasExpirySite.value) return '请选择工厂'
+    if (!hasExpiryScope.value) return '业务上下文加载中'
+    if (expiryAlertsError.value) return '读取失败'
+    if (expiryAlertsPending.value) return '加载中'
+    if (!expiryAlertsSuccessful.value) return '等待查询'
+    return `${expiryAlertsTotal.value} 条预警明细`
+  }
+  if (!siteSelected.value) return '请选择工厂'
+  if (showSiteOverview.value) {
+    // 扫描是增量的：已经扫出物料就照实报数，个别失败在下方覆盖范围里单独交代。
+    if (siteStockRows.value.length === 0 && siteStockError.value) return '读取失败'
+    if (siteStockRows.value.length === 0 && siteStockScanning.value) return '扫描中'
+    return `${siteStockRows.value.length} 个物料有库存`
+  }
+  if (availabilityError.value) return '读取失败'
+  if (availabilityPending.value) return '加载中'
+  return `${rows.value.length} 条明细`
 })
-const tableEmptyMessage = computed(() => {
+/** 表格错误态：读失败就说读失败，不许伪装成「没有数据」。 */
+const tableError = computed(() =>
+  nearExpiryOnly.value ? expiryAlertsError.value : availabilityError.value,
+)
+const tableErrorMessage = computed(() =>
+  nearExpiryOnly.value
+    ? '效期预警读取失败，现在无法判断有没有临期批次。'
+    : '库存可用量读取失败，现在无法判断这个物料有多少货。',
+)
+/** 还没形成查询条件时的中性态——什么结论都不下。 */
+const tableAwaitingScope = computed(() => {
+  if (nearExpiryOnly.value) return !hasExpirySite.value || !hasExpiryScope.value
+  return !siteSelected.value
+})
+const tableAwaitingScopeMessage = computed(() => {
   if (nearExpiryOnly.value && !hasExpirySite.value) return '请选择工厂查看效期预警批次。'
-  if (nearExpiryOnly.value && !hasExpiryScope.value) return '业务上下文加载中，请稍候。'
-  if (nearExpiryOnly.value && expiryAlertsError.value) return '效期预警加载失败，请稍后重试。'
-  if (nearExpiryOnly.value) return '当前范围没有已过期或未来30天内到期的批次。'
-  if (availabilityError.value) return '库存可用量加载失败，请稍后重试。'
-  return '没有查到库存明细。换个物料、工厂或库位再查一次。'
+  if (nearExpiryOnly.value) return '业务上下文加载中，请稍候。'
+  return '请先选择工厂，再查库存可用量。'
 })
+/** 走到这里才是真的查成功且 0 条。 */
+const tableEmptyMessage = computed(() =>
+  nearExpiryOnly.value
+    ? '当前范围没有已过期或未来30天内到期的批次。'
+    : '没有查到库存明细。换个物料、工厂或库位再查一次。',
+)
 /**
  * 全厂库存总览的列：按物料汇总。**不跨物料加总数量**——不同物料单位不同
  * （原材料按 kg / l，件号按 pcs），把 kg 和 pcs 加在一起是错的业务口径。
@@ -242,10 +273,13 @@ const siteStockColumns: NvDataTableColumn<SiteStockRow>[] = [
   },
 ]
 const siteStockEmptyMessage = computed(() => {
-  if (siteStockScanning.value) return '正在读取本厂库存台账。'
   if (siteStockTotalSkuCount.value === 0) return '暂无物料主数据，请先在基础数据维护物料。'
   return '已扫描的物料在本厂都没有库存台账。可继续扫描其余物料，或换一个工厂。'
 })
+/** 一条都没扫出来才算整表失败；已经扫出物料时，失败数走下方的覆盖范围文案。 */
+const siteStockTableError = computed(() =>
+  siteStockRows.value.length === 0 ? siteStockError.value : undefined,
+)
 /** 覆盖范围必须如实说清楚：后端没有全量库存读面，这张表是按物料逐个查出来再汇总的。 */
 const siteStockCoverageText = computed(() => {
   const scanned = siteStockScannedCount.value
@@ -586,8 +620,13 @@ async function refreshCurrentView() {
         :loading="siteStockScanning && siteStockRows.length === 0"
         :searchable="false"
         :column-settings="false"
-        :pagination="false"
+        :page-size-options="[25, 50, 100]"
+        :error="siteStockTableError"
+        error-message="本厂库存台账读取失败，现在无法判断本厂有多少货。"
+        :awaiting-scope="!siteSelected"
+        awaiting-scope-message="请先选择工厂，再查本厂库存。"
         :empty-message="siteStockEmptyMessage"
+        @retry="refreshSiteStock"
       >
         <template #cell-skuCode="{ row }">
           <button
@@ -650,8 +689,19 @@ async function refreshCurrentView() {
       :loading="tablePending"
       :searchable="false"
       :column-settings="false"
-      :pagination="false"
+      :manual="nearExpiryOnly"
+      :page="expiryAlertsPage"
+      :page-size="expiryAlertsPageSize"
+      :total-items="expiryAlertsTotal"
+      :page-size-options="[25, 50, 100, 200]"
+      @update:page="expiryAlertsPage = $event"
+      @update:page-size="expiryAlertsPageSize = $event"
+      :error="tableError"
+      :error-message="tableErrorMessage"
+      :awaiting-scope="tableAwaitingScope"
+      :awaiting-scope-message="tableAwaitingScopeMessage"
       :empty-message="tableEmptyMessage"
+      @retry="refreshCurrentView"
     >
       <template #cell-skuCode="{ row }">
         <div class="flex flex-col gap-0.5">
@@ -747,15 +797,5 @@ async function refreshCurrentView() {
         </div>
       </template>
     </NvDataTable>
-    <NvPagination
-      v-if="nearExpiryOnly && hasExpiryScope"
-      v-model:page="expiryAlertsPage"
-      v-model:page-size="expiryAlertsPageSize"
-      :total-items="expiryAlertsTotal"
-      :page-size-options="[25, 50, 100, 200]"
-      :show-edges="false"
-      :sibling-count="0"
-      class="mt-4"
-    />
   </BusinessLayout>
 </template>

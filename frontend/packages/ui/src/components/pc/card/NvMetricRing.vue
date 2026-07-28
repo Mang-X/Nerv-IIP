@@ -176,7 +176,39 @@ const centerCaptionText = computed(() =>
             stroke-width="8"
             :stroke-dasharray="arc.dasharray"
             :stroke-dashoffset="arc.dashoffset"
-            :class="cn('nv-ring-seg', dimmed(arc.seg, i) && 'nv-ring-dim')"
+            :class="
+              cn(
+                'nv-ring-seg',
+                dimmed(arc.seg, i) && 'nv-ring-dim',
+                hovered === metricItemKey(arc.seg, i) && 'nv-ring-seg-active',
+              )
+            "
+          />
+          <!--
+            命中层 —— 修「鼠标停在弧边缘时高亮自激闪烁」。
+
+            成因是**用来强调的东西同时也是被指的东西**：过去 hover 直接把可见弧
+            从 8 加粗到 11，而 SVG 描边的命中区域就是描边本身，于是「指到」会改变
+            「什么算指到」。指针落在两个宽度的差值带里时，加粗与复原互为因果，
+            enter/leave 就来回抽搐。
+
+            这里把两件事拆开：可见弧交出全部指针事件，命中改由一条**恒定 11 宽**的
+            透明弧承担。命中几何从此与视觉状态无关，无论弧画多粗都不会反过来影响判定。
+            用 `pointer-events: stroke` 而不是默认值，是因为默认的 `visiblePainted`
+            要求描边真的被绘制出来，透明描边收不到事件。
+          -->
+          <circle
+            v-for="(arc, i) in arcs"
+            :key="`hit-${metricItemKey(arc.seg, i)}`"
+            cx="42"
+            cy="42"
+            :r="R"
+            fill="none"
+            stroke="transparent"
+            stroke-width="11"
+            :stroke-dasharray="arc.dasharray"
+            :stroke-dashoffset="arc.dashoffset"
+            class="nv-ring-hit"
             @mouseenter="hovered = metricItemKey(arc.seg, i)"
             @mouseleave="hovered = null"
           />
@@ -255,12 +287,19 @@ const centerCaptionText = computed(() =>
      the breakdown bar's linked highlight so both forms of a composition behave
      the same way. stroke-width/opacity are safe to own — no utility sets them. */
   .nv-ring-seg {
+    /* 可见弧只负责好看，指针事件一律交给上面那条恒定宽度的命中弧。 */
+    pointer-events: none;
     transition:
       stroke-width var(--nv-duration-fast, 150ms) var(--nv-ease-out-quart, ease-out),
       opacity var(--nv-duration-fast, 150ms) var(--nv-ease-out-quart, ease-out);
   }
-  .nv-ring-seg:hover {
+  /* 由 `hovered` 状态驱动，不再是 CSS `:hover` —— 加粗因此不会回过头改变命中判定。 */
+  .nv-ring-seg-active {
     stroke-width: 11;
+  }
+  .nv-ring-hit {
+    /* 透明描边收不到默认的 `visiblePainted`，必须显式声明按描边命中。 */
+    pointer-events: stroke;
   }
   .nv-ring-row {
     transition: opacity var(--nv-duration-fast, 150ms) var(--nv-ease-out-quart, ease-out);
