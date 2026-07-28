@@ -2,6 +2,7 @@
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import type { DispatchAssignTarget } from '@/components/mes/DispatchAssignDialog.vue'
 import DispatchAssignDialog from '@/components/mes/DispatchAssignDialog.vue'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import {
   useBusinessMasterDataResources,
   useBusinessWorkers,
@@ -84,7 +85,26 @@ const { resources: workCenters } = useBusinessMasterDataResources('work-center')
 const { resources: shifts } = useBusinessMasterDataResources('shift')
 const { workers } = useBusinessWorkers({ employmentStatus: 'active' })
 // 必须传 shifts:true，否则班次名录恒为空、resolveShiftLabel 只会把 shiftId 原样回吐到界面上。
-const { resolveShiftLabel, resolveWorkCenter } = useMesDisplayNames({ shifts: true })
+// devices:true 同理：派工读面只回设备编码，中文设备名要靠设备台账名录在前端补。
+const { resolveDevice, resolveShiftLabel, resolveWorkCenter } = useMesDisplayNames({
+  shifts: true,
+  devices: true,
+})
+
+/** 设备列的编码与名称：读面优先，其次设备台账名录；名录查不到就只显编码。 */
+function deviceCode(row: DispatchRow) {
+  return row.deviceAssetCode ?? row.deviceAssetId ?? ''
+}
+function deviceName(row: DispatchRow) {
+  return row.deviceAssetName ?? resolveDevice(deviceCode(row))
+}
+/** 排序 / 导出用的纯文本形态，与单元格呈现同一口径。 */
+function deviceText(row: DispatchRow) {
+  const code = deviceCode(row)
+  if (!code) return '未指定'
+  const name = deviceName(row)
+  return name ? `${name} ${code}` : code
+}
 
 // 关键字打后端（facade 支持 keyword），去抖避免每敲一个字发一次请求。
 watchDebounced(
@@ -192,7 +212,7 @@ const groupColumns: NvDataTableColumn<DispatchRow>[] = [
   {
     key: 'deviceAssetId',
     header: '设备',
-    accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定',
+    accessor: (r) => deviceText(r),
   },
   { key: 'shiftId', header: '班次', width: 'w-28', accessor: (r) => resolveShiftLabel(r.shiftId) },
   { key: 'plannedStartUtc', header: '计划开始', width: 'w-44' },
@@ -218,7 +238,7 @@ const flatColumns: NvDataTableColumn<DispatchRow>[] = [
   {
     key: 'deviceAssetId',
     header: '设备',
-    accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定',
+    accessor: (r) => deviceText(r),
   },
   { key: 'shiftId', header: '班次', width: 'w-28', accessor: (r) => resolveShiftLabel(r.shiftId) },
   { key: 'plannedStartUtc', header: '计划开始', width: 'w-44' },
@@ -418,6 +438,9 @@ function formatError(error: unknown) {
                 />
               </span>
             </template>
+            <template #cell-deviceAssetId="{ row }">
+              <CodeWithNameCell :code="deviceCode(row)" :name="deviceName(row)" fallback="未指定" />
+            </template>
             <template #cell-plannedStartUtc="{ row }">
               {{ formatDateTime(row.plannedStartUtc) }}
             </template>
@@ -535,6 +558,9 @@ function formatError(error: unknown) {
             :tone="resolveScheduleState(row).tone"
           />
         </span>
+      </template>
+      <template #cell-deviceAssetId="{ row }">
+        <CodeWithNameCell :code="deviceCode(row)" :name="deviceName(row)" fallback="未指定" />
       </template>
       <template #cell-plannedStartUtc="{ row }">{{ formatDateTime(row.plannedStartUtc) }}</template>
       <template #cell-actions="{ row }">

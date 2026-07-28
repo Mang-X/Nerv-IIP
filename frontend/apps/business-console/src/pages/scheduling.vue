@@ -73,6 +73,7 @@ const {
   planDetailError,
   planDetailPending,
   plans,
+  plansError,
   plansPending,
   refreshPlans,
   releasePlan,
@@ -122,6 +123,18 @@ const actionablePlans = computed(() =>
       Boolean(plan.planId),
   ),
 )
+
+/**
+ * 页头读数说的是**历史排程方案**（与「排程总览」里的 MES 待排工单是两个集合，
+ * 两边数字不同是设计上成立的）。但方案列表本身可能读取失败——那时不能显 0，
+ * 否则"没有方案"和"取不到方案"没法区分。
+ */
+const plansFailed = computed(() => !plansPending.value && plansError.value != null)
+const planHeaderCount = computed(() => {
+  if (plansFailed.value) return '方案数取不到'
+  if (plansPending.value && actionablePlans.value.length === 0) return undefined
+  return `${actionablePlans.value.length} 个方案`
+})
 
 watch([activeView, actionablePlans], ([view, availablePlans]) => {
   if (view !== 'gantt' || detailSelection.planId || availablePlans.length === 0) return
@@ -411,7 +424,7 @@ function reasonLabel(reason?: string | null) {
     <NvPageHeader
       title="排产工作台"
       :breadcrumbs="[{ label: '需求与计划' }]"
-      :count="`${actionablePlans.length} 个方案`"
+      :count="planHeaderCount"
     >
       <template #actions>
         <NvButton size="sm" variant="outline" type="button" @click="refreshPlans">
@@ -518,9 +531,11 @@ function reasonLabel(reason?: string | null) {
           :candidates="workbench.schedulableCandidates.value"
           :draft-orders="draft.orders.value"
           :loading="workbench.candidatesPending.value"
+          :error="workbench.candidatesError.value"
           :read-only="!canManage"
           @include="draft.setIncluded"
           @update="draft.updateOrder"
+          @retry="workbench.refreshCandidates"
         />
         <SchedulingDraftBoard
           :model="draft.model.value"
@@ -546,6 +561,9 @@ function reasonLabel(reason?: string | null) {
           :searchable="false"
           :column-settings="false"
           empty-message="还没有排程方案"
+          :error="plansError"
+          error-message="没有取到排程方案列表，当前无法判断已有哪些方案。请重试，或稍后再看。"
+          @retry="refreshPlans"
         >
           <template #empty>
             <p class="text-sm font-medium text-foreground">还没有排程方案</p>

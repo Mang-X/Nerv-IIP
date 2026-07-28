@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth'
 const coladaState = vi.hoisted(() => ({
   isLoading: false,
   queryData: undefined as unknown,
+  queryError: undefined as unknown,
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -18,10 +19,19 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
 }))
 
+// 设备名 join 走主数据台账；本用例只验工作台自身的三态，主数据整条链路桩掉，
+// 免得为一个 resolveDevice 把 useBusinessMasterData 的全部 mutation options 都补进 mock。
+vi.mock('@/composables/useMasterDataDisplayNames', () => ({
+  useMasterDataDisplayNames: () => ({
+    resolveDevice: (code: string) => (code === 'DEV-1001' ? '注塑机 1 号' : undefined),
+    formatUom: (code: string, fallback: string) => code || fallback,
+  }),
+}))
+
 vi.mock('@pinia/colada', () => ({
   useQuery: vi.fn(() => ({
     data: shallowRef(coladaState.queryData),
-    error: shallowRef(),
+    error: shallowRef(coladaState.queryError),
     isLoading: shallowRef(coladaState.isLoading),
     refetch: vi.fn(),
   })),
@@ -61,6 +71,7 @@ function mountWorkbench(permissionCodes: string[]) {
 describe('business workbench page', () => {
   beforeEach(() => {
     coladaState.isLoading = false
+    coladaState.queryError = undefined
     coladaState.queryData = {
       success: true,
       data: {
@@ -176,8 +187,8 @@ describe('business workbench page', () => {
     expect(text).not.toContain('暂无可显示指标')
     expect(text).not.toContain('当前角色没有可汇总的跨域指标')
     expect(text).not.toContain('待办已清空')
-    expect(text).not.toContain('暂无未读消息')
-    expect(text).not.toContain('设备当前运行正常')
+    expect(text).not.toContain('没有未读消息')
+    expect(text).not.toContain('没有未解除的设备预警')
     expect(text).not.toContain('今天没有待处理事项')
   })
 
@@ -288,6 +299,59 @@ describe('business workbench page', () => {
     expect(text).not.toContain('待确认')
   })
 
+  it('never claims the shop floor is clear when the summary failed to load', async () => {
+    coladaState.queryError = new Error('gateway unreachable')
+    coladaState.queryData = undefined
+
+    const wrapper = mountWorkbench(['business.iiot.alarms.read'])
+    await flushPromises()
+
+    const text = wrapper.text()
+    // 失败态只说"取不到、无法判断"，绝不出现任何安慰性结论
+    expect(text).toContain('工作台摘要读取失败')
+    expect(text).toContain('设备预警读取失败')
+    expect(text).toContain('待办读取失败')
+    expect(text).toContain('消息读取失败')
+    expect(text).not.toContain('设备当前运行正常')
+    expect(text).not.toContain('没有未解除的设备预警')
+    expect(text).not.toContain('待办已清空')
+    expect(text).not.toContain('没有未读消息')
+    expect(text).not.toContain('今天没有待处理事项')
+    // 读数一律 `—`，不拿 0 冒充"已接入且为零"
+    expect(text).toContain('—')
+    expect(text).not.toContain('0 项待处理')
+    expect(text).toContain('待处理数量取不到')
+    // 有重试出口
+    expect(text).toContain('重试')
+  })
+
+  it('excludes unavailable sources from the pending total instead of counting them as zero', async () => {
+    coladaState.queryData = {
+      success: true,
+      data: {
+        kpis: [],
+        todos: { status: 'available', total: 3, items: [] },
+        // 未接入 / 无权限：不得折成 0 计入合计
+        messages: { status: 'unsupported', total: 0, unread: 0, items: [] },
+        alerts: { status: 'forbidden', total: 0, critical: 0, items: [] },
+        sourceStatuses: [],
+      },
+    }
+
+    const wrapper = mountWorkbench(['business.notification.tasks.read'])
+    await flushPromises()
+
+    const text = wrapper.text()
+    // 合计只算可用的那一路，并注明还有几路没算进来
+    expect(text).toContain('3 项待处理（另有 2 路取不到）')
+    expect(text).toContain('今日待处理构成（部分来源不可用）')
+    // 不可用的两路不说"清空 / 正常"
+    expect(text).toContain('消息暂时无法统计')
+    expect(text).toContain('设备预警暂时无法统计')
+    expect(text).not.toContain('没有未读消息')
+    expect(text).not.toContain('没有未解除的设备预警')
+  })
+
   it('collapses shortcuts into permitted business-domain tiles', async () => {
     const wrapper = mountWorkbench(['business.inventory.ledger.read'])
     await flushPromises()
@@ -323,8 +387,8 @@ describe('business workbench page', () => {
 
     const text = wrapper.text()
     expect(text).toContain('待办已清空')
-    expect(text).toContain('暂无未读消息')
-    expect(text).toContain('设备当前运行正常')
+    expect(text).toContain('没有未读消息')
+    expect(text).toContain('没有未解除的设备预警')
     expect(text).toContain('今天没有待处理事项')
     expect(text).not.toContain('审批和通知任务按当前用户过滤')
     expect(text).not.toContain('只展示消息状态，不展开消息标题')

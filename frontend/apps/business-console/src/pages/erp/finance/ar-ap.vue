@@ -43,7 +43,7 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
-import { formatAmount, pickerInvalidClass } from '../shared'
+import { UNAVAILABLE_TEXT, erpReadState, formatAmount, pickerInvalidClass } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: 'AR/AP', requiredPermissions: ['business.erp.finance.read'] },
@@ -124,6 +124,40 @@ const payableColumns: NvDataTableColumn<BusinessConsoleErpPayableItem>[] = [
   { key: 'status', header: '状态', width: 'w-24' },
 ]
 
+/** 应收 / 应付各自的读面六档状态：两张表分别有可能失败，不能共用一个结论。 */
+const receivableState = computed(() =>
+  erpReadState({
+    noun: '应收账款',
+    unit: '笔',
+    ready: receivables.ready.value,
+    pending: receivables.pending.value,
+    error: receivables.error.value,
+    total: receivables.total.value,
+    filtered: Boolean(receivables.filters.keyword || receivables.filters.status),
+    emptyHint: '还没有应收账款。销售出货或手工登记后会在这里形成应收。',
+  }),
+)
+const payableState = computed(() =>
+  erpReadState({
+    noun: '应付账款',
+    unit: '笔',
+    ready: payables.ready.value,
+    pending: payables.pending.value,
+    error: payables.error.value,
+    total: payables.total.value,
+    filtered: Boolean(payables.filters.keyword || payables.filters.status),
+    emptyHint: '还没有应付账款。采购收货或手工登记后会在这里形成应付。',
+  }),
+)
+
+/** 页头两路读数各自独立：一路挂了只说这一路取不到，不把另一路也抹掉。 */
+const headerCount = computed(() => {
+  if (receivableState.value.count === undefined && payableState.value.count === undefined) {
+    return undefined
+  }
+  return `${receivableState.value.count ?? '应收读取中'} / ${payableState.value.count ?? '应付读取中'}`
+})
+
 const receivableAmount = computed(() =>
   receivables.items.value.reduce((sum, r) => sum + (r.openAmount ?? 0), 0),
 )
@@ -136,14 +170,21 @@ const settlementCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'receivable',
     label: '应收未结',
-    value: formatAmount(receivableAmount.value),
-    meta: `当前列表 ${receivables.items.value.length} 笔应收合计`,
+    // 取不到数时绝不显 ¥0.00——那会被当成"确实没有欠款"。
+    value: receivableState.value.trustworthy
+      ? formatAmount(receivableAmount.value)
+      : UNAVAILABLE_TEXT,
+    meta: receivableState.value.trustworthy
+      ? `当前列表 ${receivables.items.value.length} 笔应收合计`
+      : receivableState.value.emptyMessage,
   },
   {
     key: 'payable',
     label: '应付未结',
-    value: formatAmount(payableAmount.value),
-    meta: `当前列表 ${payables.items.value.length} 笔应付合计`,
+    value: payableState.value.trustworthy ? formatAmount(payableAmount.value) : UNAVAILABLE_TEXT,
+    meta: payableState.value.trustworthy
+      ? `当前列表 ${payables.items.value.length} 笔应付合计`
+      : payableState.value.emptyMessage,
   },
 ])
 
@@ -222,7 +263,7 @@ async function submitPayable() {
     <NvPageHeader
       title="AR/AP"
       :breadcrumbs="[{ label: '经营管理' }, { label: '财务' }]"
-      :count="`${receivables.total.value} 笔应收 / ${payables.total.value} 笔应付`"
+      :count="headerCount"
     >
       <template #actions>
         <NvButton
@@ -283,7 +324,12 @@ async function submitPayable() {
       :loading="receivables.pending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无应收账款。"
+      :empty-message="receivableState.emptyMessage"
+      :error="receivableState.error"
+      :error-message="receivableState.errorMessage"
+      :awaiting-scope="receivableState.awaitingScope"
+      :awaiting-scope-message="receivableState.awaitingScopeMessage"
+      @retry="receivables.refresh"
       @update:page="receivablesPaged.page.value = $event"
       @update:page-size="(v) => (receivablesPaged.pageSize.value = String(v))"
     >
@@ -334,7 +380,12 @@ async function submitPayable() {
       :loading="payables.pending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无应付账款。"
+      :empty-message="payableState.emptyMessage"
+      :error="payableState.error"
+      :error-message="payableState.errorMessage"
+      :awaiting-scope="payableState.awaitingScope"
+      :awaiting-scope-message="payableState.awaitingScopeMessage"
+      @retry="payables.refresh"
       @update:page="payablesPaged.page.value = $event"
       @update:page-size="(v) => (payablesPaged.pageSize.value = String(v))"
     >

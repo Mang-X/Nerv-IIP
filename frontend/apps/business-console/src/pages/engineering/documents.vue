@@ -6,7 +6,10 @@ import type {
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useEngineeringDocuments, useEngineeringItems } from '@/composables/useProductEngineering'
-import { ENGINEERING_DOCUMENT_TYPE_OPTIONS } from '@/data/engineeringReference'
+import {
+  ENGINEERING_DOCUMENT_TYPE_ALIASES,
+  ENGINEERING_DOCUMENT_TYPE_OPTIONS,
+} from '@/data/engineeringReference'
 import { refLabel } from '@/data/masterDataReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -67,7 +70,16 @@ const {
 // 文档类型是固定受控值（后端无对应 CodeSet），筛选与表单共用同一份常量，杜绝手输拼写漂移。
 const documentTypeOptions = ENGINEERING_DOCUMENT_TYPE_OPTIONS
 function documentTypeLabel(value?: string | null) {
-  return value ? refLabel(documentTypeOptions, value) : '—'
+  const raw = (value ?? '').trim()
+  if (!raw) return '—'
+  // 受控值先查；存量数据里的既有类型码（sop / inspection-spec / process-card）走只读别名表。
+  const alias = ENGINEERING_DOCUMENT_TYPE_ALIASES[raw.toLowerCase()]
+  if (alias) return alias
+  const label = refLabel(documentTypeOptions, raw)
+  if (label === raw && import.meta.env.DEV) {
+    console.warn(`[工程文档] 词表缺失: ${raw}，请补 engineeringReference.ts 的文档类型词表`)
+  }
+  return label
 }
 
 const documentTypeFilter = computed({
@@ -154,7 +166,7 @@ const showErrors = ref(false)
 const form = reactive<DocumentForm>(blankForm())
 
 const itemPickerOptions = computed(() => {
-  const byCode = new Map<string, { value: string, label: string, hint?: string }>()
+  const byCode = new Map<string, { value: string; label: string; hint?: string }>()
   for (const item of engineeringItems.value) {
     if (!item.itemCode || byCode.has(item.itemCode)) continue
     byCode.set(item.itemCode, {

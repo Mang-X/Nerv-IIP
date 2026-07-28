@@ -41,7 +41,13 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
-import { formatAmount, formatQuantity, pickerInvalidClass } from '../shared'
+import {
+  UNAVAILABLE_TEXT,
+  erpReadState,
+  formatAmount,
+  formatQuantity,
+  pickerInvalidClass,
+} from '../shared'
 
 definePage({
   meta: {
@@ -108,20 +114,36 @@ const columns: NvDataTableColumn<(typeof rows.value)[number]>[] = [
   { key: 'amount', header: '金额', align: 'end', width: 'w-32' },
 ]
 
+const readState = computed(() =>
+  erpReadState({
+    noun: '采购订单',
+    unit: '张',
+    ready: orders.ready.value,
+    pending: orders.pending.value,
+    error: orders.error.value,
+    total: orders.total.value,
+    filtered: Boolean(orders.filters.keyword || orders.filters.status),
+    emptyHint: '还没有采购订单。已批准的供应商报价或采购申请转单后会在这里出现。',
+  }),
+)
+
 const openQuantity = computed(() => rows.value.reduce((sum, row) => sum + row.openQuantity, 0))
 const orderAmount = computed(() => rows.value.reduce((sum, row) => sum + row.amount, 0))
 const orderCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'open-quantity',
     label: '未到数量',
-    value: formatQuantity(openQuantity.value),
-    meta: '已下达但供应商尚未交付',
+    // 取不到订单时显 `—`：0 会被读成"供应商都交齐了"。
+    value: readState.value.trustworthy ? formatQuantity(openQuantity.value) : UNAVAILABLE_TEXT,
+    meta: readState.value.trustworthy ? '已下达但供应商尚未交付' : readState.value.emptyMessage,
   },
   {
     key: 'amount',
     label: '订单金额',
-    value: formatAmount(orderAmount.value),
-    meta: `当前列表 ${rows.value.length} 行采购明细合计`,
+    value: readState.value.trustworthy ? formatAmount(orderAmount.value) : UNAVAILABLE_TEXT,
+    meta: readState.value.trustworthy
+      ? `当前列表 ${rows.value.length} 行采购明细合计`
+      : readState.value.emptyMessage,
   },
 ])
 
@@ -201,7 +223,7 @@ async function submit() {
     <NvPageHeader
       title="采购订单"
       :breadcrumbs="[{ label: '经营管理' }, { label: '采购' }]"
-      :count="`${orders.total.value} 张订单`"
+      :count="readState.count"
     >
       <template #actions>
         <NvButton
@@ -256,7 +278,12 @@ async function submit() {
       :loading="orders.pending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无采购订单。已批准供应商报价或采购申请可转入采购订单。"
+      :empty-message="readState.emptyMessage"
+      :error="readState.error"
+      :error-message="readState.errorMessage"
+      :awaiting-scope="readState.awaitingScope"
+      :awaiting-scope-message="readState.awaitingScopeMessage"
+      @retry="orders.refresh"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >

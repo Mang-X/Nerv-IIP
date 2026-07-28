@@ -5,11 +5,13 @@ import {
   useBusinessTelemetryConnectors,
 } from '@/composables/useBusinessTelemetry'
 import ConnectorHealthCard from '@/components/equipment/ConnectorHealthCard.vue'
-import { notifyError } from '@/utils/notify'
+import { hasBusinessContext } from '@/composables/businessContextBinding'
+import { useBusinessContextStore } from '@/stores/businessContext'
+import { friendlyErrorMessage, notifyError } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type { NvMetricSegment } from '@nerv-iip/ui'
 import { NvButton, NvMetricRing, NvPageHeader } from '@nerv-iip/ui'
-import { HashIcon, RefreshCwIcon } from '@lucide/vue'
+import { HashIcon, RefreshCwIcon, TriangleAlertIcon } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -41,6 +43,25 @@ watch(connectorsError, (error) => {
     errorNotified.value = false
   }
 })
+
+// toast 会消失，故障不会。读面四态在页面上留下持久痕迹：
+// 「上下文未就绪 / 加载中 / 取不到 / 已取到」各自不同，绝不都落回「暂无现场采集连接」。
+const businessContext = useBusinessContextStore()
+const hasConnectorData = computed(() => connectors.value.length > 0)
+const connectorsState = computed<'idle' | 'loading' | 'error' | 'ready'>(() => {
+  if (!hasBusinessContext(businessContext)) return 'idle'
+  if (connectorsPending.value && !hasConnectorData.value) return 'loading'
+  if (connectorsError.value && !hasConnectorData.value) return 'error'
+  return 'ready'
+})
+// 有旧数据时不清空页面，但必须标明「这批读数已经不是最新的」，否则轮询挂了也看着像现场正常。
+const staleAfterError = computed(() => Boolean(connectorsError.value) && hasConnectorData.value)
+const connectorsErrorDetail = computed(() =>
+  friendlyErrorMessage(connectorsError.value, '请稍后重试。'),
+)
+const headerCount = computed(() =>
+  connectorsState.value === 'ready' ? `${connectorsTotal.value} 个采集连接器` : '—',
+)
 
 const onlineCount = computed(
   () =>
@@ -82,7 +103,7 @@ function toggle(key: string) {
     <NvPageHeader
       title="采集健康"
       :breadcrumbs="[{ label: '设备监控（IoT）' }]"
-      :count="`${connectorsTotal} 个采集连接器`"
+      :count="headerCount"
     >
       <template #actions>
         <span class="text-xs text-muted-foreground">每 10 秒自动刷新</span>
@@ -104,7 +125,9 @@ function toggle(key: string) {
       </template>
     </NvPageHeader>
 
+    <!-- 取不到读数时不画环：四段全 0 的环等于断言「现场一个连接器都没有」。 -->
     <NvMetricRing
+      v-if="connectorsState === 'ready'"
       label="采集状态构成"
       :value="connectors.length"
       center-caption="个连接器"
@@ -112,11 +135,54 @@ function toggle(key: string) {
       class="max-w-md"
     />
 
+    <!-- 轮询失败但仍有上一次读数：保留数据，同时常驻标明读数已过期。 -->
+    <div v-if="staleAfterError" class="rounded-lg border border-destructive/40 p-4">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <p class="inline-flex items-center gap-1.5 font-medium text-destructive" role="alert">
+            <TriangleAlertIcon class="size-4 shrink-0" aria-hidden="true" />
+            采集健康刷新失败，下方为上一次成功读取的结果，不代表现场此刻的状态。
+          </p>
+          <p class="mt-1 text-sm text-muted-foreground">{{ connectorsErrorDetail }}</p>
+        </div>
+        <NvButton size="sm" type="button" variant="outline" @click="refreshConnectors">
+          <RefreshCwIcon aria-hidden="true" />
+          重试
+        </NvButton>
+      </div>
+    </div>
+
     <div
-      v-if="connectorsPending && !connectors.length"
+      v-if="connectorsState === 'idle'"
+      class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
+    >
+      业务上下文未就绪，采集健康尚未查询。
+    </div>
+
+    <div
+      v-else-if="connectorsState === 'loading'"
       class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
     >
       正在加载采集连接器…
+    </div>
+
+    <div
+      v-else-if="connectorsState === 'error'"
+      class="rounded-lg border border-destructive/40 p-4"
+    >
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <p class="inline-flex items-center gap-1.5 font-medium text-destructive" role="alert">
+            <TriangleAlertIcon class="size-4 shrink-0" aria-hidden="true" />
+            采集健康取不到，无法判断现场采集是否正常。
+          </p>
+          <p class="mt-1 text-sm text-muted-foreground">{{ connectorsErrorDetail }}</p>
+        </div>
+        <NvButton size="sm" type="button" variant="outline" @click="refreshConnectors">
+          <RefreshCwIcon aria-hidden="true" />
+          重试
+        </NvButton>
+      </div>
     </div>
 
     <div

@@ -28,11 +28,25 @@ const REASON_LABELS: Record<string, string> = {
   workorderreleased: '工单已下达',
 }
 
+/**
+ * 词表漏词只在开发期告警一次，生产构建里整段被摇树掉。
+ * 仍然回吐原值（不让原因列空白），但别让漏词沉默到真机走查才被发现。
+ */
+const warnedReasonCodes = new Set<string>()
+function warnMissingReasonLabel(raw: string) {
+  if (!import.meta.env.DEV) return
+  if (warnedReasonCodes.has(raw)) return
+  warnedReasonCodes.add(raw)
+  console.warn(`[排程] 词表缺失: ${raw}，请补 useScheduleInvalidation.ts 的 REASON_LABELS`)
+}
+
 /** 失效原因码→中文标签；未知码回退原值，空值回退占位。 */
 export function describeScheduleInvalidationReason(reasonCode?: string | null): string {
   const raw = (reasonCode ?? '').trim()
   if (!raw) return '排程前提已变化'
-  return REASON_LABELS[raw.toLowerCase()] ?? raw
+  const label = REASON_LABELS[raw.toLowerCase()]
+  if (label === undefined) warnMissingReasonLabel(raw)
+  return label ?? raw
 }
 
 /** 失效行的完整引导文案（tooltip/说明用）。 */

@@ -90,6 +90,7 @@ function listShape(itemsRef: () => Array<Record<string, unknown>>) {
     environmentId: computed(() => 'env-dev'),
     error: shallowRef(undefined),
     pending: shallowRef(false),
+    ready: computed(() => true),
     refresh: vi.fn(),
   }
 }
@@ -108,6 +109,7 @@ vi.mock('@/composables/useBusinessErp', () => ({
     const base = listShape(() => state.salesOrders)
     return {
       filters: base.filters,
+      ready: base.ready,
       salesOrders: base.items,
       salesOrdersTotal: base.total,
       salesOrdersError: shallowRef(undefined),

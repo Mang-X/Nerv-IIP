@@ -143,10 +143,24 @@ export const mesCapacityStatusOptions = mesDowntimeStatusOptions
 
 export const mesHandoverStatusOptions = statusOptions(['open', 'accepted'], { open: '待接班' })
 
+/**
+ * 词表漏词只在开发期告警一次，生产构建里整段被摇树掉。
+ * 仍然回吐原值（不让状态列空白），但别让漏词沉默到真机走查才被发现。
+ */
+const warnedStatusValues = new Set<string>()
+function warnMissingStatusLabel(value: string) {
+  if (!import.meta.env.DEV) return
+  if (warnedStatusValues.has(value)) return
+  warnedStatusValues.add(value)
+  console.warn(`[MES] 词表缺失: ${value}，请补 useMesReferenceLabels.ts 的状态词表`)
+}
+
 export function useMesReferenceLabels() {
   function statusLabel(value?: string | null) {
     if (!value) return '未知'
-    return normalizedStatusLabels[value] ?? normalizedStatusLabels[value.toLowerCase()] ?? value
+    const label = normalizedStatusLabels[value] ?? normalizedStatusLabels[value.toLowerCase()]
+    if (label === undefined) warnMissingStatusLabel(value)
+    return label ?? value
   }
 
   function emptyText(value?: string | null) {

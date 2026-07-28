@@ -316,6 +316,128 @@ const runningChains = computed(
     ).length,
 )
 
+/**
+ * 五张读面表各自的状态。
+ *
+ * 五张表原本一律只有 `:loading` + `empty-message`，composable 早就导出了 `*Error`
+ * 却从没被消费——「接口 500」和「真的没有待办」渲染成同一句「当前没有…」，等于用故障
+ * 冒充"审批都清空了"。这里把「未选范围 / 在途 / 失败 / 真的 0 条」拆开。
+ *
+ * `contextReady` 必须单独判：上下文未就绪时查询 `enabled:false`，pinia-colada 的
+ * `asyncStatus` 停在 `idle`，`isLoading` 为 **false**，pending 兜不住这一态。
+ */
+interface ApprovalReadState {
+  trustworthy: boolean
+  tabCount: string
+  emptyMessage: string
+  error: unknown
+  errorMessage: string | undefined
+  awaitingScope: boolean
+}
+
+const APPROVAL_AWAITING_MESSAGE = '尚未选择业务范围，还没有发起查询——请先在顶部选择。'
+
+function approvalReadState(
+  noun: string,
+  pending: boolean,
+  error: unknown,
+  total: number,
+  emptyHint: string,
+): ApprovalReadState {
+  // 只有「没就绪 **且** 手上确实没有结果」才算未查询；已有行就按实际数据走。
+  if (!approval.contextReady.value && total === 0 && error == null) {
+    return {
+      trustworthy: false,
+      tabCount: '—',
+      emptyMessage: APPROVAL_AWAITING_MESSAGE,
+      error: undefined,
+      errorMessage: undefined,
+      awaitingScope: true,
+    }
+  }
+  if (error != null) {
+    return {
+      trustworthy: false,
+      tabCount: '取不到',
+      emptyMessage: `没有取到${noun}，无法判断当前是否有需要处理的事项。`,
+      error,
+      errorMessage: `没有取到${noun}，当前无法判断是否有待处理的审批。请重试，或稍后再看。`,
+      awaitingScope: false,
+    }
+  }
+  if (pending && total === 0) {
+    return {
+      trustworthy: false,
+      tabCount: '…',
+      emptyMessage: `正在读取${noun}…`,
+      error: undefined,
+      errorMessage: undefined,
+      awaitingScope: false,
+    }
+  }
+  return {
+    trustworthy: true,
+    tabCount: String(total),
+    emptyMessage: emptyHint,
+    error: undefined,
+    errorMessage: undefined,
+    awaitingScope: false,
+  }
+}
+
+const tasksState = computed(() =>
+  approvalReadState(
+    '审批任务',
+    approval.tasksPending.value,
+    approval.tasksError.value,
+    approval.tasksTotal.value,
+    '没有待你处理的审批任务。有单据流转到你这一步时会出现在这里。',
+  ),
+)
+const chainsState = computed(() =>
+  approvalReadState(
+    '审批流程',
+    approval.chainsPending.value,
+    approval.chainsError.value,
+    approval.chainsTotal.value,
+    '没有正在审批中的单据。发起审批后会在这里跟踪流转。',
+  ),
+)
+const decisionsState = computed(() =>
+  approvalReadState(
+    '审批决策记录',
+    approval.decisionsPending.value,
+    approval.decisionsError.value,
+    approval.decisionsTotal.value,
+    '还没有审批决策记录。任何一次通过或驳回都会在这里留痕。',
+  ),
+)
+const delegationsState = computed(() =>
+  approvalReadState(
+    '审批委托',
+    approval.delegationsPending.value,
+    approval.delegationsError.value,
+    approval.delegationsTotal.value,
+    '还没有审批委托。休假或出差前可在这里把审批权临时交出去。',
+  ),
+)
+const templatesState = computed(() =>
+  approvalReadState(
+    '审批模板',
+    approval.templatesPending.value,
+    approval.templatesError.value,
+    approval.templatesTotal.value,
+    '还没有审批模板。先配置单据类型的审批链路，之后的单据才能自动进入审批。',
+  ),
+)
+
+/** 页头读数：任务这一路取不到就直说，不显 0。 */
+const headerCount = computed(() => {
+  if (tasksState.value.awaitingScope) return '—'
+  if (!tasksState.value.trustworthy) return '待处理任务数取不到'
+  return `${approval.tasksTotal.value} 个待处理任务`
+})
+
 applyRouteApprovalFilters()
 
 /** 审批人类型码值 → 中文；UI 不直出 role/user/department 之类的原文。 */
@@ -556,11 +678,7 @@ function toIsoFromLocalInput(value: string) {
 
 <template>
   <BusinessLayout>
-    <NvPageHeader
-      title="审批中心"
-      :breadcrumbs="[{ label: '审批中心' }]"
-      :count="`${approval.tasksTotal.value} 个待处理任务`"
-    >
+    <NvPageHeader title="审批中心" :breadcrumbs="[{ label: '审批中心' }]" :count="headerCount">
       <template #actions>
         <NvButton size="sm" type="button" variant="outline" @click="approval.refreshAll">
           <RefreshCwIcon aria-hidden="true" />
@@ -579,34 +697,47 @@ function toIsoFromLocalInput(value: string) {
 
     <template v-else>
       <div class="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+        <!-- 读不到任务时不许说"已清空"：那是在没有依据的情况下断言"没你的事"。 -->
         <NvMetricCard
           variant="alert"
           label="待我处理"
-          :value="pendingTasks"
-          unit="项"
-          :tone="pendingTasks > 0 ? 'warning' : 'neutral'"
+          :value="tasksState.trustworthy ? pendingTasks : '—'"
+          :unit="tasksState.trustworthy ? '项' : ''"
+          :tone="tasksState.trustworthy && pendingTasks > 0 ? 'warning' : 'neutral'"
           :status="
-            pendingTasks > 0
-              ? { label: '等待决策', tone: 'warning' }
-              : { label: '已清空', tone: 'success' }
+            !tasksState.trustworthy
+              ? { label: '无法判断', tone: 'neutral' }
+              : pendingTasks > 0
+                ? { label: '等待决策', tone: 'warning' }
+                : { label: '已清空', tone: 'success' }
           "
           :foot-start="
-            pendingTasks > 0
-              ? '单据在你这一步停着，下游的执行也会一起等。'
-              : '当前没有等你决策的审批。'
+            !tasksState.trustworthy
+              ? tasksState.emptyMessage
+              : pendingTasks > 0
+                ? '单据在你这一步停着，下游的执行也会一起等。'
+                : '当前没有等你决策的审批。'
           "
-          :action="pendingTasks > 0 ? { label: '去处理' } : undefined"
+          :action="tasksState.trustworthy && pendingTasks > 0 ? { label: '去处理' } : undefined"
           @action="activeTab = 'tasks'"
         />
         <NvMetricStrip
           :cells="[
-            { key: 'running', label: '进行中审批', value: runningChains, unit: '单' },
+            {
+              key: 'running',
+              label: '进行中审批',
+              value: chainsState.trustworthy ? runningChains : '—',
+              unit: chainsState.trustworthy ? '单' : '',
+              meta: chainsState.trustworthy ? undefined : chainsState.emptyMessage,
+            },
             {
               key: 'delegation',
               label: '生效中的委托',
-              value: activeDelegations,
-              unit: '条',
-              meta: '代批期间由被委托人决策',
+              value: delegationsState.trustworthy ? activeDelegations : '—',
+              unit: delegationsState.trustworthy ? '条' : '',
+              meta: delegationsState.trustworthy
+                ? '代批期间由被委托人决策'
+                : delegationsState.emptyMessage,
             },
           ]"
         />
@@ -622,19 +753,14 @@ function toIsoFromLocalInput(value: string) {
 
       <NvTabs v-model="activeTab">
         <NvTabsList>
-          <NvTabsTrigger value="tasks">我的任务 ({{ approval.tasksTotal.value }})</NvTabsTrigger>
-          <NvTabsTrigger value="chains"
-            >审批中的单据 ({{ approval.chainsTotal.value }})</NvTabsTrigger
-          >
-          <NvTabsTrigger value="decisions"
-            >决策记录 ({{ approval.decisionsTotal.value }})</NvTabsTrigger
-          >
+          <!-- 每个页签的数字各自独立：某一路取不到就显 `—` / 「取不到」，不显 0 -->
+          <NvTabsTrigger value="tasks">我的任务 ({{ tasksState.tabCount }})</NvTabsTrigger>
+          <NvTabsTrigger value="chains">审批中的单据 ({{ chainsState.tabCount }})</NvTabsTrigger>
+          <NvTabsTrigger value="decisions">决策记录 ({{ decisionsState.tabCount }})</NvTabsTrigger>
           <NvTabsTrigger value="delegations"
-            >委托设置 ({{ approval.delegationsTotal.value }})</NvTabsTrigger
+            >委托设置 ({{ delegationsState.tabCount }})</NvTabsTrigger
           >
-          <NvTabsTrigger value="templates"
-            >模板配置 ({{ approval.templatesTotal.value }})</NvTabsTrigger
-          >
+          <NvTabsTrigger value="templates">模板配置 ({{ templatesState.tabCount }})</NvTabsTrigger>
         </NvTabsList>
 
         <NvTabsContent value="tasks" class="grid gap-3">
@@ -649,7 +775,12 @@ function toIsoFromLocalInput(value: string) {
             :loading="approval.tasksPending.value"
             :searchable="false"
             :column-settings="false"
-            empty-message="当前没有待处理审批任务。"
+            :empty-message="tasksState.emptyMessage"
+            :error="tasksState.error"
+            :error-message="tasksState.errorMessage"
+            :awaiting-scope="tasksState.awaitingScope"
+            :awaiting-scope-message="APPROVAL_AWAITING_MESSAGE"
+            @retry="approval.refreshAll"
             @update:page="taskPager.page.value = $event"
             @update:page-size="(v) => (taskPager.pageSize.value = String(v))"
           >
@@ -697,7 +828,12 @@ function toIsoFromLocalInput(value: string) {
             :loading="approval.chainsPending.value"
             :searchable="false"
             :column-settings="false"
-            empty-message="当前没有审批流程。"
+            :empty-message="chainsState.emptyMessage"
+            :error="chainsState.error"
+            :error-message="chainsState.errorMessage"
+            :awaiting-scope="chainsState.awaitingScope"
+            :awaiting-scope-message="APPROVAL_AWAITING_MESSAGE"
+            @retry="approval.refreshAll"
             @update:page="chainPager.page.value = $event"
             @update:page-size="(v) => (chainPager.pageSize.value = String(v))"
           >
@@ -748,7 +884,12 @@ function toIsoFromLocalInput(value: string) {
             :loading="approval.decisionsPending.value"
             :searchable="false"
             :column-settings="false"
-            empty-message="当前没有审批决策记录。"
+            :empty-message="decisionsState.emptyMessage"
+            :error="decisionsState.error"
+            :error-message="decisionsState.errorMessage"
+            :awaiting-scope="decisionsState.awaitingScope"
+            :awaiting-scope-message="APPROVAL_AWAITING_MESSAGE"
+            @retry="approval.refreshAll"
             @update:page="decisionPager.page.value = $event"
             @update:page-size="(v) => (decisionPager.pageSize.value = String(v))"
           >
@@ -779,7 +920,12 @@ function toIsoFromLocalInput(value: string) {
             :loading="approval.delegationsPending.value"
             :searchable="false"
             :column-settings="false"
-            empty-message="当前没有审批委托。"
+            :empty-message="delegationsState.emptyMessage"
+            :error="delegationsState.error"
+            :error-message="delegationsState.errorMessage"
+            :awaiting-scope="delegationsState.awaitingScope"
+            :awaiting-scope-message="APPROVAL_AWAITING_MESSAGE"
+            @retry="approval.refreshAll"
             @update:page="delegationPager.page.value = $event"
             @update:page-size="(v) => (delegationPager.pageSize.value = String(v))"
           >
@@ -817,7 +963,12 @@ function toIsoFromLocalInput(value: string) {
             :loading="approval.templatesPending.value"
             :searchable="false"
             :column-settings="false"
-            empty-message="当前没有审批模板。"
+            :empty-message="templatesState.emptyMessage"
+            :error="templatesState.error"
+            :error-message="templatesState.errorMessage"
+            :awaiting-scope="templatesState.awaitingScope"
+            :awaiting-scope-message="APPROVAL_AWAITING_MESSAGE"
+            @retry="approval.refreshAll"
             @update:page="templatePager.page.value = $event"
             @update:page-size="(v) => (templatePager.pageSize.value = String(v))"
           >

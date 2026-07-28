@@ -71,10 +71,20 @@ const equipmentComposableState = vi.hoisted(() => ({
   refreshDevice: vi.fn(),
 }))
 
-// 看板列表读面；按用例改写以驱动状态构成环的分段。
+// 看板列表读面；按用例改写以驱动状态构成环的分段与四态（idle/loading/error/ready）。
 const overviewState = vi.hoisted(() => ({
   activeBlocks: [] as Array<Record<string, unknown>>,
   devices: [] as Array<Record<string, unknown>>,
+  effectiveCount: 2,
+  overviewError: undefined as unknown,
+  rosterError: undefined as unknown,
+  rosterTotal: 2,
+  state: 'ready' as 'idle' | 'loading' | 'error' | 'ready',
+}))
+
+const overviewMocks = vi.hoisted(() => ({
+  refreshDeviceRoster: vi.fn(),
+  refreshOverview: vi.fn(),
 }))
 
 const authState = vi.hoisted(() => ({
@@ -307,13 +317,19 @@ vi.mock('@/composables/useBusinessEquipment', () => ({
   }),
   useBusinessEquipmentOverview: () => ({
     activeBlocks: computed(() => overviewState.activeBlocks),
+    contextReady: computed(() => overviewState.state !== 'idle'),
+    deviceRosterError: computed(() => overviewState.rosterError),
+    deviceRosterTotal: computed(() => overviewState.rosterTotal),
     devices: computed(() => overviewState.devices),
+    effectiveDeviceAssetIdCount: computed(() => overviewState.effectiveCount),
     filters: {
       deviceAssetIds: 'DEV-OIL-01,DEV-PACK-01',
     },
-    overviewError: shallowRef(),
-    overviewPending: shallowRef(false),
-    refreshOverview: vi.fn(),
+    overviewError: computed(() => overviewState.overviewError),
+    overviewPending: computed(() => overviewState.state === 'loading'),
+    overviewState: computed(() => overviewState.state),
+    refreshDeviceRoster: overviewMocks.refreshDeviceRoster,
+    refreshOverview: overviewMocks.refreshOverview,
   }),
 }))
 
@@ -539,6 +555,13 @@ describe('equipment pages', () => {
     runtimeHoursState.hasSamples = true
     overviewState.devices = []
     overviewState.activeBlocks = []
+    overviewState.effectiveCount = 2
+    overviewState.overviewError = undefined
+    overviewState.rosterError = undefined
+    overviewState.rosterTotal = 2
+    overviewState.state = 'ready'
+    overviewMocks.refreshDeviceRoster.mockClear()
+    overviewMocks.refreshOverview.mockClear()
     authState.permissionCodes = [
       'business.iiot.alarms.read',
       'business.iiot.alarms.write',
@@ -591,6 +614,54 @@ describe('equipment pages', () => {
     expect(alarmCard!.text()).toContain('3')
     expect(alarmCard!.text()).toContain('需处理')
     expect(alarmCard!.text()).toContain('查看报警')
+  })
+
+  it('renders a read failure as an error block with retry, never as 0 devices', async () => {
+    overviewState.state = 'error'
+    overviewState.rosterError = new Error('roster boom')
+
+    const wrapper = mount(EquipmentIndexPage, { global: { stubs } })
+
+    expect(wrapper.text()).toContain('设备台账取不到，当前无法判断在册设备与运行情况。')
+    expect(wrapper.text()).toContain('设备清单取不到，无法判断有哪些设备、各自什么状态。')
+    expect(wrapper.text()).toContain('阻塞窗口取不到，无法判断当前是否有设备被阻塞。')
+    expect(wrapper.text()).not.toContain('0 台设备')
+    expect(wrapper.text()).not.toContain('暂无设备运行记录')
+    expect(wrapper.text()).not.toContain('当前没有设备阻塞窗口')
+    expect(wrapper.find('.nv-ring-card').exists()).toBe(false)
+
+    const retry = wrapper.findAll('button').find((button) => button.text().trim() === '重试')
+    expect(retry).toBeDefined()
+    await retry!.trigger('click')
+    expect(overviewMocks.refreshDeviceRoster).toHaveBeenCalled()
+    expect(overviewMocks.refreshOverview).toHaveBeenCalled()
+  })
+
+  it('separates not-yet-queried and loading from a genuine zero-device fleet', () => {
+    overviewState.state = 'idle'
+    const idle = mount(EquipmentIndexPage, { global: { stubs } })
+    expect(idle.text()).toContain('业务上下文未就绪，设备运行数据尚未查询。')
+    expect(idle.text()).not.toContain('暂无设备运行记录')
+    expect(idle.text()).not.toContain('0 台设备')
+
+    overviewState.state = 'loading'
+    const loading = mount(EquipmentIndexPage, { global: { stubs } })
+    expect(loading.text()).toContain('正在读取设备台账与运行状态…')
+    expect(loading.text()).not.toContain('0 台设备')
+
+    overviewState.state = 'ready'
+    const ready = mount(EquipmentIndexPage, { global: { stubs } })
+    expect(ready.text()).toContain('0 台设备')
+    expect(ready.text()).toContain('暂无设备运行记录')
+  })
+
+  it('states the 50-device query cap instead of silently truncating the fleet', () => {
+    overviewState.rosterTotal = 71
+    overviewState.effectiveCount = 50
+
+    const wrapper = mount(EquipmentIndexPage, { global: { stubs } })
+
+    expect(wrapper.text()).toContain('范围内共 71 台设备，当前看板展示前 50 台。')
   })
 
   it('updates the device filter and refreshes when route device id changes', async () => {

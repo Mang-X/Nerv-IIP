@@ -57,6 +57,8 @@ const overviewState = vi.hoisted(() => ({
   counts: [] as Array<{ count?: number; key: string }>,
   overviewError: undefined as Error | undefined,
   overviewPending: false,
+  // 读面四态：驾驶舱的所有结论都以它为准，'ready' 之外一律不许下结论。
+  readState: 'ready' as 'idle' | 'loading' | 'error' | 'ready',
   pendingWork: [] as Array<{ count?: number }>,
   refreshOverview: vi.fn(),
 }))
@@ -84,6 +86,7 @@ vi.mock('@/composables/useBusinessMes', () => {
       counts: readonlyRef(() => overviewState.counts),
       overviewError: readonlyRef(() => overviewState.overviewError),
       overviewPending: readonlyRef(() => overviewState.overviewPending),
+      overviewState: readonlyRef(() => overviewState.readState),
       pendingWork: readonlyRef(() => overviewState.pendingWork),
       refreshOverview: overviewState.refreshOverview,
     }),
@@ -96,6 +99,7 @@ describe('MES index page', () => {
     overviewState.counts = []
     overviewState.overviewError = undefined
     overviewState.overviewPending = false
+    overviewState.readState = 'ready'
     overviewState.pendingWork = []
     overviewState.refreshOverview.mockReset()
   })
@@ -135,5 +139,58 @@ describe('MES index page', () => {
     expect(blockerCard).toBeDefined()
     expect(blockerCard!.attributes('data-to')).toBe('/mes/capacity')
     expect(blockerCard!.text()).toContain('查看异常与产能')
+  })
+
+  // 读面取不到数据时，页面绝不能替现场下「没有阻塞 / 可以继续推进」的结论。
+  const SAFETY_CLAIMS = ['没有汇总阻塞', '没有阻塞', '没有生产阻塞', '暂无阻塞', '一切正常']
+
+  it('读面失败时不断言现场无阻塞，改为明说取不到并给重试', () => {
+    overviewState.readState = 'error'
+    overviewState.overviewError = new Error('网关暂时不可用')
+
+    const text = mountPage().text()
+
+    for (const claim of SAFETY_CLAIMS) {
+      expect(text).not.toContain(claim)
+    }
+    expect(text).toContain('现场数据获取失败，无法判断当前是否存在阻塞')
+    expect(text).toContain('重试')
+    expect(text).toContain('无法判断现场是否存在阻塞')
+  })
+
+  it('读面失败时指标显示占位而不是 0', () => {
+    overviewState.readState = 'error'
+    overviewState.counts = [
+      { key: 'work-orders', count: 12 },
+      { key: 'operation-tasks', count: 34 },
+    ]
+
+    const text = mountPage().text()
+
+    expect(text).toContain('—')
+    expect(text).toContain('数据获取失败')
+    expect(text).not.toContain('12')
+    expect(text).not.toContain('34')
+  })
+
+  it('业务上下文未就绪时不渲染 0，也不下任何结论', () => {
+    overviewState.readState = 'idle'
+
+    const text = mountPage().text()
+
+    for (const claim of SAFETY_CLAIMS) {
+      expect(text).not.toContain(claim)
+    }
+    expect(text).toContain('尚未选择业务范围')
+    expect(text).toContain('—')
+  })
+
+  it('确实读到数据且为空时才说没有阻塞', () => {
+    overviewState.readState = 'ready'
+
+    const text = mountPage().text()
+
+    expect(text).toContain('本次读取的汇总里没有阻塞')
+    expect(text).toContain('进入工单与派工')
   })
 })

@@ -30,7 +30,7 @@ import {
 } from '@nerv-iip/ui'
 import { PackageCheckIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { formatQuantity } from '../shared'
+import { UNAVAILABLE_TEXT, erpReadState, formatQuantity, readCount } from '../shared'
 
 definePage({
   meta: {
@@ -78,15 +78,35 @@ const columns: NvDataTableColumn<(typeof rows.value)[number]>[] = [
   { key: 'actions', header: '操作', align: 'end', width: 'w-28' },
 ]
 
+const readState = computed(() =>
+  erpReadState({
+    noun: '可收货采购订单',
+    unit: '张',
+    ready: receipts.ready.value,
+    pending: receipts.pending.value,
+    error: receipts.error.value,
+    total: receipts.total.value,
+    filtered: Boolean(receipts.filters.keyword || receipts.filters.status),
+    emptyHint: '还没有可收货的采购订单。采购订单释放后会在这里跟进入库。',
+  }),
+)
+
 const receivableLines = computed(() => rows.value.filter((row) => row.openQuantity > 0).length)
 const openQuantity = computed(() => rows.value.reduce((sum, row) => sum + row.openQuantity, 0))
 const receiptCells = computed<NvMetricStripCell[]>(() => [
-  { key: 'lines', label: '可收货行', value: receivableLines.value, unit: '行' },
+  {
+    key: 'lines',
+    label: '可收货行',
+    value: readCount(readState.value, receivableLines.value),
+    unit: readState.value.trustworthy ? '行' : '',
+    meta: readState.value.trustworthy ? undefined : readState.value.emptyMessage,
+  },
   {
     key: 'open-quantity',
     label: '待收数量',
-    value: formatQuantity(openQuantity.value),
-    meta: '已下达采购但尚未入库的数量',
+    // 取不到采购订单时显 `—`：0 会被读成"没有在途待收"。
+    value: readState.value.trustworthy ? formatQuantity(openQuantity.value) : UNAVAILABLE_TEXT,
+    meta: readState.value.trustworthy ? '已下达采购但尚未入库的数量' : readState.value.emptyMessage,
   },
 ])
 
@@ -152,7 +172,7 @@ async function submit() {
     <NvPageHeader
       title="采购收货"
       :breadcrumbs="[{ label: '经营管理' }, { label: '采购' }]"
-      :count="`${receipts.total.value} 张采购单来源`"
+      :count="readState.count"
     >
       <template #actions>
         <NvButton
@@ -192,7 +212,12 @@ async function submit() {
       :loading="receipts.pending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无可收货采购订单。采购订单释放后会在这里跟进入库。"
+      :empty-message="readState.emptyMessage"
+      :error="readState.error"
+      :error-message="readState.errorMessage"
+      :awaiting-scope="readState.awaitingScope"
+      :awaiting-scope-message="readState.awaitingScopeMessage"
+      @retry="receipts.refresh"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >

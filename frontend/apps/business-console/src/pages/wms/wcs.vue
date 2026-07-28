@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsWcsTaskItem } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import {
   labelFor,
   WCS_ADAPTER_TYPE_LABELS,
   WCS_TASK_STATUS_LABELS,
   wmsStatusTone,
 } from '@/data/businessLabels'
+import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useWmsWcsTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -57,22 +57,23 @@ const {
   refreshWcsTasks,
   dispatchWcs,
   dispatchWcsPending,
-  dispatchWcsError,
   failWcs,
   failWcsPending,
-  failWcsError,
   completeWcs,
   completeWcsPending,
-  completeWcsError,
 } = useWmsWcsTasks()
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.externalTaskId, () => filters.warehouseTaskId],
 })
 
-const errorMessage = computed(() =>
-  formatError(
-    wcsTasksError.value ?? dispatchWcsError.value ?? failWcsError.value ?? completeWcsError.value,
-  ),
+/**
+ * 读错误只归列表区域。派发 / 标记失败 / 标记完成的失败一律走 toast，不并进这一条：
+ * 两者共用一个变量时，「派发失败」会伪装成「列表加载失败」。
+ */
+const listErrorMessage = computed(() =>
+  wcsTasksError.value
+    ? `取不到设备任务列表，设备执行情况无法判断：${formatError(wcsTasksError.value)}`
+    : '',
 )
 
 type Action = 'dispatch' | 'fail' | 'complete'
@@ -183,11 +184,65 @@ const taskContextItems = computed(() => {
 })
 const hasCarriedAdapter = computed(() => Boolean(pendingTask.value?.adapterType))
 const hasCarriedExternalTaskId = computed(() => Boolean(pendingTask.value?.externalTaskId))
+/**
+ * 数字口径：页头与「设备任务」KPI 一律用**服务端总数**；失败/执行中只能按当前页算，
+ * 一律带「本页」前缀。读不到数（上下文未就绪 / 读取中 / 读失败）时显 `—` 并明说取不到，
+ * 不断言 0，更不敢说「运行正常」——那是把故障伪装成一切正常。
+ */
+// 业务范围是否选定走全站唯一判定，不在页面里另写一份——判定分叉了，
+// 「还没查」和「真的 0 条」很快又会混回同一个渲染。
+const contextReady = computed(() => hasBusinessContext(filters))
+const listReady = computed(
+  () => contextReady.value && !wcsTasksError.value && !wcsTasksPending.value,
+)
+const headerCount = computed(() => {
+  if (!contextReady.value) return '未选择业务范围'
+  if (wcsTasksError.value) return '任务数取不到'
+  if (wcsTasksPending.value) return '加载中'
+  return `${wcsTasksTotal.value} 个任务`
+})
 const failedCount = computed(
   () =>
     wcsTasks.value.filter((t) => !!t.failedAtUtc || (t.status ?? '').toLowerCase() === 'failed')
       .length,
 )
+const metricCells = computed<NvMetricStripCell[]>(() => {
+  if (!listReady.value) {
+    return [
+      { key: 'total', label: '设备任务', value: '—' },
+      { key: 'running', label: '本页执行中', value: '—' },
+      { key: 'failed', label: '本页执行失败', value: '—' },
+    ]
+  }
+  return [
+    { key: 'total', label: '设备任务', value: wcsTasksTotal.value, unit: '条' },
+    {
+      key: 'running',
+      label: '本页执行中',
+      value: wcsTasks.value.length - failedCount.value,
+      unit: '条',
+    },
+    {
+      key: 'failed',
+      label: '本页执行失败',
+      value: failedCount.value,
+      unit: '条',
+      valueTone: failedCount.value > 0 ? 'danger' : undefined,
+    },
+  ]
+})
+const failedCardStatus = computed(() => {
+  if (!listReady.value) return { label: '取不到数据', tone: 'neutral' as const }
+  return failedCount.value > 0
+    ? { label: '需人工跟进', tone: 'danger' as const }
+    : { label: '本页无失败', tone: 'success' as const }
+})
+const failedCardNote = computed(() => {
+  if (!listReady.value) return '设备任务读不到，本页有没有失败任务无法判断，请重试。'
+  return failedCount.value > 0
+    ? '失败任务不会自动重试，需要在设备侧确认后重新下发。'
+    : '本页设备任务都在正常执行；其余分页请翻页或按状态筛选查看。'
+})
 
 type WcsRow = BusinessConsoleWmsWcsTaskItem
 const columns: NvDataTableColumn<WcsRow>[] = [
@@ -224,15 +279,16 @@ function rowKey(row: WcsRow) {
 }
 /**
  * 适配器类型说人话。后端是自由文本技术标识（`agv` / `stacker-crane`），
- * 词表里有就显中文设备名、技术标识降为副行；没收录就只显技术标识，不编名字。
+ * 词表里有就只显中文设备名（技术标识对现场没有信息量，不并列展示）；
+ * 没收录就退回技术标识，不编名字。
  */
 function adapterTypeLabel(value?: string | null) {
   if (!value) return '无'
   const name = labelFor(WCS_ADAPTER_TYPE_LABELS, value, '')
+  if (!name && import.meta.env.DEV) {
+    console.warn(`[WCS] 词表缺失: ${value}，请补 businessLabels.ts 的 WCS_ADAPTER_TYPE_LABELS`)
+  }
   return name || value
-}
-function adapterTypeName(value?: string | null) {
-  return value ? labelFor(WCS_ADAPTER_TYPE_LABELS, value, '') || undefined : undefined
 }
 function statusLabel(value?: string | null) {
   return labelFor(WCS_TASK_STATUS_LABELS, value, '未知状态')
@@ -249,11 +305,7 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <NvPageHeader
-      title="WCS 任务"
-      :breadcrumbs="[{ label: '仓储作业' }]"
-      :count="`${wcsTasksTotal} 个任务`"
-    >
+    <NvPageHeader title="WCS 任务" :breadcrumbs="[{ label: '仓储作业' }]" :count="headerCount">
       <template #actions>
         <NvButton
           size="sm"
@@ -269,40 +321,15 @@ function formatError(error: unknown) {
     </NvPageHeader>
 
     <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
-      <NvMetricStrip
-        :cells="[
-          { key: 'total', label: '设备任务', value: wcsTasksTotal, unit: '条' },
-          {
-            key: 'running',
-            label: '执行中',
-            value: wcsTasks.length - failedCount,
-            unit: '条',
-          },
-          {
-            key: 'failed',
-            label: '执行失败',
-            value: failedCount,
-            unit: '条',
-            valueTone: failedCount > 0 ? 'danger' : undefined,
-          },
-        ]"
-      />
+      <NvMetricStrip :cells="metricCells" />
       <NvMetricCard
         variant="alert"
-        label="执行失败"
-        :value="failedCount"
-        unit="条"
-        :tone="failedCount > 0 ? 'danger' : 'neutral'"
-        :status="
-          failedCount > 0
-            ? { label: '需人工跟进', tone: 'danger' }
-            : { label: '运行正常', tone: 'success' }
-        "
-        :foot-start="
-          failedCount > 0
-            ? '失败任务不会自动重试，需要在设备侧确认后重新下发。'
-            : '本页设备任务都在正常执行。'
-        "
+        label="本页执行失败"
+        :value="listReady ? failedCount : '—'"
+        :unit="listReady ? '条' : undefined"
+        :tone="listReady && failedCount > 0 ? 'danger' : 'neutral'"
+        :status="failedCardStatus"
+        :foot-start="failedCardNote"
       />
     </div>
 
@@ -329,8 +356,7 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
+    <!-- 读失败 / 未选组织环境都由表格自己的三态呈现，绝不退化成「暂无设备任务」。 -->
     <NvDataTable
       manual
       :page="page"
@@ -342,9 +368,14 @@ function formatError(error: unknown) {
       :rows="wcsTasks"
       :row-key="rowKey"
       :loading="wcsTasksPending"
+      :error="wcsTasksError"
+      :error-message="listErrorMessage"
+      :awaiting-scope="!contextReady"
+      awaiting-scope-message="请先在顶部选择业务范围，再查看设备任务。"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无设备任务。"
+      @retry="refreshWcsTasks"
     >
       <template #empty>
         <p class="text-sm font-medium">暂无设备任务</p>
@@ -360,12 +391,11 @@ function formatError(error: unknown) {
           </NvButton>
         </div>
       </template>
+      <!-- 设备类型是技术标识不是设备编码：词表命中就只显中文名（`agv` 这类原样并列没有信息量），
+           没收录才退回原标识，仍不编造名字。 -->
       <template #cell-adapterType="{ row }">
-        <CodeWithNameCell
-          :code="row.adapterType"
-          :name="adapterTypeName(row.adapterType)"
-          fallback="无"
-        />
+        <span v-if="!row.adapterType" class="text-muted-foreground">无</span>
+        <span v-else>{{ adapterTypeLabel(row.adapterType) }}</span>
       </template>
       <template #cell-status="{ row }"
         ><NvStatusBadge

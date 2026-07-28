@@ -117,6 +117,7 @@ import {
   withBusinessContextEnabled,
   type BusinessContextFields,
 } from './businessContextBinding'
+import { businessReadState } from './businessReadState'
 
 const DEFAULT_TAKE = 100
 // 取消补偿预览按此页大小完整分页，直到取全该工单的全部关联单据（取消 handler 处理全部）。
@@ -364,6 +365,9 @@ function envelopeItems<
   return envelope.data?.items ?? []
 }
 
+// 注意：加载中 / 失败 / 查询未启用时信封都是 undefined，这里一律回 0——所以 `xxxTotal` 单独用
+// 是**没有语义的**：0 既可能是「真的一条都没有」，也可能是「压根没取到」。页面要区分这两者，
+// 必须配套读同名的 `xxxState`（见 ./businessReadState），只有 `ready` 时 0 才算数。
 function envelopeTotal<TEnvelope extends { success?: boolean; data?: { total?: number } | null }>(
   envelope: TEnvelope | undefined,
 ) {
@@ -539,6 +543,7 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
     ),
     workOrdersError: workOrdersQuery.error,
     workOrdersPending: workOrdersQuery.isLoading,
+    workOrdersState: businessReadState(workOrdersQuery, () => hasBusinessContext(filters)),
     workOrdersTotal: computed(() => envelopeTotal(workOrdersQuery.data.value)),
   }
 }
@@ -595,6 +600,7 @@ export function useMesProductionPlans() {
     ),
     productionPlansError: plansQuery.error,
     productionPlansPending: plansQuery.isLoading,
+    productionPlansState: businessReadState(plansQuery, () => hasBusinessContext(filters)),
     productionPlansTotal: computed(() => envelopeTotal(plansQuery.data.value)),
     refreshProductionPlans: () => refetchWithBusinessContext(filters, plansQuery),
   }
@@ -630,6 +636,7 @@ export function useMesProductionPlanReadiness(productionPlanId = '') {
     ),
     planReadinessError: readinessQuery.error,
     planReadinessPending: readinessQuery.isLoading,
+    planReadinessState: businessReadState(readinessQuery, () => readinessEnabled.value),
     refreshPlanReadiness: () =>
       readinessEnabled.value ? readinessQuery.refetch() : Promise.resolve(),
   }
@@ -657,6 +664,7 @@ export function useMesFoundationReadiness() {
     ),
     readinessError: readinessQuery.error,
     readinessPending: readinessQuery.isLoading,
+    readinessState: businessReadState(readinessQuery, () => hasBusinessContext(filters)),
     refreshReadiness: () => refetchWithBusinessContext(filters, readinessQuery),
   }
 }
@@ -687,6 +695,8 @@ export function useMesOverview() {
     overview,
     overviewError: overviewQuery.error,
     overviewPending: overviewQuery.isLoading,
+    // 驾驶舱据此区分「取不到」与「真的没有阻塞」——没有它，读面 500 会被渲染成「现场无阻塞」。
+    overviewState: businessReadState(overviewQuery, () => hasBusinessContext(filters)),
     pendingWork: computed(() => overview.value?.pendingWork ?? []),
     refreshOverview: () => refetchWithBusinessContext(filters, overviewQuery),
   }
@@ -851,6 +861,7 @@ export function useMesWorkOrderDetail() {
     ),
     detailError: detailQuery.error,
     detailPending: detailQuery.isLoading,
+    detailState: businessReadState(detailQuery, () => detailEnabled.value),
     filters,
     // 按关联单据前端汇总：该工单下未终结的完工入库请求（后端暂无取消预览端点，PR 已注明降级实现）
     finishedGoodsReceiptRequests: computed<BusinessConsoleMesReceiptRequestRow[]>(() =>
@@ -874,6 +885,7 @@ export function useMesWorkOrderDetail() {
     ),
     materialReadinessError: materialQuery.error,
     materialReadinessPending: materialQuery.isLoading,
+    materialReadinessState: businessReadState(materialQuery, () => detailEnabled.value),
     refreshDetail: () => (detailEnabled.value ? detailQuery.refetch() : Promise.resolve()),
     refreshMaterialReadiness: () =>
       detailEnabled.value ? materialQuery.refetch() : Promise.resolve(),
@@ -952,6 +964,7 @@ export function useMesOperationTasks() {
     ),
     operationTasksError: operationTasksQuery.error,
     operationTasksPending: operationTasksQuery.isLoading,
+    operationTasksState: businessReadState(operationTasksQuery, () => hasBusinessContext(filters)),
     operationTasksTotal: computed(() => envelopeTotal(operationTasksQuery.data.value)),
     pauseOperationTask: (
       operationTaskId: string,
@@ -1042,6 +1055,7 @@ export function useMesCurrentOperationSops() {
     ),
     currentSopsError: sopsQuery.error,
     currentSopsPending: sopsQuery.isLoading,
+    currentSopsState: businessReadState(sopsQuery, () => enabled.value),
     refreshCurrentSops: () => (enabled.value ? sopsQuery.refetch() : Promise.resolve()),
     createSopFileDownloadGrant,
   }
@@ -1091,6 +1105,7 @@ export function useMesMaterialIssueRequests() {
     ),
     materialIssueRequestsError: requestsQuery.error,
     materialIssueRequestsPending: requestsQuery.isLoading,
+    materialIssueRequestsState: businessReadState(requestsQuery, () => hasBusinessContext(filters)),
     materialIssueRequestsTotal: computed(() => envelopeTotal(requestsQuery.data.value)),
     refreshMaterialIssueRequests: () => refetchWithBusinessContext(filters, requestsQuery),
   }
@@ -1145,6 +1160,7 @@ export function useMesDispatchTasks() {
     ),
     dispatchTasksError: dispatchQuery.error,
     dispatchTasksPending: dispatchQuery.isLoading,
+    dispatchTasksState: businessReadState(dispatchQuery, () => hasBusinessContext(filters)),
     dispatchTasksTotal: computed(() => envelopeTotal(dispatchQuery.data.value)),
     filters,
     refreshDispatchTasks: () => refetchWithBusinessContext(filters, dispatchQuery),
@@ -1168,6 +1184,7 @@ export function useMesWipSummary() {
     refreshWip: () => refetchWithBusinessContext(filters, wipQuery),
     wipError: wipQuery.error,
     wipPending: wipQuery.isLoading,
+    wipState: businessReadState(wipQuery, () => hasBusinessContext(filters)),
     wipRows: computed<BusinessConsoleMesWipSummaryRow[]>(() =>
       envelopeItems<BusinessConsoleMesWipSummaryRow, BusinessConsoleMesWipSummaryEnvelope>(
         wipQuery.data.value,
@@ -1233,6 +1250,7 @@ export function useMesProductionReports() {
     ),
     productionReportsError: reportsQuery.error,
     productionReportsPending: reportsQuery.isLoading,
+    productionReportsState: businessReadState(reportsQuery, () => hasBusinessContext(filters)),
     productionReportsTotal: computed(() => envelopeTotal(reportsQuery.data.value)),
     refreshProductionReports: () => refetchWithBusinessContext(filters, reportsQuery),
     activateReverseDetail(reportNo: string) {
@@ -1323,6 +1341,7 @@ export function useMesTelemetryProductionReportCandidates() {
     ),
     pending: candidatesQuery.isLoading,
     error: candidatesQuery.error,
+    state: businessReadState(candidatesQuery, () => hasBusinessContext(filters)),
     refresh: () => refetchWithBusinessContext(filters, candidatesQuery),
     promote: (candidateId: string, workOrderId: string, operationTaskId: string) =>
       promoteMutation.mutateAsync({
@@ -1395,6 +1414,10 @@ export function useMesWorkOrderProducedLots(workOrderId: () => string) {
     producedLots,
     producedLotsError: producedLotsQuery.error,
     producedLotsPending: producedLotsQuery.isLoading,
+    producedLotsState: businessReadState(
+      producedLotsQuery,
+      () => hasBusinessContext(filters) && isNonEmpty(workOrderId().trim()),
+    ),
     refreshProducedLots: () => refetchWithBusinessContext(filters, producedLotsQuery),
   }
 }
@@ -1469,6 +1492,7 @@ export function useMesFinishedGoodsReceipts() {
     ),
     receiptRequestsError: receiptsQuery.error,
     receiptRequestsPending: receiptsQuery.isLoading,
+    receiptRequestsState: businessReadState(receiptsQuery, () => hasBusinessContext(filters)),
     receiptRequestsTotal: computed(() => envelopeTotal(receiptsQuery.data.value)),
     refreshReceiptRequests: () => refetchWithBusinessContext(filters, receiptsQuery),
   }
@@ -1538,6 +1562,7 @@ export function useMesQualityHold(
     }),
     timelinePending: timelineQuery.isLoading,
     timelineError: timelineQuery.error,
+    timelineState: businessReadState(timelineQuery, () => enabled.value),
     refreshTimeline: () => (enabled.value ? timelineQuery.refetch() : Promise.resolve()),
     forceRelease: (reason: string) => {
       const s = source()
@@ -1585,6 +1610,7 @@ export function useMesQualityContext() {
     ),
     qualityItemsError: qualityQuery.error,
     qualityItemsPending: qualityQuery.isLoading,
+    qualityItemsState: businessReadState(qualityQuery, () => hasBusinessContext(filters)),
     qualityItemsTotal: computed(() => envelopeTotal(qualityQuery.data.value)),
     recordDefect: (body: BusinessConsoleMesRecordDefectRequest) =>
       defectMutation.mutateAsync({ body }),
@@ -1632,6 +1658,7 @@ export function useMesDowntimeEvents() {
     ),
     downtimeEventsError: downtimeQuery.error,
     downtimeEventsPending: downtimeQuery.isLoading,
+    downtimeEventsState: businessReadState(downtimeQuery, () => hasBusinessContext(filters)),
     downtimeEventsTotal: computed(() => envelopeTotal(downtimeQuery.data.value)),
     filters,
     recordDowntimeEvent: (body: BusinessConsoleMesRecordDowntimeEventRequest) =>
@@ -1703,6 +1730,7 @@ export function useMesShiftHandovers() {
     ),
     handoversError: handoversQuery.error,
     handoversPending: handoversQuery.isLoading,
+    handoversState: businessReadState(handoversQuery, () => hasBusinessContext(filters)),
     handoversTotal: computed(() => envelopeTotal(handoversQuery.data.value)),
     refreshHandovers: () => refetchWithBusinessContext(filters, handoversQuery),
   }
@@ -1804,6 +1832,7 @@ export function useMesCapacityImpacts() {
     ),
     capacityImpactsError: capacityQuery.error,
     capacityImpactsPending: capacityQuery.isLoading,
+    capacityImpactsState: businessReadState(capacityQuery, () => hasBusinessContext(filters)),
     capacityImpactsTotal: computed(() => envelopeTotal(capacityQuery.data.value)),
     filters,
     refreshCapacityImpacts: () => refetchWithBusinessContext(filters, capacityQuery),
@@ -1855,6 +1884,7 @@ export function useMesSchedules() {
     scheduleHistoryTotal: computed(() => envelopeTotal(historyQuery.data.value)),
     scheduleHistoryError: historyQuery.error,
     scheduleHistoryPending: historyQuery.isLoading,
+    scheduleHistoryState: businessReadState(historyQuery, () => hasBusinessContext(filters)),
     refreshScheduleHistory: () => refetchWithBusinessContext(filters, historyQuery),
     runSchedule: (body: BusinessConsoleRunScheduleRequest) =>
       runScheduleMutation.mutateAsync({ body }),

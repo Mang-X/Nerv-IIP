@@ -31,7 +31,14 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
-import { formatDate, formatQuantity, pickerInvalidClass } from '../shared'
+import {
+  UNAVAILABLE_TEXT,
+  erpReadState,
+  formatDate,
+  formatQuantity,
+  pickerInvalidClass,
+  readCount,
+} from '../shared'
 
 definePage({
   meta: {
@@ -81,13 +88,34 @@ const requestedQuantity = computed(() =>
     .flatMap((r) => r.lines ?? [])
     .reduce((sum, line) => sum + (line.quantity ?? 0), 0),
 )
+const readState = computed(() =>
+  erpReadState({
+    noun: '询价单',
+    unit: '张',
+    ready: rfqs.ready.value,
+    pending: rfqs.pending.value,
+    error: rfqs.error.value,
+    total: rfqs.total.value,
+    filtered: Boolean(rfqs.filters.keyword || rfqs.filters.status),
+    emptyHint: '还没有询价单。可从采购申请或供应商策略发起真实询价。',
+  }),
+)
+
 const rfqCells = computed<NvMetricStripCell[]>(() => [
-  { key: 'open', label: '询价中', value: openCount.value, unit: '单', meta: '等待供应商回价' },
+  {
+    key: 'open',
+    label: '询价中',
+    value: readCount(readState.value, openCount.value),
+    unit: readState.value.trustworthy ? '单' : '',
+    meta: readState.value.trustworthy ? '等待供应商回价' : readState.value.emptyMessage,
+  },
   {
     key: 'quantity',
     label: '询价数量',
-    value: formatQuantity(requestedQuantity.value),
-    meta: `当前列表 ${rfqs.items.value.length} 张询价单合计`,
+    value: readState.value.trustworthy ? formatQuantity(requestedQuantity.value) : UNAVAILABLE_TEXT,
+    meta: readState.value.trustworthy
+      ? `当前列表 ${rfqs.items.value.length} 张询价单合计`
+      : readState.value.emptyMessage,
   },
 ])
 
@@ -165,7 +193,7 @@ async function submit() {
     <NvPageHeader
       title="询价 RFQ"
       :breadcrumbs="[{ label: '经营管理' }, { label: '采购' }]"
-      :count="`${rfqs.total.value} 张 RFQ`"
+      :count="readState.count"
     >
       <template #actions>
         <NvButton
@@ -209,7 +237,12 @@ async function submit() {
       :loading="rfqs.pending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无 RFQ。可从采购申请或供应商策略发起真实询价。"
+      :empty-message="readState.emptyMessage"
+      :error="readState.error"
+      :error-message="readState.errorMessage"
+      :awaiting-scope="readState.awaitingScope"
+      :awaiting-scope-message="readState.awaitingScopeMessage"
+      @retry="rfqs.refresh"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >

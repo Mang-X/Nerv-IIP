@@ -18,6 +18,8 @@ import {
   useQualityUomCatalog,
 } from '@/composables/useQualityPickerCatalog'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -322,6 +324,13 @@ const canCreateRecord = computed(
     validResultLines.value.length > 0,
 )
 
+// 检验方案读面只回编码（SKU-… / WC-… / DEV-…），中文名在主数据里，按编码 join 出来。
+const { resolveSkuName } = useSkuNames()
+const { resolveDevice, resolveWorkCenter } = useMasterDataDisplayNames({
+  devices: true,
+  workCenters: true,
+})
+
 type PlanRow = BusinessConsoleQualityItem
 const columns: NvDataTableColumn<PlanRow>[] = [
   { key: 'code', header: '方案', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
@@ -512,13 +521,18 @@ function categoryLabel(value?: string | null) {
   if (!code) return ''
   return CATEGORY_LABELS[code.toLowerCase()] ?? code
 }
+/** 「中文名（编码）」；名录查不到就只显编码，不编造名字。 */
+function namedCode(code: string | null | undefined, name: string | undefined) {
+  if (!isPresent(code)) return undefined
+  return name ? `${name}（${code}）` : code
+}
 function qualityItemSummary(item: BusinessConsoleQualityItem) {
   const values = [
     categoryLabel(item.category),
-    item.skuCode,
+    namedCode(item.skuCode, resolveSkuName(item.skuCode)),
     item.partnerId,
-    item.workCenterId,
-    item.deviceAssetId,
+    namedCode(item.workCenterId, resolveWorkCenter(item.workCenterId)),
+    namedCode(item.deviceAssetId, resolveDevice(item.deviceAssetId)),
     item.documentType,
   ].filter(isPresent)
   return values.length ? values.join(' / ') : '无'

@@ -76,6 +76,7 @@ function listShape(itemsRef: () => Array<Record<string, unknown>>) {
     environmentId: computed(() => 'env-dev'),
     error: shallowRef(undefined),
     pending: shallowRef(false),
+    ready: computed(() => true),
     refresh: vi.fn(),
   }
 }
