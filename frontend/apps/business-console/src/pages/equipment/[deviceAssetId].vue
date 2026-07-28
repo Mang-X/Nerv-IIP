@@ -623,7 +623,9 @@ function formatError(error: unknown) {
 <template>
   <BusinessLayout>
     <NvPageHeader
-      :title="filters.deviceAssetId ? `设备详情：${deviceLabel(filters.deviceAssetId)}` : '设备详情'"
+      :title="
+        filters.deviceAssetId ? `设备详情：${deviceLabel(filters.deviceAssetId)}` : '设备详情'
+      "
       :breadcrumbs="[{ label: '设备监控（IoT）' }]"
     >
       <template #actions>

@@ -1,7 +1,9 @@
 import type { ListBusinessConsoleMesWorkOrdersData } from '@nerv-iip/api-client'
 import type { StatusTone } from '@nerv-iip/ui'
 
-type MesStatusValue = NonNullable<NonNullable<ListBusinessConsoleMesWorkOrdersData['query']>['status']>
+type MesStatusValue = NonNullable<
+  NonNullable<ListBusinessConsoleMesWorkOrdersData['query']>['status']
+>
 
 export type MesStatusOption = {
   value: 'all' | MesStatusValue
@@ -135,10 +137,7 @@ export function isFailedReceiptStatus(status?: string | null) {
   return normalizeReceiptStatus(status) === 'inventorypostingfailed'
 }
 
-export const mesDowntimeStatusOptions = statusOptions([
-  'open',
-  'recovered',
-])
+export const mesDowntimeStatusOptions = statusOptions(['open', 'recovered'])
 
 export const mesCapacityStatusOptions = mesDowntimeStatusOptions
 

@@ -305,7 +305,10 @@ function formatError(error: unknown) {
       empty-message="暂无保养计划。为关键设备登记周期保养，再用「生成到期工单」批量开单。"
     >
       <template #cell-actions="{ row }">
-        <NvRowActions v-if="canManagePlans" :label="`保养计划操作 ${row.planCode ?? MISSING_PLAN_CODE}`">
+        <NvRowActions
+          v-if="canManagePlans"
+          :label="`保养计划操作 ${row.planCode ?? MISSING_PLAN_CODE}`"
+        >
           <NvDropdownMenuItem :disabled="!row.planId" @click="openEdit(row)">
             <PencilIcon aria-hidden="true" />
             编辑触发条件

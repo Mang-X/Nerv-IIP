@@ -27,7 +27,6 @@ import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDe
 import {
   NvButton,
   NvCombobox,
-  NvSearchSelect,
   NvDataTable,
   NvDialog,
   NvDialogContent,

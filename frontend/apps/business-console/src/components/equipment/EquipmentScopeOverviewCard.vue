@@ -4,7 +4,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { NvBadge, NvButton, NvDataTable } from '@nerv-iip/ui'
 import { ArrowRightIcon } from '@lucide/vue'
 import { computed } from 'vue'
-import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 
 /**
  * 设备域四页共用的「范围设备总览」聚合视图：未下钻到单台设备时，
@@ -24,22 +24,15 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (e: 'select', code: string): void }>()
 
-// 车间 / 产线在设备台账上只有编码，中文名在各自的主数据目录里，这里按编码 join 出来。
-const workshopSource = useBusinessMasterDataResources('workshop')
-const lineSource = useBusinessMasterDataResources('production-line')
-function nameIndex(items: BusinessConsoleResourceItem[]) {
-  const map = new Map<string, string>()
-  for (const item of items) {
-    if (item.code) map.set(item.code, item.displayName ?? item.code)
-  }
-  return map
-}
-const workshopNameByCode = computed(() => nameIndex(workshopSource.resources.value))
-const lineNameByCode = computed(() => nameIndex(lineSource.resources.value))
+// 车间 / 产线在设备台账上只有编码，中文名在各自的主数据目录里，走统一名录解析 join 出来。
+const { resolveWorkshop, resolveLine } = useMasterDataDisplayNames({
+  workshops: true,
+  lines: true,
+})
 /** 目录查不到就只显编码，不编名字。 */
-function scopeName(index: Map<string, string>, code?: string | null) {
+function scopeName(resolve: (code?: string | null) => string | undefined, code?: string | null) {
   if (!code) return '未划分'
-  return index.get(code) ?? code
+  return resolve(code) ?? code
 }
 
 /** 「名称 编号」串，供排序与导出用；没登记名称就只有编号，不编名字。 */
@@ -60,13 +53,13 @@ const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
     key: 'workshopCode',
     header: '车间',
     width: 'w-32',
-    accessor: (r) => scopeName(workshopNameByCode.value, r.workshopCode),
+    accessor: (r) => scopeName(resolveWorkshop, r.workshopCode),
   },
   {
     key: 'lineCode',
     header: '产线',
     width: 'w-32',
-    accessor: (r) => scopeName(lineNameByCode.value, r.lineCode),
+    accessor: (r) => scopeName(resolveLine, r.lineCode),
   },
   { key: 'active', header: '台账状态', width: 'w-24' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-32' },

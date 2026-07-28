@@ -102,9 +102,7 @@ function openFull() {
           </div>
           <div class="flex justify-between gap-3">
             <span class="text-muted-foreground">物料</span>
-            <span v-if="detail.skuId" class="font-medium">{{
-              resolveSkuLabel(detail.skuId)
-            }}</span>
+            <span v-if="detail.skuId" class="font-medium">{{ resolveSkuLabel(detail.skuId) }}</span>
             <span v-else class="text-muted-foreground">—</span>
           </div>
         </div>

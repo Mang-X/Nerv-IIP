@@ -107,7 +107,10 @@ const receiptContextItems = computed(() => {
   return [
     { label: '采购单', value: row.purchaseOrderNo },
     { label: '采购行', value: row.lineNo },
-    { label: '供应商', value: row.supplierName ? `${row.supplierName}（${row.supplierCode}）` : row.supplierCode },
+    {
+      label: '供应商',
+      value: row.supplierName ? `${row.supplierName}（${row.supplierCode}）` : row.supplierCode,
+    },
     { label: '物料', value: row.skuName ? `${row.skuName}（${row.skuCode}）` : row.skuCode },
     { label: '订单数量', value: formatQuantity(row.orderedQuantity) },
     { label: '已收数量', value: formatQuantity(row.receivedQuantity) },

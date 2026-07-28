@@ -11,7 +11,10 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useBusinessApproval } from '@/composables/useBusinessApproval'
-import { useBusinessMasterDataResources, useBusinessWorkers } from '@/composables/useBusinessMasterData'
+import {
+  useBusinessMasterDataResources,
+  useBusinessWorkers,
+} from '@/composables/useBusinessMasterData'
 import { APPROVAL_DOCUMENT_TYPE_OPTIONS } from '@/data/approvalReference'
 import { APPROVAL_DECISION_LABELS, DOCUMENT_TYPE_LABELS, labelFor } from '@/data/businessLabels'
 import { usePagedList } from '@/composables/usePagedList'
@@ -130,10 +133,17 @@ const templateError = shallowRef('')
 
 // ── 模板 / 单据类型 / 审批人 的受控取值 ──────────────────────────
 const documentTypeOptions = APPROVAL_DOCUMENT_TYPE_OPTIONS
-function documentTypeLabel(value?: string | null) {
+/**
+ * 单据类型码值 → 中文。
+ *
+ * 两级查表：先查发起审批的受控值（措辞必须与新建下拉一致），再退到跨域显示词表——
+ * 审批列表会回显历史链路上的其它单据类型，那些不在受控值里，但同样不能把英文码印上屏。
+ */
+function documentTypeLabel(value?: string | null, fallback = '') {
   const code = (value ?? '').trim()
-  if (!code) return ''
-  return documentTypeOptions.find((option) => option.value === code)?.label ?? code
+  if (!code) return fallback
+  const controlled = documentTypeOptions.find((option) => option.value === code)?.label
+  return controlled ?? labelFor(DOCUMENT_TYPE_LABELS, code, fallback || code)
 }
 
 // 委托的「单据范围」可留空代表全部单据；NvSelect 不接受空串值，用 `all` 哨兵代理。
@@ -155,7 +165,7 @@ watch(
 // 模板编码既可能复用已有模板（改版本 / 改步骤），也可能是本次新建的编码——
 // 给已有模板编码做建议，同时保留录入新编码的能力。
 const templateCodeSuggestions = computed(() => {
-  const byCode = new Map<string, { value: string, label: string, hint?: string }>()
+  const byCode = new Map<string, { value: string; label: string; hint?: string }>()
   for (const template of approval.templates.value) {
     const code = template.templateCode?.trim()
     if (!code || byCode.has(code)) continue
@@ -334,14 +344,9 @@ const decisionContextItems = computed(() => {
   ]
 })
 
-/** 单据类型码值 → 中文（`purchase-order` → 采购订单）；词表没有的原样显示，不编造。 */
-function documentTypeLabel(value?: string | null, fallback = '业务单据') {
-  return labelFor(DOCUMENT_TYPE_LABELS, value, fallback)
-}
-
 function documentLabel(row: { documentType?: string | null; documentId?: string | null }) {
   const id = row.documentId ?? ''
-  const type = documentTypeLabel(row.documentType)
+  const type = documentTypeLabel(row.documentType, '业务单据')
   return id ? `${type} · ${id}` : type
 }
 
@@ -1048,7 +1053,9 @@ function toIsoFromLocalInput(value: string) {
                     ? '暂无员工，请先在基础数据维护员工'
                     : '暂无部门，请先在基础数据维护组织架构'
                 "
-                :loading="templateForm.approverType === 'user' ? workersPending : departmentsPending"
+                :loading="
+                  templateForm.approverType === 'user' ? workersPending : departmentsPending
+                "
                 aria-label="审批人"
                 clearable
               />

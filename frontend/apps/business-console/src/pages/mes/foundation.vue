@@ -45,7 +45,9 @@ const {
 const { skuOptions, skusPending, productionVersionOptions, productionVersionsPending } =
   useMesMaterialVersionCatalog()
 
-function scopeModel(field: 'siteCode' | 'lineCode' | 'workCenterCode' | 'skuId' | 'productionVersionId') {
+function scopeModel(
+  field: 'siteCode' | 'lineCode' | 'workCenterCode' | 'skuId' | 'productionVersionId',
+) {
   return computed({
     get: () => filters[field] ?? '',
     set: (value: string) => {
@@ -186,9 +188,7 @@ const columns: NvDataTableColumn<ReadinessArea>[] = [
             :options="lineChoices"
             title="选择产线"
             placeholder="全部"
-            :source-text="
-              siteValue ? '仅列所选工厂下的产线' : '数据来自基础数据产线主数据'
-            "
+            :source-text="siteValue ? '仅列所选工厂下的产线' : '数据来自基础数据产线主数据'"
             :empty-text="
               siteValue ? '所选工厂下暂无产线，请先在基础数据维护' : '暂无产线，请先在基础数据维护'
             "
@@ -206,9 +206,7 @@ const columns: NvDataTableColumn<ReadinessArea>[] = [
             title="选择工作中心"
             placeholder="全部"
             :source-text="
-              lineValue || siteValue
-                ? '仅列所选范围下的工作中心'
-                : '数据来自基础数据工作中心主数据'
+              lineValue || siteValue ? '仅列所选范围下的工作中心' : '数据来自基础数据工作中心主数据'
             "
             empty-text="所选范围下暂无工作中心，请先在基础数据维护"
             :loading="workCentersPending"

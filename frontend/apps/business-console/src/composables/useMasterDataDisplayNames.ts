@@ -12,6 +12,10 @@ export interface MasterDataDisplayNameOptions {
   teams?: boolean
   /** 计量单位（unit-of-measure）。 */
   uoms?: boolean
+  /** 车间（workshop）。 */
+  workshops?: boolean
+  /** 产线（production-line）。 */
+  lines?: boolean
 }
 
 /**
@@ -43,6 +47,8 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
   const workCenterSource = source(options.workCenters, 'work-center')
   const teamSource = source(options.teams, 'team')
   const uomSource = source(options.uoms, 'unit-of-measure')
+  const workshopSource = source(options.workshops, 'workshop')
+  const lineSource = source(options.lines, 'production-line')
 
   function indexOf(items: { code?: string | null; displayName?: string | null }[] | undefined) {
     const map = new Map<string, string>()
@@ -57,6 +63,8 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
   const workCenterByCode = computed(() => indexOf(workCenterSource?.resources.value))
   const teamByCode = computed(() => indexOf(teamSource?.resources.value))
   const uomByCode = computed(() => indexOf(uomSource?.resources.value))
+  const workshopByCode = computed(() => indexOf(workshopSource?.resources.value))
+  const lineByCode = computed(() => indexOf(lineSource?.resources.value))
 
   const resolver = (index: typeof deviceByCode) => (code?: string | null) => {
     if (!code) return undefined
@@ -70,6 +78,8 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
     resolveWorkCenter: resolver(workCenterByCode),
     resolveTeam: resolver(teamByCode),
     resolveUom: resolver(uomByCode),
+    resolveWorkshop: resolver(workshopByCode),
+    resolveLine: resolver(lineByCode),
     /** 计量单位展示串：「件 (pcs)」，名录缺失时只显编码。 */
     formatUom(code?: string | null, fallback = ''): string {
       if (!code) return fallback
@@ -81,5 +91,7 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
     workCenterByCode,
     teamByCode,
     uomByCode,
+    workshopByCode,
+    lineByCode,
   }
 }

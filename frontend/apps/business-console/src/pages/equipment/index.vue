@@ -248,11 +248,9 @@ function formatError(error: unknown) {
             class="grid leading-tight text-brand underline-offset-4 hover:underline"
           >
             <span class="font-medium">{{ deviceLabel(row.deviceAssetId) }}</span>
-            <span
-              v-if="resolveDevice(row.deviceAssetId)"
-              class="text-xs text-muted-foreground"
-              >{{ row.deviceAssetId }}</span
-            >
+            <span v-if="resolveDevice(row.deviceAssetId)" class="text-xs text-muted-foreground">{{
+              row.deviceAssetId
+            }}</span>
           </RouterLink>
         </template>
         <template #cell-currentState="{ row }">

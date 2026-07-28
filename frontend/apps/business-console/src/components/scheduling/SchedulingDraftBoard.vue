@@ -64,7 +64,9 @@ const view = shallowRef('gantt')
               ·
               {{
                 item.message ||
-                (item.reasonCode ? describeScheduleInvalidationReason(item.reasonCode) : '待重新排程')
+                (item.reasonCode
+                  ? describeScheduleInvalidationReason(item.reasonCode)
+                  : '待重新排程')
               }}
             </p>
           </div>

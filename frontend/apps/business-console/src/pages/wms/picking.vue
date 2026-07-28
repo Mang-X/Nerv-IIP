@@ -3,6 +3,7 @@ import type { BusinessConsoleWmsWarehouseTaskItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
+import { wmsStatusTone } from '@/data/businessLabels'
 import { useWmsOutboundOrders, useWmsPickingTasks } from '@/composables/useBusinessWms'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
@@ -99,7 +100,8 @@ const outboundOrderNoById = computed(() => {
 })
 const outboundOrderSelection = computed({
   // 目录还没到位时如实回落显示已有值，不让选择框看起来是空的。
-  get: () => outboundOrderNoById.value.get(createForm.outboundOrderId) ?? createForm.outboundOrderId,
+  get: () =>
+    outboundOrderNoById.value.get(createForm.outboundOrderId) ?? createForm.outboundOrderId,
   set: (no: string) => {
     createForm.outboundOrderId = outboundOrderIdByNo.value.get(no) ?? no
   },

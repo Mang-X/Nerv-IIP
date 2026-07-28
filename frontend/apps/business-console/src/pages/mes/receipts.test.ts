@@ -6,6 +6,55 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/stores/auth'
 import ReceiptsPage from './receipts.vue'
 
+// 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
+// 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
+vi.mock('@/composables/useSkuNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useSkuNames: () => ({
+      resolveSkuName: () => undefined,
+      resolveSkuLabel: (code?: string | null) => code ?? '未指定物料',
+      skuByCode: computed(() => new Map<string, string>()),
+      skusPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useBusinessPartnerNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useBusinessPartnerNames: () => ({
+      resolvePartner: () => undefined,
+      resolvePartnerLabel: (code?: string | null, fallback = '未指定') => code ?? fallback,
+      partnerByCode: computed(() => new Map<string, string>()),
+      partners: computed(() => []),
+      partnersPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+  const { computed } = await import('vue')
+  const emptyIndex = computed(() => new Map<string, string>())
+  return {
+    useMasterDataDisplayNames: () => ({
+      resolveDevice: () => undefined,
+      resolveLocation: () => undefined,
+      resolveWorkCenter: () => undefined,
+      resolveTeam: () => undefined,
+      resolveUom: () => undefined,
+      resolveWorkshop: () => undefined,
+      resolveLine: () => undefined,
+      formatUom: (code?: string | null, fallback = '') => code ?? fallback,
+      deviceByCode: emptyIndex,
+      locationByCode: emptyIndex,
+      workCenterByCode: emptyIndex,
+      teamByCode: emptyIndex,
+      uomByCode: emptyIndex,
+      workshopByCode: emptyIndex,
+      lineByCode: emptyIndex,
+    }),
+  }
+})
+
 const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }))
 const routerState = vi.hoisted(() => ({ replace: vi.fn(), push: vi.fn() }))
 
@@ -15,7 +64,11 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('@/composables/mes/useMesDisplayNames', () => ({
-  useMesDisplayNames: () => ({ resolveSku: (v?: string | null) => v ?? '无' }),
+  useMesDisplayNames: () => ({
+    resolveSku: (v?: string | null) => v ?? '无',
+    // 完工入库弹窗改用 resolveSkuLabel 显示成品（查不到只显编码，不编物料名）。
+    resolveSkuLabel: (v?: string | null) => v ?? '未指定物料',
+  }),
 }))
 
 const notifySpies = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
