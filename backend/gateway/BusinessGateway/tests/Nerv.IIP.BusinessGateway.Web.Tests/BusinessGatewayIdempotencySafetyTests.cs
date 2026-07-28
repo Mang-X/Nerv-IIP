@@ -71,6 +71,23 @@ public sealed class BusinessGatewayIdempotencySafetyTests
     }
 
     [Fact]
+    public void Accepted_receipt_preserves_a_governed_rooted_application_readback()
+    {
+        var receipt = BusinessConsoleOperationReceipts.Accepted(
+            "iiot.alarm.acknowledge",
+            "industrial-telemetry",
+            "alarm-event",
+            "alarm-001",
+            "/api/business-console/v1/equipment/alarms?organizationId=org-001",
+            "alarm-intent-001");
+
+        Assert.Equal(HttpMethod.Get.Method, receipt.ReadbackMethod);
+        Assert.Equal(
+            "/api/business-console/v1/equipment/alarms?organizationId=org-001",
+            receipt.ReadbackPath);
+    }
+
+    [Fact]
     public async Task Downstream_idempotency_conflict_is_preserved_as_a_stable_409()
     {
         using var httpClient = Client(

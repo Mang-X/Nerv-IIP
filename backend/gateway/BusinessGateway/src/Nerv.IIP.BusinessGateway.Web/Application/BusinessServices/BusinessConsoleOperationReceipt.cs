@@ -56,8 +56,9 @@ internal static class BusinessConsoleOperationReceipts
         DateTimeOffset? changedAtUtc = null)
     {
         var normalizedReadbackPath = Required(readbackPath);
-        if (!normalizedReadbackPath.StartsWith("/api/business-console/v1/", StringComparison.Ordinal)
-            || Uri.TryCreate(normalizedReadbackPath, UriKind.Absolute, out _))
+        // A rooted application path is parsed as an absolute file URI on Unix,
+        // so the governed route prefix is the portable trust boundary here.
+        if (!normalizedReadbackPath.StartsWith("/api/business-console/v1/", StringComparison.Ordinal))
         {
             throw InvalidReceipt();
         }
