@@ -4,8 +4,28 @@ import { describe, expect, it, vi } from 'vitest'
 
 import SchedulesPage from './schedules.vue'
 
+const historyRow = {
+  scheduleVersion: 43,
+  trigger: 'RushOrder',
+  scheduledAtUtc: '2026-07-04T08:00:00Z',
+  assignmentCount: 1,
+  affectedWorkOrderCount: 1,
+  affectedWorkOrderIds: ['WO-002'],
+  assignments: [
+    {
+      workOrderId: 'WO-002',
+      operationTaskId: 'OP-20',
+      workCenterId: 'WC-02',
+      startUtc: '2026-07-04T09:00:00Z',
+      endUtc: '2026-07-04T10:00:00Z',
+      reason: '急件插单重排',
+    },
+  ],
+}
+
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesSchedules: () => ({
+    filters: { organizationId: 'org', environmentId: 'dev', skip: 0, take: 20 },
     lastSchedule: computed(() => ({
       scheduleVersion: 42,
       trigger: 'Manual',
@@ -22,6 +42,11 @@ vi.mock('@/composables/useBusinessMes', () => ({
       ],
       affectedWorkOrderIds: ['WO-001'],
     })),
+    scheduleHistory: computed(() => [historyRow]),
+    scheduleHistoryTotal: computed(() => 72),
+    scheduleHistoryError: ref(undefined),
+    scheduleHistoryPending: ref(false),
+    refreshScheduleHistory: vi.fn(),
     runSchedule: vi.fn(),
     runScheduleError: ref(undefined),
     runSchedulePending: ref(false),
@@ -45,7 +70,7 @@ const stubs = {
   NvDataTable: {
     props: ['rows', 'columns', 'emptyMessage'],
     template:
-      '<section>{{ emptyMessage }}<div v-for="row in rows" :key="row.operationTaskId">{{ row.workOrderId }} {{ row.workCenterId }}</div></section>',
+      '<section>{{ emptyMessage }}<div v-for="(row, index) in rows" :key="index">{{ row.workOrderId }} {{ row.workCenterId }} {{ row.scheduleVersion }} {{ row.trigger }}</div></section>',
   },
   NvDialog: {
     props: ['open'],
@@ -120,10 +145,14 @@ describe('MES rule scheduling page IA copy', () => {
     const text = wrapper.text()
 
     expect(text).toContain('规则排程')
-    expect(text).toContain('数据来自最近一次规则排程运行')
     expect(text).toContain('排产工作台')
     expect(text).not.toContain('过渡')
     expect(text).not.toContain('正式 APS')
+
+    // 历史排程结果来自服务端读面，不再只有「本次会话刚跑的那一次」。
+    expect(text).toContain('历史排程运行')
+    expect(text).toContain('共 72 次')
+    expect(text).toContain('WO-002')
 
     const schedulingLink = wrapper
       .findAll('[data-router-link]')

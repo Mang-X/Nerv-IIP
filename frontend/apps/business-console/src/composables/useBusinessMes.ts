@@ -39,6 +39,7 @@ import {
   promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   listBusinessConsoleMesRelatedQualityItemsQueryOptions,
+  listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
@@ -95,6 +96,8 @@ import {
   type BusinessConsoleCreateRushWorkOrderRequest,
   type BusinessConsoleMesScheduleEnvelope,
   type BusinessConsoleMesScheduleResult,
+  type BusinessConsoleMesScheduleResultListEnvelope,
+  type BusinessConsoleMesScheduleResultRow,
   type BusinessConsoleMesWipSummaryEnvelope,
   type BusinessConsoleMesWipSummaryRow,
   type BusinessConsoleMesWorkOrderDetailEnvelope,
@@ -1809,18 +1812,50 @@ export function useMesCapacityImpacts() {
 
 export function useMesSchedules() {
   const queryCache = useQueryCache()
+  // 本次会话刚跑的那一次：立即展示，不必等历史列表重取。
   const lastScheduleEnvelope = shallowRef<BusinessConsoleMesScheduleEnvelope>()
+  const filters = defaultFilters()
+
+  // 历史排程结果的真读面。此前这里只有 mutation，页面刷新后历史一条都查不到。
+  const historyQuery = useQuery(() =>
+    withBusinessContextEnabled(
+      listBusinessConsoleMesScheduleResultsQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          skip: filters.skip,
+          take: filters.take,
+        },
+      }),
+      filters,
+    ),
+  )
 
   const runScheduleMutation = useMutation({
     ...runBusinessConsoleMesScheduleMutationOptions(),
     onSuccess(result) {
       lastScheduleEnvelope.value = result
       void invalidateWorkOrders(queryCache).catch(ignoreBackgroundError)
+      // 新跑的这一次已经落库，失效重取比乐观补一行更准。
+      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesScheduleResults']).catch(
+        ignoreBackgroundError,
+      )
     },
   })
 
   return {
+    filters,
     lastSchedule: computed(() => unwrapSchedule(lastScheduleEnvelope.value)),
+    scheduleHistory: computed<BusinessConsoleMesScheduleResultRow[]>(() =>
+      envelopeItems<
+        BusinessConsoleMesScheduleResultRow,
+        BusinessConsoleMesScheduleResultListEnvelope
+      >(historyQuery.data.value),
+    ),
+    scheduleHistoryTotal: computed(() => envelopeTotal(historyQuery.data.value)),
+    scheduleHistoryError: historyQuery.error,
+    scheduleHistoryPending: historyQuery.isLoading,
+    refreshScheduleHistory: () => refetchWithBusinessContext(filters, historyQuery),
     runSchedule: (body: BusinessConsoleRunScheduleRequest) =>
       runScheduleMutation.mutateAsync({ body }),
     runScheduleError: runScheduleMutation.error,

@@ -25,6 +25,7 @@ import {
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
+  listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   recordBusinessConsoleMesProductionReportMutationOptions,
@@ -241,6 +242,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   listBusinessConsoleMesRelatedQualityItemsQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesRelatedQualityItems' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleMesScheduleResultsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMesScheduleResults' }],
     query: vi.fn(),
   })),
   listBusinessConsoleMesShiftHandoversQueryOptions: vi.fn(() => ({
@@ -912,6 +917,24 @@ describe('business MES composables', () => {
 
     expect(
       coladaState.queryFactoriesById.get('getBusinessConsoleMesProductionReport')?.(),
+    ).toMatchObject({ enabled: false })
+  })
+
+  it('reads schedule history through the generated query option', () => {
+    const schedules = useMesSchedules()
+    schedules.filters.skip = 5
+    schedules.filters.take = 25
+
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesScheduleResults')?.()
+
+    expect(listBusinessConsoleMesScheduleResultsQueryOptions).toHaveBeenCalledWith({
+      query: expect.objectContaining({ skip: 5, take: 25 }),
+    })
+
+    // 业务上下文为空时不发请求（页面给空态，不是反复失败的请求）。
+    schedules.filters.organizationId = ''
+    expect(
+      coladaState.queryFactoriesById.get('listBusinessConsoleMesScheduleResults')?.(),
     ).toMatchObject({ enabled: false })
   })
 

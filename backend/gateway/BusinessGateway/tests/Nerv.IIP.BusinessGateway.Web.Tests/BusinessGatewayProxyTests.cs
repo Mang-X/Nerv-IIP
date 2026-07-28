@@ -6827,6 +6827,71 @@ public sealed class BusinessGatewayProxyTests
         Assert.All(handler.Requests, sent => Assert.Equal("internal-token-001", sent.Headers.Authorization!.Parameter));
     }
 
+    /// <summary>
+    /// 历史规则排程读面（「规则排程」页此前只有本次会话的内存结果，刷新即空）：
+    /// facade 必须把触发原因与分页原样转发，并把行、分配明细与合计一路带回。
+    /// </summary>
+    [Fact]
+    public async Task Mes_http_client_forwards_schedule_result_list_query_and_maps_rows()
+    {
+        var scheduledAtUtc = DateTimeOffset.Parse("2026-04-13T07:30:00Z");
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            items = new[]
+            {
+                new
+                {
+                    scheduleVersion = 12,
+                    trigger = "RushOrder",
+                    scheduledAtUtc,
+                    assignmentCount = 2,
+                    affectedWorkOrderCount = 1,
+                    affectedWorkOrderIds = new[] { "WO-2026-00042" },
+                    assignments = new[]
+                    {
+                        new
+                        {
+                            workOrderId = "WO-2026-00042",
+                            operationTaskId = "WO-2026-00042-OP-50",
+                            workCenterId = "WC-FA-01",
+                            startUtc = scheduledAtUtc,
+                            endUtc = scheduledAtUtc.AddHours(3),
+                            reason = "急件插单重排",
+                        },
+                    },
+                },
+            },
+            total = 72,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var response = await client.ListScheduleResultsAsync(
+            "internal-token-001",
+            new BusinessConsoleMesScheduleResultListRequest("org-001", "env-dev", Trigger: "RushOrder", Skip: 5, Take: 20),
+            CancellationToken.None);
+
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal(
+            "/api/business/v1/mes/schedules?organizationId=org-001&environmentId=env-dev&trigger=RushOrder&skip=5&take=20",
+            request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+
+        Assert.Equal(72, response.Total);
+        var row = Assert.Single(response.Items);
+        Assert.Equal(12, row.ScheduleVersion);
+        Assert.Equal("RushOrder", row.Trigger);
+        Assert.Equal(scheduledAtUtc, row.ScheduledAtUtc);
+        Assert.Equal(2, row.AssignmentCount);
+        Assert.Equal(1, row.AffectedWorkOrderCount);
+        Assert.Equal("WO-2026-00042", Assert.Single(row.AffectedWorkOrderIds));
+        var assignment = Assert.Single(row.Assignments);
+        Assert.Equal("WO-2026-00042-OP-50", assignment.OperationTaskId);
+        Assert.Equal("WC-FA-01", assignment.WorkCenterId);
+        Assert.Equal("急件插单重排", assignment.Reason);
+    }
+
     [Fact]
     public async Task Mes_http_client_forwards_finished_goods_receipt_unit_cost()
     {
@@ -12605,6 +12670,12 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         string internalBearerToken,
         string downtimeEventId,
         BusinessConsoleMesRecoverDowntimeEventRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesScheduleResultListResponse> ListScheduleResultsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesScheduleResultListRequest request,
         CancellationToken cancellationToken) =>
         throw new NotSupportedException();
 
