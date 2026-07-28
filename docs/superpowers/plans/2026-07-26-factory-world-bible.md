@@ -145,6 +145,26 @@
 | `mes.mes_sku_availabilities` | L0 既有 SKU 编码 | **黑名单表**，只记停用事实；清单只能挑非成品、非用料、非二供弹簧的原材料 |
 | `mes.schedule_results` | `SP-2026-W##`（周计划号） | 每周一次基线排程 + 周内 0–3 次重排；`schedule_version` 自 1 起连续，与运行时「已有条数 + 1」衔接 |
 
+四期补登记（设备维修备件 / 设备状态投影）：
+
+| 号段 | 用途 | 归属服务 |
+|---|---|---|
+| `MRO-{类}-##` | **维修备件目录**（轴承 / 油封 / 密封圈 / 同步带 / 滤芯 / 接触器 / 气缸 / 砂轮 / 刀具 / 液压油 / 传感器 / 电极…），挂在 `maintenance.maintenance_work_order_spare_part_lines.sku_code` 上 | Maintenance |
+
+`MRO-` 与 L0 §4 的 `RM-/PK-` 显式分段：`RM-/PK-` 是**减振器的用料**（进 BOM、进领料、进成品成本），
+`MRO-` 是**维修物耗**（与产品 BOM 无关）。把「机床主轴轴承」记成 `RM-SEL-01 油封` 会让物料主数据、
+BOM 与库存三处同时失真。因此 `MRO-` 备件**只存在于 Maintenance 侧的确定性 Spec**，
+**不写入 MasterData SKU 主数据、不进库存台账、不产生库存流水**——历史备件消耗若真去扣库存，
+会打破库存域「现存量 = 世界观流水代数和」的恒等式（WMS 那批已踩过），扣的还是不存在的账。
+`maintenance_work_order_spare_part_lines` 的表注释本就写明 “not inventory balances”。
+备件行本身没有独立单号（主键为 GUID，前端按 `SP-{id 后 8 位}` 呈现）。
+
+`maintenance.maintenance_device_states` **不占号段也不是业务台账**：它是
+`DeviceAssetChangedIntegrationEvent` 的最新投影（只有一个 `disabled` 布尔位），唯一用途是
+给保养计划生成做闸门。「设备在跑还是在修」的视图在 IndustrialTelemetry 的
+`device_state_snapshots`；维修态由工单 `Status=Open` + `AssetUnavailable` 表达。
+种子按 §3 的 46 台设备镜像 MasterData 启用态（全部 `disabled=false`，变更时刻 = 上线日）。
+
 `NCR-2026-D####` 单独分段的理由：MES 的车间不良记录需要在 `DispositionType`/`NcrCode`
 上引用一张 NCR，但 MES 不能跨库向 Quality 取号，两个服务各自按序号生成会直接抢占
 同一号段并在演示里出现「两张不同的 NCR-2026-0007」。用 `D` 前缀把 MES 引用侧的号

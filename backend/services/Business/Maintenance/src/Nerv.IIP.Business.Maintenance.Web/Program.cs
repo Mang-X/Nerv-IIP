@@ -192,16 +192,22 @@ try
             historyStopwatch.Stop();
             app.Logger.LogInformation(
                 "World-history maintenance seed completed in {ElapsedSeconds:F1}s: {Reasons} downtime reasons, " +
-                "{Plans} maintenance plans, {Inspections} inspections, {WorkOrders} work orders; validator checked " +
-                "{WorkOrdersChecked} work orders / {InspectionsChecked} inspections, total completed downtime " +
+                "{Plans} maintenance plans, {Inspections} inspections, {WorkOrders} work orders, " +
+                "{SparePartLines} spare part lines, {DeviceStates} device states; validator checked " +
+                "{WorkOrdersChecked} work orders / {InspectionsChecked} inspections / {SparePartLinesChecked} spare " +
+                "part lines / {DeviceStatesChecked} device states, total completed downtime " +
                 "{DowntimeMinutes} min ({OpenWorkOrders} open-tail work orders).",
                 historyStopwatch.Elapsed.TotalSeconds,
                 report.DowntimeReasonsWritten,
                 report.MaintenancePlansWritten,
                 report.InspectionsWritten,
                 report.WorkOrdersWritten,
+                report.SparePartLinesWritten,
+                report.DeviceStatesWritten,
                 report.Validation.WorkOrdersChecked,
                 report.Validation.InspectionsChecked,
+                report.Validation.SparePartLinesChecked,
+                report.Validation.DeviceStatesChecked,
                 report.Validation.CompletedDowntimeMinutes,
                 report.Validation.OpenWorkOrders);
             foreach (var line in report.Validation.Sample)

@@ -47,6 +47,8 @@ public sealed class WorldHistoryMaintenanceSeedPostgresTests(ITestOutputHelper o
         output.WriteLine($"maintenance-world-history-plans={first.MaintenancePlansWritten}");
         output.WriteLine($"maintenance-world-history-inspections={first.InspectionsWritten}");
         output.WriteLine($"maintenance-world-history-work-orders={first.WorkOrdersWritten}");
+        output.WriteLine($"maintenance-world-history-spare-part-lines={first.SparePartLinesWritten}");
+        output.WriteLine($"maintenance-world-history-device-states={first.DeviceStatesWritten}");
         output.WriteLine($"maintenance-world-history-open-work-orders={first.Validation.OpenWorkOrders}");
         output.WriteLine($"maintenance-world-history-completed-downtime-minutes={first.Validation.CompletedDowntimeMinutes}");
         output.WriteLine($"maintenance-world-history-first-run-ms={stopwatch.ElapsedMilliseconds}");
@@ -56,14 +58,19 @@ public sealed class WorldHistoryMaintenanceSeedPostgresTests(ITestOutputHelper o
             output.WriteLine($"maintenance-world-history-sample: {line}");
         }
 
-        // 设定集 §7 量级：维修工单约 120 张；点检/保养计划 92 条。
+        // 设定集 §7 量级：维修工单约 120 张；点检/保养计划 92 条；
+        // 四期：备件消耗行约 120 条（约 1.1 行/完工单）；设备状态投影 46 台全覆盖。
         Assert.InRange(first.WorkOrdersWritten, 90, 150);
         Assert.Equal(92, first.MaintenancePlansWritten);
+        Assert.InRange(first.SparePartLinesWritten, 90, 180);
+        Assert.Equal(46, first.DeviceStatesWritten);
 
         Assert.Equal(0, second.DowntimeReasonsWritten);
         Assert.Equal(0, second.MaintenancePlansWritten);
         Assert.Equal(0, second.InspectionsWritten);
         Assert.Equal(0, second.WorkOrdersWritten);
+        Assert.Equal(0, second.SparePartLinesWritten);
+        Assert.Equal(0, second.DeviceStatesWritten);
 
         Assert.True(
             stopwatch.ElapsedMilliseconds < BudgetMilliseconds,
