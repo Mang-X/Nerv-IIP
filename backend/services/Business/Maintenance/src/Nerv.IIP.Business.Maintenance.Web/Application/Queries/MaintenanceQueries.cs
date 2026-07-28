@@ -870,7 +870,9 @@ internal static class MaintenanceAvailabilityWindowCalculator
                 x.Status,
                 x.AssetUnavailableFromUtc!.Value,
                 x.AlarmClearedAtUtc,
-                x.CompletedAtUtc))
+                x.CompletedAtUtc,
+                x.SourcePlanCode,
+                x.SourceReferenceId))
             .ToArrayAsync(cancellationToken);
 
         var plans = await dbContext.MaintenancePlans
@@ -887,13 +889,13 @@ internal static class MaintenanceAvailabilityWindowCalculator
             .Where(x => x.OrganizationId == contract.OrganizationId)
             .Where(x => x.EnvironmentId == contract.EnvironmentId)
             .Where(x => deviceAssetIds.Contains(x.DeviceAssetId))
-            .Select(x => new MaintenanceInspectionPlanProjection(x.Id, x.DeviceAssetId))
+            .Select(x => new MaintenanceInspectionPlanProjection(x.Id, x.DeviceAssetId, x.PlanCode))
             .ToArrayAsync(cancellationToken);
         var inspectionWorkOrders = await dbContext.MaintenanceWorkOrders
             .Where(x => x.OrganizationId == contract.OrganizationId)
             .Where(x => x.EnvironmentId == contract.EnvironmentId)
             .Where(x => deviceAssetIds.Contains(x.DeviceAssetId))
-            .Select(x => new MaintenanceInspectionWorkOrderProjection(x.Id, x.DeviceAssetId))
+            .Select(x => new MaintenanceInspectionWorkOrderProjection(x.Id, x.DeviceAssetId, x.SourcePlanCode, x.SourceReferenceId))
             .ToArrayAsync(cancellationToken);
         var inspectionPlanIds = inspectionPlans.Select(x => x.PlanId).ToArray();
         var inspectionWorkOrderIds = inspectionWorkOrders.Select(x => x.WorkOrderId).ToArray();
@@ -922,7 +924,13 @@ internal static class MaintenanceAvailabilityWindowCalculator
                 endUtc,
                 workOrder.SourceAlarmId is null ? EquipmentRuntimeSourceType.Downtime : EquipmentRuntimeSourceType.Alarm,
                 workOrder.SourceAlarmId ?? workOrder.WorkOrderId.ToString(),
-                contract);
+                contract,
+                // 维修工单号（MWO-2026-####）按本服务既定约定落在 SourceReferenceId 上
+                // （见 WorldHistorySeedService 注释，先例 MWO-DEMO-001），这才是人读单号。
+                // 注意**不要**用 SourceAlarmId：它是 WH-DEV-ASM-12-press-force:0000 这类合成键，
+                // 不是给人看的编号。工单号缺失时回落到生成它的保养计划编码，再没有就回 null ——
+                // 宁可让界面显示占位，也不把 GUID 当业务标识上屏。
+                sourceReferenceLabel: workOrder.SourceReferenceId ?? workOrder.SourcePlanCode);
         }
 
         foreach (var plan in plans)
@@ -936,7 +944,9 @@ internal static class MaintenanceAvailabilityWindowCalculator
                 plan.WindowEndUtc,
                 EquipmentRuntimeSourceType.MaintenanceWindow,
                 plan.PlanCode,
-                contract);
+                contract,
+                // 保养窗口的 SourceReferenceId 本就是计划编码（人读），标签同值即可。
+                sourceReferenceLabel: plan.PlanCode);
         }
 
         var latestInspections = inspections
@@ -960,7 +970,8 @@ internal static class MaintenanceAvailabilityWindowCalculator
                 contract.WindowEndUtc,
                 EquipmentRuntimeSourceType.Inspection,
                 inspection.InspectionId.ToString(),
-                contract);
+                contract,
+                sourceReferenceLabel: ResolveInspectionReferenceLabel(inspection, inspectionPlans, inspectionWorkOrders));
         }
 
         return new EquipmentRuntimeAvailabilityResponse(
@@ -994,7 +1005,8 @@ internal static class MaintenanceAvailabilityWindowCalculator
         DateTimeOffset endUtc,
         EquipmentRuntimeSourceType sourceType,
         string sourceReferenceId,
-        EquipmentRuntimeAvailabilityRequest request)
+        EquipmentRuntimeAvailabilityRequest request,
+        string? sourceReferenceLabel = null)
     {
         var clippedStartUtc = Max(startUtc, request.WindowStartUtc);
         var clippedEndUtc = Min(endUtc, request.WindowEndUtc);
@@ -1014,7 +1026,8 @@ internal static class MaintenanceAvailabilityWindowCalculator
             SourceType: sourceType,
             SourceReferenceId: sourceReferenceId,
             MessageKey: reasonCode,
-            SubstituteDeviceAssetIds: []));
+            SubstituteDeviceAssetIds: [],
+            SourceReferenceLabel: sourceReferenceLabel));
     }
 
     private static string? ResolveInspectionDeviceAssetId(
@@ -1030,6 +1043,29 @@ internal static class MaintenanceAvailabilityWindowCalculator
         return inspection.WorkOrderId is null
             ? null
             : workOrders.FirstOrDefault(x => x.WorkOrderId == inspection.WorkOrderId)?.DeviceAssetId;
+    }
+
+    /// <summary>
+    /// 点检记录本身没有业务编号，人读标识取其所属保养计划的编码（PM-INSP-DAILY-01）；
+    /// 挂在工单下的点检取该工单的来源计划编码。都取不到时回 null，界面显示占位而不是 GUID。
+    /// </summary>
+    private static string? ResolveInspectionReferenceLabel(
+        MaintenanceInspectionAvailabilityProjection inspection,
+        IReadOnlyCollection<MaintenanceInspectionPlanProjection> plans,
+        IReadOnlyCollection<MaintenanceInspectionWorkOrderProjection> workOrders)
+    {
+        if (inspection.PlanId is not null)
+        {
+            return plans.FirstOrDefault(x => x.PlanId == inspection.PlanId)?.PlanCode;
+        }
+
+        if (inspection.WorkOrderId is null)
+        {
+            return null;
+        }
+
+        var workOrder = workOrders.FirstOrDefault(x => x.WorkOrderId == inspection.WorkOrderId);
+        return workOrder?.SourceReferenceId ?? workOrder?.SourcePlanCode;
     }
 
     private static string GetInspectionReferenceKey(MaintenanceInspectionAvailabilityProjection inspection)
@@ -1062,13 +1098,19 @@ internal sealed record MaintenanceWorkOrderAvailabilityProjection(
     MaintenanceWorkOrderStatus Status,
     DateTimeOffset AssetUnavailableFromUtc,
     DateTimeOffset? AlarmClearedAtUtc,
-    DateTimeOffset? CompletedAtUtc);
+    DateTimeOffset? CompletedAtUtc,
+    string? SourcePlanCode = null,
+    string? SourceReferenceId = null);
 
 internal sealed record MaintenancePlanAvailabilityProjection(MaintenancePlanId PlanId, string DeviceAssetId, string PlanCode, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
 
-internal sealed record MaintenanceInspectionPlanProjection(MaintenancePlanId PlanId, string DeviceAssetId);
+internal sealed record MaintenanceInspectionPlanProjection(MaintenancePlanId PlanId, string DeviceAssetId, string? PlanCode = null);
 
-internal sealed record MaintenanceInspectionWorkOrderProjection(MaintenanceWorkOrderId WorkOrderId, string DeviceAssetId);
+internal sealed record MaintenanceInspectionWorkOrderProjection(
+    MaintenanceWorkOrderId WorkOrderId,
+    string DeviceAssetId,
+    string? SourcePlanCode = null,
+    string? SourceReferenceId = null);
 
 internal sealed record MaintenanceInspectionAvailabilityProjection(
     MaintenanceInspectionId InspectionId,
