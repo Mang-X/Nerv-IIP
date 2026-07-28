@@ -20,7 +20,6 @@ import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNam
 import { useSkuNames } from '@/composables/useSkuNames'
 import {
   useWarehouseCodeCatalog,
-  WAREHOUSE_CATALOG_SOURCE_TEXT,
   WAREHOUSE_LOCATION_EMPTY_TEXT,
   WAREHOUSE_LOT_EMPTY_TEXT,
   WAREHOUSE_SERIAL_EMPTY_TEXT,
@@ -42,7 +41,6 @@ import {
   NvMetricRing,
   NvMetricStrip,
   NvPageHeader,
-  NvPagination,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -115,8 +113,15 @@ const {
   siteStockTrackedLines,
 } = useInventorySiteStockOverview(() => filters.siteCode)
 // 库位/批次/序列号后端无主数据读面，从台账与仓储作业记录派生可选项。
-const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
-  useWarehouseCodeCatalog(() => rows.value)
+const {
+  locationOptions,
+  locationSourceText,
+  lotOptions,
+  lotSourceText,
+  serialOptions,
+  serialSourceText,
+  warehouseCatalogPending,
+} = useWarehouseCodeCatalog(() => rows.value)
 const siteStockCoverageText = computed(() => {
   const base = `已扫描 ${siteStockScannedCount.value}/${siteStockTotalSkuCount.value} 个物料`
   return siteStockFailedCount.value > 0
@@ -179,24 +184,57 @@ const tablePending = computed(() => {
   if (!hasSkuSelection.value) return siteStockScanning.value && rows.value.length === 0
   return availabilityPending.value
 })
+const siteSelected = computed(() => (filters.siteCode ?? '').trim().length > 0)
+/**
+ * 计数三态：数不出来的时候绝不说「0 条」——0 是一个结论，只有真的查成功才配下。
+ * 未选范围 / 加载中 / 失败各说各的，别让一次 500 长得跟「本厂真没有批次」一样。
+ */
 const pageCount = computed(() => {
-  if (showSiteOverview.value) return `${rows.value.length} 条全厂批次`
-  if (!nearExpiryOnly.value) return `${rows.value.length} 条库存明细`
-  if (!hasExpirySite.value) return '请选择工厂'
-  if (!hasExpiryScope.value) return '业务上下文加载中'
-  if (expiryAlertsPending.value) return '加载中'
-  if (expiryAlertsError.value) return '加载失败'
-  if (!expiryAlertsSuccessful.value) return '等待查询'
-  return `${expiryAlertsTotal.value} 条预警明细`
-})
-const tableEmptyMessage = computed(() => {
-  if (nearExpiryOnly.value && !hasExpirySite.value) return '请选择工厂查看效期预警批次。'
-  if (nearExpiryOnly.value && !hasExpiryScope.value) return '业务上下文加载中，请稍候。'
-  if (nearExpiryOnly.value && expiryAlertsError.value) return '效期预警加载失败，请稍后重试。'
-  if (nearExpiryOnly.value) return '当前范围没有已过期或未来30天内到期的批次。'
-  if (availabilityError.value) return '库存批次加载失败，请稍后重试。'
+  if (nearExpiryOnly.value) {
+    if (!hasExpirySite.value) return '请选择工厂'
+    if (!hasExpiryScope.value) return '业务上下文加载中'
+    if (expiryAlertsError.value) return '读取失败'
+    if (expiryAlertsPending.value) return '加载中'
+    if (!expiryAlertsSuccessful.value) return '等待查询'
+    return `${expiryAlertsTotal.value} 条预警明细`
+  }
+  if (!siteSelected.value) return '请选择工厂'
   if (showSiteOverview.value) {
-    if (siteStockScanning.value) return '正在读取本厂批次台账。'
+    // 扫描是增量的：已经扫出行了就照实报数，个别物料失败在下方覆盖范围里单独交代。
+    if (rows.value.length === 0 && siteStockError.value) return '读取失败'
+    if (rows.value.length === 0 && siteStockScanning.value) return '扫描中'
+    return `${rows.value.length} 条全厂批次`
+  }
+  if (availabilityError.value) return '读取失败'
+  if (availabilityPending.value) return '加载中'
+  return `${rows.value.length} 条库存明细`
+})
+/** 表格错误态：读失败就说读失败，不许伪装成「没有数据」。 */
+const tableError = computed(() => {
+  if (nearExpiryOnly.value) return expiryAlertsError.value
+  // 全厂扫描是增量的，已经扫出行就不整表报错——失败数在覆盖范围文案里如实交代。
+  if (showSiteOverview.value) return rows.value.length === 0 ? siteStockError.value : undefined
+  return availabilityError.value
+})
+const tableErrorMessage = computed(() => {
+  if (nearExpiryOnly.value) return '效期预警读取失败，现在无法判断有没有临期批次。'
+  if (showSiteOverview.value) return '本厂批次台账读取失败，现在无法判断本厂有没有批次。'
+  return '库存批次读取失败，现在无法判断这个物料有没有批次。'
+})
+/** 还没形成查询条件时的中性态——什么结论都不下。 */
+const tableAwaitingScope = computed(() => {
+  if (nearExpiryOnly.value) return !hasExpirySite.value || !hasExpiryScope.value
+  return !siteSelected.value
+})
+const tableAwaitingScopeMessage = computed(() => {
+  if (nearExpiryOnly.value && !hasExpirySite.value) return '请选择工厂查看效期预警批次。'
+  if (nearExpiryOnly.value) return '业务上下文加载中，请稍候。'
+  return '请先选择工厂，再查本厂批次。'
+})
+/** 走到这里才是真的查成功且 0 条。 */
+const tableEmptyMessage = computed(() => {
+  if (nearExpiryOnly.value) return '当前范围没有已过期或未来30天内到期的批次。'
+  if (showSiteOverview.value) {
     if (siteStockTotalSkuCount.value === 0) return '暂无物料主数据，请先在基础数据维护物料。'
     return '已扫描的物料在本厂没有批次或序列号记录。可继续扫描其余物料，或换一个工厂。'
   }
@@ -351,6 +389,7 @@ function firstQuery(value: unknown) {
 
 async function refreshCurrentView() {
   if (nearExpiryOnly.value) await refreshExpiryAlerts()
+  else if (showSiteOverview.value) await refreshSiteStock()
   else await refreshAvailability()
 }
 </script>
@@ -447,7 +486,7 @@ async function refreshCurrentView() {
           :options="locationOptions"
           title="选择库位"
           placeholder="库位"
-          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+          :source-text="locationSourceText"
           :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
           :loading="warehouseCatalogPending"
           clearable
@@ -460,7 +499,7 @@ async function refreshCurrentView() {
           :options="lotOptions"
           title="选择批次"
           placeholder="批次"
-          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+          :source-text="lotSourceText"
           :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
           :loading="warehouseCatalogPending"
           clearable
@@ -473,7 +512,7 @@ async function refreshCurrentView() {
           :options="serialOptions"
           title="选择序列号"
           placeholder="序列号"
-          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+          :source-text="serialSourceText"
           :empty-text="WAREHOUSE_SERIAL_EMPTY_TEXT"
           :loading="warehouseCatalogPending"
           clearable
@@ -495,6 +534,12 @@ async function refreshCurrentView() {
       </template>
     </NvToolbar>
 
+    <!--
+      分页不是装饰：本厂批次台账**首屏就有三四千行**（实测前 24 个物料 = 3811 行，
+      且 93 个物料全扫完约 1.4 万行），每行 11 列、4~5 个 RouterLink。
+      一次性铺完等于同步做上万次路由解析 + 十万级组件实例，主线程会被钉死到打不开页面。
+      效期预警走服务端分页（manual），其余两种来源在前端切页。
+    -->
     <NvDataTable
       :columns="columns"
       :rows="rows"
@@ -502,8 +547,19 @@ async function refreshCurrentView() {
       :loading="tablePending"
       :searchable="false"
       :column-settings="false"
-      :pagination="false"
+      :manual="nearExpiryOnly"
+      :page="expiryAlertsPage"
+      :page-size="expiryAlertsPageSize"
+      :total-items="expiryAlertsTotal"
+      :page-size-options="[25, 50, 100, 200]"
+      :error="tableError"
+      :error-message="tableErrorMessage"
+      :awaiting-scope="tableAwaitingScope"
+      :awaiting-scope-message="tableAwaitingScopeMessage"
       :empty-message="tableEmptyMessage"
+      @update:page="expiryAlertsPage = $event"
+      @update:page-size="expiryAlertsPageSize = $event"
+      @retry="refreshCurrentView"
     >
       <template #cell-lotNo="{ row }">
         <div class="flex flex-col gap-0.5">
@@ -635,15 +691,5 @@ async function refreshCurrentView() {
         {{ siteStockScanning ? '扫描中…' : '继续扫描其余物料' }}
       </NvButton>
     </div>
-    <NvPagination
-      v-if="nearExpiryOnly && hasExpiryScope"
-      v-model:page="expiryAlertsPage"
-      v-model:page-size="expiryAlertsPageSize"
-      :total-items="expiryAlertsTotal"
-      :page-size-options="[25, 50, 100, 200]"
-      :show-edges="false"
-      :sibling-count="0"
-      class="mt-4"
-    />
   </BusinessLayout>
 </template>
