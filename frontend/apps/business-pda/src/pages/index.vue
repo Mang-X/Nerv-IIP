@@ -105,6 +105,13 @@ const inspectionEmptyExplanation = computed(() =>
     ? '当前组织/环境范围暂无待检任务；此列表不是个人待检。'
     : '缺少组织或环境范围，未发起查询。',
 )
+const inspectionFailure = computed(() =>
+  inspection.error.value
+    ? inspection.error.value
+    : inspection.hasFailedResponse.value
+      ? new Error('待检任务服务未返回成功结果，请重试。')
+      : null,
+)
 
 /** 快捷应用按登录人权限裁剪：无读权限的入口不出现（点了也是 403）。 */
 const KIND_PERMISSIONS: Record<string, string> = {
@@ -289,13 +296,14 @@ function openRoute(route: string) {
             !inspection.scopeReady.value ||
             (!inspection.pending.value &&
               !inspection.error.value &&
+              inspection.hasSuccessfulResponse.value &&
               inspection.tasks.value.length === 0)
           "
           :empty-explanation="inspectionEmptyExplanation"
         />
         <RetryableListError
-          v-if="inspection.error.value"
-          :error="inspection.error.value"
+          v-if="inspectionFailure"
+          :error="inspectionFailure"
           :pending="inspection.pending.value"
           fallback="待检任务加载失败，请重试。"
           test-id="home-inspection-error"
@@ -317,7 +325,10 @@ function openRoute(route: string) {
         </NvCellGroup>
         <div
           v-else-if="
-            inspection.scopeReady.value && !inspection.pending.value && !inspection.error.value
+            inspection.scopeReady.value &&
+            !inspection.pending.value &&
+            !inspection.error.value &&
+            inspection.hasSuccessfulResponse.value
           "
           class="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground"
         >

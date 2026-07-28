@@ -59,6 +59,8 @@ const hasScope = computed(() => Boolean(organizationId.value && environmentId.va
 const inspectionPending = ref(false)
 const inspectionError = ref<unknown>(null)
 const refreshInspection = vi.fn(async () => {})
+const inspectionHasSuccessfulResponse = ref(true)
+const inspectionHasFailedResponse = ref(false)
 
 vi.mock('@/composables/useWorkbenchHome', () => {
   const HOME_PERMISSIONS = {
@@ -111,6 +113,8 @@ vi.mock('@/composables/useWorkbenchHome', () => {
       pending: inspectionPending,
       error: inspectionError,
       refresh: refreshInspection,
+      hasSuccessfulResponse: inspectionHasSuccessfulResponse,
+      hasFailedResponse: inspectionHasFailedResponse,
       lastUpdatedAt: ref('2026-07-28T10:20:30.000Z'),
     }),
   }
@@ -155,6 +159,8 @@ describe('PDA home', () => {
     inspectionPending.value = false
     inspectionError.value = null
     refreshInspection.mockClear()
+    inspectionHasSuccessfulResponse.value = true
+    inspectionHasFailedResponse.value = false
   })
 
   it('shows the unacknowledged-alarm count badge on the 查看报警 tile, and hides it at zero', async () => {
@@ -228,6 +234,17 @@ describe('PDA home', () => {
     const wrapper = mount(HomePage)
 
     expect(wrapper.text()).toContain('当前组织/环境范围暂无待检任务')
+  })
+
+  it('shows a retryable inspection failure for success:false instead of a business empty state', async () => {
+    inspectionHasSuccessfulResponse.value = false
+    inspectionHasFailedResponse.value = true
+    const wrapper = mount(HomePage)
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('待检任务服务未返回成功结果')
+    expect(wrapper.text()).not.toContain('当前组织/环境范围暂无待检任务')
+    await wrapper.get('[data-testid="retry-list"]').trigger('click')
+    expect(refreshInspection).toHaveBeenCalledTimes(1)
   })
 
   it('renders my dispatch tasks with status tags, and an empty state without tasks', async () => {

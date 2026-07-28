@@ -36,8 +36,18 @@ type WorkOrder = BusinessConsoleMesWorkOrderItem
 
 const router = useRouter()
 
-const { filters, receipts, total, pending, error, lastUpdatedAt, refresh, createReceipt } =
-  useMesReceipts()
+const {
+  filters,
+  receipts,
+  total,
+  pending,
+  error,
+  lastUpdatedAt,
+  hasSuccessfulResponse,
+  hasFailedResponse,
+  refresh,
+  createReceipt,
+} = useMesReceipts()
 
 const {
   filters: workOrderFilters,
@@ -73,6 +83,13 @@ const emptyExplanation = computed(() =>
   !filters.organizationId || !filters.environmentId
     ? '缺少组织或环境范围，未发起查询。'
     : '当前组织/环境范围暂无完工入库申请；此列表暂不支持按当前人员归属筛选，不代表当前人员没有入库任务。',
+)
+const listFailure = computed(() =>
+  error.value
+    ? error.value
+    : hasFailedResponse.value
+      ? new Error('完工入库申请服务未返回成功结果，请重试。')
+      : null,
 )
 
 function formatReceiptNumber(value: number) {
@@ -314,13 +331,13 @@ function onScanWorkOrder(value: string) {
         :loaded="receipts.length"
         :total="total"
         :updated-at="lastUpdatedAt"
-        :empty="!pending && !error && receipts.length === 0"
+        :empty="!pending && !error && hasSuccessfulResponse && receipts.length === 0"
         :empty-explanation="emptyExplanation"
       />
 
       <RetryableListError
-        v-if="error"
-        :error="error"
+        v-if="listFailure"
+        :error="listFailure"
         :pending="pending"
         fallback="加载完工入库申请失败，请下拉刷新或重试。"
         test-id="receipt-error"
@@ -333,6 +350,7 @@ function onScanWorkOrder(value: string) {
           filters.environmentId &&
           !pending &&
           !error &&
+          hasSuccessfulResponse &&
           receipts.length === 0
         "
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"

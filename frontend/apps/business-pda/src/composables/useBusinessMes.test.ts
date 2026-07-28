@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick, reactive, shallowRef } from 'vue'
+import { nextTick, reactive, shallowRef, type ShallowRef } from 'vue'
 
 import {
   completeBusinessConsoleMesOperationTaskMutationOptions,
@@ -34,6 +34,8 @@ import {
 
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
+  queryDataRefById: new Map<string, ShallowRef<unknown>>(),
+  loadingById: new Map<string, ShallowRef<boolean>>(),
   refetchById: new Map<string, ReturnType<typeof vi.fn>>(),
   queryOptionsById: new Map<
     string,
@@ -156,10 +158,14 @@ vi.mock('@pinia/colada', () => ({
 
     const refetch = vi.fn()
     coladaState.refetchById.set(id, refetch)
+    const data = shallowRef(coladaState.queryDataById.get(id))
+    const isLoading = shallowRef(false)
+    coladaState.queryDataRefById.set(id, data)
+    coladaState.loadingById.set(id, isLoading)
     return {
-      data: shallowRef(coladaState.queryDataById.get(id)),
+      data,
       error: shallowRef(),
-      isLoading: shallowRef(false),
+      isLoading,
       refetch,
     }
   }),
@@ -196,6 +202,8 @@ describe('pda useBusinessMes composables', () => {
     sessionStorage.clear()
     receiptState.confirm.mockImplementation(async (value) => value)
     coladaState.queryDataById.clear()
+    coladaState.queryDataRefById.clear()
+    coladaState.loadingById.clear()
     coladaState.refetchById.clear()
     coladaState.queryOptionsById.clear()
     coladaState.queryFactoriesById.clear()
@@ -364,6 +372,50 @@ describe('pda useBusinessMes composables', () => {
 
     expect(materialIssue.lastUpdatedAt.value).not.toBeNull()
     expect(receipts.lastUpdatedAt.value).not.toBeNull()
+  })
+
+  it('exposes failed material-issue and receipt envelopes instead of treating them as successful empty lists', () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
+      success: false,
+      message: '领料申请查询失败',
+    })
+    coladaState.queryDataById.set('listBusinessConsoleMesFinishedGoodsReceiptRequests', {
+      success: false,
+      message: '完工入库申请查询失败',
+    })
+
+    const materialIssue = useMesMaterialIssue()
+    const receipts = useMesReceipts()
+
+    expect(materialIssue.hasSuccessfulResponse.value).toBe(false)
+    expect(materialIssue.hasFailedResponse.value).toBe(true)
+    expect(receipts.hasSuccessfulResponse.value).toBe(false)
+    expect(receipts.hasFailedResponse.value).toBe(true)
+  })
+
+  it('does not report stale successful envelopes as current success while refreshing', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
+      success: true,
+      data: { items: [], total: 0 },
+    })
+    coladaState.queryDataById.set('listBusinessConsoleMesFinishedGoodsReceiptRequests', {
+      success: true,
+      data: { items: [], total: 0 },
+    })
+
+    const materialIssue = useMesMaterialIssue()
+    const receipts = useMesReceipts()
+    expect(materialIssue.hasSuccessfulResponse.value).toBe(true)
+    expect(receipts.hasSuccessfulResponse.value).toBe(true)
+
+    coladaState.loadingById.get('listBusinessConsoleMesMaterialIssueRequests')!.value = true
+    coladaState.loadingById.get('listBusinessConsoleMesFinishedGoodsReceiptRequests')!.value = true
+    await nextTick()
+
+    expect(materialIssue.hasSuccessfulResponse.value).toBe(false)
+    expect(materialIssue.hasFailedResponse.value).toBe(false)
+    expect(receipts.hasSuccessfulResponse.value).toBe(false)
+    expect(receipts.hasFailedResponse.value).toBe(false)
   })
 
   it('enables list queries once a principal scope is present', () => {

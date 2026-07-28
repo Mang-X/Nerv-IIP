@@ -55,6 +55,8 @@ const receiptsPending = ref(false)
 const receiptsError = ref<unknown>(null)
 const receiptRows = ref(receipts)
 const receiptsLastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
+const receiptsHasSuccessfulResponse = ref(true)
+const receiptsHasFailedResponse = ref(false)
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesReceipts: () => ({
@@ -64,6 +66,8 @@ vi.mock('@/composables/useBusinessMes', () => ({
     pending: receiptsPending,
     error: receiptsError,
     lastUpdatedAt: receiptsLastUpdatedAt,
+    hasSuccessfulResponse: receiptsHasSuccessfulResponse,
+    hasFailedResponse: receiptsHasFailedResponse,
     refresh: refreshReceipts,
     createReceipt,
   }),
@@ -91,6 +95,8 @@ describe('PDA MES finished-goods receipt page', () => {
     receiptsPending.value = false
     receiptsError.value = null
     receiptRows.value = receipts
+    receiptsHasSuccessfulResponse.value = true
+    receiptsHasFailedResponse.value = false
   })
 
   it('renders the receipt list with readable Chinese status and work order numbers', () => {
@@ -130,6 +136,19 @@ describe('PDA MES finished-goods receipt page', () => {
 
     expect(wrapper.text()).toContain('当前组织/环境范围暂无完工入库申请')
     expect(wrapper.text()).toContain('不代表当前人员没有入库任务')
+  })
+
+  it('shows a retryable failure for success:false instead of a business empty state', async () => {
+    receiptRows.value = []
+    receiptsHasSuccessfulResponse.value = false
+    receiptsHasFailedResponse.value = true
+    const wrapper = mount(ReceiptPage)
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('完工入库申请服务未返回成功结果')
+    expect(wrapper.text()).not.toContain('当前组织/环境范围暂无完工入库申请')
+    await wrapper.get('[data-testid="retry-list"]').trigger('click')
+    expect(refreshReceipts).toHaveBeenCalledTimes(1)
   })
 
   it('scanning sets the receipt keyword filter', async () => {

@@ -53,7 +53,7 @@ import {
   peekPendingBusinessIntent,
 } from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { useListFreshness } from '@/composables/useListFreshness'
+import { useListFreshness, useListResponseState } from '@/composables/useListFreshness'
 import { computed, reactive, watch, watchEffect, type Ref } from 'vue'
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
@@ -879,6 +879,11 @@ export function useMesMaterialIssue() {
     () => requestsQuery.data.value,
     () => hasScope(filters),
   )
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    () => requestsQuery.data.value,
+    () => hasScope(filters),
+    requestsQuery.isLoading,
+  )
 
   const createMutation = useMutation({
     ...createBusinessConsoleMesMaterialIssueRequestMutationOptions(),
@@ -910,6 +915,8 @@ export function useMesMaterialIssue() {
     pending: requestsQuery.isLoading,
     error: requestsQuery.error,
     lastUpdatedAt,
+    hasSuccessfulResponse,
+    hasFailedResponse,
     refresh: () => (hasScope(filters) ? requestsQuery.refetch() : Promise.resolve()),
     createIssue: (workOrderId: string, body: CreateIssueInput) =>
       createMutation.mutateAsync({
@@ -978,6 +985,11 @@ export function useMesReceipts() {
     () => receiptsQuery.data.value,
     () => hasScope(filters),
   )
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    () => receiptsQuery.data.value,
+    () => hasScope(filters),
+    receiptsQuery.isLoading,
+  )
 
   const createMutation = useMutation({
     ...createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions(),
@@ -1000,6 +1012,8 @@ export function useMesReceipts() {
     pending: receiptsQuery.isLoading,
     error: receiptsQuery.error,
     lastUpdatedAt,
+    hasSuccessfulResponse,
+    hasFailedResponse,
     refresh: () => (hasScope(filters) ? receiptsQuery.refetch() : Promise.resolve()),
     createReceipt: (input: CreateReceiptInput) =>
       createMutation.mutateAsync({
