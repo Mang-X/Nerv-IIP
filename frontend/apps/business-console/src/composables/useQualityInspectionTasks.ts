@@ -21,6 +21,7 @@ import {
   type BusinessContextFields,
 } from './businessContextBinding'
 import { executeLifecycleAction } from './lifecycleAction'
+import { useListFreshness } from './useListFreshness'
 
 const DEFAULT_TAKE = 200
 
@@ -205,6 +206,10 @@ export function useQualityInspectionTasks(initialFilters: Partial<InspectionTask
       enabled: hasBusinessContext(filters),
     }
   })
+  const lastUpdatedAt = useListFreshness(
+    () => tasksQuery.data.value,
+    () => hasBusinessContext(filters),
+  )
   const taskActions = useQualityInspectionTaskActions(filters)
 
   const rawTasks = computed<BusinessConsoleQualityInspectionTaskItem[]>(() => {
@@ -228,6 +233,7 @@ export function useQualityInspectionTasks(initialFilters: Partial<InspectionTask
     ),
     pending: tasksQuery.isLoading,
     error: tasksQuery.error,
+    lastUpdatedAt,
     startInspection: taskActions.startInspection,
     startInspectionError: taskActions.startInspectionError,
     startInspectionPending: taskActions.startInspectionPending,

@@ -15,6 +15,7 @@ import {
   peekPendingBusinessIntent,
 } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
+import { useListFreshness } from '@/composables/useListFreshness'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
@@ -144,6 +145,7 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     }),
     enabled: scopeReady.value,
   }))
+  const lastUpdatedAt = useListFreshness(() => listQuery.data.value, scopeReady)
 
   const invalidate = () =>
     void queryCache.invalidateQueries({ predicate: isAlarmsQuery }).catch(ignoreBackgroundError)
@@ -326,6 +328,10 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     total: computed(() =>
       listTotal(listQuery.data.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined),
     ),
+    organizationId,
+    environmentId,
+    scopeReady,
+    lastUpdatedAt,
     pending: listQuery.isLoading,
     error: listQuery.error,
     actionPending: computed(

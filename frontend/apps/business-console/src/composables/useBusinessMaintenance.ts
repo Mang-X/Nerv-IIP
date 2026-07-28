@@ -47,6 +47,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive, shallowRef } from 'vue'
+import { useListFreshness } from './useListFreshness'
 import {
   bindBusinessContext,
   hasBusinessContext,
@@ -215,6 +216,10 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
       filters,
     ),
   )
+  const workOrdersLastUpdatedAt = useListFreshness(
+    () => workOrdersQuery.data.value,
+    () => hasBusinessContext(filters),
+  )
 
   const createMutation = useMutation({
     ...createBusinessConsoleMaintenanceWorkOrderMutationOptions(),
@@ -346,6 +351,7 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
         workOrdersQuery.data.value as BusinessConsoleMaintenanceWorkOrderListEnvelope | undefined,
       ),
     ),
+    workOrdersLastUpdatedAt,
     refreshWorkOrders: () => refetchWithBusinessContext(filters, workOrdersQuery),
     createWorkOrder: createWithStableIntent,
     createWorkOrderPending: createMutation.isLoading,

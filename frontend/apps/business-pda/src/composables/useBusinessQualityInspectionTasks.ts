@@ -19,6 +19,7 @@ import {
 } from '@nerv-iip/business-core'
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
+import { useListFreshness } from '@/composables/useListFreshness'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, shallowRef, toValue, type MaybeRefOrGetter } from 'vue'
 import { makeIdempotencyKey } from './makeIdempotencyKey'
@@ -100,6 +101,7 @@ export function useBusinessQualityInspectionTasks() {
     }),
     enabled: scopeReady.value,
   }))
+  const lastUpdatedAt = useListFreshness(() => listQuery.data.value, scopeReady)
 
   // 原因码目录（计数特性判不合格时的 Picker 数据源）：只取启用项，小目录一次拉全。
   const reasonCodesQuery = useQuery(() => ({
@@ -286,6 +288,7 @@ export function useBusinessQualityInspectionTasks() {
     ensureAllLoaded,
     pending: listQuery.isLoading,
     error: listQuery.error,
+    lastUpdatedAt,
     refresh: () => (scopeReady.value ? listQuery.refetch() : Promise.resolve()),
     reasonCodes,
     submitInspection,

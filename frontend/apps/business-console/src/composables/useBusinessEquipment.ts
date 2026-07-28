@@ -27,6 +27,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
+import { useListFreshness } from './useListFreshness'
 import { useBusinessMasterDataResources } from './useBusinessMasterData'
 import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 import { executeLifecycleAction } from './lifecycleAction'
@@ -450,6 +451,20 @@ export function useBusinessEquipmentAlarms() {
       : undefined
   }
 
+  const alarmsLastUpdatedAt = useListFreshness(
+    () => alarmsQuery.data.value,
+    () => hasBusinessContext(businessContext),
+  )
+  const acknowledgeMutation = useMutation({
+    ...acknowledgeBusinessConsoleEquipmentAlarmMutationOptions(),
+  })
+  const shelveMutation = useMutation({
+    ...shelveBusinessConsoleEquipmentAlarmMutationOptions(),
+  })
+  const unshelveMutation = useMutation({
+    ...unshelveBusinessConsoleEquipmentAlarmMutationOptions(),
+  })
+
   async function acknowledgeAlarm(alarmEventId: string, acknowledgedBy: string) {
     const scope = {
       principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
@@ -622,6 +637,12 @@ export function useBusinessEquipmentAlarms() {
     ),
     alarmsError: alarmsQuery.error,
     alarmsPending: alarmsQuery.isLoading,
+    alarmsTotal: computed(() =>
+      alarmsQuery.data.value?.success ? (alarmsQuery.data.value.data?.total ?? 0) : 0,
+    ),
+    alarmsOrganizationId: computed(() => businessContext.organizationId),
+    alarmsEnvironmentId: computed(() => businessContext.environmentId),
+    alarmsLastUpdatedAt,
     refreshAlarms: () => refetchWithBusinessContext(businessContext, alarmsQuery),
     shelveAlarm,
     unshelveAlarm,

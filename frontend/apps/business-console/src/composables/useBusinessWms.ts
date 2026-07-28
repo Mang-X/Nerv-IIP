@@ -59,6 +59,7 @@ import {
   withBusinessContextEnabled,
 } from './businessContextBinding'
 import { executeLifecycleAction } from './lifecycleAction'
+import { useListFreshness } from './useListFreshness'
 
 const DEFAULT_TAKE = 100
 const RECEIVING_QUALITY_POLL_INTERVAL_MS = 10_000
@@ -253,6 +254,10 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
     ),
     autoRefetch: () => RECEIVING_QUALITY_POLL_INTERVAL_MS,
   }))
+  const inboundOrdersLastUpdatedAt = useListFreshness(
+    () => inboundOrdersQuery.data.value,
+    () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
+  )
   const receivingQualityGatesQuery = useQuery(() =>
     withBusinessContextEnabled(
       {
@@ -409,6 +414,7 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
         inboundOrdersQuery.data.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
       ),
     ),
+    inboundOrdersLastUpdatedAt,
     refreshInboundOrders: () => refetchWithBusinessContext(filters, inboundOrdersQuery),
     receivingQualityGates: computed<BusinessConsoleWmsReceivingQualityGateItem[]>(() =>
       listItems<BusinessConsoleWmsReceivingQualityGateItem>(
@@ -451,6 +457,10 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
       }),
       filters,
     ),
+  )
+  const outboundOrdersLastUpdatedAt = useListFreshness(
+    () => outboundOrdersQuery.data.value,
+    () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
   )
 
   const completeOutboundPending = shallowRef(false)
@@ -556,6 +566,7 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
         outboundOrdersQuery.data.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
       ),
     ),
+    outboundOrdersLastUpdatedAt,
     refreshOutboundOrders: () => refetchWithBusinessContext(filters, outboundOrdersQuery),
     completeOutbound: completeOutboundOrder,
     completeOutboundPending,
@@ -657,6 +668,10 @@ export function useWmsPutawayTasks(initialFilters: Partial<WmsWarehouseTaskListF
       filters,
     ),
   )
+  const putawayTasksLastUpdatedAt = useListFreshness(
+    () => putawayTasksQuery.data.value,
+    () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
+  )
 
   const createMutation = useMutation({
     ...createBusinessConsoleWmsPutawayTaskMutationOptions(),
@@ -679,6 +694,7 @@ export function useWmsPutawayTasks(initialFilters: Partial<WmsWarehouseTaskListF
         putawayTasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
       ),
     ),
+    putawayTasksLastUpdatedAt,
     refreshPutawayTasks: () => refetchWithBusinessContext(filters, putawayTasksQuery),
     createPutaway: (inboundOrderId: string, body: BusinessConsoleCreateWmsPutawayTaskRequest) =>
       createMutation.mutateAsync({
@@ -702,6 +718,10 @@ export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListF
       filters,
     ),
   )
+  const pickingTasksLastUpdatedAt = useListFreshness(
+    () => pickingTasksQuery.data.value,
+    () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
+  )
 
   const createMutation = useMutation({
     ...createBusinessConsoleWmsPickingTaskMutationOptions(),
@@ -724,6 +744,7 @@ export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListF
         pickingTasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
       ),
     ),
+    pickingTasksLastUpdatedAt,
     refreshPickingTasks: () => refetchWithBusinessContext(filters, pickingTasksQuery),
     createPicking: (outboundOrderId: string, body: BusinessConsoleCreateWmsPickingTaskRequest) =>
       createMutation.mutateAsync({
@@ -750,6 +771,10 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
       }),
       filters,
     ),
+  )
+  const countExecutionsLastUpdatedAt = useListFreshness(
+    () => countExecutionsQuery.data.value,
+    () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
   )
 
   const createMutation = useMutation({
@@ -858,6 +883,7 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
         countExecutionsQuery.data.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
       ),
     ),
+    countExecutionsLastUpdatedAt,
     refreshCountExecutions: () => refetchWithBusinessContext(filters, countExecutionsQuery),
     createCountExecution: (body: BusinessConsoleCreateWmsCountExecutionRequest) =>
       createMutation.mutateAsync({ body }),

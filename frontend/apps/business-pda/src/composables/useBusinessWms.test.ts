@@ -170,6 +170,10 @@ describe('PDA WMS composables', () => {
   })
 
   it('enables lists and threads the principal scope into inbound query', () => {
+    coladaState.queryDataById.set('listBusinessConsoleWmsInboundOrders', {
+      success: true,
+      data: { items: [{ inboundOrderId: 'in-1' }], total: 3 },
+    })
     const result = useWmsInbound()
 
     expect(listBusinessConsoleWmsInboundOrdersQueryOptions).toHaveBeenCalledWith({
@@ -182,7 +186,11 @@ describe('PDA WMS composables', () => {
     expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsInboundOrders')?.enabled).toBe(
       true,
     )
-    expect(result.orders.value).toEqual([])
+    expect(result.orders.value).toHaveLength(1)
+    expect(result.organizationId.value).toBe('org-001')
+    expect(result.environmentId.value).toBe('env-dev')
+    expect(result.scopeReady.value).toBe(true)
+    expect(result.total.value).toBe(3)
   })
 
   it('uses the page-supplied idempotency key for the inbound complete body and targets the path', async () => {

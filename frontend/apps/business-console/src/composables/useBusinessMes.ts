@@ -128,6 +128,7 @@ import {
 } from './businessContextBinding'
 import { businessReadState } from './businessReadState'
 import { executeLifecycleAction } from './lifecycleAction'
+import { useListFreshness } from './useListFreshness'
 
 const DEFAULT_TAKE = 100
 const MES_OPERATIONS_MANAGE_PERMISSION = 'business.mes.operations.manage'
@@ -1168,6 +1169,10 @@ export function useMesOperationTasks() {
       filters,
     ),
   )
+  const operationTasksLastUpdatedAt = useListFreshness(
+    () => operationTasksQuery.data.value,
+    () => hasBusinessContext(filters),
+  )
   const completeMutation = useMutation(completeBusinessConsoleMesOperationTaskMutationOptions())
   const pauseMutation = useMutation(pauseBusinessConsoleMesOperationTaskMutationOptions())
   const resumeMutation = useMutation(resumeBusinessConsoleMesOperationTaskMutationOptions())
@@ -1270,6 +1275,7 @@ export function useMesOperationTasks() {
     operationScopeMessage: operationScope.scopeMessage,
     operationScopePending: operationScope.scopePending,
     operationScopeReady: operationScope.scopeReady,
+    operationTasksLastUpdatedAt,
     pauseOperationTask: async (
       operationTaskId: string,
       context: MesContextFilters,

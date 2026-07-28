@@ -14,6 +14,7 @@ import { useQuery } from '@pinia/colada'
 import { computed } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
+import { useListFreshness } from '@/composables/useListFreshness'
 
 /**
  * 工作台首页数据封装：按登录人权限裁剪各域摘要。
@@ -278,6 +279,7 @@ export function usePendingInspectionSummary() {
     }),
     enabled: enabled.value,
   }))
+  const lastUpdatedAt = useListFreshness(() => tasksQuery.data.value, enabled)
 
   return {
     enabled,
@@ -286,5 +288,6 @@ export function usePendingInspectionSummary() {
     ),
     total: computed(() => listTotal(tasksQuery.data.value)),
     pending: tasksQuery.isLoading,
+    lastUpdatedAt,
   }
 }

@@ -128,6 +128,21 @@ describe('useBusinessEquipmentAlarms', () => {
     expect(coladaState.queryOptionsById.get(ALL_KEY)?.enabled).toBe(true)
   })
 
+  it('exposes the real scope and server total for the alarm list', () => {
+    seedPrincipal()
+    coladaState.queryDataById.set(ALL_KEY, {
+      success: true,
+      data: { items: [{ alarmEventId: 'a-1' }], total: 4 },
+    })
+
+    const result = useBusinessEquipmentAlarms()
+
+    expect(result.organizationId.value).toBe('org-001')
+    expect(result.environmentId.value).toBe('env-dev')
+    expect(result.scopeReady.value).toBe(true)
+    expect(result.total.value).toBe(4)
+  })
+
   it('re-affirms the server lifecycle order client-side: 未确认 > 已搁置 > 已确认 > 已清除, newest-first', () => {
     seedPrincipal()
     coladaState.queryDataById.set(ALL_KEY, {

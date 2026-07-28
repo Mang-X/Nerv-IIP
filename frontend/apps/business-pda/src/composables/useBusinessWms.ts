@@ -38,6 +38,7 @@ import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
+import { useListFreshness } from '@/composables/useListFreshness'
 
 const DEFAULT_TAKE = 100
 
@@ -123,6 +124,7 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     }),
     enabled: scope.hasScope.value,
   }))
+  const lastUpdatedAt = useListFreshness(() => ordersQuery.data.value, scope.hasScope)
 
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsInboundOrderMutationOptions(),
@@ -132,6 +134,9 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
   })
 
   return {
+    organizationId: scope.organizationId,
+    environmentId: scope.environmentId,
+    scopeReady: scope.hasScope,
     filters,
     orders: computed<BusinessConsoleWmsInboundOrderItem[]>(() =>
       listItems<BusinessConsoleWmsInboundOrderItem>(
@@ -143,6 +148,7 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     ),
     pending: ordersQuery.isLoading,
     error: ordersQuery.error,
+    lastUpdatedAt,
     refresh: ordersQuery.refetch,
     completeInbound: async (
       inboundOrderId: string,
@@ -226,6 +232,7 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     }),
     enabled: scope.hasScope.value,
   }))
+  const lastUpdatedAt = useListFreshness(() => ordersQuery.data.value, scope.hasScope)
 
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsOutboundOrderMutationOptions(),
@@ -235,6 +242,9 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
   })
 
   return {
+    organizationId: scope.organizationId,
+    environmentId: scope.environmentId,
+    scopeReady: scope.hasScope,
     filters,
     orders: computed<BusinessConsoleWmsOutboundOrderItem[]>(() =>
       listItems<BusinessConsoleWmsOutboundOrderItem>(
@@ -246,6 +256,7 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     ),
     pending: ordersQuery.isLoading,
     error: ordersQuery.error,
+    lastUpdatedAt,
     refresh: ordersQuery.refetch,
     completeOutbound: async (
       outboundOrderId: string,
@@ -330,8 +341,12 @@ function useWmsWarehouseTasks(
     }),
     enabled: scope.hasScope.value,
   }))
+  const lastUpdatedAt = useListFreshness(() => tasksQuery.data.value, scope.hasScope)
 
   return {
+    organizationId: scope.organizationId,
+    environmentId: scope.environmentId,
+    scopeReady: scope.hasScope,
     filters,
     tasks: computed<BusinessConsoleWmsWarehouseTaskItem[]>(() =>
       listItems<BusinessConsoleWmsWarehouseTaskItem>(
@@ -343,6 +358,7 @@ function useWmsWarehouseTasks(
     ),
     pending: tasksQuery.isLoading,
     error: tasksQuery.error,
+    lastUpdatedAt,
     refresh: tasksQuery.refetch,
   }
 }
@@ -419,6 +435,7 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     }),
     enabled: scope.hasScope.value,
   }))
+  const lastUpdatedAt = useListFreshness(() => executionsQuery.data.value, scope.hasScope)
 
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsCountExecutionMutationOptions(),
@@ -428,6 +445,9 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
   })
 
   return {
+    organizationId: scope.organizationId,
+    environmentId: scope.environmentId,
+    scopeReady: scope.hasScope,
     filters,
     executions: computed<BusinessConsoleWmsCountExecutionItem[]>(() =>
       listItems<BusinessConsoleWmsCountExecutionItem>(
@@ -441,6 +461,7 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     ),
     pending: executionsQuery.isLoading,
     error: executionsQuery.error,
+    lastUpdatedAt,
     refresh: executionsQuery.refetch,
     completeCount: async (
       countExecutionId: string,

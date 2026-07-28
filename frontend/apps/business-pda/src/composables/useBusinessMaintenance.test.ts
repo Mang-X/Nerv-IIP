@@ -111,7 +111,7 @@ describe('useBusinessMaintenance', () => {
 
   it('enables list queries once the principal carries an org/env scope', () => {
     seedPrincipal()
-    useBusinessMaintenance()
+    const result = useBusinessMaintenance()
 
     expect(
       coladaState.queryOptionsById.get('listBusinessConsoleMaintenanceWorkOrders')?.enabled,
@@ -122,6 +122,10 @@ describe('useBusinessMaintenance', () => {
     expect(coladaState.queryOptionsById.get('listBusinessConsoleMaintenancePlans')?.enabled).toBe(
       true,
     )
+    expect(result.organizationId.value).toBe('org-001')
+    expect(result.environmentId.value).toBe('env-dev')
+    expect(result.scopeReady.value).toBe(true)
+    expect(result.workOrdersTotal.value).toBe(0)
   })
 
   it('injects org/env/openedBy into the work-order create body — caller cannot override them', async () => {

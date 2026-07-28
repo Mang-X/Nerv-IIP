@@ -53,6 +53,7 @@ import {
   peekPendingBusinessIntent,
 } from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
+import { useListFreshness } from '@/composables/useListFreshness'
 import { computed, reactive, watch, watchEffect, type Ref } from 'vue'
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
@@ -472,6 +473,10 @@ export function useMesOperationTasks() {
     }),
     enabled: hasScope(filters),
   }))
+  const lastUpdatedAt = useListFreshness(
+    () => operationTasksQuery.data.value,
+    () => hasScope(filters),
+  )
 
   const invalidate = () =>
     void invalidateMesQueries(queryCache, ['listBusinessConsoleMesOperationTasks']).catch(
@@ -573,6 +578,7 @@ export function useMesOperationTasks() {
     operationScopeMessage: operationScope.scopeMessage,
     operationScopePending: operationScope.scopePending,
     operationScopeReady: operationScope.scopeReady,
+    lastUpdatedAt,
     refresh: operationTasksQuery.refetch,
     cancelPendingTasks: () =>
       queryCache.cancelQueries({

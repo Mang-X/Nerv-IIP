@@ -15,6 +15,7 @@ import {
   completePendingBusinessIntent,
 } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
+import { useListFreshness } from '@/composables/useListFreshness'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 
@@ -110,6 +111,9 @@ export function useBusinessMaintenance() {
     ...listBusinessConsoleMaintenancePlansQueryOptions({ query: scopedQuery(planFilters) }),
     enabled: scopeReady.value,
   }))
+  const workOrdersLastUpdatedAt = useListFreshness(() => workOrdersQuery.data.value, scopeReady)
+  const inspectionsLastUpdatedAt = useListFreshness(() => inspectionsQuery.data.value, scopeReady)
+  const plansLastUpdatedAt = useListFreshness(() => plansQuery.data.value, scopeReady)
 
   const plansTotal = computed(() => listTotal(plansQuery.data.value as ListEnvelope<unknown>))
 
@@ -188,6 +192,9 @@ export function useBusinessMaintenance() {
   }
 
   return {
+    organizationId,
+    environmentId,
+    scopeReady,
     workOrders: computed<MaintenanceWorkOrderItem[]>(() =>
       listItems<MaintenanceWorkOrderItem>(
         workOrdersQuery.data.value as ListEnvelope<MaintenanceWorkOrderItem>,
@@ -198,6 +205,7 @@ export function useBusinessMaintenance() {
     ),
     workOrdersPending: workOrdersQuery.isLoading,
     workOrdersError: workOrdersQuery.error,
+    workOrdersLastUpdatedAt,
     refreshWorkOrders: () => (scopeReady.value ? workOrdersQuery.refetch() : Promise.resolve()),
     workOrderFilters,
     createWorkOrder,
@@ -213,6 +221,7 @@ export function useBusinessMaintenance() {
     ),
     inspectionsPending: inspectionsQuery.isLoading,
     inspectionsError: inspectionsQuery.error,
+    inspectionsLastUpdatedAt,
     refreshInspections: () => (scopeReady.value ? inspectionsQuery.refetch() : Promise.resolve()),
     inspectionFilters,
     recordInspection,
@@ -222,6 +231,7 @@ export function useBusinessMaintenance() {
     plansTotal,
     plansPending: plansQuery.isLoading,
     plansError: plansQuery.error,
+    plansLastUpdatedAt,
     refreshPlans: () => (scopeReady.value ? plansQuery.refetch() : Promise.resolve()),
     planFilters,
     loadMorePlans,
