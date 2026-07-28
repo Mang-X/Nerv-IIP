@@ -860,7 +860,8 @@ public sealed record ListOperationTasksQuery(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null) : IQuery<MesOperationTaskListResponse>;
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null) : IQuery<MesOperationTaskListResponse>;
 
 public sealed record MesOperationTaskListResponse(
     IReadOnlyCollection<MesOperationTaskRow> Items,
@@ -876,7 +877,7 @@ public sealed class ListOperationTasksQueryHandler(ApplicationDbContext dbContex
                 dbContext,
                 request.OrganizationId,
                 request.EnvironmentId,
-                null,
+                request.WorkOrderId,
                 request.Status,
                 request.Keyword,
                 request.WorkCenterId,
@@ -888,7 +889,7 @@ public sealed class ListOperationTasksQueryHandler(ApplicationDbContext dbContex
                 dbContext,
                 request.OrganizationId,
                 request.EnvironmentId,
-                null,
+                request.WorkOrderId,
                 request.Status,
                 request.Skip,
                 request.Take,
