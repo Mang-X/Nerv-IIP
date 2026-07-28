@@ -135,7 +135,8 @@ public sealed class WorldHistoryFloorEventsSeedService(ApplicationDbContext dbCo
                     plan.ShiftId,
                     plan.TeamId,
                     plan.OpenIssueCount,
-                    plan.CreatedAtUtc);
+                    plan.CreatedAtUtc,
+                    plan.TeamName);
                 if (plan.AcceptedAtUtc is { } acceptedAtUtc)
                 {
                     handover.Accept(acceptedAtUtc);

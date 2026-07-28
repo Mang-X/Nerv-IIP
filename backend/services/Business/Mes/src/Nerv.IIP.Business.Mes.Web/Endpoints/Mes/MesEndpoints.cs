@@ -330,7 +330,9 @@ public sealed record AssignDispatchTaskRequest(
     string? AssignedUserName,
     string? DeviceAssetId,
     string? ShiftId,
-    DateTimeOffset? AssignedAtUtc);
+    DateTimeOffset? AssignedAtUtc,
+    string? TeamId = null,
+    string? TeamName = null);
 
 public sealed record OperationTaskActionRequest(
     string OrganizationId,
@@ -417,7 +419,8 @@ public sealed record CreateShiftHandoverRequest(
     string ShiftId,
     string TeamId,
     DateTimeOffset? HandoverAtUtc,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    string? TeamName = null);
 
 public sealed record AcceptShiftHandoverRequest(
     string OrganizationId,
@@ -989,7 +992,9 @@ public sealed class AssignDispatchTaskEndpoint(ISender sender, TimeProvider time
             req.ShiftId,
             req.AssignedAtUtc ?? timeProvider.GetUtcNow(),
             MesAuthenticatedActor.Resolve(HttpContext),
-            req.AssignedUserName), ct);
+            req.AssignedUserName,
+            req.TeamId,
+            req.TeamName), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1436,7 +1441,8 @@ public sealed class CreateShiftHandoverEndpoint(ISender sender, TimeProvider tim
             req.ShiftId,
             req.TeamId,
             req.HandoverAtUtc ?? timeProvider.GetUtcNow(),
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            req.TeamName), ct);
         await Send.OkAsync(response, ct);
     }
 }

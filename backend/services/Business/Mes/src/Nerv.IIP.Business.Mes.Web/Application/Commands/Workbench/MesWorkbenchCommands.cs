@@ -1105,7 +1105,9 @@ public sealed record AssignDispatchTaskCommand(
     string? ShiftId,
     DateTimeOffset AssignedAtUtc,
     string Actor = "system:mes",
-    string? AssignedUserName = null) : ICommand<MesAcceptedResponse>, IOperationTaskConcurrencyRetryCommand;
+    string? AssignedUserName = null,
+    string? TeamId = null,
+    string? TeamName = null) : ICommand<MesAcceptedResponse>, IOperationTaskConcurrencyRetryCommand;
 
 public sealed class AssignDispatchTaskCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<AssignDispatchTaskCommand, MesAcceptedResponse>
@@ -1149,11 +1151,21 @@ public sealed class AssignDispatchTaskCommandHandler(ApplicationDbContext dbCont
         }
 
         MesDomainRuleGuard.Enforce(() =>
-            task.Assign(request.AssignedUserId, request.DeviceAssetId, request.ShiftId, request.AssignedAtUtc, request.Actor, request.AssignedUserName));
+            task.Assign(
+                request.AssignedUserId,
+                request.DeviceAssetId,
+                request.ShiftId,
+                request.AssignedAtUtc,
+                request.Actor,
+                request.AssignedUserName,
+                request.TeamId,
+                request.TeamName));
         dbContext.Entry(task).Property(x => x.AssignedUserId).IsModified = true;
         dbContext.Entry(task).Property(x => x.AssignedUserName).IsModified = true;
         dbContext.Entry(task).Property(x => x.DeviceAssetId).IsModified = true;
         dbContext.Entry(task).Property(x => x.ShiftId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.TeamId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.TeamName).IsModified = true;
         dbContext.Entry(task).Property(x => x.AssignedAtUtc).IsModified = true;
         return new MesAcceptedResponse("Accepted", request.OperationTaskId, request.AssignedAtUtc);
     }
@@ -1774,7 +1786,8 @@ public sealed record CreateShiftHandoverCommand(
     string ShiftId,
     string TeamId,
     DateTimeOffset HandoverAtUtc,
-    string? IdempotencyKey = null) : ICommand<MesAcceptedResponse>;
+    string? IdempotencyKey = null,
+    string? TeamName = null) : ICommand<MesAcceptedResponse>;
 
 public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService = null)
     : ICommandHandler<CreateShiftHandoverCommand, MesAcceptedResponse>
@@ -1807,7 +1820,8 @@ public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbCon
             request.ShiftId,
             request.TeamId,
             openIssueCount,
-            request.HandoverAtUtc);
+            request.HandoverAtUtc,
+            request.TeamName);
         dbContext.ShiftHandovers.Add(handover);
         return new MesAcceptedResponse("Accepted", handover.HandoverNo, request.HandoverAtUtc);
     }
