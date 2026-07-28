@@ -74,11 +74,17 @@ vi.mock('@/composables/useBusinessWms', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
   return {
     useWmsPutawayTasks: () => ({
-      filters: reactive({ skip: 0, take: 100 }),
+      filters: reactive({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        skip: 0,
+        take: 100,
+      }),
       putawayTasks: computed(() => []),
       putawayTasksError: shallowRef(undefined),
       putawayTasksPending: shallowRef(false),
       putawayTasksTotal: computed(() => 0),
+      putawayTasksLastUpdatedAt: shallowRef('2026-07-28T10:20:30.000Z'),
       refreshPutawayTasks: vi.fn(),
       createPutaway: state.createPutaway,
       createPutawayPending: shallowRef(false),

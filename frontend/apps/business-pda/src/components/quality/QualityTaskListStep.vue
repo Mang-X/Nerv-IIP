@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import QualityTaskListView from '@/components/quality/QualityTaskListView.vue'
 import QualityTaskScanFilter from '@/components/quality/QualityTaskScanFilter.vue'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { useNowClock } from '@/composables/useNowClock'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
-import { INSPECTION_TASK_SOURCE_TYPES, inspectionTaskSourceTypeLabel } from '@nerv-iip/business-core'
+import {
+  INSPECTION_TASK_SOURCE_TYPES,
+  inspectionTaskSourceTypeLabel,
+} from '@nerv-iip/business-core'
 import { computed, shallowRef } from 'vue'
 
 type Task = BusinessConsoleQualityInspectionTaskItem
@@ -15,6 +19,8 @@ const props = defineProps<{
   hasMore: boolean
   pending: boolean
   error: unknown
+  scope?: string
+  updatedAt?: string | null
   /** 加载全部待检任务并返回最新集合（扫码跨页直达用）。 */
   loadAll?: () => Promise<Task[]>
 }>()
@@ -101,6 +107,16 @@ async function onScan(value: string) {
       @scan="onScan"
       @clear-scan="scanKeyword = ''"
       @pick-source-type="(type) => (sourceTypeFilter = type)"
+    />
+
+    <ListScopeMeta
+      :scope="props.scope ?? '组织/环境范围未就绪'"
+      source="质检待检任务服务（组织/环境范围，状态：待检）"
+      :loaded="props.loaded"
+      :total="props.total"
+      :updated-at="props.updatedAt"
+      :empty="!pending && !error && filteredTasks.length === 0"
+      empty-explanation="当前列表是组织范围待检，不是个人待检；缺少范围时不会发起查询。"
     />
 
     <QualityTaskListView

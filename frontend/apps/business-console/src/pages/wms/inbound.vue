@@ -4,6 +4,7 @@ import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsReceivingQualityFlow from '@/components/wms/WmsReceivingQualityFlow.vue'
+import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import {
@@ -95,7 +96,14 @@ const {
   supplierReturnsPending,
   supplierReturnsError,
   refreshReceivingQuality,
+  inboundOrdersLastUpdatedAt,
 } = useWmsInboundOrders()
+const inboundScopeReady = computed(
+  () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
+)
+const inboundScope = computed(() =>
+  inboundScopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
+)
 const auth = useAuthStore()
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManageReceipts = computed(() => permissionCodes.value.includes(P.wmsReceiptsManage))
@@ -414,6 +422,18 @@ function formatError(error: unknown) {
         </NvButton>
       </template>
     </NvPageHeader>
+
+    <ListScopeMeta
+      :scope="inboundScope"
+      source="收货入库服务（组织/环境范围）"
+      :loaded="inboundOrders.length"
+      :total="inboundOrdersTotal"
+      :updated-at="inboundOrdersLastUpdatedAt"
+      :empty="!inboundOrdersPending && !inboundOrdersError && inboundOrders.length === 0"
+      :empty-explanation="
+        inboundScopeReady ? '当前组织/环境范围没有收货单。' : '缺少组织或环境范围，未发起查询。'
+      "
+    />
 
     <p v-if="contextUnavailable" class="text-sm text-warning" role="status">
       没有权限或库存服务暂不可用，本页只显示入库单本身。

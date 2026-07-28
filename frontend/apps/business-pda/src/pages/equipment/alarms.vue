@@ -7,6 +7,7 @@ import {
 } from '@nerv-iip/business-core'
 import { describeRequestError } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import {
   ALARM_SHELVE_DURATIONS_MINUTES,
   useBusinessEquipmentAlarms,
@@ -43,8 +44,26 @@ type Alarm = BusinessConsoleTelemetryAlarmEventItem
 
 const router = useRouter()
 
-const { filters, alarms, pending, error, refresh, acknowledge, shelve, actionPending } =
-  useBusinessEquipmentAlarms()
+const {
+  filters,
+  alarms,
+  total,
+  organizationId,
+  environmentId,
+  scopeReady,
+  lastUpdatedAt,
+  pending,
+  error,
+  refresh,
+  acknowledge,
+  shelve,
+  actionPending,
+} = useBusinessEquipmentAlarms()
+const alarmScope = computed(() =>
+  scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
+)
+const alarmTotal = computed(() => total.value)
+const alarmScopeReady = computed(() => scopeReady.value)
 
 // 当前是否按设备过滤（用于展示/清除过滤）。
 const filteredDevice = computed(() => filters.deviceAssetId)
@@ -340,6 +359,19 @@ function showToast(message: string, type: 'success' | 'error') {
       <!-- 报警列表 -->
       <section class="space-y-2">
         <h2 class="text-sm font-medium text-muted-foreground">设备报警</h2>
+        <ListScopeMeta
+          :scope="alarmScope"
+          source="设备报警服务（组织/环境范围）"
+          :loaded="alarms.length"
+          :total="alarmTotal"
+          :updated-at="lastUpdatedAt"
+          :empty="!pending && !error && alarms.length === 0"
+          :empty-explanation="
+            alarmScopeReady
+              ? '当前组织/环境范围没有未解除设备报警。'
+              : '缺少组织或环境范围，未发起查询。'
+          "
+        />
 
         <RetryableListError
           v-if="error"
@@ -358,7 +390,9 @@ function showToast(message: string, type: 'success' | 'error') {
           v-else-if="alarms.length === 0"
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
         >
-          暂无设备报警
+          {{
+            alarmScopeReady ? '暂无设备报警（当前组织/环境范围）' : '缺少组织或环境范围，未发起查询'
+          }}
         </div>
 
         <!-- 行非交互（避免行内交互控件嵌套在 role=button 行内导致键盘冒泡/辅助技术歧义）；

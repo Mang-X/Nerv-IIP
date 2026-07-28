@@ -55,6 +55,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     filters,
     operationTasks: computed(() => operationTasksRef.value),
     total: computed(() => operationTasksRef.value.length),
+    lastUpdatedAt: ref('2026-07-28T10:20:30.000Z'),
     pending: ref(false),
     error: tasksErrorRef,
     refresh,

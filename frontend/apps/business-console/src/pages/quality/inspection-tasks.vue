@@ -9,6 +9,7 @@ import {
 import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useQualitySkuCatalog } from '@/composables/useQualityPickerCatalog'
+import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -35,7 +36,7 @@ const route = useRoute()
 const router = useRouter()
 const initialSourceDocumentNo = firstQuery(route.query.sourceDocumentNo)
 const initialInspectionTaskId = firstQuery(route.query.inspectionTaskId)
-const { filters, hasLocator, tasks, total, pending, error, refreshTasks } =
+const { filters, hasLocator, tasks, total, pending, error, refreshTasks, lastUpdatedAt } =
   useQualityInspectionTasks({
     status: 'pending',
     ...(initialSourceDocumentNo ? { sourceDocumentNo: initialSourceDocumentNo } : {}),
@@ -101,6 +102,16 @@ const emptyMessage = computed(() =>
 )
 const scopeHint = computed(() =>
   locatorMessage.value ? `共定位到 ${total.value} 个待检任务。` : `共 ${total.value} 个待检任务。`,
+)
+const scopeText = computed(() =>
+  filters.organizationId && filters.environmentId
+    ? '当前登录组织 / 当前业务环境'
+    : '组织/环境范围未就绪',
+)
+const emptyExplanation = computed(() =>
+  !filters.organizationId || !filters.environmentId
+    ? '缺少组织或环境范围，未发起查询。'
+    : '当前列表为组织范围的待检任务，暂不支持按检验人员筛选；空态不代表个人待检。',
 )
 
 watch(
@@ -308,6 +319,15 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
         </NvField>
         <p class="text-sm text-muted-foreground">{{ scopeHint }}</p>
       </div>
+      <ListScopeMeta
+        :scope="scopeText"
+        source="质检待检任务服务（组织/环境范围，状态：待检）"
+        :loaded="tasks.length"
+        :total="total"
+        :updated-at="lastUpdatedAt"
+        :empty="!pending && !error && tasks.length === 0"
+        :empty-explanation="emptyExplanation"
+      />
     </div>
 
     <p

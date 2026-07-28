@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import InspectionMeasurementRow, {
   type MeasurementFormRow,
 } from '@/components/equipment/InspectionMeasurementRow.vue'
@@ -68,12 +69,15 @@ const {
   plansPending,
   plansError,
   plansTotal,
+  plansLastUpdatedAt,
   loadMorePlans,
   refreshPlans,
   recordInspection,
   recordPending,
   inspectionsPending,
   inspectionsError,
+  inspectionsTotal,
+  inspectionsLastUpdatedAt,
   refreshInspections,
 } = maintenance
 
@@ -81,6 +85,9 @@ const {
 const allPlans = computed<PlanRow[]>(() => maintenance.plans.value as PlanRow[])
 const inspections = computed<InspectionRow[]>(
   () => maintenance.inspections.value as InspectionRow[],
+)
+const maintenanceScope = computed(() =>
+  maintenance.scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
 )
 
 // 扫码/手输关键字 → 对**已加载**的 plans 做客户端过滤（facade 无 keyword/device 查询参数）。
@@ -368,6 +375,19 @@ function inspectionSubtitle(item: {
         <!-- 步骤 1：选择保养计划 -->
         <div class="space-y-2">
           <p class="text-sm text-foreground">选择保养计划</p>
+          <ListScopeMeta
+            :scope="maintenanceScope"
+            source="保养计划服务（组织/环境范围，暂不支持按维修人员归属筛选）"
+            :loaded="plans.length"
+            :total="plansTotal"
+            :updated-at="plansLastUpdatedAt"
+            :empty="!plansPending && !plansError && plans.length === 0"
+            :empty-explanation="
+              maintenance.scopeReady.value
+                ? '当前组织/环境范围暂无保养计划；暂不支持按维修人员归属筛选，空态不代表个人计划。'
+                : '缺少组织或环境范围，未发起查询。'
+            "
+          />
 
           <RetryableListError
             v-if="plansError"
@@ -499,6 +519,19 @@ function inspectionSubtitle(item: {
       <!-- 近期点检记录 -->
       <section class="space-y-2">
         <h2 class="text-sm font-medium text-muted-foreground">近期点检记录</h2>
+        <ListScopeMeta
+          :scope="maintenanceScope"
+          source="点检记录服务（组织/环境范围）"
+          :loaded="inspections.length"
+          :total="inspectionsTotal"
+          :updated-at="inspectionsLastUpdatedAt"
+          :empty="!inspectionsPending && !inspectionsError && inspections.length === 0"
+          :empty-explanation="
+            maintenance.scopeReady.value
+              ? '当前组织/环境范围暂无点检记录。'
+              : '缺少组织或环境范围，未发起查询。'
+          "
+        />
 
         <RetryableListError
           v-if="inspectionsError"

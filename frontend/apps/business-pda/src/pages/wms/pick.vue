@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { useWmsPicking } from '@/composables/useBusinessWms'
 import { warehouseTaskStatusLabel } from '@nerv-iip/business-core'
 import { NvAppShellMobile, NvListRow, NvScanBar } from '@nerv-iip/ui-mobile'
@@ -13,7 +14,22 @@ definePage({
 })
 
 // 只读任务清单：拣货无逐任务 complete 端点，写闭环经父单复核发货过账。
-const { filters, tasks, pending, error, refresh } = useWmsPicking()
+const {
+  filters,
+  tasks,
+  total,
+  pending,
+  error,
+  refresh,
+  organizationId,
+  environmentId,
+  scopeReady,
+  lastUpdatedAt,
+} = useWmsPicking()
+const pickingScope = computed(() =>
+  scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
+)
+const pickingTotal = computed(() => total.value)
 
 // 空态仅在「无任务且无加载/错误」时出现，避免与错误/加载态打架。
 const showEmpty = computed(() => !pending.value && !error.value && tasks.value.length === 0)
@@ -61,6 +77,19 @@ function rowSubtitle(task: {
 
     <div class="space-y-4 p-4">
       <NvScanBar placeholder="扫描库位" @scan="onScan" />
+      <ListScopeMeta
+        :scope="pickingScope"
+        source="拣货任务服务（组织/环境范围，暂不支持按操作员归属筛选）"
+        :loaded="tasks.length"
+        :total="pickingTotal"
+        :updated-at="lastUpdatedAt"
+        :empty="showEmpty"
+        :empty-explanation="
+          scopeReady
+            ? '当前组织/环境范围没有拣货任务；暂不支持按操作员归属筛选，空态不代表个人任务。'
+            : '缺少组织或环境范围，未发起查询。'
+        "
+      />
 
       <div
         v-if="hasFilter"
@@ -92,7 +121,7 @@ function rowSubtitle(task: {
         v-if="showEmpty"
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
       >
-        暂无拣货任务
+        当前组织/环境范围暂无拣货任务；暂不支持按操作员归属筛选
       </div>
 
       <div v-else-if="tasks.length > 0" class="overflow-hidden rounded-lg border border-border">

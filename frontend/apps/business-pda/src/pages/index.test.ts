@@ -68,6 +68,8 @@ vi.mock('@/composables/useWorkbenchHome', () => {
     usePdaIdentity: () => ({
       principalId: ref('user-emp-010'),
       loginName: ref('emp010'),
+      organizationId: ref('org-001'),
+      environmentId: ref('env-dev'),
       hasScope: ref(true),
       can: (code: string) => permissions.value.has(code),
       worker,
@@ -92,12 +94,14 @@ vi.mock('@/composables/useWorkbenchHome', () => {
       ),
       entries: warehouseEntries,
       pending: ref(false),
+      lastUpdatedAt: ref('2026-07-28T10:20:30.000Z'),
     }),
     usePendingInspectionSummary: () => ({
       enabled: computed(() => permissions.value.has(HOME_PERMISSIONS.quality)),
       tasks: inspectionTasks,
       total: computed(() => inspectionTasks.value.length),
       pending: ref(false),
+      lastUpdatedAt: ref('2026-07-28T10:20:30.000Z'),
     }),
   }
 })

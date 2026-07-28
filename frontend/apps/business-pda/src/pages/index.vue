@@ -16,6 +16,7 @@ import {
 } from '@lucide/vue'
 import { operationTaskStatusLabel, PDA_TASK_KINDS } from '@nerv-iip/business-core'
 import { useUnacknowledgedAlarmCount } from '@/composables/useBusinessEquipmentAlarms'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import {
   HOME_PERMISSIONS,
   useMyDispatchTasks,
@@ -263,11 +264,24 @@ function openRoute(route: string) {
       <!-- 检验任务（有质检读权限的检验员可见） -->
       <section v-if="inspection.enabled.value" data-testid="home-inspection">
         <div class="mb-2 flex items-baseline justify-between">
-          <h2 class="text-sm font-medium text-muted-foreground">待检任务</h2>
+          <h2 class="text-sm font-medium text-muted-foreground">组织范围待检</h2>
           <span class="text-xs text-muted-foreground">
             共 <span class="font-semibold text-foreground">{{ inspection.total.value }}</span> 项
           </span>
         </div>
+        <ListScopeMeta
+          :scope="
+            identity.organizationId.value && identity.environmentId.value
+              ? '当前登录组织 / 当前业务环境'
+              : '组织/环境范围未就绪'
+          "
+          source="质检待检任务服务（组织/环境范围，状态：待检）"
+          :loaded="inspection.tasks.value.length"
+          :total="inspection.total.value"
+          :updated-at="inspection.lastUpdatedAt.value"
+          :empty="!inspection.pending.value && inspection.tasks.value.length === 0"
+          empty-explanation="当前列表是组织/环境范围待检，不是个人待检；缺少范围时不会发起查询。"
+        />
         <NvCellGroup
           v-if="inspectionPreview.length > 0"
           class="overflow-hidden rounded-xl border border-border"
@@ -286,7 +300,7 @@ function openRoute(route: string) {
           v-else-if="!inspection.pending.value"
           class="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground"
         >
-          暂无待检任务
+          当前组织/环境范围暂无待检任务；此列表不是个人待检
         </div>
       </section>
 

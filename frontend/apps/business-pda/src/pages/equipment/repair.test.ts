@@ -33,12 +33,20 @@ const workOrders = ref<Array<Record<string, unknown>>>([
 ])
 const workOrdersError = ref<unknown>(null)
 const workOrdersPending = ref(false)
+const organizationId = ref('org-001')
+const environmentId = ref('env-dev')
+const scopeReady = ref(true)
+const workOrdersLastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 const refreshWorkOrders = vi.fn(async () => {})
 
 vi.mock('@/composables/useBusinessMaintenance', () => ({
   useBusinessMaintenance: () => ({
     workOrders,
     workOrdersTotal: computed(() => workOrders.value.length),
+    organizationId,
+    environmentId,
+    scopeReady,
+    workOrdersLastUpdatedAt,
     workOrdersPending,
     workOrdersError,
     refreshWorkOrders,

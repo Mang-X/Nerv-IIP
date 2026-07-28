@@ -12,6 +12,7 @@ import {
   REQUEST_TIMEOUT_MS,
 } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import {
@@ -54,7 +55,13 @@ const {
   operationScopeMessage,
   operationScopeReady,
   refresh,
+  lastUpdatedAt,
 } = useMesOperationTasks()
+const mesScope = computed(() =>
+  filters.organizationId && filters.environmentId
+    ? '当前登录组织 / 当前业务环境'
+    : '组织/环境范围未就绪',
+)
 const {
   filters: sopFilters,
   currentSops,
@@ -368,6 +375,15 @@ function formatDate(value?: string | null) {
       >
         {{ operationScopeMessage }}
       </p>
+      <ListScopeMeta
+        :scope="mesScope"
+        source="工序任务服务（组织/环境范围，暂不支持按当前人员归属筛选）"
+        :loaded="operationTasks.length"
+        :total="total"
+        :updated-at="lastUpdatedAt"
+        :empty="!pending && !error && operationTasks.length === 0"
+        empty-explanation="当前列表是组织范围工序任务，暂不支持按当前人员归属筛选；空态不代表我的任务。"
+      />
 
       <RetryableListError
         v-if="error"
@@ -382,7 +398,7 @@ function formatDate(value?: string | null) {
         v-else-if="!pending && operationTasks.length === 0"
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
       >
-        暂无工序任务
+        当前组织/环境范围暂无工序任务；暂不支持按当前人员归属筛选
       </div>
 
       <div v-else class="overflow-hidden rounded-lg border border-border">

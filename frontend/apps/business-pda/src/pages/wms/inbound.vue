@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
@@ -48,8 +49,24 @@ definePage({
 type InboundOrder = BusinessConsoleWmsInboundOrderItem
 
 const router = useRouter()
-const { filters, orders, pending, error, refresh, completeInbound, completePending } =
-  useWmsInbound()
+const {
+  filters,
+  orders,
+  total,
+  pending,
+  error,
+  refresh,
+  completeInbound,
+  completePending,
+  organizationId,
+  environmentId,
+  scopeReady,
+  lastUpdatedAt,
+} = useWmsInbound()
+const inboundScope = computed(() =>
+  scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
+)
+const inboundTotal = computed(() => total.value)
 
 // 选中的收货单（单据级质检状态/上架放行来自列表项派生字段，避免按分页门禁行跨页聚合）。
 const selectedOrder = ref<InboundOrder | null>(null)
@@ -379,6 +396,17 @@ function goPutaway() {
 
     <div v-else class="space-y-4 p-4">
       <NvScanBar placeholder="扫描收货单号" :active="scanActive" @scan="onScan" />
+      <ListScopeMeta
+        :scope="inboundScope"
+        source="收货入库服务（组织/环境范围）"
+        :loaded="orders.length"
+        :total="inboundTotal"
+        :updated-at="lastUpdatedAt"
+        :empty="!pending && !error && orders.length === 0"
+        :empty-explanation="
+          scopeReady ? '当前组织/环境范围没有待收货单据。' : '缺少组织或环境范围，未发起查询。'
+        "
+      />
 
       <RetryableListError
         v-if="error"
@@ -393,7 +421,7 @@ function goPutaway() {
         v-if="showEmpty"
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
       >
-        暂无待收货单据
+        当前组织/环境范围暂无待收货单据
       </div>
 
       <div v-else class="overflow-hidden rounded-lg border border-border">

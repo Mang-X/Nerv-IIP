@@ -20,6 +20,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
@@ -76,7 +77,18 @@ const {
   completeWorkOrder,
   completeWorkOrderPending,
   filters,
+  workOrdersLastUpdatedAt,
 } = useMaintenanceWorkOrders()
+const maintenanceScope = computed(() =>
+  filters.organizationId && filters.environmentId
+    ? '当前登录组织 / 当前业务环境'
+    : '组织/环境范围未就绪',
+)
+const maintenanceEmptyExplanation = computed(() =>
+  !filters.organizationId || !filters.environmentId
+    ? '缺少组织或环境范围，未发起查询。'
+    : '当前列表为组织范围的维护工单，暂不支持按维修人员筛选；空态不代表个人工单。',
+)
 const { page, pageSize } = usePagedList(filters)
 const route = useRoute()
 const router = useRouter()
@@ -576,6 +588,16 @@ watch(
         </NvButton>
       </template>
     </NvPageHeader>
+
+    <ListScopeMeta
+      :scope="maintenanceScope"
+      source="维修工单服务（组织/环境范围，暂不支持按维修人员归属筛选）"
+      :loaded="workOrders.length"
+      :total="workOrdersTotal"
+      :updated-at="workOrdersLastUpdatedAt"
+      :empty="!workOrdersPending && !workOrdersError && workOrders.length === 0"
+      :empty-explanation="maintenanceEmptyExplanation"
+    />
 
     <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
       <!-- 高优先待执行只出现在右侧告警卡（它带「看可用窗口」的行动出口）；

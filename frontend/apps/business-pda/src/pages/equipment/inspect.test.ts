@@ -1,7 +1,7 @@
 import { RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 // ---- vue-router mock ----------------------------------------------------------
 const push = vi.fn()
@@ -32,6 +32,7 @@ const plans = ref<Array<Record<string, unknown>>>([
 const plansPending = ref(false)
 const plansError = ref<unknown>(null)
 const plansTotal = ref(2)
+const plansLastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 const refreshPlans = vi.fn(async () => {})
 const loadMorePlans = vi.fn()
 const planFilters = { skip: 0, take: 100 }
@@ -58,6 +59,11 @@ const inspections = ref<Array<Record<string, unknown>>>([
 ])
 const inspectionsPending = ref(false)
 const inspectionsError = ref<unknown>(null)
+const inspectionsTotal = computed(() => inspections.value.length)
+const inspectionsLastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
+const organizationId = ref('org-001')
+const environmentId = ref('env-dev')
+const scopeReady = ref(true)
 const refreshInspections = vi.fn(async () => {})
 const inspectionFilters = { skip: 0, take: 100 }
 
@@ -67,12 +73,18 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     plansPending,
     plansError,
     plansTotal,
+    plansLastUpdatedAt,
     refreshPlans,
     loadMorePlans,
     planFilters,
     recordInspection,
     recordPending,
     inspections,
+    inspectionsTotal,
+    inspectionsLastUpdatedAt,
+    organizationId,
+    environmentId,
+    scopeReady,
     inspectionsPending,
     inspectionsError,
     refreshInspections,

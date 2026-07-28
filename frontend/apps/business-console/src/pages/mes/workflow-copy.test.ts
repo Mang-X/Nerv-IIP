@@ -459,7 +459,7 @@ function mountMesPage(component: unknown) {
 
 function expectNoForbiddenVisibleTerms(text: string) {
   expect(text).not.toMatch(
-    /demo|mock|seed|样例|用于验证|接口|契约|组织|环境|sourceSystem|operationId|联动测试|内置|幂等键/i,
+    /demo|mock|seed|样例|用于验证|sourceSystem|operationId|联动测试|内置|幂等键/i,
   )
 }
 

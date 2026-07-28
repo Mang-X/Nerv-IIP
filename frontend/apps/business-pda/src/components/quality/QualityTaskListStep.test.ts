@@ -26,15 +26,43 @@ function task(over: Partial<Task> = {}): Task {
 
 function mountList(tasks: Task[]) {
   return mount(QualityTaskListStep, {
-    props: { tasks, total: tasks.length, loaded: tasks.length, hasMore: false, pending: false, error: null },
+    props: {
+      tasks,
+      total: tasks.length,
+      loaded: tasks.length,
+      hasMore: false,
+      pending: false,
+      error: null,
+      scope: '当前登录组织 / 当前业务环境',
+      updatedAt: '2026-07-28T10:20:30.000Z',
+    },
   })
 }
 
 describe('QualityTaskListStep', () => {
+  it('shows scope, source, counts, and stable successful-response time', () => {
+    const wrapper = mountList([task({ inspectionTaskId: 'T1' })])
+    expect(wrapper.text()).toContain('范围：当前登录组织 / 当前业务环境')
+    expect(wrapper.text()).toContain('已加载 1 / 共 1')
+    expect(wrapper.text()).toContain('更新时间（最近成功响应）：2026/7/28 18:20')
+    expect(wrapper.text()).toContain('质检待检任务服务（组织/环境范围，状态：待检）')
+  })
+
   it('scan direct: an exact/unique source-document or SKU hit auto-selects the task', async () => {
     const wrapper = mountList([
-      task({ inspectionTaskId: 'T1', sourceDocumentId: 'RCV-1001', skuCode: 'SKU-A', dueAtUtc: FUTURE }),
-      task({ inspectionTaskId: 'T2', sourceType: 'final', sourceDocumentId: 'WO-2', skuCode: 'SKU-B', dueAtUtc: FUTURE }),
+      task({
+        inspectionTaskId: 'T1',
+        sourceDocumentId: 'RCV-1001',
+        skuCode: 'SKU-A',
+        dueAtUtc: FUTURE,
+      }),
+      task({
+        inspectionTaskId: 'T2',
+        sourceType: 'final',
+        sourceDocumentId: 'WO-2',
+        skuCode: 'SKU-B',
+        dueAtUtc: FUTURE,
+      }),
     ])
     await wrapper.findComponent(NvScanBar).vm.$emit('scan', 'RCV-1001')
     expect(wrapper.emitted('select')?.[0]?.[0]).toMatchObject({ inspectionTaskId: 'T1' })
@@ -42,11 +70,24 @@ describe('QualityTaskListStep', () => {
 
   it('scan direct: cross-page hit loads all then auto-selects the task', async () => {
     // 目标任务在未加载分页（loaded 集合无命中，hasMore=true）→ loadAll 后跨页直达。
-    const target = task({ inspectionTaskId: 'T99', sourceDocumentId: 'RCV-9999', skuCode: 'SKU-Z', dueAtUtc: FUTURE })
+    const target = task({
+      inspectionTaskId: 'T99',
+      sourceDocumentId: 'RCV-9999',
+      skuCode: 'SKU-Z',
+      dueAtUtc: FUTURE,
+    })
     const loaded = [task({ inspectionTaskId: 'T1', sourceDocumentId: 'RCV-1', dueAtUtc: FUTURE })]
     const loadAll = vi.fn().mockResolvedValue([...loaded, target])
     const wrapper = mount(QualityTaskListStep, {
-      props: { tasks: loaded, total: 2, loaded: 1, hasMore: true, pending: false, error: null, loadAll },
+      props: {
+        tasks: loaded,
+        total: 2,
+        loaded: 1,
+        hasMore: true,
+        pending: false,
+        error: null,
+        loadAll,
+      },
     })
     await wrapper.findComponent(NvScanBar).vm.$emit('scan', 'RCV-9999')
     await flushPromises()
@@ -64,7 +105,15 @@ describe('QualityTaskListStep', () => {
         task({ inspectionTaskId: 'T2', sourceDocumentId: 'RCV-2', skuCode: 'SKU-DUP' }),
       ])
     const wrapper = mount(QualityTaskListStep, {
-      props: { tasks: loaded, total: 2, loaded: 1, hasMore: true, pending: false, error: null, loadAll },
+      props: {
+        tasks: loaded,
+        total: 2,
+        loaded: 1,
+        hasMore: true,
+        pending: false,
+        error: null,
+        loadAll,
+      },
     })
     await wrapper.findComponent(NvScanBar).vm.$emit('scan', 'SKU-DUP')
     await flushPromises()

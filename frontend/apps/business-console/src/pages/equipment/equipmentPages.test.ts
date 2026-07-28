@@ -570,12 +570,10 @@ describe('equipment pages', () => {
     ]
   })
 
-  it('does not expose organization or environment context on equipment pages', () => {
+  it('does not expose internal organization or environment identifiers on equipment pages', () => {
     for (const page of [EquipmentIndexPage, EquipmentAlarmsPage, EquipmentDetailPage]) {
       const wrapper = mount(page, { global: { stubs } })
 
-      expect(wrapper.text()).not.toContain('组织')
-      expect(wrapper.text()).not.toContain('环境')
       expect(wrapper.html()).not.toContain('organizationId')
       expect(wrapper.html()).not.toContain('environmentId')
     }

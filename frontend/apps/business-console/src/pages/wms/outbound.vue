@@ -12,6 +12,7 @@ import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { createWmsIdempotencyKey, useWmsOutboundOrders } from '@/composables/useBusinessWms'
+import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
 import {
@@ -78,7 +79,15 @@ const {
   completeOutboundPending,
   createOutbound,
   createOutboundPending,
+  createOutboundError,
+  outboundOrdersLastUpdatedAt,
 } = useWmsOutboundOrders()
+const outboundScopeReady = computed(
+  () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
+)
+const outboundScope = computed(() =>
+  outboundScopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
+)
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 // 物料 / 单位 / 工厂走主数据目录；库位与批次后端无读面，从既有台账与作业记录派生。
 const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
@@ -427,6 +436,18 @@ function formatError(error: unknown) {
         </NvButton>
       </template>
     </NvPageHeader>
+
+    <ListScopeMeta
+      :scope="outboundScope"
+      source="出库发货服务（组织/环境范围）"
+      :loaded="outboundOrders.length"
+      :total="outboundOrdersTotal"
+      :updated-at="outboundOrdersLastUpdatedAt"
+      :empty="!outboundOrdersPending && !outboundOrdersError && outboundOrders.length === 0"
+      :empty-explanation="
+        outboundScopeReady ? '当前组织/环境范围没有出库单。' : '缺少组织或环境范围，未发起查询。'
+      "
+    />
 
     <NvMetricStrip :cells="metricCells" />
 

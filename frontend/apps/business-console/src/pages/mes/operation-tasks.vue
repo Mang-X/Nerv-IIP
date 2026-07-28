@@ -7,6 +7,7 @@ import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import { openDownloadGrantBlob, statusActionGate } from '@nerv-iip/business-core'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import { recoverLifecycleAction, useLifecycleWriteIntent } from '@/composables/lifecycleAction'
+import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
@@ -88,11 +89,22 @@ const {
   operationTasksTotal,
   operationScopeMessage,
   operationScopeReady,
+  operationTasksLastUpdatedAt,
   pauseOperationTask,
   refreshOperationTasks,
   resumeOperationTask,
   startOperationTask,
 } = useMesOperationTasks()
+const mesScope = computed(() =>
+  filters.organizationId && filters.environmentId
+    ? '当前登录组织 / 当前业务环境'
+    : '组织/环境范围未就绪',
+)
+const mesEmptyExplanation = computed(() =>
+  !filters.organizationId || !filters.environmentId
+    ? '缺少组织或环境范围，未发起查询。'
+    : '当前列表为组织范围的工序任务，暂不支持按当前人员归属筛选；空态不代表我的任务。',
+)
 // 派工在本页行内直接完成：一线看着工序表就能把没人的活派出去，不必先跳派工看板。
 const { assignDispatchTask, assignDispatchTaskPending } = useMesDispatchTasks()
 
@@ -481,6 +493,16 @@ function formatError(error: unknown) {
         </NvButton>
       </template>
     </NvPageHeader>
+
+    <ListScopeMeta
+      :scope="mesScope"
+      source="工序任务服务（组织/环境范围，暂不支持按当前人员归属筛选）"
+      :loaded="operationTasks.length"
+      :total="operationTasksTotal"
+      :updated-at="operationTasksLastUpdatedAt"
+      :empty="!operationTasksPending && !operationTasksError && operationTasks.length === 0"
+      :empty-explanation="mesEmptyExplanation"
+    />
 
     <NvToolbar v-model:search="keyword" search-placeholder="搜索任务、工单、设备">
       <template #filters>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
@@ -29,8 +30,24 @@ definePage({
 })
 
 const router = useRouter()
-const { filters, executions, pending, error, refresh, completeCount, completePending } =
-  useWmsCount()
+const {
+  filters,
+  executions,
+  total,
+  pending,
+  error,
+  refresh,
+  completeCount,
+  completePending,
+  organizationId,
+  environmentId,
+  scopeReady,
+  lastUpdatedAt,
+} = useWmsCount()
+const countScope = computed(() =>
+  scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
+)
+const countTotal = computed(() => total.value)
 
 // 选中的盘点号 + GUID（GUID 仅用于 complete 调用与 :key，绝不展示）。
 const selectedExecutionId = ref('')
@@ -216,6 +233,19 @@ function goHome() {
 
     <div v-else class="space-y-4 p-4">
       <NvScanBar placeholder="扫描库位" :active="scanActive" @scan="onScan" />
+      <ListScopeMeta
+        :scope="countScope"
+        source="仓储盘点任务服务（组织/环境范围，暂不支持按操作员归属筛选）"
+        :loaded="executions.length"
+        :total="countTotal"
+        :updated-at="lastUpdatedAt"
+        :empty="!pending && !error && executions.length === 0"
+        :empty-explanation="
+          scopeReady
+            ? '当前组织/环境范围没有盘点任务；暂不支持按操作员归属筛选，空态不代表个人任务。'
+            : '缺少组织或环境范围，未发起查询。'
+        "
+      />
 
       <RetryableListError
         v-if="error"
@@ -230,7 +260,7 @@ function goHome() {
         v-if="showEmpty"
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
       >
-        暂无盘点任务
+        当前组织/环境范围暂无盘点任务；暂不支持按操作员归属筛选
       </div>
 
       <div v-else class="overflow-hidden rounded-lg border border-border">
