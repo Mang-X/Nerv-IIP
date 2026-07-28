@@ -142,6 +142,85 @@ describe('NvEntityPicker', () => {
     wrapper.unmount()
   })
 
+  // value 是内部 id（GUID）的调用点：print-batches / eco / bom-analysis。
+  // 组件此前无条件把 value 当编码渲染，GUID 会直接露到界面上。
+  describe('value 是内部标识时不能把它当编码印出来', () => {
+    const GUID = '8f14e45f-ceea-467a-9f1e-4b2c3d5a6e7b'
+    const idOptions = [{ value: GUID, label: '前减振器总成', code: 'SKU-FG-100' }]
+
+    it('给了 code 就显示 code，不显示 value', async () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: { options: idOptions, title: '选择物料', modelValue: GUID },
+        attachTo: document.body,
+      })
+
+      // 触发器上
+      expect(wrapper.text()).toContain('SKU-FG-100')
+      expect(wrapper.text()).not.toContain(GUID)
+
+      // 下拉里
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+      const list = document.body.querySelector('[role="listbox"]')
+      expect(list?.textContent).toContain('SKU-FG-100')
+      expect(list?.textContent).not.toContain(GUID)
+
+      wrapper.unmount()
+    })
+
+    it('show-code=false 时编码行整条不渲染', async () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: {
+          options: [{ value: GUID, label: '前减振器总成' }],
+          title: '选择物料',
+          modelValue: GUID,
+          showCode: false,
+        },
+        attachTo: document.body,
+      })
+
+      expect(wrapper.text()).toContain('前减振器总成')
+      expect(wrapper.text()).not.toContain(GUID)
+      // 没有编码就别留一对空括号。
+      expect(wrapper.text()).not.toContain('（）')
+
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+      expect(document.body.querySelector('[role="listbox"]')?.textContent).not.toContain(GUID)
+
+      wrapper.unmount()
+    })
+
+    it('按人读编码搜得到，GUID 不参与匹配', async () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: { options: idOptions, title: '选择物料' },
+        attachTo: document.body,
+      })
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+
+      const search = document.body.querySelector<HTMLInputElement>('input[role="combobox"]')!
+      search.value = 'SKU-FG'
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+      await flushPromises()
+      expect(document.body.querySelectorAll('[role="option"]').length).toBe(1)
+
+      search.value = '8f14e45f'
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+      await flushPromises()
+      expect(document.body.querySelectorAll('[role="option"]').length).toBe(0)
+
+      wrapper.unmount()
+    })
+
+    it('value 本身就是人读编码时行为不变（默认仍显示编码）', () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: { options, title: '选择物料', modelValue: 'RM-200' },
+      })
+      expect(wrapper.text()).toContain('RM-200')
+    })
+  })
+
   it('clears the selection without opening the picker', async () => {
     const wrapper = mount(NvEntityPicker, {
       props: {
