@@ -30,7 +30,8 @@ const CATALOG_TAKE = 300
  * 这不是审美取舍，是硬性上限：`EntityPickerPanel` 用 `v-for` 铺**全部**选项，既不虚拟化也不分页。
  * 批次与预留页把整张台账（实测首屏 3811 行、全扫约 1.4 万行）当作 `extraLines` 喂进来，
  * 不设上限的话光是展开一次「批次」下拉就会同步渲染上万个节点，把主线程钉死。
- * 超出部分不是丢掉不管——`warehouseCatalogSourceText` 会如实说明列了多少、共有多少。
+ * 超出部分不是丢掉不管——`locationSourceText` / `lotSourceText` / `serialSourceText`
+ * 会如实说明共有多少个编码、当前列出了多少。
  */
 const CATALOG_OPTION_LIMIT = 500
 
@@ -68,8 +69,13 @@ function toOptions(map: Map<string, CodeAccumulator>): EntityPickerOption[] {
     .map((entry) => {
       const hints = [...entry.hints]
       // hint 只放少量辅助识别信息，堆一长串反而看不清。
-      const hint = hints.length > 3 ? `${hints.slice(0, 3).join('、')} 等 ${hints.length} 项` : hints.join('、')
-      return hint ? { value: entry.value, label: entry.value, hint } : { value: entry.value, label: entry.value }
+      const hint =
+        hints.length > 3
+          ? `${hints.slice(0, 3).join('、')} 等 ${hints.length} 项`
+          : hints.join('、')
+      return hint
+        ? { value: entry.value, label: entry.value, hint }
+        : { value: entry.value, label: entry.value }
     })
 }
 
