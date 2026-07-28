@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, reactive, shallowRef, type ShallowRef } from 'vue'
 
 import {
@@ -196,6 +196,10 @@ vi.mock('@/stores/auth', () => ({
 }))
 
 describe('pda useBusinessMes composables', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
@@ -419,6 +423,8 @@ describe('pda useBusinessMes composables', () => {
   })
 
   it('removes cached issue and receipt rows outside scope and waits for the restored scope response', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime('2026-07-28T01:00:00.000Z')
     coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
       success: true,
       data: {
@@ -440,6 +446,8 @@ describe('pda useBusinessMes composables', () => {
     expect(materialIssue.total.value).toBe(9)
     expect(receipts.receipts.value).toHaveLength(1)
     expect(receipts.total.value).toBe(8)
+    expect(materialIssue.lastUpdatedAt.value).toBe('2026-07-28T01:00:00.000Z')
+    expect(receipts.lastUpdatedAt.value).toBe('2026-07-28T01:00:00.000Z')
 
     reactiveAuthState.principal = undefined
     await nextTick()
@@ -449,6 +457,8 @@ describe('pda useBusinessMes composables', () => {
     expect(materialIssue.total.value).toBe(0)
     expect(receipts.receipts.value).toEqual([])
     expect(receipts.total.value).toBe(0)
+    expect(materialIssue.lastUpdatedAt.value).toBeNull()
+    expect(receipts.lastUpdatedAt.value).toBeNull()
     expect(
       coladaState.refetchById.get('listBusinessConsoleMesMaterialIssueRequests'),
     ).not.toHaveBeenCalled()
@@ -465,7 +475,19 @@ describe('pda useBusinessMes composables', () => {
     expect(receipts.receipts.value).toEqual([])
     expect(receipts.total.value).toBe(0)
     expect(receipts.hasSuccessfulResponse.value).toBe(false)
+    expect(materialIssue.lastUpdatedAt.value).toBeNull()
+    expect(receipts.lastUpdatedAt.value).toBeNull()
 
+    coladaState.queryDataRefById.get('listBusinessConsoleMesMaterialIssueRequests')!.value = {
+      success: false,
+    }
+    coladaState.queryDataRefById.get('listBusinessConsoleMesFinishedGoodsReceiptRequests')!.value =
+      { success: false }
+    await nextTick()
+    expect(materialIssue.lastUpdatedAt.value).toBeNull()
+    expect(receipts.lastUpdatedAt.value).toBeNull()
+
+    vi.setSystemTime('2026-07-28T02:00:00.000Z')
     coladaState.queryDataRefById.get('listBusinessConsoleMesMaterialIssueRequests')!.value = {
       success: true,
       data: {
@@ -491,6 +513,8 @@ describe('pda useBusinessMes composables', () => {
       expect.objectContaining({ receiptRequestId: 'NEW-RECEIPT' }),
     ])
     expect(receipts.total.value).toBe(1)
+    expect(materialIssue.lastUpdatedAt.value).toBe('2026-07-28T02:00:00.000Z')
+    expect(receipts.lastUpdatedAt.value).toBe('2026-07-28T02:00:00.000Z')
 
     coladaState.loadingById.get('listBusinessConsoleMesMaterialIssueRequests')!.value = true
     coladaState.loadingById.get('listBusinessConsoleMesFinishedGoodsReceiptRequests')!.value = true
@@ -502,6 +526,8 @@ describe('pda useBusinessMes composables', () => {
     expect(receipts.receipts.value).toEqual([
       expect.objectContaining({ receiptRequestId: 'NEW-RECEIPT' }),
     ])
+    expect(materialIssue.lastUpdatedAt.value).toBe('2026-07-28T02:00:00.000Z')
+    expect(receipts.lastUpdatedAt.value).toBe('2026-07-28T02:00:00.000Z')
   })
 
   it('enables list queries once a principal scope is present', () => {

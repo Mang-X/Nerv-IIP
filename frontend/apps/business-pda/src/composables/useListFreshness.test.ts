@@ -1,8 +1,12 @@
 import { nextTick, ref } from 'vue'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useListFreshness } from './useListFreshness'
 
 describe('useListFreshness', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('does not timestamp failed envelopes or missing-scope responses', async () => {
     const data = ref<unknown>({ success: false })
     const enabled = ref(false)
@@ -28,6 +32,29 @@ describe('useListFreshness', () => {
     const enabled = ref(true)
     const updatedAt = useListFreshness(data, enabled)
 
+    await nextTick()
+    expect(updatedAt.value).toBeNull()
+  })
+
+  it('clears an unbound scope timestamp and preserves it during a same-scope refresh', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime('2026-07-28T01:00:00.000Z')
+    const data = ref<unknown>({ success: true, data: { items: [] } })
+    const enabled = ref(true)
+    const updatedAt = useListFreshness(data, enabled)
+
+    expect(updatedAt.value).toBe('2026-07-28T01:00:00.000Z')
+
+    data.value = { success: false }
+    await nextTick()
+    expect(updatedAt.value).toBe('2026-07-28T01:00:00.000Z')
+
+    data.value = undefined
+    await nextTick()
+    expect(updatedAt.value).toBeNull()
+
+    enabled.value = false
+    data.value = { success: true, data: { items: [] } }
     await nextTick()
     expect(updatedAt.value).toBeNull()
   })
