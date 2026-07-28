@@ -18,6 +18,7 @@ import {
   recordBusinessConsoleMesProductionReportMutationOptions,
   startBusinessConsoleMesOperationTaskMutationOptions,
 } from '@nerv-iip/api-client'
+import { acquirePendingBusinessIntent } from '@nerv-iip/business-core'
 
 import {
   useMesMaterialIssue,
@@ -49,6 +50,9 @@ const coladaState = vi.hoisted(() => ({
   mutateById: new Map<string, ReturnType<typeof vi.fn>>(),
   cancelQueries: vi.fn().mockResolvedValue(undefined),
 }))
+const receiptState = vi.hoisted(() => ({
+  confirm: vi.fn(),
+}))
 
 const authState = vi.hoisted(() => ({
   principal: undefined as { organizationId?: string; environmentId?: string } | undefined,
@@ -70,6 +74,7 @@ function mockMutationOptions(id: string) {
 }
 
 vi.mock('@nerv-iip/api-client', () => ({
+  confirmBusinessConsoleOperation: (...args: unknown[]) => receiptState.confirm(...args),
   listBusinessConsoleMesWorkOrdersQueryOptions: mockQueryOptions(
     'listBusinessConsoleMesWorkOrders',
   ),
@@ -180,6 +185,8 @@ describe('pda useBusinessMes composables', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    sessionStorage.clear()
+    receiptState.confirm.mockImplementation(async (value) => value)
     coladaState.queryDataById.clear()
     coladaState.queryOptionsById.clear()
     coladaState.queryFactoriesById.clear()
@@ -198,7 +205,10 @@ describe('pda useBusinessMes composables', () => {
                   {
                     operationTaskId: query.keyword,
                     workOrderId: query.workOrderId ?? 'wo-1',
-                    status: query.keyword === 'ot-3' ? 'Queued' : 'InProgress',
+                    status:
+                      query.keyword === 'ot-3' || query.keyword === 'ot-reentry'
+                        ? 'Queued'
+                        : 'InProgress',
                   },
                 ],
                 total: 1,
@@ -226,6 +236,43 @@ describe('pda useBusinessMes composables', () => {
             },
           }) as never,
       )
+  })
+
+  it('keeps the original operation key after accepted-readback failure and PDA page re-entry', async () => {
+    receiptState.confirm
+      .mockRejectedValueOnce(
+        Object.assign(new Error('请求已受理，但权威状态尚未确认'), {
+          code: 'business-operation-unconfirmed',
+        }),
+      )
+      .mockImplementation(async (value) => value)
+
+    const firstPage = useMesOperationTasks()
+    const firstMutation = coladaState.mutateById.get('startBusinessConsoleMesOperationTask')!
+    await expect(
+      firstPage.startTask('ot-reentry', {
+        reasonCode: 'OPERATOR_READY',
+        idempotencyKey: 'pda-page-key-1',
+      }),
+    ).rejects.toThrow('权威状态尚未确认')
+
+    const returnedPage = useMesOperationTasks()
+    const retryMutation = coladaState.mutateById.get('startBusinessConsoleMesOperationTask')!
+    await returnedPage.startTask('ot-reentry', {
+      reasonCode: 'OPERATOR_READY',
+      idempotencyKey: 'pda-page-key-2',
+    })
+
+    const newIntentPage = useMesOperationTasks()
+    const newIntentMutation = coladaState.mutateById.get('startBusinessConsoleMesOperationTask')!
+    await newIntentPage.startTask('ot-reentry', {
+      reasonCode: 'OPERATOR_READY',
+      idempotencyKey: 'pda-page-key-3',
+    })
+
+    expect(firstMutation.mock.calls[0]?.[0].body.idempotencyKey).toBe('pda-page-key-1')
+    expect(retryMutation.mock.calls[0]?.[0].body.idempotencyKey).toBe('pda-page-key-1')
+    expect(newIntentMutation.mock.calls[0]?.[0].body.idempotencyKey).toBe('pda-page-key-3')
   })
 
   it('keeps list queries disabled when the principal has no org/env scope', () => {
@@ -447,6 +494,22 @@ describe('pda useBusinessMes composables', () => {
     expect(payload.body.idempotencyKey).toBe('op-complete-1')
   })
 
+  it('clears an operation intent after a determinate 422 so the next attempt uses a new key', async () => {
+    const { pauseTask } = useMesOperationTasks()
+    const mutateAsync = coladaState.mutateById.get('pauseBusinessConsoleMesOperationTask')!
+    mutateAsync
+      .mockRejectedValueOnce({ status: 422, message: 'invalid transition' })
+      .mockResolvedValueOnce({ success: true, data: {} })
+
+    await expect(
+      pauseTask('ot-determinate', { idempotencyKey: 'operation-key-1' }),
+    ).rejects.toMatchObject({ status: 422 })
+    await pauseTask('ot-determinate', { idempotencyKey: 'operation-key-2' })
+
+    expect(mutateAsync.mock.calls[0][0].body.idempotencyKey).toBe('operation-key-1')
+    expect(mutateAsync.mock.calls[1][0].body.idempotencyKey).toBe('operation-key-2')
+  })
+
   it('re-reads the exact operation task and blocks a completed task before mutation', async () => {
     vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
       data: {
@@ -576,10 +639,73 @@ describe('pda useBusinessMes composables', () => {
     expect(payload.body.idempotencyKey).toBe('op-report-stable')
   })
 
+  it('clears a report intent after a determinate 422 so the next attempt uses a new key', async () => {
+    const { recordReport } = useMesProductionReports()
+    const mutateAsync = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')!
+    mutateAsync
+      .mockRejectedValueOnce({ status: 422, message: 'invalid report' })
+      .mockResolvedValueOnce({ success: true, data: {} })
+    const intent = {
+      workOrderId: 'wo-report-determinate',
+      operationTaskId: 'ot-report-determinate',
+      goodQuantity: 4,
+      scrapQuantity: 0,
+      completesOperation: false,
+    } as const
+
+    await expect(recordReport({ ...intent, idempotencyKey: 'report-key-1' })).rejects.toMatchObject(
+      { status: 422 },
+    )
+    await recordReport({ ...intent, idempotencyKey: 'report-key-2' })
+
+    expect(mutateAsync.mock.calls[0][0].body.idempotencyKey).toBe('report-key-1')
+    expect(mutateAsync.mock.calls[1][0].body.idempotencyKey).toBe('report-key-2')
+  })
+
+  it('restores all required report fields when a pending intent has no payload snapshot', async () => {
+    const input = {
+      workOrderId: 'wo-report-missing-snapshot',
+      operationTaskId: 'ot-report-missing-snapshot',
+      goodQuantity: 7,
+      scrapQuantity: 1,
+      completesOperation: false,
+      idempotencyKey: 'report-missing-snapshot-key',
+    }
+    const { idempotencyKey, ...payload } = input
+    acquirePendingBusinessIntent(
+      {
+        principalId: 'unrestored-session',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        operationType: 'mes.production-report.record',
+        payloadFingerprint: JSON.stringify(payload),
+      },
+      () => idempotencyKey,
+    )
+    const { recordReport } = useMesProductionReports()
+
+    await recordReport(input)
+
+    const mutateAsync = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')!
+    expect(mutateAsync.mock.calls[0][0].body).toMatchObject({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      workOrderId: input.workOrderId,
+      operationTaskId: input.operationTaskId,
+      goodQuantity: input.goodQuantity,
+      scrapQuantity: input.scrapQuantity,
+      completesOperation: false,
+      idempotencyKey,
+      reportedAtUtc: expect.any(String),
+    })
+  })
+
   it('replays only the same issued report-complete key after the task became completed', async () => {
     const { recordReport } = useMesProductionReports()
     const mutateAsync = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')!
-    mutateAsync.mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce(undefined)
+    mutateAsync
+      .mockRejectedValueOnce(new TypeError('response lost'))
+      .mockResolvedValueOnce(undefined)
     const originalIntent = {
       workOrderId: 'wo-1',
       operationTaskId: 'ot-1',

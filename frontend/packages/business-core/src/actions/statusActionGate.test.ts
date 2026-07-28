@@ -50,6 +50,37 @@ describe('statusActionGate', () => {
     },
   )
 
+  it.each([
+    ['start', 'InProgress', false],
+    ['pause', 'Paused', false],
+    ['resume', 'InProgress', false],
+    ['complete', 'Completed', true],
+    ['report-complete', 'Completed', true],
+  ] as const)(
+    'treats only a matching issued MES %s replay at %s as an already-applied no-op',
+    (action, status, isTerminal) => {
+      expect(
+        gate({
+          domain: 'mes-operation-task',
+          action,
+          facts: { status, idempotentReplay: true },
+        }),
+      ).toMatchObject({
+        terminal: isTerminal,
+        executable: false,
+        legalNoop: true,
+        reason: 'already-applied-noop',
+      })
+      expect(
+        gate({
+          domain: 'mes-operation-task',
+          action,
+          facts: { status, idempotentReplay: false },
+        }).legalNoop,
+      ).toBe(false)
+    },
+  )
+
   it('marks a known but wrong MES operation phase as incompatible', () => {
     expect(
       gate({
@@ -77,12 +108,12 @@ describe('statusActionGate', () => {
     expect(gate({ domain: 'mes-work-order', action, facts: { status } }).executable).toBe(true)
   })
 
-  it('preserves cancelled work-order cancel as a legal no-op', () => {
+  it('preserves cancelled work-order cancel only for the matching issued replay', () => {
     expect(
       gate({
         domain: 'mes-work-order',
         action: 'cancel',
-        facts: { status: 'cancelled' },
+        facts: { status: 'cancelled', idempotentReplay: true },
       }),
     ).toMatchObject({
       known: true,
@@ -90,6 +121,18 @@ describe('statusActionGate', () => {
       executable: false,
       legalNoop: true,
       reason: 'already-applied-noop',
+    })
+    expect(
+      gate({
+        domain: 'mes-work-order',
+        action: 'cancel',
+        facts: { status: 'cancelled', idempotentReplay: false },
+      }),
+    ).toMatchObject({
+      terminal: true,
+      executable: false,
+      legalNoop: false,
+      reason: 'terminal-status',
     })
   })
 
@@ -223,7 +266,7 @@ describe('statusActionGate', () => {
     [{ status: 'pending' }, true, false],
     [{ status: 'in-progress', inspectionRecordId: null }, false, false],
     [{ status: 'in-progress', inspectionRecordId: 'record-1' }, false, false],
-    [{ status: 'completed', inspectionRecordId: 'record-1' }, false, true],
+    [{ status: 'completed', inspectionRecordId: 'record-1' }, false, false],
     [{ status: 'completed', inspectionRecordId: null }, false, false],
   ] as const)('evaluates quality inspection task facts %j', (facts, executable, legalNoop) => {
     expect(
@@ -233,6 +276,25 @@ describe('statusActionGate', () => {
         facts,
       }),
     ).toMatchObject({ executable, legalNoop })
+  })
+
+  it('accepts a completed inspection record only for the matching issued create-record replay', () => {
+    expect(
+      gate({
+        domain: 'quality-inspection-task',
+        action: 'create-record',
+        facts: {
+          status: 'completed',
+          inspectionRecordId: 'record-1',
+          idempotentReplay: true,
+        },
+      }),
+    ).toMatchObject({
+      terminal: true,
+      executable: false,
+      legalNoop: true,
+      reason: 'already-applied-noop',
+    })
   })
 
   it('does not treat the completed-only task record link as an in-progress retry fact', () => {
@@ -339,7 +401,7 @@ describe('statusActionGate', () => {
     ).toMatchObject({ terminal: true, executable: false, reason: 'terminal-status' })
   })
 
-  it('allows first alarm acknowledgement and preserves first-write-wins', () => {
+  it('allows first alarm acknowledgement and only no-ops the matching issued replay', () => {
     expect(
       gate({
         domain: 'iiot-alarm',
@@ -351,16 +413,35 @@ describe('statusActionGate', () => {
       gate({
         domain: 'iiot-alarm',
         action: 'acknowledge',
-        facts: { status: 'shelved', acknowledgedAtUtc: '2026-07-27T01:00:00Z' },
+        facts: {
+          status: 'shelved',
+          acknowledgedAtUtc: '2026-07-27T01:00:00Z',
+          idempotentReplay: true,
+        },
       }),
     ).toMatchObject({
       executable: false,
       legalNoop: true,
       reason: 'already-applied-noop',
     })
+    expect(
+      gate({
+        domain: 'iiot-alarm',
+        action: 'acknowledge',
+        facts: {
+          status: 'shelved',
+          acknowledgedAtUtc: '2026-07-27T01:00:00Z',
+          idempotentReplay: false,
+        },
+      }),
+    ).toMatchObject({
+      executable: false,
+      legalNoop: false,
+      reason: 'incompatible-state',
+    })
   })
 
-  it('allows shelving unless cleared and treats an active shelf as a legal no-op', () => {
+  it('allows shelving unless cleared and only no-ops an active matching replay', () => {
     expect(
       gate({
         domain: 'iiot-alarm',
@@ -380,12 +461,30 @@ describe('statusActionGate', () => {
           shelvedAtUtc: '2026-07-27T01:00:00Z',
           shelvedUntilUtc: '2026-07-27T03:00:00Z',
           evaluatedAtUtc: '2026-07-27T02:00:00Z',
+          idempotentReplay: true,
         },
       }),
     ).toMatchObject({
       executable: false,
       legalNoop: true,
       reason: 'already-applied-noop',
+    })
+    expect(
+      gate({
+        domain: 'iiot-alarm',
+        action: 'shelve',
+        facts: {
+          status: 'shelved',
+          shelvedAtUtc: '2026-07-27T01:00:00Z',
+          shelvedUntilUtc: '2026-07-27T03:00:00Z',
+          evaluatedAtUtc: '2026-07-27T02:00:00Z',
+          idempotentReplay: false,
+        },
+      }),
+    ).toMatchObject({
+      executable: false,
+      legalNoop: false,
+      reason: 'incompatible-state',
     })
     expect(
       gate({
@@ -483,7 +582,7 @@ describe('statusActionGate', () => {
     })
   })
 
-  it('treats evaluation exactly at shelf start as an active shelf no-op', () => {
+  it('treats evaluation exactly at shelf start as a no-op for the matching replay', () => {
     expect(
       gate({
         domain: 'iiot-alarm',
@@ -493,6 +592,7 @@ describe('statusActionGate', () => {
           shelvedAtUtc: '2026-07-27T02:00:00Z',
           shelvedUntilUtc: '2026-07-27T03:00:00Z',
           evaluatedAtUtc: '2026-07-27T02:00:00Z',
+          idempotentReplay: true,
         },
       }),
     ).toMatchObject({
@@ -502,17 +602,29 @@ describe('statusActionGate', () => {
     })
   })
 
-  it('keeps non-shelved alarm unshelve as a legal no-op', () => {
+  it('keeps non-shelved alarm unshelve as a no-op only for the matching issued replay', () => {
     expect(
       gate({
         domain: 'iiot-alarm',
         action: 'unshelve',
-        facts: { status: 'acknowledged' },
+        facts: { status: 'acknowledged', idempotentReplay: true },
       }),
     ).toMatchObject({
       executable: false,
       legalNoop: true,
       reason: 'already-applied-noop',
+    })
+    expect(
+      gate({
+        domain: 'iiot-alarm',
+        action: 'unshelve',
+        facts: { status: 'acknowledged', idempotentReplay: false },
+      }),
+    ).toMatchObject({
+      terminal: false,
+      executable: false,
+      legalNoop: false,
+      reason: 'incompatible-state',
     })
     expect(
       gate({

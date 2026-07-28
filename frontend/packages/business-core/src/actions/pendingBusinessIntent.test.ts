@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   acquirePendingBusinessIntent,
   clearPendingBusinessIntent,
+  completePendingBusinessIntent,
   peekPendingBusinessIntent,
+  shouldRetainPendingBusinessIntent,
 } from './pendingBusinessIntent'
 
 const scope = {
@@ -104,5 +106,56 @@ describe('pending business intent session store', () => {
 
     expect(removeItem).toHaveBeenCalled()
     expect(refreshedStore.peekPendingBusinessIntent(scope)).toBeUndefined()
+  })
+
+  it.each([
+    Object.assign(new Error('confirmed failure'), {
+      code: 'business-operation-failed',
+      indeterminate: false,
+    }),
+    { status: 400 },
+    { statusCode: 409 },
+    { response: { status: 422 } },
+    Object.assign(new Error('offline'), { name: 'OfflineError' }),
+    new Error('local validation failed'),
+  ])('classifies an explicit failure as determinate and safe to clear', (error) => {
+    expect(shouldRetainPendingBusinessIntent(error)).toBe(false)
+  })
+
+  it.each([
+    Object.assign(new Error('unconfirmed'), { code: 'business-operation-unconfirmed' }),
+    Object.assign(new Error('timeout'), { name: 'RequestTimeoutError' }),
+    new TypeError('network failed'),
+    { status: 500 },
+    { statusCode: 503 },
+    { response: { status: 502 } },
+    { indeterminate: true },
+  ])('retains an intent when the dispatched write outcome is indeterminate', (error) => {
+    expect(shouldRetainPendingBusinessIntent(error)).toBe(true)
+  })
+
+  it('clears after success or determinate failure and retains after an unconfirmed result', async () => {
+    acquirePendingBusinessIntent(scope, () => 'success-key')
+    await expect(completePendingBusinessIntent(scope, async () => 'done')).resolves.toBe('done')
+    expect(peekPendingBusinessIntent(scope)).toBeUndefined()
+
+    acquirePendingBusinessIntent(scope, () => 'failed-key')
+    await expect(
+      completePendingBusinessIntent(scope, async () => {
+        throw { statusCode: 422 }
+      }),
+    ).rejects.toEqual({ statusCode: 422 })
+    expect(peekPendingBusinessIntent(scope)).toBeUndefined()
+
+    acquirePendingBusinessIntent(scope, () => 'unconfirmed-key')
+    const unconfirmed = Object.assign(new Error('unconfirmed'), {
+      code: 'business-operation-unconfirmed',
+    })
+    await expect(
+      completePendingBusinessIntent(scope, async () => {
+        throw unconfirmed
+      }),
+    ).rejects.toBe(unconfirmed)
+    expect(peekPendingBusinessIntent(scope)?.idempotencyKey).toBe('unconfirmed-key')
   })
 })

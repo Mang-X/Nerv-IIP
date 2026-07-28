@@ -2,7 +2,8 @@ import {
   acceptBusinessConsoleMesShiftHandoverMutationOptions,
   assignBusinessConsoleMesDispatchTaskMutationOptions,
   cancelBusinessConsoleMesWorkOrder,
-  completeBusinessConsoleMesOperationTask,
+  completeBusinessConsoleMesOperationTaskMutationOptions,
+  confirmBusinessConsoleOperation,
   confirmBusinessConsoleMesDowntimeRecoveryMutationOptions,
   convertBusinessConsoleMesPlanToWorkOrderMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
@@ -42,16 +43,16 @@ import {
   listBusinessConsoleMesRelatedQualityItemsQueryOptions,
   listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
-  pauseBusinessConsoleMesOperationTask,
+  pauseBusinessConsoleMesOperationTaskMutationOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   recordBusinessConsoleMesDefectMutationOptions,
   recordBusinessConsoleMesDowntimeEventMutationOptions,
   recordBusinessConsoleMesProductionReport,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
-  resumeBusinessConsoleMesOperationTask,
+  resumeBusinessConsoleMesOperationTaskMutationOptions,
   reverseBusinessConsoleMesProductionReportMutationOptions,
   runBusinessConsoleMesScheduleMutationOptions,
-  startBusinessConsoleMesOperationTask,
+  startBusinessConsoleMesOperationTaskMutationOptions,
   type BusinessConsoleMesCapacityImpactListEnvelope,
   type BusinessConsoleMesCapacityImpactRow,
   type BusinessConsoleMesCreateMaterialIssueRequest,
@@ -109,6 +110,12 @@ import {
   type BusinessConsoleRunScheduleRequest,
   type ListBusinessConsoleMesWorkOrdersData,
 } from '@nerv-iip/api-client'
+import {
+  acquirePendingBusinessIntent,
+  completePendingBusinessIntent,
+  peekPendingBusinessIntent,
+} from '@nerv-iip/business-core'
+import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, shallowRef } from 'vue'
 import {
@@ -119,9 +126,17 @@ import {
   type BusinessContextFields,
 } from './businessContextBinding'
 import { businessReadState } from './businessReadState'
-import { executeLifecycleAction, LifecycleStateChangedError } from './lifecycleAction'
+import { executeLifecycleAction } from './lifecycleAction'
 
 const DEFAULT_TAKE = 100
+
+function requirePendingPayloadSnapshot<T extends object>(snapshot: unknown, operation: string): T {
+  if (!snapshot || typeof snapshot !== 'object') {
+    throw new Error(`${operation}缺少冻结的待处理载荷，请保留当前页面并人工核实。`)
+  }
+  return snapshot as T
+}
+
 // 取消补偿预览按此页大小完整分页，直到取全该工单的全部关联单据（取消 handler 处理全部）。
 const CANCEL_PREVIEW_PAGE_SIZE = 200
 
@@ -444,6 +459,7 @@ async function readMesOperationLifecycleRequest(
   operationTaskId: string,
   context: MesContextFilters,
   action: 'start' | 'pause' | 'resume' | 'complete' | 'report-complete',
+  idempotentReplay = false,
 ) {
   const workOrderId = context.workOrderId?.trim()
   if (!workOrderId) return undefined
@@ -468,7 +484,7 @@ async function readMesOperationLifecycleRequest(
       return {
         domain: 'mes-operation-task' as const,
         action,
-        facts: { status: item.status },
+        facts: { status: item.status, idempotentReplay },
       }
     }
     const total = response.data.data?.total ?? 0
@@ -486,6 +502,7 @@ export interface UseMesWorkOrdersOptions {
  * 业务上下文（组织 / 环境）由本钩内部绑定并补齐到请求体，调用方只传报工对象与数量。
  */
 export function useMesProductionReporting() {
+  const auth = useAuthStore()
   const context = defaultContext()
   const queryCache = useQueryCache()
   const issuedReportCompleteIntents = new Set<string>()
@@ -507,15 +524,40 @@ export function useMesProductionReporting() {
     recordProductionReportPending.value = true
     recordProductionReportError.value = undefined
     try {
-      const idempotencyKey = body.idempotencyKey?.trim()
-      const workOrderId = body.workOrderId?.trim()
-      const operationTaskId = body.operationTaskId?.trim()
+      const {
+        idempotencyKey: suppliedKey,
+        reportedAtUtc: _reportedAtUtc,
+        ...fingerprintBody
+      } = body
+      const scope = {
+        principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+        organizationId: context.organizationId,
+        environmentId: context.environmentId,
+        operationType: 'mes.production-report.record',
+        payloadFingerprint: JSON.stringify(fingerprintBody),
+      }
+      const restored = peekPendingBusinessIntent(scope)
+      const pending = acquirePendingBusinessIntent(
+        scope,
+        () => suppliedKey?.trim() || makeIdempotencyKey('production-report'),
+        body,
+      )
+      const stableBody =
+        requirePendingPayloadSnapshot<BusinessConsoleRecordProductionReportRequest>(
+          pending.payloadSnapshot,
+          '生产报工',
+        )
+      const idempotencyKey = pending.idempotencyKey
+      const workOrderId = stableBody.workOrderId?.trim()
+      const operationTaskId = stableBody.operationTaskId?.trim()
       const reportCompleteIntent =
-        body.completesOperation && idempotencyKey && workOrderId && operationTaskId
+        stableBody.completesOperation && idempotencyKey && workOrderId && operationTaskId
           ? `${workOrderId}\u0000${operationTaskId}\u0000${idempotencyKey}`
           : undefined
       const isIssuedReplay =
-        reportCompleteIntent !== undefined && issuedReportCompleteIntents.has(reportCompleteIntent)
+        reportCompleteIntent !== undefined &&
+        (issuedReportCompleteIntents.has(reportCompleteIntent) ||
+          restored?.idempotencyKey === pending.idempotencyKey)
       const command = () => {
         if (reportCompleteIntent) issuedReportCompleteIntents.add(reportCompleteIntent)
         options.onCommandAttempt?.()
@@ -523,39 +565,41 @@ export function useMesProductionReporting() {
           body: {
             organizationId: context.organizationId,
             environmentId: context.environmentId,
-            ...body,
+            ...stableBody,
+            idempotencyKey,
           },
           throwOnError: false,
         })
       }
-      const result = body.completesOperation
-        ? isIssuedReplay
-          ? await command().then((response) => {
-              if (response.response?.status === 409) {
-                throw new LifecycleStateChangedError('conflict')
-              }
+      const result = await completePendingBusinessIntent(scope, async () => {
+        const envelope = stableBody.completesOperation
+          ? await executeLifecycleAction({
+              readLatest: () =>
+                readMesOperationLifecycleRequest(
+                  stableBody.operationTaskId ?? '',
+                  {
+                    organizationId: context.organizationId,
+                    environmentId: context.environmentId,
+                    workOrderId: stableBody.workOrderId,
+                  },
+                  'report-complete',
+                  isIssuedReplay,
+                ),
+              command,
+            })
+          : await command().then((response) => {
               if (response.error !== undefined) throw response.error
               if (response.data?.success === false) throw response.data
               return response.data
             })
-          : await executeLifecycleAction({
-              readLatest: () =>
-                readMesOperationLifecycleRequest(
-                  body.operationTaskId ?? '',
-                  {
-                    organizationId: context.organizationId,
-                    environmentId: context.environmentId,
-                    workOrderId: body.workOrderId,
-                  },
-                  'report-complete',
-                ),
-              command,
-            })
-        : await command().then((response) => {
-            if (response.error !== undefined) throw response.error
-            if (response.data?.success === false) throw response.data
-            return response.data
-          })
+        if (!envelope) throw new Error('生产报工未返回业务信封')
+        await confirmBusinessConsoleOperation(envelope, {
+          expectedOperationType: 'mes.production-report.record',
+          expectedIdempotencyKey: pending.idempotencyKey,
+          expectedResourceIdSelector: (candidate) => candidate.data?.productionReportId,
+        })
+        return envelope
+      })
       await refreshProductionReportQueries()
       return result
     } catch (error) {
@@ -1034,6 +1078,7 @@ export function useMesWorkOrderDetail() {
 }
 
 export function useMesOperationTasks() {
+  const auth = useAuthStore()
   const filters = defaultFilters()
   const queryCache = useQueryCache()
 
@@ -1045,6 +1090,10 @@ export function useMesOperationTasks() {
       filters,
     ),
   )
+  const completeMutation = useMutation(completeBusinessConsoleMesOperationTaskMutationOptions())
+  const pauseMutation = useMutation(pauseBusinessConsoleMesOperationTaskMutationOptions())
+  const resumeMutation = useMutation(resumeBusinessConsoleMesOperationTaskMutationOptions())
+  const startMutation = useMutation(startBusinessConsoleMesOperationTaskMutationOptions())
   function operationActionBody(
     operationTaskId: string,
     context: MesContextFilters,
@@ -1057,28 +1106,57 @@ export function useMesOperationTasks() {
     }
   }
 
-  async function runOperationAction(
+  async function performOperationAction(
     action: 'start' | 'pause' | 'resume' | 'complete',
+    mutation: typeof startMutation,
     operationTaskId: string,
     context: MesContextFilters,
     body: BusinessConsoleMesOperationTaskActionRequest,
   ) {
-    const request = operationActionBody(operationTaskId, context, body)
-    const result = await executeLifecycleAction({
-      readLatest: () => readMesOperationLifecycleRequest(operationTaskId, context, action),
-      command: () => {
-        const options = { ...request, throwOnError: false as const }
-        switch (action) {
-          case 'start':
-            return startBusinessConsoleMesOperationTask(options)
-          case 'pause':
-            return pauseBusinessConsoleMesOperationTask(options)
-          case 'resume':
-            return resumeBusinessConsoleMesOperationTask(options)
-          case 'complete':
-            return completeBusinessConsoleMesOperationTask(options)
-        }
-      },
+    const { idempotencyKey: suppliedKey, ...payload } = body
+    const scope = {
+      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+      organizationId: context.organizationId,
+      environmentId: context.environmentId,
+      operationType: `mes.operation-task.${action}`,
+      payloadFingerprint: `${operationTaskId}:${JSON.stringify(payload)}`,
+    }
+    const restored = peekPendingBusinessIntent(scope)
+    const pending = acquirePendingBusinessIntent(
+      scope,
+      () => suppliedKey?.trim() || makeIdempotencyKey(`operation-${action}`),
+      payload,
+    )
+    const stablePayload = requirePendingPayloadSnapshot<typeof payload>(
+      pending.payloadSnapshot,
+      `工序${action}动作`,
+    )
+    const result = await completePendingBusinessIntent(scope, async () => {
+      const envelope = await executeLifecycleAction({
+        readLatest: () =>
+          readMesOperationLifecycleRequest(
+            operationTaskId,
+            context,
+            action,
+            restored?.idempotencyKey === pending.idempotencyKey,
+          ),
+        command: async () => ({
+          data: await mutation.mutateAsync(
+            operationActionBody(operationTaskId, context, {
+              ...stablePayload,
+              idempotencyKey: pending.idempotencyKey,
+            }),
+          ),
+          response: { status: 200 },
+        }),
+      })
+      if (!envelope) throw new Error('工序动作未返回业务信封')
+      await confirmBusinessConsoleOperation(envelope, {
+        expectedOperationType: `mes.operation-task.${action}`,
+        expectedIdempotencyKey: pending.idempotencyKey,
+        expectedResourceId: operationTaskId,
+      })
+      return envelope
     })
     await invalidateMesQueries(queryCache, [
       'listBusinessConsoleMesOperationTasks',
@@ -1089,11 +1167,11 @@ export function useMesOperationTasks() {
 
   return {
     filters,
-    completeOperationTask: (
+    completeOperationTask: async (
       operationTaskId: string,
       context: MesContextFilters,
       body: BusinessConsoleMesOperationTaskActionRequest,
-    ) => runOperationAction('complete', operationTaskId, context, body),
+    ) => performOperationAction('complete', completeMutation, operationTaskId, context, body),
     operationTasks: computed<BusinessConsoleMesOperationTaskRow[]>(() =>
       envelopeItems<
         BusinessConsoleMesOperationTaskRow,
@@ -1104,22 +1182,22 @@ export function useMesOperationTasks() {
     operationTasksPending: operationTasksQuery.isLoading,
     operationTasksState: businessReadState(operationTasksQuery, () => hasBusinessContext(filters)),
     operationTasksTotal: computed(() => envelopeTotal(operationTasksQuery.data.value)),
-    pauseOperationTask: (
+    pauseOperationTask: async (
       operationTaskId: string,
       context: MesContextFilters,
       body: BusinessConsoleMesOperationTaskActionRequest,
-    ) => runOperationAction('pause', operationTaskId, context, body),
+    ) => performOperationAction('pause', pauseMutation, operationTaskId, context, body),
     refreshOperationTasks: () => refetchWithBusinessContext(filters, operationTasksQuery),
-    resumeOperationTask: (
+    resumeOperationTask: async (
       operationTaskId: string,
       context: MesContextFilters,
       body: BusinessConsoleMesOperationTaskActionRequest,
-    ) => runOperationAction('resume', operationTaskId, context, body),
-    startOperationTask: (
+    ) => performOperationAction('resume', resumeMutation, operationTaskId, context, body),
+    startOperationTask: async (
       operationTaskId: string,
       context: MesContextFilters,
       body: BusinessConsoleMesOperationTaskActionRequest,
-    ) => runOperationAction('start', operationTaskId, context, body),
+    ) => performOperationAction('start', startMutation, operationTaskId, context, body),
   }
 }
 

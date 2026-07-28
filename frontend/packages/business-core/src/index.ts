@@ -124,7 +124,9 @@ export type {
 export {
   acquirePendingBusinessIntent,
   clearPendingBusinessIntent,
+  completePendingBusinessIntent,
   peekPendingBusinessIntent,
+  shouldRetainPendingBusinessIntent,
   type PendingBusinessIntent,
   type PendingBusinessIntentScope,
 } from './actions/pendingBusinessIntent'

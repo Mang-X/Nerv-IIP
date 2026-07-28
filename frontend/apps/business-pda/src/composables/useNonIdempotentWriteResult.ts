@@ -2,12 +2,12 @@ import { describeRequestError } from '@/api/request-timeout'
 import { computed, readonly, ref } from 'vue'
 
 /**
- * Result state machine for a write whose endpoint has NO server-side idempotency key
- * (Maintenance 报修/点检). Shared by `equipment/repair.vue` and `equipment/inspect.vue`
+ * Result state machine for a frontline write. Shared by `equipment/repair.vue` and
+ * `equipment/inspect.vue`
  * so the "when is a retry safe" rule lives in ONE place — the pages were duplicating it
  * line-for-line, which invites the two copies to drift.
  *
- * The core rule: only a DISPATCHED-but-unanswered failure (timeout / network drop) is
+ * The core rule: a DISPATCHED-but-unanswered failure (timeout / network drop / 5xx) is
  * `indeterminate` — the write may already have taken effect server-side, so a blind
  * retry could duplicate it. Those steer the user to the list to verify. Everything else
  * (a definite server error, or an offline pre-check that never left the device) is safe
@@ -22,6 +22,8 @@ export interface NonIdempotentWriteResultOptions {
   verifyVerb: string
   /** Refresh that list so the user can check whether the write actually landed. */
   onVerify: () => void
+  /** Server persists the operation key and returns the same authoritative result on replay. */
+  idempotent?: boolean
 }
 
 export type WritePhase = 'form' | 'success' | 'error'
@@ -33,6 +35,7 @@ export function useNonIdempotentWriteResult(options: NonIdempotentWriteResultOpt
   const lastError = ref<unknown>(null)
 
   const errorInfo = computed(() => describeRequestError(lastError.value, options.failureTitle))
+  const isOutcomeIndeterminate = computed(() => errorInfo.value.indeterminate)
 
   const errorTitle = computed(() =>
     errorInfo.value.indeterminate ? '提交结果未知' : options.failureTitle,
@@ -40,16 +43,18 @@ export function useNonIdempotentWriteResult(options: NonIdempotentWriteResultOpt
 
   const errorDescription = computed(() =>
     errorInfo.value.indeterminate
-      ? `${errorInfo.value.message}。请勿重复提交，返回后在"${options.verifyListLabel}"中核实是否已${options.verifyVerb}。`
+      ? options.idempotent
+        ? `${errorInfo.value.message}。可使用相同操作编号安全重试，服务端不会重复${options.verifyVerb}。`
+        : `${errorInfo.value.message}。请勿重复提交，返回后在"${options.verifyListLabel}"中核实是否已${options.verifyVerb}。`
       : errorInfo.value.message,
   )
 
   /**
    * Whether the error Result should offer a retry. Indeterminate (dispatched, unknown)
-   * → no retry (steer to verify). Determinate server error OR offline-not-dispatched →
-   * safe to retry.
+   * → retry only when the endpoint persists a caller-owned idempotency key. A determinate
+   * business rejection or offline-not-dispatched failure is safe to retry.
    */
-  const canRetry = computed(() => !errorInfo.value.indeterminate)
+  const canRetry = computed(() => options.idempotent === true || !errorInfo.value.indeterminate)
 
   /** Run one submit; success → 'success', failure → 'error' keeping the raw error to classify. */
   async function run(submit: () => Promise<unknown>): Promise<boolean> {
@@ -92,6 +97,7 @@ export function useNonIdempotentWriteResult(options: NonIdempotentWriteResultOpt
     errorTitle,
     errorDescription,
     canRetry,
+    isOutcomeIndeterminate,
     run,
     retry,
     verify,

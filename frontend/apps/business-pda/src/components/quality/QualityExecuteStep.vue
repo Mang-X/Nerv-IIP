@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { describeRequestError } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
 import QualityCharacteristicPicker from '@/components/quality/QualityCharacteristicPicker.vue'
 import QualityCharacteristicRow from '@/components/quality/QualityCharacteristicRow.vue'
@@ -125,7 +126,7 @@ async function submit() {
     const result = await execution.submit(props.task.inspectionTaskId)
     emit('submitted', result)
   } catch (e) {
-    emit('failed', e instanceof Error ? e.message : '提交失败，请检查网络后重试。', e)
+    emit('failed', describeRequestError(e, '提交失败，请检查网络后重试。').message, e)
   }
 }
 

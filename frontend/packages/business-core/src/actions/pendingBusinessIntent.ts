@@ -115,3 +115,64 @@ export function clearPendingBusinessIntent(scope: PendingBusinessIntentScope) {
 export function peekPendingBusinessIntent(scope: PendingBusinessIntentScope) {
   return loadEntries().get(scopeKey(scope))
 }
+
+function errorRecord(error: unknown): Record<string, unknown> | undefined {
+  return typeof error === 'object' && error !== null
+    ? (error as Record<string, unknown>)
+    : undefined
+}
+
+function errorStatus(error: unknown): number | undefined {
+  const candidate = errorRecord(error)
+  if (!candidate) return undefined
+  for (const key of ['status', 'statusCode']) {
+    const value = candidate[key]
+    if (typeof value === 'number' && Number.isInteger(value)) return value
+  }
+  const response = errorRecord(candidate.response)
+  return typeof response?.status === 'number' && Number.isInteger(response.status)
+    ? response.status
+    : undefined
+}
+
+/**
+ * Whether a dispatched write may still have committed and therefore must keep its
+ * frozen payload/idempotency key. Only explicit determinate failures are safe to clear.
+ */
+export function shouldRetainPendingBusinessIntent(error: unknown) {
+  const candidate = errorRecord(error)
+  if (candidate?.indeterminate === true) return true
+  if (candidate?.indeterminate === false) return false
+  if (candidate?.code === 'business-operation-unconfirmed') return true
+  if (candidate?.code === 'business-operation-failed') return false
+
+  const name = error instanceof Error ? error.name : candidate?.name
+  if (name === 'RequestTimeoutError') return true
+  if (name === 'OfflineError') return false
+  if (error instanceof TypeError) return true
+
+  const status = errorStatus(error)
+  if (status === 0 || (status !== undefined && status >= 500)) return true
+  if (status !== undefined && status >= 400 && status < 500) return false
+  return false
+}
+
+/**
+ * Runs the mutation + receipt confirmation for one pending intent. Success and
+ * determinate rejection clear it; timeout/network/5xx/unconfirmed outcomes retain it.
+ */
+export async function completePendingBusinessIntent<TResult>(
+  scope: PendingBusinessIntentScope,
+  operation: () => Promise<TResult>,
+) {
+  try {
+    const result = await operation()
+    clearPendingBusinessIntent(scope)
+    return result
+  } catch (error) {
+    if (!shouldRetainPendingBusinessIntent(error)) {
+      clearPendingBusinessIntent(scope)
+    }
+    throw error
+  }
+}

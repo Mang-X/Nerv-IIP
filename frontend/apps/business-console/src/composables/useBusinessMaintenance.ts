@@ -1,5 +1,6 @@
 import {
-  completeBusinessConsoleMaintenanceWorkOrder,
+  completeBusinessConsoleMaintenanceWorkOrderMutationOptions,
+  confirmBusinessConsoleOperation,
   createBusinessConsoleMaintenancePlanMutationOptions,
   createBusinessConsoleMaintenanceSparePartMutationOptions,
   createBusinessConsoleMaintenanceWorkOrderMutationOptions,
@@ -38,6 +39,11 @@ import {
   type EquipmentRuntimeAvailabilityEnvelope,
   type EquipmentRuntimeAvailabilityWindow,
 } from '@nerv-iip/api-client'
+import {
+  acquirePendingBusinessIntent,
+  completePendingBusinessIntent,
+} from '@nerv-iip/business-core'
+import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive, shallowRef } from 'vue'
 import {
@@ -49,6 +55,13 @@ import {
 import { executeLifecycleAction } from './lifecycleAction'
 
 const DEFAULT_TAKE = 100
+
+function requirePendingPayloadSnapshot<T extends object>(snapshot: unknown, operation: string): T {
+  if (!snapshot || typeof snapshot !== 'object') {
+    throw new Error(`${operation}缺少冻结的待处理载荷，请保留当前页面并人工核实。`)
+  }
+  return snapshot as T
+}
 
 export interface MaintenanceListFilters {
   organizationId: string
@@ -73,6 +86,20 @@ export interface MaintenanceAvailabilityFilters {
   windowStartUtc: string
   windowEndUtc: string
   workCenterIds: string
+}
+
+type MaintenanceCreateIntent = Omit<
+  BusinessConsoleCreateMaintenanceWorkOrderRequest,
+  'idempotencyKey'
+> & {
+  idempotencyKey?: string
+}
+
+type MaintenanceCompleteIntent = Omit<
+  BusinessConsoleCompleteMaintenanceWorkOrderRequest,
+  'idempotencyKey'
+> & {
+  idempotencyKey?: string
 }
 
 function defaultFilters(initial: Partial<MaintenanceListFilters> = {}): MaintenanceListFilters {
@@ -146,7 +173,33 @@ function unwrapData<TData>(envelope: { success?: boolean; data?: TData | null } 
   return envelope?.success ? (envelope.data ?? undefined) : undefined
 }
 
+function newMaintenanceIntentKey(operation: string) {
+  const cryptoApi = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
+  const uniquePart =
+    cryptoApi && typeof cryptoApi.randomUUID === 'function'
+      ? cryptoApi.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `maintenance-${operation}-${uniquePart}`
+}
+
+function canonicalIntentValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalIntentValue)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalIntentValue(item)]),
+    )
+  }
+  return value
+}
+
+function intentFingerprint(value: object) {
+  return JSON.stringify(canonicalIntentValue(value))
+}
+
 export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceListFilters> = {}) {
+  const auth = useAuthStore()
   const filters = defaultFilters(initialFilters)
   const workOrdersQuery = useQuery(() =>
     withBusinessContextEnabled(
@@ -168,43 +221,69 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
       void refetchWithBusinessContext(filters, workOrdersQuery)
     },
   })
+  const completeMutation = useMutation({
+    ...completeBusinessConsoleMaintenanceWorkOrderMutationOptions(),
+  })
   const completeWorkOrderPending = shallowRef(false)
   const completeWorkOrderError = shallowRef<unknown>()
 
-  async function completeWorkOrder(
-    workOrderId: string,
-    body: BusinessConsoleCompleteMaintenanceWorkOrderRequest,
-  ) {
+  async function completeWorkOrder(workOrderId: string, body: MaintenanceCompleteIntent) {
+    const { idempotencyKey: suppliedKey, ...intent } = body
+    const scope = {
+      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      operationType: 'maintenance.work-order.complete',
+      payloadFingerprint: `${workOrderId}:${intentFingerprint(intent)}`,
+    }
+    const pending = acquirePendingBusinessIntent(
+      scope,
+      () => suppliedKey ?? newMaintenanceIntentKey(`complete-${workOrderId}`),
+      intent,
+    )
+    const stableIntent = requirePendingPayloadSnapshot<
+      Omit<MaintenanceCompleteIntent, 'idempotencyKey'>
+    >(pending.payloadSnapshot, '维修工单完工')
     completeWorkOrderPending.value = true
     completeWorkOrderError.value = undefined
     try {
-      const result = await executeLifecycleAction({
-        readLatest: async () => {
-          const query = getBusinessConsoleMaintenanceWorkOrderQueryOptions({
-            path: { workOrderId },
-            query: {
-              organizationId: filters.organizationId,
-              environmentId: filters.environmentId,
-            },
-          })
-          const response = await query.query({
-            signal: new AbortController().signal,
-          } as Parameters<typeof query.query>[0])
-          const item = response?.success ? response.data : undefined
-          return item
-            ? {
-                domain: 'maintenance-work-order' as const,
-                action: 'complete' as const,
-                facts: { status: item.status },
-              }
-            : undefined
-        },
-        command: () =>
-          completeBusinessConsoleMaintenanceWorkOrder({
-            path: { workOrderId },
-            body,
-            throwOnError: false,
+      const result = await completePendingBusinessIntent(scope, async () => {
+        const envelope = await executeLifecycleAction({
+          readLatest: async () => {
+            const query = getBusinessConsoleMaintenanceWorkOrderQueryOptions({
+              path: { workOrderId },
+              query: {
+                organizationId: filters.organizationId,
+                environmentId: filters.environmentId,
+              },
+            })
+            const response = await query.query({
+              signal: new AbortController().signal,
+            } as Parameters<typeof query.query>[0])
+            const item = response?.success ? response.data : undefined
+            return item
+              ? {
+                  domain: 'maintenance-work-order' as const,
+                  action: 'complete' as const,
+                  facts: { status: item.status },
+                }
+              : undefined
+          },
+          command: async () => ({
+            data: await completeMutation.mutateAsync({
+              path: { workOrderId },
+              body: { ...stableIntent, idempotencyKey: pending.idempotencyKey },
+            }),
+            response: { status: 200 },
           }),
+        })
+        if (!envelope) throw new Error('维修工单完工未返回业务信封')
+        await confirmBusinessConsoleOperation(envelope, {
+          expectedOperationType: 'maintenance.work-order.complete',
+          expectedIdempotencyKey: pending.idempotencyKey,
+          expectedResourceId: workOrderId,
+        })
+        return envelope
       })
       await refetchWithBusinessContext(filters, workOrdersQuery)
       return result
@@ -214,6 +293,40 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
     } finally {
       completeWorkOrderPending.value = false
     }
+  }
+
+  async function createWithStableIntent(body: MaintenanceCreateIntent) {
+    const { idempotencyKey: suppliedKey, ...intent } = body
+    const fingerprint = intentFingerprint(intent)
+    const scope = {
+      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+      organizationId: intent.organizationId ?? '',
+      environmentId: intent.environmentId ?? '',
+      operationType: 'maintenance.work-order.create',
+      payloadFingerprint: fingerprint,
+    }
+    const pending = acquirePendingBusinessIntent(
+      scope,
+      () => suppliedKey ?? newMaintenanceIntentKey('create'),
+      intent,
+    )
+    const stableIntent = requirePendingPayloadSnapshot<typeof intent>(
+      pending.payloadSnapshot,
+      '创建维修工单',
+    )
+    return completePendingBusinessIntent(scope, async () => {
+      const result = await confirmBusinessConsoleOperation(
+        await createMutation.mutateAsync({
+          body: { ...stableIntent, idempotencyKey: pending.idempotencyKey },
+        }),
+        {
+          expectedOperationType: 'maintenance.work-order.create',
+          expectedIdempotencyKey: pending.idempotencyKey,
+          expectedResourceIdSelector: (envelope) => envelope.data?.workOrderId,
+        },
+      )
+      return result
+    })
   }
 
   return {
@@ -231,8 +344,7 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
       ),
     ),
     refreshWorkOrders: () => refetchWithBusinessContext(filters, workOrdersQuery),
-    createWorkOrder: (body: BusinessConsoleCreateMaintenanceWorkOrderRequest) =>
-      createMutation.mutateAsync({ body }),
+    createWorkOrder: createWithStableIntent,
     createWorkOrderPending: createMutation.isLoading,
     createWorkOrderError: createMutation.error,
     completeWorkOrder,

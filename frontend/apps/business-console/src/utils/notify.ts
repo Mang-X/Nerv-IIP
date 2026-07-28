@@ -24,15 +24,41 @@ function rawMessage(error: unknown): string {
 export function friendlyErrorMessage(error: unknown, fallback = '操作失败，请稍后重试。'): string {
   const raw = rawMessage(error)
   if (!raw) return fallback
-  if (/downstream-invalid-response|\b502\b|bad ?gateway|\b503\b|service unavailable|\b500\b/i.test(raw)) {
-    return '服务暂时不可用，请稍后重试。'
+  if (
+    /business-operation-unconfirmed|BusinessOperationUnconfirmedError|权威状态尚未确认|写操作回执不完整|写操作缺少权威回执/i.test(
+      raw,
+    )
+  ) {
+    return '操作结果尚未确认，请保留当前操作并刷新列表核实；确认未生效后再重试。'
+  }
+  if (
+    /downstream-invalid-response|\b502\b|bad ?gateway|\b503\b|service unavailable|\b500\b/i.test(
+      raw,
+    )
+  ) {
+    return '服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。'
   }
   if (/failed to fetch|networkerror|network error|timeout|timed out|econn/i.test(raw)) {
-    return '网络异常，请检查连接后重试。'
+    return '网络异常，操作结果可能尚未确认；请刷新列表核实后再重试。'
   }
   if (/\b401\b|unauthor/i.test(raw)) return '登录已过期，请重新登录。'
   if (/\b403\b|forbidden|permission/i.test(raw)) return '没有权限执行此操作。'
-  if (/\b409\b|conflict|already exists|duplicat/i.test(raw)) return '编码或名称已存在，请更换后重试。'
+  if (/\b404\b|not found|does not exist|scope mismatch/i.test(raw)) {
+    return '操作对象不存在或已不在当前业务范围，请刷新列表后重试。'
+  }
+  if (
+    /(?:code|编码|名称|name).{0,24}(?:already exists|duplicat|已存在|已被占用)|(?:already exists|duplicat).{0,24}(?:code|编码|名称|name)/i.test(
+      raw,
+    )
+  ) {
+    return '编码或名称已存在，请更换后重试。'
+  }
+  if (/\b409\b|conflict|idempotency|intent|lifecycle|already bound/i.test(raw)) {
+    return '当前状态或操作意图发生冲突，请刷新列表并核实最新状态后再处理。'
+  }
+  if (/\b422\b|unprocessable|validation|invalid request/i.test(raw)) {
+    return '提交内容未通过校验，请检查填写项后重试。'
+  }
   if (/system-managed|cannot be updated/i.test(raw)) return '该项由系统管理（平台固化），不可修改。'
   // 后端返回的可读中文业务校验信息（短文本）直接透传。
   if (/[一-龥]/.test(raw) && raw.length <= 60) return raw

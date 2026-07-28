@@ -11,6 +11,7 @@ import {
   useBusinessEquipmentAlarms,
   useUnacknowledgedAlarmCount,
 } from './useBusinessEquipmentAlarms'
+import { acquirePendingBusinessIntent } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 
 const coladaState = vi.hoisted(() => ({
@@ -29,6 +30,7 @@ const coladaState = vi.hoisted(() => ({
 // key 里带 _status，区分「全量」列表读与 useUnacknowledgedAlarmCount 的 status=raised 读。
 vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleEquipmentAlarms: coladaState.listPlain,
+  confirmBusinessConsoleOperation: vi.fn(async (value) => value),
   listBusinessConsoleEquipmentAlarmsQueryOptions: vi.fn(
     (opts: { query?: { status?: string } }) => ({
       key: [{ _id: 'listBusinessConsoleEquipmentAlarms', _status: opts?.query?.status ?? 'all' }],
@@ -83,6 +85,7 @@ describe('useBusinessEquipmentAlarms', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    sessionStorage.clear()
     coladaState.queryDataById.clear()
     coladaState.queryOptionsById.clear()
     coladaState.listPlain.mockImplementation(
@@ -152,7 +155,7 @@ describe('useBusinessEquipmentAlarms', () => {
     ])
   })
 
-  it('acknowledge posts the caller-supplied stable atUtc + actor, and wires list invalidation', async () => {
+  it('acknowledge posts the stable intent timestamp, actor, and idempotency key', async () => {
     seedPrincipal()
     const { acknowledge } = useBusinessEquipmentAlarms()
 
@@ -165,6 +168,7 @@ describe('useBusinessEquipmentAlarms', () => {
         environmentId: 'env-dev',
         acknowledgedAtUtc: '2026-06-10T08:30:00.000Z',
         acknowledgedBy: 'admin',
+        idempotencyKey: expect.any(String),
       },
     })
     coladaState.lastMutationConfig?.onSuccess?.()
@@ -197,6 +201,92 @@ describe('useBusinessEquipmentAlarms', () => {
     })
     expect(coladaState.mutateAsync).not.toHaveBeenCalled()
   })
+
+  it('reuses the acknowledge intent key and timestamp after an indeterminate failure', async () => {
+    seedPrincipal()
+    coladaState.mutateAsync.mockRejectedValueOnce(new TypeError('network failed'))
+    const { acknowledge } = useBusinessEquipmentAlarms()
+
+    await expect(acknowledge('alarm-9', '2026-06-10T08:30:00.000Z')).rejects.toThrow(
+      'network failed',
+    )
+    const first = coladaState.mutateAsync.mock.calls.at(-1)?.[0]
+
+    await acknowledge('alarm-9', '2026-06-10T09:45:00.000Z')
+    const retry = coladaState.mutateAsync.mock.calls.at(-1)?.[0]
+
+    expect(retry).toEqual(first)
+    expect(retry?.body.idempotencyKey).toEqual(expect.any(String))
+    expect(retry?.body.acknowledgedAtUtc).toBe('2026-06-10T08:30:00.000Z')
+  })
+
+  it.each(['acknowledge', 'shelve'] as const)(
+    'clears the %s intent after a determinate 422 so the next attempt uses a new key',
+    async (action) => {
+      seedPrincipal()
+      coladaState.mutateAsync.mockRejectedValueOnce({ status: 422, message: 'invalid request' })
+      const { acknowledge, shelve } = useBusinessEquipmentAlarms()
+
+      if (action === 'acknowledge') {
+        await expect(
+          acknowledge('alarm-determinate-ack', '2026-06-10T08:30:00.000Z'),
+        ).rejects.toMatchObject({ status: 422 })
+        const firstKey = coladaState.mutateAsync.mock.calls.at(-1)?.[0].body.idempotencyKey
+
+        await acknowledge('alarm-determinate-ack', '2026-06-10T08:30:00.000Z')
+        expect(coladaState.mutateAsync.mock.calls.at(-1)?.[0].body.idempotencyKey).not.toBe(
+          firstKey,
+        )
+        return
+      }
+
+      await expect(
+        shelve('alarm-determinate-shelve', 120, '2026-06-10T08:30:00.000Z', 'shelve-key-1'),
+      ).rejects.toMatchObject({ status: 422 })
+      await shelve('alarm-determinate-shelve', 120, '2026-06-10T08:30:00.000Z', 'shelve-key-2')
+
+      expect(coladaState.mutateAsync.mock.calls.at(-1)?.[0].body.idempotencyKey).toBe(
+        'shelve-key-2',
+      )
+    },
+  )
+
+  it.each(['acknowledge', 'shelve'] as const)(
+    'falls back to the caller-frozen %s payload when a restored intent has no snapshot',
+    async (action) => {
+      seedPrincipal()
+      const alarmEventId = `alarm-missing-snapshot-${action}`
+      const atUtc = '2026-06-10T08:30:00.000Z'
+      const scope = {
+        principalId: 'user-admin',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        operationType: `iiot.alarm.${action}`,
+        payloadFingerprint:
+          action === 'acknowledge'
+            ? JSON.stringify({ alarmEventId })
+            : JSON.stringify({ alarmEventId, durationMinutes: 120, reason: '' }),
+      }
+      acquirePendingBusinessIntent(scope, () => `restored-${action}-key`)
+      const { acknowledge, shelve } = useBusinessEquipmentAlarms()
+
+      if (action === 'acknowledge') {
+        await acknowledge(alarmEventId, atUtc)
+        expect(coladaState.mutateAsync.mock.calls.at(-1)?.[0].body).toMatchObject({
+          acknowledgedAtUtc: atUtc,
+          idempotencyKey: 'restored-acknowledge-key',
+        })
+        return
+      }
+
+      await shelve(alarmEventId, 120, atUtc, 'restored-shelve-key')
+      expect(coladaState.mutateAsync.mock.calls.at(-1)?.[0].body).toMatchObject({
+        durationMinutes: 120,
+        shelvedAtUtc: atUtc,
+        idempotencyKey: 'restored-shelve-key',
+      })
+    },
+  )
 
   it('shelve posts durationMinutes + stable atUtc + the persistent idempotencyKey; reason only when provided', async () => {
     seedPrincipal()

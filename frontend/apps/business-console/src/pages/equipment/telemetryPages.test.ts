@@ -616,7 +616,7 @@ describe('equipment telemetry pages', () => {
 
   it.each([
     ['403 forbidden', '没有权限执行此操作。'],
-    ['network timeout', '网络异常，请检查连接后重试。'],
+    ['network timeout', '网络异常，操作结果可能尚未确认；请刷新列表核实后再重试。'],
   ])('shows a clear failure state for %s without an empty chart', (message, expected) => {
     telemetryPageMocks.historyError = new Error(message)
 

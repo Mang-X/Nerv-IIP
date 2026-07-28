@@ -1032,7 +1032,9 @@ describe('maintenance plans page', () => {
 
     expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
     expect(document.body.querySelector<HTMLInputElement>('#plan-runtime-hours')?.value).toBe('1800')
-    expect(state.toastError).toHaveBeenCalledWith('网络异常，请检查连接后重试。')
+    expect(state.toastError).toHaveBeenCalledWith(
+      '网络异常，操作结果可能尚未确认；请刷新列表核实后再重试。',
+    )
     expect(state.toastSuccess).not.toHaveBeenCalled()
   })
 

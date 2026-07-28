@@ -8,6 +8,10 @@ import {
   RequestTimeoutError,
   resolveRequestTimeoutMs,
 } from './request-timeout'
+import {
+  BusinessOperationFailedError,
+  BusinessOperationUnconfirmedError,
+} from '@nerv-iip/api-client'
 
 /** A fetch that never resolves on its own — only rejects (AbortError) when its signal aborts. */
 function hangingFetch(): typeof fetch {
@@ -141,6 +145,21 @@ describe('typed request errors', () => {
 })
 
 describe('describeRequestError', () => {
+  it.each([
+    [401, '登录已失效，请重新登录', false],
+    [403, '当前账号无此操作权限', false],
+    [404, '业务对象已不存在', false],
+    [409, '状态已变化', false],
+    [422, '未通过业务校验', false],
+    [503, '服务暂时不可用', true],
+  ])('maps HTTP %s to consistent actionable copy', (status, expected, indeterminate) => {
+    expect(describeRequestError({ status, message: 'downstream-request-failed' })).toMatchObject({
+      message: expect.stringContaining(expected),
+      status,
+      indeterminate,
+    })
+  })
+
   it('classifies a DISPATCHED timeout / network drop as INDETERMINATE (result unknown, non-idempotent retry unsafe)', () => {
     expect(describeRequestError(new RequestTimeoutError())).toMatchObject({
       kind: 'timeout',
@@ -151,6 +170,44 @@ describe('describeRequestError', () => {
       kind: 'network',
       indeterminate: true,
       message: '网络连接失败，请检查网络后重试',
+    })
+  })
+
+  it.each([
+    new BusinessOperationUnconfirmedError(
+      '请求已受理，但权威状态尚未确认（downstream-invalid-response）',
+    ),
+    {
+      code: 'business-operation-unconfirmed',
+      message: 'raw technical readback failure',
+    },
+  ])(
+    'classifies an accepted-but-unconfirmed business receipt as indeterminate with field copy',
+    (error) => {
+      const described = describeRequestError(error)
+
+      expect(described).toMatchObject({
+        kind: 'business',
+        indeterminate: true,
+        message: '操作已受理，但结果尚未核实。请刷新列表确认状态，勿重复提交',
+      })
+      expect(described.message).not.toContain('downstream')
+      expect(described.message).not.toContain('technical')
+    },
+  )
+
+  it('surfaces a confirmed business failure as determinate safe copy', () => {
+    expect(
+      describeRequestError(
+        new BusinessOperationFailedError(
+          'Stock movement would make on-hand quantity negative.',
+          'NEGATIVE_ON_HAND',
+        ),
+      ),
+    ).toMatchObject({
+      kind: 'business',
+      indeterminate: false,
+      message: '库存不足，无法完成本次库存过账，请核对数量后重试',
     })
   })
 
@@ -179,7 +236,7 @@ describe('describeRequestError', () => {
   ])('treats a structured HTTP 5xx as indeterminate', (error) => {
     expect(describeRequestError(error)).toMatchObject({
       indeterminate: true,
-      message: '服务暂不可用',
+      message: '服务暂时不可用，请稍后重试；写操作请先刷新核实结果',
     })
   })
 

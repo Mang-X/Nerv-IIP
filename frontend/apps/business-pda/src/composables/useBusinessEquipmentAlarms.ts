@@ -1,12 +1,19 @@
 import {
   acknowledgeBusinessConsoleEquipmentAlarmMutationOptions,
   listBusinessConsoleEquipmentAlarms,
+  confirmBusinessConsoleOperation,
   listBusinessConsoleEquipmentAlarmsQueryOptions,
   shelveBusinessConsoleEquipmentAlarmMutationOptions,
   type BusinessConsoleEquipmentAlarmListEnvelope,
   type BusinessConsoleTelemetryAlarmEventItem,
 } from '@nerv-iip/api-client'
-import { alarmLifecycleSortWeight } from '@nerv-iip/business-core'
+import {
+  acquirePendingBusinessIntent,
+  alarmLifecycleSortWeight,
+  clearPendingBusinessIntent,
+  completePendingBusinessIntent,
+  peekPendingBusinessIntent,
+} from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
@@ -66,8 +73,11 @@ function authScope() {
   const organizationId = computed(() => auth.principal?.organizationId ?? '')
   const environmentId = computed(() => auth.principal?.environmentId ?? '')
   const actor = computed(() => auth.principal?.loginName ?? '')
+  const principalId = computed(
+    () => auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+  )
   const scopeReady = computed(() => Boolean(organizationId.value && environmentId.value))
-  return { organizationId, environmentId, actor, scopeReady }
+  return { organizationId, environmentId, actor, principalId, scopeReady }
 }
 
 /**
@@ -108,14 +118,13 @@ export function useUnacknowledgedAlarmCount(enabled: MaybeRefOrGetter<boolean> =
  * 全部未确认在前，已处理项不会插到未确认之前；前端再做一次同口径排序仅为兜底。角标另用
  * {@link useUnacknowledgedAlarmCount} 的 `status=raised` total（全量准确）。
  *
- * **幂等（断网/延迟重投不重复）**：`shelve` 携带调用方铸造的**持久幂等键** `idempotencyKey`，
- * 后端 `AlarmEvent.ShelveIdempotencyKey` 记录最后一次已应用的搁置操作键，**同键的延迟重复投递
- * 一律 no-op**（即便原窗口已过期/解除回到 raised），这是稳定时间戳单独做不到的。`acknowledge`
- * 领域侧 `AcknowledgedAtUtc is not null` 即 first-write-wins，天然幂等，无需额外键。页面对
- * 「已发出但结果未知」的失败不盲目重试（交给 verify）。
+ * **幂等（断网/延迟重投不重复）**：`acknowledge` 与 `shelve` 都携带意图级**持久幂等键**
+ * `idempotencyKey`。结果未知时保留同一键和时间戳，后端以报警生命周期资源锁与持久回执收敛
+ * 重复投递；同键更换报警、动作或载荷会 fail closed。页面对「已发出但结果未知」的失败先回读，
+ * 不创建新意图盲重放。
  */
 export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlarmFilters> = {}) {
-  const { organizationId, environmentId, actor, scopeReady } = authScope()
+  const { organizationId, environmentId, actor, principalId, scopeReady } = authScope()
   const queryCache = useQueryCache()
   const filters = reactive<EquipmentAlarmFilters>({
     skip: 0,
@@ -170,25 +179,61 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     return matches.length === 1 ? matches[0] : undefined
   }
 
-  /** 确认。`atUtc` 由调用方铸造并跨重试复用；领域 first-write-wins 保证重复确认为 no-op。 */
+  /** 确认。意图键与 `atUtc` 都跨结果未知的重试复用，直到回执确认后才清除。 */
   async function acknowledge(alarmEventId: string, atUtc: string) {
-    const authoritative = await readExactAlarm(alarmEventId)
-    assertLifecycleActionExecutable({
-      domain: 'iiot-alarm',
-      action: 'acknowledge',
-      facts: {
-        status: authoritative?.status,
-        acknowledgedAtUtc: authoritative?.acknowledgedAtUtc,
-      },
-    })
-    return acknowledgeMutation.mutateAsync({
-      path: { alarmEventId },
-      body: {
-        ...contextBody(),
-        acknowledgedAtUtc: atUtc,
-        acknowledgedBy: actor.value,
-      },
-    })
+    const intentScope = {
+      principalId: principalId.value,
+      organizationId: organizationId.value,
+      environmentId: environmentId.value,
+      operationType: 'iiot.alarm.acknowledge',
+      payloadFingerprint: JSON.stringify({ alarmEventId }),
+    }
+    const isReplay = Boolean(peekPendingBusinessIntent(intentScope))
+    const pending = acquirePendingBusinessIntent(
+      intentScope,
+      () => globalThis.crypto?.randomUUID?.() ?? `alarm-acknowledge-${Date.now()}-${Math.random()}`,
+      { acknowledgedAtUtc: atUtc },
+    )
+    try {
+      const authoritative = await readExactAlarm(alarmEventId)
+      assertLifecycleActionExecutable({
+        domain: 'iiot-alarm',
+        action: 'acknowledge',
+        facts: {
+          status: authoritative?.status,
+          acknowledgedAtUtc: authoritative?.acknowledgedAtUtc,
+          idempotentReplay: isReplay,
+        },
+      })
+    } catch (error) {
+      if (!isReplay) clearPendingBusinessIntent(intentScope)
+      throw error
+    }
+    const acknowledgedAtUtcSnapshot = (
+      pending.payloadSnapshot as { acknowledgedAtUtc?: unknown } | undefined
+    )?.acknowledgedAtUtc
+    const acknowledgedAtUtc =
+      typeof acknowledgedAtUtcSnapshot === 'string' && acknowledgedAtUtcSnapshot.trim()
+        ? acknowledgedAtUtcSnapshot
+        : atUtc
+    return completePendingBusinessIntent(intentScope, async () =>
+      confirmBusinessConsoleOperation(
+        await acknowledgeMutation.mutateAsync({
+          path: { alarmEventId },
+          body: {
+            ...contextBody(),
+            acknowledgedAtUtc,
+            acknowledgedBy: actor.value,
+            idempotencyKey: pending.idempotencyKey,
+          },
+        }),
+        {
+          expectedOperationType: 'iiot.alarm.acknowledge',
+          expectedIdempotencyKey: pending.idempotencyKey,
+          expectedResourceId: alarmEventId,
+        },
+      ),
+    )
   }
 
   /**
@@ -202,29 +247,65 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     idempotencyKey: string,
     reason?: string,
   ) {
-    const authoritative = await readExactAlarm(alarmEventId)
-    assertLifecycleActionExecutable({
-      domain: 'iiot-alarm',
-      action: 'shelve',
-      facts: {
-        status: authoritative?.status,
-        acknowledgedAtUtc: authoritative?.acknowledgedAtUtc,
-        shelvedAtUtc: authoritative?.shelvedAtUtc,
-        shelvedUntilUtc: authoritative?.shelvedUntilUtc,
-        evaluatedAtUtc: atUtc,
-      },
-    })
-    return shelveMutation.mutateAsync({
-      path: { alarmEventId },
-      body: {
-        ...contextBody(),
+    const intentScope = {
+      principalId: principalId.value,
+      organizationId: organizationId.value,
+      environmentId: environmentId.value,
+      operationType: 'iiot.alarm.shelve',
+      payloadFingerprint: JSON.stringify({
+        alarmEventId,
         durationMinutes,
-        shelvedAtUtc: atUtc,
-        shelvedBy: actor.value,
-        idempotencyKey,
-        ...(reason && reason.trim() ? { reason: reason.trim() } : {}),
-      },
+        reason: reason?.trim() ?? '',
+      }),
+    }
+    const isReplay = Boolean(peekPendingBusinessIntent(intentScope))
+    const pending = acquirePendingBusinessIntent(intentScope, () => idempotencyKey, {
+      shelvedAtUtc: atUtc,
     })
+    try {
+      const authoritative = await readExactAlarm(alarmEventId)
+      assertLifecycleActionExecutable({
+        domain: 'iiot-alarm',
+        action: 'shelve',
+        facts: {
+          status: authoritative?.status,
+          acknowledgedAtUtc: authoritative?.acknowledgedAtUtc,
+          shelvedAtUtc: authoritative?.shelvedAtUtc,
+          shelvedUntilUtc: authoritative?.shelvedUntilUtc,
+          evaluatedAtUtc: atUtc,
+          idempotentReplay: isReplay,
+        },
+      })
+    } catch (error) {
+      if (!isReplay) clearPendingBusinessIntent(intentScope)
+      throw error
+    }
+    const shelvedAtUtcSnapshot = (pending.payloadSnapshot as { shelvedAtUtc?: unknown } | undefined)
+      ?.shelvedAtUtc
+    const shelvedAtUtc =
+      typeof shelvedAtUtcSnapshot === 'string' && shelvedAtUtcSnapshot.trim()
+        ? shelvedAtUtcSnapshot
+        : atUtc
+    return completePendingBusinessIntent(intentScope, async () =>
+      confirmBusinessConsoleOperation(
+        await shelveMutation.mutateAsync({
+          path: { alarmEventId },
+          body: {
+            ...contextBody(),
+            durationMinutes,
+            shelvedAtUtc,
+            shelvedBy: actor.value,
+            idempotencyKey: pending.idempotencyKey,
+            ...(reason && reason.trim() ? { reason: reason.trim() } : {}),
+          },
+        }),
+        {
+          expectedOperationType: 'iiot.alarm.shelve',
+          expectedIdempotencyKey: pending.idempotencyKey,
+          expectedResourceId: alarmEventId,
+        },
+      ),
+    )
   }
 
   const alarms = computed<BusinessConsoleTelemetryAlarmEventItem[]>(() => {

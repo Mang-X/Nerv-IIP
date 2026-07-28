@@ -16,6 +16,7 @@ import {
 } from './useQualityInspectionTasks'
 
 const state = vi.hoisted(() => ({
+  confirmOperation: vi.fn(),
   data: undefined as unknown,
   invalidateQueries: vi.fn(async () => undefined),
 }))
@@ -25,6 +26,7 @@ vi.mock('@nerv-iip/api-client', () => ({
     data: { success: true },
     response: { status: 200 },
   })),
+  confirmBusinessConsoleOperation: (...args: unknown[]) => state.confirmOperation(...args),
   createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (variables) => ({ success: true, data: variables })),
   })),
@@ -66,6 +68,7 @@ describe('quality inspection task workbench', () => {
     state.data = undefined
     state.invalidateQueries.mockClear()
     vi.clearAllMocks()
+    state.confirmOperation.mockImplementation(async (value) => value)
   })
 
   it('passes context, source type and server pagination to the real task facade', () => {
@@ -231,9 +234,41 @@ describe('quality inspection task workbench', () => {
     expect(createBusinessConsoleQualityInspectionRecordFromTask).toHaveBeenCalledWith({
       path: { inspectionTaskId: 'TASK-1' },
       query: { organizationId: 'org-001', environmentId: 'env-dev' },
-      body: { inspectorUserId: 'user-qa', resultLines: [] },
+      body: {
+        inspectorUserId: 'user-qa',
+        resultLines: [],
+        idempotencyKey: expect.stringMatching(/^quality-submit-/),
+      },
       throwOnError: false,
     })
     expect(filters.organizationId).toBe('org-001')
+  })
+
+  it('rotates the quality submission key after an explicit 422 rejection', async () => {
+    const { startInspection } = useQualityInspectionTasks()
+    vi.mocked(listBusinessConsoleQualityInspectionTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: { items: [{ inspectionTaskId: 'TASK-422', status: 'pending' }], total: 1 },
+      },
+    } as never)
+    const intent = {
+      inspectorUserId: 'user-qa',
+      resultLines: [],
+    }
+    state.confirmOperation
+      .mockRejectedValueOnce(Object.assign(new Error('validation failed'), { statusCode: 422 }))
+      .mockImplementation(async (value) => value)
+
+    await expect(
+      startInspection('TASK-422', { ...intent, idempotencyKey: 'quality-key-1' }),
+    ).rejects.toThrow('validation failed')
+    await startInspection('TASK-422', { ...intent, idempotencyKey: 'quality-key-2' })
+
+    expect(
+      vi
+        .mocked(createBusinessConsoleQualityInspectionRecordFromTask)
+        .mock.calls.map(([request]) => request.body.idempotencyKey),
+    ).toEqual(['quality-key-1', 'quality-key-2'])
   })
 })

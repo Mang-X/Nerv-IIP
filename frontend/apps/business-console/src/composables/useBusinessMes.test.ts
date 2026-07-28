@@ -33,6 +33,7 @@ import {
   retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
   reverseBusinessConsoleMesProductionReportMutationOptions,
   runBusinessConsoleMesScheduleMutationOptions,
+  startBusinessConsoleMesOperationTaskMutationOptions,
 } from '@nerv-iip/api-client'
 import {
   describeMesReadinessReason,
@@ -64,12 +65,16 @@ const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
   queryRefetchById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
+const receiptState = vi.hoisted(() => ({
+  confirm: vi.fn(),
+}))
 
 vi.mock('@nerv-iip/api-client', () => ({
   cancelBusinessConsoleMesWorkOrder: vi.fn(async () => ({
     data: { success: true },
     response: { status: 200 },
   })),
+  confirmBusinessConsoleOperation: (...args: unknown[]) => receiptState.confirm(...args),
   acceptBusinessConsoleMesShiftHandoverMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
@@ -367,10 +372,116 @@ describe('business MES composables', () => {
     setActivePinia(createPinia())
     useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     vi.clearAllMocks()
+    sessionStorage.clear()
+    receiptState.confirm.mockImplementation(async (value) => value)
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [{ operationTaskId: 'op-1', workOrderId: 'wo-rush', status: 'InProgress' }],
+          total: 1,
+        },
+      },
+    } as never)
     coladaState.invalidateQueries.mockClear()
     coladaState.queryFactoriesById.clear()
     coladaState.queryDataById.clear()
     coladaState.queryRefetchById.clear()
+  })
+
+  it('keeps the original MES action key across failed accepted readback and composable re-entry', async () => {
+    const context = {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      workOrderId: 'wo-1',
+    }
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [{ operationTaskId: 'task-1', workOrderId: 'wo-1', status: 'Queued' }],
+          total: 1,
+        },
+      },
+    } as never)
+    receiptState.confirm
+      .mockRejectedValueOnce(
+        Object.assign(new Error('请求已受理，但权威状态尚未确认'), {
+          code: 'business-operation-unconfirmed',
+        }),
+      )
+      .mockImplementation(async (value) => value)
+
+    const firstPage = useMesOperationTasks()
+    await expect(
+      firstPage.startOperationTask('task-1', context, {
+        reasonCode: 'OPERATOR_READY',
+        idempotencyKey: 'page-random-key-1',
+      }),
+    ).rejects.toThrow('权威状态尚未确认')
+
+    const returnedPage = useMesOperationTasks()
+    await returnedPage.startOperationTask('task-1', context, {
+      reasonCode: 'OPERATOR_READY',
+      idempotencyKey: 'page-random-key-2',
+    })
+
+    const newIntentPage = useMesOperationTasks()
+    await newIntentPage.startOperationTask('task-1', context, {
+      reasonCode: 'OPERATOR_READY',
+      idempotencyKey: 'page-random-key-3',
+    })
+
+    const sentKeys = vi
+      .mocked(startBusinessConsoleMesOperationTaskMutationOptions)
+      .mock.results.map(
+        ({ value }) =>
+          (value.mutation as ReturnType<typeof vi.fn>).mock.calls[0]?.[0].body.idempotencyKey,
+      )
+
+    expect(sentKeys).toEqual(['page-random-key-1', 'page-random-key-1', 'page-random-key-3'])
+  })
+
+  it('rotates the MES action key after an explicit 422 rejection', async () => {
+    const context = {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      workOrderId: 'wo-422',
+    }
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [{ operationTaskId: 'task-422', workOrderId: 'wo-422', status: 'Queued' }],
+          total: 1,
+        },
+      },
+    } as never)
+    receiptState.confirm
+      .mockRejectedValueOnce(Object.assign(new Error('validation failed'), { statusCode: 422 }))
+      .mockImplementation(async (value) => value)
+
+    const page = useMesOperationTasks()
+    await expect(
+      page.startOperationTask('task-422', context, {
+        reasonCode: 'OPERATOR_READY',
+        idempotencyKey: 'mes-key-1',
+      }),
+    ).rejects.toThrow('validation failed')
+
+    const returnedPage = useMesOperationTasks()
+    await returnedPage.startOperationTask('task-422', context, {
+      reasonCode: 'OPERATOR_READY',
+      idempotencyKey: 'mes-key-2',
+    })
+
+    const sentKeys = vi
+      .mocked(startBusinessConsoleMesOperationTaskMutationOptions)
+      .mock.results.map(
+        ({ value }) =>
+          (value.mutation as ReturnType<typeof vi.fn>).mock.calls[0]?.[0].body.idempotencyKey,
+      )
+    expect(sentKeys).toEqual(['mes-key-1', 'mes-key-2'])
   })
 
   it('maps backend MES readiness reason codes to shared labels and next steps', () => {
@@ -544,6 +655,7 @@ describe('business MES composables', () => {
       scrapQuantity: 1,
       completesOperation: true,
       reportedAtUtc: '2026-05-24T01:00:00Z',
+      idempotencyKey: 'production-report-test',
     })
 
     expect(createBusinessConsoleMesRushWorkOrderMutationOptions).toHaveBeenCalled()
@@ -625,7 +737,7 @@ describe('business MES composables', () => {
       }),
     ).rejects.toThrow('状态已被其他操作更新')
 
-    expect(listBusinessConsoleMesOperationTasks).toHaveBeenCalledTimes(2)
+    expect(listBusinessConsoleMesOperationTasks).toHaveBeenCalledTimes(3)
     expect(recordBusinessConsoleMesProductionReport).toHaveBeenCalledTimes(2)
   })
 

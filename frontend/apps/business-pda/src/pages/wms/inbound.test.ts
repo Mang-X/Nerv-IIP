@@ -303,7 +303,7 @@ describe('WMS 收货入库', () => {
         options?: { onCommandAttempt?: () => void },
       ) => {
         options?.onCommandAttempt?.()
-        return Promise.reject(new Error('lost response'))
+        return Promise.reject(new RequestTimeoutError())
       },
     )
     const wrapper = mount(InboundPage, { attachTo: document.body })
@@ -311,6 +311,10 @@ describe('WMS 收货入库', () => {
     await flushPromises()
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     confirm.click()
+    await flushPromises()
+    const batch = document.querySelector<HTMLInputElement>('[data-batch-input]')!
+    batch.value = 'LOT-CHANGED'
+    batch.dispatchEvent(new Event('input'))
     await flushPromises()
     confirm.click()
     await flushPromises()
@@ -349,7 +353,6 @@ describe('WMS 收货入库', () => {
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     confirm.click()
     await flushPromises()
-
     const firstKey = wmsState.completeInbound.mock.calls[0][1]
     const batch = document.querySelector<HTMLInputElement>('[data-batch-input]')!
     batch.value = 'LOT-CORRECTED'

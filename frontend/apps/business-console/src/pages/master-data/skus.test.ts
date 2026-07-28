@@ -20,7 +20,7 @@ const stub = vi.hoisted(() => ({
     qualityRequired: true,
   }),
   // 记录每个 codeSet 的实时拉取调用，断言"实时拉字典"已接线。
-  resourcesCalls: [] as Array<{ resourceType: string, codeSet?: string }>,
+  resourcesCalls: [] as Array<{ resourceType: string; codeSet?: string }>,
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }))
@@ -97,22 +97,32 @@ const dialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvAlertDialogAction: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
   // RowActions 的 Pro 下拉就地渲染，避免 reka DropdownMenu portal 在 jsdom 卸载崩。
   NvDropdownMenuContent: { template: '<div><slot /></div>' },
-  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuItem: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
 }
 // RowActions 下拉就地渲染，让「编辑」可点。
 const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
-  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuItem: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
 }
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue 完成"填表→提交"。
 const selectStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
@@ -122,11 +132,16 @@ const selectStubs = {
 }
 
 async function openAndFillValid(wrapper: ReturnType<typeof mount>) {
-  await wrapper.findAll('button').find((b) => b.text().includes('新建物料'))!.trigger('click')
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text().includes('新建物料'))!
+    .trigger('click')
   await flushPromises()
   await wrapper.find('#sku-name').setValue('测试物料')
   // 仅产品分类默认空（其它字段默认值均合法），设为合法码值即可通过校验。
-  const categorySelect = wrapper.findAll('select').find((s) => s.findAll('option').some((o) => o.text().includes('电子料')))
+  const categorySelect = wrapper
+    .findAll('select')
+    .find((s) => s.findAll('option').some((o) => o.text().includes('电子料')))
   await categorySelect!.setValue('electronic')
   await flushPromises()
 }
@@ -163,14 +178,26 @@ describe('master-data skus page', () => {
     mount(SkusPage, { global: { stubs: { ...layoutStub, ...dialogStubs } } })
     await flushPromises()
 
-    const codeSets = stub.resourcesCalls.filter((c) => c.resourceType === 'reference-data').map((c) => c.codeSet)
-    for (const cs of ['material-type', 'batch-tracking-policy', 'serial-tracking-policy', 'shelf-life-policy', 'storage-condition', 'barcode-rule', 'compliance-tag']) {
+    const codeSets = stub.resourcesCalls
+      .filter((c) => c.resourceType === 'reference-data')
+      .map((c) => c.codeSet)
+    for (const cs of [
+      'material-type',
+      'batch-tracking-policy',
+      'serial-tracking-policy',
+      'shelf-life-policy',
+      'storage-condition',
+      'barcode-rule',
+      'compliance-tag',
+    ]) {
       expect(codeSets).toContain(cs)
     }
   })
 
   it('行「编辑」触发：拉详情回填、对话框进入编辑态、编号只读显示', async () => {
-    const wrapper = mount(SkusPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...rowActionStubs } } })
+    const wrapper = mount(SkusPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...rowActionStubs } },
+    })
     await flushPromises()
 
     const editItem = wrapper.findAll('button').find((b) => b.text().trim() === '编辑')
@@ -202,7 +229,9 @@ describe('master-data skus page', () => {
   })
 
   it('填全必填后提交：调用 createSku 并弹成功 toast', async () => {
-    const wrapper = mount(SkusPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(SkusPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
     await flushPromises()
     await openAndFillValid(wrapper)
 
@@ -210,7 +239,7 @@ describe('master-data skus page', () => {
     await flushPromises()
 
     expect(stub.createSku).toHaveBeenCalledTimes(1)
-    const body = stub.createSku.mock.calls[0]![0] as { name: string, category: string }
+    const body = stub.createSku.mock.calls[0]![0] as { name: string; category: string }
     expect(body.name).toBe('测试物料')
     expect(body.category).toBe('electronic')
     expect(stub.toastSuccess).toHaveBeenCalled()
@@ -219,7 +248,9 @@ describe('master-data skus page', () => {
 
   it('提交失败：弹错误 toast（人话）且不重置/不关闭表单', async () => {
     stub.createSku.mockRejectedValueOnce(new Error('downstream-invalid-response'))
-    const wrapper = mount(SkusPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(SkusPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
     await flushPromises()
     await openAndFillValid(wrapper)
 
@@ -228,7 +259,9 @@ describe('master-data skus page', () => {
 
     expect(stub.createSku).toHaveBeenCalledTimes(1)
     // 失败走 toast.error 的人话映射，不暴露技术串
-    expect(stub.toastError).toHaveBeenCalledWith('服务暂时不可用，请稍后重试。')
+    expect(stub.toastError).toHaveBeenCalledWith(
+      '服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。',
+    )
     expect(stub.toastSuccess).not.toHaveBeenCalled()
     // 表单未被重置（仍可重试）：名称保留
     expect((wrapper.find('#sku-name').element as HTMLInputElement).value).toBe('测试物料')

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { describeRequestError } from '@/api/request-timeout'
 import type {
   BusinessConsoleMesOperationTaskRow,
   BusinessConsoleMesWorkOrderItem,
@@ -353,7 +354,7 @@ async function submit() {
     intent.result = {
       status: 'error',
       title: '报工失败',
-      description: e instanceof Error ? e.message : '请检查网络后重试。',
+      description: describeRequestError(e, '请检查网络后重试。').message,
     }
   }
 }

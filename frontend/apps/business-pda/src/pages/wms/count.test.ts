@@ -183,7 +183,7 @@ describe('WMS 盘点', () => {
     wmsState.completeCount.mockImplementationOnce(
       (_id: string, _input: unknown, options?: { onCommandAttempt?: () => void }) => {
         options?.onCommandAttempt?.()
-        return Promise.reject(new Error('lost response'))
+        return Promise.reject(new RequestTimeoutError())
       },
     )
     const wrapper = mount(CountPage, { attachTo: document.body })
@@ -195,7 +195,9 @@ describe('WMS 盘点', () => {
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     confirm.click()
     await flushPromises()
-    // 重试：不重新点任务，直接再次确认。
+    countInput.value = '9'
+    countInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await wrapper.vm.$nextTick()
     confirm.click()
     await flushPromises()
     expect(wmsState.completeCount).toHaveBeenCalledTimes(2)
@@ -243,7 +245,6 @@ describe('WMS 盘点', () => {
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     confirm.click()
     await flushPromises()
-
     const firstKey = (wmsState.completeCount.mock.calls[0][1] as { idempotencyKey: string })
       .idempotencyKey
     countInput.value = '9'

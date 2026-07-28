@@ -21,6 +21,7 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 
 const coladaState = vi.hoisted(() => ({
+  confirmOperation: vi.fn(),
   queryDataById: new Map<string, unknown>(),
   queryFactoriesById: new Map<string, () => { enabled?: boolean } & Record<string, unknown>>(),
   queryOptionsById: new Map<string, { enabled?: boolean } & Record<string, unknown>>(),
@@ -28,6 +29,7 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  confirmBusinessConsoleOperation: (...args: unknown[]) => coladaState.confirmOperation(...args),
   completeBusinessConsoleWmsCountExecution: vi.fn(),
   listBusinessConsoleWmsCountExecutions: vi.fn(),
   listBusinessConsoleWmsCountExecutionsQueryOptions: vi.fn(() => ({
@@ -95,6 +97,7 @@ describe('business WMS composables', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    coladaState.confirmOperation.mockImplementation(async (value) => value)
     coladaState.queryDataById.clear()
     coladaState.queryFactoriesById.clear()
     coladaState.queryOptionsById.clear()
@@ -383,34 +386,79 @@ describe('business WMS composables', () => {
     })
   })
 
-  it('allows a completed count retry with the frozen key and returns the authoritative receipt', async () => {
+  it('allows only a persisted completed-count retry with the frozen key', async () => {
     const context = useBusinessContextStore()
     context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
-    vi.mocked(listBusinessConsoleWmsCountExecutions).mockResolvedValue({
-      data: {
-        success: true,
-        data: { items: [{ countExecutionId: 'count-1', status: 'Completed' }], total: 1 },
-      },
-    } as never)
+    vi.mocked(listBusinessConsoleWmsCountExecutions)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: { items: [{ countExecutionId: 'count-1', status: 'Open' }], total: 1 },
+        },
+      } as never)
+      .mockResolvedValue({
+        data: {
+          success: true,
+          data: { items: [{ countExecutionId: 'count-1', status: 'Completed' }], total: 1 },
+        },
+      } as never)
     const receipt = {
       success: true,
       data: { countExecutionId: 'count-1', status: 'Completed', countedQuantity: 5 },
     }
-    vi.mocked(completeBusinessConsoleWmsCountExecution).mockResolvedValue({
-      data: receipt,
-      response: new Response(null, { status: 200 }),
-    } as never)
+    vi.mocked(completeBusinessConsoleWmsCountExecution)
+      .mockRejectedValueOnce(new TypeError('network interrupted'))
+      .mockResolvedValue({
+        data: receipt,
+        response: new Response(null, { status: 200 }),
+      } as never)
     const { completeCountExecution } = useWmsCountExecutions()
 
+    await expect(completeCountExecution('count-1', 5, 'KEY-CNT-FROZEN')).rejects.toThrow(
+      'network interrupted',
+    )
     await expect(
       completeCountExecution('count-1', 5, 'KEY-CNT-FROZEN', { attempt: 'retry' }),
     ).resolves.toBe(receipt)
 
-    expect(completeBusinessConsoleWmsCountExecution).toHaveBeenCalledWith({
+    expect(completeBusinessConsoleWmsCountExecution).toHaveBeenCalledTimes(2)
+    expect(completeBusinessConsoleWmsCountExecution).toHaveBeenLastCalledWith({
       path: { countExecutionId: 'count-1' },
       query: { organizationId: 'org-001', environmentId: 'env-dev' },
       body: { countedQuantity: 5, idempotencyKey: 'KEY-CNT-FROZEN' },
       throwOnError: false,
     })
+  })
+
+  it('rotates the count intent key after an explicit 422 rejection', async () => {
+    useBusinessContextStore().patchContext({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    })
+    vi.mocked(listBusinessConsoleWmsCountExecutions).mockResolvedValue({
+      data: {
+        success: true,
+        data: { items: [{ countExecutionId: 'count-422', status: 'Open' }], total: 1 },
+      },
+    } as never)
+    vi.mocked(completeBusinessConsoleWmsCountExecution).mockResolvedValue({
+      data: { success: true, data: { countExecutionId: 'count-422' } },
+      response: new Response(null, { status: 200 }),
+    } as never)
+    coladaState.confirmOperation
+      .mockRejectedValueOnce(Object.assign(new Error('validation failed'), { statusCode: 422 }))
+      .mockImplementation(async (value) => value)
+    const { completeCountExecution } = useWmsCountExecutions()
+
+    await expect(completeCountExecution('count-422', 5, 'count-key-1')).rejects.toThrow(
+      'validation failed',
+    )
+    await completeCountExecution('count-422', 5, 'count-key-2')
+
+    expect(
+      vi
+        .mocked(completeBusinessConsoleWmsCountExecution)
+        .mock.calls.map(([request]) => request.body.idempotencyKey),
+    ).toEqual(['count-key-1', 'count-key-2'])
   })
 })

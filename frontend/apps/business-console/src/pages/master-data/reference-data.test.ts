@@ -12,8 +12,20 @@ const stub = vi.hoisted(() => ({
 
 // 列表桩数据带 codeSet 分组字段。
 const codeRows = [
-  { resourceType: 'reference-data', codeSet: 'material-type', code: 'raw-material', displayName: '原材料', active: true },
-  { resourceType: 'reference-data', codeSet: 'material-type', code: 'finished-goods', displayName: '成品', active: false },
+  {
+    resourceType: 'reference-data',
+    codeSet: 'material-type',
+    code: 'raw-material',
+    displayName: '原材料',
+    active: true,
+  },
+  {
+    resourceType: 'reference-data',
+    codeSet: 'material-type',
+    code: 'finished-goods',
+    displayName: '成品',
+    active: false,
+  },
 ]
 
 function stubCodes() {
@@ -25,7 +37,14 @@ function stubCodes() {
     createCode: stub.createCode,
     createCodeError: shallowRef(undefined),
     createCodePending: shallowRef(false),
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', resourceType: 'reference-data', skip: 0, take: 10, codeSet: 'material-type' }),
+    filters: reactive({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      resourceType: 'reference-data',
+      skip: 0,
+      take: 10,
+      codeSet: 'material-type',
+    }),
     refreshCodes: vi.fn(),
   }
 }
@@ -68,7 +87,10 @@ const dialogStubs = {
   // 行操作里 RowActions 的下拉内容已迁到 Pro（NvDropdownMenuContent 含 reka portal/Teleport，
   // jsdom 卸载会崩）就地渲染，避免渲染崩溃。
   NvDropdownMenuContent: { template: '<div><slot /></div>' },
-  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuItem: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
   // 行操作里的 AlertDialog 已迁到 Pro（NvAlertDialogContent 含 reka portal/Teleport，jsdom 卸载会崩）就地渲染。
   NvAlertDialog: { template: '<div><slot /></div>' },
   NvAlertDialogTrigger: { template: '<div><slot /></div>' },
@@ -78,14 +100,18 @@ const dialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvAlertDialogAction: {
+    emits: ['click'],
+    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
 }
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue（这里所属字典已由切分组带入合法值）。
 const selectStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
@@ -96,10 +122,16 @@ const selectStubs = {
 
 // 先切到可维护分组（仓储条件，platform-preset），开新建对话框并填编码/名称（所属字典已带入）。
 async function switchAndFillValid(wrapper: ReturnType<typeof mount>) {
-  const storageTab = wrapper.find('nav[aria-label="字典分组"]').findAll('button').find((b) => b.text().includes('仓储条件'))!
+  const storageTab = wrapper
+    .find('nav[aria-label="字典分组"]')
+    .findAll('button')
+    .find((b) => b.text().includes('仓储条件'))!
   await storageTab.trigger('click')
   await flushPromises()
-  await wrapper.findAll('button').find((b) => b.text().includes('新建字典条目'))!.trigger('click')
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text().includes('新建字典条目'))!
+    .trigger('click')
   await flushPromises()
   await wrapper.find('#ref-code').setValue('cold-chain')
   await wrapper.find('#ref-name').setValue('冷链')
@@ -130,7 +162,10 @@ describe('master-data reference-data page', () => {
     const wrapper = mount(ReferenceDataPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
-    const button = wrapper.find('nav[aria-label="字典分组"]').findAll('button').find((b) => b.text().includes('仓储条件'))!
+    const button = wrapper
+      .find('nav[aria-label="字典分组"]')
+      .findAll('button')
+      .find((b) => b.text().includes('仓储条件'))!
     await button.trigger('click')
     await flushPromises()
 
@@ -142,11 +177,17 @@ describe('master-data reference-data page', () => {
     await flushPromises()
 
     // 默认 CodeSet material-type 为系统枚举（不可新增），先切到可维护分组再开新建对话框。
-    const storageTab = wrapper.find('nav[aria-label="字典分组"]').findAll('button').find((b) => b.text().includes('仓储条件'))!
+    const storageTab = wrapper
+      .find('nav[aria-label="字典分组"]')
+      .findAll('button')
+      .find((b) => b.text().includes('仓储条件'))!
     await storageTab.trigger('click')
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建字典条目'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建字典条目'))!
+      .trigger('click')
     await flushPromises()
 
     const body = document.body.textContent ?? ''
@@ -158,7 +199,9 @@ describe('master-data reference-data page', () => {
     const wrapper = mount(ReferenceDataPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
-    const triggers = wrapper.findAll('button').filter((b) => b.attributes('aria-label')?.includes('操作'))
+    const triggers = wrapper
+      .findAll('button')
+      .filter((b) => b.attributes('aria-label')?.includes('操作'))
     expect(triggers.length).toBeGreaterThan(0)
   })
 
@@ -168,11 +211,17 @@ describe('master-data reference-data page', () => {
     await flushPromises()
 
     // 默认 material-type 为系统枚举不可新增，先切到可维护分组（仓储条件）再开新建对话框。
-    const storageTab = wrapper.find('nav[aria-label="字典分组"]').findAll('button').find((b) => b.text().includes('仓储条件'))!
+    const storageTab = wrapper
+      .find('nav[aria-label="字典分组"]')
+      .findAll('button')
+      .find((b) => b.text().includes('仓储条件'))!
     await storageTab.trigger('click')
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('新建字典条目'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建字典条目'))!
+      .trigger('click')
     await flushPromises()
 
     // 对话框 teleport 到 body；编码/名称留空 → 提交触发汇总提示。
@@ -189,7 +238,9 @@ describe('master-data reference-data page', () => {
     stub.createCode.mockClear()
     stub.toastSuccess.mockClear()
     stub.toastError.mockClear()
-    const wrapper = mount(ReferenceDataPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(ReferenceDataPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
     await flushPromises()
     await switchAndFillValid(wrapper)
 
@@ -197,7 +248,11 @@ describe('master-data reference-data page', () => {
     await flushPromises()
 
     expect(stub.createCode).toHaveBeenCalledTimes(1)
-    const body = stub.createCode.mock.calls[0]![0] as { codeSet: string, code: string, name: string }
+    const body = stub.createCode.mock.calls[0]![0] as {
+      codeSet: string
+      code: string
+      name: string
+    }
     expect(body.codeSet).toBe('storage-condition')
     expect(body.code).toBe('cold-chain')
     expect(body.name).toBe('冷链')
@@ -210,7 +265,9 @@ describe('master-data reference-data page', () => {
     stub.toastSuccess.mockClear()
     stub.toastError.mockClear()
     stub.createCode.mockRejectedValueOnce(new Error('downstream-invalid-response'))
-    const wrapper = mount(ReferenceDataPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(ReferenceDataPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
     await flushPromises()
     await switchAndFillValid(wrapper)
 
@@ -218,7 +275,9 @@ describe('master-data reference-data page', () => {
     await flushPromises()
 
     expect(stub.createCode).toHaveBeenCalledTimes(1)
-    expect(stub.toastError).toHaveBeenCalledWith('服务暂时不可用，请稍后重试。')
+    expect(stub.toastError).toHaveBeenCalledWith(
+      '服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。',
+    )
     expect(stub.toastSuccess).not.toHaveBeenCalled()
     // 表单未被重置：名称保留。
     expect((wrapper.find('#ref-name').element as HTMLInputElement).value).toBe('冷链')
