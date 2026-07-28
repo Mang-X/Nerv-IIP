@@ -13,8 +13,9 @@ public sealed class ShiftHandoverEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id.");
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id for the shift handover.");
         builder.Property(x => x.HandoverNo).HasColumnName("handover_no").IsRequired().HasMaxLength(100).HasComment("MES shift handover number allocated by the service numbering counter.");
-        builder.Property(x => x.ShiftId).HasColumnName("shift_id").IsRequired().HasMaxLength(100).HasComment("MasterData shift public id.");
-        builder.Property(x => x.TeamId).HasColumnName("team_id").IsRequired().HasMaxLength(100).HasComment("MasterData team public id handing over the shift.");
+        builder.Property(x => x.ShiftId).HasColumnName("shift_id").IsRequired().HasMaxLength(100).HasComment("MasterData shift public id (e.g. EARLY / MIDDLE); the shift dimension only, never a team code.");
+        builder.Property(x => x.TeamId).HasColumnName("team_id").IsRequired().HasMaxLength(100).HasComment("MasterData team public id (e.g. TEAM-WB-MC-A) handing over the shift; a code, never a display name.");
+        builder.Property(x => x.TeamName).HasColumnName("team_name").HasMaxLength(200).HasComment("Display name of the handing-over team captured at handover time; snapshot so the read face needs no MasterData call.");
         builder.Property(x => x.HandoverStatus).HasColumnName("handover_status").IsRequired().HasMaxLength(30).HasComment("Shift handover lifecycle status.");
         builder.Property(x => x.OpenIssueCount).HasColumnName("open_issue_count").IsRequired().HasComment("Number of open issues captured when the handover was created.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the handover was created.");

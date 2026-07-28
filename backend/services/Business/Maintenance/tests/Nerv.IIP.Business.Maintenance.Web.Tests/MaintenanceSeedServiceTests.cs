@@ -22,8 +22,10 @@ public sealed class MaintenanceSeedServiceTests
         Assert.Equal(3, plans.Count);
         // 计划绑定设备资产 + 覆盖日/周/月三档 ISO 日周期，供点检页选计划。
         Assert.Contains(plans, p => p.PlanCode == "PM-INSP-DAILY-01" && p.DeviceAssetId == "DEV-CNC-01" && p.Interval == "P1D");
-        Assert.Contains(plans, p => p.PlanCode == "PM-INSP-WEEKLY-02" && p.DeviceAssetId == "DEV-PUMP-02" && p.Interval == "P7D");
-        Assert.Contains(plans, p => p.PlanCode == "PM-INSP-MONTHLY-03" && p.DeviceAssetId == "DEV-COMP-03" && p.Interval == "P30D");
+        // 周检/月检原绑 DEV-PUMP-02 / DEV-COMP-03，这两台在设定集 §3 的 46 台设备台账里并不存在；
+        // 公用工程（空压机/干燥机）归 DEV-AUX-* 段。
+        Assert.Contains(plans, p => p.PlanCode == "PM-INSP-WEEKLY-02" && p.DeviceAssetId == "DEV-AUX-01" && p.Interval == "P7D");
+        Assert.Contains(plans, p => p.PlanCode == "PM-INSP-MONTHLY-03" && p.DeviceAssetId == "DEV-AUX-03" && p.Interval == "P30D");
     }
 
     [Fact]

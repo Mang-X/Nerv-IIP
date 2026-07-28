@@ -196,8 +196,9 @@ public static class WorldHistoryFloorEventsSpec
     #region 班次交接（班次交接页）
 
     /// <summary>
-    /// L0 §5 的 6 个班组。班组即本平台的班次维度——历史工序任务的 <c>shift_id</c> 落的就是班组编码，
-    /// 交接单据据此与工序任务（工作中心 / 设备筛选）对得上。
+    /// L0 §5 的 6 个班组。班组与班次是**两个维度**：班组是「谁」（<c>TEAM-WB-*</c>），班次是「何时」
+    /// （<c>EARLY</c> / <c>MIDDLE</c>），每个班组各自引用一个班次。历史工序任务的 <c>shift_id</c> 落班次编码、
+    /// <c>team_id</c> 落班组编码，交接单据据此与工序任务对得上。
     /// </summary>
     public static readonly IReadOnlyList<WorldHistoryShiftTeam> Teams =
     [
@@ -266,11 +267,12 @@ public static class WorldHistoryFloorEventsSpec
 
                 handovers.Add(new WorldHistoryShiftHandover(
                     handoverNo,
-                    ShiftId: team.TeamCode,
-                    TeamId: team.TeamName,
+                    ShiftId: WorldHistoryCalendar.ShiftCode(team.ShiftIndex),
+                    TeamId: team.TeamCode,
                     openIssueCount,
                     createdAtUtc,
-                    acceptedAtUtc));
+                    acceptedAtUtc,
+                    TeamName: team.TeamName));
             }
         }
 
@@ -388,7 +390,8 @@ public sealed record WorldHistoryShiftHandover(
     string TeamId,
     int OpenIssueCount,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset? AcceptedAtUtc)
+    DateTimeOffset? AcceptedAtUtc,
+    string? TeamName = null)
 {
     /// <summary>是否尚未接班。</summary>
     public bool IsPending => AcceptedAtUtc is null;

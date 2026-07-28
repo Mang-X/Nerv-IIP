@@ -627,7 +627,9 @@ public sealed record MesOperationTaskRow(
     string? DeviceAssetName = null,
     string? OperationCode = null,
     DateTimeOffset? ScheduledAtUtc = null,
-    string? ScheduleInvalidationReasonCode = null);
+    string? ScheduleInvalidationReasonCode = null,
+    string? TeamId = null,
+    string? TeamName = null);
 
 public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetMesWorkOrderDetailQuery, MesWorkOrderDetailResponse>
@@ -761,7 +763,9 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
                 null,
                 x.OperationCode,
                 x.ScheduledAtUtc,
-                x.ScheduleInvalidationReasonCode));
+                x.ScheduleInvalidationReasonCode,
+                x.TeamId,
+                x.TeamName));
     }
 
     internal static IQueryable<Domain.AggregatesModel.OperationTaskAggregate.OperationTask> QueryOperationTaskEntities(
@@ -1058,7 +1062,9 @@ public sealed record MesDispatchTaskRow(
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null,
     DateTimeOffset? ScheduledAtUtc = null,
-    string? ScheduleInvalidationReasonCode = null);
+    string? ScheduleInvalidationReasonCode = null,
+    string? TeamId = null,
+    string? TeamName = null);
 
 public sealed class ListDispatchTasksQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListDispatchTasksQuery, MesDispatchTaskListResponse>
@@ -1110,7 +1116,9 @@ public sealed class ListDispatchTasksQueryHandler(ApplicationDbContext dbContext
                 x.DeviceAssetId,
                 null,
                 x.ScheduledAtUtc,
-                x.ScheduleInvalidationReasonCode))
+                x.ScheduleInvalidationReasonCode,
+                x.TeamId,
+                x.TeamName))
             .ToArrayAsync(cancellationToken);
         return new MesDispatchTaskListResponse(tasks, total);
     }
@@ -1563,7 +1571,8 @@ public sealed record MesShiftHandoverRow(
     string TeamId,
     string HandoverStatus,
     int OpenIssueCount,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    string? TeamName = null);
 
 public sealed class ListShiftHandoversQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListShiftHandoversQuery, MesShiftHandoverListResponse>
@@ -1620,7 +1629,8 @@ public sealed class ListShiftHandoversQueryHandler(ApplicationDbContext dbContex
                 x.TeamId,
                 x.HandoverStatus,
                 x.OpenIssueCount,
-                x.CreatedAtUtc))
+                x.CreatedAtUtc,
+                x.TeamName))
             .ToArrayAsync(cancellationToken);
         return new MesShiftHandoverListResponse(items, total);
     }

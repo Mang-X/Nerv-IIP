@@ -133,6 +133,8 @@ public static class WorldHistoryMesSpec
             WorldHistoryWorkshop.Surface, WorldHistoryWorkshop.Surface,
         };
         var teamCodes = new[] { "TEAM-WB-MC-A", "TEAM-WB-MC-B", "TEAM-WB-AS-A", "TEAM-WB-AS-B", "TEAM-WB-SP-A", "TEAM-WB-SP-B" };
+        // 与 L0 WorldBibleSpec.Teams 同名（班组名称随派工落快照，读面无需回查主数据）。
+        var teamNames = new[] { "机加车间早班组", "机加车间中班组", "装配车间早班组", "装配车间中班组", "表面与包装车间早班组", "表面与包装车间中班组" };
 
         var operators = new List<WorldHistoryOperator>(25);
 
@@ -147,7 +149,8 @@ public static class WorldHistoryMesSpec
                 teamCodes[leaderIndex],
                 teamWorkshops[leaderIndex],
                 // L0 班组顺序里偶数下标是早班、奇数是中班。
-                ShiftIndex: leaderIndex % 2));
+                ShiftIndex: leaderIndex % 2,
+                TeamName: teamNames[leaderIndex]));
         }
 
         // 19 名操作工：L0 序号 9..27（0 基），前 18 人按 6 个班组轮转，第 19 人补入末组。
@@ -161,7 +164,8 @@ public static class WorldHistoryMesSpec
                 EmployeeName(ordinal),
                 teamCodes[teamIndex],
                 teamWorkshops[teamIndex],
-                ShiftIndex: teamIndex % 2));
+                ShiftIndex: teamIndex % 2,
+                TeamName: teamNames[teamIndex]));
         }
 
         return operators;
@@ -308,7 +312,8 @@ public sealed record WorldHistoryOperator(
     string Name,
     string TeamCode,
     WorldHistoryWorkshop Workshop,
-    int ShiftIndex);
+    int ShiftIndex,
+    string TeamName);
 
 public sealed record WorldHistoryWorkOrderPlan(
     string WorkOrderNo,

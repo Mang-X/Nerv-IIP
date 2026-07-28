@@ -42,7 +42,9 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.HasActiveManualDispatch)
             .HasColumnName("has_active_manual_dispatch").IsRequired().HasDefaultValue(false)
             .HasComment("Whether the operation currently owns an active MES manual-device dispatch lock; false with revision zero and a device remains legacy-unknown.");
-        builder.Property(x => x.ShiftId).HasColumnName("shift_id").HasMaxLength(100).HasComment("Assigned MasterData shift public id captured by MES dispatch.");
+        builder.Property(x => x.ShiftId).HasColumnName("shift_id").HasMaxLength(100).HasComment("Assigned MasterData shift public id (e.g. EARLY / MIDDLE) captured by MES dispatch; the shift dimension only, never a team code.");
+        builder.Property(x => x.TeamId).HasColumnName("team_id").HasMaxLength(100).HasComment("Assigned MasterData team public id (e.g. TEAM-WB-MC-A) captured by MES dispatch.");
+        builder.Property(x => x.TeamName).HasColumnName("team_name").HasMaxLength(200).HasComment("Display name of the assigned team captured by MES dispatch; snapshot so the read face needs no MasterData call.");
         builder.Property(x => x.AssignedAtUtc).HasColumnName("assigned_at_utc").HasComment("UTC time when MES dispatch assignment facts were captured.");
         builder.Property(x => x.ScheduledAtUtc).HasColumnName("scheduled_at_utc").HasComment("UTC time when a released APS schedule last placed this task; set only by schedule assignment (not manual dispatch) and used to derive the 已排程/未排程 schedule state.");
         builder.Property(x => x.SchedulePlanId).HasColumnName("schedule_plan_id").HasMaxLength(100).HasComment("Scheduling plan id that currently owns this task's APS assignment, or null after matching revocation.");
