@@ -3,7 +3,9 @@ import type { BusinessConsoleErpOpportunityItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpOpportunities } from '@/composables/useBusinessErp'
 import { useErpPartnerCatalog } from '@/composables/useErpPickerCatalog'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
+import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -38,6 +40,8 @@ definePage({
 const opportunities = useErpOpportunities()
 // 客户从业务伙伴主数据里选，机会一开立就挂在真实客户上。
 const { customerOptions, partnersPending } = useErpPartnerCatalog()
+// 列表侧另需 code→name 反查（目录只给下拉选项，不做反查）；底层同一份查询，不会重复请求。
+const { resolvePartner } = useBusinessPartnerNames()
 const { page, pageSize } = usePagedList(opportunities.filters, {
   resetOn: [() => opportunities.filters.keyword],
 })
@@ -49,7 +53,11 @@ const columns: NvDataTableColumn<BusinessConsoleErpOpportunityItem>[] = [
     cellClass: 'font-medium',
     accessor: (r) => r.opportunityNo ?? '-',
   },
-  { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '-' },
+  {
+    key: 'customerCode',
+    header: '客户',
+    accessor: (r) => resolvePartner(r.customerCode) ?? r.customerCode ?? '-',
+  },
   { key: 'topic', header: '主题', accessor: (r) => r.topic ?? '-' },
   { key: 'status', header: '阶段', width: 'w-28' },
   {
@@ -159,6 +167,9 @@ async function submit() {
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >
+      <template #cell-customerCode="{ row }">
+        <PartnerNameCell :code="row.customerCode" />
+      </template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
     </NvDataTable>
 

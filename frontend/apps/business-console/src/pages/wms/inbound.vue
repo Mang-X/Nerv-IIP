@@ -3,6 +3,7 @@ import type { BusinessConsoleWmsInboundOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsReceivingQualityFlow from '@/components/wms/WmsReceivingQualityFlow.vue'
+import { wmsStatusTone } from '@/data/businessLabels'
 import { useWmsInboundOrders } from '@/composables/useBusinessWms'
 import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
@@ -14,6 +15,7 @@ import {
 } from '@/composables/useWarehouseCodeCatalog'
 import {
   wmsInboundOrderStatusFilterOptions,
+  wmsInboundOrderStatusLabel,
   WMS_INBOUND_SOURCE_TYPE_OPTIONS,
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
@@ -305,6 +307,14 @@ const columns: NvDataTableColumn<InboundRow>[] = [
 function rowKey(row: InboundRow) {
   return row.inboundOrderId ?? row.inboundOrderNo ?? '入库单'
 }
+/**
+ * 入库单状态说人话。后端回的是 PascalCase 枚举（`PendingQualityCheck` /
+ * `InventoryPostingFailed`），UI 包通用状态表只按小写整串查，多词状态一律查不到、
+ * 直接把英文印到界面上。
+ */
+function statusLabel(value?: string | null) {
+  return wmsInboundOrderStatusLabel(value)
+}
 function scanRecordRoute(row: InboundRow) {
   return {
     path: '/barcode/scans',
@@ -458,7 +468,12 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="暂无入库单。收货作业产生入库单后会出现在这里。"
     >
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }"
+        ><NvStatusBadge
+          :value="row.status"
+          :label="statusLabel(row.status)"
+          :tone="wmsStatusTone(row.status)"
+      /></template>
       <template #cell-quality="{ row }">
         <WmsReceivingQualityFlow
           v-if="row.inboundOrderNo"

@@ -3,6 +3,7 @@ import type { BusinessConsoleErpSalesOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpSalesOrders } from '@/composables/useBusinessErp'
 import { useErpSiteCatalog } from '@/composables/useErpPickerCatalog'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
@@ -13,6 +14,7 @@ import {
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import FulfillmentTimelineSheet from '@/components/fulfillment/FulfillmentTimelineSheet.vue'
+import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -48,6 +50,8 @@ definePage({
 const orders = useErpSalesOrders()
 // 履约工厂从工厂主数据里选，手输编码只会在提交时才发现敲错。
 const { siteOptions, sitesPending } = useErpSiteCatalog()
+// 客户列显名称：读面只回 customerCode，中文名在主数据业务伙伴里，前端按编码 join。
+const { resolvePartner } = useBusinessPartnerNames()
 const orderUrgencies = useOrderUrgencies(
   computed(() => orders.salesOrders.value.map((order) => order.salesOrderNo)),
 )
@@ -83,7 +87,11 @@ const columns: NvDataTableColumn<BusinessConsoleErpSalesOrderItem>[] = [
     cellClass: 'font-medium',
     accessor: (r) => r.salesOrderNo ?? '-',
   },
-  { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '-' },
+  {
+    key: 'customerCode',
+    header: '客户',
+    accessor: (r) => resolvePartner(r.customerCode) ?? r.customerCode ?? '-',
+  },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'urgency', header: '紧急度', width: 'w-28' },
   {
@@ -220,6 +228,9 @@ async function submit() {
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >
+      <template #cell-customerCode="{ row }">
+        <PartnerNameCell :code="row.customerCode" />
+      </template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
       <template #cell-urgency="{ row }">
         <OrderUrgencyBadge

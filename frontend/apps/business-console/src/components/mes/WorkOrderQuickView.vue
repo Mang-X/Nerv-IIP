@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   isScheduleInvalidated,
   scheduleInvalidationHint,
@@ -23,6 +24,8 @@ import { useRouter } from 'vue-router'
 const workOrderId = defineModel<string | null>('workOrderId', { default: null })
 const router = useRouter()
 const { detail, detailError, detailPending, filters } = useMesWorkOrderDetail()
+// 工单详情只回物料标识；物料名在 SKU 主数据里，查不到显编码，是内部 GUID 则不上屏。
+const { resolveSkuLabel } = useMesDisplayNames()
 
 watch(
   workOrderId,
@@ -99,7 +102,7 @@ function openFull() {
           </div>
           <div class="flex justify-between gap-3">
             <span class="text-muted-foreground">物料</span>
-            <span v-if="detail.skuId" class="font-medium">{{ detail.skuId }}</span>
+            <span v-if="detail.skuId" class="font-medium">{{ resolveSkuLabel(detail.skuId) }}</span>
             <span v-else class="text-muted-foreground">—</span>
           </div>
         </div>

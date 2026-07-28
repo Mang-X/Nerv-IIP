@@ -10,6 +10,7 @@ import {
   useEquipmentUomCatalog,
   useTelemetryTagCatalog,
 } from '@/composables/useEquipmentPickerCatalog'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -126,6 +127,14 @@ const formEnabledValue = computed({
   },
 })
 
+// 规则读面只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
+const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
+/** 设备展示串：名称优先，名录查不到就只显编号，不编名字。 */
+function deviceLabel(code?: string | null, fallback = '无设备') {
+  if (!code) return fallback
+  return resolveDevice(code) ?? code
+}
+
 const columns: NvDataTableColumn<BusinessConsoleTelemetryAlarmRuleItem>[] = [
   {
     key: 'ruleCode',
@@ -133,7 +142,14 @@ const columns: NvDataTableColumn<BusinessConsoleTelemetryAlarmRuleItem>[] = [
     cellClass: 'font-medium',
     accessor: (r) => r.ruleCode ?? '无规则',
   },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '无设备' },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    accessor: (r) =>
+      resolveDevice(r.deviceAssetId)
+        ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
+        : (r.deviceAssetId ?? '无设备'),
+  },
   { key: 'tagKey', header: '采集标签', accessor: (r) => r.tagKey ?? '无标签' },
   { key: 'condition', header: '触发条件', accessor: (r) => conditionLabel(r) },
   { key: 'severity', header: '级别', width: 'w-24' },
@@ -220,7 +236,8 @@ async function submitRule() {
   }
 }
 function severityLabel(value?: string | null) {
-  return severityOptions.find((o) => o.value === value)?.label ?? value ?? '未知'
+  // 选项里没有的级别就说「未知级别」，绝不把后端英文码回吐到界面上。
+  return value ? (severityOptions.find((o) => o.value === value)?.label ?? '未知级别') : '未知'
 }
 function severityVariant(value?: string | null) {
   const severity = value?.toLowerCase()
@@ -323,9 +340,12 @@ function formatError(error: unknown) {
       <template #cell-deviceAssetId="{ row }">
         <RouterLink
           :to="`/equipment/${row.deviceAssetId}`"
-          class="text-brand underline-offset-4 hover:underline"
+          class="grid leading-tight text-brand underline-offset-4 hover:underline"
         >
-          {{ row.deviceAssetId ?? '无设备' }}
+          <span>{{ deviceLabel(row.deviceAssetId) }}</span>
+          <span v-if="resolveDevice(row.deviceAssetId)" class="text-xs text-muted-foreground">{{
+            row.deviceAssetId
+          }}</span>
         </RouterLink>
       </template>
       <template #cell-severity="{ row }">

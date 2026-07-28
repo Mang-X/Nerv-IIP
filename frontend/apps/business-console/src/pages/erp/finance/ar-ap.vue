@@ -10,7 +10,9 @@ import {
   useErpPayableSourceCatalog,
   useErpReceivableSourceCatalog,
 } from '@/composables/useErpPickerCatalog'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
+import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -53,6 +55,8 @@ const payables = useErpPayables()
 const { customerOptions, supplierOptions, partnersPending } = useErpPartnerCatalog()
 const { receivableSourceOptions, receivableSourcesPending } = useErpReceivableSourceCatalog()
 const { payableSourceOptions, payableSourcesPending } = useErpPayableSourceCatalog()
+// 列表侧另需 code→name 反查（目录只给下拉选项，不做反查）；底层同一份查询，不会重复请求。
+const { resolvePartner } = useBusinessPartnerNames()
 const receivablesPaged = usePagedList(receivables.filters, {
   resetOn: [() => receivables.filters.status, () => receivables.filters.keyword],
 })
@@ -81,7 +85,11 @@ const receivableColumns: NvDataTableColumn<BusinessConsoleErpReceivableItem>[] =
     accessor: (r) => r.receivableNo ?? '-',
   },
   { key: 'sourceDocumentNo', header: '来源单据', accessor: (r) => r.sourceDocumentNo ?? '-' },
-  { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '-' },
+  {
+    key: 'customerCode',
+    header: '客户',
+    accessor: (r) => resolvePartner(r.customerCode) ?? r.customerCode ?? '-',
+  },
   { key: 'amount', header: '金额', align: 'end', width: 'w-32', accessor: (r) => r.amount ?? 0 },
   {
     key: 'openAmount',
@@ -100,7 +108,11 @@ const payableColumns: NvDataTableColumn<BusinessConsoleErpPayableItem>[] = [
     accessor: (r) => r.payableNo ?? '-',
   },
   { key: 'sourceDocumentNo', header: '来源单据', accessor: (r) => r.sourceDocumentNo ?? '-' },
-  { key: 'supplierCode', header: '供应商', accessor: (r) => r.supplierCode ?? '-' },
+  {
+    key: 'supplierCode',
+    header: '供应商',
+    accessor: (r) => resolvePartner(r.supplierCode) ?? r.supplierCode ?? '-',
+  },
   { key: 'amount', header: '金额', align: 'end', width: 'w-32', accessor: (r) => r.amount ?? 0 },
   {
     key: 'openAmount',
@@ -275,6 +287,9 @@ async function submitPayable() {
       @update:page="receivablesPaged.page.value = $event"
       @update:page-size="(v) => (receivablesPaged.pageSize.value = String(v))"
     >
+      <template #cell-customerCode="{ row }">
+        <PartnerNameCell :code="row.customerCode" />
+      </template>
       <template #cell-amount="{ row }"
         ><span class="tabular-nums">{{
           formatAmount(row.amount, row.currencyCode ?? 'CNY')
@@ -323,6 +338,9 @@ async function submitPayable() {
       @update:page="payablesPaged.page.value = $event"
       @update:page-size="(v) => (payablesPaged.pageSize.value = String(v))"
     >
+      <template #cell-supplierCode="{ row }">
+        <PartnerNameCell :code="row.supplierCode" />
+      </template>
       <template #cell-amount="{ row }"
         ><span class="tabular-nums">{{
           formatAmount(row.amount, row.currencyCode ?? 'CNY')

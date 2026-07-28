@@ -3,6 +3,8 @@ import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { NvBadge, NvButton, NvDataTable } from '@nerv-iip/ui'
 import { ArrowRightIcon } from '@lucide/vue'
+import { computed } from 'vue'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 
 /**
  * 设备域四页共用的「范围设备总览」聚合视图：未下钻到单台设备时，
@@ -22,25 +24,43 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (e: 'select', code: string): void }>()
 
+// 车间 / 产线在设备台账上只有编码，中文名在各自的主数据目录里，走统一名录解析 join 出来。
+const { resolveWorkshop, resolveLine } = useMasterDataDisplayNames({
+  workshops: true,
+  lines: true,
+})
+/** 目录查不到就只显编码，不编名字。 */
+function scopeName(resolve: (code?: string | null) => string | undefined, code?: string | null) {
+  if (!code) return '未划分'
+  return resolve(code) ?? code
+}
+
+/** 「名称 编号」串，供排序与导出用；没登记名称就只有编号，不编名字。 */
+function deviceText(item: BusinessConsoleResourceItem) {
+  const name = item.displayName?.trim()
+  return name ? `${name} ${item.code ?? ''}`.trim() : (item.code ?? '无编号')
+}
+
 const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
+  // 名称在上、编号在下：现场先认名字，编号是核对用的次要信息。
   {
     key: 'code',
-    header: '设备编号',
+    header: '设备',
     cellClass: 'font-medium',
-    accessor: (r) => r.code ?? '无编号',
-  },
-  {
-    key: 'displayName',
-    header: '名称',
-    accessor: (r) => (r.displayName?.trim() ? r.displayName : '未命名'),
+    accessor: (r) => deviceText(r),
   },
   {
     key: 'workshopCode',
     header: '车间',
-    width: 'w-28',
-    accessor: (r) => r.workshopCode ?? '未划分',
+    width: 'w-32',
+    accessor: (r) => scopeName(resolveWorkshop, r.workshopCode),
   },
-  { key: 'lineCode', header: '产线', width: 'w-28', accessor: (r) => r.lineCode ?? '未划分' },
+  {
+    key: 'lineCode',
+    header: '产线',
+    width: 'w-32',
+    accessor: (r) => scopeName(resolveLine, r.lineCode),
+  },
   { key: 'active', header: '台账状态', width: 'w-24' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-32' },
 ]
@@ -67,6 +87,14 @@ function select(code?: string | null) {
       empty-message="范围内暂无设备主数据。请调整上方范围，或先在基础数据登记设备资产。"
       @row-click="(row) => select(row.code)"
     >
+      <template #cell-code="{ row }">
+        <span class="grid leading-tight">
+          <span>{{ row.displayName?.trim() ? row.displayName : (row.code ?? '无编号') }}</span>
+          <span v-if="row.displayName?.trim() && row.code" class="text-xs text-muted-foreground">{{
+            row.code
+          }}</span>
+        </span>
+      </template>
       <template #cell-active="{ row }">
         <NvBadge class="rounded-sm" :variant="row.active === false ? 'neutral' : 'success'">
           {{ row.active === false ? '已停用' : '启用中' }}

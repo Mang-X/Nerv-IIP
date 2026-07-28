@@ -4,8 +4,12 @@ import type {
   BusinessConsolePostStockMovementRequest,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
+import { INVENTORY_MOVEMENT_TYPE_LABELS, labelFor } from '@/data/businessLabels'
 import { useInventoryMovement } from '@/composables/useBusinessInventory'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useSkuNames } from '@/composables/useSkuNames'
 import {
   useWarehouseCodeCatalog,
   WAREHOUSE_CATALOG_SOURCE_TEXT,
@@ -152,17 +156,37 @@ const canSubmit = computed(
     toOptionalNumber(form.quantity) !== undefined,
 )
 
+// 读面只回编码，名称在主数据里，按编码 join 出中文名。
+const { resolveSkuName } = useSkuNames()
+const { resolveLocation } = useMasterDataDisplayNames({ locations: true })
+
+/** 「名称 编码」串，供排序与导出用；名录查不到就只有编码，不编名字。 */
+function skuText(code?: string | null, fallback = '未记录') {
+  const name = resolveSkuName(code)
+  return name ? `${name} ${code}` : (code ?? fallback)
+}
+/** 「工厂 / 库位」串：库位优先显中文名，查不到就只显编码。 */
+function locationLabel(siteCode?: string | null, locationCode?: string | null) {
+  const location = locationCode ? (resolveLocation(locationCode) ?? locationCode) : ''
+  return [siteCode, location].filter(Boolean).join(' / ') || '—'
+}
+
 type MovementRow = BusinessConsoleInventoryMovementLineResponse
 const columns: NvDataTableColumn<MovementRow>[] = [
   { key: 'sourceDocumentId', header: '来源单据', cellClass: 'font-medium' },
   {
     key: 'movementType',
     header: '类型',
+    // 本页的 MOVEMENT_TYPE_LABELS 比共享词表更全（含状态转出入、盘点调整），用它。
     accessor: (r) =>
       r.movementType ? (MOVEMENT_TYPE_LABELS[r.movementType] ?? r.movementType) : '—',
   },
-  { key: 'skuCode', header: '物料' },
-  { key: 'location', header: '库位', accessor: (r) => `${r.siteCode} / ${r.locationCode}` },
+  { key: 'skuCode', header: '物料', accessor: (r) => skuText(r.skuCode) },
+  {
+    key: 'location',
+    header: '库位',
+    accessor: (r) => locationLabel(r.siteCode, r.locationCode),
+  },
   { key: 'lotNo', header: '批次', accessor: (r) => r.lotNo || '—' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
   { key: 'postedAtUtc', header: '过账时间', accessor: (r) => formatDateTime(r.postedAtUtc) },
@@ -210,7 +234,7 @@ async function submitMovement() {
   }
   // 列表来自服务端读面：过账成功后失效查询即可，新过账的流水刷新之后仍然在。
   movementSheetOpen.value = false
-  notifySuccess(`库存移动 ${response?.data?.movementId ?? body.idempotencyKey} 已受理`)
+  notifySuccess(`来源单据 ${body.sourceDocumentId} 的库存移动已受理`)
 }
 
 function optionalText(value: string) {
@@ -259,6 +283,9 @@ function isNonEmpty(value: string) {
       :column-settings="false"
       empty-message="当前范围内没有库存流水。库存移动一般由收货、完工入库、领料或盘点自动产生；确需补录时点右上角新建移动。"
     >
+      <template #cell-skuCode="{ row }">
+        <CodeWithNameCell :code="row.skuCode" :name="resolveSkuName(row.skuCode)" />
+      </template>
       <template #cell-quantity="{ row }"
         ><span
           class="tabular-nums"

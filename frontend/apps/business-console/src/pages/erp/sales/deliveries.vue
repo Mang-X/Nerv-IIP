@@ -2,7 +2,9 @@
 import type { BusinessConsoleErpDeliveryOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpDeliveryOrders } from '@/composables/useBusinessErp'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
+import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -23,6 +25,8 @@ definePage({
 })
 
 const deliveries = useErpDeliveryOrders()
+// 客户列显名称：读面只回 customerCode，中文名在主数据业务伙伴里，前端按编码 join。
+const { resolvePartner } = useBusinessPartnerNames()
 const { page, pageSize } = usePagedList(deliveries.filters, {
   resetOn: [() => deliveries.filters.keyword],
 })
@@ -35,7 +39,11 @@ const columns: NvDataTableColumn<BusinessConsoleErpDeliveryOrderItem>[] = [
     accessor: (r) => r.deliveryOrderNo ?? '-',
   },
   { key: 'salesOrderNo', header: '销售单', accessor: (r) => r.salesOrderNo ?? '-' },
-  { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '-' },
+  {
+    key: 'customerCode',
+    header: '客户',
+    accessor: (r) => resolvePartner(r.customerCode) ?? r.customerCode ?? '-',
+  },
   { key: 'status', header: '状态', width: 'w-28' },
   {
     key: 'releasedAtUtc',
@@ -121,6 +129,9 @@ async function release(row: BusinessConsoleErpDeliveryOrderItem) {
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >
+      <template #cell-customerCode="{ row }">
+        <PartnerNameCell :code="row.customerCode" />
+      </template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
       <template #cell-actions="{ row }">
         <NvButton

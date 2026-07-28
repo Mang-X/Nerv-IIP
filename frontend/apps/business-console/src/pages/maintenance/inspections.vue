@@ -11,6 +11,7 @@ import {
   useEquipmentUomCatalog,
   useMaintenanceDocumentCatalog,
 } from '@/composables/useEquipmentPickerCatalog'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -160,26 +161,35 @@ const listErrorMessage = computed(() => formatError(inspectionsError.value))
 // 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
 const recordErrorMessage = computed(() => recordError.value)
 
+// 测量值只回单位编码（mm / EA），中文名在主数据计量单位里。
+const { formatUom } = useMasterDataDisplayNames({ uoms: true })
+
 type InspectionRow = BusinessConsoleMaintenanceInspectionItem
 type MeasurementItem = BusinessConsoleMaintenanceInspectionMeasurementItem
 const columns: NvDataTableColumn<InspectionRow>[] = [
+  // 点检记录没有人读单号（inspectionId 是 GUID），以「点检时间」作主列。
   {
-    key: 'inspectionId',
-    header: '点检记录',
+    key: 'inspectedAt',
+    header: '点检时间',
     cellClass: 'font-medium',
-    accessor: (r) => inspectionNo(r),
+    accessor: (r) => formatDateTime(r.inspectedAtUtc),
   },
-  { key: 'planId', header: '保养计划', accessor: (r) => r.planId ?? '未关联' },
-  { key: 'workOrderId', header: '维修工单', accessor: (r) => r.workOrderId ?? '未关联' },
+  // planId / workOrderId 都只有 GUID（读面缺 planCode / workOrderNo）——GUID 不上屏，
+  // 先如实留白，跳转由「操作」列承载；已登记为后端缺口。
+  { key: 'planId', header: '保养计划', accessor: (r) => (r.planId ? '—' : '未关联') },
+  { key: 'workOrderId', header: '维修工单', accessor: (r) => (r.workOrderId ? '—' : '未关联') },
   { key: 'inspector', header: '点检人', accessor: (r) => r.inspector ?? '未记录' },
   { key: 'result', header: '结果', width: 'w-24' },
   { key: 'measurements', header: '测量值', width: 'w-40' },
-  { key: 'inspectedAtUtc', header: '点检时间', accessor: (r) => formatDateTime(r.inspectedAtUtc) },
 ]
 
+/**
+ * 点检记录的抬头说法。以前拿 inspectionId（GUID）尾 8 位拼 `INSP-XXXXXXXX` 冒充记录号——
+ * 那是编造出来的号，改用「点检人 + 点检时间」这组真实事实指认这条记录。
+ */
 function inspectionNo(row: InspectionRow) {
-  const id = row.inspectionId ?? ''
-  return id ? `INSP-${id.slice(-8).toUpperCase()}` : '点检记录'
+  const parts = [row.inspector, formatDateTime(row.inspectedAtUtc)].filter(Boolean)
+  return parts.length ? `点检 · ${parts.join(' · ')}` : '点检详情'
 }
 function rowKey(row: InspectionRow) {
   return (
@@ -187,9 +197,9 @@ function rowKey(row: InspectionRow) {
   )
 }
 function resultLabel(value?: string | null) {
-  return (
-    resultOptions.find((o) => o.value === (value ?? '').toLowerCase())?.label ?? value ?? '未知'
-  )
+  // 选项里没有的结果就说「未知结果」，绝不把后端英文码回吐到界面上。
+  if (!value) return '未知'
+  return resultOptions.find((o) => o.value === value.toLowerCase())?.label ?? '未知结果'
 }
 // 后端已算 isWithinSpec：超差 = 明确 false（未判定的 undefined 不当作超差）。
 function measurementOutOfSpec(m: MeasurementItem) {
@@ -581,7 +591,7 @@ function formatError(error: unknown) {
             </div>
             <div class="text-sm text-muted-foreground">
               测量 <span class="tabular-nums text-foreground">{{ m.measuredValue ?? '—' }}</span>
-              {{ m.uomCode ?? '' }} · 规格 {{ measurementRange(m) }}
+              {{ formatUom(m.uomCode, '') }} · 规格 {{ measurementRange(m) }}
             </div>
           </div>
 

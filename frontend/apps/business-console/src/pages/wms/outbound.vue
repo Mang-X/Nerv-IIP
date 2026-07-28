@@ -3,6 +3,7 @@ import type { BusinessConsoleWmsOutboundOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
+import { wmsStatusTone } from '@/data/businessLabels'
 import { useWmsOutboundOrders } from '@/composables/useBusinessWms'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
@@ -14,6 +15,7 @@ import {
 } from '@/composables/useWarehouseCodeCatalog'
 import {
   wmsOutboundOrderStatusFilterOptions,
+  wmsOutboundOrderStatusLabel,
   WMS_OUTBOUND_SOURCE_TYPE_OPTIONS,
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
@@ -273,6 +275,13 @@ const columns: NvDataTableColumn<OutboundRow>[] = [
 function rowKey(row: OutboundRow) {
   return row.outboundOrderId ?? row.outboundOrderNo ?? '出库单'
 }
+/**
+ * 出库单状态说人话。后端回的是 PascalCase 枚举（`InventoryPostingPending` /
+ * `InventoryPostingFailed`），UI 包通用状态表按小写整串查不到，会把英文印到界面上。
+ */
+function statusLabel(value?: string | null) {
+  return wmsOutboundOrderStatusLabel(value)
+}
 function formatDateTime(value?: string | null) {
   if (!value) return '—'
   const date = new Date(value)
@@ -362,7 +371,12 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="暂无出库单。发货作业产生出库单后会出现在这里。"
     >
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }"
+        ><NvStatusBadge
+          :value="row.status"
+          :label="statusLabel(row.status)"
+          :tone="wmsStatusTone(row.status)"
+      /></template>
       <template #cell-actions="{ row }">
         <NvButton
           size="sm"

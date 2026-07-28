@@ -42,6 +42,8 @@ import {
   useMaintenanceSpareParts,
   useMaintenanceWorkOrders,
 } from '@/composables/useBusinessMaintenance'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { formatIsoInterval } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvBadge,
@@ -457,6 +459,21 @@ watch(
   { immediate: true },
 )
 
+// 设备 / 维保读面只回编号（DEV-CNC-01 / WC-…），名称在主数据里，按编号 join 出中文名。
+const { resolveDevice, resolveWorkCenter } = useMasterDataDisplayNames({
+  devices: true,
+  workCenters: true,
+})
+/** 设备展示串：名称优先，名录查不到就只显编号，不编名字。 */
+function deviceLabel(code?: string | null, fallback = '无设备') {
+  if (!code) return fallback
+  return resolveDevice(code) ?? code
+}
+function workCenterLabel(code?: string | null, fallback = '未绑定') {
+  if (!code) return fallback
+  return resolveWorkCenter(code) ?? code
+}
+
 type Window = (typeof availabilityWindows)['value'][number]
 const columns: NvDataTableColumn<Window>[] = [
   { key: 'availabilityStatus', header: '状态', width: 'w-24' },
@@ -465,7 +482,7 @@ const columns: NvDataTableColumn<Window>[] = [
     header: '原因',
     accessor: (r) => describeEquipmentReason(r.reasonCode ?? '').label,
   },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '未绑定' },
+  { key: 'workCenterId', header: '工作中心', accessor: (r) => workCenterLabel(r.workCenterId) },
   { key: 'startUtc', header: '开始', width: 'w-44' },
   { key: 'endUtc', header: '结束', width: 'w-44' },
   { key: 'sourceReferenceId', header: '关联业务', accessor: (r) => r.sourceReferenceId ?? '无' },
@@ -473,7 +490,9 @@ const columns: NvDataTableColumn<Window>[] = [
     key: 'substituteDeviceAssetIds',
     header: '替代设备',
     accessor: (r) =>
-      r.substituteDeviceAssetIds?.length ? r.substituteDeviceAssetIds.join(', ') : '无',
+      r.substituteDeviceAssetIds?.length
+        ? r.substituteDeviceAssetIds.map((id) => deviceLabel(id)).join('、')
+        : '无',
   },
 ]
 
@@ -491,8 +510,11 @@ function statusLabel(status?: string | null) {
     ready: '就绪',
     running: '运行中',
     stopped: '停止',
+    maintenance: '维护中',
+    warmup: '预热中',
   }
-  return status ? (labels[status.toLowerCase()] ?? status) : '未知'
+  // 词表漏了就说「未知状态」，绝不把后端英文码回吐到界面上。
+  return status ? (labels[status.toLowerCase()] ?? '未知状态') : '未知'
 }
 function severityLabel(value?: string | null) {
   const labels: Record<string, string> = {
@@ -500,8 +522,11 @@ function severityLabel(value?: string | null) {
     critical: '严重',
     info: '信息',
     warning: '预警',
+    major: '重要',
+    minor: '次要',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「未知级别」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '未知级别') : '未知'
 }
 function severityVariant(value?: string | null) {
   const severity = value?.toLowerCase()
@@ -515,7 +540,8 @@ function availabilityLabel(value?: string | null) {
     unavailable: '不可用',
     unknown: '未知',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「未知」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '未知') : '未知'
 }
 function availabilityVariant(value?: string | null) {
   if (value === 'available') return 'success'
@@ -538,7 +564,8 @@ function historyTypeLabel(value?: string | null) {
     sample: '采样',
     state: '状态',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '事件'
+  // 词表漏了就说「其他记录」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '其他记录') : '事件'
 }
 function historyType(row: { itemType?: string | null }) {
   return row.itemType
@@ -555,20 +582,26 @@ function maintenanceStatusLabel(value?: string | null) {
     'in-progress': '处理中',
     completed: '已完成',
     closed: '已关闭',
+    cancelled: '已取消',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「未知状态」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '未知状态') : '未知'
 }
 function workOrderLabel(row: { workOrderId?: string }) {
   return row.workOrderId ?? '维护工单'
 }
+/** 保养/点检周期：先查常用说法，其余按 ISO 8601 周期翻译（P7D → 每 7 天）。 */
 function intervalLabel(value?: string | null) {
   const labels: Record<string, string> = {
     P7D: '每周',
     P14D: '每两周',
     P30D: '每月',
     P90D: '每季度',
+    P180D: '每半年',
+    P365D: '每年',
   }
-  return value ? (labels[value] ?? value) : '未设置'
+  if (!value) return '未设置'
+  return labels[value.toUpperCase()] ?? formatIsoInterval(value)
 }
 function quantityLabel(row: { quantity?: number | null; uomCode?: string | null }) {
   if (row.quantity === null || row.quantity === undefined) return '未记录'
@@ -590,7 +623,9 @@ function formatError(error: unknown) {
 <template>
   <BusinessLayout>
     <NvPageHeader
-      :title="filters.deviceAssetId ? `设备详情：${filters.deviceAssetId}` : '设备详情'"
+      :title="
+        filters.deviceAssetId ? `设备详情：${deviceLabel(filters.deviceAssetId)}` : '设备详情'
+      "
       :breadcrumbs="[{ label: '设备监控（IoT）' }]"
     >
       <template #actions>
@@ -759,6 +794,9 @@ function formatError(error: unknown) {
             <div class="mt-3 flex items-center justify-between gap-3">
               <div class="min-w-0">
                 <p class="truncate text-lg font-semibold text-foreground">
+                  {{ deviceLabel(currentState?.deviceAssetId ?? filters.deviceAssetId) }}
+                </p>
+                <p class="truncate text-xs text-muted-foreground">
                   {{ currentState?.deviceAssetId ?? filters.deviceAssetId }}
                 </p>
                 <p class="mt-1 text-sm text-muted-foreground">

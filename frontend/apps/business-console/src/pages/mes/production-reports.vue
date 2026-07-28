@@ -8,6 +8,12 @@ import {
   useMesProductionReports,
   useMesTelemetryProductionReportCandidates,
 } from '@/composables/useBusinessMes'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import {
+  labelFor,
+  REPORT_SUSPENSION_REASON_LABELS,
+  TELEMETRY_CANDIDATE_STATUS_LABELS,
+} from '@/data/businessLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
@@ -68,6 +74,15 @@ const {
 } = useMesProductionReports()
 const { page, pageSize } = usePagedList(filters)
 const candidateQueue = useMesTelemetryProductionReportCandidates()
+// 候选卡上只有设备标识，设备名在主数据里；查不到就只显标识，不编名字。
+const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
+type TelemetryCandidate = (typeof candidateQueue.candidates.value)[number]
+/** 候选当前处境：优先说明为什么挂起，没挂起就说它在队列里的状态。 */
+function candidateStateText(candidate: TelemetryCandidate) {
+  return candidate.suspensionReason
+    ? labelFor(REPORT_SUSPENSION_REASON_LABELS, candidate.suspensionReason)
+    : labelFor(TELEMETRY_CANDIDATE_STATUS_LABELS, candidate.status) || '未标注状态'
+}
 const candidateWorkOrderId = ref('')
 const candidateOperationTaskId = ref('')
 const dismissalReason = ref('')
@@ -774,10 +789,13 @@ async function dismissCandidate(candidateId?: string) {
         >
           <div class="flex flex-wrap justify-between gap-3">
             <div>
-              <p class="font-medium">{{ candidate.deviceAssetId }} · {{ candidate.tagKey }}</p>
+              <p class="font-medium">
+                {{ resolveDevice(candidate.deviceAssetId) ?? candidate.deviceAssetId }} ·
+                {{ candidate.tagKey }}
+              </p>
               <p class="text-sm text-muted-foreground">
                 {{ candidate.goodQuantity }} 件 · {{ formatDateTime(candidate.bucketEndUtc) }} ·
-                {{ candidate.suspensionReason ?? candidate.status }}
+                {{ candidateStateText(candidate) }}
               </p>
             </div>
             <NvButton size="sm" variant="outline" @click="toggleCandidate(candidate.candidateId)"

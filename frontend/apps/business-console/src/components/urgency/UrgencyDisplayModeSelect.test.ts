@@ -38,7 +38,7 @@ describe('UrgencyDisplayModeSelect', () => {
       'slack',
       'expectedDelay',
     ])
-    expect(wrapper.text()).toContain('Critical Ratio')
+    expect(wrapper.text()).toContain('紧迫系数（CR）')
     expect(wrapper.text()).toContain('预计延迟')
   })
 

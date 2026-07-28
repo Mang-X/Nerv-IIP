@@ -5,6 +5,55 @@ import { computed, reactive, shallowRef } from 'vue'
 
 import ControlBindingsPage from './control-bindings.vue'
 
+// 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
+// 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
+vi.mock('@/composables/useSkuNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useSkuNames: () => ({
+      resolveSkuName: () => undefined,
+      resolveSkuLabel: (code?: string | null) => code ?? '未指定物料',
+      skuByCode: computed(() => new Map<string, string>()),
+      skusPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useBusinessPartnerNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useBusinessPartnerNames: () => ({
+      resolvePartner: () => undefined,
+      resolvePartnerLabel: (code?: string | null, fallback = '未指定') => code ?? fallback,
+      partnerByCode: computed(() => new Map<string, string>()),
+      partners: computed(() => []),
+      partnersPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+  const { computed } = await import('vue')
+  const emptyIndex = computed(() => new Map<string, string>())
+  return {
+    useMasterDataDisplayNames: () => ({
+      resolveDevice: () => undefined,
+      resolveLocation: () => undefined,
+      resolveWorkCenter: () => undefined,
+      resolveTeam: () => undefined,
+      resolveUom: () => undefined,
+      resolveWorkshop: () => undefined,
+      resolveLine: () => undefined,
+      formatUom: (code?: string | null, fallback = '') => code ?? fallback,
+      deviceByCode: emptyIndex,
+      locationByCode: emptyIndex,
+      workCenterByCode: emptyIndex,
+      teamByCode: emptyIndex,
+      uomByCode: emptyIndex,
+      workshopByCode: emptyIndex,
+      lineByCode: emptyIndex,
+    }),
+  }
+})
+
 const stub = vi.hoisted(() => ({
   saveBinding: vi.fn(() => Promise.resolve({ success: true })),
   disableBinding: vi.fn(() => Promise.resolve({ success: true })),

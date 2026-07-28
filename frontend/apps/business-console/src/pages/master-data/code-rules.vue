@@ -8,6 +8,7 @@ import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useCodeRules } from '@/composables/useCodeRules'
+import { CODE_RULE_VERSION_LABELS, labelFor } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -670,7 +671,9 @@ async function submitForm() {
                 <tbody>
                   <tr v-for="(ver, i) in versions" :key="i" class="border-t">
                     <td class="px-3 py-2 text-right tabular-nums">{{ ver.version ?? '—' }}</td>
-                    <td class="px-3 py-2">{{ ver.status ?? '—' }}</td>
+                    <td class="px-3 py-2">
+                      {{ labelFor(CODE_RULE_VERSION_LABELS, ver.status, '—') }}
+                    </td>
                     <td class="px-3 py-2">{{ ver.effectiveFromUtc ?? '即时' }}</td>
                     <td class="px-3 py-2">{{ ver.createdBy ?? '—' }}</td>
                     <td class="px-3 py-2 text-muted-foreground">{{ ver.changeReason ?? '—' }}</td>

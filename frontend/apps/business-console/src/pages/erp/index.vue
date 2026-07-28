@@ -6,6 +6,8 @@ import type {
 import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import { useErpPurchaseRequisitions } from '@/composables/useBusinessErp'
 import { useBusinessPartners } from '@/composables/useBusinessMasterData'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useSkuNames } from '@/composables/useSkuNames'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { usePagedList } from '@/composables/usePagedList'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
@@ -50,6 +52,9 @@ definePage({
 const route = useRoute()
 const requisitions = useErpPurchaseRequisitions()
 const suppliers = useBusinessPartners()
+// 物料列显中文名、单位列显「件 (pcs)」：读面只回编码，名称在主数据里。
+const { resolveSkuName } = useSkuNames()
+const { formatUom } = useMasterDataDisplayNames({ uoms: true })
 const { page, pageSize } = usePagedList(requisitions.filters, {
   resetOn: [() => requisitions.filters.status, () => requisitions.filters.keyword],
 })
@@ -107,7 +112,11 @@ const columns: NvDataTableColumn<BusinessConsoleErpPurchaseRequisitionItem>[] = 
     cellClass: 'font-medium',
     accessor: (r) => r.requisitionNo ?? '-',
   },
-  { key: 'skuCode', header: '物料', accessor: (r) => r.skuCode ?? '-' },
+  {
+    key: 'skuCode',
+    header: '物料',
+    accessor: (r) => resolveSkuName(r.skuCode) ?? r.skuCode ?? '-',
+  },
   {
     key: 'quantity',
     header: '申请数量',
@@ -115,7 +124,7 @@ const columns: NvDataTableColumn<BusinessConsoleErpPurchaseRequisitionItem>[] = 
     width: 'w-28',
     accessor: (r) => r.quantity ?? 0,
   },
-  { key: 'uomCode', header: '单位', width: 'w-20', accessor: (r) => r.uomCode ?? '-' },
+  { key: 'uomCode', header: '单位', width: 'w-20', accessor: (r) => formatUom(r.uomCode, '-') },
   {
     key: 'requiredDate',
     header: '需求日期',

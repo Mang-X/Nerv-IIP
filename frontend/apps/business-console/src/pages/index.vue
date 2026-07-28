@@ -111,7 +111,9 @@ const heroMetrics = computed<HeroMetric[]>(() => {
     const preset = KPI_PRESENTATION[normalize(kpi.key)]
     return {
       key: `kpi-${normalize(kpi.source)}-${normalize(kpi.key)}`,
-      label: preset?.label ?? (normalize(kpi.label) || '业务指标'),
+      // 未登记的 KPI 只在后端 label 本身是中文时才透传；facade 现有若干英文 label
+      // （如 "Open NCRs"），直接回吐会把英文印到首页工作台上。
+      label: preset?.label ?? chineseOrFallback(kpi.label, '业务指标'),
       value,
       unit: preset?.unit ?? '',
       icon: preset?.icon ?? ListChecksIcon,
@@ -241,6 +243,12 @@ function isAvailable(status: string | null | undefined) {
 
 function normalize(value: string | null | undefined) {
   return value?.trim() ?? ''
+}
+
+/** 只在文本含中文时采用，否则退回占位——不把后端英文 label 直接印上屏。 */
+function chineseOrFallback(value: string | null | undefined, fallback: string) {
+  const text = normalize(value)
+  return text && /[一-鿿]/.test(text) ? text : fallback
 }
 
 function sourceLabel(source: string | null | undefined) {

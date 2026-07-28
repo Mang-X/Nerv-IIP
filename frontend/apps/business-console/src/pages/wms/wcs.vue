@@ -2,6 +2,13 @@
 import type { BusinessConsoleWmsWcsTaskItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
+import {
+  labelFor,
+  WCS_ADAPTER_TYPE_LABELS,
+  WCS_TASK_STATUS_LABELS,
+  wmsStatusTone,
+} from '@/data/businessLabels'
 import { useWmsWcsTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -109,7 +116,7 @@ async function submitDispatch() {
   const id = pendingTask.value?.warehouseTaskId
   if (!id) return
   if (!dispatchForm.adapterType.trim() || !dispatchForm.externalTaskId.trim()) {
-    formError.value = '请填写适配器与外部任务号。'
+    formError.value = '请填写设备类型与外部任务号。'
     return
   }
   if (invalidJson(dispatchForm.payloadJson)) {
@@ -168,10 +175,10 @@ async function submitComplete() {
 const taskContextItems = computed(() => {
   const task = pendingTask.value
   if (!task) return []
+  // 仓库任务只有 GUID（读面缺 taskNo），GUID 不上屏，这里就不摆这一行。
   return [
     { label: '外部任务号', value: task.externalTaskId },
-    { label: '适配器', value: task.adapterType },
-    { label: '仓库任务', value: task.warehouseTaskId },
+    { label: '设备类型', value: adapterTypeLabel(task.adapterType) },
   ]
 })
 const hasCarriedAdapter = computed(() => Boolean(pendingTask.value?.adapterType))
@@ -190,12 +197,10 @@ const columns: NvDataTableColumn<WcsRow>[] = [
     cellClass: 'font-medium',
     accessor: (r) => r.externalTaskId ?? '无',
   },
-  { key: 'adapterType', header: '适配器', accessor: (r) => r.adapterType ?? '无' },
   {
-    key: 'warehouseTaskId',
-    header: '仓库任务',
-    cellClass: 'text-muted-foreground',
-    accessor: (r) => r.warehouseTaskId ?? '无',
+    key: 'adapterType',
+    header: '设备类型',
+    accessor: (r) => adapterTypeLabel(r.adapterType),
   },
   { key: 'status', header: '状态', width: 'w-28' },
   {
@@ -216,6 +221,21 @@ const columns: NvDataTableColumn<WcsRow>[] = [
 
 function rowKey(row: WcsRow) {
   return row.wcsTaskId ?? row.externalTaskId ?? 'WCS 任务'
+}
+/**
+ * 适配器类型说人话。后端是自由文本技术标识（`agv` / `stacker-crane`），
+ * 词表里有就显中文设备名、技术标识降为副行；没收录就只显技术标识，不编名字。
+ */
+function adapterTypeLabel(value?: string | null) {
+  if (!value) return '无'
+  const name = labelFor(WCS_ADAPTER_TYPE_LABELS, value, '')
+  return name || value
+}
+function adapterTypeName(value?: string | null) {
+  return value ? labelFor(WCS_ADAPTER_TYPE_LABELS, value, '') || undefined : undefined
+}
+function statusLabel(value?: string | null) {
+  return labelFor(WCS_TASK_STATUS_LABELS, value, '未知状态')
 }
 function formatDateTime(value?: string | null) {
   if (!value) return '—'
@@ -340,7 +360,19 @@ function formatError(error: unknown) {
           </NvButton>
         </div>
       </template>
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-adapterType="{ row }">
+        <CodeWithNameCell
+          :code="row.adapterType"
+          :name="adapterTypeName(row.adapterType)"
+          fallback="无"
+        />
+      </template>
+      <template #cell-status="{ row }"
+        ><NvStatusBadge
+          :value="row.status"
+          :label="statusLabel(row.status)"
+          :tone="wmsStatusTone(row.status)"
+      /></template>
       <template #cell-failure="{ row }">
         <div v-if="row.failureCode || row.failureMessage" class="flex flex-col gap-0.5">
           <span class="text-sm text-destructive">{{ row.failureCode ?? '失败' }}</span>
@@ -388,7 +420,7 @@ function formatError(error: unknown) {
           <CarriedContextSummary label="派发对象" :items="taskContextItems" />
           <NvFieldGroup>
             <NvField v-if="!hasCarriedAdapter">
-              <NvFieldLabel for="wcs-adapter">适配器</NvFieldLabel>
+              <NvFieldLabel for="wcs-adapter">设备类型</NvFieldLabel>
               <NvInput id="wcs-adapter" v-model="dispatchForm.adapterType" autocomplete="off" />
             </NvField>
             <NvField v-if="!hasCarriedExternalTaskId">

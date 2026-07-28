@@ -2,7 +2,10 @@
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesDowntimeEvents } from '@/composables/useBusinessMes'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
-import { mesDowntimeStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import {
+  mesDowntimeStatusOptions,
+  useMesReferenceLabels,
+} from '@/composables/mes/useMesReferenceLabels'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -40,6 +43,7 @@ const {
   refreshDowntimeEvents,
 } = useMesDowntimeEvents()
 const { keyword } = useMesKeywordFilter(filters)
+const { statusLabel } = useMesReferenceLabels()
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.keyword],
 })
@@ -190,7 +194,9 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="暂无停机事件。先在工序执行登记设备异常，再回到这里跟进恢复与影响范围。"
     >
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }">
+        <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+      </template>
       <template #cell-startedAtUtc="{ row }">{{ formatDateTime(row.startedAtUtc) }}</template>
       <template #cell-recoveredAtUtc="{ row }">{{ formatDateTime(row.recoveredAtUtc) }}</template>
     </NvDataTable>

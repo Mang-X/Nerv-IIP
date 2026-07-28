@@ -1,8 +1,19 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import InventoryExpiryStatusBadge from '@/components/inventory/InventoryExpiryStatusBadge.vue'
 import InventoryExpirySummaryCards from '@/components/inventory/InventoryExpirySummaryCards.vue'
+import {
+  labelFor,
+  normalizeCode,
+  STOCK_LEDGER_OWNER_TYPE_LABELS,
+  QUALITY_STATUS_LABELS,
+  STOCK_LEDGER_QUALITY_STATUS_TONES,
+} from '@/data/businessLabels'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { useInventoryAvailability } from '@/composables/useBusinessInventory'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useSkuNames } from '@/composables/useSkuNames'
 import { useInventoryExpiryView } from '@/composables/useInventoryExpiryView'
 import {
   useInventoryScopeDefaults,
@@ -86,6 +97,11 @@ const {
 } = useInventoryExpiryView(filters)
 // 工厂给默认值、单位跟随物料——用户只需要选物料这一件事。
 const { siteOptions, sitesPending, skuOptions, skusPending } = useInventoryScopeDefaults(filters)
+// 读面只回编码（RM-BAR-01 / WH-WB-A-01 / pcs），名称在主数据里，前端按编码 join 出中文名。
+const { resolveSkuName } = useSkuNames()
+const { formatUom, resolveLocation } = useMasterDataDisplayNames({ locations: true, uoms: true })
+// 寄售 / 客供库存的货主是业务伙伴编码，摆 CUST-WB-001 没人看得懂是谁。
+const { resolvePartner } = useBusinessPartnerNames()
 // 选物料之前先给一块跨物料的真实事实：全厂效期风险（库存域唯一只要工厂就能出行的读面）。
 const {
   overviewExpiredCount,
@@ -244,12 +260,17 @@ const siteStockCoverageText = computed(() => {
  * 收进对应单元格的第二行，避免十五列表格逼出横向滚动。
  */
 const columns: NvDataTableColumn<DisplayLine>[] = [
-  { key: 'skuCode', header: '物料', accessor: (r) => (r.skuCode ?? filters.skuCode) || '—' },
+  {
+    key: 'skuCode',
+    header: '物料',
+    // 排序/导出取「名称 编码」，界面上名称在上、编码在下。
+    accessor: (r) => skuLabelOf(r),
+  },
   {
     key: 'locationCode',
     header: '库位',
     cellClass: 'font-medium',
-    accessor: (r) => r.locationCode ?? '无',
+    accessor: (r) => locationLabelOf(r),
   },
   { key: 'lot', header: '批次/序列号' },
   {
@@ -260,7 +281,7 @@ const columns: NvDataTableColumn<DisplayLine>[] = [
   },
   { key: 'expiryStatus', header: '效期状态' },
   { key: 'qualityStatus', header: '质量状态', width: 'w-28' },
-  { key: 'owner', header: '货主', accessor: (r) => r.ownerId ?? r.ownerType ?? '无' },
+  { key: 'owner', header: '货主', accessor: (r) => ownerLabel(r.ownerType, r.ownerId) },
   { key: 'onHandQuantity', header: '现存量', align: 'end', width: 'w-24' },
   { key: 'availableQuantity', header: '可用量', align: 'end', width: 'w-24' },
   {
@@ -275,6 +296,35 @@ const columns: NvDataTableColumn<DisplayLine>[] = [
 
 function lineKey(line: DisplayLine) {
   return inventoryExpiryRowKey(line, filters.skuCode)
+}
+function skuCodeOf(line: { skuCode?: string | null }) {
+  return (line.skuCode ?? filters.skuCode) || ''
+}
+/** 「名称 编码」串，供排序与导出用；名录查不到就只有编码，不编名字。 */
+function skuLabelOf(line: { skuCode?: string | null }) {
+  const code = skuCodeOf(line)
+  if (!code) return '—'
+  const name = resolveSkuName(code)
+  return name ? `${name} ${code}` : code
+}
+function locationLabelOf(line: { locationCode?: string | null }) {
+  const code = line.locationCode ?? ''
+  if (!code) return '无'
+  const name = resolveLocation(code)
+  return name ? `${name} ${code}` : code
+}
+/** 货主：类型说中文，具体货主优先显业务伙伴中文名。 */
+function ownerLabel(ownerType?: string | null, ownerId?: string | null) {
+  const type = ownerType ? labelFor(STOCK_LEDGER_OWNER_TYPE_LABELS, ownerType, '未知货主类型') : ''
+  if (!ownerId) return type || '无'
+  const partner = resolvePartner(ownerId) ?? ownerId
+  return type ? `${type} · ${partner}` : partner
+}
+function qualityStatusLabel(value?: string | null) {
+  return labelFor(QUALITY_STATUS_LABELS, value, '未知')
+}
+function qualityStatusTone(value?: string | null) {
+  return STOCK_LEDGER_QUALITY_STATUS_TONES[normalizeCode(value)]
 }
 function lineContextQuery(line: DisplayLine) {
   return {
@@ -401,8 +451,10 @@ async function refreshCurrentView() {
             :key="`${line.skuCode}-${line.locationCode}-${line.lotNo ?? ''}`"
             class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5"
           >
-            <span class="font-medium">{{ line.skuCode }}</span>
-            <span class="text-muted-foreground">{{ line.locationCode }}</span>
+            <span class="font-medium">{{ resolveSkuName(line.skuCode) ?? line.skuCode }}</span>
+            <span class="text-muted-foreground">{{
+              resolveLocation(line.locationCode) ?? line.locationCode
+            }}</span>
             <span class="text-muted-foreground">批次 {{ line.lotNo ?? '无批次' }}</span>
             <span class="text-muted-foreground"
               >到期 {{ formatInventoryExpiryDate(line.expiryDate) }}</span
@@ -422,7 +474,7 @@ async function refreshCurrentView() {
       class="lg:max-w-md"
       label="现存量构成"
       :value="formatQuantity(onHandQuantity)"
-      :center-caption="filters.uomCode ? `现存量 · ${filters.uomCode}` : '现存量'"
+      :center-caption="filters.uomCode ? `现存量 · ${formatUom(filters.uomCode)}` : '现存量'"
       :segments="stockSegments"
     />
 
@@ -444,7 +496,7 @@ async function refreshCurrentView() {
         <span
           v-if="!nearExpiryOnly && filters.uomCode"
           class="inline-flex h-9 items-center rounded-md border border-input px-2.5 text-sm text-muted-foreground"
-          >单位 {{ filters.uomCode }}</span
+          >单位 {{ formatUom(filters.uomCode) }}</span
         >
         <NvEntityPicker
           v-model="filters.siteCode"
@@ -515,10 +567,12 @@ async function refreshCurrentView() {
             ><NvSelectValue placeholder="货主类型"
           /></NvSelectTrigger>
           <NvSelectContent>
-            <NvSelectItem value="owned">自有</NvSelectItem>
-            <NvSelectItem value="customer">客户</NvSelectItem>
-            <NvSelectItem value="supplier">供应商</NvSelectItem>
-            <NvSelectItem value="consignment">寄售</NvSelectItem>
+            <!-- 取值须落在 Inventory 服务认得的货主类型上（含别名），否则查询直接 400。 -->
+            <NvSelectItem value="owned">本公司</NvSelectItem>
+            <NvSelectItem value="customer">客户寄售</NvSelectItem>
+            <NvSelectItem value="supplier">供应商寄售</NvSelectItem>
+            <NvSelectItem value="production">生产领用</NvSelectItem>
+            <NvSelectItem value="maintenance">维修备件</NvSelectItem>
           </NvSelectContent>
         </NvSelect>
       </template>
@@ -601,11 +655,22 @@ async function refreshCurrentView() {
     >
       <template #cell-skuCode="{ row }">
         <div class="flex flex-col gap-0.5">
-          <span>{{ (row.skuCode ?? filters.skuCode) || '—' }}</span>
+          <CodeWithNameCell
+            :code="skuCodeOf(row) || undefined"
+            :name="resolveSkuName(skuCodeOf(row))"
+            fallback="—"
+          />
           <span class="text-xs text-muted-foreground"
-            >单位 {{ (row.uomCode ?? filters.uomCode) || '—' }}</span
+            >单位 {{ formatUom(row.uomCode ?? filters.uomCode, '—') }}</span
           >
         </div>
+      </template>
+      <template #cell-locationCode="{ row }">
+        <CodeWithNameCell
+          :code="row.locationCode"
+          :name="resolveLocation(row.locationCode)"
+          fallback="无"
+        />
       </template>
       <template #cell-lot="{ row }">
         <div class="flex flex-col gap-0.5">
@@ -624,7 +689,10 @@ async function refreshCurrentView() {
         </div>
       </template>
       <template #cell-qualityStatus="{ row }"
-        ><NvStatusBadge :value="row.qualityStatus"
+        ><NvStatusBadge
+          :value="row.qualityStatus"
+          :label="qualityStatusLabel(row.qualityStatus)"
+          :tone="qualityStatusTone(row.qualityStatus)"
       /></template>
       <template #cell-expiryStatus="{ row }">
         <InventoryExpiryStatusBadge :line="row" />

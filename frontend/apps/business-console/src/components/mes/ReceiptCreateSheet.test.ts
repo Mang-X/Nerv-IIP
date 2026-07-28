@@ -4,6 +4,55 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ReceiptCreateSheet from './ReceiptCreateSheet.vue'
 
+// 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
+// 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
+vi.mock('@/composables/useSkuNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useSkuNames: () => ({
+      resolveSkuName: () => undefined,
+      resolveSkuLabel: (code?: string | null) => code ?? '未指定物料',
+      skuByCode: computed(() => new Map<string, string>()),
+      skusPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useBusinessPartnerNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useBusinessPartnerNames: () => ({
+      resolvePartner: () => undefined,
+      resolvePartnerLabel: (code?: string | null, fallback = '未指定') => code ?? fallback,
+      partnerByCode: computed(() => new Map<string, string>()),
+      partners: computed(() => []),
+      partnersPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+  const { computed } = await import('vue')
+  const emptyIndex = computed(() => new Map<string, string>())
+  return {
+    useMasterDataDisplayNames: () => ({
+      resolveDevice: () => undefined,
+      resolveLocation: () => undefined,
+      resolveWorkCenter: () => undefined,
+      resolveTeam: () => undefined,
+      resolveUom: () => undefined,
+      resolveWorkshop: () => undefined,
+      resolveLine: () => undefined,
+      formatUom: (code?: string | null, fallback = '') => code ?? fallback,
+      deviceByCode: emptyIndex,
+      locationByCode: emptyIndex,
+      workCenterByCode: emptyIndex,
+      teamByCode: emptyIndex,
+      uomByCode: emptyIndex,
+      workshopByCode: emptyIndex,
+      lineByCode: emptyIndex,
+    }),
+  }
+})
+
 const state = vi.hoisted(() => ({
   createReceiptRequest: vi.fn(async (_body: unknown) => undefined),
   keyCounter: 0,
@@ -31,6 +80,14 @@ vi.mock('@/composables/useBusinessMes', () => ({
 }))
 
 // 单位已从自由文本改成计量单位主数据选择器，目录 composable 走 pinia + colada，测试直接给定选项。
+// 弹窗用它把 skuId 解析成成品名；名录不是本用例被测对象，给稳定桩。
+vi.mock('@/composables/mes/useMesDisplayNames', () => ({
+  useMesDisplayNames: () => ({
+    resolveSku: (v?: string | null) => v ?? '无',
+    resolveSkuLabel: (v?: string | null) => v ?? '未指定物料',
+  }),
+}))
+
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessUoms: () => ({
     filters: reactive({ skip: 0, take: 200 }),

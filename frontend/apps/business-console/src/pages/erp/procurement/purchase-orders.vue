@@ -7,7 +7,10 @@ import {
   useErpPartnerCatalog,
   useErpSiteCatalog,
 } from '@/composables/useErpPickerCatalog'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
+import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -53,6 +56,9 @@ const orders = useErpPurchaseOrders()
 const { supplierOptions, partnersPending } = useErpPartnerCatalog()
 const { siteOptions, sitesPending } = useErpSiteCatalog()
 const { skuOptions, skusPending, uomOptions, uomsPending, baseUomBySku } = useErpItemCatalog()
+// 列表侧另需 code→name 反查（目录只给下拉选项，不做反查）；底层同一份查询，不会重复请求。
+const { resolvePartner } = useBusinessPartnerNames()
+const { resolveSkuName } = useSkuNames()
 const { page, pageSize } = usePagedList(orders.filters, {
   resetOn: [() => orders.filters.status, () => orders.filters.keyword],
 })
@@ -69,11 +75,13 @@ const rows = computed(() =>
     (order.lines ?? []).map((line) => ({
       purchaseOrderNo: order.purchaseOrderNo ?? '-',
       supplierCode: order.supplierCode ?? '-',
+      supplierName: resolvePartner(order.supplierCode),
       siteCode: order.siteCode ?? '-',
       status: order.status ?? '-',
       receiptReadiness: order.receiptReadiness ?? '-',
       lineNo: line.lineNo ?? '-',
       skuCode: line.skuCode ?? '-',
+      skuName: resolveSkuName(line.skuCode),
       sourceRequisitions:
         (line.sources ?? [])
           .map((source) => source.purchaseRequisitionNo)
@@ -252,6 +260,12 @@ async function submit() {
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >
+      <template #cell-supplierCode="{ row }">
+        <CodeWithNameCell :code="row.supplierCode" :name="row.supplierName" />
+      </template>
+      <template #cell-skuCode="{ row }">
+        <CodeWithNameCell :code="row.skuCode" :name="row.skuName" fallback="未指定物料" />
+      </template>
       <template #cell-orderedQuantity="{ row }"
         ><span class="tabular-nums">{{ formatQuantity(row.orderedQuantity) }}</span></template
       >

@@ -6,6 +6,7 @@ import { describeEquipmentReason } from '@/composables/useBusinessEquipment'
 import { useEquipmentWorkCenterCatalog } from '@/composables/useEquipmentPickerCatalog'
 import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
 import EntityMultiPicker from '@/components/business/EntityMultiPicker.vue'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvBadge,
@@ -102,16 +103,38 @@ const windowEndLocal = computed({
   },
 })
 
+// 可用窗口读面只回编号（DEV-CNC-01 / WC-…），名称在主数据里，按编号 join 出中文名。
+const { resolveDevice, resolveWorkCenter } = useMasterDataDisplayNames({
+  devices: true,
+  workCenters: true,
+})
+/** 设备展示串：名称优先，名录查不到就只显编号，不编名字。 */
+function deviceLabel(code?: string | null, fallback = '未记录') {
+  if (!code) return fallback
+  return resolveDevice(code) ?? code
+}
+function workCenterLabel(code?: string | null, fallback = '未绑定') {
+  if (!code) return fallback
+  return resolveWorkCenter(code) ?? code
+}
+
 const columns: NvDataTableColumn<EquipmentRuntimeAvailabilityWindow>[] = [
   {
     key: 'deviceAssetId',
     header: '设备',
     cellClass: 'font-medium',
-    accessor: (r) => r.deviceAssetId ?? '未记录',
+    accessor: (r) =>
+      resolveDevice(r.deviceAssetId)
+        ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
+        : (r.deviceAssetId ?? '未记录'),
   },
   { key: 'availabilityStatus', header: '状态', width: 'w-24' },
   { key: 'reasonCode', header: '原因' },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '未绑定' },
+  {
+    key: 'workCenterId',
+    header: '工作中心',
+    accessor: (r) => workCenterLabel(r.workCenterId),
+  },
   { key: 'startUtc', header: '开始', accessor: (r) => formatDateTime(r.startUtc) },
   { key: 'endUtc', header: '结束', accessor: (r) => formatDateTime(r.endUtc) },
   { key: 'sourceReferenceId', header: '关联业务', accessor: (r) => r.sourceReferenceId ?? '无' },
@@ -123,7 +146,8 @@ function availabilityLabel(value?: string | null) {
     unavailable: '不可用',
     unknown: '未知',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「未知」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '未知') : '未知'
 }
 function availabilityVariant(value?: string | null) {
   if ((value ?? '').toLowerCase() === 'available') return 'success'
@@ -261,9 +285,12 @@ function formatError(error: unknown) {
         <template #cell-deviceAssetId="{ row }">
           <RouterLink
             :to="`/equipment/${row.deviceAssetId}`"
-            class="text-brand underline-offset-4 hover:underline"
+            class="grid leading-tight text-brand underline-offset-4 hover:underline"
           >
-            {{ row.deviceAssetId ?? '未记录' }}
+            <span>{{ deviceLabel(row.deviceAssetId) }}</span>
+            <span v-if="resolveDevice(row.deviceAssetId)" class="text-xs text-muted-foreground">{{
+              row.deviceAssetId
+            }}</span>
           </RouterLink>
         </template>
         <template #cell-availabilityStatus="{ row }">

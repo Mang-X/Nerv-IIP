@@ -4,6 +4,12 @@ import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { mesQualityStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { useMesRelatedQualityItems } from '@/composables/useBusinessMes'
+import { useQualityReasonCodes } from '@/composables/usePromotedCatalogs'
+import {
+  labelFor,
+  MES_QUALITY_ITEM_STATUS_LABELS,
+  QUALITY_SOURCE_TYPE_LABELS,
+} from '@/data/businessLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -46,6 +52,19 @@ const { keyword } = useMesKeywordFilter(filters)
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.keyword],
 })
+// 缺陷代码的中文名在质量原因码目录里；目录查不到就只显代码，不编造缺陷名。
+const { reasons: qualityReasons } = useQualityReasonCodes()
+const reasonNameByCode = computed(() => {
+  const map = new Map<string, string>()
+  for (const reason of qualityReasons.value) {
+    if (reason.reasonCode && reason.reasonName) map.set(reason.reasonCode, reason.reasonName)
+  }
+  return map
+})
+function defectLabel(code?: string | null) {
+  if (!code) return '无'
+  return reasonNameByCode.value.get(code) ?? code
+}
 
 const statusFilter = computed({
   get: () => filters.status || 'all',
@@ -81,10 +100,14 @@ const columns: NvDataTableColumn<QualityRow>[] = [
     cellClass: 'font-medium',
     accessor: (r) => r.qualityItemId ?? '无',
   },
-  { key: 'sourceType', header: '来源类型', accessor: (r) => r.sourceType ?? '未指定' },
+  {
+    key: 'sourceType',
+    header: '来源类型',
+    accessor: (r) => labelFor(QUALITY_SOURCE_TYPE_LABELS, r.sourceType) || '未指定',
+  },
   { key: 'sourceDocumentId', header: '来源单据', accessor: (r) => r.sourceDocumentId ?? '未指定' },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'defectCode', header: '缺陷代码', accessor: (r) => r.defectCode ?? '无' },
+  { key: 'defectCode', header: '缺陷', accessor: (r) => defectLabel(r.defectCode) },
   { key: 'ncrId', header: 'NCR', accessor: (r) => r.ncrId ?? '无' },
 ]
 
@@ -204,7 +227,12 @@ function formatError(error: unknown) {
         </RouterLink>
         <span v-else>{{ row.sourceDocumentId ?? '未指定' }}</span>
       </template>
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }">
+        <NvStatusBadge
+          :value="row.status"
+          :label="labelFor(MES_QUALITY_ITEM_STATUS_LABELS, row.status) || '未知'"
+        />
+      </template>
       <template #cell-ncrId="{ row }">
         <RouterLink
           v-if="row.ncrId"

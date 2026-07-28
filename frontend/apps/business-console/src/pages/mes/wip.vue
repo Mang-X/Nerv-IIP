@@ -2,7 +2,10 @@
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { describeMesReadinessReason, useMesWipSummary } from '@/composables/useBusinessMes'
-import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import {
+  mesOperationTaskStatusOptions,
+  useMesReferenceLabels,
+} from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { usePagedList } from '@/composables/usePagedList'
@@ -33,6 +36,7 @@ definePage({
 
 const { filters, refreshWip, wipError, wipPending, wipRows, wipTotal } = useMesWipSummary()
 const { resolveWorkCenter } = useMesDisplayNames()
+const { statusLabel } = useMesReferenceLabels()
 const { keyword } = useMesKeywordFilter(filters)
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.keyword],
@@ -164,7 +168,9 @@ function formatError(error: unknown) {
         </button>
         <span v-else class="text-muted-foreground">—</span>
       </template>
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }">
+        <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+      </template>
       <template #cell-progress="{ row }">
         <div class="flex flex-col gap-1">
           <span class="text-sm tabular-nums">

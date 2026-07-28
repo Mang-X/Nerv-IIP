@@ -3,7 +3,9 @@ import type { BusinessConsoleErpQuotationItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpQuotations } from '@/composables/useBusinessErp'
 import { useErpItemCatalog, useErpPartnerCatalog } from '@/composables/useErpPickerCatalog'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
+import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -46,6 +48,8 @@ const quotations = useErpQuotations()
 // 客户与物料从主数据目录里选，报价一开出就挂在真实客户与真实物料上。
 const { customerOptions, partnersPending } = useErpPartnerCatalog()
 const { skuOptions, skusPending } = useErpItemCatalog()
+// 列表侧另需 code→name 反查（目录只给下拉选项，不做反查）；底层同一份查询，不会重复请求。
+const { resolvePartner } = useBusinessPartnerNames()
 const { page, pageSize } = usePagedList(quotations.filters, {
   resetOn: [() => quotations.filters.status, () => quotations.filters.keyword],
 })
@@ -63,7 +67,11 @@ const columns: NvDataTableColumn<BusinessConsoleErpQuotationItem>[] = [
     cellClass: 'font-medium',
     accessor: (r) => r.quotationNo ?? '-',
   },
-  { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '-' },
+  {
+    key: 'customerCode',
+    header: '客户',
+    accessor: (r) => resolvePartner(r.customerCode) ?? r.customerCode ?? '-',
+  },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'expiresOn', header: '有效期至', width: 'w-32', accessor: (r) => formatDate(r.expiresOn) },
   {
@@ -237,6 +245,9 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >
+      <template #cell-customerCode="{ row }">
+        <PartnerNameCell :code="row.customerCode" />
+      </template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
       <template #cell-totalAmount="{ row }"
         ><span class="tabular-nums">{{ formatAmount(row.totalAmount) }}</span></template

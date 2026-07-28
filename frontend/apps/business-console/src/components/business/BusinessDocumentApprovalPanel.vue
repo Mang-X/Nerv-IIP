@@ -7,6 +7,7 @@ import type {
   BusinessConsoleApprovalTemplateItem,
 } from '@nerv-iip/api-client'
 import { useBusinessApproval } from '@/composables/useBusinessApproval'
+import { APPROVAL_DECISION_LABELS, DOCUMENT_TYPE_LABELS, labelFor } from '@/data/businessLabels'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -220,7 +221,8 @@ function actorLabel(step: BusinessConsoleApprovalStepItem) {
  */
 function chainOptionLabel(chain: BusinessConsoleApprovalChainItem) {
   const statusLabel = resolveStatus(chain.status).label
-  const document = chain.documentId?.trim() || chain.documentType?.trim()
+  const document =
+    chain.documentId?.trim() || labelFor(DOCUMENT_TYPE_LABELS, chain.documentType?.trim(), '')
   return document ? `${document} · ${statusLabel}` : statusLabel
 }
 
@@ -332,7 +334,10 @@ function templateLabel(template: BusinessConsoleApprovalTemplateItem) {
         >
           <div class="flex items-center justify-between gap-2">
             <span>{{ decision.actorRef ?? '处理人' }}</span>
-            <NvStatusBadge :value="decision.decision" />
+            <NvStatusBadge
+              :value="decision.decision"
+              :label="labelFor(APPROVAL_DECISION_LABELS, decision.decision, '—')"
+            />
           </div>
           <p v-if="decision.comment" class="mt-1 text-xs text-muted-foreground">
             {{ decision.comment }}

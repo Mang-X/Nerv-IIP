@@ -2,6 +2,7 @@
 import type { NvDataTableColumn, NvMetricFacet, NvMetricSegment } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { useBusinessEquipmentAlarms } from '@/composables/useBusinessEquipment'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -151,14 +152,33 @@ function historyQuery(row: Alarm): LocationQueryRaw {
   }
 }
 
+// 报警读面只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
+const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
+/** 设备展示串：名称优先，名录查不到就只显编号，不编名字。 */
+function deviceLabel(code?: string | null, fallback = '无设备') {
+  if (!code) return fallback
+  return resolveDevice(code) ?? code
+}
+/** 报警单号：alarmEventId 是系统 GUID，屏上用现场认的外部报警号。 */
+function alarmNo(row: Alarm) {
+  return row.externalAlarmId ?? '无报警号'
+}
+
 const columns: NvDataTableColumn<Alarm>[] = [
   {
     key: 'alarmEventId',
     header: '报警',
     cellClass: 'font-medium',
-    accessor: (r) => r.alarmEventId ?? '无编号',
+    accessor: (r) => alarmNo(r),
   },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '无设备' },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    accessor: (r) =>
+      resolveDevice(r.deviceAssetId)
+        ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
+        : (r.deviceAssetId ?? '无设备'),
+  },
   { key: 'alarmCode', header: '报警代码', accessor: (r) => r.alarmCode ?? '无代码' },
   { key: 'severity', header: '级别', width: 'w-24' },
   { key: 'status', header: '状态', width: 'w-24' },
@@ -300,8 +320,11 @@ function severityLabel(value?: string | null) {
     critical: '严重',
     info: '信息',
     warning: '预警',
+    major: '重要',
+    minor: '次要',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「未知级别」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '未知级别') : '未知'
 }
 function severityVariant(value?: string | null) {
   const severity = value?.toLowerCase()
@@ -315,8 +338,10 @@ function statusLabel(value?: string | null) {
     cleared: '已解除',
     raised: '已触发',
     shelved: '已搁置',
+    escalated: '已升级',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「未知状态」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '未知状态') : '未知'
 }
 function statusVariant(value?: string | null) {
   const status = value?.toLowerCase()
@@ -455,8 +480,13 @@ const shelveContextItems = computed(() => {
   const target = shelve.targets[0]
   if (!target) return []
   return [
-    { label: '报警', value: target.alarmEventId },
-    { label: '设备', value: target.deviceAssetId },
+    { label: '报警', value: alarmNo(target) },
+    {
+      label: '设备',
+      value: resolveDevice(target.deviceAssetId)
+        ? `${resolveDevice(target.deviceAssetId)}（${target.deviceAssetId}）`
+        : target.deviceAssetId,
+    },
     { label: '报警代码', value: target.alarmCode },
     { label: '级别', value: severityLabel(target.severity) },
     { label: '发生时间', value: formatDateTime(target.raisedAtUtc) },
@@ -690,15 +720,19 @@ function formatError(error: unknown) {
               </NvTooltipContent>
             </NvTooltip>
           </NvTooltipProvider>
-          <span>{{ row.alarmEventId ?? '无编号' }}</span>
+          <span>{{ alarmNo(row) }}</span>
         </div>
       </template>
       <template #cell-deviceAssetId="{ row }">
         <RouterLink
           :to="`/equipment/${row.deviceAssetId}`"
-          class="text-brand underline-offset-4 hover:underline"
-          >{{ row.deviceAssetId ?? '无设备' }}</RouterLink
+          class="grid leading-tight text-brand underline-offset-4 hover:underline"
         >
+          <span>{{ deviceLabel(row.deviceAssetId) }}</span>
+          <span v-if="resolveDevice(row.deviceAssetId)" class="text-xs text-muted-foreground">{{
+            row.deviceAssetId
+          }}</span>
+        </RouterLink>
       </template>
       <template #cell-severity="{ row }">
         <NvBadge class="rounded-sm" :variant="severityVariant(row.severity)">{{
