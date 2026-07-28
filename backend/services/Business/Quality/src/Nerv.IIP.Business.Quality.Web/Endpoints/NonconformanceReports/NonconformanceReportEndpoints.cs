@@ -285,6 +285,8 @@ public static class QualityEndpointContracts
         new(typeof(GetNonconformanceReportEndpoint), "GET", "/api/business/v1/quality/ncrs/{ncrId}", BusinessPermissionCodes.QualityNcrRead, "getBusinessQualityNcr"),
         new(typeof(SubmitNonconformanceReportDispositionEndpoint), "POST", "/api/business/v1/quality/ncrs/{ncrId}/disposition", BusinessPermissionCodes.QualityNcrManage, "submitBusinessQualityNcrDisposition"),
         new(typeof(CloseNonconformanceReportEndpoint), "POST", "/api/business/v1/quality/ncrs/{ncrId}/close", BusinessPermissionCodes.QualityNcrManage, "closeBusinessQualityNcr"),
+        new(typeof(ListCorrectiveActionsEndpoint), "GET", "/api/business/v1/quality/capas", BusinessPermissionCodes.QualityNcrRead, "listBusinessQualityCapas"),
+        new(typeof(GetCorrectiveActionEndpoint), "GET", "/api/business/v1/quality/capas/{correctiveActionId}", BusinessPermissionCodes.QualityNcrRead, "getBusinessQualityCapa"),
         new(typeof(OpenCorrectiveActionEndpoint), "POST", "/api/business/v1/quality/capas", BusinessPermissionCodes.QualityNcrManage, "openBusinessQualityCapa"),
         new(typeof(AddCorrectiveActionItemEndpoint), "POST", "/api/business/v1/quality/capas/{correctiveActionId}/actions", BusinessPermissionCodes.QualityNcrManage, "addBusinessQualityCapaAction"),
         new(typeof(CompleteCorrectiveActionItemEndpoint), "POST", "/api/business/v1/quality/capas/{correctiveActionId}/actions/{correctiveActionItemId}/complete", BusinessPermissionCodes.QualityNcrManage, "completeBusinessQualityCapaAction"),

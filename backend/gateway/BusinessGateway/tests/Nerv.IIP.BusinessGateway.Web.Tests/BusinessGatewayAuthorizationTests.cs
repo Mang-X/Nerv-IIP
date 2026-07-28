@@ -1119,6 +1119,13 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records/inspection-001/reinspections", BusinessGatewayPermissions.QualityInspectionRecordsCreate);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records/inspection-001/failures/ncr", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/ncrs", BusinessGatewayPermissions.QualityNcrRead);
+        // 三期读面：计量台账 / 校准记录 / SPC 控制图台账走检验记录读权限（与 reason-codes 同先例），
+        // CAPA 是 NCR 的下游闭环，走 NCR 读权限。
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/measuring-devices", BusinessGatewayPermissions.QualityInspectionRecordsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/calibration-records", BusinessGatewayPermissions.QualityInspectionRecordsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/spc/control-charts", BusinessGatewayPermissions.QualityInspectionRecordsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/capas", BusinessGatewayPermissions.QualityNcrRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/capas/019f87d0-3f7f-7ad0-a829-7724ea91c222", BusinessGatewayPermissions.QualityNcrRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/reason-codes", BusinessGatewayPermissions.QualityInspectionRecordsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/reason-codes/QR-SCRATCH", BusinessGatewayPermissions.QualityNcrRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/reason-codes", BusinessGatewayPermissions.QualityNcrManage);

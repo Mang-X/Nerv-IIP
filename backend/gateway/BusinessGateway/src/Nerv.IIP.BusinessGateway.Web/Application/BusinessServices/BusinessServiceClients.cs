@@ -351,6 +351,32 @@ public interface IBusinessQualityClient
         BusinessConsoleQualityProcessCapabilityRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleQualitySpcControlChartListResponse> ListSpcControlChartsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualitySpcControlChartListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityMeasuringDeviceListResponse> ListMeasuringDevicesAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityMeasuringDeviceListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityCalibrationRecordListResponse> ListCalibrationRecordsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityCalibrationRecordListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityCapaListResponse> ListCorrectiveActionsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityCapaListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityCapaItem> GetCorrectiveActionAsync(
+        string internalBearerToken,
+        string correctiveActionId,
+        BusinessConsoleQualityCapaDetailRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleQualityReasonListResponse> ListQualityReasonsAsync(
         string internalBearerToken,
         BusinessConsoleQualityReasonListRequest request,
@@ -3139,6 +3165,99 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleQualitySpcControlChartListResponse> ListSpcControlChartsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualitySpcControlChartListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualitySpcControlChartListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/quality/spc/control-charts?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", request.SkuCode),
+                ("characteristicCode", request.CharacteristicCode),
+                ("workCenterId", request.WorkCenterId),
+                ("locked", request.Locked),
+                ("keyword", request.Keyword),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleQualityMeasuringDeviceListResponse> ListMeasuringDevicesAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityMeasuringDeviceListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualityMeasuringDeviceListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/quality/measuring-devices?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("deviceType", request.DeviceType),
+                ("status", request.Status),
+                ("calibrationState", request.CalibrationState),
+                ("keyword", request.Keyword),
+                ("warningDays", request.WarningDays),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleQualityCalibrationRecordListResponse> ListCalibrationRecordsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityCalibrationRecordListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualityCalibrationRecordListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/quality/calibration-records?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("measuringDeviceId", request.MeasuringDeviceId),
+                ("keyword", request.Keyword),
+                ("calibratedFromUtc", request.CalibratedFromUtc),
+                ("calibratedToUtc", request.CalibratedToUtc),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleQualityCapaListResponse> ListCorrectiveActionsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityCapaListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualityCapaListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/quality/capas?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("status", request.Status),
+                ("ownerUserId", request.OwnerUserId),
+                ("sourceNcrId", request.SourceNcrId),
+                ("overdueOnly", request.OverdueOnly),
+                ("keyword", request.Keyword),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleQualityCapaItem> GetCorrectiveActionAsync(
+        string internalBearerToken,
+        string correctiveActionId,
+        BusinessConsoleQualityCapaDetailRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualityCapaItem>(
+            internalBearerToken,
+            HttpMethod.Get,
+            CorrectiveActionPath(correctiveActionId) + "?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleQualityReasonListResponse> ListQualityReasonsAsync(
         string internalBearerToken,
         BusinessConsoleQualityReasonListRequest request,
@@ -3301,6 +3420,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
 
     private static string QualityReasonPath(string reasonCode) =>
         $"/api/business/v1/quality/reason-codes/{Uri.EscapeDataString(reasonCode)}";
+
+    private static string CorrectiveActionPath(string correctiveActionId) =>
+        $"/api/business/v1/quality/capas/{Uri.EscapeDataString(correctiveActionId)}";
 
     private sealed record DownstreamInspectionPlanListResponse(
         IReadOnlyCollection<DownstreamInspectionPlanItem> Items,

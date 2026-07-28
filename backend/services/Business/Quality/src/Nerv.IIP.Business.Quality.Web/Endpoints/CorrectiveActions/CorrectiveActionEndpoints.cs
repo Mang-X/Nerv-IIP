@@ -2,6 +2,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
+using Nerv.IIP.Business.Quality.Web.Application.Queries.CorrectiveActions;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 
 namespace Nerv.IIP.Business.Quality.Web.Endpoints.CorrectiveActions;
@@ -42,6 +43,79 @@ public sealed record CloseCorrectiveActionRequest(
     CorrectiveActionId CorrectiveActionId,
     string ClosedByUserId,
     string? CloseApprovalChainId);
+
+public sealed record ListCorrectiveActionsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status,
+    string? OwnerUserId,
+    string? SourceNcrId,
+    bool? OverdueOnly,
+    string? Keyword,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record ListCorrectiveActionsEndpointResponse(
+    IReadOnlyCollection<CorrectiveActionResponse> Items,
+    int Total,
+    int OpenCount,
+    int EffectivenessVerifiedCount,
+    int ClosedCount,
+    int OverdueCount);
+
+/// <summary>org/env 提供时按租户过滤（网关 facade 必传，越权与不存在同为 not found）。</summary>
+public sealed record GetCorrectiveActionRequest(
+    CorrectiveActionId CorrectiveActionId,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
+
+public sealed class ListCorrectiveActionsEndpoint(ISender sender)
+    : QualityEndpoint<ListCorrectiveActionsRequest, ResponseData<ListCorrectiveActionsEndpointResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureQualityContract(QualityEndpointContracts.Get<ListCorrectiveActionsEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListCorrectiveActionsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListCorrectiveActionsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Status,
+            req.OwnerUserId,
+            req.SourceNcrId,
+            req.OverdueOnly,
+            req.Keyword,
+            req.Skip,
+            req.Take), ct);
+        await Send.OkAsync(
+            new ListCorrectiveActionsEndpointResponse(
+                response.Items,
+                response.Total,
+                response.OpenCount,
+                response.EffectivenessVerifiedCount,
+                response.ClosedCount,
+                response.OverdueCount).AsResponseData(),
+            cancellation: ct);
+    }
+}
+
+public sealed class GetCorrectiveActionEndpoint(ISender sender)
+    : QualityEndpoint<GetCorrectiveActionRequest, ResponseData<CorrectiveActionResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureQualityContract(QualityEndpointContracts.Get<GetCorrectiveActionEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetCorrectiveActionRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new GetCorrectiveActionQuery(req.CorrectiveActionId, req.OrganizationId, req.EnvironmentId), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
 
 public sealed class OpenCorrectiveActionEndpoint(ISender sender)
     : QualityEndpoint<OpenCorrectiveActionRequest, ResponseData<OpenCorrectiveActionResponse>>

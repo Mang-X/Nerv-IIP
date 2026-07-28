@@ -21,6 +21,8 @@ const GOLD_STANDARD_PAGES = [
   'quality/inspections.vue',
   'quality/ncrs.vue',
   'quality/analysis.vue',
+  'quality/calibration.vue',
+  'quality/capas.vue',
   'quality/reason-codes.vue',
   'engineering/production-versions.vue',
   'engineering/standard-operations.vue',

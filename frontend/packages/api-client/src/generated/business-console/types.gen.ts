@@ -1962,6 +1962,166 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualitySpcControlChartListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcControlChartListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcControlChartListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcControlChartItem>;
+    total?: number;
+    lockedCount?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcControlChartItem = {
+    spcControlChartId?: string;
+    organizationId?: string;
+    environmentId?: string;
+    skuCode?: string;
+    characteristicCode?: string;
+    workCenterId?: string;
+    subgroupSize?: number;
+    centerLine?: number;
+    averageRange?: number;
+    xbarUpperControlLimit?: number;
+    xbarLowerControlLimit?: number;
+    rangeUpperControlLimit?: number;
+    rangeLowerControlLimit?: number;
+    locked?: boolean;
+    limitsCalculatedAtUtc?: string | null;
+    lockedAtUtc?: string | null;
+    createdAtUtc?: string;
+    updatedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcControlChartListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityMeasuringDeviceListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityMeasuringDeviceListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityMeasuringDeviceListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityMeasuringDeviceItem>;
+    total?: number;
+    currentCount?: number;
+    warningCount?: number;
+    overdueCount?: number;
+    unavailableCount?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityMeasuringDeviceItem = {
+    measuringDeviceId?: string;
+    organizationId?: string;
+    environmentId?: string;
+    deviceCode?: string;
+    deviceType?: string;
+    accuracy?: string;
+    calibrationIntervalDays?: number;
+    status?: string;
+    lastCalibratedAtUtc?: string | null;
+    calibrationDueAtUtc?: string;
+    calibrationState?: string;
+    daysUntilDue?: number;
+    calibrationRecordCount?: number;
+    latestCalibrationNo?: string | null;
+    latestCalibrationProvider?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityMeasuringDeviceListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityCalibrationRecordListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCalibrationRecordListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCalibrationRecordListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCalibrationRecordItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCalibrationRecordItem = {
+    calibrationRecordId?: string;
+    measuringDeviceId?: string;
+    deviceCode?: string;
+    deviceType?: string;
+    calibrationNo?: string;
+    calibratedAtUtc?: string;
+    calibrationProvider?: string;
+    certificateFileId?: string | null;
+    calibrationIntervalDays?: number;
+    nextCalibrationDueAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCalibrationRecordListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityCapaListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCapaListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCapaListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCapaItem>;
+    total?: number;
+    openCount?: number;
+    effectivenessVerifiedCount?: number;
+    closedCount?: number;
+    overdueCount?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCapaItem = {
+    correctiveActionId?: string;
+    organizationId?: string;
+    environmentId?: string;
+    capaCode?: string;
+    sourceNcrId?: string | null;
+    rootCause?: string;
+    containmentAction?: string;
+    ownerUserId?: string;
+    dueAtUtc?: string;
+    status?: string;
+    effectivenessVerifiedByUserId?: string | null;
+    effectivenessResult?: string | null;
+    effectivenessVerifiedAtUtc?: string | null;
+    effectivenessInspectionRecordId?: string | null;
+    closeApprovalChainId?: string | null;
+    closedByUserId?: string | null;
+    closedAtUtc?: string | null;
+    createdAtUtc?: string;
+    updatedAtUtc?: string;
+    actionCount?: number;
+    completedActionCount?: number;
+    overdue?: boolean;
+    actions?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCapaActionItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCapaActionItem = {
+    correctiveActionItemId?: string;
+    actionType?: string;
+    description?: string;
+    ownerUserId?: string;
+    dueAtUtc?: string;
+    status?: string;
+    completedByUserId?: string | null;
+    completedAtUtc?: string | null;
+    createdAtUtc?: string;
+    overdue?: boolean;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCapaListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityCapaItem = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCapaItem | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCapaDetailRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityReasonListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityReasonListResponse | null;
 };
@@ -9684,6 +9844,185 @@ export type QueryBusinessConsoleQualityProcessCapabilityResponses = {
 };
 
 export type QueryBusinessConsoleQualityProcessCapabilityResponse = QueryBusinessConsoleQualityProcessCapabilityResponses[keyof QueryBusinessConsoleQualityProcessCapabilityResponses];
+
+export type ListBusinessConsoleQualitySpcControlChartsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        skuCode?: string | null;
+        characteristicCode?: string | null;
+        workCenterId?: string | null;
+        locked?: boolean | null;
+        keyword?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/quality/spc/control-charts';
+};
+
+export type ListBusinessConsoleQualitySpcControlChartsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleQualitySpcControlChartsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualitySpcControlChartListResponse;
+};
+
+export type ListBusinessConsoleQualitySpcControlChartsResponse = ListBusinessConsoleQualitySpcControlChartsResponses[keyof ListBusinessConsoleQualitySpcControlChartsResponses];
+
+export type ListBusinessConsoleQualityMeasuringDevicesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        deviceType?: string | null;
+        status?: string | null;
+        calibrationState?: string | null;
+        keyword?: string | null;
+        warningDays?: number;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/quality/measuring-devices';
+};
+
+export type ListBusinessConsoleQualityMeasuringDevicesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleQualityMeasuringDevicesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityMeasuringDeviceListResponse;
+};
+
+export type ListBusinessConsoleQualityMeasuringDevicesResponse = ListBusinessConsoleQualityMeasuringDevicesResponses[keyof ListBusinessConsoleQualityMeasuringDevicesResponses];
+
+export type ListBusinessConsoleQualityCalibrationRecordsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        measuringDeviceId?: string | null;
+        keyword?: string | null;
+        calibratedFromUtc?: string | null;
+        calibratedToUtc?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/quality/calibration-records';
+};
+
+export type ListBusinessConsoleQualityCalibrationRecordsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleQualityCalibrationRecordsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityCalibrationRecordListResponse;
+};
+
+export type ListBusinessConsoleQualityCalibrationRecordsResponse = ListBusinessConsoleQualityCalibrationRecordsResponses[keyof ListBusinessConsoleQualityCalibrationRecordsResponses];
+
+export type ListBusinessConsoleQualityCapasData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        status?: string | null;
+        ownerUserId?: string | null;
+        sourceNcrId?: string | null;
+        overdueOnly?: boolean | null;
+        keyword?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/quality/capas';
+};
+
+export type ListBusinessConsoleQualityCapasErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleQualityCapasResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityCapaListResponse;
+};
+
+export type ListBusinessConsoleQualityCapasResponse = ListBusinessConsoleQualityCapasResponses[keyof ListBusinessConsoleQualityCapasResponses];
+
+export type GetBusinessConsoleQualityCapaData = {
+    body?: never;
+    path: {
+        correctiveActionId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/quality/capas/{correctiveActionId}';
+};
+
+export type GetBusinessConsoleQualityCapaErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleQualityCapaResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityCapaItem;
+};
+
+export type GetBusinessConsoleQualityCapaResponse = GetBusinessConsoleQualityCapaResponses[keyof GetBusinessConsoleQualityCapaResponses];
 
 export type ListBusinessConsoleQualityReasonCodesData = {
     body?: never;

@@ -31,6 +31,48 @@ public sealed record EvaluateSpcControlChartRequest(
     int SubgroupSize = 5,
     int Take = 125);
 
+public sealed record ListSpcControlChartsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode,
+    string? CharacteristicCode,
+    string? WorkCenterId,
+    bool? Locked,
+    string? Keyword,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record ListSpcControlChartsEndpointResponse(
+    IReadOnlyCollection<SpcControlChartCatalogItemResponse> Items,
+    int Total,
+    int LockedCount);
+
+public sealed class ListSpcControlChartsEndpoint(ISender sender)
+    : QualityEndpoint<ListSpcControlChartsRequest, ResponseData<ListSpcControlChartsEndpointResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureQualityContract(QualityInspectionEndpointContracts.Get<ListSpcControlChartsEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListSpcControlChartsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListSpcControlChartsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.SkuCode,
+            req.CharacteristicCode,
+            req.WorkCenterId,
+            req.Locked,
+            req.Keyword,
+            req.Skip,
+            req.Take), ct);
+        await Send.OkAsync(
+            new ListSpcControlChartsEndpointResponse(response.Items, response.Total, response.LockedCount).AsResponseData(),
+            cancellation: ct);
+    }
+}
+
 public sealed class QuerySpcControlChartEndpoint(ISender sender)
     : QualityEndpoint<QuerySpcControlChartRequest, ResponseData<SpcControlChartResponse>>
 {
