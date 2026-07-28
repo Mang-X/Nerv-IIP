@@ -108,8 +108,14 @@ public sealed class WorldHistoryFloorEventsSeedServiceTests
         Assert.Equal(handovers.Length - pending, handovers.Count(x => x.HandoverStatus == ShiftHandover.AcceptedStatus));
         Assert.All(handovers, x =>
         {
-            Assert.Contains(x.ShiftId, WorldHistoryFloorEventsSpec.Teams.Select(team => team.TeamCode));
-            Assert.Contains(x.TeamId, WorldHistoryFloorEventsSpec.Teams.Select(team => team.TeamName));
+            // 班次与班组是两个维度：班次落 L0 班次编码，班组落班组**编码**（名称另有 TeamName 字段）。
+            // 此处原先断言的是反过来的旧语义（班次域放 TeamCode、班组域放班组名称），等于给
+            // 「字段装错东西」背书。
+            Assert.Contains(
+                x.ShiftId,
+                WorldHistoryFloorEventsSpec.Teams.Select(team => WorldHistoryCalendar.ShiftCode(team.ShiftIndex)));
+            Assert.Contains(x.TeamId, WorldHistoryFloorEventsSpec.Teams.Select(team => team.TeamCode));
+            Assert.Contains(x.TeamName, WorldHistoryFloorEventsSpec.Teams.Select(team => team.TeamName));
             Assert.InRange(x.OpenIssueCount, 0, 6);
             Assert.True(x.AcceptedAtUtc is null || x.AcceptedAtUtc >= x.CreatedAtUtc);
         });

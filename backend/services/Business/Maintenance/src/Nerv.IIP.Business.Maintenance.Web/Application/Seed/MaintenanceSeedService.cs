@@ -28,6 +28,12 @@ public sealed class MaintenanceSeedService(ApplicationDbContext dbContext)
         new("DEV-AUX-03", "PM-INSP-MONTHLY-03", "P30D"),
     ];
 
+    /// <summary>
+    /// 本 seed 引用到的设备编码。开放出来供门禁断言「引用的设备必须存在于 L0 设备台账」——
+    /// 引用不存在的主数据应当 fail-closed，不该等真机走查才发现。
+    /// </summary>
+    public static IReadOnlyList<string> SeededDeviceAssetIds => [.. Plans.Select(x => x.DeviceAssetId)];
+
     // seed 计划起始日固定（确定性），不随运行时刻漂移；点检不依赖到期日，仅需可选计划存在。
     private static readonly DateOnly PlanStartsOn = new(2026, 7, 1);
     private const string PlanOwner = "maintenance";
