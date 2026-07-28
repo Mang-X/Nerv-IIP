@@ -41,6 +41,26 @@ export const workerProfile = {
   skills: [],
 }
 
+const deviceAssets = [
+  {
+    deviceAssetId: 'device-asset-cnc-01',
+    code: 'CNC-01',
+    displayName: '一号数控机床',
+    active: true,
+    workshopCode: 'WS-1',
+    lineCode: 'LINE-A',
+    stationCode: 'ST-9',
+  },
+  {
+    deviceAssetId: 'device-asset-lathe-02',
+    code: 'LATHE-02',
+    displayName: '二号车床',
+    active: true,
+    workshopCode: 'WS-2',
+    lineCode: 'LINE-B',
+  },
+]
+
 export const session = {
   accessToken: 'access-token',
   refreshToken: 'refresh-token',
@@ -172,7 +192,22 @@ export const mesOperationTasks = [
     operationSequence: 20,
     workCenterId: 'WC-B',
   },
+  {
+    operationTaskId: 'OP-3',
+    workOrderId: 'WO-2',
+    status: 'Ready',
+    operationSequence: 10,
+    workCenterId: 'WC-C',
+  },
 ]
+
+const mesManyOperationTasks = Array.from({ length: 501 }, (_, index) => ({
+  operationTaskId: `OP-${index + 1}`,
+  workOrderId: 'WO-501',
+  status: 'Ready',
+  operationSequence: index + 1,
+  workCenterId: 'WC-MANY',
+}))
 
 /**
  * Dispatch-task rows（首页「我的任务」）— shape mirrors `BusinessConsoleMesDispatchTaskRow`：
@@ -207,6 +242,18 @@ export const mesWorkOrders = [
     workOrderId: 'WO-1',
     skuId: 'SKU-1',
     quantity: 100,
+    status: 'Released',
+  },
+  {
+    workOrderId: 'WO-2',
+    skuId: 'SKU-2',
+    quantity: 50,
+    status: 'Released',
+  },
+  {
+    workOrderId: 'WO-501',
+    skuId: 'SKU-501',
+    quantity: 1,
     status: 'Released',
   },
 ]
@@ -271,7 +318,8 @@ export const mesReceiptRequests = [
  * with routeConsoleApi). Every endpoint a spec hits must be explicitly mocked here.
  */
 export async function routeBusinessConsoleApi(route: Route) {
-  const { pathname } = new URL(route.request().url())
+  const requestUrl = new URL(route.request().url())
+  const { pathname } = requestUrl
   const method = route.request().method()
   const isPost = method === 'POST'
 
@@ -308,6 +356,29 @@ export async function routeBusinessConsoleApi(route: Route) {
   }
 
   // ---- 设备运维（报修/点检/报警查看） ----
+  // 报修设备选择器：principal scope + 服务端 keyword/skip/take，有界返回。
+  if (pathname === '/api/business-console/v1/master-data/device-assets') {
+    const keyword = (requestUrl.searchParams.get('keyword') ?? '').trim().toLowerCase()
+    const skip = Math.max(0, Number(requestUrl.searchParams.get('skip') ?? 0))
+    const take = Math.max(1, Number(requestUrl.searchParams.get('take') ?? 20))
+    const matched = keyword
+      ? deviceAssets.filter(
+          (item) =>
+            item.displayName.toLowerCase().includes(keyword) ||
+            item.code.toLowerCase().includes(keyword),
+        )
+      : deviceAssets
+    return fulfillJson(
+      route,
+      envelope({
+        resources: matched.slice(skip, skip + take),
+        total: matched.length,
+        truncated: skip + take < matched.length,
+        limit: take,
+      }),
+    )
+  }
+
   // 报修：维修工单 list / create
   if (pathname === '/api/business-console/v1/maintenance/work-orders') {
     if (method === 'POST') {
@@ -402,16 +473,56 @@ export async function routeBusinessConsoleApi(route: Route) {
     return fulfillJson(route, envelope({}))
   }
   if (pathname === `${base}/operation-tasks`) {
-    return fulfillJson(
-      route,
-      envelope({ items: mesOperationTasks, total: mesOperationTasks.length }),
-    )
+    const workOrderId = requestUrl.searchParams.get('workOrderId')
+    const scopedItems =
+      workOrderId === 'WO-501'
+        ? mesManyOperationTasks
+        : workOrderId
+          ? mesOperationTasks.filter((task) => task.workOrderId === workOrderId)
+          : mesOperationTasks
+    const skip = Number(requestUrl.searchParams.get('skip') ?? 0)
+    const take = Number(requestUrl.searchParams.get('take') ?? 100)
+    const items = scopedItems.slice(skip, skip + take)
+    return fulfillJson(route, envelope({ items, total: scopedItems.length }))
   }
   if (pathname === `${base}/work-orders`) {
     return fulfillJson(route, envelope({ items: mesWorkOrders, total: mesWorkOrders.length }))
   }
+  const workOrderDetailMatch = pathname.match(
+    /^\/api\/business-console\/v1\/mes\/work-orders\/([^/]+)$/,
+  )
+  if (method === 'GET' && workOrderDetailMatch) {
+    const workOrderId = decodeURIComponent(workOrderDetailMatch[1])
+    const workOrder = mesWorkOrders.find((candidate) => candidate.workOrderId === workOrderId)
+    if (!workOrder) {
+      return fulfillJson(route, { success: false, message: '工单不存在', data: null })
+    }
+    return fulfillJson(
+      route,
+      envelope({
+        ...workOrder,
+        readinessStatus: 'ready',
+        blockingReasons: [],
+        operationTasks: (workOrderId === 'WO-501'
+          ? mesManyOperationTasks
+          : mesOperationTasks.filter((task) => task.workOrderId === workOrderId)
+        ).slice(0, 500),
+      }),
+    )
+  }
   if (pathname === `${base}/production-reports`) {
-    if (method === 'POST') return fulfillJson(route, envelope({}))
+    if (method === 'POST') {
+      return fulfillJson(
+        route,
+        envelope({
+          productionReportId: '019f-e2e-production-report',
+          reportNo: 'RPT-E2E-0001',
+        }),
+      )
+    }
+    return fulfillJson(route, envelope({ items: [], total: 0 }))
+  }
+  if (pathname === `${base}/telemetry-production-report-candidates`) {
     return fulfillJson(route, envelope({ items: [], total: 0 }))
   }
   if (pathname === `${base}/material-issue-requests`) {

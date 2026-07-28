@@ -701,6 +701,111 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task List_operation_tasks_filters_items_and_total_by_scope_and_exact_work_order_id()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var dueUtc = DateTimeOffset.Parse("2026-07-27T08:00:00Z");
+        var workOrderA = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-EXACT-A",
+            "SKU-A",
+            "PV-A",
+            1m,
+            1,
+            dueUtc);
+        var workOrderB = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-EXACT-B",
+            "SKU-B",
+            "PV-B",
+            1m,
+            2,
+            dueUtc);
+        var otherScopeWorkOrderA = WorkOrder.Create(
+            "org-002",
+            "env-dev",
+            "WO-EXACT-A",
+            "SKU-A",
+            "PV-A",
+            1m,
+            3,
+            dueUtc);
+        var otherEnvironmentWorkOrderA = WorkOrder.Create(
+            "org-001",
+            "env-qa",
+            "WO-EXACT-A",
+            "SKU-A",
+            "PV-A",
+            1m,
+            4,
+            dueUtc);
+        dbContext.WorkOrders.AddRange(
+            workOrderA,
+            workOrderB,
+            otherScopeWorkOrderA,
+            otherEnvironmentWorkOrderA);
+        dbContext.OperationTasks.AddRange(workOrderA.Release(dueUtc.AddHours(-1), [
+            new RoutingStepSnapshot("OP-A", 10, "WC-A", [], TimeSpan.FromMinutes(10)),
+        ]));
+        dbContext.OperationTasks.AddRange(workOrderB.Release(dueUtc.AddHours(-1), [
+            new RoutingStepSnapshot("OP-B-1", 10, "WC-B", [], TimeSpan.FromMinutes(10)),
+            new RoutingStepSnapshot("OP-B-2", 20, "WC-B", [], TimeSpan.FromMinutes(10)),
+        ]));
+        dbContext.OperationTasks.AddRange(otherScopeWorkOrderA.Release(dueUtc.AddHours(-1), [
+            new RoutingStepSnapshot("OP-OTHER-SCOPE", 10, "WC-A", [], TimeSpan.FromMinutes(10)),
+        ]));
+        dbContext.OperationTasks.AddRange(otherEnvironmentWorkOrderA.Release(dueUtc.AddHours(-1), [
+            new RoutingStepSnapshot("OP-OTHER-ENV", 10, "WC-A", [], TimeSpan.FromMinutes(10)),
+        ]));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ListOperationTasksQueryHandler(dbContext).Handle(
+            new ListOperationTasksQuery(
+                "org-001",
+                "env-dev",
+                null,
+                Take: 100,
+                WorkOrderId: "WO-EXACT-A"),
+            CancellationToken.None);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal(1, result.Total);
+        Assert.Equal("WO-EXACT-A", item.WorkOrderId);
+        Assert.Equal("OP-A", item.OperationTaskId);
+    }
+
+    [Fact]
+    public async Task List_operation_tasks_endpoint_forwards_exact_work_order_id()
+    {
+        var sender = new CapturingListOperationTasksSender();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.GetAsync(
+            "/api/business/v1/mes/operation-tasks?organizationId=org-001&environmentId=env-dev&workOrderId=WO-EXACT-A&skip=0&take=100");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(sender.Query);
+        Assert.Equal("org-001", sender.Query.OrganizationId);
+        Assert.Equal("env-dev", sender.Query.EnvironmentId);
+        Assert.Equal("WO-EXACT-A", sender.Query.WorkOrderId);
+    }
+
+    [Fact]
     public async Task Production_report_only_rolls_work_order_progress_from_output_operation()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();

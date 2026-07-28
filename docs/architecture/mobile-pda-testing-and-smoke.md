@@ -14,7 +14,8 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
    - 跑在 jsdom，无真实浏览器。覆盖：组件标记/行为/事件、store 逻辑、登录/首页页面的渲染与守卫断言。
    - 快、确定性高；但**测不到真实布局/计算样式、触控尺寸、安全区、暗色渲染、跨页导航**。
 
-2. **Playwright e2e**（`playwright test`，真实 Chromium，移动视口 390×844 / Pixel 5）
+2. **Playwright e2e**（`playwright test`，真实 Chromium，默认移动视口 390×844 / Pixel 5；
+   报修高频输入专项显式覆盖 375×812）
    - 全程 `page.route` Mock BusinessGateway/console 网关（见 `e2e/fixtures.ts`），**无需后端**。
    - `seedStoredSession` 注入 `localStorage`（auth key `nerv-iip.business-pda.auth` + 可选
      `nerv-iip-color-mode`）跳过登录表单，直达受保护路由。
@@ -22,7 +23,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
      （AppShellMobile / ScanBar / ListRow / BottomSheet / Result，经 `/design-system/gallery` 画廊页载体）
      的真实交互、WMS/MES/设备运维三域业务链路 smoke，以及视觉/布局 smoke。
 
-### e2e spec 清单（5 个 spec / 27 个用例）
+### e2e spec 清单（5 个 spec / 29 个用例）
 
 - `e2e/app-flow.spec.ts`（5）：登录落地工作台；登录失败留在登录路由并透出错误；
   首页扫码条/空态/应用墙 + 无溢出 + 触控尺寸；应用墙入口跳转作业页；
@@ -33,9 +34,17 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   AppShellMobile 安全区 fallback 最小内边距；暗色 token 接线（`.dark` + body 深色背景）。
 - `e2e/wms.spec.ts`（4）：收货入库选单确认 → 成功结果；盘点录数确认 → 成功结果；
   拣货只读中文状态（无裸 code/GUID）；首页应用墙 → `/wms/inbound`。
-- `e2e/mes.spec.ts`（5）：工序执行完成（二次确认）→ 成功结果；报工全链 → 成功结果；
-  领料列表渲染；完工入库列表渲染；首页应用墙 → `/mes/operation`。
-- `e2e/equipment.spec.ts`（5）：报修提交 → 成功结果；点检提交 → 成功结果；
+- `e2e/mes.spec.ts`（7）：工序执行完成（二次确认）→ 成功结果；报工全链 → 成功结果并
+  核对 POST 的工单/工序 pair 与真实回执；携带 `workOrderId + operationTaskId` 的 router
+  pair 切换、延迟旧详情请求及浏览器 back/forward 重绑；详情前 500 项不含目标时，
+  以同工单分页精确解析第 501 个工序任务；领料列表渲染；完工入库列表渲染；首页应用墙
+  → `/mes/operation`。URL history 用例在单测试内部显式控制旧详情请求的启动与释放，
+  通过已挂载应用的 router 创建 A/B history entries，并在失败路径也释放拦截请求；无需降低
+  默认并行度。
+- `e2e/equipment.spec.ts`（5）：报修在 375×812 下覆盖报警路由预填 → 扫码覆盖 →
+  设备 facade 服务端 keyword/分页选择稳定 ID、优先级 ActionSheet、48px 触点、无横向溢出，
+  并用缩短 viewport 的 mock Chromium 证据验证 textarea 聚焦后提交动作仍可达且仅产生一次 POST
+  （不等同 Android/iOS 真 IME）；点检提交 → 成功结果；
   报警行详情「去报修」带参穿透报修页；首页应用墙 → `/equipment/repair`；
   点检数字键盘录入（MAN-458 #812）——特性/单位**真实 tap + fill**（ScanBar 编辑期
   opt-out 回焦，非原生 setter）、`±` 负号录 -80、超差即时红警示、提交前「N 项超差」确认、
@@ -50,9 +59,9 @@ pnpm -C frontend --filter @nerv-iip/business-pda exec playwright install chromiu
 # 全量 e2e（mobile project，自动起 vp dev webServer，端口 5176）
 pnpm -C frontend --filter @nerv-iip/business-pda e2e
 
-# 单文件
-pnpm -C frontend --filter @nerv-iip/business-pda e2e -- app-flow.spec.ts
-pnpm -C frontend --filter @nerv-iip/business-pda e2e -- ui-mobile.spec.ts
+# 单文件（直接调用包内 Playwright，避免把 `--` 误传成测试路径）
+pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test app-flow.spec.ts
+pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test ui-mobile.spec.ts
 
 # 不启浏览器，仅发现/解析 spec（浏览器不可用时的最低验证）
 pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test --list
