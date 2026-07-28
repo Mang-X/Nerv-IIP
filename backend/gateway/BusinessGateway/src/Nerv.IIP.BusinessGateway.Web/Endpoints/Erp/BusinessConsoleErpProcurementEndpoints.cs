@@ -30,6 +30,28 @@ public sealed class ListBusinessConsoleErpRequestsForQuotationEndpoint(
 }
 
 [Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/procurement/supplier-quotations")]
+[BusinessGatewayOperationId("listBusinessConsoleErpSupplierQuotations")]
+public sealed class ListBusinessConsoleErpSupplierQuotationsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpSupplierQuotationListRequest, BusinessConsoleErpSupplierQuotationListResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpProcurementRead)
+{
+    protected override string OrganizationId(BusinessConsoleErpSupplierQuotationListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleErpSupplierQuotationListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpSupplierQuotationListResponse> ForwardAsync(
+        BusinessConsoleErpSupplierQuotationListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ListSupplierQuotationsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
 [HttpGet("/api/business-console/v1/erp/procurement/purchase-requisitions")]
 [BusinessGatewayOperationId("listBusinessConsoleErpPurchaseRequisitions")]
 public sealed class ListBusinessConsoleErpPurchaseRequisitionsEndpoint(

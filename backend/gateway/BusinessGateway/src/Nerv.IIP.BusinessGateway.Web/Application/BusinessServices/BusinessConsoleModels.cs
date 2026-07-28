@@ -2948,6 +2948,36 @@ public sealed record BusinessConsoleErpRequestForQuotationLineItem(
     string SiteCode,
     DateOnly RequiredDate);
 
+public sealed record BusinessConsoleErpSupplierQuotationListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? RfqNo = null,
+    string? SupplierCode = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleErpSupplierQuotationListResponse(
+    IReadOnlyCollection<BusinessConsoleErpSupplierQuotationItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleErpSupplierQuotationItem(
+    string QuotationNo,
+    string RfqNo,
+    string SupplierCode,
+    decimal TotalAmount,
+    IReadOnlyCollection<BusinessConsoleErpSupplierQuotationLineItem> Lines,
+    DateTime ReceivedAtUtc);
+
+public sealed record BusinessConsoleErpSupplierQuotationLineItem(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal Quantity,
+    decimal UnitPrice,
+    decimal LineAmount,
+    DateOnly PromisedDate);
+
 public sealed record BusinessConsoleErpPurchaseRequisitionListResponse(
     IReadOnlyCollection<BusinessConsoleErpPurchaseRequisitionItem> Items,
     int Total);

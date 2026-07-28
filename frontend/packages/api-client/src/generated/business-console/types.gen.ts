@@ -5821,6 +5821,38 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     requiredDate?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpSupplierQuotationListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSupplierQuotationListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSupplierQuotationListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSupplierQuotationItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSupplierQuotationItem = {
+    quotationNo?: string;
+    rfqNo?: string;
+    supplierCode?: string;
+    totalAmount?: number;
+    lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSupplierQuotationLineItem>;
+    receivedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSupplierQuotationLineItem = {
+    lineNo?: string;
+    skuCode?: string;
+    uomCode?: string;
+    quantity?: number;
+    unitPrice?: number;
+    lineAmount?: number;
+    promisedDate?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSupplierQuotationListRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPurchaseRequisitionListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseRequisitionListResponse | null;
 };
@@ -16834,6 +16866,68 @@ export type CreateBusinessConsoleErpRequestForQuotationResponses = {
 
 export type CreateBusinessConsoleErpRequestForQuotationResponse = CreateBusinessConsoleErpRequestForQuotationResponses[keyof CreateBusinessConsoleErpRequestForQuotationResponses];
 
+export type ListBusinessConsoleErpSupplierQuotationsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        rfqNo?: string | null;
+        supplierCode?: string | null;
+        keyword?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/erp/procurement/supplier-quotations';
+};
+
+export type ListBusinessConsoleErpSupplierQuotationsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleErpSupplierQuotationsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpSupplierQuotationListResponse;
+};
+
+export type ListBusinessConsoleErpSupplierQuotationsResponse = ListBusinessConsoleErpSupplierQuotationsResponses[keyof ListBusinessConsoleErpSupplierQuotationsResponses];
+
+export type ReceiveBusinessConsoleErpSupplierQuotationData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReceiveErpSupplierQuotationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/erp/procurement/supplier-quotations';
+};
+
+export type ReceiveBusinessConsoleErpSupplierQuotationErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReceiveBusinessConsoleErpSupplierQuotationResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReceiveErpSupplierQuotationResponse;
+};
+
+export type ReceiveBusinessConsoleErpSupplierQuotationResponse = ReceiveBusinessConsoleErpSupplierQuotationResponses[keyof ReceiveBusinessConsoleErpSupplierQuotationResponses];
+
 export type ListBusinessConsoleErpPurchaseRequisitionsData = {
     body?: never;
     path?: never;
@@ -16939,33 +17033,6 @@ export type ConvertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderResponse
 };
 
 export type ConvertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderResponse = ConvertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderResponses[keyof ConvertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderResponses];
-
-export type ReceiveBusinessConsoleErpSupplierQuotationData = {
-    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReceiveErpSupplierQuotationRequest;
-    path?: never;
-    query?: never;
-    url: '/api/business-console/v1/erp/procurement/supplier-quotations';
-};
-
-export type ReceiveBusinessConsoleErpSupplierQuotationErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-};
-
-export type ReceiveBusinessConsoleErpSupplierQuotationResponses = {
-    /**
-     * Success
-     */
-    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReceiveErpSupplierQuotationResponse;
-};
-
-export type ReceiveBusinessConsoleErpSupplierQuotationResponse = ReceiveBusinessConsoleErpSupplierQuotationResponses[keyof ReceiveBusinessConsoleErpSupplierQuotationResponses];
 
 export type RecordBusinessConsoleErpPurchaseReceiptData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordErpPurchaseReceiptRequest;

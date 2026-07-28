@@ -2927,6 +2927,7 @@ public sealed class BusinessGatewayProxyTests
         var quotations = await client.GetAsync("/api/business-console/v1/erp/sales/quotations?organizationId=org-001&environmentId=env-dev&status=Draft&keyword=SKU-FG&skip=3&take=13");
         var deliveries = await client.GetAsync("/api/business-console/v1/erp/sales/delivery-orders?organizationId=org-001&environmentId=env-dev&status=released&keyword=DO-001&skip=4&take=14");
         var vouchers = await client.GetAsync("/api/business-console/v1/erp/finance/vouchers?organizationId=org-001&environmentId=env-dev&status=posted&keyword=6001&skip=5&take=15");
+        var supplierQuotations = await client.GetAsync("/api/business-console/v1/erp/procurement/supplier-quotations?organizationId=org-001&environmentId=env-dev&rfqNo=RFQ-2026-0001&supplierCode=SUP-WB-BAR-01&keyword=RM-BAR&skip=6&take=16");
 
         Assert.Equal(HttpStatusCode.OK, rfqs.StatusCode);
         Assert.Equal(HttpStatusCode.OK, opportunities.StatusCode);
@@ -2939,6 +2940,16 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "Draft", "SKU-FG", 3, 13), erp.LastQuotationListRequest);
         Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "released", "DO-001", 4, 14), erp.LastDeliveryOrderListRequest);
         Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "posted", "6001", 5, 15), erp.LastJournalVoucherListRequest);
+        Assert.Equal(HttpStatusCode.OK, supplierQuotations.StatusCode);
+        Assert.Equal(
+            new BusinessConsoleErpSupplierQuotationListRequest("org-001", "env-dev", "RFQ-2026-0001", "SUP-WB-BAR-01", "RM-BAR", 6, 16),
+            erp.LastSupplierQuotationListRequest);
+        using var supplierQuotationDocument = JsonDocument.Parse(await supplierQuotations.Content.ReadAsStringAsync());
+        var supplierQuotation = supplierQuotationDocument.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("SQ-2026-0001-A", supplierQuotation.GetProperty("quotationNo").GetString());
+        Assert.Equal("RFQ-2026-0001", supplierQuotation.GetProperty("rfqNo").GetString());
+        Assert.Equal(65m, supplierQuotation.GetProperty("totalAmount").GetDecimal());
+        Assert.Equal(6.5m, supplierQuotation.GetProperty("lines")[0].GetProperty("unitPrice").GetDecimal());
         using var document = JsonDocument.Parse(await quotations.Content.ReadAsStringAsync());
         Assert.Equal("QUO-001", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("quotationNo").GetString());
         using var deliveryDocument = JsonDocument.Parse(await deliveries.Content.ReadAsStringAsync());
@@ -10732,6 +10743,8 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
     public BusinessConsoleErpListRequest? LastRequestForQuotationListRequest { get; private set; }
 
+    public BusinessConsoleErpSupplierQuotationListRequest? LastSupplierQuotationListRequest { get; private set; }
+
     public BusinessConsoleErpListRequest? LastSalesOrderListRequest { get; private set; }
 
     public BusinessConsoleCreateErpSalesOrderRequest? LastCreateSalesOrderRequest { get; private set; }
@@ -10886,6 +10899,28 @@ internal sealed class RecordingErpClient : IBusinessErpClient
                     ["SUP-001", "SUP-002"],
                     [
                         new BusinessConsoleErpRequestForQuotationLineItem("10", "SKU-RM-001", "EA", 5m, "SITE-01", DateOnly.Parse("2026-06-10")),
+                    ],
+                    DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture)),
+            ],
+            1));
+    }
+
+    public Task<BusinessConsoleErpSupplierQuotationListResponse> ListSupplierQuotationsAsync(
+        string internalBearerToken,
+        BusinessConsoleErpSupplierQuotationListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastSupplierQuotationListRequest = request;
+        return Task.FromResult(new BusinessConsoleErpSupplierQuotationListResponse(
+            [
+                new BusinessConsoleErpSupplierQuotationItem(
+                    "SQ-2026-0001-A",
+                    "RFQ-2026-0001",
+                    "SUP-WB-BAR-01",
+                    65m,
+                    [
+                        new BusinessConsoleErpSupplierQuotationLineItem("10", "RM-BAR-01", "kg", 10m, 6.5m, 65m, DateOnly.Parse("2026-06-10")),
                     ],
                     DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture)),
             ],

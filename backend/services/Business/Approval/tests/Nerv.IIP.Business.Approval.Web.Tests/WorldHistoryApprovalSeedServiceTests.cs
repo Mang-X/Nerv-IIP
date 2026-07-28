@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
+using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalDelegationAggregate;
 using Nerv.IIP.Business.Approval.Infrastructure;
 using Nerv.IIP.Business.Approval.Web.Application.Seed;
 using Xunit.Abstractions;
@@ -161,6 +162,7 @@ public sealed class WorldHistoryApprovalSeedServiceTests(ITestOutputHelper outpu
 
         Assert.Equal(0, second.TemplatesWritten);
         Assert.Equal(0, second.ChainsWritten);
+        Assert.Equal(0, second.DelegationsWritten);
         Assert.Equal(facts.Count, await db.ApprovalChains.CountAsync());
 
         // 待办挂在 admin 名下：与工作台 ListPendingApprovalTasksQuery 的过滤口径（步骤 pending + approver）一致。
@@ -277,6 +279,138 @@ public sealed class WorldHistoryApprovalSeedServiceTests(ITestOutputHelper outpu
         Assert.NotEmpty(exception.Failures);
         Assert.Contains(exception.Failures, failure => failure.Contains("未落库", StringComparison.Ordinal));
     }
+
+    #region 审批委托（approval.approval_delegations）
+
+    [Fact]
+    public void Delegation_fact_stream_matches_the_world_bible_shape()
+    {
+        var facts = WorldHistoryApprovalSpec.BuildDelegationFacts(AsOfDate);
+        var revoked = facts.Count(x => x.IsRevoked);
+
+        output.WriteLine($"approval-world-history-delegations={facts.Count}");
+        output.WriteLine($"approval-world-history-delegations-revoked={revoked}");
+        foreach (var fact in facts)
+        {
+            var status = fact.IsRevoked ? "revoked" : "active";
+            var scope = fact.DocumentType ?? "(全部)";
+            output.WriteLine(FormattableString.Invariant(
+                $"delegation: {fact.DelegatorActorRef}→{fact.DelegateActorRef} [{status}] {fact.EffectiveFromUtc:yyyy-MM-dd}..{fact.EffectiveToUtc:yyyy-MM-dd} scope={scope} {fact.Reason}"));
+        }
+
+        // 委托是低频事件：全量 29 周历史下十几条，不随 scale 缩放。
+        Assert.InRange(facts.Count, 10, 20);
+        Assert.Equal(facts.Count, WorldHistoryApprovalSpec.BuildDelegationFacts(AsOfDate).Count);
+        Assert.Equal(facts, WorldHistoryApprovalSpec.BuildDelegationFacts(AsOfDate));
+
+        // active / revoked 混合：既不能全撤销，也不能一条撤销都没有。
+        Assert.True(revoked > 0, "历史委托里应有提前撤销的样本。");
+        Assert.True(revoked < facts.Count, "历史委托不应全部被撤销。");
+
+        // 末尾一条跨过 asOfDate 仍在生效——委托区块上「现在谁在代批」讲得通。
+        var current = facts[^1];
+        Assert.False(current.IsRevoked);
+        Assert.Null(current.DocumentType);
+        Assert.True(current.EffectiveFromUtc <= new DateTimeOffset(AsOfDate.ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero));
+        Assert.True(current.EffectiveToUtc > new DateTimeOffset(AsOfDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero));
+
+        // 自然键唯一（幂等预查的前提）。
+        Assert.Equal(facts.Count, facts.Select(x => x.NaturalKey).Distinct(StringComparer.Ordinal).Count());
+
+        // 单据范围只能是两张世界观模板覆盖的类型，或「全部」。
+        Assert.All(facts, fact => Assert.True(
+            fact.DocumentType is null
+            || fact.DocumentType == WorldHistoryApprovalSpec.PurchaseDocumentType
+            || fact.DocumentType == WorldHistoryApprovalSpec.NcrDocumentType,
+            $"委托单据范围 '{fact.DocumentType}' 不在世界观审批范围内。"));
+    }
+
+    /// <summary>防单日期盲区：5 个 asOfDate 全量走「委托落库 → 重跑零写入 → 委托人合法 → 中文事由」。</summary>
+    [Theory]
+    [InlineData(2026, 7, 27)]
+    [InlineData(2026, 7, 26)]
+    [InlineData(2026, 8, 2)]
+    [InlineData(2026, 2, 16)]
+    [InlineData(2026, 7, 31)]
+    public async Task Seed_writes_delegations_and_reruns_without_writing_anything(int year, int month, int day)
+    {
+        await using var db = CreateDbContext();
+        var seed = new WorldHistoryApprovalSeedService(db);
+        var asOfDate = new DateOnly(year, month, day);
+
+        var first = await seed.SeedAsync("org-001", "env-dev", asOfDate, SmallScale);
+        var second = await seed.SeedAsync("org-001", "env-dev", asOfDate, SmallScale);
+
+        var facts = WorldHistoryApprovalSpec.BuildDelegationFacts(asOfDate);
+        output.WriteLine($"delegations-{asOfDate:yyyy-MM-dd}={first.DelegationsWritten}");
+        output.WriteLine($"delegations-{asOfDate:yyyy-MM-dd}-active={first.Validation.ActiveDelegationsChecked}");
+
+        Assert.Equal(facts.Count, first.DelegationsWritten);
+        Assert.Equal(0, second.DelegationsWritten);
+        Assert.Equal(facts.Count, await db.ApprovalDelegations.CountAsync());
+        Assert.Equal(facts.Count, first.Validation.DelegationsChecked);
+        Assert.True(first.Validation.ActiveDelegationsChecked > 0, "委托区块必须至少有一条生效中的委托。");
+
+        var rows = await db.ApprovalDelegations.AsNoTracking().ToArrayAsync();
+        var lowerBound = new DateTimeOffset(WorldHistoryCalendar.GoLiveDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var knownActors = new[]
+        {
+            WorldHistoryApprovalSpec.AdminUserId,
+            WorldHistoryApprovalSpec.QualitySupervisorUserId,
+            WorldHistoryApprovalSpec.PlanningSupervisorUserId,
+        }
+            .Concat(WorldHistoryApprovalSpec.QualityEngineers.Select(x => x.UserId))
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.All(rows, row =>
+        {
+            Assert.Equal(WorldHistoryApprovalSpec.ActorTypeUser, row.DelegatorActorType);
+            Assert.Equal(WorldHistoryApprovalSpec.ActorTypeUser, row.DelegateActorType);
+            Assert.Contains(row.DelegatorActorRef, knownActors);
+            Assert.Contains(row.DelegateActorRef, knownActors);
+            Assert.NotEqual(row.DelegatorActorRef, row.DelegateActorRef);
+
+            // 委托事由是界面展示位，必须是中文而不是内部英文字面量。
+            Assert.False(string.IsNullOrWhiteSpace(row.Reason));
+            Assert.Matches(@"\p{IsCJKUnifiedIdeographs}", row.Reason!);
+
+            // 时间回填：创建时间落在 [上线日, 生效起点] 内，起止不倒挂。
+            Assert.InRange(row.CreatedAtUtc, lowerBound, row.EffectiveFromUtc);
+            Assert.True(row.EffectiveToUtc > row.EffectiveFromUtc);
+
+            if (row.Status == ApprovalDelegationStatuses.Revoked)
+            {
+                Assert.NotNull(row.RevokedAtUtc);
+                Assert.InRange(row.RevokedAtUtc!.Value, row.EffectiveFromUtc, row.EffectiveToUtc);
+                Assert.False(string.IsNullOrWhiteSpace(row.RevokedBy));
+            }
+            else
+            {
+                Assert.Equal(ApprovalDelegationStatuses.Active, row.Status);
+                Assert.Null(row.RevokedAtUtc);
+                Assert.Null(row.RevokedBy);
+            }
+        });
+    }
+
+    [Fact]
+    public async Task Validator_fails_closed_when_a_planned_delegation_disappears()
+    {
+        await using var db = CreateDbContext();
+        await new WorldHistoryApprovalSeedService(db).SeedAsync("org-001", "env-dev", AsOfDate, SmallScale);
+
+        var victim = await db.ApprovalDelegations.FirstAsync();
+        db.ApprovalDelegations.Remove(victim);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<WorldHistoryApprovalConsistencyException>(() =>
+            new WorldHistoryApprovalConsistencyValidator(db).ValidateAsync("org-001", "env-dev", AsOfDate, SmallScale));
+
+        Assert.Contains(exception.Failures, failure => failure.Contains("审批委托", StringComparison.Ordinal));
+    }
+
+    #endregion
 
     private static ApplicationDbContext CreateDbContext()
     {

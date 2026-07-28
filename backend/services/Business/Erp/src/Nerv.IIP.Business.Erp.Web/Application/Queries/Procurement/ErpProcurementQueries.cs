@@ -102,6 +102,103 @@ public sealed class ListRequestsForQuotationQueryHandler(ApplicationDbContext db
     }
 }
 
+/// <summary>
+/// 供应商报价读面。
+///
+/// 领域约束：<c>SupplierQuotation</c> 聚合上**没有状态字段**（报价一经收到即为终态事实，
+/// 中标与否体现在采购单选了谁，而不是报价单自己的状态），因此这里只提供
+/// 「按询价单 / 按供应商 / 关键字」三类过滤——不做一个恒真的 status 参数骗调用方。
+/// </summary>
+public sealed record ListSupplierQuotationsQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string? RfqNo = null,
+    string? SupplierCode = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100) : IQuery<ListSupplierQuotationsResponse>;
+
+public sealed record ListSupplierQuotationsResponse(IReadOnlyCollection<SupplierQuotationResponse> Items, int Total);
+
+public sealed record SupplierQuotationResponse(
+    string QuotationNo,
+    string RfqNo,
+    string SupplierCode,
+    decimal TotalAmount,
+    IReadOnlyCollection<SupplierQuotationLineResponse> Lines,
+    DateTime ReceivedAtUtc);
+
+public sealed record SupplierQuotationLineResponse(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal Quantity,
+    decimal UnitPrice,
+    decimal LineAmount,
+    DateOnly PromisedDate);
+
+public sealed class ListSupplierQuotationsQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListSupplierQuotationsQuery, ListSupplierQuotationsResponse>
+{
+    public async Task<ListSupplierQuotationsResponse> Handle(ListSupplierQuotationsQuery request, CancellationToken cancellationToken)
+    {
+        var query = dbContext.SupplierQuotations
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+
+        if (!string.IsNullOrWhiteSpace(request.RfqNo))
+        {
+            var rfqNo = request.RfqNo.Trim();
+            query = query.Where(x => x.RfqNo == rfqNo);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SupplierCode))
+        {
+            var supplierCode = request.SupplierCode.Trim();
+            query = query.Where(x => x.SupplierCode == supplierCode);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword.Trim();
+            query = query.Where(x =>
+                x.QuotationNo.Contains(keyword)
+                || x.RfqNo.Contains(keyword)
+                || x.SupplierCode.Contains(keyword)
+                || x.Lines.Any(line => line.SkuCode.Contains(keyword)));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var skip = Math.Max(request.Skip, 0);
+        var take = ErpProcurementListPaging.NormalizeTake(request.Take);
+        var items = await query
+            .OrderByDescending(x => x.ReceivedAtUtc)
+            .ThenBy(x => x.QuotationNo)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => new SupplierQuotationResponse(
+                x.QuotationNo,
+                x.RfqNo,
+                x.SupplierCode,
+                x.Lines.Sum(line => line.Quantity * line.UnitPrice),
+                x.Lines
+                    .OrderBy(line => line.LineNo)
+                    .Select(line => new SupplierQuotationLineResponse(
+                        line.LineNo,
+                        line.SkuCode,
+                        line.UomCode,
+                        line.Quantity,
+                        line.UnitPrice,
+                        line.Quantity * line.UnitPrice,
+                        line.PromisedDate))
+                    .ToArray(),
+                x.ReceivedAtUtc))
+            .ToArrayAsync(cancellationToken);
+
+        return new ListSupplierQuotationsResponse(items, total);
+    }
+}
+
 public sealed record ListPurchaseRequisitionsQuery(
     string OrganizationId,
     string EnvironmentId,

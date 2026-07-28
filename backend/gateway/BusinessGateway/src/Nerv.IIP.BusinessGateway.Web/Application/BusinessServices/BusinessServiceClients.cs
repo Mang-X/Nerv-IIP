@@ -825,6 +825,11 @@ public interface IBusinessErpClient
         BusinessConsoleErpListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleErpSupplierQuotationListResponse> ListSupplierQuotationsAsync(
+        string internalBearerToken,
+        BusinessConsoleErpSupplierQuotationListRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleErpPurchaseRequisitionListResponse> ListPurchaseRequisitionsAsync(
         string internalBearerToken,
         BusinessConsoleErpListRequest request,
@@ -6330,6 +6335,24 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/erp/rfqs?" + ErpListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleErpSupplierQuotationListResponse> ListSupplierQuotationsAsync(
+        string internalBearerToken,
+        BusinessConsoleErpSupplierQuotationListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpSupplierQuotationListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/supplier-quotations?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("rfqNo", request.RfqNo),
+                ("supplierCode", request.SupplierCode),
+                ("keyword", request.Keyword),
+                ("skip", request.Skip),
+                ("take", request.Take)),
             null,
             cancellationToken);
 

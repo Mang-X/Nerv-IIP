@@ -56,6 +56,15 @@ public static class WorldHistoryApprovalSpec
         new("user-emp-041", "EMP-041"),
     ];
 
+    /// <summary>
+    /// 计划主管（EMP-029），厂长外出期间的采购审批受托人。
+    ///
+    /// 序号按 MasterData <c>WorldBibleSpec.BuildEmployees()</c> 的同一公式复算：
+    /// 生产部 3+6+19 = 28 人在前，计划部从 0 基序号 28 起 → <c>user-emp-029</c>
+    /// （与 DemandPlanning 侧 <c>WorldHistoryPlanningSpec.PlanningSupervisor</c> 逐字一致）。
+    /// </summary>
+    public const string PlanningSupervisorUserId = "user-emp-029";
+
     /// <summary>按流键在人员池里确定性取人（与二期 <c>WorldHistoryPhase2Spec.Assign</c> 同字面量）。</summary>
     public static WorldHistoryPerson Assign(IReadOnlyList<WorldHistoryPerson> pool, string streamKey) =>
         new WorldHistoryRandom($"assign:{streamKey}").Pick(pool);
@@ -217,6 +226,140 @@ public static class WorldHistoryApprovalSpec
             DecidedAtUtc: decidedAtUtc);
     }
 
+    #region 审批委托（approval.approval_delegations）
+
+    /// <summary>
+    /// 委托是**低频事件**：不随 scale 缩放，只随历史纵深增长。
+    /// 首次委托落在上线后第 10 天，此后每 14 天一次（厂长出差 / 质量主管休假的固定节奏），
+    /// 全量 29 周历史下约 15 条——十几条正是「一年里出差休假几次」的真实量级。
+    /// </summary>
+    public const int DelegationFirstDayOffset = 10;
+
+    /// <summary>两次委托之间的间隔（自然日）。</summary>
+    public const int DelegationIntervalDays = 14;
+
+    /// <summary>历史委托中提前撤销（委托人提前回厂）的比例。</summary>
+    public const double DelegationRevokedProbability = 0.25;
+
+    /// <summary>当前仍在生效的那条委托：起始日 = <c>asOfDate - 3</c>，跨过 asOfDate 再持续一周。</summary>
+    public const int CurrentDelegationStartOffsetDays = -3;
+    public const int CurrentDelegationDurationDays = 10;
+
+    /// <summary>委托期长度候选（自然日）：3 天短差 / 一周 / 十天 / 两周年休。</summary>
+    private static readonly IReadOnlyList<int> DelegationDurationDays = [3, 7, 10, 14];
+
+    private static readonly IReadOnlyList<string> PurchaseDelegationReasons =
+    [
+        "厂长赴长三角整车一厂技术交流，采购审批临时委托计划主管",
+        "厂长外出参加供应商年度大会，期间采购审批由计划主管代行",
+        "厂长休年假，采购订单审批临时授权计划主管",
+    ];
+
+    private static readonly IReadOnlyList<string> NcrDelegationReasons =
+    [
+        "质量主管赴客户处处理索赔，NCR 处置评审委托质量工程师",
+        "质量主管参加 IATF 16949 外审培训，期间 NCR 处置由质量工程师代评",
+        "质量主管休假，不合格品处置审批临时授权质量工程师",
+    ];
+
+    private static readonly IReadOnlyList<string> DelegationRevokeReasonSuffixes =
+    [
+        "（提前返厂，委托提前收回）",
+        "（行程取消，委托作废）",
+    ];
+
+    /// <summary>
+    /// 全量审批委托事实流（确定性纯函数，seed 与校验器共用）。
+    ///
+    /// 结构：历史委托（已过期，其中约 1/4 被提前撤销）+ 末尾一条**当前仍生效**的委托，
+    /// 于是委托区块上既有 <c>active</c> 也有 <c>revoked</c>，且「现在谁在代批」讲得通。
+    /// 委托人 / 受托人全部是既有审批人（厂长、质量主管、计划主管、质量工程师），不新造人物。
+    /// </summary>
+    public static IReadOnlyList<WorldHistoryDelegationFact> BuildDelegationFacts(DateOnly asOfDate)
+    {
+        var facts = new List<WorldHistoryDelegationFact>(24);
+        var episode = 0;
+        for (var dayOffset = DelegationFirstDayOffset; ; dayOffset += DelegationIntervalDays, episode++)
+        {
+            var startDay = WorldHistoryCalendar.GoLiveDate.AddDays(dayOffset);
+            if (startDay > asOfDate)
+            {
+                break;
+            }
+
+            facts.Add(BuildHistoricalDelegationFact(episode, startDay, asOfDate));
+        }
+
+        facts.Add(BuildCurrentDelegationFact(asOfDate));
+        return facts;
+    }
+
+    private static WorldHistoryDelegationFact BuildHistoricalDelegationFact(int episode, DateOnly startDay, DateOnly asOfDate)
+    {
+        // 采购线与质量线交替：厂长出差与质量主管休假在时间轴上错开，不会同一周两条委托。
+        var isPurchase = episode % 2 == 0;
+        var streamKey = FormattableString.Invariant($"delegation:{(isPurchase ? "po" : "ncr")}:{episode:D3}");
+        var random = new WorldHistoryRandom(streamKey);
+        var durationDays = random.Pick(DelegationDurationDays);
+
+        var effectiveFromUtc = MomentOn(ClampToHistory(startDay, asOfDate), streamKey, "delegation-start");
+        var effectiveToUtc = effectiveFromUtc.AddDays(durationDays);
+        var createdAtUtc = Earlier(
+            MomentOn(ClampToHistory(startDay.AddDays(-1), asOfDate), streamKey, "delegation-created"),
+            effectiveFromUtc);
+
+        var delegatorUserId = isPurchase ? AdminUserId : QualitySupervisorUserId;
+        var delegateUserId = isPurchase
+            ? PlanningSupervisorUserId
+            : Assign(QualityEngineers, streamKey).UserId;
+        var reason = random.Pick(isPurchase ? PurchaseDelegationReasons : NcrDelegationReasons);
+
+        // 提前撤销：撤销时刻落在委托期内 60% 处，且必须仍在历史窗内（否则这条只能是自然到期）。
+        var revoked = random.Chance(DelegationRevokedProbability);
+        DateTimeOffset? revokedAtUtc = null;
+        if (revoked)
+        {
+            var revokeDay = ClampToHistory(startDay.AddDays(Math.Max(1, durationDays * 3 / 5)), asOfDate);
+            var candidate = Later(
+                MomentOn(revokeDay, streamKey, "delegation-revoke"),
+                effectiveFromUtc.AddHours(2));
+            revokedAtUtc = candidate < effectiveToUtc ? candidate : effectiveFromUtc.AddHours(2);
+        }
+
+        return new WorldHistoryDelegationFact(
+            DelegatorUserId: delegatorUserId,
+            DelegateUserId: delegateUserId,
+            DocumentType: isPurchase ? PurchaseDocumentType : NcrDocumentType,
+            EffectiveFromUtc: effectiveFromUtc,
+            EffectiveToUtc: effectiveToUtc,
+            Reason: revokedAtUtc is null ? reason : reason + random.Pick(DelegationRevokeReasonSuffixes),
+            CreatedAtUtc: createdAtUtc,
+            RevokedAtUtc: revokedAtUtc);
+    }
+
+    /// <summary>当前生效的那条：厂长本周外出，**不限单据类型**全部代批（<c>DocumentType = null</c> 的落点）。</summary>
+    private static WorldHistoryDelegationFact BuildCurrentDelegationFact(DateOnly asOfDate)
+    {
+        const string streamKey = "delegation:current";
+        var startDay = ClampToHistory(asOfDate.AddDays(CurrentDelegationStartOffsetDays), asOfDate);
+        var effectiveFromUtc = MomentOn(startDay, streamKey, "delegation-start");
+        var createdAtUtc = Earlier(
+            MomentOn(ClampToHistory(startDay.AddDays(-1), asOfDate), streamKey, "delegation-created"),
+            effectiveFromUtc);
+
+        return new WorldHistoryDelegationFact(
+            DelegatorUserId: AdminUserId,
+            DelegateUserId: PlanningSupervisorUserId,
+            DocumentType: null,
+            EffectiveFromUtc: effectiveFromUtc,
+            EffectiveToUtc: effectiveFromUtc.AddDays(CurrentDelegationDurationDays),
+            Reason: "厂长本周赴华中商用车配套客户现场，期间全部审批事项委托计划主管代行",
+            CreatedAtUtc: createdAtUtc,
+            RevokedAtUtc: null);
+    }
+
+    #endregion
+
     /// <summary>把「工作日 + 流键」映射到一个确定性的班内 UTC 时刻（与二期 <c>WorldHistoryPhase2Spec.MomentOn</c> 同字面量）。</summary>
     public static DateTimeOffset MomentOn(DateOnly date, string streamKey, string purpose)
     {
@@ -246,6 +389,38 @@ public static class WorldHistoryApprovalSpec
 
     private static DateTimeOffset Later(DateTimeOffset candidate, DateTimeOffset floor) =>
         candidate > floor ? candidate : floor;
+
+    private static DateTimeOffset Earlier(DateTimeOffset candidate, DateTimeOffset ceiling) =>
+        candidate < ceiling ? candidate : ceiling;
+}
+
+/// <summary>一条历史审批委托事实（委托人 / 受托人 / 单据范围 / 起止 / 中文事由 / 是否提前撤销）。</summary>
+public sealed record WorldHistoryDelegationFact(
+    string DelegatorUserId,
+    string DelegateUserId,
+    string? DocumentType,
+    DateTimeOffset EffectiveFromUtc,
+    DateTimeOffset EffectiveToUtc,
+    string Reason,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? RevokedAtUtc)
+{
+    /// <summary>委托人的公开 actor 引用（<c>user:user-admin</c>），与 Gateway 注入口径一致。</summary>
+    public string DelegatorActorRef => DelegatorUserId;
+
+    /// <summary>受托人的公开 actor 引用。</summary>
+    public string DelegateActorRef => DelegateUserId;
+
+    /// <summary>委托单的创建人 / 撤销人都是委托人自己（谁授权谁收回）。</summary>
+    public string CreatedBy => $"{WorldHistoryApprovalSpec.ActorTypeUser}:{DelegatorUserId}";
+
+    public bool IsRevoked => RevokedAtUtc is not null;
+
+    /// <summary>自然键：同一委托人 → 受托人 + 同一生效起点即同一条委托（幂等预查用）。</summary>
+    public string NaturalKey => NaturalKeyOf(DelegatorUserId, DelegateUserId, EffectiveFromUtc);
+
+    public static string NaturalKeyOf(string delegatorActorRef, string delegateActorRef, DateTimeOffset effectiveFromUtc) =>
+        FormattableString.Invariant($"{delegatorActorRef}|{delegateActorRef}|{effectiveFromUtc.UtcDateTime:yyyyMMddHHmm}");
 }
 
 /// <summary>世界观人物（user id + 员工号），与 L0 <c>WorldBibleSpec</c> 的 <c>user-emp-0xx</c> 公式对齐。</summary>
