@@ -120,6 +120,7 @@ try
     builder.Services.AddScoped<QualitySeedService>();
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<WorldHistorySeedService>();
+    builder.Services.AddScoped<WorldHistoryMetrologySeedService>();
     builder.Services.AddSingleton<IInspectionUomConversionClient>(NullInspectionUomConversionClient.Instance);
     builder.Services.AddScoped<IInspectionSourceDocumentVerifier, ErpPurchaseReceiptInspectionSourceDocumentVerifier>();
     builder.Services.AddScoped<IQualityIntegrationEventContextAccessor, HttpQualityIntegrationEventContextAccessor>();
@@ -245,6 +246,38 @@ try
             foreach (var line in report.Validation.Sample)
             {
                 app.Logger.LogInformation("World-history sample: {Chain}", line);
+            }
+
+            // 三期：计量器具台账 / 校准记录 / SPC 控制限 / CAPA。必须排在二期之后——
+            // CAPA 要挂真实 NCR、效果验证要引用真实合格检验记录，两者都由二期写入。
+            var metrologyReport = await scope.ServiceProvider
+                .GetRequiredService<WorldHistoryMetrologySeedService>()
+                .SeedAsync(
+                    leaderDemoOrganizationId,
+                    leaderDemoEnvironmentId,
+                    WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+                    WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+            app.Logger.LogInformation(
+                "World-history metrology seed completed: {Devices} measuring devices, {Calibrations} calibration records, " +
+                "{Charts} SPC control charts, {Capas} CAPAs ({Items} action items); validator checked " +
+                "{CheckedDevices} devices (overdue {Overdue} / warning {Warning} / unavailable {Unavailable}), " +
+                "{CheckedCharts} charts, {CheckedCapas} CAPAs ({ClosedCapas} closed, {OverdueCapas} overdue).",
+                metrologyReport.MeasuringDevicesWritten,
+                metrologyReport.CalibrationRecordsWritten,
+                metrologyReport.SpcControlChartsWritten,
+                metrologyReport.CorrectiveActionsWritten,
+                metrologyReport.CorrectiveActionItemsWritten,
+                metrologyReport.Validation.MeasuringDevicesChecked,
+                metrologyReport.Validation.OverdueDevices,
+                metrologyReport.Validation.WarningDevices,
+                metrologyReport.Validation.UnavailableDevices,
+                metrologyReport.Validation.SpcControlChartsChecked,
+                metrologyReport.Validation.CorrectiveActionsChecked,
+                metrologyReport.Validation.ClosedCorrectiveActions,
+                metrologyReport.Validation.OverdueCorrectiveActions);
+            foreach (var line in metrologyReport.Validation.Sample)
+            {
+                app.Logger.LogInformation("World-history metrology sample: {Chain}", line);
             }
         }
     }

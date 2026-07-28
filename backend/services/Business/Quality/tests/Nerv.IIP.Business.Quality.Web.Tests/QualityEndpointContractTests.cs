@@ -55,6 +55,16 @@ public sealed class QualityEndpointContractTests
             && x.Route == "/api/business/v1/quality/capas/{correctiveActionId}/actions/{correctiveActionItemId}/complete"
             && x.PermissionCode == BusinessPermissionCodes.QualityNcrManage
             && x.OperationId == "completeBusinessQualityCapaAction");
+
+        // 三期读面：CAPA 此前只有写端点，台账与详情两条读端点补齐后才看得见。
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/capas"
+            && x.PermissionCode == BusinessPermissionCodes.QualityNcrRead
+            && x.OperationId == "listBusinessQualityCapas");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/capas/{correctiveActionId}"
+            && x.PermissionCode == BusinessPermissionCodes.QualityNcrRead
+            && x.OperationId == "getBusinessQualityCapa");
     }
 
     [Fact]

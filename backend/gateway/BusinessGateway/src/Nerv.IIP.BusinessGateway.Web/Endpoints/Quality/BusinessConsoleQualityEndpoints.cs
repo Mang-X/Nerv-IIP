@@ -673,6 +673,126 @@ public sealed class QueryBusinessConsoleQualityProcessCapabilityEndpoint(
         quality.QueryProcessCapabilityAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+// SPC 控制图台账：回答「系统里立了哪些控制图、控制限何时锁的」。
+// 与 control-chart（现算一张图）同权限口径。
+[Tags("Business Console Quality")]
+[HttpGet("/api/business-console/v1/quality/spc/control-charts")]
+[BusinessGatewayOperationId("listBusinessConsoleQualitySpcControlCharts")]
+public sealed class ListBusinessConsoleQualitySpcControlChartsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualitySpcControlChartListRequest, BusinessConsoleQualitySpcControlChartListResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionRecordsRead)
+{
+    protected override string OrganizationId(BusinessConsoleQualitySpcControlChartListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleQualitySpcControlChartListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleQualitySpcControlChartListResponse> ForwardAsync(
+        BusinessConsoleQualitySpcControlChartListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        quality.ListSpcControlChartsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+// 计量器具台账。权限沿用检验记录读权限而不是另起 measuring-devices.read：
+// 「这把卡尺还在检定期内吗」是检验员执行检验时就要看的事实，与原因码目录同一先例
+// （另起权限码会让只有 inspection-records.read 的质检角色 403）。
+[Tags("Business Console Quality")]
+[HttpGet("/api/business-console/v1/quality/measuring-devices")]
+[BusinessGatewayOperationId("listBusinessConsoleQualityMeasuringDevices")]
+public sealed class ListBusinessConsoleQualityMeasuringDevicesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityMeasuringDeviceListRequest, BusinessConsoleQualityMeasuringDeviceListResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionRecordsRead)
+{
+    protected override string OrganizationId(BusinessConsoleQualityMeasuringDeviceListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleQualityMeasuringDeviceListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleQualityMeasuringDeviceListResponse> ForwardAsync(
+        BusinessConsoleQualityMeasuringDeviceListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        quality.ListMeasuringDevicesAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Quality")]
+[HttpGet("/api/business-console/v1/quality/calibration-records")]
+[BusinessGatewayOperationId("listBusinessConsoleQualityCalibrationRecords")]
+public sealed class ListBusinessConsoleQualityCalibrationRecordsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityCalibrationRecordListRequest, BusinessConsoleQualityCalibrationRecordListResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionRecordsRead)
+{
+    protected override string OrganizationId(BusinessConsoleQualityCalibrationRecordListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleQualityCalibrationRecordListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleQualityCalibrationRecordListResponse> ForwardAsync(
+        BusinessConsoleQualityCalibrationRecordListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        quality.ListCalibrationRecordsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+// CAPA 台账与详情：CAPA 是 NCR 的下游闭环，权限口径与 NCR 读面一致。
+[Tags("Business Console Quality")]
+[HttpGet("/api/business-console/v1/quality/capas")]
+[BusinessGatewayOperationId("listBusinessConsoleQualityCapas")]
+public sealed class ListBusinessConsoleQualityCapasEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityCapaListRequest, BusinessConsoleQualityCapaListResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityNcrRead)
+{
+    protected override string OrganizationId(BusinessConsoleQualityCapaListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleQualityCapaListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleQualityCapaListResponse> ForwardAsync(
+        BusinessConsoleQualityCapaListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        quality.ListCorrectiveActionsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Quality")]
+[HttpGet("/api/business-console/v1/quality/capas/{correctiveActionId}")]
+[BusinessGatewayOperationId("getBusinessConsoleQualityCapa")]
+public sealed class GetBusinessConsoleQualityCapaEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityCapaDetailRequest, BusinessConsoleQualityCapaItem>(
+        auth,
+        BusinessGatewayPermissions.QualityNcrRead)
+{
+    protected override string OrganizationId(BusinessConsoleQualityCapaDetailRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleQualityCapaDetailRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleQualityCapaDetailRequest request) => "capa";
+
+    protected override string? ResourceId(BusinessConsoleQualityCapaDetailRequest request) => request.CorrectiveActionId;
+
+    protected override Task<BusinessConsoleQualityCapaItem> ForwardAsync(
+        BusinessConsoleQualityCapaDetailRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        quality.GetCorrectiveActionAsync(tokenProvider.BearerToken, request.CorrectiveActionId, request, cancellationToken);
+}
+
 [Tags("Business Console Quality")]
 [HttpGet("/api/business-console/v1/quality/reason-codes")]
 [BusinessGatewayOperationId("listBusinessConsoleQualityReasonCodes")]

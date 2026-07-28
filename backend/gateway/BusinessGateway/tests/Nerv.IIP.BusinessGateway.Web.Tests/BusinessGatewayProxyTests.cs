@@ -856,6 +856,68 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(0.67m, capabilityDocument.RootElement.GetProperty("data").GetProperty("cp").GetDecimal());
     }
 
+    /// <summary>
+    /// 三期读面 facade：计量器具台账 / 校准记录 / CAPA 台账与详情 / SPC 控制图台账。
+    /// 这四张表此前在库里是 0 行且**没有任何读端点**，光补种子页面刷新后仍然全空。
+    /// </summary>
+    [Fact]
+    public async Task Quality_metrology_capa_and_spc_chart_ledger_facades_forward_context_and_internal_service_token()
+    {
+        var quality = new RecordingQualityClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var devices = await client.GetAsync(
+            "/api/business-console/v1/quality/measuring-devices?organizationId=org-001&environmentId=env-dev&calibrationState=overdue&warningDays=14&skip=0&take=25");
+        var calibrations = await client.GetAsync(
+            "/api/business-console/v1/quality/calibration-records?organizationId=org-001&environmentId=env-dev&keyword=CAL-2026&skip=0&take=25");
+        var capas = await client.GetAsync(
+            "/api/business-console/v1/quality/capas?organizationId=org-001&environmentId=env-dev&status=closed&skip=0&take=25");
+        var capa = await client.GetAsync(
+            "/api/business-console/v1/quality/capas/capa-001?organizationId=org-001&environmentId=env-dev");
+        var charts = await client.GetAsync(
+            "/api/business-console/v1/quality/spc/control-charts?organizationId=org-001&environmentId=env-dev&locked=true&skip=0&take=25");
+
+        Assert.Equal(HttpStatusCode.OK, devices.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, calibrations.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, capas.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, capa.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, charts.StatusCode);
+        Assert.Equal("internal-test-token", quality.LastInternalToken);
+
+        Assert.Equal("overdue", quality.LastMeasuringDeviceListRequest!.CalibrationState);
+        Assert.Equal(14, quality.LastMeasuringDeviceListRequest.WarningDays);
+        Assert.Equal("org-001", quality.LastMeasuringDeviceListRequest.OrganizationId);
+        Assert.Equal("CAL-2026", quality.LastCalibrationRecordListRequest!.Keyword);
+        Assert.Equal("closed", quality.LastCapaListRequest!.Status);
+        Assert.Equal("capa-001", quality.LastCapaDetailRequest!.CorrectiveActionId);
+        Assert.Equal("env-dev", quality.LastCapaDetailRequest.EnvironmentId);
+        Assert.True(quality.LastSpcControlChartListRequest!.Locked);
+
+        using var deviceDocument = JsonDocument.Parse(await devices.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "MD-CLP-01",
+            deviceDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("deviceCode").GetString());
+
+        using var capaDocument = JsonDocument.Parse(await capa.Content.ReadAsStringAsync());
+        Assert.Equal("CAPA-2026-001", capaDocument.RootElement.GetProperty("data").GetProperty("capaCode").GetString());
+        Assert.Equal(
+            "containment",
+            capaDocument.RootElement.GetProperty("data").GetProperty("actions")[0].GetProperty("actionType").GetString());
+
+        using var chartDocument = JsonDocument.Parse(await charts.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "WC-TS-01",
+            chartDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("workCenterId").GetString());
+    }
+
     [Fact]
     public async Task Quality_inspection_tasks_list_and_create_record_from_task_forward_context_and_internal_service_token()
     {
@@ -9265,6 +9327,16 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
 
     public BusinessConsoleQualityReasonListRequest? LastQualityReasonListRequest { get; private set; }
 
+    public BusinessConsoleQualitySpcControlChartListRequest? LastSpcControlChartListRequest { get; private set; }
+
+    public BusinessConsoleQualityMeasuringDeviceListRequest? LastMeasuringDeviceListRequest { get; private set; }
+
+    public BusinessConsoleQualityCalibrationRecordListRequest? LastCalibrationRecordListRequest { get; private set; }
+
+    public BusinessConsoleQualityCapaListRequest? LastCapaListRequest { get; private set; }
+
+    public BusinessConsoleQualityCapaDetailRequest? LastCapaDetailRequest { get; private set; }
+
     public BusinessConsoleQualityReasonRequest? LastQualityReasonRequest { get; private set; }
 
     public BusinessConsoleCreateQualityReasonRequest? LastCreateQualityReasonRequest { get; private set; }
@@ -9545,6 +9617,161 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
             0.67m,
             0.67m));
     }
+
+    public Task<BusinessConsoleQualitySpcControlChartListResponse> ListSpcControlChartsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualitySpcControlChartListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastSpcControlChartListRequest = request;
+        return Task.FromResult(new BusinessConsoleQualitySpcControlChartListResponse(
+            [
+                new BusinessConsoleQualitySpcControlChartItem(
+                    "chart-001",
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    "FG-QJ-P1-L",
+                    "damping-force",
+                    "WC-TS-01",
+                    5,
+                    1200.5m,
+                    32.4m,
+                    1219.2m,
+                    1181.8m,
+                    68.5m,
+                    0m,
+                    true,
+                    new DateTime(2026, 3, 2, 6, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 3, 2, 6, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 3, 2, 6, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 3, 2, 6, 0, 0, DateTimeKind.Utc)),
+            ],
+            1,
+            1));
+    }
+
+    public Task<BusinessConsoleQualityMeasuringDeviceListResponse> ListMeasuringDevicesAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityMeasuringDeviceListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastMeasuringDeviceListRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityMeasuringDeviceListResponse(
+            [
+                new BusinessConsoleQualityMeasuringDeviceItem(
+                    "device-001",
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    "MD-CLP-01",
+                    "数显卡尺",
+                    "0–150mm / 0.01mm / Ⅱ级",
+                    365,
+                    "in-use",
+                    new DateTimeOffset(2026, 2, 13, 1, 0, 0, TimeSpan.Zero),
+                    new DateTimeOffset(2027, 2, 13, 1, 0, 0, TimeSpan.Zero),
+                    "current",
+                    200,
+                    1,
+                    "CAL-2026-0001",
+                    "江苏省计量科学研究院"),
+            ],
+            1,
+            1,
+            0,
+            0,
+            0));
+    }
+
+    public Task<BusinessConsoleQualityCalibrationRecordListResponse> ListCalibrationRecordsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityCalibrationRecordListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCalibrationRecordListRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityCalibrationRecordListResponse(
+            [
+                new BusinessConsoleQualityCalibrationRecordItem(
+                    "calibration-001",
+                    "device-001",
+                    "MD-CLP-01",
+                    "数显卡尺",
+                    "CAL-2026-0001",
+                    new DateTimeOffset(2026, 2, 13, 1, 0, 0, TimeSpan.Zero),
+                    "江苏省计量科学研究院",
+                    "file-cal-CAL-2026-0001",
+                    365,
+                    new DateTimeOffset(2027, 2, 13, 1, 0, 0, TimeSpan.Zero)),
+            ],
+            1));
+    }
+
+    public Task<BusinessConsoleQualityCapaListResponse> ListCorrectiveActionsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityCapaListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCapaListRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityCapaListResponse(
+            [CapaItem(request.OrganizationId, request.EnvironmentId)],
+            1,
+            0,
+            0,
+            1,
+            0));
+    }
+
+    public Task<BusinessConsoleQualityCapaItem> GetCorrectiveActionAsync(
+        string internalBearerToken,
+        string correctiveActionId,
+        BusinessConsoleQualityCapaDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCapaDetailRequest = request;
+        return Task.FromResult(CapaItem(request.OrganizationId, request.EnvironmentId));
+    }
+
+    private static BusinessConsoleQualityCapaItem CapaItem(string organizationId, string environmentId) =>
+        new(
+            "capa-001",
+            organizationId,
+            environmentId,
+            "CAPA-2026-001",
+            "ncr-001",
+            "阀系预装扭矩设定值被误改（重大）",
+            "本批全部隔离报废，追溯同扭矩设定下的相邻批次",
+            "user-emp-040",
+            new DateTimeOffset(2026, 4, 2, 1, 0, 0, TimeSpan.Zero),
+            "closed",
+            "user-emp-041",
+            "措施有效，连续三批复检合格",
+            new DateTimeOffset(2026, 4, 20, 1, 0, 0, TimeSpan.Zero),
+            "inspection-record-001",
+            "APPR-CAPA-CAPA-2026-001",
+            "user-emp-040",
+            new DateTimeOffset(2026, 4, 22, 1, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 3, 3, 1, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 4, 22, 1, 0, 0, TimeSpan.Zero),
+            3,
+            3,
+            false,
+            [
+                new BusinessConsoleQualityCapaActionItem(
+                    "capa-action-001",
+                    "containment",
+                    "临时措施：本批全部隔离报废",
+                    "user-emp-040",
+                    new DateTimeOffset(2026, 3, 6, 1, 0, 0, TimeSpan.Zero),
+                    "completed",
+                    "user-emp-040",
+                    new DateTimeOffset(2026, 3, 5, 1, 0, 0, TimeSpan.Zero),
+                    new DateTimeOffset(2026, 3, 3, 1, 0, 0, TimeSpan.Zero),
+                    false),
+            ]);
 
     public Task<BusinessConsoleQualityReasonListResponse> ListQualityReasonsAsync(
         string internalBearerToken,
