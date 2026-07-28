@@ -5,7 +5,7 @@ import { buildWarehouseBoard, buildWarehouseOpsTick, OVERDUE_MIN, workFrac } fro
 const at = (h: number, m = 0) => new Date(2026, 6, 6, h, m)
 const at7 = (h: number, m = 0) => new Date(2026, 6, 7, h, m)
 
-describe('workFrac（工作窗 08:00–20:00 真实时钟）', () => {
+describe('workFrac（仓库作业窗 08:00–20:00 真实时钟）', () => {
   it('开窗前 0、窗内线性、20:00 封板', () => {
     expect(workFrac(at(7, 59))).toBe(0)
     expect(workFrac(at(8, 0))).toBe(0)
@@ -31,6 +31,15 @@ describe('出入库进度（行/单口径勾稽 + 单调 + 流量差分）', () 
     expect(b.inbound.pct).toBeGreaterThan(b.outbound.pct)
   })
 
+  it('单据量级符合设定集 §7（采购 480 张 / 销售 3200 单摊到 174 个工作日）', () => {
+    const b = buildWarehouseBoard(at(14, 0))
+    // 入库行 ≈30（收货 9 + 完工入库 21）；出库行 ≈109（发货 25 + 车间领料 84）
+    expect(b.inbound.linesTotal).toBeGreaterThanOrEqual(28)
+    expect(b.inbound.linesTotal).toBeLessThanOrEqual(40)
+    expect(b.outbound.linesTotal).toBeGreaterThanOrEqual(100)
+    expect(b.outbound.linesTotal).toBeLessThanOrEqual(125)
+  })
+
   it('近 12h 流量 = 完成量逐小时差分（Σ 精确勾稽、非负、标签整点）', () => {
     const b = buildWarehouseBoard(at(14, 0))
     for (const flow of [b.inbound, b.outbound]) {
@@ -48,7 +57,6 @@ describe('出入库进度（行/单口径勾稽 + 单调 + 流量差分）', () 
 
   it('mock 失败按确定性创建时段落桶，不伪造成全部刚刚发生', () => {
     const failedHourly = buildWarehouseBoard(at7(14, 0)).inbound.failedHourly
-
     expect(failedHourly.slice(0, -1).some((count) => count > 0)).toBe(true)
     expect(failedHourly.at(-1)).toBe(0)
   })
@@ -80,13 +88,13 @@ describe('出入库进度（行/单口径勾稽 + 单调 + 流量差分）', () 
 describe('作业任务（规模 + 守恒 + 超时是例外）', () => {
   const b = buildWarehouseBoard(at(14, 0))
 
-  it('列表规模真实：拣货 15–25 / 上架 8–15 / 盘点 4–8', () => {
-    expect(b.pick.rows.length).toBeGreaterThanOrEqual(15)
-    expect(b.pick.rows.length).toBeLessThanOrEqual(25)
-    expect(b.putaway.rows.length).toBeGreaterThanOrEqual(8)
-    expect(b.putaway.rows.length).toBeLessThanOrEqual(15)
-    expect(b.count.rows.length).toBeGreaterThanOrEqual(4)
-    expect(b.count.rows.length).toBeLessThanOrEqual(8)
+  it('列表规模贴合本厂体量：拣货 12–17 / 上架 6–9 / 盘点 3–5', () => {
+    expect(b.pick.rows.length).toBeGreaterThanOrEqual(12)
+    expect(b.pick.rows.length).toBeLessThanOrEqual(17)
+    expect(b.putaway.rows.length).toBeGreaterThanOrEqual(6)
+    expect(b.putaway.rows.length).toBeLessThanOrEqual(9)
+    expect(b.count.rows.length).toBeGreaterThanOrEqual(3)
+    expect(b.count.rows.length).toBeLessThanOrEqual(5)
   })
 
   it('任务守恒：今日创建 = Open 积压 + 今日完成；KPI 与分组一致', () => {
@@ -114,7 +122,7 @@ describe('作业任务（规模 + 守恒 + 超时是例外）', () => {
     }
   })
 
-  it('超时是例外：全板 5–7 条（繁忙日画像，仍是少数）且与超时榜一致（榜按龄期降序、TOP5 内）', () => {
+  it('超时是例外：全板 5–7 条且与超时榜一致（榜按龄期降序、TOP5 内）', () => {
     const total = b.pick.overdue + b.putaway.overdue + b.count.overdue
     expect(total).toBeGreaterThanOrEqual(5)
     expect(total).toBeLessThanOrEqual(7)
@@ -128,18 +136,19 @@ describe('作业任务（规模 + 守恒 + 超时是例外）', () => {
     expect(total / all).toBeLessThan(0.3)
   })
 
-  it('真实业务编号与流向：PK/PT/CC 单号、SO/WO 来源（工单钩子 194x–196x）、ASN 来源、库位流向', () => {
+  it('单号与来源单据全部走设定集 §9 号段（发货出库单 / 工单 / 入库单）', () => {
     for (const r of b.pick.rows) {
       expect(r.id).toMatch(/^PK-\d{4}$/)
-      expect(r.ref).toMatch(/^(SO-98\d{2}|WO-19[4-6]\d)$/)
+      expect(r.ref).toMatch(/^(OB-DO-2026-\d{5}|WO-2026-\d{5})$/)
       expect(r.from).toBeTruthy()
       expect(r.to).toBeTruthy()
     }
-    expect(b.pick.rows.some((r) => r.ref?.startsWith('SO-'))).toBe(true)
-    expect(b.pick.rows.some((r) => r.ref?.startsWith('WO-'))).toBe(true)
+    expect(b.pick.rows.some((r) => r.ref?.startsWith('OB-DO-'))).toBe(true)
+    expect(b.pick.rows.some((r) => r.ref?.startsWith('WO-2026-'))).toBe(true)
     for (const r of b.putaway.rows) {
       expect(r.id).toMatch(/^PT-\d{4}$/)
-      expect(r.ref).toMatch(/^ASN-2607\d{2}$/)
+      // 入库单 = `IB-{采购订单}`（与 WMS WorldHistoryPhase2Spec.InboundOrderNo 同式）
+      expect(r.ref).toMatch(/^IB-PO-2026-\d{4}$/)
       expect(r.from).toMatch(/^RCV-\d{2}$/)
       expect(r.to).toBeTruthy()
     }
@@ -147,6 +156,14 @@ describe('作业任务（规模 + 守恒 + 超时是例外）', () => {
       expect(r.id).toMatch(/^CC-\d{2}$/)
       expect(r.to).toBeUndefined()
       expect(r.ref).toBeUndefined()
+    }
+  })
+
+  it('物料是减振器物料（L0 §4 SKU），不是整车厂的电芯/线束', () => {
+    const rows = [...b.pick.rows, ...b.putaway.rows, ...b.count.rows]
+    const forbidden = ['电芯', 'PACK', '线束', 'BMS', '车门', '座椅', '保险杠']
+    for (const r of rows) {
+      for (const word of forbidden) expect(r.sku).not.toContain(word)
     }
   })
 })
@@ -171,10 +188,12 @@ describe('WCS（失败榜为事实源，聚合逐格勾稽）', () => {
     expect(b.kpis.wcsFailed).toBe(b.wcs.counts.failed)
   })
 
-  it('每适配器 total = queued+running+completed+failed；状态分布 = 各列合计', () => {
+  it('只列本厂真实存在的 4 类自动化设备；每适配器 total = queued+running+completed+failed', () => {
     const b = buildWarehouseBoard(at(14, 0))
-    expect(b.wcs.adapters).toHaveLength(6)
-    expect(new Set(b.wcs.adapters.map((a) => a.kind)).size).toBe(6)
+    expect(b.wcs.adapters).toHaveLength(4)
+    expect(b.wcs.adapters.map((a) => a.kind).sort()).toEqual(
+      ['agv', 'conveyor', 'hoist', 'stacker'].sort(),
+    )
     for (const a of b.wcs.adapters) {
       expect(a.total).toBe(a.queued + a.running + a.completed + a.failed)
     }
@@ -183,13 +202,13 @@ describe('WCS（失败榜为事实源，聚合逐格勾稽）', () => {
     }
   })
 
-  it('失败榜常驻 3 条（午后含提升机第 4 条）、重试次数与时刻齐备', () => {
+  it('失败榜常驻 2 条（午后含提升机第 3 条）、指令号走 WCS-{仓储任务号} 形', () => {
     const noon = buildWarehouseBoard(at(14, 0))
-    expect(noon.wcs.failures).toHaveLength(4)
+    expect(noon.wcs.failures).toHaveLength(3)
     const morning = buildWarehouseBoard(at(9, 30))
-    expect(morning.wcs.failures).toHaveLength(3)
+    expect(morning.wcs.failures).toHaveLength(2)
     for (const x of noon.wcs.failures) {
-      expect(x.cmd).toMatch(/^WCS-\d{5}$/)
+      expect(x.cmd).toMatch(/^WCS-WT-[A-Z]{2}-[A-Z]{2}-2026-\d{4}-\d{2}$/)
       expect(x.retries).toBeGreaterThanOrEqual(1)
       expect(x.sinceMin).toBeGreaterThan(0)
       expect(x.firstAt).toMatch(/^\d{2}:\d{2}$/)
@@ -199,13 +218,13 @@ describe('WCS（失败榜为事实源，聚合逐格勾稽）', () => {
 })
 
 describe('过账失败空态（0–1 单，按日期轮换）', () => {
-  it('7/6 无失败（空态语义）；7/7 恰 1 单且带单号', () => {
+  it('7/6 无失败（空态语义）；7/7 恰 1 单且带入库单号', () => {
     const clean = buildWarehouseBoard(at(14, 0))
     expect(clean.inbound.postFailedDocs).toBe(0)
     expect(clean.inbound.postFailedDoc).toBeUndefined()
     const dirty = buildWarehouseBoard(at7(14, 0))
     expect(dirty.inbound.postFailedDocs).toBe(1)
-    expect(dirty.inbound.postFailedDoc).toMatch(/^ASN-\d{6}$/)
+    expect(dirty.inbound.postFailedDoc).toMatch(/^IB-PO-2026-\d{4}$/)
   })
 })
 
@@ -224,13 +243,13 @@ describe('确定性与多频一致（3s tick 与 5s 主数据同源）', () => {
     expect(tick.overdueTop).toEqual(a.overdueTop)
   })
 
-  it('跨厂差异：F02 与 F01 画像不同（种子含工厂）', () => {
-    const f1 = buildWarehouseBoard(at(14, 0), 'F01')
-    const f2 = buildWarehouseBoard(at(14, 0), 'F02')
-    const sig = (x: typeof f1) =>
+  it('跨日差异：种子含日期，不同日画像不同', () => {
+    const d6 = buildWarehouseBoard(at(14, 0))
+    const d7 = buildWarehouseBoard(at7(14, 0))
+    const sig = (x: typeof d6) =>
       [x.inbound.linesTotal, x.outbound.linesTotal, x.pick.rows.length, x.pick.rows[0]?.id].join(
         '|',
       )
-    expect(sig(f2)).not.toBe(sig(f1))
+    expect(sig(d7)).not.toBe(sig(d6))
   })
 })

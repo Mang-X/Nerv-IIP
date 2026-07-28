@@ -4,6 +4,7 @@
 // 龄期/超时/失败龄期按真实时间戳计算）；库存余额/流水/预留无读面（库存半屏待 #570）。
 import { IS_REAL_DATA } from '@/data/config'
 import type { WarehouseBoard, WarehouseOpsTick } from '@/data/contracts/warehouse'
+import { DEFAULT_FACTORY_ID } from '@/data/mock/masterdata'
 import { buildWarehouseBoard, buildWarehouseOpsTick } from '@/data/mock/warehouse'
 import { fetchRealWarehouseBoard, fetchRealWarehouseOpsTick } from '@/data/real/warehouse'
 
@@ -12,14 +13,16 @@ function delay(ms: number): Promise<void> {
 }
 
 /** 主数据（KPI + 出入库进度 + 盘点汇总），10s 轮询。 */
-export async function fetchWarehouseBoard(factoryId = 'F01'): Promise<WarehouseBoard> {
+export async function fetchWarehouseBoard(factoryId = DEFAULT_FACTORY_ID): Promise<WarehouseBoard> {
   if (IS_REAL_DATA) return fetchRealWarehouseBoard(factoryId)
   await delay(240)
   return buildWarehouseBoard(new Date(), factoryId)
 }
 
 /** 任务看板 + WCS 高频 tick，15s 轮询（mock 与主数据同源纯函数，口径必然一致）。 */
-export async function fetchWarehouseOpsTick(factoryId = 'F01'): Promise<WarehouseOpsTick> {
+export async function fetchWarehouseOpsTick(
+  factoryId = DEFAULT_FACTORY_ID,
+): Promise<WarehouseOpsTick> {
   if (IS_REAL_DATA) return fetchRealWarehouseOpsTick(factoryId)
   await delay(180)
   return buildWarehouseOpsTick(new Date(), factoryId)

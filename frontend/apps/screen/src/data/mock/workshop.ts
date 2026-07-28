@@ -1,9 +1,10 @@
 // 车间总览 mock 聚合（MAN-315）：车间主任「当班作战室」——
-// ① 产线区**直接复用** buildLineCards（与产线/设备屏同源：电芯线红灯 ⇔ 卷绕机 1# 报警），
-//    车间产量/计划/达成 = Σ 本车间产线卡，数字精确同源（勾稽单测锁定）；
+// ① 产线区**直接复用** buildLineCards（与产线/设备屏同源：活塞杆一线红灯 ⇔ DEV-CNC-03 报警），
+//    车间产量/计划/达成 = Σ 本车间产线卡，数字精确同源（勾稽单测锁定）——
+//    注意这是**车间内工序产出合计**，全厂「成品下线」另有末道口径，见 mock/factory.ts；
 // ② 事件流从设备画像归并（急停/待修/换型/失联），计划保养不进异常流 ——
 //    异常是例外，正常车间事件区为空（空态 = 健康）；
-// ③ 齐套与产线屏 kitting 同口径（LN-ASSY-2 缺料，需求量 = 该线当前工单计划数同式）；
+// ③ 齐套与产线屏 kitting 同口径（前减装配二线缺料，需求量 = 该线当前工单计划数同式）；
 // ④ 人员区诚实口径：只给班组花名册/班次/交接遗留/技能覆盖（平台真实能力），
 //    **不造**考勤在岗/人效（数据缺口，见 spec 人员维度铁律）。
 // 🟠 车间维度聚合当前无真实端点（#570），接入后由 fetchers/workshop.ts 单点切换。
@@ -21,10 +22,11 @@ import type {
   WorkshopOee,
 } from '@/data/contracts/workshop'
 import { buildEquipmentOverview } from './equipment'
-import { clock, jitter, seq } from './fixtures'
-import { buildLineCards, shiftNow } from './line'
-import { linesByWorkshop, workshopsByFactory } from './masterdata'
+import { clock, jitter } from './fixtures'
+import { buildLineCards } from './line'
+import { DEFAULT_FACTORY_ID, linesByWorkshop, workshopsByFactory } from './masterdata'
 import { buildQualityBoard } from './quality'
+import { shiftNow, teamOf, woOf } from './world'
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n))
@@ -46,27 +48,21 @@ export function composeWorkshopState(lines: Pick<LineSummaryCard, 'state'>[]): L
   return 'run'
 }
 
-// —— 班组花名册（✅ 平台真实能力：计划班组/组长/班次；人名为演示数据）——
-const CREW_PROFILES: Record<string, { teamName: string; leader: string; skillBase: number }> = {
-  'WS-STAMP': { teamName: '冲压一班', leader: '韩志刚', skillBase: 96 },
-  'WS-WELD': { teamName: '焊装二班', leader: '郑卫东', skillBase: 94 },
-  'WS-PAINT': { teamName: '涂装一班', leader: '罗成', skillBase: 92 },
-  'WS-ASSY': { teamName: '总装三班', leader: '何建波', skillBase: 95 },
-  'WS-BATTERY': { teamName: '电池一班', leader: '崔明亮', skillBase: 91 },
-  'WS-INJECT': { teamName: '注塑一班', leader: '唐国栋', skillBase: 93 },
-  'WS-MACH': { teamName: '机加一班', leader: '沈永康', skillBase: 97 },
-}
-const DEFAULT_CREW = { teamName: '生产一班', leader: '张伟', skillBase: 92 }
+// —— 班组花名册（✅ 平台真实能力：设定集 §5 的 6 个**车间级**班组，组长为 L0 EMP-004..009）——
+// 技能覆盖率基线：操作工每人 1–3 项带等级/取证日期（§5），车间间略有差异。
+const SKILL_BASE: Record<string, number> = { 'WS-01': 94, 'WS-02': 92, 'WS-03': 90 }
 
-// 班次交接遗留（✅ 平台有交接记录；叙事与设备画像勾稽：夜班已留意的隐患当班应验）
+// 班次交接遗留（✅ 平台有交接记录，设定集 §9 `HO-2026-#####`；
+// 叙事与设备画像勾稽：上一班已留意的隐患当班应验）
 const HANDOVER: Record<string, { issues: number; note: string }> = {
-  'WS-BATTERY': { issues: 1, note: '夜班交接：卷绕机 1# 间歇异响，需重点观察' },
-  'WS-ASSY': { issues: 1, note: '夜班交接：合装举升机液压渗油，已报保全跟进' },
+  'WS-01': { issues: 1, note: '上一班交接：DEV-CNC-03 主轴间歇异响，需重点观察振动值' },
+  'WS-03': { issues: 1, note: '上一班交接：DEV-CTG-02 循环泵底部渗液，已报设备部跟进' },
 }
 
-// —— 线边缺料画像：与 mock/line.ts buildLineBoard 的 kitting 口径一致（仅 LN-ASSY-2 short）；
-//    需求量按该线当前工单计划数派生（与产线屏 qtyPlan 同式，跨屏对得上）——
-const KITTING_SHORT_LINES = new Set(['LN-ASSY-2'])
+// —— 线边缺料画像：与 mock/line.ts buildLineBoard 的 kitting 口径一致（仅前减装配二线 short）；
+//    需求量按该线当前工单计划数派生（与产线屏 qtyPlan 同式，跨屏对得上）。
+//    物料编码取 L0 §4 原材料段（RM-*），弹簧二供切换是设定集里既有的版本演进故事。
+const KITTING_SHORT_LINES = new Set(['LINE-WB-FA-02'])
 interface ShortageSpec {
   material: string
   code: string
@@ -76,57 +72,114 @@ interface ShortageSpec {
   etaText?: string
 }
 const SHORTAGE_SPECS: Record<string, ShortageSpec[]> = {
-  'LN-ASSY-2': [
-    { material: '线束总成', code: 'MAT-30512', shortPct: 0.12, etaMin: 85 },
-    { material: '门内饰板（左前）', code: 'MAT-30587', shortPct: 0.08, etaMin: 45 },
-    { material: '风挡玻璃总成', code: 'MAT-30443', shortPct: 0.04, etaText: '在途 · 待入库' },
+  'LINE-WB-FA-02': [
+    { material: '悬架弹簧 轿车前（首选供应商）', code: 'RM-SPR-01', shortPct: 0.12, etaMin: 85 },
+    { material: '油封 φ22 骨架式', code: 'RM-SEL-02', shortPct: 0.08, etaMin: 45 },
+    { material: '防尘罩 带缓冲块', code: 'RM-ACC-06', shortPct: 0.04, etaText: '在途 · 待入库' },
   ],
 }
 
 // —— 当班已闭环事件（短停/预警已恢复）：作战室事件流要有当班全貌 ——
 // 活跃异常置顶、历史沉底灰显；已恢复短停计入当班停机统计（与 downtime 对账）。
-// 健康对照车间（冲压/注塑/机加）保持空 —— 空态 = 健康，不为填屏造事件。
+// 无当班异常的车间保持空 —— 空态 = 健康，不为填屏造事件。
 const RESOLVED_POOL: Record<
   string,
-  { lineName: string; level: WorkshopEvent['level']; text: string; status: string; minsAgo: number; durMin?: number }[]
+  {
+    lineName: string
+    level: WorkshopEvent['level']
+    text: string
+    status: string
+    minsAgo: number
+    durMin?: number
+  }[]
 > = {
-  'WS-BATTERY': [
-    { lineName: 'PACK 线', level: 'downtime', text: 'PACK 线体 上料卡滞短停 8 min', status: '已恢复', minsAgo: 152, durMin: 8 },
-    { lineName: '电芯线', level: 'warn', text: '化成柜 B 温度越限预警', status: '已恢复 · 复归正常', minsAgo: 205 },
-    { lineName: '电芯二线', level: 'warn', text: '分容柜 2# 温度越限预警', status: '已恢复 · 复归正常', minsAgo: 235 },
+  'WS-01': [
+    {
+      lineName: '缸筒一线',
+      level: 'downtime',
+      text: 'DEV-CNC-07 立式加工中心 换刀异常短停 7 min',
+      status: '已恢复',
+      minsAgo: 152,
+      durMin: 7,
+    },
+    {
+      lineName: '精磨线',
+      level: 'warn',
+      text: 'DEV-GRD-01 数控外圆磨床 振动瞬时越限',
+      status: '已恢复 · 复归正常',
+      minsAgo: 205,
+    },
   ],
-  'WS-WELD': [
-    { lineName: '焊装二线', level: 'downtime', text: '输送滚床 2# 光电误触发短停 5 min', status: '已恢复', minsAgo: 118, durMin: 5 },
+  'WS-02': [
+    {
+      lineName: '前减装配一线',
+      level: 'downtime',
+      text: 'DEV-ASM-02 减振器装配台 送料卡滞短停 5 min',
+      status: '已恢复',
+      minsAgo: 118,
+      durMin: 5,
+    },
+    {
+      lineName: '阀系预装线',
+      level: 'warn',
+      text: 'DEV-ASM-11 阀系预装台 扭矩复检超差',
+      status: '已恢复 · 已重新标定',
+      minsAgo: 96,
+    },
   ],
-  'WS-ASSY': [
-    { lineName: '总装二线', level: 'warn', text: 'AGV 牵引车 02 低电量告警', status: '已恢复 · 已换电', minsAgo: 96 },
-    { lineName: '总装一线', level: 'downtime', text: '拧紧工作站 2# 枪头卡滞短停 4 min', status: '已恢复', minsAgo: 165, durMin: 4 },
-  ],
-  'WS-PAINT': [
-    { lineName: '涂装一线', level: 'warn', text: '喷房送风压差预警', status: '已恢复 · 滤网已换', minsAgo: 178 },
+  'WS-03': [
+    {
+      lineName: '性能检测线',
+      level: 'warn',
+      text: 'DEV-TST-03 电液伺服试验台 阻尼力曲线漂移',
+      status: '已恢复 · 标定件复测合格',
+      minsAgo: 178,
+    },
   ],
 }
 
 // 未恢复预警（与设备屏 ALARM_POOL 同一叙事：文本/线别/时距一致）
-const WARN_POOL: Record<string, { lineName: string; text: string; minsAgo: number; status: string }[]> = {
-  'WS-WELD': [
-    { lineName: '焊装一线', text: '焊接机器人 R02 伺服过载预警', minsAgo: 108, status: '已确认 · 待处理' },
-    { lineName: '焊装四线', text: '弧焊工作站 保护气流量偏低预警', minsAgo: 63, status: '观察中' },
+const WARN_POOL: Record<
+  string,
+  { lineName: string; text: string; minsAgo: number; status: string }[]
+> = {
+  'WS-01': [
+    {
+      lineName: '精磨线',
+      text: 'DEV-GRD-02 数控外圆磨床 MK1332 振动接近上限',
+      minsAgo: 112,
+      status: '已确认 · 待砂轮动平衡',
+    },
+    {
+      lineName: '缸筒一线',
+      text: 'DEV-WLD-01 六轴焊接机器人 焊接电流波动偏大',
+      minsAgo: 143,
+      status: '观察中',
+    },
   ],
-  'WS-BATTERY': [
-    { lineName: '电芯线', text: '注液机 注液量偏差预警', minsAgo: 137, status: '观察中' },
-    { lineName: '模组线', text: 'EOL 测试柜 通讯超时重试', minsAgo: 58, status: '自动重试中' },
+  'WS-02': [
+    {
+      lineName: '后减装配二线',
+      text: 'DEV-ASM-10 减振器装配台 压装力接近上限',
+      minsAgo: 226,
+      status: '计划传感器标定',
+    },
   ],
-  'WS-ASSY': [
-    { lineName: '总装二线', text: '风挡涂胶机 胶温偏低预警', minsAgo: 74, status: '观察中' },
+  'WS-03': [
+    {
+      lineName: '包装线',
+      text: 'DEV-AUX-07 螺杆空压机 SA-37 气源压力偏低',
+      minsAgo: 168,
+      status: '待保养 · 空滤芯堵塞',
+    },
   ],
-  'WS-MACH': [{ lineName: '机加线', text: '加工中心 M01 刀具寿命预警', minsAgo: 240, status: '计划换刀' }],
 }
 
-// 维修责任人（与设备屏 REPAIR_POOL 同源：卷绕机→张建国、举升机→刘志远）
+// 维修责任人（与设备屏 REPAIR_POOL 同源：L0 §5 设备部维修技师 EMP-043..046）
 const REPAIR_ASSIGNEE: Record<string, string> = {
-  '卷绕机 1#': '张建国',
-  '合装举升机': '刘志远',
+  'DEV-CNC-03 数控车床 CK6150': '张红梅',
+  'DEV-CTG-02 电泳槽': '刘秀英',
+  'DEV-AUX-06 冷冻式干燥机 CD-15': '陈国庆',
 }
 
 /** 当班累计曲线：计划匀速、实际带噪声单调爬升。**分线生成、逐点求和** ——
@@ -166,10 +219,11 @@ function buildShiftCurve(
   return { actual, plan, labels, byLine }
 }
 
-/** 近 30 天车间日产量：日计划 = 当班计划节奏 × 20h 有效工时（双班），周日排产 30%；
+/** 近 30 天车间日产量：日计划 = 当班计划节奏 × 16h 有效工时（设定集 §1 双班 8+8），
+ *  **周日停产保养不排产**（§1 标准工作日历）；
  *  末点 = 今日截至当前实际（与 KPI output.actual 精确勾稽，「今天还没过完」是真实的）。 */
 function buildDaily30(planShift: number, actual: number, elapsedMin: number): Daily30 {
-  const dayPlan = Math.max(200, Math.round((planShift / elapsedMin) * 60 * 20))
+  const dayPlan = Math.max(100, Math.round((planShift / elapsedMin) * 60 * 16))
   const output: number[] = []
   const plan: number[] = []
   const labels: string[] = []
@@ -183,9 +237,13 @@ function buildDaily30(planShift: number, actual: number, elapsedMin: number): Da
       continue
     }
     const sunday = d.getDay() === 0
-    const p = sunday ? Math.round(dayPlan * 0.3) : dayPlan
+    const p = sunday ? 0 : dayPlan
     plan.push(p)
-    output.push(clamp(jitter(Math.round(p * 0.96), Math.round(p * 0.06)), Math.round(p * 0.85), p))
+    output.push(
+      sunday
+        ? 0
+        : clamp(jitter(Math.round(p * 0.96), Math.round(p * 0.06)), Math.round(p * 0.85), p),
+    )
   }
   return { output, plan, labels }
 }
@@ -193,7 +251,7 @@ function buildDaily30(planShift: number, actual: number, elapsedMin: number): Da
 /** /workshop/[id] 车间总览；scope 外或不存在的车间返回 null（越权防护）。 */
 export function buildWorkshopBoard(
   workshopId: string,
-  factoryId = 'F01',
+  factoryId = DEFAULT_FACTORY_ID,
   workshopIds: string[] | 'all' = 'all',
 ): WorkshopBoard | null {
   const ws = workshopsByFactory(factoryId).find((w) => w.id === workshopId)
@@ -253,7 +311,7 @@ export function buildWorkshopBoard(
         text: `${d.name} ${d.block ?? '停机待修'}`,
         status: who ? `维修中 · ${who}` : '停机待修',
       })
-    } else if (d.state === 'idle' && d.block === '换型待机') {
+    } else if (d.state === 'idle' && d.block?.startsWith('换型待机')) {
       const arr = changeoverByLine.get(d.lineName) ?? []
       arr.push(d.name)
       changeoverByLine.set(d.lineName, arr)
@@ -352,8 +410,13 @@ export function buildWorkshopBoard(
   let rework = 0
   const fpyByLine = new Map<string, number>()
   for (const l of lines) {
-    const s = clamp(Math.round(l.output.good * 0.008) + clamp(jitter(1, 2), 0, 2), 0, l.output.good)
-    const r = clamp(jitter(2, 3), 0, 4)
+    // 报废/返修与产线屏 lineMetrics 同族口径（设定集 §7：不合格 2.3%，报废 15% / 返工 60%）
+    const s = clamp(
+      Math.round(l.output.good * 0.0035) + clamp(jitter(0, 2), 0, 1),
+      0,
+      l.output.good,
+    )
+    const r = clamp(Math.round(l.output.good * 0.014), 0, l.output.good - s)
     scrap += s
     rework += r
     const doneL = l.output.good + s + r
@@ -404,40 +467,42 @@ export function buildWorkshopBoard(
     byLine,
   }
 
-  // ⑦ 工单交付预警（编号走 196x 段，不与产线屏当前工单 194x 冲突；异常是例外）
+  // ⑦ 工单交付预警（引用产线卡同号工单，跨屏对得上；异常是例外）
   const woAlerts: WoAlert[] = []
-  if (workshopId === 'WS-ASSY') {
-    // 总装一线合装举升机待修 → 后续排队单已超期（与工厂屏「超期风险」叙事一致）
-    woAlerts.push({
-      code: seq('WO', 1961),
-      product: 'Model C 整车装配',
-      lineName: '总装一线',
-      kind: 'overdue',
-      dueText: `已超期 ${fmtDur(clamp(jitter(150, 30), 100, 200))}`,
-    })
-  }
-  if (workshopId === 'WS-BATTERY') {
-    // 电芯线急停 → 当前工单临期（引用产线卡同号工单，跨屏对得上）
-    const bat = lines.find((l) => l.id === 'LN-BAT-1')
-    if (bat?.currentWo) {
+  if (workshopId === 'WS-01') {
+    // 活塞杆一线 DEV-CNC-03 振动超限停摆 → 当前工单临期（与工厂屏红卡同一叙事）
+    const rod = lines.find((l) => l.id === 'LINE-WB-ROD-01')
+    if (rod?.currentWo) {
       woAlerts.push({
-        code: bat.currentWo,
-        product: 'LFP-280Ah 电芯',
-        lineName: bat.name,
+        code: rod.currentWo,
+        product: '活塞杆 φ22×420',
+        lineName: rod.name,
         kind: 'dueSoon',
         dueText: `${fmtDur(clamp(jitter(210, 40), 150, 280))} 后到期`,
       })
     }
   }
+  if (workshopId === 'WS-02') {
+    // 前减装配二线弹簧二供切换缺料 → 排队单已超期
+    woAlerts.push({
+      code: woOf('LINE-WB-FA-02'),
+      product: 'P1 平台前滑柱总成（右）',
+      lineName: '前减装配二线',
+      kind: 'overdue',
+      dueText: `已超期 ${fmtDur(clamp(jitter(150, 30), 100, 200))}`,
+    })
+  }
 
   // ⑧ 班组（诚实口径：花名册/技能矩阵/交接 ✅；在岗/人效缺口不展示）
-  const crewProfile = CREW_PROFILES[workshopId] ?? DEFAULT_CREW
+  // 设定集 §5：班组绑车间不绑工作中心，6 个班组 = 3 车间 × 早/中班；
+  // headcountPlanned = 该班组在册（班组长 1 + 操作工 N），不是考勤在岗。
+  const team = teamOf(workshopId, shift.name)
   const handover = HANDOVER[workshopId]
   const crew: CrewInfo = {
-    teamName: crewProfile.teamName,
-    leader: crewProfile.leader,
-    headcountPlanned: clamp(8 + linesByWorkshop(workshopId).length * 4, 8, 20),
-    skillCoverage: clamp(jitter(crewProfile.skillBase, 3), 80, 100),
+    teamName: team?.name ?? `${ws.shortName}班组`,
+    leader: team?.leader ?? ws.managerName,
+    headcountPlanned: team ? team.operators + 1 : 4,
+    skillCoverage: clamp(jitter(SKILL_BASE[workshopId] ?? 92, 3), 80, 100),
     handoverIssues: handover?.issues ?? 0,
     handoverNote: handover?.note,
   }
@@ -453,7 +518,7 @@ export function buildWorkshopBoard(
     output,
     lines,
     lineStates,
-    shiftCurve: buildShiftCurve(lines, plan, elapsed, shift.name === '早班' ? 8 : 20),
+    shiftCurve: buildShiftCurve(lines, plan, elapsed, shift.name.startsWith('早') ? 8 : 16),
     daily30: buildDaily30(plan, actual, elapsed),
     oee,
     devices,

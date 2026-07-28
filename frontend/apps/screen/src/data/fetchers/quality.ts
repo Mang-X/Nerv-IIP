@@ -2,10 +2,11 @@
 // 聚合端点，并在此做缺陷码映射（Quality reason_code ↔ MES defect_code 口径归一）；
 // 页面与契约均不动。
 import type { QualityBoard } from '@/data/contracts/quality'
+import { DEFAULT_FACTORY_ID } from '@/data/mock/masterdata'
 import { buildQualityBoard } from '@/data/mock/quality'
 
 export async function fetchQualityBoard(
-  factoryId = 'F01',
+  factoryId = DEFAULT_FACTORY_ID,
   workshopIds: string[] | 'all' = 'all',
 ): Promise<QualityBoard> {
   await new Promise((r) => setTimeout(r, 230))

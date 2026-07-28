@@ -58,6 +58,10 @@ const factoryModel = computed<string | number>({
   get: () => scope.currentFactoryId,
   set: (id) => scope.switchFactory(String(id)),
 })
+/** 单基地时切换器隐藏，改用静态标签保留厂名。 */
+const currentFactoryName = computed(
+  () => scope.factories.find((f) => f.id === scope.currentFactoryId)?.name ?? '',
+)
 
 // —— 时钟 / 更新时间 ——
 const now = useNow({ interval: 1000 })
@@ -137,6 +141,12 @@ const scopeCounts = computed(() => {
             v-if="scope.factories.length > 1"
             v-model="factoryModel"
             :options="factoryOptions"
+          />
+          <!-- 单基地时切换器无意义，但厂名必须留在屏上（现场要一眼知道看的是哪个厂） -->
+          <NvScreenStatusTag
+            v-else-if="currentFactoryName"
+            tone="cyan"
+            :label="currentFactoryName"
           />
           <NvScreenStatusTag tone="cyan" :label="scope.persona.label" />
         </div>

@@ -25,6 +25,8 @@ import type {
   WhTaskRow,
 } from '@/data/contracts/warehouse'
 import { jitter, seq } from './fixtures'
+import { DEFAULT_FACTORY_ID } from './masterdata'
+import { woOf } from './world'
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n))
@@ -97,24 +99,25 @@ function failedHourlyOf(count: number, seed: number): number[] {
   return hourly
 }
 
-// —— 任务池素材（汽车 / 电池制造物料 + 真实库位编码）——
-const SKUS: { name: string; unit: string; lo: number; hi: number }[] = [
-  { name: '电芯极片卷料', unit: '卷', lo: 6, hi: 24 },
-  { name: 'PACK 下箱体', unit: '件', lo: 4, hi: 16 },
-  { name: '门内饰板总成', unit: '件', lo: 8, hi: 32 },
-  { name: 'M8 高强螺栓', unit: '箱', lo: 4, hi: 20 },
-  { name: '前舱线束总成', unit: '套', lo: 6, hi: 18 },
-  { name: 'BMS 主控板', unit: '件', lo: 10, hi: 40 },
-  { name: '高压连接器', unit: '盒', lo: 8, hi: 36 },
-  { name: '电机定子铁芯', unit: '件', lo: 6, hi: 24 },
-  { name: '制动卡钳总成', unit: '件', lo: 8, hi: 28 },
-  { name: '座椅滑轨组件', unit: '套', lo: 10, hi: 30 },
-  { name: '车门密封条', unit: '卷', lo: 12, hi: 48 },
-  { name: '冷却液管路', unit: '件', lo: 8, hi: 30 },
-  { name: '铝合金防撞梁', unit: '件', lo: 4, hi: 12 },
-  { name: '轮速传感器', unit: '盒', lo: 10, hi: 40 },
-  { name: '电池模组端板', unit: '件', lo: 12, hi: 48 },
-  { name: '隔音棉-前围', unit: '包', lo: 6, hi: 20 },
+// —— 任务池素材：物料名/编码/单位逐条取自 L0 §4 的 84 SKU（RM- 原料 / SF- 半成品 /
+//    FG- 成品 / PK- 包材），库位编码为仓储侧自有编码 ——
+const SKUS: { code: string; name: string; unit: string; lo: number; hi: number }[] = [
+  { code: 'RM-BAR-01', name: '45# 钢棒料 φ22', unit: 'kg', lo: 200, hi: 900 },
+  { code: 'RM-TUB-02', name: '精密钢管 φ50×2.0', unit: 'kg', lo: 180, hi: 800 },
+  { code: 'RM-SPR-01', name: '悬架弹簧 轿车前（首选供应商）', unit: '件', lo: 60, hi: 320 },
+  { code: 'RM-SPR-03', name: '悬架弹簧 SUV 前（首选供应商）', unit: '件', lo: 60, hi: 280 },
+  { code: 'RM-SEL-02', name: '油封 φ22 骨架式', unit: '件', lo: 100, hi: 600 },
+  { code: 'RM-SEL-04', name: '油封 φ25 双唇式', unit: '件', lo: 100, hi: 600 },
+  { code: 'RM-OIL-01', name: '减振器专用油 10#', unit: 'L', lo: 40, hi: 200 },
+  { code: 'RM-ACC-01', name: '连接环 上安装环', unit: '件', lo: 120, hi: 640 },
+  { code: 'RM-ACC-05', name: '防尘罩 长款', unit: '件', lo: 120, hi: 600 },
+  { code: 'RM-ACC-09', name: '紧固件 M10 高强螺栓', unit: '件', lo: 200, hi: 900 },
+  { code: 'SF-ROD-03', name: '活塞杆 φ22×420', unit: '件', lo: 80, hi: 400 },
+  { code: 'SF-TUB-03', name: '缸筒 φ50×300', unit: '件', lo: 80, hi: 400 },
+  { code: 'SF-VLV-02', name: '阀系组件 标准型', unit: '件', lo: 80, hi: 400 },
+  { code: 'FG-QJ-P1-L', name: 'P1 平台前滑柱总成（左）', unit: '件', lo: 40, hi: 240 },
+  { code: 'FG-HJ-S2-R', name: 'S2 平台后减振器总成（右）', unit: '件', lo: 40, hi: 240 },
+  { code: 'PK-BOX-02', name: '纸箱 中号（6 件装）', unit: '个', lo: 30, hi: 160 },
 ]
 const STORAGE_LOCS = [
   'A2-03-14',
@@ -131,8 +134,28 @@ const STORAGE_LOCS = [
 const PICK_FACES = ['P-A-07', 'P-B-03', 'P-C-12', 'P-A-11']
 const RCV_LOCS = ['RCV-01', 'RCV-02', 'RCV-03']
 const SHIP_LOCS = ['SHIP-01', 'SHIP-02', 'SHIP-03']
-const LINESIDE_LOCS = ['线边-总装一线', '线边-电芯线', '线边-PACK 线', '线边-焊装一线']
-const CUSTOMERS = ['蔚然汽车', '星驰新能源', '临港储能', '迅驰车业', '宏远重工']
+/** 可发运物料：成品 + 成品包材（发运出库只会出这些）。 */
+const SHIPPABLE_SKUS = SKUS.filter((x) => /^(FG|PK)-/.test(x.code))
+/** 可配送到线边的物料：原料 + 半成品（线边领料只会领这些）。 */
+const LINESIDE_SKUS = SKUS.filter((x) => /^(RM|SF)-/.test(x.code))
+
+const LINESIDE_LOCS = [
+  '线边-前减装配一线',
+  '线边-后减装配一线',
+  '线边-阀系预装线',
+  '线边-活塞杆一线',
+]
+/** 线边配送拣货挂的工单所属产线（与 LINESIDE_LOCS 逐位对应，跨屏工单号对得上）。 */
+const LINE_IDS = ['LINE-WB-FA-01', 'LINE-WB-RA-01', 'LINE-WB-VA-01', 'LINE-WB-ROD-01']
+// 客户取 L0 §6 的 8 家（含 MAN-519 固定案例客户 CUST-DEMO-001）
+const CUSTOMERS = [
+  '长三角整车一厂',
+  '长三角整车二厂',
+  '比德新能源',
+  '皖江 Tier1 汽车系统',
+  '华东汽车零部件采购中心',
+  '路航售后连锁',
+]
 
 /** 超时阈值（分钟）。 */
 export const OVERDUE_MIN = 45
@@ -164,7 +187,11 @@ function taskRows(kind: WhTaskKind, n: number, s: number, now: Date): WhTaskRow[
   const slots =
     kind === 'pick' ? PICK_AGE_SLOTS : kind === 'putaway' ? PUTAWAY_AGE_SLOTS : COUNT_AGE_SLOTS
   return Array.from({ length: n }, (_, i) => {
-    const sku = SKUS[(s + i * 7) % SKUS.length]
+    // 拣货物料按去向选池：发运只可能拣成品/包材，线边配送只可能拣原料/半成品。
+    // 把「S2 平台后减振器总成」拣去阀系预装线边是物流上不可能的事，一眼假。
+    const toShipPick = kind === 'pick' && (s + i) % 5 < 3
+    const pool = kind !== 'pick' ? SKUS : toShipPick ? SHIPPABLE_SKUS : LINESIDE_SKUS
+    const sku = pool[(s + i * 7) % pool.length]
     const age = ageOf(now, slots[i] ?? 0)
     let id: string
     let from: string
@@ -173,19 +200,23 @@ function taskRows(kind: WhTaskKind, n: number, s: number, now: Date): WhTaskRow[
     let qty: number
     if (kind === 'pick') {
       id = seq('PK', 880 + (s % 40) + i)
-      const toShip = (s + i) % 5 < 3 // 60% 发运拣货 / 40% 线边配送（关联 MES 工单）
+      const toShip = toShipPick // 60% 发运拣货 / 40% 线边配送（关联 MES 工单）
       const fromPool = (s + i) % 3 === 0 ? PICK_FACES : STORAGE_LOCS
       from = fromPool[(s + i * 3) % fromPool.length]
       to = toShip
         ? SHIP_LOCS[(s + i) % SHIP_LOCS.length]
         : LINESIDE_LOCS[(s + i) % LINESIDE_LOCS.length]
-      ref = toShip ? seq('SO', 9800 + (s % 60) + i) : seq('WO', 1941 + ((s + i) % 20))
+      // 发运拣货挂发货出库单（设定集 §9 `OB-DO-2026-#####`），线边配送挂 MES 工单
+      ref = toShip
+        ? `OB-DO-2026-${String(1180 + (s % 60) + i).padStart(5, '0')}`
+        : woOf(LINE_IDS[(s + i) % LINE_IDS.length])
       qty = sku.lo + ((s * 13 + i * 29) % (sku.hi - sku.lo + 1))
     } else if (kind === 'putaway') {
       id = seq('PT', 420 + (s % 30) + i)
       from = RCV_LOCS[(s + i) % RCV_LOCS.length]
       to = STORAGE_LOCS[(s + i * 3) % STORAGE_LOCS.length]
-      ref = seq('ASN', 260700 + (s % 40) + i, 6)
+      // 收货上架挂入库单 `IB-{采购订单}`（WMS WorldHistoryPhase2Spec.InboundOrderNo 同式）
+      ref = `IB-${seq('PO-2026', 430 + (s % 40) + i, 4)}`
       qty = sku.lo + ((s * 17 + i * 31) % (sku.hi - sku.lo + 1))
     } else {
       id = seq('CC', 12 + (s % 8) + i, 2)
@@ -210,7 +241,9 @@ function taskRows(kind: WhTaskKind, n: number, s: number, now: Date): WhTaskRow[
   })
 }
 
-// —— WCS 适配器画像（AdapterType 语义；share 为指令量占比；六类自动化设备）——
+// —— WCS 适配器画像（AdapterType 语义；share 为指令量占比）——
+// 宁沪减振的自动化仓储只有：成品立库堆垛机、线边配送 AGV、包装下线接驳输送线、
+// 立库层间提升机。分拣机/四向穿梭车这类电商仓设备本厂没有，不列（列了就是假设备）。
 const ADAPTER_DEFS: {
   kind: WcsAdapterKind
   label: string
@@ -218,52 +251,41 @@ const ADAPTER_DEFS: {
   run: number
   queue: number
 }[] = [
-  { kind: 'stacker', label: '巷道堆垛机', share: 0.26, run: 6, queue: 8 },
-  { kind: 'agv', label: 'AGV 调度', share: 0.3, run: 9, queue: 11 },
-  { kind: 'shuttle', label: '四向穿梭车', share: 0.16, run: 5, queue: 6 },
-  { kind: 'conveyor', label: '输送线', share: 0.14, run: 6, queue: 5 },
-  { kind: 'sorter', label: '分拣机', share: 0.09, run: 4, queue: 4 },
-  { kind: 'hoist', label: '提升机', share: 0.05, run: 2, queue: 3 },
+  { kind: 'agv', label: '线边配送 AGV', share: 0.42, run: 4, queue: 5 },
+  { kind: 'stacker', label: '成品立库堆垛机', share: 0.3, run: 2, queue: 3 },
+  { kind: 'conveyor', label: '包装下线输送线', share: 0.2, run: 2, queue: 2 },
+  { kind: 'hoist', label: '立库提升机', share: 0.08, run: 1, queue: 1 },
 ]
 
-/** WCS 失败池：常驻 3 条（堆垛机取货超时 / AGV 路径阻挡 / 分拣格口满位），
- *  午后高峰多 1 条提升机 —— 繁忙工厂日画像，仍是少数（异常是例外）。 */
+/** WCS 失败池：常驻 2 条（堆垛机取货超时 / AGV 路径阻挡），午后高峰多 1 条提升机
+ *  —— 异常是例外。指令号走设定集 §9 的 `WCS-{仓储任务号}` 形（派生自作业任务号）。 */
 function buildFailures(now: Date, s: number): WcsFailureRow[] {
   const rows: WcsFailureRow[] = [
     {
-      cmd: seq('WCS', 88200 + (s % 90), 5),
+      cmd: `WCS-WT-OB-PK-2026-${String(1180 + (s % 90)).padStart(4, '0')}-01`,
       kind: 'stacker',
-      adapter: '巷道 2 堆垛机',
+      adapter: '成品立库 2 巷道堆垛机',
       error: '取货超时 · 货叉未到位',
       retries: 3,
       sinceMin: 12,
       firstAt: hhmmAgo(now, 12),
     },
     {
-      cmd: seq('WCS', 88100 + (s % 70), 5),
+      cmd: `WCS-WT-IS-LN-2026-${String(2260 + (s % 70)).padStart(4, '0')}-01`,
       kind: 'agv',
-      adapter: 'AGV-07',
+      adapter: 'AGV-03（装配车间线边）',
       error: '路径阻挡 · 等待人工移障',
       retries: 1,
       sinceMin: 6,
       firstAt: hhmmAgo(now, 6),
     },
-    {
-      cmd: seq('WCS', 88400 + (s % 60), 5),
-      kind: 'sorter',
-      adapter: '分拣机 1#',
-      error: '格口满位 · 分拣暂停',
-      retries: 2,
-      sinceMin: 17,
-      firstAt: hhmmAgo(now, 17),
-    },
   ]
   const h = now.getHours()
   if (h >= 13 && h < 18) {
     rows.push({
-      cmd: seq('WCS', 88300 + (s % 50), 5),
+      cmd: `WCS-WT-IB-PR-2026-${String(1040 + (s % 50)).padStart(4, '0')}-01`,
       kind: 'hoist',
-      adapter: '提升机 2#',
+      adapter: '立库提升机 1#',
       error: '层间光电信号异常 · 自动重试中',
       retries: 2,
       sinceMin: 23,
@@ -274,13 +296,18 @@ function buildFailures(now: Date, s: number): WcsFailureRow[] {
 }
 
 /** /warehouse 仓储物流大屏（纯函数；now 可注入测试确定性）。 */
-export function buildWarehouseBoard(now = new Date(), factoryId = 'F01'): WarehouseBoard {
+export function buildWarehouseBoard(
+  now = new Date(),
+  factoryId = DEFAULT_FACTORY_ID,
+): WarehouseBoard {
   const s = daySeed(now, factoryId)
   const f = workFrac(now)
 
-  // —— 当日入库（ASN）：行数为主口径，单据完成滞后于行（收完最后一行才关单）——
-  const inLinesTotal = 170 + (s % 31)
-  const inDocsTotal = 21 + (s % 5)
+  // —— 当日入库：行数为主口径，单据完成滞后于行（收完最后一行才关单）——
+  // 规模推导（设定集 §7）：采购订单 480 张 / 174 工作日 ≈ 2.8 张/日 → 收货行 ≈ 9；
+  // 加上完工入库（工单 3600 / 174 ≈ 21 张/日）→ 当日入库行 ≈ 30。
+  const inLinesTotal = 28 + (s % 9)
+  const inDocsTotal = 6 + (s % 3)
   const inLinesDone = doneAt(inLinesTotal, now, IN_CURVE, 0.6)
   const inDocsDone = Math.min(inDocsTotal, Math.floor(inDocsTotal * IN_CURVE(f) ** 1.15))
   const postFailedDocs = now.getDate() % 3 === 0 ? 0 : 1
@@ -294,12 +321,14 @@ export function buildWarehouseBoard(now = new Date(), factoryId = 'F01'): Wareho
     ...hourlyOf(inLinesTotal, now, IN_CURVE, 0.6),
     failedHourly: failedHourlyOf(postFailedDocs, s),
     postFailedDocs,
-    postFailedDoc: postFailedDocs > 0 ? seq('ASN', 260690 + (s % 9), 6) : undefined,
+    postFailedDoc: postFailedDocs > 0 ? `IB-${seq('PO-2026', 425 + (s % 9), 4)}` : undefined,
   }
 
-  // —— 当日出库（SO）：已拣配行 / 应发行 ——
-  const outLinesTotal = 136 + (s % 25)
-  const outDocsTotal = 15 + (s % 4)
+  // —— 当日出库：已拣配行 / 应发行 ——
+  // 规模推导（设定集 §7）：销售订单 3200 / 174 ≈ 18 张/日 → 发货行 ≈ 25；
+  // 加上车间领料（21 张工单 × 约 4 个组件）≈ 84 行 → 当日出库行 ≈ 109。
+  const outLinesTotal = 104 + (s % 17)
+  const outDocsTotal = 17 + (s % 5)
   const outLinesDone = doneAt(outLinesTotal, now, OUT_CURVE, 2.3)
   const outDocsDone = Math.min(outDocsTotal, Math.floor(outDocsTotal * OUT_CURVE(f) ** 1.15))
   const outbound: OutboundProgress = {
@@ -314,13 +343,13 @@ export function buildWarehouseBoard(now = new Date(), factoryId = 'F01'): Wareho
     customers: 5 + (s % 3),
     latestShipment:
       outDocsDone > 0
-        ? `${CUSTOMERS[s % CUSTOMERS.length]} · ${seq('SO', 9800 + (s % 60))}`
+        ? `${CUSTOMERS[s % CUSTOMERS.length]} · ${seq('SO-2026', 3140 + (s % 60), 5)}`
         : undefined,
   }
 
   // —— 作业任务（守恒：今日创建 = Open 积压 + 今日完成）——
   // 拣货完成 ⇔ SO 已拣配行（同一事实的两个视图，跨面板勾稽）
-  const pickRows = taskRows('pick', 18 + (s % 8), s, now)
+  const pickRows = taskRows('pick', 12 + (s % 6), s, now)
   const pick: WhTaskGroup = {
     kind: 'pick',
     backlog: pickRows.length,
@@ -330,7 +359,7 @@ export function buildWarehouseBoard(now = new Date(), factoryId = 'F01'): Wareho
     rows: pickRows,
   }
   // 上架完成 ≈ 收货行的 86%（部分收货直送线边，不产生上架任务）
-  const putawayRows = taskRows('putaway', 10 + (s % 6), s, now)
+  const putawayRows = taskRows('putaway', 6 + (s % 4), s, now)
   const putawayDone = Math.floor(inLinesDone * 0.86)
   const putaway: WhTaskGroup = {
     kind: 'putaway',
@@ -341,8 +370,8 @@ export function buildWarehouseBoard(now = new Date(), factoryId = 'F01'): Wareho
     rows: putawayRows,
   }
   // 盘点：库位数口径（planned = 已盘 + 未盘任务），差异 ≤ 已盘
-  const countRows = taskRows('count', 5 + (s % 4), s, now)
-  const counted = 8 + Math.floor(f * 8)
+  const countRows = taskRows('count', 3 + (s % 3), s, now)
+  const counted = 5 + Math.floor(f * 6)
   const count: CycleCountBoard = {
     planned: counted + countRows.length,
     counted,
@@ -353,7 +382,8 @@ export function buildWarehouseBoard(now = new Date(), factoryId = 'F01'): Wareho
 
   // —— WCS：失败榜为事实源，适配器聚合/状态分布由其推导（逐格勾稽）——
   const failures = buildFailures(now, s)
-  const dailyCap = 900 + (s % 120)
+  // WCS 指令量按本厂规模（成品立库 + 线边 AGV 配送）≈260 条/日，不是整车厂的上千条
+  const dailyCap = 240 + (s % 60)
   const adapters: WcsAdapterCell[] = ADAPTER_DEFS.map((d) => {
     const completed = Math.floor(dailyCap * d.share * f)
     const running = f > 0 ? clamp(jitter(d.run, 3), 1, 12) : 0
@@ -415,7 +445,10 @@ export function buildWarehouseBoard(now = new Date(), factoryId = 'F01'): Wareho
 }
 
 /** 任务看板 + WCS 高频 tick（3s）：与主数据（5s）同源纯函数推导，口径必然一致。 */
-export function buildWarehouseOpsTick(now = new Date(), factoryId = 'F01'): WarehouseOpsTick {
+export function buildWarehouseOpsTick(
+  now = new Date(),
+  factoryId = DEFAULT_FACTORY_ID,
+): WarehouseOpsTick {
   const b = buildWarehouseBoard(now, factoryId)
   return { pick: b.pick, putaway: b.putaway, count: b.count, wcs: b.wcs, overdueTop: b.overdueTop }
 }

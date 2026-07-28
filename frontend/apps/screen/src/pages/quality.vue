@@ -21,8 +21,8 @@ import { formatScreenFreshness } from '@/data/freshness'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
 // 质量看板（spec §六）：质量健康度 + 待办闭环 —— 一眼看清不良率是否越红线、
-// 该催哪张 NCR、缺陷集中在哪条线。与产线屏同一个故事：电芯线卷绕机报警 ⇔
-// 帕累托 TOP1/2 电芯缺陷、最老超期 NCR 挂 WO-1951。5s 轮询。
+// 该催哪张 NCR、缺陷集中在哪条线。与产线屏同一个故事：活塞杆一线 DEV-CNC-03
+// 振动超限 ⇔ 帕累托 TOP1/2 为活塞杆缺陷、最老超期 NCR 挂该线当前工单。5s 轮询。
 const scope = useAccessScope()
 const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
 const {
