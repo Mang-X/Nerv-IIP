@@ -91,3 +91,121 @@ describe('NvDataTable 服务端分页 + 受控排序（公共契约回归）', (
     expect(firstCell()).toBe(before) // 受控：未内部按 id 升序重排（否则首行会变 'A'）
   })
 })
+
+// 走查发现的架构级缺陷：组件此前只有 loading + emptyMessage，请求失败必然落进空态，
+// 一个 500 和「真的 0 条」渲染出同一句安慰话。以下用例锁死三态不可再被合并。
+describe('NvDataTable 空 / 失败 / 未查询三态（架构契约）', () => {
+  const EMPTY = '当前工厂没有批次记录。'
+
+  it('错误态：不出现 emptyMessage 文案，给出失败提示与重试入口', async () => {
+    const wrapper = mount(NvDataTable, {
+      props: {
+        ...base,
+        rows: [],
+        pagination: false,
+        emptyMessage: EMPTY,
+        error: new Error('网关 502'),
+      },
+    })
+    await nextTick()
+
+    const text = wrapper.text()
+    expect(text).not.toContain(EMPTY)
+    // 失败态禁止任何安慰性措辞
+    expect(text).not.toContain('暂无')
+    expect(text).not.toContain('没有匹配的结果')
+    expect(text).toContain('数据加载失败')
+    expect(text).toContain('网关 502')
+
+    const retry = wrapper.findAll('button').find((b) => b.text().includes('重新加载'))
+    expect(retry).toBeDefined()
+    await retry!.trigger('click')
+    expect(wrapper.emitted('retry')).toHaveLength(1)
+    // retry 与 refresh 语义不重叠，不得互相触发
+    expect(wrapper.emitted('refresh')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('错误态优先级高于空态与加载态（rows 为空 + error → 走错误态）', async () => {
+    const wrapper = mount(NvDataTable, {
+      props: {
+        ...base,
+        rows: [],
+        pagination: false,
+        emptyMessage: EMPTY,
+        loading: true,
+        error: '库存批次加载失败',
+      },
+    })
+    await nextTick()
+
+    expect(wrapper.text()).toContain('库存批次加载失败')
+    expect(wrapper.text()).not.toContain(EMPTY)
+    // 重试中：仍停在错误态，只把按钮置为进行中
+    expect(wrapper.text()).toContain('重试中')
+    wrapper.unmount()
+  })
+
+  it('错误态可被 #error 插槽整体覆盖', async () => {
+    const wrapper = mount(NvDataTable, {
+      props: { ...base, rows: [], pagination: false, emptyMessage: EMPTY, error: 'boom' },
+      slots: { error: '<p>自定义失败呈现</p>' },
+    })
+    await nextTick()
+    expect(wrapper.text()).toContain('自定义失败呈现')
+    expect(wrapper.text()).not.toContain(EMPTY)
+    wrapper.unmount()
+  })
+
+  it('未查询态与空态渲染不同：说清还要选什么，且不说「暂无数据」', async () => {
+    const awaiting = mount(NvDataTable, {
+      props: {
+        ...base,
+        rows: [],
+        pagination: false,
+        emptyMessage: EMPTY,
+        awaitingScope: true,
+        awaitingScopeMessage: '请先选择物料后查询批次。',
+      },
+    })
+    await nextTick()
+    const empty = mount(NvDataTable, {
+      props: { ...base, rows: [], pagination: false, emptyMessage: EMPTY },
+    })
+    await nextTick()
+
+    expect(awaiting.text()).toContain('尚未发起查询')
+    expect(awaiting.text()).toContain('请先选择物料后查询批次。')
+    expect(awaiting.text()).not.toContain(EMPTY)
+    expect(empty.text()).toContain(EMPTY)
+    expect(empty.text()).not.toContain('尚未发起查询')
+    expect(awaiting.text()).not.toBe(empty.text())
+    awaiting.unmount()
+    empty.unmount()
+  })
+
+  it('回归：不传新 prop 时行为与改动前一致（空态 / 加载骨架 / 有数据）', async () => {
+    const empty = mount(NvDataTable, {
+      props: { ...base, rows: [], pagination: false, emptyMessage: EMPTY },
+    })
+    await nextTick()
+    expect(empty.text()).toContain(EMPTY)
+    expect(empty.find('.nv-dt-state-icon').exists()).toBe(false)
+    empty.unmount()
+
+    const loading = mount(NvDataTable, {
+      props: { ...base, rows: [], pagination: false, loading: true, skeletonRows: 3 },
+    })
+    await nextTick()
+    expect(loading.findAll('tbody tr')).toHaveLength(3)
+    expect(loading.text()).not.toContain('数据加载失败')
+    loading.unmount()
+
+    const rows: Row[] = [{ id: 'A', name: 'a' }]
+    const ready = mount(NvDataTable, { props: { ...base, rows, pagination: false } })
+    await nextTick()
+    expect(ready.findAll('tbody tr')).toHaveLength(1)
+    expect(ready.text()).toContain('a')
+    ready.unmount()
+  })
+})

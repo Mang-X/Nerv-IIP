@@ -36,7 +36,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { friendlyErrorMessage, notifyError, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -81,8 +81,11 @@ watch(
   { immediate: true },
 )
 
+// 非 Error 形态的 rejection 也必须显示出来，否则错误横幅整条消失、页面退化成空态把故障吞掉。
 const listErrorMessage = computed(() =>
-  skillsError.value instanceof Error ? skillsError.value.message : '',
+  skillsError.value
+    ? friendlyErrorMessage(skillsError.value, '技能目录加载失败，请刷新重试。')
+    : '',
 )
 
 // 技能组没有独立目录端点，组名就是本表已有值的去重集合；这里是技能目录自身的维护页，
@@ -93,7 +96,9 @@ const groupSuggestions = computed(() => {
     const group = skill.groupName?.trim()
     if (group) names.add(group)
   }
-  return [...names].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')).map((name) => ({ value: name }))
+  return [...names]
+    .sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
+    .map((name) => ({ value: name }))
 })
 
 const columns: NvDataTableColumn<SkillCatalogItem>[] = [

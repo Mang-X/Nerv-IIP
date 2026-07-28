@@ -82,6 +82,7 @@ vi.mock('@/stores/auth', () => ({
 }))
 vi.mock('@/composables/useSchedulingWorkbench', () => ({
   useSchedulingWorkbench: () => ({
+    candidatesError: shallowRef(undefined),
     candidatesPending: shallowRef(false),
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
     generatePending: shallowRef(false),
@@ -305,6 +306,7 @@ vi.mock('@/composables/useBusinessScheduling', () => ({
         unscheduledOperationCount: 0,
       },
     ]),
+    plansError: shallowRef(undefined),
     plansPending: shallowRef(false),
     releasePlan: stub.releasePlan,
     releasePlanPending: shallowRef(false),

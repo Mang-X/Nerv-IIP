@@ -13,6 +13,7 @@ import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNam
 import { usePagedList } from '@/composables/usePagedList'
 import { formatIsoInterval } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -304,6 +305,13 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="暂无保养计划。为关键设备登记周期保养，再用「生成到期工单」批量开单。"
     >
+      <template #cell-deviceAssetId="{ row }">
+        <CodeWithNameCell
+          :code="row.deviceAssetId"
+          :name="resolveDevice(row.deviceAssetId)"
+          fallback="—"
+        />
+      </template>
       <template #cell-actions="{ row }">
         <NvRowActions
           v-if="canManagePlans"

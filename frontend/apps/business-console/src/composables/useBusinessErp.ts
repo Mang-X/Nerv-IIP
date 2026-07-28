@@ -145,6 +145,12 @@ function useErpDocumentList<
     filters,
     organizationId: computed(() => businessContext.organizationId),
     environmentId: computed(() => businessContext.environmentId),
+    /**
+     * 业务上下文是否就绪 = 查询是否真的发出去了。
+     * 未就绪时 `enabled:false`，pinia-colada 的 `asyncStatus` 停在 `idle`，`isLoading`
+     * 为 **false**——页面只看 pending/error 会把「压根没查」当成「查过了、是 0」。
+     */
+    ready: computed(() => hasBusinessContext(businessContext)),
     items: computed<TItem[]>(() => unwrapItems(query.data.value as TEnvelope | undefined)),
     total: computed(() => unwrapTotal(query.data.value as TEnvelope | undefined)),
     error: query.error,
@@ -186,6 +192,7 @@ export function useBusinessErp() {
 
   return {
     filters,
+    ready: computed(() => hasBusinessContext(businessContext)),
     purchaseRequisitions: computed<BusinessConsoleErpPurchaseRequisitionItem[]>(() =>
       unwrapItems(
         purchaseRequisitionsQuery.data.value as
@@ -350,6 +357,7 @@ export function useErpSupplierQuotations(
     filters,
     organizationId,
     environmentId,
+    ready: computed(() => hasBusinessContext(businessContext)),
     items: computed<BusinessConsoleErpSupplierQuotationItem[]>(() =>
       unwrapItems(query.data.value as BusinessConsoleErpSupplierQuotationListEnvelope | undefined),
     ),
@@ -490,6 +498,7 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
 
   return {
     filters,
+    ready: computed(() => hasBusinessContext(businessContext)),
     salesOrders: computed<BusinessConsoleErpSalesOrderItem[]>(() =>
       unwrapItems(
         salesOrdersQuery.data.value as BusinessConsoleErpSalesOrderListEnvelope | undefined,
@@ -655,6 +664,7 @@ export function useErpFinanceSummary() {
   }))
 
   return {
+    ready: computed(() => hasBusinessContext(businessContext)),
     summary: computed<BusinessConsoleErpFinanceSummaryResponse | undefined>(() =>
       unwrapData(summaryQuery.data.value as BusinessConsoleErpFinanceSummaryEnvelope | undefined),
     ),

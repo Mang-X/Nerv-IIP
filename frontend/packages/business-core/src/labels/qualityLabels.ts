@@ -83,3 +83,32 @@ export const inspectionRecordResultLabels: Record<string, string> = {
 export function inspectionRecordResultLabel(value: string | null | undefined): string {
   return lookup(inspectionRecordResultLabels, value, '未知结论')
 }
+
+/**
+ * 质量特性码 → 中文特性名。
+ *
+ * 特性没有全域目录读面（只能挂在检验方案下按 `inspectionPlanId` 取），所以 SPC 结果这类
+ * **只带 `characteristicCode`、不带 name** 的读面在页面上会直接印出 `damping-force` 这样的
+ * 英文码。这张表镜像 Quality 种子 `WorldHistoryQualitySpec.InspectionPlans` 的特性清单，
+ * 让「特性」列在没有方案上下文时也能说人话。
+ *
+ * 注意：`UCL` / `LCL` / `Cpk` / `X-bar` / `Pareto` 是 SPC 通用术语，**保留英文不译**，不进本表。
+ */
+export const qualityCharacteristicLabels: Record<string, string> = {
+  appearance: '外观检查',
+  dimension: '关键尺寸',
+  certificate: '材质证明',
+  'damping-force': '阻尼力',
+  stroke: '行程',
+  leakage: '渗漏检查',
+  labeling: '标识核对',
+  packaging: '包装完整性',
+}
+
+/** 特性码→中文名；未收录时回吐原码（不编名字），空值回吐空串由调用方补占位。 */
+export function qualityCharacteristicLabel(value: string | null | undefined): string {
+  if (value == null) return ''
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return ''
+  return qualityCharacteristicLabels[trimmed.toLowerCase()] ?? trimmed
+}

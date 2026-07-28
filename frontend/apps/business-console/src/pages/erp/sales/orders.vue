@@ -41,7 +41,14 @@ import { PlusIcon, RefreshCwIcon, RouteIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { notifyError, notifySuccess } from '@/utils/notify'
-import { firstQueryParam, formatAmount, pickerInvalidClass } from '../shared'
+import {
+  UNAVAILABLE_TEXT,
+  erpReadState,
+  firstQueryParam,
+  formatAmount,
+  pickerInvalidClass,
+  readCount,
+} from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: '销售订单', requiredPermissions: ['business.erp.sales.read'] },
@@ -112,19 +119,35 @@ const amount = computed(() =>
   orders.salesOrders.value.reduce((sum, order) => sum + (order.totalAmount ?? 0), 0),
 )
 // 金额只能按已取回的这一页加总，所以把口径写进副行而不是冒充全量。
+const readState = computed(() =>
+  erpReadState({
+    noun: '销售订单',
+    unit: '张',
+    ready: orders.ready.value,
+    pending: orders.salesOrdersPending.value,
+    error: orders.salesOrdersError.value,
+    total: orders.salesOrdersTotal.value,
+    filtered: Boolean(orders.filters.keyword || orders.filters.status),
+    emptyHint: '还没有销售订单。批准报价后可在这里生成订单。',
+  }),
+)
+
 const orderCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'released',
     label: '已释放订单',
-    value: releasedCount.value,
-    unit: '张',
-    meta: '已下达到履约环节',
+    value: readCount(readState.value, releasedCount.value),
+    unit: readState.value.trustworthy ? '张' : '',
+    meta: readState.value.trustworthy ? '已下达到履约环节' : readState.value.emptyMessage,
   },
   {
     key: 'amount',
     label: '订单金额',
-    value: formatAmount(amount.value),
-    meta: `当前列表 ${orders.salesOrders.value.length} 张订单合计`,
+    // 取不到订单时显 `—`：¥0.00 会被读成"这一批确实没金额"。
+    value: readState.value.trustworthy ? formatAmount(amount.value) : UNAVAILABLE_TEXT,
+    meta: readState.value.trustworthy
+      ? `当前列表 ${orders.salesOrders.value.length} 张订单合计`
+      : readState.value.emptyMessage,
   },
 ])
 
@@ -177,7 +200,7 @@ async function submit() {
     <NvPageHeader
       title="销售订单"
       :breadcrumbs="[{ label: '经营管理' }, { label: '销售' }]"
-      :count="`${orders.salesOrdersTotal.value} 张订单`"
+      :count="readState.count"
     >
       <template #actions>
         <NvButton
@@ -224,7 +247,12 @@ async function submit() {
       :loading="orders.salesOrdersPending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无销售订单。批准报价后可在这里生成订单。"
+      :empty-message="readState.emptyMessage"
+      :error="readState.error"
+      :error-message="readState.errorMessage"
+      :awaiting-scope="readState.awaitingScope"
+      :awaiting-scope-message="readState.awaitingScopeMessage"
+      @retry="orders.refreshSalesOrders"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >

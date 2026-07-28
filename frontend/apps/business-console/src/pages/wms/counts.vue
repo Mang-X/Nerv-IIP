@@ -8,6 +8,7 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
+import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useWmsCountExecutions } from '@/composables/useBusinessWms'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
@@ -111,8 +112,31 @@ function hasVariance(row: BusinessConsoleWmsCountExecutionItem) {
 }
 
 // 待盘点 / 有差异 是可行动语义指标（驱动复盘与库存调整），非机械总数。
+// 口径：这两个只能按**当前页**的行算，标签一律带「本页」，不与服务端总数混在一起。
 const pendingCount = computed(() => countExecutions.value.filter(isOpen).length)
 const varianceCount = computed(() => countExecutions.value.filter(hasVariance).length)
+
+/**
+ * 「账实不符」告警卡不许在读不到数时下结论：上下文未就绪 / 读取中 / 读失败时
+ * `varianceCount` 恒为 0，直接渲染就会告诉仓管「账实一致」——把故障说成绿灯。
+ * 非就绪一律值显 `—`、状态说取不到、脚注说清无法判断。
+ */
+const contextReady = computed(() => hasBusinessContext(filters))
+const varianceCardReady = computed(
+  () => contextReady.value && !countExecutionsError.value && !countExecutionsPending.value,
+)
+const varianceCardStatus = computed(() => {
+  if (!varianceCardReady.value) return { label: '取不到数据', tone: 'neutral' as const }
+  return varianceCount.value > 0
+    ? { label: '待复盘', tone: 'danger' as const }
+    : { label: '本页账实一致', tone: 'success' as const }
+})
+const varianceCardNote = computed(() => {
+  if (!varianceCardReady.value) return '盘点单读不到，账实是否一致无法判断，请重试。'
+  return varianceCount.value > 0
+    ? '差异单需复盘确认后再做库存调整，否则账面数量会一直不准。'
+    : '本页盘点单账面与实盘一致。'
+})
 
 const createOpen = shallowRef(false)
 const createForm = reactive({
@@ -336,10 +360,10 @@ function formatError(error: unknown) {
       <NvMetricStrip
         :cells="[
           { key: 'total', label: '盘点单', value: countExecutionsTotal, unit: '张' },
-          { key: 'pending', label: '待实盘录入', value: pendingCount, unit: '张' },
+          { key: 'pending', label: '本页待实盘录入', value: pendingCount, unit: '张' },
           {
             key: 'variance',
-            label: '账实不符',
+            label: '本页账实不符',
             value: varianceCount,
             unit: '张',
             valueTone: varianceCount > 0 ? 'danger' : undefined,
@@ -348,20 +372,12 @@ function formatError(error: unknown) {
       />
       <NvMetricCard
         variant="alert"
-        label="账实不符"
-        :value="varianceCount"
-        unit="张"
-        :tone="varianceCount > 0 ? 'danger' : 'neutral'"
-        :status="
-          varianceCount > 0
-            ? { label: '待复盘', tone: 'danger' }
-            : { label: '账实一致', tone: 'success' }
-        "
-        :foot-start="
-          varianceCount > 0
-            ? '差异单需复盘确认后再做库存调整，否则账面数量会一直不准。'
-            : '本页盘点单账面与实盘一致。'
-        "
+        label="本页账实不符"
+        :value="varianceCardReady ? varianceCount : '—'"
+        :unit="varianceCardReady ? '张' : undefined"
+        :tone="varianceCardReady && varianceCount > 0 ? 'danger' : 'neutral'"
+        :status="varianceCardStatus"
+        :foot-start="varianceCardNote"
       />
     </div>
 
@@ -389,10 +405,6 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
-      {{ listErrorMessage }}
-    </p>
-
     <NvDataTable
       manual
       :page="page"
@@ -406,7 +418,12 @@ function formatError(error: unknown) {
       :loading="countExecutionsPending"
       :searchable="false"
       :column-settings="false"
+      :error="countExecutionsError"
+      :error-message="listErrorMessage"
+      :awaiting-scope="!contextReady"
+      awaiting-scope-message="请先在顶部选择业务范围，再查看盘点单。"
       empty-message="暂无盘点单。"
+      @retry="refreshCountExecutions"
     >
       <template #empty>
         <p class="text-sm font-medium">暂无盘点单</p>
