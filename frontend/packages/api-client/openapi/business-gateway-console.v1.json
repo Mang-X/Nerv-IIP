@@ -33185,6 +33185,10 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCapaActionItem"
             }
+          },
+          "sourceNcrCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -38282,6 +38286,14 @@
           "scheduleInvalidationReasonCode": {
             "type": "string",
             "nullable": true
+          },
+          "teamId": {
+            "type": "string",
+            "nullable": true
+          },
+          "teamName": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -39237,6 +39249,14 @@
             "nullable": true
           },
           "scheduleInvalidationReasonCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "teamId": {
+            "type": "string",
+            "nullable": true
+          },
+          "teamName": {
             "type": "string",
             "nullable": true
           }
@@ -40923,6 +40943,10 @@
           "createdAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "teamName": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -40951,6 +40975,10 @@
           },
           "idempotencyKey": {
             "type": "string"
+          },
+          "teamName": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

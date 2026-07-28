@@ -793,6 +793,8 @@ public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
         // The assignee must be a registered, on-duty worker; resolving here keeps the name snapshot
         // trustworthy and stops arbitrary identifiers from reaching the dispatch record.
         string? assignedUserName = null;
+        string? teamId = null;
+        string? teamName = null;
         if (!string.IsNullOrWhiteSpace(request.AssignedUserId))
         {
             var directory = await masterData.ListWorkersAsync(
@@ -816,6 +818,12 @@ public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
             }
 
             assignedUserName = worker.DisplayName;
+
+            // 班组随派工落快照，口径与 assignedUserName 一致：由网关从主数据解析，不信调用方传入。
+            // 一名工人可能挂多个班组，取其带班的那个，没有带班关系则取首个。
+            var team = worker.Teams.FirstOrDefault(x => x.IsLeader) ?? worker.Teams.FirstOrDefault();
+            teamId = team?.TeamCode;
+            teamName = team?.TeamName;
         }
 
         return await mes.AssignDispatchTaskAsync(
@@ -828,7 +836,9 @@ public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
                 assignedUserName,
                 request.DeviceAssetId,
                 request.ShiftId,
-                request.IdempotencyKey),
+                request.IdempotencyKey,
+                teamId,
+                teamName),
             RequireAuthorizedPrincipalActorReference(),
             cancellationToken);
     }

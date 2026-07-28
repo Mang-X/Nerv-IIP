@@ -350,13 +350,18 @@ public sealed class WorldHistorySeedService(
                     operationCode: operation.OperationCode,
                     schedulePlanId: WorldHistoryMesSpec.SchedulePlanId(workingDay),
                     scheduleReleaseRevision: 1);
+                // 班次与班组是两个维度：shiftId 落 L0 主数据的班次编码（EARLY/MIDDLE），班组另走
+                // teamId/teamName。历史上这里把 TeamCode 写进了 shiftId，导致派工看板「班次」列
+                // 直接吐出 TEAM-WB-MC-A。
                 task.Assign(
                     assignee.UserId,
                     deviceAssetId,
-                    shiftId: assignee.TeamCode,
+                    shiftId: WorldHistoryCalendar.ShiftCode(assignee.ShiftIndex),
                     assignedAtUtc: startUtc,
                     DispatchActor,
-                    assignedUserName: assignee.Name);
+                    assignedUserName: assignee.Name,
+                    teamId: assignee.TeamCode,
+                    teamName: assignee.TeamName);
                 task.Start(startUtc);
             }
 

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Queries.CorrectiveActions;
 
@@ -39,7 +40,11 @@ public sealed record CorrectiveActionResponse(
     int ActionCount,
     int CompletedActionCount,
     bool Overdue,
-    IReadOnlyCollection<CorrectiveActionItemResponse> Actions);
+    IReadOnlyCollection<CorrectiveActionItemResponse> Actions,
+    // SourceNcrCode：来源 NCR 的**单号**（NCR-2026-0001）。SourceNcrId 是聚合 GUID，界面上
+    // 「来源 NCR」列直接渲染它就是一串裸 GUID；前端没有 NCR 名录可查，必须由读面回带人读单号。
+    // 源 NCR 已被清理时为 null。
+    string? SourceNcrCode = null);
 
 public sealed record ListCorrectiveActionsResponse(
     IReadOnlyCollection<CorrectiveActionResponse> Items,
@@ -163,8 +168,10 @@ public sealed class ListCorrectiveActionsQueryHandler(ApplicationDbContext dbCon
             .Take(take)
             .ToListAsync(cancellationToken);
 
+        var sourceNcrCodes = await CorrectiveActionProjection.ResolveSourceNcrCodesAsync(dbContext, rows, cancellationToken);
+
         return new ListCorrectiveActionsResponse(
-            [.. rows.Select(row => CorrectiveActionProjection.ToResponse(row, now))],
+            [.. rows.Select(row => CorrectiveActionProjection.ToResponse(row, now, sourceNcrCodes))],
             total,
             openCount,
             effectivenessVerifiedCount,
@@ -200,7 +207,8 @@ public sealed class GetCorrectiveActionQueryHandler(ApplicationDbContext dbConte
 
         var capa = await query.SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"CAPA '{request.CorrectiveActionId}' was not found.");
-        return CorrectiveActionProjection.ToResponse(capa, timeProvider.GetUtcNow());
+        var sourceNcrCodes = await CorrectiveActionProjection.ResolveSourceNcrCodesAsync(dbContext, [capa], cancellationToken);
+        return CorrectiveActionProjection.ToResponse(capa, timeProvider.GetUtcNow(), sourceNcrCodes);
     }
 }
 
@@ -214,7 +222,43 @@ public static class CorrectiveActionStatuses
 
 internal static class CorrectiveActionProjection
 {
-    public static CorrectiveActionResponse ToResponse(CorrectiveAction capa, DateTimeOffset nowUtc)
+    /// <summary>
+    /// 批量解析 CAPA 的来源 NCR 单号。<c>SourceNcrId</c> 存的是 NCR 聚合 GUID 的字符串形式，
+    /// 这里一次查回本页涉及的 NCR，避免逐行 N+1；解析不出的 id（脏数据/已清理）直接跳过，
+    /// 读面回 null 而不是抛。
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<string, string>> ResolveSourceNcrCodesAsync(
+        ApplicationDbContext dbContext,
+        IEnumerable<CorrectiveAction> capas,
+        CancellationToken cancellationToken)
+    {
+        var ncrIds = capas
+            .Select(x => x.SourceNcrId)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.Ordinal)
+            .Select(x => Guid.TryParse(x, out var parsed) ? new NonconformanceReportId(parsed) : null)
+            .Where(x => x is not null)
+            .Select(x => x!)
+            .ToArray();
+
+        if (ncrIds.Length == 0)
+        {
+            return new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+
+        var rows = await dbContext.NonconformanceReports
+            .AsNoTracking()
+            .Where(x => ncrIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.NcrCode })
+            .ToListAsync(cancellationToken);
+
+        return rows.ToDictionary(x => x.Id.ToString()!, x => x.NcrCode, StringComparer.Ordinal);
+    }
+
+    public static CorrectiveActionResponse ToResponse(
+        CorrectiveAction capa,
+        DateTimeOffset nowUtc,
+        IReadOnlyDictionary<string, string>? sourceNcrCodes = null)
     {
         var actions = capa.Actions
             .OrderBy(x => x.CreatedAtUtc)
@@ -255,6 +299,12 @@ internal static class CorrectiveActionProjection
             actions.Length,
             actions.Count(x => x.Status == "completed"),
             capa.Status != CorrectiveActionStatuses.Closed && capa.DueAtUtc < nowUtc,
-            actions);
+            actions,
+            ResolveCode(capa.SourceNcrId, sourceNcrCodes));
     }
+
+    private static string? ResolveCode(string? sourceNcrId, IReadOnlyDictionary<string, string>? codes) =>
+        sourceNcrId is not null && codes is not null && codes.TryGetValue(sourceNcrId, out var code)
+            ? code
+            : null;
 }

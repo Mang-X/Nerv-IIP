@@ -198,13 +198,23 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             failures.Add($"班次交接条数 {rows.Length} 与设定集预期 {expected} 不符。");
         }
 
-        var shiftIds = WorldHistoryFloorEventsSpec.Teams.Select(x => x.TeamCode).ToHashSet(StringComparer.Ordinal);
-        var teamNames = WorldHistoryFloorEventsSpec.Teams.Select(x => x.TeamName).ToHashSet(StringComparer.Ordinal);
+        // 班次与班组是两个维度，各自校验各自的取值域：班次只能是 L0 的 EARLY/MIDDLE，班组只能是
+        // 6 个 TEAM-WB-*。旧实现把两者混为一谈（班次域里放 TeamCode、班组域里放班组**名称**），
+        // 反而把「字段装错东西」固化成了断言。
+        var shiftCodes = WorldHistoryFloorEventsSpec.Teams
+            .Select(x => WorldHistoryCalendar.ShiftCode(x.ShiftIndex))
+            .ToHashSet(StringComparer.Ordinal);
+        var teamCodes = WorldHistoryFloorEventsSpec.Teams.Select(x => x.TeamCode).ToHashSet(StringComparer.Ordinal);
         foreach (var row in rows)
         {
-            if (!shiftIds.Contains(row.ShiftId) || !teamNames.Contains(row.TeamId))
+            if (!shiftCodes.Contains(row.ShiftId))
             {
-                failures.Add($"班次交接 {row.HandoverNo} 的班次 {row.ShiftId} / 班组 {row.TeamId} 不在 L0 的 6 个班组内。");
+                failures.Add($"班次交接 {row.HandoverNo} 的班次 {row.ShiftId} 不是 L0 班次编码（应为 EARLY / MIDDLE）。");
+            }
+
+            if (!teamCodes.Contains(row.TeamId))
+            {
+                failures.Add($"班次交接 {row.HandoverNo} 的班组 {row.TeamId} 不在 L0 的 6 个班组编码内。");
             }
 
             if (row.OpenIssueCount < 0)
