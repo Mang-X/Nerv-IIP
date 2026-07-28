@@ -2,6 +2,14 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## 一线写操作幂等与权威回执（MAN-625 / #1162）
+
+MES 工序开始、暂停、恢复和完成，Quality 检验任务提交，以及 Maintenance 报修建单和一步完工现在都使用意图级 `idempotencyKey`。同一意图在超时后以同键重试，服务端持久绑定完整载荷指纹与首次结果；同键同载荷返回同一权威业务 ID、状态和时间，同键异载荷 fail closed，并以资源级分布式锁及数据库唯一冲突恢复收敛并发。WMS 盘点完成同时覆盖本地事件和 Inventory RPC 两条路径，持久保存 movement receipt，使超时重放不会再次调整库存。既有 WMS 入库完成、出库复核和报警搁置幂等实现保持不变；报警确认继续使用 first-write-wins 语义。
+
+BusinessGateway 统一返回 `operationReceipt`，明确区分服务端已经返回权威事实的 `confirmed` 与仍需公开 GET 回读的 `accepted`。WMS、MES 报工以及报警确认/搁置/解除的 `accepted` 回执都携带精确 `readbackMethod/readbackPath`，`stateConfirmed=false`；HTTP 200 或本地乐观值本身不再代表业务成功。WMS 盘点的 `Completed` 只表示盘点单据完成，权威回读以对应 movement 的 `Posted` / `Failed` / `Pending` 判定成功 / 确定失败 / 结果未知；既有 exposed count-executions GET 仅追加可选过账状态、失败事实和 movement ID，不新增路由。Business Console/PDA 为同一失败或超时意图保留键，只有收到 confirmed 或完成权威回读后才结束该意图。离线队列与后台自动重放不在本项范围内。
+
+BusinessGateway 写入口优先使用标准 `Idempotency-Key` header，同时兼容既有 legacy header 与请求体字段；多个来源归一化后不一致时统一返回 `409 idempotency-key-mismatch`，不选择任一冲突值继续执行。Quality、WMS、IndustrialTelemetry、MES 和 Maintenance 的资源级命令锁共用生产安全 Redis 实现，生产环境缺少 Redis 配置时 fail fast；测试环境才允许进程内锁替代。
+
 ## Quality 复检历史与 MES hold 自动释放闭环（MAN-516 / #954）
 
 BusinessQuality 现在将首检幂等和复检历史分开建模：原有创建命令继续按来源业务键返回首条记录；新增 predecessor-targeted 复检命令只允许对非合格记录追加不可变 successor，并记录 `attempt_number` 与 `reinspection_of_inspection_record_id`。每个前置记录最多一个直接 successor，命令重放返回同一 successor；多次复检需以上一次未通过结果作为新的 predecessor。计划检验复用原方案和来源/批次/库存维度，已 superseded 的历史方案仍可用于该记录复检，但跨组织、环境、方案或合格终态均 fail closed。`AddQualityReinspectionHistory` migration 增加正数约束、自引用 Restrict 外键、前置唯一索引，并把来源唯一键扩展到 attempt。
