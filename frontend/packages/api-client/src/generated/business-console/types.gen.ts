@@ -2095,6 +2095,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     completedActionCount?: number;
     overdue?: boolean;
     actions?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCapaActionItem>;
+    sourceNcrCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCapaActionItem = {
@@ -3489,6 +3490,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     operationCode?: string | null;
     scheduledAtUtc?: string | null;
     scheduleInvalidationReasonCode?: string | null;
+    teamId?: string | null;
+    teamName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference = {
@@ -3761,6 +3764,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     operationCode?: string | null;
     scheduledAtUtc?: string | null;
     scheduleInvalidationReasonCode?: string | null;
+    teamId?: string | null;
+    teamName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchTaskListRequest = {
@@ -4222,6 +4227,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     handoverStatus?: string;
     openIssueCount?: number;
     createdAtUtc?: string;
+    teamName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateShiftHandoverRequest = {
@@ -4231,6 +4237,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     teamId?: string;
     openIssueIds?: Array<string> | null;
     idempotencyKey?: string;
+    teamName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAcceptShiftHandoverRequest = {

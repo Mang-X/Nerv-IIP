@@ -1407,7 +1407,10 @@ public sealed record BusinessConsoleQualityCapaItem(
     int ActionCount,
     int CompletedActionCount,
     bool Overdue,
-    IReadOnlyCollection<BusinessConsoleQualityCapaActionItem> Actions);
+    IReadOnlyCollection<BusinessConsoleQualityCapaActionItem> Actions,
+    // 来源 NCR 单号（NCR-2026-0001）。SourceNcrId 是聚合 GUID，界面「来源 NCR」列若直接渲染它
+    // 就是一串裸 GUID，而前端没有 NCR 名录可查，故由读面回带人读单号。
+    string? SourceNcrCode = null);
 
 public sealed record BusinessConsoleQualityCapaListResponse(
     IReadOnlyCollection<BusinessConsoleQualityCapaItem> Items,
@@ -4243,11 +4246,14 @@ public sealed record BusinessConsoleMesDispatchTaskRow(
     string? DeviceAssetName = null,
     string? OperationCode = null,
     DateTimeOffset? ScheduledAtUtc = null,
-    string? ScheduleInvalidationReasonCode = null);
+    string? ScheduleInvalidationReasonCode = null,
+    string? TeamId = null,
+    string? TeamName = null);
 
 /// <summary>
-/// Payload forwarded to the MES service. The assignee display name is resolved by the gateway from
-/// MasterData rather than trusted from the caller, so the dispatch record keeps a verified snapshot.
+/// Payload forwarded to the MES service. The assignee display name and the team the assignee belongs to
+/// are resolved by the gateway from MasterData rather than trusted from the caller, so the dispatch
+/// record keeps a verified snapshot.
 /// </summary>
 public sealed record BusinessConsoleMesAssignDispatchTaskForwardRequest(
     string OrganizationId,
@@ -4256,7 +4262,9 @@ public sealed record BusinessConsoleMesAssignDispatchTaskForwardRequest(
     string? AssignedUserName,
     string? DeviceAssetId,
     string? ShiftId,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    string? TeamId = null,
+    string? TeamName = null);
 
 public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     [property: RouteParam] string OperationTaskId,
@@ -4292,7 +4300,9 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     string? DeviceAssetName = null,
     string? OperationCode = null,
     DateTimeOffset? ScheduledAtUtc = null,
-    string? ScheduleInvalidationReasonCode = null);
+    string? ScheduleInvalidationReasonCode = null,
+    string? TeamId = null,
+    string? TeamName = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: RouteParam] string OperationTaskId,
@@ -4622,7 +4632,8 @@ public sealed record BusinessConsoleMesShiftHandoverRow(
     string TeamId,
     string HandoverStatus,
     int OpenIssueCount,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    string? TeamName = null);
 
 public sealed record BusinessConsoleMesCreateShiftHandoverRequest(
     string OrganizationId,
@@ -4630,7 +4641,8 @@ public sealed record BusinessConsoleMesCreateShiftHandoverRequest(
     string ShiftId,
     string TeamId,
     IReadOnlyCollection<string>? OpenIssueIds,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    string? TeamName = null);
 
 public sealed record BusinessConsoleMesAcceptShiftHandoverRequest(
     [property: RouteParam] string HandoverId,

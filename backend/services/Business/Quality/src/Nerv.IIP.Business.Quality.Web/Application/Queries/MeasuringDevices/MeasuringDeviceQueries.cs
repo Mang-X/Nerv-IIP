@@ -230,52 +230,58 @@ public sealed class ListCalibrationRecordsQueryHandler(ApplicationDbContext dbCo
         CancellationToken cancellationToken)
     {
         var take = Math.Clamp(request.Take, 1, 500);
+
+        // 筛选与排序必须停留在实体（或匿名类型）上：positional record 的构造是 Members == null 的
+        // NewExpression，EF Core 无法把 `new Projection(...).Prop` 归约回列访问，一旦在其之上再拼
+        // Where/OrderBy 就会翻译失败。投影因此放在 Skip/Take 之后（与本文件
+        // ListMeasuringDevicesQuery、SpcAnalysisQueries 的写法一致）。
         var query =
             from record in dbContext.CalibrationRecords.AsNoTracking()
             join device in dbContext.MeasuringDevices.AsNoTracking() on record.MeasuringDeviceId equals device.Id
             where device.OrganizationId == request.OrganizationId
                 && device.EnvironmentId == request.EnvironmentId
-            select new CalibrationRecordProjection(
-                record.Id,
-                device.Id,
-                device.DeviceCode,
-                device.DeviceType,
-                device.CalibrationIntervalDays,
-                record.CalibrationNo,
-                record.CalibratedAtUtc,
-                record.CalibrationProvider,
-                record.CertificateFileId);
+            select new { record, device };
 
         if (request.MeasuringDeviceId is { } measuringDeviceId)
         {
-            query = query.Where(x => x.MeasuringDeviceId == measuringDeviceId);
+            query = query.Where(x => x.device.Id == measuringDeviceId);
         }
 
         if (request.CalibratedFromUtc is { } from)
         {
-            query = query.Where(x => x.CalibratedAtUtc >= from);
+            query = query.Where(x => x.record.CalibratedAtUtc >= from);
         }
 
         if (request.CalibratedToUtc is { } to)
         {
-            query = query.Where(x => x.CalibratedAtUtc <= to);
+            query = query.Where(x => x.record.CalibratedAtUtc <= to);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
             var keyword = request.Keyword.Trim().ToLower();
             query = query.Where(x =>
-                x.CalibrationNo.ToLower().Contains(keyword)
-                || x.DeviceCode.ToLower().Contains(keyword)
-                || x.CalibrationProvider.ToLower().Contains(keyword));
+                x.record.CalibrationNo.ToLower().Contains(keyword)
+                || x.device.DeviceCode.ToLower().Contains(keyword)
+                || x.record.CalibrationProvider.ToLower().Contains(keyword));
         }
 
         var total = await query.CountAsync(cancellationToken);
         var rows = await query
-            .OrderByDescending(x => x.CalibratedAtUtc)
-            .ThenBy(x => x.CalibrationNo)
+            .OrderByDescending(x => x.record.CalibratedAtUtc)
+            .ThenBy(x => x.record.CalibrationNo)
             .Skip(request.Skip)
             .Take(take)
+            .Select(x => new CalibrationRecordProjection(
+                x.record.Id,
+                x.device.Id,
+                x.device.DeviceCode,
+                x.device.DeviceType,
+                x.device.CalibrationIntervalDays,
+                x.record.CalibrationNo,
+                x.record.CalibratedAtUtc,
+                x.record.CalibrationProvider,
+                x.record.CertificateFileId))
             .ToListAsync(cancellationToken);
 
         // 下次到期 = 本次校准时刻 + 器具校准周期：逐 provider 都能翻译的加法留在内存里做。
