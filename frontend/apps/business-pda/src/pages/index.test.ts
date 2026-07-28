@@ -53,6 +53,12 @@ const inspectionTasks = ref<
     uomCode?: string
   }>
 >([])
+const organizationId = ref('org-001')
+const environmentId = ref('env-dev')
+const hasScope = computed(() => Boolean(organizationId.value && environmentId.value))
+const inspectionPending = ref(false)
+const inspectionError = ref<unknown>(null)
+const refreshInspection = vi.fn(async () => {})
 
 vi.mock('@/composables/useWorkbenchHome', () => {
   const HOME_PERMISSIONS = {
@@ -68,9 +74,9 @@ vi.mock('@/composables/useWorkbenchHome', () => {
     usePdaIdentity: () => ({
       principalId: ref('user-emp-010'),
       loginName: ref('emp010'),
-      organizationId: ref('org-001'),
-      environmentId: ref('env-dev'),
-      hasScope: ref(true),
+      organizationId,
+      environmentId,
+      hasScope,
       can: (code: string) => permissions.value.has(code),
       worker,
       displayName: computed(() => worker.value?.displayName || 'emp010'),
@@ -97,10 +103,14 @@ vi.mock('@/composables/useWorkbenchHome', () => {
       lastUpdatedAt: ref('2026-07-28T10:20:30.000Z'),
     }),
     usePendingInspectionSummary: () => ({
-      enabled: computed(() => permissions.value.has(HOME_PERMISSIONS.quality)),
+      visible: computed(() => permissions.value.has(HOME_PERMISSIONS.quality)),
+      scopeReady: hasScope,
+      enabled: computed(() => permissions.value.has(HOME_PERMISSIONS.quality) && hasScope.value),
       tasks: inspectionTasks,
       total: computed(() => inspectionTasks.value.length),
-      pending: ref(false),
+      pending: inspectionPending,
+      error: inspectionError,
+      refresh: refreshInspection,
       lastUpdatedAt: ref('2026-07-28T10:20:30.000Z'),
     }),
   }
@@ -140,6 +150,11 @@ describe('PDA home', () => {
     myTasksPending.value = false
     warehouseEntries.value = []
     inspectionTasks.value = []
+    organizationId.value = 'org-001'
+    environmentId.value = 'env-dev'
+    inspectionPending.value = false
+    inspectionError.value = null
+    refreshInspection.mockClear()
   })
 
   it('shows the unacknowledged-alarm count badge on the 查看报警 tile, and hides it at zero', async () => {
@@ -180,6 +195,39 @@ describe('PDA home', () => {
     expect(wrapper.text()).toContain('收货入库')
     expect(wrapper.text()).not.toContain('报工')
     expect(wrapper.text()).not.toContain('查看报警')
+  })
+
+  it('shows the inspection source and missing-scope explanation when permitted without scope', () => {
+    organizationId.value = ''
+    environmentId.value = ''
+
+    const wrapper = mount(HomePage)
+
+    expect(wrapper.find('[data-testid="home-inspection"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('组织/环境范围未就绪')
+    expect(wrapper.text()).toContain('质检待检任务服务（组织/环境范围，状态：待检）')
+    expect(wrapper.text()).toContain('缺少组织或环境范围，未发起查询')
+    expect(wrapper.text()).not.toContain('当前组织/环境范围暂无待检任务')
+  })
+
+  it('shows a retryable inspection error without presenting a business empty set', async () => {
+    inspectionError.value = new Error('待检任务加载失败')
+    const wrapper = mount(HomePage)
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('待检任务加载失败')
+    expect(wrapper.text()).not.toContain('当前组织/环境范围暂无待检任务')
+
+    await wrapper
+      .get('[data-testid="home-inspection-error"]')
+      .get('[data-testid="retry-list"]')
+      .trigger('click')
+    expect(refreshInspection).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the inspection business empty state only after a successful scoped response', () => {
+    const wrapper = mount(HomePage)
+
+    expect(wrapper.text()).toContain('当前组织/环境范围暂无待检任务')
   })
 
   it('renders my dispatch tasks with status tags, and an empty state without tasks', async () => {

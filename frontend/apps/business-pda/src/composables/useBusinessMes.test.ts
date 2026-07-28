@@ -334,6 +334,38 @@ describe('pda useBusinessMes composables', () => {
     ).not.toHaveBeenCalled()
   })
 
+  it('does not manually refresh material-issue or receipt lists without org/env scope', async () => {
+    authState.principal = undefined
+
+    const materialIssue = useMesMaterialIssue()
+    const receipts = useMesReceipts()
+    await Promise.all([materialIssue.refresh(), receipts.refresh()])
+
+    expect(
+      coladaState.refetchById.get('listBusinessConsoleMesMaterialIssueRequests'),
+    ).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('listBusinessConsoleMesFinishedGoodsReceiptRequests'),
+    ).not.toHaveBeenCalled()
+  })
+
+  it('records freshness only after successful material-issue and receipt responses', () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
+      success: true,
+      data: { items: [], total: 0 },
+    })
+    coladaState.queryDataById.set('listBusinessConsoleMesFinishedGoodsReceiptRequests', {
+      success: true,
+      data: { items: [], total: 0 },
+    })
+
+    const materialIssue = useMesMaterialIssue()
+    const receipts = useMesReceipts()
+
+    expect(materialIssue.lastUpdatedAt.value).not.toBeNull()
+    expect(receipts.lastUpdatedAt.value).not.toBeNull()
+  })
+
   it('enables list queries once a principal scope is present', () => {
     useMesWorkOrders()
 

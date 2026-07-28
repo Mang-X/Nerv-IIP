@@ -13,6 +13,8 @@ const refreshReceipts = vi.fn(async () => {})
 const refreshWorkOrders = vi.fn(async () => {})
 
 const receiptFilters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
   keyword: undefined as string | undefined,
   status: undefined as string | undefined,
   workOrderId: undefined as string | undefined,
@@ -52,6 +54,7 @@ const workOrders = [
 const receiptsPending = ref(false)
 const receiptsError = ref<unknown>(null)
 const receiptRows = ref(receipts)
+const receiptsLastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesReceipts: () => ({
@@ -60,6 +63,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     total: computed(() => receiptRows.value.length),
     pending: receiptsPending,
     error: receiptsError,
+    lastUpdatedAt: receiptsLastUpdatedAt,
     refresh: refreshReceipts,
     createReceipt,
   }),
@@ -81,6 +85,8 @@ describe('PDA MES finished-goods receipt page', () => {
     createReceipt.mockResolvedValue(undefined)
     push.mockClear()
     receiptFilters.keyword = undefined
+    receiptFilters.organizationId = 'org-001'
+    receiptFilters.environmentId = 'env-dev'
     workOrderFilters.keyword = undefined
     receiptsPending.value = false
     receiptsError.value = null
@@ -97,6 +103,10 @@ describe('PDA MES finished-goods receipt page', () => {
     expect(wrapper.text()).toContain('已入库')
     expect(wrapper.text()).not.toContain('Requested')
     expect(wrapper.text()).not.toContain('Received')
+    expect(wrapper.text()).toContain('范围：当前登录组织 / 当前业务环境')
+    expect(wrapper.text()).toContain('来源：生产完工入库申请服务（组织/环境范围）')
+    expect(wrapper.text()).toContain('已加载 2 / 共 2')
+    expect(wrapper.text()).toContain('最近成功响应')
   })
 
   it('shows the list error (not the empty state) when the receipts query fails', async () => {
@@ -110,6 +120,16 @@ describe('PDA MES finished-goods receipt page', () => {
     expect(alert.text()).toContain('加载失败：网络异常')
     // 错误态不应退化为「暂无完工入库申请」空态
     expect(wrapper.text()).not.toContain('暂无完工入库申请')
+    expect(wrapper.find('[data-testid="list-empty-explanation"]').exists()).toBe(false)
+  })
+
+  it('explains a successful empty organization-scope response without claiming personal ownership', async () => {
+    receiptRows.value = []
+    const wrapper = mount(ReceiptPage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('当前组织/环境范围暂无完工入库申请')
+    expect(wrapper.text()).toContain('不代表当前人员没有入库任务')
   })
 
   it('scanning sets the receipt keyword filter', async () => {
@@ -145,10 +165,14 @@ describe('PDA MES finished-goods receipt page', () => {
     const skuInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-sku"]')!
     skuInput.value = 'SKU-A'
     skuInput.dispatchEvent(new Event('input'))
-    const qtyInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-quantity"]')!
+    const qtyInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="receipt-quantity"]',
+    )!
     qtyInput.value = '20'
     qtyInput.dispatchEvent(new Event('input'))
-    const costInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-unit-cost"]')!
+    const costInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="receipt-unit-cost"]',
+    )!
     costInput.value = '12.34'
     costInput.dispatchEvent(new Event('input'))
     const uomInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-uom"]')!
@@ -191,10 +215,14 @@ describe('PDA MES finished-goods receipt page', () => {
       const skuInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-sku"]')!
       skuInput.value = sku
       skuInput.dispatchEvent(new Event('input'))
-      const qtyInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-quantity"]')!
+      const qtyInput = document.body.querySelector<HTMLInputElement>(
+        '[data-testid="receipt-quantity"]',
+      )!
       qtyInput.value = '20'
       qtyInput.dispatchEvent(new Event('input'))
-      const costInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-unit-cost"]')!
+      const costInput = document.body.querySelector<HTMLInputElement>(
+        '[data-testid="receipt-unit-cost"]',
+      )!
       costInput.value = '12.34'
       costInput.dispatchEvent(new Event('input'))
       const uomInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-uom"]')!

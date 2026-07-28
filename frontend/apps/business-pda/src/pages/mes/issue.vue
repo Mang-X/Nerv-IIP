@@ -20,6 +20,7 @@ import {
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMesMaterialIssue, useMesWorkOrders } from '@/composables/useBusinessMes'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
@@ -36,8 +37,17 @@ type WorkOrder = BusinessConsoleMesWorkOrderItem
 
 const router = useRouter()
 
-const { filters, requests, total, pending, error, refresh, createIssue, confirmLineSideReceipt } =
-  useMesMaterialIssue()
+const {
+  filters,
+  requests,
+  total,
+  pending,
+  error,
+  lastUpdatedAt,
+  refresh,
+  createIssue,
+  confirmLineSideReceipt,
+} = useMesMaterialIssue()
 
 const {
   filters: workOrderFilters,
@@ -50,6 +60,16 @@ const {
 
 // 可读中文状态标签 + 工单标题/副标题来自 @nerv-iip/business-core（不暴露原始状态码）。
 const statusLabel = materialIssueStatusLabel
+const listScope = computed(() =>
+  filters.organizationId && filters.environmentId
+    ? '当前登录组织 / 当前业务环境'
+    : '组织/环境范围未就绪',
+)
+const emptyExplanation = computed(() =>
+  !filters.organizationId || !filters.environmentId
+    ? '缺少组织或环境范围，未发起查询。'
+    : '当前组织/环境范围暂无领料申请；此列表暂不支持按当前人员归属筛选，不代表当前人员没有领料任务。',
+)
 
 // 领料申请没有自带业务单号；用工单 + 物料组合作可读标题，
 // 不把 requestId（GUID）当标签暴露——它仅作为列表 key 与接收动作的 path 参数。
@@ -343,7 +363,15 @@ function onScanWorkOrder(value: string) {
     <div v-else class="space-y-4 p-4">
       <NvScanBar placeholder="扫描工单号 / 领料单" :active="scanActive" @scan="onScan" />
 
-      <p class="text-sm text-muted-foreground">共 {{ total }} 条领料申请</p>
+      <ListScopeMeta
+        :scope="listScope"
+        source="生产领料申请服务（组织/环境范围）"
+        :loaded="requests.length"
+        :total="total"
+        :updated-at="lastUpdatedAt"
+        :empty="!pending && !error && requests.length === 0"
+        :empty-explanation="emptyExplanation"
+      />
 
       <RetryableListError
         v-if="error"
@@ -355,10 +383,16 @@ function onScanWorkOrder(value: string) {
       />
 
       <div
-        v-if="!pending && !error && requests.length === 0"
+        v-if="
+          filters.organizationId &&
+          filters.environmentId &&
+          !pending &&
+          !error &&
+          requests.length === 0
+        "
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
       >
-        暂无领料申请
+        当前组织/环境范围暂无领料申请
       </div>
 
       <div v-else class="overflow-hidden rounded-lg border border-border">

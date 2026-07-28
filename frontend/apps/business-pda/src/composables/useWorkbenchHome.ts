@@ -265,7 +265,9 @@ export function useWarehouseSummary() {
 
 export function usePendingInspectionSummary() {
   const identity = usePdaIdentity()
-  const enabled = computed(() => identity.hasScope.value && identity.can(HOME_PERMISSIONS.quality))
+  const visible = computed(() => identity.can(HOME_PERMISSIONS.quality))
+  const scopeReady = identity.hasScope
+  const enabled = computed(() => scopeReady.value && visible.value)
 
   const tasksQuery = useQuery(() => ({
     ...listBusinessConsoleQualityInspectionTasksQueryOptions({
@@ -282,12 +284,16 @@ export function usePendingInspectionSummary() {
   const lastUpdatedAt = useListFreshness(() => tasksQuery.data.value, enabled)
 
   return {
+    visible,
+    scopeReady,
     enabled,
     tasks: computed<BusinessConsoleQualityInspectionTaskItem[]>(() =>
       listItems<BusinessConsoleQualityInspectionTaskItem>(tasksQuery.data.value),
     ),
     total: computed(() => listTotal(tasksQuery.data.value)),
     pending: tasksQuery.isLoading,
+    error: tasksQuery.error,
     lastUpdatedAt,
+    refresh: () => (enabled.value ? tasksQuery.refetch() : Promise.resolve()),
   }
 }

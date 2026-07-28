@@ -875,6 +875,10 @@ export function useMesMaterialIssue() {
     }),
     enabled: hasScope(filters),
   }))
+  const lastUpdatedAt = useListFreshness(
+    () => requestsQuery.data.value,
+    () => hasScope(filters),
+  )
 
   const createMutation = useMutation({
     ...createBusinessConsoleMesMaterialIssueRequestMutationOptions(),
@@ -905,7 +909,8 @@ export function useMesMaterialIssue() {
     total: computed(() => envelopeTotal(requestsQuery.data.value)),
     pending: requestsQuery.isLoading,
     error: requestsQuery.error,
-    refresh: requestsQuery.refetch,
+    lastUpdatedAt,
+    refresh: () => (hasScope(filters) ? requestsQuery.refetch() : Promise.resolve()),
     createIssue: (workOrderId: string, body: CreateIssueInput) =>
       createMutation.mutateAsync({
         path: { workOrderId },
@@ -969,6 +974,10 @@ export function useMesReceipts() {
     }),
     enabled: hasScope(filters),
   }))
+  const lastUpdatedAt = useListFreshness(
+    () => receiptsQuery.data.value,
+    () => hasScope(filters),
+  )
 
   const createMutation = useMutation({
     ...createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions(),
@@ -990,7 +999,8 @@ export function useMesReceipts() {
     total: computed(() => envelopeTotal(receiptsQuery.data.value)),
     pending: receiptsQuery.isLoading,
     error: receiptsQuery.error,
-    refresh: receiptsQuery.refetch,
+    lastUpdatedAt,
+    refresh: () => (hasScope(filters) ? receiptsQuery.refetch() : Promise.resolve()),
     createReceipt: (input: CreateReceiptInput) =>
       createMutation.mutateAsync({
         body: {

@@ -16,6 +16,8 @@ const refreshRequests = vi.fn(async () => {})
 const refreshWorkOrders = vi.fn(async () => {})
 
 const issueFilters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
   keyword: undefined as string | undefined,
   workOrderId: undefined as string | undefined,
   status: undefined as string | undefined,
@@ -52,6 +54,7 @@ const workOrders = [
 const issuePending = ref(false)
 const issueError = ref<unknown>(null)
 const issueRequests = ref(requests)
+const issueLastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesMaterialIssue: () => ({
@@ -60,6 +63,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     total: computed(() => issueRequests.value.length),
     pending: issuePending,
     error: issueError,
+    lastUpdatedAt: issueLastUpdatedAt,
     refresh: refreshRequests,
     createIssue,
     confirmLineSideReceipt,
@@ -84,6 +88,8 @@ describe('PDA MES material issue page', () => {
     confirmLineSideReceipt.mockResolvedValue(undefined)
     push.mockClear()
     issueFilters.keyword = undefined
+    issueFilters.organizationId = 'org-001'
+    issueFilters.environmentId = 'env-dev'
     workOrderFilters.keyword = undefined
     issuePending.value = false
     issueError.value = null
@@ -99,6 +105,10 @@ describe('PDA MES material issue page', () => {
     expect(wrapper.text()).toContain('MAT-A')
     // 不暴露原始 requestId 作为标签
     expect(wrapper.text()).not.toContain('REQ-1')
+    expect(wrapper.text()).toContain('范围：当前登录组织 / 当前业务环境')
+    expect(wrapper.text()).toContain('来源：生产领料申请服务（组织/环境范围）')
+    expect(wrapper.text()).toContain('已加载 2 / 共 2')
+    expect(wrapper.text()).toContain('最近成功响应')
   })
 
   it('shows the list error (not the empty state) when the requests query fails', async () => {
@@ -112,6 +122,16 @@ describe('PDA MES material issue page', () => {
     expect(alert.text()).toContain('加载失败：网络异常')
     // 错误态不应退化为「暂无领料申请」空态
     expect(wrapper.text()).not.toContain('暂无领料申请')
+    expect(wrapper.find('[data-testid="list-empty-explanation"]').exists()).toBe(false)
+  })
+
+  it('explains a successful empty organization-scope response without claiming personal ownership', async () => {
+    issueRequests.value = []
+    const wrapper = mount(IssuePage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('当前组织/环境范围暂无领料申请')
+    expect(wrapper.text()).toContain('不代表当前人员没有领料任务')
   })
 
   it('scanning sets the issue keyword filter', async () => {

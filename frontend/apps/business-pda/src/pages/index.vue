@@ -17,6 +17,7 @@ import {
 import { operationTaskStatusLabel, PDA_TASK_KINDS } from '@nerv-iip/business-core'
 import { useUnacknowledgedAlarmCount } from '@/composables/useBusinessEquipmentAlarms'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
+import RetryableListError from '@/components/RetryableListError.vue'
 import {
   HOME_PERMISSIONS,
   useMyDispatchTasks,
@@ -99,6 +100,11 @@ function taskNote(task: (typeof myTasksPreview.value)[number]) {
 
 const INSPECTION_PREVIEW = 3
 const inspectionPreview = computed(() => inspection.tasks.value.slice(0, INSPECTION_PREVIEW))
+const inspectionEmptyExplanation = computed(() =>
+  inspection.scopeReady.value
+    ? '当前组织/环境范围暂无待检任务；此列表不是个人待检。'
+    : '缺少组织或环境范围，未发起查询。',
+)
 
 /** 快捷应用按登录人权限裁剪：无读权限的入口不出现（点了也是 403）。 */
 const KIND_PERMISSIONS: Record<string, string> = {
@@ -262,7 +268,7 @@ function openRoute(route: string) {
       </section>
 
       <!-- 检验任务（有质检读权限的检验员可见） -->
-      <section v-if="inspection.enabled.value" data-testid="home-inspection">
+      <section v-if="inspection.visible.value" data-testid="home-inspection">
         <div class="mb-2 flex items-baseline justify-between">
           <h2 class="text-sm font-medium text-muted-foreground">组织范围待检</h2>
           <span class="text-xs text-muted-foreground">
@@ -279,8 +285,21 @@ function openRoute(route: string) {
           :loaded="inspection.tasks.value.length"
           :total="inspection.total.value"
           :updated-at="inspection.lastUpdatedAt.value"
-          :empty="!inspection.pending.value && inspection.tasks.value.length === 0"
-          empty-explanation="当前列表是组织/环境范围待检，不是个人待检；缺少范围时不会发起查询。"
+          :empty="
+            !inspection.scopeReady.value ||
+            (!inspection.pending.value &&
+              !inspection.error.value &&
+              inspection.tasks.value.length === 0)
+          "
+          :empty-explanation="inspectionEmptyExplanation"
+        />
+        <RetryableListError
+          v-if="inspection.error.value"
+          :error="inspection.error.value"
+          :pending="inspection.pending.value"
+          fallback="待检任务加载失败，请重试。"
+          test-id="home-inspection-error"
+          @retry="() => inspection.refresh()"
         />
         <NvCellGroup
           v-if="inspectionPreview.length > 0"
@@ -297,7 +316,9 @@ function openRoute(route: string) {
           />
         </NvCellGroup>
         <div
-          v-else-if="!inspection.pending.value"
+          v-else-if="
+            inspection.scopeReady.value && !inspection.pending.value && !inspection.error.value
+          "
           class="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground"
         >
           当前组织/环境范围暂无待检任务；此列表不是个人待检
