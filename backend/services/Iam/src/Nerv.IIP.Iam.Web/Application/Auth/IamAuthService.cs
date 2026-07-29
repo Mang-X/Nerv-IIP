@@ -411,7 +411,7 @@ public sealed class PostgreSqlIamAuthService(
         var dataScope = ToAuthorizationDataScope(scopeGrants, organizationId);
         if (scopeGrants.Length > 0)
         {
-            await securityAudit.RecordAsync(
+            await securityAudit.RecordAndSaveAsync(
                 new SecurityAuditContext(
                     $"user:{principal.UserId}",
                     Guid.CreateVersion7().ToString("N"),

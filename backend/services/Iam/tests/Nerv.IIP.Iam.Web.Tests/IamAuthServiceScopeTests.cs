@@ -123,6 +123,94 @@ public sealed class IamAuthServiceScopeTests
     }
 
     [Fact]
+    public async Task Principal_scope_match_audit_is_durable_when_authorization_check_returns()
+    {
+        await using var connection = new SqliteConnection("Filename=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDbContext(connection);
+        await db.Database.EnsureCreatedAsync();
+        var passwordService = new IamPasswordService();
+        var user = new User(
+            new UserId("user-audited-scope"),
+            "audited-scope",
+            "audited-scope@nerv-iip.local",
+            passwordService.Hash("Password123!"),
+            true,
+            Guid.NewGuid().ToString("n"),
+            1);
+        var role = new Role(
+            new RoleId("role-audited-scope"),
+            "受审计范围角色",
+            ["business.mes.work-orders.read"]);
+        role.ReplaceDataScopes([new DataScopeBinding("workshop", "WS-AUDIT")]);
+        var membership = new Membership(
+            new MembershipId("membership-audited-scope"),
+            user.Id,
+            new OrganizationId("org-001"),
+            new IamEnvironmentId("env-dev"),
+            [role.Id]);
+
+        db.Users.Add(user);
+        db.Organizations.Add(new Organization(new OrganizationId("org-001"), "Nerv", "active"));
+        db.Environments.Add(new IamEnvironment(
+            new IamEnvironmentId("env-dev"),
+            new OrganizationId("org-001"),
+            "Dev",
+            "active"));
+        db.Roles.Add(role);
+        db.Memberships.Add(membership);
+        await db.SaveChangesAsync();
+
+        var service = new PostgreSqlIamAuthService(
+            new UserRepository(db),
+            new UserSessionRepository(db),
+            new MembershipRepository(db),
+            new ConnectorHostCredentialRepository(db),
+            new ExternalClientRepository(db),
+            passwordService,
+            CreateTokenService(),
+            Options.Create(new IamAuthenticationOptions()),
+            Options.Create(new EnterpriseIdentityOptions()),
+            new InMemoryMfaChallengeStore(),
+            new SecurityAuditRecorder(new SecurityAuditRepository(db)),
+            NullLogger<PostgreSqlIamAuthService>.Instance,
+            new TestWebHostEnvironment());
+        var principal = new CurrentPrincipalResponse(
+            user.Id.Id,
+            user.LoginName,
+            user.Email,
+            "user",
+            "org-001",
+            "env-dev",
+            user.PermissionVersion,
+            ["business.mes.work-orders.read"],
+            [role.Id.Id]);
+
+        var result = await service.PrincipalHasPermissionAsync(
+            principal,
+            "org-001",
+            "env-dev",
+            "business.mes.work-orders.read",
+            "mes-work-order",
+            "WO-AUDIT",
+            CancellationToken.None);
+
+        Assert.True(result.Allowed);
+        await using var reloadedDb = CreateDbContext(connection);
+        var audit = await reloadedDb.SecurityAuditRecords
+            .AsNoTracking()
+            .SingleAsync(x => x.Action == "iam.authorization.data-scope.matched");
+        Assert.Equal("org-001", audit.OrganizationId);
+        Assert.Equal("env-dev", audit.EnvironmentId);
+        Assert.Equal("user:user-audited-scope", audit.Actor);
+        Assert.Equal("mes-work-order", audit.TargetType);
+        Assert.Equal("WO-AUDIT", audit.TargetId);
+        Assert.Equal("success", audit.Outcome);
+        Assert.Contains("\"scopeKind\":\"workshop\"", audit.DetailsJson, StringComparison.Ordinal);
+        Assert.Contains("\"scopeId\":\"WS-AUDIT\"", audit.DetailsJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Permission_role_without_data_scope_does_not_invent_an_organization_grant()
     {
         await using var connection = new SqliteConnection("Filename=:memory:");
