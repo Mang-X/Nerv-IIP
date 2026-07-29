@@ -666,6 +666,84 @@ public sealed class BusinessGatewayWmsTests
     }
 
     [Theory]
+    [InlineData("site")]
+    [InlineData("self")]
+    [InlineData("team")]
+    [InlineData("no-grant")]
+    public async Task Inbound_inventory_context_does_not_query_site_outside_independent_inventory_scope(
+        string inventoryScope)
+    {
+        var inventoryGrant = inventoryScope switch
+        {
+            "site" => new AuthorizationScopeGrant(
+                "role",
+                "role-inventory-site",
+                "site",
+                "SITE-A",
+                [BusinessGatewayPermissions.InventoryLedgerRead]),
+            "self" => new AuthorizationScopeGrant(
+                "role",
+                "role-inventory-self",
+                "self",
+                "user-admin",
+                [BusinessGatewayPermissions.InventoryLedgerRead]),
+            "team" => new AuthorizationScopeGrant(
+                "role",
+                "role-inventory-team",
+                "team",
+                "TEAM-A",
+                [BusinessGatewayPermissions.InventoryLedgerRead]),
+            _ => null,
+        };
+        var grants = new List<AuthorizationScopeGrant>
+        {
+            new(
+                "role",
+                "role-wms-organization",
+                "organization",
+                "org-001",
+                [BusinessGatewayPermissions.WmsReceiptsRead],
+                OrganizationWide: true),
+        };
+        if (inventoryGrant is not null)
+        {
+            grants.Add(inventoryGrant);
+        }
+
+        var auth = ScopeAuth(
+            [
+                BusinessGatewayPermissions.WmsReceiptsRead,
+                BusinessGatewayPermissions.InventoryLedgerRead,
+            ],
+            [.. grants]);
+        var wms = new RecordingWmsClient();
+        var inventory = new RecordingInventoryClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1&scopeKind=organization&scopeId=org-001");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, inventory.AvailabilityCallCount);
+        Assert.Equal(
+            BusinessGatewayAuthorizationContinuityMode.RealtimeRequired,
+            auth.LastContinuityMode);
+        Assert.True(auth.Requirements.Last().IncludePrincipalContext);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var context = document.RootElement.GetProperty("data").GetProperty("inventoryContext");
+        Assert.Equal("forbidden", context.GetProperty("status").GetString());
+        Assert.Equal("work-scope-not-authorized", context.GetProperty("reason").GetString());
+    }
+
+    [Theory]
     [InlineData("proxy")]
     [InlineData("http")]
     public async Task Inbound_orders_return_unavailable_inventory_context_when_inventory_source_fails(string failureKind)

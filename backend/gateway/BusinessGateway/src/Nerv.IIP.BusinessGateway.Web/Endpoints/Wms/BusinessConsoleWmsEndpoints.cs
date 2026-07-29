@@ -138,28 +138,18 @@ public sealed class ListBusinessConsoleWmsInboundOrdersEndpoint
                 request.OrganizationId,
                 request.EnvironmentId,
                 null,
-                null),
+                null,
+                IncludePrincipalContext: true),
+            BusinessGatewayAuthorizationContinuityMode.RealtimeRequired,
             cancellationToken);
         if (!authorization.IsAllowed)
         {
-            return new BusinessConsoleWmsInventoryContext(
-                "BusinessInventory",
-                "forbidden",
-                BusinessGatewayPermissions.InventoryLedgerRead,
-                authorization.DenialReason ?? "forbidden",
-                request.SkuCode,
-                request.UomCode,
-                request.SiteCode,
-                request.LocationCode,
-                request.LotNo,
-                request.SerialNo,
-                request.QualityStatus,
-                request.OwnerType,
-                request.OwnerId,
-                null,
-                null,
-                null,
-                []);
+            return ForbiddenInventoryContext(request, authorization.DenialReason ?? "forbidden");
+        }
+
+        if (!await IsInventorySiteAuthorizedAsync(authorization, request, cancellationToken))
+        {
+            return ForbiddenInventoryContext(request, "work-scope-not-authorized");
         }
 
         try
@@ -241,6 +231,61 @@ public sealed class ListBusinessConsoleWmsInboundOrdersEndpoint
                 []);
         }
     }
+
+    private async Task<bool> IsInventorySiteAuthorizedAsync(
+        BusinessGatewayAuthorizationResult authorization,
+        BusinessConsoleWmsInboundOrderListRequest request,
+        CancellationToken cancellationToken)
+    {
+        foreach (var candidate in new[]
+                 {
+                     (Kind: "site", Id: request.SiteCode!),
+                     (Kind: "organization", Id: request.OrganizationId),
+                 })
+        {
+            try
+            {
+                await _workScopeResolver.ResolveAsync(
+                    authorization,
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    BusinessGatewayPermissions.InventoryLedgerRead,
+                    candidate.Kind,
+                    candidate.Id,
+                    cancellationToken);
+                return true;
+            }
+            catch (BusinessServiceProxyException exception)
+                when (exception.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                // Try the organization-wide authorization path before failing closed.
+            }
+        }
+
+        return false;
+    }
+
+    private static BusinessConsoleWmsInventoryContext ForbiddenInventoryContext(
+        BusinessConsoleWmsInboundOrderListRequest request,
+        string reason) =>
+        new(
+            "BusinessInventory",
+            "forbidden",
+            BusinessGatewayPermissions.InventoryLedgerRead,
+            reason,
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.LocationCode,
+            request.LotNo,
+            request.SerialNo,
+            request.QualityStatus,
+            request.OwnerType,
+            request.OwnerId,
+            null,
+            null,
+            null,
+            []);
 }
 
 [Tags("Business Console WMS")]
