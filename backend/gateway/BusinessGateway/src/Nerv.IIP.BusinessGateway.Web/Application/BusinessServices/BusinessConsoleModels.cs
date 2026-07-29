@@ -4097,7 +4097,9 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
     string? ScrapReasonCode = null,
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
-    string? SerialNo = null);
+    string? SerialNo = null,
+    string? ScopeKind = null,
+    string? ScopeId = null);
 
 public sealed record BusinessConsoleConsumedMaterialLotInput(
     string MaterialId,
@@ -4204,7 +4206,9 @@ public sealed record BusinessConsoleMesConvertPlanToWorkOrderRequest(
 public sealed record BusinessConsoleMesWorkOrderDetailRequest(
     [property: RouteParam] string WorkOrderId,
     [property: QueryParam] string OrganizationId,
-    [property: QueryParam] string EnvironmentId);
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
 
 public sealed record BusinessConsoleMesWorkOrderDetailResponse(
     string WorkOrderId,
@@ -4246,14 +4250,18 @@ public sealed record BusinessConsoleMesReleaseWorkOrderRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     bool ConfirmWarnings,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
 
 public sealed record BusinessConsoleMesWorkOrderReasonRequest(
     [property: RouteParam] string WorkOrderId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     string Reason,
-    DateTimeOffset? ChangedAtUtc);
+    DateTimeOffset? ChangedAtUtc,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
 
 // Actor is intentionally omitted: the gateway injects the authenticated principal as the
 // force-release audit actor so a caller cannot forge the releaser identity via the request body.
@@ -4486,7 +4494,9 @@ public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     string? ReasonCode,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionResponse(
     string OperationTaskId,

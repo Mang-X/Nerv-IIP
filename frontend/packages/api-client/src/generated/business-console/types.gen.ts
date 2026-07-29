@@ -4078,6 +4078,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     defectRecordNo?: string | null;
     producedLotNo?: string | null;
     serialNo?: string | null;
+    scopeKind?: string | null;
+    scopeId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConsumedMaterialLotInput = {
@@ -12976,6 +12978,8 @@ export type GetBusinessConsoleMesWorkOrderDetailData = {
     query: {
         organizationId: string;
         environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/mes/work-orders/{workOrderId}';
 };
@@ -13008,6 +13012,8 @@ export type ReleaseBusinessConsoleMesWorkOrderData = {
     query: {
         organizationId: string;
         environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/mes/work-orders/{workOrderId}/release';
 };
@@ -13043,6 +13049,8 @@ export type HoldBusinessConsoleMesWorkOrderData = {
     query: {
         organizationId: string;
         environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/mes/work-orders/{workOrderId}/hold';
 };
@@ -13078,6 +13086,8 @@ export type CancelBusinessConsoleMesWorkOrderData = {
     query: {
         organizationId: string;
         environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/mes/work-orders/{workOrderId}/cancel';
 };
@@ -13629,6 +13639,8 @@ export type StartBusinessConsoleMesOperationTaskData = {
     query: {
         organizationId: string;
         environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/mes/operation-tasks/{operationTaskId}/start';
 };
@@ -13674,6 +13686,8 @@ export type PauseBusinessConsoleMesOperationTaskData = {
     query: {
         organizationId: string;
         environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/mes/operation-tasks/{operationTaskId}/pause';
 };
@@ -13719,6 +13733,8 @@ export type ResumeBusinessConsoleMesOperationTaskData = {
     query: {
         organizationId: string;
         environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/mes/operation-tasks/{operationTaskId}/resume';
 };
@@ -13764,6 +13780,8 @@ export type CompleteBusinessConsoleMesOperationTaskData = {
     query: {
         organizationId: string;
         environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/mes/operation-tasks/{operationTaskId}/complete';
 };

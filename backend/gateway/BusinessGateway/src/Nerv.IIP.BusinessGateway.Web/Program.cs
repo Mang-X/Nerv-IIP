@@ -49,6 +49,7 @@ builder.Services.Configure<BusinessGatewayAuthorizationOptions>(builder.Configur
 builder.Services.Configure<BusinessGatewayInventoryForwardedPermissionOptions>(builder.Configuration.GetSection("Inventory:ForwardedPermissions"));
 builder.Services.AddSingleton<BusinessGatewayDownstreamHealthState>();
 builder.Services.AddScoped<PrincipalWorkScopeResolver>();
+builder.Services.AddScoped<MesPrincipalWorkScopeAuthorizer>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<AcceptLanguageForwardingHandler>();
 builder.Services.AddScoped<BusinessConsoleSearchService>();

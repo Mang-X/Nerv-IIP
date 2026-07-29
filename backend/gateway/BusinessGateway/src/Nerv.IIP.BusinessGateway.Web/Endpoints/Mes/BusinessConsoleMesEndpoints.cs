@@ -453,24 +453,41 @@ public sealed class ListBusinessConsoleMesWorkOrdersEndpoint(
 public sealed class GetBusinessConsoleMesWorkOrderDetailEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesWorkOrderDetailRequest, BusinessConsoleMesWorkOrderDetailResponse>(
         auth,
         BusinessGatewayPermissions.MesWorkOrdersRead)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleMesWorkOrderDetailRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMesWorkOrderDetailRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesWorkOrderDetailResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleMesWorkOrderDetailResponse> ForwardAsync(
         BusinessConsoleMesWorkOrderDetailRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.GetWorkOrderDetailAsync(
+        CancellationToken cancellationToken)
+    {
+        await workScopeAuthorizer.EnsureWorkOrderAccessAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MesWorkOrdersRead,
+            request.ScopeKind,
+            request.ScopeId,
+            request.WorkOrderId,
+            cancellationToken);
+        return await mes.GetWorkOrderDetailAsync(
             tokenProvider.BearerToken,
             request.WorkOrderId,
             new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
             cancellationToken);
+    }
 }
 
 [Tags("Business Console MES")]
@@ -480,29 +497,56 @@ public sealed class GetBusinessConsoleMesWorkOrderDetailEndpoint(
 public sealed class ReleaseBusinessConsoleMesWorkOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesReleaseWorkOrderRequest, BusinessConsoleAcceptedResponse>(
         auth,
         BusinessGatewayPermissions.MesWorkOrdersManage)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleMesReleaseWorkOrderRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMesReleaseWorkOrderRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
         BusinessConsoleMesReleaseWorkOrderRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.ReleaseWorkOrderAsync(tokenProvider.BearerToken, request.WorkOrderId, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        await workScopeAuthorizer.EnsureWorkOrderAccessAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MesWorkOrdersManage,
+            request.ScopeKind,
+            request.ScopeId,
+            request.WorkOrderId,
+            cancellationToken);
+        return await mes.ReleaseWorkOrderAsync(
+            tokenProvider.BearerToken,
+            request.WorkOrderId,
+            request,
+            cancellationToken);
+    }
 }
 
 public abstract class BusinessConsoleMesWorkOrderReasonActionEndpoint(
     IBusinessGatewayAuthorizationClient auth,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesWorkOrderReasonRequest, BusinessConsoleAcceptedResponse>(
         auth,
         BusinessGatewayPermissions.MesWorkOrdersManage)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleMesWorkOrderReasonRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMesWorkOrderReasonRequest request) => request.EnvironmentId;
@@ -512,11 +556,22 @@ public abstract class BusinessConsoleMesWorkOrderReasonActionEndpoint(
         BusinessConsoleMesWorkOrderReasonRequest request,
         CancellationToken cancellationToken);
 
-    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
         BusinessConsoleMesWorkOrderReasonRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        ForwardOperationAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        await workScopeAuthorizer.EnsureWorkOrderAccessAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MesWorkOrdersManage,
+            request.ScopeKind,
+            request.ScopeId,
+            request.WorkOrderId,
+            cancellationToken);
+        return await ForwardOperationAsync(tokenProvider.BearerToken, request, cancellationToken);
+    }
 }
 
 [Tags("Business Console MES")]
@@ -526,8 +581,9 @@ public abstract class BusinessConsoleMesWorkOrderReasonActionEndpoint(
 public sealed class HoldBusinessConsoleMesWorkOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
-    : BusinessConsoleMesWorkOrderReasonActionEndpoint(auth, tokenProvider)
+    : BusinessConsoleMesWorkOrderReasonActionEndpoint(auth, workScopeAuthorizer, tokenProvider)
 {
     protected override Task<BusinessConsoleAcceptedResponse> ForwardOperationAsync(
         string internalBearerToken,
@@ -543,8 +599,9 @@ public sealed class HoldBusinessConsoleMesWorkOrderEndpoint(
 public sealed class CancelBusinessConsoleMesWorkOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
-    : BusinessConsoleMesWorkOrderReasonActionEndpoint(auth, tokenProvider)
+    : BusinessConsoleMesWorkOrderReasonActionEndpoint(auth, workScopeAuthorizer, tokenProvider)
 {
     protected override Task<BusinessConsoleAcceptedResponse> ForwardOperationAsync(
         string internalBearerToken,
@@ -1036,11 +1093,17 @@ public sealed class GetBusinessConsoleMesCurrentOperationSopsEndpoint(
 
 public abstract class BusinessConsoleMesOperationTaskActionEndpoint(
     IBusinessGatewayAuthorizationClient auth,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesOperationTaskActionRequest, BusinessConsoleMesOperationTaskActionResponse>(
         auth,
         BusinessGatewayPermissions.MesOperationsManage)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleMesOperationTaskActionRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMesOperationTaskActionRequest request) => request.EnvironmentId;
@@ -1050,11 +1113,22 @@ public abstract class BusinessConsoleMesOperationTaskActionEndpoint(
         BusinessConsoleMesOperationTaskActionRequest request,
         CancellationToken cancellationToken);
 
-    protected override Task<BusinessConsoleMesOperationTaskActionResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleMesOperationTaskActionResponse> ForwardAsync(
         BusinessConsoleMesOperationTaskActionRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        ForwardOperationAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        await workScopeAuthorizer.EnsureOperationTaskAccessAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MesOperationsManage,
+            request.ScopeKind,
+            request.ScopeId,
+            request.OperationTaskId,
+            cancellationToken);
+        return await ForwardOperationAsync(tokenProvider.BearerToken, request, cancellationToken);
+    }
 }
 
 [Tags("Business Console MES")]
@@ -1064,8 +1138,9 @@ public abstract class BusinessConsoleMesOperationTaskActionEndpoint(
 public sealed class StartBusinessConsoleMesOperationTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
-    : BusinessConsoleMesOperationTaskActionEndpoint(auth, tokenProvider)
+    : BusinessConsoleMesOperationTaskActionEndpoint(auth, workScopeAuthorizer, tokenProvider)
 {
     protected override Task<BusinessConsoleMesOperationTaskActionResponse> ForwardOperationAsync(
         string internalBearerToken,
@@ -1081,8 +1156,9 @@ public sealed class StartBusinessConsoleMesOperationTaskEndpoint(
 public sealed class PauseBusinessConsoleMesOperationTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
-    : BusinessConsoleMesOperationTaskActionEndpoint(auth, tokenProvider)
+    : BusinessConsoleMesOperationTaskActionEndpoint(auth, workScopeAuthorizer, tokenProvider)
 {
     protected override Task<BusinessConsoleMesOperationTaskActionResponse> ForwardOperationAsync(
         string internalBearerToken,
@@ -1098,8 +1174,9 @@ public sealed class PauseBusinessConsoleMesOperationTaskEndpoint(
 public sealed class ResumeBusinessConsoleMesOperationTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
-    : BusinessConsoleMesOperationTaskActionEndpoint(auth, tokenProvider)
+    : BusinessConsoleMesOperationTaskActionEndpoint(auth, workScopeAuthorizer, tokenProvider)
 {
     protected override Task<BusinessConsoleMesOperationTaskActionResponse> ForwardOperationAsync(
         string internalBearerToken,
@@ -1115,8 +1192,9 @@ public sealed class ResumeBusinessConsoleMesOperationTaskEndpoint(
 public sealed class CompleteBusinessConsoleMesOperationTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
-    : BusinessConsoleMesOperationTaskActionEndpoint(auth, tokenProvider)
+    : BusinessConsoleMesOperationTaskActionEndpoint(auth, workScopeAuthorizer, tokenProvider)
 {
     protected override Task<BusinessConsoleMesOperationTaskActionResponse> ForwardOperationAsync(
         string internalBearerToken,
@@ -1202,20 +1280,40 @@ public sealed class GetBusinessConsoleMesProductionReportEndpoint(
 public sealed class RecordBusinessConsoleMesProductionReportEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleRecordProductionReportRequest, BusinessConsoleRecordProductionReportResponse>(
         auth,
         BusinessGatewayPermissions.MesReportingWrite)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleRecordProductionReportRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleRecordProductionReportRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleRecordProductionReportResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleRecordProductionReportResponse> ForwardAsync(
         BusinessConsoleRecordProductionReportRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.RecordProductionReportAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        await workScopeAuthorizer.EnsureOperationTaskAccessAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MesReportingWrite,
+            request.ScopeKind,
+            request.ScopeId,
+            request.OperationTaskId,
+            cancellationToken);
+        return await mes.RecordProductionReportAsync(
+            tokenProvider.BearerToken,
+            request,
+            cancellationToken);
+    }
 }
 
 public sealed class BusinessConsoleRecordProductionReportRequestValidator

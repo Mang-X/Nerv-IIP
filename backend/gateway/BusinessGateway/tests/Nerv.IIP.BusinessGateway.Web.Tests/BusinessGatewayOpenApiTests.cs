@@ -549,6 +549,20 @@ public sealed class BusinessGatewayOpenApiTests
             AssertNoQueryParameter(paths, path, "get", "teamIds");
             AssertNoQueryParameter(paths, path, "get", "workCenterIds");
         }
+        foreach (var (path, method) in new (string Path, string Method)[]
+                 {
+                     ("/api/business-console/v1/mes/work-orders/{workOrderId}", "get"),
+                     ("/api/business-console/v1/mes/work-orders/{workOrderId}/release", "post"),
+                     ("/api/business-console/v1/mes/work-orders/{workOrderId}/hold", "post"),
+                     ("/api/business-console/v1/mes/work-orders/{workOrderId}/cancel", "post"),
+                     ("/api/business-console/v1/mes/operation-tasks/{operationTaskId}/start", "post"),
+                     ("/api/business-console/v1/mes/operation-tasks/{operationTaskId}/pause", "post"),
+                     ("/api/business-console/v1/mes/operation-tasks/{operationTaskId}/resume", "post"),
+                     ("/api/business-console/v1/mes/operation-tasks/{operationTaskId}/complete", "post"),
+                 })
+        {
+            AssertQueryParameters(paths, path, method, "scopeKind", "scopeId");
+        }
         AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-link", "get", "getBusinessConsoleMesFinishedGoodsReceiptInventoryLink");
         AssertOperationId(paths, "/api/business-console/v1/mes/downtime-events", "get", "listBusinessConsoleMesDowntimeEvents");
         AssertOperationId(paths, "/api/business-console/v1/mes/downtime-events", "post", "recordBusinessConsoleMesDowntimeEvent");
