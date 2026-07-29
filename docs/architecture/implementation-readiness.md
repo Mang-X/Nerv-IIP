@@ -861,6 +861,12 @@ IndustrialTelemetry 现在按请求从同一组织、环境和设备范围内的
 
 同一 session 随后以完全相同的 RunId 和场景起点运行 `-ReplayExisting`；默认 300 ms/POST 的受控节奏重放同一 193 次历史回填和 600 次实时写入，未触发 BusinessGateway 300 次/分钟固定窗口限流。重放返回与首次运行相同的 TelemetrySummary/DeviceStateSnapshot 强 ID，公开 alarm 仍为 `cleared`，且两次证据均记录 `backgroundProcessesCreated=0`。重放证据为 `artifacts/leader-demo/nerv-5da4-789972/telemetry-simulator-man-601-final-5ce90a2-20260724T025133545Z.json`。验收后精确停止该 session，复核结果为 `state=Stopped remaining=0`、`containers=0`。证据文件是本地运行产物，不提交仓库。
 
+### 2026-07-28 WMS 角色范围与任务执行记录（MAN-629 / #1166）
+
+WMS 收货、上架、拣货、复核发货与盘点五类列表已接入服务端授权工作范围。公开请求只接受 `scopeKind/scopeId`，BusinessGateway 通过当前主体工作上下文解析 self、team、site 或 organization 候选，再把人员、班组、站点授权集合作为内部请求传给 WMS；work-center/workshop 等不适用于仓储的范围 fail closed。当前 MasterData 尚无独立仓库聚合，首版“仓库范围”使用授权 site candidate 映射 WMS `SiteCode`，不得从库位编码前缀猜测仓库。
+
+WarehouseTask 已保存操作员、班组、站点派工快照及任务版本、累计执行量、批次/序列号、执行人和执行时间；上架/拣货任务新增 start、progress、exception、complete 四段人工动作。显式操作员派工优先于班组/站点，组织级范围只覆盖未派工任务，不能越过显式派工；进度采用累计数量且不可回退或超计划，上架必须足量完成，拣货短拣必须提交差异原因。任务动作使用数据库并发版本与持久幂等回执，同键同载荷可重放、同键异载荷拒绝；终态只返回空 `allowedActions`，PDA 不自行猜测可执行性。旧 `/warehouse-tasks/{id}/progress|complete` 保持 WCS adapter/callback 内部边界，不暴露为人工入口。离线队列、WCS 设备控制、波次拣货和独立仓库主数据不属于本切片。
+
 ### 可以并行但不阻塞开工的事项
 
 1. Ops 持久化 outbox、复杂失败重试、审批 Console 管理入口和生产级调度策略。

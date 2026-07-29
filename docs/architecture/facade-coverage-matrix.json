@@ -4575,6 +4575,58 @@
     },
     {
       "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/complete",
+      "operationId": "completeWmsPickingTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "completeBusinessConsoleWmsPickingTask"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/exception",
+      "operationId": "reportWmsPickingTaskException",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "reportBusinessConsoleWmsPickingTaskException"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/progress",
+      "operationId": "recordWmsPickingTaskProgress",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "recordBusinessConsoleWmsPickingTaskProgress"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/start",
+      "operationId": "startWmsPickingTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "startBusinessConsoleWmsPickingTask"
+      ]
+    },
+    {
+      "service": "Wms",
       "method": "GET",
       "route": "/api/business/v1/wms/replenishment-tasks",
       "operationId": "listWmsReplenishmentTasks",
@@ -4592,6 +4644,58 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleWmsPutawayTasks"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/complete",
+      "operationId": "completeWmsPutawayTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "completeBusinessConsoleWmsPutawayTask"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/exception",
+      "operationId": "reportWmsPutawayTaskException",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "reportBusinessConsoleWmsPutawayTaskException"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/progress",
+      "operationId": "recordWmsPutawayTaskProgress",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "recordBusinessConsoleWmsPutawayTaskProgress"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/start",
+      "operationId": "startWmsPutawayTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "startBusinessConsoleWmsPutawayTask"
       ]
     },
     {
