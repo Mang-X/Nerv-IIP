@@ -93,9 +93,25 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 table: "warehouse_tasks",
                 type: "character varying(50)",
                 maxLength: 50,
-                nullable: false,
-                defaultValue: "",
+                nullable: true,
                 comment: "Atomic execution ownership channel: legacy-unclaimed, unclaimed, manual or WCS.");
+
+            migrationBuilder.Sql(
+                """UPDATE "wms"."warehouse_tasks" SET "execution_channel" = 'LegacyUnclaimed' WHERE "execution_channel" IS NULL;""");
+
+            migrationBuilder.AlterColumn<string>(
+                name: "execution_channel",
+                schema: "wms",
+                table: "warehouse_tasks",
+                type: "character varying(50)",
+                maxLength: 50,
+                nullable: false,
+                comment: "Atomic execution ownership channel: legacy-unclaimed, unclaimed, manual or WCS.",
+                oldClrType: typeof(string),
+                oldType: "character varying(50)",
+                oldMaxLength: 50,
+                oldNullable: true,
+                oldComment: "Atomic execution ownership channel: legacy-unclaimed, unclaimed, manual or WCS.");
 
             migrationBuilder.AddColumn<DateTime>(
                 name: "execution_claimed_at_utc",
@@ -145,9 +161,23 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 schema: "wms",
                 table: "warehouse_tasks",
                 type: "bigint",
-                nullable: false,
-                defaultValue: 0L,
+                nullable: true,
                 comment: "Optimistic concurrency token advanced for every successful task mutation.");
+
+            migrationBuilder.Sql(
+                """UPDATE "wms"."warehouse_tasks" SET "version" = 1 WHERE "version" IS NULL;""");
+
+            migrationBuilder.AlterColumn<long>(
+                name: "version",
+                schema: "wms",
+                table: "warehouse_tasks",
+                type: "bigint",
+                nullable: false,
+                comment: "Optimistic concurrency token advanced for every successful task mutation.",
+                oldClrType: typeof(long),
+                oldType: "bigint",
+                oldNullable: true,
+                oldComment: "Optimistic concurrency token advanced for every successful task mutation.");
 
             migrationBuilder.AddColumn<string>(
                 name: "assigned_operator_user_id",
@@ -190,9 +220,23 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 schema: "wms",
                 table: "inbound_orders",
                 type: "bigint",
-                nullable: false,
-                defaultValue: 0L,
+                nullable: true,
                 comment: "Optimistic concurrency token advanced for inbound assignment and lifecycle mutations.");
+
+            migrationBuilder.Sql(
+                """UPDATE "wms"."inbound_orders" SET "version" = 1 WHERE "version" IS NULL;""");
+
+            migrationBuilder.AlterColumn<long>(
+                name: "version",
+                schema: "wms",
+                table: "inbound_orders",
+                type: "bigint",
+                nullable: false,
+                comment: "Optimistic concurrency token advanced for inbound assignment and lifecycle mutations.",
+                oldClrType: typeof(long),
+                oldType: "bigint",
+                oldNullable: true,
+                oldComment: "Optimistic concurrency token advanced for inbound assignment and lifecycle mutations.");
 
             migrationBuilder.AddColumn<string>(
                 name: "assigned_operator_user_id",
@@ -217,9 +261,23 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 schema: "wms",
                 table: "count_executions",
                 type: "bigint",
-                nullable: false,
-                defaultValue: 0L,
+                nullable: true,
                 comment: "Optimistic concurrency token advanced for count assignment and lifecycle mutations.");
+
+            migrationBuilder.Sql(
+                """UPDATE "wms"."count_executions" SET "version" = 1 WHERE "version" IS NULL;""");
+
+            migrationBuilder.AlterColumn<long>(
+                name: "version",
+                schema: "wms",
+                table: "count_executions",
+                type: "bigint",
+                nullable: false,
+                comment: "Optimistic concurrency token advanced for count assignment and lifecycle mutations.",
+                oldClrType: typeof(long),
+                oldType: "bigint",
+                oldNullable: true,
+                oldComment: "Optimistic concurrency token advanced for count assignment and lifecycle mutations.");
 
             migrationBuilder.CreateTable(
                 name: "warehouse_assignment_receipts",
