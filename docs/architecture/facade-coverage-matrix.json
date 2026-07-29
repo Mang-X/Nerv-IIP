@@ -536,6 +536,19 @@
       ]
     },
     {
+      "service": "DemandPlanning",
+      "method": "POST",
+      "route": "/api/business/v1/planning/suggestions/{suggestionId}/reject",
+      "operationId": "rejectPlanningSuggestion",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "rejectBusinessConsolePlanningSuggestion"
+      ]
+    },
+    {
       "service": "Erp",
       "method": "GET",
       "route": "/api/business/v1/erp/delivery-orders",

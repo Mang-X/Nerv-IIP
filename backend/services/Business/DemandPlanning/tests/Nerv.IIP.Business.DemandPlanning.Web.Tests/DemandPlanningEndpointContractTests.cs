@@ -34,7 +34,7 @@ public sealed class DemandPlanningEndpointContractTests
     {
         var contracts = DemandPlanningEndpointContracts.All.ToArray();
 
-        Assert.Equal(15, contracts.Length);
+        Assert.Equal(16, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/planning/mps" && x.PermissionCode == DemandPlanningPermissionCodes.MpsRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "listPlanningMpsBuckets");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/mps" && x.PermissionCode == DemandPlanningPermissionCodes.MpsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createPlanningMpsBucket");
         Assert.Contains(contracts, x => x.HttpMethod == "PUT" && x.Route == "/api/business/v1/planning/mps/{mpsId}" && x.PermissionCode == DemandPlanningPermissionCodes.MpsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "updatePlanningMpsBucket");
@@ -50,6 +50,7 @@ public sealed class DemandPlanningEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/planning/mrp-runs/{runId}/pegging" && x.PermissionCode == DemandPlanningPermissionCodes.MrpRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getPlanningMrpPegging");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/planning/suggestions" && x.PermissionCode == DemandPlanningPermissionCodes.MrpRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "listPlanningSuggestions");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/suggestions/{suggestionId}/accept" && x.PermissionCode == DemandPlanningPermissionCodes.SuggestionsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "acceptPlanningSuggestion");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/suggestions/{suggestionId}/reject" && x.PermissionCode == DemandPlanningPermissionCodes.SuggestionsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "rejectPlanningSuggestion");
     }
 
     [Theory]
@@ -68,6 +69,7 @@ public sealed class DemandPlanningEndpointContractTests
     [InlineData(typeof(ListMrpPeggingEndpoint))]
     [InlineData(typeof(ListPlanningSuggestionsEndpoint))]
     [InlineData(typeof(AcceptPlanningSuggestionEndpoint))]
+    [InlineData(typeof(RejectPlanningSuggestionEndpoint))]
     public void DemandPlanning_endpoints_route_through_mediator(Type endpointType)
     {
         var parameterTypes = endpointType.GetConstructors().Single().GetParameters().Select(x => x.ParameterType).ToArray();
@@ -518,6 +520,76 @@ public sealed class DemandPlanningEndpointContractTests
 
         Assert.Contains("Only open planning suggestions can be accepted", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, bridge.CreateCount);
+    }
+
+    [Fact]
+    public async Task Suggestion_rejection_marks_open_suggestion_rejected_and_records_reason()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), "planned-purchase", "SKU-RM-1000", "pcs", "SITE-01", 19m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
+        dbContext.PlanningSuggestions.Add(suggestion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new RejectPlanningSuggestionCommandHandler(dbContext);
+
+        await handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "planner.li", "demand-cancelled"), CancellationToken.None);
+
+        Assert.Equal(PlanningSuggestionStatus.Rejected, suggestion.Status);
+        Assert.Equal("demand-cancelled", suggestion.ReasonCode);
+    }
+
+    [Fact]
+    public async Task Suggestion_rejection_replay_is_tolerated_and_preserves_original_reason()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), "planned-purchase", "SKU-RM-1000", "pcs", "SITE-01", 19m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
+        dbContext.PlanningSuggestions.Add(suggestion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new RejectPlanningSuggestionCommandHandler(dbContext);
+
+        await handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "planner.li", "demand-cancelled"), CancellationToken.None);
+        await handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "planner.li", "replayed-reason"), CancellationToken.None);
+
+        Assert.Equal(PlanningSuggestionStatus.Rejected, suggestion.Status);
+        Assert.Equal("demand-cancelled", suggestion.ReasonCode);
+    }
+
+    [Fact]
+    public async Task Suggestion_rejection_of_accepted_suggestion_is_a_business_error()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), "planned-purchase", "SKU-RM-1000", "pcs", "SITE-01", 19m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
+        suggestion.Accept("erp", "purchase-request", "PR-001");
+        dbContext.PlanningSuggestions.Add(suggestion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new RejectPlanningSuggestionCommandHandler(dbContext);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "planner.li", "too-late"), CancellationToken.None));
+
+        Assert.Contains("Only open planning suggestions can be rejected", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(PlanningSuggestionStatus.Accepted, suggestion.Status);
+    }
+
+    [Fact]
+    public void Suggestion_rejection_command_requires_actor_and_reason()
+    {
+        var validator = new RejectPlanningSuggestionCommandValidator();
+
+        var missingReason = validator.Validate(new RejectPlanningSuggestionCommand(new(Guid.CreateVersion7()), "planner.li", ""));
+        var missingActor = validator.Validate(new RejectPlanningSuggestionCommand(new(Guid.CreateVersion7()), "", "demand-cancelled"));
+        var valid = validator.Validate(new RejectPlanningSuggestionCommand(new(Guid.CreateVersion7()), "planner.li", "demand-cancelled"));
+
+        Assert.False(missingReason.IsValid);
+        Assert.Contains(missingReason.Errors, x => string.Equals(x.PropertyName, nameof(RejectPlanningSuggestionCommand.Reason), StringComparison.OrdinalIgnoreCase));
+        Assert.False(missingActor.IsValid);
+        Assert.Contains(missingActor.Errors, x => string.Equals(x.PropertyName, nameof(RejectPlanningSuggestionCommand.RejectedBy), StringComparison.OrdinalIgnoreCase));
+        Assert.True(valid.IsValid);
     }
 
     [Fact]

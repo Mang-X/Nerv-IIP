@@ -2590,6 +2590,16 @@ public sealed record BusinessConsoleAcceptPlanningSuggestionRequest(
     string? DownstreamDocumentId,
     string? IdempotencyKey = null);
 
+// The rejecting actor is never taken from the request body; the Gateway injects the
+// authorized principal as the downstream RejectedBy audit identity.
+public sealed record BusinessConsoleRejectPlanningSuggestionRequest(
+    [property: RouteParam] string SuggestionId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string Reason);
+
+public sealed record BusinessConsolePlanningSuggestionRejectedResponse(bool Rejected);
+
 public sealed record BusinessConsoleSchedulingContextRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -3816,7 +3826,8 @@ public sealed record BusinessConsoleMesWorkOrderListRequest(
     int Skip = 0,
     int Take = 100,
     string? WorkCenterIds = null,
-    string? DeviceAssetIds = null);
+    string? DeviceAssetIds = null,
+    string? Statuses = null);
 
 public sealed record BusinessConsoleMesListWithoutStatusRequest(
     string OrganizationId,

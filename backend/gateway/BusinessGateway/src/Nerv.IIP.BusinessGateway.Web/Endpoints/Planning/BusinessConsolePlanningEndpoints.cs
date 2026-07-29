@@ -383,6 +383,42 @@ public sealed class AcceptBusinessConsolePlanningSuggestionEndpoint(
     }
 }
 
+[Tags("Business Console Planning")]
+[HttpPost("/api/business-console/v1/planning/suggestions/{suggestionId}/reject")]
+[BusinessGatewayOperationId("rejectBusinessConsolePlanningSuggestion")]
+public sealed class RejectBusinessConsolePlanningSuggestionEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessPlanningClient planning,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleRejectPlanningSuggestionRequest, BusinessConsolePlanningSuggestionRejectedResponse>(
+        auth,
+        BusinessGatewayPermissions.PlanningSuggestionsManage)
+{
+    protected override string OrganizationId(BusinessConsoleRejectPlanningSuggestionRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleRejectPlanningSuggestionRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleRejectPlanningSuggestionRequest request) => "planning-suggestion";
+
+    protected override string? ResourceId(BusinessConsoleRejectPlanningSuggestionRequest request) => Route<string>("suggestionId") ?? request.SuggestionId;
+
+    protected override Task<BusinessConsolePlanningSuggestionRejectedResponse> ForwardAsync(
+        BusinessConsoleRejectPlanningSuggestionRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        // The rejecting actor is always the authorized principal; caller-supplied identities are never forwarded.
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
+        var suggestionId = Route<string>("suggestionId") ?? request.SuggestionId;
+        return planning.RejectSuggestionAsync(
+            tokenProvider.BearerToken,
+            suggestionId,
+            actorRef,
+            request with { SuggestionId = suggestionId },
+            cancellationToken);
+    }
+}
+
 public sealed class BusinessConsoleCreateOrUpdateDemandSourceRequestValidator
     : Validator<BusinessConsoleCreateOrUpdateDemandSourceRequest>
 {
@@ -525,5 +561,17 @@ public sealed class BusinessConsoleAcceptPlanningSuggestionRequestValidator
         RuleFor(x => x.DownstreamDocumentType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DownstreamDocumentId).MaximumLength(150);
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+    }
+}
+
+public sealed class BusinessConsoleRejectPlanningSuggestionRequestValidator
+    : Validator<BusinessConsoleRejectPlanningSuggestionRequest>
+{
+    public BusinessConsoleRejectPlanningSuggestionRequestValidator()
+    {
+        RuleFor(x => x.SuggestionId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(128);
     }
 }

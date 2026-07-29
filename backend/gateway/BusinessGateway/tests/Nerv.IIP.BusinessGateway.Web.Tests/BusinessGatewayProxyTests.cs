@@ -10454,6 +10454,12 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
 
     public string? LastAcceptedSuggestionId { get; private set; }
 
+    public string? LastRejectedSuggestionId { get; private set; }
+
+    public string? LastRejectedBy { get; private set; }
+
+    public BusinessConsoleRejectPlanningSuggestionRequest? LastRejectSuggestionRequest { get; private set; }
+
     public BusinessConsolePlanningDemandCancelRequest? LastCancelDemandRequest { get; private set; }
 
     public BusinessConsoleForecastInputListRequest? LastForecastListRequest { get; private set; }
@@ -10726,6 +10732,20 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
         LastInternalToken = internalBearerToken;
         LastAcceptedSuggestionId = suggestionId;
         return Task.FromResult(AcceptedSuggestionResponse);
+    }
+
+    public Task<BusinessConsolePlanningSuggestionRejectedResponse> RejectSuggestionAsync(
+        string internalBearerToken,
+        string suggestionId,
+        string rejectedBy,
+        BusinessConsoleRejectPlanningSuggestionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastRejectedSuggestionId = suggestionId;
+        LastRejectedBy = rejectedBy;
+        LastRejectSuggestionRequest = request;
+        return Task.FromResult(new BusinessConsolePlanningSuggestionRejectedResponse(true));
     }
 }
 
