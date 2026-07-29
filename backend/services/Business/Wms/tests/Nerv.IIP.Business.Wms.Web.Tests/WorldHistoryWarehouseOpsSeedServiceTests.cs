@@ -1,18 +1,23 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
+using Nerv.IIP.Business.Wms.Web.Application.Auth;
+using Nerv.IIP.Business.Wms.Web.Application.Queries;
 using Nerv.IIP.Business.Wms.Web.Application.Seed;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
 /// <summary>
-/// 《工厂世界观设定集》L1「仓储自动化 / 盘点执行 / 来料退货」块的形状与幂等性证据。
+/// 《工厂世界观设定集》L1「仓储自动化 / 盘点执行 / 来料退货 / 现场当前队列」块的形状与幂等性证据。
 ///
 /// 四张表此前恒为 0 行，业务前端「WCS 任务」「盘点执行」「入库 · 退货」三页全空。
 /// 断言覆盖：条数区间、号段格式、状态分布、引用完整性（WCS 绑真实仓储作业任务、
-/// 退货挂真实入库单）、熔断链路收敛闭合、幂等，以及 **5 个 asOfDate 边界**
+/// 退货挂真实入库单）、五类现场队列、作业池资格、熔断链路收敛闭合、幂等，以及 **5 个 asOfDate 边界**
 /// （上线日 / 上线日+1 / 年中 / 演示当天 / 未来日）——单日期测试假绿的教训见 #1151。
 /// </summary>
 public sealed class WorldHistoryWarehouseOpsSeedServiceTests
@@ -44,6 +49,7 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
 
         var report = await new WorldHistoryWarehouseOpsSeedService(db)
             .SeedAsync("org-001", "env-dev", asOfDate, TestScale);
+        await AssertCurrentQueueShapeAsync(db, asOfDate);
 
         // 四张表都不再是 0 行——这正是三页空白的直接原因。
         // WCS 与退货是**派生**事实：上线日附近上游单据链本来就只有个位数，
@@ -52,6 +58,7 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
         Assert.Equal(WorldHistoryWarehouseOpsSpec.Devices.Count, report.WcsDispatchCircuitsWritten);
 
         var expectedWcsTasks = (await db.WarehouseTasks.Select(x => x.TaskNo).ToArrayAsync())
+            .Where(taskNo => !WorldHistoryWarehouseOpsSpec.IsCurrentQueueTask(taskNo))
             .Count(WorldHistoryWarehouseOpsSpec.IsDispatched);
         var realInboundOrders = (await db.InboundOrders.Select(x => x.InboundOrderNo).ToArrayAsync())
             .ToHashSet(StringComparer.Ordinal);
@@ -61,16 +68,29 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
 
         Assert.Equal(expectedWcsTasks, report.WcsTasksWritten);
         Assert.Equal(expectedReturns, report.SupplierReturnRequestsWritten);
+        Assert.Equal(4, report.CurrentQueue.InboundOrdersWritten);
+        Assert.Equal(2, report.CurrentQueue.PutawayTasksWritten);
+        Assert.Equal(4, report.CurrentQueue.OutboundOrdersWritten);
+        Assert.Equal(4, report.CurrentQueue.PickingTasksWritten);
+        Assert.Equal(2, report.CurrentQueue.ReviewReadyOrdersWritten);
         Assert.Equal(
             WorldHistoryCountSpec.CountPlanCount(asOfDate, TestScale),
             await db.CountExecutions.CountAsync());
         Assert.Equal(report.WcsTasksWritten, await db.WcsTasks.CountAsync());
         Assert.Equal(report.SupplierReturnRequestsWritten, await db.SupplierReturnRequests.CountAsync());
+        Assert.Equal(WorldHistoryWarehouseOpsSpec.WorkPools.Count, await db.WarehouseWorkPools.CountAsync());
+        Assert.Equal(
+            WorldHistoryWarehouseOpsSpec.WorkPools.Count,
+            await db.WarehouseWorkPoolMemberships.CountAsync());
 
         // 校验器（fail-closed）跑过并如实回报条数。
         Assert.Equal(report.CountExecutionsWritten, report.Validation.CountExecutionsChecked);
         Assert.Equal(report.WcsTasksWritten, report.Validation.WcsTasksChecked);
         Assert.Equal(report.SupplierReturnRequestsWritten, report.Validation.SupplierReturnRequestsChecked);
+        Assert.Equal(WorldHistoryWarehouseOpsSpec.WorkPools.Count, report.Validation.WorkPoolsChecked);
+        Assert.Equal(
+            WorldHistoryWarehouseOpsSpec.WorkPools.Count,
+            report.Validation.WorkPoolMembershipsChecked);
     }
 
     [Theory]
@@ -186,6 +206,278 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
         Assert.True(report.Validation.VarianceCountExecutionsChecked > 0, "盘点差异必须在场。");
     }
 
+    [Fact]
+    public async Task Warehouse_operator_can_distinguish_self_pool_and_site_queues_for_all_five_flows()
+    {
+        var asOfDate = new DateOnly(2026, 7, 27);
+        await using var db = CreateDbContext();
+        await SeedDocumentChainAsync(db, asOfDate);
+
+        var report = await new WorldHistoryWarehouseOpsSeedService(db)
+            .SeedAsync("org-001", "env-dev", asOfDate, TestScale);
+
+        var assignmentShape =
+            $"inbound={report.Assignments.InboundOrdersAssigned}, " +
+            $"putaway={report.Assignments.PutawayTasksAssigned}, " +
+            $"picking={report.Assignments.PickingTasksAssigned}, " +
+            $"outbound={report.Assignments.OutboundOrdersAssigned}, " +
+            $"count={report.Assignments.CountExecutionsAssigned}, " +
+            $"direct={report.Assignments.DirectAssignments}";
+        Assert.True(report.Assignments.InboundOrdersAssigned > 0, assignmentShape);
+        Assert.True(report.Assignments.PutawayTasksAssigned > 0);
+        Assert.True(report.Assignments.PickingTasksAssigned > 0);
+        Assert.True(report.Assignments.OutboundOrdersAssigned > 0);
+        Assert.True(report.Assignments.CountExecutionsAssigned > 0);
+        Assert.True(report.Assignments.DirectAssignments > 0);
+
+        var pools = await db.WarehouseWorkPools.AsNoTracking().ToArrayAsync();
+        Assert.Equal(WorldHistoryWarehouseOpsSpec.WorkPools.Count, pools.Length);
+        Assert.All(pools, pool =>
+        {
+            Assert.Equal(WorldHistorySpec.SiteCode, pool.SiteCode);
+            Assert.True(pool.Active);
+        });
+        var memberships = await db.WarehouseWorkPoolMemberships.AsNoTracking().ToArrayAsync();
+        Assert.Equal(WorldHistoryWarehouseOpsSpec.WorkPools.Count, memberships.Length);
+        Assert.All(memberships, membership =>
+        {
+            Assert.Equal(WorldHistoryWarehouseOpsSpec.DemoWarehousePrincipalId, membership.PrincipalId);
+            Assert.True(membership.Active);
+        });
+
+        var authorizer = new WarehouseWorkScopeAuthorizer(
+            db,
+            new StaticTimeProvider(new DateTime(2026, 7, 27, 12, 0, 0, DateTimeKind.Utc)));
+        var catalog = await authorizer.GetCatalogAsync(
+            "org-001",
+            "env-dev",
+            WorldHistoryWarehouseOpsSpec.DemoWarehousePrincipalId,
+            [WorldHistorySpec.SiteCode],
+            CancellationToken.None);
+
+        Assert.Contains(catalog.Items, item => item.ScopeKind == "self");
+        Assert.Equal(
+            WorldHistoryWarehouseOpsSpec.WorkPools.Select(spec => spec.PoolCode).Order(),
+            catalog.Items
+                .Where(item => item.ScopeKind == "work-pool")
+                .Select(item => item.ScopeId)
+                .Order());
+        Assert.Contains(
+            catalog.Items,
+            item => item.ScopeKind == "site" && item.ScopeId == WorldHistorySpec.SiteCode);
+
+        var self = await ResolveScopeAsync(
+            authorizer,
+            "self",
+            WorldHistoryWarehouseOpsSpec.DemoWarehousePrincipalId);
+        var receiving = await ResolveScopeAsync(
+            authorizer,
+            "work-pool",
+            WorldHistoryWarehouseOpsSpec.ReceivingPoolCode);
+        var shipping = await ResolveScopeAsync(
+            authorizer,
+            "work-pool",
+            WorldHistoryWarehouseOpsSpec.ShippingPoolCode);
+        var count = await ResolveScopeAsync(
+            authorizer,
+            "work-pool",
+            WorldHistoryWarehouseOpsSpec.CountPoolCode);
+        var site = await ResolveScopeAsync(
+            authorizer,
+            "site",
+            WorldHistorySpec.SiteCode);
+
+        var inboundHandler = new ListInboundOrdersQueryHandler(db);
+        var inboundSelf = await inboundHandler.Handle(
+            InboundQuery(self, $"{WorldHistoryWarehouseOpsSpec.CurrentInboundOrderPrefix}A-RECEIPT"),
+            CancellationToken.None);
+        var inboundPool = await inboundHandler.Handle(
+            InboundQuery(receiving, $"{WorldHistoryWarehouseOpsSpec.CurrentInboundOrderPrefix}A-RECEIPT"),
+            CancellationToken.None);
+        var inboundSite = await inboundHandler.Handle(
+            InboundQuery(site, $"{WorldHistoryWarehouseOpsSpec.CurrentInboundOrderPrefix}A-RECEIPT"),
+            CancellationToken.None);
+        var inboundIds = (await db.InboundOrders.AsNoTracking()
+                .Select(order => order.Id)
+                .ToArrayAsync())
+            .ToHashSet();
+        AssertScopedQueues(
+            inboundSelf.Items,
+            inboundPool.Items,
+            inboundSite.Items,
+            item => item.InboundOrderId,
+            item => item.AssignedOperatorUserId,
+            item => item.AssignedPoolCode,
+            inboundIds,
+            WorldHistoryWarehouseOpsSpec.ReceivingPoolCode);
+
+        var taskHandler = new ListWarehouseTasksQueryHandler(db);
+        var putawaySelf = await taskHandler.Handle(
+            WarehouseTaskQuery(WarehouseTaskType.Putaway, self),
+            CancellationToken.None);
+        var putawayPool = await taskHandler.Handle(
+            WarehouseTaskQuery(WarehouseTaskType.Putaway, receiving),
+            CancellationToken.None);
+        var putawaySite = await taskHandler.Handle(
+            WarehouseTaskQuery(WarehouseTaskType.Putaway, site),
+            CancellationToken.None);
+        var warehouseTaskIds = (await db.WarehouseTasks.AsNoTracking()
+                .Select(task => task.Id)
+                .ToArrayAsync())
+            .ToHashSet();
+        AssertScopedQueues(
+            putawaySelf.Items,
+            putawayPool.Items,
+            putawaySite.Items,
+            item => item.WarehouseTaskId,
+            item => item.AssignedOperatorUserId,
+            item => item.AssignedPoolCode,
+            warehouseTaskIds,
+            WorldHistoryWarehouseOpsSpec.ReceivingPoolCode);
+
+        var pickingSelf = await taskHandler.Handle(
+            WarehouseTaskQuery(WarehouseTaskType.Picking, self),
+            CancellationToken.None);
+        var pickingPool = await taskHandler.Handle(
+            WarehouseTaskQuery(WarehouseTaskType.Picking, shipping),
+            CancellationToken.None);
+        var pickingSite = await taskHandler.Handle(
+            WarehouseTaskQuery(WarehouseTaskType.Picking, site),
+            CancellationToken.None);
+        AssertScopedQueues(
+            pickingSelf.Items,
+            pickingPool.Items,
+            pickingSite.Items,
+            item => item.WarehouseTaskId,
+            item => item.AssignedOperatorUserId,
+            item => item.AssignedPoolCode,
+            warehouseTaskIds,
+            WorldHistoryWarehouseOpsSpec.ShippingPoolCode);
+
+        var outboundHandler = new ListOutboundOrdersQueryHandler(db);
+        var outboundSelf = await outboundHandler.Handle(
+            OutboundQuery(self, $"{WorldHistoryWarehouseOpsSpec.CurrentOutboundOrderPrefix}A-REVIEW"),
+            CancellationToken.None);
+        var outboundPool = await outboundHandler.Handle(
+            OutboundQuery(shipping, $"{WorldHistoryWarehouseOpsSpec.CurrentOutboundOrderPrefix}A-REVIEW"),
+            CancellationToken.None);
+        var outboundSite = await outboundHandler.Handle(
+            OutboundQuery(site, $"{WorldHistoryWarehouseOpsSpec.CurrentOutboundOrderPrefix}A-REVIEW"),
+            CancellationToken.None);
+        var outboundIds = (await db.OutboundOrders.AsNoTracking()
+                .Select(order => order.Id)
+                .ToArrayAsync())
+            .ToHashSet();
+        AssertScopedQueues(
+            outboundSelf.Items,
+            outboundPool.Items,
+            outboundSite.Items,
+            item => item.OutboundOrderId,
+            item => item.AssignedOperatorUserId,
+            item => item.AssignedPoolCode,
+            outboundIds,
+            WorldHistoryWarehouseOpsSpec.ShippingPoolCode);
+
+        var countHandler = new ListCountExecutionsQueryHandler(db);
+        var countSelf = await countHandler.Handle(
+            CountQuery(self),
+            CancellationToken.None);
+        var countPool = await countHandler.Handle(
+            CountQuery(count),
+            CancellationToken.None);
+        var countSite = await countHandler.Handle(
+            CountQuery(site),
+            CancellationToken.None);
+        var countIds = (await db.CountExecutions.AsNoTracking()
+                .Select(execution => execution.Id)
+                .ToArrayAsync())
+            .ToHashSet();
+        AssertScopedQueues(
+            countSelf.Items,
+            countPool.Items,
+            countSite.Items,
+            item => item.CountExecutionId,
+            item => item.AssignedOperatorUserId,
+            item => item.AssignedPoolCode,
+            countIds,
+            WorldHistoryWarehouseOpsSpec.CountPoolCode);
+
+        Assert.DoesNotContain(
+            await db.InboundOrders.AsNoTracking()
+                .Where(order => order.Status != InboundOrderStatus.Open)
+                .ToArrayAsync(),
+            order => order.AssignedPoolCode is not null || order.AssignedOperatorUserId is not null);
+        Assert.DoesNotContain(
+            await db.OutboundOrders.AsNoTracking()
+                .Where(order => order.Status != OutboundOrderStatus.Open)
+                .ToArrayAsync(),
+            order => order.AssignedPoolCode is not null || order.AssignedOperatorUserId is not null);
+        Assert.DoesNotContain(
+            await db.WarehouseTasks.AsNoTracking()
+                .Where(task => task.Status != WarehouseTaskStatus.Open)
+                .ToArrayAsync(),
+            task => task.AssignedPoolCode is not null || task.AssignedOperatorUserId is not null);
+        Assert.DoesNotContain(
+            await db.CountExecutions.AsNoTracking()
+                .Where(execution => execution.Status != CountExecutionStatus.Open)
+                .ToArrayAsync(),
+            execution => execution.AssignedPoolCode is not null
+                || execution.AssignedOperatorUserId is not null);
+    }
+
+    [Fact]
+    public async Task Current_queue_is_idempotent_across_a_full_history_seed_restart()
+    {
+        var asOfDate = new DateOnly(2026, 7, 27);
+        await using var db = CreateDbContext();
+        var historySeed = new WorldHistorySeedService(db);
+        var operationsSeed = new WorldHistoryWarehouseOpsSeedService(db);
+
+        var firstHistory = await historySeed.SeedAsync(
+            "org-001",
+            "env-dev",
+            asOfDate,
+            TestScale);
+        var firstOperations = await operationsSeed.SeedAsync(
+            "org-001",
+            "env-dev",
+            asOfDate,
+            TestScale);
+        var inboundOrders = await db.InboundOrders.CountAsync();
+        var outboundOrders = await db.OutboundOrders.CountAsync();
+        var warehouseTasks = await db.WarehouseTasks.CountAsync();
+
+        var secondHistory = await historySeed.SeedAsync(
+            "org-001",
+            "env-dev",
+            asOfDate,
+            TestScale);
+        var secondOperations = await operationsSeed.SeedAsync(
+            "org-001",
+            "env-dev",
+            asOfDate,
+            TestScale);
+
+        Assert.True(firstHistory.InboundOrdersWritten > 0);
+        Assert.Equal(14, firstOperations.CurrentQueue.TotalWritten);
+        Assert.Equal(0, secondHistory.InboundOrdersWritten);
+        Assert.Equal(0, secondHistory.OutboundOrdersWritten);
+        Assert.Equal(0, secondHistory.WarehouseTasksWritten);
+        Assert.Equal(0, secondHistory.InventoryMovementRequestsWritten);
+        Assert.Equal(
+            firstHistory.Validation.InboundOrdersChecked,
+            secondHistory.Validation.InboundOrdersChecked);
+        Assert.Equal(
+            firstHistory.Validation.OutboundOrdersChecked,
+            secondHistory.Validation.OutboundOrdersChecked);
+        Assert.Equal(0, secondOperations.CurrentQueue.TotalWritten);
+        Assert.Equal(0, secondOperations.Assignments.TotalAssignments);
+        Assert.Equal(inboundOrders, await db.InboundOrders.CountAsync());
+        Assert.Equal(outboundOrders, await db.OutboundOrders.CountAsync());
+        Assert.Equal(warehouseTasks, await db.WarehouseTasks.CountAsync());
+        await AssertCurrentQueueShapeAsync(db, asOfDate);
+    }
+
     [Theory]
     [MemberData(nameof(AsOfDates))]
     public async Task Warehouse_ops_seed_is_idempotent_for_any_as_of_date(int year, int month, int day)
@@ -200,6 +492,11 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
         var wcsTasks = await db.WcsTasks.CountAsync();
         var circuits = await db.WcsDispatchCircuits.CountAsync();
         var returns = await db.SupplierReturnRequests.CountAsync();
+        var workPools = await db.WarehouseWorkPools.CountAsync();
+        var memberships = await db.WarehouseWorkPoolMemberships.CountAsync();
+        var inboundOrders = await db.InboundOrders.CountAsync();
+        var outboundOrders = await db.OutboundOrders.CountAsync();
+        var warehouseTasks = await db.WarehouseTasks.CountAsync();
 
         var second = await seed.SeedAsync("org-001", "env-dev", asOfDate, TestScale);
 
@@ -207,10 +504,20 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
         Assert.Equal(0, second.WcsTasksWritten);
         Assert.Equal(0, second.WcsDispatchCircuitsWritten);
         Assert.Equal(0, second.SupplierReturnRequestsWritten);
+        Assert.Equal(0, second.WorkPoolsWritten);
+        Assert.Equal(0, second.WorkPoolMembershipsWritten);
+        Assert.Equal(0, second.CurrentQueue.TotalWritten);
+        Assert.Equal(0, second.CurrentQueue.ReviewReadyOrdersWritten);
+        Assert.Equal(0, second.Assignments.TotalAssignments);
         Assert.Equal(countExecutions, await db.CountExecutions.CountAsync());
         Assert.Equal(wcsTasks, await db.WcsTasks.CountAsync());
         Assert.Equal(circuits, await db.WcsDispatchCircuits.CountAsync());
         Assert.Equal(returns, await db.SupplierReturnRequests.CountAsync());
+        Assert.Equal(workPools, await db.WarehouseWorkPools.CountAsync());
+        Assert.Equal(memberships, await db.WarehouseWorkPoolMemberships.CountAsync());
+        Assert.Equal(inboundOrders, await db.InboundOrders.CountAsync());
+        Assert.Equal(outboundOrders, await db.OutboundOrders.CountAsync());
+        Assert.Equal(warehouseTasks, await db.WarehouseTasks.CountAsync());
         Assert.True(first.CountExecutionsWritten > 0);
     }
 
@@ -291,6 +598,230 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
         Assert.Contains(exception.Failures, failure => failure.Contains("未落库", StringComparison.Ordinal));
     }
 
+    private static Task<WarehouseWorkScopeSelection> ResolveScopeAsync(
+        WarehouseWorkScopeAuthorizer authorizer,
+        string scopeKind,
+        string scopeId) =>
+        authorizer.ResolveAsync(
+            new WarehouseWorkScopeRequest(
+                "org-001",
+                "env-dev",
+                WorldHistoryWarehouseOpsSpec.DemoWarehousePrincipalId,
+                [WorldHistorySpec.SiteCode],
+                scopeKind,
+                scopeId,
+                WorldHistorySpec.SiteCode),
+            CancellationToken.None);
+
+    private static ListInboundOrdersQuery InboundQuery(
+        WarehouseWorkScopeSelection selection,
+        string? keyword = null) =>
+        new(
+            "org-001",
+            "env-dev",
+            Take: 500,
+            Status: InboundOrderStatus.Open.ToString(),
+            Keyword: keyword,
+            AssignedOperatorUserIds: Operators(selection),
+            AssignedPoolCodes: Pools(selection),
+            SiteCodes: selection.SiteCodes);
+
+    private static ListOutboundOrdersQuery OutboundQuery(
+        WarehouseWorkScopeSelection selection,
+        string? keyword = null) =>
+        new(
+            "org-001",
+            "env-dev",
+            Take: 500,
+            Status: OutboundOrderStatus.Open.ToString(),
+            Keyword: keyword,
+            AssignedOperatorUserIds: Operators(selection),
+            AssignedPoolCodes: Pools(selection),
+            SiteCodes: selection.SiteCodes);
+
+    private static ListWarehouseTasksQuery WarehouseTaskQuery(
+        WarehouseTaskType taskType,
+        WarehouseWorkScopeSelection selection) =>
+        new(
+            "org-001",
+            "env-dev",
+            taskType,
+            Take: 500,
+            Status: WarehouseTaskStatus.Open.ToString(),
+            AssignedOperatorUserIds: Operators(selection),
+            AssignedPoolCodes: Pools(selection),
+            SiteCodes: selection.SiteCodes);
+
+    private static ListCountExecutionsQuery CountQuery(WarehouseWorkScopeSelection selection) =>
+        new(
+            "org-001",
+            "env-dev",
+            Take: 500,
+            Status: CountExecutionStatus.Open.ToString(),
+            AssignedOperatorUserIds: Operators(selection),
+            AssignedPoolCodes: Pools(selection),
+            SiteCodes: selection.SiteCodes);
+
+    private static IReadOnlyCollection<string>? Operators(
+        WarehouseWorkScopeSelection selection) =>
+        selection.AssignedOperatorUserId is null
+            ? null
+            : [selection.AssignedOperatorUserId];
+
+    private static IReadOnlyCollection<string>? Pools(
+        WarehouseWorkScopeSelection selection) =>
+        selection.AssignedOperatorUserId is null
+            ? selection.PoolCodes
+            : null;
+
+    private static void AssertScopedQueues<TItem, TId>(
+        IReadOnlyCollection<TItem> self,
+        IReadOnlyCollection<TItem> pool,
+        IReadOnlyCollection<TItem> site,
+        Func<TItem, TId> id,
+        Func<TItem, string?> assignedOperator,
+        Func<TItem, string?> assignedPool,
+        IReadOnlySet<TId> realIds,
+        string expectedPool)
+        where TId : notnull
+    {
+        Assert.NotEmpty(self);
+        Assert.NotEmpty(pool);
+        Assert.NotEmpty(site);
+        Assert.Contains(
+            pool,
+            item => string.Equals(
+                assignedOperator(item),
+                WorldHistoryWarehouseOpsSpec.DemoWarehousePrincipalId,
+                StringComparison.Ordinal));
+        Assert.Contains(pool, item => assignedOperator(item) is null);
+
+        var poolIds = pool.Select(id).ToHashSet();
+        var siteIds = site.Select(id).ToHashSet();
+        Assert.All(self, item =>
+        {
+            Assert.Contains(id(item), realIds);
+            Assert.Contains(id(item), poolIds);
+            Assert.Contains(id(item), siteIds);
+            Assert.Equal(
+                WorldHistoryWarehouseOpsSpec.DemoWarehousePrincipalId,
+                assignedOperator(item));
+            Assert.Equal(expectedPool, assignedPool(item));
+        });
+        Assert.All(pool, item =>
+        {
+            Assert.Contains(id(item), realIds);
+            Assert.Equal(expectedPool, assignedPool(item));
+        });
+        Assert.All(site, item =>
+        {
+            Assert.Contains(id(item), realIds);
+            Assert.Equal(expectedPool, assignedPool(item));
+        });
+    }
+
+    private static async Task AssertCurrentQueueShapeAsync(
+        ApplicationDbContext db,
+        DateOnly asOfDate)
+    {
+        var spec = WorldHistoryWarehouseOpsSpec.BuildCurrentQueue(asOfDate);
+        var inboundNumbers = spec.ReceiptOrders
+            .Concat(spec.PutawayOrders)
+            .Select(draft => draft.InboundOrderNo)
+            .ToArray();
+        var inbounds = (await db.InboundOrders.AsNoTracking()
+                .Include(order => order.Lines)
+                .Where(order => inboundNumbers.Contains(order.InboundOrderNo))
+                .ToArrayAsync())
+            .ToDictionary(order => order.InboundOrderNo, StringComparer.Ordinal);
+        var outboundNumbers = spec.OutboundOrders
+            .Select(draft => draft.OutboundOrderNo)
+            .ToArray();
+        var outbounds = (await db.OutboundOrders.AsNoTracking()
+                .Include(order => order.Lines)
+                .Where(order => outboundNumbers.Contains(order.OutboundOrderNo))
+                .ToArrayAsync())
+            .ToDictionary(order => order.OutboundOrderNo, StringComparer.Ordinal);
+        var taskNumbers = spec.PutawayOrders
+            .Select(draft => draft.WarehouseTaskNo!)
+            .Concat(spec.OutboundOrders.Select(draft => draft.WarehouseTaskNo))
+            .ToArray();
+        var tasks = (await db.WarehouseTasks.AsNoTracking()
+                .Where(task => taskNumbers.Contains(task.TaskNo))
+                .ToArrayAsync())
+            .ToDictionary(task => task.TaskNo, StringComparer.Ordinal);
+
+        Assert.Equal(inboundNumbers.Length, inbounds.Count);
+        Assert.Equal(outboundNumbers.Length, outbounds.Count);
+        Assert.Equal(taskNumbers.Length, tasks.Count);
+
+        foreach (var draft in spec.ReceiptOrders.Concat(spec.PutawayOrders))
+        {
+            var order = inbounds[draft.InboundOrderNo];
+            var line = Assert.Single(order.Lines);
+            Assert.NotEqual(default, order.Id);
+            Assert.Equal(draft.SourceDocumentType, order.SourceDocumentType);
+            Assert.Equal(draft.SourceDocumentId, order.SourceDocumentId);
+            Assert.Equal(WorldHistorySpec.SiteCode, order.SiteCode);
+            Assert.Equal(InboundOrderStatus.Open, order.Status);
+            Assert.Equal(draft.SkuCode, line.SkuCode);
+            Assert.Equal(draft.UomCode, line.UomCode);
+            Assert.Equal(draft.Quantity, line.ReceivedQuantity);
+            Assert.Equal(draft.StagingLocationCode, line.StagingLocationCode);
+            Assert.Equal(draft.LotNo, line.LotNo);
+            Assert.Equal(draft.CreatedAtUtc.UtcDateTime, order.CreatedAtUtc);
+
+            if (draft.WarehouseTaskNo is null)
+            {
+                continue;
+            }
+
+            var task = tasks[draft.WarehouseTaskNo];
+            Assert.NotEqual(default, task.Id);
+            Assert.Equal(order.InboundOrderNo, task.SourceOrderNo);
+            Assert.Equal(WorldHistoryWmsSpec.LineNo, task.SourceOrderLineNo);
+            Assert.Equal(draft.SkuCode, task.SkuCode);
+            Assert.Equal(draft.UomCode, task.UomCode);
+            Assert.Equal(draft.Quantity, task.PlannedQuantity);
+            Assert.Equal(draft.PutawayFromLocationCode, task.FromLocationCode);
+            Assert.Equal(draft.PutawayToLocationCode, task.ToLocationCode);
+            Assert.Equal(draft.LotNo, task.LotNo);
+            Assert.Equal(WarehouseTaskStatus.Open, task.Status);
+        }
+
+        foreach (var draft in spec.OutboundOrders)
+        {
+            var order = outbounds[draft.OutboundOrderNo];
+            var line = Assert.Single(order.Lines);
+            var task = tasks[draft.WarehouseTaskNo];
+            Assert.NotEqual(default, order.Id);
+            Assert.NotEqual(default, task.Id);
+            Assert.Equal(draft.SourceDocumentType, order.SourceDocumentType);
+            Assert.Equal(draft.SourceDocumentId, order.SourceDocumentId);
+            Assert.Equal(WorldHistorySpec.SiteCode, order.SiteCode);
+            Assert.Equal(OutboundOrderStatus.Open, order.Status);
+            Assert.Equal(draft.SkuCode, line.SkuCode);
+            Assert.Equal(draft.UomCode, line.UomCode);
+            Assert.Equal(draft.Quantity, line.RequestedQuantity);
+            Assert.Equal(draft.PickFromLocationCode, line.PickLocationCode);
+            Assert.Equal(draft.LotNo, line.LotNo);
+            Assert.Equal(order.OutboundOrderNo, task.SourceOrderNo);
+            Assert.Equal(WorldHistoryWmsSpec.LineNo, task.SourceOrderLineNo);
+            Assert.Equal(draft.SkuCode, task.SkuCode);
+            Assert.Equal(draft.UomCode, task.UomCode);
+            Assert.Equal(draft.Quantity, task.PlannedQuantity);
+            Assert.Equal(draft.PickFromLocationCode, task.FromLocationCode);
+            Assert.Equal(draft.PickToLocationCode, task.ToLocationCode);
+            Assert.Equal(draft.LotNo, task.LotNo);
+            Assert.Equal(
+                draft.ReviewReady ? WarehouseTaskStatus.Completed : WarehouseTaskStatus.Open,
+                task.Status);
+            Assert.Equal(
+                draft.ReviewReady ? draft.Quantity : 0m,
+                task.ExecutedQuantity);
+        }
+    }
+
     private static async Task SeedDocumentChainAsync(ApplicationDbContext dbContext, DateOnly asOfDate) =>
         await new WorldHistorySeedService(dbContext).SeedAsync("org-001", "env-dev", asOfDate, TestScale);
 
@@ -300,5 +831,11 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
             .UseInMemoryDatabase($"wms-world-history-ops-{Guid.CreateVersion7():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed class StaticTimeProvider(DateTime utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() =>
+            new(utcNow, TimeSpan.Zero);
     }
 }

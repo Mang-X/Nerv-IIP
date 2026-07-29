@@ -343,7 +343,8 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 .AsNoTracking()
                 .Include(x => x.Lines)
                 .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
-                    x.InboundOrderNo.StartsWith("IB-"))
+                    x.InboundOrderNo.StartsWith("IB-") &&
+                    !x.InboundOrderNo.StartsWith(WorldHistoryWarehouseOpsSpec.CurrentInboundOrderPrefix))
                 .ToArrayAsync(cancellationToken))
             .Select(x => new InboundProjection(
                 x.InboundOrderNo,
@@ -364,7 +365,8 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 .AsNoTracking()
                 .Include(x => x.Lines)
                 .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
-                    x.OutboundOrderNo.StartsWith("OB-"))
+                    x.OutboundOrderNo.StartsWith("OB-") &&
+                    !x.OutboundOrderNo.StartsWith(WorldHistoryWarehouseOpsSpec.CurrentOutboundOrderPrefix))
                 .ToArrayAsync(cancellationToken))
             .Select(x => new OutboundProjection(
                 x.OutboundOrderNo,
@@ -387,7 +389,9 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         await dbContext.WarehouseTasks
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
-                x.TaskNo.StartsWith("WT-"))
+                x.TaskNo.StartsWith("WT-") &&
+                !x.TaskNo.StartsWith(WorldHistoryWarehouseOpsSpec.CurrentInboundTaskPrefix) &&
+                !x.TaskNo.StartsWith(WorldHistoryWarehouseOpsSpec.CurrentOutboundTaskPrefix))
             .Select(x => new TaskProjection(
                 x.TaskNo,
                 x.SourceOrderNo,

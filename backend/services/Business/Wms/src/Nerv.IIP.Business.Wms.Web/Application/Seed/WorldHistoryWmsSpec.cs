@@ -31,10 +31,11 @@ namespace Nerv.IIP.Business.Wms.Web.Application.Seed;
 /// 因此这里统一用 <c>quality.InspectionPassed</c>，无需把质量域规格再复制一份到仓储侧。
 /// </para>
 /// <para>
-/// 裁决点四 · **执行人无处可落**。<c>InboundOrder</c> / <c>OutboundOrder</c> / <c>WarehouseTask</c>
-/// 三个聚合都没有作业人字段（领域层从未建模执行人），因此库管的分配结果只出现在
-/// <see cref="WorldHistoryInboundDocument.ExecutorUserId"/> /
-/// <see cref="WorldHistoryOutboundDocument.ExecutorUserId"/> 与校验器抽样里，落不进库。
+/// 裁决点四 · **背景历史保持终态，当前队列另行受控派工**。本规格仍只描述已经闭环的
+/// 历史单据；<see cref="WorldHistoryInboundDocument.ExecutorUserId"/> /
+/// <see cref="WorldHistoryOutboundDocument.ExecutorUserId"/> 保留为历史叙事字段，不回写终态聚合。
+/// 演示日仍可执行的收货 / 上架 / 拣货 / 复核事实由
+/// <see cref="WorldHistoryWarehouseOpsSpec.BuildCurrentQueue"/> 生成，并通过 WMS 作业池持久化归属。
 /// </para>
 /// </summary>
 public static class WorldHistoryWmsSpec

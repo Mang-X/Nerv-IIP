@@ -206,11 +206,24 @@ try
             WorldHistoryConfiguration.ResolveScale(builder.Configuration));
         app.Logger.LogInformation(
             "World-history WMS operations seed completed: {Counts} count executions, {Returns} supplier returns, " +
+            "current queue {QueueInbound} inbound / {QueuePutaway} putaway / {QueueOutbound} outbound / " +
+            "{QueuePicking} picking ({QueueReviewReady} review-ready), " +
+            "{Pools} work pools, {Memberships} memberships, {Assignments} controlled assignments, " +
             "{WcsTasks} WCS tasks, {Circuits} dispatch circuits; validator checked {CheckedCounts} counts " +
             "({CompletedCounts} completed, {VarianceCounts} with variance) / {CheckedWcs} WCS tasks " +
-            "({CompletedWcs} completed, {FailedWcs} failed) / {CheckedCircuits} circuits / {CheckedReturns} returns.",
+            "({CompletedWcs} completed, {FailedWcs} failed) / {CheckedCircuits} circuits / {CheckedReturns} returns / " +
+            "{CheckedPools} pools / {CheckedMemberships} memberships / assignments " +
+            "{CheckedInbound}/{CheckedPutaway}/{CheckedPicking}/{CheckedOutbound}/{CheckedCount}.",
             opsReport.CountExecutionsWritten,
             opsReport.SupplierReturnRequestsWritten,
+            opsReport.CurrentQueue.InboundOrdersWritten,
+            opsReport.CurrentQueue.PutawayTasksWritten,
+            opsReport.CurrentQueue.OutboundOrdersWritten,
+            opsReport.CurrentQueue.PickingTasksWritten,
+            opsReport.CurrentQueue.ReviewReadyOrdersWritten,
+            opsReport.WorkPoolsWritten,
+            opsReport.WorkPoolMembershipsWritten,
+            opsReport.Assignments.TotalAssignments,
             opsReport.WcsTasksWritten,
             opsReport.WcsDispatchCircuitsWritten,
             opsReport.Validation.CountExecutionsChecked,
@@ -220,7 +233,14 @@ try
             opsReport.Validation.CompletedWcsTasksChecked,
             opsReport.Validation.FailedWcsTasksChecked,
             opsReport.Validation.WcsDispatchCircuitsChecked,
-            opsReport.Validation.SupplierReturnRequestsChecked);
+            opsReport.Validation.SupplierReturnRequestsChecked,
+            opsReport.Validation.WorkPoolsChecked,
+            opsReport.Validation.WorkPoolMembershipsChecked,
+            opsReport.Validation.AssignedInboundOrdersChecked,
+            opsReport.Validation.AssignedPutawayTasksChecked,
+            opsReport.Validation.AssignedPickingTasksChecked,
+            opsReport.Validation.AssignedOutboundOrdersChecked,
+            opsReport.Validation.AssignedCountExecutionsChecked);
     }
 
     app.UseNervIipRequestLocalization();
