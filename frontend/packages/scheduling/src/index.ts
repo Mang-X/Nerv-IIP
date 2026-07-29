@@ -2,6 +2,7 @@
 
 export { default as GanttChart } from './components/GanttChart.vue'
 export { default as ResourceSchedulerBoard } from './components/ResourceSchedulerBoard.vue'
+export { default as SchedulingLegend } from './components/panels/SchedulingLegend.vue'
 
 export { useSchedulingPlan, type SchedulingContext } from './composables/useSchedulingPlan'
 export { useSchedulingEdits, type SchedulingEditsDeps } from './composables/useSchedulingEdits'

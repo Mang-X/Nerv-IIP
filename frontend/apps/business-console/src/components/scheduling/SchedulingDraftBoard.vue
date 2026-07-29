@@ -7,13 +7,29 @@ import {
 } from '@nerv-iip/scheduling'
 import type { WorkingSchedulePendingOperation } from '@/composables/useWorkingScheduleDraft'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
-import { NvButton, NvInput, NvTabs, NvTabsContent, NvTabsList, NvTabsTrigger } from '@nerv-iip/ui'
+import {
+  NvButton,
+  NvInput,
+  NvStatusBadge,
+  NvTabs,
+  NvTabsContent,
+  NvTabsList,
+  NvTabsTrigger,
+} from '@nerv-iip/ui'
 import { shallowRef } from 'vue'
 
 defineProps<{
   model?: ScheduleModel
   pendingOperations?: WorkingSchedulePendingOperation[]
   readOnly?: boolean
+  /**
+   * 本次会话内落库成功的 override 工序键（`orderId:operationId`）。
+   * 仅为会话内乐观回显：override 目前没有读接口，刷新或换会话后无法回读，徽标即消失。
+   * followUp: 待后端补 override 查询 facade 后，改为服务端回读、跨会话回显。
+   */
+  persistedOperationKeys?: string[]
+  /** 持久化请求进行中（禁用所有持久锁定按钮，避免并发重复提交）。 */
+  persistPending?: boolean
 }>()
 const emit = defineEmits<{
   move: [payload: TaskDragPayload]
@@ -22,6 +38,7 @@ const emit = defineEmits<{
   lockedAttempt: [taskId: string]
   moveToPending: [taskId: string]
   restorePending: [taskId: string]
+  persistOverride: [taskId: string]
 }>()
 const view = shallowRef('gantt')
 </script>
@@ -154,14 +171,35 @@ const view = shallowRef('gantt')
                 />
               </td>
               <td class="p-2">
-                <NvButton
-                  size="sm"
-                  :variant="task.locked ? 'secondary' : 'outline'"
-                  type="button"
-                  :disabled="readOnly"
-                  @click="emit('lock', task.id, !task.locked)"
-                  >{{ task.locked ? '解锁' : '锁定' }}</NvButton
-                >
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <NvButton
+                    size="sm"
+                    :variant="task.locked ? 'secondary' : 'outline'"
+                    type="button"
+                    :disabled="readOnly"
+                    @click="emit('lock', task.id, !task.locked)"
+                    >{{ task.locked ? '解锁' : '锁定' }}</NvButton
+                  >
+                  <NvButton
+                    size="sm"
+                    variant="outline"
+                    type="button"
+                    :disabled="readOnly || persistPending || !task.resourceId"
+                    :title="
+                      task.resourceId
+                        ? '把该工序的资源与起止落库为跨方案 override，重排程自动继承'
+                        : '该工序未分配资源，先指定资源再持久锁定'
+                    "
+                    @click="emit('persistOverride', task.id)"
+                    >持久锁定</NvButton
+                  >
+                  <NvStatusBadge
+                    v-if="persistedOperationKeys?.includes(`${task.orderId}:${task.operationId}`)"
+                    label="本次会话已持久化"
+                    tone="success"
+                    title="该工序 override 已在本次会话内落库；override 暂无读接口，刷新后徽标不再回显，但落库结果仍会被重排程继承"
+                  />
+                </div>
               </td>
               <td class="p-2">
                 <NvButton
