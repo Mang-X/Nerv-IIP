@@ -164,6 +164,15 @@ public sealed class IamManagementEndpointAuthorizationTests
 
     private sealed class EmptyRoleApplicationService : IIamRoleApplicationService
     {
+        public Task<IReadOnlyList<RoleResponse>> ResolveRolesAsync(
+            IReadOnlyCollection<string> roleIds,
+            CancellationToken cancellationToken)
+        {
+            _ = roleIds;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<RoleResponse>>([]);
+        }
+
         public Task<PagedListResponse<RoleResponse>> ListRolesAsync(IamListQueryOptions options, CancellationToken cancellationToken)
         {
             _ = options;

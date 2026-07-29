@@ -45,7 +45,10 @@ public sealed class IamSeedService(
         var membershipId = new MembershipId($"{seed.AdminUserId}:{seed.OrganizationId}:{seed.EnvironmentId}");
         var credentialId = new ConnectorHostCredentialId(seed.ConnectorHostCredentialId);
         var manifestId = new SeedManifestId("iam-default-seed:v1");
+        var principalScopeBackfillManifestId = new SeedManifestId("iam-admin-principal-scope-backfill:v1");
         var seedAlreadyApplied = await dbContext.SeedManifests.FindAsync([manifestId], cancellationToken) is not null;
+        var principalScopeBackfillApplied = await dbContext.SeedManifests
+            .FindAsync([principalScopeBackfillManifestId], cancellationToken) is not null;
         var now = DateTimeOffset.UtcNow;
 
         if (await dbContext.Organizations.FindAsync([organizationId], cancellationToken) is null)
@@ -60,14 +63,21 @@ public sealed class IamSeedService(
 
         var role = await dbContext.Roles
             .Include(x => x.Permissions)
+            .Include(x => x.DataScopes)
             .SingleOrDefaultAsync(x => x.Id == adminRoleId, cancellationToken);
         if (role is null)
         {
-            dbContext.Roles.Add(new Role(adminRoleId, "Platform Administrator", NervIipSeedPermissions.All));
+            role = new Role(adminRoleId, "Platform Administrator", NervIipSeedPermissions.All);
+            role.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId)]);
+            dbContext.Roles.Add(role);
         }
-        else if (!SetEquals(role.Permissions.Select(x => x.PermissionCode), NervIipSeedPermissions.All))
+        else if (!principalScopeBackfillApplied
+            && seedAlreadyApplied
+            && role.RoleName == "Platform Administrator"
+            && role.DataScopes.Count == 0
+            && SetEquals(role.Permissions.Select(x => x.PermissionCode), NervIipSeedPermissions.All))
         {
-            role.ReplacePermissions(NervIipSeedPermissions.All);
+            role.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId)]);
         }
 
         var user = await dbContext.Users.FindAsync([adminUserId], cancellationToken);
@@ -94,10 +104,6 @@ public sealed class IamSeedService(
         if (membership is null)
         {
             dbContext.Memberships.Add(new Membership(membershipId, adminUserId, organizationId, environmentId, [adminRoleId]));
-        }
-        else if (!SetEquals(membership.Roles.Select(x => x.RoleId.Id), [adminRoleId.Id]))
-        {
-            membership.ReplaceRoles([adminRoleId]);
         }
 
         var connectorCapabilities = NervIipSeedPermissions.All
@@ -181,6 +187,16 @@ public sealed class IamSeedService(
         if (!seedAlreadyApplied)
         {
             dbContext.SeedManifests.Add(new SeedManifest(manifestId, "iam-default-seed", "v1", "iam", now));
+        }
+
+        if (!principalScopeBackfillApplied)
+        {
+            dbContext.SeedManifests.Add(new SeedManifest(
+                principalScopeBackfillManifestId,
+                "iam-admin-principal-scope-backfill",
+                "v1",
+                "iam",
+                now));
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);

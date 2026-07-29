@@ -393,13 +393,23 @@ public sealed class PostgreSqlIamAuthService(
             return new IamAuthorizationCheckResult(false);
         }
 
-        var scopes = await membershipRepository.ListEffectiveDataScopesAsync(
+        var permissionScopeGrants = await membershipRepository.ListPermissionDataScopeGrantsAsync(
             new UserId(principal.UserId),
             new OrganizationId(organizationId),
             new IamEnvironmentId(environmentId),
+            permissionCode,
             cancellationToken);
-        var dataScope = ToAuthorizationDataScope(scopes);
-        if (dataScope is { HasRestrictions: true })
+        var scopeGrants = permissionScopeGrants
+            .Select(x => new AuthorizationScopeGrant(
+                x.SourceKind,
+                x.SourceId,
+                x.ScopeKind,
+                x.ScopeId,
+                x.ApplicablePermissionCodes,
+                x.OrganizationWide))
+            .ToArray();
+        var dataScope = ToAuthorizationDataScope(scopeGrants, organizationId);
+        if (scopeGrants.Length > 0)
         {
             await securityAudit.RecordAsync(
                 new SecurityAuditContext(
@@ -418,24 +428,25 @@ public sealed class PostgreSqlIamAuthService(
                     resourceType,
                     resourceId,
                     dataScope,
+                    scopeGrants,
                 },
                 DateTimeOffset.UtcNow,
                 cancellationToken);
         }
 
-        return new IamAuthorizationCheckResult(true, dataScope);
+        return new IamAuthorizationCheckResult(true, dataScope, scopeGrants);
     }
 
-    private static AuthorizationDataScope? ToAuthorizationDataScope(IReadOnlyCollection<DataScopeBinding> scopes)
+    private static AuthorizationDataScope? ToAuthorizationDataScope(
+        IReadOnlyCollection<AuthorizationScopeGrant> scopeGrants,
+        string organizationId)
     {
-        if (scopes.Count == 0)
-        {
-            return null;
-        }
-
-        var unknownTypes = scopes
-            .Select(x => x.ScopeType.Trim().ToLowerInvariant())
-            .Where(x => !DataScopeBinding.KnownScopeTypes.Contains(x, StringComparer.Ordinal))
+        var unknownTypes = scopeGrants
+            .Where(x =>
+                x.OrganizationWide
+                    ? !string.Equals(x.ScopeKind.Trim(), "organization", StringComparison.OrdinalIgnoreCase)
+                    : !DataScopeBinding.KnownScopeTypes.Contains(x.ScopeKind.Trim().ToLowerInvariant(), StringComparer.Ordinal))
+            .Select(x => x.ScopeKind.Trim().ToLowerInvariant())
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         if (unknownTypes.Length > 0)
@@ -443,19 +454,55 @@ public sealed class PostgreSqlIamAuthService(
             return new AuthorizationDataScope([], [], [], DenyAll: true);
         }
 
+        if (scopeGrants.Any(x =>
+                string.Equals(x.ScopeKind.Trim(), DataScopeBinding.Organization, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(x.ScopeId.Trim(), organizationId, StringComparison.Ordinal)))
+        {
+            return new AuthorizationDataScope([], [], [], DenyAll: true);
+        }
+
+        if (scopeGrants.Any(x => x.OrganizationWide))
+        {
+            return null;
+        }
+
         return new AuthorizationDataScope(
-            scopes.Where(x => string.Equals(x.ScopeType.Trim(), DataScopeBinding.Site, StringComparison.OrdinalIgnoreCase))
-                .Select(x => x.ScopeCode.Trim())
+            scopeGrants.Where(x => string.Equals(x.ScopeKind.Trim(), DataScopeBinding.Site, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeId.Trim())
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)
                 .ToArray(),
-            scopes.Where(x => string.Equals(x.ScopeType.Trim(), DataScopeBinding.Workshop, StringComparison.OrdinalIgnoreCase))
-                .Select(x => x.ScopeCode.Trim())
+            scopeGrants.Where(x => string.Equals(x.ScopeKind.Trim(), DataScopeBinding.Workshop, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeId.Trim())
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)
                 .ToArray(),
-            scopes.Where(x => string.Equals(x.ScopeType.Trim(), DataScopeBinding.ProductionLine, StringComparison.OrdinalIgnoreCase))
-                .Select(x => x.ScopeCode.Trim())
+            scopeGrants.Where(x => string.Equals(x.ScopeKind.Trim(), DataScopeBinding.ProductionLine, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeId.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray(),
+            SelfIds: scopeGrants
+                .Where(x => string.Equals(x.ScopeKind.Trim(), DataScopeBinding.Self, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeId.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray(),
+            TeamCodes: scopeGrants
+                .Where(x => string.Equals(x.ScopeKind.Trim(), DataScopeBinding.Team, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeId.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray(),
+            WorkCenterCodes: scopeGrants
+                .Where(x => string.Equals(x.ScopeKind.Trim(), DataScopeBinding.WorkCenter, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeId.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray(),
+            OrganizationIds: scopeGrants
+                .Where(x => string.Equals(x.ScopeKind.Trim(), DataScopeBinding.Organization, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeId.Trim())
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)
                 .ToArray());

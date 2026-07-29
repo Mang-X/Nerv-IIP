@@ -20,6 +20,439 @@ namespace Nerv.IIP.Iam.Web.Tests;
 
 public sealed class IamAuthServiceScopeTests
 {
+    [Theory]
+    [InlineData("self")]
+    [InlineData("team")]
+    [InlineData("work-center")]
+    [InlineData("workshop")]
+    [InlineData("organization")]
+    public void Frontline_scope_kinds_are_governed_IAM_data_scope_types(string scopeKind)
+    {
+        var binding = DataScopeBinding.Normalize(new DataScopeBinding(scopeKind, "SCOPE-001"));
+
+        Assert.Equal(scopeKind, binding.ScopeType);
+        Assert.Equal("SCOPE-001", binding.ScopeCode);
+    }
+
+    [Fact]
+    public async Task Principal_scope_grants_do_not_cross_permissions_between_roles()
+    {
+        await using var connection = new SqliteConnection("Filename=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDbContext(connection);
+        await db.Database.EnsureCreatedAsync();
+        var passwordService = new IamPasswordService();
+        var user = new User(
+            new UserId("user-two-roles"),
+            "two-roles",
+            "two-roles@nerv-iip.local",
+            passwordService.Hash("Password123!"),
+            true,
+            Guid.NewGuid().ToString("n"),
+            1);
+        var mesRole = new Role(
+            new RoleId("role-mes"),
+            "MES 操作工",
+            ["business.mes.work-orders.read"]);
+        mesRole.ReplaceDataScopes([new DataScopeBinding("workshop", "WS-MES")]);
+        var qualityRole = new Role(
+            new RoleId("role-quality"),
+            "质检员",
+            ["business.quality.inspection-records.read"]);
+        qualityRole.ReplaceDataScopes([new DataScopeBinding("workshop", "WS-QA")]);
+        var membership = new Membership(
+            new MembershipId("membership-two-roles"),
+            user.Id,
+            new OrganizationId("org-001"),
+            new IamEnvironmentId("env-dev"),
+            [mesRole.Id, qualityRole.Id]);
+
+        db.Users.Add(user);
+        db.Organizations.Add(new Organization(new OrganizationId("org-001"), "Nerv", "active"));
+        db.Environments.Add(new IamEnvironment(
+            new IamEnvironmentId("env-dev"),
+            new OrganizationId("org-001"),
+            "Dev",
+            "active"));
+        db.Roles.AddRange(mesRole, qualityRole);
+        db.Memberships.Add(membership);
+        await db.SaveChangesAsync();
+
+        var service = new PostgreSqlIamAuthService(
+            new UserRepository(db),
+            new UserSessionRepository(db),
+            new MembershipRepository(db),
+            new ConnectorHostCredentialRepository(db),
+            new ExternalClientRepository(db),
+            passwordService,
+            CreateTokenService(),
+            Options.Create(new IamAuthenticationOptions()),
+            Options.Create(new EnterpriseIdentityOptions()),
+            new InMemoryMfaChallengeStore(),
+            new NoopSecurityAuditRecorder(),
+            NullLogger<PostgreSqlIamAuthService>.Instance,
+            new TestWebHostEnvironment());
+        var principal = new CurrentPrincipalResponse(
+            user.Id.Id,
+            user.LoginName,
+            user.Email,
+            "user",
+            "org-001",
+            "env-dev",
+            user.PermissionVersion,
+            ["business.mes.work-orders.read", "business.quality.inspection-records.read"],
+            ["role-mes", "role-quality"]);
+
+        var result = await service.PrincipalHasPermissionAsync(
+            principal,
+            "org-001",
+            "env-dev",
+            "business.mes.work-orders.read",
+            "mes-work-order",
+            null,
+            CancellationToken.None);
+
+        Assert.True(result.Allowed);
+        Assert.Equal(["WS-MES"], result.DataScope!.WorkshopCodes);
+        var grant = Assert.Single(result.ScopeGrants!);
+        Assert.Equal("role", grant.SourceKind);
+        Assert.Equal("role-mes", grant.SourceId);
+        Assert.Equal("workshop", grant.ScopeKind);
+        Assert.Equal("WS-MES", grant.ScopeId);
+        Assert.Equal(["business.mes.work-orders.read"], grant.ApplicablePermissionCodes);
+    }
+
+    [Fact]
+    public async Task Permission_role_without_data_scope_does_not_invent_an_organization_grant()
+    {
+        await using var connection = new SqliteConnection("Filename=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDbContext(connection);
+        await db.Database.EnsureCreatedAsync();
+        var passwordService = new IamPasswordService();
+        var user = new User(
+            new UserId("user-organization-role"),
+            "organization-role",
+            "organization-role@nerv-iip.local",
+            passwordService.Hash("Password123!"),
+            true,
+            Guid.NewGuid().ToString("n"),
+            1);
+        var role = new Role(
+            new RoleId("role-organization"),
+            "全厂调度员",
+            ["business.mes.work-orders.read"]);
+        var membership = new Membership(
+            new MembershipId("membership-organization-role"),
+            user.Id,
+            new OrganizationId("org-001"),
+            new IamEnvironmentId("env-dev"),
+            [role.Id]);
+        db.Users.Add(user);
+        db.Organizations.Add(new Organization(new OrganizationId("org-001"), "Nerv", "active"));
+        db.Environments.Add(new IamEnvironment(
+            new IamEnvironmentId("env-dev"),
+            new OrganizationId("org-001"),
+            "Dev",
+            "active"));
+        db.Roles.Add(role);
+        db.Memberships.Add(membership);
+        await db.SaveChangesAsync();
+
+        var service = new PostgreSqlIamAuthService(
+            new UserRepository(db),
+            new UserSessionRepository(db),
+            new MembershipRepository(db),
+            new ConnectorHostCredentialRepository(db),
+            new ExternalClientRepository(db),
+            passwordService,
+            CreateTokenService(),
+            Options.Create(new IamAuthenticationOptions()),
+            Options.Create(new EnterpriseIdentityOptions()),
+            new InMemoryMfaChallengeStore(),
+            new NoopSecurityAuditRecorder(),
+            NullLogger<PostgreSqlIamAuthService>.Instance,
+            new TestWebHostEnvironment());
+        var principal = new CurrentPrincipalResponse(
+            user.Id.Id,
+            user.LoginName,
+            user.Email,
+            "user",
+            "org-001",
+            "env-dev",
+            user.PermissionVersion,
+            ["business.mes.work-orders.read"],
+            ["role-organization"]);
+
+        var result = await service.PrincipalHasPermissionAsync(
+            principal,
+            "org-001",
+            "env-dev",
+            "business.mes.work-orders.read",
+            "mes-work-order",
+            null,
+            CancellationToken.None);
+
+        Assert.True(result.Allowed);
+        Assert.NotNull(result.DataScope);
+        Assert.False(result.DataScope!.HasRestrictions);
+        Assert.Empty(result.ScopeGrants!);
+    }
+
+    [Theory]
+    [InlineData("org-001", true)]
+    [InlineData("org-other", false)]
+    public async Task Explicit_organization_scope_is_only_wide_for_the_current_organization(
+        string scopedOrganizationId,
+        bool expectedAllowedScope)
+    {
+        await using var connection = new SqliteConnection("Filename=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDbContext(connection);
+        await db.Database.EnsureCreatedAsync();
+        var passwordService = new IamPasswordService();
+        var user = new User(
+            new UserId($"user-explicit-{scopedOrganizationId}"),
+            $"explicit-{scopedOrganizationId}",
+            $"explicit-{scopedOrganizationId}@nerv-iip.local",
+            passwordService.Hash("Password123!"),
+            true,
+            Guid.NewGuid().ToString("n"),
+            1);
+        var role = new Role(
+            new RoleId($"role-explicit-{scopedOrganizationId}"),
+            "显式组织范围角色",
+            ["business.mes.work-orders.read"]);
+        role.ReplaceDataScopes([new DataScopeBinding("organization", scopedOrganizationId)]);
+        var membership = new Membership(
+            new MembershipId($"membership-explicit-{scopedOrganizationId}"),
+            user.Id,
+            new OrganizationId("org-001"),
+            new IamEnvironmentId("env-dev"),
+            [role.Id]);
+        db.Users.Add(user);
+        db.Organizations.Add(new Organization(new OrganizationId("org-001"), "Nerv", "active"));
+        db.Environments.Add(new IamEnvironment(
+            new IamEnvironmentId("env-dev"),
+            new OrganizationId("org-001"),
+            "Dev",
+            "active"));
+        db.Roles.Add(role);
+        db.Memberships.Add(membership);
+        await db.SaveChangesAsync();
+
+        var service = new PostgreSqlIamAuthService(
+            new UserRepository(db),
+            new UserSessionRepository(db),
+            new MembershipRepository(db),
+            new ConnectorHostCredentialRepository(db),
+            new ExternalClientRepository(db),
+            passwordService,
+            CreateTokenService(),
+            Options.Create(new IamAuthenticationOptions()),
+            Options.Create(new EnterpriseIdentityOptions()),
+            new InMemoryMfaChallengeStore(),
+            new NoopSecurityAuditRecorder(),
+            NullLogger<PostgreSqlIamAuthService>.Instance,
+            new TestWebHostEnvironment());
+        var principal = new CurrentPrincipalResponse(
+            user.Id.Id,
+            user.LoginName,
+            user.Email,
+            "user",
+            "org-001",
+            "env-dev",
+            user.PermissionVersion,
+            ["business.mes.work-orders.read"],
+            [role.Id.Id]);
+
+        var result = await service.PrincipalHasPermissionAsync(
+            principal,
+            "org-001",
+            "env-dev",
+            "business.mes.work-orders.read",
+            "mes-work-order",
+            null,
+            CancellationToken.None);
+
+        Assert.True(result.Allowed);
+        var grant = Assert.Single(result.ScopeGrants!);
+        Assert.Equal("organization", grant.ScopeKind);
+        Assert.Equal(scopedOrganizationId, grant.ScopeId);
+        Assert.Equal(expectedAllowedScope, grant.OrganizationWide);
+        if (expectedAllowedScope)
+        {
+            Assert.Null(result.DataScope);
+        }
+        else
+        {
+            Assert.True(result.DataScope!.DenyAll);
+        }
+    }
+
+    [Fact]
+    public async Task Organization_grant_cannot_hide_unknown_legacy_scope_for_the_same_permission()
+    {
+        await using var connection = new SqliteConnection("Filename=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDbContext(connection);
+        await db.Database.EnsureCreatedAsync();
+        var passwordService = new IamPasswordService();
+        var user = new User(
+            new UserId("user-org-and-legacy"),
+            "org-and-legacy",
+            "org-and-legacy@nerv-iip.local",
+            passwordService.Hash("Password123!"),
+            true,
+            Guid.NewGuid().ToString("n"),
+            1);
+        var organizationRole = new Role(
+            new RoleId("role-org-wide"),
+            "全组织角色",
+            ["business.mes.work-orders.read"]);
+        organizationRole.ReplaceDataScopes([new DataScopeBinding("organization", "org-001")]);
+        var legacyRole = new Role(
+            new RoleId("role-legacy-cell"),
+            "存量单元角色",
+            ["business.mes.work-orders.read"]);
+        var membership = new Membership(
+            new MembershipId("membership-org-and-legacy"),
+            user.Id,
+            new OrganizationId("org-001"),
+            new IamEnvironmentId("env-dev"),
+            [organizationRole.Id, legacyRole.Id]);
+        db.Users.Add(user);
+        db.Organizations.Add(new Organization(new OrganizationId("org-001"), "Nerv", "active"));
+        db.Environments.Add(new IamEnvironment(
+            new IamEnvironmentId("env-dev"),
+            new OrganizationId("org-001"),
+            "Dev",
+            "active"));
+        db.Roles.AddRange(organizationRole, legacyRole);
+        db.Memberships.Add(membership);
+        await db.SaveChangesAsync();
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO role_data_scopes (Id, RoleId, ScopeType, ScopeCode) VALUES ('role-legacy-cell:cell:CELL-A', 'role-legacy-cell', 'cell', 'CELL-A')");
+
+        var service = new PostgreSqlIamAuthService(
+            new UserRepository(db),
+            new UserSessionRepository(db),
+            new MembershipRepository(db),
+            new ConnectorHostCredentialRepository(db),
+            new ExternalClientRepository(db),
+            passwordService,
+            CreateTokenService(),
+            Options.Create(new IamAuthenticationOptions()),
+            Options.Create(new EnterpriseIdentityOptions()),
+            new InMemoryMfaChallengeStore(),
+            new NoopSecurityAuditRecorder(),
+            NullLogger<PostgreSqlIamAuthService>.Instance,
+            new TestWebHostEnvironment());
+        var principal = new CurrentPrincipalResponse(
+            user.Id.Id,
+            user.LoginName,
+            user.Email,
+            "user",
+            "org-001",
+            "env-dev",
+            user.PermissionVersion,
+            ["business.mes.work-orders.read"],
+            ["role-org-wide", "role-legacy-cell"]);
+
+        var result = await service.PrincipalHasPermissionAsync(
+            principal,
+            "org-001",
+            "env-dev",
+            "business.mes.work-orders.read",
+            "mes-work-order",
+            null,
+            CancellationToken.None);
+
+        Assert.True(result.Allowed);
+        Assert.NotNull(result.DataScope);
+        Assert.True(result.DataScope!.DenyAll);
+    }
+
+    [Fact]
+    public async Task Membership_scope_restricts_permission_when_granting_role_has_no_role_scope()
+    {
+        await using var connection = new SqliteConnection("Filename=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDbContext(connection);
+        await db.Database.EnsureCreatedAsync();
+        var passwordService = new IamPasswordService();
+        var user = new User(
+            new UserId("user-membership-restricted"),
+            "membership-restricted",
+            "membership-restricted@nerv-iip.local",
+            passwordService.Hash("Password123!"),
+            true,
+            Guid.NewGuid().ToString("n"),
+            1);
+        var role = new Role(
+            new RoleId("role-no-scope"),
+            "无角色范围",
+            ["business.mes.work-orders.read"]);
+        var membership = new Membership(
+            new MembershipId("membership-workshop"),
+            user.Id,
+            new OrganizationId("org-001"),
+            new IamEnvironmentId("env-dev"),
+            [role.Id]);
+        membership.ReplaceDataScopes([new DataScopeBinding("workshop", "WS-MC")]);
+        db.Users.Add(user);
+        db.Organizations.Add(new Organization(new OrganizationId("org-001"), "Nerv", "active"));
+        db.Environments.Add(new IamEnvironment(
+            new IamEnvironmentId("env-dev"),
+            new OrganizationId("org-001"),
+            "Dev",
+            "active"));
+        db.Roles.Add(role);
+        db.Memberships.Add(membership);
+        await db.SaveChangesAsync();
+
+        var service = new PostgreSqlIamAuthService(
+            new UserRepository(db),
+            new UserSessionRepository(db),
+            new MembershipRepository(db),
+            new ConnectorHostCredentialRepository(db),
+            new ExternalClientRepository(db),
+            passwordService,
+            CreateTokenService(),
+            Options.Create(new IamAuthenticationOptions()),
+            Options.Create(new EnterpriseIdentityOptions()),
+            new InMemoryMfaChallengeStore(),
+            new NoopSecurityAuditRecorder(),
+            NullLogger<PostgreSqlIamAuthService>.Instance,
+            new TestWebHostEnvironment());
+        var principal = new CurrentPrincipalResponse(
+            user.Id.Id,
+            user.LoginName,
+            user.Email,
+            "user",
+            "org-001",
+            "env-dev",
+            user.PermissionVersion,
+            ["business.mes.work-orders.read"],
+            ["role-no-scope"]);
+
+        var result = await service.PrincipalHasPermissionAsync(
+            principal,
+            "org-001",
+            "env-dev",
+            "business.mes.work-orders.read",
+            "mes-work-order",
+            null,
+            CancellationToken.None);
+
+        Assert.True(result.Allowed);
+        Assert.Equal(["WS-MC"], result.DataScope!.WorkshopCodes);
+        Assert.DoesNotContain(result.ScopeGrants!, x => x.OrganizationWide);
+        var grant = Assert.Single(result.ScopeGrants!);
+        Assert.Equal("membership", grant.SourceKind);
+        Assert.Equal("WS-MC", grant.ScopeId);
+    }
+
     [Fact]
     public async Task PrincipalHasPermissionAsync_returns_effective_data_scope_and_records_audit()
     {
@@ -496,6 +929,29 @@ public sealed class IamAuthServiceScopeTests
             _ = cancellationToken;
             IReadOnlyList<DataScopeBinding> scopes = [];
             return Task.FromResult(scopes);
+        }
+
+        public Task<IReadOnlyList<PermissionDataScopeGrant>> ListPermissionDataScopeGrantsAsync(
+            UserId userId,
+            OrganizationId organizationId,
+            IamEnvironmentId environmentId,
+            string permissionCode,
+            CancellationToken cancellationToken = default)
+        {
+            _ = userId;
+            _ = environmentId;
+            _ = cancellationToken;
+            IReadOnlyList<PermissionDataScopeGrant> grants =
+            [
+                new(
+                    "role",
+                    organizationId.Id == "org-zzz" ? "role-ops" : "role-empty",
+                    "organization",
+                    organizationId.Id,
+                    [permissionCode],
+                    OrganizationWide: true),
+            ];
+            return Task.FromResult(grants);
         }
 
         public Task<bool> UserHasMembershipAsync(

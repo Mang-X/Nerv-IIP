@@ -2,13 +2,16 @@ using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Iam.Web.Application.Auth;
+using Nerv.IIP.Iam.Web.Application.Roles;
 using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Iam.Web.Endpoints.Authorization;
 
 [HttpPost("/internal/iam/v1/authorization/check")]
 [AllowAnonymous]
-public sealed class AuthorizationCheckEndpoint(IIamAuthService auth) : Endpoint<AuthorizationCheckRequest, ResponseData<AuthorizationCheckResponse>>
+public sealed class AuthorizationCheckEndpoint(
+    IIamAuthService auth,
+    IIamRoleApplicationService roles) : Endpoint<AuthorizationCheckRequest, ResponseData<AuthorizationCheckResponse>>
 {
     public override async Task HandleAsync(AuthorizationCheckRequest req, CancellationToken ct)
     {
@@ -34,8 +37,19 @@ public sealed class AuthorizationCheckEndpoint(IIamAuthService auth) : Endpoint<
             return;
         }
 
+        var resolvedRoles = req.IncludePrincipalContext
+            ? await roles.ResolveRolesAsync(principal.RoleIds, ct)
+            : [];
         await Send.OkAsync(
-            new AuthorizationCheckResponse(true, principal.UserId, principal.PrincipalType, principal.LoginName, null, authorization.DataScope).AsResponseData(),
+            new AuthorizationCheckResponse(
+                true,
+                principal.UserId,
+                principal.PrincipalType,
+                principal.LoginName,
+                null,
+                authorization.DataScope,
+                req.IncludePrincipalContext ? authorization.ScopeGrants : null,
+                resolvedRoles.Select(x => new AuthorizationRole(x.RoleId, x.RoleName)).ToArray()).AsResponseData(),
             ct);
     }
 }

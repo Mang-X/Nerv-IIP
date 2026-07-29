@@ -242,6 +242,68 @@ public sealed class InMemoryIamStore
         }
     }
 
+    public IReadOnlyList<PermissionDataScopeGrant> ListPermissionDataScopeGrants(
+        string userId,
+        string organizationId,
+        string environmentId,
+        string permissionCode)
+    {
+        lock (_gate)
+        {
+            var membership = _memberships.SingleOrDefault(x =>
+                x.UserId == userId
+                && x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId);
+            if (membership is null)
+            {
+                return [];
+            }
+
+            var permissionRoleIds = _roles
+                .Where(x =>
+                    membership.RoleIds.Contains(x.RoleId)
+                    && x.PermissionCodes.Contains(permissionCode))
+                .Select(x => x.RoleId)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+            if (permissionRoleIds.Length == 0)
+            {
+                return [];
+            }
+
+            var grants = permissionRoleIds
+                .SelectMany(roleId =>
+                    _roleDataScopes.GetValueOrDefault(roleId, new HashSet<DataScopeBinding>())
+                        .Select(scope => ToPermissionDataScopeGrant(
+                            "role",
+                            roleId,
+                            scope,
+                            userId,
+                            organizationId,
+                            permissionCode)))
+                .Concat(
+                    _membershipDataScopes
+                        .GetValueOrDefault(
+                            MembershipDataScopeKey(userId, organizationId, environmentId),
+                            new HashSet<DataScopeBinding>())
+                        .Select(scope => ToPermissionDataScopeGrant(
+                            "membership",
+                            MembershipDataScopeKey(userId, organizationId, environmentId),
+                            scope,
+                            userId,
+                            organizationId,
+                            permissionCode)))
+                .Distinct()
+                .OrderBy(x => x.SourceKind, StringComparer.Ordinal)
+                .ThenBy(x => x.SourceId, StringComparer.Ordinal)
+                .ThenBy(x => x.ScopeKind, StringComparer.Ordinal)
+                .ThenBy(x => x.ScopeId, StringComparer.Ordinal)
+                .ToArray();
+            return grants;
+        }
+    }
+
     public bool ExternalClientHasPermission(string clientId, string organizationId, string environmentId, string permissionCode)
     {
         return ExternalClientHasPermission(clientId, organizationId, environmentId, permissionCode, null, null);
@@ -687,6 +749,11 @@ public sealed class InMemoryIamStore
         _organizations.Add(new OrganizationFact("org-001", "Nerv IIP", "active"));
         _environments.Add(new IamEnvironmentFact("env-dev", "org-001", "Development", "active"));
         _roles.Add(new RoleFact("role-platform-admin", "Platform Administrator", NervIipSeedPermissions.All.ToHashSet(StringComparer.Ordinal)));
+        _roleDataScopes["role-platform-admin"] =
+            new HashSet<DataScopeBinding>
+            {
+                new(DataScopeBinding.Organization, "org-001"),
+            };
         var now = DateTimeOffset.UtcNow;
         _users.Add(new UserFact(
             "user-admin",
@@ -714,6 +781,25 @@ public sealed class InMemoryIamStore
             .OrderBy(x => x.ScopeType, StringComparer.Ordinal)
             .ThenBy(x => x.ScopeCode, StringComparer.Ordinal)
             .ToArray();
+
+    private static PermissionDataScopeGrant ToPermissionDataScopeGrant(
+        string sourceKind,
+        string sourceId,
+        DataScopeBinding scope,
+        string userId,
+        string organizationId,
+        string permissionCode)
+    {
+        var normalized = DataScopeBinding.Normalize(scope);
+        return new PermissionDataScopeGrant(
+            sourceKind,
+            sourceId,
+            normalized.ScopeType,
+            normalized.ScopeType == DataScopeBinding.Self ? userId : normalized.ScopeCode,
+            [permissionCode],
+            OrganizationWide: normalized.ScopeType == DataScopeBinding.Organization
+                && normalized.ScopeCode == organizationId);
+    }
 
     private static string MembershipDataScopeKey(string userId, string organizationId, string environmentId) =>
         $"{userId}:{organizationId}:{environmentId}";
