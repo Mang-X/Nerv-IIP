@@ -597,8 +597,8 @@ watch(
       :loaded="workOrders.length"
       :total="workOrdersTotal"
       :updated-at="workOrdersLastUpdatedAt"
-      :empty="workOrdersHasSuccessfulResponse && workOrders.length === 0"
-      :failed="workOrdersHasFailedResponse"
+      :empty="workOrdersHasSuccessfulResponse && !workOrdersError && workOrders.length === 0"
+      :failed="workOrdersHasFailedResponse || Boolean(workOrdersError)"
       failure-explanation="维修工单服务未成功返回，请重试。"
       :empty-explanation="maintenanceEmptyExplanation"
     />

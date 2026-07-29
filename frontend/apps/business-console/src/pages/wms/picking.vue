@@ -315,8 +315,8 @@ function firstQuery(value: unknown) {
       :loaded="pickingTasks.length"
       :total="pickingTasksTotal"
       :updated-at="pickingTasksLastUpdatedAt"
-      :empty="pickingTasksHasSuccessfulResponse && pickingTasks.length === 0"
-      :failed="pickingTasksHasFailedResponse"
+      :empty="pickingTasksHasSuccessfulResponse && !pickingTasksError && pickingTasks.length === 0"
+      :failed="pickingTasksHasFailedResponse || Boolean(pickingTasksError)"
       failure-explanation="拣货任务服务未成功返回，请重试。"
       :empty-explanation="
         pickingScopeReady

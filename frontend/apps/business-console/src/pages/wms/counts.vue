@@ -436,8 +436,12 @@ function formatError(error: unknown) {
       :loaded="countExecutions.length"
       :total="countExecutionsTotal"
       :updated-at="countExecutionsLastUpdatedAt"
-      :empty="countExecutionsHasSuccessfulResponse && countExecutions.length === 0"
-      :failed="countExecutionsHasFailedResponse"
+      :empty="
+        countExecutionsHasSuccessfulResponse &&
+        !countExecutionsError &&
+        countExecutions.length === 0
+      "
+      :failed="countExecutionsHasFailedResponse || Boolean(countExecutionsError)"
       failure-explanation="仓储盘点任务服务未成功返回，请重试。"
       :empty-explanation="
         countScopeReady

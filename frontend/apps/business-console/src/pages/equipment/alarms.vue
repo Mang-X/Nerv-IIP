@@ -765,8 +765,8 @@ function formatError(error: unknown) {
       :loaded="alarms.length"
       :total="alarmsTotal"
       :updated-at="alarmsLastUpdatedAt"
-      :empty="alarmsHasSuccessfulResponse && alarms.length === 0"
-      :failed="alarmsHasFailedResponse"
+      :empty="alarmsHasSuccessfulResponse && !alarmsError && alarms.length === 0"
+      :failed="alarmsHasFailedResponse || Boolean(alarmsError)"
       failure-explanation="设备报警服务未成功返回，请重试。"
       :empty-explanation="alarmEmptyExplanation"
     />

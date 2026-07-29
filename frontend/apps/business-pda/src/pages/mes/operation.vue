@@ -52,6 +52,9 @@ const {
   resumeTask,
   completeTask,
   actionPending,
+  operationListScope,
+  operationListScopeMessage,
+  operationListScopeReady,
   operationScopeMessage,
   operationScopeReady,
   refresh,
@@ -59,10 +62,24 @@ const {
   hasSuccessfulResponse,
   hasFailedResponse,
 } = useMesOperationTasks()
-const mesScope = computed(() =>
-  filters.organizationId && filters.environmentId
-    ? '当前登录组织 / 当前业务环境'
-    : '组织/环境范围未就绪',
+const workScopeKindLabels: Record<string, string> = {
+  self: '本人',
+  team: '班组',
+  'work-center': '工作中心',
+  workshop: '车间',
+  organization: '组织',
+}
+const mesScope = computed(() => {
+  const selectedScope = operationListScope.value
+  if (!selectedScope) return '当前主体授权作业范围未就绪'
+  const kind = workScopeKindLabels[selectedScope.kind] ?? selectedScope.kind
+  const name = selectedScope.displayName || selectedScope.id
+  return `当前主体授权作业范围 · ${name}（${kind}）`
+})
+const mesEmptyExplanation = computed(() =>
+  operationListScopeReady.value
+    ? '当前主体授权作业范围内暂无工序任务。'
+    : operationListScopeMessage.value || '尚未取得当前主体的授权作业范围，未发起查询。',
 )
 const showOperationTasksEmpty = computed(
   () =>
@@ -378,7 +395,15 @@ function formatDate(value?: string | null) {
 
       <p class="text-sm text-muted-foreground">共 {{ total }} 个工序任务</p>
       <p
-        v-if="operationScopeMessage"
+        v-if="operationListScopeMessage"
+        data-testid="operation-list-scope-message"
+        class="rounded-lg border border-destructive/40 px-4 py-3 text-sm text-destructive"
+        role="alert"
+      >
+        {{ operationListScopeMessage }}
+      </p>
+      <p
+        v-if="operationListScopeReady && operationScopeMessage"
         data-testid="operation-scope-message"
         class="rounded-lg border border-destructive/40 px-4 py-3 text-sm text-destructive"
         role="alert"
@@ -387,14 +412,14 @@ function formatDate(value?: string | null) {
       </p>
       <ListScopeMeta
         :scope="mesScope"
-        source="工序任务服务（组织/环境范围，暂不支持按当前人员归属筛选）"
+        source="工序任务服务（服务端按当前主体与所选授权作业范围过滤）"
         :loaded="operationTasks.length"
         :total="total"
         :updated-at="lastUpdatedAt"
         :failed="hasFailedResponse"
         failure-explanation="工序任务服务未成功返回，请刷新重试。"
-        :empty="!(filters.organizationId && filters.environmentId) || showOperationTasksEmpty"
-        empty-explanation="当前列表是组织范围工序任务，暂不支持按当前人员归属筛选；空态不代表我的任务。"
+        :empty="!operationListScopeReady || showOperationTasksEmpty"
+        :empty-explanation="mesEmptyExplanation"
       />
 
       <RetryableListError
@@ -410,7 +435,7 @@ function formatDate(value?: string | null) {
         v-else-if="showOperationTasksEmpty"
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
       >
-        当前组织/环境范围暂无工序任务；暂不支持按当前人员归属筛选
+        当前主体授权作业范围内暂无工序任务
       </div>
 
       <div v-else class="overflow-hidden rounded-lg border border-border">

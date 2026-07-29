@@ -445,8 +445,10 @@ function formatError(error: unknown) {
       :loaded="outboundOrders.length"
       :total="outboundOrdersTotal"
       :updated-at="outboundOrdersLastUpdatedAt"
-      :empty="outboundOrdersHasSuccessfulResponse && outboundOrders.length === 0"
-      :failed="outboundOrdersHasFailedResponse"
+      :empty="
+        outboundOrdersHasSuccessfulResponse && !outboundOrdersError && outboundOrders.length === 0
+      "
+      :failed="outboundOrdersHasFailedResponse || Boolean(outboundOrdersError)"
       failure-explanation="出库发货服务未成功返回，请重试。"
       :empty-explanation="
         outboundScopeReady ? '当前组织/环境范围没有出库单。' : '缺少组织或环境范围，未发起查询。'

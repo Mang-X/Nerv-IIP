@@ -466,15 +466,6 @@ export function useBusinessEquipmentAlarms() {
     hasSuccessfulResponse: alarmsHasSuccessfulResponse,
     hasFailedResponse: alarmsHasFailedResponse,
   } = useListResponseState(alarmsResponse, alarmsScopeReady, () => alarmsQuery.isLoading.value)
-  const acknowledgeMutation = useMutation({
-    ...acknowledgeBusinessConsoleEquipmentAlarmMutationOptions(),
-  })
-  const shelveMutation = useMutation({
-    ...shelveBusinessConsoleEquipmentAlarmMutationOptions(),
-  })
-  const unshelveMutation = useMutation({
-    ...unshelveBusinessConsoleEquipmentAlarmMutationOptions(),
-  })
 
   async function acknowledgeAlarm(alarmEventId: string, acknowledgedBy: string) {
     const scope = {

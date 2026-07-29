@@ -15,6 +15,7 @@ import {
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesOperationTasks,
   listBusinessConsoleMesProductionReportsQueryOptions,
+  listBusinessConsoleMesReportableOperationTasks,
   listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions,
   promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
@@ -62,8 +63,11 @@ import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRe
 import { useAuthStore } from '@/stores/auth'
 
 const DEFAULT_TAKE = 100
+const MES_OPERATIONS_READ_PERMISSION = 'business.mes.operations.read'
 const MES_OPERATIONS_MANAGE_PERMISSION = 'business.mes.operations.manage'
+const MES_REPORTING_READ_PERMISSION = 'business.mes.reporting.read'
 const MES_REPORTING_WRITE_PERMISSION = 'business.mes.reporting.write'
+const MES_WORK_ORDERS_READ_PERMISSION = 'business.mes.work-orders.read'
 
 export const MES_WORK_SCOPE_REQUIRED_MESSAGE =
   '尚未选择已授权作业范围，当前操作已禁用。请刷新范围后重试。'
@@ -143,16 +147,24 @@ interface MesSelectedWorkScope {
 }
 
 function useMesPrincipalWorkScope(scope: MesScope, permissionCode: string) {
-  const workContextQuery = useQuery(() => ({
-    ...getBusinessConsolePrincipalWorkContextQueryOptions({
+  const auth = useAuthStore()
+  const principalIdentity = computed(
+    () => auth.principal?.principalId?.trim() || auth.sessionId?.trim() || 'unrestored-session',
+  )
+  const workContextQuery = useQuery(() => {
+    const options = getBusinessConsolePrincipalWorkContextQueryOptions({
       query: {
         organizationId: scope.organizationId,
         environmentId: scope.environmentId,
         permissionCode,
       },
-    }),
-    enabled: hasScope(scope),
-  }))
+    })
+    return {
+      ...options,
+      key: [...options.key, `principal:${principalIdentity.value}`],
+      enabled: hasScope(scope),
+    }
+  })
   const selectedScope = computed<MesSelectedWorkScope | undefined>(() => {
     const envelope = workContextQuery.data.value
     if (!envelope?.success) return undefined
@@ -182,6 +194,7 @@ function useMesPrincipalWorkScope(scope: MesScope, permissionCode: string) {
   }
 
   return {
+    principalIdentity,
     requireSelectedScope,
     selectedScope,
     scopeMessage,
@@ -306,17 +319,36 @@ function invalidateMesQueries(queryCache: ReturnType<typeof useQueryCache>, ids:
 
 export function useMesWorkOrders() {
   const filters = defaultFilters()
-  const scopeReady = computed(() => hasScope(filters))
+  const workOrderReadScope = useMesPrincipalWorkScope(filters, MES_WORK_ORDERS_READ_PERMISSION)
+  const scopeReady = computed(() => hasScope(filters) && workOrderReadScope.scopeReady.value)
+  const workOrdersIdentity = computed(() => {
+    const selectedScope = workOrderReadScope.selectedScope.value
+    return [
+      workOrderReadScope.principalIdentity.value,
+      filters.organizationId.trim(),
+      filters.environmentId.trim(),
+      selectedScope?.kind ?? '',
+      selectedScope?.id ?? '',
+    ].join(':')
+  })
 
-  const workOrdersQuery = useQuery(() => ({
-    ...listBusinessConsoleMesWorkOrdersQueryOptions({
-      query: toListQuery(filters),
-    }),
-    enabled: scopeReady.value,
-  }))
+  const workOrdersQuery = useQuery(() => {
+    const selectedScope = workOrderReadScope.selectedScope.value
+    const options = listBusinessConsoleMesWorkOrdersQueryOptions({
+      query: {
+        ...toListQuery(filters),
+        ...(selectedScope ? { scopeKind: selectedScope.kind, scopeId: selectedScope.id } : {}),
+      },
+    })
+    return {
+      ...options,
+      key: [...options.key, `principal-scope:${workOrdersIdentity.value}`],
+      enabled: scopeReady.value,
+    }
+  })
   const currentResponse = useScopeBoundListResponse(
     () => workOrdersQuery.data.value,
-    () => scopeKey(filters),
+    workOrdersIdentity,
     scopeReady,
   )
   const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
@@ -336,28 +368,83 @@ export function useMesWorkOrders() {
     total: computed(() => envelopeTotal(currentResponse.value)),
     pending: workOrdersQuery.isLoading,
     error: workOrdersQuery.error,
+    workOrderReadScope: workOrderReadScope.selectedScope,
+    workOrderReadScopeMessage: workOrderReadScope.scopeMessage,
+    workOrderReadScopePending: workOrderReadScope.scopePending,
+    workOrderReadScopeReady: workOrderReadScope.scopeReady,
     lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
-    refresh: () => (hasScope(filters) ? workOrdersQuery.refetch() : Promise.resolve()),
+    refresh: () => (scopeReady.value ? workOrdersQuery.refetch() : Promise.resolve()),
   }
 }
 
 export function useMesWorkOrderDetail(workOrderId: Readonly<Ref<string>>) {
   const scope = bindAuthScope(reactive({ organizationId: '', environmentId: '' }))
+  const workOrderReadScope = useMesPrincipalWorkScope(scope, MES_WORK_ORDERS_READ_PERMISSION)
   const queryCache = useQueryCache()
-  const detailEnabled = computed(() => hasScope(scope) && workOrderId.value.trim() !== '')
-  const detailIdentityKey = computed(() => `${scopeKey(scope)}:${workOrderId.value.trim()}`)
+  const detailEnabled = computed(
+    () => hasScope(scope) && workOrderReadScope.scopeReady.value && workOrderId.value.trim() !== '',
+  )
+  const detailScopeIdentity = computed(() => {
+    const selectedScope = workOrderReadScope.selectedScope.value
+    return [
+      workOrderReadScope.principalIdentity.value,
+      scope.organizationId.trim(),
+      scope.environmentId.trim(),
+      selectedScope?.kind ?? '',
+      selectedScope?.id ?? '',
+    ].join(':')
+  })
+  const detailIdentityKey = computed(
+    () => `${detailScopeIdentity.value}:${workOrderId.value.trim()}`,
+  )
   watch(
-    () => [workOrderId.value.trim(), scope.organizationId, scope.environmentId] as const,
+    () => {
+      const selectedScope = workOrderReadScope.selectedScope.value
+      return [
+        workOrderId.value.trim(),
+        scope.organizationId,
+        scope.environmentId,
+        workOrderReadScope.principalIdentity.value,
+        selectedScope?.kind ?? '',
+        selectedScope?.id ?? '',
+      ] as const
+    },
     (_current, previous) => {
-      const [previousWorkOrderId, organizationId, environmentId] = previous ?? []
-      if (!previousWorkOrderId || !organizationId || !environmentId) return
+      const [
+        previousWorkOrderId,
+        organizationId,
+        environmentId,
+        principalIdentity,
+        scopeKind,
+        scopeId,
+      ] = previous ?? []
+      if (
+        !previousWorkOrderId ||
+        !organizationId ||
+        !environmentId ||
+        !principalIdentity ||
+        !scopeKind ||
+        !scopeId
+      ) {
+        return
+      }
+      const previousScopeIdentity = [
+        principalIdentity,
+        organizationId.trim(),
+        environmentId.trim(),
+        scopeKind,
+        scopeId,
+      ].join(':')
       void queryCache.cancelQueries({
-        key: getBusinessConsoleMesWorkOrderDetailQueryKey({
-          path: { workOrderId: previousWorkOrderId },
-          query: { organizationId, environmentId },
-        }),
+        key: [
+          ...getBusinessConsoleMesWorkOrderDetailQueryKey({
+            path: { workOrderId: previousWorkOrderId },
+            query: { organizationId, environmentId, scopeKind, scopeId },
+          }),
+          `principal-scope:${previousScopeIdentity}`,
+        ],
         exact: true,
       })
     },
@@ -365,11 +452,17 @@ export function useMesWorkOrderDetail(workOrderId: Readonly<Ref<string>>) {
   )
   const detailQuery = useQuery(() => {
     const requestedId = workOrderId.value.trim()
+    const selectedScope = workOrderReadScope.selectedScope.value
+    const options = getBusinessConsoleMesWorkOrderDetailQueryOptions({
+      path: { workOrderId: requestedId },
+      query: {
+        ...scopeQuery(scope),
+        ...(selectedScope ? { scopeKind: selectedScope.kind, scopeId: selectedScope.id } : {}),
+      },
+    })
     return {
-      ...getBusinessConsoleMesWorkOrderDetailQueryOptions({
-        path: { workOrderId: requestedId },
-        query: scopeQuery(scope),
-      }),
+      ...options,
+      key: [...options.key, `principal-scope:${detailScopeIdentity.value}`],
       enabled: detailEnabled.value,
     }
   })
@@ -407,6 +500,10 @@ export function useMesWorkOrderDetail(workOrderId: Readonly<Ref<string>>) {
     }),
     pending: detailQuery.isLoading,
     error,
+    workOrderReadScope: workOrderReadScope.selectedScope,
+    workOrderReadScopeMessage: workOrderReadScope.scopeMessage,
+    workOrderReadScopePending: workOrderReadScope.scopePending,
+    workOrderReadScopeReady: workOrderReadScope.scopeReady,
     lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
@@ -421,6 +518,7 @@ function exactOperationTaskQueryKey(
   environmentId: string,
   workOrderId: string,
   operationTaskId: string,
+  principalScopeIdentity: string,
 ) {
   return [
     'mes-report-exact-operation-task',
@@ -428,6 +526,7 @@ function exactOperationTaskQueryKey(
     environmentId,
     workOrderId,
     operationTaskId,
+    principalScopeIdentity,
   ] as const
 }
 
@@ -437,7 +536,18 @@ export function useMesExactOperationTask(
   detail: Readonly<Ref<BusinessConsoleMesWorkOrderDetailResponse | null | undefined>>,
 ) {
   const scope = bindAuthScope(reactive({ organizationId: '', environmentId: '' }))
+  const reportingReadScope = useMesPrincipalWorkScope(scope, MES_REPORTING_READ_PERMISSION)
   const queryCache = useQueryCache()
+  const principalScopeIdentity = computed(() => {
+    const selectedScope = reportingReadScope.selectedScope.value
+    return [
+      reportingReadScope.principalIdentity.value,
+      scope.organizationId.trim(),
+      scope.environmentId.trim(),
+      selectedScope?.kind ?? '',
+      selectedScope?.id ?? '',
+    ].join(':')
+  })
   watch(
     () =>
       [
@@ -445,16 +555,32 @@ export function useMesExactOperationTask(
         scope.environmentId,
         workOrderId.value.trim(),
         operationTaskId.value.trim(),
+        principalScopeIdentity.value,
       ] as const,
     (_current, previous) => {
-      const [organizationId, environmentId, requestedWorkOrderId, requestedTaskId] = previous ?? []
-      if (!organizationId || !environmentId || !requestedWorkOrderId || !requestedTaskId) return
+      const [
+        organizationId,
+        environmentId,
+        requestedWorkOrderId,
+        requestedTaskId,
+        previousPrincipalScopeIdentity,
+      ] = previous ?? []
+      if (
+        !organizationId ||
+        !environmentId ||
+        !requestedWorkOrderId ||
+        !requestedTaskId ||
+        !previousPrincipalScopeIdentity
+      ) {
+        return
+      }
       void queryCache.cancelQueries({
         key: exactOperationTaskQueryKey(
           organizationId,
           environmentId,
           requestedWorkOrderId,
           requestedTaskId,
+          previousPrincipalScopeIdentity,
         ),
         exact: true,
       })
@@ -466,6 +592,7 @@ export function useMesExactOperationTask(
     const requestedTaskId = operationTaskId.value.trim()
     return (
       hasScope(scope) &&
+      reportingReadScope.scopeReady.value &&
       requestedWorkOrderId !== '' &&
       requestedTaskId !== '' &&
       detail.value?.workOrderId === requestedWorkOrderId &&
@@ -481,6 +608,7 @@ export function useMesExactOperationTask(
       scope.environmentId,
       workOrderId.value.trim(),
       operationTaskId.value.trim(),
+      principalScopeIdentity.value,
     ),
     enabled: enabled.value,
     query: async ({ signal }) => {
@@ -488,13 +616,16 @@ export function useMesExactOperationTask(
       const environmentId = scope.environmentId
       const requestedWorkOrderId = workOrderId.value.trim()
       const requestedTaskId = operationTaskId.value.trim()
+      const selectedScope = reportingReadScope.requireSelectedScope()
       let skip = 0
       while (true) {
-        const response = await listBusinessConsoleMesOperationTasks({
+        const response = await listBusinessConsoleMesReportableOperationTasks({
           query: {
             organizationId,
             environmentId,
             workOrderId: requestedWorkOrderId,
+            scopeKind: selectedScope.kind,
+            scopeId: selectedScope.id,
             skip,
             take: EXACT_TASK_PAGE_SIZE,
           },
@@ -526,7 +657,11 @@ export function useMesExactOperationTask(
     task: query.data,
     pending: query.isLoading,
     error: query.error,
-    refresh: query.refetch,
+    reportingReadScope: reportingReadScope.selectedScope,
+    reportingReadScopeMessage: reportingReadScope.scopeMessage,
+    reportingReadScopePending: reportingReadScope.scopePending,
+    reportingReadScopeReady: reportingReadScope.scopeReady,
+    refresh: () => (enabled.value ? query.refetch() : Promise.resolve()),
   }
 }
 
@@ -545,18 +680,26 @@ type OperationAction = 'start' | 'pause' | 'resume' | 'complete'
 async function readExactOperationTask(
   filters: MesScope,
   operationTaskId: string,
+  selectedScope: MesSelectedWorkScope,
   workOrderId?: string,
+  source: 'operations' | 'reportable' = 'operations',
 ): Promise<BusinessConsoleMesOperationTaskRow | undefined> {
-  const { data } = await listBusinessConsoleMesOperationTasks({
+  const request = {
     query: {
       ...scopeQuery(filters),
       ...(workOrderId ? { workOrderId } : {}),
+      scopeKind: selectedScope.kind,
+      scopeId: selectedScope.id,
       keyword: operationTaskId,
       skip: 0,
       take: 2,
     },
     throwOnError: true,
-  })
+  } as const
+  const { data } =
+    source === 'reportable'
+      ? await listBusinessConsoleMesReportableOperationTasks(request)
+      : await listBusinessConsoleMesOperationTasks(request)
   return exactItem(
     data as BusinessConsoleMesOperationTaskListEnvelope | undefined,
     (item: BusinessConsoleMesOperationTaskRow) =>
@@ -568,19 +711,38 @@ async function readExactOperationTask(
 export function useMesOperationTasks() {
   const auth = useAuthStore()
   const filters = defaultFilters()
+  const operationListScope = useMesPrincipalWorkScope(filters, MES_OPERATIONS_READ_PERMISSION)
   const operationScope = useMesPrincipalWorkScope(filters, MES_OPERATIONS_MANAGE_PERMISSION)
   const queryCache = useQueryCache()
-  const scopeReady = computed(() => hasScope(filters))
+  const scopeReady = computed(() => hasScope(filters) && operationListScope.scopeReady.value)
+  const operationTasksIdentity = computed(() => {
+    const selectedScope = operationListScope.selectedScope.value
+    return [
+      operationListScope.principalIdentity.value,
+      filters.organizationId.trim(),
+      filters.environmentId.trim(),
+      selectedScope?.kind ?? '',
+      selectedScope?.id ?? '',
+    ].join(':')
+  })
 
-  const operationTasksQuery = useQuery(() => ({
-    ...listBusinessConsoleMesOperationTasksQueryOptions({
-      query: toListQuery(filters),
-    }),
-    enabled: scopeReady.value,
-  }))
+  const operationTasksQuery = useQuery(() => {
+    const selectedScope = operationListScope.selectedScope.value
+    const options = listBusinessConsoleMesOperationTasksQueryOptions({
+      query: {
+        ...toListQuery(filters),
+        ...(selectedScope ? { scopeKind: selectedScope.kind, scopeId: selectedScope.id } : {}),
+      },
+    })
+    return {
+      ...options,
+      key: [...options.key, `principal-scope:${operationTasksIdentity.value}`],
+      enabled: scopeReady.value,
+    }
+  })
   const currentResponse = useScopeBoundListResponse(
     () => operationTasksQuery.data.value,
-    () => scopeKey(filters),
+    operationTasksIdentity,
     scopeReady,
   )
   const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
@@ -649,7 +811,7 @@ export function useMesOperationTasks() {
     const isReplay = Boolean(peekPendingBusinessIntent(scope))
     const pending = acquirePendingBusinessIntent(scope, () => options.idempotencyKey)
     try {
-      const authoritative = await readExactOperationTask(filters, operationTaskId)
+      const authoritative = await readExactOperationTask(filters, operationTaskId, selectedScope)
       assertLifecycleActionExecutable({
         domain: 'mes-operation-task',
         action,
@@ -687,13 +849,17 @@ export function useMesOperationTasks() {
     total: computed(() => envelopeTotal(currentResponse.value)),
     pending: operationTasksQuery.isLoading,
     error: operationTasksQuery.error,
+    operationListScope: operationListScope.selectedScope,
+    operationListScopeMessage: operationListScope.scopeMessage,
+    operationListScopePending: operationListScope.scopePending,
+    operationListScopeReady: operationListScope.scopeReady,
     operationScopeMessage: operationScope.scopeMessage,
     operationScopePending: operationScope.scopePending,
     operationScopeReady: operationScope.scopeReady,
     lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
-    refresh: () => (hasScope(filters) ? operationTasksQuery.refetch() : Promise.resolve()),
+    refresh: () => (scopeReady.value ? operationTasksQuery.refetch() : Promise.resolve()),
     cancelPendingTasks: () =>
       queryCache.cancelQueries({
         predicate: isBusinessQuery('listBusinessConsoleMesOperationTasks'),
@@ -884,7 +1050,13 @@ export function useMesProductionReports() {
           const workOrderId = input.workOrderId?.trim()
           const operationTaskId = input.operationTaskId?.trim()
           const authoritative = operationTaskId
-            ? await readExactOperationTask(filters, operationTaskId, workOrderId)
+            ? await readExactOperationTask(
+                filters,
+                operationTaskId,
+                selectedScope,
+                workOrderId,
+                'reportable',
+              )
             : undefined
           assertLifecycleActionExecutable({
             domain: 'mes-operation-task',

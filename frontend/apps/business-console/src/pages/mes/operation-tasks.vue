@@ -87,6 +87,9 @@ const {
   operationTasksError,
   operationTasksPending,
   operationTasksTotal,
+  operationListScope,
+  operationListScopeMessage,
+  operationListScopeReady,
   operationScopeMessage,
   operationScopeReady,
   operationTasksLastUpdatedAt,
@@ -97,15 +100,24 @@ const {
   resumeOperationTask,
   startOperationTask,
 } = useMesOperationTasks()
-const mesScope = computed(() =>
-  filters.organizationId && filters.environmentId
-    ? '当前登录组织 / 当前业务环境'
-    : '组织/环境范围未就绪',
-)
+const workScopeKindLabels: Record<string, string> = {
+  self: '本人',
+  team: '班组',
+  'work-center': '工作中心',
+  workshop: '车间',
+  organization: '组织',
+}
+const mesScope = computed(() => {
+  const selectedScope = operationListScope.value
+  if (!selectedScope) return '当前主体授权作业范围未就绪'
+  const kind = workScopeKindLabels[selectedScope.kind] ?? selectedScope.kind
+  const name = selectedScope.displayName || selectedScope.id
+  return `当前主体授权作业范围 · ${name}（${kind}）`
+})
 const mesEmptyExplanation = computed(() =>
-  !filters.organizationId || !filters.environmentId
-    ? '缺少组织或环境范围，未发起查询。'
-    : '当前列表为组织范围的工序任务，暂不支持按当前人员归属筛选；空态不代表我的任务。',
+  operationListScopeReady.value
+    ? '当前主体授权作业范围内暂无工序任务。'
+    : operationListScopeMessage.value || '尚未取得当前主体的授权作业范围，未发起查询。',
 )
 // 派工在本页行内直接完成：一线看着工序表就能把没人的活派出去，不必先跳派工看板。
 const { assignDispatchTask, assignDispatchTaskPending } = useMesDispatchTasks()
@@ -498,15 +510,27 @@ function formatError(error: unknown) {
 
     <ListScopeMeta
       :scope="mesScope"
-      source="工序任务服务（组织/环境范围，暂不支持按当前人员归属筛选）"
+      source="工序任务服务（服务端按当前主体与所选授权作业范围过滤）"
       :loaded="operationTasks.length"
       :total="operationTasksTotal"
       :updated-at="operationTasksLastUpdatedAt"
-      :empty="operationTasksHasSuccessfulResponse && operationTasks.length === 0"
-      :failed="operationTasksHasFailedResponse"
+      :empty="
+        !operationListScopeReady ||
+        (operationTasksHasSuccessfulResponse && !operationTasksError && operationTasks.length === 0)
+      "
+      :failed="operationTasksHasFailedResponse || Boolean(operationTasksError)"
       failure-explanation="工序任务服务未成功返回，请重试。"
       :empty-explanation="mesEmptyExplanation"
     />
+
+    <p
+      v-if="operationListScopeMessage"
+      data-testid="operation-list-scope-message"
+      class="text-sm text-destructive"
+      role="alert"
+    >
+      {{ operationListScopeMessage }}
+    </p>
 
     <NvToolbar v-model:search="keyword" search-placeholder="搜索任务、工单、设备">
       <template #filters>

@@ -81,8 +81,18 @@ vi.mock('@/composables/useBusinessMes', () => ({
     refreshWorkOrders: vi.fn(),
     workOrders: ref(workOrders.items),
     workOrdersError: ref(undefined),
+    workOrdersHasFailedResponse: ref(false),
+    workOrdersHasSuccessfulResponse: ref(true),
+    workOrdersLastUpdatedAt: ref('2026-07-30T00:00:00.000Z'),
     workOrdersPending: ref(false),
     workOrdersTotal: ref(workOrders.items.length),
+    workOrderReadScope: ref({
+      kind: 'work-center',
+      id: 'WC-A',
+      displayName: '精加工一线',
+    }),
+    workOrderReadScopeMessage: ref(''),
+    workOrderReadScopeReady: ref(true),
   }),
 }))
 

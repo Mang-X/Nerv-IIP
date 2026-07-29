@@ -64,6 +64,9 @@ const {
   lastUpdatedAt: workOrdersLastUpdatedAt,
   hasSuccessfulResponse: workOrdersHasSuccessfulResponse,
   hasFailedResponse: workOrdersHasFailedResponse,
+  workOrderReadScope: workOrderListReadScope,
+  workOrderReadScopeMessage: workOrderListReadScopeMessage,
+  workOrderReadScopeReady: workOrderListReadScopeReady,
 } = useMesWorkOrders()
 
 const {
@@ -74,7 +77,8 @@ const {
   lastUpdatedAt: workOrderDetailLastUpdatedAt,
   hasSuccessfulResponse: workOrderDetailHasSuccessfulResponse,
   hasFailedResponse: workOrderDetailHasFailedResponse,
-  refresh: refreshWorkOrderDetail,
+  workOrderReadScope: workOrderDetailReadScope,
+  workOrderReadScopeMessage: workOrderDetailReadScopeMessage,
 } = useMesWorkOrderDetail(routeWorkOrderId)
 const routeOperationTaskId = computed(() => {
   const value = route.query.operationTaskId
@@ -85,6 +89,8 @@ const {
   pending: exactOperationTaskPending,
   error: exactOperationTaskError,
   refresh: refreshExactOperationTask,
+  reportingReadScopeMessage: exactOperationTaskScopeMessage,
+  reportingReadScopeReady: exactOperationTaskScopeReady,
 } = useMesExactOperationTask(routeWorkOrderId, routeOperationTaskId, workOrderDetail)
 
 const {
@@ -104,6 +110,8 @@ const {
   exactOperationTask,
   exactOperationTaskPending,
   exactOperationTaskError,
+  exactOperationTaskScopeReady,
+  exactOperationTaskScopeMessage,
 })
 
 const { recordReport, reportScopeMessage, reportScopePending, reportScopeReady } =
@@ -253,15 +261,23 @@ function taskSubtitle(task: Task) {
   return parts.join(' · ')
 }
 
-const workOrderScope = computed(() =>
-  workOrderFilters.organizationId && workOrderFilters.environmentId
-    ? '当前登录组织 / 当前业务环境'
-    : '组织/环境范围未就绪',
-)
+const workScopeKindLabels: Record<string, string> = {
+  self: '本人',
+  team: '班组',
+  'work-center': '工作中心',
+  workshop: '车间',
+  organization: '组织',
+}
+function workScopeLabel(scope: { kind: string; id: string; displayName?: string } | undefined) {
+  if (!scope) return '当前主体授权工单范围未就绪'
+  const kind = workScopeKindLabels[scope.kind] ?? scope.kind
+  return `当前主体授权工单范围 · ${scope.displayName || scope.id}（${kind}）`
+}
+const workOrderScope = computed(() => workScopeLabel(workOrderListReadScope.value))
 const workOrderEmptyExplanation = computed(() =>
-  !workOrderFilters.organizationId || !workOrderFilters.environmentId
-    ? '缺少组织或环境范围，未发起查询。'
-    : '当前列表按组织/环境范围查询，暂不支持按当前人员归属筛选；空态不代表个人工单。',
+  workOrderListReadScopeReady.value
+    ? '当前主体授权工单范围内暂无生产工单。'
+    : workOrderListReadScopeMessage.value || '尚未取得当前主体的授权工单范围，未发起查询。',
 )
 const showWorkOrdersEmpty = computed(
   () =>
@@ -271,15 +287,11 @@ const showWorkOrdersEmpty = computed(
     workOrdersHasSuccessfulResponse.value &&
     workOrders.value.length === 0,
 )
-const operationTaskScope = computed(() =>
-  workOrderFilters.organizationId && workOrderFilters.environmentId
-    ? '当前登录组织 / 当前业务环境'
-    : '组织/环境范围未就绪',
-)
-const operationTaskEmptyExplanation = computed(() =>
-  !workOrderFilters.organizationId || !workOrderFilters.environmentId
-    ? '缺少组织或环境范围，未发起查询。'
-    : '当前空态只代表所选工单返回的工序集合为空；接口未提供工序总数，不代表个人任务。',
+const operationTaskScope = computed(() => workScopeLabel(workOrderDetailReadScope.value))
+const operationTaskEmptyExplanation = computed(
+  () =>
+    workOrderDetailReadScopeMessage.value ||
+    '当前空态只代表所选授权工单返回的工序集合为空；接口未提供工序总数。',
 )
 
 // --- 步骤操作 ---
@@ -498,7 +510,7 @@ function onScanWorkOrder(value: string) {
       >
         <ListScopeMeta
           :scope="operationTaskScope"
-          source="生产工单详情服务（当前工单与组织/环境范围）"
+          source="生产工单详情服务（服务端按当前主体与所选授权工单范围校验）"
           :loaded="0"
           :total="0"
           :updated-at="workOrderDetailLastUpdatedAt"
@@ -567,16 +579,13 @@ function onScanWorkOrder(value: string) {
         <p class="text-sm text-muted-foreground">选择报工的工单（共 {{ workOrderTotal }} 张）</p>
         <ListScopeMeta
           :scope="workOrderScope"
-          source="生产工单服务（组织/环境范围，暂不支持按当前人员归属筛选）"
+          source="生产工单服务（服务端按当前主体与所选授权工单范围过滤）"
           :loaded="workOrders.length"
           :total="workOrderTotal"
           :updated-at="workOrdersLastUpdatedAt"
-          :failed="workOrdersHasFailedResponse"
+          :failed="workOrdersHasFailedResponse || Boolean(workOrdersError)"
           failure-explanation="生产工单服务未成功返回，请刷新重试。"
-          :empty="
-            !(workOrderFilters.organizationId && workOrderFilters.environmentId) ||
-            showWorkOrdersEmpty
-          "
+          :empty="!workOrderListReadScopeReady || showWorkOrdersEmpty"
           :empty-explanation="workOrderEmptyExplanation"
         />
         <RetryableListError
@@ -627,7 +636,7 @@ function onScanWorkOrder(value: string) {
 
         <ListScopeMeta
           :scope="operationTaskScope"
-          source="生产工序服务（当前工单返回集合，接口未提供服务总数）"
+          source="生产工序服务（当前主体授权工单详情返回集合，接口未提供服务总数）"
           :loaded="visibleOperationTasks.length"
           :total="visibleOperationTasks.length"
           :updated-at="workOrderDetailLastUpdatedAt"

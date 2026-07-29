@@ -36,7 +36,6 @@ const recordReport = vi.fn(
 )
 const refreshWorkOrders = vi.fn(async () => {})
 const refreshTasks = vi.fn(async () => {})
-const refreshWorkOrderDetail = vi.fn(async () => {})
 const refreshExactTask = vi.fn(async () => {})
 const cancelPendingTasks = vi.fn()
 const workOrdersErrorRef = ref<unknown>(null)
@@ -105,6 +104,8 @@ const refreshWorkOrderDetail = vi.fn(async () => {})
 const exactTaskRef = ref<Record<string, unknown> | null | undefined>(undefined)
 const exactTaskPendingRef = ref(false)
 const exactTaskErrorRef = ref<unknown>(null)
+const exactTaskScopeReadyRef = ref(true)
+const exactTaskScopeMessageRef = ref('')
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesWorkOrders: () => ({
@@ -117,6 +118,13 @@ vi.mock('@/composables/useBusinessMes', () => ({
     lastUpdatedAt: workOrdersLastUpdatedAtRef,
     hasSuccessfulResponse: computed(() => !workOrdersPendingRef.value && !workOrdersErrorRef.value),
     hasFailedResponse: computed(() => false),
+    workOrderReadScope: ref({
+      kind: 'work-center',
+      id: 'WC-A',
+      displayName: '精加工一线',
+    }),
+    workOrderReadScopeMessage: ref(''),
+    workOrderReadScopeReady: ref(true),
   }),
   useMesOperationTasks: () => {
     operationTaskDiscoveryCalls += 1
@@ -158,7 +166,12 @@ vi.mock('@/composables/useBusinessMes', () => ({
     lastUpdatedAt: workOrderDetailLastUpdatedAtRef,
     hasSuccessfulResponse: workOrderDetailHasSuccessfulResponseRef,
     hasFailedResponse: workOrderDetailHasFailedResponseRef,
-    refresh: refreshWorkOrderDetail,
+    workOrderReadScope: ref({
+      kind: 'work-center',
+      id: 'WC-A',
+      displayName: '精加工一线',
+    }),
+    workOrderReadScopeMessage: ref(''),
   }),
   useMesExactOperationTask: (
     workOrderId: { value: string },
@@ -181,6 +194,8 @@ vi.mock('@/composables/useBusinessMes', () => ({
     pending: exactTaskPendingRef,
     error: exactTaskErrorRef,
     refresh: refreshExactTask,
+    reportingReadScopeReady: exactTaskScopeReadyRef,
+    reportingReadScopeMessage: exactTaskScopeMessageRef,
   }),
   useMesProductionReports: () => ({
     filters: reactive({}),
@@ -255,6 +270,8 @@ describe('PDA MES production reporting page', () => {
     exactTaskRef.value = undefined
     exactTaskPendingRef.value = false
     exactTaskErrorRef.value = null
+    exactTaskScopeReadyRef.value = true
+    exactTaskScopeMessageRef.value = ''
     operationTaskDiscoveryCalls = 0
     workOrderFilters.keyword = undefined
     taskFilters.workOrderId = undefined
@@ -294,17 +311,48 @@ describe('PDA MES production reporting page', () => {
     wrapper.unmount()
   })
 
+  it.each([
+    ['未选择', '尚未选择已授权作业范围，当前操作已禁用。'],
+    ['核验失败', '作业范围核验失败，当前操作已禁用。请刷新后重试。'],
+  ])(
+    'shows the reporting-read scope %s reason instead of claiming the exact task is absent',
+    async (_state, scopeMessage) => {
+      workOrderDetailRef.value = {
+        ...defaultWorkOrders[0],
+        operationTasks: [],
+      }
+      exactTaskRef.value = null
+      exactTaskScopeReadyRef.value = false
+      exactTaskScopeMessageRef.value = scopeMessage
+      route.query = {
+        workOrderId: 'WO-2026-0001',
+        operationTaskId: 'OP-READ-SCOPE',
+      }
+
+      const wrapper = mount(ReportPage)
+      await flushPromises()
+
+      const issue = wrapper.get('[data-testid="report-route-issue"]').text()
+      expect(issue).toContain('报工任务读取范围未就绪')
+      expect(issue).toContain(scopeMessage)
+      expect(issue).not.toContain('未找到工单')
+      expect(issue).not.toContain('未找到工单 WO-2026-0001 下的工序任务')
+      expect(recordReport).not.toHaveBeenCalled()
+      expect(refreshExactTask).not.toHaveBeenCalled()
+    },
+  )
+
   it('shows scope, source, count, and successful-response time for both report lists', async () => {
     const wrapper = mount(ReportPage)
 
-    expect(wrapper.text()).toContain('范围：当前登录组织 / 当前业务环境')
-    expect(wrapper.text()).toContain('来源：生产工单服务（组织/环境范围')
+    expect(wrapper.text()).toContain('范围：当前主体授权工单范围 · 精加工一线（工作中心）')
+    expect(wrapper.text()).toContain('来源：生产工单服务（服务端按当前主体与所选授权工单范围过滤）')
     expect(wrapper.text()).toContain('已加载 2 / 共 2')
     expect(wrapper.text()).toContain('最近成功响应')
 
     await selectWorkOrder(wrapper, 0)
 
-    expect(wrapper.text()).toContain('来源：生产工序服务（当前工单返回集合')
+    expect(wrapper.text()).toContain('来源：生产工序服务（当前主体授权工单详情返回集合')
     expect(wrapper.text()).toContain('已加载 2 / 共 2')
   })
 
@@ -316,7 +364,7 @@ describe('PDA MES production reporting page', () => {
     const wrapper = mount(ReportPage)
     await selectWorkOrder(wrapper, 0)
 
-    expect(wrapper.text()).toContain('接口未提供工序总数，不代表个人任务')
+    expect(wrapper.text()).toContain('当前空态只代表所选授权工单返回的工序集合为空')
   })
 
   it('detail failure blocks route identity and shows failed metadata plus a retry action', async () => {

@@ -16,6 +16,8 @@ interface UseMesReportIdentityOptions {
   exactOperationTask: Readonly<Ref<Task | null | undefined>>
   exactOperationTaskPending: Readonly<Ref<boolean>>
   exactOperationTaskError: Readonly<Ref<unknown>>
+  exactOperationTaskScopeReady: Readonly<Ref<boolean>>
+  exactOperationTaskScopeMessage: Readonly<Ref<string>>
 }
 
 function queryId(value: unknown) {
@@ -96,6 +98,11 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
       return `未找到工单 ${workOrderId}，已阻止报工。`
     }
     if (workOrderId && operationTaskId && selectedWorkOrder.value && !selectedTask.value) {
+      if (!options.exactOperationTaskScopeReady.value) {
+        const scopeMessage =
+          options.exactOperationTaskScopeMessage.value || '报工任务读取范围尚未就绪。'
+        return `报工任务读取范围未就绪：${scopeMessage}`
+      }
       if (options.exactOperationTaskError.value) {
         return `工单 ${workOrderId} 下的工序任务 ${operationTaskId} 精确查询失败，已阻止报工，请重试。`
       }

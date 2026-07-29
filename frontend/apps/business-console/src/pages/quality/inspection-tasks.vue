@@ -346,8 +346,8 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
         :loaded="tasks.length"
         :total="total"
         :updated-at="lastUpdatedAt"
-        :empty="tasksHasSuccessfulResponse && tasks.length === 0"
-        :failed="tasksHasFailedResponse"
+        :empty="tasksHasSuccessfulResponse && !error && tasks.length === 0"
+        :failed="tasksHasFailedResponse || Boolean(error)"
         failure-explanation="质检待检任务服务未成功返回，请重试。"
         :empty-explanation="emptyExplanation"
       />

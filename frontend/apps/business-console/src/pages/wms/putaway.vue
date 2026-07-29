@@ -336,8 +336,8 @@ function firstQuery(value: unknown) {
       :loaded="putawayTasks.length"
       :total="putawayTasksTotal"
       :updated-at="putawayTasksLastUpdatedAt"
-      :empty="putawayTasksHasSuccessfulResponse && putawayTasks.length === 0"
-      :failed="putawayTasksHasFailedResponse"
+      :empty="putawayTasksHasSuccessfulResponse && !putawayTasksError && putawayTasks.length === 0"
+      :failed="putawayTasksHasFailedResponse || Boolean(putawayTasksError)"
       failure-explanation="上架任务服务未成功返回，请重试。"
       :empty-explanation="
         putawayScopeReady
