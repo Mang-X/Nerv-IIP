@@ -1,16 +1,24 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import { useWmsOutbound } from '@/composables/useBusinessWms'
-import { outboundOrderStatusLabel, outboundReviewFlow } from '@nerv-iip/business-core'
+import {
+  outboundOrderStatusLabel,
+  outboundReviewFlow,
+  statusActionGate,
+} from '@nerv-iip/business-core'
 import {
   NvAppShellMobile,
   NvBottomSheet,
   NvListRow,
   NvMobileResult,
+  NvMobileToast,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -32,13 +40,23 @@ const completed = ref(false)
 
 // 每次用户发起操作（点单开抽屉）生成一次稳定幂等键，跨重试复用以防丢响应重复出库；
 // 选新单/继续后再点单才换新键。绝不在重试时重新生成。
-const operationKey = ref('')
+const intent = useIdempotentWriteIntent<{
+  packReviewNo: string
+  passed: boolean
+  idempotencyKey: string
+}>(makeIdempotencyKey)
+const intentLocked = intent.locked
+usePendingWriteLeaveGuard(intentLocked)
 
 // 复核录入：复核单号 + 通过/不通过开关。
 const packReviewNo = ref('')
 const passed = ref(true)
 // 复核单号需有非空白内容才算有效（纯空格 "   " 不可提交）。
 const validPackReviewNo = computed(() => packReviewNo.value.trim().length > 0)
+watch([packReviewNo, passed], () => {
+  intent.inputChanged()
+  submitError.value = ''
+})
 
 // outboundReviewFlow 驱动进度：selectOrder→enterReviewNo→complete。
 const flowCtx = computed(() => ({
@@ -64,49 +82,82 @@ function onScan(value: string) {
   filters.keyword = value
 }
 
-function selectOrder(outboundOrderId: string | undefined, outboundOrderNo: string | undefined) {
+function canComplete(status?: string) {
+  return statusActionGate({
+    domain: 'wms-outbound',
+    action: 'complete',
+    facts: { status },
+  }).executable
+}
+
+function selectOrder(
+  outboundOrderId: string | undefined,
+  outboundOrderNo: string | undefined,
+  status?: string,
+) {
   if (!outboundOrderId) return
+  if (!canComplete(status)) return
   selectedOrderId.value = outboundOrderId
   selectedOrderNo.value = outboundOrderNo ?? ''
   packReviewNo.value = ''
   passed.value = true
   // 新操作开始：换一把新幂等键。
-  operationKey.value = makeIdempotencyKey()
+  intent.start()
   submitError.value = ''
   sheetOpen.value = true
 }
 
 function closeSheet() {
+  if (intentLocked.value) return
   sheetOpen.value = false
 }
+
+function onSheetOpenChange(open: boolean) {
+  if (!open && intentLocked.value) return
+  sheetOpen.value = open
+}
+
+const lifecycleRecovery = useLifecycleActionRecovery({
+  reset: resetFlow,
+  refresh,
+})
 
 async function confirmComplete() {
   // 防重：pending 中或复核单号无有效内容直接早退（按钮也已禁用，UI 守双道）。
   if (completePending.value || !validPackReviewNo.value) return
   submitError.value = ''
   try {
-    // 重试复用同一 operationKey（不重新生成），#188 客户端去重可识别为同一操作。
-    await completeOutbound(selectedOrderId.value, {
+    const payload = intent.payload((idempotencyKey) => ({
       packReviewNo: packReviewNo.value.trim(),
       passed: passed.value,
-      idempotencyKey: operationKey.value,
+      idempotencyKey,
+    }))
+    // 重试复用同一 operationKey（不重新生成），#188 客户端去重可识别为同一操作。
+    await completeOutbound(selectedOrderId.value, payload, {
+      attempt: intent.attempt.value,
+      onCommandAttempt: intent.markCommandAttempt,
     })
     // 成功后立刻关抽屉并切到结果态，重复点击无法再触发。
     sheetOpen.value = false
     completed.value = true
   } catch (e) {
-    submitError.value = e instanceof Error ? e.message : '完成出库复核失败'
+    if (await lifecycleRecovery.handle(e)) return
+    const info = intent.recordFailure(e, '完成出库复核失败')
+    submitError.value = intentLocked.value
+      ? `${info.message}。提交结果未知，仅可按原内容重试。`
+      : info.message
   }
 }
 
 function resetFlow() {
+  sheetOpen.value = false
   completed.value = false
   selectedOrderId.value = ''
   selectedOrderNo.value = ''
   packReviewNo.value = ''
   passed.value = true
   // 清空操作键：下次点单会铸新键，保证新操作 ≠ 旧键。
-  operationKey.value = ''
+  intent.reset()
   submitError.value = ''
 }
 
@@ -177,13 +228,13 @@ function goHome() {
           :key="order.outboundOrderId"
           :title="order.outboundOrderNo ?? ''"
           :subtitle="outboundOrderStatusLabel(order.status)"
-          @select="selectOrder(order.outboundOrderId, order.outboundOrderNo)"
+          @select="selectOrder(order.outboundOrderId, order.outboundOrderNo, order.status)"
         />
       </div>
     </div>
 
     <!-- 复核完成确认抽屉 -->
-    <NvBottomSheet :open="sheetOpen" title="完成出库复核" @update:open="(v) => (sheetOpen = v)">
+    <NvBottomSheet :open="sheetOpen" title="完成出库复核" @update:open="onSheetOpenChange">
       <div class="space-y-4">
         <p v-if="selectedOrderNo" class="text-sm text-muted-foreground">
           出库单 {{ selectedOrderNo }}
@@ -196,6 +247,7 @@ function goHome() {
             v-model="packReviewNo"
             data-testid="pack-review-no"
             type="text"
+            :disabled="intentLocked"
             inputmode="text"
             placeholder="请输入复核单号"
             class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base text-foreground"
@@ -207,6 +259,7 @@ function goHome() {
           <button
             type="button"
             data-testid="toggle-passed"
+            :disabled="intentLocked"
             class="min-h-touch rounded-lg border px-4 text-base font-medium"
             :class="
               passed
@@ -229,11 +282,12 @@ function goHome() {
             class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
             @click="confirmComplete"
           >
-            {{ completePending ? '提交中…' : '确认完成' }}
+            {{ completePending ? '提交中…' : intentLocked ? '按原内容重试' : '确认完成' }}
           </button>
           <button
             type="button"
-            class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground"
+            :disabled="intentLocked"
+            class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground disabled:opacity-60"
             @click="closeSheet"
           >
             取消
@@ -241,5 +295,12 @@ function goHome() {
         </div>
       </div>
     </NvBottomSheet>
+
+    <NvMobileToast
+      :show="lifecycleRecovery.toast.value.show"
+      :message="lifecycleRecovery.toast.value.message"
+      :type="lifecycleRecovery.toast.value.type"
+      @update:show="lifecycleRecovery.setToastOpen"
+    />
   </NvAppShellMobile>
 </template>

@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsInboundOrderItem } from '@nerv-iip/api-client'
+import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsReceivingQualityFlow from '@/components/wms/WmsReceivingQualityFlow.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
-import { useWmsInboundOrders } from '@/composables/useBusinessWms'
+import {
+  isIndeterminateLifecycleWriteError,
+  recoverLifecycleAction,
+} from '@/composables/lifecycleAction'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
+import { createWmsIdempotencyKey, useWmsInboundOrders } from '@/composables/useBusinessWms'
 import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
 import {
@@ -108,6 +114,10 @@ const { page, pageSize } = usePagedList(filters, {
 
 const completeOpen = shallowRef(false)
 const pendingOrder = shallowRef<InboundRow>()
+const completeIntentKey = shallowRef('')
+const completeIntentAttempted = shallowRef(false)
+const completeIntentLocked = shallowRef(false)
+usePendingWriteLeaveGuard(completeIntentLocked)
 
 // 后端 WMS InboundOrderLine 要求 uomCode/正数 receivedQuantity/stagingLocationCode/qualityStatus/ownerType 均非空。
 const QUALITY_OPTIONS = [
@@ -223,21 +233,58 @@ async function submitCreate() {
   }
 }
 
-function isCompleted(row: InboundRow) {
-  return (row.status ?? '').toLowerCase() === 'completed'
+function canComplete(row: InboundRow) {
+  return statusActionGate({
+    domain: 'wms-inbound',
+    action: 'complete',
+    facts: { status: row.status },
+  }).executable
 }
 function openComplete(row: InboundRow) {
+  if (completeIntentLocked.value) return
   pendingOrder.value = row
+  completeIntentKey.value = createWmsIdempotencyKey()
+  completeIntentAttempted.value = false
+  completeIntentLocked.value = false
   completeOpen.value = true
+}
+function onCompleteOpenChange(open: boolean) {
+  if (!open && completeIntentLocked.value) return
+  completeOpen.value = open
 }
 async function confirmComplete() {
   const id = pendingOrder.value?.inboundOrderId
   if (!id) return
   try {
-    await completeInbound(id)
+    await completeInbound(id, completeIntentKey.value, {
+      attempt: completeIntentAttempted.value ? 'retry' : 'initial',
+      onCommandAttempt: () => {
+        completeIntentAttempted.value = true
+      },
+    })
     completeOpen.value = false
+    completeIntentKey.value = ''
+    completeIntentAttempted.value = false
+    completeIntentLocked.value = false
     notifySuccess('入库单已完成')
   } catch (error) {
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          completeOpen.value = false
+          pendingOrder.value = undefined
+          completeIntentKey.value = ''
+          completeIntentAttempted.value = false
+          completeIntentLocked.value = false
+        },
+        refresh: refreshInboundOrders,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
+    completeIntentLocked.value =
+      completeIntentAttempted.value && isIndeterminateLifecycleWriteError(error)
     notifyError(error, '完成入库失败，请稍后重试。')
   }
 }
@@ -512,7 +559,7 @@ function formatError(error: unknown) {
             type="button"
             variant="outline"
             :aria-label="`完成入库 ${row.inboundOrderNo ?? ''}`"
-            :disabled="isCompleted(row) || !row.inboundOrderId"
+            :disabled="!canComplete(row) || !row.inboundOrderId"
             @click="openComplete(row)"
           >
             完成入库
@@ -521,7 +568,7 @@ function formatError(error: unknown) {
       </template>
     </NvDataTable>
 
-    <NvAlertDialog v-model:open="completeOpen">
+    <NvAlertDialog :open="completeOpen" @update:open="onCompleteOpenChange">
       <NvAlertDialogContent>
         <NvAlertDialogHeader>
           <NvAlertDialogTitle>完成入库</NvAlertDialogTitle>
@@ -531,7 +578,9 @@ function formatError(error: unknown) {
           </NvAlertDialogDescription>
         </NvAlertDialogHeader>
         <NvAlertDialogFooter>
-          <NvAlertDialogCancel :disabled="completeInboundPending">取消</NvAlertDialogCancel>
+          <NvAlertDialogCancel :disabled="completeInboundPending || completeIntentLocked"
+            >取消</NvAlertDialogCancel
+          >
           <NvButton type="button" :disabled="completeInboundPending" @click="confirmComplete"
             >完成入库</NvButton
           >

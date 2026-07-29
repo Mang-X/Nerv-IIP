@@ -20,6 +20,10 @@ const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
   lastMutationVars: new Map<string, unknown>(),
+  mutationResultById: new Map<string, unknown>(),
+  listInbound: vi.fn(),
+  listOutbound: vi.fn(),
+  listCount: vi.fn(),
 }))
 
 const authState = vi.hoisted(() => ({
@@ -36,6 +40,9 @@ vi.mock('@/stores/auth', () => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  listBusinessConsoleWmsInboundOrders: coladaState.listInbound,
+  listBusinessConsoleWmsOutboundOrders: coladaState.listOutbound,
+  listBusinessConsoleWmsCountExecutions: coladaState.listCount,
   listBusinessConsoleWmsInboundOrdersQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleWmsInboundOrders' }],
     query: vi.fn(),
@@ -56,9 +63,15 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleWmsCountExecutions' }],
     query: vi.fn(),
   })),
-  completeBusinessConsoleWmsInboundOrderMutationOptions: vi.fn(() => ({ _mutationId: 'completeInbound' })),
-  completeBusinessConsoleWmsOutboundOrderMutationOptions: vi.fn(() => ({ _mutationId: 'completeOutbound' })),
-  completeBusinessConsoleWmsCountExecutionMutationOptions: vi.fn(() => ({ _mutationId: 'completeCount' })),
+  completeBusinessConsoleWmsInboundOrderMutationOptions: vi.fn(() => ({
+    _mutationId: 'completeInbound',
+  })),
+  completeBusinessConsoleWmsOutboundOrderMutationOptions: vi.fn(() => ({
+    _mutationId: 'completeOutbound',
+  })),
+  completeBusinessConsoleWmsCountExecutionMutationOptions: vi.fn(() => ({
+    _mutationId: 'completeCount',
+  })),
 }))
 
 vi.mock('@pinia/colada', () => ({
@@ -77,8 +90,9 @@ vi.mock('@pinia/colada', () => ({
   }),
   useMutation: vi.fn((mutationOptions: { _mutationId?: string }) => ({
     mutateAsync: vi.fn((vars: unknown) => {
-      coladaState.lastMutationVars.set(mutationOptions._mutationId ?? '', vars)
-      return Promise.resolve(undefined)
+      const mutationId = mutationOptions._mutationId ?? ''
+      coladaState.lastMutationVars.set(mutationId, vars)
+      return Promise.resolve(coladaState.mutationResultById.get(mutationId))
     }),
     isLoading: shallowRef(false),
     error: shallowRef(),
@@ -93,7 +107,26 @@ describe('PDA WMS composables', () => {
     coladaState.queryDataById.clear()
     coladaState.queryOptionsById.clear()
     coladaState.lastMutationVars.clear()
+    coladaState.mutationResultById.clear()
     authState.principal = { ...SCOPE }
+    coladaState.listInbound.mockResolvedValue({
+      data: {
+        success: true,
+        data: { items: [{ inboundOrderId: 'inbound-1', status: 'Open' }], total: 1 },
+      },
+    })
+    coladaState.listOutbound.mockResolvedValue({
+      data: {
+        success: true,
+        data: { items: [{ outboundOrderId: 'outbound-1', status: 'Open' }], total: 1 },
+      },
+    })
+    coladaState.listCount.mockResolvedValue({
+      data: {
+        success: true,
+        data: { items: [{ countExecutionId: 'count-1', status: 'Open' }], total: 1 },
+      },
+    })
   })
 
   it('disables every list query when the principal has no org/env scope', () => {
@@ -126,7 +159,9 @@ describe('PDA WMS composables', () => {
         skip: 0,
       }),
     })
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsInboundOrders')?.enabled).toBe(true)
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsInboundOrders')?.enabled).toBe(
+      true,
+    )
     expect(result.orders.value).toEqual([])
   })
 
@@ -170,6 +205,50 @@ describe('PDA WMS composables', () => {
     expect(vars.query).toEqual(SCOPE)
   })
 
+  it('allows only an explicit same-key inbound retry after completion', async () => {
+    coladaState.listInbound.mockResolvedValue({
+      data: {
+        success: true,
+        data: { items: [{ inboundOrderId: 'inbound-1', status: 'Completed' }], total: 1 },
+      },
+    })
+    const { completeInbound } = useWmsInbound()
+
+    await expect(
+      completeInbound('inbound-1', 'KEY-1', undefined, { attempt: 'initial' }),
+    ).rejects.toThrow('状态已被其他操作更新')
+    expect(coladaState.lastMutationVars.has('completeInbound')).toBe(false)
+
+    await expect(
+      completeInbound('inbound-1', 'KEY-1', undefined, { attempt: 'retry' }),
+    ).resolves.toBeUndefined()
+    expect(coladaState.lastMutationVars.has('completeInbound')).toBe(true)
+  })
+
+  it('allows only an explicit same-key outbound retry while inventory posting is pending', async () => {
+    coladaState.listOutbound.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [{ outboundOrderId: 'outbound-1', status: 'InventoryPostingPending' }],
+          total: 1,
+        },
+      },
+    })
+    const { completeOutbound } = useWmsOutbound()
+    const input = { packReviewNo: 'PR', passed: true, idempotencyKey: 'KEY-OUT' }
+
+    await expect(completeOutbound('outbound-1', input, { attempt: 'initial' })).rejects.toThrow(
+      '状态已被其他操作更新',
+    )
+    expect(coladaState.lastMutationVars.has('completeOutbound')).toBe(false)
+
+    await expect(
+      completeOutbound('outbound-1', input, { attempt: 'retry' }),
+    ).resolves.toBeUndefined()
+    expect(coladaState.lastMutationVars.has('completeOutbound')).toBe(true)
+  })
+
   it('passes the supplied idempotencyKey through count and keeps org/env override-proof', async () => {
     const { completeCount } = useWmsCount()
     await completeCount('count-1', {
@@ -191,12 +270,61 @@ describe('PDA WMS composables', () => {
     expect(vars.query).toEqual(SCOPE)
   })
 
+  it('re-reads the exact count execution and does not mutate after it became completed', async () => {
+    coladaState.listCount.mockResolvedValue({
+      data: {
+        success: true,
+        data: { items: [{ countExecutionId: 'count-1', status: 'Completed' }], total: 1 },
+      },
+    })
+    const { completeCount } = useWmsCount()
+
+    await expect(
+      completeCount('count-1', { countedQuantity: 5, idempotencyKey: 'KEY-CNT' }),
+    ).rejects.toThrow('状态已被其他操作更新')
+
+    expect(coladaState.listCount).toHaveBeenCalledWith({
+      query: { ...SCOPE, countExecutionId: 'count-1', skip: 0, take: 2 },
+      throwOnError: true,
+    })
+    expect(coladaState.lastMutationVars.has('completeCount')).toBe(false)
+  })
+
+  it('allows a completed count retry with the frozen key and returns the authoritative receipt', async () => {
+    const receipt = { countExecutionId: 'count-1', status: 'Completed', countedQuantity: 5 }
+    coladaState.listCount.mockResolvedValue({
+      data: {
+        success: true,
+        data: { items: [{ countExecutionId: 'count-1', status: 'Completed' }], total: 1 },
+      },
+    })
+    coladaState.mutationResultById.set('completeCount', receipt)
+    const { completeCount } = useWmsCount()
+
+    await expect(
+      completeCount(
+        'count-1',
+        { countedQuantity: 5, idempotencyKey: 'KEY-CNT-FROZEN' },
+        { attempt: 'retry' },
+      ),
+    ).resolves.toBe(receipt)
+
+    expect(coladaState.lastMutationVars.get('completeCount')).toMatchObject({
+      path: { countExecutionId: 'count-1' },
+      body: { countedQuantity: 5, idempotencyKey: 'KEY-CNT-FROZEN' },
+    })
+  })
+
   it('enables picking/putaway read-only lists without a non-empty operatorUserId', () => {
     useWmsPicking()
     useWmsPutaway()
 
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsPickingTasks')?.enabled).toBe(true)
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsPutawayTasks')?.enabled).toBe(true)
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsPickingTasks')?.enabled).toBe(
+      true,
+    )
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsPutawayTasks')?.enabled).toBe(
+      true,
+    )
 
     for (const fn of [
       listBusinessConsoleWmsPickingTasksQueryOptions,

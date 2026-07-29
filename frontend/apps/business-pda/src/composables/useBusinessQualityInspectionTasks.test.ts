@@ -93,19 +93,40 @@ describe('useBusinessQualityInspectionTasks', () => {
     vi.clearAllMocks()
     coladaState.queryOptionsById.clear()
     coladaState.dataById.clear()
+    coladaState.listPlain.mockImplementation(
+      async ({ query }: { query: { inspectionTaskId?: string } }) => ({
+        data: {
+          success: true,
+          data: {
+            items: query.inspectionTaskId
+              ? [{ inspectionTaskId: query.inspectionTaskId, status: 'pending' }]
+              : [],
+            total: query.inspectionTaskId ? 1 : 0,
+          },
+        },
+      }),
+    )
   })
 
   it('keeps list + reason-code queries disabled when the principal has no org/env scope', () => {
     useBusinessQualityInspectionTasks()
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleQualityInspectionTasks')?.enabled).toBe(false)
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleQualityReasonCodes')?.enabled).toBe(false)
+    expect(
+      coladaState.queryOptionsById.get('listBusinessConsoleQualityInspectionTasks')?.enabled,
+    ).toBe(false)
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleQualityReasonCodes')?.enabled).toBe(
+      false,
+    )
   })
 
   it('enables the queries once the principal carries an org/env scope', () => {
     seedPrincipal()
     useBusinessQualityInspectionTasks()
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleQualityInspectionTasks')?.enabled).toBe(true)
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleQualityReasonCodes')?.enabled).toBe(true)
+    expect(
+      coladaState.queryOptionsById.get('listBusinessConsoleQualityInspectionTasks')?.enabled,
+    ).toBe(true)
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleQualityReasonCodes')?.enabled).toBe(
+      true,
+    )
   })
 
   it('injects inspectorUserId (principalId) + org/env into the submit call — caller only supplies lines', async () => {
@@ -135,6 +156,34 @@ describe('useBusinessQualityInspectionTasks', () => {
     const { submitInspection } = useBusinessQualityInspectionTasks()
 
     await expect(submitInspection('TASK-1', LINES)).rejects.toThrow('登录态未就绪')
+    expect(coladaState.submit).not.toHaveBeenCalled()
+  })
+
+  it('re-reads the exact task and does not submit after another inspector completed it', async () => {
+    seedPrincipal()
+    coladaState.listPlain.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [{ inspectionTaskId: 'TASK-1', status: 'completed' }],
+          total: 1,
+        },
+      },
+    })
+    const { submitInspection } = useBusinessQualityInspectionTasks()
+
+    await expect(submitInspection('TASK-1', LINES)).rejects.toThrow('状态已被其他操作更新')
+
+    expect(coladaState.listPlain).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        inspectionTaskId: 'TASK-1',
+        skip: 0,
+        take: 2,
+      },
+      throwOnError: true,
+    })
     expect(coladaState.submit).not.toHaveBeenCalled()
   })
 

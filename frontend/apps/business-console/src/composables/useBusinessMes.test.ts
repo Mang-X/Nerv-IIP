@@ -3,7 +3,7 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
-  cancelBusinessConsoleMesWorkOrderMutationOptions,
+  cancelBusinessConsoleMesWorkOrder,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
@@ -23,12 +23,13 @@ import {
   listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
+  listBusinessConsoleMesOperationTasks,
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
-  recordBusinessConsoleMesProductionReportMutationOptions,
+  recordBusinessConsoleMesProductionReport,
   retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
   reverseBusinessConsoleMesProductionReportMutationOptions,
   runBusinessConsoleMesScheduleMutationOptions,
@@ -45,6 +46,7 @@ import {
   useMesOperationTasks,
   useMesOverview,
   useMesProductionPlans,
+  useMesProductionReporting,
   useMesProductionReports,
   useMesQualityContext,
   useMesSchedules,
@@ -64,6 +66,10 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  cancelBusinessConsoleMesWorkOrder: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
+  })),
   acceptBusinessConsoleMesShiftHandoverMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
@@ -195,7 +201,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   getBusinessConsoleMesWorkOrderDetailQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesWorkOrderDetail' }],
-    query: vi.fn(),
+    query: vi.fn(async () => ({ success: true, data: { status: 'Created' } })),
   })),
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesWorkOrderTraceability' }],
@@ -231,6 +237,19 @@ vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleMesOperationTasksQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesOperationTasks' }],
     query: vi.fn(),
+  })),
+  listBusinessConsoleMesOperationTasks: vi.fn(async () => ({
+    data: {
+      success: true,
+      data: {
+        items: [{ operationTaskId: 'op-1', workOrderId: 'wo-rush', status: 'InProgress' }],
+        total: 1,
+      },
+    },
+  })),
+  recordBusinessConsoleMesProductionReport: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
   })),
   listBusinessConsoleMesProductionPlansQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesProductionPlans' }],
@@ -536,17 +555,78 @@ describe('business MES composables', () => {
         workOrderId: 'wo-rush',
       }),
     })
-    expect(recordBusinessConsoleMesProductionReportMutationOptions).toHaveBeenCalled()
-    expect(
-      vi.mocked(recordBusinessConsoleMesProductionReportMutationOptions).mock.results[0]?.value
-        .mutation,
-    ).toHaveBeenCalledWith({
+    expect(recordBusinessConsoleMesProductionReport).toHaveBeenCalledWith({
       body: expect.objectContaining({
         operationTaskId: 'op-1',
       }),
+      throwOnError: false,
     })
     // 急单 4 键 + 报工 5 键（报工弹窗现在也从工序执行页打开，工序任务列表须一起失效）。
     expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(9)
+  })
+
+  it('仅重放当前实例已发出的同键报工完工，新键仍按最新 Completed 状态拦截', async () => {
+    const { recordProductionReport } = useMesProductionReporting()
+    vi.mocked(listBusinessConsoleMesOperationTasks)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                operationTaskId: 'op-replay',
+                workOrderId: 'wo-replay',
+                status: 'InProgress',
+              },
+            ],
+            total: 1,
+          },
+        },
+      } as never)
+      .mockResolvedValue({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                operationTaskId: 'op-replay',
+                workOrderId: 'wo-replay',
+                status: 'Completed',
+              },
+            ],
+            total: 1,
+          },
+        },
+      } as never)
+    vi.mocked(recordBusinessConsoleMesProductionReport)
+      .mockRejectedValueOnce(new Error('response lost'))
+      .mockResolvedValue({
+        data: { success: true, data: { reportNo: 'PRPT-REPLAY' } },
+        response: { status: 200 },
+      } as never)
+    const originalIntent = {
+      workOrderId: 'wo-replay',
+      operationTaskId: 'op-replay',
+      goodQuantity: 4,
+      scrapQuantity: 0,
+      completesOperation: true,
+      reportedAtUtc: '2026-07-28T01:00:00.000Z',
+      idempotencyKey: 'report-complete-replay',
+    }
+
+    await expect(recordProductionReport(originalIntent)).rejects.toThrow('response lost')
+    await expect(recordProductionReport(originalIntent)).resolves.toMatchObject({
+      success: true,
+    })
+    await expect(
+      recordProductionReport({
+        ...originalIntent,
+        idempotencyKey: 'report-complete-new-intent',
+      }),
+    ).rejects.toThrow('状态已被其他操作更新')
+
+    expect(listBusinessConsoleMesOperationTasks).toHaveBeenCalledTimes(2)
+    expect(recordBusinessConsoleMesProductionReport).toHaveBeenCalledTimes(2)
   })
 
   it('reads overview, foundation readiness, operation tasks, and WIP rows', () => {
@@ -994,13 +1074,11 @@ describe('business MES composables', () => {
 
     await detail.cancelWorkOrder('计划取消：产线调整')
 
-    expect(cancelBusinessConsoleMesWorkOrderMutationOptions).toHaveBeenCalled()
-    expect(
-      vi.mocked(cancelBusinessConsoleMesWorkOrderMutationOptions).mock.results[0]?.value.mutation,
-    ).toHaveBeenCalledWith({
+    expect(cancelBusinessConsoleMesWorkOrder).toHaveBeenCalledWith({
       path: { workOrderId: 'WO-CANCEL' },
       query: { organizationId: 'org-001', environmentId: 'env-dev' },
       body: { reason: '计划取消：产线调整' },
+      throwOnError: false,
     })
     // 本域 9 键 + 跨域库存可用量 1 键（A1 §4.2 跨域刷新首个落地）
     expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(10)

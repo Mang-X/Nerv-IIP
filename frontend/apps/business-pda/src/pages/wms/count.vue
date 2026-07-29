@@ -1,16 +1,24 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import { useWmsCount } from '@/composables/useBusinessWms'
-import { countExecutionFlow, countExecutionStatusLabel } from '@nerv-iip/business-core'
+import {
+  countExecutionFlow,
+  countExecutionStatusLabel,
+  statusActionGate,
+} from '@nerv-iip/business-core'
 import {
   NvAppShellMobile,
   NvBottomSheet,
   NvListRow,
   NvMobileResult,
+  NvMobileToast,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -33,11 +41,20 @@ const completed = ref(false)
 
 // 每次用户发起操作（点任务开抽屉）生成一次稳定幂等键，跨重试复用以防丢响应重复提交；
 // 选新任务/继续后再点任务才换新键。绝不在重试时重新生成。
-const operationKey = ref('')
+const intent = useIdempotentWriteIntent<{
+  countedQuantity: number
+  idempotencyKey: string
+}>(makeIdempotencyKey)
+const intentLocked = intent.locked
+usePendingWriteLeaveGuard(intentLocked)
 
 // 实盘数量录入。type=number 下 v-model 解包可能是 number 或 ''，统一按字符串校验。
 const countedQuantityText = ref<string | number>('')
 const countedQuantity = computed(() => Number(countedQuantityText.value))
+watch(countedQuantityText, () => {
+  intent.inputChanged()
+  submitError.value = ''
+})
 // 有效：非空、可解析为有限数且非负。
 const validCount = computed(() => {
   const text = String(countedQuantityText.value).trim()
@@ -67,6 +84,11 @@ const submitError = ref('')
 // 空态仅在「无盘点任务且无加载/错误」时出现，避免与错误/加载态打架。
 const showEmpty = computed(() => !pending.value && !error.value && executions.value.length === 0)
 
+function displayCountStatus(status?: string) {
+  if (status?.trim().toLowerCase() === 'open') return '待盘点'
+  return countExecutionStatusLabel(status)
+}
+
 function onScan(value: string) {
   filters.locationCode = value
 }
@@ -75,48 +97,78 @@ function selectExecution(
   countExecutionId: string | undefined,
   countNo: string | undefined,
   expected: number | undefined,
+  status?: string,
 ) {
   if (!countExecutionId) return
+  if (
+    !statusActionGate({
+      domain: 'wms-count',
+      action: 'complete',
+      facts: { status },
+    }).executable
+  ) {
+    return
+  }
   selectedExecutionId.value = countExecutionId
   selectedCountNo.value = countNo ?? ''
   expectedQuantity.value = expected ?? 0
   countedQuantityText.value = ''
   // 新操作开始：换一把新幂等键。
-  operationKey.value = makeIdempotencyKey()
+  intent.start()
   submitError.value = ''
   sheetOpen.value = true
 }
 
 function closeSheet() {
+  if (intentLocked.value) return
   sheetOpen.value = false
 }
+
+function onSheetOpenChange(open: boolean) {
+  if (!open && intentLocked.value) return
+  sheetOpen.value = open
+}
+
+const lifecycleRecovery = useLifecycleActionRecovery({
+  reset: resetFlow,
+  refresh,
+})
 
 async function confirmComplete() {
   // 防重：pending 中或实盘数无效直接早退（按钮也已禁用，UI 守双道）。
   if (completePending.value || !validCount.value) return
   submitError.value = ''
   try {
-    // 重试复用同一 operationKey（不重新生成），#188 客户端去重可识别为同一操作。
-    await completeCount(selectedExecutionId.value, {
+    const payload = intent.payload((idempotencyKey) => ({
       countedQuantity: countedQuantity.value,
-      idempotencyKey: operationKey.value,
+      idempotencyKey,
+    }))
+    // 重试复用同一 operationKey（不重新生成），#188 客户端去重可识别为同一操作。
+    await completeCount(selectedExecutionId.value, payload, {
+      attempt: intent.attempt.value,
+      onCommandAttempt: intent.markCommandAttempt,
     })
     // 成功后立刻关抽屉并切到结果态，重复点击无法再触发。
     sheetOpen.value = false
     completed.value = true
   } catch (e) {
-    submitError.value = e instanceof Error ? e.message : '提交盘点失败'
+    if (await lifecycleRecovery.handle(e)) return
+    const info = intent.recordFailure(e, '提交盘点失败')
+    submitError.value = intentLocked.value
+      ? `${info.message}。提交结果未知，仅可按原内容重试。`
+      : info.message
   }
 }
 
 function resetFlow() {
+  sheetOpen.value = false
   completed.value = false
   selectedExecutionId.value = ''
   selectedCountNo.value = ''
   expectedQuantity.value = 0
   countedQuantityText.value = ''
   // 清空操作键：下次点任务会铸新键，保证新操作 ≠ 旧键。
-  operationKey.value = ''
+  intent.reset()
   submitError.value = ''
 }
 
@@ -186,12 +238,13 @@ function goHome() {
           v-for="execution in executions"
           :key="execution.countExecutionId"
           :title="`盘点 ${execution.countNo ?? ''}`"
-          :subtitle="`SKU ${execution.skuCode ?? ''} · 库位 ${execution.locationCode ?? ''} · 预期 ${execution.expectedQuantity ?? 0} · ${countExecutionStatusLabel(execution.status)}`"
+          :subtitle="`SKU ${execution.skuCode ?? ''} · 库位 ${execution.locationCode ?? ''} · 预期 ${execution.expectedQuantity ?? 0} · ${displayCountStatus(execution.status)}`"
           @select="
             selectExecution(
               execution.countExecutionId,
               execution.countNo,
               execution.expectedQuantity,
+              execution.status,
             )
           "
         />
@@ -199,7 +252,7 @@ function goHome() {
     </div>
 
     <!-- 完成盘点确认抽屉 -->
-    <NvBottomSheet :open="sheetOpen" title="完成盘点" @update:open="(v) => (sheetOpen = v)">
+    <NvBottomSheet :open="sheetOpen" title="完成盘点" @update:open="onSheetOpenChange">
       <div class="space-y-4">
         <p v-if="selectedCountNo" class="text-sm text-muted-foreground">
           盘点 {{ selectedCountNo }}
@@ -225,6 +278,7 @@ function goHome() {
             type="number"
             inputmode="numeric"
             min="0"
+            :disabled="intentLocked"
             placeholder="请输入实盘数量"
             class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base text-foreground"
           />
@@ -244,11 +298,12 @@ function goHome() {
             class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
             @click="confirmComplete"
           >
-            {{ completePending ? '提交中…' : '确认完成' }}
+            {{ completePending ? '提交中…' : intentLocked ? '按原内容重试' : '确认完成' }}
           </button>
           <button
             type="button"
-            class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground"
+            :disabled="intentLocked"
+            class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground disabled:opacity-60"
             @click="closeSheet"
           >
             取消
@@ -256,5 +311,12 @@ function goHome() {
         </div>
       </div>
     </NvBottomSheet>
+
+    <NvMobileToast
+      :show="lifecycleRecovery.toast.value.show"
+      :message="lifecycleRecovery.toast.value.message"
+      :type="lifecycleRecovery.toast.value.type"
+      @update:show="lifecycleRecovery.setToastOpen"
+    />
   </NvAppShellMobile>
 </template>

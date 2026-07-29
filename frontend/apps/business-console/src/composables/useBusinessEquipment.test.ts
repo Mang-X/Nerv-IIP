@@ -3,13 +3,14 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
-  acknowledgeBusinessConsoleEquipmentAlarmMutationOptions,
+  acknowledgeBusinessConsoleEquipmentAlarm,
   getBusinessConsoleEquipmentAvailabilityQueryOptions,
   getBusinessConsoleEquipmentDeviceQueryOptions,
   getBusinessConsoleEquipmentOverviewQueryOptions,
   listBusinessConsoleEquipmentAlarmsQueryOptions,
-  shelveBusinessConsoleEquipmentAlarmMutationOptions,
-  unshelveBusinessConsoleEquipmentAlarmMutationOptions,
+  listBusinessConsoleEquipmentAlarms,
+  shelveBusinessConsoleEquipmentAlarm,
+  unshelveBusinessConsoleEquipmentAlarm,
 } from '@nerv-iip/api-client'
 import {
   describeEquipmentReason,
@@ -28,6 +29,10 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  acknowledgeBusinessConsoleEquipmentAlarm: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
+  })),
   acknowledgeBusinessConsoleEquipmentAlarmMutationOptions: vi.fn(() => ({
     key: [],
     mutation: vi.fn(),
@@ -47,6 +52,15 @@ vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleEquipmentAlarmsQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleEquipmentAlarms' }],
     query: vi.fn(),
+  })),
+  listBusinessConsoleEquipmentAlarms: vi.fn(),
+  shelveBusinessConsoleEquipmentAlarm: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
+  })),
+  unshelveBusinessConsoleEquipmentAlarm: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
   })),
   shelveBusinessConsoleEquipmentAlarmMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   unshelveBusinessConsoleEquipmentAlarmMutationOptions: vi.fn(() => ({
@@ -314,23 +328,31 @@ describe('business equipment composables', () => {
 
   it('posts alarm lifecycle actions with current business context', async () => {
     const active = useBusinessEquipmentAlarms()
+    vi.mocked(listBusinessConsoleEquipmentAlarms)
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [{ alarmEventId: 'alarm-1', status: 'Raised' }] } },
+      } as never)
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [{ alarmEventId: 'alarm-1', status: 'Raised' }] } },
+      } as never)
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [{ alarmEventId: 'alarm-1', status: 'Shelved' }] } },
+      } as never)
 
     await active.acknowledgeAlarm('alarm-1', 'operator-a')
     await active.shelveAlarm('alarm-1', 'operator-a', 45, 'maintenance window')
     await active.unshelveAlarm('alarm-1')
 
-    expect(acknowledgeBusinessConsoleEquipmentAlarmMutationOptions).toHaveBeenCalled()
-    expect(shelveBusinessConsoleEquipmentAlarmMutationOptions).toHaveBeenCalled()
-    expect(unshelveBusinessConsoleEquipmentAlarmMutationOptions).toHaveBeenCalled()
-    expect(coladaState.mutations[0]).toHaveBeenCalledWith({
+    expect(acknowledgeBusinessConsoleEquipmentAlarm).toHaveBeenCalledWith({
       path: { alarmEventId: 'alarm-1' },
       body: expect.objectContaining({
         organizationId: 'org-001',
         environmentId: 'env-dev',
         acknowledgedBy: 'operator-a',
       }),
+      throwOnError: false,
     })
-    expect(coladaState.mutations[1]).toHaveBeenCalledWith({
+    expect(shelveBusinessConsoleEquipmentAlarm).toHaveBeenCalledWith({
       path: { alarmEventId: 'alarm-1' },
       body: expect.objectContaining({
         organizationId: 'org-001',
@@ -339,26 +361,30 @@ describe('business equipment composables', () => {
         reason: 'maintenance window',
         shelvedBy: 'operator-a',
       }),
+      throwOnError: false,
     })
-    expect(coladaState.mutations[2]).toHaveBeenCalledWith({
+    expect(unshelveBusinessConsoleEquipmentAlarm).toHaveBeenCalledWith({
       path: { alarmEventId: 'alarm-1' },
       body: expect.objectContaining({
         organizationId: 'org-001',
         environmentId: 'env-dev',
       }),
+      throwOnError: false,
     })
   })
 
   it('forwards a frozen shelvedAtUtc and idempotency key so batch shelve retries are no-ops', async () => {
     const active = useBusinessEquipmentAlarms()
+    vi.mocked(listBusinessConsoleEquipmentAlarms).mockResolvedValueOnce({
+      data: { success: true, data: { items: [{ alarmEventId: 'alarm-1', status: 'Raised' }] } },
+    } as never)
 
     await active.shelveAlarm('alarm-1', 'operator-a', 120, 'planned maintenance', {
       shelvedAtUtc: '2026-07-12T08:00:00.000Z',
       idempotencyKey: 'shelve:alarm-1:2026-07-12T08:00:00.000Z:120',
     })
 
-    // acknowledge / shelve / unshelve mutations register in order → shelve is index 1.
-    expect(coladaState.mutations[1]).toHaveBeenCalledWith({
+    expect(shelveBusinessConsoleEquipmentAlarm).toHaveBeenCalledWith({
       path: { alarmEventId: 'alarm-1' },
       body: expect.objectContaining({
         durationMinutes: 120,
@@ -366,6 +392,35 @@ describe('business equipment composables', () => {
         shelvedAtUtc: '2026-07-12T08:00:00.000Z',
         idempotencyKey: 'shelve:alarm-1:2026-07-12T08:00:00.000Z:120',
       }),
+      throwOnError: false,
     })
+  })
+
+  it('uses the frozen shelf instant only for an explicit same-key retry gate', async () => {
+    const active = useBusinessEquipmentAlarms()
+    vi.mocked(listBusinessConsoleEquipmentAlarms).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              alarmEventId: 'alarm-1',
+              status: 'Shelved',
+              shelvedAtUtc: '2026-07-12T08:00:00.000Z',
+              shelvedUntilUtc: '2026-07-12T10:00:00.000Z',
+            },
+          ],
+        },
+      },
+    } as never)
+    const intent = {
+      attempt: 'retry' as const,
+      shelvedAtUtc: '2026-07-12T08:00:00.000Z',
+      idempotencyKey: 'shelve:alarm-1:2026-07-12T08:00:00.000Z:120',
+    }
+
+    await active.shelveAlarm('alarm-1', 'operator-a', 120, 'planned maintenance', intent)
+
+    expect(shelveBusinessConsoleEquipmentAlarm).toHaveBeenCalledOnce()
   })
 })

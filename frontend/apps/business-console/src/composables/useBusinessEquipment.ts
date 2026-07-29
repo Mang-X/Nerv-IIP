@@ -1,11 +1,12 @@
 import {
-  acknowledgeBusinessConsoleEquipmentAlarmMutationOptions,
+  acknowledgeBusinessConsoleEquipmentAlarm,
   getBusinessConsoleEquipmentAvailabilityQueryOptions,
   getBusinessConsoleEquipmentDeviceQueryOptions,
   getBusinessConsoleEquipmentOverviewQueryOptions,
   listBusinessConsoleEquipmentAlarmsQueryOptions,
-  shelveBusinessConsoleEquipmentAlarmMutationOptions,
-  unshelveBusinessConsoleEquipmentAlarmMutationOptions,
+  listBusinessConsoleEquipmentAlarms,
+  shelveBusinessConsoleEquipmentAlarm,
+  unshelveBusinessConsoleEquipmentAlarm,
   type BusinessConsoleEquipmentAlarmListEnvelope,
   type BusinessConsoleEquipmentDeviceDetailEnvelope,
   type BusinessConsoleEquipmentDeviceDetailResponse,
@@ -21,6 +22,7 @@ import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 import { useBusinessMasterDataResources } from './useBusinessMasterData'
 import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
+import { executeLifecycleAction } from './lifecycleAction'
 
 const DEFAULT_DEVICE_ASSET_IDS = ''
 
@@ -397,25 +399,56 @@ export function useBusinessEquipmentAlarms() {
     }),
     enabled: hasBusinessContext(businessContext),
   }))
-  const acknowledgeMutation = useMutation({
-    ...acknowledgeBusinessConsoleEquipmentAlarmMutationOptions(),
-  })
-  const shelveMutation = useMutation({
-    ...shelveBusinessConsoleEquipmentAlarmMutationOptions(),
-  })
-  const unshelveMutation = useMutation({
-    ...unshelveBusinessConsoleEquipmentAlarmMutationOptions(),
-  })
+  async function readAlarm(
+    alarmEventId: string,
+    action: 'acknowledge' | 'shelve' | 'unshelve',
+    evaluatedAtUtc?: string,
+  ) {
+    const response = await listBusinessConsoleEquipmentAlarms({
+      query: {
+        ...toContextQuery(businessContext),
+        alarmEventId,
+        skip: 0,
+        take: 1,
+      },
+      throwOnError: false,
+    })
+    if (response.error !== undefined) throw response.error
+    if (!response.data?.success) throw response.data ?? new Error('读取报警最新状态失败')
+    const item = response.data.data?.items?.find(
+      (candidate) => candidate.alarmEventId === alarmEventId,
+    )
+    return item
+      ? {
+          domain: 'iiot-alarm' as const,
+          action,
+          facts: {
+            status: item.status,
+            acknowledgedAtUtc: item.acknowledgedAtUtc,
+            shelvedAtUtc: item.shelvedAtUtc,
+            shelvedUntilUtc: item.shelvedUntilUtc,
+            evaluatedAtUtc,
+          },
+        }
+      : undefined
+  }
 
   async function acknowledgeAlarm(alarmEventId: string, acknowledgedBy: string) {
-    return acknowledgeMutation.mutateAsync({
-      path: { alarmEventId },
-      body: {
-        ...toContextQuery(businessContext),
-        acknowledgedAtUtc: new Date().toISOString(),
-        acknowledgedBy,
-      },
+    const result = await executeLifecycleAction({
+      readLatest: () => readAlarm(alarmEventId, 'acknowledge'),
+      command: () =>
+        acknowledgeBusinessConsoleEquipmentAlarm({
+          path: { alarmEventId },
+          body: {
+            ...toContextQuery(businessContext),
+            acknowledgedAtUtc: new Date().toISOString(),
+            acknowledgedBy,
+          },
+          throwOnError: false,
+        }),
     })
+    await refetchWithBusinessContext(businessContext, alarmsQuery)
+    return result
   }
 
   async function shelveAlarm(
@@ -423,32 +456,55 @@ export function useBusinessEquipmentAlarms() {
     shelvedBy: string,
     durationMinutes = 30,
     reason?: string,
-    options?: { shelvedAtUtc?: string; idempotencyKey?: string },
+    options?: {
+      attempt?: 'initial' | 'retry'
+      shelvedAtUtc?: string
+      idempotencyKey?: string
+    },
   ) {
     // Freeze the shelve instant so a retried batch reuses the same window; the backend
     // derives the shelve window from shelvedAtUtc + idempotencyKey (first-write-wins),
     // so a stable key makes re-submitting the same batch a no-op instead of extending it.
-    return shelveMutation.mutateAsync({
-      path: { alarmEventId },
-      body: {
-        ...toContextQuery(businessContext),
-        durationMinutes,
-        idempotencyKey: options?.idempotencyKey,
-        reason,
-        shelvedAtUtc: options?.shelvedAtUtc ?? new Date().toISOString(),
-        shelvedBy,
-      },
+    const result = await executeLifecycleAction({
+      readLatest: () =>
+        readAlarm(
+          alarmEventId,
+          'shelve',
+          options?.attempt === 'retry' && options.idempotencyKey ? options.shelvedAtUtc : undefined,
+        ),
+      command: () =>
+        shelveBusinessConsoleEquipmentAlarm({
+          path: { alarmEventId },
+          body: {
+            ...toContextQuery(businessContext),
+            durationMinutes,
+            idempotencyKey: options?.idempotencyKey,
+            reason,
+            shelvedAtUtc: options?.shelvedAtUtc ?? new Date().toISOString(),
+            shelvedBy,
+          },
+          throwOnError: false,
+        }),
     })
+    await refetchWithBusinessContext(businessContext, alarmsQuery)
+    return result
   }
 
   async function unshelveAlarm(alarmEventId: string) {
-    return unshelveMutation.mutateAsync({
-      path: { alarmEventId },
-      body: {
-        ...toContextQuery(businessContext),
-        unshelvedAtUtc: new Date().toISOString(),
-      },
+    const result = await executeLifecycleAction({
+      readLatest: () => readAlarm(alarmEventId, 'unshelve'),
+      command: () =>
+        unshelveBusinessConsoleEquipmentAlarm({
+          path: { alarmEventId },
+          body: {
+            ...toContextQuery(businessContext),
+            unshelvedAtUtc: new Date().toISOString(),
+          },
+          throwOnError: false,
+        }),
     })
+    await refetchWithBusinessContext(businessContext, alarmsQuery)
+    return result
   }
 
   return {

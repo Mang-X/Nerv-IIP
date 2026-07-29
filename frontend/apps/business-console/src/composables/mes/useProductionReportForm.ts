@@ -1,7 +1,12 @@
 import type { BusinessConsoleRecordProductionReportRequest } from '@nerv-iip/api-client'
-import { computed, reactive, ref, watch } from 'vue'
+import { statusActionGate } from '@nerv-iip/business-core'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 
 import { makeIdempotencyKey, useMesProductionReporting } from '@/composables/useBusinessMes'
+import {
+  isIndeterminateLifecycleWriteError,
+  recoverLifecycleAction,
+} from '@/composables/lifecycleAction'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
 /**
@@ -14,6 +19,7 @@ export interface ProductionReportContext {
   operationTaskId: string
   operationTaskNo?: string | null
   operationSequence?: number | null
+  operationStatus?: string | null
   /** 工作中心显示名（已解析为人读名称，不是 ID）。 */
   workCenterLabel?: string | null
   /** 物料显示名（已解析为人读名称，不是 ID）。 */
@@ -37,33 +43,68 @@ function toOptionalNumber(value: string) {
  */
 export function useProductionReportForm(
   context: () => ProductionReportContext | null,
-  options: { onReported?: () => void } = {},
+  options: { onReported?: () => void; onStateChanged?: () => void } = {},
 ) {
-  const { recordProductionReport, recordProductionReportError, recordProductionReportPending } =
-    useMesProductionReporting()
+  const {
+    recordProductionReport,
+    recordProductionReportError,
+    recordProductionReportPending,
+    refreshProductionReportState,
+  } = useMesProductionReporting()
+
+  const canCompleteOperation = computed(() => {
+    const ctx = context()
+    return (
+      ctx !== null &&
+      statusActionGate({
+        domain: 'mes-operation-task',
+        action: 'report-complete',
+        facts: { status: ctx.operationStatus },
+      }).executable
+    )
+  })
 
   const form = reactive({
     goodQuantity: '1',
     scrapQuantity: '0',
-    completesOperation: true,
+    completesOperation: canCompleteOperation.value,
     idempotencyKey: makeIdempotencyKey('production-report'),
   })
 
   const showErrors = ref(false)
+  const intentAttempted = ref(false)
+  const intentLocked = ref(false)
+  const frozenPayload = shallowRef<BusinessConsoleRecordProductionReportRequest>()
+  let resetting = false
 
   function resetForm() {
+    resetting = true
+    intentAttempted.value = false
+    intentLocked.value = false
+    frozenPayload.value = undefined
     form.goodQuantity = '1'
     form.scrapQuantity = '0'
-    form.completesOperation = true
+    form.completesOperation = canCompleteOperation.value
     form.idempotencyKey = makeIdempotencyKey('production-report')
     showErrors.value = false
+    resetting = false
   }
+
+  watch(
+    () => `${form.goodQuantity}\u0000${form.scrapQuantity}\u0000${form.completesOperation}`,
+    () => {
+      if (resetting || !intentAttempted.value || intentLocked.value) return
+      form.idempotencyKey = makeIdempotencyKey('production-report')
+      intentAttempted.value = false
+      frozenPayload.value = undefined
+    },
+  )
 
   // 切换报工对象（从工单 A 的工序切到 B）时整表重置，避免把 A 的数量与登记会话幂等键提交到 B。
   watch(
     () => {
       const ctx = context()
-      return ctx ? `${ctx.workOrderId}|${ctx.operationTaskId}` : ''
+      return ctx ? `${ctx.workOrderId}|${ctx.operationTaskId}|${ctx.operationStatus ?? ''}` : ''
     },
     () => resetForm(),
   )
@@ -84,6 +125,16 @@ export function useProductionReportForm(
   const canSubmit = computed(() => {
     const ctx = context()
     if (!ctx?.workOrderId?.trim() || !ctx.operationTaskId?.trim()) return false
+    if (
+      form.completesOperation &&
+      !statusActionGate({
+        domain: 'mes-operation-task',
+        action: 'report-complete',
+        facts: { status: ctx.operationStatus },
+      }).executable
+    ) {
+      return false
+    }
     return !invalid.value.goodQuantity && !invalid.value.scrapQuantity
   })
 
@@ -91,17 +142,24 @@ export function useProductionReportForm(
     showErrors.value = true
     const ctx = context()
     if (!ctx || !canSubmit.value) return false
-    const body: BusinessConsoleRecordProductionReportRequest = {
-      workOrderId: ctx.workOrderId.trim(),
-      operationTaskId: ctx.operationTaskId.trim(),
-      goodQuantity: goodQuantity.value,
-      scrapQuantity: scrapQuantity.value,
-      completesOperation: form.completesOperation,
-      reportedAtUtc: new Date().toISOString(),
-      idempotencyKey: form.idempotencyKey,
-    }
+    const body =
+      frozenPayload.value ??
+      ({
+        workOrderId: ctx.workOrderId.trim(),
+        operationTaskId: ctx.operationTaskId.trim(),
+        goodQuantity: goodQuantity.value,
+        scrapQuantity: scrapQuantity.value,
+        completesOperation: form.completesOperation,
+        reportedAtUtc: new Date().toISOString(),
+        idempotencyKey: form.idempotencyKey,
+      } satisfies BusinessConsoleRecordProductionReportRequest)
+    frozenPayload.value = body
     try {
-      const response = await recordProductionReport(body)
+      const response = await recordProductionReport(body, {
+        onCommandAttempt: () => {
+          intentAttempted.value = true
+        },
+      })
       const reportNo = response?.data?.reportNo ?? response?.data?.productionReportId
       notifySuccess(
         `已报工${reportNo ? ` ${reportNo}` : ''} · ${ctx.operationTaskNo ?? ctx.operationTaskId}`,
@@ -110,6 +168,19 @@ export function useProductionReportForm(
       options.onReported?.()
       return true
     } catch (error) {
+      if (
+        await recoverLifecycleAction(error, {
+          reset: () => {
+            resetForm()
+            options.onStateChanged?.()
+          },
+          refresh: refreshProductionReportState,
+          notify: (message) => notifyError(message),
+        })
+      ) {
+        return false
+      }
+      intentLocked.value = intentAttempted.value && isIndeterminateLifecycleWriteError(error)
       notifyError(recordProductionReportError.value ?? error, '报工提交失败，请稍后重试。')
       return false
     }
@@ -120,6 +191,8 @@ export function useProductionReportForm(
     invalid,
     showErrors,
     canSubmit,
+    canCompleteOperation,
+    intentLocked,
     recordProductionReportPending,
     resetForm,
     submit,

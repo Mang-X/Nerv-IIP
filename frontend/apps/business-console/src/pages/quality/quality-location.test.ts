@@ -58,7 +58,11 @@ const routeState = vi.hoisted(() => ({
 }))
 
 const notifySpies = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
-const taskActionSpies = vi.hoisted(() => ({ startInspection: vi.fn() }))
+const taskActionSpies = vi.hoisted(() => ({
+  startInspection: vi.fn(),
+  refreshInspectionTasks: vi.fn(),
+}))
+const routerSpies = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }))
 const ncrActionSpies = vi.hoisted(() => ({ closeNcr: vi.fn(), submitDisposition: vi.fn() }))
 vi.mock('@/utils/notify', () => ({
   notifyError: notifySpies.error,
@@ -72,6 +76,7 @@ vi.mock('@/stores/auth', () => ({
 vi.mock('@/composables/useQualityInspectionTasks', () => ({
   useQualityInspectionTaskActions: () => ({
     startInspection: taskActionSpies.startInspection,
+    refreshInspectionTasks: taskActionSpies.refreshInspectionTasks,
   }),
 }))
 
@@ -121,7 +126,7 @@ vi.mock('vue-router', async (importOriginal) => {
     ...actual,
     RouterLink: { props: ['to'], template: '<a data-router-link><slot /></a>' },
     useRoute: () => routeState.route,
-    useRouter: () => ({ push: vi.fn() }),
+    useRouter: () => ({ push: routerSpies.push, replace: routerSpies.replace }),
   }
 })
 
@@ -356,6 +361,13 @@ describe('quality route location behavior', () => {
     notifySpies.error.mockReset()
     notifySpies.success.mockReset()
     taskActionSpies.startInspection.mockReset()
+    taskActionSpies.refreshInspectionTasks.mockReset()
+    taskActionSpies.refreshInspectionTasks.mockResolvedValue(undefined)
+    routerSpies.push.mockReset()
+    routerSpies.replace.mockReset()
+    routerSpies.replace.mockImplementation(async ({ query }: { query: Record<string, string> }) => {
+      routeState.route!.query = query
+    })
     ncrActionSpies.closeNcr.mockReset()
     ncrActionSpies.submitDisposition.mockReset()
   })
@@ -411,9 +423,9 @@ describe('quality route location behavior', () => {
       await nextRenderTick()
 
       expect(vm.canSubmitDisposition).toBe(true)
-      expect(vm.canCloseNcr).toBe(true)
+      expect(vm.canCloseNcr).toBe(false)
       expect(dispositionButton?.attributes('disabled')).toBeUndefined()
-      expect(closeButton?.attributes('disabled')).toBeUndefined()
+      expect(closeButton?.attributes('disabled')).toBeDefined()
     },
   )
 
@@ -609,6 +621,99 @@ describe('quality route location behavior', () => {
     expect(form.resultLines).toEqual([
       expect.objectContaining({ characteristicCode: 'MANUAL-01', observedValue: '10.1' }),
     ])
+  })
+
+  it('clears the routed inspection task and stale form context after a lifecycle conflict', async () => {
+    const { LifecycleStateChangedError } = await import('@/composables/lifecycleAction')
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      batchNo: 'LOT-7',
+      action: 'create',
+    }
+    taskActionSpies.startInspection.mockRejectedValueOnce(
+      new LifecycleStateChangedError('conflict'),
+    )
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    const vm = wrapper.vm as unknown as {
+      recordSheetOpen: boolean
+      recordForm: {
+        inspectionPlanId: string
+        sourceDocumentId: string
+        skuCode: string
+        batchNo: string
+        resultLines: Array<{ observedValue: string }>
+      }
+      submitInspectionRecord: () => Promise<void>
+    }
+    vm.recordForm.resultLines[0]!.observedValue = '10.1'
+    await vm.submitInspectionRecord()
+    await nextRenderTick()
+
+    expect(routerSpies.replace).toHaveBeenCalledWith({ query: {} })
+    expect(routeState.route!.query.inspectionTaskId).toBeUndefined()
+    expect(vm.recordSheetOpen).toBe(false)
+    expect(vm.recordForm).toMatchObject({
+      inspectionPlanId: '',
+      sourceDocumentId: '',
+      skuCode: '',
+      batchNo: '',
+    })
+    expect(vm.recordForm.resultLines).toEqual([
+      expect.objectContaining({ characteristicCode: '', observedValue: '' }),
+    ])
+    expect(taskActionSpies.refreshInspectionTasks).toHaveBeenCalledOnce()
+    expect(notifySpies.error).toHaveBeenCalledWith('状态已被其他操作更新')
+  })
+
+  it('preserves the routed inspection task and form input after an ordinary validation error', async () => {
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+    taskActionSpies.startInspection.mockRejectedValueOnce({
+      success: false,
+      statusCode: 422,
+      message: '实测值不符合格式',
+    })
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    const vm = wrapper.vm as unknown as {
+      recordSheetOpen: boolean
+      recordForm: {
+        inspectionPlanId: string
+        sourceDocumentId: string
+        resultLines: Array<{ observedValue: string }>
+      }
+      submitInspectionRecord: () => Promise<void>
+    }
+    vm.recordForm.resultLines[0]!.observedValue = '10.1'
+    await vm.submitInspectionRecord()
+    await nextRenderTick()
+
+    expect(routerSpies.replace).not.toHaveBeenCalled()
+    expect(routeState.route!.query.inspectionTaskId).toBe('TASK-001')
+    expect(vm.recordSheetOpen).toBe(true)
+    expect(vm.recordForm).toMatchObject({
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+    })
+    expect(vm.recordForm.resultLines[0]!.observedValue).toBe('10.1')
+    expect(taskActionSpies.refreshInspectionTasks).not.toHaveBeenCalled()
   })
 
   it('locates a source inspection record: opens read-only record detail from inspectionRecordId', async () => {

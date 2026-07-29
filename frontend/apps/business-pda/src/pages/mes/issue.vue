@@ -5,6 +5,7 @@ import type {
 } from '@nerv-iip/api-client'
 import {
   materialIssueStatusLabel,
+  statusActionGate,
   workOrderSubtitle,
   workOrderTitle,
 } from '@nerv-iip/business-core'
@@ -13,12 +14,14 @@ import {
   NvBottomSheet,
   NvListRow,
   NvMobileResult,
+  NvMobileToast,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMesMaterialIssue, useMesWorkOrders } from '@/composables/useBusinessMes'
 import RetryableListError from '@/components/RetryableListError.vue'
+import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 
 definePage({
@@ -172,7 +175,16 @@ const receiveSheetOpen = computed({
   },
 })
 
+function canReceive(req: IssueRequest) {
+  return statusActionGate({
+    domain: 'mes-material-issue',
+    action: 'confirm-receipt',
+    facts: { status: req.status },
+  }).executable
+}
+
 function openReceive(req: IssueRequest) {
+  if (!canReceive(req)) return
   result.value = null
   // 新一轮线边接收 → 作废上一个幂等键
   operationKey.value = ''
@@ -183,6 +195,17 @@ function closeReceive() {
   receiving.value = null
   receivedQuantity.value = null
 }
+
+function resetReceiveIntent() {
+  result.value = null
+  closeReceive()
+  operationKey.value = ''
+}
+
+const lifecycleRecovery = useLifecycleActionRecovery({
+  reset: resetReceiveIntent,
+  refresh,
+})
 
 async function submitReceive() {
   const req = receiving.value
@@ -197,10 +220,16 @@ async function submitReceive() {
   submitting.value = true
   receiving.value = null
   const doSubmit = () =>
-    confirmLineSideReceipt(requestId, {
-      ...(quantity === null ? {} : { receivedQuantity: quantity }),
-      idempotencyKey: operationKey.value,
-    })
+    confirmLineSideReceipt(
+      requestId,
+      {
+        ...(quantity === null ? {} : { receivedQuantity: quantity }),
+        idempotencyKey: operationKey.value,
+      },
+      {
+        workOrderId: req?.workOrderId,
+      },
+    )
   try {
     await doSubmit()
     result.value = {
@@ -209,6 +238,7 @@ async function submitReceive() {
       retry: () => {},
     }
   } catch (e) {
+    if (await lifecycleRecovery.handle(e)) return
     result.value = {
       status: 'error',
       title: '线边接收失败',
@@ -341,6 +371,7 @@ function onScanWorkOrder(value: string) {
         >
           <template #trailing>
             <button
+              v-if="canReceive(req)"
               type="button"
               :data-testid="`receive-${req.requestId}`"
               class="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-primary"
@@ -497,5 +528,12 @@ function onScanWorkOrder(value: string) {
         </button>
       </div>
     </NvBottomSheet>
+
+    <NvMobileToast
+      :show="lifecycleRecovery.toast.value.show"
+      :message="lifecycleRecovery.toast.value.message"
+      :type="lifecycleRecovery.toast.value.type"
+      @update:show="lifecycleRecovery.setToastOpen"
+    />
   </NvAppShellMobile>
 </template>

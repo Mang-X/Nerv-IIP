@@ -1,10 +1,17 @@
 import { OfflineError, RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
+import { NvBottomSheet } from '@nerv-iip/ui-mobile'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 
 const push = vi.fn(() => Promise.resolve())
+const routeGuardState = vi.hoisted(() => ({
+  guard: undefined as (() => boolean) | undefined,
+}))
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
+    routeGuardState.guard = guard
+  }),
   useRouter: () => ({ push }),
   RouterView: { template: '<div />' },
 }))
@@ -38,8 +45,16 @@ const wmsState = vi.hoisted(() => ({
       isReleasedForPutaway: true,
     },
   ] as Array<Record<string, unknown>>,
-  completeInbound: vi.fn((_inboundOrderId: string, _idempotencyKey: string, _lines?: unknown[]) =>
-    Promise.resolve(),
+  completeInbound: vi.fn(
+    (
+      _inboundOrderId: string,
+      _idempotencyKey: string,
+      _lines?: unknown[],
+      options?: { attempt: 'initial' | 'retry'; onCommandAttempt?: () => void },
+    ) => {
+      options?.onCommandAttempt?.()
+      return Promise.resolve()
+    },
   ),
   completePending: false,
   error: null as unknown,
@@ -250,6 +265,7 @@ describe('WMS 收货入库', () => {
     expect(lines).toEqual([
       { lineNo: '1', lotNo: 'LOT-A', productionDate: undefined, expiryDate: '2027-12-31' },
     ])
+    expect(wmsState.completeInbound.mock.calls[0][3]).toMatchObject({ attempt: 'initial' })
   })
 
   it('多行新批次：逐行批号手输 → 随 completeInbound 落库', async () => {
@@ -279,7 +295,17 @@ describe('WMS 收货入库', () => {
   })
 
   it('重试（不重新点单）复用同一 idempotencyKey；重新点单为新操作换新键', async () => {
-    wmsState.completeInbound.mockRejectedValueOnce(new Error('lost response'))
+    wmsState.completeInbound.mockImplementationOnce(
+      (
+        _id: string,
+        _key: string,
+        _lines?: unknown[],
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject(new Error('lost response'))
+      },
+    )
     const wrapper = mount(InboundPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
     await flushPromises()
@@ -291,16 +317,97 @@ describe('WMS 收货入库', () => {
     expect(wmsState.completeInbound).toHaveBeenCalledTimes(2)
     const firstKey = wmsState.completeInbound.mock.calls[0][1]
     expect(wmsState.completeInbound.mock.calls[1][1]).toBe(firstKey)
+    expect(wmsState.completeInbound.mock.calls[0][3]).toMatchObject({ attempt: 'initial' })
+    expect(wmsState.completeInbound.mock.calls[1][3]).toMatchObject({ attempt: 'retry' })
 
     const continueBtn = wrapper.findAll('button').find((b) => b.text() === '继续')!
     await continueBtn.trigger('click')
 
-    await wrapper.findAll('[data-row]')[1].trigger('click')
+    await wrapper.findAll('[data-row]')[0].trigger('click')
     await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
     await flushPromises()
     expect(wmsState.completeInbound).toHaveBeenCalledTimes(3)
     expect(wmsState.completeInbound.mock.calls[2][1]).not.toBe(firstKey)
+  })
+
+  it('确定性 422 后编辑采集批号会轮换 key，并按 initial 新意图提交', async () => {
+    wmsState.completeInbound.mockImplementationOnce(
+      (
+        _id: string,
+        _key: string,
+        _lines?: unknown[],
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject({ success: false, statusCode: 422, message: '批号无效' })
+      },
+    )
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
+    confirm.click()
+    await flushPromises()
+
+    const firstKey = wmsState.completeInbound.mock.calls[0][1]
+    const batch = document.querySelector<HTMLInputElement>('[data-batch-input]')!
+    batch.value = 'LOT-CORRECTED'
+    batch.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    confirm.click()
+    await flushPromises()
+
+    expect(wmsState.completeInbound.mock.calls[1][1]).not.toBe(firstKey)
+    expect(wmsState.completeInbound.mock.calls[1][2]).toEqual([
+      {
+        lineNo: '1',
+        lotNo: 'LOT-CORRECTED',
+        productionDate: undefined,
+        expiryDate: '2027-12-31',
+      },
+    ])
+    expect(wmsState.completeInbound.mock.calls[1][3]).toMatchObject({ attempt: 'initial' })
+  })
+
+  it('结果未知时锁定采集字段，只按冻结 lines/key 原样重放', async () => {
+    wmsState.completeInbound.mockImplementationOnce(
+      (
+        _id: string,
+        _key: string,
+        _lines?: unknown[],
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject(new RequestTimeoutError())
+      },
+    )
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
+    confirm.click()
+    await flushPromises()
+
+    const first = wmsState.completeInbound.mock.calls[0]
+    expect(document.querySelector<HTMLInputElement>('[data-batch-input]')!.disabled).toBe(true)
+    expect(document.body.textContent).toContain('原内容重试')
+    const sheet = wrapper.findComponent(NvBottomSheet)
+    sheet.vm.$emit('update:open', false)
+    await wrapper.vm.$nextTick()
+    expect(sheet.props('open')).toBe(true)
+    const cancel = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === '取消',
+    )
+    expect(cancel?.disabled).toBe(true)
+    expect(routeGuardState.guard?.()).toBe(false)
+    confirm.click()
+    await flushPromises()
+
+    const second = wmsState.completeInbound.mock.calls[1]
+    expect(second[1]).toBe(first[1])
+    expect(second[2]).toEqual(first[2])
+    expect(second[3]).toMatchObject({ attempt: 'retry' })
   })
 
   it('completePending 时确认按钮禁用（防重）', async () => {

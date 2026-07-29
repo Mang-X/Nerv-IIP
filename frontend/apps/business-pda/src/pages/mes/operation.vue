@@ -1,18 +1,28 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
-import { openDownloadGrantBlob, operationTaskStatusLabel } from '@nerv-iip/business-core'
-import { createTimeoutFetch, REQUEST_TIMEOUT_MS } from '@/api/request-timeout'
+import {
+  openDownloadGrantBlob,
+  operationTaskStatusLabel,
+  statusActionGate,
+} from '@nerv-iip/business-core'
+import { createTimeoutFetch, isIndeterminateError, REQUEST_TIMEOUT_MS } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+import {
+  isLifecycleActionUpdated,
+  LIFECYCLE_ACTION_UPDATED_MESSAGE,
+} from '@/composables/lifecycleActionRecovery'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import {
   NvAppShellMobile,
   NvBottomSheet,
   NvListRow,
   NvMobileResult,
+  NvMobileToast,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -57,21 +67,16 @@ const statusLabel = operationTaskStatusLabel
 
 type ActionKind = 'start' | 'pause' | 'resume' | 'complete'
 
-// 按当前状态决定可用动作
+// 只消费服务端持久化 canonical status；未知/终态固定只读。
 function actionsFor(status?: string): ActionKind[] {
-  switch (status) {
-    case 'Ready':
-      return ['start']
-    case 'Running':
-    case 'Started':
-    case 'InProgress':
-      return ['pause', 'complete']
-    case 'Paused':
-    case 'Held':
-      return ['resume', 'complete']
-    default:
-      return []
-  }
+  return (['start', 'pause', 'resume', 'complete'] as const).filter(
+    (action) =>
+      statusActionGate({
+        domain: 'mes-operation-task',
+        action,
+        facts: { status },
+      }).executable,
+  )
 }
 
 const ACTION_LABELS: Record<ActionKind, string> = {
@@ -99,6 +104,8 @@ const ACTION_FNS: Record<ActionKind, (id: string, idempotencyKey: string) => Pro
 // 稳定的逐动作幂等键：用户发起某动作时铸造一次，重试该动作复用同键；
 // 换动作或重新打开面板 → 新键。
 const operationKey = ref('')
+const operationResultUnknown = ref(false)
+usePendingWriteLeaveGuard(operationResultUnknown)
 
 // --- BottomSheet 状态 ---
 const selected = ref<Task | null>(null)
@@ -122,6 +129,7 @@ type ResultState = {
 const result = ref<ResultState | null>(null)
 const openingSopFileId = ref<string | null>(null)
 const sopFileError = ref('')
+const toast = reactive({ show: false, message: '', type: 'error' as const })
 
 const availableActions = computed(() => actionsFor(selected.value?.status))
 
@@ -141,11 +149,12 @@ function rowSubtitle(task: Task) {
 }
 
 function openSheet(task: Task) {
+  if (operationResultUnknown.value) return
   result.value = null
   sopFileError.value = ''
   confirmingComplete.value = false
   // 重新打开面板 → 新一轮操作，作废上一个幂等键
-  operationKey.value = ''
+  if (!operationResultUnknown.value) operationKey.value = ''
   selected.value = task
   sopFilters.operationCode = task.operationCode?.trim() ?? ''
   sopFilters.workCenterCode = (task.workCenterCode ?? task.workCenterId)?.trim() ?? ''
@@ -156,6 +165,20 @@ function openSheet(task: Task) {
 function closeSheet() {
   selected.value = null
   confirmingComplete.value = false
+}
+
+async function recoverLifecycleUpdate() {
+  closeSheet()
+  result.value = null
+  operationKey.value = ''
+  operationResultUnknown.value = false
+  try {
+    await refresh()
+  } catch {
+    // 刷新失败不阻断固定冲突提示，用户可随后手动刷新列表。
+  }
+  toast.message = LIFECYCLE_ACTION_UPDATED_MESSAGE
+  toast.show = true
 }
 async function openSopFile(sop: CurrentSop) {
   const fileId = sop.fileId?.trim()
@@ -182,20 +205,26 @@ async function runAction(action: ActionKind) {
   // 完成是终态动作，先进入二次确认；在用户发起该动作（点动作按钮）时铸造稳定键
   if (action === 'complete' && !confirmingComplete.value) {
     confirmingComplete.value = true
-    operationKey.value = makeIdempotencyKey()
+    if (!operationResultUnknown.value) operationKey.value = makeIdempotencyKey()
     return
   }
   // 非完成动作点击即发起；完成动作此处为确认（沿用进入确认时铸造的键）
   if (action !== 'complete') {
-    operationKey.value = makeIdempotencyKey()
+    if (!operationResultUnknown.value) operationKey.value = makeIdempotencyKey()
   }
   const id = task.operationTaskId
   const key = operationKey.value
   closeSheet()
   try {
     await ACTION_FNS[action](id, key)
+    operationResultUnknown.value = false
     result.value = { status: 'success', title: SUCCESS_TITLES[action], action, taskId: id }
   } catch (e) {
+    if (isLifecycleActionUpdated(e)) {
+      await recoverLifecycleUpdate()
+      return
+    }
+    operationResultUnknown.value = isIndeterminateError(e)
     result.value = {
       status: 'error',
       title: '操作失败',
@@ -215,8 +244,14 @@ async function retry() {
   result.value = null
   try {
     await ACTION_FNS[action](taskId, key)
+    operationResultUnknown.value = false
     result.value = { status: 'success', title: SUCCESS_TITLES[action], action, taskId }
   } catch (e) {
+    if (isLifecycleActionUpdated(e)) {
+      await recoverLifecycleUpdate()
+      return
+    }
+    operationResultUnknown.value = isIndeterminateError(e)
     result.value = {
       status: 'error',
       title: '操作失败',
@@ -228,11 +263,13 @@ async function retry() {
 }
 
 function continueWork() {
+  if (operationResultUnknown.value) return
   result.value = null
   // 成功后回到列表态，作废本次操作幂等键 → 下次发起铸造新键
   operationKey.value = ''
 }
 function backToList() {
+  if (operationResultUnknown.value) return
   result.value = null
   operationKey.value = ''
   router.push('/').catch(() => {})
@@ -255,8 +292,9 @@ function formatDate(value?: string | null) {
         <button
           type="button"
           aria-label="返回"
+          :disabled="operationResultUnknown"
           class="text-sm text-muted-foreground"
-          @click="router.push('/').catch(() => {})"
+          @click="backToList"
         >
           返回
         </button>
@@ -291,6 +329,8 @@ function formatDate(value?: string | null) {
         </button>
         <button
           type="button"
+          data-testid="back-to-list"
+          :disabled="operationResultUnknown"
           class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground"
           @click="backToList"
         >
@@ -445,5 +485,12 @@ function formatDate(value?: string | null) {
         </div>
       </div>
     </NvBottomSheet>
+
+    <NvMobileToast
+      :show="toast.show"
+      :message="toast.message"
+      :type="toast.type"
+      @update:show="toast.show = $event"
+    />
   </NvAppShellMobile>
 </template>

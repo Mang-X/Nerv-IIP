@@ -1,5 +1,6 @@
 import {
   acknowledgeBusinessConsoleEquipmentAlarmMutationOptions,
+  listBusinessConsoleEquipmentAlarms,
   listBusinessConsoleEquipmentAlarmsQueryOptions,
   shelveBusinessConsoleEquipmentAlarmMutationOptions,
   type BusinessConsoleEquipmentAlarmListEnvelope,
@@ -9,6 +10,7 @@ import { alarmLifecycleSortWeight } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
+import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
 
 const DEFAULT_TAKE = 100
 
@@ -151,8 +153,34 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     environmentId: environmentId.value,
   })
 
+  async function readExactAlarm(alarmEventId: string) {
+    const { data } = await listBusinessConsoleEquipmentAlarms({
+      query: {
+        organizationId: organizationId.value,
+        environmentId: environmentId.value,
+        alarmEventId,
+        skip: 0,
+        take: 2,
+      },
+      throwOnError: true,
+    })
+    const matches = listItems<BusinessConsoleTelemetryAlarmEventItem>(
+      data as BusinessConsoleEquipmentAlarmListEnvelope | undefined,
+    ).filter((alarm) => alarm.alarmEventId === alarmEventId)
+    return matches.length === 1 ? matches[0] : undefined
+  }
+
   /** 确认。`atUtc` 由调用方铸造并跨重试复用；领域 first-write-wins 保证重复确认为 no-op。 */
   async function acknowledge(alarmEventId: string, atUtc: string) {
+    const authoritative = await readExactAlarm(alarmEventId)
+    assertLifecycleActionExecutable({
+      domain: 'iiot-alarm',
+      action: 'acknowledge',
+      facts: {
+        status: authoritative?.status,
+        acknowledgedAtUtc: authoritative?.acknowledgedAtUtc,
+      },
+    })
     return acknowledgeMutation.mutateAsync({
       path: { alarmEventId },
       body: {
@@ -174,6 +202,18 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     idempotencyKey: string,
     reason?: string,
   ) {
+    const authoritative = await readExactAlarm(alarmEventId)
+    assertLifecycleActionExecutable({
+      domain: 'iiot-alarm',
+      action: 'shelve',
+      facts: {
+        status: authoritative?.status,
+        acknowledgedAtUtc: authoritative?.acknowledgedAtUtc,
+        shelvedAtUtc: authoritative?.shelvedAtUtc,
+        shelvedUntilUtc: authoritative?.shelvedUntilUtc,
+        evaluatedAtUtc: atUtc,
+      },
+    })
     return shelveMutation.mutateAsync({
       path: { alarmEventId },
       body: {

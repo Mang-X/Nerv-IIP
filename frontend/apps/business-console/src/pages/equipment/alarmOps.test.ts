@@ -395,6 +395,8 @@ describe('alarm ops — shelve validation + batch retry (attaches to body for te
     expect(run2).toHaveLength(1)
     expect(run2[0][0]).toBe('ALM-2')
     expect(keyOf(run2, 'ALM-2')).toBe(alm2Key1)
+    expect(run1.every((call) => (call[4] as { attempt?: string }).attempt === 'initial')).toBe(true)
+    expect((run2[0][4] as { attempt?: string }).attempt).toBe('retry')
   })
 
   it('commits the locked retry state even when the post-batch refresh fails', async () => {
@@ -415,6 +417,44 @@ describe('alarm ops — shelve validation + batch retry (attaches to body for te
     expect(q('[data-slot=nv-dialog-content]')).not.toBeNull()
     expect(q<HTMLInputElement>('#shelve-reason')?.disabled).toBe(true)
     expect(document.body.textContent).toContain('放弃重试')
+  })
+
+  it('keeps ordinary 422 failures editable and rotates them to a new intent', async () => {
+    alarmState.shelveAlarm.mockRejectedValue({
+      success: false,
+      code: 422,
+      message: '搁置原因不符合规则',
+    })
+
+    await openBatchShelve(['ALM-1', 'ALM-2'])
+    await setInput('#shelve-reason', '原原因')
+    await nextTick()
+    nativeClick(dialogConfirmBtn() ?? null)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await nextTick()
+
+    const firstCalls = [...alarmState.shelveAlarm.mock.calls]
+    const firstKey = (firstCalls[0]?.[4] as { idempotencyKey?: string }).idempotencyKey
+    expect(q('[data-slot=nv-dialog-content]')).not.toBeNull()
+    expect(q<HTMLInputElement>('#shelve-reason')?.disabled).toBe(false)
+    expect(document.body.textContent).not.toContain('放弃重试')
+
+    alarmState.shelveAlarm.mockClear()
+    alarmState.shelveAlarm.mockResolvedValue(undefined)
+    await setInput('#shelve-reason', '修正原因')
+    nativeClick(dialogConfirmBtn() ?? null)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await nextTick()
+
+    expect(alarmState.shelveAlarm).toHaveBeenCalledTimes(2)
+    const secondKey = (alarmState.shelveAlarm.mock.calls[0]?.[4] as { idempotencyKey?: string })
+      .idempotencyKey
+    expect(secondKey).not.toBe(firstKey)
+    expect(
+      alarmState.shelveAlarm.mock.calls.every(
+        (call) => (call[4] as { attempt?: string }).attempt === 'initial',
+      ),
+    ).toBe(true)
   })
 
   it('exposes aria-invalid + aria-describedby on the native input when the duration is invalid', async () => {

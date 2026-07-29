@@ -6,6 +6,7 @@ import type {
 import {
   operationTaskStatusLabel,
   productionReportFlow,
+  statusActionGate,
   type ReportCtx,
   workOrderSubtitle,
   workOrderTitle,
@@ -17,6 +18,7 @@ import {
   NvMobileResult,
   NvMobileButton,
   NvMobileInput,
+  NvMobileToast,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref, watch } from 'vue'
@@ -29,6 +31,7 @@ import {
   useMesWorkOrders,
 } from '@/composables/useBusinessMes'
 import RetryableListError from '@/components/RetryableListError.vue'
+import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useMesReportIdentity } from '@/composables/useMesReportIdentity'
 
@@ -62,6 +65,7 @@ const {
   workOrder: workOrderDetail,
   pending: workOrderDetailPending,
   error: workOrderDetailError,
+  refresh: refreshWorkOrderDetail,
 } = useMesWorkOrderDetail(routeWorkOrderId)
 const routeOperationTaskId = computed(() => {
   const value = route.query.operationTaskId
@@ -71,6 +75,7 @@ const {
   task: exactOperationTask,
   pending: exactOperationTaskPending,
   error: exactOperationTaskError,
+  refresh: refreshExactOperationTask,
 } = useMesExactOperationTask(routeWorkOrderId, routeOperationTaskId, workOrderDetail)
 
 const {
@@ -182,6 +187,15 @@ const pairKey = computed(() =>
 const currentIntent = computed(() => (pairKey.value ? intents.get(pairKey.value) : undefined))
 const result = computed(() => currentIntent.value?.result ?? null)
 const submitting = computed(() => currentIntent.value?.status === 'pending')
+const canCompleteSelectedTask = computed(
+  () =>
+    selectedTask.value !== null &&
+    statusActionGate({
+      domain: 'mes-operation-task',
+      action: 'report-complete',
+      facts: { status: selectedTask.value.status },
+    }).executable,
+)
 
 watch(
   [() => selectedWorkOrder.value?.workOrderId, () => selectedTask.value?.operationTaskId],
@@ -205,6 +219,9 @@ watch(
     ctx.recorded = status === 'success'
   },
 )
+watch(canCompleteSelectedTask, (canComplete) => {
+  if (!canComplete) completesOperation.value = false
+})
 
 // ScanBar 仅在选工单步活跃；录数量/结果时不抢焦点
 const scanActive = computed(
@@ -243,6 +260,22 @@ function closeSheet() {
 function backToWorkOrders() {
   void clearIdentity()
 }
+
+function resetReportIntent() {
+  if (pairKey.value) intents.delete(pairKey.value)
+  goodQuantity.value = 0
+  scrapQuantity.value = 0
+  completesOperation.value = false
+  ctx.quantityEntered = false
+  ctx.recorded = false
+  void clearIdentity()
+}
+
+const lifecycleRecovery = useLifecycleActionRecovery({
+  reset: resetReportIntent,
+  refresh: () =>
+    Promise.all([refreshWorkOrders(), refreshWorkOrderDetail(), refreshExactOperationTask()]),
+})
 
 async function submit() {
   const identity = pair.value
@@ -315,6 +348,7 @@ async function submit() {
     }
   } catch (e) {
     if (intent.attempt !== attempt) return
+    if (await lifecycleRecovery.handle(e)) return
     intent.status = 'error'
     intent.result = {
       status: 'error',
@@ -568,9 +602,14 @@ function onScanWorkOrder(value: string) {
             v-model="completesOperation"
             data-testid="completes-operation"
             type="checkbox"
+            :disabled="!canCompleteSelectedTask"
             class="size-5"
           />
         </label>
+
+        <p v-if="!canCompleteSelectedTask" class="text-sm text-muted-foreground">
+          当前工序可报数量；仅执行中的工序可同时完工。
+        </p>
 
         <p v-if="!quantityValid" class="text-sm text-muted-foreground">
           良品数与次品数须为非负数，且合计大于 0。
@@ -595,5 +634,12 @@ function onScanWorkOrder(value: string) {
         </button>
       </div>
     </NvBottomSheet>
+
+    <NvMobileToast
+      :show="lifecycleRecovery.toast.value.show"
+      :message="lifecycleRecovery.toast.value.message"
+      :type="lifecycleRecovery.toast.value.type"
+      @update:show="lifecycleRecovery.setToastOpen"
+    />
   </NvAppShellMobile>
 </template>

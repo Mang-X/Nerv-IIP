@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn, NvMetricStatus, NvMetricTone } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import QualityHoldPanel from '@/components/mes/QualityHoldPanel.vue'
 import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
@@ -240,7 +242,15 @@ const cancelOpen = ref(false)
 const cancelForm = reactive({ reasonCode: '', remark: '' })
 
 const currentStatus = computed(() => (detail.value?.status ?? '').toLowerCase())
-const canCancel = computed(() => CANCELLABLE_STATUSES.has(currentStatus.value))
+const canCancel = computed(
+  () =>
+    CANCELLABLE_STATUSES.has(currentStatus.value) &&
+    statusActionGate({
+      domain: 'mes-work-order',
+      action: 'cancel',
+      facts: { status: detail.value?.status },
+    }).executable,
+)
 const cancelDisabledReason = computed(() => {
   if (!detail.value) return '工单信息加载中，请稍候。'
   if (canCancel.value) return ''
@@ -371,6 +381,18 @@ async function submitCancel() {
       `已取消工单 ${filters.workOrderId}：${releasedCount} 项预留释放、${returnCount} 项退料指引生成。`,
     )
   } catch (error) {
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          cancelOpen.value = false
+          resetCancelForm()
+        },
+        refresh: refreshDetail,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
     notifyError(error, '取消工单失败，请稍后重试。')
   }
 }

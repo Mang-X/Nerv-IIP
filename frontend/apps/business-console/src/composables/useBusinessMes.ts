@@ -1,8 +1,8 @@
 import {
   acceptBusinessConsoleMesShiftHandoverMutationOptions,
   assignBusinessConsoleMesDispatchTaskMutationOptions,
-  cancelBusinessConsoleMesWorkOrderMutationOptions,
-  completeBusinessConsoleMesOperationTaskMutationOptions,
+  cancelBusinessConsoleMesWorkOrder,
+  completeBusinessConsoleMesOperationTask,
   confirmBusinessConsoleMesDowntimeRecoveryMutationOptions,
   convertBusinessConsoleMesPlanToWorkOrderMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
@@ -32,6 +32,7 @@ import {
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
+  listBusinessConsoleMesOperationTasks,
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesReceivableProducedLotsQueryOptions,
@@ -41,16 +42,16 @@ import {
   listBusinessConsoleMesRelatedQualityItemsQueryOptions,
   listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
-  pauseBusinessConsoleMesOperationTaskMutationOptions,
+  pauseBusinessConsoleMesOperationTask,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   recordBusinessConsoleMesDefectMutationOptions,
   recordBusinessConsoleMesDowntimeEventMutationOptions,
-  recordBusinessConsoleMesProductionReportMutationOptions,
+  recordBusinessConsoleMesProductionReport,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
-  resumeBusinessConsoleMesOperationTaskMutationOptions,
+  resumeBusinessConsoleMesOperationTask,
   reverseBusinessConsoleMesProductionReportMutationOptions,
   runBusinessConsoleMesScheduleMutationOptions,
-  startBusinessConsoleMesOperationTaskMutationOptions,
+  startBusinessConsoleMesOperationTask,
   type BusinessConsoleMesCapacityImpactListEnvelope,
   type BusinessConsoleMesCapacityImpactRow,
   type BusinessConsoleMesCreateMaterialIssueRequest,
@@ -118,6 +119,7 @@ import {
   type BusinessContextFields,
 } from './businessContextBinding'
 import { businessReadState } from './businessReadState'
+import { executeLifecycleAction, LifecycleStateChangedError } from './lifecycleAction'
 
 const DEFAULT_TAKE = 100
 // 取消补偿预览按此页大小完整分页，直到取全该工单的全部关联单据（取消 handler 处理全部）。
@@ -227,7 +229,9 @@ export interface MesWorkOrderContext {
   workOrderId: string
 }
 
-export interface MesContextFilters extends BusinessContextFields {}
+export interface MesContextFilters extends BusinessContextFields {
+  workOrderId?: string
+}
 
 export interface MesTraceabilityFilters extends MesContextFilters {
   workOrderId: string
@@ -436,6 +440,43 @@ function invalidateWorkOrders(queryCache: ReturnType<typeof useQueryCache>) {
   return invalidateMesQueries(queryCache, ['listBusinessConsoleMesWorkOrders'])
 }
 
+async function readMesOperationLifecycleRequest(
+  operationTaskId: string,
+  context: MesContextFilters,
+  action: 'start' | 'pause' | 'resume' | 'complete' | 'report-complete',
+) {
+  const workOrderId = context.workOrderId?.trim()
+  if (!workOrderId) return undefined
+
+  let skip = 0
+  while (true) {
+    const response = await listBusinessConsoleMesOperationTasks({
+      query: {
+        organizationId: context.organizationId,
+        environmentId: context.environmentId,
+        workOrderId,
+        skip,
+        take: DEFAULT_TAKE,
+      },
+      throwOnError: false,
+    })
+    if (response.error !== undefined) throw response.error
+    if (!response.data?.success) throw response.data ?? new Error('读取工序最新状态失败')
+    const items = response.data.data?.items ?? []
+    const item = items.find((candidate) => candidate.operationTaskId === operationTaskId)
+    if (item) {
+      return {
+        domain: 'mes-operation-task' as const,
+        action,
+        facts: { status: item.status },
+      }
+    }
+    const total = response.data.data?.total ?? 0
+    if (items.length === 0 || skip + items.length >= total) return undefined
+    skip += items.length
+  }
+}
+
 export interface UseMesWorkOrdersOptions {
   initialTake?: number
 }
@@ -447,31 +488,89 @@ export interface UseMesWorkOrdersOptions {
 export function useMesProductionReporting() {
   const context = defaultContext()
   const queryCache = useQueryCache()
+  const issuedReportCompleteIntents = new Set<string>()
+  const recordProductionReportPending = shallowRef(false)
+  const recordProductionReportError = shallowRef<unknown>()
+  const refreshProductionReportQueries = () =>
+    invalidateMesQueries(queryCache, [
+      'getBusinessConsoleMesOverview',
+      'getBusinessConsoleMesWipSummary',
+      'listBusinessConsoleMesProductionReports',
+      'listBusinessConsoleMesWorkOrders',
+      'listBusinessConsoleMesOperationTasks',
+    ])
 
-  const reportMutation = useMutation({
-    ...recordBusinessConsoleMesProductionReportMutationOptions(),
-    onSuccess() {
-      void invalidateMesQueries(queryCache, [
-        'getBusinessConsoleMesOverview',
-        'getBusinessConsoleMesWipSummary',
-        'listBusinessConsoleMesProductionReports',
-        'listBusinessConsoleMesWorkOrders',
-        'listBusinessConsoleMesOperationTasks',
-      ]).catch(ignoreBackgroundError)
-    },
-  })
+  async function recordProductionReportAction(
+    body: BusinessConsoleRecordProductionReportRequest,
+    options: { onCommandAttempt?: () => void } = {},
+  ) {
+    recordProductionReportPending.value = true
+    recordProductionReportError.value = undefined
+    try {
+      const idempotencyKey = body.idempotencyKey?.trim()
+      const workOrderId = body.workOrderId?.trim()
+      const operationTaskId = body.operationTaskId?.trim()
+      const reportCompleteIntent =
+        body.completesOperation && idempotencyKey && workOrderId && operationTaskId
+          ? `${workOrderId}\u0000${operationTaskId}\u0000${idempotencyKey}`
+          : undefined
+      const isIssuedReplay =
+        reportCompleteIntent !== undefined && issuedReportCompleteIntents.has(reportCompleteIntent)
+      const command = () => {
+        if (reportCompleteIntent) issuedReportCompleteIntents.add(reportCompleteIntent)
+        options.onCommandAttempt?.()
+        return recordBusinessConsoleMesProductionReport({
+          body: {
+            organizationId: context.organizationId,
+            environmentId: context.environmentId,
+            ...body,
+          },
+          throwOnError: false,
+        })
+      }
+      const result = body.completesOperation
+        ? isIssuedReplay
+          ? await command().then((response) => {
+              if (response.response?.status === 409) {
+                throw new LifecycleStateChangedError('conflict')
+              }
+              if (response.error !== undefined) throw response.error
+              if (response.data?.success === false) throw response.data
+              return response.data
+            })
+          : await executeLifecycleAction({
+              readLatest: () =>
+                readMesOperationLifecycleRequest(
+                  body.operationTaskId ?? '',
+                  {
+                    organizationId: context.organizationId,
+                    environmentId: context.environmentId,
+                    workOrderId: body.workOrderId,
+                  },
+                  'report-complete',
+                ),
+              command,
+            })
+        : await command().then((response) => {
+            if (response.error !== undefined) throw response.error
+            if (response.data?.success === false) throw response.data
+            return response.data
+          })
+      await refreshProductionReportQueries()
+      return result
+    } catch (error) {
+      recordProductionReportError.value = error
+      throw error
+    } finally {
+      recordProductionReportPending.value = false
+    }
+  }
 
   return {
-    recordProductionReport: (body: BusinessConsoleRecordProductionReportRequest) =>
-      reportMutation.mutateAsync({
-        body: {
-          organizationId: context.organizationId,
-          environmentId: context.environmentId,
-          ...body,
-        },
-      }),
-    recordProductionReportError: reportMutation.error,
-    recordProductionReportPending: reportMutation.isLoading,
+    recordProductionReport: recordProductionReportAction,
+    recordProductionReportError,
+    recordProductionReportPending,
+    refreshProductionReportState: refreshProductionReportQueries,
   }
 }
 
@@ -803,38 +902,77 @@ export function useMesWorkOrderDetail() {
     }
   })
 
-  const cancelMutation = useMutation({
-    ...cancelBusinessConsoleMesWorkOrderMutationOptions(),
-    onSuccess() {
-      void invalidateMesQueries(queryCache, [
-        // 本域：取消改动工单及其派生读模型（详情/列表/概览/在制/工序/派工/齐套/领料/完工入库）
-        'getBusinessConsoleMesWorkOrderDetail',
-        'listBusinessConsoleMesWorkOrders',
-        'getBusinessConsoleMesOverview',
-        'getBusinessConsoleMesWipSummary',
-        'listBusinessConsoleMesOperationTasks',
-        'listBusinessConsoleMesDispatchTasks',
-        'getBusinessConsoleMesMaterialReadiness',
-        'listBusinessConsoleMesMaterialIssueRequests',
-        'listBusinessConsoleMesFinishedGoodsReceiptRequests',
-        // 跨域（A1 §4.2 跨域刷新首个落地）：预留释放后库存可用量恢复，库存可用量读面必须失效
-        'getBusinessConsoleInventoryAvailability',
-      ]).catch(ignoreBackgroundError)
-    },
-  })
+  const cancelWorkOrderPending = shallowRef(false)
+  const cancelWorkOrderError = shallowRef<unknown>()
+  const refreshCancelledWorkOrderQueries = () =>
+    invalidateMesQueries(queryCache, [
+      // 本域：取消改动工单及其派生读模型（详情/列表/概览/在制/工序/派工/齐套/领料/完工入库）
+      'getBusinessConsoleMesWorkOrderDetail',
+      'listBusinessConsoleMesWorkOrders',
+      'getBusinessConsoleMesOverview',
+      'getBusinessConsoleMesWipSummary',
+      'listBusinessConsoleMesOperationTasks',
+      'listBusinessConsoleMesDispatchTasks',
+      'getBusinessConsoleMesMaterialReadiness',
+      'listBusinessConsoleMesMaterialIssueRequests',
+      'listBusinessConsoleMesFinishedGoodsReceiptRequests',
+      // 跨域（A1 §4.2 跨域刷新首个落地）：预留释放后库存可用量恢复，库存可用量读面必须失效
+      'getBusinessConsoleInventoryAvailability',
+    ])
+
+  async function cancelWorkOrder(reason: string) {
+    cancelWorkOrderPending.value = true
+    cancelWorkOrderError.value = undefined
+    try {
+      const result = await executeLifecycleAction({
+        readLatest: async () => {
+          const query = getBusinessConsoleMesWorkOrderDetailQueryOptions({
+            path: { workOrderId: filters.workOrderId },
+            query: {
+              organizationId: filters.organizationId,
+              environmentId: filters.environmentId,
+            },
+          })
+          const response = await query.query({
+            signal: new AbortController().signal,
+          } as Parameters<typeof query.query>[0])
+          const item = response?.success ? response.data : undefined
+          return item
+            ? {
+                domain: 'mes-work-order' as const,
+                action: 'cancel' as const,
+                facts: { status: item.status },
+              }
+            : undefined
+        },
+        command: () =>
+          cancelBusinessConsoleMesWorkOrder({
+            path: { workOrderId: filters.workOrderId },
+            query: {
+              organizationId: filters.organizationId,
+              environmentId: filters.environmentId,
+            },
+            body: { reason },
+            throwOnError: false,
+          }),
+      })
+      await refreshCancelledWorkOrderQueries()
+      return result
+    } catch (error) {
+      cancelWorkOrderError.value = error
+      throw error
+    } finally {
+      cancelWorkOrderPending.value = false
+    }
+  }
 
   return {
     activateCancelPreview: () => {
       cancelPreviewRequested.value = true
     },
-    cancelWorkOrder: (reason: string) =>
-      cancelMutation.mutateAsync({
-        path: { workOrderId: filters.workOrderId },
-        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-        body: { reason },
-      }),
-    cancelWorkOrderError: cancelMutation.error,
-    cancelWorkOrderPending: cancelMutation.isLoading,
+    cancelWorkOrder,
+    cancelWorkOrderError,
+    cancelWorkOrderPending,
     // 补偿预览两项查询的加载/失败/就绪态，供破坏性确认按钮门禁：两项都成功拿到数据前禁用确认，失败可重试。
     cancelPreviewPending: computed(
       () =>
@@ -907,39 +1045,6 @@ export function useMesOperationTasks() {
       filters,
     ),
   )
-  const startMutation = useMutation({
-    ...startBusinessConsoleMesOperationTaskMutationOptions(),
-    onSuccess: () =>
-      void invalidateMesQueries(queryCache, [
-        'listBusinessConsoleMesOperationTasks',
-        'getBusinessConsoleMesWipSummary',
-      ]).catch(ignoreBackgroundError),
-  })
-  const pauseMutation = useMutation({
-    ...pauseBusinessConsoleMesOperationTaskMutationOptions(),
-    onSuccess: () =>
-      void invalidateMesQueries(queryCache, [
-        'listBusinessConsoleMesOperationTasks',
-        'getBusinessConsoleMesWipSummary',
-      ]).catch(ignoreBackgroundError),
-  })
-  const resumeMutation = useMutation({
-    ...resumeBusinessConsoleMesOperationTaskMutationOptions(),
-    onSuccess: () =>
-      void invalidateMesQueries(queryCache, [
-        'listBusinessConsoleMesOperationTasks',
-        'getBusinessConsoleMesWipSummary',
-      ]).catch(ignoreBackgroundError),
-  })
-  const completeMutation = useMutation({
-    ...completeBusinessConsoleMesOperationTaskMutationOptions(),
-    onSuccess: () =>
-      void invalidateMesQueries(queryCache, [
-        'listBusinessConsoleMesOperationTasks',
-        'getBusinessConsoleMesWipSummary',
-      ]).catch(ignoreBackgroundError),
-  })
-
   function operationActionBody(
     operationTaskId: string,
     context: MesContextFilters,
@@ -952,13 +1057,43 @@ export function useMesOperationTasks() {
     }
   }
 
+  async function runOperationAction(
+    action: 'start' | 'pause' | 'resume' | 'complete',
+    operationTaskId: string,
+    context: MesContextFilters,
+    body: BusinessConsoleMesOperationTaskActionRequest,
+  ) {
+    const request = operationActionBody(operationTaskId, context, body)
+    const result = await executeLifecycleAction({
+      readLatest: () => readMesOperationLifecycleRequest(operationTaskId, context, action),
+      command: () => {
+        const options = { ...request, throwOnError: false as const }
+        switch (action) {
+          case 'start':
+            return startBusinessConsoleMesOperationTask(options)
+          case 'pause':
+            return pauseBusinessConsoleMesOperationTask(options)
+          case 'resume':
+            return resumeBusinessConsoleMesOperationTask(options)
+          case 'complete':
+            return completeBusinessConsoleMesOperationTask(options)
+        }
+      },
+    })
+    await invalidateMesQueries(queryCache, [
+      'listBusinessConsoleMesOperationTasks',
+      'getBusinessConsoleMesWipSummary',
+    ])
+    return result
+  }
+
   return {
     filters,
     completeOperationTask: (
       operationTaskId: string,
       context: MesContextFilters,
       body: BusinessConsoleMesOperationTaskActionRequest,
-    ) => completeMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
+    ) => runOperationAction('complete', operationTaskId, context, body),
     operationTasks: computed<BusinessConsoleMesOperationTaskRow[]>(() =>
       envelopeItems<
         BusinessConsoleMesOperationTaskRow,
@@ -973,18 +1108,18 @@ export function useMesOperationTasks() {
       operationTaskId: string,
       context: MesContextFilters,
       body: BusinessConsoleMesOperationTaskActionRequest,
-    ) => pauseMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
+    ) => runOperationAction('pause', operationTaskId, context, body),
     refreshOperationTasks: () => refetchWithBusinessContext(filters, operationTasksQuery),
     resumeOperationTask: (
       operationTaskId: string,
       context: MesContextFilters,
       body: BusinessConsoleMesOperationTaskActionRequest,
-    ) => resumeMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
+    ) => runOperationAction('resume', operationTaskId, context, body),
     startOperationTask: (
       operationTaskId: string,
       context: MesContextFilters,
       body: BusinessConsoleMesOperationTaskActionRequest,
-    ) => startMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
+    ) => runOperationAction('start', operationTaskId, context, body),
   }
 }
 

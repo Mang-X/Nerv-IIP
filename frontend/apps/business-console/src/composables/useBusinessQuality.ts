@@ -1,11 +1,12 @@
 import {
-  closeBusinessConsoleQualityNcrMutationOptions,
+  closeBusinessConsoleQualityNcr,
   createBusinessConsoleQualityInspectionRecordMutationOptions,
+  getBusinessConsoleQualityNcrQueryOptions,
   getBusinessConsoleQualityInspectionRecordQueryOptions,
   listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions,
   listBusinessConsoleQualityInspectionPlansQueryOptions,
   listBusinessConsoleQualityNcrsQueryOptions,
-  submitBusinessConsoleQualityNcrDispositionMutationOptions,
+  submitBusinessConsoleQualityNcrDisposition,
   type BusinessConsoleCreateInspectionRecordRequest,
   type BusinessConsoleInspectionRecordDetailResponse,
   type BusinessConsoleInspectionPlanCharacteristicItem,
@@ -15,13 +16,14 @@ import {
   type BusinessConsoleQualityListEnvelope,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, shallowRef } from 'vue'
 import {
   bindBusinessContext,
   hasBusinessContext,
   refetchWithBusinessContext,
   type BusinessContextFields,
 } from './businessContextBinding'
+import { executeLifecycleAction } from './lifecycleAction'
 
 const DEFAULT_TAKE = 100
 
@@ -206,56 +208,104 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
     enabled: hasBusinessContext(filters),
   }))
 
-  const submitDispositionMutation = useMutation({
-    ...submitBusinessConsoleQualityNcrDispositionMutationOptions(),
-    onSuccess() {
-      void queryCache
-        .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleQualityNcrs') })
-        .catch(ignoreBackgroundError)
-    },
-  })
+  const submitDispositionPending = shallowRef(false)
+  const submitDispositionError = shallowRef<unknown>()
+  const closeNcrPending = shallowRef(false)
+  const closeNcrError = shallowRef<unknown>()
 
-  const closeNcrMutation = useMutation({
-    ...closeBusinessConsoleQualityNcrMutationOptions(),
-    onSuccess() {
-      void queryCache
-        .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleQualityNcrs') })
-        .catch(ignoreBackgroundError)
-    },
-  })
+  async function readNcr(ncrId: string, action: 'submit-disposition' | 'close') {
+    const query = getBusinessConsoleQualityNcrQueryOptions({
+      path: { ncrId },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+      },
+    })
+    const response = await query.query({
+      signal: new AbortController().signal,
+    } as Parameters<typeof query.query>[0])
+    const item = response?.success ? response.data : undefined
+    return item
+      ? {
+          domain: 'quality-ncr' as const,
+          action,
+          facts: { status: item.status, dispositionType: item.dispositionType },
+        }
+      : undefined
+  }
+
+  async function refreshNcrActions() {
+    await queryCache
+      .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleQualityNcrs') })
+      .catch(ignoreBackgroundError)
+  }
+
+  async function submitDisposition(ncrId: string, body: BusinessConsoleNcrDispositionRequest) {
+    submitDispositionPending.value = true
+    submitDispositionError.value = undefined
+    try {
+      const result = await executeLifecycleAction({
+        readLatest: () => readNcr(ncrId, 'submit-disposition'),
+        command: () =>
+          submitBusinessConsoleQualityNcrDisposition({
+            path: { ncrId },
+            query: {
+              organizationId: filters.organizationId,
+              environmentId: filters.environmentId,
+            },
+            body,
+            throwOnError: false,
+          }),
+      })
+      await refreshNcrActions()
+      return result
+    } catch (error) {
+      submitDispositionError.value = error
+      throw error
+    } finally {
+      submitDispositionPending.value = false
+    }
+  }
+
+  async function closeNcr(ncrId: string, body: BusinessConsoleNcrCloseRequest) {
+    closeNcrPending.value = true
+    closeNcrError.value = undefined
+    try {
+      const result = await executeLifecycleAction({
+        readLatest: () => readNcr(ncrId, 'close'),
+        command: () =>
+          closeBusinessConsoleQualityNcr({
+            path: { ncrId },
+            query: {
+              organizationId: filters.organizationId,
+              environmentId: filters.environmentId,
+            },
+            body,
+            throwOnError: false,
+          }),
+      })
+      await refreshNcrActions()
+      return result
+    } catch (error) {
+      closeNcrError.value = error
+      throw error
+    } finally {
+      closeNcrPending.value = false
+    }
+  }
 
   return {
-    closeNcr: (ncrId: string, body: BusinessConsoleNcrCloseRequest) =>
-      closeNcrMutation.mutateAsync({
-        path: {
-          ncrId,
-        },
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-        },
-        body,
-      }),
-    closeNcrError: closeNcrMutation.error,
-    closeNcrPending: closeNcrMutation.isLoading,
+    closeNcr,
+    closeNcrError,
+    closeNcrPending,
     filters,
     ncrs: computed<BusinessConsoleQualityItem[]>(() => listItems(ncrsQuery.data.value)),
     ncrsError: ncrsQuery.error,
     ncrsPending: ncrsQuery.isLoading,
     ncrsTotal: computed(() => listTotal(ncrsQuery.data.value)),
     refreshNcrs: () => refetchWithBusinessContext(filters, ncrsQuery),
-    submitDisposition: (ncrId: string, body: BusinessConsoleNcrDispositionRequest) =>
-      submitDispositionMutation.mutateAsync({
-        path: {
-          ncrId,
-        },
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-        },
-        body,
-      }),
-    submitDispositionError: submitDispositionMutation.error,
-    submitDispositionPending: submitDispositionMutation.isLoading,
+    submitDisposition,
+    submitDispositionError,
+    submitDispositionPending,
   }
 }

@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { BusinessConsoleTelemetryAlarmEventItem } from '@nerv-iip/api-client'
-import { alarmLifecycleStatusLabel, alarmSeverityLabel } from '@nerv-iip/business-core'
+import {
+  alarmLifecycleStatusLabel,
+  alarmSeverityLabel,
+  statusActionGate,
+} from '@nerv-iip/business-core'
 import { describeRequestError } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
 import {
@@ -8,6 +12,10 @@ import {
   useBusinessEquipmentAlarms,
 } from '@/composables/useBusinessEquipmentAlarms'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+import {
+  isLifecycleActionUpdated,
+  LIFECYCLE_ACTION_UPDATED_MESSAGE,
+} from '@/composables/lifecycleActionRecovery'
 import {
   NvActionSheet,
   NvAppShellMobile,
@@ -54,9 +62,34 @@ function statusOf(item: Alarm) {
   return (item.status ?? '').trim().toLowerCase()
 }
 
-// 未确认（raised）才提供行内 确认/搁置；已处理行灰显 + 状态标。
-function isRaised(item: Alarm) {
-  return statusOf(item) === 'raised'
+function alarmFacts(item: Alarm) {
+  return {
+    status: item.status,
+    acknowledgedAtUtc: item.acknowledgedAtUtc,
+    shelvedAtUtc: item.shelvedAtUtc,
+    shelvedUntilUtc: item.shelvedUntilUtc,
+    evaluatedAtUtc: new Date().toISOString(),
+  }
+}
+
+function canAcknowledge(item: Alarm) {
+  return statusActionGate({
+    domain: 'iiot-alarm',
+    action: 'acknowledge',
+    facts: alarmFacts(item),
+  }).executable
+}
+
+function canShelve(item: Alarm) {
+  return statusActionGate({
+    domain: 'iiot-alarm',
+    action: 'shelve',
+    facts: alarmFacts(item),
+  }).executable
+}
+
+function isActionable(item: Alarm) {
+  return canAcknowledge(item) || canShelve(item)
 }
 
 function timeText(iso?: string | null) {
@@ -118,7 +151,11 @@ const pendingAction = ref<PendingAction | null>(null)
 
 // 失败结果：确定性失败（无副作用）可复用同键重试；已发出但结果未知（超时/断网）不盲目重试，
 // 交给 verify（刷新列表核对是否已处理）。
-const actionError = ref<{ message: string; canRetry: boolean } | null>(null)
+const actionError = ref<{
+  message: string
+  canRetry: boolean
+  indeterminate?: boolean
+} | null>(null)
 
 async function runPending() {
   const p = pendingAction.value
@@ -134,13 +171,28 @@ async function runPending() {
     }
     pendingAction.value = null
   } catch (e) {
+    if (isLifecycleActionUpdated(e)) {
+      pendingAction.value = null
+      actionError.value = null
+      pendingAck.value = null
+      pendingShelve.value = null
+      detail.value = null
+      try {
+        await refresh()
+      } catch {
+        // 刷新失败不阻断固定冲突提示，用户可随后手动刷新列表。
+      }
+      showToast(LIFECYCLE_ACTION_UPDATED_MESSAGE, 'error')
+      return
+    }
     const info = describeRequestError(e, '操作失败，请重试')
     if (info.indeterminate) {
-      // 已发出、结果未知：不盲目重试，刷新列表引导核对。
+      // 已发出、结果未知：先刷新供核对，同时保留冻结 payload/key，只允许原样重放。
       void refresh()
       actionError.value = {
-        message: `${info.message}。已为你刷新列表，请核对该报警是否已处理，勿重复提交。`,
-        canRetry: false,
+        message: `${info.message}。已为你刷新列表，请先核对；如需重试，系统会按原内容安全处理，不会重复执行。`,
+        canRetry: true,
+        indeterminate: true,
       }
     } else {
       // 确定性失败：服务端已应答、无挂起副作用 → 复用同一 atUtc 安全重试。
@@ -318,15 +370,16 @@ function showToast(message: string, type: 'success' | 'error') {
             :title="alarmTitle(item)"
             :subtitle="alarmSubtitle(item)"
             :interactive="false"
-            :class="isRaised(item) ? undefined : 'opacity-60'"
+            :class="isActionable(item) ? undefined : 'opacity-60'"
           >
             <template v-if="processedMeta(item)" #meta>
               <div class="truncate text-xs text-muted-foreground">{{ processedMeta(item) }}</div>
             </template>
             <template #trailing>
               <div class="flex shrink-0 items-center gap-2">
-                <template v-if="isRaised(item)">
+                <template v-if="isActionable(item)">
                   <NvMobileButton
+                    v-if="canAcknowledge(item)"
                     :data-testid="`ack-${item.alarmEventId}`"
                     variant="primary"
                     size="sm"
@@ -336,6 +389,7 @@ function showToast(message: string, type: 'success' | 'error') {
                     确认
                   </NvMobileButton>
                   <NvMobileButton
+                    v-if="canShelve(item)"
                     :data-testid="`shelve-${item.alarmEventId}`"
                     variant="outline"
                     size="sm"
@@ -346,7 +400,7 @@ function showToast(message: string, type: 'success' | 'error') {
                   </NvMobileButton>
                 </template>
                 <NvMobileTag
-                  v-else
+                  v-if="statusOf(item) !== 'raised'"
                   :data-testid="`status-${item.alarmEventId}`"
                   :variant="tagVariant(item)"
                 >
@@ -392,9 +446,9 @@ function showToast(message: string, type: 'success' | 'error') {
     <!-- 失败对话框：确定性失败可重试（复用同键）；结果未知只提示核对 -->
     <NvMobileDialog
       :open="actionError !== null"
-      :title="actionError?.canRetry ? '操作失败' : '提交结果未知'"
+      :title="actionError?.indeterminate ? '提交结果未知' : '操作失败'"
       :description="actionError?.message ?? ''"
-      :confirm-text="actionError?.canRetry ? '重试' : '我知道了'"
+      :confirm-text="actionError?.indeterminate ? '按原内容重试' : '重试'"
       :show-cancel="actionError?.canRetry ?? false"
       cancel-text="取消"
       @update:open="

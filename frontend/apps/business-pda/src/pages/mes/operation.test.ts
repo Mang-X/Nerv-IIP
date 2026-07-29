@@ -1,10 +1,16 @@
 import { RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, reactive, ref } from 'vue'
+import { computed, defineComponent, h, nextTick, reactive, ref, shallowRef } from 'vue'
 
 const push = vi.fn()
+const routeGuardState = vi.hoisted(() => ({
+  guard: undefined as (() => boolean) | undefined,
+}))
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
+    routeGuardState.guard = guard
+  }),
   useRouter: () => ({ push }),
 }))
 
@@ -26,7 +32,7 @@ const defaultTasks = [
   {
     operationTaskId: 'OP-1',
     workOrderId: 'WO-2026-0001',
-    status: 'Running',
+    status: 'InProgress',
     operationSequence: 10,
     operationCode: 'OP-CODE-1',
     workCenterId: 'WC-A',
@@ -34,7 +40,7 @@ const defaultTasks = [
   {
     operationTaskId: 'OP-2',
     workOrderId: 'WO-2026-0002',
-    status: 'Ready',
+    status: 'Queued',
     operationSequence: 20,
     workCenterId: 'WC-B',
   },
@@ -79,14 +85,23 @@ describe('PDA MES operation execution page', () => {
     startTask.mockClear()
     pauseTask.mockClear()
     resumeTask.mockClear()
+    refresh.mockClear()
     refreshSops.mockClear()
     tasksErrorRef.value = null
     sopsErrorRef.value = null
     operationTasksRef.value = defaultTasks
     currentSopsRef.value = []
     createSopFileDownloadGrant.mockClear()
+    push.mockClear()
+    routeGuardState.guard = undefined
     filters.keyword = undefined
   })
+
+  function dispatchBeforeUnload() {
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    return event
+  }
 
   it('renders the scan bar and an operation ListRow per task', () => {
     const wrapper = mount(OperationPage)
@@ -140,11 +155,13 @@ describe('PDA MES operation execution page', () => {
     // 成功后显示 Result 成功文案
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('工序已完成')
+    expect(routeGuardState.guard?.()).toBe(true)
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false)
     wrapper.unmount()
   })
 
-  it('shows an error Result with a retry entry when an action fails', async () => {
-    completeTask.mockRejectedValueOnce(new Error('boom'))
+  it('shows an error Result without locking route/refresh leave after a determinate 4xx', async () => {
+    completeTask.mockRejectedValueOnce({ status: 422, message: '数量校验失败' })
     const wrapper = mount(OperationPage, { attachTo: document.body })
     const rows = wrapper.findAll('[data-row]')
     await rows[0].trigger('click')
@@ -156,11 +173,50 @@ describe('PDA MES operation execution page', () => {
 
     expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('重试')
+    expect(routeGuardState.guard?.()).toBe(true)
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('refreshes and closes stale action context on a typed 409 without offering retry', async () => {
+    completeTask.mockRejectedValueOnce({ success: false, message: 'lifecycle-conflict' })
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    expect(refresh).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(false)
+    expect(document.body.textContent).toContain('状态已被其他操作更新')
+    expect(document.body.querySelector('[data-testid="confirm-complete"]')).toBeNull()
+    expect(routeGuardState.guard?.()).toBe(true)
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('still closes stale action context and shows the fixed toast when conflict refresh fails', async () => {
+    completeTask.mockRejectedValueOnce({ success: false, message: 'lifecycle-conflict' })
+    refresh.mockRejectedValueOnce(new Error('refresh unavailable'))
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    expect(refresh).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(false)
+    expect(document.body.textContent).toContain('状态已被其他操作更新')
+    expect(document.body.querySelector('[data-testid="confirm-complete"]')).toBeNull()
     wrapper.unmount()
   })
 
   it('reuses the SAME idempotencyKey on action retry; a different action initiation mints a new key', async () => {
-    // 行 0 是 Running 工序，可执行「暂停」与「完成」
+    // 行 0 是 InProgress 工序，可执行「暂停」与「完成」
     completeTask.mockRejectedValueOnce(new Error('lost response'))
     const wrapper = mount(OperationPage, { attachTo: document.body })
     const rows = wrapper.findAll('[data-row]')
@@ -201,6 +257,57 @@ describe('PDA MES operation execution page', () => {
     expect(pauseKey).toBeTruthy()
     expect(pauseKey).not.toBe(firstKey)
     wrapper.unmount()
+  })
+
+  it('locks route/refresh leave for an unknown result, then unlocks after same-key retry succeeds', async () => {
+    completeTask.mockRejectedValueOnce(new RequestTimeoutError()).mockResolvedValueOnce(undefined)
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    const firstKey = completeTask.mock.calls[0][1].idempotencyKey
+    const back = wrapper.get('[data-testid="back-to-list"]')
+    expect(back.attributes('disabled')).toBeDefined()
+    await back.trigger('click')
+    await wrapper.get('[aria-label="返回"]').trigger('click')
+    expect(push).not.toHaveBeenCalled()
+    expect(routeGuardState.guard?.()).toBe(false)
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true)
+
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+    expect(completeTask).toHaveBeenCalledTimes(2)
+    expect(completeTask.mock.calls[1][1].idempotencyKey).toBe(firstKey)
+    expect(routeGuardState.guard?.()).toBe(true)
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('removes the beforeunload guard when the operation route component is removed', async () => {
+    const addEventListener = vi.spyOn(window, 'addEventListener')
+    const removeEventListener = vi.spyOn(window, 'removeEventListener')
+    const visible = shallowRef(true)
+    const Host = defineComponent({
+      setup() {
+        return () => (visible.value ? h(OperationPage) : h('div'))
+      },
+    })
+
+    mount(Host)
+    const handler = addEventListener.mock.calls.find(([type]) => type === 'beforeunload')?.[1]
+    expect(handler).toBeTypeOf('function')
+
+    visible.value = false
+    await nextTick()
+
+    expect(removeEventListener).toHaveBeenCalledWith('beforeunload', handler)
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false)
+    addEventListener.mockRestore()
+    removeEventListener.mockRestore()
   })
 
   // P1：SOP 查询失败也要有可操作错误态 + 重试入口（#814 所有 facade）。

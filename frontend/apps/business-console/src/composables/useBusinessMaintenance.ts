@@ -1,9 +1,10 @@
 import {
-  completeBusinessConsoleMaintenanceWorkOrderMutationOptions,
+  completeBusinessConsoleMaintenanceWorkOrder,
   createBusinessConsoleMaintenancePlanMutationOptions,
   createBusinessConsoleMaintenanceSparePartMutationOptions,
   createBusinessConsoleMaintenanceWorkOrderMutationOptions,
   generateDueBusinessConsoleMaintenanceWorkOrdersMutationOptions,
+  getBusinessConsoleMaintenanceWorkOrderQueryOptions,
   listBusinessConsoleMaintenanceInspectionsQueryOptions,
   listBusinessConsoleMaintenancePlansQueryOptions,
   listBusinessConsoleMaintenanceSparePartsQueryOptions,
@@ -38,13 +39,14 @@ import {
   type EquipmentRuntimeAvailabilityWindow,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, shallowRef } from 'vue'
 import {
   bindBusinessContext,
   hasBusinessContext,
   refetchWithBusinessContext,
   withBusinessContextEnabled,
 } from './businessContextBinding'
+import { executeLifecycleAction } from './lifecycleAction'
 
 const DEFAULT_TAKE = 100
 
@@ -166,12 +168,53 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
       void refetchWithBusinessContext(filters, workOrdersQuery)
     },
   })
-  const completeMutation = useMutation({
-    ...completeBusinessConsoleMaintenanceWorkOrderMutationOptions(),
-    onSuccess() {
-      void refetchWithBusinessContext(filters, workOrdersQuery)
-    },
-  })
+  const completeWorkOrderPending = shallowRef(false)
+  const completeWorkOrderError = shallowRef<unknown>()
+
+  async function completeWorkOrder(
+    workOrderId: string,
+    body: BusinessConsoleCompleteMaintenanceWorkOrderRequest,
+  ) {
+    completeWorkOrderPending.value = true
+    completeWorkOrderError.value = undefined
+    try {
+      const result = await executeLifecycleAction({
+        readLatest: async () => {
+          const query = getBusinessConsoleMaintenanceWorkOrderQueryOptions({
+            path: { workOrderId },
+            query: {
+              organizationId: filters.organizationId,
+              environmentId: filters.environmentId,
+            },
+          })
+          const response = await query.query({
+            signal: new AbortController().signal,
+          } as Parameters<typeof query.query>[0])
+          const item = response?.success ? response.data : undefined
+          return item
+            ? {
+                domain: 'maintenance-work-order' as const,
+                action: 'complete' as const,
+                facts: { status: item.status },
+              }
+            : undefined
+        },
+        command: () =>
+          completeBusinessConsoleMaintenanceWorkOrder({
+            path: { workOrderId },
+            body,
+            throwOnError: false,
+          }),
+      })
+      await refetchWithBusinessContext(filters, workOrdersQuery)
+      return result
+    } catch (error) {
+      completeWorkOrderError.value = error
+      throw error
+    } finally {
+      completeWorkOrderPending.value = false
+    }
+  }
 
   return {
     filters,
@@ -192,12 +235,9 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
       createMutation.mutateAsync({ body }),
     createWorkOrderPending: createMutation.isLoading,
     createWorkOrderError: createMutation.error,
-    completeWorkOrder: (
-      workOrderId: string,
-      body: BusinessConsoleCompleteMaintenanceWorkOrderRequest,
-    ) => completeMutation.mutateAsync({ path: { workOrderId }, body }),
-    completeWorkOrderPending: completeMutation.isLoading,
-    completeWorkOrderError: completeMutation.error,
+    completeWorkOrder,
+    completeWorkOrderPending,
+    completeWorkOrderError,
   }
 }
 
