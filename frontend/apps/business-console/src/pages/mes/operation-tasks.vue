@@ -86,6 +86,8 @@ const {
   operationTasksError,
   operationTasksPending,
   operationTasksTotal,
+  operationScopeMessage,
+  operationScopeReady,
   pauseOperationTask,
   refreshOperationTasks,
   resumeOperationTask,
@@ -340,6 +342,7 @@ const LIFECYCLE_DONE_MESSAGES: Record<MesLifecycleActionKey, string> = {
   complete: '该工序已完工。',
 }
 function lifecycleActionEnabled(task: Row, action: MesLifecycleActionKey) {
+  if (!operationScopeReady.value) return false
   if (task.operationTaskId && !lifecycleIntent.permits(task.operationTaskId, action)) return false
   return statusActionGate({
     domain: 'mes-operation-task',
@@ -349,6 +352,10 @@ function lifecycleActionEnabled(task: Row, action: MesLifecycleActionKey) {
 }
 
 async function runLifecycleAction(task: Row, action: MesLifecycleActionKey) {
+  if (!operationScopeReady.value) {
+    notifyError(operationScopeMessage.value)
+    return
+  }
   const operationTaskId = task.operationTaskId
   if (!operationTaskId) return
   const intent = lifecycleIntent.acquire(operationTaskId, action)
@@ -535,6 +542,14 @@ function formatError(error: unknown) {
     </NvToolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+    <p
+      v-if="operationScopeMessage"
+      data-testid="operation-scope-message"
+      class="text-sm text-destructive"
+      role="alert"
+    >
+      {{ operationScopeMessage }}
+    </p>
 
     <NvDataTable
       manual

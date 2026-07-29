@@ -72,6 +72,8 @@ const { assignDispatchTask, assignDispatchTaskPending } = useMesDispatchTasks()
 const {
   completeOperationTask,
   filters: operationFilters,
+  operationScopeMessage,
+  operationScopeReady,
   pauseOperationTask,
   resumeOperationTask,
   startOperationTask,
@@ -170,6 +172,7 @@ const LIFECYCLE_DONE_MESSAGES: Record<MesLifecycleActionKey, string> = {
   complete: '该工序已完工。',
 }
 function lifecycleActionEnabled(task: OperationRow, action: MesLifecycleActionKey) {
+  if (!operationScopeReady.value) return false
   if (task.operationTaskId && !lifecycleIntent.permits(task.operationTaskId, action)) return false
   return statusActionGate({
     domain: 'mes-operation-task',
@@ -179,6 +182,10 @@ function lifecycleActionEnabled(task: OperationRow, action: MesLifecycleActionKe
 }
 
 async function runLifecycleAction(task: OperationRow, action: MesLifecycleActionKey) {
+  if (!operationScopeReady.value) {
+    notifyError(operationScopeMessage.value)
+    return
+  }
   const operationTaskId = task.operationTaskId
   if (!operationTaskId) return
   const intent = lifecycleIntent.acquire(operationTaskId, action)
@@ -308,6 +315,14 @@ function formatQuantity(value?: number | null) {
           <!-- 工序 -->
           <section class="grid gap-2">
             <h3 class="text-sm font-semibold text-foreground">工序（{{ operations.length }}）</h3>
+            <p
+              v-if="operationScopeMessage"
+              data-testid="operation-scope-message"
+              class="text-sm text-destructive"
+              role="alert"
+            >
+              {{ operationScopeMessage }}
+            </p>
             <NvDataTable
               :columns="operationColumns"
               :rows="operations"

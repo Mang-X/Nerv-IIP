@@ -216,7 +216,7 @@ Business Console operationId 使用 lower camelCase，并带 `BusinessConsole` �
 | `confirmBusinessConsoleMesLineSideMaterialReceipt` | `POST /api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts` | 确认线边接收。 |
 | `listBusinessConsoleMesDispatchTasks` | `GET /api/business-console/v1/mes/dispatch-tasks` | 派工任务列表。 |
 | `assignBusinessConsoleMesDispatchTask` | `POST /api/business-console/v1/mes/dispatch-tasks/{operationTaskId}/assign` | 分派工序任务。 |
-| `listBusinessConsoleMesOperationTasks` | `GET /api/business-console/v1/mes/operation-tasks` | 工序执行任务列表；按当前主体授权范围在服务端筛选，返回 MES 权威 `allowedActions/blockReasons/evaluatedAtUtc`，终态和未知态不返回可执行动作。 |
+| `listBusinessConsoleMesOperationTasks` | `GET /api/business-console/v1/mes/operation-tasks` | 工序执行任务列表；按当前主体授权范围在服务端筛选，返回 MES 权威 `allowedActions/blockReasons/evaluatedAtUtc`，终态和未知态不返回可执行动作。PC/PDA 当前从 `/me/work-context` 读取对应写权限的服务端 `selectedScope`，无选中范围时不发动作请求。 |
 | `listBusinessConsoleMesReportableOperationTasks` | `GET /api/business-console/v1/mes/reportable-operation-tasks` | 可报工工序任务列表；复用同一主体范围与稳定分页口径，只返回 MES 判定当前允许 `report` 的任务。 |
 | `startBusinessConsoleMesOperationTask` | `POST /api/business-console/v1/mes/operation-tasks/{operationTaskId}/start` | 工序开工；写请求必须显式携带当前已选 `scopeKind/scopeId` 与 `idempotencyKey`，不得依赖唯一范围自动选择。 |
 | `pauseBusinessConsoleMesOperationTask` | `POST /api/business-console/v1/mes/operation-tasks/{operationTaskId}/pause` | 工序暂停；沿用同一显式范围与幂等契约。 |
@@ -225,7 +225,7 @@ Business Console operationId 使用 lower camelCase，并带 `BusinessConsole` �
 | `getBusinessConsoleMesWipSummary` | `GET /api/business-console/v1/mes/wip` | 在制状态汇总。 |
 | `listBusinessConsoleMesProductionReports` | `GET /api/business-console/v1/mes/production-reports` | 报工记录列表。 |
 | `getBusinessConsoleMesProductionReport` | `GET /api/business-console/v1/mes/production-reports/{reportNo}` | 读取单条报工及其消耗物料批次，供冲销确认与追溯。 |
-| `recordBusinessConsoleMesProductionReport` | `POST /api/business-console/v1/mes/production-reports` | 创建生产报工；body 必须显式携带所选 `scopeKind/scopeId` 与 `idempotencyKey`。 |
+| `recordBusinessConsoleMesProductionReport` | `POST /api/business-console/v1/mes/production-reports` | 创建生产报工；body 必须显式携带所选 `scopeKind/scopeId` 与 `idempotencyKey`。PC/PDA 当前消费 `/me/work-context` 返回的 `selectedScope`；缺失范围时禁用提交且不发命令。 |
 | `reverseBusinessConsoleMesProductionReport` | `POST /api/business-console/v1/mes/production-reports/{reportNo}/reverse` | 冲销生产报工；操作人由 Gateway 从已认证 principal 注入并由 MES 审计。 |
 | `recordBusinessConsoleMesDefect` | `POST /api/business-console/v1/mes/defects` | 记录制程不良。 |
 | `listBusinessConsoleMesRelatedQualityItems` | `GET /api/business-console/v1/mes/related-quality-items` | 关联质量事项列表。 |

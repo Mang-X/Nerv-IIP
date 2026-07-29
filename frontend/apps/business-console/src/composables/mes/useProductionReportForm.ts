@@ -1,8 +1,11 @@
-import type { BusinessConsoleRecordProductionReportRequest } from '@nerv-iip/api-client'
 import { statusActionGate } from '@nerv-iip/business-core'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 
-import { makeIdempotencyKey, useMesProductionReporting } from '@/composables/useBusinessMes'
+import {
+  makeIdempotencyKey,
+  useMesProductionReporting,
+  type MesProductionReportInput,
+} from '@/composables/useBusinessMes'
 import {
   isIndeterminateLifecycleWriteError,
   recoverLifecycleAction,
@@ -49,6 +52,9 @@ export function useProductionReportForm(
     recordProductionReport,
     recordProductionReportError,
     recordProductionReportPending,
+    reportScopeMessage,
+    reportScopePending,
+    reportScopeReady,
     refreshProductionReportState,
   } = useMesProductionReporting()
 
@@ -74,7 +80,7 @@ export function useProductionReportForm(
   const showErrors = ref(false)
   const intentAttempted = ref(false)
   const intentLocked = ref(false)
-  const frozenPayload = shallowRef<BusinessConsoleRecordProductionReportRequest>()
+  const frozenPayload = shallowRef<MesProductionReportInput>()
   let resetting = false
 
   function resetForm() {
@@ -125,6 +131,7 @@ export function useProductionReportForm(
   const canSubmit = computed(() => {
     const ctx = context()
     if (!ctx?.workOrderId?.trim() || !ctx.operationTaskId?.trim()) return false
+    if (!reportScopeReady.value) return false
     if (
       form.completesOperation &&
       !statusActionGate({
@@ -141,7 +148,10 @@ export function useProductionReportForm(
   async function submit(): Promise<boolean> {
     showErrors.value = true
     const ctx = context()
-    if (!ctx || !canSubmit.value) return false
+    if (!ctx || !canSubmit.value) {
+      if (!reportScopeReady.value) notifyError(reportScopeMessage.value)
+      return false
+    }
     const body =
       frozenPayload.value ??
       ({
@@ -152,7 +162,7 @@ export function useProductionReportForm(
         completesOperation: form.completesOperation,
         reportedAtUtc: new Date().toISOString(),
         idempotencyKey: form.idempotencyKey,
-      } satisfies BusinessConsoleRecordProductionReportRequest)
+      } satisfies MesProductionReportInput)
     frozenPayload.value = body
     try {
       const response = await recordProductionReport(body, {
@@ -192,6 +202,9 @@ export function useProductionReportForm(
     showErrors,
     canSubmit,
     canCompleteOperation,
+    reportScopeMessage,
+    reportScopePending,
+    reportScopeReady,
     intentLocked,
     recordProductionReportPending,
     resetForm,
