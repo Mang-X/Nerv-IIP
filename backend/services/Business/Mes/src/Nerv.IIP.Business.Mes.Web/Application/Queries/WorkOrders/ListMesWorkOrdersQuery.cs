@@ -18,7 +18,8 @@ public sealed record ListMesWorkOrdersQuery(
     string? DeviceAssetIds = null,
     string? Statuses = null,
     string? AssignedUserIds = null,
-    string? TeamIds = null) : IQuery<ListMesWorkOrdersResponse>;
+    string? TeamIds = null,
+    string? WorkOrderId = null) : IQuery<ListMesWorkOrdersResponse>;
 
 public sealed record ListMesWorkOrdersResponse(
     IReadOnlyCollection<MesWorkOrderExecutionFact> Items,
@@ -74,6 +75,12 @@ public sealed class ListMesWorkOrdersQueryHandler(
         var workOrdersQuery = dbContext.WorkOrders
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+
+        if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
+        {
+            var workOrderId = request.WorkOrderId.Trim();
+            workOrdersQuery = workOrdersQuery.Where(x => x.WorkOrderIdValue == workOrderId);
+        }
 
         if (!string.IsNullOrWhiteSpace(request.Status))
         {

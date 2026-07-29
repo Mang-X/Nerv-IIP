@@ -11930,6 +11930,30 @@
             }
           },
           {
+            "name": "workCenterIds",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "deviceAssetIds",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "statuses",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
             "name": "scopeKind",
             "in": "query",
             "schema": {
@@ -11939,14 +11963,6 @@
           },
           {
             "name": "scopeId",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          },
-          {
-            "name": "statuses",
             "in": "query",
             "schema": {
               "type": "string",
@@ -13730,17 +13746,17 @@
           {
             "name": "scopeKind",
             "in": "query",
+            "required": true,
             "schema": {
-              "type": "string",
-              "nullable": true
+              "type": "string"
             }
           },
           {
             "name": "scopeId",
             "in": "query",
+            "required": true,
             "schema": {
-              "type": "string",
-              "nullable": true
+              "type": "string"
             }
           },
           {
@@ -13846,17 +13862,17 @@
           {
             "name": "scopeKind",
             "in": "query",
+            "required": true,
             "schema": {
-              "type": "string",
-              "nullable": true
+              "type": "string"
             }
           },
           {
             "name": "scopeId",
             "in": "query",
+            "required": true,
             "schema": {
-              "type": "string",
-              "nullable": true
+              "type": "string"
             }
           },
           {
@@ -13962,17 +13978,17 @@
           {
             "name": "scopeKind",
             "in": "query",
+            "required": true,
             "schema": {
-              "type": "string",
-              "nullable": true
+              "type": "string"
             }
           },
           {
             "name": "scopeId",
             "in": "query",
+            "required": true,
             "schema": {
-              "type": "string",
-              "nullable": true
+              "type": "string"
             }
           },
           {
@@ -14078,17 +14094,17 @@
           {
             "name": "scopeKind",
             "in": "query",
+            "required": true,
             "schema": {
-              "type": "string",
-              "nullable": true
+              "type": "string"
             }
           },
           {
             "name": "scopeId",
             "in": "query",
+            "required": true,
             "schema": {
-              "type": "string",
-              "nullable": true
+              "type": "string"
             }
           },
           {
@@ -40972,7 +40988,9 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "idempotencyKey"
+          "idempotencyKey",
+          "scopeKind",
+          "scopeId"
         ],
         "properties": {
           "organizationId": {
@@ -41008,6 +41026,18 @@
             "minLength": 0,
             "nullable": false
           },
+          "scopeKind": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 0,
+            "nullable": false
+          },
+          "scopeId": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": false
+          },
           "consumedMaterialLots": {
             "type": "array",
             "nullable": true,
@@ -41032,14 +41062,6 @@
             "nullable": true
           },
           "serialNo": {
-            "type": "string",
-            "nullable": true
-          },
-          "scopeKind": {
-            "type": "string",
-            "nullable": true
-          },
-          "scopeId": {
             "type": "string",
             "nullable": true
           }

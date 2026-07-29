@@ -188,6 +188,23 @@ describe('generated API client contract', () => {
     >().toEqualTypeOf<{ idempotencyKey: string }>()
   })
 
+  it('requires an explicit MAN-628 scope on MES task actions and production reports', () => {
+    type StartOperationOptions = Parameters<
+      typeof businessConsoleClient.startBusinessConsoleMesOperationTask
+    >[0]
+
+    expectTypeOf<Pick<StartOperationOptions['query'], 'scopeKind' | 'scopeId'>>().toEqualTypeOf<{
+      scopeKind: string
+      scopeId: string
+    }>()
+    expectTypeOf<
+      Pick<BusinessConsoleRecordProductionReportRequest, 'scopeKind' | 'scopeId'>
+    >().toEqualTypeOf<{
+      scopeKind: string
+      scopeId: string
+    }>()
+  })
+
   it('exports the current-principal work-context contract through the stable boundary', () => {
     expectTypeOf<GetBusinessConsolePrincipalWorkContextData>().toBeObject()
     expectTypeOf<

@@ -32,11 +32,11 @@ public sealed class MesPrincipalWorkScopeAuthorizer(
             new BusinessMesWorkOrderListRequest(
                 organizationId,
                 environmentId,
-                Keyword: workOrderId,
-                Take: 500,
+                Take: 1,
                 AssignedUserIds: Join(scope.AssignedUserIds),
                 TeamIds: Join(scope.TeamIds),
-                WorkCenterIds: Join(scope.WorkCenterIds)),
+                WorkCenterIds: Join(scope.WorkCenterIds),
+                WorkOrderId: workOrderId),
             cancellationToken);
         if (!response.Items.Any(x => string.Equals(x.WorkOrderId, workOrderId, StringComparison.Ordinal)))
         {
@@ -67,11 +67,11 @@ public sealed class MesPrincipalWorkScopeAuthorizer(
             new BusinessMesOperationTaskListRequest(
                 organizationId,
                 environmentId,
-                Keyword: operationTaskId,
-                Take: 500,
+                Take: 1,
                 AssignedUserIds: Join(scope.AssignedUserIds),
                 TeamIds: Join(scope.TeamIds),
-                WorkCenterIds: Join(scope.WorkCenterIds)),
+                WorkCenterIds: Join(scope.WorkCenterIds),
+                OperationTaskId: operationTaskId),
             cancellationToken);
         if (!response.Items.Any(x => string.Equals(x.OperationTaskId, operationTaskId, StringComparison.Ordinal)))
         {

@@ -8025,6 +8025,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("assignedUserIds", request.AssignedUserIds),
             ("teamIds", request.TeamIds),
             ("workCenterIds", request.WorkCenterIds),
+            ("operationTaskId", request.OperationTaskId),
             ("skip", request.Skip),
             ("take", request.Take));
 
@@ -8042,6 +8043,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("deviceAssetId", request.DeviceAssetId),
             ("deviceAssetIds", request.DeviceAssetIds),
             ("statuses", request.Statuses),
+            ("workOrderId", request.WorkOrderId),
             ("skip", request.Skip),
             ("take", request.Take));
 

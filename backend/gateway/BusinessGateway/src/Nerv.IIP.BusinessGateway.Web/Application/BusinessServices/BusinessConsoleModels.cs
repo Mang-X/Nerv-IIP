@@ -3955,7 +3955,8 @@ public sealed record BusinessMesWorkOrderListRequest(
     string? TeamIds = null,
     string? WorkCenterIds = null,
     string? DeviceAssetIds = null,
-    string? Statuses = null);
+    string? Statuses = null,
+    string? WorkOrderId = null);
 
 public sealed record BusinessConsoleMesOperationTaskListRequest(
     string OrganizationId,
@@ -3984,7 +3985,8 @@ public sealed record BusinessMesOperationTaskListRequest(
     int Take = 100,
     string? AssignedUserIds = null,
     string? TeamIds = null,
-    string? WorkCenterIds = null);
+    string? WorkCenterIds = null,
+    string? OperationTaskId = null);
 
 public sealed record BusinessConsoleMesListWithoutStatusRequest(
     string OrganizationId,
@@ -4092,14 +4094,14 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
     bool CompletesOperation,
     DateTimeOffset ReportedAtUtc,
     string IdempotencyKey,
+    string ScopeKind,
+    string ScopeId,
     IReadOnlyCollection<BusinessConsoleConsumedMaterialLotInput>? ConsumedMaterialLots = null,
     decimal ReworkQuantity = 0m,
     string? ScrapReasonCode = null,
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
-    string? SerialNo = null,
-    string? ScopeKind = null,
-    string? ScopeId = null);
+    string? SerialNo = null);
 
 public sealed record BusinessConsoleConsumedMaterialLotInput(
     string MaterialId,
@@ -4495,8 +4497,8 @@ public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: QueryParam] string EnvironmentId,
     string? ReasonCode,
     string IdempotencyKey,
-    [property: QueryParam] string? ScopeKind = null,
-    [property: QueryParam] string? ScopeId = null);
+    [property: QueryParam] string ScopeKind,
+    [property: QueryParam] string ScopeId);
 
 public sealed record BusinessConsoleMesOperationTaskActionResponse(
     string OperationTaskId,

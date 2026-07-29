@@ -84,6 +84,60 @@ public sealed class MesTaskScopeQueryTests
     }
 
     [Fact]
+    public async Task Exact_strong_ids_are_filtered_with_scope_before_paging()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = Utc("2026-07-29T08:00:00Z");
+        for (var index = 0; index < 500; index++)
+        {
+            SeedTask(
+                dbContext,
+                $"WO-A{index:000}-WO-Z-SCOPE",
+                $"OP-A{index:000}-OP-Z-SCOPE",
+                "WC-01",
+                "emp010",
+                "TEAM-A",
+                now.AddSeconds(index));
+        }
+
+        SeedTask(
+            dbContext,
+            "WO-Z-SCOPE",
+            "OP-Z-SCOPE",
+            "WC-01",
+            "emp010",
+            "TEAM-A",
+            now.AddMinutes(10));
+        await dbContext.SaveChangesAsync();
+
+        var workOrders = await new ListMesWorkOrdersQueryHandler(dbContext).Handle(
+            new ListMesWorkOrdersQuery(
+                "org-001",
+                "env-dev",
+                null,
+                Take: 1,
+                AssignedUserIds: "emp010",
+                WorkOrderId: "WO-Z-SCOPE"),
+            CancellationToken.None);
+        var operationTasks = await new ListOperationTasksQueryHandler(dbContext).Handle(
+            new ListOperationTasksQuery(
+                "org-001",
+                "env-dev",
+                null,
+                Take: 1,
+                AssignedUserIds: "emp010",
+                OperationTaskId: "OP-Z-SCOPE"),
+            CancellationToken.None);
+
+        Assert.Equal(1, workOrders.Total);
+        Assert.Equal("WO-Z-SCOPE", Assert.Single(workOrders.Items).WorkOrderId);
+        Assert.Equal(1, operationTasks.Total);
+        Assert.Equal("OP-Z-SCOPE", Assert.Single(operationTasks.Items).OperationTaskId);
+    }
+
+    [Fact]
     public async Task Work_order_scope_uses_operation_exists_and_intersects_the_business_work_center_filter()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();

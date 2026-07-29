@@ -20,7 +20,9 @@ public sealed class PublicIdempotencyRequestValidationTests
                 OrganizationId: "org-001",
                 EnvironmentId: "env-dev",
                 ReasonCode: null,
-                IdempotencyKey: key!)).IsValid);
+                IdempotencyKey: key!,
+                ScopeKind: "organization",
+                ScopeId: "org-001")).IsValid);
 
         Assert.False(new BusinessConsoleRecordProductionReportRequestValidator().Validate(
             new BusinessConsoleRecordProductionReportRequest(
@@ -32,7 +34,9 @@ public sealed class PublicIdempotencyRequestValidationTests
                 ScrapQuantity: 0m,
                 CompletesOperation: false,
                 ReportedAtUtc: DateTimeOffset.UnixEpoch,
-                IdempotencyKey: key!)).IsValid);
+                IdempotencyKey: key!,
+                ScopeKind: "organization",
+                ScopeId: "org-001")).IsValid);
 
         Assert.False(new BusinessConsoleCreateInspectionRecordFromTaskRequestValidator().Validate(
             new BusinessConsoleCreateInspectionRecordFromTaskRequest(
@@ -64,5 +68,39 @@ public sealed class PublicIdempotencyRequestValidationTests
                 DowntimeMinutes: 10,
                 SpareParts: [],
                 IdempotencyKey: key!)).IsValid);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", "user-admin")]
+    [InlineData("self", null)]
+    [InlineData("   ", "   ")]
+    public void Mes_task_actions_and_production_reports_require_an_explicit_nonblank_scope(
+        string? scopeKind,
+        string? scopeId)
+    {
+        Assert.False(new BusinessConsoleMesOperationTaskActionRequestValidator().Validate(
+            new BusinessConsoleMesOperationTaskActionRequest(
+                OperationTaskId: "OP-10",
+                OrganizationId: "org-001",
+                EnvironmentId: "env-dev",
+                ReasonCode: null,
+                IdempotencyKey: "operation-action-001",
+                ScopeKind: scopeKind!,
+                ScopeId: scopeId!)).IsValid);
+
+        Assert.False(new BusinessConsoleRecordProductionReportRequestValidator().Validate(
+            new BusinessConsoleRecordProductionReportRequest(
+                OrganizationId: "org-001",
+                EnvironmentId: "env-dev",
+                WorkOrderId: "WO-001",
+                OperationTaskId: "OP-10",
+                GoodQuantity: 1m,
+                ScrapQuantity: 0m,
+                CompletesOperation: false,
+                ReportedAtUtc: DateTimeOffset.UnixEpoch,
+                IdempotencyKey: "production-report-001",
+                ScopeKind: scopeKind!,
+                ScopeId: scopeId!)).IsValid);
     }
 }

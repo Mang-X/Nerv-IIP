@@ -749,7 +749,8 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
         string? assignedUserId = null,
         string? assignedUserIds = null,
         string? teamIds = null,
-        string? workCenterIds = null)
+        string? workCenterIds = null,
+        string? operationTaskId = null)
     {
         var query = QueryOperationTaskEntities(
             dbContext,
@@ -764,7 +765,8 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
             assignedUserId,
             assignedUserIds,
             teamIds,
-            workCenterIds);
+            workCenterIds,
+            operationTaskId);
 
         return query
             .OrderBy(x => x.EarliestStartUtc)
@@ -811,11 +813,18 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
         string? assignedUserId = null,
         string? assignedUserIds = null,
         string? teamIds = null,
-        string? workCenterIds = null)
+        string? workCenterIds = null,
+        string? operationTaskId = null)
     {
         var query = dbContext.OperationTasks
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId);
+
+        if (!string.IsNullOrWhiteSpace(operationTaskId))
+        {
+            var normalizedOperationTaskId = operationTaskId.Trim();
+            query = query.Where(x => x.OperationTaskIdValue == normalizedOperationTaskId);
+        }
 
         if (!string.IsNullOrWhiteSpace(workOrderId))
         {
@@ -970,7 +979,8 @@ public sealed record ListOperationTasksQuery(
     string? WorkOrderId = null,
     string? AssignedUserIds = null,
     string? TeamIds = null,
-    string? WorkCenterIds = null) : IQuery<MesOperationTaskListResponse>;
+    string? WorkCenterIds = null,
+    string? OperationTaskId = null) : IQuery<MesOperationTaskListResponse>;
 
 public sealed record MesOperationTaskListResponse(
     IReadOnlyCollection<MesOperationTaskRow> Items,
@@ -995,7 +1005,8 @@ public sealed class ListOperationTasksQueryHandler(
             request.DeviceAssetId,
             assignedUserIds: request.AssignedUserIds,
             teamIds: request.TeamIds,
-            workCenterIds: request.WorkCenterIds);
+            workCenterIds: request.WorkCenterIds,
+            operationTaskId: request.OperationTaskId);
         var total = await query.CountAsync(cancellationToken);
         var tasks = await query
             .OrderBy(x => x.EarliestStartUtc)

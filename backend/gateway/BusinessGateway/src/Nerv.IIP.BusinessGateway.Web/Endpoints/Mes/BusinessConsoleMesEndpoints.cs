@@ -1319,15 +1319,29 @@ public sealed class RecordBusinessConsoleMesProductionReportEndpoint(
 public sealed class BusinessConsoleRecordProductionReportRequestValidator
     : Validator<BusinessConsoleRecordProductionReportRequest>
 {
-    public BusinessConsoleRecordProductionReportRequestValidator() =>
+    public BusinessConsoleRecordProductionReportRequestValidator()
+    {
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ScopeKind)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(Endpoints.Principal.BusinessGatewayWorkScopeKinds.Contains);
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+    }
 }
 
 public sealed class BusinessConsoleMesOperationTaskActionRequestValidator
     : Validator<BusinessConsoleMesOperationTaskActionRequest>
 {
-    public BusinessConsoleMesOperationTaskActionRequestValidator() =>
+    public BusinessConsoleMesOperationTaskActionRequestValidator()
+    {
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ScopeKind)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(Endpoints.Principal.BusinessGatewayWorkScopeKinds.Contains);
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+    }
 }
 
 [Tags("Business Console MES")]

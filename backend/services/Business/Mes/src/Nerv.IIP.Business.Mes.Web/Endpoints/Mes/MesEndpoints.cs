@@ -52,7 +52,8 @@ public sealed record ListMesWorkOrdersRequest(
     string? DeviceAssetIds = null,
     string? Statuses = null,
     string? AssignedUserIds = null,
-    string? TeamIds = null);
+    string? TeamIds = null,
+    string? WorkOrderId = null);
 
 public sealed record ListOperationTasksRequest(
     string OrganizationId,
@@ -67,7 +68,8 @@ public sealed record ListOperationTasksRequest(
     string? WorkOrderId = null,
     string? AssignedUserIds = null,
     string? TeamIds = null,
-    string? WorkCenterIds = null);
+    string? WorkCenterIds = null,
+    string? OperationTaskId = null);
 
 public sealed record ListReportableOperationTasksRequest(
     string OrganizationId,
@@ -708,7 +710,8 @@ public sealed class ListMesWorkOrdersEndpoint(ISender sender)
                 req.DeviceAssetIds,
                 req.Statuses,
                 req.AssignedUserIds,
-                req.TeamIds),
+                req.TeamIds,
+                req.WorkOrderId),
             ct);
         await Send.OkAsync(response, ct);
     }
@@ -1056,7 +1059,8 @@ public sealed class ListOperationTasksEndpoint(ISender sender)
             WorkOrderId: req.WorkOrderId,
             AssignedUserIds: req.AssignedUserIds,
             TeamIds: req.TeamIds,
-            WorkCenterIds: req.WorkCenterIds), ct);
+            WorkCenterIds: req.WorkCenterIds,
+            OperationTaskId: req.OperationTaskId), ct);
         await Send.OkAsync(response, ct);
     }
 }
