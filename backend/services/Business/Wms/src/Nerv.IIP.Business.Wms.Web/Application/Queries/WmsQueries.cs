@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.BackorderOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
@@ -10,6 +11,27 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Queries;
+
+public sealed record GetWarehouseWorkScopeCatalogQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes) : IQuery<WarehouseWorkScopeCatalog>;
+
+public sealed class GetWarehouseWorkScopeCatalogQueryHandler(
+    WarehouseWorkScopeAuthorizer authorizer)
+    : IQueryHandler<GetWarehouseWorkScopeCatalogQuery, WarehouseWorkScopeCatalog>
+{
+    public Task<WarehouseWorkScopeCatalog> Handle(
+        GetWarehouseWorkScopeCatalogQuery request,
+        CancellationToken cancellationToken) =>
+        authorizer.GetCatalogAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.ActorPrincipalId,
+            request.AuthorizedSiteCodes,
+            cancellationToken);
+}
 
 public sealed record ListBackorderOrdersQuery(
     string OrganizationId,
@@ -153,18 +175,16 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
             WmsOwnershipScopeKind.Operator => query.Where(x =>
                 x.AssignedOperatorUserId != null
                 && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
-            WmsOwnershipScopeKind.Team => query.Where(x =>
-                x.AssignedOperatorUserId == null
-                && x.AssignedPoolCode != null
+            WmsOwnershipScopeKind.Pool => query.Where(x =>
+                x.AssignedPoolCode != null
                 && ownershipScope.Values.Contains(x.AssignedPoolCode)),
-            WmsOwnershipScopeKind.Site => query.Where(x =>
-                x.AssignedOperatorUserId == null
-                && x.AssignedPoolCode == null
-                && ownershipScope.Values.Contains(x.SiteCode)),
-            WmsOwnershipScopeKind.Organization => query.Where(x =>
-                x.AssignedOperatorUserId == null && x.AssignedPoolCode == null),
             _ => query.Where(_ => false),
         };
+        var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
+        if (siteCodes.Length > 0)
+        {
+            query = query.Where(x => siteCodes.Contains(x.SiteCode));
+        }
         if (WmsListQueryFilters.TryParseStatus<InboundOrderStatus>(request.Status, out var status))
         {
             query = query.Where(x => x.Status == status);
@@ -308,18 +328,16 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
             WmsOwnershipScopeKind.Operator => query.Where(x =>
                 x.AssignedOperatorUserId != null
                 && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
-            WmsOwnershipScopeKind.Team => query.Where(x =>
-                x.AssignedOperatorUserId == null
-                && x.AssignedPoolCode != null
+            WmsOwnershipScopeKind.Pool => query.Where(x =>
+                x.AssignedPoolCode != null
                 && ownershipScope.Values.Contains(x.AssignedPoolCode)),
-            WmsOwnershipScopeKind.Site => query.Where(x =>
-                x.AssignedOperatorUserId == null
-                && x.AssignedPoolCode == null
-                && ownershipScope.Values.Contains(x.SiteCode)),
-            WmsOwnershipScopeKind.Organization => query.Where(x =>
-                x.AssignedOperatorUserId == null && x.AssignedPoolCode == null),
             _ => query.Where(_ => false),
         };
+        var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
+        if (siteCodes.Length > 0)
+        {
+            query = query.Where(x => siteCodes.Contains(x.SiteCode));
+        }
         if (WmsListQueryFilters.TryParseStatus<OutboundOrderStatus>(request.Status, out var status))
         {
             query = query.Where(x => x.Status == status);
@@ -546,18 +564,16 @@ public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContex
             WmsOwnershipScopeKind.Operator => query.Where(x =>
                 x.AssignedOperatorUserId != null
                 && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
-            WmsOwnershipScopeKind.Team => query.Where(x =>
-                x.AssignedOperatorUserId == null
-                && x.AssignedPoolCode != null
+            WmsOwnershipScopeKind.Pool => query.Where(x =>
+                x.AssignedPoolCode != null
                 && ownershipScope.Values.Contains(x.AssignedPoolCode)),
-            WmsOwnershipScopeKind.Site => query.Where(x =>
-                x.AssignedOperatorUserId == null
-                && x.AssignedPoolCode == null
-                && ownershipScope.Values.Contains(x.SiteCode)),
-            WmsOwnershipScopeKind.Organization => query.Where(x =>
-                x.AssignedOperatorUserId == null && x.AssignedPoolCode == null),
             _ => query.Where(_ => false),
         };
+        var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
+        if (siteCodes.Length > 0)
+        {
+            query = query.Where(x => siteCodes.Contains(x.SiteCode));
+        }
 
         if (WmsListQueryFilters.TryParseStatus<WarehouseTaskStatus>(request.Status, out var status))
         {
@@ -654,19 +670,17 @@ internal static class WmsOwnershipQueryFilters
 
     public static bool TryResolve(
         IEnumerable<string>? operatorUserIds,
-        IEnumerable<string>? teamIds,
+        IEnumerable<string>? poolCodes,
         IEnumerable<string>? siteCodes,
         bool organizationWideScope,
         out WmsOwnershipScope scope)
     {
         var operators = Normalize(operatorUserIds);
-        var teams = Normalize(teamIds);
-        var sites = Normalize(siteCodes);
+        var pools = Normalize(poolCodes);
+        _ = Normalize(siteCodes);
         var activeModes = (operators.Length > 0 ? 1 : 0)
-            + (teams.Length > 0 ? 1 : 0)
-            + (sites.Length > 0 ? 1 : 0)
-            + (organizationWideScope ? 1 : 0);
-        if (activeModes != 1)
+            + (pools.Length > 0 ? 1 : 0);
+        if (organizationWideScope || activeModes != 1)
         {
             scope = default;
             return false;
@@ -674,11 +688,7 @@ internal static class WmsOwnershipQueryFilters
 
         scope = operators.Length > 0
             ? new WmsOwnershipScope(WmsOwnershipScopeKind.Operator, operators)
-            : teams.Length > 0
-                ? new WmsOwnershipScope(WmsOwnershipScopeKind.Team, teams)
-                : sites.Length > 0
-                    ? new WmsOwnershipScope(WmsOwnershipScopeKind.Site, sites)
-                    : new WmsOwnershipScope(WmsOwnershipScopeKind.Organization, []);
+            : new WmsOwnershipScope(WmsOwnershipScopeKind.Pool, pools);
         return true;
     }
 }
@@ -686,9 +696,7 @@ internal static class WmsOwnershipQueryFilters
 internal enum WmsOwnershipScopeKind
 {
     Operator,
-    Team,
-    Site,
-    Organization,
+    Pool,
 }
 
 internal readonly record struct WmsOwnershipScope(
@@ -757,18 +765,16 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
             WmsOwnershipScopeKind.Operator => query.Where(x =>
                 x.AssignedOperatorUserId != null
                 && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
-            WmsOwnershipScopeKind.Team => query.Where(x =>
-                x.AssignedOperatorUserId == null
-                && x.AssignedPoolCode != null
+            WmsOwnershipScopeKind.Pool => query.Where(x =>
+                x.AssignedPoolCode != null
                 && ownershipScope.Values.Contains(x.AssignedPoolCode)),
-            WmsOwnershipScopeKind.Site => query.Where(x =>
-                x.AssignedOperatorUserId == null
-                && x.AssignedPoolCode == null
-                && ownershipScope.Values.Contains(x.SiteCode)),
-            WmsOwnershipScopeKind.Organization => query.Where(x =>
-                x.AssignedOperatorUserId == null && x.AssignedPoolCode == null),
             _ => query.Where(_ => false),
         };
+        var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
+        if (siteCodes.Length > 0)
+        {
+            query = query.Where(x => siteCodes.Contains(x.SiteCode));
+        }
 
         if (WmsListQueryFilters.TryParseStatus<CountExecutionStatus>(request.Status, out var status))
         {

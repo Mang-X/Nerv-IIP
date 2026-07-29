@@ -77,6 +77,10 @@ public sealed record AssignInboundOrderRequest(
 public sealed record ListInboundOrdersRequest(
     string? OrganizationId,
     string? EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId,
     int Skip = 0,
     int Take = 100,
     string? Status = null,
@@ -84,10 +88,7 @@ public sealed record ListInboundOrdersRequest(
     InboundOrderId? InboundOrderId = null,
     string? LocationCode = null,
     string? LotNo = null,
-    IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
-    IReadOnlyCollection<string>? AssignedPoolCodes = null,
-    IReadOnlyCollection<string>? SiteCodes = null,
-    bool OrganizationWideScope = false);
+    string? SiteCode = null);
 public sealed record CreatePutawayTaskRequest(
     InboundOrderId InboundOrderId,
     string TaskNo,
@@ -98,16 +99,17 @@ public sealed record CreatePutawayTaskRequest(
 public sealed record ListWarehouseTasksRequest(
     string OrganizationId,
     string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId,
     int Skip = 0,
     int Take = 100,
     string? Status = null,
     string? LocationCode = null,
     string? Keyword = null,
     string? LotNo = null,
-    IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
-    IReadOnlyCollection<string>? AssignedPoolCodes = null,
-    IReadOnlyCollection<string>? SiteCodes = null,
-    bool OrganizationWideScope = false);
+    string? SiteCode = null);
 public sealed record CreateWarehouseTaskResponse(WarehouseTaskId WarehouseTaskId);
 public sealed record AssignPutawayTaskRequest(
     WarehouseTaskId WarehouseTaskId,
@@ -208,6 +210,10 @@ public sealed record AssignOutboundOrderRequest(
 public sealed record ListOutboundOrdersRequest(
     string? OrganizationId,
     string? EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId,
     int Skip = 0,
     int Take = 100,
     string? Status = null,
@@ -215,10 +221,7 @@ public sealed record ListOutboundOrdersRequest(
     OutboundOrderId? OutboundOrderId = null,
     string? LocationCode = null,
     string? LotNo = null,
-    IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
-    IReadOnlyCollection<string>? AssignedPoolCodes = null,
-    IReadOnlyCollection<string>? SiteCodes = null,
-    bool OrganizationWideScope = false);
+    string? SiteCode = null);
 public sealed record ListBackorderOrdersRequest(string OrganizationId, string EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
 public sealed record CloseBackorderOrderRequest(BackorderOrderId BackorderOrderId, string Reason);
 public sealed record CreatePickingTaskRequest(
@@ -261,16 +264,17 @@ public sealed record AssignCountExecutionRequest(
 public sealed record ListCountExecutionsRequest(
     string OrganizationId,
     string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId,
     int Skip = 0,
     int Take = 100,
     string? Status = null,
     string? LocationCode = null,
     string? Keyword = null,
     CountExecutionId? CountExecutionId = null,
-    IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
-    IReadOnlyCollection<string>? AssignedPoolCodes = null,
-    IReadOnlyCollection<string>? SiteCodes = null,
-    bool OrganizationWideScope = false);
+    string? SiteCode = null);
 public sealed record CompleteCountExecutionRequest(
     CountExecutionId CountExecutionId,
     decimal CountedQuantity,
@@ -304,6 +308,47 @@ public sealed class CompleteCountExecutionRequestValidator : Validator<CompleteC
         RuleFor(x => x.EnvironmentId).MaximumLength(100);
     }
 }
+
+internal sealed record WmsAuthorizedListScope(
+    IReadOnlyCollection<string>? OperatorPrincipalIds,
+    IReadOnlyCollection<string>? PoolCodes,
+    IReadOnlyCollection<string> SiteCodes);
+
+internal static class WmsAuthorizedListScopeResolver
+{
+    public static async Task<WmsAuthorizedListScope> ResolveAsync(
+        WarehouseWorkScopeAuthorizer authorizer,
+        string? organizationId,
+        string? environmentId,
+        string actorPrincipalId,
+        IReadOnlyCollection<string> authorizedSiteCodes,
+        string scopeKind,
+        string scopeId,
+        string? siteCode,
+        CancellationToken cancellationToken)
+    {
+        var selection = await authorizer.ResolveAsync(
+            new WarehouseWorkScopeRequest(
+                organizationId ?? string.Empty,
+                environmentId ?? string.Empty,
+                actorPrincipalId,
+                authorizedSiteCodes,
+                scopeKind,
+                scopeId,
+                siteCode),
+            cancellationToken);
+        return selection.AssignedOperatorUserId is not null
+            ? new WmsAuthorizedListScope(
+                [selection.AssignedOperatorUserId],
+                PoolCodes: null,
+                selection.SiteCodes)
+            : new WmsAuthorizedListScope(
+                OperatorPrincipalIds: null,
+                selection.PoolCodes,
+                selection.SiteCodes);
+    }
+}
+
 public sealed record DispatchWcsTaskRequest(WarehouseTaskId WarehouseTaskId, string AdapterType, string ExternalTaskId, string PayloadJson);
 public sealed record DispatchWcsTaskResponse(WcsTaskId WcsTaskId);
 public sealed record CompleteWcsTaskRequest(string OrganizationId, string EnvironmentId, string ExternalTaskId, string CompletionPayloadJson);
@@ -322,6 +367,11 @@ public sealed record ListWcsDispatchCircuitsRequest(string OrganizationId, strin
 public sealed record ResetWcsDispatchCircuitRequest(string OrganizationId, string EnvironmentId, string AdapterType, string DeviceId);
 public sealed record ListReceivingQualityGatesRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? GateStatus = null, string? Keyword = null, bool IncludeNotRequired = false, string? InboundOrderNo = null);
 public sealed record ListSupplierReturnRequestsRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
+public sealed record WarehouseWorkScopeCatalogRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes);
 
 public sealed class CreateInboundOrderEndpoint(ISender sender) : WmsEndpoint<CreateInboundOrderRequest, ResponseData<CreateInboundOrderResponse>>
 {
@@ -340,11 +390,24 @@ public sealed class CreateInboundOrderEndpoint(ISender sender) : WmsEndpoint<Cre
     }
 }
 
-public sealed class ListInboundOrdersEndpoint(ISender sender) : WmsEndpoint<ListInboundOrdersRequest, ResponseData<ListInboundOrdersResponse>>
+public sealed class ListInboundOrdersEndpoint(
+    ISender sender,
+    WarehouseWorkScopeAuthorizer authorizer)
+    : WmsEndpoint<ListInboundOrdersRequest, ResponseData<ListInboundOrdersResponse>>
 {
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListInboundOrdersEndpoint>());
     public override async Task HandleAsync(ListInboundOrdersRequest req, CancellationToken ct)
     {
+        var scope = await WmsAuthorizedListScopeResolver.ResolveAsync(
+            authorizer,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorPrincipalId,
+            req.AuthorizedSiteCodes,
+            req.ScopeKind,
+            req.ScopeId,
+            req.SiteCode,
+            ct);
         var result = await sender.Send(new ListInboundOrdersQuery(
             req.OrganizationId,
             req.EnvironmentId,
@@ -355,10 +418,9 @@ public sealed class ListInboundOrdersEndpoint(ISender sender) : WmsEndpoint<List
             req.InboundOrderId,
             req.LocationCode,
             req.LotNo,
-            req.AssignedOperatorUserIds,
-            req.AssignedPoolCodes,
-            req.SiteCodes,
-            req.OrganizationWideScope), ct);
+            scope.OperatorPrincipalIds,
+            scope.PoolCodes,
+            scope.SiteCodes), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -429,11 +491,24 @@ public sealed class AssignPutawayTaskEndpoint(ISender sender)
     }
 }
 
-public sealed class ListPutawayTasksEndpoint(ISender sender) : WmsEndpoint<ListWarehouseTasksRequest, ResponseData<ListWarehouseTasksResponse>>
+public sealed class ListPutawayTasksEndpoint(
+    ISender sender,
+    WarehouseWorkScopeAuthorizer authorizer)
+    : WmsEndpoint<ListWarehouseTasksRequest, ResponseData<ListWarehouseTasksResponse>>
 {
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListPutawayTasksEndpoint>());
     public override async Task HandleAsync(ListWarehouseTasksRequest req, CancellationToken ct)
     {
+        var scope = await WmsAuthorizedListScopeResolver.ResolveAsync(
+            authorizer,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorPrincipalId,
+            req.AuthorizedSiteCodes,
+            req.ScopeKind,
+            req.ScopeId,
+            req.SiteCode,
+            ct);
         var response = await sender.Send(new ListWarehouseTasksQuery(
             req.OrganizationId,
             req.EnvironmentId,
@@ -444,10 +519,9 @@ public sealed class ListPutawayTasksEndpoint(ISender sender) : WmsEndpoint<ListW
             req.LocationCode,
             req.Keyword,
             req.LotNo,
-            req.AssignedOperatorUserIds,
-            req.AssignedPoolCodes,
-            req.SiteCodes,
-            req.OrganizationWideScope), ct);
+            scope.OperatorPrincipalIds,
+            scope.PoolCodes,
+            scope.SiteCodes), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -509,11 +583,24 @@ public sealed class CreateOutboundOrderEndpoint(ISender sender) : WmsEndpoint<Cr
     }
 }
 
-public sealed class ListOutboundOrdersEndpoint(ISender sender) : WmsEndpoint<ListOutboundOrdersRequest, ResponseData<ListOutboundOrdersResponse>>
+public sealed class ListOutboundOrdersEndpoint(
+    ISender sender,
+    WarehouseWorkScopeAuthorizer authorizer)
+    : WmsEndpoint<ListOutboundOrdersRequest, ResponseData<ListOutboundOrdersResponse>>
 {
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListOutboundOrdersEndpoint>());
     public override async Task HandleAsync(ListOutboundOrdersRequest req, CancellationToken ct)
     {
+        var scope = await WmsAuthorizedListScopeResolver.ResolveAsync(
+            authorizer,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorPrincipalId,
+            req.AuthorizedSiteCodes,
+            req.ScopeKind,
+            req.ScopeId,
+            req.SiteCode,
+            ct);
         var result = await sender.Send(new ListOutboundOrdersQuery(
             req.OrganizationId,
             req.EnvironmentId,
@@ -524,10 +611,9 @@ public sealed class ListOutboundOrdersEndpoint(ISender sender) : WmsEndpoint<Lis
             req.OutboundOrderId,
             req.LocationCode,
             req.LotNo,
-            req.AssignedOperatorUserIds,
-            req.AssignedPoolCodes,
-            req.SiteCodes,
-            req.OrganizationWideScope), ct);
+            scope.OperatorPrincipalIds,
+            scope.PoolCodes,
+            scope.SiteCodes), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -598,11 +684,24 @@ public sealed class AssignPickingTaskEndpoint(ISender sender)
     }
 }
 
-public sealed class ListPickingTasksEndpoint(ISender sender) : WmsEndpoint<ListWarehouseTasksRequest, ResponseData<ListWarehouseTasksResponse>>
+public sealed class ListPickingTasksEndpoint(
+    ISender sender,
+    WarehouseWorkScopeAuthorizer authorizer)
+    : WmsEndpoint<ListWarehouseTasksRequest, ResponseData<ListWarehouseTasksResponse>>
 {
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListPickingTasksEndpoint>());
     public override async Task HandleAsync(ListWarehouseTasksRequest req, CancellationToken ct)
     {
+        var scope = await WmsAuthorizedListScopeResolver.ResolveAsync(
+            authorizer,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorPrincipalId,
+            req.AuthorizedSiteCodes,
+            req.ScopeKind,
+            req.ScopeId,
+            req.SiteCode,
+            ct);
         var response = await sender.Send(new ListWarehouseTasksQuery(
             req.OrganizationId,
             req.EnvironmentId,
@@ -613,19 +712,31 @@ public sealed class ListPickingTasksEndpoint(ISender sender) : WmsEndpoint<ListW
             req.LocationCode,
             req.Keyword,
             req.LotNo,
-            req.AssignedOperatorUserIds,
-            req.AssignedPoolCodes,
-            req.SiteCodes,
-            req.OrganizationWideScope), ct);
+            scope.OperatorPrincipalIds,
+            scope.PoolCodes,
+            scope.SiteCodes), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
-public sealed class ListReplenishmentTasksEndpoint(ISender sender) : WmsEndpoint<ListWarehouseTasksRequest, ResponseData<ListWarehouseTasksResponse>>
+public sealed class ListReplenishmentTasksEndpoint(
+    ISender sender,
+    WarehouseWorkScopeAuthorizer authorizer)
+    : WmsEndpoint<ListWarehouseTasksRequest, ResponseData<ListWarehouseTasksResponse>>
 {
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListReplenishmentTasksEndpoint>());
     public override async Task HandleAsync(ListWarehouseTasksRequest req, CancellationToken ct)
     {
+        var scope = await WmsAuthorizedListScopeResolver.ResolveAsync(
+            authorizer,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorPrincipalId,
+            req.AuthorizedSiteCodes,
+            req.ScopeKind,
+            req.ScopeId,
+            req.SiteCode,
+            ct);
         var response = await sender.Send(new ListWarehouseTasksQuery(
             req.OrganizationId,
             req.EnvironmentId,
@@ -636,10 +747,9 @@ public sealed class ListReplenishmentTasksEndpoint(ISender sender) : WmsEndpoint
             req.LocationCode,
             req.Keyword,
             req.LotNo,
-            req.AssignedOperatorUserIds,
-            req.AssignedPoolCodes,
-            req.SiteCodes,
-            req.OrganizationWideScope), ct);
+            scope.OperatorPrincipalIds,
+            scope.PoolCodes,
+            scope.SiteCodes), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -948,11 +1058,24 @@ public sealed class CreateCountExecutionEndpoint(ISender sender) : WmsEndpoint<C
     }
 }
 
-public sealed class ListCountExecutionsEndpoint(ISender sender) : WmsEndpoint<ListCountExecutionsRequest, ResponseData<ListCountExecutionsResponse>>
+public sealed class ListCountExecutionsEndpoint(
+    ISender sender,
+    WarehouseWorkScopeAuthorizer authorizer)
+    : WmsEndpoint<ListCountExecutionsRequest, ResponseData<ListCountExecutionsResponse>>
 {
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListCountExecutionsEndpoint>());
     public override async Task HandleAsync(ListCountExecutionsRequest req, CancellationToken ct)
     {
+        var scope = await WmsAuthorizedListScopeResolver.ResolveAsync(
+            authorizer,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorPrincipalId,
+            req.AuthorizedSiteCodes,
+            req.ScopeKind,
+            req.ScopeId,
+            req.SiteCode,
+            ct);
         var response = await sender.Send(new ListCountExecutionsQuery(
             req.OrganizationId,
             req.EnvironmentId,
@@ -962,10 +1085,9 @@ public sealed class ListCountExecutionsEndpoint(ISender sender) : WmsEndpoint<Li
             req.LocationCode,
             req.Keyword,
             req.CountExecutionId,
-            req.AssignedOperatorUserIds,
-            req.AssignedPoolCodes,
-            req.SiteCodes,
-            req.OrganizationWideScope), ct);
+            scope.OperatorPrincipalIds,
+            scope.PoolCodes,
+            scope.SiteCodes), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -1089,6 +1211,65 @@ public sealed class ListSupplierReturnRequestsEndpoint(ISender sender) : WmsEndp
     }
 }
 
+public abstract class WarehouseWorkScopeCatalogEndpoint(
+    ISender sender)
+    : WmsEndpoint<WarehouseWorkScopeCatalogRequest, ResponseData<WarehouseWorkScopeCatalog>>
+{
+    protected async Task SendCatalogAsync(
+        WarehouseWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken)
+    {
+        var catalog = await sender.Send(new GetWarehouseWorkScopeCatalogQuery(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.ActorPrincipalId,
+            request.AuthorizedSiteCodes), cancellationToken);
+        await Send.OkAsync(catalog.AsResponseData(), cancellation: cancellationToken);
+    }
+}
+
+public sealed class GetReceiptWorkScopesEndpoint(
+    ISender sender)
+    : WarehouseWorkScopeCatalogEndpoint(sender)
+{
+    public override void Configure() => ConfigureWmsContract(
+        WmsEndpointContracts.Get<GetReceiptWorkScopesEndpoint>(),
+        StatusCodes.Status403Forbidden);
+
+    public override Task HandleAsync(
+        WarehouseWorkScopeCatalogRequest req,
+        CancellationToken ct) =>
+        SendCatalogAsync(req, ct);
+}
+
+public sealed class GetShipmentWorkScopesEndpoint(
+    ISender sender)
+    : WarehouseWorkScopeCatalogEndpoint(sender)
+{
+    public override void Configure() => ConfigureWmsContract(
+        WmsEndpointContracts.Get<GetShipmentWorkScopesEndpoint>(),
+        StatusCodes.Status403Forbidden);
+
+    public override Task HandleAsync(
+        WarehouseWorkScopeCatalogRequest req,
+        CancellationToken ct) =>
+        SendCatalogAsync(req, ct);
+}
+
+public sealed class GetCountWorkScopesEndpoint(
+    ISender sender)
+    : WarehouseWorkScopeCatalogEndpoint(sender)
+{
+    public override void Configure() => ConfigureWmsContract(
+        WmsEndpointContracts.Get<GetCountWorkScopesEndpoint>(),
+        StatusCodes.Status403Forbidden);
+
+    public override Task HandleAsync(
+        WarehouseWorkScopeCatalogRequest req,
+        CancellationToken ct) =>
+        SendCatalogAsync(req, ct);
+}
+
 public sealed record WmsEndpointContract(Type EndpointType, string HttpMethod, string Route, string PermissionCode, string AuthorizationPolicy, string OperationId);
 
 public static class WmsEndpointContracts
@@ -1138,6 +1319,9 @@ public static class WmsEndpointContracts
         new(typeof(ResetWcsDispatchCircuitEndpoint), "POST", "/api/business/v1/wms/wcs-dispatch-circuits/reset", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "resetWmsWcsDispatchCircuit"),
         new(typeof(ListReceivingQualityGatesEndpoint), "GET", "/api/business/v1/wms/receiving-quality-gates", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsReceivingQualityGates"),
         new(typeof(ListSupplierReturnRequestsEndpoint), "GET", "/api/business/v1/wms/supplier-return-requests", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsSupplierReturnRequests"),
+        new(typeof(GetReceiptWorkScopesEndpoint), "GET", "/api/business/v1/wms/work-scopes/receipts", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "getWmsReceiptWorkScopes"),
+        new(typeof(GetShipmentWorkScopesEndpoint), "GET", "/api/business/v1/wms/work-scopes/shipments", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "getWmsShipmentWorkScopes"),
+        new(typeof(GetCountWorkScopesEndpoint), "GET", "/api/business/v1/wms/work-scopes/counts", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "getWmsCountWorkScopes"),
     ];
 
     public static WmsEndpointContract Get<TEndpoint>() => All.Single(x => x.EndpointType == typeof(TEndpoint));

@@ -315,7 +315,7 @@ public sealed class WmsWarehouseTaskManualExecutionTests
 
         Assert.Empty(denied.Items);
         Assert.Equal("PICK-TEAM", Assert.Single(team.Items).TaskNo);
-        Assert.Equal("PICK-SITE", Assert.Single(organization.Items).TaskNo);
+        Assert.Empty(organization.Items);
         Assert.Empty(ambiguous.Items);
         Assert.Empty(conflicting.Items);
     }

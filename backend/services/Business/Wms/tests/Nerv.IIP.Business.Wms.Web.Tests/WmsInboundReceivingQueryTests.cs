@@ -29,7 +29,8 @@ public sealed class WmsInboundReceivingQueryTests
             "asn",
             $"SRC-{inboundOrderNo}",
             "SITE-1",
-            lines);
+            lines,
+            assignedPoolCode: "POOL-RECEIVING");
 
     private static InboundOrderLineDraft Line(string lineNo, string qualityStatus) =>
         new(lineNo, $"SKU-{lineNo}", "kg", 5m, "LOC-STAGE", $"LOT-{lineNo}", null, qualityStatus, "company", "owner-001");
@@ -54,7 +55,8 @@ public sealed class WmsInboundReceivingQueryTests
                 new ListInboundOrdersQuery(
                     "org-001",
                     "env-dev",
-                    OrganizationWideScope: true),
+                    AssignedPoolCodes: ["POOL-RECEIVING"],
+                    SiteCodes: ["SITE-1"]),
                 CancellationToken.None);
 
         var a = result.Items.Single(x => x.InboundOrderNo == "IN-Q-A");

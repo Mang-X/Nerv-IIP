@@ -36,6 +36,17 @@ public sealed record WarehouseAssignmentAuthorizationResult(
     string PoolCode,
     string? OperatorPrincipalId);
 
+public sealed record WarehouseWorkScopeCatalogItem(
+    string ScopeKind,
+    string ScopeId,
+    string DisplayName,
+    string? SiteCode,
+    string? PoolCode);
+
+public sealed record WarehouseWorkScopeCatalog(
+    string ActorPrincipalId,
+    IReadOnlyList<WarehouseWorkScopeCatalogItem> Items);
+
 /// <summary>
 /// Applies the WMS-owned work-pool qualification boundary after IAM has supplied
 /// the caller's trusted principal and exact-site grants.
@@ -44,6 +55,86 @@ public sealed class WarehouseWorkScopeAuthorizer(
     ApplicationDbContext dbContext,
     TimeProvider timeProvider)
 {
+    public async Task<WarehouseWorkScopeCatalog> GetCatalogAsync(
+        string organizationId,
+        string environmentId,
+        string actorPrincipalId,
+        IReadOnlyCollection<string> authorizedSiteCodes,
+        CancellationToken cancellationToken)
+    {
+        var normalizedOrganizationId = Required(organizationId, nameof(organizationId));
+        var normalizedEnvironmentId = Required(environmentId, nameof(environmentId));
+        var normalizedActorPrincipalId = Required(
+            actorPrincipalId,
+            nameof(actorPrincipalId));
+        var authorizedSites = NormalizeAuthorizedSites(authorizedSiteCodes);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var memberships = await (
+            from membership in dbContext.WarehouseWorkPoolMemberships.AsNoTracking()
+            join pool in dbContext.WarehouseWorkPools.AsNoTracking()
+                on new
+                {
+                    membership.OrganizationId,
+                    membership.EnvironmentId,
+                    membership.PoolCode,
+                }
+                equals new
+                {
+                    pool.OrganizationId,
+                    pool.EnvironmentId,
+                    pool.PoolCode,
+                }
+            where membership.OrganizationId == normalizedOrganizationId
+                && membership.EnvironmentId == normalizedEnvironmentId
+                && membership.PrincipalId == normalizedActorPrincipalId
+                && membership.Active
+                && membership.EffectiveFromUtc <= now
+                && (membership.EffectiveToUtc == null || now < membership.EffectiveToUtc)
+                && pool.Active
+                && authorizedSites.Contains(pool.SiteCode)
+            select new CatalogMembership(
+                pool.PoolCode,
+                pool.DisplayName,
+                pool.SiteCode))
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        if (memberships.Count == 0)
+        {
+            throw WmsAuthorizationException.Forbidden(
+                "no-effective-work-pool-membership");
+        }
+
+        var items = new List<WarehouseWorkScopeCatalogItem>
+        {
+            new(
+                "self",
+                normalizedActorPrincipalId,
+                "我的任务",
+                SiteCode: null,
+                PoolCode: null),
+        };
+        items.AddRange(memberships
+            .OrderBy(membership => membership.SiteCode, StringComparer.Ordinal)
+            .ThenBy(membership => membership.DisplayName, StringComparer.Ordinal)
+            .Select(membership => new WarehouseWorkScopeCatalogItem(
+                "work-pool",
+                membership.PoolCode,
+                membership.DisplayName,
+                membership.SiteCode,
+                membership.PoolCode)));
+        items.AddRange(memberships
+            .Select(membership => membership.SiteCode)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .Select(siteCode => new WarehouseWorkScopeCatalogItem(
+                "site",
+                siteCode,
+                siteCode,
+                siteCode,
+                PoolCode: null)));
+        return new WarehouseWorkScopeCatalog(normalizedActorPrincipalId, items);
+    }
+
     public async Task<WarehouseWorkScopeSelection> ResolveAsync(
         WarehouseWorkScopeRequest request,
         CancellationToken cancellationToken)
@@ -283,4 +374,9 @@ public sealed class WarehouseWorkScopeAuthorizer(
     }
 
     private sealed record EffectiveMembership(string PoolCode, string SiteCode);
+
+    private sealed record CatalogMembership(
+        string PoolCode,
+        string DisplayName,
+        string SiteCode);
 }

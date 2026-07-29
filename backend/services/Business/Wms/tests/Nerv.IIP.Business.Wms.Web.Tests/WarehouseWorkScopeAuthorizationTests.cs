@@ -1,8 +1,10 @@
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseWorkPoolAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
+using Nerv.IIP.Business.Wms.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -174,6 +176,127 @@ public sealed class WarehouseWorkScopeAuthorizationTests
                 CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Catalog_contains_only_self_active_pools_and_sites_inside_exact_grants()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedPool(
+            dbContext,
+            "POOL-RECEIVING",
+            "收货上架组",
+            "SITE-001",
+            "user-emp-049",
+            Now.AddDays(-1),
+            Now.AddDays(1));
+        SeedPool(
+            dbContext,
+            "POOL-EXPIRED",
+            "过期作业组",
+            "SITE-001",
+            "user-emp-049",
+            Now.AddDays(-2),
+            Now.AddDays(-1));
+        SeedPool(
+            dbContext,
+            "POOL-OTHER-SITE",
+            "外站作业组",
+            "SITE-002",
+            "user-emp-049",
+            Now.AddDays(-1),
+            Now.AddDays(1));
+        await dbContext.SaveChangesAsync();
+
+        var catalog = await new WarehouseWorkScopeAuthorizer(
+                dbContext,
+                new StaticTimeProvider(Now))
+            .GetCatalogAsync(
+                "org-001",
+                "env-dev",
+                "user-emp-049",
+                ["SITE-001"],
+                CancellationToken.None);
+
+        Assert.Equal(
+            [
+                ("self", "user-emp-049"),
+                ("work-pool", "POOL-RECEIVING"),
+                ("site", "SITE-001"),
+            ],
+            catalog.Items
+                .Select(item => (item.ScopeKind, item.ScopeId))
+                .ToArray());
+    }
+
+    [Fact]
+    public async Task Self_pool_and_site_queues_use_persisted_assignment_and_never_show_legacy_unassigned()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedPool(
+            dbContext,
+            "POOL-A",
+            "收货组",
+            "SITE-001",
+            "user-emp-049",
+            Now.AddDays(-1),
+            Now.AddDays(1));
+        SeedPool(
+            dbContext,
+            "POOL-B",
+            "发货组",
+            "SITE-001",
+            "user-emp-049",
+            Now.AddDays(-1),
+            Now.AddDays(1));
+        SeedPool(
+            dbContext,
+            "POOL-C",
+            "外站组",
+            "SITE-002",
+            "user-emp-049",
+            Now.AddDays(-1),
+            Now.AddDays(1));
+        dbContext.WarehouseTasks.AddRange(
+            CreateTask("SELF", "SITE-001", "POOL-A", "user-emp-049"),
+            CreateTask("POOL-UNCLAIMED", "SITE-001", "POOL-A", null),
+            CreateTask("POOL-OTHER-OP", "SITE-001", "POOL-A", "user-other"),
+            CreateTask("SITE-OTHER-POOL", "SITE-001", "POOL-B", null),
+            CreateTask("OTHER-SITE", "SITE-002", "POOL-C", null),
+            CreateTask("LEGACY-UNASSIGNED", "SITE-001", null, null));
+        await dbContext.SaveChangesAsync();
+        var authorizer = new WarehouseWorkScopeAuthorizer(
+            dbContext,
+            new StaticTimeProvider(Now));
+        var queryHandler = new ListWarehouseTasksQueryHandler(dbContext);
+
+        var selfScope = await authorizer.ResolveAsync(
+            WorkScope("self", "user-emp-049", authorizedSites: ["SITE-001"]),
+            CancellationToken.None);
+        var poolScope = await authorizer.ResolveAsync(
+            WorkScope("work-pool", "POOL-A", authorizedSites: ["SITE-001"]),
+            CancellationToken.None);
+        var siteScope = await authorizer.ResolveAsync(
+            WorkScope("site", "SITE-001", authorizedSites: ["SITE-001"]),
+            CancellationToken.None);
+
+        var self = await Query(queryHandler, selfScope);
+        var pool = await Query(queryHandler, poolScope);
+        var site = await Query(queryHandler, siteScope);
+
+        Assert.Equal(["SELF"], self.Items.Select(item => item.TaskNo));
+        Assert.Equal(
+            ["POOL-OTHER-OP", "POOL-UNCLAIMED", "SELF"],
+            pool.Items.Select(item => item.TaskNo).Order(StringComparer.Ordinal));
+        Assert.Equal(
+            ["POOL-OTHER-OP", "POOL-UNCLAIMED", "SELF", "SITE-OTHER-POOL"],
+            site.Items.Select(item => item.TaskNo).Order(StringComparer.Ordinal));
+        Assert.DoesNotContain(site.Items, item => item.TaskNo == "LEGACY-UNASSIGNED");
+        Assert.DoesNotContain(site.Items, item => item.TaskNo == "OTHER-SITE");
+    }
+
     private static WarehouseWorkScopeRequest WorkScope(
         string kind,
         string id,
@@ -211,6 +334,43 @@ public sealed class WarehouseWorkScopeAuthorizationTests
             effectiveFromUtc,
             effectiveToUtc));
     }
+
+    private static WarehouseTask CreateTask(
+        string taskNo,
+        string siteCode,
+        string? poolCode,
+        string? operatorPrincipalId) =>
+        WarehouseTask.CreatePicking(
+            "org-001",
+            "env-dev",
+            taskNo,
+            "OUT-001",
+            taskNo,
+            "SKU-001",
+            "pcs",
+            siteCode,
+            "BIN-01",
+            "PACK-01",
+            1m,
+            assignedOperatorUserId: operatorPrincipalId,
+            assignedPoolCode: poolCode);
+
+    private static Task<ListWarehouseTasksResponse> Query(
+        ListWarehouseTasksQueryHandler handler,
+        WarehouseWorkScopeSelection selection) =>
+        handler.Handle(
+            new ListWarehouseTasksQuery(
+                "org-001",
+                "env-dev",
+                WarehouseTaskType.Picking,
+                AssignedOperatorUserIds: selection.AssignedOperatorUserId is null
+                    ? null
+                    : [selection.AssignedOperatorUserId],
+                AssignedPoolCodes: selection.AssignedOperatorUserId is null
+                    ? selection.PoolCodes
+                    : null,
+                SiteCodes: selection.SiteCodes),
+            CancellationToken.None);
 
     private sealed class StaticTimeProvider(DateTime utcNow) : TimeProvider
     {
