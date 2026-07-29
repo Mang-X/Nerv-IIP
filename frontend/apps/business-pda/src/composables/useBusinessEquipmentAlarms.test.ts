@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { shallowRef } from 'vue'
+import { nextTick, shallowRef, type ShallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
@@ -16,6 +16,7 @@ import { useAuthStore } from '@/stores/auth'
 
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
+  queryDataRefById: new Map<string, ShallowRef<unknown>>(),
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
   mutateAsync: vi.fn(
     async (_payload: { path: { alarmEventId: string }; body: Record<string, unknown> }) => ({
@@ -49,9 +50,11 @@ vi.mock('@pinia/colada', () => ({
       : undefined
     const id = `${key?._id ?? ''}:${key?._status ?? 'all'}`
     coladaState.queryOptionsById.set(id, options as { enabled?: boolean })
+    const data = shallowRef(coladaState.queryDataById.get(id))
+    coladaState.queryDataRefById.set(id, data)
 
     return {
-      data: shallowRef(coladaState.queryDataById.get(id)),
+      data,
       error: shallowRef(),
       isLoading: shallowRef(false),
       refetch: vi.fn(async () => {}),
@@ -66,15 +69,15 @@ vi.mock('@pinia/colada', () => ({
 
 function seedPrincipal(overrides: Record<string, unknown> = {}) {
   const auth = useAuthStore()
-  auth.$patch({
-    principal: {
+  auth.$patch((state) => {
+    state.principal = {
       principalId: 'user-admin',
       principalType: 'user',
       loginName: 'admin',
       organizationId: 'org-001',
       environmentId: 'env-dev',
       ...overrides,
-    } as never,
+    } as never
   })
 }
 
@@ -87,6 +90,7 @@ describe('useBusinessEquipmentAlarms', () => {
     vi.clearAllMocks()
     sessionStorage.clear()
     coladaState.queryDataById.clear()
+    coladaState.queryDataRefById.clear()
     coladaState.queryOptionsById.clear()
     coladaState.listPlain.mockImplementation(
       async ({ query }: { query: { alarmEventId?: string } }) => ({
@@ -126,6 +130,21 @@ describe('useBusinessEquipmentAlarms', () => {
       query: expect.not.objectContaining({ status: expect.anything() }),
     })
     expect(coladaState.queryOptionsById.get(ALL_KEY)?.enabled).toBe(true)
+  })
+
+  it('exposes the real scope and server total for the alarm list', () => {
+    seedPrincipal()
+    coladaState.queryDataById.set(ALL_KEY, {
+      success: true,
+      data: { items: [{ alarmEventId: 'a-1' }], total: 4 },
+    })
+
+    const result = useBusinessEquipmentAlarms()
+
+    expect(result.organizationId.value).toBe('org-001')
+    expect(result.environmentId.value).toBe('env-dev')
+    expect(result.scopeReady.value).toBe(true)
+    expect(result.total.value).toBe(4)
   })
 
   it('re-affirms the server lifecycle order client-side: 未确认 > 已搁置 > 已确认 > 已清除, newest-first', () => {
@@ -327,6 +346,49 @@ describe('useBusinessEquipmentAlarms', () => {
     expect(retry).toEqual(first)
     expect(retry?.body.idempotencyKey).toBe(key)
   })
+
+  it('exposes success:false and malformed raw alarm responses as retryable failures', async () => {
+    seedPrincipal()
+    coladaState.queryDataById.set(ALL_KEY, {
+      success: false,
+      message: '报警查询失败',
+    })
+
+    const result = useBusinessEquipmentAlarms()
+
+    expect(result.alarms.value).toEqual([])
+    expect(result.total.value).toBe(0)
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(true)
+
+    coladaState.queryDataRefById.get(ALL_KEY)!.value = { data: { items: [], total: 0 } }
+    await nextTick()
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(true)
+  })
+
+  it('unbinds alarm rows, total, and freshness immediately on an org/env scope switch', async () => {
+    seedPrincipal()
+    coladaState.queryDataById.set(ALL_KEY, {
+      success: true,
+      data: { items: [{ alarmEventId: 'old-alarm', status: 'raised' }], total: 5 },
+    })
+
+    const result = useBusinessEquipmentAlarms()
+    expect(result.alarms.value).toHaveLength(1)
+    expect(result.total.value).toBe(5)
+    expect(result.hasSuccessfulResponse.value).toBe(true)
+    expect(result.lastUpdatedAt.value).not.toBeNull()
+
+    seedPrincipal({ organizationId: 'org-002', environmentId: 'env-prod' })
+    await nextTick()
+
+    expect(result.alarms.value).toEqual([])
+    expect(result.total.value).toBe(0)
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(false)
+    expect(result.lastUpdatedAt.value).toBeNull()
+  })
 })
 
 describe('useUnacknowledgedAlarmCount', () => {
@@ -334,6 +396,7 @@ describe('useUnacknowledgedAlarmCount', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     coladaState.queryDataById.clear()
+    coladaState.queryDataRefById.clear()
     coladaState.queryOptionsById.clear()
   })
 
@@ -356,5 +419,36 @@ describe('useUnacknowledgedAlarmCount', () => {
       query: expect.objectContaining({ status: 'raised', take: 1 }),
     })
     expect(unacknowledgedCount.value).toBe(137)
+  })
+
+  it('does not turn a failed raised-count envelope into a successful zero', () => {
+    seedPrincipal()
+    coladaState.queryDataById.set(RAISED_KEY, {
+      success: false,
+      message: '未确认报警数查询失败',
+    })
+
+    const result = useUnacknowledgedAlarmCount()
+
+    expect(result.unacknowledgedCount.value).toBe(0)
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(true)
+  })
+
+  it('unbinds the raised count when the principal scope changes', async () => {
+    seedPrincipal()
+    coladaState.queryDataById.set(RAISED_KEY, {
+      success: true,
+      data: { items: [], total: 12 },
+    })
+    const result = useUnacknowledgedAlarmCount()
+    expect(result.unacknowledgedCount.value).toBe(12)
+
+    seedPrincipal({ organizationId: 'org-002', environmentId: 'env-prod' })
+    await nextTick()
+
+    expect(result.unacknowledgedCount.value).toBe(0)
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(false)
   })
 })

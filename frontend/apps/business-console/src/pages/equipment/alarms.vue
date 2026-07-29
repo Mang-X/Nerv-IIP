@@ -3,6 +3,7 @@ import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn, NvMetricFacet, NvMetricSegment } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { LifecycleStateChangedError, recoverLifecycleAction } from '@/composables/lifecycleAction'
+import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { useBusinessEquipmentAlarms } from '@/composables/useBusinessEquipment'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -75,10 +76,26 @@ const {
   alarms,
   alarmsError,
   alarmsPending,
+  alarmsTotal,
+  alarmsOrganizationId,
+  alarmsEnvironmentId,
+  alarmsLastUpdatedAt,
+  alarmsHasSuccessfulResponse,
+  alarmsHasFailedResponse,
   refreshAlarms,
   shelveAlarm,
   unshelveAlarm,
 } = useBusinessEquipmentAlarms()
+const alarmScope = computed(() =>
+  alarmsOrganizationId && alarmsEnvironmentId
+    ? '当前登录组织 / 当前业务环境'
+    : '组织/环境范围未就绪',
+)
+const alarmEmptyExplanation = computed(() =>
+  !alarmsOrganizationId || !alarmsEnvironmentId
+    ? '缺少组织或环境范围，未发起查询。'
+    : '当前列表为组织范围的未解除设备报警，暂不支持按当前人员归属筛选；空态不代表个人报警。',
+)
 
 const errorMessage = computed(() => formatError(alarmsError.value))
 const criticalCount = computed(
@@ -741,6 +758,18 @@ function formatError(error: unknown) {
         </NvButton>
       </template>
     </NvPageHeader>
+
+    <ListScopeMeta
+      :scope="alarmScope"
+      source="设备报警服务（组织/环境范围）"
+      :loaded="alarms.length"
+      :total="alarmsTotal"
+      :updated-at="alarmsLastUpdatedAt"
+      :empty="alarmsHasSuccessfulResponse && !alarmsError && alarms.length === 0"
+      :failed="alarmsHasFailedResponse || Boolean(alarmsError)"
+      failure-explanation="设备报警服务未成功返回，请重试。"
+      :empty-explanation="alarmEmptyExplanation"
+    />
 
     <NvSectionCards :columns="2">
       <NvMetricRing

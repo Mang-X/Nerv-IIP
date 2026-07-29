@@ -7,6 +7,7 @@ import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import { openDownloadGrantBlob, statusActionGate } from '@nerv-iip/business-core'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import { recoverLifecycleAction, useLifecycleWriteIntent } from '@/composables/lifecycleAction'
+import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
@@ -86,13 +87,38 @@ const {
   operationTasksError,
   operationTasksPending,
   operationTasksTotal,
+  operationListScope,
+  operationListScopeMessage,
+  operationListScopeReady,
   operationScopeMessage,
   operationScopeReady,
+  operationTasksLastUpdatedAt,
+  operationTasksHasSuccessfulResponse,
+  operationTasksHasFailedResponse,
   pauseOperationTask,
   refreshOperationTasks,
   resumeOperationTask,
   startOperationTask,
 } = useMesOperationTasks()
+const workScopeKindLabels: Record<string, string> = {
+  self: '本人',
+  team: '班组',
+  'work-center': '工作中心',
+  workshop: '车间',
+  organization: '组织',
+}
+const mesScope = computed(() => {
+  const selectedScope = operationListScope.value
+  if (!selectedScope) return '当前主体授权作业范围未就绪'
+  const kind = workScopeKindLabels[selectedScope.kind] ?? selectedScope.kind
+  const name = selectedScope.displayName || selectedScope.id
+  return `当前主体授权作业范围 · ${name}（${kind}）`
+})
+const mesEmptyExplanation = computed(() =>
+  operationListScopeReady.value
+    ? '当前主体授权作业范围内暂无工序任务。'
+    : operationListScopeMessage.value || '尚未取得当前主体的授权作业范围，未发起查询。',
+)
 // 派工在本页行内直接完成：一线看着工序表就能把没人的活派出去，不必先跳派工看板。
 const { assignDispatchTask, assignDispatchTaskPending } = useMesDispatchTasks()
 
@@ -481,6 +507,30 @@ function formatError(error: unknown) {
         </NvButton>
       </template>
     </NvPageHeader>
+
+    <ListScopeMeta
+      :scope="mesScope"
+      source="工序任务服务（服务端按当前主体与所选授权作业范围过滤）"
+      :loaded="operationTasks.length"
+      :total="operationTasksTotal"
+      :updated-at="operationTasksLastUpdatedAt"
+      :empty="
+        !operationListScopeReady ||
+        (operationTasksHasSuccessfulResponse && !operationTasksError && operationTasks.length === 0)
+      "
+      :failed="operationTasksHasFailedResponse || Boolean(operationTasksError)"
+      failure-explanation="工序任务服务未成功返回，请重试。"
+      :empty-explanation="mesEmptyExplanation"
+    />
+
+    <p
+      v-if="operationListScopeMessage"
+      data-testid="operation-list-scope-message"
+      class="text-sm text-destructive"
+      role="alert"
+    >
+      {{ operationListScopeMessage }}
+    </p>
 
     <NvToolbar v-model:search="keyword" search-placeholder="搜索任务、工单、设备">
       <template #filters>

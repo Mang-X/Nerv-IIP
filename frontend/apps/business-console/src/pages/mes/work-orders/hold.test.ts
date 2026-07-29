@@ -75,6 +75,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
     refreshDetail: vi.fn(),
     refreshMaterialReadiness: vi.fn(),
     retryCancelPreview: vi.fn(),
+    workOrderManageScopeMessage: ref(''),
+    workOrderManageScopeReady: ref(true),
+    workOrderReadScopeMessage: ref(''),
   }),
   // 急单表单的「工序任务」改成只选，列表页新引入了工序任务读面。
   useMesOperationTasks: () => ({
@@ -104,8 +107,18 @@ vi.mock('@/composables/useBusinessMes', () => ({
     refreshWorkOrders: vi.fn(),
     workOrders: ref(detailState.workOrders),
     workOrdersError: ref(undefined),
+    workOrdersHasFailedResponse: ref(false),
+    workOrdersHasSuccessfulResponse: ref(true),
+    workOrdersLastUpdatedAt: ref('2026-07-30T00:00:00.000Z'),
     workOrdersPending: ref(false),
     workOrdersTotal: ref(detailState.workOrders.length),
+    workOrderReadScope: ref({
+      kind: 'work-center',
+      id: 'WC-A',
+      displayName: '精加工一线',
+    }),
+    workOrderReadScopeMessage: ref(''),
+    workOrderReadScopeReady: ref(true),
   }),
 }))
 

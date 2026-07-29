@@ -27,6 +27,11 @@ import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
+import {
+  useListFreshness,
+  useListResponseState,
+  useScopeBoundListResponse,
+} from './useListFreshness'
 import { useBusinessMasterDataResources } from './useBusinessMasterData'
 import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 import { executeLifecycleAction } from './lifecycleAction'
@@ -450,6 +455,18 @@ export function useBusinessEquipmentAlarms() {
       : undefined
   }
 
+  const alarmsScopeReady = computed(() => hasBusinessContext(businessContext))
+  const alarmsResponse = useScopeBoundListResponse(
+    () => alarmsQuery.data.value,
+    () => `${businessContext.organizationId.trim()}:${businessContext.environmentId.trim()}`,
+    alarmsScopeReady,
+  )
+  const alarmsLastUpdatedAt = useListFreshness(alarmsResponse, alarmsScopeReady)
+  const {
+    hasSuccessfulResponse: alarmsHasSuccessfulResponse,
+    hasFailedResponse: alarmsHasFailedResponse,
+  } = useListResponseState(alarmsResponse, alarmsScopeReady, () => alarmsQuery.isLoading.value)
+
   async function acknowledgeAlarm(alarmEventId: string, acknowledgedBy: string) {
     const scope = {
       principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
@@ -617,11 +634,19 @@ export function useBusinessEquipmentAlarms() {
     acknowledgeAlarm,
     alarms: computed<BusinessConsoleTelemetryAlarmEventItem[]>(() =>
       listItems<BusinessConsoleTelemetryAlarmEventItem, BusinessConsoleEquipmentAlarmListEnvelope>(
-        alarmsQuery.data.value,
+        alarmsResponse.value,
       ),
     ),
     alarmsError: alarmsQuery.error,
     alarmsPending: alarmsQuery.isLoading,
+    alarmsTotal: computed(() =>
+      alarmsResponse.value?.success ? (alarmsResponse.value.data?.total ?? 0) : 0,
+    ),
+    alarmsOrganizationId: computed(() => businessContext.organizationId),
+    alarmsEnvironmentId: computed(() => businessContext.environmentId),
+    alarmsLastUpdatedAt,
+    alarmsHasSuccessfulResponse,
+    alarmsHasFailedResponse,
     refreshAlarms: () => refetchWithBusinessContext(businessContext, alarmsQuery),
     shelveAlarm,
     unshelveAlarm,

@@ -19,8 +19,13 @@ import {
 } from '@nerv-iip/business-core'
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
+import {
+  useListFreshness,
+  useListResponseState,
+  useScopeBoundListResponse,
+} from '@/composables/useListFreshness'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive, shallowRef, toValue, type MaybeRefOrGetter } from 'vue'
+import { computed, reactive, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { makeIdempotencyKey } from './makeIdempotencyKey'
 
 const DEFAULT_TAKE = 100
@@ -80,6 +85,7 @@ export function useBusinessQualityInspectionTasks() {
   const environmentId = computed(() => auth.principal?.environmentId ?? '')
   const inspectorUserId = computed(() => auth.principal?.principalId ?? '')
   const scopeReady = computed(() => Boolean(organizationId.value && environmentId.value))
+  const scopeKey = computed(() => `${organizationId.value.trim()}:${environmentId.value.trim()}`)
 
   const queryCache = useQueryCache()
   const filters = reactive<InspectionTaskFilters>({
@@ -100,6 +106,17 @@ export function useBusinessQualityInspectionTasks() {
     }),
     enabled: scopeReady.value,
   }))
+  const currentResponse = useScopeBoundListResponse(
+    () => listQuery.data.value,
+    scopeKey,
+    scopeReady,
+  )
+  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    currentResponse,
+    scopeReady,
+    listQuery.isLoading,
+  )
 
   // 原因码目录（计数特性判不合格时的 Picker 数据源）：只取启用项，小目录一次拉全。
   const reasonCodesQuery = useQuery(() => ({
@@ -121,11 +138,21 @@ export function useBusinessQualityInspectionTasks() {
 
   // 超出基础查询（take ≤ MAX_TAKE）之外、按页聚合的补充任务页——「加载更多 / 扫码全量」共用。
   const extraTasks = shallowRef<BusinessConsoleQualityInspectionTaskItem[]>([])
+  let paginationEpoch = 0
+  watch(
+    [scopeKey, () => filters.status],
+    () => {
+      paginationEpoch += 1
+      extraTasks.value = []
+    },
+    { flush: 'sync' },
+  )
 
   const submitMutation = useMutation({
     ...createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions(),
     onSuccess() {
       // 基础页失效重取；聚合补充页会 stale，一并丢弃（需要时再按页重聚合）。
+      paginationEpoch += 1
       extraTasks.value = []
       void queryCache
         .invalidateQueries({ predicate: isInspectionTasksQuery })
@@ -134,28 +161,55 @@ export function useBusinessQualityInspectionTasks() {
   })
 
   const baseTasks = computed<BusinessConsoleQualityInspectionTaskItem[]>(() =>
-    listItems<BusinessConsoleQualityInspectionTaskItem>(listQuery.data.value),
+    listItems<BusinessConsoleQualityInspectionTaskItem>(currentResponse.value),
   )
   const tasks = computed<BusinessConsoleQualityInspectionTaskItem[]>(() => {
     if (extraTasks.value.length === 0) return baseTasks.value
     const seen = new Set(baseTasks.value.map((t) => t.inspectionTaskId))
     return [...baseTasks.value, ...extraTasks.value.filter((t) => !seen.has(t.inspectionTaskId))]
   })
-  const total = computed(() => listTotal(listQuery.data.value))
+  const total = computed(() => listTotal(currentResponse.value))
   const loaded = computed(() => tasks.value.length)
   const hasMore = computed(() => loaded.value < total.value)
 
+  function capturePaginationScope() {
+    return {
+      epoch: paginationEpoch,
+      key: scopeKey.value,
+      organizationId: organizationId.value,
+      environmentId: environmentId.value,
+      status: filters.status,
+    }
+  }
+
+  function isCurrentPaginationScope(execution: ReturnType<typeof capturePaginationScope>) {
+    return (
+      scopeReady.value &&
+      paginationEpoch === execution.epoch &&
+      scopeKey.value === execution.key &&
+      filters.status === execution.status
+    )
+  }
+
   /** 受限拉取一页（take 不超上限），返回该页 items；失败抛错由调用方处理。 */
-  async function fetchPage(skip: number, take: number) {
+  async function fetchPage(
+    skip: number,
+    take: number,
+    execution: ReturnType<typeof capturePaginationScope>,
+  ) {
     const { data } = await listBusinessConsoleQualityInspectionTasks({
       query: {
-        organizationId: organizationId.value,
-        environmentId: environmentId.value,
-        status: filters.status,
+        organizationId: execution.organizationId,
+        environmentId: execution.environmentId,
+        status: execution.status,
         skip,
         take: Math.min(Math.max(take, 1), MAX_TAKE),
       },
     })
+    if (!isCurrentPaginationScope(execution)) return null
+    if (data?.success !== true) {
+      throw new Error(data?.message?.trim() || '待检任务分页查询失败，请刷新重试。')
+    }
     return listItems<BusinessConsoleQualityInspectionTaskItem>(data)
   }
 
@@ -169,7 +223,9 @@ export function useBusinessQualityInspectionTasks() {
       filters.take = Math.min(filters.take + DEFAULT_TAKE, MAX_TAKE)
       return
     }
-    const page = await fetchPage(loaded.value, MAX_TAKE)
+    const execution = capturePaginationScope()
+    const page = await fetchPage(loaded.value, MAX_TAKE, execution)
+    if (!page || !isCurrentPaginationScope(execution)) return
     if (page.length > 0) extraTasks.value = [...extraTasks.value, ...page]
   }
 
@@ -180,9 +236,15 @@ export function useBusinessQualityInspectionTasks() {
    */
   async function ensureAllLoaded() {
     if (!scopeReady.value) return tasks.value
+    const execution = capturePaginationScope()
     // 防御：空页即止（total 与实际漂移时不空转）。
-    while (hasMore.value) {
-      const page = await fetchPage(loaded.value, Math.min(MAX_TAKE, total.value - loaded.value))
+    while (hasMore.value && isCurrentPaginationScope(execution)) {
+      const page = await fetchPage(
+        loaded.value,
+        Math.min(MAX_TAKE, total.value - loaded.value),
+        execution,
+      )
+      if (!page || !isCurrentPaginationScope(execution)) break
       if (page.length === 0) break
       extraTasks.value = [...extraTasks.value, ...page]
     }
@@ -286,6 +348,9 @@ export function useBusinessQualityInspectionTasks() {
     ensureAllLoaded,
     pending: listQuery.isLoading,
     error: listQuery.error,
+    lastUpdatedAt,
+    hasSuccessfulResponse,
+    hasFailedResponse,
     refresh: () => (scopeReady.value ? listQuery.refetch() : Promise.resolve()),
     reasonCodes,
     submitInspection,

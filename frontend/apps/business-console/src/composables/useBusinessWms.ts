@@ -59,6 +59,11 @@ import {
   withBusinessContextEnabled,
 } from './businessContextBinding'
 import { executeLifecycleAction } from './lifecycleAction'
+import {
+  useListFreshness,
+  useListResponseState,
+  useScopeBoundListResponse,
+} from './useListFreshness'
 
 const DEFAULT_TAKE = 100
 const RECEIVING_QUALITY_POLL_INTERVAL_MS = 10_000
@@ -230,6 +235,14 @@ function requireSuccessfulList<TItem>(
   return result.data.data?.items ?? []
 }
 
+function listScopeReady(filters: { organizationId: string; environmentId: string }) {
+  return filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0
+}
+
+function listScopeKey(filters: { organizationId: string; environmentId: string }) {
+  return `${filters.organizationId.trim()}:${filters.environmentId.trim()}`
+}
+
 export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilters> = {}) {
   const auth = useAuthStore()
   const filters = defaultFilters<WmsInboundListFilters>(initialFilters)
@@ -253,6 +266,24 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
     ),
     autoRefetch: () => RECEIVING_QUALITY_POLL_INTERVAL_MS,
   }))
+  const inboundOrdersScopeReady = computed(() => listScopeReady(filters))
+  const inboundOrdersResponse = useScopeBoundListResponse(
+    () => inboundOrdersQuery.data.value,
+    () => listScopeKey(filters),
+    inboundOrdersScopeReady,
+  )
+  const inboundOrdersLastUpdatedAt = useListFreshness(
+    inboundOrdersResponse,
+    inboundOrdersScopeReady,
+  )
+  const {
+    hasSuccessfulResponse: inboundOrdersHasSuccessfulResponse,
+    hasFailedResponse: inboundOrdersHasFailedResponse,
+  } = useListResponseState(
+    inboundOrdersResponse,
+    inboundOrdersScopeReady,
+    () => inboundOrdersQuery.isLoading.value,
+  )
   const receivingQualityGatesQuery = useQuery(() =>
     withBusinessContextEnabled(
       {
@@ -393,11 +424,11 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
     filters,
     inboundOrders: computed<BusinessConsoleWmsInboundOrderItem[]>(() =>
       listItems<BusinessConsoleWmsInboundOrderItem>(
-        inboundOrdersQuery.data.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
+        inboundOrdersResponse.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
       ),
     ),
     inventoryContext: computed<BusinessConsoleWmsInventoryContext | undefined>(() => {
-      const envelope = inboundOrdersQuery.data.value as
+      const envelope = inboundOrdersResponse.value as
         | BusinessConsoleWmsInboundOrderListEnvelope
         | undefined
       return envelope?.success ? (envelope.data?.inventoryContext ?? undefined) : undefined
@@ -406,9 +437,12 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
     inboundOrdersPending: inboundOrdersQuery.isLoading,
     inboundOrdersTotal: computed(() =>
       listTotal(
-        inboundOrdersQuery.data.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
+        inboundOrdersResponse.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
       ),
     ),
+    inboundOrdersLastUpdatedAt,
+    inboundOrdersHasSuccessfulResponse,
+    inboundOrdersHasFailedResponse,
     refreshInboundOrders: () => refetchWithBusinessContext(filters, inboundOrdersQuery),
     receivingQualityGates: computed<BusinessConsoleWmsReceivingQualityGateItem[]>(() =>
       listItems<BusinessConsoleWmsReceivingQualityGateItem>(
@@ -451,6 +485,24 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
       }),
       filters,
     ),
+  )
+  const outboundOrdersScopeReady = computed(() => listScopeReady(filters))
+  const outboundOrdersResponse = useScopeBoundListResponse(
+    () => outboundOrdersQuery.data.value,
+    () => listScopeKey(filters),
+    outboundOrdersScopeReady,
+  )
+  const outboundOrdersLastUpdatedAt = useListFreshness(
+    outboundOrdersResponse,
+    outboundOrdersScopeReady,
+  )
+  const {
+    hasSuccessfulResponse: outboundOrdersHasSuccessfulResponse,
+    hasFailedResponse: outboundOrdersHasFailedResponse,
+  } = useListResponseState(
+    outboundOrdersResponse,
+    outboundOrdersScopeReady,
+    () => outboundOrdersQuery.isLoading.value,
   )
 
   const completeOutboundPending = shallowRef(false)
@@ -546,16 +598,19 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
     filters,
     outboundOrders: computed<BusinessConsoleWmsOutboundOrderItem[]>(() =>
       listItems<BusinessConsoleWmsOutboundOrderItem>(
-        outboundOrdersQuery.data.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
+        outboundOrdersResponse.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
       ),
     ),
     outboundOrdersError: outboundOrdersQuery.error,
     outboundOrdersPending: outboundOrdersQuery.isLoading,
     outboundOrdersTotal: computed(() =>
       listTotal(
-        outboundOrdersQuery.data.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
+        outboundOrdersResponse.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
       ),
     ),
+    outboundOrdersLastUpdatedAt,
+    outboundOrdersHasSuccessfulResponse,
+    outboundOrdersHasFailedResponse,
     refreshOutboundOrders: () => refetchWithBusinessContext(filters, outboundOrdersQuery),
     completeOutbound: completeOutboundOrder,
     completeOutboundPending,
@@ -657,6 +712,21 @@ export function useWmsPutawayTasks(initialFilters: Partial<WmsWarehouseTaskListF
       filters,
     ),
   )
+  const putawayTasksScopeReady = computed(() => listScopeReady(filters))
+  const putawayTasksResponse = useScopeBoundListResponse(
+    () => putawayTasksQuery.data.value,
+    () => listScopeKey(filters),
+    putawayTasksScopeReady,
+  )
+  const putawayTasksLastUpdatedAt = useListFreshness(putawayTasksResponse, putawayTasksScopeReady)
+  const {
+    hasSuccessfulResponse: putawayTasksHasSuccessfulResponse,
+    hasFailedResponse: putawayTasksHasFailedResponse,
+  } = useListResponseState(
+    putawayTasksResponse,
+    putawayTasksScopeReady,
+    () => putawayTasksQuery.isLoading.value,
+  )
 
   const createMutation = useMutation({
     ...createBusinessConsoleWmsPutawayTaskMutationOptions(),
@@ -669,16 +739,19 @@ export function useWmsPutawayTasks(initialFilters: Partial<WmsWarehouseTaskListF
     filters,
     putawayTasks: computed<BusinessConsoleWmsWarehouseTaskItem[]>(() =>
       listItems<BusinessConsoleWmsWarehouseTaskItem>(
-        putawayTasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
+        putawayTasksResponse.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
       ),
     ),
     putawayTasksError: putawayTasksQuery.error,
     putawayTasksPending: putawayTasksQuery.isLoading,
     putawayTasksTotal: computed(() =>
       listTotal(
-        putawayTasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
+        putawayTasksResponse.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
       ),
     ),
+    putawayTasksLastUpdatedAt,
+    putawayTasksHasSuccessfulResponse,
+    putawayTasksHasFailedResponse,
     refreshPutawayTasks: () => refetchWithBusinessContext(filters, putawayTasksQuery),
     createPutaway: (inboundOrderId: string, body: BusinessConsoleCreateWmsPutawayTaskRequest) =>
       createMutation.mutateAsync({
@@ -702,6 +775,21 @@ export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListF
       filters,
     ),
   )
+  const pickingTasksScopeReady = computed(() => listScopeReady(filters))
+  const pickingTasksResponse = useScopeBoundListResponse(
+    () => pickingTasksQuery.data.value,
+    () => listScopeKey(filters),
+    pickingTasksScopeReady,
+  )
+  const pickingTasksLastUpdatedAt = useListFreshness(pickingTasksResponse, pickingTasksScopeReady)
+  const {
+    hasSuccessfulResponse: pickingTasksHasSuccessfulResponse,
+    hasFailedResponse: pickingTasksHasFailedResponse,
+  } = useListResponseState(
+    pickingTasksResponse,
+    pickingTasksScopeReady,
+    () => pickingTasksQuery.isLoading.value,
+  )
 
   const createMutation = useMutation({
     ...createBusinessConsoleWmsPickingTaskMutationOptions(),
@@ -714,16 +802,19 @@ export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListF
     filters,
     pickingTasks: computed<BusinessConsoleWmsWarehouseTaskItem[]>(() =>
       listItems<BusinessConsoleWmsWarehouseTaskItem>(
-        pickingTasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
+        pickingTasksResponse.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
       ),
     ),
     pickingTasksError: pickingTasksQuery.error,
     pickingTasksPending: pickingTasksQuery.isLoading,
     pickingTasksTotal: computed(() =>
       listTotal(
-        pickingTasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
+        pickingTasksResponse.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
       ),
     ),
+    pickingTasksLastUpdatedAt,
+    pickingTasksHasSuccessfulResponse,
+    pickingTasksHasFailedResponse,
     refreshPickingTasks: () => refetchWithBusinessContext(filters, pickingTasksQuery),
     createPicking: (outboundOrderId: string, body: BusinessConsoleCreateWmsPickingTaskRequest) =>
       createMutation.mutateAsync({
@@ -750,6 +841,24 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
       }),
       filters,
     ),
+  )
+  const countExecutionsScopeReady = computed(() => listScopeReady(filters))
+  const countExecutionsResponse = useScopeBoundListResponse(
+    () => countExecutionsQuery.data.value,
+    () => listScopeKey(filters),
+    countExecutionsScopeReady,
+  )
+  const countExecutionsLastUpdatedAt = useListFreshness(
+    countExecutionsResponse,
+    countExecutionsScopeReady,
+  )
+  const {
+    hasSuccessfulResponse: countExecutionsHasSuccessfulResponse,
+    hasFailedResponse: countExecutionsHasFailedResponse,
+  } = useListResponseState(
+    countExecutionsResponse,
+    countExecutionsScopeReady,
+    () => countExecutionsQuery.isLoading.value,
   )
 
   const createMutation = useMutation({
@@ -848,16 +957,19 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
     filters,
     countExecutions: computed<BusinessConsoleWmsCountExecutionItem[]>(() =>
       listItems<BusinessConsoleWmsCountExecutionItem>(
-        countExecutionsQuery.data.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
+        countExecutionsResponse.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
       ),
     ),
     countExecutionsError: countExecutionsQuery.error,
     countExecutionsPending: countExecutionsQuery.isLoading,
     countExecutionsTotal: computed(() =>
       listTotal(
-        countExecutionsQuery.data.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
+        countExecutionsResponse.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
       ),
     ),
+    countExecutionsLastUpdatedAt,
+    countExecutionsHasSuccessfulResponse,
+    countExecutionsHasFailedResponse,
     refreshCountExecutions: () => refetchWithBusinessContext(filters, countExecutionsQuery),
     createCountExecution: (body: BusinessConsoleCreateWmsCountExecutionRequest) =>
       createMutation.mutateAsync({ body }),

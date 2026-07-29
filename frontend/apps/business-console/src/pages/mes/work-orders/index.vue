@@ -21,6 +21,7 @@ import {
 } from '@/composables/useUrgencyDisplayMode'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import WorkOrderDetailSheet from '@/components/mes/WorkOrderDetailSheet.vue'
+import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
@@ -85,8 +86,14 @@ const {
   refreshWorkOrders,
   workOrders,
   workOrdersError,
+  workOrdersHasFailedResponse,
+  workOrdersHasSuccessfulResponse,
+  workOrdersLastUpdatedAt,
   workOrdersPending,
   workOrdersTotal,
+  workOrderReadScope,
+  workOrderReadScopeMessage,
+  workOrderReadScopeReady,
 } = useMesWorkOrders()
 const orderUrgencies = useOrderUrgencies(
   computed(() => workOrders.value.map((order) => order.workOrderId)),
@@ -144,6 +151,24 @@ const rushForm = reactive({
 const reportContext = shallowRef<ProductionReportContext | null>(null)
 
 const listErrorMessage = computed(() => formatError(workOrdersError.value))
+const workScopeKindLabels: Record<string, string> = {
+  self: '本人',
+  team: '班组',
+  'work-center': '工作中心',
+  workshop: '车间',
+  organization: '组织',
+}
+const workOrderScopeLabel = computed(() => {
+  const selectedScope = workOrderReadScope.value
+  if (!selectedScope) return '当前主体授权工单范围未就绪'
+  const kind = workScopeKindLabels[selectedScope.kind] ?? selectedScope.kind
+  return `当前主体授权工单范围 · ${selectedScope.displayName || selectedScope.id}（${kind}）`
+})
+const workOrderEmptyExplanation = computed(() =>
+  workOrderReadScopeReady.value
+    ? '当前主体授权工单范围内暂无生产工单。'
+    : workOrderReadScopeMessage.value || '尚未取得当前主体的授权工单范围，未发起查询。',
+)
 
 const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
 const skuOptions = computed(() => toResourceOptions(skus.value))
@@ -456,6 +481,29 @@ function isNonEmpty(value: string) {
         </NvButton>
       </template>
     </NvPageHeader>
+
+    <ListScopeMeta
+      :scope="workOrderScopeLabel"
+      source="生产工单服务（服务端按当前主体与所选授权工单范围过滤）"
+      :loaded="workOrders.length"
+      :total="workOrdersTotal"
+      :updated-at="workOrdersLastUpdatedAt"
+      :empty="
+        !workOrderReadScopeReady ||
+        (workOrdersHasSuccessfulResponse && !workOrdersError && workOrders.length === 0)
+      "
+      :failed="workOrdersHasFailedResponse || Boolean(workOrdersError)"
+      failure-explanation="生产工单服务未成功返回，请重试。"
+      :empty-explanation="workOrderEmptyExplanation"
+    />
+    <p
+      v-if="workOrderReadScopeMessage"
+      class="text-sm text-destructive"
+      role="alert"
+      data-testid="work-order-read-scope-message"
+    >
+      {{ workOrderReadScopeMessage }}
+    </p>
 
     <NvToolbar v-model:search="keyword" search-placeholder="搜索工单、物料、生产版本">
       <template #filters>

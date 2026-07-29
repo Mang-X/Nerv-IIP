@@ -83,6 +83,9 @@ const {
   refreshDetail,
   refreshMaterialReadiness,
   retryCancelPreview,
+  workOrderManageScopeMessage,
+  workOrderManageScopeReady,
+  workOrderReadScopeMessage,
 } = useMesWorkOrderDetail()
 
 watch(
@@ -244,6 +247,7 @@ const cancelForm = reactive({ reasonCode: '', remark: '' })
 const currentStatus = computed(() => (detail.value?.status ?? '').toLowerCase())
 const canCancel = computed(
   () =>
+    workOrderManageScopeReady.value &&
     CANCELLABLE_STATUSES.has(currentStatus.value) &&
     statusActionGate({
       domain: 'mes-work-order',
@@ -253,6 +257,9 @@ const canCancel = computed(
 )
 const cancelDisabledReason = computed(() => {
   if (!detail.value) return '工单信息加载中，请稍候。'
+  if (!workOrderManageScopeReady.value) {
+    return workOrderManageScopeMessage.value || '尚未取得当前主体的工单管理范围。'
+  }
   if (canCancel.value) return ''
   const reasons: Record<string, string> = {
     started: '工单已开工，无法取消；请先处理在制工序。',
@@ -337,7 +344,7 @@ const remarkMaxLength = computed(() =>
 )
 const canSubmitCancel = computed(() => {
   // 破坏性动作：两项补偿预览成功拿到数据前禁用确认（慢网/失败时不允许在空数据上确认）。
-  if (!cancelPreviewReady.value) return false
+  if (!workOrderManageScopeReady.value || !cancelPreviewReady.value) return false
   // 存在无批次却可退的已收料申请时，后端会拒绝整单取消——前置阻断，不允许确认。
   if (unreturnableNoLotRows.value.length > 0) return false
   if (!cancelForm.reasonCode) return false
@@ -506,6 +513,15 @@ function formatError(error: unknown) {
         </NvTooltipProvider>
       </template>
     </NvPageHeader>
+
+    <p
+      v-if="workOrderReadScopeMessage"
+      class="text-sm text-destructive"
+      role="alert"
+      data-testid="work-order-read-scope-message"
+    >
+      {{ workOrderReadScopeMessage }}
+    </p>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 

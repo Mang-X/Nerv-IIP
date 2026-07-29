@@ -33,6 +33,7 @@ import {
 } from '@/composables/useBusinessMes'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useMesReportIdentity } from '@/composables/useMesReportIdentity'
 
@@ -60,6 +61,12 @@ const {
   pending: workOrdersPending,
   error: workOrdersError,
   refresh: refreshWorkOrders,
+  lastUpdatedAt: workOrdersLastUpdatedAt,
+  hasSuccessfulResponse: workOrdersHasSuccessfulResponse,
+  hasFailedResponse: workOrdersHasFailedResponse,
+  workOrderReadScope: workOrderListReadScope,
+  workOrderReadScopeMessage: workOrderListReadScopeMessage,
+  workOrderReadScopeReady: workOrderListReadScopeReady,
 } = useMesWorkOrders()
 
 const {
@@ -67,6 +74,11 @@ const {
   pending: workOrderDetailPending,
   error: workOrderDetailError,
   refresh: refreshWorkOrderDetail,
+  lastUpdatedAt: workOrderDetailLastUpdatedAt,
+  hasSuccessfulResponse: workOrderDetailHasSuccessfulResponse,
+  hasFailedResponse: workOrderDetailHasFailedResponse,
+  workOrderReadScope: workOrderDetailReadScope,
+  workOrderReadScopeMessage: workOrderDetailReadScopeMessage,
 } = useMesWorkOrderDetail(routeWorkOrderId)
 const routeOperationTaskId = computed(() => {
   const value = route.query.operationTaskId
@@ -77,6 +89,8 @@ const {
   pending: exactOperationTaskPending,
   error: exactOperationTaskError,
   refresh: refreshExactOperationTask,
+  reportingReadScopeMessage: exactOperationTaskScopeMessage,
+  reportingReadScopeReady: exactOperationTaskScopeReady,
 } = useMesExactOperationTask(routeWorkOrderId, routeOperationTaskId, workOrderDetail)
 
 const {
@@ -96,6 +110,8 @@ const {
   exactOperationTask,
   exactOperationTaskPending,
   exactOperationTaskError,
+  exactOperationTaskScopeReady,
+  exactOperationTaskScopeMessage,
 })
 
 const { recordReport, reportScopeMessage, reportScopePending, reportScopeReady } =
@@ -244,6 +260,39 @@ function taskSubtitle(task: Task) {
   if (task.workCenterId) parts.push(`工作中心 ${task.workCenterId}`)
   return parts.join(' · ')
 }
+
+const workScopeKindLabels: Record<string, string> = {
+  self: '本人',
+  team: '班组',
+  'work-center': '工作中心',
+  workshop: '车间',
+  organization: '组织',
+}
+function workScopeLabel(scope: { kind: string; id: string; displayName?: string } | undefined) {
+  if (!scope) return '当前主体授权工单范围未就绪'
+  const kind = workScopeKindLabels[scope.kind] ?? scope.kind
+  return `当前主体授权工单范围 · ${scope.displayName || scope.id}（${kind}）`
+}
+const workOrderScope = computed(() => workScopeLabel(workOrderListReadScope.value))
+const workOrderEmptyExplanation = computed(() =>
+  workOrderListReadScopeReady.value
+    ? '当前主体授权工单范围内暂无生产工单。'
+    : workOrderListReadScopeMessage.value || '尚未取得当前主体的授权工单范围，未发起查询。',
+)
+const showWorkOrdersEmpty = computed(
+  () =>
+    !workOrdersPending.value &&
+    !workOrdersError.value &&
+    !workOrdersHasFailedResponse.value &&
+    workOrdersHasSuccessfulResponse.value &&
+    workOrders.value.length === 0,
+)
+const operationTaskScope = computed(() => workScopeLabel(workOrderDetailReadScope.value))
+const operationTaskEmptyExplanation = computed(
+  () =>
+    workOrderDetailReadScopeMessage.value ||
+    '当前空态只代表所选授权工单返回的工序集合为空；接口未提供工序总数。',
+)
 
 // --- 步骤操作 ---
 function chooseWorkOrder(wo: WorkOrder) {
@@ -452,6 +501,31 @@ function onScanWorkOrder(value: string) {
         {{ routeIssue }}
       </p>
       <section
+        v-if="
+          currentStep === 'selectWorkOrder' &&
+          routeWorkOrderId &&
+          (workOrderDetailError || workOrderDetailHasFailedResponse)
+        "
+        class="space-y-2"
+      >
+        <ListScopeMeta
+          :scope="operationTaskScope"
+          source="生产工单详情服务（服务端按当前主体与所选授权工单范围校验）"
+          :loaded="0"
+          :total="0"
+          :updated-at="workOrderDetailLastUpdatedAt"
+          failed
+          failure-explanation="工单详情服务未成功返回，请重试。"
+        />
+        <RetryableListError
+          :error="workOrderDetailError ?? '工单详情服务未成功返回'"
+          :pending="workOrderDetailPending"
+          fallback="加载工单详情失败，请重试。"
+          test-id="work-order-detail-error"
+          @retry="() => refreshWorkOrderDetail()"
+        />
+      </section>
+      <section
         v-if="telemetryQueue.candidates.value.length"
         class="space-y-3 rounded-lg border border-warning/40 bg-warning/5 p-3"
       >
@@ -503,16 +577,27 @@ function onScanWorkOrder(value: string) {
       <template v-if="currentStep === 'selectWorkOrder'">
         <NvScanBar placeholder="扫描工单号" :active="scanActive" @scan="onScanWorkOrder" />
         <p class="text-sm text-muted-foreground">选择报工的工单（共 {{ workOrderTotal }} 张）</p>
+        <ListScopeMeta
+          :scope="workOrderScope"
+          source="生产工单服务（服务端按当前主体与所选授权工单范围过滤）"
+          :loaded="workOrders.length"
+          :total="workOrderTotal"
+          :updated-at="workOrdersLastUpdatedAt"
+          :failed="workOrdersHasFailedResponse || Boolean(workOrdersError)"
+          failure-explanation="生产工单服务未成功返回，请刷新重试。"
+          :empty="!workOrderListReadScopeReady || showWorkOrdersEmpty"
+          :empty-explanation="workOrderEmptyExplanation"
+        />
         <RetryableListError
-          v-if="workOrdersError"
-          :error="workOrdersError"
+          v-if="workOrdersError || workOrdersHasFailedResponse"
+          :error="workOrdersError ?? '生产工单服务未成功返回'"
           :pending="workOrdersPending"
           fallback="加载工单失败，请下拉刷新或重试。"
           test-id="work-orders-error"
           @retry="() => refreshWorkOrders()"
         />
         <div
-          v-else-if="!workOrdersPending && workOrders.length === 0"
+          v-else-if="showWorkOrdersEmpty"
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
         >
           暂无可报工的工单
@@ -549,11 +634,41 @@ function onScanWorkOrder(value: string) {
           </button>
         </div>
 
+        <ListScopeMeta
+          :scope="operationTaskScope"
+          source="生产工序服务（当前主体授权工单详情返回集合，接口未提供服务总数）"
+          :loaded="visibleOperationTasks.length"
+          :total="visibleOperationTasks.length"
+          :updated-at="workOrderDetailLastUpdatedAt"
+          :failed="workOrderDetailHasFailedResponse || Boolean(workOrderDetailError)"
+          failure-explanation="工单详情服务未成功返回，请重试。"
+          :empty="
+            !workOrderDetailPending &&
+            !workOrderDetailError &&
+            workOrderDetailHasSuccessfulResponse &&
+            selectedWorkOrder !== null &&
+            visibleOperationTasks.length === 0
+          "
+          :empty-explanation="operationTaskEmptyExplanation"
+        />
+        <RetryableListError
+          v-if="workOrderDetailError || workOrderDetailHasFailedResponse"
+          :error="workOrderDetailError ?? '工单详情服务未成功返回'"
+          :pending="workOrderDetailPending"
+          fallback="加载工单详情失败，请重试。"
+          test-id="work-order-detail-error"
+          @retry="() => refreshWorkOrderDetail()"
+        />
         <p class="text-sm text-muted-foreground">
           选择要报工的工序（共 {{ visibleOperationTasks.length }} 道）
         </p>
         <div
-          v-if="!workOrderDetailPending && visibleOperationTasks.length === 0"
+          v-if="
+            !workOrderDetailPending &&
+            !workOrderDetailError &&
+            workOrderDetailHasSuccessfulResponse &&
+            visibleOperationTasks.length === 0
+          "
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
         >
           该工单暂无工序

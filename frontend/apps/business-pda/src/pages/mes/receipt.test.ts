@@ -13,6 +13,8 @@ const refreshReceipts = vi.fn(async () => {})
 const refreshWorkOrders = vi.fn(async () => {})
 
 const receiptFilters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
   keyword: undefined as string | undefined,
   status: undefined as string | undefined,
   workOrderId: undefined as string | undefined,
@@ -52,6 +54,9 @@ const workOrders = [
 const receiptsPending = ref(false)
 const receiptsError = ref<unknown>(null)
 const receiptRows = ref(receipts)
+const receiptsLastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
+const receiptsHasSuccessfulResponse = ref(true)
+const receiptsHasFailedResponse = ref(false)
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesReceipts: () => ({
@@ -60,6 +65,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
     total: computed(() => receiptRows.value.length),
     pending: receiptsPending,
     error: receiptsError,
+    lastUpdatedAt: receiptsLastUpdatedAt,
+    hasSuccessfulResponse: receiptsHasSuccessfulResponse,
+    hasFailedResponse: receiptsHasFailedResponse,
     refresh: refreshReceipts,
     createReceipt,
   }),
@@ -81,10 +89,15 @@ describe('PDA MES finished-goods receipt page', () => {
     createReceipt.mockResolvedValue(undefined)
     push.mockClear()
     receiptFilters.keyword = undefined
+    receiptFilters.organizationId = 'org-001'
+    receiptFilters.environmentId = 'env-dev'
     workOrderFilters.keyword = undefined
     receiptsPending.value = false
     receiptsError.value = null
     receiptRows.value = receipts
+    receiptsHasSuccessfulResponse.value = true
+    receiptsHasFailedResponse.value = false
+    refreshReceipts.mockClear()
   })
 
   it('renders the receipt list with readable Chinese status and work order numbers', () => {
@@ -97,6 +110,10 @@ describe('PDA MES finished-goods receipt page', () => {
     expect(wrapper.text()).toContain('已入库')
     expect(wrapper.text()).not.toContain('Requested')
     expect(wrapper.text()).not.toContain('Received')
+    expect(wrapper.text()).toContain('范围：当前登录组织 / 当前业务环境')
+    expect(wrapper.text()).toContain('来源：生产完工入库申请服务（组织/环境范围）')
+    expect(wrapper.text()).toContain('已加载 2 / 共 2')
+    expect(wrapper.text()).toContain('最近成功响应')
   })
 
   it('shows the list error (not the empty state) when the receipts query fails', async () => {
@@ -110,6 +127,43 @@ describe('PDA MES finished-goods receipt page', () => {
     expect(alert.text()).toContain('加载失败：网络异常')
     // 错误态不应退化为「暂无完工入库申请」空态
     expect(wrapper.text()).not.toContain('暂无完工入库申请')
+    expect(wrapper.find('[data-testid="list-empty-explanation"]').exists()).toBe(false)
+  })
+
+  it('explains a successful empty organization-scope response without claiming personal ownership', async () => {
+    receiptRows.value = []
+    const wrapper = mount(ReceiptPage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('当前组织/环境范围暂无完工入库申请')
+    expect(wrapper.text()).toContain('不代表当前人员没有入库任务')
+  })
+
+  it('shows a retryable failure for success:false instead of a business empty state', async () => {
+    receiptRows.value = []
+    receiptsHasSuccessfulResponse.value = false
+    receiptsHasFailedResponse.value = true
+    const wrapper = mount(ReceiptPage)
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('完工入库申请服务未返回成功结果')
+    expect(wrapper.text()).not.toContain('当前组织/环境范围暂无完工入库申请')
+    await wrapper.get('[data-testid="retry-list"]').trigger('click')
+    expect(refreshReceipts).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not render cached receipt rows or totals after the organization scope is lost', async () => {
+    const wrapper = mount(ReceiptPage)
+    expect(wrapper.text()).toContain('FGR-2026-0001')
+
+    receiptFilters.organizationId = ''
+    receiptFilters.environmentId = ''
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('缺少组织或环境范围，未发起查询')
+    expect(wrapper.text()).toContain('已加载 0 / 共 0')
+    expect(wrapper.text()).not.toContain('FGR-2026-0001')
+    expect(wrapper.text()).not.toContain('SKU-A')
   })
 
   it('scanning sets the receipt keyword filter', async () => {
@@ -145,10 +199,14 @@ describe('PDA MES finished-goods receipt page', () => {
     const skuInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-sku"]')!
     skuInput.value = 'SKU-A'
     skuInput.dispatchEvent(new Event('input'))
-    const qtyInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-quantity"]')!
+    const qtyInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="receipt-quantity"]',
+    )!
     qtyInput.value = '20'
     qtyInput.dispatchEvent(new Event('input'))
-    const costInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-unit-cost"]')!
+    const costInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="receipt-unit-cost"]',
+    )!
     costInput.value = '12.34'
     costInput.dispatchEvent(new Event('input'))
     const uomInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-uom"]')!
@@ -191,10 +249,14 @@ describe('PDA MES finished-goods receipt page', () => {
       const skuInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-sku"]')!
       skuInput.value = sku
       skuInput.dispatchEvent(new Event('input'))
-      const qtyInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-quantity"]')!
+      const qtyInput = document.body.querySelector<HTMLInputElement>(
+        '[data-testid="receipt-quantity"]',
+      )!
       qtyInput.value = '20'
       qtyInput.dispatchEvent(new Event('input'))
-      const costInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-unit-cost"]')!
+      const costInput = document.body.querySelector<HTMLInputElement>(
+        '[data-testid="receipt-unit-cost"]',
+      )!
       costInput.value = '12.34'
       costInput.dispatchEvent(new Event('input'))
       const uomInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-uom"]')!

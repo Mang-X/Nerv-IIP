@@ -15,6 +15,11 @@ import {
   peekPendingBusinessIntent,
 } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
+import {
+  useListFreshness,
+  useListResponseState,
+  useScopeBoundListResponse,
+} from '@/composables/useListFreshness'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
@@ -77,7 +82,8 @@ function authScope() {
     () => auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
   )
   const scopeReady = computed(() => Boolean(organizationId.value && environmentId.value))
-  return { organizationId, environmentId, actor, principalId, scopeReady }
+  const scopeKey = computed(() => `${organizationId.value.trim()}:${environmentId.value.trim()}`)
+  return { organizationId, environmentId, actor, principalId, scopeReady, scopeKey }
 }
 
 /**
@@ -86,7 +92,8 @@ function authScope() {
  * `total` 仍是符合条件的全部条数。
  */
 export function useUnacknowledgedAlarmCount(enabled: MaybeRefOrGetter<boolean> = true) {
-  const { organizationId, environmentId, scopeReady } = authScope()
+  const { organizationId, environmentId, scopeReady, scopeKey } = authScope()
+  const queryEnabled = computed(() => scopeReady.value && toValue(enabled))
   const raisedQuery = useQuery(() => ({
     ...listBusinessConsoleEquipmentAlarmsQueryOptions({
       query: {
@@ -98,14 +105,26 @@ export function useUnacknowledgedAlarmCount(enabled: MaybeRefOrGetter<boolean> =
       },
     }),
     // 调用方可再按权限门（如首页仅报警读权限主体才查询）。
-    enabled: scopeReady.value && toValue(enabled),
+    enabled: queryEnabled.value,
   }))
+  const currentResponse = useScopeBoundListResponse(
+    () => raisedQuery.data.value,
+    scopeKey,
+    queryEnabled,
+  )
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    currentResponse,
+    queryEnabled,
+    raisedQuery.isLoading,
+  )
 
   return {
     unacknowledgedCount: computed(() =>
-      listTotal(raisedQuery.data.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined),
+      listTotal(currentResponse.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined),
     ),
     pending: raisedQuery.isLoading,
+    hasSuccessfulResponse,
+    hasFailedResponse,
   }
 }
 
@@ -124,7 +143,7 @@ export function useUnacknowledgedAlarmCount(enabled: MaybeRefOrGetter<boolean> =
  * 不创建新意图盲重放。
  */
 export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlarmFilters> = {}) {
-  const { organizationId, environmentId, actor, principalId, scopeReady } = authScope()
+  const { organizationId, environmentId, actor, principalId, scopeReady, scopeKey } = authScope()
   const queryCache = useQueryCache()
   const filters = reactive<EquipmentAlarmFilters>({
     skip: 0,
@@ -144,6 +163,17 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     }),
     enabled: scopeReady.value,
   }))
+  const currentResponse = useScopeBoundListResponse(
+    () => listQuery.data.value,
+    scopeKey,
+    scopeReady,
+  )
+  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    currentResponse,
+    scopeReady,
+    listQuery.isLoading,
+  )
 
   const invalidate = () =>
     void queryCache.invalidateQueries({ predicate: isAlarmsQuery }).catch(ignoreBackgroundError)
@@ -310,7 +340,7 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
 
   const alarms = computed<BusinessConsoleTelemetryAlarmEventItem[]>(() => {
     const items = listItems<BusinessConsoleTelemetryAlarmEventItem>(
-      listQuery.data.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined,
+      currentResponse.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined,
     )
     // 服务端已按生命周期排好；前端同口径再排一次兜底（稳定副本，不改原数组）。
     return [...items].sort((a, b) => {
@@ -324,8 +354,14 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     filters,
     alarms,
     total: computed(() =>
-      listTotal(listQuery.data.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined),
+      listTotal(currentResponse.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined),
     ),
+    organizationId,
+    environmentId,
+    scopeReady,
+    lastUpdatedAt,
+    hasSuccessfulResponse,
+    hasFailedResponse,
     pending: listQuery.isLoading,
     error: listQuery.error,
     actionPending: computed(

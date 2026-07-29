@@ -14,6 +14,11 @@ import { useQuery } from '@pinia/colada'
 import { computed } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
+import {
+  useListFreshness,
+  useListResponseState,
+  useScopeBoundListResponse,
+} from '@/composables/useListFreshness'
 
 /**
  * 工作台首页数据封装：按登录人权限裁剪各域摘要。
@@ -264,7 +269,9 @@ export function useWarehouseSummary() {
 
 export function usePendingInspectionSummary() {
   const identity = usePdaIdentity()
-  const enabled = computed(() => identity.hasScope.value && identity.can(HOME_PERMISSIONS.quality))
+  const visible = computed(() => identity.can(HOME_PERMISSIONS.quality))
+  const scopeReady = identity.hasScope
+  const enabled = computed(() => scopeReady.value && visible.value)
 
   const tasksQuery = useQuery(() => ({
     ...listBusinessConsoleQualityInspectionTasksQueryOptions({
@@ -278,13 +285,30 @@ export function usePendingInspectionSummary() {
     }),
     enabled: enabled.value,
   }))
+  const scopeKey = computed(() =>
+    scopeReady.value ? `${identity.organizationId.value}:${identity.environmentId.value}` : '',
+  )
+  const currentResponse = useScopeBoundListResponse(() => tasksQuery.data.value, scopeKey, enabled)
+  const lastUpdatedAt = useListFreshness(currentResponse, enabled)
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    currentResponse,
+    enabled,
+    tasksQuery.isLoading,
+  )
 
   return {
+    visible,
+    scopeReady,
     enabled,
     tasks: computed<BusinessConsoleQualityInspectionTaskItem[]>(() =>
-      listItems<BusinessConsoleQualityInspectionTaskItem>(tasksQuery.data.value),
+      listItems<BusinessConsoleQualityInspectionTaskItem>(currentResponse.value),
     ),
-    total: computed(() => listTotal(tasksQuery.data.value)),
+    total: computed(() => listTotal(currentResponse.value)),
     pending: tasksQuery.isLoading,
+    error: tasksQuery.error,
+    lastUpdatedAt,
+    hasSuccessfulResponse,
+    hasFailedResponse,
+    refresh: () => (enabled.value ? tasksQuery.refetch() : Promise.resolve()),
   }
 }

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { shallowRef } from 'vue'
+import { nextTick, shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { useBusinessQualityInspectionTasks } from './useBusinessQualityInspectionTasks'
@@ -64,15 +64,15 @@ vi.mock('@pinia/colada', () => ({
 
 function seedPrincipal(overrides: Record<string, unknown> = {}) {
   const auth = useAuthStore()
-  auth.$patch({
-    principal: {
+  auth.$patch((state) => {
+    state.principal = {
       principalId: 'user-admin',
       principalType: 'user',
       loginName: 'admin',
       organizationId: 'org-001',
       environmentId: 'env-dev',
       ...overrides,
-    } as never,
+    } as never
   })
 }
 
@@ -87,6 +87,14 @@ const LINES = [
     measuredValue: 10.5,
   },
 ]
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
 
 describe('useBusinessQualityInspectionTasks', () => {
   beforeEach(() => {
@@ -257,5 +265,132 @@ describe('useBusinessQualityInspectionTasks', () => {
     }
     expect(coladaState.listPlain.mock.calls[0][0].query.skip).toBe(200)
     expect(coladaState.listPlain.mock.calls[1][0].query.skip).toBe(400)
+  })
+
+  it('exposes success:false and malformed raw task responses as failures instead of empty success', async () => {
+    seedPrincipal()
+    coladaState.dataById.set('listBusinessConsoleQualityInspectionTasks', {
+      value: { success: false, message: '待检任务查询失败' },
+    })
+
+    const result = useBusinessQualityInspectionTasks()
+
+    expect(result.tasks.value).toEqual([])
+    expect(result.total.value).toBe(0)
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(true)
+
+    coladaState.dataById.get('listBusinessConsoleQualityInspectionTasks')!.value = {
+      data: { items: [], total: 0 },
+    }
+    await nextTick()
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(true)
+  })
+
+  it('unbinds base and already aggregated extra tasks when the org/env scope changes', async () => {
+    seedPrincipal()
+    coladaState.dataById.set('listBusinessConsoleQualityInspectionTasks', {
+      value: {
+        success: true,
+        data: {
+          items: [{ inspectionTaskId: 'OLD-1', sourceType: 'receiving' }],
+          total: 2,
+        },
+      },
+    })
+    coladaState.listPlain.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [{ inspectionTaskId: 'OLD-2', sourceType: 'receiving' }],
+          total: 2,
+        },
+      },
+    })
+
+    const result = useBusinessQualityInspectionTasks()
+    await result.ensureAllLoaded()
+    expect(result.tasks.value).toHaveLength(2)
+    expect(result.hasSuccessfulResponse.value).toBe(true)
+
+    seedPrincipal({ organizationId: 'org-002', environmentId: 'env-prod' })
+    await nextTick()
+
+    expect(result.tasks.value).toEqual([])
+    expect(result.total.value).toBe(0)
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(false)
+    expect(result.lastUpdatedAt.value).toBeNull()
+  })
+
+  it('discards an in-flight extra page when it resolves after the org/env scope changes', async () => {
+    seedPrincipal()
+    coladaState.dataById.set('listBusinessConsoleQualityInspectionTasks', {
+      value: {
+        success: true,
+        data: {
+          items: [{ inspectionTaskId: 'OLD-1', sourceType: 'receiving' }],
+          total: 2,
+        },
+      },
+    })
+    const oldPage = deferred<{
+      data: {
+        success: true
+        data: {
+          items: Array<{ inspectionTaskId: string; sourceType: string }>
+          total: number
+        }
+      }
+    }>()
+    coladaState.listPlain.mockReturnValue(oldPage.promise)
+
+    const result = useBusinessQualityInspectionTasks()
+    const loadPromise = result.ensureAllLoaded()
+    expect(coladaState.listPlain).toHaveBeenCalledWith({
+      query: expect.objectContaining({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        skip: 1,
+      }),
+    })
+
+    seedPrincipal({ organizationId: 'org-002', environmentId: 'env-prod' })
+    await nextTick()
+    oldPage.resolve({
+      data: {
+        success: true,
+        data: {
+          items: [{ inspectionTaskId: 'OLD-2', sourceType: 'receiving' }],
+          total: 2,
+        },
+      },
+    })
+
+    await expect(loadPromise).resolves.toEqual([])
+    expect(result.tasks.value).toEqual([])
+    expect(result.total.value).toBe(0)
+  })
+
+  it('fails closed when an extra task page resolves with success:false', async () => {
+    seedPrincipal()
+    coladaState.dataById.set('listBusinessConsoleQualityInspectionTasks', {
+      value: {
+        success: true,
+        data: {
+          items: [{ inspectionTaskId: 'T1', sourceType: 'receiving' }],
+          total: 2,
+        },
+      },
+    })
+    coladaState.listPlain.mockResolvedValue({
+      data: { success: false, message: '下一页查询失败' },
+    })
+
+    const result = useBusinessQualityInspectionTasks()
+
+    await expect(result.ensureAllLoaded()).rejects.toThrow('下一页查询失败')
+    expect(result.tasks.value).toHaveLength(1)
   })
 })

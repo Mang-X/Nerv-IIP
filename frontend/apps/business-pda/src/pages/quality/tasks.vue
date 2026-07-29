@@ -11,6 +11,7 @@ import {
   useInspectionPlanCharacteristics,
 } from '@/composables/useBusinessQualityInspectionTasks'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
+import { usePdaIdentity } from '@/composables/useWorkbenchHome'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
 import { statusActionGate } from '@nerv-iip/business-core'
 import { NvAppShellMobile, NvMobileButton, NvMobileToast } from '@nerv-iip/ui-mobile'
@@ -42,7 +43,17 @@ const {
   reasonCodes,
   submitInspection,
   submitPending,
+  lastUpdatedAt,
+  hasSuccessfulResponse,
+  hasFailedResponse,
+  scopeReady,
 } = useBusinessQualityInspectionTasks()
+const identity = usePdaIdentity()
+const qualityScope = computed(() =>
+  identity.organizationId.value && identity.environmentId.value
+    ? '当前登录组织 / 当前业务环境'
+    : '组织/环境范围未就绪',
+)
 
 // 选中任务的检验计划特性（可选可搜数据源；单位/公差/类别直接匹配）。
 const selectedTask = ref<Task | null>(null)
@@ -144,6 +155,11 @@ function openNcr() {
       :has-more="hasMore"
       :pending="pending"
       :error="error"
+      :scope="qualityScope"
+      :scope-ready="scopeReady"
+      :updated-at="lastUpdatedAt"
+      :has-successful-response="hasSuccessfulResponse"
+      :has-failed-response="hasFailedResponse"
       :load-all="ensureAllLoaded"
       @select="selectTask"
       @load-more="loadMore"

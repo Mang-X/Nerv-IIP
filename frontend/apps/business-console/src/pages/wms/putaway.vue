@@ -6,6 +6,7 @@ import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
+import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { useWmsInboundOrders, useWmsPutawayTasks } from '@/composables/useBusinessWms'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
@@ -68,7 +69,17 @@ const {
   refreshPutawayTasks,
   createPutaway,
   createPutawayPending,
+  createPutawayError,
+  putawayTasksLastUpdatedAt,
+  putawayTasksHasSuccessfulResponse,
+  putawayTasksHasFailedResponse,
 } = useWmsPutawayTasks()
+const putawayScopeReady = computed(
+  () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
+)
+const putawayScope = computed(() =>
+  putawayScopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
+)
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManageReceipts = computed(() => permissionCodes.value.includes(P.wmsReceiptsManage))
 const inboundOrderNo = computed(() => firstQuery(route.query.inboundOrderNo))
@@ -318,6 +329,22 @@ function firstQuery(value: unknown) {
         </NvButton>
       </template>
     </NvPageHeader>
+
+    <ListScopeMeta
+      :scope="putawayScope"
+      source="上架任务服务（组织/环境范围，暂不支持按操作员归属筛选）"
+      :loaded="putawayTasks.length"
+      :total="putawayTasksTotal"
+      :updated-at="putawayTasksLastUpdatedAt"
+      :empty="putawayTasksHasSuccessfulResponse && !putawayTasksError && putawayTasks.length === 0"
+      :failed="putawayTasksHasFailedResponse || Boolean(putawayTasksError)"
+      failure-explanation="上架任务服务未成功返回，请重试。"
+      :empty-explanation="
+        putawayScopeReady
+          ? '当前组织/环境范围没有上架任务；后端未提供操作员归属过滤，空态不代表个人任务。'
+          : '缺少组织或环境范围，未发起查询。'
+      "
+    />
 
     <NvToolbar :show-search="false">
       <template #filters>

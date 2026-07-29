@@ -1,4 +1,4 @@
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, nextTick, reactive, shallowRef } from 'vue'
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import InspectionTasksPage from './inspection-tasks.vue'
@@ -132,6 +132,7 @@ vi.mock('@/composables/useQualityInspectionTasks', () => ({
       total: computed(() => (initial.status === 'completed' ? 0 : state.tasks.length)),
       pending: shallowRef(false),
       error: computed(() => state.error),
+      lastUpdatedAt: shallowRef('2026-07-28T10:20:30Z'),
       refreshTasks: vi.fn(),
     }
   },
@@ -233,6 +234,16 @@ describe('quality inspection task workbench page', () => {
 
     expect(state.initialFilters).toEqual({ status: 'pending' })
     expect(wrapper.get('[data-testid="task-table"]').attributes('data-manual')).toBe('false')
+  })
+
+  it('keeps source-type empty states honest about current-page filtering and service total', async () => {
+    const wrapper = mount(InspectionTasksPage, { global: { stubs } })
+    const filters = (wrapper.vm as unknown as { filters: { sourceType: string } }).filters
+    filters.sourceType = 'operation'
+    await nextTick()
+
+    expect(wrapper.text()).toContain('本页匹配 1 个 / 服务总数 4 个')
+    expect(wrapper.text()).toContain('筛选仅按当前页匹配')
   })
 
   it('opens the existing inspection form without inventing a source document number', async () => {

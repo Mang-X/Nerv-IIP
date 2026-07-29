@@ -16,6 +16,8 @@ type DetailEnvelope = {
     skuId: string
     quantity: number
     status: string
+    readinessStatus: string
+    blockingReasons: string[]
     operationTasks: Task[]
   }
 }
@@ -26,13 +28,19 @@ type Task = {
   status: 'Ready'
   operationSequence: number
   workCenterId: string
+  qualityStatus: string
 }
 
 const sdkState = vi.hoisted(() => ({
   detailRequests: [] as Array<{
     options: {
       path: { workOrderId: string }
-      query: { organizationId: string; environmentId: string }
+      query: {
+        organizationId: string
+        environmentId: string
+        scopeKind?: string
+        scopeId?: string
+      }
     }
     signal: AbortSignal
     resolve: (value: DetailEnvelope) => void
@@ -43,6 +51,8 @@ const sdkState = vi.hoisted(() => ({
         organizationId: string
         environmentId: string
         workOrderId: string
+        scopeKind?: string
+        scopeId?: string
         skip: number
         take: number
       }
@@ -56,16 +66,67 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@nerv-iip/api-client')>()
   const detailKey = (options: {
     path: { workOrderId: string }
-    query: { organizationId: string; environmentId: string }
+    query: {
+      organizationId: string
+      environmentId: string
+      scopeKind?: string
+      scopeId?: string
+    }
   }) => [
     'integration-work-order-detail',
     options.query.organizationId,
     options.query.environmentId,
+    options.query.scopeKind,
+    options.query.scopeId,
     options.path.workOrderId,
   ]
 
   return {
     ...actual,
+    getBusinessConsolePrincipalWorkContextQueryOptions: vi.fn(
+      ({
+        query,
+      }: {
+        query: {
+          organizationId: string
+          environmentId: string
+          permissionCode: string
+        }
+      }) => ({
+        key: [
+          'integration-principal-work-context',
+          query.organizationId,
+          query.environmentId,
+          query.permissionCode,
+        ],
+        query: async () => ({
+          success: true,
+          data: {
+            selectedScope: {
+              kind: 'work-center',
+              id: query.organizationId === 'org-001' ? 'WC-1' : 'WC-2',
+            },
+          },
+        }),
+      }),
+    ),
+    getBusinessConsoleMesMaterialReadinessQueryOptions: vi.fn(
+      ({
+        path,
+        query,
+      }: {
+        path: { workOrderId: string }
+        query: { organizationId: string; environmentId: string }
+      }) => ({
+        key: [
+          'integration-material-readiness',
+          query.organizationId,
+          query.environmentId,
+          path.workOrderId,
+        ],
+        query: async () => ({ success: true, data: { status: 'ready' } }),
+      }),
+    ),
     getBusinessConsoleMesWorkOrderDetailQueryKey: vi.fn(detailKey),
     getBusinessConsoleMesWorkOrderDetailQueryOptions: vi.fn((options) => ({
       key: detailKey(options),
@@ -74,12 +135,14 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => {
           sdkState.detailRequests.push({ options, signal, resolve })
         }),
     })),
-    listBusinessConsoleMesOperationTasks: vi.fn(
+    listBusinessConsoleMesReportableOperationTasks: vi.fn(
       (options: {
         query: {
           organizationId: string
           environmentId: string
           workOrderId: string
+          scopeKind?: string
+          scopeId?: string
           skip: number
           take: number
         }
@@ -99,6 +162,7 @@ function task(workOrderId: string, sequence: number): Task {
     status: 'Ready',
     operationSequence: sequence,
     workCenterId: 'WC-1',
+    qualityStatus: 'Pending',
   }
 }
 
@@ -110,6 +174,8 @@ function detail(workOrderId: string, tasks: Task[]): DetailEnvelope {
       skuId: `SKU-${workOrderId}`,
       quantity: 1,
       status: 'Released',
+      readinessStatus: 'ready',
+      blockingReasons: [],
       operationTasks: tasks,
     },
   }
@@ -127,6 +193,7 @@ async function createHarness(initialUrl: string) {
   const auth = useAuthStore(pinia)
   auth.$patch({
     principal: {
+      principalId: 'user-001',
       organizationId: 'org-001',
       environmentId: 'env-dev',
     },
@@ -150,6 +217,8 @@ async function createHarness(initialUrl: string) {
         exactOperationTask: exactAuthority.task,
         exactOperationTaskPending: exactAuthority.pending,
         exactOperationTaskError: exactAuthority.error,
+        exactOperationTaskScopeReady: exactAuthority.reportingReadScopeReady,
+        exactOperationTaskScopeMessage: exactAuthority.reportingReadScopeMessage,
       })
       return () =>
         h(
@@ -255,6 +324,7 @@ describe('MES report identity real router + Colada integration', () => {
     expect(oldScopeRequest).not.toBe(oldRouteRequest)
     expect(oldScopeRequest.options.signal.aborted).toBe(false)
     auth.principal = {
+      principalId: 'user-001',
       organizationId: 'org-002',
       environmentId: 'env-prod',
     } as never

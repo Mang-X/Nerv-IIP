@@ -16,6 +16,8 @@ const refreshRequests = vi.fn(async () => {})
 const refreshWorkOrders = vi.fn(async () => {})
 
 const issueFilters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
   keyword: undefined as string | undefined,
   workOrderId: undefined as string | undefined,
   status: undefined as string | undefined,
@@ -52,6 +54,9 @@ const workOrders = [
 const issuePending = ref(false)
 const issueError = ref<unknown>(null)
 const issueRequests = ref(requests)
+const issueLastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
+const issueHasSuccessfulResponse = ref(true)
+const issueHasFailedResponse = ref(false)
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesMaterialIssue: () => ({
@@ -60,6 +65,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
     total: computed(() => issueRequests.value.length),
     pending: issuePending,
     error: issueError,
+    lastUpdatedAt: issueLastUpdatedAt,
+    hasSuccessfulResponse: issueHasSuccessfulResponse,
+    hasFailedResponse: issueHasFailedResponse,
     refresh: refreshRequests,
     createIssue,
     confirmLineSideReceipt,
@@ -84,10 +92,15 @@ describe('PDA MES material issue page', () => {
     confirmLineSideReceipt.mockResolvedValue(undefined)
     push.mockClear()
     issueFilters.keyword = undefined
+    issueFilters.organizationId = 'org-001'
+    issueFilters.environmentId = 'env-dev'
     workOrderFilters.keyword = undefined
     issuePending.value = false
     issueError.value = null
     issueRequests.value = requests
+    issueHasSuccessfulResponse.value = true
+    issueHasFailedResponse.value = false
+    refreshRequests.mockClear()
   })
 
   it('lists material issue requests with readable info', () => {
@@ -99,6 +112,10 @@ describe('PDA MES material issue page', () => {
     expect(wrapper.text()).toContain('MAT-A')
     // 不暴露原始 requestId 作为标签
     expect(wrapper.text()).not.toContain('REQ-1')
+    expect(wrapper.text()).toContain('范围：当前登录组织 / 当前业务环境')
+    expect(wrapper.text()).toContain('来源：生产领料申请服务（组织/环境范围）')
+    expect(wrapper.text()).toContain('已加载 2 / 共 2')
+    expect(wrapper.text()).toContain('最近成功响应')
   })
 
   it('shows the list error (not the empty state) when the requests query fails', async () => {
@@ -112,6 +129,43 @@ describe('PDA MES material issue page', () => {
     expect(alert.text()).toContain('加载失败：网络异常')
     // 错误态不应退化为「暂无领料申请」空态
     expect(wrapper.text()).not.toContain('暂无领料申请')
+    expect(wrapper.find('[data-testid="list-empty-explanation"]').exists()).toBe(false)
+  })
+
+  it('explains a successful empty organization-scope response without claiming personal ownership', async () => {
+    issueRequests.value = []
+    const wrapper = mount(IssuePage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('当前组织/环境范围暂无领料申请')
+    expect(wrapper.text()).toContain('不代表当前人员没有领料任务')
+  })
+
+  it('shows a retryable failure for success:false instead of a business empty state', async () => {
+    issueRequests.value = []
+    issueHasSuccessfulResponse.value = false
+    issueHasFailedResponse.value = true
+    const wrapper = mount(IssuePage)
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('领料申请服务未返回成功结果')
+    expect(wrapper.text()).not.toContain('当前组织/环境范围暂无领料申请')
+    await wrapper.get('[data-testid="retry-list"]').trigger('click')
+    expect(refreshRequests).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not render cached issue rows or totals after the organization scope is lost', async () => {
+    const wrapper = mount(IssuePage)
+    expect(wrapper.text()).toContain('WO-2026-0001')
+
+    issueFilters.organizationId = ''
+    issueFilters.environmentId = ''
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('缺少组织或环境范围，未发起查询')
+    expect(wrapper.text()).toContain('已加载 0 / 共 0')
+    expect(wrapper.text()).not.toContain('WO-2026-0001')
+    expect(wrapper.text()).not.toContain('MAT-A')
   })
 
   it('scanning sets the issue keyword filter', async () => {

@@ -112,9 +112,19 @@ vi.mock('@/composables/useBusinessMes', async () => {
       operationTasksError: shallowRef(undefined),
       operationTasksPending: shallowRef(false),
       operationTasksTotal: computed(() => 0),
+      operationListScope: computed(() => ({
+        kind: 'work-center',
+        id: 'WC-A',
+        displayName: '精加工一线',
+      })),
+      operationListScopeMessage: computed(() => ''),
+      operationListScopeReady: computed(() => true),
       operationScopeMessage: computed(() => ''),
       operationScopePending: shallowRef(false),
       operationScopeReady: computed(() => true),
+      operationTasksLastUpdatedAt: computed(() => '2026-07-28T10:20:30.000Z'),
+      operationTasksHasSuccessfulResponse: computed(() => true),
+      operationTasksHasFailedResponse: computed(() => false),
       refreshOperationTasks: vi.fn(),
       startOperationTask: vi.fn(),
       pauseOperationTask: vi.fn(),
@@ -168,6 +178,8 @@ describe('operation-tasks 排程已失效 quick filter', () => {
   it('binds aria-pressed to the active state and toggles it on click', async () => {
     const wrapper = mountPage()
     await flushPromises()
+
+    expect(wrapper.text()).toContain('当前主体授权作业范围 · 精加工一线（工作中心）')
 
     const button = wrapper.findAll('button').find((b) => b.text().includes('排程已失效'))!
     expect(button).toBeTruthy()

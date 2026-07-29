@@ -328,6 +328,8 @@ describe('business equipment composables', () => {
     coladaState.queryDataById.set('listBusinessConsoleEquipmentAlarms', { success: false })
     const failed = useBusinessEquipmentAlarms()
     expect(failed.alarms.value).toEqual([])
+    expect(failed.alarmsHasSuccessfulResponse.value).toBe(false)
+    expect(failed.alarmsHasFailedResponse.value).toBe(true)
   })
 
   it('posts alarm lifecycle actions with current business context', async () => {

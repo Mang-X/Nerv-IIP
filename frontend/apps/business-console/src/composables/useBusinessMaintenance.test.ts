@@ -316,6 +316,17 @@ describe('business maintenance composables', () => {
     expect(calls[1]?.body.idempotencyKey).not.toBe(calls[0]?.body.idempotencyKey)
   })
 
+  it('exposes an unsuccessful work-order envelope as a business-response failure', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    coladaState.queryDataById.set('', { success: false })
+
+    const workOrders = useMaintenanceWorkOrders()
+
+    expect(workOrders.workOrdersHasSuccessfulResponse.value).toBe(false)
+    expect(workOrders.workOrdersHasFailedResponse.value).toBe(true)
+  })
+
   it('loads inspection rows and records a real inspection through the facade', async () => {
     const context = useBusinessContextStore()
     context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })

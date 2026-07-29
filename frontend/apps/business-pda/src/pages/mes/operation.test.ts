@@ -24,11 +24,20 @@ const refresh = vi.fn(async () => {})
 const refreshSops = vi.fn()
 const createSopFileDownloadGrant = vi.fn()
 
-const filters = reactive({ keyword: undefined as string | undefined })
+const filters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
+  keyword: undefined as string | undefined,
+})
 const tasksErrorRef = ref<unknown>(null)
 const sopsErrorRef = ref<unknown>(null)
 const operationScopeMessageRef = ref('')
 const operationScopeReadyRef = ref(true)
+const operationListScopeRef = ref({
+  kind: 'work-center',
+  id: 'WC-A',
+  displayName: '精加工一线',
+})
 
 const defaultTasks = [
   {
@@ -55,6 +64,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
     filters,
     operationTasks: computed(() => operationTasksRef.value),
     total: computed(() => operationTasksRef.value.length),
+    lastUpdatedAt: ref('2026-07-28T10:20:30.000Z'),
+    hasSuccessfulResponse: computed(() => !tasksErrorRef.value),
+    hasFailedResponse: computed(() => false),
     pending: ref(false),
     error: tasksErrorRef,
     refresh,
@@ -63,6 +75,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
     resumeTask,
     completeTask,
     actionPending: ref(false),
+    operationListScope: operationListScopeRef,
+    operationListScopeMessage: ref(''),
+    operationListScopeReady: ref(true),
     operationScopeMessage: operationScopeMessageRef,
     operationScopePending: ref(false),
     operationScopeReady: operationScopeReadyRef,
@@ -115,6 +130,7 @@ describe('PDA MES operation execution page', () => {
     expect(wrapper.find('input[placeholder^="扫"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('WO-2026-0001')
     expect(wrapper.text()).toContain('WO-2026-0002')
+    expect(wrapper.text()).toContain('当前主体授权作业范围 · 精加工一线（工作中心）')
     // 工序序号可读呈现
     expect(wrapper.text()).toContain('工序 10')
   })

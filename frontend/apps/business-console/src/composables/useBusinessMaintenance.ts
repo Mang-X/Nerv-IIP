@@ -48,6 +48,11 @@ import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive, shallowRef } from 'vue'
 import {
+  useListFreshness,
+  useListResponseState,
+  useScopeBoundListResponse,
+} from './useListFreshness'
+import {
   bindBusinessContext,
   hasBusinessContext,
   refetchWithBusinessContext,
@@ -215,6 +220,21 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
       filters,
     ),
   )
+  const workOrdersScopeReady = computed(() => hasBusinessContext(filters))
+  const workOrdersResponse = useScopeBoundListResponse(
+    () => workOrdersQuery.data.value,
+    () => `${filters.organizationId.trim()}:${filters.environmentId.trim()}`,
+    workOrdersScopeReady,
+  )
+  const workOrdersLastUpdatedAt = useListFreshness(workOrdersResponse, workOrdersScopeReady)
+  const {
+    hasSuccessfulResponse: workOrdersHasSuccessfulResponse,
+    hasFailedResponse: workOrdersHasFailedResponse,
+  } = useListResponseState(
+    workOrdersResponse,
+    workOrdersScopeReady,
+    () => workOrdersQuery.isLoading.value,
+  )
 
   const createMutation = useMutation({
     ...createBusinessConsoleMaintenanceWorkOrderMutationOptions(),
@@ -336,16 +356,19 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
     filters,
     workOrders: computed<BusinessConsoleMaintenanceWorkOrderItem[]>(() =>
       listItems<BusinessConsoleMaintenanceWorkOrderItem>(
-        workOrdersQuery.data.value as BusinessConsoleMaintenanceWorkOrderListEnvelope | undefined,
+        workOrdersResponse.value as BusinessConsoleMaintenanceWorkOrderListEnvelope | undefined,
       ),
     ),
     workOrdersError: workOrdersQuery.error,
     workOrdersPending: workOrdersQuery.isLoading,
     workOrdersTotal: computed(() =>
       listTotal(
-        workOrdersQuery.data.value as BusinessConsoleMaintenanceWorkOrderListEnvelope | undefined,
+        workOrdersResponse.value as BusinessConsoleMaintenanceWorkOrderListEnvelope | undefined,
       ),
     ),
+    workOrdersLastUpdatedAt,
+    workOrdersHasSuccessfulResponse,
+    workOrdersHasFailedResponse,
     refreshWorkOrders: () => refetchWithBusinessContext(filters, workOrdersQuery),
     createWorkOrder: createWithStableIntent,
     createWorkOrderPending: createMutation.isLoading,

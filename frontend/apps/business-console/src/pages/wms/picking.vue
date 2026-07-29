@@ -5,6 +5,7 @@ import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
+import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { useWmsOutboundOrders, useWmsPickingTasks } from '@/composables/useBusinessWms'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
@@ -63,7 +64,17 @@ const {
   refreshPickingTasks,
   createPicking,
   createPickingPending,
+  createPickingError,
+  pickingTasksLastUpdatedAt,
+  pickingTasksHasSuccessfulResponse,
+  pickingTasksHasFailedResponse,
 } = useWmsPickingTasks()
+const pickingScopeReady = computed(
+  () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
+)
+const pickingScope = computed(() =>
+  pickingScopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
+)
 const route = useRoute()
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.locationCode, () => filters.keyword],
@@ -297,6 +308,22 @@ function firstQuery(value: unknown) {
         </NvButton>
       </template>
     </NvPageHeader>
+
+    <ListScopeMeta
+      :scope="pickingScope"
+      source="拣货任务服务（组织/环境范围，暂不支持按操作员归属筛选）"
+      :loaded="pickingTasks.length"
+      :total="pickingTasksTotal"
+      :updated-at="pickingTasksLastUpdatedAt"
+      :empty="pickingTasksHasSuccessfulResponse && !pickingTasksError && pickingTasks.length === 0"
+      :failed="pickingTasksHasFailedResponse || Boolean(pickingTasksError)"
+      failure-explanation="拣货任务服务未成功返回，请重试。"
+      :empty-explanation="
+        pickingScopeReady
+          ? '当前组织/环境范围没有拣货任务；后端未提供操作员归属过滤，空态不代表个人任务。'
+          : '缺少组织或环境范围，未发起查询。'
+      "
+    />
 
     <NvToolbar :show-search="false">
       <template #filters>

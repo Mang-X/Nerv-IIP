@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { RequestTimeoutError } from '@/api/request-timeout'
 import { BusinessOperationUnconfirmedError } from '@nerv-iip/api-client'
 
@@ -36,9 +36,13 @@ const ACKED = {
   externalAlarmId: 'EXT-2',
 }
 const alarms = ref<Array<Record<string, unknown>>>([RAISED, ACKED])
-const total = ref(2)
+const total = computed(() => alarms.value.length)
 const error = ref<unknown>(null)
 const pending = ref(false)
+const scopeReady = ref(true)
+const organizationId = ref('org-001')
+const environmentId = ref('env-dev')
+const lastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 const refresh = vi.fn(async () => {})
 const acknowledge = vi.fn(async (_id: string, _atUtc: string) => ({ success: true }))
 const shelve = vi.fn(
@@ -60,6 +64,12 @@ vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
     filters,
     alarms,
     total,
+    organizationId,
+    environmentId,
+    scopeReady,
+    lastUpdatedAt,
+    hasSuccessfulResponse: computed(() => !pending.value && !error.value),
+    hasFailedResponse: computed(() => false),
     pending,
     error,
     refresh,

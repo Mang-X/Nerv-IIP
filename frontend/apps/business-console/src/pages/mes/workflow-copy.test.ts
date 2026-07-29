@@ -132,9 +132,19 @@ vi.mock('@/composables/useBusinessMes', () => ({
     operationTasksError: ref(undefined),
     operationTasksPending: ref(false),
     operationTasksTotal: ref(1),
+    operationListScope: ref({
+      kind: 'work-center',
+      id: 'WC-01',
+      displayName: '精加工一线',
+    }),
+    operationListScopeMessage: ref(''),
+    operationListScopeReady: ref(true),
     operationScopeMessage: ref(''),
     operationScopePending: ref(false),
     operationScopeReady: ref(true),
+    operationTasksLastUpdatedAt: ref('2026-07-30T00:00:00Z'),
+    operationTasksHasSuccessfulResponse: ref(true),
+    operationTasksHasFailedResponse: ref(false),
     refreshOperationTasks: vi.fn(),
     startOperationTask: vi.fn(),
     pauseOperationTask: vi.fn(),
@@ -236,6 +246,16 @@ vi.mock('@/composables/useBusinessMes', () => ({
     workOrdersError: ref(undefined),
     workOrdersPending: ref(false),
     workOrdersTotal: ref(1),
+    workOrdersLastUpdatedAt: ref('2026-07-30T00:00:00Z'),
+    workOrdersHasSuccessfulResponse: ref(true),
+    workOrdersHasFailedResponse: ref(false),
+    workOrderReadScope: ref({
+      kind: 'work-center',
+      id: 'WC-01',
+      displayName: '精加工一线',
+    }),
+    workOrderReadScopeMessage: ref(''),
+    workOrderReadScopeReady: ref(true),
   }),
 }))
 
@@ -459,7 +479,7 @@ function mountMesPage(component: unknown) {
 
 function expectNoForbiddenVisibleTerms(text: string) {
   expect(text).not.toMatch(
-    /demo|mock|seed|样例|用于验证|接口|契约|组织|环境|sourceSystem|operationId|联动测试|内置|幂等键/i,
+    /demo|mock|seed|样例|用于验证|sourceSystem|operationId|联动测试|内置|幂等键/i,
   )
 }
 

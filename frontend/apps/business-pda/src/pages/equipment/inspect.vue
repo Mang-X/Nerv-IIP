@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import InspectionMeasurementRow, {
   type MeasurementFormRow,
 } from '@/components/equipment/InspectionMeasurementRow.vue'
@@ -65,15 +66,23 @@ const router = useRouter()
 
 const maintenance = useBusinessMaintenance()
 const {
+  scopeReady,
   plansPending,
   plansError,
   plansTotal,
+  plansLastUpdatedAt,
+  plansHasSuccessfulResponse,
+  plansHasFailedResponse,
   loadMorePlans,
   refreshPlans,
   recordInspection,
   recordPending,
   inspectionsPending,
   inspectionsError,
+  inspectionsTotal,
+  inspectionsLastUpdatedAt,
+  inspectionsHasSuccessfulResponse,
+  inspectionsHasFailedResponse,
   refreshInspections,
 } = maintenance
 
@@ -81,6 +90,25 @@ const {
 const allPlans = computed<PlanRow[]>(() => maintenance.plans.value as PlanRow[])
 const inspections = computed<InspectionRow[]>(
   () => maintenance.inspections.value as InspectionRow[],
+)
+const maintenanceScope = computed(() =>
+  scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
+)
+const showPlansEmpty = computed(
+  () =>
+    !plansPending.value &&
+    !plansError.value &&
+    !plansHasFailedResponse.value &&
+    plansHasSuccessfulResponse.value &&
+    allPlans.value.length === 0,
+)
+const showInspectionsEmpty = computed(
+  () =>
+    !inspectionsPending.value &&
+    !inspectionsError.value &&
+    !inspectionsHasFailedResponse.value &&
+    inspectionsHasSuccessfulResponse.value &&
+    inspections.value.length === 0,
 )
 
 // 扫码/手输关键字 → 对**已加载**的 plans 做客户端过滤（facade 无 keyword/device 查询参数）。
@@ -368,10 +396,25 @@ function inspectionSubtitle(item: {
         <!-- 步骤 1：选择保养计划 -->
         <div class="space-y-2">
           <p class="text-sm text-foreground">选择保养计划</p>
+          <ListScopeMeta
+            :scope="maintenanceScope"
+            source="保养计划服务（组织/环境范围，暂不支持按维修人员归属筛选）"
+            :loaded="plans.length"
+            :total="plansTotal"
+            :updated-at="plansLastUpdatedAt"
+            :failed="plansHasFailedResponse"
+            failure-explanation="保养计划服务未成功返回，请刷新重试。"
+            :empty="!scopeReady || showPlansEmpty"
+            :empty-explanation="
+              scopeReady
+                ? '当前组织/环境范围暂无保养计划；暂不支持按维修人员归属筛选，空态不代表个人计划。'
+                : '缺少组织或环境范围，未发起查询。'
+            "
+          />
 
           <RetryableListError
-            v-if="plansError"
-            :error="plansError"
+            v-if="plansError || plansHasFailedResponse"
+            :error="plansError ?? '保养计划服务未成功返回'"
             :pending="plansPending"
             fallback="保养计划加载失败，请稍后重试。"
             test-id="plans-error"
@@ -383,7 +426,7 @@ function inspectionSubtitle(item: {
           </div>
 
           <div
-            v-else-if="allPlans.length === 0"
+            v-else-if="showPlansEmpty"
             class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
           >
             暂无保养计划
@@ -499,10 +542,23 @@ function inspectionSubtitle(item: {
       <!-- 近期点检记录 -->
       <section class="space-y-2">
         <h2 class="text-sm font-medium text-muted-foreground">近期点检记录</h2>
+        <ListScopeMeta
+          :scope="maintenanceScope"
+          source="点检记录服务（组织/环境范围）"
+          :loaded="inspections.length"
+          :total="inspectionsTotal"
+          :updated-at="inspectionsLastUpdatedAt"
+          :failed="inspectionsHasFailedResponse"
+          failure-explanation="点检记录服务未成功返回，请刷新重试。"
+          :empty="!scopeReady || showInspectionsEmpty"
+          :empty-explanation="
+            scopeReady ? '当前组织/环境范围暂无点检记录。' : '缺少组织或环境范围，未发起查询。'
+          "
+        />
 
         <RetryableListError
-          v-if="inspectionsError"
-          :error="inspectionsError"
+          v-if="inspectionsError || inspectionsHasFailedResponse"
+          :error="inspectionsError ?? '点检记录服务未成功返回'"
           :pending="inspectionsPending"
           fallback="点检记录加载失败，请稍后重试。"
           test-id="inspections-error"
@@ -517,7 +573,7 @@ function inspectionSubtitle(item: {
         </div>
 
         <div
-          v-else-if="inspections.length === 0"
+          v-else-if="showInspectionsEmpty"
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
         >
           暂无点检记录

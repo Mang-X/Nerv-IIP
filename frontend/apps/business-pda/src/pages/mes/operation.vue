@@ -12,6 +12,7 @@ import {
   REQUEST_TIMEOUT_MS,
 } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import {
@@ -51,10 +52,43 @@ const {
   resumeTask,
   completeTask,
   actionPending,
+  operationListScope,
+  operationListScopeMessage,
+  operationListScopeReady,
   operationScopeMessage,
   operationScopeReady,
   refresh,
+  lastUpdatedAt,
+  hasSuccessfulResponse,
+  hasFailedResponse,
 } = useMesOperationTasks()
+const workScopeKindLabels: Record<string, string> = {
+  self: '本人',
+  team: '班组',
+  'work-center': '工作中心',
+  workshop: '车间',
+  organization: '组织',
+}
+const mesScope = computed(() => {
+  const selectedScope = operationListScope.value
+  if (!selectedScope) return '当前主体授权作业范围未就绪'
+  const kind = workScopeKindLabels[selectedScope.kind] ?? selectedScope.kind
+  const name = selectedScope.displayName || selectedScope.id
+  return `当前主体授权作业范围 · ${name}（${kind}）`
+})
+const mesEmptyExplanation = computed(() =>
+  operationListScopeReady.value
+    ? '当前主体授权作业范围内暂无工序任务。'
+    : operationListScopeMessage.value || '尚未取得当前主体的授权作业范围，未发起查询。',
+)
+const showOperationTasksEmpty = computed(
+  () =>
+    !pending.value &&
+    !error.value &&
+    !hasFailedResponse.value &&
+    hasSuccessfulResponse.value &&
+    operationTasks.value.length === 0,
+)
 const {
   filters: sopFilters,
   currentSops,
@@ -361,17 +395,36 @@ function formatDate(value?: string | null) {
 
       <p class="text-sm text-muted-foreground">共 {{ total }} 个工序任务</p>
       <p
-        v-if="operationScopeMessage"
+        v-if="operationListScopeMessage"
+        data-testid="operation-list-scope-message"
+        class="rounded-lg border border-destructive/40 px-4 py-3 text-sm text-destructive"
+        role="alert"
+      >
+        {{ operationListScopeMessage }}
+      </p>
+      <p
+        v-if="operationListScopeReady && operationScopeMessage"
         data-testid="operation-scope-message"
         class="rounded-lg border border-destructive/40 px-4 py-3 text-sm text-destructive"
         role="alert"
       >
         {{ operationScopeMessage }}
       </p>
+      <ListScopeMeta
+        :scope="mesScope"
+        source="工序任务服务（服务端按当前主体与所选授权作业范围过滤）"
+        :loaded="operationTasks.length"
+        :total="total"
+        :updated-at="lastUpdatedAt"
+        :failed="hasFailedResponse"
+        failure-explanation="工序任务服务未成功返回，请刷新重试。"
+        :empty="!operationListScopeReady || showOperationTasksEmpty"
+        :empty-explanation="mesEmptyExplanation"
+      />
 
       <RetryableListError
-        v-if="error"
-        :error="error"
+        v-if="error || hasFailedResponse"
+        :error="error ?? '工序任务服务未成功返回'"
         :pending="pending"
         fallback="加载工序任务失败，请下拉刷新或重试。"
         test-id="operation-tasks-error"
@@ -379,10 +432,10 @@ function formatDate(value?: string | null) {
       />
 
       <div
-        v-else-if="!pending && operationTasks.length === 0"
+        v-else-if="showOperationTasksEmpty"
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
       >
-        暂无工序任务
+        当前主体授权作业范围内暂无工序任务
       </div>
 
       <div v-else class="overflow-hidden rounded-lg border border-border">

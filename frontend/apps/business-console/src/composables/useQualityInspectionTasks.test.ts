@@ -112,6 +112,15 @@ describe('quality inspection task workbench', () => {
     expect(tasks.value).toEqual([{ inspectionTaskId: 'TASK-1', status: 'pending' }])
   })
 
+  it('exposes an unsuccessful task envelope as a business-response failure', () => {
+    state.data = { success: false }
+
+    const tasks = useQualityInspectionTasks()
+
+    expect(tasks.hasSuccessfulResponse.value).toBe(false)
+    expect(tasks.hasFailedResponse.value).toBe(true)
+  })
+
   it('filters the visible page by平级来源类型 without inventing a second data source', () => {
     state.data = {
       success: true,
