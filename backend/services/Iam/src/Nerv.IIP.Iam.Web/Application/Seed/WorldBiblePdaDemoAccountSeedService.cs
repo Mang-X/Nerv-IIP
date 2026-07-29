@@ -105,6 +105,9 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
         var principalScopeBackfillManifestId = new SeedManifestId("iam-pda-principal-scope-backfill:v1");
         var principalScopeBackfillApplied = await dbContext.SeedManifests
             .FindAsync([principalScopeBackfillManifestId], cancellationToken) is not null;
+        var warehouseSiteScopeManifestId = new SeedManifestId("iam-pda-warehouse-site-scope:v2");
+        var warehouseSiteScopeApplied = await dbContext.SeedManifests
+            .FindAsync([warehouseSiteScopeManifestId], cancellationToken) is not null;
         var now = DateTimeOffset.UtcNow;
         var rolesById = new Dictionary<string, Role>(StringComparer.Ordinal);
 
@@ -113,6 +116,7 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
             var typedRoleId = new RoleId(roleId);
             var role = await dbContext.Roles
                 .Include(x => x.Permissions)
+                .Include(x => x.DataScopes)
                 .SingleOrDefaultAsync(x => x.Id == typedRoleId, cancellationToken);
             if (role is null)
             {
@@ -121,6 +125,22 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
             }
 
             rolesById.Add(roleId, role);
+        }
+
+        if (!warehouseSiteScopeApplied)
+        {
+            var warehouseRole = rolesById[WarehouseRoleId];
+            warehouseRole.ReplaceDataScopes([
+                .. warehouseRole.DataScopes.Select(
+                    scope => new DataScopeBinding(scope.ScopeType, scope.ScopeCode)),
+                new DataScopeBinding(DataScopeBinding.Site, "SITE-001"),
+            ]);
+            dbContext.SeedManifests.Add(new SeedManifest(
+                warehouseSiteScopeManifestId,
+                "iam-pda-warehouse-site-scope",
+                "v2",
+                "iam",
+                now));
         }
 
         foreach (var (userId, roleId) in Accounts)
