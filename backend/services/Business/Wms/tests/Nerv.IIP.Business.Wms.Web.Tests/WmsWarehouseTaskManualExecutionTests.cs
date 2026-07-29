@@ -296,10 +296,28 @@ public sealed class WmsWarehouseTaskManualExecutionTests
                 WarehouseTaskType.Picking,
                 OrganizationWideScope: true),
             CancellationToken.None);
+        var ambiguous = await handler.Handle(
+            new ListWarehouseTasksQuery(
+                "org-001",
+                "env-dev",
+                WarehouseTaskType.Picking,
+                AssignedOperatorUserIds: ["user-001"],
+                OrganizationWideScope: true),
+            CancellationToken.None);
+        var conflicting = await handler.Handle(
+            new ListWarehouseTasksQuery(
+                "org-001",
+                "env-dev",
+                WarehouseTaskType.Picking,
+                AssignedOperatorUserIds: ["user-001"],
+                AssignedTeamIds: ["TEAM-A"]),
+            CancellationToken.None);
 
         Assert.Empty(denied.Items);
         Assert.Equal("PICK-TEAM", Assert.Single(team.Items).TaskNo);
-        Assert.Equal(3, organization.Total);
+        Assert.Equal("PICK-SITE", Assert.Single(organization.Items).TaskNo);
+        Assert.Empty(ambiguous.Items);
+        Assert.Empty(conflicting.Items);
     }
 
     private static WarehouseTask CreateTask(

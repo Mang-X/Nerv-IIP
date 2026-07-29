@@ -1108,6 +1108,56 @@ public sealed class WmsEndpointContractTests
         Assert.Empty(wcsResult.Items);
     }
 
+    [Fact]
+    public async Task Organization_scope_only_returns_unassigned_rows_across_all_wms_lists()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.InboundOrders.AddRange(
+            CreateInboundOrder("IN-SELF", "user-001"),
+            CreateInboundOrder("IN-TEAM", assignedTeamId: "TEAM-A"),
+            CreateInboundOrder("IN-UNASSIGNED"));
+        dbContext.OutboundOrders.AddRange(
+            CreateOutboundOrder("OUT-SELF", "user-001"),
+            CreateOutboundOrder("OUT-TEAM", assignedTeamId: "TEAM-A"),
+            CreateOutboundOrder("OUT-UNASSIGNED"));
+        dbContext.WarehouseTasks.AddRange(
+            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-SELF", "IN-SELF", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-01", 1m, assignedOperatorUserId: "user-001"),
+            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-TEAM", "IN-TEAM", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-01", 1m, assignedTeamId: "TEAM-A"),
+            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-UNASSIGNED", "IN-UNASSIGNED", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-01", 1m),
+            WarehouseTask.CreatePicking("org-001", "env-dev", "PICK-SELF", "OUT-SELF", "10", "SKU-001", "pcs", "SITE-01", "BIN-01", "PACK-01", 1m, assignedOperatorUserId: "user-001"),
+            WarehouseTask.CreatePicking("org-001", "env-dev", "PICK-TEAM", "OUT-TEAM", "10", "SKU-001", "pcs", "SITE-01", "BIN-01", "PACK-01", 1m, assignedTeamId: "TEAM-A"),
+            WarehouseTask.CreatePicking("org-001", "env-dev", "PICK-UNASSIGNED", "OUT-UNASSIGNED", "10", "SKU-001", "pcs", "SITE-01", "BIN-01", "PACK-01", 1m));
+        dbContext.CountExecutions.AddRange(
+            CountExecution.Create("org-001", "env-dev", "COUNT-SELF", "SKU-001", "pcs", "SITE-01", "BIN-01", 1m, "user-001"),
+            CountExecution.Create("org-001", "env-dev", "COUNT-TEAM", "SKU-001", "pcs", "SITE-01", "BIN-01", 1m, assignedTeamId: "TEAM-A"),
+            CountExecution.Create("org-001", "env-dev", "COUNT-UNASSIGNED", "SKU-001", "pcs", "SITE-01", "BIN-01", 1m));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var inbound = await new ListInboundOrdersQueryHandler(dbContext).Handle(
+            new ListInboundOrdersQuery("org-001", "env-dev", OrganizationWideScope: true),
+            CancellationToken.None);
+        var outbound = await new ListOutboundOrdersQueryHandler(dbContext).Handle(
+            new ListOutboundOrdersQuery("org-001", "env-dev", OrganizationWideScope: true),
+            CancellationToken.None);
+        var putaway = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
+            new ListWarehouseTasksQuery("org-001", "env-dev", WarehouseTaskType.Putaway, OrganizationWideScope: true),
+            CancellationToken.None);
+        var picking = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
+            new ListWarehouseTasksQuery("org-001", "env-dev", WarehouseTaskType.Picking, OrganizationWideScope: true),
+            CancellationToken.None);
+        var count = await new ListCountExecutionsQueryHandler(dbContext).Handle(
+            new ListCountExecutionsQuery("org-001", "env-dev", OrganizationWideScope: true),
+            CancellationToken.None);
+
+        Assert.Equal("IN-UNASSIGNED", Assert.Single(inbound.Items).InboundOrderNo);
+        Assert.Equal("OUT-UNASSIGNED", Assert.Single(outbound.Items).OutboundOrderNo);
+        Assert.Equal("PUT-UNASSIGNED", Assert.Single(putaway.Items).TaskNo);
+        Assert.Equal("PICK-UNASSIGNED", Assert.Single(picking.Items).TaskNo);
+        Assert.Equal("COUNT-UNASSIGNED", Assert.Single(count.Items).CountNo);
+    }
+
     public static IEnumerable<object[]> EndpointTypes()
     {
         return WmsEndpointContracts.All.Select(x => new object[] { x.EndpointType });
@@ -1207,7 +1257,10 @@ public sealed class WmsEndpointContractTests
         }
     }
 
-    private static InboundOrder CreateInboundOrder(string orderNo)
+    private static InboundOrder CreateInboundOrder(
+        string orderNo,
+        string? assignedOperatorUserId = null,
+        string? assignedTeamId = null)
     {
         var order = InboundOrder.Create(
             "org-001",
@@ -1216,7 +1269,9 @@ public sealed class WmsEndpointContractTests
             "purchase-receipt",
             $"PO-{orderNo}",
             "SITE-01",
-            [new InboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "STAGE-01", null, null, "qualified", "company", null)]);
+            [new InboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "STAGE-01", null, null, "qualified", "company", null)],
+            assignedOperatorUserId,
+            assignedTeamId);
         if (orderNo.Contains("CLOSED", StringComparison.Ordinal))
         {
             order.Complete($"idem-{orderNo}");
@@ -1261,7 +1316,10 @@ public sealed class WmsEndpointContractTests
             "critical-defect");
     }
 
-    private static OutboundOrder CreateOutboundOrder(string orderNo)
+    private static OutboundOrder CreateOutboundOrder(
+        string orderNo,
+        string? assignedOperatorUserId = null,
+        string? assignedTeamId = null)
     {
         var order = OutboundOrder.Create(
             "org-001",
@@ -1270,7 +1328,9 @@ public sealed class WmsEndpointContractTests
             "sales-shipment",
             $"SO-{orderNo}",
             "SITE-01",
-            [new OutboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "BIN-01", null, null, "qualified", "company", null)]);
+            [new OutboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "BIN-01", null, null, "qualified", "company", null)],
+            assignedOperatorUserId,
+            assignedTeamId);
         if (orderNo.Contains("CLOSED", StringComparison.Ordinal))
         {
             order.CompletePackReview($"PACK-{orderNo}", true, $"idem-{orderNo}");

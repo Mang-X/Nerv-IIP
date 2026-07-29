@@ -1276,7 +1276,7 @@ public sealed class CompleteOutboundOrderCommandHandler(
         return new CompleteWmsMovementResult(movementRequests.First().Id, null);
     }
 
-    private async Task<IReadOnlyDictionary<string, decimal>?> GetExecutedPickingQuantitiesAsync(
+    private async Task<IReadOnlyDictionary<string, decimal>> GetExecutedPickingQuantitiesAsync(
         OutboundOrder outbound,
         CancellationToken cancellationToken)
     {
@@ -1285,20 +1285,46 @@ public sealed class CompleteOutboundOrderCommandHandler(
                 && x.EnvironmentId == outbound.EnvironmentId
                 && x.TaskType == WarehouseTaskType.Picking
                 && x.SourceOrderNo == outbound.OutboundOrderNo)
-            .GroupBy(x => x.SourceOrderLineNo)
-            .Select(x => new { LineNo = x.Key, ExecutedQuantity = x.Sum(task => task.ExecutedQuantity) })
+            .Select(x => new
+            {
+                LineNo = x.SourceOrderLineNo,
+                x.Status,
+                x.ExecutedQuantity,
+                x.CompletionReason,
+            })
             .ToArrayAsync(cancellationToken);
 
-        return taskExecutions.Length == 0
-            ? null
-            : taskExecutions.ToDictionary(x => x.LineNo, x => x.ExecutedQuantity, StringComparer.Ordinal);
+        if (taskExecutions.Length == 0
+            || taskExecutions.Any(x =>
+                x.Status is not (WarehouseTaskStatus.Completed or WarehouseTaskStatus.CompletedWithDifference))
+            || taskExecutions.Any(x =>
+                x.Status == WarehouseTaskStatus.CompletedWithDifference
+                && string.IsNullOrWhiteSpace(x.CompletionReason)))
+        {
+            throw new KnownException(
+                "Outbound order requires terminal picking task execution facts with a persisted difference reason before pack review.");
+        }
+
+        var executedQuantities = taskExecutions
+            .GroupBy(x => x.LineNo, StringComparer.Ordinal)
+            .ToDictionary(
+                x => x.Key,
+                x => x.Sum(task => task.ExecutedQuantity),
+                StringComparer.Ordinal);
+        if (outbound.Lines.Any(line => !executedQuantities.ContainsKey(line.LineNo)))
+        {
+            throw new KnownException(
+                "Every outbound order line requires a terminal picking task execution fact before pack review.");
+        }
+
+        return executedQuantities;
     }
 
     private void EnsureInventoryClientAvailableForShortPickRelease(
         OutboundOrder outbound,
-        IReadOnlyDictionary<string, decimal>? executedQuantitiesByLine)
+        IReadOnlyDictionary<string, decimal> executedQuantitiesByLine)
     {
-        if (inventoryReservationClient is not null || executedQuantitiesByLine is null)
+        if (inventoryReservationClient is not null)
         {
             return;
         }

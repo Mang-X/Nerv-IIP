@@ -139,25 +139,32 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
             .Where(x => request.InboundOrderId == null || x.Id == request.InboundOrderId);
-        if (!request.OrganizationWideScope)
+        if (!WmsOwnershipQueryFilters.TryResolve(
+                request.AssignedOperatorUserIds,
+                request.AssignedTeamIds,
+                request.SiteCodes,
+                request.OrganizationWideScope,
+                out var ownershipScope))
         {
-            var operatorUserIds = WmsOwnershipQueryFilters.Normalize(request.AssignedOperatorUserIds);
-            var teamIds = WmsOwnershipQueryFilters.Normalize(request.AssignedTeamIds);
-            var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
-            if (operatorUserIds.Length == 0 && teamIds.Length == 0 && siteCodes.Length == 0)
-            {
-                return new ListInboundOrdersResponse([], 0);
-            }
-
-            query = query.Where(x =>
-                (x.AssignedOperatorUserId != null && operatorUserIds.Contains(x.AssignedOperatorUserId))
-                || (x.AssignedOperatorUserId == null
-                    && x.AssignedTeamId != null
-                    && teamIds.Contains(x.AssignedTeamId))
-                || (x.AssignedOperatorUserId == null
-                    && x.AssignedTeamId == null
-                    && siteCodes.Contains(x.SiteCode)));
+            return new ListInboundOrdersResponse([], 0);
         }
+        query = ownershipScope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => query.Where(x =>
+                x.AssignedOperatorUserId != null
+                && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Team => query.Where(x =>
+                x.AssignedOperatorUserId == null
+                && x.AssignedTeamId != null
+                && ownershipScope.Values.Contains(x.AssignedTeamId)),
+            WmsOwnershipScopeKind.Site => query.Where(x =>
+                x.AssignedOperatorUserId == null
+                && x.AssignedTeamId == null
+                && ownershipScope.Values.Contains(x.SiteCode)),
+            WmsOwnershipScopeKind.Organization => query.Where(x =>
+                x.AssignedOperatorUserId == null && x.AssignedTeamId == null),
+            _ => query.Where(_ => false),
+        };
         if (WmsListQueryFilters.TryParseStatus<InboundOrderStatus>(request.Status, out var status))
         {
             query = query.Where(x => x.Status == status);
@@ -287,25 +294,32 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
             .Where(x => request.OutboundOrderId == null || x.Id == request.OutboundOrderId);
-        if (!request.OrganizationWideScope)
+        if (!WmsOwnershipQueryFilters.TryResolve(
+                request.AssignedOperatorUserIds,
+                request.AssignedTeamIds,
+                request.SiteCodes,
+                request.OrganizationWideScope,
+                out var ownershipScope))
         {
-            var operatorUserIds = WmsOwnershipQueryFilters.Normalize(request.AssignedOperatorUserIds);
-            var teamIds = WmsOwnershipQueryFilters.Normalize(request.AssignedTeamIds);
-            var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
-            if (operatorUserIds.Length == 0 && teamIds.Length == 0 && siteCodes.Length == 0)
-            {
-                return new ListOutboundOrdersResponse([], 0);
-            }
-
-            query = query.Where(x =>
-                (x.AssignedOperatorUserId != null && operatorUserIds.Contains(x.AssignedOperatorUserId))
-                || (x.AssignedOperatorUserId == null
-                    && x.AssignedTeamId != null
-                    && teamIds.Contains(x.AssignedTeamId))
-                || (x.AssignedOperatorUserId == null
-                    && x.AssignedTeamId == null
-                    && siteCodes.Contains(x.SiteCode)));
+            return new ListOutboundOrdersResponse([], 0);
         }
+        query = ownershipScope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => query.Where(x =>
+                x.AssignedOperatorUserId != null
+                && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Team => query.Where(x =>
+                x.AssignedOperatorUserId == null
+                && x.AssignedTeamId != null
+                && ownershipScope.Values.Contains(x.AssignedTeamId)),
+            WmsOwnershipScopeKind.Site => query.Where(x =>
+                x.AssignedOperatorUserId == null
+                && x.AssignedTeamId == null
+                && ownershipScope.Values.Contains(x.SiteCode)),
+            WmsOwnershipScopeKind.Organization => query.Where(x =>
+                x.AssignedOperatorUserId == null && x.AssignedTeamId == null),
+            _ => query.Where(_ => false),
+        };
         if (WmsListQueryFilters.TryParseStatus<OutboundOrderStatus>(request.Status, out var status))
         {
             query = query.Where(x => x.Status == status);
@@ -518,25 +532,32 @@ public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContex
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.TaskType == request.TaskType);
-        if (!request.OrganizationWideScope)
+        if (!WmsOwnershipQueryFilters.TryResolve(
+                request.AssignedOperatorUserIds,
+                request.AssignedTeamIds,
+                request.SiteCodes,
+                request.OrganizationWideScope,
+                out var ownershipScope))
         {
-            var operatorUserIds = WmsOwnershipQueryFilters.Normalize(request.AssignedOperatorUserIds);
-            var teamIds = WmsOwnershipQueryFilters.Normalize(request.AssignedTeamIds);
-            var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
-            if (operatorUserIds.Length == 0 && teamIds.Length == 0 && siteCodes.Length == 0)
-            {
-                return new ListWarehouseTasksResponse([], 0);
-            }
-
-            query = query.Where(x =>
-                (x.AssignedOperatorUserId != null && operatorUserIds.Contains(x.AssignedOperatorUserId))
-                || (x.AssignedOperatorUserId == null
-                    && x.AssignedTeamId != null
-                    && teamIds.Contains(x.AssignedTeamId))
-                || (x.AssignedOperatorUserId == null
-                    && x.AssignedTeamId == null
-                    && siteCodes.Contains(x.SiteCode)));
+            return new ListWarehouseTasksResponse([], 0);
         }
+        query = ownershipScope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => query.Where(x =>
+                x.AssignedOperatorUserId != null
+                && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Team => query.Where(x =>
+                x.AssignedOperatorUserId == null
+                && x.AssignedTeamId != null
+                && ownershipScope.Values.Contains(x.AssignedTeamId)),
+            WmsOwnershipScopeKind.Site => query.Where(x =>
+                x.AssignedOperatorUserId == null
+                && x.AssignedTeamId == null
+                && ownershipScope.Values.Contains(x.SiteCode)),
+            WmsOwnershipScopeKind.Organization => query.Where(x =>
+                x.AssignedOperatorUserId == null && x.AssignedTeamId == null),
+            _ => query.Where(_ => false),
+        };
 
         if (WmsListQueryFilters.TryParseStatus<WarehouseTaskStatus>(request.Status, out var status))
         {
@@ -630,7 +651,49 @@ internal static class WmsOwnershipQueryFilters
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToArray()
         ?? [];
+
+    public static bool TryResolve(
+        IEnumerable<string>? operatorUserIds,
+        IEnumerable<string>? teamIds,
+        IEnumerable<string>? siteCodes,
+        bool organizationWideScope,
+        out WmsOwnershipScope scope)
+    {
+        var operators = Normalize(operatorUserIds);
+        var teams = Normalize(teamIds);
+        var sites = Normalize(siteCodes);
+        var activeModes = (operators.Length > 0 ? 1 : 0)
+            + (teams.Length > 0 ? 1 : 0)
+            + (sites.Length > 0 ? 1 : 0)
+            + (organizationWideScope ? 1 : 0);
+        if (activeModes != 1)
+        {
+            scope = default;
+            return false;
+        }
+
+        scope = operators.Length > 0
+            ? new WmsOwnershipScope(WmsOwnershipScopeKind.Operator, operators)
+            : teams.Length > 0
+                ? new WmsOwnershipScope(WmsOwnershipScopeKind.Team, teams)
+                : sites.Length > 0
+                    ? new WmsOwnershipScope(WmsOwnershipScopeKind.Site, sites)
+                    : new WmsOwnershipScope(WmsOwnershipScopeKind.Organization, []);
+        return true;
+    }
 }
+
+internal enum WmsOwnershipScopeKind
+{
+    Operator,
+    Team,
+    Site,
+    Organization,
+}
+
+internal readonly record struct WmsOwnershipScope(
+    WmsOwnershipScopeKind Kind,
+    string[] Values);
 
 public sealed record ListCountExecutionsQuery(
     string OrganizationId,
@@ -680,25 +743,32 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => request.CountExecutionId == null || x.Id == request.CountExecutionId);
-        if (!request.OrganizationWideScope)
+        if (!WmsOwnershipQueryFilters.TryResolve(
+                request.AssignedOperatorUserIds,
+                request.AssignedTeamIds,
+                request.SiteCodes,
+                request.OrganizationWideScope,
+                out var ownershipScope))
         {
-            var operatorUserIds = WmsOwnershipQueryFilters.Normalize(request.AssignedOperatorUserIds);
-            var teamIds = WmsOwnershipQueryFilters.Normalize(request.AssignedTeamIds);
-            var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
-            if (operatorUserIds.Length == 0 && teamIds.Length == 0 && siteCodes.Length == 0)
-            {
-                return new ListCountExecutionsResponse([], 0);
-            }
-
-            query = query.Where(x =>
-                (x.AssignedOperatorUserId != null && operatorUserIds.Contains(x.AssignedOperatorUserId))
-                || (x.AssignedOperatorUserId == null
-                    && x.AssignedTeamId != null
-                    && teamIds.Contains(x.AssignedTeamId))
-                || (x.AssignedOperatorUserId == null
-                    && x.AssignedTeamId == null
-                    && siteCodes.Contains(x.SiteCode)));
+            return new ListCountExecutionsResponse([], 0);
         }
+        query = ownershipScope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => query.Where(x =>
+                x.AssignedOperatorUserId != null
+                && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Team => query.Where(x =>
+                x.AssignedOperatorUserId == null
+                && x.AssignedTeamId != null
+                && ownershipScope.Values.Contains(x.AssignedTeamId)),
+            WmsOwnershipScopeKind.Site => query.Where(x =>
+                x.AssignedOperatorUserId == null
+                && x.AssignedTeamId == null
+                && ownershipScope.Values.Contains(x.SiteCode)),
+            WmsOwnershipScopeKind.Organization => query.Where(x =>
+                x.AssignedOperatorUserId == null && x.AssignedTeamId == null),
+            _ => query.Where(_ => false),
+        };
 
         if (WmsListQueryFilters.TryParseStatus<CountExecutionStatus>(request.Status, out var status))
         {

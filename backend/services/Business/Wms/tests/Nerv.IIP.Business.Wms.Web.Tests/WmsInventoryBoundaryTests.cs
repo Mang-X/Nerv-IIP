@@ -566,6 +566,7 @@ public sealed class WmsInventoryBoundaryTests
             "SITE-01",
             [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
         dbContext.OutboundOrders.Add(outbound);
+        CompletePickingTasks(dbContext, outbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
@@ -641,6 +642,7 @@ public sealed class WmsInventoryBoundaryTests
             "SITE-01",
             [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
         dbContext.OutboundOrders.Add(outbound);
+        CompletePickingTasks(dbContext, outbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         const string idempotencyKey = "outbound-replay";
         var first = await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
@@ -693,6 +695,7 @@ public sealed class WmsInventoryBoundaryTests
                 new OutboundOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 2m, "LOC-A-02", "LOT-002", null, "qualified", "company", "owner-001")
             ]);
         dbContext.OutboundOrders.Add(outbound);
+        CompletePickingTasks(dbContext, outbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
@@ -733,6 +736,7 @@ public sealed class WmsInventoryBoundaryTests
                 new OutboundOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 2m, "LOC-A-02", "LOT-002", null, "qualified", "company", "owner-001")
             ]);
         dbContext.OutboundOrders.Add(outbound);
+        CompletePickingTasks(dbContext, outbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var idempotencyKey = new string('k', 128);
         var handler = new CompleteOutboundOrderCommandHandler(dbContext);
@@ -778,6 +782,11 @@ public sealed class WmsInventoryBoundaryTests
         await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
             new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
             CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new CompleteWarehouseTaskCommandHandler(dbContext).Handle(
+            new CompleteWarehouseTaskCommand(dbContext.WarehouseTasks.Single().Id),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
         var result = await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
             new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001"),
             CancellationToken.None);
@@ -848,9 +857,8 @@ public sealed class WmsInventoryBoundaryTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var warehouseTask = dbContext.WarehouseTasks.Single();
-        await new RecordWarehouseTaskProgressCommandHandler(dbContext).Handle(
-            new RecordWarehouseTaskProgressCommand(warehouseTask.Id, 8m),
-            CancellationToken.None);
+        warehouseTask.Start("picker-001", warehouseTask.Version);
+        warehouseTask.Complete(8m, "picker-001", "缺货短拣", warehouseTask.Version);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await new CompleteOutboundOrderCommandHandler(dbContext, inventory).Handle(
@@ -887,9 +895,9 @@ public sealed class WmsInventoryBoundaryTests
             new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-SHORT-NO-CLIENT-001", "LINE-001", "LOC-A-01", "PACK-01", 10m),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new RecordWarehouseTaskProgressCommandHandler(dbContext).Handle(
-            new RecordWarehouseTaskProgressCommand(dbContext.WarehouseTasks.Single().Id, 8m),
-            CancellationToken.None);
+        var warehouseTask = dbContext.WarehouseTasks.Single();
+        warehouseTask.Start("picker-001", warehouseTask.Version);
+        warehouseTask.Complete(8m, "picker-001", "缺货短拣", warehouseTask.Version);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await Assert.ThrowsAsync<KnownException>(() => new CompleteOutboundOrderCommandHandler(dbContext).Handle(
@@ -900,6 +908,54 @@ public sealed class WmsInventoryBoundaryTests
         var line = outbound.Lines.Single();
         Assert.Equal(0m, line.IssuedQuantity);
         Assert.Equal(0m, line.BackorderQuantity);
+    }
+
+    [Fact]
+    public async Task Complete_outbound_rejects_missing_or_non_terminal_picking_execution_facts()
+    {
+        await using var dbContext = CreateContext();
+        var withoutTask = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-NO-TASK-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", null, null, "qualified", "company", "owner-001")]);
+        var withActiveTask = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-ACTIVE-TASK-001",
+            "sales-delivery",
+            "SO-002",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", null, null, "qualified", "company", "owner-001")]);
+        var activeTask = withActiveTask.CreatePickingTask(
+            "TASK-ACTIVE-001",
+            "LINE-001",
+            "LOC-A-01",
+            "PACK-01",
+            4m);
+        activeTask.Start("picker-001", activeTask.Version);
+        activeTask.RecordProgress(2m, "picker-001", activeTask.Version);
+        dbContext.OutboundOrders.AddRange(withoutTask, withActiveTask);
+        dbContext.WarehouseTasks.Add(activeTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var missing = await Assert.ThrowsAsync<KnownException>(() =>
+            new CompleteOutboundOrderCommandHandler(dbContext).Handle(
+                new CompleteOutboundOrderCommand(withoutTask.Id, "PACK-NO-TASK-001", true, "idem-no-task-001"),
+                CancellationToken.None));
+        var active = await Assert.ThrowsAsync<KnownException>(() =>
+            new CompleteOutboundOrderCommandHandler(dbContext).Handle(
+                new CompleteOutboundOrderCommand(withActiveTask.Id, "PACK-ACTIVE-001", true, "idem-active-001"),
+                CancellationToken.None));
+
+        Assert.Contains("terminal picking task", missing.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("terminal picking task", active.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(OutboundOrderStatus.Open, withoutTask.Status);
+        Assert.Equal(OutboundOrderStatus.Open, withActiveTask.Status);
+        Assert.Empty(dbContext.InventoryMovementRequests);
     }
 
     [Fact]
@@ -961,6 +1017,8 @@ public sealed class WmsInventoryBoundaryTests
         await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
             new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
             CancellationToken.None);
+        CompletePickingTasks(dbContext, outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
         await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
             new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001"),
             CancellationToken.None);
@@ -1025,6 +1083,8 @@ public sealed class WmsInventoryBoundaryTests
         await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
             new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-002", "LINE-002", "LOC-A-02", "PACK-01", 2m),
             CancellationToken.None);
+        CompletePickingTasks(dbContext, outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
         await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
             new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001"),
             CancellationToken.None);
@@ -1099,6 +1159,8 @@ public sealed class WmsInventoryBoundaryTests
         await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
             new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
             CancellationToken.None);
+        CompletePickingTasks(dbContext, outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
         await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
             new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001"),
             CancellationToken.None);
@@ -1673,6 +1735,40 @@ public sealed class WmsInventoryBoundaryTests
             .UseInMemoryDatabase($"wms-boundary-{Guid.NewGuid():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static void CompletePickingTasks(ApplicationDbContext dbContext, OutboundOrder outbound)
+    {
+        var tasks = dbContext.WarehouseTasks.Local
+            .Where(x =>
+                x.TaskType == WarehouseTaskType.Picking
+                && x.SourceOrderNo == outbound.OutboundOrderNo)
+            .ToList();
+        foreach (var line in outbound.Lines.Where(line =>
+                     tasks.All(task => task.SourceOrderLineNo != line.LineNo)))
+        {
+            var task = outbound.CreatePickingTask(
+                $"TEST-{outbound.OutboundOrderNo}-{line.LineNo}",
+                line.LineNo,
+                line.PickLocationCode,
+                "PACK-01",
+                line.RequestedQuantity);
+            dbContext.WarehouseTasks.Add(task);
+            tasks.Add(task);
+        }
+
+        foreach (var task in tasks)
+        {
+            if (task.Status == WarehouseTaskStatus.Open)
+            {
+                task.Start("test-picker", task.Version);
+            }
+
+            if (task.Status == WarehouseTaskStatus.InProgress)
+            {
+                task.Complete(task.PlannedQuantity, "test-picker", null, task.Version);
+            }
+        }
     }
 
     private static void SetStatus(InboundOrder inbound, InboundOrderStatus status)
