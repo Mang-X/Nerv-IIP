@@ -2964,6 +2964,116 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsolePrincipalWorkContextResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePrincipalWorkContextResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePrincipalWorkContextResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    applicablePermissionCode?: string;
+    resolvedAtUtc?: string;
+    principal?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePrincipalIdentity;
+    resolutionStatus?: string;
+    worker?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessMasterDataWorkContextWorker | null;
+    teams?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessMasterDataWorkContextTeam>;
+    coveredWorkCenters?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessMasterDataWorkContextCoveredWorkCenter>;
+    workshops?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessMasterDataWorkContextReference>;
+    shifts?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessMasterDataWorkContextShift>;
+    sites?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessMasterDataWorkContextReference>;
+    candidateScopes?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessMasterDataWorkContextCandidateScope>;
+    candidateScopeKinds?: Array<string>;
+    authorizedScopes?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAuthorizedWorkScope>;
+    availableScopeKinds?: Array<string>;
+    selectedScope?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAuthorizedWorkScope | null;
+    issues?: Array<string>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePrincipalIdentity = {
+    id?: string;
+    principalType?: string;
+    loginName?: string | null;
+    roles?: Array<NervIipContractsIamAuthorizationRole>;
+};
+
+export type NervIipContractsIamAuthorizationRole = {
+    id?: string;
+    displayName?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessMasterDataWorkContextWorker = {
+    id?: string;
+    userId?: string;
+    employeeNo?: string;
+    name?: string;
+    departmentId?: string | null;
+    departmentName?: string | null;
+    jobTitle?: string | null;
+    employmentStatus?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessMasterDataWorkContextTeam = {
+    id?: string;
+    name?: string;
+    isLeader?: boolean;
+    workshopId?: string | null;
+    shiftId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessMasterDataWorkContextCoveredWorkCenter = {
+    id?: string;
+    name?: string;
+    workshopId?: string;
+    relationship?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessMasterDataWorkContextReference = {
+    id?: string;
+    name?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessMasterDataWorkContextShift = {
+    id?: string;
+    name?: string;
+    startsAt?: string;
+    endsAt?: string;
+    crossesMidnight?: boolean;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessMasterDataWorkContextCandidateScope = {
+    kind?: string;
+    id?: string;
+    displayName?: string;
+    relationship?: string;
+    ancestors?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessMasterDataWorkContextScopeAncestor>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessMasterDataWorkContextScopeAncestor = {
+    kind?: string;
+    id?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAuthorizedWorkScope = {
+    kind?: string;
+    id?: string;
+    displayName?: string;
+    relationship?: string;
+    authorizationPaths?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkScopeAuthorizationPath>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkScopeAuthorizationPath = {
+    sourceKind?: string;
+    sourceId?: string;
+    grantScopeKind?: string;
+    grantScopeId?: string;
+    relationship?: string;
+    applicablePermissionCodes?: Array<string>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePrincipalWorkContextRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMpsBucketListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMpsBucketListResponse | null;
 };
@@ -11718,6 +11828,47 @@ export type ResolveBusinessConsoleEngineeringProductionVersionResponses = {
 };
 
 export type ResolveBusinessConsoleEngineeringProductionVersionResponse = ResolveBusinessConsoleEngineeringProductionVersionResponses[keyof ResolveBusinessConsoleEngineeringProductionVersionResponses];
+
+export type GetBusinessConsolePrincipalWorkContextData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        permissionCode: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/me/work-context';
+};
+
+export type GetBusinessConsolePrincipalWorkContextErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+};
+
+export type GetBusinessConsolePrincipalWorkContextError = GetBusinessConsolePrincipalWorkContextErrors[keyof GetBusinessConsolePrincipalWorkContextErrors];
+
+export type GetBusinessConsolePrincipalWorkContextResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsolePrincipalWorkContextResponse;
+};
+
+export type GetBusinessConsolePrincipalWorkContextResponse = GetBusinessConsolePrincipalWorkContextResponses[keyof GetBusinessConsolePrincipalWorkContextResponses];
 
 export type ListBusinessConsolePlanningMpsBucketsData = {
     body?: never;

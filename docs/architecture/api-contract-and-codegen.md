@@ -66,6 +66,15 @@ BusinessGateway Console OpenAPI 的生成链路固定为：
 4. `frontend/packages/api-client/src/business-console.ts` 提供业务控制台稳定导出；`src/index.ts` 可以重新导出业务控制台需要的类型、SDK 和 Pinia Colada query/mutation options。
 5. `frontend/apps/business-console` 只从 `@nerv-iip/api-client` 稳定入口消费，不深 import `src/generated/business-console/*`。
 6. OpenAPI 快照是生成输入，不允许手改；新增或修改 business-console endpoint 时必须先更新 BusinessGateway endpoint、OpenAPI/authorization/proxy tests，再导出快照并运行 `pnpm -C frontend generate:api`。
+
+MAN-627 / #1164 的 `GET /api/business-console/v1/me/work-context`
+（`getBusinessConsolePrincipalWorkContext`）是当前主体作业上下文的两跳 facade：Gateway 使用
+realtime IAM check 从服务端取得 principal、角色和 permission-aware grants，再调用
+MasterData principal work-context 并只返回候选与授权范围的交集。请求不接受 `userId`；
+`organizationId`、`environmentId`、`permissionCode` 必填，scope kind/id 只能成对作为待验证
+选择。MasterData 协议/坏响应稳定映射 502，连接或超时映射 503，OpenAPI 必须声明两类错误。
+该响应不替代各业务动作自己的 permission/scope 检查。
+
 7. `@hey-api/openapi-ts` 当前生成的 fetch client 内含上游 TODO 注释；该注释属于 generated artifact，不在项目内手改，升级生成器前通过 `frontend/packages/api-client/scripts/clean-generated.mjs` 保持生成目录无陈旧文件。
 8. BusinessGateway facade 转发下游查询时，布尔开关参数采用“默认 false 省略、true 显式发送”的约定；例如 MasterData `includeDisabled=false` 不进入下游 query string，`includeDisabled=true` 才会发送，避免 Gateway 把下游默认值重复编码进 facade。
 9. `runBusinessConsoleMesSchedule` 是 MES 规则排程的过渡入口，用于 #206 前的确定性规则排程触发和结果状态查看；它不是长期 APS 权威接口。#206 落地 BusinessScheduling/APS lite 后，Business Console 的正式排程视图和甘特/RFC 应消费 BusinessScheduling 输出 DTO，MES 只按已发布方案落地执行域变化。

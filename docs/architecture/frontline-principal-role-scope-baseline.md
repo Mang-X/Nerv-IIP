@@ -24,11 +24,11 @@
    [Worker.cs](../../backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/WorkerAggregate/Worker.cs)、
    [WorldBibleWorkerSpec.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/WorldBibleWorkerSpec.cs)、
    [Role.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/RoleAggregate/Role.cs)。
-3. 当前 IAM 数据范围只接受 `site`、`workshop`、`production-line`；公开授权结果只返回
-   `SiteCodes`、`WorkshopCodes`、`ProductionLineCodes`。它没有 `self`、`team`、
-   `work-center` 或显式 `organization` scope type。后文的
-   Self/Team/WorkCenter/Workshop/Organization 是后续契约的统一业务语义，
-   不是对现有 IAM 字段的改名。
+3. MAN-627 / #1164 已把 IAM data scope 扩展为 `self`、`team`、`work-center`、
+   `workshop`、`organization`、`site`、`production-line`，并在实时授权检查按
+   permission 返回带 role/membership 来源的 `ScopeGrants`。空 data scopes 只保留
+   legacy `DataScope` 兼容，不生成 grant，也绝不等价于 Organization；Organization
+   必须显式持久化且匹配当前 organization。
    证据：
    [Role.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/RoleAggregate/Role.cs)、
    [AuthorizationContracts.cs](../../backend/common/Contracts/Nerv.IIP.Contracts.Iam/AuthorizationContracts.cs)。
@@ -58,20 +58,19 @@
 | Role | 聚合 `permissionCodes`，并可持有 role data scopes；角色名是管理/展示文本，不参与业务代码分支。 | [Role.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/RoleAggregate/Role.cs) |
 | `permissionCodes` | 当前 membership 下全部未删除角色权限的 `Distinct + OrderBy` 结果；前端可用来裁剪入口，Gateway/IAM 逐请求校验仍是最终边界。 | [IamRepositories.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Repositories/IamRepositories.cs)、[AuthorizedBusinessProxyEndpoint.cs](../../backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/AuthorizedBusinessProxyEndpoint.cs) |
 | `roleIds` | 当前 membership 的全部 role ID；`/auth/me` 返回它们供角色 catalog 展示和审计，不作为动作授权条件。 | [IamAuthService.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Auth/IamAuthService.cs)、[API 契约与代码生成规范](api-contract-and-codegen.md#console-iam-admin-api) |
-| 当前有效 data scope | membership scopes 与其所有 role scopes 的去重并集。当前模型不保留“哪个权限来自哪个角色、哪个范围来自哪个角色”的联合关系。 | [IamRepositories.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Repositories/IamRepositories.cs) |
+| 当前有效 data scope | legacy `DataScope` 仍是 membership scopes 与 role scopes 的兼容并集；MAN-627 新增的 permission-aware `ScopeGrants` 只取真正授予本次 permission 的 role scopes，并附加当前 membership scopes，保留 `sourceKind/sourceId` 审计来源。 | [IamRepositories.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Repositories/IamRepositories.cs) |
 
 当前实现的多角色算法可概括为：
 
 ```text
 effectivePermissionCodes = distinct(union(each membership role.permissionCodes))
 effectiveRoleIds         = all membership roleIds
-effectiveDataScopes      = distinct(membership scopes ∪ all role scopes)
+permissionScopeGrants    = scopes(roles granting checked permission) ∪ membership scopes
 ```
 
-这证明多角色主体无需角色切换，也暴露一个尚未裁决的边界：权限并集与范围并集是分开计算的。
-如果角色 A 提供动作权限、角色 B 提供更宽范围，当前模型没有权限—范围来源绑定来阻止两者形成
-笛卡尔式组合。后续 #1164 必须决定是否接受这种“主体级总并集”，或引入可审计的
-permission-to-scope binding；在裁决前不能由前端自行组合。
+这证明多角色主体无需角色切换。角色 A 提供动作权限时，不再自动拼接角色 B 的更宽
+role scope；membership scope 是主体在当前组织环境中的显式公共边界，会随本次 permission
+返回并保留 membership 来源。客户端不能自行组合 role、permission 和 scope。
 
 ### 2.2 Worker、岗位、班组、工作中心、车间与班次
 
@@ -98,8 +97,10 @@ permission-to-scope binding；在裁决前不能由前端自行组合。
 公开 BusinessGateway worker directory 当前返回 worker、团队和技能的组合读面，支持
 `userId`、`departmentCode`、`teamCode`、`workshopCode`、`workCenterCode`、
 `skillCode`、`employmentStatus` 过滤；它不返回 IAM `roleIds` 或 `permissionCodes`。
-反过来，Console principal 不返回 Worker、Team、WorkCenter、Workshop 或 Shift。
-因此目前没有一次调用即可得到完整“当前主体作业上下文”的公开契约；这是 #1164 的范围。
+MAN-627 新增 `GET /api/business-console/v1/me/work-context`，从实时 IAM 检查取得服务端
+principal，再聚合 MasterData Worker、当前有效 Team、Shift、Workshop、Site 和车间覆盖的
+WorkCenter 候选，最后与 permission-aware grants 求交集。客户端不传 userId；缺 Worker、
+重复 Worker、停用 Worker、孤立/矛盾层级都显式返回 resolution/issues，且不扩张候选范围。
 
 证据：
 
@@ -116,10 +117,10 @@ scope kind/code 只能是请求，不能成为授权事实。
 | 范围 | 统一含义 | 当前可验证的事实锚点 | 当前交付状态与 fail-closed 规则 |
 | --- | --- | --- | --- |
 | Self | 只包含业务对象明确记录的当前主体本人：例如任务 `assignedUserId == principalId`，或命令 subject 是映射到 principal 的 Worker `userId`。 | Principal `principalId` 与 Worker `userId`；PDA “我的任务”当前按 `assignedUserId=principalId` 做服务端查询并再次行级校验。 | 仅部分 MES 派工读面已有实例。没有 assignee/owner/subject 字段的对象不能伪称“我的”；交由 #1157、#1163、#1165–#1168 明确各域归属。 |
-| Team | 当前主体被服务端确认可管理/参与的一个或多个稳定 `teamCode` 所覆盖的对象集合。成员关系必须当前有效；跨成员动作还需独立 permissionCode。 | `TeamMember(teamCode,userId,isLeader,effectiveFrom/effectiveTo)` 和 `Team.shiftCode/workshopCode`。 | IAM 不支持 `team` scope type，current principal 也不返回团队范围；不能仅凭 `JobTitle=班组长` 或 `isLeader` 自动授予跨人员权限。由 #1164、#1179 补齐。 |
-| WorkCenter | 明确绑定一个或多个稳定 WorkCenter code 的任务、工序、设备或其它对象集合。 | `WorkCenter.Code/WorkshopCode`、设备与任务已有的 WorkCenter 引用。 | IAM 不支持 `work-center` scope type。当前 worker 候选查询会由 work center 解析到 workshop 的所有班组，但这只是候选解析，不是 WorkCenter 授权授予。由 #1157、#1164、#1165、#1168 补齐。 |
-| Workshop | 明确绑定一个或多个稳定 Workshop code，及各域契约明确声明可沿 Workshop 展开的对象集合。 | IAM 已支持 `workshop` data scope；MasterData 有 Workshop、WorkCenter.WorkshopCode、Team.WorkshopCode。 | 是五种语义中唯一已有同名 IAM scope 的一项，但 BusinessGateway 仅在少数 MES/报警/Maintenance 查询中解析并下推，不能假定全域已覆盖。 |
-| Organization | 当前 `organizationId + environmentId` 内、经独立 Organization 级授权允许的对象集合，是最宽业务范围。 | IAM membership 的 organization/environment 边界。 | IAM 没有显式 `organization` data scope type；当前有效 scopes 为空时授权结果为 `null`，Gateway 将其解释为“无范围限制”。后续不能把“空 scope”当成前线账号的 Organization 授权，#1164 必须给出显式、可审计且 fail-closed 的表达。 |
+| Team | 当前主体被服务端确认可管理/参与的一个或多个稳定 `teamCode` 所覆盖的对象集合。成员关系必须当前有效；跨成员动作还需独立 permissionCode。 | `TeamMember(teamCode,userId,isLeader,effectiveFrom/effectiveTo)` 和 `Team.shiftCode/workshopCode`。 | IAM 已支持显式 `team` grant；work-context 只把当前有效成员关系解析为候选，再与 grant 求交。`JobTitle=班组长` 或 `isLeader` 仍不会自动授予权限。 |
+| WorkCenter | 明确绑定一个或多个稳定 WorkCenter code 的任务、工序、设备或其它对象集合。 | `WorkCenter.Code/WorkshopCode`、设备与任务已有的 WorkCenter 引用。 | IAM 已支持显式 `work-center` grant；work-context 会验证车间和产线层级，孤立或冲突 WorkCenter 不成为候选。各域列表下推仍由 #1165–#1168 交付。 |
+| Workshop | 明确绑定一个或多个稳定 Workshop code，及各域契约明确声明可沿 Workshop 展开的对象集合。 | IAM `workshop` grant；MasterData Workshop、WorkCenter.WorkshopCode、Team.WorkshopCode。 | work-context 可沿已验证层级展开 Team 与 WorkCenter，但这不代表所有业务域读写都已接入范围门禁。 |
+| Organization | 当前 `organizationId + environmentId` 内、经独立 Organization 级授权允许的对象集合，是最宽业务范围。 | IAM 显式 `organization` grant，且 scope id 必须匹配当前 organization。 | 空 scopes 不生成 Organization grant；管理员 seed 显式配置 Organization，PDA 演示账号 membership 显式配置各自 Self。 |
 
 这五种范围不是可以按名称做数值比较的单链：
 
@@ -129,7 +130,7 @@ scope kind/code 只能是请求，不能成为授权事实。
 - Workshop 可以通过明确的主数据关系展开 Team 和 WorkCenter。
 - Organization 是独立授权的最宽边界，不是“其它 scope 为空”的默认别名。
 
-当前 IAM 对已实现范围的处理是 membership scopes 与 role scopes 取并集；存在未知
+当前 IAM 的实时授权检查保留 scope grant 的 role/membership 来源；存在未知 legacy
 scope type 时授权结果 `DenyAll=true`。BusinessGateway 当前只在 MES 工单、遥测/设备报警、
 Maintenance 工单等有限读面解析 site/workshop/production-line，再收敛 work center 和设备；
 这个实现不能证明 WMS、Quality 或所有写命令都已有范围门禁。
@@ -230,11 +231,13 @@ BusinessApproval delegation 是审批域事实，不能自动授权业务域代�
 | `role-pda-warehouse` | `business.wms.receipts.read`、`business.wms.receipts.manage`、`business.wms.shipments.read`、`business.wms.shipments.manage`、`business.inventory.ledger.read`、`business.inventory.counts.manage`、`business.inventory.movements.create`、`business.masterdata.resources.read` |
 | `role-pda-inspector` | `business.quality.inspection-records.read`、`business.quality.inspection-records.create`、`business.mes.work-orders.read`、`business.masterdata.resources.read` |
 
-上述三个角色和四个 membership seed 都不写 data scopes；在干净数据库上，这会形成空有效
-scopes，并按当前 IAM 行为得到 `DataScope=null`，BusinessGateway 将其视为无附加范围限制。
-既有数据库可能保留管理员另行配置的 role/membership scopes，seed 不会清除它们，所以验收
-必须通过公开授权路径读取实际结果，不能只看 seed。无论哪种情况，当前 seed 都没有提供五级
-范围隔离的前置证据。
+上述三个角色不写 role data scopes；四个 PDA membership seed 显式写入各自 principal 的
+Self scope，避免空 scope 被误读为全量。Platform Administrator seed 则显式写入当前
+Organization scope。MAN-627 前已落库且仍严格匹配旧 seed 基线的空 scope 身份，会由独立
+seed manifest 做一次性回填：管理员需同时匹配旧默认 manifest、固定角色名和完整基线权限，
+PDA membership 需只含对应固定角色且该角色名/权限均未变化。任何非空或已自定义的
+permissions、roles、scopes 均不覆盖；验收仍必须通过公开实时授权路径读取实际结果，不能只看 seed。
+这些 seed 只提供本人或组织边界，不代表 Team、WorkCenter、Workshop 等五级范围已自动配置。
 
 ## 7. 缺少的验收身份与前置
 
@@ -243,7 +246,7 @@ scopes，并按当前 IAM 行为得到 `DataScope=null`，BusinessGateway 将其
 | 维修人员 | `EMP-043`–`EMP-046` 是维修技师，`EMP-047` 是点检员；均有 `equipment-maintenance` 技能。 | 没有已知口令、可登录 membership、维修角色、准确 permissionCodes、Self/Team/WorkCenter/Workshop 范围或维修派工事实。由 #1158、#1164、#1168、#1178 补齐并验收。 |
 | 班组长 | `EMP-004`–`EMP-009` 分别是六个 World Bible Team 的 `isLeader=true` 成员。 | 没有已知口令、可登录 membership、班组长角色/权限或 Team scope；`isLeader` 不能代替授权。由 #1158、#1164、#1179 补齐。 |
 | 车间主任/车间组长 | `EMP-001`–`EMP-003` 的 Worker `JobTitle=车间主任`；World Bible 规格曾在构造阶段为其分配三个 workshop code。 | 持久 Worker 不保存 workshop，World Bible Workshop `managerUserId=null`，也无登录 membership、角色/权限或 Workshop scope；运行时不能证实三人分别管理哪个车间。由 #1158、#1164、#1179 补齐。 |
-| PC 管理角色 | seed 可创建 `admin` / `role-platform-admin`，拥有权限 catalog 全集。 | 这是平台超级管理员且无 Worker 映射，不代表计划员、质量主管、设备主管、仓储主管、班组长或车间主任的最小权限 PC 身份；缺各业务角色、默认工作台和显式范围。由 #1158、#1173、#1182 补齐。 |
+| PC 管理角色 | seed 可创建 `admin` / `role-platform-admin`，拥有权限 catalog 全集及显式 Organization scope。 | 这是平台超级管理员且无 Worker 映射，不代表计划员、质量主管、设备主管、仓储主管、班组长或车间主任的最小权限 PC 身份；缺各业务角色和默认工作台。由 #1158、#1173、#1182 补齐。 |
 
 人员号段和岗位分布证据：
 [WorldBibleWorkerSpec.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/WorldBibleWorkerSpec.cs)、
@@ -253,11 +256,8 @@ scopes，并按当前 IAM 行为得到 `DataScope=null`，BusinessGateway 将其
 
 ### 8.1 已确认的能力缺口
 
-- 缺统一 current principal work context 契约，不能一次得到 principal、Worker、岗位、团队、
-  班次、WorkCenter/Workshop 可用范围与可选 scope kinds：#1164。
-- IAM scope types/公开 `AuthorizationDataScope` 不覆盖 Self、Team、WorkCenter 和显式
-  Organization；WMS、Quality、Maintenance 与写命令也没有统一的五级范围下推：#1157、
-  #1164–#1168。
+- current principal work-context 和 permission-aware grant 已由 #1164 交付；MES、WMS、
+  Quality、Maintenance 的列表/动作仍需 #1165–#1168 把已验证 scope 下推到各自查询与命令。
 - 没有跨业务域统一 actor/subject/reason 代操作契约；审批委托不能替代现场动作授权：
   #1157、#1162、#1179。
 - PDA 首页虽然按 `permissionCodes` 聚合入口，但 current principal 不含 Worker/范围，
@@ -286,15 +286,11 @@ World Bible L1 背景历史引擎可以生成设备遥测、报警、维修和�
 
 1. Team 与 WorkCenter 并非父子层级时，各角色默认 scope、可同时选择的 scope kinds 及 UI
    表达；不能用单个“范围级别”整数覆盖。
-2. 多角色主体采用当前权限并集 + 范围并集，还是建立 permission-to-scope 来源绑定；必须
-   明确跨角色组合的最小权限原则和审计解释。
-3. Organization scope 是否必须显式授予，以及如何迁移当前“空 data scopes = 无限制”的
-   行为，避免前线账号意外获得组织全量。
-4. Worker 多个当前有效 Team、多个班次或临时支援时，默认 Team/Shift、显式切换和有效期
+2. Worker 多个当前有效 Team、多个班次或临时支援时，默认 Team/Shift、显式切换和有效期
    冲突如何处理。
-5. 是否引入 Position/Job 稳定目录，及 `JobTitle`、Team leader、Workshop manager 与 IAM
+3. 是否引入 Position/Job 稳定目录，及 `JobTitle`、Team leader、Workshop manager 与 IAM
    role 的管理关系；无论如何，业务代码都不得按中文岗位名授权。
-6. 主管代操作适用哪些动作、是否必须先有 delegation/assignment、reason 采用文本还是受控
+4. 主管代操作适用哪些动作、是否必须先有 delegation/assignment、reason 采用文本还是受控
    原因码，以及 subject 对回执和统计的归属。
 
 这些裁决的实现入口是 #1164、#1169、#1170、#1173 和 #1179；在代码/公开契约落地前，

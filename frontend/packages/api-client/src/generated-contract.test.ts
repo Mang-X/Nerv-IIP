@@ -4,6 +4,7 @@ import { client } from './generated/client.gen'
 import type { ListConsoleInstancesData } from './generated/types.gen'
 import type {
   BusinessConsoleApprovalChainResponse,
+  BusinessConsoleAuthorizedWorkScope,
   BusinessConsoleBarcodePrintBatchResponse,
   BusinessConsoleCancelScheduledEngineeringChangeRequest,
   BusinessConsoleConnectorCollectionHealthRequest,
@@ -42,6 +43,8 @@ import type {
   BusinessConsoleOpenNcrFromInspectionRequest,
   BusinessConsoleOpenNcrFromInspectionResponse,
   BusinessConsolePublishSopDocumentRequest,
+  BusinessConsolePrincipalWorkContextRequest,
+  BusinessConsolePrincipalWorkContextResponse,
   BusinessConsoleReleasedEngineeringVersionEnvelope,
   BusinessConsoleReleasedEngineeringVersionResponse,
   BusinessConsoleRescheduleEngineeringChangeRequest,
@@ -59,6 +62,7 @@ import type {
   BusinessConsoleWmsInboundLineInput,
   BusinessConsoleWmsReceivingQualityGateItem,
   BusinessConsoleWorkbenchSummaryResponse,
+  BusinessConsoleWorkScopeAuthorizationPath,
   CancelBusinessConsolePlanningDemandData,
   CancelScheduledBusinessConsoleEngineeringChangeData,
   CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionData,
@@ -75,6 +79,8 @@ import type {
   GetBusinessConsoleErpPayableBySourceDocumentData,
   GetBusinessConsoleErpReceivableBySourceDocumentData,
   GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkData,
+  GetBusinessConsolePrincipalWorkContextData,
+  GetBusinessConsolePrincipalWorkContextErrors,
   ListBusinessConsoleDeviceAssetsData,
   ListBusinessConsolePlanningForecastsData,
   ListBusinessConsoleQualityInspectionRecordsData,
@@ -118,6 +124,7 @@ import {
   getBusinessConsoleMesMaterialReadinessQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
   getBusinessConsoleMesProductionReportQueryOptions,
+  getBusinessConsolePrincipalWorkContextQueryOptions,
   getBusinessConsoleMesProductionPlanReadinessQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
@@ -178,6 +185,33 @@ describe('generated API client contract', () => {
     expectTypeOf<
       Pick<BusinessConsoleCompleteMaintenanceWorkOrderRequest, 'idempotencyKey'>
     >().toEqualTypeOf<{ idempotencyKey: string }>()
+  })
+
+  it('exports the current-principal work-context contract through the stable boundary', () => {
+    expectTypeOf<GetBusinessConsolePrincipalWorkContextData>().toBeObject()
+    expectTypeOf<
+      Pick<
+        BusinessConsolePrincipalWorkContextRequest,
+        'organizationId' | 'environmentId' | 'permissionCode' | 'scopeKind' | 'scopeId'
+      >
+    >().toEqualTypeOf<{
+      organizationId: string
+      environmentId: string
+      permissionCode: string
+      scopeKind?: string | null
+      scopeId?: string | null
+    }>()
+    expectTypeOf<
+      BusinessConsolePrincipalWorkContextResponse['availableScopeKinds']
+    >().toEqualTypeOf<string[] | undefined>()
+    expectTypeOf<BusinessConsoleAuthorizedWorkScope['authorizationPaths']>().toEqualTypeOf<
+      BusinessConsoleWorkScopeAuthorizationPath[] | undefined
+    >()
+    expectTypeOf<
+      Extract<keyof GetBusinessConsolePrincipalWorkContextErrors, 502 | 503>
+    >().toEqualTypeOf<502 | 503>()
+    expectTypeOf(businessConsoleClient.getBusinessConsolePrincipalWorkContext).toBeFunction()
+    expectTypeOf(getBusinessConsolePrincipalWorkContextQueryOptions).toBeFunction()
   })
 
   it('requires the governed ERP work-center cost-rate effective start', () => {

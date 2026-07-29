@@ -131,6 +131,26 @@ JWT 可以携带少量权限码用于前端体验优化，但服务端执行类�
 
 Endpoint 层只声明所需权限和上下文，不写领域规则。权限快照可以使用 FusionCache 缓存，但权限变更、角色变更、会话撤销和授权撤销必须主动失效相关缓存。
 
+### 当前主体范围上下文
+
+MAN-627 / #1164 在 internal `POST /internal/iam/v1/authorization/check` 增加可选
+`IncludePrincipalContext`。普通动作授权保持轻量；只有需要当前主体角色/范围解释的 Gateway
+请求才设为 `true`，响应附带角色 ID/名称和 permission-aware `ScopeGrants`。每个 grant
+记录 `sourceKind`（`role`/`membership`）、`sourceId`、scope kind/id、本次适用 permission
+及显式 Organization 标记。
+
+Role scope 只从真正授予本次 permission 的角色产生，避免“角色 A 给权限、角色 B 给更宽
+范围”的笛卡尔扩权；membership scope 是当前组织环境主体的显式公共边界。`self`、`team`、
+`work-center`、`workshop`、`organization`、`site`、`production-line` 是受控 scope type。
+空 data scopes 不生成 grant，绝不解释为 Organization；显式 Organization 必须匹配当前
+organization。未知 legacy scope 继续 fail-closed 为 `DenyAll`。富上下文与普通授权使用不同
+缓存键，不能互相复用。
+
+默认管理员与 PDA 演示身份的新建路径分别写入 Organization 与 Self。升级既有演示库时，
+两个独立 seed manifest 只回填可证明仍是旧 seed 基线且 scopes 为空的固定身份；角色名、
+permissions 或 membership roles 已变化，或者已有任意 scope 时均不修改，避免 seed 重启
+覆盖运营授权。
+
 ### 权限码命名基线
 
 权限码采用 `{domain}.{resource}.{action}` 风格，全部小写，用复数资源名表达集合能力。首批建议冻结以下范围：
