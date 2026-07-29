@@ -3224,6 +3224,18 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
     idempotencyKey?: string | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsolePlanningSuggestionRejectedResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePlanningSuggestionRejectedResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePlanningSuggestionRejectedResponse = {
+    rejected?: boolean;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRejectPlanningSuggestionRequest = {
+    reason: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfNotificationMessageListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsNotificationNotificationMessageListResponse | null;
 };
@@ -12156,6 +12168,44 @@ export type AcceptBusinessConsolePlanningSuggestionResponses = {
 
 export type AcceptBusinessConsolePlanningSuggestionResponse = AcceptBusinessConsolePlanningSuggestionResponses[keyof AcceptBusinessConsolePlanningSuggestionResponses];
 
+export type RejectBusinessConsolePlanningSuggestionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRejectPlanningSuggestionRequest;
+    path: {
+        suggestionId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/planning/suggestions/{suggestionId}/reject';
+};
+
+export type RejectBusinessConsolePlanningSuggestionErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RejectBusinessConsolePlanningSuggestionError = RejectBusinessConsolePlanningSuggestionErrors[keyof RejectBusinessConsolePlanningSuggestionErrors];
+
+export type RejectBusinessConsolePlanningSuggestionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsolePlanningSuggestionRejectedResponse;
+};
+
+export type RejectBusinessConsolePlanningSuggestionResponse = RejectBusinessConsolePlanningSuggestionResponses[keyof RejectBusinessConsolePlanningSuggestionResponses];
+
 export type ListBusinessConsoleNotificationMessagesData = {
     body?: never;
     path?: never;
@@ -12658,6 +12708,7 @@ export type ListBusinessConsoleMesWorkOrdersData = {
         take?: number;
         workCenterIds?: string | null;
         deviceAssetIds?: string | null;
+        statuses?: string | null;
     };
     url: '/api/business-console/v1/mes/work-orders';
 };

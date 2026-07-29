@@ -33,6 +33,14 @@ import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
+  NvAlertDialog,
+  NvAlertDialogAction,
+  NvAlertDialogCancel,
+  NvAlertDialogContent,
+  NvAlertDialogDescription,
+  NvAlertDialogFooter,
+  NvAlertDialogHeader,
+  NvAlertDialogTitle,
   NvButton,
   NvDataTable,
   NvPageHeader,
@@ -54,7 +62,7 @@ import {
   NvTabsTrigger,
   toast,
 } from '@nerv-iip/ui'
-import { EyeIcon, RefreshCwIcon, SendIcon } from '@lucide/vue'
+import { EyeIcon, RefreshCwIcon, SendIcon, Undo2Icon } from '@lucide/vue'
 import { computed, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -78,6 +86,10 @@ const {
   refreshPlans,
   releasePlan,
   releasePlanPending,
+  revokePlan,
+  revokePlanPending,
+  upsertOperationOverride,
+  upsertOperationOverridePending,
 } = useBusinessScheduling()
 const auth = useAuthStore()
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
@@ -269,11 +281,18 @@ async function publish(planId: string | undefined) {
   try {
     await releasePlan(planId)
     toast.success('排程方案已发布')
-  } catch {
-    toast.error('发布失败，请稍后重试')
+  } catch (error) {
+    toast.error(
+      error instanceof Error && error.message
+        ? `发布失败：${error.message}`
+        : '发布失败，请稍后重试',
+    )
   }
 }
 
+// TODO(scheduling): 「生成首版」前的真实预览待后端补 workbench 级 dry-run facade
+// （勿用 POST /scheduling/plans/preview——其契约要求前端提交完整 SchedulingProblemContract，
+// 而 problem 只能由后端 SchedulingWorkbenchSourceProvider 从工单选择组装）。
 async function generateWorkbenchPlan() {
   if (!canManage.value || draft.includedOrders.value.length === 0) return
   const horizonStart = new Date()
@@ -337,8 +356,82 @@ async function publishCandidate() {
   try {
     await releasePlan(planId)
     toast.success('新版排程已发布')
-  } catch {
-    toast.error('发布失败；失效或终态方案不能发布')
+  } catch (error) {
+    toast.error(
+      error instanceof Error && error.message
+        ? `发布失败：${error.message}`
+        : '发布失败；失效或终态方案不能发布',
+    )
+  }
+}
+
+// 撤销发布：只对已发布方案开放，二次确认说明后果（MES 侧回流撤销对应工序排程）。
+// 权限沿用发布权限——后端 revoke 端点同样挂在 PlansRelease 权限码下。
+const revokeTargetPlanId = shallowRef('')
+const revokeConfirmOpen = shallowRef(false)
+
+function canRevoke(row: BusinessConsoleSchedulingPlanSummaryResponse | undefined) {
+  return Boolean(row && canPublish.value && row.status === 'released')
+}
+
+function requestRevoke(planId: string | undefined) {
+  if (!planId) return
+  if (!canRevoke(actionablePlans.value.find((plan) => plan.planId === planId))) return
+  revokeTargetPlanId.value = planId
+  revokeConfirmOpen.value = true
+}
+
+async function confirmRevoke() {
+  const planId = revokeTargetPlanId.value
+  if (!planId) return
+  try {
+    await revokePlan(planId)
+    revokeConfirmOpen.value = false
+    toast.success('排程方案已撤销发布，MES 侧将回流撤销对应工序排程')
+  } catch (error) {
+    toast.error(
+      error instanceof Error && error.message
+        ? `撤销失败：${error.message}`
+        : '撤销失败，请稍后重试',
+    )
+  }
+}
+
+// 单工序持久化 override：把资源/起止落库为跨方案 override，后端建方案路径自动叠加继承。
+const persistedOperationKeys = shallowRef<string[]>([])
+
+async function persistOperationOverride(taskId: string) {
+  const planId = draft.model.value?.meta.planId
+  const task = draft.model.value?.tasks.find((candidate) => candidate.id === taskId)
+  if (!canManage.value || !task || task.type !== 'operation') return
+  if (!planId) {
+    // 草案模型存在但缺方案标识（异常数据）：显式提示，而不是静默吞掉点击。
+    toast.error('当前草案未关联排程方案，无法持久锁定；请重新生成方案')
+    return
+  }
+  if (!task.resourceId) {
+    toast.error('该工序未分配资源，请先指定资源再持久锁定')
+    return
+  }
+  try {
+    await upsertOperationOverride({
+      planId,
+      operationId: task.operationId,
+      resourceId: task.resourceId,
+      startUtc: task.startUtc,
+      endUtc: task.endUtc,
+    })
+    const key = `${task.orderId}:${task.operationId}`
+    if (!persistedOperationKeys.value.includes(key)) {
+      persistedOperationKeys.value = [...persistedOperationKeys.value, key]
+    }
+    toast.success('工序 override 已持久化，重排程自动继承')
+  } catch (error) {
+    toast.error(
+      error instanceof Error && error.message
+        ? `持久化失败：${error.message}`
+        : '持久化失败，请稍后重试',
+    )
   }
 }
 
@@ -541,6 +634,9 @@ function reasonLabel(reason?: string | null) {
           :model="draft.model.value"
           :pending-operations="draft.pendingOperations.value"
           :read-only="!canManage"
+          :persisted-operation-keys="persistedOperationKeys"
+          :persist-pending="upsertOperationOverridePending"
+          @persist-override="persistOperationOverride"
           @move="draft.moveTask"
           @update="draft.updateTask"
           @lock="draft.setLocked"
@@ -609,6 +705,18 @@ function reasonLabel(reason?: string | null) {
                 <SendIcon v-else aria-hidden="true" />
                 发布
               </NvButton>
+              <NvButton
+                v-if="canRevoke(row)"
+                size="sm"
+                variant="destructive"
+                type="button"
+                :disabled="revokePlanPending"
+                title="撤销该已发布方案，MES 侧回流撤销对应工序排程"
+                @click="requestRevoke(row.planId)"
+              >
+                <Undo2Icon aria-hidden="true" />
+                撤销发布
+              </NvButton>
             </div>
           </template>
         </NvDataTable>
@@ -633,6 +741,18 @@ function reasonLabel(reason?: string | null) {
               </NvSelectItem>
             </NvSelectContent>
           </NvSelect>
+          <NvButton
+            v-if="canRevoke(selectedPlanSummary)"
+            size="sm"
+            variant="destructive"
+            type="button"
+            :disabled="revokePlanPending"
+            title="撤销该已发布方案，MES 侧回流撤销对应工序排程"
+            @click="requestRevoke(detailSelection.planId)"
+          >
+            <Undo2Icon aria-hidden="true" />
+            撤销发布
+          </NvButton>
         </div>
         <SchedulingPlanGantt
           :plan="planDetail"
@@ -645,6 +765,32 @@ function reasonLabel(reason?: string | null) {
         />
       </NvTabsContent>
     </NvTabs>
+
+    <!-- 撤销发布二次确认：说明 MES 侧后果，避免误触。
+         v-if 按需挂载：关闭时完全不渲染 reka AlertDialog 树，也避免与页面测试针对
+         NvSheet 的全局 DialogRoot stub 相互干扰（stub 会剥掉 AlertDialog 的注入上下文）。 -->
+    <NvAlertDialog v-if="revokeConfirmOpen" v-model:open="revokeConfirmOpen">
+      <NvAlertDialogContent>
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>确认撤销发布该排程方案？</NvAlertDialogTitle>
+          <NvAlertDialogDescription>
+            方案 {{ revokeTargetPlanId }} 撤销后将进入「已撤销」终态，MES
+            侧会回流撤销由它下达的工序排程；需要重新下达时须生成并发布新方案。
+          </NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <NvAlertDialogFooter>
+          <NvAlertDialogCancel>取消</NvAlertDialogCancel>
+          <NvAlertDialogAction
+            variant="destructive"
+            :disabled="revokePlanPending"
+            @click="confirmRevoke"
+          >
+            <Spinner v-if="revokePlanPending" aria-hidden="true" />
+            确认撤销
+          </NvAlertDialogAction>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
 
     <NvSheet v-model:open="detailOpen">
       <NvSheetContent side="right" class="w-full overflow-y-auto sm:max-w-3xl">

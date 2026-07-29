@@ -724,6 +724,13 @@ public interface IBusinessPlanningClient
         string suggestionId,
         BusinessConsoleAcceptPlanningSuggestionRequest request,
         CancellationToken cancellationToken);
+
+    Task<BusinessConsolePlanningSuggestionRejectedResponse> RejectSuggestionAsync(
+        string internalBearerToken,
+        string suggestionId,
+        string rejectedBy,
+        BusinessConsoleRejectPlanningSuggestionRequest request,
+        CancellationToken cancellationToken);
 }
 
 public interface IBusinessSchedulingClient
@@ -4644,6 +4651,24 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             cancellationToken);
     }
 
+    public Task<BusinessConsolePlanningSuggestionRejectedResponse> RejectSuggestionAsync(
+        string internalBearerToken,
+        string suggestionId,
+        string rejectedBy,
+        BusinessConsoleRejectPlanningSuggestionRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsolePlanningSuggestionRejectedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/planning/suggestions/{Uri.EscapeDataString(suggestionId)}/reject",
+            new DownstreamRejectPlanningSuggestionRequest(suggestionId, rejectedBy, request.Reason),
+            cancellationToken);
+
+    private sealed record DownstreamRejectPlanningSuggestionRequest(
+        string SuggestionId,
+        string RejectedBy,
+        string Reason);
+
     private static string PlanningContextQuery(string organizationId, string environmentId) =>
         Query(("organizationId", organizationId), ("environmentId", environmentId));
 
@@ -7706,6 +7731,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("organizationId", request.OrganizationId),
             ("environmentId", request.EnvironmentId),
             ("status", request.Status),
+            ("statuses", request.Statuses),
             ("keyword", request.Keyword),
             ("workCenterId", request.WorkCenterId),
             ("workCenterIds", request.WorkCenterIds),

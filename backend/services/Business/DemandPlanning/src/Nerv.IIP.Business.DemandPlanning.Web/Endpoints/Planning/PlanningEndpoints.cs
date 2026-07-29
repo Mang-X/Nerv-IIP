@@ -151,6 +151,13 @@ public sealed record AcceptPlanningSuggestionResponse(
     string DownstreamDocumentType,
     string? DownstreamDocumentId);
 
+public sealed record RejectPlanningSuggestionRequest(
+    PlanningSuggestionId SuggestionId,
+    string RejectedBy,
+    string Reason);
+
+public sealed record RejectPlanningSuggestionResponse(bool Rejected);
+
 public sealed class ListMasterProductionScheduleBucketsEndpoint(ISender sender)
     : DemandPlanningEndpoint<ListMasterProductionScheduleBucketsRequest, ResponseData<IReadOnlyCollection<MasterProductionScheduleBucketResponse>>>
 {
@@ -452,6 +459,24 @@ public sealed class AcceptPlanningSuggestionEndpoint(ISender sender)
     }
 }
 
+public sealed class RejectPlanningSuggestionEndpoint(ISender sender)
+    : DemandPlanningEndpoint<RejectPlanningSuggestionRequest, ResponseData<RejectPlanningSuggestionResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureDemandPlanningContract(DemandPlanningEndpointContracts.Get<RejectPlanningSuggestionEndpoint>());
+    }
+
+    public override async Task HandleAsync(RejectPlanningSuggestionRequest req, CancellationToken ct)
+    {
+        await sender.Send(new RejectPlanningSuggestionCommand(
+            req.SuggestionId,
+            req.RejectedBy,
+            req.Reason), ct);
+        await Send.OkAsync(new RejectPlanningSuggestionResponse(true).AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed record DemandPlanningEndpointContract(
     Type EndpointType,
     string HttpMethod,
@@ -479,6 +504,7 @@ public static class DemandPlanningEndpointContracts
         new(typeof(ListMrpPeggingEndpoint), "GET", "/api/business/v1/planning/mrp-runs/{runId}/pegging", DemandPlanningPermissionCodes.MrpRead, InternalServiceAuthorizationPolicy.Name, "getPlanningMrpPegging"),
         new(typeof(ListPlanningSuggestionsEndpoint), "GET", "/api/business/v1/planning/suggestions", DemandPlanningPermissionCodes.MrpRead, InternalServiceAuthorizationPolicy.Name, "listPlanningSuggestions"),
         new(typeof(AcceptPlanningSuggestionEndpoint), "POST", "/api/business/v1/planning/suggestions/{suggestionId}/accept", DemandPlanningPermissionCodes.SuggestionsManage, InternalServiceAuthorizationPolicy.Name, "acceptPlanningSuggestion"),
+        new(typeof(RejectPlanningSuggestionEndpoint), "POST", "/api/business/v1/planning/suggestions/{suggestionId}/reject", DemandPlanningPermissionCodes.SuggestionsManage, InternalServiceAuthorizationPolicy.Name, "rejectPlanningSuggestion"),
     ];
 
     public static DemandPlanningEndpointContract Get<TEndpoint>()

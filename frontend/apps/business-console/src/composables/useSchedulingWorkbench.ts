@@ -24,6 +24,9 @@ const SCHEDULING_WORKBENCH_TERMINAL_WORK_ORDER_STATUSES = new Set([
 
 export function useSchedulingWorkbench() {
   const mes = useMesWorkOrders({ initialTake: 500 })
+  // 只取非终态工单:后端默认按 DueUtc 升序,交期最早的历史关单排在最前,不带状态过滤时
+  // take=500 的窗口会被终态工单占满,可排候选恒为 0(真机 4759 单中前 ~3900 条全是 closed)。
+  mes.filters.statuses = 'created,released,started,hold'
   const queryCache = useQueryCache()
 
   const invalidatePlans = () =>

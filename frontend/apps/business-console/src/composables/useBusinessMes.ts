@@ -197,6 +197,8 @@ export interface MesListFilters {
   organizationId: string
   environmentId: string
   status?: string
+  /** 多状态过滤（CSV，如 'created,released,started,hold'）；与单值 status 互补，排产候选池用。 */
+  statuses?: string
   keyword?: string
   workCenterId?: string
   shiftId?: string
@@ -324,6 +326,7 @@ function toListQuery(filters: MesListFilters) {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
     ...optionalQuery('status', filters.status as MesListStatus | undefined),
+    ...optionalQuery('statuses', filters.statuses),
     ...optionalQuery('keyword', filters.keyword),
     ...optionalQuery('workCenterId', filters.workCenterId),
     ...optionalQuery('shiftId', filters.shiftId),

@@ -22,18 +22,31 @@ const dhxStub = fileURLToPath(
 const dhxCssStub = fileURLToPath(
   new URL('../../packages/scheduling/src/engine/dhtmlx/empty.css', import.meta.url),
 )
-const dhxAlias = dhxInstalled
-  ? {}
-  : {
+// 测试环境(vitest/jsdom)无论 vendor/私有源是否可用都走 stub:jsdom 承载不了真实 DHTMLX
+// 渲染,组件树应稳定落到 readonly-schedule-timeline 降级路径,断言才有确定性;真实引擎
+// 渲染由 Playwright/浏览器验证。做法与 packages/scheduling/vite.config.ts 的测试别名同款。
+const dhxAlias = process.env.VITEST
+  ? {
       // 更具体的 css 子路径必须排在前面:Vite 字符串 alias 是前缀匹配,否则会被 '@dhx/trial-gantt' 劫持。
-      '@dhx/trial-gantt/codebase/dhtmlxgantt.css': existsSync(dhxCssVendor) ? dhxCssVendor : dhxCssStub,
-      '@dhx/trial-gantt': existsSync(dhxVendor) ? dhxVendor : dhxStub,
+      '@dhx/trial-gantt/codebase/dhtmlxgantt.css': dhxCssStub,
+      '@dhx/trial-gantt': dhxStub,
     }
+  : dhxInstalled
+    ? {}
+    : {
+        // 更具体的 css 子路径必须排在前面:Vite 字符串 alias 是前缀匹配,否则会被 '@dhx/trial-gantt' 劫持。
+        '@dhx/trial-gantt/codebase/dhtmlxgantt.css': existsSync(dhxCssVendor)
+          ? dhxCssVendor
+          : dhxCssStub,
+        '@dhx/trial-gantt': existsSync(dhxVendor) ? dhxVendor : dhxStub,
+      }
 
 const configuredPort = process.env.NERV_IIP_VITE_PORT
 const port = Number(configuredPort ?? '5125')
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-  throw new Error(`NERV_IIP_VITE_PORT must be an integer from 1 through 65535; received '${configuredPort}'.`)
+  throw new Error(
+    `NERV_IIP_VITE_PORT must be an integer from 1 through 65535; received '${configuredPort}'.`,
+  )
 }
 
 export default defineConfig({

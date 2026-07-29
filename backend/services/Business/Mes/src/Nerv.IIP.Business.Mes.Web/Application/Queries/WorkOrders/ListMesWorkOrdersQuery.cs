@@ -14,7 +14,8 @@ public sealed record ListMesWorkOrdersQuery(
     string? ShiftId = null,
     string? DeviceAssetId = null,
     string? WorkCenterIds = null,
-    string? DeviceAssetIds = null) : IQuery<ListMesWorkOrdersResponse>;
+    string? DeviceAssetIds = null,
+    string? Statuses = null) : IQuery<ListMesWorkOrdersResponse>;
 
 public sealed record ListMesWorkOrdersResponse(
     IReadOnlyCollection<MesWorkOrderExecutionFact> Items,
@@ -66,6 +67,15 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
         {
             var status = request.Status.Trim().ToLowerInvariant();
             workOrdersQuery = workOrdersQuery.Where(x => x.Status.ToLower() == status);
+        }
+
+        // 多状态过滤(CSV,与 WorkCenterIds/DeviceAssetIds 同一约定)。排产工作台等消费方需要
+        // 一次取回全部非终态工单;单值 Status 只能取一种,而默认排序按 DueUtc 升序会把交期最早的
+        // 历史关单排在前面,分页窗口内全是终态、真正可排的工单永远取不到。
+        var statuses = SplitCsv(request.Statuses).Select(x => x.ToLowerInvariant()).ToArray();
+        if (statuses.Length > 0)
+        {
+            workOrdersQuery = workOrdersQuery.Where(x => statuses.Contains(x.Status.ToLower()));
         }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))

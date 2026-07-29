@@ -1,11 +1,13 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { computed, reactive, shallowRef } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SchedulingPage from './scheduling.vue'
 
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
-// 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
+// 让断言不依赖真实名录查询。挂载仍装一个新 Pinia（见各 mount 的 plugins）：
+// SchedulingPlanGantt 里未被 mock 的 useMesDisplayNames() 需要 active Pinia。
 vi.mock('@/composables/useSkuNames', async () => {
   const { computed } = await import('vue')
   return {
@@ -351,7 +353,9 @@ async function openPlanTable(wrapper: ReturnType<typeof mount>) {
 
 describe('APS scheduling workbench page', () => {
   it('renders the official scheduling entry with plan summary columns from facade data', async () => {
-    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
     await flushPromises()
     await openPlanTable(wrapper)
 
@@ -364,7 +368,9 @@ describe('APS scheduling workbench page', () => {
   })
 
   it('exposes the complete leader-demo workbench loop from one route', async () => {
-    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
     await flushPromises()
 
     const workbenchTab = wrapper
@@ -383,7 +389,9 @@ describe('APS scheduling workbench page', () => {
   })
 
   it('uses a single-page table while the facade does not return a total count', async () => {
-    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
     await flushPromises()
     await openPlanTable(wrapper)
 
@@ -395,7 +403,9 @@ describe('APS scheduling workbench page', () => {
   })
 
   it('renders the selected APS plan as a read-only resource timeline', async () => {
-    const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub } } })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub } },
+    })
     await flushPromises()
 
     const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特图'))!
@@ -417,7 +427,9 @@ describe('APS scheduling workbench page', () => {
   })
 
   it('does not render summaries without a plan id as Gantt selector options', async () => {
-    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
     await flushPromises()
 
     const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特图'))!
@@ -430,7 +442,9 @@ describe('APS scheduling workbench page', () => {
   })
 
   it('opens plan detail and releases the selected plan through the composable', async () => {
-    const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+    })
     await flushPromises()
     await openPlanTable(wrapper)
 
@@ -457,7 +471,9 @@ describe('APS scheduling workbench page', () => {
   })
 
   it('maps the assignment order id into the shared urgency badge inside plan detail', async () => {
-    const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+    })
     await flushPromises()
     await openPlanTable(wrapper)
 
@@ -479,7 +495,9 @@ describe('APS scheduling workbench page', () => {
 
   it('consumes the order reference route and opens the matching assignment in plan detail', async () => {
     routeStub.query = { orderReference: 'WO-20260701-001' }
-    const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+    })
     await flushPromises()
 
     expect(detailSelection.planId).toBe('plan-001')
@@ -488,7 +506,9 @@ describe('APS scheduling workbench page', () => {
   })
 
   it('marks invalidated plans with their reason and blocks release', async () => {
-    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
     await flushPromises()
     await openPlanTable(wrapper)
 
@@ -506,7 +526,9 @@ describe('APS scheduling workbench page', () => {
   })
 
   it('localizes terminal plan statuses and explains why they cannot be released', async () => {
-    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
     await flushPromises()
     await openPlanTable(wrapper)
 
@@ -530,7 +552,9 @@ describe('APS scheduling workbench page', () => {
 
   it('explains invalidated, invalid-time, and missing-resource assignments in the Gantt view', async () => {
     detailSelection.planId = 'plan-invalid'
-    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
     await flushPromises()
 
     const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特图'))!
@@ -556,7 +580,9 @@ describe('APS scheduling workbench page', () => {
   it('shows a permission-specific Gantt error state', async () => {
     detailSelection.planId = 'plan-empty'
     detailError.value = { response: { status: 403 } }
-    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
     await flushPromises()
 
     const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特图'))!
@@ -573,7 +599,9 @@ describe('APS scheduling workbench page', () => {
     cyclicError.cause = cyclicError
     detailError.value = cyclicError
 
-    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
     await flushPromises()
     const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特图'))!
     await ganttTab.trigger('focus')
@@ -585,7 +613,9 @@ describe('APS scheduling workbench page', () => {
 
   it('shows explicit detail feedback when a plan detail request fails', async () => {
     detailError.value = new Error('network')
-    const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+    })
     await flushPromises()
     await openPlanTable(wrapper)
 
@@ -600,7 +630,9 @@ describe('APS scheduling workbench page', () => {
   })
 
   it('shows explicit detail feedback when the facade returns no detail payload', async () => {
-    const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+    })
     await flushPromises()
     await openPlanTable(wrapper)
 

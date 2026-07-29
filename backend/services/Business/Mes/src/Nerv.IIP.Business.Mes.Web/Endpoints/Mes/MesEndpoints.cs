@@ -49,7 +49,8 @@ public sealed record ListMesWorkOrdersRequest(
     string? ShiftId = null,
     string? DeviceAssetId = null,
     string? WorkCenterIds = null,
-    string? DeviceAssetIds = null);
+    string? DeviceAssetIds = null,
+    string? Statuses = null);
 
 public sealed record ListOperationTasksRequest(
     string OrganizationId,
@@ -671,7 +672,8 @@ public sealed class ListMesWorkOrdersEndpoint(ISender sender)
                 req.ShiftId,
                 req.DeviceAssetId,
                 req.WorkCenterIds,
-                req.DeviceAssetIds),
+                req.DeviceAssetIds,
+                req.Statuses),
             ct);
         await Send.OkAsync(response, ct);
     }

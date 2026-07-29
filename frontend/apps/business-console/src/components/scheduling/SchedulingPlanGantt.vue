@@ -6,10 +6,12 @@ import type {
 } from '@nerv-iip/api-client'
 import {
   ResourceSchedulerBoard,
+  SchedulingLegend,
   toModel,
   type ScheduleModel,
   type TimeScale,
 } from '@nerv-iip/scheduling'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
 import {
   schedulingPlanStatusLabel,
@@ -20,7 +22,6 @@ import { NvButton, NvStatusBadge, Spinner } from '@nerv-iip/ui'
 import {
   CalendarDaysIcon,
   EyeIcon,
-  LockIcon,
   SendIcon,
   ShieldAlertIcon,
   TimerIcon,
@@ -42,6 +43,26 @@ const emit = defineEmits<{
 }>()
 
 const scale = shallowRef<TimeScale>('auto')
+
+// 工序分色按工作中心族归类（组件库 --nv-scheduling-category-* 六色板）。
+// 族→名称以主数据 work_centers 为准：ROD/TUB/GRD/CNC=机加、FA/RA/VA=装配、
+// CT=电泳涂装（不是切割！）、PK=包装、TS=检测、SCALE-WELD=焊接。辅助动力(AUX)不上色。
+const WC_FAMILIES: Array<{ pattern: RegExp; key: string; label: string }> = [
+  { pattern: /^WC-(ROD|TUB|GRD|CNC)/, key: 'mach', label: '机加' },
+  { pattern: /^WC-(FA|RA|VA)|^WC-SCALE-(SEAL|ROD)/, key: 'pack', label: '装配' },
+  { pattern: /^WC-CT/, key: 'paint', label: '表面处理' },
+  { pattern: /^WC-PK/, key: 'cut', label: '包装' },
+  { pattern: /^WC-TS|^WC-SCALE-TEST/, key: 'bend', label: '检测' },
+  { pattern: /^WC-SCALE-WELD/, key: 'weld', label: '焊接' },
+]
+
+function wcFamily(workCenterId?: string | null) {
+  if (!workCenterId) return undefined
+  return WC_FAMILIES.find((f) => f.pattern.test(workCenterId))
+}
+
+// 工作中心显示名（主数据名录，与派工看板同一份缓存）。
+const { resolveWorkCenter } = useMesDisplayNames()
 
 const assignments = computed(() => props.plan?.assignments ?? [])
 const invalidTimeAssignments = computed(() => assignments.value.filter(hasInvalidTime))
@@ -66,12 +87,36 @@ const model = computed<ScheduleModel | undefined>(() => {
     tasks: mapped.tasks.map((task) => {
       if (task.type !== 'operation') return task
       const sequence = task.operationSequence > 0 ? `第 ${task.operationSequence} 道` : '工序'
+      const family = wcFamily(task.workCenterId)
+      // 参考实现成例（dev/SchedulingPreview.vue）：toModel 之后充实展示模型——
+      // 工序分色 colorKey + 工作中心维度人话名（泳道名从 WC-ROD-01 变「活塞杆加工中心一线」）。
       return {
         ...task,
         text: [task.orderId, sequence, task.operationId].filter(Boolean).join(' · '),
+        colorKey: family?.key,
+        dimensions: task.workCenterId
+          ? {
+              ...task.dimensions,
+              workCenter: {
+                id: task.workCenterId,
+                label: resolveWorkCenter(task.workCenterId) ?? task.workCenterId,
+              },
+            }
+          : task.dimensions,
       }
     }),
   }
+})
+
+// 图例只列本方案实际用到的分类（不罗列全色板）。
+const legendCategories = computed(() => {
+  const used = new Set(
+    (model.value?.tasks ?? [])
+      .filter((t) => t.type === 'operation')
+      .map((t) => t.colorKey)
+      .filter(Boolean),
+  )
+  return WC_FAMILIES.filter((f) => used.has(f.key)).map((f) => ({ key: f.key, label: f.label }))
 })
 
 const resourceCount = computed(() => model.value?.resources.length ?? 0)
@@ -287,23 +332,11 @@ function formatDateTime(value: string) {
         />
       </div>
 
-      <div
-        class="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border bg-card px-4 py-3 text-xs text-muted-foreground"
-      >
-        <span class="font-semibold text-foreground">状态说明</span>
-        <span class="inline-flex items-center gap-1.5"
-          ><span class="h-2.5 w-6 rounded-sm border border-primary bg-primary/15" />正常工序</span
-        >
-        <span class="inline-flex items-center gap-1.5"
-          ><TriangleAlertIcon
-            class="size-3.5 text-destructive"
-            aria-hidden="true"
-          />冲突（红色实线边框）</span
-        >
-        <span class="inline-flex items-center gap-1.5"
-          ><LockIcon class="size-3.5" aria-hidden="true" />锁定（虚线边框）</span
-        >
-        <span>点击工序块打开方案明细；只读视图不支持拖拽或改派。</span>
+      <div class="overflow-hidden rounded-lg border bg-card">
+        <SchedulingLegend :categories="legendCategories" view="resource" />
+        <p class="border-t border-border/50 px-4 py-2 text-xs text-muted-foreground">
+          点击工序块打开方案明细；只读视图不支持拖拽或改派，编辑请回「排程总览」草案工作区。
+        </p>
       </div>
 
       <div

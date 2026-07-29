@@ -628,6 +628,13 @@ public sealed class BusinessGatewayAuthorizationTests
             downstreamDocumentType = "work-order",
             downstreamDocumentId = "WO-001",
         },
+        "/api/business-console/v1/planning/suggestions/suggestion-001/reject" => new
+        {
+            suggestionId = "suggestion-001",
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reason = "authorization test",
+        },
         "/api/business-console/v1/planning/demands/demand-001/cancel" => new
         {
             demandSourceId = "demand-001",
@@ -1185,6 +1192,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mrp-runs/mrp-run-001/pegging", BusinessGatewayPermissions.PlanningMrpRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/suggestions", BusinessGatewayPermissions.PlanningMrpRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/suggestions/suggestion-001/accept", BusinessGatewayPermissions.PlanningSuggestionsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/suggestions/suggestion-001/reject", BusinessGatewayPermissions.PlanningSuggestionsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/demands/demand-001/cancel", BusinessGatewayPermissions.PlanningDemandsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans/preview", BusinessGatewayPermissions.SchedulingPlansManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans", BusinessGatewayPermissions.SchedulingPlansManage);

@@ -60,6 +60,35 @@ describe('SchedulingDraftBoard', () => {
     expect(cells[5]!.text()).toContain('移回待排')
   })
 
+  it('emits persistOverride with the task id, which the page must map to operationId', async () => {
+    // 接线契约：板只上报 task.id（'assignment-001'），页面侧必须换算成 task.operationId（'OP-10'）
+    // 再进 override 路径参数——fixture 两者刻意不同；operationId 进 path 由
+    // useBusinessScheduling.test.ts 的 override body 映射测试把守。
+    expect(model.tasks[0]!.id).not.toBe(model.tasks[0]!.operationId)
+
+    const wrapper = mount(SchedulingDraftBoard, {
+      props: { model },
+      global: {
+        stubs: {
+          GanttChart: true,
+          ResourceSchedulerBoard: true,
+        },
+      },
+    })
+
+    const tableTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('表格编辑'))!
+    await tableTab.trigger('focus')
+    await tableTab.trigger('mousedown')
+    await flushPromises()
+
+    const persistButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('持久锁定'))!
+    await persistButton.trigger('click')
+
+    expect(wrapper.emitted('persistOverride')).toEqual([['assignment-001']])
+  })
+
   it('forwards locked drag attempts to its parent', () => {
     const wrapper = mount(SchedulingDraftBoard, {
       props: { model },

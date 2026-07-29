@@ -2,10 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
+import type { BusinessConsoleSchedulingPlanStatus } from '@nerv-iip/api-client'
 import {
   getBusinessConsoleSchedulingPlanQueryOptions,
   listBusinessConsoleSchedulingPlansQueryOptions,
   releaseBusinessConsoleSchedulingPlanMutationOptions,
+  revokeBusinessConsoleSchedulingPlanMutationOptions,
+  upsertBusinessConsoleSchedulingOperationOverrideMutationOptions,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useBusinessScheduling } from './useBusinessScheduling'
@@ -29,6 +32,18 @@ vi.mock('@nerv-iip/api-client', () => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: { planId: vars.path.planId, status: 'released' },
+    })),
+  })),
+  revokeBusinessConsoleSchedulingPlanMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: { planId: vars.path.planId, status: 'revoked' },
+    })),
+  })),
+  upsertBusinessConsoleSchedulingOperationOverrideMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: { planId: vars.path.planId, operationId: vars.path.operationId },
     })),
   })),
 }))
@@ -121,5 +136,109 @@ describe('business scheduling composable', () => {
       query: { organizationId: 'org-001', environmentId: 'env-dev' },
     })
     expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
+  })
+
+  it('revokes a released plan through the generated facade and invalidates scheduling reads', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    const { revokePlan } = useBusinessScheduling()
+
+    await revokePlan('plan-001')
+
+    expect(revokeBusinessConsoleSchedulingPlanMutationOptions).toHaveBeenCalled()
+    expect(
+      vi.mocked(revokeBusinessConsoleSchedulingPlanMutationOptions).mock.results[0]?.value.mutation,
+    ).toHaveBeenCalledWith({
+      path: { planId: 'plan-001' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+    })
+    expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
+  })
+
+  it('suppresses revoke when the business scope is empty', async () => {
+    const { revokePlan } = useBusinessScheduling()
+
+    await expect(revokePlan('plan-001')).rejects.toThrow('未发起撤销请求')
+    expect(
+      vi.mocked(revokeBusinessConsoleSchedulingPlanMutationOptions).mock.results[0]?.value.mutation,
+    ).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a 200 + success:false revoke envelope as an error instead of fake success', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    const { revokePlan } = useBusinessScheduling()
+    vi.mocked(
+      vi.mocked(revokeBusinessConsoleSchedulingPlanMutationOptions).mock.results[0]?.value.mutation,
+    ).mockResolvedValueOnce({ success: false, message: '方案不处于已发布状态' })
+
+    await expect(revokePlan('plan-001')).rejects.toThrow('方案不处于已发布状态')
+  })
+
+  it('persists an operation override with scope in the body and invalidates scheduling reads', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    const { upsertOperationOverride } = useBusinessScheduling()
+
+    await upsertOperationOverride({
+      planId: 'plan-001',
+      operationId: 'op-010',
+      resourceId: 'res-cnc-01',
+      startUtc: '2026-07-29T01:00:00Z',
+      endUtc: '2026-07-29T03:00:00Z',
+    })
+
+    expect(
+      vi.mocked(upsertBusinessConsoleSchedulingOperationOverrideMutationOptions).mock.results[0]
+        ?.value.mutation,
+    ).toHaveBeenCalledWith({
+      path: { planId: 'plan-001', operationId: 'op-010' },
+      body: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        resourceId: 'res-cnc-01',
+        startUtc: '2026-07-29T01:00:00Z',
+        endUtc: '2026-07-29T03:00:00Z',
+      },
+    })
+    expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
+  })
+
+  it('surfaces a 200 + success:false override envelope as an error instead of fake success', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    const { upsertOperationOverride } = useBusinessScheduling()
+    vi.mocked(
+      vi.mocked(upsertBusinessConsoleSchedulingOperationOverrideMutationOptions).mock.results[0]
+        ?.value.mutation,
+    ).mockResolvedValueOnce({ success: false, message: '工序不属于该方案' })
+
+    await expect(
+      upsertOperationOverride({ planId: 'plan-001', operationId: 'op-010', resourceId: 'res-1' }),
+    ).rejects.toThrow('工序不属于该方案')
+  })
+
+  it('gates revoke on the lowercase released status defined by the plan-status contract', () => {
+    // canRevoke（scheduling.vue）用 row.status === 'released' 小写口径；
+    // 该口径由 api-client 契约字面量联合保证——契约漂移成大写时此测试在类型检查阶段失败。
+    const released: BusinessConsoleSchedulingPlanStatus = 'released'
+    expect(released).toBe('released')
+    // @ts-expect-error 'Released'（大写）不是合法的方案状态契约值
+    const uppercase: BusinessConsoleSchedulingPlanStatus = 'Released'
+    void uppercase
+  })
+
+  it('suppresses the operation override when the resource is missing', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    const { upsertOperationOverride } = useBusinessScheduling()
+
+    await expect(
+      upsertOperationOverride({ planId: 'plan-001', operationId: 'op-010', resourceId: ' ' }),
+    ).rejects.toThrow('未发起持久化请求')
+    expect(
+      vi.mocked(upsertBusinessConsoleSchedulingOperationOverrideMutationOptions).mock.results[0]
+        ?.value.mutation,
+    ).not.toHaveBeenCalled()
   })
 })

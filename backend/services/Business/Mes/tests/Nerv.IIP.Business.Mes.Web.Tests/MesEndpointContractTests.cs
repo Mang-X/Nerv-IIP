@@ -23,6 +23,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -42,6 +43,7 @@ public sealed class MesEndpointContractTests
                 });
             });
         var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
         client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
 
         var response = await client.PostAsJsonAsync(
@@ -75,6 +77,7 @@ public sealed class MesEndpointContractTests
                 });
             });
         var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
         client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
 
         var response = await client.PostAsJsonAsync("/api/business/v1/mes/production-reports", new
@@ -116,6 +119,7 @@ public sealed class MesEndpointContractTests
                 });
             });
         var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
         client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
 
         var response = await client.PostAsJsonAsync("/api/business/v1/mes/finished-goods-receipt-requests", new
@@ -798,6 +802,7 @@ public sealed class MesEndpointContractTests
                 });
             });
         var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
         client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
 
         var response = await client.GetAsync(
@@ -1634,6 +1639,7 @@ public sealed class MesEndpointContractTests
             .WithWebHostBuilder(builder =>
                 builder.UseSetting("InternalService:BearerToken", "test-internal-service-token"));
         var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
         client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
 
         var response = await client.PostAsJsonAsync("/api/business/v1/mes/production-plans/SUG-001/work-orders", new
@@ -1664,6 +1670,7 @@ public sealed class MesEndpointContractTests
             .WithWebHostBuilder(builder =>
                 builder.UseSetting("InternalService:BearerToken", "test-internal-service-token"));
         var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
         client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
         client.DefaultRequestHeaders.Add("X-Authenticated-Actor", "user:validation-test");
 
@@ -1875,42 +1882,36 @@ public sealed class MesEndpointContractTests
     [Fact]
     public async Task Mes_endpoints_require_internal_service_authentication()
     {
-        var factory = new WebApplicationFactory<Program>();
-        try
+        await using var factory = new WebApplicationFactory<Program>();
+        using var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+
+        foreach (var route in MesWriteAuthRoutes)
         {
-            using var client = factory.CreateClient();
-
-            foreach (var route in MesWriteAuthRoutes)
+            var postResponse = await client.PostAsJsonAsync(route, new
             {
-                var postResponse = await client.PostAsJsonAsync(route, new
-                {
-                    organizationId = "org-001",
-                    environmentId = "env-dev",
-                    trigger = "Manual",
-                    workOrderId = "WO-RUSH",
-                    skuId = "SKU-R",
-                    productionVersionId = "PV-001",
-                    quantity = 1,
-                    dueUtc = DateTimeOffset.Parse("2026-05-22T12:00:00Z"),
-                    workCenterId = "WC-A",
-                    durationMinutes = 60
-                });
-
-                Assert.True(
-                    postResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
-                    $"Expected auth failure for {route} but received {(int)postResponse.StatusCode}.");
-            }
-
-            var queryResponse = await client.GetAsync("/api/business/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev");
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                trigger = "Manual",
+                workOrderId = "WO-RUSH",
+                skuId = "SKU-R",
+                productionVersionId = "PV-001",
+                quantity = 1,
+                dueUtc = DateTimeOffset.Parse("2026-05-22T12:00:00Z"),
+                workCenterId = "WC-A",
+                durationMinutes = 60
+            });
 
             Assert.True(
-                queryResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
-                $"Expected auth failure for MES work-order query but received {(int)queryResponse.StatusCode}.");
+                postResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
+                $"Expected auth failure for {route} but received {(int)postResponse.StatusCode}.");
         }
-        finally
-        {
-            await DisposeAuthOnlyFactoryAsync(factory);
-        }
+
+        var queryResponse = await client.GetAsync("/api/business/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev");
+
+        Assert.True(
+            queryResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
+            $"Expected auth failure for MES work-order query but received {(int)queryResponse.StatusCode}.");
     }
 
     private static readonly string[] MesWriteAuthRoutes =
@@ -1923,18 +1924,6 @@ public sealed class MesEndpointContractTests
         "/api/business/v1/mes/quality-holds/WO-001/force-release",
         "/api/business/v1/mes/finished-goods-receipt-requests/FGR-001/inventory-posting/retry",
     ];
-
-    private static async ValueTask DisposeAuthOnlyFactoryAsync(WebApplicationFactory<Program> factory)
-    {
-        try
-        {
-            await factory.DisposeAsync();
-        }
-        catch (ObjectDisposedException)
-        {
-            // CAP/TestHost can race during auth-only factory cleanup; the auth response was already asserted.
-        }
-    }
 
     public static IEnumerable<object[]> EndpointTypes()
     {
