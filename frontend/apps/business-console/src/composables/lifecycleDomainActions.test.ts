@@ -50,6 +50,10 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => {
       key: [],
       query: api.getMaintenance,
     })),
+    getBusinessConsolePrincipalWorkContextQueryOptions: vi.fn(() => ({
+      key: [{ _id: 'getBusinessConsolePrincipalWorkContext' }],
+      query: vi.fn(),
+    })),
     getBusinessConsoleQualityNcrQueryOptions: vi.fn(() => ({
       key: [],
       query: api.getNcr,
@@ -82,9 +86,18 @@ vi.mock('@pinia/colada', async (importOriginal) => {
       }),
     ),
     useQuery: vi.fn((factory) => {
-      factory()
+      const options = factory()
+      const key = Array.isArray(options.key) ? options.key[0] : undefined
+      const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
       return {
-        data: shallowRef(),
+        data: shallowRef(
+          id === 'getBusinessConsolePrincipalWorkContext'
+            ? {
+                success: true,
+                data: { selectedScope: { kind: 'self', id: 'user-001' } },
+              }
+            : undefined,
+        ),
         error: shallowRef(),
         isLoading: shallowRef(false),
         refetch: queryRefetch,

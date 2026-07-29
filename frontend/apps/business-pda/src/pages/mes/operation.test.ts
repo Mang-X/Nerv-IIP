@@ -27,6 +27,8 @@ const createSopFileDownloadGrant = vi.fn()
 const filters = reactive({ keyword: undefined as string | undefined })
 const tasksErrorRef = ref<unknown>(null)
 const sopsErrorRef = ref<unknown>(null)
+const operationScopeMessageRef = ref('')
+const operationScopeReadyRef = ref(true)
 
 const defaultTasks = [
   {
@@ -61,6 +63,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
     resumeTask,
     completeTask,
     actionPending: ref(false),
+    operationScopeMessage: operationScopeMessageRef,
+    operationScopePending: ref(false),
+    operationScopeReady: operationScopeReadyRef,
   }),
   useMesCurrentOperationSops: () => ({
     filters: {
@@ -89,6 +94,8 @@ describe('PDA MES operation execution page', () => {
     refreshSops.mockClear()
     tasksErrorRef.value = null
     sopsErrorRef.value = null
+    operationScopeMessageRef.value = ''
+    operationScopeReadyRef.value = true
     operationTasksRef.value = defaultTasks
     currentSopsRef.value = []
     createSopFileDownloadGrant.mockClear()
@@ -127,6 +134,26 @@ describe('PDA MES operation execution page', () => {
     await flushPromises()
     // BottomSheet 内容 teleport 到 body
     expect(document.body.textContent).toContain('完成')
+    wrapper.unmount()
+  })
+
+  it('shows the missing-scope reason and disables lifecycle actions', async () => {
+    operationScopeReadyRef.value = false
+    operationScopeMessageRef.value = '尚未选择已授权作业范围，当前操作已禁用。'
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="operation-scope-message"]').text()).toContain(
+      '尚未选择已授权作业范围',
+    )
+    const action = document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="action-complete"]',
+    )!
+    expect(action.disabled).toBe(true)
+    action.click()
+    await flushPromises()
+    expect(completeTask).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

@@ -186,11 +186,10 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             throw new KnownException($"报工工序任务不存在或不属于当前工单，WorkOrderId = {request.WorkOrderId}, OperationTaskId = {request.OperationTaskId}");
         }
 
-        if (request.CompletesOperation &&
-            operationTask.Status != OperationTaskLifecycleStatus.InProgress)
+        if (operationTask.Status != OperationTaskLifecycleStatus.InProgress)
         {
             throw new MesLifecycleConflictException(
-                "report-complete",
+                "report",
                 operationTask.Status.ToString());
         }
 

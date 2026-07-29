@@ -98,7 +98,8 @@ const {
   exactOperationTaskError,
 })
 
-const { recordReport } = useMesProductionReports()
+const { recordReport, reportScopeMessage, reportScopePending, reportScopeReady } =
+  useMesProductionReports()
 const telemetryQueue = useMesTelemetryProductionReportCandidates()
 const telemetryCandidateId = ref<string | null>(null)
 const telemetryWorkOrderId = ref('')
@@ -279,6 +280,7 @@ const lifecycleRecovery = useLifecycleActionRecovery({
 })
 
 async function submit() {
+  if (!reportScopeReady.value) return
   const identity = pair.value
   const task = selectedTask.value
   const workOrderId = identity?.workOrderId
@@ -433,6 +435,14 @@ function onScanWorkOrder(value: string) {
     </NvMobileResult>
 
     <div v-else class="space-y-4 p-4">
+      <p
+        v-if="reportScopeMessage"
+        data-testid="report-scope-message"
+        class="rounded-lg border border-destructive/40 px-4 py-3 text-sm text-destructive"
+        role="alert"
+      >
+        {{ reportScopeMessage }}
+      </p>
       <p
         v-if="routeIssue"
         role="alert"
@@ -619,7 +629,7 @@ function onScanWorkOrder(value: string) {
         <button
           type="button"
           data-testid="submit-report"
-          :disabled="!quantityValid || submitting"
+          :disabled="!quantityValid || submitting || reportScopePending || !reportScopeReady"
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
           @click="submit"
         >

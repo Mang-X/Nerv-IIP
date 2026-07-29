@@ -51,6 +51,8 @@ const {
   resumeTask,
   completeTask,
   actionPending,
+  operationScopeMessage,
+  operationScopeReady,
   refresh,
 } = useMesOperationTasks()
 const {
@@ -205,6 +207,11 @@ async function openSopFile(sop: CurrentSop) {
 }
 
 async function runAction(action: ActionKind) {
+  if (!operationScopeReady.value) {
+    toast.message = operationScopeMessage.value
+    toast.show = true
+    return
+  }
   const task = selected.value
   if (!task?.operationTaskId) return
   // 完成是终态动作，先进入二次确认；在用户发起该动作（点动作按钮）时铸造稳定键
@@ -241,6 +248,11 @@ async function runAction(action: ActionKind) {
 }
 
 async function retry() {
+  if (!operationScopeReady.value) {
+    toast.message = operationScopeMessage.value
+    toast.show = true
+    return
+  }
   const state = result.value
   if (!state) return
   const { action, taskId } = state
@@ -348,6 +360,14 @@ function formatDate(value?: string | null) {
       <NvScanBar placeholder="扫描工单 / 工序号" :active="scanActive" @scan="onScan" />
 
       <p class="text-sm text-muted-foreground">共 {{ total }} 个工序任务</p>
+      <p
+        v-if="operationScopeMessage"
+        data-testid="operation-scope-message"
+        class="rounded-lg border border-destructive/40 px-4 py-3 text-sm text-destructive"
+        role="alert"
+      >
+        {{ operationScopeMessage }}
+      </p>
 
       <RetryableListError
         v-if="error"
@@ -448,7 +468,7 @@ function formatDate(value?: string | null) {
           <button
             type="button"
             data-testid="confirm-complete"
-            :disabled="actionPending"
+            :disabled="actionPending || !operationScopeReady"
             class="min-h-touch w-full rounded-lg bg-destructive text-base font-medium text-destructive-foreground disabled:opacity-60"
             @click="runAction('complete')"
           >
@@ -470,7 +490,7 @@ function formatDate(value?: string | null) {
             :key="action"
             type="button"
             :data-testid="`action-${action}`"
-            :disabled="actionPending"
+            :disabled="actionPending || !operationScopeReady"
             class="min-h-touch w-full rounded-lg text-base font-medium disabled:opacity-60"
             :class="
               action === 'complete'

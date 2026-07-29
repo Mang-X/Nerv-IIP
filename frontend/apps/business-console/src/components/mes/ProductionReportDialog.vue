@@ -56,6 +56,9 @@ const {
   canCompleteOperation,
   intentLocked,
   recordProductionReportPending,
+  reportScopeMessage,
+  reportScopePending,
+  reportScopeReady,
   submit,
 } = useProductionReportForm(() => props.context, {
   onReported: () => emit('reported'),
@@ -125,7 +128,7 @@ async function onSubmit() {
               step="any"
               type="number"
               autofocus
-              :disabled="intentLocked"
+              :disabled="intentLocked || !reportScopeReady"
               :data-invalid="showErrors && invalid.goodQuantity ? '' : undefined"
             />
           </NvField>
@@ -138,7 +141,7 @@ async function onSubmit() {
               min="0"
               step="any"
               type="number"
-              :disabled="intentLocked"
+              :disabled="intentLocked || !reportScopeReady"
               :data-invalid="showErrors && invalid.scrapQuantity ? '' : undefined"
             />
           </NvField>
@@ -150,13 +153,25 @@ async function onSubmit() {
             <NvCheckbox
               id="report-complete"
               v-model:checked="form.completesOperation"
-              :disabled="!canCompleteOperation || intentLocked"
+              :disabled="!canCompleteOperation || intentLocked || !reportScopeReady"
             />
           </NvField>
         </NvFieldGroup>
 
+        <p
+          v-if="reportScopeMessage"
+          data-testid="report-scope-message"
+          class="text-sm text-destructive"
+          role="alert"
+        >
+          {{ reportScopeMessage }}
+        </p>
         <!-- 点提交才标红；未通过不发请求。 -->
-        <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+        <p
+          v-if="showErrors && (invalid.goodQuantity || invalid.scrapQuantity)"
+          class="text-sm text-destructive"
+          role="alert"
+        >
           请填写数量：合格与不合格均不可为负，且合计需大于 0。
         </p>
         <p v-if="intentLocked" class="text-sm text-warning-strong">
@@ -165,8 +180,14 @@ async function onSubmit() {
 
         <NvDialogFooter>
           <NvButton type="button" variant="outline" @click="openModel = false">取消</NvButton>
-          <NvButton type="submit" :disabled="recordProductionReportPending">
-            <Spinner v-if="recordProductionReportPending" aria-hidden="true" />
+          <NvButton
+            type="submit"
+            :disabled="!canSubmit || recordProductionReportPending || reportScopePending"
+          >
+            <Spinner
+              v-if="recordProductionReportPending || reportScopePending"
+              aria-hidden="true"
+            />
             <ClipboardCheckIcon v-else aria-hidden="true" />
             提交报工
           </NvButton>

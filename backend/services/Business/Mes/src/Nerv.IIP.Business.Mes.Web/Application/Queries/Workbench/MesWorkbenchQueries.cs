@@ -629,9 +629,18 @@ public sealed record MesOperationTaskRow(
     DateTimeOffset? ScheduledAtUtc = null,
     string? ScheduleInvalidationReasonCode = null,
     string? TeamId = null,
-    string? TeamName = null);
+    string? TeamName = null)
+{
+    public IReadOnlyCollection<string> AllowedActions { get; init; } = [];
 
-public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbContext)
+    public IReadOnlyCollection<string> BlockReasons { get; init; } = [];
+
+    public DateTimeOffset EvaluatedAtUtc { get; init; }
+}
+
+public sealed class GetMesWorkOrderDetailQueryHandler(
+    ApplicationDbContext dbContext,
+    TimeProvider? timeProvider = null)
     : IQueryHandler<GetMesWorkOrderDetailQuery, MesWorkOrderDetailResponse>
 {
     public async Task<MesWorkOrderDetailResponse> Handle(GetMesWorkOrderDetailQuery request, CancellationToken cancellationToken)
@@ -660,8 +669,23 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
 
-        var tasks = await QueryOperationTasks(dbContext, request.OrganizationId, request.EnvironmentId, request.WorkOrderId, null, 0, 500)
+        var operationTasks = await QueryOperationTaskEntities(
+                dbContext,
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId,
+                null)
+            .OrderBy(x => x.EarliestStartUtc)
+            .ThenBy(x => x.OperationSequence)
+            .ThenBy(x => x.OperationTaskIdValue)
+            .Take(500)
             .ToArrayAsync(cancellationToken);
+        var evaluatedAtUtc = (timeProvider ?? TimeProvider.System).GetUtcNow();
+        var taskReadiness = await new MesOperationTaskActionReadinessEvaluator(dbContext)
+            .EvaluateManyAsync(operationTasks, evaluatedAtUtc, cancellationToken);
+        var tasks = operationTasks
+            .Select(x => ToRow(x, taskReadiness[x.OperationTaskIdValue]))
+            .ToArray();
 
         // 返回该工单的全部质量保留周期(活跃 + 已释放)。锁定看 IsActive;已释放周期仍返回,
         // 使释放后详情面板不卸载、释放时间/方式与完整时间线仍可见(满足「hold 自动消失且时间线完整」)。
@@ -722,7 +746,11 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
         string? workCenterId = null,
         string? shiftId = null,
         string? deviceAssetId = null,
-        string? assignedUserId = null)
+        string? assignedUserId = null,
+        string? assignedUserIds = null,
+        string? teamIds = null,
+        string? workCenterIds = null,
+        string? operationTaskId = null)
     {
         var query = QueryOperationTaskEntities(
             dbContext,
@@ -734,7 +762,11 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
             workCenterId,
             shiftId,
             deviceAssetId,
-            assignedUserId);
+            assignedUserId,
+            assignedUserIds,
+            teamIds,
+            workCenterIds,
+            operationTaskId);
 
         return query
             .OrderBy(x => x.EarliestStartUtc)
@@ -778,11 +810,21 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
         string? workCenterId = null,
         string? shiftId = null,
         string? deviceAssetId = null,
-        string? assignedUserId = null)
+        string? assignedUserId = null,
+        string? assignedUserIds = null,
+        string? teamIds = null,
+        string? workCenterIds = null,
+        string? operationTaskId = null)
     {
         var query = dbContext.OperationTasks
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId);
+
+        if (!string.IsNullOrWhiteSpace(operationTaskId))
+        {
+            var normalizedOperationTaskId = operationTaskId.Trim();
+            query = query.Where(x => x.OperationTaskIdValue == normalizedOperationTaskId);
+        }
 
         if (!string.IsNullOrWhiteSpace(workOrderId))
         {
@@ -840,7 +882,75 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
             query = query.Where(x => x.AssignedUserId == normalizedAssignedUserId);
         }
 
+        if (assignedUserIds is not null)
+        {
+            var values = SplitCanonicalCsv(assignedUserIds);
+            query = values.Length == 0
+                ? query.Where(_ => false)
+                : query.Where(x => values.Contains(x.AssignedUserId));
+        }
+
+        if (teamIds is not null)
+        {
+            var values = SplitCanonicalCsv(teamIds);
+            query = values.Length == 0
+                ? query.Where(_ => false)
+                : query.Where(x => values.Contains(x.TeamId));
+        }
+
+        if (workCenterIds is not null)
+        {
+            var values = SplitCanonicalCsv(workCenterIds);
+            query = values.Length == 0
+                ? query.Where(_ => false)
+                : query.Where(x => values.Contains(x.WorkCenterId));
+        }
+
         return query;
+    }
+
+    internal static MesOperationTaskRow ToRow(
+        Domain.AggregatesModel.OperationTaskAggregate.OperationTask task,
+        MesOperationTaskActionReadiness readiness)
+    {
+        return new MesOperationTaskRow(
+            task.OperationTaskIdValue,
+            task.WorkOrderId,
+            task.Status.ToString(),
+            task.OperationSequence,
+            task.WorkCenterId,
+            task.DeviceAssetId,
+            task.ShiftId,
+            task.AssignedUserId,
+            task.AssignedUserName,
+            task.EarliestStartUtc,
+            task.ExistingStartUtc,
+            "Ready",
+            task.WorkOrderId,
+            task.OperationTaskIdValue,
+            task.WorkCenterId,
+            null,
+            task.DeviceAssetId,
+            null,
+            task.OperationCode,
+            task.ScheduledAtUtc,
+            task.ScheduleInvalidationReasonCode,
+            task.TeamId,
+            task.TeamName)
+        {
+            AllowedActions = readiness.AllowedActions,
+            BlockReasons = readiness.BlockReasons,
+            EvaluatedAtUtc = readiness.EvaluatedAtUtc,
+        };
+    }
+
+    private static string[] SplitCanonicalCsv(string value)
+    {
+        return value
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static bool TryParseOperationTaskStatus(string status, out OperationTaskLifecycleStatus parsedStatus)
@@ -866,43 +976,119 @@ public sealed record ListOperationTasksQuery(
     string? WorkCenterId = null,
     string? ShiftId = null,
     string? DeviceAssetId = null,
-    string? WorkOrderId = null) : IQuery<MesOperationTaskListResponse>;
+    string? WorkOrderId = null,
+    string? AssignedUserIds = null,
+    string? TeamIds = null,
+    string? WorkCenterIds = null,
+    string? OperationTaskId = null) : IQuery<MesOperationTaskListResponse>;
 
 public sealed record MesOperationTaskListResponse(
     IReadOnlyCollection<MesOperationTaskRow> Items,
     int Total);
 
-public sealed class ListOperationTasksQueryHandler(ApplicationDbContext dbContext)
+public sealed class ListOperationTasksQueryHandler(
+    ApplicationDbContext dbContext,
+    TimeProvider? timeProvider = null)
     : IQueryHandler<ListOperationTasksQuery, MesOperationTaskListResponse>
 {
     public async Task<MesOperationTaskListResponse> Handle(ListOperationTasksQuery request, CancellationToken cancellationToken)
     {
-        var total = await GetMesWorkOrderDetailQueryHandler
-            .QueryOperationTaskEntities(
-                dbContext,
-                request.OrganizationId,
-                request.EnvironmentId,
-                request.WorkOrderId,
-                request.Status,
-                request.Keyword,
-                request.WorkCenterId,
-                request.ShiftId,
-                request.DeviceAssetId)
-            .CountAsync(cancellationToken);
-        var items = await GetMesWorkOrderDetailQueryHandler
-            .QueryOperationTasks(
-                dbContext,
-                request.OrganizationId,
-                request.EnvironmentId,
-                request.WorkOrderId,
-                request.Status,
-                request.Skip,
-                request.Take,
-                request.Keyword,
-                request.WorkCenterId,
-                request.ShiftId,
-                request.DeviceAssetId)
+        var query = GetMesWorkOrderDetailQueryHandler.QueryOperationTaskEntities(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkOrderId,
+            request.Status,
+            request.Keyword,
+            request.WorkCenterId,
+            request.ShiftId,
+            request.DeviceAssetId,
+            assignedUserIds: request.AssignedUserIds,
+            teamIds: request.TeamIds,
+            workCenterIds: request.WorkCenterIds,
+            operationTaskId: request.OperationTaskId);
+        var total = await query.CountAsync(cancellationToken);
+        var tasks = await query
+            .OrderBy(x => x.EarliestStartUtc)
+            .ThenBy(x => x.OperationSequence)
+            .ThenBy(x => x.OperationTaskIdValue)
+            .Skip(Math.Max(0, request.Skip))
+            .Take(Math.Clamp(request.Take, 1, 500))
             .ToArrayAsync(cancellationToken);
+        var readiness = await new MesOperationTaskActionReadinessEvaluator(dbContext)
+            .EvaluateManyAsync(
+                tasks,
+                (timeProvider ?? TimeProvider.System).GetUtcNow(),
+                cancellationToken);
+        var items = tasks
+            .Select(x => GetMesWorkOrderDetailQueryHandler.ToRow(x, readiness[x.OperationTaskIdValue]))
+            .ToArray();
+        return new MesOperationTaskListResponse(items, total);
+    }
+}
+
+public sealed record ListReportableOperationTasksQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    int Skip = 0,
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    string? AssignedUserIds = null,
+    string? TeamIds = null,
+    string? WorkCenterIds = null) : IQuery<MesOperationTaskListResponse>;
+
+public sealed class ListReportableOperationTasksQueryHandler(
+    ApplicationDbContext dbContext,
+    TimeProvider? timeProvider = null)
+    : IQueryHandler<ListReportableOperationTasksQuery, MesOperationTaskListResponse>
+{
+    public async Task<MesOperationTaskListResponse> Handle(
+        ListReportableOperationTasksQuery request,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Status)
+            && !string.Equals(
+                request.Status.Trim(),
+                nameof(OperationTaskLifecycleStatus.InProgress),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return new MesOperationTaskListResponse([], 0);
+        }
+
+        var query = GetMesWorkOrderDetailQueryHandler.QueryOperationTaskEntities(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkOrderId,
+            nameof(OperationTaskLifecycleStatus.InProgress),
+            request.Keyword,
+            request.WorkCenterId,
+            request.ShiftId,
+            request.DeviceAssetId,
+            assignedUserIds: request.AssignedUserIds,
+            teamIds: request.TeamIds,
+            workCenterIds: request.WorkCenterIds);
+        var total = await query.CountAsync(cancellationToken);
+        var tasks = await query
+            .OrderBy(x => x.EarliestStartUtc)
+            .ThenBy(x => x.OperationSequence)
+            .ThenBy(x => x.OperationTaskIdValue)
+            .Skip(Math.Max(0, request.Skip))
+            .Take(Math.Clamp(request.Take, 1, 500))
+            .ToArrayAsync(cancellationToken);
+        var readiness = await new MesOperationTaskActionReadinessEvaluator(dbContext)
+            .EvaluateManyAsync(
+                tasks,
+                (timeProvider ?? TimeProvider.System).GetUtcNow(),
+                cancellationToken);
+        var items = tasks
+            .Select(x => GetMesWorkOrderDetailQueryHandler.ToRow(x, readiness[x.OperationTaskIdValue]))
+            .ToArray();
         return new MesOperationTaskListResponse(items, total);
     }
 }

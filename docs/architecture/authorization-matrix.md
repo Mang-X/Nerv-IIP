@@ -214,15 +214,15 @@ PlatformGateway 的 Console Observability facade 在查询 VictoriaLogs 前，�
 | `business.mes.foundation.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 MES 基础就绪、生产版本、物料、质量、设备、条码和编号阻塞项。 |
 | `business.mes.overview.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 MES 生产驾驶舱和待办摘要。 |
 | `business.mes.plans.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看生产计划候选、计划就绪和转工单前检查。 |
-| `business.mes.work-orders.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工单、工单详情和释放快照。工单详情包含**质量保留生命周期摘要**（是否活跃、范围、施加/释放的时间·操作人·理由·释放方式），供生产协调判断工单为何被保留；**逐事件保留时间线属 `business.mes.quality.read`**，**来源检验记录下钻属 `business.quality.inspection-records.read`**（MAN-445/#799，见质量域说明）。 |
+| `business.mes.work-orders.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工单、工单详情和释放快照。BusinessGateway 工单列表以实时 permission-aware grants 校验 Self/Team/WorkCenter/Workshop/Organization 选择，并把归属范围与状态、关键字、工作中心等业务筛选取交集后再计数分页。工单详情包含**质量保留生命周期摘要**（是否活跃、范围、施加/释放的时间·操作人·理由·释放方式），供生产协调判断工单为何被保留；**逐事件保留时间线属 `business.mes.quality.read`**，**来源检验记录下钻属 `business.quality.inspection-records.read`**（MAN-445/#799，见质量域说明）。 |
 | `business.mes.work-orders.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建急单、计划转工单、释放和关闭工单。 |
 | `business.mes.materials.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看齐套检查、领料申请和线边收料状态。 |
 | `business.mes.materials.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建领料/备料申请并确认线边收料。 |
 | `business.mes.dispatch.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看派工任务和资源阻塞。 |
 | `business.mes.dispatch.manage` | `user` / `external-client` / `internal-service` | environment + resource | 指派工序任务到人员、设备、班次和工作中心。 |
-| `business.mes.operations.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工序任务和 WIP 摘要。 |
+| `business.mes.operations.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工序任务和 WIP 摘要；BusinessGateway 工序任务列表按当前主体经授权的 Self/Team/WorkCenter/Workshop/Organization 范围过滤，并由 MES 返回权威允许动作与阻塞原因。 |
 | `business.mes.operations.manage` | `user` / `external-client` / `internal-service` | environment + resource | 开始、暂停、恢复和完成工序任务。 |
-| `business.mes.reporting.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看报工记录和生产日报。 |
+| `business.mes.reporting.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看报工记录、生产日报和当前主体授权范围内的可报工工序任务；可报工任务只返回 MES 权威状态允许 `report` 的行。 |
 | `business.mes.reporting.write` | `user` / `external-client` | environment + resource | 提交工序报工、合格数、不良数和工时。 |
 | `business.mes.quality.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工单/工序关联的质量、缺陷和 NCR 上下文。**保护质量保留的逐事件时间线端点（`GET /mes/quality-holds/{sourceDocumentId}/timeline`）**——高于工单详情里的保留生命周期摘要（后者随 `business.mes.work-orders.read`）。时间线里的**来源检验记录下钻另需 `business.quality.inspection-records.read`**（Quality 域，前端据此门控互链，避免死链）。 |
 | `business.mes.quality.write` | `user` / `external-client` | environment + resource | 记录生产过程不良、返工/报废上下文，以及带理由的 MES 质量 hold 人工强制释放。 |

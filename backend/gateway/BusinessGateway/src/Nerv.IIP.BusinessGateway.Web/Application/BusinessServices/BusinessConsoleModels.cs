@@ -3937,7 +3937,56 @@ public sealed record BusinessConsoleMesWorkOrderListRequest(
     int Take = 100,
     string? WorkCenterIds = null,
     string? DeviceAssetIds = null,
-    string? Statuses = null);
+    string? Statuses = null,
+    string? ScopeKind = null,
+    string? ScopeId = null);
+
+public sealed record BusinessMesWorkOrderListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    int Skip = 0,
+    int Take = 100,
+    string? AssignedUserIds = null,
+    string? TeamIds = null,
+    string? WorkCenterIds = null,
+    string? DeviceAssetIds = null,
+    string? Statuses = null,
+    string? WorkOrderId = null);
+
+public sealed record BusinessConsoleMesOperationTaskListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    int Skip = 0,
+    int Take = 100,
+    string? ScopeKind = null,
+    string? ScopeId = null);
+
+public sealed record BusinessMesOperationTaskListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    int Skip = 0,
+    int Take = 100,
+    string? AssignedUserIds = null,
+    string? TeamIds = null,
+    string? WorkCenterIds = null,
+    string? OperationTaskId = null);
 
 public sealed record BusinessConsoleMesListWithoutStatusRequest(
     string OrganizationId,
@@ -3991,7 +4040,10 @@ public sealed record BusinessConsoleMesOperationTaskItem(
     DateTimeOffset? ExistingEndUtc,
     string? OperationTaskNo = null,
     string? WorkCenterCode = null,
-    string? WorkCenterName = null);
+    string? WorkCenterName = null,
+    IReadOnlyCollection<string>? AllowedActions = null,
+    IReadOnlyCollection<string>? BlockReasons = null,
+    DateTimeOffset? EvaluatedAtUtc = null);
 
 public sealed record BusinessConsoleCreateRushWorkOrderRequest(
     string OrganizationId,
@@ -4042,6 +4094,8 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
     bool CompletesOperation,
     DateTimeOffset ReportedAtUtc,
     string IdempotencyKey,
+    string ScopeKind,
+    string ScopeId,
     IReadOnlyCollection<BusinessConsoleConsumedMaterialLotInput>? ConsumedMaterialLots = null,
     decimal ReworkQuantity = 0m,
     string? ScrapReasonCode = null,
@@ -4154,7 +4208,9 @@ public sealed record BusinessConsoleMesConvertPlanToWorkOrderRequest(
 public sealed record BusinessConsoleMesWorkOrderDetailRequest(
     [property: RouteParam] string WorkOrderId,
     [property: QueryParam] string OrganizationId,
-    [property: QueryParam] string EnvironmentId);
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
 
 public sealed record BusinessConsoleMesWorkOrderDetailResponse(
     string WorkOrderId,
@@ -4196,14 +4252,18 @@ public sealed record BusinessConsoleMesReleaseWorkOrderRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     bool ConfirmWarnings,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
 
 public sealed record BusinessConsoleMesWorkOrderReasonRequest(
     [property: RouteParam] string WorkOrderId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     string Reason,
-    DateTimeOffset? ChangedAtUtc);
+    DateTimeOffset? ChangedAtUtc,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
 
 // Actor is intentionally omitted: the gateway injects the authenticated principal as the
 // force-release audit actor so a caller cannot forge the releaser identity via the request body.
@@ -4426,14 +4486,19 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     DateTimeOffset? ScheduledAtUtc = null,
     string? ScheduleInvalidationReasonCode = null,
     string? TeamId = null,
-    string? TeamName = null);
+    string? TeamName = null,
+    IReadOnlyCollection<string>? AllowedActions = null,
+    IReadOnlyCollection<string>? BlockReasons = null,
+    DateTimeOffset? EvaluatedAtUtc = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: RouteParam] string OperationTaskId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     string? ReasonCode,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    [property: QueryParam] string ScopeKind,
+    [property: QueryParam] string ScopeId);
 
 public sealed record BusinessConsoleMesOperationTaskActionResponse(
     string OperationTaskId,

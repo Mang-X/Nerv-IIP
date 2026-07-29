@@ -1106,10 +1106,14 @@ public sealed class BusinessGatewayProxyTests
     public async Task Mes_work_order_list_uses_internal_service_token_for_downstream_business_service()
     {
         var mes = new RecordingMesClient();
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var factory = CreateFactory(
+            AllowedOrganizationScope(BusinessGatewayPermissions.MesWorkOrdersRead),
+            services =>
         {
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -1120,7 +1124,7 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", mes.LastInternalToken);
-        Assert.Equal(new BusinessConsoleMesWorkOrderListRequest(
+        Assert.Equal(new BusinessMesWorkOrderListRequest(
             "org-001",
             "env-dev",
             "released",
@@ -1133,22 +1137,257 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Mes_work_order_list_pushes_iam_workshop_data_scope_to_downstream_filters()
+    public async Task Mes_scoped_work_order_list_requires_realtime_principal_context()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            new AuthorizationDataScope([], [], [], SelfIds: ["user-admin"]),
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-001",
+                    "self",
+                    "user-admin",
+                    [BusinessGatewayPermissions.MesWorkOrdersRead]),
+            ]);
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "self",
+                    "user-admin",
+                    "当前人员",
+                    "worker-user",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(auth.LastRequirement!.IncludePrincipalContext);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+        Assert.Equal("user-admin", masterData.LastPrincipalWorkContextRequest!.UserId);
+    }
+
+    [Fact]
+    public async Task Mes_work_order_list_rejects_an_unauthorized_explicit_scope_without_calling_mes()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            new AuthorizationDataScope([], [], [], SelfIds: ["user-admin"]),
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-001",
+                    "self",
+                    "user-admin",
+                    [BusinessGatewayPermissions.MesWorkOrdersRead]),
+            ]);
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "self",
+                    "user-admin",
+                    "当前人员",
+                    "worker-user",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&scopeKind=team&scopeId=TEAM-FORGED");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(mes.LastWorkOrderListRequest);
+    }
+
+    [Fact]
+    public async Task Mes_operation_task_list_projects_an_authorized_team_scope()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "role-team-lead",
+                    "team",
+                    "TEAM-A",
+                    [BusinessGatewayPermissions.MesOperationsRead]),
+            ]);
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "team",
+                    "TEAM-A",
+                    "甲班",
+                    "active-membership",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/operation-tasks?organizationId=org-001&environmentId=env-dev&scopeKind=team&scopeId=TEAM-A&status=Queued&keyword=OP-10&skip=2&take=20");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("TEAM-A", mes.LastOperationTaskListRequest!.TeamIds);
+        Assert.Null(mes.LastOperationTaskListRequest.AssignedUserIds);
+        Assert.Null(mes.LastOperationTaskListRequest.WorkCenterIds);
+        Assert.Equal("Queued", mes.LastOperationTaskListRequest.Status);
+        Assert.Equal("OP-10", mes.LastOperationTaskListRequest.Keyword);
+        Assert.Equal(2, mes.LastOperationTaskListRequest.Skip);
+        Assert.Equal(20, mes.LastOperationTaskListRequest.Take);
+    }
+
+    [Fact]
+    public async Task Mes_reportable_task_list_binds_self_to_the_authenticated_principal()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-operator",
+                    "self",
+                    "user-admin",
+                    [BusinessGatewayPermissions.MesReportingRead]),
+            ]);
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "self",
+                    "user-admin",
+                    "当前人员",
+                    "worker-mapping",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/reportable-operation-tasks?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("user-admin", mes.LastReportableOperationTaskListRequest!.AssignedUserIds);
+        Assert.Equal(BusinessGatewayPermissions.MesReportingRead, auth.LastRequirement!.PermissionCode);
+        Assert.True(auth.LastRequirement.IncludePrincipalContext);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+    }
+
+    [Fact]
+    public async Task Mes_reportable_task_list_rejects_a_scope_grant_for_another_permission()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-operator",
+                    "self",
+                    "user-admin",
+                    [BusinessGatewayPermissions.MesOperationsRead]),
+            ]);
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "self",
+                    "user-admin",
+                    "当前人员",
+                    "worker-mapping",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/reportable-operation-tasks?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(mes.LastReportableOperationTaskListRequest);
+    }
+
+    [Fact]
+    public async Task Mes_work_order_list_projects_an_authorized_workshop_to_verified_work_centers()
     {
         var mes = new RecordingMesClient();
         var masterData = new RecordingMasterDataClient
         {
-            Resources =
-            [
-                new BusinessConsoleResourceItem("production-line", "LINE-A", "Line A", true, "v1", WorkshopCode: "WS-A"),
-                new BusinessConsoleResourceItem("production-line", "LINE-B", "Line B", true, "v1", WorkshopCode: "WS-B"),
-                new BusinessConsoleResourceItem("work-center", "WC-A", "Work center A", true, "v1", LineCode: "LINE-A", WorkshopCode: "WS-A"),
-                new BusinessConsoleResourceItem("work-center", "WC-B", "Work center B", true, "v1", LineCode: "LINE-B", WorkshopCode: "WS-B"),
-                new BusinessConsoleResourceItem("device-asset", "DEV-A-CODE", "Device A", true, "v1", LineCode: "LINE-A", WorkCenterCode: "WC-A", DeviceAssetId: "DEV-A"),
-                new BusinessConsoleResourceItem("device-asset", "DEV-B-CODE", "Device B", true, "v1", LineCode: "LINE-B", WorkCenterCode: "WC-B", DeviceAssetId: "DEV-B"),
-            ],
+            PrincipalWorkContext = PrincipalWorkContext(
+                [
+                    new BusinessMasterDataWorkContextCoveredWorkCenter("WC-A", "工作中心 A", "WS-A", "workshop-covered"),
+                    new BusinessMasterDataWorkContextCoveredWorkCenter("WC-B", "工作中心 B", "WS-B", "workshop-covered"),
+                ],
+                new BusinessMasterDataWorkContextCandidateScope("workshop", "WS-A", "车间 A", "active-team-workshop", []),
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center",
+                    "WC-A",
+                    "工作中心 A",
+                    "workshop-covered",
+                    [new BusinessMasterDataWorkContextScopeAncestor("workshop", "WS-A")]),
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center",
+                    "WC-B",
+                    "工作中心 B",
+                    "workshop-covered",
+                    [new BusinessMasterDataWorkContextScopeAncestor("workshop", "WS-B")])),
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(new AuthorizationDataScope([], ["WS-A"], [])), services =>
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "role-workshop-lead",
+                    "workshop",
+                    "WS-A",
+                    [BusinessGatewayPermissions.MesWorkOrdersRead]),
+            ]);
+        await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
@@ -1160,30 +1399,39 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released");
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&scopeKind=workshop&scopeId=WS-A");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.WorkCenterIds);
-        Assert.Null(mes.LastWorkOrderListRequest.DeviceAssetIds);
         Assert.DoesNotContain("WC-B", mes.LastWorkOrderListRequest.WorkCenterIds);
     }
 
     [Fact]
-    public async Task Mes_work_order_list_honors_explicit_work_center_data_scope()
+    public async Task Mes_work_order_list_projects_an_authorized_work_center_selection()
     {
         var mes = new RecordingMesClient();
         var masterData = new RecordingMasterDataClient
         {
-            Resources =
-            [
-                new BusinessConsoleResourceItem("work-center", "WC-A", "Work center A", true, "v1"),
-                new BusinessConsoleResourceItem("work-center", "WC-B", "Work center B", true, "v1"),
-                new BusinessConsoleResourceItem("device-asset", "DEV-A-CODE", "Device A", true, "v1", WorkCenterCode: "WC-A", DeviceAssetId: "DEV-A"),
-                new BusinessConsoleResourceItem("device-asset", "DEV-B-CODE", "Device B", true, "v1", WorkCenterCode: "WC-B", DeviceAssetId: "DEV-B"),
-            ],
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center",
+                    "WC-A",
+                    "工作中心 A",
+                    "workshop-covered",
+                    [])),
         };
-        var dataScope = new AuthorizationDataScope([], [], [], WorkCenterCodes: ["WC-A"]);
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(dataScope), services =>
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "role-work-center-lead",
+                    "work-center",
+                    "WC-A",
+                    [BusinessGatewayPermissions.MesWorkOrdersRead]),
+            ]);
+        await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
@@ -1195,20 +1443,176 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released");
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&scopeKind=work-center&scopeId=WC-A");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.WorkCenterIds);
-        Assert.DoesNotContain("WC-B", mes.LastWorkOrderListRequest.WorkCenterIds);
     }
 
     [Fact]
-    public async Task Legacy_consumers_fail_closed_without_resolving_self_or_team_scope()
+    public async Task Mes_work_order_list_intersects_requested_work_centers_and_preserves_multi_value_filters()
+    {
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                [
+                    new BusinessMasterDataWorkContextCoveredWorkCenter("WC-A", "工作中心 A", "WS-A", "workshop-covered"),
+                    new BusinessMasterDataWorkContextCoveredWorkCenter("WC-B", "工作中心 B", "WS-B", "workshop-covered"),
+                ],
+                new BusinessMasterDataWorkContextCandidateScope("workshop", "WS-A", "车间 A", "active-team-workshop", []),
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center",
+                    "WC-A",
+                    "工作中心 A",
+                    "workshop-covered",
+                    [new BusinessMasterDataWorkContextScopeAncestor("workshop", "WS-A")]),
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center",
+                    "WC-B",
+                    "工作中心 B",
+                    "workshop-covered",
+                    [new BusinessMasterDataWorkContextScopeAncestor("workshop", "WS-B")])),
+        };
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "role-workshop-lead",
+                    "workshop",
+                    "WS-A",
+                    [BusinessGatewayPermissions.MesWorkOrdersRead]),
+            ]);
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&scopeKind=workshop&scopeId=WS-A&workCenterIds=WC-A,WC-B&deviceAssetIds=DEV-A,DEV-B&statuses=Released,InProgress");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.WorkCenterIds);
+        Assert.Equal("DEV-A,DEV-B", mes.LastWorkOrderListRequest.DeviceAssetIds);
+        Assert.Equal("Released,InProgress", mes.LastWorkOrderListRequest.Statuses);
+    }
+
+    [Fact]
+    public async Task Mes_work_order_list_uses_no_match_filter_when_requested_work_centers_are_outside_scope()
+    {
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                [
+                    new BusinessMasterDataWorkContextCoveredWorkCenter("WC-A", "工作中心 A", "WS-A", "workshop-covered"),
+                ],
+                new BusinessMasterDataWorkContextCandidateScope("workshop", "WS-A", "车间 A", "active-team-workshop", []),
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center",
+                    "WC-A",
+                    "工作中心 A",
+                    "workshop-covered",
+                    [new BusinessMasterDataWorkContextScopeAncestor("workshop", "WS-A")])),
+        };
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "role-workshop-lead",
+                    "workshop",
+                    "WS-A",
+                    [BusinessGatewayPermissions.MesWorkOrdersRead]),
+            ]);
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&scopeKind=workshop&scopeId=WS-A&workCenterIds=WC-B");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("__principal_scope_no_match__", mes.LastWorkOrderListRequest!.WorkCenterIds);
+    }
+
+    [Fact]
+    public async Task Mes_work_order_list_requires_a_selection_when_multiple_scopes_are_authorized()
+    {
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                [
+                    new BusinessMasterDataWorkContextCoveredWorkCenter("WC-A", "工作中心 A", "WS-A", "workshop-covered"),
+                ],
+                new BusinessMasterDataWorkContextCandidateScope("workshop", "WS-A", "车间 A", "active-team-workshop", []),
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center",
+                    "WC-A",
+                    "工作中心 A",
+                    "workshop-covered",
+                    [new BusinessMasterDataWorkContextScopeAncestor("workshop", "WS-A")])),
+        };
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "role-workshop-lead",
+                    "workshop",
+                    "WS-A",
+                    [BusinessGatewayPermissions.MesWorkOrdersRead]),
+            ]);
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(mes.LastWorkOrderListRequest);
+    }
+
+    [Fact]
+    public async Task Mes_work_order_list_auto_selects_an_organization_wide_grant_without_worker_mapping()
     {
         var mes = new RecordingMesClient();
         var masterData = new RecordingMasterDataClient();
-        var dataScope = new AuthorizationDataScope([], [], [], SelfIds: ["user-001"], TeamCodes: ["TEAM-A"]);
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(dataScope), services =>
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "role-platform-admin",
+                    "organization",
+                    "org-001",
+                    [BusinessGatewayPermissions.MesWorkOrdersRead],
+                    OrganizationWide: true),
+            ]);
+        await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
@@ -1220,47 +1624,402 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released");
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("__iam_scope_no_match__", mes.LastWorkOrderListRequest!.WorkCenterIds);
-        Assert.Equal(0, masterData.ListResourcesCallCount);
+        Assert.NotNull(mes.LastWorkOrderListRequest);
+        Assert.Null(mes.LastWorkOrderListRequest.AssignedUserIds);
+        Assert.Null(mes.LastWorkOrderListRequest.TeamIds);
+        Assert.Null(mes.LastWorkOrderListRequest.WorkCenterIds);
     }
 
     [Fact]
-    public async Task Mes_work_order_scope_reads_master_data_beyond_first_page()
+    public async Task Mes_work_order_detail_rejects_a_known_id_outside_the_selected_self_scope()
     {
-        var mes = new RecordingMesClient();
-        var firstPageLines = Enumerable.Range(0, 500)
-            .Select(index => new BusinessConsoleResourceItem("production-line", $"LINE-B-{index:000}", $"Line B {index}", true, "v1", WorkshopCode: "WS-B"));
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-operator",
+                    "self",
+                    "user-admin",
+                    [BusinessGatewayPermissions.MesWorkOrdersRead]),
+            ]);
+        var mes = new RecordingMesClient
+        {
+            WorkOrders =
+            [
+                new BusinessConsoleMesWorkOrderItem(
+                    "WO-OTHER",
+                    "SKU-001",
+                    null,
+                    10,
+                    0,
+                    DateTimeOffset.Parse("2026-05-24T00:00:00Z"),
+                    "released",
+                    []),
+            ],
+        };
         var masterData = new RecordingMasterDataClient
         {
-            Resources = firstPageLines
-                .Concat(
-                [
-                    new BusinessConsoleResourceItem("production-line", "LINE-A", "Line A", true, "v1", WorkshopCode: "WS-A"),
-                    new BusinessConsoleResourceItem("work-center", "WC-A", "Work center A", true, "v1", LineCode: "LINE-A"),
-                    new BusinessConsoleResourceItem("device-asset", "DEV-A-CODE", "Device A", true, "v1", WorkCenterCode: "WC-A", DeviceAssetId: "DEV-A"),
-                ])
-                .ToArray(),
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "self",
+                    "user-admin",
+                    "当前人员",
+                    "worker-mapping",
+                    [])),
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(new AuthorizationDataScope([], ["WS-A"], [])), services =>
+        await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
             services.RemoveAll<IBusinessMasterDataClient>();
             services.AddSingleton<IBusinessMasterDataClient>(masterData);
-            services.RemoveAll<IInternalServiceTokenProvider>();
-            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released");
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/work-orders/WO-FOREIGN?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, mes.WorkOrderDetailCallCount);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+    }
+
+    [Fact]
+    public async Task Mes_work_order_detail_authorizes_an_exact_scoped_id_beyond_five_hundred_keyword_matches()
+    {
+        const string workOrderId = "WO-Z-SCOPE";
+        var workOrders = Enumerable.Range(0, 500)
+            .Select(index => new BusinessConsoleMesWorkOrderItem(
+                $"WO-A{index:000}-{workOrderId}",
+                "SKU-001",
+                null,
+                10,
+                0,
+                DateTimeOffset.Parse("2026-05-24T00:00:00Z"),
+                "released",
+                []))
+            .Append(new BusinessConsoleMesWorkOrderItem(
+                workOrderId,
+                "SKU-001",
+                null,
+                10,
+                0,
+                DateTimeOffset.Parse("2026-05-24T00:00:00Z"),
+                "released",
+                []))
+            .ToArray();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-operator",
+                    "self",
+                    "user-admin",
+                    [BusinessGatewayPermissions.MesWorkOrdersRead]),
+            ]);
+        var mes = new RecordingMesClient
+        {
+            WorkOrders = workOrders,
+            EmulateMesListPaging = true,
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "self",
+                    "user-admin",
+                    "当前人员",
+                    "worker-mapping",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            $"/api/business-console/v1/mes/work-orders/{workOrderId}?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.WorkCenterIds);
-        Assert.True(masterData.ListResourcesCallCount > 3);
+        Assert.Equal(1, mes.WorkOrderDetailCallCount);
+    }
+
+    [Fact]
+    public async Task Mes_work_order_action_rejects_a_known_id_outside_the_selected_self_scope()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-operator",
+                    "self",
+                    "user-admin",
+                    [BusinessGatewayPermissions.MesWorkOrdersManage]),
+            ]);
+        var mes = new RecordingMesClient
+        {
+            WorkOrders =
+            [
+                new BusinessConsoleMesWorkOrderItem(
+                    "WO-OTHER",
+                    "SKU-001",
+                    null,
+                    10,
+                    0,
+                    DateTimeOffset.Parse("2026-05-24T00:00:00Z"),
+                    "released",
+                    []),
+            ],
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "self",
+                    "user-admin",
+                    "当前人员",
+                    "worker-mapping",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/work-orders/WO-FOREIGN/release?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin",
+            new { confirmWarnings = false, idempotencyKey = "release-foreign-001" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, mes.ReleaseWorkOrderCallCount);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+    }
+
+    [Fact]
+    public async Task Mes_operation_action_rejects_a_known_id_outside_the_selected_self_scope()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-operator",
+                    "self",
+                    "user-admin",
+                    [BusinessGatewayPermissions.MesOperationsManage]),
+            ]);
+        var mes = new RecordingMesClient
+        {
+            OperationTasks =
+            [
+                new BusinessConsoleMesOperationTaskRow(
+                    "OP-OTHER",
+                    "WO-OTHER",
+                    "Queued",
+                    10,
+                    "WC-A",
+                    null,
+                    null,
+                    "user-other",
+                    "其他人员",
+                    null,
+                    null,
+                    "Ready"),
+            ],
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "self",
+                    "user-admin",
+                    "当前人员",
+                    "worker-mapping",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/operation-tasks/OP-FOREIGN/start?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin",
+            new { reasonCode = "start", idempotencyKey = "start-foreign-001" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, mes.StartOperationCallCount);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+    }
+
+    [Fact]
+    public async Task Mes_operation_action_authorizes_an_exact_scoped_id_beyond_five_hundred_keyword_matches()
+    {
+        const string operationTaskId = "OP-Z-SCOPE";
+        var operationTasks = Enumerable.Range(0, 500)
+            .Select(index => new BusinessConsoleMesOperationTaskRow(
+                $"OP-A{index:000}-{operationTaskId}",
+                "WO-001",
+                "Queued",
+                10,
+                "WC-A",
+                null,
+                null,
+                "user-admin",
+                "当前人员",
+                null,
+                null,
+                "Ready"))
+            .Append(new BusinessConsoleMesOperationTaskRow(
+                operationTaskId,
+                "WO-001",
+                "Queued",
+                10,
+                "WC-A",
+                null,
+                null,
+                "user-admin",
+                "当前人员",
+                null,
+                null,
+                "Ready"))
+            .ToArray();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-operator",
+                    "self",
+                    "user-admin",
+                    [BusinessGatewayPermissions.MesOperationsManage]),
+            ]);
+        var mes = new RecordingMesClient
+        {
+            OperationTasks = operationTasks,
+            EmulateMesListPaging = true,
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "self",
+                    "user-admin",
+                    "当前人员",
+                    "worker-mapping",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/business-console/v1/mes/operation-tasks/{operationTaskId}/start?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin",
+            new { reasonCode = "start", idempotencyKey = "start-page-boundary-001" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Mes_production_report_rejects_a_known_task_id_outside_the_selected_self_scope()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-operator",
+                    "self",
+                    "user-admin",
+                    [BusinessGatewayPermissions.MesReportingWrite]),
+            ]);
+        var mes = new RecordingMesClient
+        {
+            OperationTasks =
+            [
+                new BusinessConsoleMesOperationTaskRow(
+                    "OP-OTHER",
+                    "WO-OTHER",
+                    "InProgress",
+                    10,
+                    "WC-A",
+                    null,
+                    null,
+                    "user-other",
+                    "其他人员",
+                    null,
+                    null,
+                    "Ready"),
+            ],
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "self",
+                    "user-admin",
+                    "当前人员",
+                    "worker-mapping",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/production-reports",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                workOrderId = "WO-FOREIGN",
+                operationTaskId = "OP-FOREIGN",
+                goodQuantity = 1,
+                scrapQuantity = 0,
+                completesOperation = false,
+                reportedAtUtc = DateTimeOffset.Parse("2026-07-29T08:00:00Z"),
+                idempotencyKey = "report-foreign-001",
+                scopeKind = "self",
+                scopeId = "user-admin",
+            });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, mes.RecordProductionReportCallCount);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
     }
 
     [Fact]
@@ -1385,10 +2144,14 @@ public sealed class BusinessGatewayProxyTests
                 HttpStatusCode.Conflict,
                 "QUALITY_PLAN_MISSING"),
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var factory = CreateFactory(
+            AllowedOrganizationScope(BusinessGatewayPermissions.MesWorkOrdersManage),
+            services =>
         {
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -1413,10 +2176,14 @@ public sealed class BusinessGatewayProxyTests
                 HttpStatusCode.Conflict,
                 "lifecycle-conflict"),
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var factory = CreateFactory(
+            AllowedOrganizationScope(BusinessGatewayPermissions.MesWorkOrdersManage),
+            services =>
         {
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -1442,10 +2209,14 @@ public sealed class BusinessGatewayProxyTests
                 HttpStatusCode.Conflict,
                 "<html>secret lifecycle stack trace</html>"),
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var factory = CreateFactory(
+            AllowedOrganizationScope(BusinessGatewayPermissions.MesWorkOrdersManage),
+            services =>
         {
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -1473,10 +2244,14 @@ public sealed class BusinessGatewayProxyTests
                 HttpStatusCode.Conflict,
                 "EQUIPMENT_MAINTENANCE_CONFLICT"),
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var factory = CreateFactory(
+            AllowedOrganizationScope(BusinessGatewayPermissions.MesOperationsManage),
+            services =>
         {
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -1484,7 +2259,7 @@ public sealed class BusinessGatewayProxyTests
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.PostAsJsonAsync(
-            "/api/business-console/v1/mes/operation-tasks/OP-001/start?organizationId=org-001&environmentId=env-dev",
+            "/api/business-console/v1/mes/operation-tasks/OP-001/start?organizationId=org-001&environmentId=env-dev&scopeKind=organization&scopeId=org-001",
             new { reasonCode = "start", idempotencyKey = "start-001" });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -1496,10 +2271,14 @@ public sealed class BusinessGatewayProxyTests
     public async Task Mes_work_order_hold_forwards_context_and_internal_service_token()
     {
         var mes = new RecordingMesClient();
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var factory = CreateFactory(
+            AllowedOrganizationScope(BusinessGatewayPermissions.MesWorkOrdersManage),
+            services =>
         {
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -1526,10 +2305,14 @@ public sealed class BusinessGatewayProxyTests
     public async Task Mes_work_order_cancel_forwards_context_and_internal_service_token()
     {
         var mes = new RecordingMesClient();
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var factory = CreateFactory(
+            AllowedOrganizationScope(BusinessGatewayPermissions.MesWorkOrdersManage),
+            services =>
         {
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -6771,7 +7554,7 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListWorkOrdersAsync(
             "internal-token-001",
-            new BusinessConsoleMesWorkOrderListRequest(
+            new BusinessMesWorkOrderListRequest(
                 "org-001",
                 "env-dev",
                 "released",
@@ -7019,6 +7802,52 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(cases.Select(x => x.Path), handler.Requests.Select(x => x.RequestUri!.PathAndQuery));
         Assert.All(handler.Requests, sent => Assert.Equal("internal-token-001", sent.Headers.Authorization!.Parameter));
+    }
+
+    [Fact]
+    public async Task Mes_scoped_operation_http_clients_forward_only_internal_ownership_filters()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            items = Array.Empty<object>(),
+            total = 2,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+        var request = new BusinessMesOperationTaskListRequest(
+            "org-001",
+            "env-dev",
+            "InProgress",
+            "OP-10",
+            "WC-01",
+            "SHIFT-A",
+            "DEV-01",
+            "WO-01",
+            Skip: 4,
+            Take: 12,
+            AssignedUserIds: "user-emp-010",
+            TeamIds: "TEAM-A",
+            WorkCenterIds: "WC-01,WC-02");
+        const string expectedQuery =
+            "?organizationId=org-001&environmentId=env-dev&status=InProgress&keyword=OP-10&workCenterId=WC-01&shiftId=SHIFT-A&deviceAssetId=DEV-01&workOrderId=WO-01&assignedUserIds=user-emp-010&teamIds=TEAM-A&workCenterIds=WC-01%2CWC-02&skip=4&take=12";
+
+        var operation = await client.ListOperationTasksAsync(
+            "internal-token-001",
+            request,
+            CancellationToken.None);
+        var reportable = await client.ListReportableOperationTasksAsync(
+            "internal-token-001",
+            request,
+            CancellationToken.None);
+
+        Assert.Equal(2, operation.Total);
+        Assert.Equal(2, reportable.Total);
+        Assert.Equal(
+            [
+                "/api/business/v1/mes/operation-tasks" + expectedQuery,
+                "/api/business/v1/mes/reportable-operation-tasks" + expectedQuery,
+            ],
+            handler.Requests.Select(x => x.RequestUri!.PathAndQuery));
     }
 
     /// <summary>
@@ -7528,6 +8357,38 @@ public sealed class BusinessGatewayProxyTests
         Assert.DoesNotContain("<html>", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    private static BusinessMasterDataPrincipalWorkContextResponse PrincipalWorkContext(
+        params BusinessMasterDataWorkContextCandidateScope[] candidates) =>
+        PrincipalWorkContext([], candidates);
+
+    private static BusinessMasterDataPrincipalWorkContextResponse PrincipalWorkContext(
+        IReadOnlyCollection<BusinessMasterDataWorkContextCoveredWorkCenter> coveredWorkCenters,
+        params BusinessMasterDataWorkContextCandidateScope[] candidates) =>
+        new(
+            "resolved",
+            null,
+            [],
+            coveredWorkCenters,
+            [],
+            [],
+            [],
+            candidates,
+            candidates.Select(x => x.Kind).Distinct(StringComparer.Ordinal).ToArray(),
+            []);
+
+    private static FakeBusinessGatewayAuthorizationClient AllowedOrganizationScope(string permissionCode) =>
+        FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "role-platform-admin",
+                    "organization",
+                    "org-001",
+                    [permissionCode],
+                    OrganizationWide: true),
+            ]);
+
     private static WebApplicationFactory<Program> CreateFactory(
         FakeBusinessGatewayAuthorizationClient auth,
         Action<IServiceCollection>? configureServices = null) =>
@@ -7866,7 +8727,9 @@ public sealed class BusinessGatewayProxyTests
         0m,
         false,
         DateTimeOffset.Parse("2026-07-21T15:46:24Z"),
-        "wire-shape-001");
+        "wire-shape-001",
+        "organization",
+        "org-001");
 
     private static BusinessConsoleMesCreateReceiptRequest FinishedGoodsReceiptRequest() => new(
         "org-001",
@@ -12622,10 +13485,18 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public string? LastProductionReportNo { get; private set; }
     public BusinessConsoleMesContextRequest? LastProductionReportContext { get; private set; }
     public int WorkOrderListCallCount { get; private set; }
+    public int WorkOrderDetailCallCount { get; private set; }
+    public int ReleaseWorkOrderCallCount { get; private set; }
+    public int StartOperationCallCount { get; private set; }
+    public int RecordProductionReportCallCount { get; private set; }
 
     public string? LastInternalToken { get; private set; }
 
-    public BusinessConsoleMesWorkOrderListRequest? LastWorkOrderListRequest { get; private set; }
+    public BusinessMesWorkOrderListRequest? LastWorkOrderListRequest { get; private set; }
+
+    public BusinessMesOperationTaskListRequest? LastOperationTaskListRequest { get; private set; }
+
+    public BusinessMesOperationTaskListRequest? LastReportableOperationTaskListRequest { get; private set; }
 
     public Exception? FoundationReadinessFailure { get; init; }
 
@@ -12638,6 +13509,10 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public IReadOnlyCollection<BusinessConsoleMesWorkOrderItem>? WorkOrders { get; init; }
 
     public int? WorkOrdersTotal { get; init; }
+
+    public IReadOnlyCollection<BusinessConsoleMesOperationTaskRow>? OperationTasks { get; init; }
+
+    public bool EmulateMesListPaging { get; init; }
 
     public IReadOnlyCollection<BusinessConsoleMesProductionPlanRow>? ProductionPlans { get; init; }
 
@@ -12743,7 +13618,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public Task<BusinessConsoleMesWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMesWorkOrderListRequest request,
+        BusinessMesWorkOrderListRequest request,
         CancellationToken cancellationToken)
     {
         WorkOrderListCallCount++;
@@ -12752,7 +13627,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         var workOrders = WorkOrders ??
             [
                 new BusinessConsoleMesWorkOrderItem(
-                    "wo-001",
+                    request.WorkOrderId ?? request.Keyword ?? "wo-001",
                     "SKU-001",
                     null,
                     10,
@@ -12761,6 +13636,35 @@ internal sealed class RecordingMesClient : IBusinessMesClient
                     "released",
                     []),
             ];
+        if (EmulateMesListPaging)
+        {
+            var keyword = request.Keyword?.Trim();
+            var query = workOrders.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
+            {
+                query = query.Where(x =>
+                    string.Equals(x.WorkOrderId, request.WorkOrderId.Trim(), StringComparison.Ordinal));
+            }
+
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
+                query = query.Where(x =>
+                    x.WorkOrderId.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                    x.SkuId.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                    (x.ProductionVersionId?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+
+            var matches = query
+                .OrderBy(x => x.DueUtc)
+                .ThenBy(x => x.WorkOrderId, StringComparer.Ordinal)
+                .ToArray();
+            var page = matches
+                .Skip(Math.Max(0, request.Skip))
+                .Take(Math.Clamp(request.Take, 1, 500))
+                .ToArray();
+            return Task.FromResult(new BusinessConsoleMesWorkOrderListResponse(page, matches.Length));
+        }
+
         return Task.FromResult(new BusinessConsoleMesWorkOrderListResponse(workOrders, WorkOrdersTotal ?? workOrders.Count));
     }
 
@@ -12770,6 +13674,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         BusinessConsoleMesContextRequest request,
         CancellationToken cancellationToken)
     {
+        WorkOrderDetailCallCount++;
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleMesWorkOrderDetailResponse(
             workOrderId,
@@ -12788,6 +13693,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         BusinessConsoleMesReleaseWorkOrderRequest request,
         CancellationToken cancellationToken)
     {
+        ReleaseWorkOrderCallCount++;
         LastInternalToken = internalBearerToken;
         if (ReleaseFailure is not null)
         {
@@ -12956,10 +13862,70 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public Task<BusinessConsoleMesOperationTaskListResponse> ListOperationTasksAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessMesOperationTaskListRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
+        LastOperationTaskListRequest = request;
+        var tasks = OperationTasks ??
+            [
+                new BusinessConsoleMesOperationTaskRow(
+                    request.OperationTaskId ?? request.Keyword ?? "OP-001",
+                    "WO-001",
+                    "Queued",
+                    10,
+                    "WC-A",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    "Ready"),
+            ];
+        if (EmulateMesListPaging)
+        {
+            var keyword = request.Keyword?.Trim();
+            var query = tasks.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(request.OperationTaskId))
+            {
+                query = query.Where(x =>
+                    string.Equals(x.OperationTaskId, request.OperationTaskId.Trim(), StringComparison.Ordinal));
+            }
+
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
+                query = query.Where(x =>
+                    x.OperationTaskId.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                    x.WorkOrderId.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                    x.WorkCenterId.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                    (x.DeviceAssetId?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (x.ShiftId?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+
+            var matches = query
+                .OrderBy(x => x.PlannedStartUtc)
+                .ThenBy(x => x.OperationSequence)
+                .ThenBy(x => x.OperationTaskId, StringComparer.Ordinal)
+                .ToArray();
+            var page = matches
+                .Skip(Math.Max(0, request.Skip))
+                .Take(Math.Clamp(request.Take, 1, 500))
+                .ToArray();
+            return Task.FromResult(new BusinessConsoleMesOperationTaskListResponse(page, matches.Length));
+        }
+
+        return Task.FromResult(new BusinessConsoleMesOperationTaskListResponse(tasks, tasks.Count));
+    }
+
+    public Task<BusinessConsoleMesOperationTaskListResponse> ListReportableOperationTasksAsync(
+        string internalBearerToken,
+        BusinessMesOperationTaskListRequest request,
+        CancellationToken cancellationToken)
+    {
+        StartOperationCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastReportableOperationTaskListRequest = request;
         return Task.FromResult(new BusinessConsoleMesOperationTaskListResponse([], 0));
     }
 
@@ -13071,8 +14037,12 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(
         string internalBearerToken,
         BusinessConsoleRecordProductionReportRequest request,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        CancellationToken cancellationToken)
+    {
+        RecordProductionReportCallCount++;
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleRecordProductionReportResponse("report-001", "PR-001"));
+    }
 
     public Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(
         string internalBearerToken,

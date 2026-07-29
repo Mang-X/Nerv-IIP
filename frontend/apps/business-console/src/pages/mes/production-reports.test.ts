@@ -124,6 +124,10 @@ vi.mock('@/composables/useBusinessMes', async () => {
       recordProductionReport: vi.fn(),
       recordProductionReportError: shallowRef(undefined),
       recordProductionReportPending: shallowRef(false),
+      reportScopeMessage: shallowRef(''),
+      reportScopePending: shallowRef(false),
+      reportScopeReady: shallowRef(true),
+      refreshProductionReportState: vi.fn(),
     }),
     useMesProductionReports: () => ({
       filters: mesState.filters,

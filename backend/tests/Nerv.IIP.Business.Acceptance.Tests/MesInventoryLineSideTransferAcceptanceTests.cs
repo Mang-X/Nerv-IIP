@@ -818,7 +818,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         workOrder.MarkReleased();
         workOrder.Start(now);
         mesDb.WorkOrders.Add(workOrder);
-        mesDb.OperationTasks.Add(OperationTask.Create(
+        var operationTask = OperationTask.Create(
             "org-001",
             "env-dev",
             workOrderId,
@@ -830,7 +830,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             now,
             TimeSpan.FromMinutes(30),
             null,
-            null));
+            null);
+        operationTask.Start(now);
+        mesDb.OperationTasks.Add(operationTask);
     }
 
     private static async Task RecordMesOutputLotAsync(

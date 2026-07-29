@@ -9,6 +9,7 @@ import {
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
   forceReleaseBusinessConsoleMesQualityHoldMutationOptions,
+  getBusinessConsolePrincipalWorkContextQueryOptions,
   getBusinessConsoleMesQualityHoldTimelineQueryOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
@@ -129,6 +130,11 @@ import { businessReadState } from './businessReadState'
 import { executeLifecycleAction } from './lifecycleAction'
 
 const DEFAULT_TAKE = 100
+const MES_OPERATIONS_MANAGE_PERMISSION = 'business.mes.operations.manage'
+const MES_REPORTING_WRITE_PERMISSION = 'business.mes.reporting.write'
+
+export const MES_WORK_SCOPE_REQUIRED_MESSAGE =
+  '尚未选择已授权作业范围，当前操作已禁用。请刷新范围后重试。'
 
 function requirePendingPayloadSnapshot<T extends object>(snapshot: unknown, operation: string): T {
   if (!snapshot || typeof snapshot !== 'object') {
@@ -273,6 +279,62 @@ function defaultContext(): MesContextFilters {
       environmentId: '',
     }),
   )
+}
+
+interface MesSelectedWorkScope {
+  kind: string
+  id: string
+  displayName?: string
+}
+
+function useMesPrincipalWorkScope(context: BusinessContextFields, permissionCode: string) {
+  const workContextQuery = useQuery(() =>
+    withBusinessContextEnabled(
+      getBusinessConsolePrincipalWorkContextQueryOptions({
+        query: {
+          organizationId: context.organizationId,
+          environmentId: context.environmentId,
+          permissionCode,
+        },
+      }),
+      context,
+    ),
+  )
+  const selectedScope = computed<MesSelectedWorkScope | undefined>(() => {
+    const envelope = workContextQuery.data.value
+    if (!envelope?.success) return undefined
+    const selection = envelope.data?.selectedScope
+    const kind = selection?.kind?.trim()
+    const id = selection?.id?.trim()
+    const displayName = selection?.displayName?.trim()
+    if (!kind || !id) return undefined
+    return {
+      kind,
+      id,
+      ...(displayName ? { displayName } : {}),
+    }
+  })
+  const scopeReady = computed(() => selectedScope.value !== undefined)
+  const scopeMessage = computed(() => {
+    if (!hasBusinessContext(context)) return '尚未进入有效组织与环境，当前操作已禁用。'
+    if (workContextQuery.isLoading.value) return '正在核验当前作业范围…'
+    if (workContextQuery.error.value) return '作业范围核验失败，当前操作已禁用。请刷新后重试。'
+    return scopeReady.value ? '' : MES_WORK_SCOPE_REQUIRED_MESSAGE
+  })
+
+  function requireSelectedScope() {
+    const selection = selectedScope.value
+    if (!selection) throw new Error(scopeMessage.value || MES_WORK_SCOPE_REQUIRED_MESSAGE)
+    return selection
+  }
+
+  return {
+    requireSelectedScope,
+    selectedScope,
+    scopeMessage,
+    scopePending: workContextQuery.isLoading,
+    scopeReady,
+  }
 }
 
 function defaultFoundationFilters(): MesFoundationReadinessFilters {
@@ -501,9 +563,15 @@ export interface UseMesWorkOrdersOptions {
  * 生产报工（写）单独成钩：报工弹窗从工单列表 / 工序执行两处行内打开，不应为了一个写操作再拉一份工单列表。
  * 业务上下文（组织 / 环境）由本钩内部绑定并补齐到请求体，调用方只传报工对象与数量。
  */
+export type MesProductionReportInput = Omit<
+  BusinessConsoleRecordProductionReportRequest,
+  'organizationId' | 'environmentId' | 'scopeKind' | 'scopeId'
+>
+
 export function useMesProductionReporting() {
   const auth = useAuthStore()
   const context = defaultContext()
+  const reportScope = useMesPrincipalWorkScope(context, MES_REPORTING_WRITE_PERMISSION)
   const queryCache = useQueryCache()
   const issuedReportCompleteIntents = new Set<string>()
   const recordProductionReportPending = shallowRef(false)
@@ -518,29 +586,37 @@ export function useMesProductionReporting() {
     ])
 
   async function recordProductionReportAction(
-    body: BusinessConsoleRecordProductionReportRequest,
+    body: MesProductionReportInput,
     options: { onCommandAttempt?: () => void } = {},
   ) {
     recordProductionReportPending.value = true
     recordProductionReportError.value = undefined
     try {
+      const selectedScope = reportScope.requireSelectedScope()
+      const submittedBody = {
+        ...body,
+        organizationId: context.organizationId,
+        environmentId: context.environmentId,
+        scopeKind: selectedScope.kind,
+        scopeId: selectedScope.id,
+      } satisfies BusinessConsoleRecordProductionReportRequest
       const {
         idempotencyKey: suppliedKey,
         reportedAtUtc: _reportedAtUtc,
         ...fingerprintBody
-      } = body
-      const scope = {
+      } = submittedBody
+      const intentScope = {
         principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
         organizationId: context.organizationId,
         environmentId: context.environmentId,
         operationType: 'mes.production-report.record',
         payloadFingerprint: JSON.stringify(fingerprintBody),
       }
-      const restored = peekPendingBusinessIntent(scope)
+      const restored = peekPendingBusinessIntent(intentScope)
       const pending = acquirePendingBusinessIntent(
-        scope,
+        intentScope,
         () => suppliedKey?.trim() || makeIdempotencyKey('production-report'),
-        body,
+        submittedBody,
       )
       const stableBody =
         requirePendingPayloadSnapshot<BusinessConsoleRecordProductionReportRequest>(
@@ -563,15 +639,13 @@ export function useMesProductionReporting() {
         options.onCommandAttempt?.()
         return recordBusinessConsoleMesProductionReport({
           body: {
-            organizationId: context.organizationId,
-            environmentId: context.environmentId,
             ...stableBody,
             idempotencyKey,
           },
           throwOnError: false,
         })
       }
-      const result = await completePendingBusinessIntent(scope, async () => {
+      const result = await completePendingBusinessIntent(intentScope, async () => {
         const envelope = stableBody.completesOperation
           ? await executeLifecycleAction({
               readLatest: () =>
@@ -614,6 +688,9 @@ export function useMesProductionReporting() {
     recordProductionReport: recordProductionReportAction,
     recordProductionReportError,
     recordProductionReportPending,
+    reportScopeMessage: reportScope.scopeMessage,
+    reportScopePending: reportScope.scopePending,
+    reportScopeReady: reportScope.scopeReady,
     refreshProductionReportState: refreshProductionReportQueries,
   }
 }
@@ -1080,6 +1157,7 @@ export function useMesWorkOrderDetail() {
 export function useMesOperationTasks() {
   const auth = useAuthStore()
   const filters = defaultFilters()
+  const operationScope = useMesPrincipalWorkScope(filters, MES_OPERATIONS_MANAGE_PERMISSION)
   const queryCache = useQueryCache()
 
   const operationTasksQuery = useQuery(() =>
@@ -1097,11 +1175,17 @@ export function useMesOperationTasks() {
   function operationActionBody(
     operationTaskId: string,
     context: MesContextFilters,
+    selectedScope: MesSelectedWorkScope,
     body: BusinessConsoleMesOperationTaskActionRequest,
   ) {
     return {
       path: { operationTaskId },
-      query: { organizationId: context.organizationId, environmentId: context.environmentId },
+      query: {
+        organizationId: context.organizationId,
+        environmentId: context.environmentId,
+        scopeKind: selectedScope.kind,
+        scopeId: selectedScope.id,
+      },
       body,
     }
   }
@@ -1113,13 +1197,14 @@ export function useMesOperationTasks() {
     context: MesContextFilters,
     body: BusinessConsoleMesOperationTaskActionRequest,
   ) {
+    const selectedScope = operationScope.requireSelectedScope()
     const { idempotencyKey: suppliedKey, ...payload } = body
     const scope = {
       principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
       organizationId: context.organizationId,
       environmentId: context.environmentId,
       operationType: `mes.operation-task.${action}`,
-      payloadFingerprint: `${operationTaskId}:${JSON.stringify(payload)}`,
+      payloadFingerprint: `${operationTaskId}:${selectedScope.kind}:${selectedScope.id}:${JSON.stringify(payload)}`,
     }
     const restored = peekPendingBusinessIntent(scope)
     const pending = acquirePendingBusinessIntent(
@@ -1142,7 +1227,7 @@ export function useMesOperationTasks() {
           ),
         command: async () => ({
           data: await mutation.mutateAsync(
-            operationActionBody(operationTaskId, context, {
+            operationActionBody(operationTaskId, context, selectedScope, {
               ...stablePayload,
               idempotencyKey: pending.idempotencyKey,
             }),
@@ -1182,6 +1267,9 @@ export function useMesOperationTasks() {
     operationTasksPending: operationTasksQuery.isLoading,
     operationTasksState: businessReadState(operationTasksQuery, () => hasBusinessContext(filters)),
     operationTasksTotal: computed(() => envelopeTotal(operationTasksQuery.data.value)),
+    operationScopeMessage: operationScope.scopeMessage,
+    operationScopePending: operationScope.scopePending,
+    operationScopeReady: operationScope.scopeReady,
     pauseOperationTask: async (
       operationTaskId: string,
       context: MesContextFilters,

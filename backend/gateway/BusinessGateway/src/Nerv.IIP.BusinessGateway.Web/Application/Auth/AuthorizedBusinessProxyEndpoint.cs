@@ -31,8 +31,10 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
                     OrganizationId(req),
                     EnvironmentId(req),
                     ResourceType(req),
-                    ResourceId(req)))
+                    ResourceId(req),
+                    IncludePrincipalContext))
                 .ToArray(),
+            AuthorizationContinuityMode,
             ct);
         if (bearerToken is null)
         {
@@ -58,6 +60,13 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
     protected virtual int StatusCode => StatusCodes.Status200OK;
 
     protected virtual JsonSerializerOptions? ResponseJsonOptions => null;
+
+    protected virtual bool IncludePrincipalContext => false;
+
+    protected virtual BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        HttpMethods.IsGet(HttpContext.Request.Method)
+            ? BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed
+            : BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
 
     protected virtual string? ResourceType(TRequest request) => null;
 

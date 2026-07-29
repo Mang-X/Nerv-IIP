@@ -8,6 +8,7 @@ import {
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
+  getBusinessConsolePrincipalWorkContextQueryOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryKey,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
@@ -81,6 +82,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   getBusinessConsoleMesCurrentOperationSopsQueryOptions: mockQueryOptions(
     'getBusinessConsoleMesCurrentOperationSops',
   ),
+  getBusinessConsolePrincipalWorkContextQueryOptions: vi.fn(({ query }) => ({
+    key: [{ _id: `getBusinessConsolePrincipalWorkContext:${query.permissionCode}` }],
+    query: vi.fn(),
+  })),
   getBusinessConsoleMesWorkOrderDetailQueryOptions: mockQueryOptions(
     'getBusinessConsoleMesWorkOrderDetail',
   ),
@@ -192,6 +197,22 @@ describe('pda useBusinessMes composables', () => {
     coladaState.queryFactoriesById.clear()
     coladaState.mutateById.clear()
     coladaState.cancelQueries.mockClear()
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.operations.manage',
+      {
+        success: true,
+        data: {
+          selectedScope: { kind: 'work-center', id: 'WC-A', displayName: '精加工一线' },
+        },
+      },
+    )
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.reporting.write',
+      {
+        success: true,
+        data: { selectedScope: { kind: 'self', id: 'user-001', displayName: '我的任务' } },
+      },
+    )
     authState.principal = { organizationId: 'org-001', environmentId: 'env-dev' }
     vi.mocked(listBusinessConsoleMesOperationTasks)
       .mockReset()
@@ -474,10 +495,34 @@ describe('pda useBusinessMes composables', () => {
       goodQuantity: 9,
       scrapQuantity: 1,
       completesOperation: true,
+      scopeKind: 'self',
+      scopeId: 'user-001',
     })
     // caller-supplied key passes through verbatim
     expect(payload.body.idempotencyKey).toBe('op-report-1')
     expect(payload.body.reportedAtUtc).toBeTruthy()
+  })
+
+  it('does not send a production report when no reporting scope is selected', async () => {
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.reporting.write',
+      { success: true, data: { selectedScope: null } },
+    )
+    const { recordReport, reportScopeReady } = useMesProductionReports()
+    const mutateAsync = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')!
+
+    expect(reportScopeReady.value).toBe(false)
+    await expect(
+      recordReport({
+        workOrderId: 'wo-no-scope',
+        operationTaskId: 'ot-no-scope',
+        goodQuantity: 1,
+        scrapQuantity: 0,
+        completesOperation: false,
+        idempotencyKey: 'report-no-scope',
+      }),
+    ).rejects.toThrow('尚未选择已授权作业范围')
+    expect(mutateAsync).not.toHaveBeenCalled()
   })
 
   it('completes an operation task forwarding the caller-supplied idempotency key', async () => {
@@ -490,8 +535,30 @@ describe('pda useBusinessMes composables', () => {
     expect(mutateAsync).toHaveBeenCalledTimes(1)
     const payload = mutateAsync!.mock.calls[0][0]
     expect(payload.path).toEqual({ operationTaskId: 'ot-9' })
-    expect(payload.query).toMatchObject({ organizationId: 'org-001', environmentId: 'env-dev' })
+    expect(payload.query).toEqual({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      scopeKind: 'work-center',
+      scopeId: 'WC-A',
+    })
     expect(payload.body.idempotencyKey).toBe('op-complete-1')
+  })
+
+  it('fails closed before task readback and mutation when no operation scope is selected', async () => {
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.operations.manage',
+      { success: true, data: { selectedScope: null } },
+    )
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockClear()
+    const { startTask, operationScopeReady } = useMesOperationTasks()
+    const mutateAsync = coladaState.mutateById.get('startBusinessConsoleMesOperationTask')!
+
+    expect(operationScopeReady.value).toBe(false)
+    await expect(
+      startTask('ot-no-scope', { idempotencyKey: 'operation-no-scope' }),
+    ).rejects.toThrow('尚未选择已授权作业范围')
+    expect(listBusinessConsoleMesOperationTasks).not.toHaveBeenCalled()
+    expect(mutateAsync).not.toHaveBeenCalled()
   })
 
   it('clears an operation intent after a determinate 422 so the next attempt uses a new key', async () => {
@@ -626,6 +693,8 @@ describe('pda useBusinessMes composables', () => {
       idempotencyKey: 'op-report-stable',
       organizationId: 'EVIL',
       environmentId: 'EVIL',
+      scopeKind: 'organization',
+      scopeId: 'EVIL',
       reportedAtUtc: '1999-01-01T00:00:00.000Z',
     } as never)
 
@@ -634,6 +703,8 @@ describe('pda useBusinessMes composables', () => {
     // org/env + timestamp injected LAST from principal scope — hostile caller values lose
     expect(payload.body.organizationId).toBe('org-001')
     expect(payload.body.environmentId).toBe('env-dev')
+    expect(payload.body.scopeKind).toBe('self')
+    expect(payload.body.scopeId).toBe('user-001')
     expect(payload.body.reportedAtUtc).not.toBe('1999-01-01T00:00:00.000Z')
     // the idempotency key is now the caller's responsibility — it passes through verbatim
     expect(payload.body.idempotencyKey).toBe('op-report-stable')
@@ -678,7 +749,11 @@ describe('pda useBusinessMes composables', () => {
         organizationId: 'org-001',
         environmentId: 'env-dev',
         operationType: 'mes.production-report.record',
-        payloadFingerprint: JSON.stringify(payload),
+        payloadFingerprint: JSON.stringify({
+          ...payload,
+          scopeKind: 'self',
+          scopeId: 'user-001',
+        }),
       },
       () => idempotencyKey,
     )
@@ -697,6 +772,8 @@ describe('pda useBusinessMes composables', () => {
       completesOperation: false,
       idempotencyKey,
       reportedAtUtc: expect.any(String),
+      scopeKind: 'self',
+      scopeId: 'user-001',
     })
   })
 

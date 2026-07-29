@@ -10,6 +10,7 @@ import {
   getBusinessConsoleMesBatchTraceabilityQueryOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   getBusinessConsoleMesFoundationReadinessQueryOptions,
+  getBusinessConsolePrincipalWorkContextQueryOptions,
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
   getBusinessConsoleMesProductionReportQueryOptions,
@@ -178,6 +179,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   getBusinessConsoleMesFoundationReadinessQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesFoundationReadiness' }],
+    query: vi.fn(),
+  })),
+  getBusinessConsolePrincipalWorkContextQueryOptions: vi.fn(({ query }) => ({
+    key: [{ _id: `getBusinessConsolePrincipalWorkContext:${query.permissionCode}` }],
     query: vi.fn(),
   })),
   getBusinessConsoleMesMaterialReadinessQueryOptions: vi.fn(() => ({
@@ -387,6 +392,22 @@ describe('business MES composables', () => {
     coladaState.queryFactoriesById.clear()
     coladaState.queryDataById.clear()
     coladaState.queryRefetchById.clear()
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.operations.manage',
+      {
+        success: true,
+        data: {
+          selectedScope: { kind: 'work-center', id: 'WC-A', displayName: '精加工一线' },
+        },
+      },
+    )
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.reporting.write',
+      {
+        success: true,
+        data: { selectedScope: { kind: 'self', id: 'user-001', displayName: '我的任务' } },
+      },
+    )
   })
 
   it('keeps the original MES action key across failed accepted readback and composable re-entry', async () => {
@@ -440,6 +461,40 @@ describe('business MES composables', () => {
       )
 
     expect(sentKeys).toEqual(['page-random-key-1', 'page-random-key-1', 'page-random-key-3'])
+    const firstRequest = vi.mocked(startBusinessConsoleMesOperationTaskMutationOptions).mock
+      .results[0]?.value.mutation as ReturnType<typeof vi.fn>
+    expect(firstRequest.mock.calls[0]?.[0].query).toEqual({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      scopeKind: 'work-center',
+      scopeId: 'WC-A',
+    })
+  })
+
+  it('fails closed before readback or mutation when no authorized operation scope is selected', async () => {
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.operations.manage',
+      { success: true, data: { selectedScope: null } },
+    )
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockClear()
+    const page = useMesOperationTasks()
+    const mutation = vi.mocked(startBusinessConsoleMesOperationTaskMutationOptions).mock.results[0]
+      ?.value.mutation as ReturnType<typeof vi.fn>
+
+    await expect(
+      page.startOperationTask(
+        'task-no-scope',
+        {
+          organizationId: 'org-001',
+          environmentId: 'env-dev',
+          workOrderId: 'wo-no-scope',
+        },
+        { idempotencyKey: 'no-scope-key' },
+      ),
+    ).rejects.toThrow('尚未选择已授权作业范围')
+
+    expect(listBusinessConsoleMesOperationTasks).not.toHaveBeenCalled()
+    expect(mutation).not.toHaveBeenCalled()
   })
 
   it('rotates the MES action key after an explicit 422 rejection', async () => {
@@ -647,8 +702,6 @@ describe('business MES composables', () => {
       durationMinutes: 60,
     })
     await recordProductionReport({
-      organizationId: 'org-001',
-      environmentId: 'env-dev',
       workOrderId: 'wo-rush',
       operationTaskId: 'op-1',
       goodQuantity: 8,
@@ -670,11 +723,35 @@ describe('business MES composables', () => {
     expect(recordBusinessConsoleMesProductionReport).toHaveBeenCalledWith({
       body: expect.objectContaining({
         operationTaskId: 'op-1',
+        scopeKind: 'self',
+        scopeId: 'user-001',
       }),
       throwOnError: false,
     })
     // 急单 4 键 + 报工 5 键（报工弹窗现在也从工序执行页打开，工序任务列表须一起失效）。
     expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(9)
+  })
+
+  it('does not send a production report when the write scope is not selected', async () => {
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.reporting.write',
+      { success: true, data: { selectedScope: null } },
+    )
+    const { recordProductionReport, reportScopeReady } = useMesProductionReporting()
+    vi.mocked(recordBusinessConsoleMesProductionReport).mockClear()
+
+    expect(reportScopeReady.value).toBe(false)
+    await expect(
+      recordProductionReport({
+        workOrderId: 'wo-no-scope',
+        operationTaskId: 'op-no-scope',
+        goodQuantity: 1,
+        scrapQuantity: 0,
+        completesOperation: false,
+        idempotencyKey: 'report-no-scope',
+      }),
+    ).rejects.toThrow('尚未选择已授权作业范围')
+    expect(recordBusinessConsoleMesProductionReport).not.toHaveBeenCalled()
   })
 
   it('仅重放当前实例已发出的同键报工完工，新键仍按最新 Completed 状态拦截', async () => {

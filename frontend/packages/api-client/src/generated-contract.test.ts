@@ -135,6 +135,7 @@ import {
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
+  listBusinessConsoleMesReportableOperationTasksQueryOptions,
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesRelatedQualityItemsQueryOptions,
@@ -185,6 +186,23 @@ describe('generated API client contract', () => {
     expectTypeOf<
       Pick<BusinessConsoleCompleteMaintenanceWorkOrderRequest, 'idempotencyKey'>
     >().toEqualTypeOf<{ idempotencyKey: string }>()
+  })
+
+  it('requires an explicit MAN-628 scope on MES task actions and production reports', () => {
+    type StartOperationOptions = Parameters<
+      typeof businessConsoleClient.startBusinessConsoleMesOperationTask
+    >[0]
+
+    expectTypeOf<Pick<StartOperationOptions['query'], 'scopeKind' | 'scopeId'>>().toEqualTypeOf<{
+      scopeKind: string
+      scopeId: string
+    }>()
+    expectTypeOf<
+      Pick<BusinessConsoleRecordProductionReportRequest, 'scopeKind' | 'scopeId'>
+    >().toEqualTypeOf<{
+      scopeKind: string
+      scopeId: string
+    }>()
   })
 
   it('exports the current-principal work-context contract through the stable boundary', () => {
@@ -342,6 +360,10 @@ describe('generated API client contract', () => {
     expect(listBusinessConsoleMesDispatchTasksQueryOptions).toBeTypeOf('function')
     expect(assignBusinessConsoleMesDispatchTaskMutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesOperationTasksQueryOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesReportableOperationTasksQueryOptions).toBeTypeOf('function')
+    expect(businessConsoleClient.listBusinessConsoleMesReportableOperationTasks).toBeTypeOf(
+      'function',
+    )
     expect(startBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')
     expect(pauseBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')
     expect(resumeBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')

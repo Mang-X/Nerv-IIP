@@ -193,7 +193,9 @@ public sealed class BusinessGatewayIdempotencySafetyTests
                 "org-001",
                 "env-dev",
                 null,
-                "mes-action-intent-001"),
+                "mes-action-intent-001",
+                "organization",
+                "org-001"),
             CancellationToken.None));
     }
 

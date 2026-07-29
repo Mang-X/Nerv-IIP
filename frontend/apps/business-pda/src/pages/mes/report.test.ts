@@ -43,6 +43,9 @@ const workOrdersErrorRef = ref<unknown>(null)
 const tasksErrorRef = ref<unknown>(null)
 const workOrdersPendingRef = ref(false)
 const tasksPendingRef = ref(false)
+const reportScopeMessageRef = ref('')
+const reportScopePendingRef = ref(false)
+const reportScopeReadyRef = ref(true)
 let operationTaskDiscoveryCalls = 0
 
 const workOrderFilters = reactive({
@@ -173,6 +176,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
     error: ref(null),
     refresh: vi.fn(),
     recordReport,
+    reportScopeMessage: reportScopeMessageRef,
+    reportScopePending: reportScopePendingRef,
+    reportScopeReady: reportScopeReadyRef,
   }),
   useMesTelemetryProductionReportCandidates: () => ({
     candidates: computed(() => []),
@@ -216,6 +222,9 @@ describe('PDA MES production reporting page', () => {
     tasksErrorRef.value = null
     workOrdersPendingRef.value = false
     tasksPendingRef.value = false
+    reportScopeMessageRef.value = ''
+    reportScopePendingRef.value = false
+    reportScopeReadyRef.value = true
     workOrdersRef.value = defaultWorkOrders
     operationTasksRef.value = defaultOperationTasks
     workOrderDetailRef.value = {
@@ -244,6 +253,28 @@ describe('PDA MES production reporting page', () => {
     expect(wrapper.text()).toContain('WO-2026-0002')
     // 尚未到选工序，列表里不应出现工序序号
     expect(wrapper.text()).not.toContain('工序 10')
+  })
+
+  it('shows the missing-scope reason and keeps production reporting disabled', async () => {
+    reportScopeReadyRef.value = false
+    reportScopeMessageRef.value = '尚未选择已授权作业范围，当前操作已禁用。'
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="report-scope-message"]').text()).toContain(
+      '尚未选择已授权作业范围',
+    )
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    input.value = '1'
+    input.dispatchEvent(new Event('input'))
+    await flushPromises()
+    const submit = document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!
+    expect(submit.disabled).toBe(true)
+    submit.click()
+    await flushPromises()
+    expect(recordReport).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('scanning sets the work-order keyword filter', async () => {

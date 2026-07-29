@@ -1037,6 +1037,8 @@ public sealed class BusinessGatewayAuthorizationTests
             organizationId = "org-001",
             environmentId = "env-dev",
             idempotencyKey = "mes-production-report-authz",
+            scopeKind = "organization",
+            scopeId = "org-001",
         },
         "/api/business-console/v1/maintenance/plans" => new
         {

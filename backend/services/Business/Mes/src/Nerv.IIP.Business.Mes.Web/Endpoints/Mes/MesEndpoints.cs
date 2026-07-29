@@ -50,7 +50,10 @@ public sealed record ListMesWorkOrdersRequest(
     string? DeviceAssetId = null,
     string? WorkCenterIds = null,
     string? DeviceAssetIds = null,
-    string? Statuses = null);
+    string? Statuses = null,
+    string? AssignedUserIds = null,
+    string? TeamIds = null,
+    string? WorkOrderId = null);
 
 public sealed record ListOperationTasksRequest(
     string OrganizationId,
@@ -62,7 +65,26 @@ public sealed record ListOperationTasksRequest(
     string? WorkCenterId = null,
     string? ShiftId = null,
     string? DeviceAssetId = null,
-    string? WorkOrderId = null);
+    string? WorkOrderId = null,
+    string? AssignedUserIds = null,
+    string? TeamIds = null,
+    string? WorkCenterIds = null,
+    string? OperationTaskId = null);
+
+public sealed record ListReportableOperationTasksRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    int Skip = 0,
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    string? AssignedUserIds = null,
+    string? TeamIds = null,
+    string? WorkCenterIds = null);
 
 public sealed record ListProductionPlansRequest(
     string OrganizationId,
@@ -686,7 +708,10 @@ public sealed class ListMesWorkOrdersEndpoint(ISender sender)
                 req.DeviceAssetId,
                 req.WorkCenterIds,
                 req.DeviceAssetIds,
-                req.Statuses),
+                req.Statuses,
+                req.AssignedUserIds,
+                req.TeamIds,
+                req.WorkOrderId),
             ct);
         await Send.OkAsync(response, ct);
     }
@@ -1031,7 +1056,37 @@ public sealed class ListOperationTasksEndpoint(ISender sender)
             WorkCenterId: req.WorkCenterId,
             ShiftId: req.ShiftId,
             DeviceAssetId: req.DeviceAssetId,
-            WorkOrderId: req.WorkOrderId), ct);
+            WorkOrderId: req.WorkOrderId,
+            AssignedUserIds: req.AssignedUserIds,
+            TeamIds: req.TeamIds,
+            WorkCenterIds: req.WorkCenterIds,
+            OperationTaskId: req.OperationTaskId), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class ListReportableOperationTasksEndpoint(ISender sender)
+    : MesEndpoint<ListReportableOperationTasksRequest, MesOperationTaskListResponse>
+{
+    public override void Configure() =>
+        ConfigureMesContract(MesEndpointContracts.Get<ListReportableOperationTasksEndpoint>());
+
+    public override async Task HandleAsync(ListReportableOperationTasksRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListReportableOperationTasksQuery(
+            OrganizationId: req.OrganizationId,
+            EnvironmentId: req.EnvironmentId,
+            Status: req.Status,
+            Skip: req.Skip,
+            Take: req.Take,
+            Keyword: req.Keyword,
+            WorkCenterId: req.WorkCenterId,
+            ShiftId: req.ShiftId,
+            DeviceAssetId: req.DeviceAssetId,
+            WorkOrderId: req.WorkOrderId,
+            AssignedUserIds: req.AssignedUserIds,
+            TeamIds: req.TeamIds,
+            WorkCenterIds: req.WorkCenterIds), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1598,6 +1653,7 @@ public static class MesEndpointContracts
         new(typeof(ListDispatchTasksEndpoint), "GET", "/api/business/v1/mes/dispatch-tasks", MesPermissionCodes.DispatchRead, "listBusinessMesDispatchTasks"),
         new(typeof(AssignDispatchTaskEndpoint), "POST", "/api/business/v1/mes/dispatch-tasks/{operationTaskId}/assign", MesPermissionCodes.DispatchManage, "assignBusinessMesDispatchTask"),
         new(typeof(ListOperationTasksEndpoint), "GET", "/api/business/v1/mes/operation-tasks", MesPermissionCodes.OperationsRead, "listBusinessMesOperationTasks"),
+        new(typeof(ListReportableOperationTasksEndpoint), "GET", "/api/business/v1/mes/reportable-operation-tasks", MesPermissionCodes.ReportingRead, "listBusinessMesReportableOperationTasks"),
         new(typeof(StartOperationTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/start", MesPermissionCodes.OperationsManage, "startBusinessMesOperationTask"),
         new(typeof(PauseOperationTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/pause", MesPermissionCodes.OperationsManage, "pauseBusinessMesOperationTask"),
         new(typeof(ResumeOperationTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/resume", MesPermissionCodes.OperationsManage, "resumeBusinessMesOperationTask"),

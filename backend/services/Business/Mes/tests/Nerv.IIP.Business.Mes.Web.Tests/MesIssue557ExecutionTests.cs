@@ -38,6 +38,9 @@ public sealed class MesIssue557ExecutionTests
         await using var dbContext = CreateDbContext(nameof(Operation_action_replay_with_the_same_intent_returns_the_authoritative_state));
         var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
         workOrder.MarkReleased();
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+            Utc("2026-06-29T08:00:00Z"));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
@@ -53,7 +56,7 @@ public sealed class MesIssue557ExecutionTests
             null,
             null));
         await dbContext.SaveChangesAsync();
-        var handler = new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider());
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
         var command = new ChangeOperationTaskStateCommand(
             "org-001",
             "env-dev",
@@ -75,6 +78,9 @@ public sealed class MesIssue557ExecutionTests
         await using var dbContext = CreateDbContext(nameof(Operation_action_rejects_reusing_the_same_key_for_a_different_payload));
         var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
         workOrder.MarkReleased();
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+            Utc("2026-06-29T08:00:00Z"));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
@@ -90,7 +96,7 @@ public sealed class MesIssue557ExecutionTests
             null,
             null));
         await dbContext.SaveChangesAsync();
-        var handler = new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider());
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 
         await handler.Handle(
             new ChangeOperationTaskStateCommand(
@@ -119,6 +125,9 @@ public sealed class MesIssue557ExecutionTests
         await using var dbContext = CreateDbContext(nameof(Operation_action_replay_ignores_server_generated_changed_at));
         var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
         workOrder.MarkReleased();
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+            Utc("2026-06-29T08:00:00Z"));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
@@ -134,7 +143,7 @@ public sealed class MesIssue557ExecutionTests
             null,
             null));
         await dbContext.SaveChangesAsync();
-        var handler = new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider());
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
         var first = new ChangeOperationTaskStateCommand(
             "org-001",
             "env-dev",
@@ -162,7 +171,7 @@ public sealed class MesIssue557ExecutionTests
         SeedReleasedWorkOrderWithTwoOperations(dbContext, secondStatus: OperationTaskLifecycleStatus.Queued);
         await dbContext.SaveChangesAsync();
 
-        var handler = new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider());
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-20", "start", Utc("2026-06-29T09:00:00Z")),
@@ -177,6 +186,9 @@ public sealed class MesIssue557ExecutionTests
         await using var dbContext = CreateDbContext(nameof(Operation_pause_on_queued_task_surfaces_lifecycle_conflict));
         var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
         workOrder.MarkReleased();
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+            Utc("2026-06-29T08:00:00Z"));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
@@ -193,7 +205,7 @@ public sealed class MesIssue557ExecutionTests
             null));
         await dbContext.SaveChangesAsync();
 
-        var handler = new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider());
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 
         var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() => handler.Handle(
             new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-10", "pause", Utc("2026-06-30T09:00:00Z")),
@@ -242,7 +254,7 @@ public sealed class MesIssue557ExecutionTests
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
-            new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider()).Handle(
+            new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
                 new ChangeOperationTaskStateCommand(
                     "org-001",
                     "env-dev",
@@ -348,7 +360,7 @@ public sealed class MesIssue557ExecutionTests
         SeedReleasedWorkOrderWithTwoOperations(dbContext, secondStatus: OperationTaskLifecycleStatus.InProgress);
         await dbContext.SaveChangesAsync();
 
-        var handler = new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider());
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-20", "complete", Utc("2026-06-29T10:00:00Z")),
@@ -363,6 +375,9 @@ public sealed class MesIssue557ExecutionTests
         await using var dbContext = CreateDbContext(nameof(Operation_pause_resume_completion_deducts_paused_time_from_labor_and_machine_hours));
         var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
         workOrder.MarkReleased();
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+            Utc("2026-06-29T08:00:00Z"));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
@@ -378,7 +393,7 @@ public sealed class MesIssue557ExecutionTests
             null,
             null));
         await dbContext.SaveChangesAsync();
-        var handler = new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider());
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 
         await handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-10", "start", Utc("2026-06-29T08:00:00Z")), CancellationToken.None);
         await handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-10", "pause", Utc("2026-06-29T09:00:00Z")), CancellationToken.None);
@@ -689,6 +704,9 @@ public sealed class MesIssue557ExecutionTests
     {
         var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
         workOrder.MarkReleased();
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+            Utc("2026-06-29T08:00:00Z"));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
@@ -787,16 +805,6 @@ public sealed class MesIssue557ExecutionTests
             .UseSqlite(connection)
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
-    }
-
-    private sealed class NoRequirementsProvider : IMesMaterialRequirementSnapshotProvider
-    {
-        public Task<MesMaterialRequirementSnapshotResult> GetSnapshotAsync(
-            MesMaterialRequirementSnapshotRequest request,
-            CancellationToken cancellationToken)
-        {
-            return Task.FromResult(MesMaterialRequirementSnapshotResult.NoRequirements("test"));
-        }
     }
 
     private sealed class NoopMediator : IMediator

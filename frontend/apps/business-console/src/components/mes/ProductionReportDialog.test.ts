@@ -17,6 +17,11 @@ const spies = vi.hoisted(() => ({
   notifySuccess: vi.fn(),
   notifyError: vi.fn(),
 }))
+const scopeState = vi.hoisted(() => ({
+  message: '',
+  pending: false,
+  ready: true,
+}))
 
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: spies.makeIdempotencyKey,
@@ -24,6 +29,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
     recordProductionReport: spies.recordProductionReport,
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
+    reportScopeMessage: ref(scopeState.message),
+    reportScopePending: ref(scopeState.pending),
+    reportScopeReady: ref(scopeState.ready),
     refreshProductionReportState: vi.fn(async () => undefined),
   }),
 }))
@@ -90,6 +98,9 @@ describe('ProductionReportDialog — 带出式录入', () => {
     spies.makeIdempotencyKey.mockImplementation((prefix: string) => `${prefix}-test-${++keyIndex}`)
     spies.notifySuccess.mockClear()
     spies.notifyError.mockClear()
+    scopeState.message = ''
+    scopeState.pending = false
+    scopeState.ready = true
   })
 
   it('带出的上下文只读呈现，且不提供工单/工序的输入位', () => {
@@ -162,6 +173,21 @@ describe('ProductionReportDialog — 带出式录入', () => {
     expect(spies.recordProductionReport).not.toHaveBeenCalled()
     expect(wrapper.find('#report-good').attributes('data-invalid')).toBeDefined()
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+  })
+
+  it('未选择服务端授权作业范围时禁用提交并且不发请求', async () => {
+    scopeState.ready = false
+    scopeState.message = '尚未选择已授权作业范围，当前操作已禁用。'
+    const wrapper = mountDialog()
+
+    expect(wrapper.get('[data-testid="report-scope-message"]').text()).toContain(
+      '尚未选择已授权作业范围',
+    )
+    expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeDefined()
+    await wrapper.find('form').trigger('submit')
+
+    expect(spies.recordProductionReport).not.toHaveBeenCalled()
+    expect(spies.notifyError).toHaveBeenCalledWith(expect.stringContaining('尚未选择'))
   })
 
   it('没有带出上下文时不渲染录入表单（无法凭空报工）', () => {
